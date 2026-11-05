@@ -7611,5 +7611,74 @@ rm -rf "${HM}"
 
 rm -f "${HI_OUT_FILE}"
 
+# ------------------------------------------------ apt on a fresh VM
+# apt_update / wait_for_first_boot_apt against stub apt-get, cloud-init and
+# timeout (functions, so as_root is stubbed to call them directly). A fresh
+# tenant VM's first provision died on "Could not get lock
+# /var/lib/apt/lists/lock" because DPkg::Lock::Timeout does not cover the
+# lists lock `apt-get update` takes.
+APT_T=$(mktemp -d)
+APT_SAVED_AS_ROOT=$(declare -f as_root)
+as_root() { "$@"; }
+# shellcheck disable=SC2329  # invoked through as_root
+apt-get() {
+  local n
+  n=$(($(cat "${APT_T}/calls" 2>/dev/null || echo 0) + 1))
+  echo "${n}" >"${APT_T}/calls"
+  if ((n <= ${APT_STUB_LOCKED_CALLS:-0})); then
+    echo 'E: Could not get lock /var/lib/apt/lists/lock. It is held by process 1328 (apt-get)'
+    echo 'E: Unable to lock directory /var/lib/apt/lists/'
+    return 100
+  fi
+  if [[ -n ${APT_STUB_OTHER_ERROR:-} ]]; then
+    echo "E: ${APT_STUB_OTHER_ERROR}"
+    return 100
+  fi
+  return 0
+}
+apt_calls() { cat "${APT_T}/calls" 2>/dev/null || echo 0; }
+
+rm -f "${APT_T}/calls"
+APT_STUB_LOCKED_CALLS=2 FICUS_APT_LOCK_RETRY_DELAY=0 apt_update 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "apt_update: succeeds once the lists lock is released" "${rc}" 0
+expect_eq "apt_update: retried while the lists lock was held" "$(apt_calls)" 3
+expect_match "apt_update: logs each lock retry" "$(cat "${APT_T}/err")" 'apt lock held by another apt process.*\(2/60\)'
+
+rm -f "${APT_T}/calls"
+APT_STUB_LOCKED_CALLS=99 FICUS_APT_LOCK_RETRY_DELAY=0 FICUS_APT_LOCK_RETRY_ATTEMPTS=4 apt_update 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "apt_update: a lock that never frees returns apt's status" "${rc}" 100
+expect_eq "apt_update: gives up after the attempt bound" "$(apt_calls)" 4
+expect_match "apt_update: final lock error is shown" "$(cat "${APT_T}/err")" 'Could not get lock /var/lib/apt/lists/lock'
+
+rm -f "${APT_T}/calls"
+APT_STUB_OTHER_ERROR='Failed to fetch https://example.invalid/dists/noble/InRelease 404' FICUS_APT_LOCK_RETRY_DELAY=0 apt_update 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "apt_update: a non-lock failure is not retried (status)" "${rc}" 100
+expect_eq "apt_update: a non-lock failure is not retried (calls)" "$(apt_calls)" 1
+expect_match "apt_update: a non-lock failure shows apt's error" "$(cat "${APT_T}/err")" 'Failed to fetch'
+
+# wait_for_first_boot_apt: waits through cloud-init, and never fails setup.
+# shellcheck disable=SC2329  # invoked through as_root
+timeout() { echo "$1" >"${APT_T}/timeout_secs"; shift; "$@"; }
+# shellcheck disable=SC2329  # invoked through as_root / timeout
+cloud-init() { echo "$*" >"${APT_T}/cloud_init_args"; return "${CLOUD_INIT_STUB_STATUS:-0}"; }
+wait_for_first_boot_apt 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "wait_for_first_boot_apt: waits with cloud-init status --wait" "$(cat "${APT_T}/cloud_init_args")" 'status --wait'
+expect_eq "wait_for_first_boot_apt: bounded by 300s by default" "$(cat "${APT_T}/timeout_secs")" 300
+expect_eq "wait_for_first_boot_apt: success returns 0" "${rc}" 0
+CLOUD_INIT_STUB_STATUS=124 wait_for_first_boot_apt 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "wait_for_first_boot_apt: a timed-out wait does not fail setup" "${rc}" 0
+expect_match "wait_for_first_boot_apt: a timed-out wait warns" "$(cat "${APT_T}/err")" 'cloud-init still running after 300s'
+CLOUD_INIT_STUB_STATUS=2 wait_for_first_boot_apt 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "wait_for_first_boot_apt: a cloud-init error does not fail setup" "${rc}" 0
+expect_match "wait_for_first_boot_apt: a cloud-init error warns" "$(cat "${APT_T}/err")" 'exited 2'
+unset -f cloud-init
+rm -f "${APT_T}/cloud_init_args"
+wait_for_first_boot_apt 2>"${APT_T}/err" && rc=0 || rc=$?
+expect_eq "wait_for_first_boot_apt: no cloud-init is a no-op" "${rc}:$([[ -e ${APT_T}/cloud_init_args ]] && echo ran || echo skipped)" '0:skipped'
+
+unset -f apt-get apt_calls timeout
+eval "${APT_SAVED_AS_ROOT}"
+rm -rf "${APT_T}"
+
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]

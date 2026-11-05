@@ -277,6 +277,61 @@ require_root_capability() {
   fi
 }
 
+# ------------------------------------------------ apt on a fresh VM
+#
+# A fresh cloud VM runs its own apt on first boot (cloud-init's package
+# phase, then unattended-upgrades on its timer), and provisioning reaches the
+# host within a couple of minutes of creating it. setup-host.sh's
+# `DPkg::Lock::Timeout` config makes apt WAIT for the dpkg lock, but
+# `apt-get update` takes a different one, /var/lib/apt/lists/lock, which that
+# option does not cover: a tenant provision's first attempt died with
+# "Could not get lock /var/lib/apt/lists/lock. It is held by process 1328
+# (apt-get)" → exit 100, and only the job's retry minutes later got through.
+
+# Block until cloud-init has finished (packages included), bounded by
+# FICUS_CLOUD_INIT_WAIT_SECS (default 300). Only an optimisation, as in
+# scripts/machine/bootstrap.sh: no cloud-init, a cloud-init that reports an
+# error, or the bound running out all warn and continue — apt_update below is
+# what actually tolerates a busy lock.
+wait_for_first_boot_apt() {
+  have cloud-init || return 0
+  local secs=${FICUS_CLOUD_INIT_WAIT_SECS:-300} status=0
+  if have timeout; then
+    as_root timeout "${secs}" cloud-init status --wait >/dev/null 2>&1 || status=$?
+  else
+    as_root cloud-init status --wait >/dev/null 2>&1 || status=$?
+  fi
+  case ${status} in
+    0) ;;
+    124) log_warn "cloud-init still running after ${secs}s — continuing; apt waits for its locks" ;;
+    *) log_warn "cloud-init status --wait exited ${status} — continuing; apt waits for its locks" ;;
+  esac
+  return 0
+}
+
+# `apt-get update`, retried while ANOTHER apt process holds its lock (every
+# FICUS_APT_LOCK_RETRY_DELAY seconds, default 5, up to
+# FICUS_APT_LOCK_RETRY_ATTEMPTS tries, default 60 = 5 minutes). Any other
+# failure returns at once with apt's own status and output.
+apt_update() {
+  local attempts=${FICUS_APT_LOCK_RETRY_ATTEMPTS:-60} delay=${FICUS_APT_LOCK_RETRY_DELAY:-5}
+  local attempt out status
+  for ((attempt = 1; ; attempt++)); do
+    out=$(as_root apt-get update -qq 2>&1) && status=0 || status=$?
+    if [[ ${status} -eq 0 ]]; then
+      [[ -z ${out} ]] || printf '%s\n' "${out}" >&2
+      return 0
+    fi
+    if [[ ${out} =~ Could\ not\ get\ lock|Unable\ to\ lock ]] && ((attempt < attempts)); then
+      log_info "apt lock held by another apt process; retrying apt-get update in ${delay}s (${attempt}/${attempts})"
+      sleep "${delay}"
+      continue
+    fi
+    printf '%s\n' "${out}" >&2
+    return "${status}"
+  done
+}
+
 # ------------------------------------------------ host layout (phase 5)
 #
 # Where this host keeps its install root, config, units, backup script, HOME
@@ -2702,7 +2757,7 @@ upgrade_caddy_apply() {
 install_caddy() {
   have caddy && return 0
   log_info "installing caddy (official cloudsmith apt repo)"
-  as_root apt-get update -qq
+  apt_update
   as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     debian-keyring debian-archive-keyring apt-transport-https curl
   # Fetch to temp files FIRST, then install. `curl … | tee` writes an EMPTY
@@ -2720,7 +2775,7 @@ install_caddy() {
   [[ -s ${_key} && -s ${_list} ]] || die "caddy: cloudsmith returned an empty key or source list"
   as_root gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg <"${_key}"
   as_root install -m 0644 "${_list}" /etc/apt/sources.list.d/caddy-stable.list
-  as_root apt-get update -qq
+  apt_update
   as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
 }
 
