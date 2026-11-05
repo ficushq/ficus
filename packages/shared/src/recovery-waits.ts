@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { QuestionItem } from './types'
 
 export const RECOVERY_ATTEMPT_BUDGET = 3
 export const RECOVERY_MANAGER_CYCLES = 1
@@ -7,6 +8,9 @@ export const WORK_STREAM_CONFIG_DECLARATION = 'ficus:work-stream' as const
 export const WORK_STREAM_CONFIG_INPUT_KEYS: readonly string[] = ['git.worktree', 'git.branch', 'git.baseBranch']
 export const FORENSIC_ASK_REFUSAL =
   'Ask only for a task file, configuration value or product choice; logs, journal output, registry/host state and human-run commands are not valid input requests.'
+/** Appended to a located forensic refusal so the asking agent can rephrase. */
+export const FORENSIC_ASK_HINT =
+  'To ask approval for an action you will perform yourself, describe that action in plain words (for example "May I restart the service once?") instead of asking the person to run a command, and do not ask for logs, status output or host state.'
 
 export const CREDENTIAL_INPUT_REFUSAL =
   'Use the protected credential or integration input surface, not a plaintext task response.'
@@ -35,9 +39,37 @@ function normalizedWording(text: string): string {
     .trim()
 }
 
+// Service lifecycle actions an agent may ask permission to perform itself. Read-only
+// subcommands (status, show, is-active, list-units, ...) are host forensics instead.
+const SYSTEMCTL_LIFECYCLE =
+  '(?:start|stop|restart|reload|try-restart|reload-or-restart|try-reload-or-restart|enable|disable)'
+const SYSTEMCTL_FLAGS = '(?:\\s+-\\S+)*'
+const SYSTEMCTL_LIFECYCLE_COMMAND = new RegExp(`\\bsystemctl${SYSTEMCTL_FLAGS}\\s+${SYSTEMCTL_LIFECYCLE}\\b`)
+/** Running systemctl for anything other than a lifecycle action (status, bare systemctl, ...). */
+const SYSTEMCTL_NON_LIFECYCLE_RUN = new RegExp(
+  `(?:\\b(?:run|execute|invoke|use)\\s+[\`'"]?(?:sudo\\s+)?|^[\`'"]?)systemctl\\b(?!${SYSTEMCTL_FLAGS}\\s+${SYSTEMCTL_LIFECYCLE}\\b)`
+)
+
+/**
+ * Second-person direction to act or hand something over ("can you run", "you check",
+ * "please ...", "your logs"), as opposed to incidental prose such as "the restart you
+ * accepted" in an agent's own proposal.
+ */
+function directsPerson(normalized: string): boolean {
+  return (
+    /\bplease\b|\byour\b/.test(normalized) ||
+    /\b(?:can|could|would|will)\s+you\b|\b(?:need|want|ask|like)\s+you\s+to\b/.test(normalized) ||
+    /\byou\s+(?:to\s+)?(?:(?:must|should|can|could|may|might|will|would|need to|have to)\s+)?(?:run|execute|invoke|ssh|log in|restart|start|stop|reload|check|inspect|look|read|tail|open|send|share|paste|upload|provide|supply|collect|gather|give|grab|copy)\b/.test(
+      normalized
+    )
+  )
+}
+
 /** Wording is a narrow secondary guard; paths and declared keys carry structure. */
 export function isForbiddenEvidenceRequest(text: string, proposedAction = false): boolean {
   const normalized = normalizedWording(text)
+  const agentProposal = /\b(?:i will|i'll|i can|may i|can i|should i|we will|shall we)\b/.test(normalized)
+  const personDirected = directsPerson(normalized)
   // A choice can itself ask the person to perform host forensics. Addressing it
   // as an agent proposal does not make a host action an ordinary task decision.
   const commandText = text
@@ -56,11 +88,14 @@ export function isForbiddenEvidenceRequest(text: string, proposedAction = false)
     /\b(?:read|view|tail|inspect|collect|check|gather)\b[^.!?]*\b(?:logs?|journal|syslog)\b[^.!?]*\b(?:on|from|of)\s+(?:\w+\s+){0,4}(?:host|server|box|system|platform)\b/.test(
       normalized
     )
+  // A service lifecycle command (systemctl restart, ...) is valid only as the
+  // agent's own proposal: the field must say the agent will do it and must not
+  // direct the person to act. Read-only systemctl and journalctl stay forbidden.
+  if (SYSTEMCTL_LIFECYCLE_COMMAND.test(commandText) && (!agentProposal || personDirected)) return true
   if (
-    /\b(?:run|execute|invoke|use)\s+(?:sudo\s+)?(?:journalctl|systemctl)\b|^(?:journalctl|systemctl)\b/.test(
-      commandText
-    ) ||
-    /\b(?:journalctl\s+-\S+|systemctl\s+(?:status|show|start|stop|restart|reload|is-active|is-enabled|list-units))\b/.test(
+    /\b(?:run|execute|invoke|use)\s+[`'"]?(?:sudo\s+)?journalctl\b|^[`'"]?journalctl\b/.test(commandText) ||
+    SYSTEMCTL_NON_LIFECYCLE_RUN.test(commandText) ||
+    /\b(?:journalctl\s+-\S+|systemctl(?:\s+-\S+)*\s+(?:status|show|cat|is-active|is-enabled|is-failed|list-[a-z-]+))\b/.test(
       commandText
     ) ||
     /\bssh\s+(?:in(?:to)?\b|\S+@\S+|-\S+)/.test(commandText) ||
@@ -71,8 +106,6 @@ export function isForbiddenEvidenceRequest(text: string, proposedAction = false)
   )
     return true
   const person = /\byou(?:r)?\b|\bplease\b/.test(normalized)
-  const agentProposal = /\b(?:i will|i'll|i can|may i|can i|should i|we will|shall we)\b/.test(normalized)
-  if (agentProposal && !person) return false
   // Product behavior is not a request for the person to gather diagnostics.
   if (
     !person &&
@@ -92,19 +125,18 @@ export function isForbiddenEvidenceRequest(text: string, proposedAction = false)
     /\b(?:ssh|sudo|systemctl|journalctl)\b|\b(?:docker|kubectl)\s+(?:ps|logs|inspect|stats|get|describe|exec)\b|(?:^|\s)(?:cat|tail|grep)\s+\//.test(
       evidence
     )
+  const asksForEvidence = explicitEvidence || (requested && (diagnostics || hostCommand))
+  // An agent asking to perform an action itself is not a request for the person
+  // to act, even when unrelated prose mentions "you" ("the restart you accepted").
+  // Prose that addresses the person and also asks for evidence stays forbidden.
+  if (agentProposal && (!person || (!personDirected && !asksForEvidence))) return false
   const personCommand =
     /\b(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|you\s+(?:(?:must|should|can|may|need to|have to)\s+)?)(?:run|execute|ssh)\b/.test(
       evidence
     )
   const bareCommand = /(?:^|[.!?:;,\n]\s*|\b(?:please|then|and)\s+)(?:run|execute)\b/.test(evidence)
   const choice = /\bor\b|\bshould (?:i|we)\b/.test(evidence)
-  return (
-    explicitEvidence ||
-    (requested && (diagnostics || hostCommand)) ||
-    personCommand ||
-    (person && hostCommand) ||
-    (!proposedAction && !choice && bareCommand)
-  )
+  return asksForEvidence || personCommand || (person && hostCommand) || (!proposedAction && !choice && bareCommand)
 }
 
 function isDiagnosticTarget(text: string): boolean {
@@ -151,9 +183,65 @@ const configurationKeySchema = z
   .refine((key) => !isDiagnosticTarget(key), FORENSIC_ASK_REFUSAL)
   .refine((key) => !isCredentialInputName(key), CREDENTIAL_INPUT_REFUSAL)
 
-export function assertHumanAnswerableRequest(texts: readonly string[]): void {
-  if (texts.some((text) => isForbiddenEvidenceRequest(text))) throw new Error(FORENSIC_ASK_REFUSAL)
-  if (texts.some(isPlaintextCredentialRequest)) throw new Error(CREDENTIAL_INPUT_REFUSAL)
+/** One human-facing text checked by {@link assertHumanAnswerableRequest}. */
+export interface HumanRequestField {
+  text: string
+  /** Where the text appears, for example "the context of question 'restart'"; named in the refusal. */
+  location?: string
+  /** True for a choice the agent proposes to carry out (option labels), as in the typed decide schema. */
+  proposedAction?: boolean
+}
+
+/**
+ * Refusal of a forensic or plaintext-credential ask. The message starts with the
+ * stable FORENSIC_ASK_REFUSAL or CREDENTIAL_INPUT_REFUSAL text, then names the
+ * offending field and, for forensic asks, how to rephrase.
+ */
+export class HumanRequestRefusalError extends Error {
+  readonly reason: 'forensic' | 'credential'
+  readonly location: string | undefined
+
+  constructor(reason: 'forensic' | 'credential', location?: string) {
+    const base = reason === 'forensic' ? FORENSIC_ASK_REFUSAL : CREDENTIAL_INPUT_REFUSAL
+    const located = location ? ` Rejected text: ${location}.` : ''
+    super(`${base}${located}${reason === 'forensic' ? ` ${FORENSIC_ASK_HINT}` : ''}`)
+    this.name = 'HumanRequestRefusalError'
+    this.reason = reason
+    this.location = location
+  }
+}
+
+export function assertHumanAnswerableRequest(texts: readonly (string | HumanRequestField)[]): void {
+  const fields = texts.map((entry) => (typeof entry === 'string' ? { text: entry } : entry))
+  const forensic = fields.find((field) => isForbiddenEvidenceRequest(field.text, field.proposedAction))
+  if (forensic) throw new HumanRequestRefusalError('forensic', forensic.location)
+  const credential = fields.find((field) => isPlaintextCredentialRequest(field.text))
+  if (credential) throw new HumanRequestRefusalError('credential', credential.location)
+}
+
+/**
+ * Checks every human-facing field of agent questions (ask_human). Options are
+ * choices the agent proposes, so they are checked like typed decide option labels.
+ */
+export function assertHumanAnswerableQuestions(
+  questions: readonly Pick<QuestionItem, 'id' | 'question' | 'context' | 'options'>[]
+): void {
+  assertHumanAnswerableRequest(
+    questions.flatMap((question) => {
+      const name = `question '${question.id}'`
+      return [
+        { text: question.question, location: `the text of ${name}` },
+        { text: question.context ?? '', location: `the context of ${name}` },
+        ...(question.options ?? []).flatMap((option) =>
+          [option.value, option.label ?? ''].map((text) => ({
+            text,
+            location: `option '${option.value}' of ${name}`,
+            proposedAction: true,
+          }))
+        ),
+      ]
+    })
+  )
 }
 
 const plain = (max: number, proposedAction = false) =>

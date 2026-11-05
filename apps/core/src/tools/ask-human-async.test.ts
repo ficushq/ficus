@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import type { AgentQuestion } from '@ficus/shared'
+import { assertHumanAnswerableQuestions, type AgentQuestion } from '@ficus/shared'
 import { createAsyncAskHumanTool } from './ask-human-async'
 
 const record: AgentQuestion = {
@@ -225,5 +225,75 @@ describe('async ask_human without blocking (managers and assistants)', () => {
     )
     expect(result.details).toEqual({ error: "Question 'long': context must be at most 2000 characters" })
     expect(createQuestion).not.toHaveBeenCalled()
+  })
+})
+
+describe('async ask_human forensic guard', () => {
+  function toolWithSharedGuard() {
+    // Runs the same shared check createAgentQuestion applies before persisting.
+    const createQuestion = mock(
+      async (_origin: unknown, data: { questions: AgentQuestion['questionData']['questions'] }) => {
+        assertHumanAnswerableQuestions(data.questions)
+        return { ...record, openedWaitWorkStreamIds: [] }
+      }
+    )
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion: createQuestion as any }
+    )
+    return { tool, createQuestion }
+  }
+
+  test("describes the restriction and how to ask approval for the agent's own action", () => {
+    const { tool } = toolWithSharedGuard()
+    expect(tool.description).toContain('Never ask the person to run commands or to provide logs')
+    expect(tool.description).toContain('describe that action in plain words')
+  })
+
+  test('records an approval request for a restart the agent will run itself', async () => {
+    const { tool } = toolWithSharedGuard()
+    const result = await tool.execute(
+      'call-1',
+      {
+        questions: [
+          {
+            id: 'restart',
+            type: 'select',
+            question: 'May I gracefully restart xion.service once to recover it?',
+            context:
+              'Restart it once (recommended, about the same as the restart you already accepted): run `systemctl restart xion` once. ' +
+              "I'll verify catch-up and stop it gracefully again if it panics.",
+            options: [{ value: 'restart', label: 'Restart it once' }, { value: 'leave' }],
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      {} as any
+    )
+    expect(result.content[0]?.type === 'text' && result.content[0].text).toStartWith('Question recorded')
+  })
+
+  test('names the rejected question field and suggests a rephrasing', async () => {
+    const { tool } = toolWithSharedGuard()
+    const result = await tool.execute(
+      'call-1',
+      {
+        questions: [
+          {
+            id: 'status',
+            question: 'Is the node healthy?',
+            context: 'Can you run systemctl status xion and paste the output?',
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      {} as any
+    )
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(text).toStartWith('Error: Ask only for a task file')
+    expect(text).toContain("Rejected text: the context of question 'status'.")
+    expect(text).toContain('describe that action in plain words')
   })
 })

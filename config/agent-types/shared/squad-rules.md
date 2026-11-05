@@ -123,6 +123,12 @@ a typed task input or owner task decision, never a free-prose diagnostic request
 is finished is cheaper than a blocked step discovered later. Use `ask_human`
 without `blocking` for questions whose answer can wait.
 
+A question must never ask the person to run commands or to provide logs, status
+output, host state or other diagnostics; `ask_human` rejects such questions and
+names the field that matched. To get approval for an action you will perform
+yourself, such as a service restart, describe that action in plain words ("May I
+restart the service once?") rather than telling the person to run a command.
+
 If a human answers your open `ask_human` question in another channel (a PR
 comment reply, chat, or inbox), close it with `ficus agent-question resolve <id>
 --answer "<their answer, quoted>" --source <url-or-reference>` instead of leaving

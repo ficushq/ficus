@@ -152,6 +152,15 @@ remote executors must support scoped-read proof. This never provisions an execut
 A narrow shared guard additionally rejects forensic asks and human-run commands,
 including disguised typed requests and human-question paths, while preserving
 product logging/registry questions and agent-proposed actions.
+Read-only host forensics (`systemctl status`, `journalctl`, `ssh`, `docker` or
+`kubectl` inspection) stay rejected even when the agent proposes them. A service
+lifecycle command (`systemctl start`, `stop`, `restart` or `reload`) is accepted
+only in the agent's own proposal ("I'll run…", "May I…") and is rejected when the
+text directs the person to act ("please run…", "can you…", "you run…"); incidental
+prose such as "the restart you accepted" does not count as direction. `ask_human`
+option values and labels are checked as proposed choices, like typed `decide`
+option labels. A rejected question names the question and field that matched and
+suggests describing the agent's own action in plain words.
 Credentials continue through protected credential/integration surfaces, never
 plaintext task responses. Old waits retain their legacy response/history behavior.
 

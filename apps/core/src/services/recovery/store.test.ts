@@ -192,6 +192,44 @@ test('common wait and question writers reject free forensic asks, while typed ta
       { blocking: true }
     )
   ).rejects.toThrow('not valid')
+  // Approval for a restart the agent runs itself is valid, even quoting the command beside unrelated "you".
+  const restartApproval = await createAgentQuestion(
+    { agentId: worker.id, executionId: execution.id },
+    {
+      questions: [
+        {
+          id: 'restart',
+          type: 'select',
+          question: 'May I gracefully restart xion.service once to recover it?',
+          context:
+            '1. Restart it once (recommended, about the same as the restart you already accepted): run `systemctl restart xion` once. ' +
+            'The graceful stop closes the FIFO, so PM2 restarts the tracer automatically (on the same bcc56f8 build), and the node ' +
+            "reopens the FIFO when it starts. I'll verify replay of 19,635,624, catch-up, export continuity and queues, and stop it " +
+            'gracefully again if it panics during catch-up.',
+          options: [
+            { value: 'restart', label: 'Restart it once (recommended)' },
+            { value: 'leave', label: 'Leave it stopped' },
+          ],
+        },
+      ],
+    }
+  )
+  expect(restartApproval.status).toBe('open')
+  await expect(
+    createAgentQuestion(
+      { agentId: worker.id, executionId: execution.id },
+      {
+        questions: [
+          {
+            id: 'status',
+            type: 'text',
+            question: 'Is the node healthy?',
+            context: 'Can you run systemctl status xion and paste the output?',
+          },
+        ],
+      }
+    )
+  ).rejects.toThrow("Rejected text: the context of question 'status'.")
   const { requestStructuredInput, resolveStructuredInput } = await import('./structured-input')
   const wait = await requestStructuredInput(
     stream.id,

@@ -115,6 +115,9 @@ const DESCRIPTION_TAIL =
   'An answer does not approve a workflow approval gate. ' +
   'Humans usually answer from the Feed or a notification, away from your conversation, so make each question ' +
   'stand alone and give it context: what you are doing, what you found, and the consequence of each answer. ' +
+  'Never ask the person to run commands or to provide logs, status output, host state or other diagnostics; ' +
+  'such questions are rejected. To get approval for an action you will perform yourself, describe that action ' +
+  'in plain words (for example "May I restart the service once?"). ' +
   "For simple questions use type 'text', optionally with options as suggested answers; for choices " +
   "use 'select' or 'multi-select' (with options)."
 
