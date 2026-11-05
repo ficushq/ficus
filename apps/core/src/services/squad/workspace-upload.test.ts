@@ -293,3 +293,146 @@ test('sandbox publication fails closed when the box cannot resolve the target', 
     await staged.cleanup()
   }
 })
+
+/** Stage one multipart upload holding a file per relative path, as a folder upload sends them. */
+async function stageFolder(paths: readonly string[]) {
+  const form = new FormData()
+  paths.forEach((relativePath, i) => {
+    form.append(`file${i}`, new File([`bytes ${i}`], `f${i}`))
+    form.append(`path_file${i}`, relativePath)
+  })
+  return stageWorkspaceMultipart(new Request('http://localhost/', { method: 'POST', body: form }))
+}
+
+/** A sandbox upload client that logs every box call in order, running box commands with `bash`. */
+function recordingClient(bash: SandboxPathClient['bash']) {
+  const calls: string[] = []
+  return {
+    calls,
+    client: {
+      bash: (request: Parameters<SandboxPathClient['bash']>[0]) => {
+        calls.push('bash')
+        return bash(request)
+      },
+      stat: async ({ path }: { path: string }) => {
+        calls.push(`stat ${path}`)
+        return { exists: false }
+      },
+      upload: async ({ path, content }: { path: string; content: ReadableStream<Uint8Array> }) => {
+        calls.push(`upload ${path}`)
+        const bytes = Buffer.from(await new Response(content).arrayBuffer())
+        return { bytesWritten: bytes.byteLength, sha256: new Bun.CryptoHasher('sha256').update(bytes).digest('hex') }
+      },
+      write: async ({ path }: { path: string }) => {
+        calls.push(`write ${path}`)
+        return { bytesWritten: 0 }
+      },
+    },
+  }
+}
+
+test('sandbox folder upload checks every target in one box command before writing, refusing settings targets', async () => {
+  const { base, root } = await settingsWorkspace()
+  const ordinary = Array.from({ length: 36 }, (_, i) => `project/src/module-${i}.ts`)
+  const paths = [
+    ...ordinary.slice(0, 18),
+    'project/../../.ficus/new.txt',
+    "project/it's $(touch marker) `id`.txt",
+    '../settings-link/new.txt',
+    ...ordinary.slice(18),
+    '../docs/dangling-link',
+    '../self-link/.ficus/new.txt',
+  ]
+  const staged = await stageFolder(paths)
+  const { calls, client } = recordingClient(localBash)
+  try {
+    const results = await publishWorkspaceUpload({
+      staged,
+      workspacePath: root,
+      targetDir: 'upload',
+      overwrite: true,
+      client,
+    })
+    const refused = new Set([
+      'upload/project/../../.ficus/new.txt',
+      'upload/../settings-link/new.txt',
+      'upload/../docs/dangling-link',
+      'upload/../self-link/.ficus/new.txt',
+    ])
+    expect(results).toEqual(
+      paths.map((relativePath) => {
+        const path = `upload/${relativePath}`
+        return refused.has(path) ? { path, status: 'error', error: 'Invalid path' } : { path, status: 'created' }
+      })
+    )
+    // Before batching, each of the 39 targets the box must check was one box command;
+    // now the whole folder is one, and it runs before any file is touched.
+    expect(calls.filter((call) => call === 'bash').length).toBe(1)
+    expect(calls[0]).toBe('bash')
+    expect(calls.filter((call) => call.startsWith('upload ')).length).toBe(37)
+    expect(calls.some((call) => call.includes('.ficus') || call.includes('settings-link'))).toBe(false)
+    expect(await readdir(root)).not.toContain('marker')
+  } finally {
+    await staged.cleanup()
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('sandbox folder upload refuses only the file the box could not resolve, and every file when it cannot answer', async () => {
+  const staged = await stageFolder(['a.txt', 'b.txt', 'c.txt'])
+  const answer = (stdout: string, exitCode: number): SandboxPathClient['bash'] =>
+    (() => {
+      const emitter = {
+        on(event: string, listener: (arg?: never) => void) {
+          if (event === 'data')
+            queueMicrotask(() =>
+              (listener as unknown as (data: BashResponse) => void)({
+                stdout: Buffer.from(stdout).toString('base64'),
+                exitCode,
+              })
+            )
+          if (event === 'end') queueMicrotask(() => queueMicrotask(() => (listener as () => void)()))
+          return emitter
+        },
+      }
+      return emitter
+    }) as unknown as SandboxPathClient['bash']
+  try {
+    const partial = recordingClient(answer('/workspace\0/workspace/a.txt\0\0/workspace/c.txt\0', 0))
+    expect(
+      await publishWorkspaceUpload({
+        staged,
+        workspacePath: '/workspace',
+        targetDir: '',
+        overwrite: true,
+        client: partial.client,
+      })
+    ).toMatchObject([
+      { path: 'a.txt', status: 'created' },
+      { path: 'b.txt', status: 'error' },
+      { path: 'c.txt', status: 'created' },
+    ])
+    expect(partial.calls.filter((call) => call.startsWith('upload '))).toEqual([
+      'upload /workspace/a.txt',
+      'upload /workspace/c.txt',
+    ])
+
+    const failing = recordingClient(answer('', 3))
+    expect(
+      await publishWorkspaceUpload({
+        staged,
+        workspacePath: '/workspace',
+        targetDir: '',
+        overwrite: true,
+        client: failing.client,
+      })
+    ).toMatchObject([
+      { path: 'a.txt', status: 'error' },
+      { path: 'b.txt', status: 'error' },
+      { path: 'c.txt', status: 'error' },
+    ])
+    expect(failing.calls).toEqual(['bash'])
+  } finally {
+    await staged.cleanup()
+  }
+})

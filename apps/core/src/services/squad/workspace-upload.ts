@@ -4,8 +4,9 @@ import { atomicVerifiedWrite } from '@ficus/sandbox-server/atomic-write'
 import type { StagedWorkspaceUpload } from '../attachments/workspace-multipart'
 import {
   resolveLocalWorkspaceWriteTarget,
-  resolveSandboxWorkspaceTarget,
+  resolveSandboxWorkspaceTargets,
   type SandboxPathClient,
+  type WorkspaceTargetResolution,
 } from './workspace-settings'
 import { SandboxHttpError } from '../sandbox/client/http-client'
 import { publicErrorMessage } from '../../db/errors'
@@ -49,17 +50,28 @@ export async function publishWorkspaceUpload(options: {
 }): Promise<WorkspaceUploadResult[]> {
   const { staged, workspacePath, targetDir, overwrite, client, signal } = options
   const results: WorkspaceUploadResult[] = []
-  for (const file of staged.files) {
+  const relativePaths = staged.files.map((file) => {
     const relativePath = staged.fields.get(`path_${file.fieldName}`) || file.filename
-    const fullRelativePath = targetDir ? `${targetDir}/${relativePath}` : relativePath
+    return targetDir ? `${targetDir}/${relativePath}` : relativePath
+  })
+  // Sandbox targets are all resolved in the box before anything is written,
+  // in as few round trips as the batch bounds allow.
+  const sandboxChecks = client ? await resolveSandboxWorkspaceTargets(client, workspacePath, relativePaths, signal) : []
+  for (const [index, file] of staged.files.entries()) {
+    const fullRelativePath = relativePaths[index]!
     try {
       signal?.throwIfAborted()
       // The target must stay inside the workspace and outside its settings
       // directory, both as written and after symlinks resolve (in the box for
       // sandbox runtimes); either refusal answers the same 'Invalid path'.
-      const target = client
-        ? await resolveSandboxWorkspaceTarget(client, workspacePath, fullRelativePath)
-        : resolveLocalWorkspaceWriteTarget(workspacePath, fullRelativePath)
+      let target: WorkspaceTargetResolution
+      if (client) {
+        const check = sandboxChecks[index]!
+        if ('error' in check) throw check.error
+        target = check.resolution
+      } else {
+        target = resolveLocalWorkspaceWriteTarget(workspacePath, fullRelativePath)
+      }
       if (!target.ok) {
         results.push({ path: fullRelativePath, status: 'error', error: 'Invalid path' })
         continue
