@@ -6,6 +6,7 @@ import {
   SYSTEM_RECIPIENT_ID,
   type PresenceFocus,
   type PresencePerson,
+  type AgentChatTypingEventData,
   type SquadActivityProjectionEventData,
   type CollectionTopic,
   type Topic,
@@ -17,7 +18,8 @@ import { invalidatePermissionCache } from '../rbac/permissions'
 import { assistantInboxOwner } from '../assistant-inbox'
 import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
-import { agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
+import { agentChatTypingScope, agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
+import { AgentChatTypingRegistry } from './agent-chat-typing'
 import {
   PresenceRegistry,
   forgetPresenceProfile,
@@ -55,6 +57,8 @@ interface Client {
   presenceChain?: Promise<void>
   /** When this connection last waved (waves are rate-limited). */
   wavedAt?: number
+  /** Typing in agent chats is checked and delivered one message after another, in the order sent. */
+  agentChatTypingChain?: Promise<void>
 }
 
 const ACCESS_CACHE_TTL_MS = 60_000
@@ -86,6 +90,8 @@ export interface WebSocketManagerOptions {
   log?: Pick<ScopedLogger, 'info' | 'warn' | 'error'>
   /** Clock for socket ages; defaults to `Date.now`. */
   now?: () => number
+  /** How long a quiet typer in an agent's chat keeps typing; a test seam (see agent-chat-typing.ts). */
+  agentChatTypingTtlMs?: number
 }
 
 /** Who holds a socket, for its log lines: the identity kind and its id, never a token or name. */
@@ -108,6 +114,8 @@ export class WebSocketManager {
   private readonly presence = new PresenceRegistry()
   /** Farm actions still being applied (they wait on a permission check), for settled(). */
   private readonly pendingFarm = new Set<Promise<unknown>>()
+  /** Who is typing in which agent's chat (people only; in memory, never stored). */
+  private readonly agentChatTyping: AgentChatTypingRegistry
 
   private readonly log: Pick<ScopedLogger, 'info' | 'warn' | 'error'>
   private readonly now: () => number
@@ -118,6 +126,14 @@ export class WebSocketManager {
   ) {
     this.log = options.log ?? createLogger('ws')
     this.now = options.now ?? Date.now
+    this.agentChatTyping = new AgentChatTypingRegistry({
+      ttlMs: options.agentChatTypingTtlMs,
+      onExpire: (clientId, stop) => {
+        const client = this.clients.get(clientId)
+        if (client)
+          this.queueAgentChatTyping(client, () => this.deliverAgentChatTyping(stop.agentId, stop.userId, false))
+      },
+    })
   }
 
   addClient(ws: ServerWebSocket<unknown>, identity: Identity): string {
@@ -176,6 +192,9 @@ export class WebSocketManager {
     const change = this.presence.withdraw(client.id)
     if (change)
       void this.deliverPresence(change).catch((error) => console.error('[ws] presence delivery failed:', error))
+    // Whatever this connection was typing in stops for everyone else.
+    for (const stop of this.agentChatTyping.withdraw(client.id))
+      this.queueAgentChatTyping(client, () => this.deliverAgentChatTyping(stop.agentId, stop.userId, false))
   }
 
   getClientByWs(ws: ServerWebSocket<unknown>): Client | undefined {
@@ -541,6 +560,9 @@ export class WebSocketManager {
             console.error('[ws] farm chat typing failed:', error)
           )
           break
+        case 'agentChat.typing':
+          this.agentChatTypingMessage(client, message.agentId, message.typing)
+          break
         case 'ping':
           this.send(ws, { type: 'pong' })
           break
@@ -865,6 +887,89 @@ export class WebSocketManager {
       throw error
     }
     this.sendFarmChat('farmChat.typing', { roomId, userId }, audienceOf(room) ?? undefined, userId)
+  }
+
+  /* ---- Typing in agent chats (see agent-chat-typing.ts) ---- */
+
+  /**
+   * A person says they're typing in an agent's chat, or stopped. Agents and
+   * tokens are ignored. The sender must be allowed to read that conversation,
+   * and it must be one several people may read (never a private one); each
+   * recipient is checked too (deliverAgentChatTyping).
+   */
+  private agentChatTypingMessage(client: Client, agentId: unknown, typing: unknown): void {
+    if (client.identity.type !== 'user') return
+    if (typeof agentId !== 'string' || !UUID_PATTERN.test(agentId) || typeof typing !== 'boolean') {
+      this.send(client.ws, { type: 'error', message: 'Invalid typing' })
+      return
+    }
+    if (!typing) {
+      const stop = this.agentChatTyping.stop(client.id, agentId)
+      if (stop) this.queueAgentChatTyping(client, () => this.deliverAgentChatTyping(stop.agentId, stop.userId, false))
+      return
+    }
+    const userId = client.identity.userId
+    const entry = this.agentChatTyping.typing(client.id, userId, agentId)
+    if (!entry) return
+    this.queueAgentChatTyping(client, async () => {
+      const scope = await agentChatTypingScope(agentId)
+      const allowed = scope !== null && (await this.canAccessTopicScope(client, scope))
+      // Stopped (or closed) while the check ran: its stop is already queued, or nothing was shown.
+      if (!this.agentChatTyping.isCurrent(client.id, entry)) return
+      if (!allowed) {
+        // No access (any more): stop, and take back anything shown before access was lost.
+        const stop = this.agentChatTyping.stop(client.id, agentId)
+        if (stop) await this.deliverAgentChatTyping(stop.agentId, stop.userId, false)
+        return
+      }
+      this.agentChatTyping.delivered(entry)
+      await this.deliverAgentChatTyping(agentId, userId, true, scope)
+    })
+  }
+
+  /** Runs a connection's typing work in the order its messages arrived (the access checks are async). */
+  private queueAgentChatTyping(client: Client, work: () => Promise<void>): void {
+    client.agentChatTypingChain = (client.agentChatTypingChain ?? Promise.resolve())
+      .then(work)
+      .catch((error) => console.error('[ws] agent chat typing failed:', error))
+    void this.track(client.agentChatTypingChain)
+  }
+
+  /**
+   * Tells the other people reading an agent's chat (subscribed to its topic and
+   * allowed to read it now) that someone is typing there, with their name as
+   * each may see it, or stopped. Never the typer's own connections, never agents.
+   */
+  private async deliverAgentChatTyping(
+    agentId: string,
+    userId: string,
+    typing: boolean,
+    knownScope?: TopicScope
+  ): Promise<void> {
+    const topic: Topic = `agents:${agentId}`
+    const audience = [...this.clients.values()].filter(
+      (client) =>
+        client.identity.type === 'user' && client.identity.userId !== userId && this.isActiveSubscriber(client, topic)
+    )
+    if (!audience.length) return
+    const scope = knownScope ?? (await agentChatTypingScope(agentId))
+    if (!scope) return
+    const profile = typing ? await presenceProfile(userId) : null
+    await Promise.all(
+      audience.map(async (client) => {
+        if (!(await this.canAccessTopicScope(client, scope))) return
+        const data: AgentChatTypingEventData = profile
+          ? {
+              agentId,
+              userId,
+              typing: true,
+              name: personName(profile, await hasPermission(client.identity, 'users:read')),
+            }
+          : { agentId, userId, typing: false }
+        if (this.isActiveSubscriber(client, topic))
+          this.send(client.ws, { type: 'event', topic, event: 'agentChat.typing', data })
+      })
+    )
   }
 
   /**

@@ -463,6 +463,8 @@ function DurableConversation(props: AssistantConversationViewProps) {
           <Chat
             beforeConversation={earlierConversation}
             agentId={agentId}
+            // A saved Assistant conversation is private to its owner: nobody else types in it.
+            showTeammateTyping={false}
             hideInboxMessages
             embedded
             className="min-w-0 flex-1 min-h-0"

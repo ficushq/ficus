@@ -14,6 +14,9 @@ export type ClientMessage =
   | { type: 'presence.wave'; toUserId: unknown }
   // Farm chat: this person is typing in a room (passed on to the room's other people, never stored).
   | { type: 'farmChat.typing'; roomId: unknown }
+  // Agent chat: this person is typing in an agent's chat composer, or stopped (passed on to the other
+  // people reading that conversation, never stored; see agent-chat-typing.ts).
+  | { type: 'agentChat.typing'; agentId: unknown; typing: unknown }
   // The page's own proof of life: answered with `pong`. Transport pings never reach the page, so a
   // socket whose frames have stopped arriving looks alive to both ends without this.
   | { type: 'ping' }

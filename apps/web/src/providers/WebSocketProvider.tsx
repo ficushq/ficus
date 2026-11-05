@@ -254,10 +254,18 @@ export function WebSocketProvider({ getUrl, heartbeat: heartbeatOptions, childre
     }
   }, [])
 
+  const send = useCallback<NonNullable<WebSocketContextValue['send']>>((message) => {
+    const ws = wsRef.current
+    if (ws?.readyState !== WebSocket.OPEN) return false
+    ws.send(JSON.stringify(message))
+    return true
+  }, [])
+
   const value: WebSocketContextValue = {
     subscribe: subscribe as WebSocketContextValue['subscribe'],
     isConnected,
     lastReconnect,
+    send,
   }
 
   return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>

@@ -70,6 +70,7 @@ export type TopicEventMap = {
     | 'message.updated'
     | 'sandbox.ensured'
     | 'sandbox.status'
+    | 'agentChat.typing'
   >
   schedules: Extract<
     keyof EventMap,
