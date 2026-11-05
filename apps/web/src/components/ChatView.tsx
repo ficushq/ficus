@@ -313,6 +313,8 @@ function AssistantMessageRow({
 }) {
   const segments = segmentAtNotices<ContentBlock>(blocks)
   const contentBlocks = segments.flatMap((segment) => (segment.type === 'blocks' ? segment.blocks : []))
+  // A leading notice row brings its own py-2, so a margin on top of it would double the gap.
+  const startsWithNotice = segments[0]?.type === 'notice'
   // If we have pre-merged blocks, inject them as metadata.content so AssistantMessageContent uses them
   const effectiveMetadata: MessageMetadata | null =
     contentBlocks.length > 0 ? { ...(message.metadata ?? {}), content: contentBlocks } : (message.metadata ?? null)
@@ -321,7 +323,12 @@ function AssistantMessageRow({
     // No bubble — agent text flows on the page (mobile vibe). Only human messages are bubbled.
     <div className="text-primary overflow-hidden pr-2 md:pr-10">
       {time && (
-        <div data-testid="message-meta" className="text-[11px] text-muted mb-0.5">
+        // Unlike a human bubble, the reply has no padding of its own: space the time from it like the
+        // reply's own parts (space-y-2), still less than the gap between rows, so it heads its reply.
+        <div
+          data-testid="message-meta"
+          className={clsx('text-[11px] text-muted', startsWithNotice ? 'mb-0.5' : 'mb-2')}
+        >
           <MessageTime at={time} />
         </div>
       )}
