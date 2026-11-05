@@ -63,6 +63,14 @@ const JSON_PARSE_ALLOWLIST = [
       "Parses the box's own `docker ps`/`docker stats --format '{{json .}}'` output line by line; " +
       'malformed lines are skipped. Not network request data.',
   },
+  {
+    file: 'services/env.ts',
+    function: 'syncedGitIdentity',
+    classification: 'local-file',
+    rationale:
+      "Reads the box's own ~/.ficus/git-identity.json, which Core writes through /write as the box user; " +
+      'only the six git identity keys are taken from it, as one-line strings. Not network request data.',
+  },
 ] as const
 
 function unwrap(expression: ts.Expression): ts.Expression {
