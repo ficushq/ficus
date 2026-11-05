@@ -1154,6 +1154,31 @@ describe('ChatView timestamps', () => {
     expect(metaFor(window.document, 'a2')).toBeNull()
   })
 
+  test('an agent time is spaced from its unbubbled reply like the reply parts; a human time keeps its tight gap', async () => {
+    const replyAt = timed(assistantMsg('a1', 'reply'), at(2))
+    const noticeFirst = timed(assistantMsg('a2', ''), at(20))
+    const items: RenderItem[] = [
+      persisted(timed(humanMsg('h1', 'question'), at(0))),
+      persisted(replyAt),
+      {
+        ...persisted(noticeFirst),
+        blocks: [
+          { type: 'system_notice', id: 'n1', text: '[System] Context compacted' },
+          { type: 'text', id: 'x1', content: 'after the notice' },
+        ],
+      },
+    ]
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    // mb-2 matches the reply's own space-y-2 between its parts.
+    expect(metaFor(window.document, 'a1')?.classList.contains('mb-2')).toBe(true)
+    // A leading notice row already has py-2, so the time keeps its small margin instead of doubling the gap.
+    expect(metaFor(window.document, 'a2')?.classList.contains('mb-0.5')).toBe(true)
+    expect(metaFor(window.document, 'a2')?.classList.contains('mb-2')).toBe(false)
+    // The human bubble's padding supplies the space, so its meta line is unchanged.
+    expect(metaFor(window.document, 'h1')?.classList.contains('mb-0.5')).toBe(true)
+  })
+
   test('a day divider appears between two days and the next message shows its time', async () => {
     const items: RenderItem[] = [
       persisted(timed(humanMsg('h1', 'yesterday'), at(0, -1))),
