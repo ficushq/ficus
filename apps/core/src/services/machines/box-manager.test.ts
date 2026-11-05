@@ -5103,6 +5103,24 @@ describe('provisioning marker decomposition', () => {
     GIT_COMMITTER_EMAIL: 'synthetic@example.com',
   }
   const withoutIdentity = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('GIT_')))
+  const envHash = (value: Record<string, string>) =>
+    createHash('sha256')
+      .update(
+        JSON.stringify(
+          Object.keys(value)
+            .sort()
+            .map((k) => [k, value[k]])
+        )
+      )
+      .digest('hex')
+      .slice(0, 16)
+  // The formula boxes were stamped with while the git author keys were still
+  // hashed into the marker's third part.
+  const identityHashedMarker = (specHash: string, value: Record<string, string>) => {
+    const identity = Object.fromEntries(Object.entries(value).filter(([key]) => key.startsWith('GIT_')))
+    const critical = Object.fromEntries(Object.entries(value).filter(([key]) => !key.startsWith('GIT_')))
+    return `${specHash}.${envHash(critical)}.${envHash(identity)}`
+  }
   const legacyMarker = (specHash: string, value: Record<string, string>) =>
     // The formula every box was stamped with before the split.
     `${specHash}.${createHash('sha256')
@@ -5126,11 +5144,17 @@ describe('provisioning marker decomposition', () => {
     const base = computeProvisioningMarker('spec-abc', env).split('.')
     const secretMoved = computeProvisioningMarker('spec-abc', { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' }).split('.')
     const urlMoved = computeProvisioningMarker('spec-abc', { ...env, FICUS_API_URL: 'http://127.0.0.1:2' }).split('.')
-    const identityMoved = computeProvisioningMarker('spec-abc', withoutIdentity).split('.')
+    const identityMoved = computeProvisioningMarker('spec-abc', {
+      ...env,
+      GIT_AUTHOR_NAME: 'Someone Else',
+      GIT_AUTHOR_EMAIL: 'else@example.com',
+    }).split('.')
     const specMoved = computeProvisioningMarker('spec-def', env).split('.')
     expect(secretMoved).toEqual([base[0], expect.not.stringMatching(base[1]!), base[2]])
     expect(urlMoved).toEqual([base[0], expect.not.stringMatching(base[1]!), base[2]])
-    expect(identityMoved).toEqual([base[0], base[1], expect.not.stringMatching(base[2]!)])
+    // The git author is delivered by the git-identity asset, never by a restart.
+    expect(identityMoved).toEqual(base)
+    expect(computeProvisioningMarker('spec-abc', withoutIdentity)).toBe(base.join('.'))
     expect(specMoved).toEqual([expect.not.stringMatching(base[0]!), base[1], base[2]])
   })
 
@@ -5154,9 +5178,8 @@ describe('provisioning marker decomposition', () => {
     const base = computeProvisioningMarker('spec-abc', env)
     expect(classifyProvisioningMarkerDrift(base, base, env)).toBe('none')
     expect(classifyProvisioningMarkerDrift(legacyMarker('spec-abc', env), base, env)).toBe('legacy')
-    expect(
-      classifyProvisioningMarkerDrift(base, computeProvisioningMarker('spec-abc', withoutIdentity), withoutIdentity)
-    ).toBe('identity')
+    // A box stamped while the author was still hashed drifts on identity only, once.
+    expect(classifyProvisioningMarkerDrift(identityHashedMarker('spec-abc', env), base, env)).toBe('identity')
     const rotated = { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' }
     expect(classifyProvisioningMarkerDrift(base, computeProvisioningMarker('spec-abc', rotated), rotated)).toBe(
       'critical'
@@ -5175,15 +5198,15 @@ describe('provisioning marker decomposition', () => {
     const base = computeProvisioningMarker('spec-abc', env)
     const envMoved = computeProvisioningMarker('spec-abc', { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' })
     const specMoved = computeProvisioningMarker('spec-def', env)
-    const identityMoved = computeProvisioningMarker('spec-abc', withoutIdentity)
+    const identityHashed = identityHashedMarker('spec-abc', env)
     const bothMoved = computeProvisioningMarker('spec-def', { ...env, SANDBOX_CALLBACK_SECRET: 'rotated' })
     expect(describeProvisioningMarkerDrift(base, envMoved)).toContain('env')
     expect(describeProvisioningMarkerDrift(base, envMoved)).not.toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, envMoved)).not.toContain('git identity')
     expect(describeProvisioningMarkerDrift(base, specMoved)).toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, specMoved)).not.toContain('env')
-    expect(describeProvisioningMarkerDrift(base, identityMoved)).toContain('git identity')
-    expect(describeProvisioningMarkerDrift(base, identityMoved)).not.toContain('spec hash')
+    expect(describeProvisioningMarkerDrift(identityHashed, base)).toContain('git identity')
+    expect(describeProvisioningMarkerDrift(identityHashed, base)).not.toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, bothMoved)).toContain('spec hash')
     expect(describeProvisioningMarkerDrift(base, bothMoved)).toContain('env')
     // A stamp in an older format cannot be split — say so rather than guess.
@@ -5191,12 +5214,13 @@ describe('provisioning marker decomposition', () => {
     expect(describeProvisioningMarkerDrift(legacyMarker('spec-abc', env), envMoved)).toContain('legacy')
     // Values never reach the log line.
     expect(describeProvisioningMarkerDrift(base, bothMoved)).not.toContain('rotated')
-    expect(describeProvisioningMarkerDrift(base, identityMoved)).not.toContain('Synthetic')
+    expect(describeProvisioningMarkerDrift(identityHashed, base)).not.toContain('Synthetic')
   })
 
   describe('ensureBox on a ready box', () => {
     const specHash = 'spec-abc'
-    const stamped = computeProvisioningMarker(specHash, env)
+    // Stamped before the git author left the marker: the transition case.
+    const stamped = identityHashedMarker(specHash, env)
 
     async function run(input: {
       stamp: string

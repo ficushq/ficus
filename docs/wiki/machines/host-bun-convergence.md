@@ -102,8 +102,8 @@ Deferring a runtime restart **does not defer configuration or setup**. Required
 asset freshness/revocation checks and due/degraded setup retries still run under
 the normal owner. File-managed SSH revocations and rendered secret rotation can
 apply while old commands continue. Critical server environment changes retain
-ordinary reconciliation and restart safeguards; git-identity-only changes retain
-their existing active-work deferral. An identified owned setup invocation still follows normal lease-scoped
+ordinary reconciliation and restart safeguards; git identity is a synced asset
+and never restarts the server. An identified owned setup invocation still follows normal lease-scoped
 cancellation, verified clearing and reconciliation without restarting the retained
 server. Failed cancellation stays readiness-pending but retries on the next
 ensure. Unknown user work is never killed or replayed merely to force adoption.

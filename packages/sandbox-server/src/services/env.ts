@@ -20,7 +20,17 @@
  *   - DOCKER_HOST (mutated by docker.ts on purpose), except a vm box's own
  *     rootless socket
  *   - TMPDIR / LD_LIBRARY_PATH / PLAYWRIGHT_* (re-set by runtime-env.sh)
+ *
+ * Git identity on a vm box: Core syncs the box's current git author/committer
+ * into `$FICUS_BOX_HOME/.ficus/git-identity.json` (a content-hashed asset,
+ * services/sandbox/vm/file-sync.ts in core) and it is read here at every
+ * spawn, over the values this process was started with. The executor's own
+ * environment comes from the unit's `server.env`, which systemd reads only at
+ * start, so carrying identity there alone meant every author change restarted
+ * the box unit and killed its shells and monitors.
  */
+
+import { readFileSync } from 'fs'
 
 const EXACT_ALLOW = new Set<string>([
   // Build-parallelism knobs: box-provision.sh derives defaults from FICUS_BOX_CPUS
@@ -88,9 +98,63 @@ function isKubernetesServiceEnv(key: string): boolean {
   return /(^|_)PORT(_|$)/.test(key) || /(^|_)SERVICE_(HOST|PORT)$/.test(key)
 }
 
+/** The git author/committer keys the synced identity file may set. Nothing else is read from it. */
+export const GIT_IDENTITY_KEYS = [
+  'GIT_USER_NAME',
+  'GIT_USER_EMAIL',
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL',
+] as const
+
+/** Where Core syncs a vm box's git identity (relative to the box HOME). */
+export const GIT_IDENTITY_FILE = '.ficus/git-identity.json'
+
+export interface ChildEnvOptions {
+  /** Reads the synced identity file; undefined when absent. Injectable for tests. */
+  readGitIdentityFile?: (path: string) => string | undefined
+}
+
+function readFileOrUndefined(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The identity keys from the synced file, or null when there is no usable
+ * file (no box HOME, missing, unreadable or malformed): the caller then keeps
+ * the identity this process was started with.
+ */
+function syncedGitIdentity(
+  boxHome: string | undefined,
+  read: (path: string) => string | undefined
+): Partial<Record<(typeof GIT_IDENTITY_KEYS)[number], string>> | null {
+  if (!boxHome) return null
+  const raw = read(`${boxHome}/${GIT_IDENTITY_FILE}`)
+  if (raw === undefined) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const out: Partial<Record<(typeof GIT_IDENTITY_KEYS)[number], string>> = {}
+  for (const key of GIT_IDENTITY_KEYS) {
+    const value = (parsed as Record<string, unknown>)[key]
+    if (typeof value === 'string' && value !== '' && !value.includes('\n') && !value.includes('\0')) out[key] = value
+  }
+  return out
+}
+
 export function buildSandboxChildEnv(
   source: NodeJS.ProcessEnv | Record<string, string | undefined>,
-  overrides?: Record<string, string | undefined>
+  overrides?: Record<string, string | undefined>,
+  options: ChildEnvOptions = {}
 ): Record<string, string> {
   const out: Record<string, string> = {}
 
@@ -108,6 +172,14 @@ export function buildSandboxChildEnv(
 
   for (const [key, value] of Object.entries(DEFAULTS)) {
     if (out[key] === undefined) out[key] = value
+  }
+
+  // A synced identity file REPLACES the started-with identity as a whole (a key
+  // it omits is removed, so a cleared email cannot linger from server.env).
+  const identity = syncedGitIdentity(source.FICUS_BOX_HOME, options.readGitIdentityFile ?? readFileOrUndefined)
+  if (identity) {
+    for (const key of GIT_IDENTITY_KEYS) delete out[key]
+    Object.assign(out, identity)
   }
 
   if (overrides) {

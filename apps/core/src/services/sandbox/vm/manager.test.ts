@@ -2882,13 +2882,14 @@ describe('VmSandboxManager', () => {
       await mgr.ensureSandbox('squad_s1', squadOpts)
       expect(box.commands).toEqual(provisioned)
 
-      // Defense in depth: even if the author keys drop out of the env (what the
-      // refresh used to cause), a box with active work is left alone.
+      // Even if the author keys drop out of the env (what the refresh used to
+      // cause), the marker does not move: identity is not part of it.
       box.setIdentity({})
       await mgr.ensureSandbox('squad_s1', squadOpts)
       const during = box.h.ensureCalls.at(-1)!
       expect(Object.keys(during.env).filter((key) => key.startsWith('GIT_'))).toEqual([])
-      expect(classifyProvisioningMarkerDrift(stamp, during.specHash, during.env)).toBe('identity')
+      expect(during.specHash).toBe(stamp)
+      expect(classifyProvisioningMarkerDrift(stamp, during.specHash, during.env)).toBe('none')
       expect(box.commands).toEqual(provisioned)
       expect(box.stamp()).toBe(stamp)
 
@@ -2899,11 +2900,15 @@ describe('VmSandboxManager', () => {
       expect(box.commands).toEqual(provisioned)
     })
 
-    test('a lasting identity change reaches the box once it is idle', async () => {
+    test('a lasting identity change never provisions or restarts the box, busy or idle', async () => {
+      // The new identity reaches the box as the content-hashed git-identity
+      // asset (file-sync.test.ts covers its push and the boxFilesCurrent miss);
+      // the unit keeps running either way.
       const box = realBoxHarness()
       const mgr = new VmSandboxManager(box.h.deps)
       await mgr.ensureSandbox('squad_s1', squadOpts)
       const provisioned = box.commands.length
+      const stamp = box.stamp()
 
       box.setIdentity({ gitUserName: 'Renamed Person', gitUserEmail: 'synthetic@example.com' })
       await mgr.ensureSandbox('squad_s1', squadOpts)
@@ -2911,8 +2916,9 @@ describe('VmSandboxManager', () => {
 
       box.setActive(false)
       await mgr.ensureSandbox('squad_s1', squadOpts)
-      expect(box.commands.slice(provisioned)).toEqual(expect.arrayContaining(['provision', 'env', 'restart']))
-      expect(box.stamp()).toBe(box.h.ensureCalls.at(-1)!.specHash)
+      expect(box.commands).toHaveLength(provisioned)
+      expect(box.h.ensureCalls.at(-1)!.specHash).toBe(stamp)
+      expect(box.stamp()).toBe(stamp)
     })
   })
 
@@ -3646,6 +3652,7 @@ test('ready reconnect checks health in parallel without a setup lease or setup B
             return [{ relPath: 'test/SKILL.md', content: Buffer.from('skill') }]
           },
           readIdentityPem: () => null,
+          resolveGitIdentityEnv: async () => ({}),
           stampBoxSyncedHash: async (_machine, _id, name, hash, files) => {
             hashes[name] = { hash, files }
           },
@@ -4125,6 +4132,7 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
       materializeSquadRemoteHosts: async () => {},
       listSquadSshFiles: async () => sshFiles,
       recordKnownHostsConflicts: async () => {},
+      resolveGitIdentityEnv: async () => ({}),
       stampBoxSyncedHash: async (_machine, _id, name, hash, files) => {
         hashes[name] = { hash, files }
       },
@@ -5121,7 +5129,9 @@ describe('ordinary reconciliation while Bun adoption is unavailable', () => {
         leases++
         return action()
       }
-      h.deps.boxFilesCurrent = async () => change !== 'assets'
+      // An identity change leaves the marker alone and makes the git-identity
+      // asset stale, so it reconciles like any changed asset (no restart).
+      h.deps.boxFilesCurrent = async () => change !== 'assets' && change !== 'identity'
       h.deps.ensureBox = async (input) => {
         expect(input.adoptIdleRuntime).toBe(false)
         expect(input.expectedBunVersion).toBeUndefined()
@@ -5168,6 +5178,7 @@ describe('ordinary reconciliation while Bun adoption is unavailable', () => {
           expect(leases).toBe(1)
           expect(h.syncCalls.length).toBe(beforeSync + 1)
           if (change === 'environment') expect(h.ensureCalls.at(-1)!.env.SANDBOX_CALLBACK_SECRET).toBe('rotated-token')
+          if (change === 'identity') expect(h.ensureCalls.at(-1)!.specHash).toBe(request.specHash)
           if (change === 'degraded-due') expect((await h.deps.getSetupState(id))!.readiness).toBe('ready')
         }
       } finally {
