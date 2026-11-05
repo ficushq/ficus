@@ -940,10 +940,15 @@ prepare_source_tools() {
   printf 'DPkg::Lock::Timeout "120";\n' |
     as_root tee /etc/apt/apt.conf.d/99ficus-lock-timeout >/dev/null
   # The same setting under its name from before the Ficus naming: one copy.
+  # That option covers the dpkg lock only, not the lists lock that
+  # `apt-get update` takes, so first let cloud-init's own package phase
+  # finish; every update below goes through apt_update, which waits out the
+  # lists lock too (see lib.sh, "apt on a fresh VM").
+  wait_for_first_boot_apt
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_info "installing missing packages: ${missing[*]}"
-    as_root apt-get update -qq
+    apt_update
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}" ca-certificates
   fi
 
@@ -1001,7 +1006,7 @@ phase_preflight() {
 
   if [[ ${DB_MODE} == container ]] && ! have docker; then
     log_info "installing docker (docker.io) for the local database container"
-    as_root apt-get update -qq
+    apt_update
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io
   fi
 
@@ -1022,7 +1027,7 @@ phase_preflight() {
     install_rendered 0644 root root /etc/apt/sources.list.d/pgdg.list \
       printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' \
       "$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
-    as_root apt-get update -qq
+    apt_update
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
     require_cmd pg_dump "postgresql-client install failed — the nightly backup cannot run without pg_dump"
     log_info "pg_dump: $(pg_dump --version)"
