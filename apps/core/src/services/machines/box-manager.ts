@@ -241,28 +241,36 @@ function computeEnvHash(env: BoxEnv): string {
 export function computeProvisioningMarker(specHash: string, env: BoxEnv): string {
   // Deliberately DECOMPOSABLE (`<specHash>.<criticalEnvHash>.<identityEnvHash>`),
   // not an opaque digest: a marker mismatch on an otherwise-healthy box forces
-  // a full re-provision that RESTARTS the box's systemd unit (killing shells
-  // and running agent commands), so the fast-path miss log must be able to say
-  // WHICH part drifted (see describeProvisioningMarkerDrift), and the ensure
-  // must be able to tell a git-author-only change — which can wait for the box
-  // to go idle — from one that cannot (see classifyProvisioningMarkerDrift).
+  // a full re-provision that RESTARTS the box's systemd unit (killing shells,
+  // running agent commands and monitors), so the fast-path miss log must be
+  // able to say WHICH part drifted (see describeProvisioningMarkerDrift).
   // specHash never contains '.' (hex), so the split is unambiguous.
+  //
+  // The git author keys are NOT hashed: the identity part is constant. A box's
+  // current identity reaches it as the content-hashed `git-identity` asset
+  // (vm/file-sync.ts), which the sandbox server reads at every spawn, so an
+  // author change is a file write, never a unit restart. server.env still
+  // carries the identity as a baseline for a server that starts before that
+  // asset is synced, and the baseline may go stale until the next real
+  // re-provision; the file wins whenever it exists. The part is kept so a box
+  // stamped while identity was still hashed classifies as `identity` drift
+  // (deferred while it has work) rather than `critical`.
   const critical: BoxEnv = {}
-  const identity: BoxEnv = {}
   for (const [key, value] of Object.entries(env)) {
-    if (IDENTITY_ENV_KEYS.has(key)) identity[key] = value
-    else critical[key] = value
+    if (!IDENTITY_ENV_KEYS.has(key)) critical[key] = value
   }
-  return `${specHash}.${computeEnvHash(critical)}.${computeEnvHash(identity)}`
+  return `${specHash}.${computeEnvHash(critical)}.${computeEnvHash({})}`
 }
 
 /**
  * The env keys that carry ONLY the git author/committer name and email
  * (`gitIdentityEnv` in sandbox/github-identity.ts). They are attribution, not
- * authority: no credential, endpoint or executor setting lives here, so a box
- * that is running work may keep its current values until it goes idle. Every
- * other key is critical and reprovisions at once. Keep this list closed — a key
- * added here stops forcing an immediate re-push when it changes.
+ * authority: no credential, endpoint or executor setting lives here, so they
+ * are left out of the provisioning marker entirely and delivered by the
+ * `git-identity` asset instead (see computeProvisioningMarker). Every other
+ * key is critical and reprovisions at once. Keep this list closed — a key
+ * added here stops forcing a re-push when it changes. Mirrored by the sandbox
+ * server's GIT_IDENTITY_KEYS (packages/sandbox-server/src/services/env.ts).
  */
 const IDENTITY_ENV_KEYS: ReadonlySet<string> = new Set([
   'GIT_USER_NAME',
@@ -1704,11 +1712,13 @@ export async function ensureBox(
     //  - a `legacy` stamp (same spec and env, old marker format) is rewritten
     //    in place once the box proves healthy;
     //  - an `identity`-only difference (git author name/email) is DEFERRED
-    //    while the box has an active execution: the box is returned as is and
-    //    its stamp is left stale, so the first ensure that finds it idle
-    //    applies the change. Restarting the unit kills whatever is running, and
-    //    an author name is never worth that. Without active work it
-    //    reprovisions at once, as before.
+    //    while the box has an active execution or a live monitor: the box is
+    //    returned as is and its stamp is left stale, so the first ensure that
+    //    finds it idle applies the change. Restarting the unit kills whatever
+    //    is running, and an author name is never worth that. Without active
+    //    work it reprovisions at once. Since identity left the marker this
+    //    happens at most once, to a box stamped while identity was still
+    //    hashed; identity itself now arrives through the `git-identity` asset.
     const markerDrift = opts.adoptIdleRuntime
       ? classifyProvisioningMarkerDrift(existing?.provisionedSpecHash, opts.specHash, opts.env)
       : classifyBoxConfigurationMarkerDrift(existing, opts.specHash, opts.env)

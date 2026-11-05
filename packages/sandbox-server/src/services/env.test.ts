@@ -170,6 +170,85 @@ describe("git's own identity variables reach the agent's git", () => {
   })
 })
 
+describe('the synced git identity file on a vm box', () => {
+  const started = {
+    FICUS_BOX_HOME: '/home/box_x',
+    GIT_USER_NAME: 'login-only',
+    GIT_AUTHOR_NAME: 'login-only',
+    GIT_AUTHOR_EMAIL: 'old@example.test',
+    GIT_COMMITTER_NAME: 'login-only',
+    GIT_COMMITTER_EMAIL: 'old@example.test',
+  }
+  const file = (content: unknown) => ({
+    readGitIdentityFile: (path: string) => {
+      expect(path).toBe('/home/box_x/.ficus/git-identity.json')
+      return typeof content === 'string' ? content : JSON.stringify(content)
+    },
+  })
+
+  it('replaces the identity the executor was started with, at spawn time', () => {
+    const env = buildSandboxChildEnv(
+      started,
+      undefined,
+      file({
+        GIT_USER_NAME: 'Noah Saso',
+        GIT_AUTHOR_NAME: 'Noah Saso',
+        GIT_AUTHOR_EMAIL: 'noah@example.test',
+        GIT_COMMITTER_NAME: 'Noah Saso',
+        GIT_COMMITTER_EMAIL: 'noah@example.test',
+      })
+    )
+    expect(env.GIT_AUTHOR_NAME).toBe('Noah Saso')
+    expect(env.GIT_COMMITTER_EMAIL).toBe('noah@example.test')
+  })
+
+  it('removes a started-with key the file omits, so a cleared value cannot linger', () => {
+    const env = buildSandboxChildEnv(started, undefined, file({ GIT_AUTHOR_NAME: 'Noah Saso' }))
+    expect(env.GIT_AUTHOR_NAME).toBe('Noah Saso')
+    expect(env.GIT_AUTHOR_EMAIL).toBeUndefined()
+    expect(env.GIT_USER_NAME).toBeUndefined()
+  })
+
+  it('takes only identity keys from the file', () => {
+    const env = buildSandboxChildEnv(started, undefined, file({ GIT_AUTHOR_NAME: 'n', PATH: '/evil', GH_TOKEN: 'x' }))
+    expect(env.PATH).not.toBe('/evil')
+    expect(env.GH_TOKEN).toBeUndefined()
+  })
+
+  it('ignores values that are not plain one-line strings', () => {
+    const env = buildSandboxChildEnv(started, undefined, file({ GIT_AUTHOR_NAME: 'a\nb', GIT_AUTHOR_EMAIL: 7 }))
+    expect(env.GIT_AUTHOR_NAME).toBeUndefined()
+    expect(env.GIT_AUTHOR_EMAIL).toBeUndefined()
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['malformed', '{not json'],
+    ['not an object', '["GIT_AUTHOR_NAME"]'],
+  ])('keeps the started-with identity when the file is %s', (_label, raw) => {
+    const env = buildSandboxChildEnv(started, undefined, { readGitIdentityFile: () => raw })
+    expect(env.GIT_AUTHOR_EMAIL).toBe('old@example.test')
+  })
+
+  it('never reads a file without a box HOME (k8s and docker)', () => {
+    let reads = 0
+    const { FICUS_BOX_HOME: _home, ...k8s } = started
+    const env = buildSandboxChildEnv(k8s, undefined, {
+      readGitIdentityFile: () => {
+        reads++
+        return '{}'
+      },
+    })
+    expect(reads).toBe(0)
+    expect(env.GIT_AUTHOR_EMAIL).toBe('old@example.test')
+  })
+
+  it('caller overrides still win over the file', () => {
+    const env = buildSandboxChildEnv(started, { GIT_AUTHOR_NAME: 'explicit' }, file({ GIT_AUTHOR_NAME: 'Noah Saso' }))
+    expect(env.GIT_AUTHOR_NAME).toBe('explicit')
+  })
+})
+
 describe('build parallelism defaults from FICUS_BOX_CPUS', () => {
   it('derives CARGO_BUILD_JOBS / MAKEFLAGS / GOMAXPROCS / CMAKE_BUILD_PARALLEL_LEVEL from FICUS_BOX_CPUS', () => {
     const env = buildSandboxChildEnv({ FICUS_BOX_CPUS: '2' })

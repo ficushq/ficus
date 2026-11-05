@@ -163,10 +163,23 @@ machine. It exits 1 if any failed and 2 for an unknown machine id.
      is re-pushed and the unit restarted, which ends whatever the box is running.
    - **Identity env** is exactly `GIT_USER_NAME`, `GIT_USER_EMAIL`,
      `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
-     `GIT_COMMITTER_EMAIL`. When only these differ and the box has an active
-     execution, the box is returned as-is and its stamp is left stale; the first
-     ensure that finds the box idle applies the change. If activity cannot be
-     determined the change is deferred. A parked box always takes the full path.
+     `GIT_COMMITTER_EMAIL`. These are **not hashed**: the marker's identity part
+     is constant, so an author change never restarts the unit. The current
+     identity is delivered as the content-hashed `git-identity` asset,
+     `~/.ficus/git-identity.json` (mode 0600, every vm box), which the sandbox
+     server reads at every command spawn over the identity in its `server.env`
+     (`buildSandboxChildEnv`). `server.env` still carries the identity as a
+     baseline for a server that starts before the asset is synced; the file
+     wins whenever it exists. The ready-box fast path compares asset hashes, so
+     a changed identity is one `/write` on the next ensure (the keep-warm sweep
+     re-ensures live boxes every minute). Commands already running, and
+     sessions inside a tmux server started earlier, keep the identity they
+     started with.
+   - A box stamped while the identity was still hashed drifts on identity only,
+     once. That drift is deferred while the box has work (an active execution
+     or a live monitor, see `sandboxActivity`); the first ensure that finds it
+     idle restamps it through the full path. If activity cannot be determined
+     the change is deferred. A parked box always takes the full path.
    - A stamp in the older `<specHash>.<envHash>` format that matches the same
      spec and env is rewritten in place (also on the parked-box resume path), so
      a Core upgrade that changes the marker format does not restart the fleet.
@@ -179,7 +192,10 @@ machine. It exits 1 if any failed and 2 for an unknown machine id.
    rejected by GitHub. The public profile (name, email) is cached per Core
    process and a failed profile request keeps the last loaded one. Before this,
    each GitHub token refresh (every 7h55m) dropped the author keys for a few
-   seconds and every box of the squad was fully reprovisioned twice.
+   seconds and every box of the squad was fully reprovisioned twice. A process
+   that has not loaded the profile yet (right after a Core restart) can still
+   resolve the login-only fallback for a moment; with the identity delivered as
+   an asset that is two file writes, not two unit restarts.
 
 5. **Provision.** `ensureServerBundle` (push the bundle if the machine's
    recorded version is stale) → `bindMachineBox` (allocate the box's port +
@@ -564,6 +580,5 @@ box's own `/write` + `/bash`, never root):
   manager writes after seeding, which activates the box devbox from its fixed
   `~/.ficus/devbox` dir. Both the boot self-cache and the bashrc `devboxDir` mode are
   gated so k8s/docker behavior is byte-identical.
-
 
 [VM runtime overview](runtime.md)

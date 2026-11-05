@@ -37,6 +37,12 @@
  *      `*.pub` mode 0644; `~/.ssh` dir 0700; squad-scoped only). `known_hosts`
  *      is merged into the box's own file as a managed block, never pushed
  *      over it (see {@link mergeKnownHostsOnBox})
+ *   6. git identity → `~/.ficus/git-identity.json` (mode 0600; every box; vm
+ *      only, so not in the shared manifest). The box's current git author and
+ *      committer, which the sandbox server reads at every spawn over the
+ *      identity its unit was started with. It replaces carrying the identity
+ *      in the provisioning marker, where every author change restarted the box
+ *      unit (see {@link GIT_IDENTITY_ASSET})
  * A failure once a secret push has started best-effort removes the partial
  * secret files of the FAILING asset (per-asset cleanup, see
  * {@link pushAssetFiles}) so a half-provisioned box never lingers with key
@@ -98,6 +104,7 @@ import {
 } from '../../machines/queries'
 import type { Machine, MachineBox } from '../../machines/queries'
 import { getSquadSshPath, RESERVED_REMOTE_HOST_KEY_PREFIXES } from '../../squad/ssh'
+import { gitIdentityEnv, resolveGitHubIdentity } from '../github-identity'
 import { materializeSquadRemoteHosts as materializeSquadRemoteHostsReal } from '../../remote-hosts/materialize'
 import { createLogger } from '../../../lib/infra/logger'
 import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
@@ -111,6 +118,37 @@ import {
 import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
 const log = createLogger('vm-file-sync')
+
+// ---------------------------------------------------------------------------
+// git identity asset
+// ---------------------------------------------------------------------------
+
+/**
+ * The stamp name of the box's git identity file in `syncedHashes`.
+ *
+ * Git author/committer used to reach a vm box only through its unit's
+ * `server.env`, part of the provisioning marker, so ANY author change (a squad
+ * account switch, or a Core process that resolves the login-only fallback for
+ * a moment after it starts) re-pushed server.env and restarted the box unit,
+ * killing its shells, running commands and monitors. As a content-hashed file
+ * the change is one `/write`, and the sandbox server picks it up at the next
+ * spawn (`buildSandboxChildEnv` in packages/sandbox-server/src/services/env.ts).
+ */
+export const GIT_IDENTITY_ASSET = 'git-identity'
+/** The file under the box dot dir; the server reads `$FICUS_BOX_HOME/.ficus/` + this. */
+export const GIT_IDENTITY_FILE = 'git-identity.json'
+
+async function defaultResolveGitIdentityEnv(squadId: string | undefined): Promise<Record<string, string>> {
+  return gitIdentityEnv(await resolveGitHubIdentity(squadId))
+}
+
+/** The identity file as pushed: sorted keys, so the content hash only moves with the values. */
+export function gitIdentityFiles(identity: Record<string, string>): PushableFile[] {
+  const keys = Object.keys(identity).sort()
+  if (keys.length === 0) return []
+  const sorted = Object.fromEntries(keys.map((key) => [key, identity[key]]))
+  return [{ relPath: GIT_IDENTITY_FILE, bytes: new TextEncoder().encode(`${JSON.stringify(sorted)}\n`), mode: '0600' }]
+}
 
 // ---------------------------------------------------------------------------
 // syncBoxFiles
@@ -145,6 +183,9 @@ export interface SetupBashFence {
 
 export interface SyncBoxFilesDeps {
   bashFence?: SetupBashFence
+  /** The git identity env (`gitIdentityEnv`) for the box's squad, or the
+   *  instance default without one. Defaults to resolveGitHubIdentity. */
+  resolveGitIdentityEnv?: (squadId: string | undefined) => Promise<Record<string, string>>
   /** The box row (its machine + per-asset content-hash stamps) driving the
    *  skip-unchanged-asset optimization; null/absent ⇒ push everything, stamp
    *  nothing (legacy call shape). */
@@ -942,6 +983,23 @@ async function syncBoxFilesImpl(
       () => pushAssetFiles(requireClient(), baseDir, files, deps.bashFence),
       isSingleFile ? [asset.dest.relPath] : [],
       !isSingleFile ? () => clearLegacyTree(asset.name, baseDir) : undefined
+    )
+  }
+
+  // The box's git author (vm only; see GIT_IDENTITY_ASSET). Every role gets it:
+  // the identity resolves to the squad's account or the instance default. An
+  // empty identity pushes nothing and removes a previously pushed file, so the
+  // server falls back to the identity its unit was started with.
+  {
+    const identity = await (deps.resolveGitIdentityEnv ?? defaultResolveGitIdentityEnv)(squadId)
+    const root = boxDotDir(home)
+    const files = gitIdentityFiles(identity)
+    await syncAsset(
+      GIT_IDENTITY_ASSET,
+      root,
+      files,
+      () => pushAssetFiles(requireClient(), root, files, deps.bashFence),
+      [GIT_IDENTITY_FILE]
     )
   }
 

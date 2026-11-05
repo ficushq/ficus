@@ -14,6 +14,9 @@ import {
   resolveBoxApiTransport,
   isValidHttpUrl,
   pushSquadSshToBox,
+  GIT_IDENTITY_ASSET,
+  GIT_IDENTITY_FILE,
+  gitIdentityFiles,
   type SyncBoxFilesDeps,
   type PushSquadSshToBoxDeps,
 } from './file-sync'
@@ -137,6 +140,8 @@ function fullDeps(over: Partial<SyncBoxFilesDeps> = {}): SyncBoxFilesDeps {
       { relPath: 'config', content: Buffer.from('Host prod\n') },
       { relPath: 'known_hosts', content: Buffer.from('prod ssh-ed25519 AAA') },
     ],
+    // No git identity by default: the identity asset has its own tests below.
+    resolveGitIdentityEnv: async () => ({}),
     ...over,
   }
 }
@@ -1930,4 +1935,122 @@ test('ready-box asset freshness is read-only and detects changed and revoked mat
   expect(await boxFilesCurrent(id, squadAgentOpts, { ...deps, readIdentityPem: () => null })).toBe(false)
   expect(await boxFilesCurrent(id, squadAgentOpts, { ...deps, listSkillFiles: async () => [] })).toBe(false)
   expect(client.calls).toEqual([])
+})
+
+describe('git identity asset', () => {
+  const squadId = '11111111-1111-4111-8111-111111111111'
+  const squadBox = `squad_${squadId}`
+  const identity = (name: string, email: string) => ({
+    GIT_USER_NAME: name,
+    GIT_AUTHOR_NAME: name,
+    GIT_COMMITTER_NAME: name,
+    GIT_USER_EMAIL: email,
+    GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_EMAIL: email,
+  })
+  const fileOf = (client: FakeClient, home: string) =>
+    client.writes().find((w) => w.path === `${home}/.ficus/${GIT_IDENTITY_FILE}`)
+
+  test('pushes the box identity as sorted JSON, 0600, under the box dot dir; the squad box resolves its squad', async () => {
+    const client = new FakeClient()
+    const seen: Array<string | undefined> = []
+    await syncBoxFiles(
+      client as any,
+      squadBox,
+      squadOpts,
+      fullDeps({
+        resolveGitIdentityEnv: async (id) => {
+          seen.push(id)
+          return identity('Noah Saso', 'noah@example.test')
+        },
+      })
+    )
+    const write = fileOf(client, HOME(squadBox))!
+    expect(write.mode).toBe('0600')
+    const parsed = JSON.parse(Buffer.from(write.content, 'base64').toString('utf8'))
+    expect(parsed).toEqual(identity('Noah Saso', 'noah@example.test'))
+    expect(Object.keys(parsed)).toEqual([...Object.keys(parsed)].sort())
+    expect(seen).toEqual([squadId])
+  })
+
+  test('a solo agent box resolves the instance default (no squad)', async () => {
+    const seen: Array<string | undefined> = []
+    await syncBoxFiles(
+      new FakeClient() as any,
+      'agent_a1',
+      soloAgentOpts,
+      fullDeps({
+        resolveGitIdentityEnv: async (id) => {
+          seen.push(id)
+          return identity('Instance', 'instance@example.test')
+        },
+      })
+    )
+    expect(seen).toEqual([undefined])
+  })
+
+  test('an author change is one file write: no restart, and the other assets stay skipped', async () => {
+    const stamp = recordingStamp()
+    const first = new FakeClient()
+    const deps = (who: Record<string, string>) =>
+      fullDeps({ resolveGitIdentityEnv: async () => who, stampBoxSyncedHash: stamp.fn })
+    await syncBoxFiles(first as any, squadBox, squadOpts, {
+      ...deps(identity('login-only', 'login@example.test')),
+      box: syncBox(),
+    })
+    expect(stamp.stamped[GIT_IDENTITY_ASSET]).toMatchObject({ files: [GIT_IDENTITY_FILE] })
+
+    // The same identity again: nothing at all is written.
+    const same = new FakeClient()
+    await syncBoxFiles(same as any, squadBox, squadOpts, {
+      ...deps(identity('login-only', 'login@example.test')),
+      box: syncBox({ ...stamp.stamped }),
+    })
+    expect(same.writes()).toEqual([])
+
+    // The profile loaded: only the identity file is rewritten.
+    const changed = new FakeClient()
+    const current = { ...stamp.stamped }
+    expect(
+      await boxFilesCurrent(squadBox, squadOpts, {
+        ...deps(identity('Noah Saso', 'noah@example.test')),
+        box: syncBox(current),
+      })
+    ).toBe(false)
+    await syncBoxFiles(changed as any, squadBox, squadOpts, {
+      ...deps(identity('Noah Saso', 'noah@example.test')),
+      box: syncBox(current),
+    })
+    expect(changed.writePaths()).toEqual([`${HOME(squadBox)}/.ficus/${GIT_IDENTITY_FILE}`])
+    expect(
+      await boxFilesCurrent(squadBox, squadOpts, {
+        ...deps(identity('Noah Saso', 'noah@example.test')),
+        box: syncBox({ ...stamp.stamped }),
+      })
+    ).toBe(true)
+  })
+
+  test('an identity that resolves empty removes the previously pushed file', async () => {
+    const client = new FakeClient()
+    const stamp = recordingStamp()
+    await syncBoxFiles(
+      client as any,
+      squadBox,
+      squadOpts,
+      fullDeps({
+        box: syncBox({ [GIT_IDENTITY_ASSET]: { hash: 'old', files: [GIT_IDENTITY_FILE] } }),
+        stampBoxSyncedHash: stamp.fn,
+      })
+    )
+    expect(client.writePaths()).not.toContain(`${HOME(squadBox)}/.ficus/${GIT_IDENTITY_FILE}`)
+    expect(client.bashes().map((b) => b.command)).toContain(`rm -f -- '${HOME(squadBox)}/.ficus/${GIT_IDENTITY_FILE}'`)
+    expect(stamp.stamped[GIT_IDENTITY_ASSET]).toMatchObject({ files: [] })
+  })
+
+  test('gitIdentityFiles: no keys, no file; key order never changes the bytes', () => {
+    expect(gitIdentityFiles({})).toEqual([])
+    const a = gitIdentityFiles({ GIT_AUTHOR_NAME: 'n', GIT_AUTHOR_EMAIL: 'e' })[0]!
+    const b = gitIdentityFiles({ GIT_AUTHOR_EMAIL: 'e', GIT_AUTHOR_NAME: 'n' })[0]!
+    expect(Buffer.from(a.bytes).toString()).toBe(Buffer.from(b.bytes).toString())
+  })
 })

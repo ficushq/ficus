@@ -1,6 +1,6 @@
 import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
-import { sql } from 'drizzle-orm'
-import { agents, db, executions } from '../../db'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { agents, db, executions, monitors } from '../../db'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../../entities/agent-runners/constants'
 import type { DbExecutor } from './force-migration-audit'
 
@@ -10,6 +10,24 @@ export interface SandboxActivity {
   active: boolean
   /** Count is absent when the sandbox owner cannot be derived safely. */
   activeExecutionCount?: number
+  /** Live monitors on the sandbox; present only when there is one and no execution is active. */
+  liveMonitorCount?: number
+}
+
+/**
+ * Monitor statuses whose process is still on the box: a monitor outlives the
+ * agent turn that started it (the agent ends its turn and waits on it), so an
+ * agent with no execution can still have work running there. `canceling` is
+ * included because its process has not exited yet.
+ */
+export const LIVE_MONITOR_STATUSES = ['starting', 'running', 'canceling'] as const
+
+async function liveMonitorCount(sandboxId: string, executor: DbExecutor = db): Promise<number> {
+  const [row] = await executor
+    .select({ count: sql<number>`count(*)::int` })
+    .from(monitors)
+    .where(and(eq(monitors.sandboxId, sandboxId), inArray(monitors.status, [...LIVE_MONITOR_STATUSES])))
+  return row?.count ?? 0
 }
 
 async function ownerActivity(seedWhere: ReturnType<typeof sql>, executor: DbExecutor = db): Promise<SandboxActivity> {
@@ -28,10 +46,20 @@ async function ownerActivity(seedWhere: ReturnType<typeof sql>, executor: DbExec
 }
 
 /**
- * Resolve execution activity that can be using a sandbox. Unknown sandbox IDs
- * fail safe as active so destructive callers choose the longer grace tier.
+ * Whether work is running in a sandbox: an active execution of an agent that
+ * can use it, or a live monitor on it. Callers use this to avoid restarting,
+ * migrating or recreating a box under running work, and a monitor's process
+ * dies with the box unit just like an execution's commands. Unknown sandbox
+ * IDs fail safe as active so destructive callers choose the longer grace tier.
  */
 export async function sandboxActivity(sandboxId: string, executor: DbExecutor = db): Promise<SandboxActivity> {
+  const execution = await executionActivity(sandboxId, executor)
+  if (execution.active) return execution
+  const monitorsLive = await liveMonitorCount(sandboxId, executor)
+  return monitorsLive > 0 ? { ...execution, active: true, liveMonitorCount: monitorsLive } : execution
+}
+
+async function executionActivity(sandboxId: string, executor: DbExecutor = db): Promise<SandboxActivity> {
   const consultantSquad = consultantSandboxSquadId(sandboxId)
   if (consultantSquad) {
     if (!UUID_RE.test(consultantSquad)) return { active: true }
