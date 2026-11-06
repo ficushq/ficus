@@ -1,4 +1,4 @@
-/** Whether a resolved token color (`rgb(...)` or `rgba(...)`) is a dark surface. */
+/** Whether a resolved token color, in the comma-separated form the token reader returns, is a dark surface. */
 export function isDarkColor(color: string | undefined): boolean {
   const channels = color
     ?.match(/^rgba?\(([^)]+)\)$/)?.[1]
