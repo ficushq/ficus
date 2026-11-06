@@ -221,6 +221,19 @@ describe('machine script docker contract', () => {
     expect(bootstrapSh).not.toContain('"docker":"none"')
   })
 
+  it("bootstrap.sh fetches Docker's apt signing key with bounded retries and fails closed", () => {
+    // A stalled key server must not hang bootstrap: every attempt is capped and
+    // a failure is retried a bounded number of times (scripts/setup/lib.sh's
+    // fetch_apt_source_file uses the same budget).
+    expect(bootstrapSh).toContain(
+      'curl -fsSL --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 2 --retry-all-errors \\\n    -o "${docker_key}" "${docker_key_url}" || [ ! -s "${docker_key}" ]; then'
+    )
+    expect(bootstrapSh).toContain("could not fetch Docker's apt signing key from ${docker_key_url} after 3 attempts")
+    // The key reaches gpg only from the checked file, never straight off a pipe.
+    expect(bootstrapSh).toContain('gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg <"${docker_key}"')
+    expect(bootstrapSh).not.toMatch(/download\.docker\.com\/linux\/ubuntu\/gpg[\s\\]*\|/)
+  })
+
   it('box-provision.sh locks the box HOME to 0700 (idempotent, applies to existing boxes on re-provision)', () => {
     // Ubuntu useradd leaves the home 0755, which would let co-located box
     // users read a sibling's ~/memory, ~/.tau/skills, ~/bin. ensure_dirs runs

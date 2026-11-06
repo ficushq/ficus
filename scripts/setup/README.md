@@ -597,6 +597,14 @@ copy lives in the toolkit. Slugs, in the order a full provision emits them:
 | `seed`       | `setup-host.sh` | phase 7/8: seed provider, secrets, starter squad                                                                                                                                                            |
 | `verify`     | `setup-host.sh` | phase 8/8: verify + handoff                                                                                                                                                                                 |
 
+Every apt signing key and source list the toolkit downloads (the PGDG and
+Caddy keys and the Caddy source list) has a bounded budget
+(`fetch_apt_source_file` in `lib.sh`):
+each attempt gets 5 s to connect and 10 s in total, and a failure is retried
+twice, 2 s and then 4 s later, so a stalled key server costs at most 36 s. If
+every attempt fails, the run stops with an error naming the URL and installs
+nothing from that source.
+
 Steps 4/5 and 5/5 of `provision.sh` have no marker: step 4 is the SSH session
 whose first output is `setup-host.sh`'s `packages` marker, and step 5 is a
 short cleanup after `verify`. Optional phases print their marker only when

@@ -365,14 +365,45 @@ host_source_tool_packages() { # SRC_MODE
   fi
 }
 
+# The network budget for one apt signing key or source list download. With no
+# timeout, curl waits on a stalled server for as long as the kernel lets it:
+# fetching the PGDG key from www.postgresql.org failed or stalled for 46-88 s
+# in half of the measured tenant provisions. Each attempt is capped (connect,
+# then the whole transfer) and a failure is retried with a doubling backoff,
+# so one fetch takes at most
+#   ATTEMPTS * MAX_TIME + BACKOFF * (2^(ATTEMPTS-1) - 1) = 3*10 + 2+4 = 36 s.
+# The files are a few kilobytes; a healthy fetch takes well under a second.
+APT_FETCH_ATTEMPTS=3
+APT_FETCH_CONNECT_TIMEOUT_SECS=5
+APT_FETCH_MAX_TIME_SECS=10
+APT_FETCH_BACKOFF_SECS=2
+
 # Fetch URL to DEST and refuse an empty result: an apt key or source list is
 # always fetched to a file first and installed only once it is known good. A
 # `curl … | tee` writes an EMPTY apt source when the fetch 404s, and a
 # zero-byte .list poisons every later `apt-get update` on the host — observed
 # when cloudsmith's path moved.
+#
+# A failed or timed-out attempt is retried within the APT_FETCH_* budget
+# above. When every attempt fails it dies naming the URL: there is no fallback
+# source and nothing is installed without the file. An empty file is not
+# retried — the server answered, and its answer is wrong.
 fetch_apt_source_file() { # URL DEST WHAT
-  curl -1sSLf -o "$2" "$1" || die "$3: could not fetch $1"
-  [[ -s $2 ]] || die "$3: $1 returned an empty file"
+  local url=$1 dest=$2 what=$3 attempt=1 rc why delay=${APT_FETCH_BACKOFF_SECS}
+  while :; do
+    rc=0
+    curl -1sSLf --connect-timeout "${APT_FETCH_CONNECT_TIMEOUT_SECS}" \
+      --max-time "${APT_FETCH_MAX_TIME_SECS}" -o "${dest}" "${url}" || rc=$?
+    [[ ${rc} -eq 0 ]] && break
+    why="curl exit ${rc}"
+    [[ ${rc} -eq 28 ]] && why="${why}, timed out"
+    [[ ${attempt} -lt ${APT_FETCH_ATTEMPTS} ]] ||
+      die "${what}: could not fetch ${url} after ${attempt} attempts (last: ${why}) — nothing was installed from it"
+    log_warn "${what}: fetching ${url} failed (attempt ${attempt}/${APT_FETCH_ATTEMPTS}, ${why}); retrying in ${delay}s"
+    sleep "${delay}"
+    attempt=$((attempt + 1)) delay=$((delay * 2))
+  done
+  [[ -s ${dest} ]] || die "${what}: ${url} returned an empty file"
 }
 
 # PGDG (apt.postgresql.org): the source of postgresql-client for external

@@ -270,8 +270,23 @@ install_docker_packages() {
   # Docker's official apt repo (docker-ce-rootless-extras is NOT in Ubuntu's
   # default repos). Idempotent: the keyring + list are overwritten, not appended.
   "${SUDO[@]}" install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-    | "${SUDO[@]}" gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+  # The signing key is fetched to a file first and dearmored only when it is
+  # non-empty, with a bounded network budget: each attempt is capped at 5 s to
+  # connect and 10 s in total, and any failure is retried twice, 2 s apart, so
+  # a stalled server costs at most 34 s instead of hanging bootstrap. The same
+  # budget as fetch_apt_source_file in scripts/setup/lib.sh, which this
+  # standalone script cannot source. Every attempt failing stops bootstrap;
+  # there is no unverified fallback source.
+  local docker_key_url=https://download.docker.com/linux/ubuntu/gpg docker_key
+  docker_key=$(mktemp)
+  if ! curl -fsSL --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 2 --retry-all-errors \
+    -o "${docker_key}" "${docker_key_url}" || [ ! -s "${docker_key}" ]; then
+    rm -f "${docker_key}"
+    echo "bootstrap.sh: could not fetch Docker's apt signing key from ${docker_key_url} after 3 attempts" >&2
+    exit 1
+  fi
+  "${SUDO[@]}" gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg <"${docker_key}"
+  rm -f "${docker_key}"
   "${SUDO[@]}" chmod a+r /etc/apt/keyrings/docker.gpg
 
   local arch codename
