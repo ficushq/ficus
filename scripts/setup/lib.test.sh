@@ -7806,6 +7806,7 @@ oap_source() { # FUNCTION CURL_MODE(ok|empty|fail) — prints recorded calls; rc
     }
     as_root() { printf 'as_root %s\n' "$*" >>"${OAP_T}/log"; }
     install_rendered() { printf 'install_rendered %s\n' "$*" >>"${OAP_T}/log"; }
+    sleep() { printf 'sleep %s\n' "$*" >>"${OAP_T}/log"; }
     "$1"
   ) 2>"${OAP_T}/err" || rc=$?
   cat "${OAP_T}/log"
@@ -7825,8 +7826,13 @@ expect_match 'caddy_apt_source_install: dearmors the cloudsmith key into its own
 expect_match 'caddy_apt_source_install: installs the fetched list' "${oap_out}" 'as_root install -m 0644 [^ ]+ /etc/apt/sources\.list\.d/caddy-stable\.list'
 expect_match 'caddy_apt_source_install: fetches debian.deb.txt (debian.txt 404s)' "${oap_out}" 'curl https://dl\.cloudsmith\.io/public/caddy/stable/debian\.deb\.txt'
 oap_out=$(oap_source caddy_apt_source_install fail)
-expect_eq 'caddy_apt_source_install: a failed fetch installs nothing' "${oap_out}" 'curl https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+expect_eq 'caddy_apt_source_install: a failed fetch is retried, then installs nothing' "${oap_out}" 'curl https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+sleep 2
+curl https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+sleep 4
+curl https://dl.cloudsmith.io/public/caddy/stable/gpg.key
 rc=1'
+expect_match 'caddy_apt_source_install: ...and names the URL' "$(cat "${OAP_T}/err")" 'caddy: the cloudsmith signing key: could not fetch https://dl\.cloudsmith\.io/public/caddy/stable/gpg\.key after 3 attempts'
 oap_out=$(oap_source caddy_apt_source_install empty)
 expect_not_match 'caddy_apt_source_install: an empty key or list installs nothing' "${oap_out}" 'as_root'
 
@@ -7858,6 +7864,117 @@ expect_eq 'phase_preflight: the pass comes after the config checks and before th
 expect_match 'phase_preflight: pg_dump is verified even when the pass installed it' \
   "${oap_pf}" '    fi'$'\n''    require_cmd pg_dump'
 rm -rf "${OAP_T}"
+
+# ------------------------------------------ bounded apt key / source fetches
+# fetch_apt_source_file with the REAL curl against a local stub server (never
+# the internet): /ok answers, /flaky answers 503 once and then the file,
+# /down always answers 503, and /stall accepts the request and never replies.
+# The per-attempt cap is lowered to 1 s so the stall case runs in about 3 s,
+# and sleep is stubbed so the backoff is recorded rather than waited out.
+expect_eq 'fetch_apt_source_file: worst case stays bounded (attempts x cap + backoff <= 40 s)' \
+  "$((APT_FETCH_ATTEMPTS * APT_FETCH_MAX_TIME_SECS + APT_FETCH_BACKOFF_SECS * ((1 << (APT_FETCH_ATTEMPTS - 1)) - 1)))" 36
+expect_eq 'fetch_apt_source_file: a small bounded number of attempts' "${APT_FETCH_ATTEMPTS}" 3
+
+AFS_SKIP=''
+for afs_cmd in python3 curl timeout; do
+  have "${afs_cmd}" || AFS_SKIP=${AFS_SKIP:-"${afs_cmd}"}
+done
+if [[ -n ${AFS_SKIP} ]]; then
+  printf 'SKIP: the bounded apt fetch tests did not run — %s not available\n' "${AFS_SKIP}" >&2
+  if [[ $(uname -s) == Linux ]]; then
+    FAIL=$((FAIL + 1))
+    log_error "FAIL: the bounded apt fetch tests must run on Linux — ${AFS_SKIP} not available"
+  fi
+else
+  AFS_T=$(mktemp -d)
+  cat >"${AFS_T}/server.py" <<'PY'
+import http.server, os, sys, time
+
+hits = {}
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        n = hits[self.path] = hits.get(self.path, 0) + 1
+        if self.path == '/stall':
+            time.sleep(60)
+            return
+        if self.path == '/down' or (self.path == '/flaky' and n == 1):
+            self.send_response(503)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        body = b'-----BEGIN PGP PUBLIC KEY BLOCK-----\nfixture\n'
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+server.daemon_threads = True
+with open(sys.argv[1] + '.tmp', 'w') as f:
+    f.write(str(server.server_address[1]))
+os.rename(sys.argv[1] + '.tmp', sys.argv[1])
+server.serve_forever()
+PY
+  # Bounded even if this runner dies before the kill below.
+  timeout 120 python3 "${AFS_T}/server.py" "${AFS_T}/port" &
+  AFS_PID=$!
+  for _ in $(seq 50); do
+    [[ -s ${AFS_T}/port ]] && break
+    command sleep 0.1
+  done
+  AFS_PORT=$(cat "${AFS_T}/port" 2>/dev/null || true)
+  afs_fetch() { # PATH — prints rc, the recorded backoff and the fetched file
+    local rc=0
+    rm -f "${AFS_T}/dest"
+    : >"${AFS_T}/sleeps"
+    (
+      sleep() { printf 'sleep %s\n' "$*" >>"${AFS_T}/sleeps"; }
+      APT_FETCH_MAX_TIME_SECS=1
+      fetch_apt_source_file "http://127.0.0.1:${AFS_PORT}$1" "${AFS_T}/dest" 'fixture key'
+    ) >/dev/null 2>"${AFS_T}/err" || rc=$?
+    echo "rc=${rc}"
+    tr '\n' ' ' <"${AFS_T}/sleeps"
+    echo
+    cat "${AFS_T}/dest" 2>/dev/null || true
+  }
+  expect_match 'fetch_apt_source_file: the local stub server started' "${AFS_PORT}" '^[0-9]+$'
+
+  expect_eq 'fetch_apt_source_file: success on the first attempt, no backoff' "$(afs_fetch /ok)" 'rc=0
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+fixture'
+  expect_eq 'fetch_apt_source_file: ...and no retry warning' "$(grep -c 'retrying' "${AFS_T}/err" || true)" 0
+
+  expect_eq 'fetch_apt_source_file: a transient failure is retried, then succeeds' "$(afs_fetch /flaky)" 'rc=0
+sleep 2 
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+fixture'
+  expect_match 'fetch_apt_source_file: ...and warns about the failed attempt' "$(cat "${AFS_T}/err")" \
+    "fixture key: fetching http://127\\.0\\.0\\.1:${AFS_PORT}/flaky failed \\(attempt 1/3, curl exit 22\\); retrying in 2s"
+
+  afs_start=${SECONDS}
+  afs_out=$(afs_fetch /stall)
+  afs_elapsed=$((SECONDS - afs_start))
+  expect_eq 'fetch_apt_source_file: a stalled server hits the timeout on every attempt' "${afs_out}" 'rc=1
+sleep 2 sleep 4 '
+  expect_match 'fetch_apt_source_file: ...says it timed out, naming the URL' "$(cat "${AFS_T}/err")" \
+    "fixture key: could not fetch http://127\\.0\\.0\\.1:${AFS_PORT}/stall after 3 attempts \\(last: curl exit 28, timed out\\)"
+  expect_eq 'fetch_apt_source_file: ...within the per-attempt cap (3 x 1 s, under 10 s)' "$((afs_elapsed < 10))" 1
+
+  expect_eq 'fetch_apt_source_file: exhaustion fails closed with no file' "$(afs_fetch /down)" 'rc=1
+sleep 2 sleep 4 '
+  expect_match 'fetch_apt_source_file: ...with a clear error naming the URL' "$(cat "${AFS_T}/err")" \
+    "error.*fixture key: could not fetch http://127\\.0\\.0\\.1:${AFS_PORT}/down after 3 attempts \\(last: curl exit 22\\) — nothing was installed from it"
+  expect_eq 'fetch_apt_source_file: ...after warning about each retried attempt' "$(grep -c 'retrying in' "${AFS_T}/err" || true)" 2
+
+  kill "${AFS_PID}" 2>/dev/null || true
+  wait "${AFS_PID}" 2>/dev/null || true
+  rm -rf "${AFS_T}"
+fi
 
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]
