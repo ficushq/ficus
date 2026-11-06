@@ -8,7 +8,14 @@ import clsx from 'clsx'
 import { Fragment, useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { flushSync } from 'react-dom'
-import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@ficus/shared'
+import type {
+  MessageMetadata,
+  MessageToolCall,
+  ContentBlock,
+  DeliveryMode,
+  ExecutionStatus,
+  MessageSearchResult,
+} from '@ficus/shared'
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
 import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
@@ -37,7 +44,10 @@ import {
   SpeakerOnIcon,
   StopIcon,
   TrashIcon,
+  SearchIcon,
 } from './icons'
+import { ChatHistorySearch, type ChatHistoryJumpOutcome } from './ChatHistorySearch'
+import { isChatHistorySearchShortcut, shortcutModifierLabel } from '../lib/chatHistorySearch'
 import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
@@ -57,7 +67,7 @@ import {
 } from '../lib/tool-inline-actions'
 import { openExternalUrl, openLocalApp } from '../lib/openToolInlineTarget'
 import { ToolFirewallBadge } from './ToolFirewallBadge'
-import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
+import { MAX_OLDER_PAGE_SIZE, type RenderItem, type StreamingContentBlock } from '@ficus/client-react'
 import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
@@ -96,6 +106,22 @@ interface PendingImage {
   uploadedId?: string // ID from server after upload
   error?: string
 }
+
+/** Older pages a deep-link focus may load when the target's position is unknown. */
+const MAX_FOCUS_OLDER_PAGES = 10
+/** Messages one older page holds while jumping to a search result. */
+const MAX_FOCUS_PAGE_MESSAGES = MAX_OLDER_PAGE_SIZE
+/** Extra older pages a search jump may load beyond its estimate (merged turns, new arrivals). */
+const MAX_FOCUS_EXTRA_PAGES = 2
+/** Ask for a few more messages than the estimate so a jump rarely needs a second page. */
+const FOCUS_PAGE_MARGIN = 10
+/**
+ * The farthest back (in messages newer than the target) a search jump loads. The transcript is
+ * not virtualized, so every loaded message stays rendered; beyond this the panel says so instead.
+ */
+const MAX_FOCUS_JUMP_MESSAGES = 5000
+/** Mounted chats offering history search, most recent last: answers the shortcut when nothing is focused. */
+const searchableChats: Array<() => void> = []
 
 function automatedSource(message: { role: string; metadata?: MessageMetadata | null }): 'inbox' | 'monitor' | null {
   if (message.role !== 'human') return null
@@ -138,7 +164,8 @@ interface ChatViewProps {
   /** Every change to the draft text (typing, voice, attachments, clearing after a send). */
   onDraftChange?: (draft: string) => void
   // pagination
-  onLoadOlder?: () => void
+  /** Load older history. `minimumMessages` asks for a larger page when jumping far back. */
+  onLoadOlder?: (options?: { minimumMessages?: number }) => void | Promise<unknown>
   isLoadingOlder?: boolean
   hasOlderMessages?: boolean
   /** Initial messages fetch in flight — show a loader instead of a blank/empty flash. */
@@ -224,6 +251,12 @@ interface ChatViewProps {
   focusMessageId?: string
   /** Inbox message id: focuses the transcript message that DELIVERED it. */
   focusInboxMessageId?: string
+  /**
+   * Offer a search of this conversation's full server-side history (header button and
+   * Cmd/Ctrl+Shift+F). Selecting a result loads history back to it and highlights it.
+   * Needs `agentId` and `onLoadOlder`.
+   */
+  enableHistorySearch?: boolean
   /**
    * Live typing with teammates in this agent's chat: show who else is typing, and tell them when
    * this person is (see useAgentChatTyping). Off for conversations private to one person.
@@ -612,6 +645,7 @@ export function ChatView({
   selectedModelSupportsImages,
   focusMessageId,
   focusInboxMessageId,
+  enableHistorySearch = false,
   showTeammateTyping = false,
   dependencies,
 }: ChatViewProps) {
@@ -924,87 +958,178 @@ export function ChatView({
     [itemsStableRef]
   )
 
+  /** The running focus jump; starting another one cancels it. */
+  const focusRunRef = useRef<{ cancelled: boolean } | null>(null)
+
+  /**
+   * Bring one message into view: load older pages until it is rendered (bounded), then scroll
+   * to it and briefly highlight it. `newerCount` (how many messages are newer than the target,
+   * known from history search) sizes the older pages so a far jump takes a few requests, and
+   * raises the page bound to reach it. Without it, at most MAX_FOCUS_OLDER_PAGES default pages load.
+   */
+  const startFocus = useCallback(
+    (
+      target: { messageId?: string; inboxMessageId?: string },
+      options: { newerCount?: number; onMissing: 'bottom' | 'stay' }
+    ) => {
+      if (focusRunRef.current) focusRunRef.current.cancelled = true
+      const run = { cancelled: false }
+      focusRunRef.current = run
+      focusSearchActiveRef.current = true
+      focusModeRef.current = true
+      updateAutoScroll(false)
+      const scrollToItem = (itemId: string) => {
+        scrollContainerRef.current
+          ?.querySelector<HTMLElement>(`[data-message-id~="${itemId}"]`)
+          ?.scrollIntoView?.({ block: 'center' })
+      }
+      const settle = () => {
+        if (focusRunRef.current === run) focusSearchActiveRef.current = false
+      }
+      const { newerCount } = options
+      const maxOlderPages =
+        newerCount === undefined
+          ? MAX_FOCUS_OLDER_PAGES
+          : Math.ceil((newerCount + 1) / MAX_FOCUS_PAGE_MESSAGES) + MAX_FOCUS_EXTRA_PAGES
+
+      const outcome = (async (): Promise<ChatHistoryJumpOutcome> => {
+        let attempts = 0
+        let foundId: string | null = null
+        while (!run.cancelled) {
+          foundId = findFocusTarget(target)
+          if (foundId) break
+          if (newerCount !== undefined && newerCount >= MAX_FOCUS_JUMP_MESSAGES) break
+          const loadOlder = onLoadOlderStableRef.current
+          if (!hasOlderMessagesStableRef.current || attempts >= maxOlderPages || !loadOlder) break
+          attempts += 1
+          const previousItems = itemsStableRef.current
+          const loaded = previousItems.reduce(
+            (count, item) => count + (item.kind === 'persisted' ? (item.mergedFrom?.length ?? 1) : 0),
+            0
+          )
+          const result: unknown = loadOlder(
+            newerCount === undefined ? undefined : { minimumMessages: newerCount + 1 - loaded + FOCUS_PAGE_MARGIN }
+          )
+          if (result && typeof (result as Promise<unknown>).then === 'function') {
+            await result
+          } else {
+            await Promise.resolve()
+          }
+          // Bounded wait for the fetched page to actually land in `items` before rechecking.
+          const start = Date.now()
+          while (!run.cancelled && itemsStableRef.current === previousItems && Date.now() - start < 5000) {
+            await new Promise((resolve) => setTimeout(resolve, 30))
+          }
+        }
+        if (run.cancelled) return 'cancelled'
+        if (!foundId) {
+          settle()
+          if (options.onMissing === 'bottom') {
+            // Never found the target — fall back to normal bottom-anchored behavior.
+            focusModeRef.current = false
+            updateAutoScroll(true)
+            requestAnimationFrame(pinTranscriptToBottom)
+          }
+          return newerCount !== undefined && newerCount >= MAX_FOCUS_JUMP_MESSAGES ? 'too-far' : 'not-found'
+        }
+        setHighlightedMessageId(foundId)
+        if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current)
+        highlightTimeoutRef.current = setTimeout(() => setHighlightedMessageId(null), 2000)
+        // PIN PHASE: a single scrollIntoView was not enough — prepended pages,
+        // images, and streaming appends keep shifting layout for a while, which
+        // read as "scrolls up then stops partway". Re-assert the target position
+        // after paint and again whenever items change, briefly.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        if (run.cancelled) return 'cancelled'
+        scrollToItem(foundId)
+        const settleStart = Date.now()
+        let lastItems = itemsStableRef.current
+        while (!run.cancelled && Date.now() - settleStart < 2000) {
+          await new Promise((resolve) => setTimeout(resolve, 150))
+          if (itemsStableRef.current !== lastItems) {
+            lastItems = itemsStableRef.current
+            scrollToItem(foundId)
+          }
+        }
+        settle()
+        // focusModeRef stays set: the user is reading a past message, and
+        // bottom-follow only returns on their own scroll-to-bottom or send.
+        return 'found'
+      })()
+
+      const cancel = () => {
+        run.cancelled = true
+        if (focusRunRef.current === run) {
+          focusRunRef.current = null
+          focusSearchActiveRef.current = false
+        }
+      }
+      return { outcome, cancel }
+    },
+    // The loop reads live state via stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [findFocusTarget, pinTranscriptToBottom, updateAutoScroll]
+  )
+
   useEffect(() => {
     if (!focusMessageId && !focusInboxMessageId) return
-    let cancelled = false
-    focusSearchActiveRef.current = true
-    focusModeRef.current = true
-    updateAutoScroll(false)
-    const target = {
-      ...(focusMessageId ? { messageId: focusMessageId } : {}),
-      ...(focusInboxMessageId ? { inboxMessageId: focusInboxMessageId } : {}),
-    }
-    const MAX_OLDER_PAGES = 10
-    const scrollToItem = (itemId: string) => {
-      scrollContainerRef.current
-        ?.querySelector<HTMLElement>(`[data-message-id~="${itemId}"]`)
-        ?.scrollIntoView?.({ block: 'center' })
-    }
+    const { cancel } = startFocus(
+      {
+        ...(focusMessageId ? { messageId: focusMessageId } : {}),
+        ...(focusInboxMessageId ? { inboxMessageId: focusInboxMessageId } : {}),
+      },
+      { onMissing: 'bottom' }
+    )
+    return cancel
+  }, [focusMessageId, focusInboxMessageId, startFocus])
 
-    const run = async () => {
-      let attempts = 0
-      let foundId: string | null = null
-      while (!cancelled) {
-        foundId = findFocusTarget(target)
-        if (foundId) break
-        const loadOlder = onLoadOlderStableRef.current
-        if (!hasOlderMessagesStableRef.current || attempts >= MAX_OLDER_PAGES || !loadOlder) break
-        attempts += 1
-        const previousItems = itemsStableRef.current
-        const result: unknown = loadOlder()
-        if (result && typeof (result as Promise<unknown>).then === 'function') {
-          await result
-        } else {
-          await Promise.resolve()
-        }
-        // Bounded wait for the fetched page to actually land in `items` before rechecking.
-        const start = Date.now()
-        while (!cancelled && itemsStableRef.current === previousItems && Date.now() - start < 5000) {
-          await new Promise((resolve) => setTimeout(resolve, 30))
-        }
-      }
-      if (cancelled) return
-      if (!foundId) {
-        // Never found the target — fall back to normal bottom-anchored behavior.
-        focusModeRef.current = false
-        updateAutoScroll(true)
-        requestAnimationFrame(pinTranscriptToBottom)
-        focusSearchActiveRef.current = false
-        return
-      }
-      setHighlightedMessageId(foundId)
-      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current)
-      highlightTimeoutRef.current = setTimeout(() => setHighlightedMessageId(null), 2000)
-      // PIN PHASE: a single scrollIntoView was not enough — prepended pages,
-      // images, and streaming appends keep shifting layout for a while, which
-      // read as "scrolls up then stops partway". Re-assert the target position
-      // after paint and again whenever items change, briefly.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-      if (cancelled) return
-      scrollToItem(foundId)
-      const settleStart = Date.now()
-      let lastItems = itemsStableRef.current
-      while (!cancelled && Date.now() - settleStart < 2000) {
-        await new Promise((resolve) => setTimeout(resolve, 150))
-        if (itemsStableRef.current !== lastItems) {
-          lastItems = itemsStableRef.current
-          scrollToItem(foundId)
-        }
-      }
-      focusSearchActiveRef.current = false
-      // focusModeRef stays set: the user is reading a past message, and
-      // bottom-follow only returns on their own scroll-to-bottom or send.
+  // History search: a panel under the header that searches the whole conversation on the
+  // server and jumps to a result through startFocus.
+  const historySearchAvailable = enableHistorySearch && !!agentId && !!onLoadOlder
+  const [historySearchOpen, setHistorySearchOpen] = useState(false)
+  const historySearchButtonRef = useRef<HTMLButtonElement>(null)
+  const historyJumpRef = useRef<{ cancel: () => void } | null>(null)
+  const openHistorySearch = useCallback(() => setHistorySearchOpen(true), [])
+  const closeHistorySearch = useCallback(() => {
+    setHistorySearchOpen(false)
+    requestAnimationFrame(() => historySearchButtonRef.current?.focus({ preventScroll: true }))
+  }, [])
+  const jumpToSearchResult = useCallback(
+    (result: MessageSearchResult) => {
+      historyJumpRef.current?.cancel()
+      const jump = startFocus({ messageId: result.id }, { newerCount: result.newerCount, onMissing: 'stay' })
+      historyJumpRef.current = jump
+      return jump.outcome
+    },
+    [startFocus]
+  )
+  useEffect(() => () => historyJumpRef.current?.cancel(), [])
+  useEffect(() => {
+    // A different conversation: close the panel rather than search the old one.
+    setHistorySearchOpen(false)
+  }, [agentId])
+  const openHistorySearchRef = useStableRef(openHistorySearch)
+  useEffect(() => {
+    if (!historySearchAvailable) return
+    // The chat holding focus answers the shortcut; with nothing focused, the most recently mounted one does.
+    const entry = () => openHistorySearchRef.current()
+    searchableChats.push(entry)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !isChatHistorySearchShortcut(e)) return
+      const active = document.activeElement
+      const focusedHere =
+        !!active && !!scrollContainerRef.current?.closest('[data-drop-scope="chat"]')?.contains(active)
+      const nothingFocused = !active || active === document.body
+      if (!focusedHere && !(nothingFocused && searchableChats.at(-1) === entry)) return
+      e.preventDefault()
+      entry()
     }
-
-    void run()
-
+    window.addEventListener('keydown', onKeyDown)
     return () => {
-      cancelled = true
-      focusSearchActiveRef.current = false
+      window.removeEventListener('keydown', onKeyDown)
+      searchableChats.splice(searchableChats.indexOf(entry), 1)
     }
-    // The loop reads live state via stable refs — only the target ids should restart it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusMessageId, focusInboxMessageId, findFocusTarget, pinTranscriptToBottom, updateAutoScroll])
+  }, [historySearchAvailable, openHistorySearchRef])
 
   useEffect(() => {
     return () => {
@@ -1871,6 +1996,23 @@ export function ChatView({
     </button>
   )
 
+  const historySearchButton = historySearchAvailable && (
+    <button
+      ref={historySearchButtonRef}
+      type="button"
+      onClick={() => (historySearchOpen ? closeHistorySearch() : openHistorySearch())}
+      aria-pressed={historySearchOpen}
+      className={clsx(
+        'ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0',
+        historySearchOpen && 'text-accent-light hover:text-accent-light bg-accent/10 hover:bg-accent/20'
+      )}
+      aria-label="Search this conversation"
+      title={`Search this conversation (${shortcutModifierLabel()}+Shift+F)`}
+    >
+      <SearchIcon className="w-4 h-4" />
+    </button>
+  )
+
   const chatContent = (
     <div
       // The whole chat is one drop and paste scope; clicking its messages focuses it (see handleSurfacePaste).
@@ -1888,7 +2030,7 @@ export function ChatView({
       )}
     >
       {isDragging && <ChatDropOverlay />}
-      {(header || headerRawTextToggle || fullscreenButton) && (
+      {(header || headerRawTextToggle || historySearchButton || fullscreenButton) && (
         <div
           className={clsx(
             'px-3 md:px-4 py-0.5 md:py-2 border-b border-th-border shrink-0',
@@ -1898,9 +2040,19 @@ export function ChatView({
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">{header}</div>
             {headerRawTextToggle}
+            {historySearchButton}
             {fullscreenButton}
           </div>
         </div>
+      )}
+
+      {historySearchAvailable && historySearchOpen && (
+        <ChatHistorySearch
+          key={agentId}
+          agentId={agentId!}
+          onSelect={jumpToSearchResult}
+          onClose={closeHistorySearch}
+        />
       )}
 
       {headerStatus && <div className="shrink-0 min-w-0">{headerStatus}</div>}

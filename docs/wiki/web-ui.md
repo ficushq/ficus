@@ -77,6 +77,8 @@ Titles use `Manager (Name)`, `Purpose (Type • Name)`, or `Type (Name)` when th
 
 Initial agent-history loading uses message-shaped skeletons in the transcript, retaining the real header and composer. Do not replace existing messages with skeletons during background refresh. Empty-state copy appears only after loading resolves.
 
+Agent chats offer a history search in the chat header (Cmd/Ctrl+Shift+F; Cmd/Ctrl+F stays the browser's find in page). It searches the whole conversation on the server and opens as a panel under the header that keeps the transcript visible. Results show the sender, day and time, and an excerpt with the matched text marked; arrow keys move through them, Enter or a click opens one, and Escape closes the panel. Opening a result loads history back to it, then scrolls to and briefly highlights the message, as a deep link does. See [conversation history search](agents-and-executions.md#conversation-history-search).
+
 Transcript timestamps are quiet clock times (never relative), shown once per group in the muted meta line: above a human bubble (joined to the sender name when that label shows) or at the start of an agent reply. A group is consecutive messages from the same sender, each within five minutes of the previous one; system rows, automated deliveries, and unsaved items reset it. Every saved message carries its full date and time as a hover tooltip, and a centered Today / Yesterday / date divider marks each new local day. The helpers live in `apps/web/src/lib/chatTimestamps.ts`.
 
 ### Pending GitHub events

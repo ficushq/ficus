@@ -521,6 +521,7 @@ export function AgentChat({
       className={className}
       focusMessageId={focusMessageId}
       focusInboxMessageId={focusInboxMessageId}
+      enableHistorySearch
     />
   )
 }

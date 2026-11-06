@@ -6,6 +6,7 @@ import type {
   DeliverySuggestion,
   ExecutionStatus,
   Message,
+  MessageSearchResponse,
 } from '@ficus/shared'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 import type { Transport } from '../transport'
@@ -191,6 +192,17 @@ export function agentsResource(t: Transport) {
       openReconnectableAgentStream(t, agentId, callbacks, executionId),
     getMessage: (agentId: string, messageId: string): Promise<Message> =>
       t.request(`/agents/${agentId}/messages/${messageId}`),
+    /** Search one conversation's full message history (newest first). */
+    searchMessages: (
+      agentId: string,
+      options: { q: string; limit?: number; cursor?: string },
+      signal?: AbortSignal
+    ): Promise<MessageSearchResponse> => {
+      const p = new URLSearchParams({ q: options.q })
+      if (options.limit) p.set('limit', String(options.limit))
+      if (options.cursor) p.set('cursor', options.cursor)
+      return t.request(`/agents/${agentId}/messages/search?${p}`, signal ? { signal } : undefined)
+    },
     getMessages: (
       agentId: string,
       options?: { cursor?: string; beforeId?: string; limit?: number }

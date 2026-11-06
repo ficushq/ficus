@@ -4,7 +4,7 @@ import { getRelayAvailability, getServerConnection } from './api/serverConnectio
 import { getPublicAppUrl, getPublicAppUrlStatus } from './api/publicUrl'
 import { getProductFeedbackStatus } from './api/productFeedback'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
-import { desktopQueryKeys } from './queryKeys'
+import { desktopQueryKeys, messageSearchQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
 import { apiFetch, ApiError } from './api/client'
 import { channelLinkQueryKeys } from './queryKeys'
@@ -225,6 +225,18 @@ export const queries = {
       queryOptions({ queryKey: themePresetQueryKeys.list(scope), queryFn: () => client.themePresets.list(scope) }),
   },
   agents: {
+    /** Search one conversation's full history, newest first, a page at a time. */
+    messageSearch: (agentId: string, query: string) =>
+      infiniteQueryOptions({
+        queryKey: messageSearchQueryKeys.results(agentId, query),
+        enabled: query.length > 0,
+        queryFn: ({ pageParam, signal }) =>
+          client.agents.searchMessages(agentId, { q: query, limit: 20, cursor: pageParam ?? undefined }, signal),
+        initialPageParam: null as string | null,
+        getNextPageParam: (last) => last.nextCursor ?? undefined,
+        placeholderData: keepPreviousData,
+        staleTime: 30_000,
+      }),
     slotHolds: (squadId: string, agentId: string) =>
       queryOptions({
         queryKey: agentSlotHoldQueryKeys.agent(squadId, agentId),
