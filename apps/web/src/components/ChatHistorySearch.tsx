@@ -137,7 +137,9 @@ export function ChatHistorySearch({ agentId, onSelect, onClose }: ChatHistorySea
           <SearchIcon className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
           <input
             ref={inputRef}
-            type="search"
+            type="text"
+            enterKeyHint="search"
+            autoComplete="off"
             role="combobox"
             aria-expanded={results.length > 0}
             aria-controls={listId}
@@ -205,7 +207,7 @@ export function ChatHistorySearch({ agentId, onSelect, onClose }: ChatHistorySea
                     <SnippetText snippet={result.snippet} />
                   </p>
                   {(jumpState === 'not-found' || jumpState === 'too-far') && (
-                    <p className="mt-1 text-xs text-status-warning-600" role="status">
+                    <p className="mt-1 text-xs text-status-attention-700 dark:text-status-attention-300" role="status">
                       {JUMP_MESSAGES[jumpState]}
                     </p>
                   )}
