@@ -30,7 +30,6 @@ import { AppsTab } from './squads/AppsTab'
 import { SharingTab } from './squads/grants'
 import { SquadMonitorsSection } from './monitors/SquadMonitorsSection'
 import { ChevronDownIcon, ChevronRightIcon } from './icons'
-import { countableSquadAgents } from '../lib/agentDisplay'
 import { LoadingContent, SkeletonBlock, SkeletonText } from './loading/Skeleton'
 import { GitHubFeedbackReviewProvider } from './integrations/GitHubFeedbackReviewProvider'
 import { PendingGitHubEventsSection } from './integrations/PendingGitHubEventsSection'
@@ -272,8 +271,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
   }
 
   const activeWorkStreams = activeWorkStreamRows.length
-  const countableAgents = countableSquadAgents(agents)
-  const activeAgents = countableAgents.filter((a) => a.status === 'active').length
+  const activeAgents = agents.filter((a) => a.status === 'active').length
   const statPills = (
     <>
       <span className="px-2 py-0.5 rounded-md bg-surface-secondary text-xs text-secondary">

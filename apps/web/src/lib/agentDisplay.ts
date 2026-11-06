@@ -47,7 +47,3 @@ export function agentMatchesQuery(agent: Agent, query: string): boolean {
   const type = agent.agentTypeId.toLowerCase()
   return purpose.includes(q) || name.includes(q) || type.includes(q)
 }
-
-export function countableSquadAgents(agents: Agent[]): Agent[] {
-  return agents.filter((a) => a.agentTypeId !== 'consultant')
-}

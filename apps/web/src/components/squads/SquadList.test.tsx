@@ -22,26 +22,38 @@ describe('hasWorkingAgent', () => {
 })
 
 describe('squad cards', () => {
-  test('show the active agent count alone, and pin the counts to the card bottom', () => {
+  const squad = { id: 'sq', name: 'Chlea', purpose: 'Short', status: 'active', isAnonymous: false, avatarUrl: null }
+  const agent = (id: string, status: AgentStatus, agentTypeId = 'engineer') => ({
+    id,
+    squadId: 'sq',
+    agentTypeId,
+    status,
+  })
+
+  function renderCards(squadAgents: ReturnType<typeof agent>[]) {
     const client = new QueryClient()
-    const squad = { id: 'sq', name: 'Chlea', purpose: 'Short', status: 'active', isAnonymous: false, avatarUrl: null }
-    const agent = (id: string, status: AgentStatus) => ({ id, squadId: 'sq', agentTypeId: 'engineer', status })
     client.setQueryData(queries.squads.list('active').queryKey, [squad] as never)
-    client.setQueryData(queries.agents.list().queryKey, [
-      agent('a', 'active'),
-      agent('b', 'idle'),
-      agent('c', 'idle'),
-    ] as never)
+    client.setQueryData(queries.agents.list().queryKey, squadAgents as never)
     client.setQueryData(queries.squads.activeWorkStreams().queryKey, [] as never)
-    const html = renderToStaticMarkup(
+    return renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <MemoryRouter>
           <SquadList />
         </MemoryRouter>
       </QueryClientProvider>
     )
+  }
+
+  test('show the active agent count alone, and pin the counts to the card bottom', () => {
+    const html = renderCards([agent('a', 'active'), agent('b', 'idle'), agent('c', 'idle')])
     expect(html).toContain('1 active agent<')
     expect(html).not.toMatch(/\d+\/\d+ active agents?/)
     expect(html).toContain('mt-auto flex items-center gap-3 text-xs text-muted')
+  })
+
+  test('count an active consultant like any other agent', () => {
+    const html = renderCards([agent('c', 'active', 'consultant')])
+    expect(html).toContain('1 active agent<')
+    expect(html).toContain('Agent activity in progress')
   })
 })

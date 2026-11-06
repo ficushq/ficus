@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { Agent } from '@ficus/shared'
-import {
-  getAgentName,
-  getAgentPrimaryLabel,
-  getAgentPurpose,
-  agentMatchesQuery,
-  countableSquadAgents,
-} from './agentDisplay'
+import { getAgentName, getAgentPrimaryLabel, getAgentPurpose, agentMatchesQuery } from './agentDisplay'
 
 function agent(metadata: Agent['metadata'], agentTypeId = 'engineer'): Agent {
   return {
@@ -36,13 +30,6 @@ describe('agentMatchesQuery', () => {
     expect(agentMatchesQuery(a, 'pearl')).toBe(true)
     expect(agentMatchesQuery(a, 'consultant')).toBe(true)
     expect(agentMatchesQuery(a, 'zzz')).toBe(false)
-  })
-})
-
-describe('countableSquadAgents', () => {
-  it('excludes consultant agents', () => {
-    const agents = [mk({ id: 'm', agentTypeId: 'manager' }), mk({ id: 'c', agentTypeId: 'consultant' })]
-    expect(countableSquadAgents(agents).map((a) => a.id)).toEqual(['m'])
   })
 })
 
