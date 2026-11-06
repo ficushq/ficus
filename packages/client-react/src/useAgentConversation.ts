@@ -59,6 +59,12 @@ export interface SendAcceptanceHandle {
   accepted: Promise<void>
 }
 
+/** Messages per history page. */
+const MESSAGES_PAGE_SIZE = 50
+/** Largest history page a jump into far history may request at once. */
+export const MAX_OLDER_PAGE_SIZE = 500
+type MessagesPageParam = { cursor: string; limit: number } | undefined
+
 export interface UseAgentConversationResult {
   items: RenderItem[]
   streamStatus: StreamStatus
@@ -80,7 +86,11 @@ export interface UseAgentConversationResult {
   isLoading: boolean
   hasOlder: boolean
   isFetchingOlder: boolean
-  fetchOlder: () => void
+  /**
+   * Load the next page of older history. `minimumMessages` asks for a larger page (capped at
+   * MAX_OLDER_PAGE_SIZE), so jumping to a far search result takes a few requests instead of many.
+   */
+  fetchOlder: (options?: { minimumMessages?: number }) => Promise<unknown>
   send: (
     content: string,
     opts?: { imageIds?: string[]; deliveryMode?: DeliveryMode; reviewConsultation?: ReviewConsultationSend }
@@ -725,16 +735,34 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   }, [resolvedAgentId, queryClient, invalidateConversationQueries])
 
   // 2. Persisted history → memoized groupPersisted.
+  // Page sizes requested for particular page indexes (a jump into far history asks for larger
+  // pages). Keyed by index, so a refetch of every loaded page asks for the same sizes again and
+  // keeps the same history loaded.
+  const olderPageSizesRef = useRef<{ agentId: string | undefined; sizes: Map<number, number> }>({
+    agentId: undefined,
+    sizes: new Map(),
+  })
+  if (olderPageSizesRef.current.agentId !== resolvedAgentId)
+    olderPageSizesRef.current = { agentId: resolvedAgentId, sizes: new Map() }
   const messagesQuery = useInfiniteQuery({
     queryKey: queryKeys.agents.messagesInfinite(resolvedAgentId ?? '__none__'),
     enabled: !!resolvedAgentId,
-    initialPageParam: undefined as string | undefined,
+    initialPageParam: undefined as MessagesPageParam,
     queryFn: async ({ pageParam }) => {
       const generation = ++collectionRequestGenerationRef.current
-      const page = await client.agents.getMessages(resolvedAgentId!, { cursor: pageParam, limit: 50 })
+      const page = await client.agents.getMessages(resolvedAgentId!, {
+        cursor: pageParam?.cursor,
+        limit: pageParam?.limit ?? MESSAGES_PAGE_SIZE,
+      })
       return { ...page, __collectionRequestGeneration: generation, __collectionRequestOwner: collectionRequestOwner }
     },
-    getNextPageParam: (last) => (last.pagination.hasMore ? last.pagination.nextCursor : undefined),
+    getNextPageParam: (last, allPages): MessagesPageParam =>
+      last.pagination.hasMore && last.pagination.nextCursor
+        ? {
+            cursor: last.pagination.nextCursor,
+            limit: olderPageSizesRef.current.sizes.get(allPages.length) ?? MESSAGES_PAGE_SIZE,
+          }
+        : undefined,
     refetchOnWindowFocus: () => !isStreamLive(),
   })
 
@@ -1491,7 +1519,15 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     isLoading: messagesQuery.isLoading,
     hasOlder: messagesQuery.hasNextPage ?? false,
     isFetchingOlder: messagesQuery.isFetchingNextPage,
-    fetchOlder: () => void messagesQuery.fetchNextPage(),
+    fetchOlder: (options) => {
+      const minimum = options?.minimumMessages
+      if (minimum && minimum > MESSAGES_PAGE_SIZE)
+        olderPageSizesRef.current.sizes.set(
+          messagesQuery.data?.pages.length ?? 0,
+          Math.min(Math.ceil(minimum), MAX_OLDER_PAGE_SIZE)
+        )
+      return messagesQuery.fetchNextPage()
+    },
     send,
     sendAccepted,
     retrySend,

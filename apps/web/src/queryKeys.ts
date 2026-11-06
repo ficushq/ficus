@@ -7,6 +7,15 @@ export const desktopQueryKeys = {
 }
 
 /**
+ * One conversation's history search, by agent and trimmed query. Kept out of `agents` so chat
+ * events never re-run a search the person is reading.
+ */
+export const messageSearchQueryKeys = {
+  all: ['message-search'] as const,
+  results: (agentId: string, query: string) => [...messageSearchQueryKeys.all, agentId, query] as const,
+}
+
+/**
  * The composer's Interrupt / Follow up suggestion, keyed by the whitespace-normalized draft. Kept
  * out of `agents` so agent events never refetch it (each fetch asks a decision model).
  */

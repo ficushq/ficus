@@ -4,7 +4,7 @@ import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@
 import type { FicusClient } from '@ficus/client-core'
 import { createClient, queryKeys, type Transport } from '@ficus/client-core'
 import { ConversationClientProvider, type SubscribeToAgentEvents } from './ConversationClientProvider'
-import { useAgentConversation } from './useAgentConversation'
+import { MAX_OLDER_PAGE_SIZE, useAgentConversation } from './useAgentConversation'
 import type { Message, StreamEvent } from '@ficus/shared'
 
 // Every mounted fixture owns its timers and focus/online subscriptions. Earlier
@@ -239,8 +239,7 @@ function makeMockClient(opts?: {
   }
 }
 
-function wrap(client: FicusClient) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function wrap(client: FicusClient, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={qc}>
       <ConversationClientProvider client={client}>{children}</ConversationClientProvider>
@@ -797,6 +796,45 @@ describe('useAgentConversation', () => {
       ).toEqual([oldest.id, middle.id, newest.id].sort())
     )
     expect(result.current.hasOlder).toBe(false)
+  })
+
+  test('fetchOlder can ask for a larger, capped page and a refetch asks for the same sizes again', async () => {
+    const at = new Date('2026-02-03T04:05:06.000Z')
+    const message = (id: string): Message => ({
+      id,
+      agentId: 'a1',
+      role: 'human',
+      content: id,
+      metadata: {},
+      pending: false,
+      createdAt: at,
+    })
+    const mock = makeMockClient({
+      messagePages: {
+        first: { messages: [message('m3')], pagination: { hasMore: true, totalCount: 3, nextCursor: 'c2' } },
+        c2: { messages: [message('m2')], pagination: { hasMore: true, totalCount: 0, nextCursor: 'c1' } },
+        c1: { messages: [message('m1')], pagination: { hasMore: false, totalCount: 0 } },
+      },
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = await renderHook(() => useAgentConversation({ agentId: 'a1' }), {
+      wrapper: wrap(mock.client, queryClient),
+    })
+
+    await waitFor(() => expect(result.current.hasOlder).toBe(true))
+    await act(async () => result.current.fetchOlder({ minimumMessages: 5000 }))
+    await waitFor(() => expect(mock.getMessagesOptions).toHaveLength(2))
+    await act(async () => result.current.fetchOlder())
+    await waitFor(() => expect(mock.getMessagesOptions).toHaveLength(3))
+    expect(mock.getMessagesOptions.map((o) => o?.limit)).toEqual([50, MAX_OLDER_PAGE_SIZE, 50])
+
+    await act(async () => queryClient.refetchQueries({ queryKey: queryKeys.agents.messagesInfinite('a1') }))
+    await waitFor(() => expect(mock.getMessagesOptions).toHaveLength(6))
+    expect(mock.getMessagesOptions.slice(3).map((o) => [o?.cursor, o?.limit])).toEqual([
+      [undefined, 50],
+      ['c2', MAX_OLDER_PAGE_SIZE],
+      ['c1', 50],
+    ])
   })
 
   test('onDone fires when the done event arrives on the agent stream', async () => {

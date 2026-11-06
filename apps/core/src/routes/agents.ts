@@ -7,7 +7,12 @@ import { sentAssistantRouting } from '../services/routing/assistant-routing-prev
 import { captureRoutingCorrection } from '../services/routing/routing-eval-capture'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
-import { chatPagePathSchema, chatRequestSchema, manualWaitDecisionSchema } from '@ficus/shared'
+import {
+  chatPagePathSchema,
+  chatRequestSchema,
+  manualWaitDecisionSchema,
+  messageSearchQuerySchema,
+} from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
 import { replySuggestionsEnabled, withVisibleReplySuggestions } from '../services/reply-suggestions/visibility'
@@ -16,6 +21,7 @@ import { Hono, type Context } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
+import { zValidator } from '../lib/zod-validator'
 import { join } from 'path'
 import { Execution } from '../entities/Execution'
 import { isSessionActive, isSessionCompacting, removeSession } from '../services/execution'
@@ -25,6 +31,7 @@ import { and, eq } from 'drizzle-orm'
 import { db, agentExtraScopes, sandboxProvisionRecoveries, recoveryEpisodes } from '../db'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { InvalidMessageCursorError } from '../services/agent/message-cursor'
+import { searchAgentMessages } from '../services/agent/message-search'
 import {
   getSandboxManager,
   isHostRuntime,
@@ -901,6 +908,19 @@ export const agentsRouter = new Hono()
       const result = await agent.listMessages(options)
       const visible = withVisibleReplySuggestions(result.messages, replySuggestionsEnabled())
       return c.json({ ...result, messages: await withChatQueueState(agent.id, visible) })
+    } catch (error) {
+      if (error instanceof InvalidMessageCursorError)
+        return c.json({ error: 'Invalid cursor', code: 'MESSAGES_CURSOR_INVALID' }, 400)
+      throw error
+    }
+  })
+  // GET /api/agents/:id/messages/search?q=<text>&limit=N&cursor=<opaque> — search this one conversation's
+  // full history. Same authorization as reading its messages (owner-only for private agents).
+  .get('/:id/messages/search', requireAgentReadPermission, zValidator('query', messageSearchQuerySchema), async (c) => {
+    const agent = await Agent.find(c.req.param('id'))
+    if (!agent) return c.json({ error: 'Agent not found' }, 404)
+    try {
+      return c.json(await searchAgentMessages(agent.id, c.req.valid('query')))
     } catch (error) {
       if (error instanceof InvalidMessageCursorError)
         return c.json({ error: 'Invalid cursor', code: 'MESSAGES_CURSOR_INVALID' }, 400)

@@ -429,7 +429,35 @@ POST   /api/agents/:id/steer           — Deprecated compatibility route for a 
 POST   /api/agents/:id/follow-up       — Deprecated compatibility route for a follow-up message
 POST   /api/agents/:id/stop            — Stop active execution
 POST   /api/agents/:id/abort-tool      — Abort current tool
+GET    /api/agents/:id/messages        — Page through the conversation history (newest first, opaque cursor)
+GET    /api/agents/:id/messages/search — Search this conversation's full history (see below)
 ```
+
+### Conversation history search
+
+`GET /api/agents/:id/messages/search?q=<text>&limit=<1-50>&cursor=<opaque>` searches one
+conversation's whole history, not just what a client has loaded. It uses exactly the authorization of
+reading that conversation's messages (`agents:read` in the agent's squad; owner only for private agents
+and Assistant conversations, even against other administrators), so it never reveals a message the
+caller could not page to anyway, and it never searches across conversations.
+
+- It matches a case-insensitive substring of the visible message text (`messages.content`): what people
+  wrote and the agent's reply text. Thinking, tool calls and tool output (`metadata.content`) are not
+  searched, because the chat view collapses them and a jump could not show the match.
+- `q` is trimmed and limited to 200 characters; LIKE wildcards in it are literal. Results are newest
+  first, 20 per page by default and at most 50, with a `nextCursor` bound to the agent and query.
+- Each result carries the message `id`, `createdAt`, `role`, the recorded `sender` or delivery `source`,
+  a short single-line `snippet` with highlight ranges, and `newerCount`: how many messages are newer,
+  which the web chat uses to load enough history to reach it.
+- There is no dedicated index: a 50,000-message conversation searches in well under a second. If
+  conversations grow far beyond that, a trigram index is the next step.
+
+The web chat view opens the search from its header or with Cmd/Ctrl+Shift+F (Cmd/Ctrl+F stays the
+browser's, or Ficus Desktop's, find in page). Choosing a result loads older history in larger pages
+(up to 500 messages per request), then scrolls to and highlights the message. Because the transcript
+is not virtualized, a jump reaches at most 5,000 messages back; beyond that the result says it is too
+far back. The CLI's `ficus agent messages <id> --search <text>` lists matching messages with the same
+authorization.
 
 ## Chat file attachments
 
