@@ -141,6 +141,10 @@ function nextClientId(): string {
   return `pending-${Date.now()}-${pendingCounter}`
 }
 
+function isTerminalStatus(status: ExecutionStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'stopped'
+}
+
 /** A turn-starting send whose execution the hook has not discovered yet. */
 interface AwaitingTurn {
   clientId: string
@@ -488,9 +492,44 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     [invalidateConversationQueries]
   )
 
+  // A just-sent turn is optimistically running before its execution is known. The cached
+  // active-execution answer and the previous execution's terminal status were both read before the
+  // send, so neither may clear it. Returns true while `executionId` (the execution a terminalizing
+  // path is about to trust; null for none) cannot speak for the awaiting turn. The turn stops
+  // awaiting once a post-acceptance read succeeded, the stream identified a different execution, or
+  // TURN_DISCOVERY_LIMIT_MS passed.
+  const awaitingTurnBlocks = useCallback((executionId: string | null): boolean => {
+    const turn = awaitingTurnRef.current
+    if (!turn) return false
+    const known = streamedExecIdRef.current ?? announcedExecutionIdRef.current
+    if (
+      turn.confirmed ||
+      Date.now() - turn.sentAt >= TURN_DISCOVERY_LIMIT_MS ||
+      (known !== null && known !== turn.previousExecutionId)
+    ) {
+      awaitingTurnRef.current = null
+      return false
+    }
+    return executionId === null || executionId === turn.previousExecutionId
+  }, [])
+
+  // True when a terminal status for `executionId` is about the execution a just-sent turn followed,
+  // so it must not end that turn. Unlike awaitingTurnBlocks, an unidentified status (null) is not
+  // held back: a stream event without identity may be the new turn's own end.
+  const terminalPredatesAwaitingTurn = useCallback(
+    (status: ExecutionStatus, executionId: string | null): boolean =>
+      isTerminalStatus(status) && executionId !== null && awaitingTurnBlocks(executionId),
+    [awaitingTurnBlocks]
+  )
+
   // Keep executionStatus in sync with the live stream (both the agent stream and the create-flow
   // chat stream) so the activity indicator clears on turn end. Without this it would otherwise be
   // seeded once on mount and stick at 'running'.
+  //
+  // A resubscription (for example on returning to the foreground) replays the execution it follows:
+  // a pinned stream reports the previous execution's terminal snapshot, an unpinned one replays the
+  // previous turn ending in its done. Those replays still update per-execution bookkeeping, but a
+  // terminal status for the execution that preceded a just-sent turn does not end that turn.
   const applyExecStatus = useCallback(
     (event: import('@ficus/shared').StreamEvent) => {
       lastStreamAtRef.current = Date.now()
@@ -513,10 +552,13 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
           )
       )
         confirmTerminalHistory(executionId)
+      const setStatus = (status: ExecutionStatus, statusExecutionId: string | null = executionId) => {
+        if (!terminalPredatesAwaitingTurn(status, statusExecutionId)) setExecutionStatusLocal(status)
+      }
       const terminal = executionId ? terminalExecutionStatusesRef.current.get(executionId) : undefined
       if (event.type !== 'execution_snapshot' && terminal) {
         if (event.type === 'done' || event.type === 'error') streamedExecIdRef.current = null
-        setExecutionStatusLocal(terminal)
+        setStatus(terminal)
         return
       }
       if (event.type === 'execution_snapshot') {
@@ -532,11 +574,11 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
           terminalHistoryAfterRef.current.delete(event.executionId)
         }
         streamedExecIdRef.current = ['completed', 'failed', 'stopped'].includes(event.status) ? null : event.executionId
-        setExecutionStatusLocal(event.status)
+        setStatus(event.status, event.executionId)
       } else if (event.type === 'done') {
         if (executionId) terminalExecutionStatusesRef.current.set(executionId, 'completed')
         streamedExecIdRef.current = null
-        setExecutionStatusLocal('completed')
+        setStatus('completed')
       } else if (event.type === 'error') {
         // The proxy uses the same event for connection failures as runner errors.
         // Keep an identified execution's status/pin until exact reconciliation;
@@ -545,7 +587,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         if (!executionId && !streamedExecIdRef.current) setExecutionStatusLocal('failed')
       } else if (event.type === 'agent' && event.executionStatus) {
         setStreamStatus('live')
-        setExecutionStatusLocal(event.executionStatus)
+        setStatus(event.executionStatus)
       } else if (event.type === 'execution_phase') {
         if (event.phase === 'sandbox_recovery_wait') setExecutionStatusLocal('waiting-sandbox')
         if (event.phase === 'maintenance_queue') setExecutionStatusLocal('waiting-maintenance')
@@ -564,7 +606,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         setWaitingForSandbox(false)
       }
     },
-    [setExecutionStatusLocal, confirmTerminalHistory]
+    [setExecutionStatusLocal, confirmTerminalHistory, terminalPredatesAwaitingTurn]
   )
 
   // Reset store state when the conversation identity changes (new agent) — NOT on a re-subscribe for
@@ -657,7 +699,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
             terminalExecutionStatusesRef.current.set(executionId, execution.status)
             confirmTerminalHistory(executionId)
           }
-          setExecutionStatusLocal(execution.status)
+          // A pinned previous execution finishing says nothing about a just-sent turn.
+          if (!terminalPredatesAwaitingTurn(execution.status, executionId)) setExecutionStatusLocal(execution.status)
           // Busy executions can replay missed events. Terminal exact streams only
           // send a status snapshot; their missing text/tools come from the durable
           // post-confirmation history refresh, not a final worker replay.
@@ -728,6 +771,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     flushDeferredReconnect,
     invalidateConversationQueries,
     setExecutionStatusLocal,
+    terminalPredatesAwaitingTurn,
   ])
 
   // Reconnect the SSE stream when the app/window regains focus. While backgrounded the
@@ -869,27 +913,6 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     enabled: !!resolvedAgentId,
     queryFn: fetchActiveExecution,
   })
-
-  // A just-sent turn is optimistically running before its execution is known. The cached
-  // active-execution answer and the previous execution's terminal status were both read before the
-  // send, so neither may clear it. Returns true while `executionId` (the execution a terminalizing
-  // path is about to trust; null for none) cannot speak for the awaiting turn. The turn stops
-  // awaiting once a post-acceptance read succeeded, the stream identified a different execution, or
-  // TURN_DISCOVERY_LIMIT_MS passed.
-  const awaitingTurnBlocks = useCallback((executionId: string | null): boolean => {
-    const turn = awaitingTurnRef.current
-    if (!turn) return false
-    const known = streamedExecIdRef.current ?? announcedExecutionIdRef.current
-    if (
-      turn.confirmed ||
-      Date.now() - turn.sentAt >= TURN_DISCOVERY_LIMIT_MS ||
-      (known !== null && known !== turn.previousExecutionId)
-    ) {
-      awaitingTurnRef.current = null
-      return false
-    }
-    return executionId === null || executionId === turn.previousExecutionId
-  }, [])
 
   // Read the active execution after the server accepted a turn-starting send, so the new execution
   // is found without depending on websocket delivery (often still reconnecting on mobile right after
