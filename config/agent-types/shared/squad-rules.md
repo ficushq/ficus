@@ -335,6 +335,15 @@ or any other artifact a human outside Ficus will see:
 - Keep a single, capable Ficus voice: one system helping the user, not a
   visible collection of agents.
 
+## Diagrams
+
+When a flow, state machine, architecture or sequence is genuinely easier to
+understand as a picture, you may include a Mermaid diagram (a fenced `mermaid`
+code block, usually a `flowchart`) in pull request bodies, review handoffs,
+briefs and plans; the Ficus app and GitHub draw it as a diagram. Use one only
+when it really clarifies something the prose alone does not. It is not a
+default for every message, so keep it small and keep the key facts in the text.
+
 ## Communication
 
 ### Inbox

@@ -10,10 +10,13 @@ import { remarkAgentFileReferences } from '../lib/remarkAgentFileReferences'
 import { parseEntityReference } from '../lib/entityReference'
 import { FileIcon } from './icons'
 import { EntityReferenceLink } from './EntityReferenceLink'
+import { MermaidDiagram } from './MermaidDiagram'
+import { remarkMermaidFences, UNCLOSED_FENCE_ATTRIBUTE } from '../lib/remarkMermaidFences'
 
 const plugins = [
   remarkGfm,
   remarkWorkStreamReferences,
+  remarkMermaidFences,
   // parse and hide frontmatter
   remarkFrontmatter,
 ]
@@ -109,11 +112,15 @@ function Code({ className, children, ...props }: ComponentProps<'code'>) {
 
   // Check if it's a code block (has language) vs inline code
   if (match) {
-    return (
+    const block = (
       <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div">
         {codeString}
       </SyntaxHighlighter>
     )
+    // A fence that is still streaming (no closing fence yet) stays code until it is complete.
+    const unclosed = (props as Record<string, unknown>)[UNCLOSED_FENCE_ATTRIBUTE] !== undefined
+    if (match[1] === 'mermaid' && !unclosed) return <MermaidDiagram source={codeString} fallback={block} />
+    return block
   }
 
   // Inline code
