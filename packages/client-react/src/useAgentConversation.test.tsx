@@ -4483,3 +4483,299 @@ test('the clear count leaves out inbox and monitor deliveries, and send-now coun
     send.mockRestore()
   }
 })
+
+// A send that starts a new turn shows the working indicator optimistically. Until the hook knows the
+// new execution, the cached idle answer and the previous execution's terminal status were both read
+// before the send, so neither may hide the indicator (the mobile "plant blip" while the websocket
+// reconnects and execution.created is missed).
+describe('a turn-starting send keeps the working indicator until its execution is known', () => {
+  type ActiveExecution = Awaited<ReturnType<FicusClient['agents']['getActiveExecution']>>
+  const working = (value: ReturnType<typeof useAgentConversation>) => value.items.some((i) => i.kind === 'working')
+
+  // The quiet backstop compares Date.now(); silent recovery uses performance.now(). Move both together.
+  function sendClock() {
+    const clock = reconciliationClock()
+    const realNow = Date.now.bind(Date)
+    const start = performance.now()
+    const wall = spyOn(Date, 'now').mockImplementation(() => realNow() + (performance.now() - start))
+    return {
+      advance: clock.advance,
+      restore() {
+        wall.mockRestore()
+        clock.restore()
+      },
+    }
+  }
+
+  // An idle agent after a completed turn. 'pinned' keeps the previous execution as the stream's exact
+  // identity (after exact terminal recovery); 'unpinned' is the normal state after a delivered done.
+  async function idleAfterCompletedTurn(pin: 'unpinned' | 'pinned') {
+    const m = makeMockClient({
+      activeExecution:
+        pin === 'pinned' ? { active: true, executionId: 'exec-1', status: 'running' } : { active: false },
+    })
+    const executionReads: string[] = []
+    m.client.agents.getExecution = async (_agentId: string, executionId: string) => {
+      executionReads.push(executionId)
+      return { agentId: 'a', executionId, executionVersion: 2, status: 'completed', active: false }
+    }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const renders: Array<ReturnType<typeof useAgentConversation>> = []
+    const hook = await renderHook(
+      () => {
+        const value = useAgentConversation({ agentId: 'a' })
+        renders.push(value)
+        return value
+      },
+      { wrapper: wrapWith(qc, m.client) }
+    )
+    if (pin === 'pinned') {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-1'))
+      act(() => m.emit({ type: 'text', text: 'first answer', streamGroupId: 'S1' }))
+      // The stream closes without a done; exact recovery reads exec-1 as completed and keeps the pin.
+      await act(async () => {
+        m.triggerDone()
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(hook.result.current.executionStatus).toBe('completed'))
+      m.setActiveExecution({ active: false })
+      await act(async () => {
+        await qc.invalidateQueries({ queryKey: queryKeys.agents.activeExecution('a') })
+      })
+      expect(m.subscribedExecutionIds.at(-1)).toBe('exec-1')
+    } else {
+      act(() => {
+        m.emit({ type: 'agent', agentId: 'a', executionId: 'exec-1' })
+        m.emit({ type: 'text', text: 'first answer', streamGroupId: 'S1' })
+        m.emit({ type: 'done', response: 'first answer', streamGroupId: 'S1', messageIds: ['m1'] })
+      })
+    }
+    expect(hook.result.current.executionStatus).toBe('completed')
+    expect(working(hook.result.current)).toBe(false)
+    executionReads.length = 0
+
+    // Send, let the server accept it, and echo the saved human message (retiring the optimistic row).
+    const sendAndEcho = async (content: string) => {
+      const firstRender = renders.length
+      let handle!: { clientId: string; accepted: Promise<void> }
+      act(() => {
+        handle = hook.result.current.sendAccepted(content)
+      })
+      await act(async () => {
+        await handle.accepted
+      })
+      m.setMessages([
+        {
+          id: 'h2',
+          agentId: 'a',
+          role: 'human',
+          content,
+          pending: false,
+          createdAt: new Date(),
+          metadata: { clientId: handle.clientId },
+        },
+      ])
+      await act(async () => {
+        await qc.invalidateQueries({ queryKey: queryKeys.agents.messages('a') })
+      })
+      await waitFor(() => expect(hook.result.current.items.some((i) => i.kind === 'pending')).toBe(false))
+      return { rendersSinceSend: () => renders.slice(firstRender) }
+    }
+    return { m, qc, hook, executionReads, sendAndEcho }
+  }
+
+  // Server state changes without any websocket or stream event reaching this client.
+  function holdActiveExecutionReads(m: ReturnType<typeof makeMockClient>) {
+    const held: Array<(value: ActiveExecution) => void> = []
+    m.client.agents.getActiveExecution = () => new Promise<ActiveExecution>((resolve) => held.push(resolve))
+    return {
+      count: () => held.length,
+      release: (value: ActiveExecution) => held.splice(0).forEach((resolve) => resolve(value)),
+    }
+  }
+
+  test.each(['unpinned', 'pinned'] as const)(
+    'acceptance reads the active execution and follows the new turn without a websocket event (%s)',
+    async (pin) => {
+      const clock = sendClock()
+      const { m, qc, hook, sendAndEcho } = await idleAfterCompletedTurn(pin)
+      try {
+        m.setActiveExecution({ active: true, executionId: 'exec-2', status: 'queued' })
+        const { rendersSinceSend } = await sendAndEcho('second question')
+        await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-2'))
+        await clock.advance(5000)
+        expect(rendersSinceSend().every(working)).toBe(true)
+        expect(hook.result.current.executionStatus).toBe('running')
+      } finally {
+        hook.unmount()
+        qc.clear()
+        clock.restore()
+      }
+    }
+  )
+
+  test.each(['unpinned', 'pinned'] as const)(
+    'a slow discovery keeps the indicator past the quiet backstop, then follows the new execution (%s)',
+    async (pin) => {
+      const clock = sendClock()
+      const { m, qc, hook, executionReads, sendAndEcho } = await idleAfterCompletedTurn(pin)
+      try {
+        const reads = holdActiveExecutionReads(m)
+        const { rendersSinceSend } = await sendAndEcho('second question')
+        expect(reads.count()).toBeGreaterThan(0)
+        // Well past STREAM_QUIET_MS with no stream event and no answer about the new execution yet.
+        await clock.advance(9000)
+        expect(rendersSinceSend().every(working)).toBe(true)
+        expect(hook.result.current.executionStatus).toBe('running')
+        // The previous execution's terminal status is not consulted for the new turn.
+        expect(executionReads).toEqual([])
+
+        await act(async () => {
+          reads.release({ active: true, executionId: 'exec-2', status: 'running' })
+          await Promise.resolve()
+        })
+        await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-2'))
+        act(() => m.emit({ type: 'text', text: 'second answer', streamGroupId: 'S2' }))
+        expect(rendersSinceSend().every(working)).toBe(true)
+        expect(hook.result.current.executionStatus).toBe('running')
+      } finally {
+        hook.unmount()
+        qc.clear()
+        clock.restore()
+      }
+    }
+  )
+
+  test('silent recovery reading the previous execution as completed does not clear the new turn', async () => {
+    const clock = sendClock()
+    const { m, qc, hook, executionReads, sendAndEcho } = await idleAfterCompletedTurn('unpinned')
+    try {
+      const reads = holdActiveExecutionReads(m)
+      const { rendersSinceSend } = await sendAndEcho('second question')
+      // The silent-open probe fires after 15 quiet seconds against the last announced execution.
+      await clock.advance(16_000)
+      await waitFor(() => expect(executionReads).toEqual(['exec-1']))
+      await clock.advance(0)
+      expect(rendersSinceSend().every(working)).toBe(true)
+      expect(hook.result.current.executionStatus).toBe('running')
+      expect(hook.result.current.streamStatus).toBe('live')
+
+      await act(async () => {
+        reads.release({ active: true, executionId: 'exec-2', status: 'running' })
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-2'))
+      expect(rendersSinceSend().every(working)).toBe(true)
+    } finally {
+      hook.unmount()
+      qc.clear()
+      clock.restore()
+    }
+  })
+
+  test.each(['unpinned', 'pinned'] as const)(
+    'the stuck-running backstop still clears when a read after the send reports the agent idle (%s)',
+    async (pin) => {
+      const clock = sendClock()
+      const { m, qc, hook, sendAndEcho } = await idleAfterCompletedTurn(pin)
+      try {
+        // The server accepted the send but no execution is active (it never started or already ended).
+        let reads = 0
+        m.client.agents.getActiveExecution = async () => {
+          reads++
+          return { active: false }
+        }
+        await sendAndEcho('second question')
+        await waitFor(() => expect(reads).toBeGreaterThan(0))
+        expect(working(hook.result.current)).toBe(true)
+        await clock.advance(5000)
+        await waitFor(() => expect(working(hook.result.current)).toBe(false))
+        expect(hook.result.current.executionStatus).toBe('completed')
+      } finally {
+        hook.unmount()
+        qc.clear()
+        clock.restore()
+      }
+    }
+  )
+
+  test('a slow send acceptance is not answered by a read that started before the server accepted it', async () => {
+    const clock = sendClock()
+    const { m, qc, hook } = await idleAfterCompletedTurn('unpinned')
+    try {
+      let reads = 0
+      m.client.agents.getActiveExecution = async () => {
+        reads++
+        return { active: true, executionId: 'exec-2', status: 'queued' }
+      }
+      m.holdNextSend()
+      let accepted!: Promise<void>
+      act(() => {
+        accepted = hook.result.current.sendAccepted('second question').accepted
+      })
+      // The quiet backstop fires while the request is still outstanding: no discovery read yet.
+      await clock.advance(5000)
+      expect(reads).toBe(0)
+      expect(working(hook.result.current)).toBe(true)
+      await act(async () => {
+        m.releaseNextSend()
+        await accepted
+      })
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-2'))
+      expect(reads).toBe(1)
+      expect(working(hook.result.current)).toBe(true)
+    } finally {
+      hook.unmount()
+      qc.clear()
+      clock.restore()
+    }
+  })
+
+  test('a send whose execution can never be read still clears after the discovery limit', async () => {
+    const clock = sendClock()
+    const { m, qc, hook, sendAndEcho } = await idleAfterCompletedTurn('unpinned')
+    try {
+      let reads = 0
+      m.client.agents.getActiveExecution = async () => {
+        reads++
+        throw new Error('offline')
+      }
+      await sendAndEcho('second question')
+      await clock.advance(20_000)
+      expect(working(hook.result.current)).toBe(true)
+      // Failed reads are retried while waiting, but boundedly.
+      expect(reads).toBeGreaterThan(1)
+      expect(reads).toBeLessThanOrEqual(8)
+      await clock.advance(15_000)
+      await waitFor(() => expect(working(hook.result.current)).toBe(false))
+      expect(hook.result.current.executionStatus).toBe('completed')
+    } finally {
+      hook.unmount()
+      qc.clear()
+      clock.restore()
+    }
+  })
+
+  test('a send into a running turn keeps the existing queued-intervention behavior', async () => {
+    const m = makeMockClient({ activeExecution: { active: true, executionId: 'exec-1', status: 'running' } })
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-1'))
+      act(() => m.emit({ type: 'text', text: 'working', streamGroupId: 'S1' }))
+      let reads = 0
+      m.client.agents.getActiveExecution = async () => {
+        reads++
+        return { active: true, executionId: 'exec-1', status: 'running' }
+      }
+      m.runNextSendIntoActiveTurn()
+      await act(async () => {
+        await hook.result.current.sendAccepted('also this').accepted
+      })
+      expect(hook.result.current.queuedCount).toBe(1)
+      // No extra discovery read for an intervention into a known execution.
+      expect(reads).toBe(0)
+    } finally {
+      hook.unmount()
+    }
+  })
+})

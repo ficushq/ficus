@@ -41,6 +41,10 @@ import {
 // terminalize a locally-busy state. Guards the backstop against a lagging activeExecution refetch
 // clearing a turn that is actually mid-flight or was just sent (the refetch trails the SSE).
 const STREAM_QUIET_MS = 4000
+// Upper bound on how long a just-sent turn may stay optimistically busy while its execution is
+// still unknown (no successful post-acceptance read and no stream identity). Past it, the terminal
+// backstop behaves as before, so a send that never starts cannot leave the indicator stuck.
+const TURN_DISCOVERY_LIMIT_MS = 30_000
 // Legacy creation events retain a bounded conservative post-arrival barrier.
 const CREATED_MESSAGE_BARRIER_MS = 5000
 const MESSAGE_RECONCILE_REQUEST_MS = 30_000
@@ -137,6 +141,19 @@ function nextClientId(): string {
   return `pending-${Date.now()}-${pendingCounter}`
 }
 
+/** A turn-starting send whose execution the hook has not discovered yet. */
+interface AwaitingTurn {
+  clientId: string
+  /** The execution the hook knew about when the send started; its terminal status predates the turn. */
+  previousExecutionId: string | null
+  sentAt: number
+  /** The server accepted the send, so it has created (or queued) the turn's execution. */
+  accepted: boolean
+  /** A read of the active execution that started after the server accepted the send succeeded. */
+  confirmed: boolean
+  discovering: boolean
+}
+
 type PendingAction =
   | { type: 'reset' }
   | { type: 'add'; item: PendingItem }
@@ -213,6 +230,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   const highestExecutionVersionRef = useRef(new Map<string, number>())
   const terminalExecutionStatusesRef = useRef(new Map<string, ExecutionStatus>())
   const announcedExecutionIdRef = useRef<string | null>(null)
+  const awaitingTurnRef = useRef<AwaitingTurn | null>(null)
   const executionStatusRef = useRef<ExecutionStatus | null>(null)
   // True while the server has signaled (via execution_phase:waiting_sandbox) that backend-reported
   // blocking sandbox setup/reconciliation outlasted its debounce — distinct from generic
@@ -566,6 +584,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       terminalHistoryAfterRef.current.clear()
       terminalExecutionStatusesRef.current.clear()
       announcedExecutionIdRef.current = null
+      awaitingTurnRef.current = null
       recoveryAttemptsRef.current.clear()
       previousLiveStatusRef.current = null
       lastStreamAtRef.current = 0
@@ -841,11 +860,61 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   // it on execution.* events — a live feed without coupling this hook to any websocket. Used to seed
   // the initial status and to terminalize a stuck-running state (a dropped SSE 'done'); the live
   // signal trails the SSE, so it never *drives* the indicator, only backs it up.
+  const fetchActiveExecution = useCallback(
+    () => client.agents.getActiveExecution(resolvedAgentId!),
+    [client, resolvedAgentId]
+  )
   const activeExecutionQuery = useQuery({
     queryKey: queryKeys.agents.activeExecution(resolvedAgentId ?? '__none__'),
     enabled: !!resolvedAgentId,
-    queryFn: () => client.agents.getActiveExecution(resolvedAgentId!),
+    queryFn: fetchActiveExecution,
   })
+
+  // A just-sent turn is optimistically running before its execution is known. The cached
+  // active-execution answer and the previous execution's terminal status were both read before the
+  // send, so neither may clear it. Returns true while `executionId` (the execution a terminalizing
+  // path is about to trust; null for none) cannot speak for the awaiting turn. The turn stops
+  // awaiting once a post-acceptance read succeeded, the stream identified a different execution, or
+  // TURN_DISCOVERY_LIMIT_MS passed.
+  const awaitingTurnBlocks = useCallback((executionId: string | null): boolean => {
+    const turn = awaitingTurnRef.current
+    if (!turn) return false
+    const known = streamedExecIdRef.current ?? announcedExecutionIdRef.current
+    if (
+      turn.confirmed ||
+      Date.now() - turn.sentAt >= TURN_DISCOVERY_LIMIT_MS ||
+      (known !== null && known !== turn.previousExecutionId)
+    ) {
+      awaitingTurnRef.current = null
+      return false
+    }
+    return executionId === null || executionId === turn.previousExecutionId
+  }, [])
+
+  // Read the active execution after the server accepted a turn-starting send, so the new execution
+  // is found without depending on websocket delivery (often still reconnecting on mobile right after
+  // the app returns to the foreground). The first attempt cancels any read already in flight: it
+  // may have started before the send. Every read started later is post-acceptance evidence.
+  const discoverAwaitingTurn = useCallback(
+    async (turn: AwaitingTurn, cancelEarlierRead: boolean) => {
+      if (!resolvedAgentId || !turn.accepted || turn.discovering) return
+      turn.discovering = true
+      const queryKey = queryKeys.agents.activeExecution(resolvedAgentId)
+      try {
+        if (cancelEarlierRead) await queryClient.cancelQueries({ queryKey, exact: true })
+        await queryClient.fetchQuery({ queryKey, queryFn: fetchActiveExecution, staleTime: 0 })
+        turn.confirmed = true
+      } catch {
+        // Not evidence either way. The terminal backstop retries until the discovery limit.
+      } finally {
+        turn.discovering = false
+        // Re-run the backstop: a fresh idle answer can be structurally equal to the cached one.
+        if (awaitingTurnRef.current === turn) bumpTick()
+      }
+    },
+    [resolvedAgentId, queryClient, fetchActiveExecution]
+  )
+
   // `serverActive`: true/false once the query resolves, null while it hasn't. The endpoint only ever
   // reports a *busy* execution (queued/running/stopping); once the turn ends there is no active
   // execution, so it returns { active: false } with NO status. Treat that active:false as the idle
@@ -911,6 +980,15 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       const timer = setTimeout(() => {
         if (Date.now() - lastStreamAtRef.current < STREAM_QUIET_MS) return
         const executionId = streamedExecIdRef.current
+        const turn = awaitingTurnRef.current
+        if (turn && awaitingTurnBlocks(executionId)) {
+          // The idle answer (or the pinned previous execution) predates a just-sent turn. Once the
+          // send is accepted, look for the new execution instead. Re-arm either way so the discovery
+          // limit still bounds the wait.
+          void discoverAwaitingTurn(turn, false)
+          bumpTick()
+          return
+        }
         if (!executionId || !resolvedAgentId) {
           // Legacy streams have no exact identity to query.
           setExecutionStatusLocal(liveStatus ?? 'completed')
@@ -959,6 +1037,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     client,
     invalidateConversationQueries,
     setExecutionStatusLocal,
+    awaitingTurnBlocks,
+    discoverAwaitingTurn,
   ])
 
   // A silent *open* connection cannot rely on EOF, focus or a cached busy query.
@@ -1086,13 +1166,17 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
             execution.executionVersion >= highest
           ) {
             highestExecutionVersionRef.current.set(executionId, execution.executionVersion)
-            if (['completed', 'failed', 'stopped'].includes(execution.status)) {
+            const terminal = ['completed', 'failed', 'stopped'].includes(execution.status)
+            if (terminal) {
               terminalExecutionStatusesRef.current.set(executionId, execution.status)
-              setStreamStatus('ended')
               if (!terminalHistoryAfterRef.current.has(executionId))
                 terminalHistoryAfterRef.current.set(executionId, historyAfter)
             }
-            setExecutionStatusLocal(execution.status)
+            // The previous execution finishing says nothing about a just-sent turn.
+            if (!terminal || !awaitingTurnBlocks(executionId)) {
+              if (terminal) setStreamStatus('ended')
+              setExecutionStatusLocal(execution.status)
+            }
           }
         }
         // Even a failed exact read is not permission to drop content/clear busy.
@@ -1117,6 +1201,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     client,
     invalidateConversationQueries,
     setExecutionStatusLocal,
+    awaitingTurnBlocks,
   ])
 
   // 3. Pending store. An echo acknowledges an optimistic row permanently; merely
@@ -1147,9 +1232,18 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         const queued = result.queued ?? (result.status === 'running' || item.queued === true)
         rememberQueueState(item.clientId, queued)
         dispatch({ type: 'status', clientId: item.clientId, status: queued ? 'queued' : 'sending', queued })
+        const turn = awaitingTurnRef.current
+        if (turn?.clientId === item.clientId) {
+          // Queued into a running execution: nothing new to discover.
+          if (queued) awaitingTurnRef.current = null
+          else {
+            turn.accepted = true
+            void discoverAwaitingTurn(turn, true)
+          }
+        }
       }
     },
-    [resolvedAgentId, client, rememberQueueState]
+    [resolvedAgentId, client, rememberQueueState, discoverAwaitingTurn]
   )
 
   const fireCreate = useCallback(
@@ -1272,6 +1366,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
 
   const markSendFailed = useCallback(
     (item: PendingItem) => {
+      if (awaitingTurnRef.current?.clientId === item.clientId) awaitingTurnRef.current = null
       // A submission error says nothing about the execution already processing other work.
       if (item.queued === true) return
       if (storeRef.current!.snapshot().some((group) => !group.done && !group.errored && !group.flushed)) return
@@ -1280,18 +1375,32 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     [setExecutionStatusLocal]
   )
 
-  const markOptimisticallyRunning = useCallback(() => {
-    lastStreamAtRef.current = Date.now()
-    activityAtRef.current = performance.now()
-    activitySequenceRef.current = ++conversationActivitySequence
-    setExecutionStatusLocal('running')
-  }, [setExecutionStatusLocal])
+  const markOptimisticallyRunning = useCallback(
+    (item: PendingItem) => {
+      lastStreamAtRef.current = Date.now()
+      activityAtRef.current = performance.now()
+      activitySequenceRef.current = ++conversationActivitySequence
+      // A send into a busy agent queues behind a known execution; only a turn-starting send waits
+      // for a new one. The create flow resolves its agent from its own stream.
+      if (!item.queued && resolvedAgentId)
+        awaitingTurnRef.current = {
+          clientId: item.clientId,
+          previousExecutionId: streamedExecIdRef.current ?? announcedExecutionIdRef.current,
+          sentAt: Date.now(),
+          accepted: false,
+          confirmed: false,
+          discovering: false,
+        }
+      setExecutionStatusLocal('running')
+    },
+    [setExecutionStatusLocal, resolvedAgentId]
+  )
 
   const send = useCallback(
     (content: string, opts?: SendOpts): string => {
       const item = optimisticItem(content, opts)
       dispatch({ type: 'add', item })
-      markOptimisticallyRunning()
+      markOptimisticallyRunning(item)
       void beginSend(item).catch(() => {
         dispatch({ type: 'status', clientId: item.clientId, status: 'failed' })
         markSendFailed(item)
@@ -1305,7 +1414,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     (content: string, opts?: SendOpts & { clientId?: string }): SendAcceptanceHandle => {
       const item = optimisticItem(content, opts)
       dispatch({ type: 'add', item })
-      markOptimisticallyRunning()
+      markOptimisticallyRunning(item)
       const accepted = beginSend(item).catch((error) => {
         // The composer still owns this pre-acceptance attempt and will retain its
         // local assets for retry, so remove the hook's duplicate optimistic row.
@@ -1324,7 +1433,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       if (!item) return
       const retryItem = { ...item, status: 'sending' as const }
       dispatch({ type: 'status', clientId, status: 'sending' })
-      markOptimisticallyRunning()
+      markOptimisticallyRunning(retryItem)
       void beginSend(retryItem).catch(() => {
         dispatch({ type: 'status', clientId, status: 'failed' })
         markSendFailed(item)
