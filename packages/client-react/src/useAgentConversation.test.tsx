@@ -4756,6 +4756,158 @@ describe('a turn-starting send keeps the working indicator until its execution i
     }
   })
 
+  // Returning to the foreground replaces the stream. A pinned replacement first reports the previous
+  // execution's terminal snapshot; an unpinned one replays the previous turn ending in its done.
+  // Neither speaks for the just-sent turn.
+  function returnToForeground() {
+    act(() => focusManager.setFocused(false))
+    act(() => focusManager.setFocused(true))
+  }
+
+  test('a pinned resubscription reporting the previous execution as completed does not clear the new turn', async () => {
+    const clock = sendClock()
+    const { m, qc, hook, sendAndEcho } = await idleAfterCompletedTurn('pinned')
+    try {
+      const reads = holdActiveExecutionReads(m)
+      const { rendersSinceSend } = await sendAndEcho('second question')
+      const subscriptions = m.subscribeCount()
+      returnToForeground()
+      await waitFor(() => expect(m.subscribeCount()).toBeGreaterThan(subscriptions))
+      expect(m.subscribedExecutionIds.at(-1)).toBe('exec-1')
+      act(() => m.emit({ type: 'execution_snapshot', executionId: 'exec-1', executionVersion: 3, status: 'completed' }))
+      expect(rendersSinceSend().every(working)).toBe(true)
+      expect(hook.result.current.executionStatus).toBe('running')
+
+      await act(async () => {
+        reads.release({ active: true, executionId: 'exec-2', status: 'running' })
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-2'))
+      expect(rendersSinceSend().every(working)).toBe(true)
+    } finally {
+      hook.unmount()
+      qc.clear()
+      clock.restore()
+    }
+  })
+
+  test('a pinned stream ending before its snapshot does not clear the new turn from the previous execution', async () => {
+    const clock = sendClock()
+    const { m, qc, hook, executionReads, sendAndEcho } = await idleAfterCompletedTurn('pinned')
+    try {
+      holdActiveExecutionReads(m)
+      const { rendersSinceSend } = await sendAndEcho('second question')
+      // The pinned transport fails; exact recovery reads exec-1, which completed before the send.
+      await act(async () => {
+        m.triggerError()
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(executionReads).toEqual(['exec-1']))
+      await clock.advance(0)
+      expect(rendersSinceSend().every(working)).toBe(true)
+      expect(hook.result.current.executionStatus).toBe('running')
+    } finally {
+      hook.unmount()
+      qc.clear()
+      clock.restore()
+    }
+  })
+
+  test("an unpinned resubscription replaying the previous turn's done does not clear the new turn", async () => {
+    const clock = sendClock()
+    const { m, qc, hook, sendAndEcho } = await idleAfterCompletedTurn('unpinned')
+    try {
+      const reads = holdActiveExecutionReads(m)
+      const { rendersSinceSend } = await sendAndEcho('second question')
+      const subscriptions = m.subscribeCount()
+      returnToForeground()
+      await waitFor(() => expect(m.subscribeCount()).toBeGreaterThan(subscriptions))
+      expect(m.subscribedExecutionIds.at(-1)).toBeUndefined()
+      act(() =>
+        m.emitCatchup([
+          { type: 'agent', agentId: 'a', executionId: 'exec-1' },
+          { type: 'text', text: 'first answer', streamGroupId: 'S1' },
+          { type: 'done', response: 'first answer', streamGroupId: 'S1', messageIds: ['m1'] },
+        ])
+      )
+      expect(rendersSinceSend().every(working)).toBe(true)
+      expect(hook.result.current.executionStatus).toBe('running')
+      // A live replay of the same done is held back the same way.
+      act(() => m.emit({ type: 'done', response: 'first answer', streamGroupId: 'S1', messageIds: ['m1'] }))
+      expect(hook.result.current.executionStatus).toBe('running')
+
+      await act(async () => {
+        reads.release({ active: true, executionId: 'exec-2', status: 'running' })
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('exec-2'))
+      expect(rendersSinceSend().every(working)).toBe(true)
+    } finally {
+      hook.unmount()
+      qc.clear()
+      clock.restore()
+    }
+  })
+
+  test.each(['unpinned', 'pinned'] as const)(
+    'the awaited turn finishing still clears the indicator after a replay of the previous turn (%s)',
+    async (pin) => {
+      const clock = sendClock()
+      const { m, qc, hook, sendAndEcho } = await idleAfterCompletedTurn(pin)
+      try {
+        holdActiveExecutionReads(m)
+        await sendAndEcho('second question')
+        returnToForeground()
+        act(() =>
+          m.emitCatchup(
+            pin === 'pinned'
+              ? [{ type: 'execution_snapshot', executionId: 'exec-1', executionVersion: 3, status: 'completed' }]
+              : [
+                  { type: 'agent', agentId: 'a', executionId: 'exec-1' },
+                  { type: 'done', response: 'first answer', streamGroupId: 'S1', messageIds: ['m1'] },
+                ]
+          )
+        )
+        expect(working(hook.result.current)).toBe(true)
+        act(() => {
+          m.emit({ type: 'agent', agentId: 'a', executionId: 'exec-2' })
+          m.emit({ type: 'text', text: 'second answer', streamGroupId: 'S2' })
+          m.emit({ type: 'done', response: 'second answer', streamGroupId: 'S2', messageIds: ['m2'] })
+        })
+        expect(hook.result.current.executionStatus).toBe('completed')
+        expect(working(hook.result.current)).toBe(false)
+      } finally {
+        hook.unmount()
+        qc.clear()
+        clock.restore()
+      }
+    }
+  )
+
+  test('a failed send still clears the indicator despite a replay of the previous turn', async () => {
+    const { m, qc, hook } = await idleAfterCompletedTurn('unpinned')
+    try {
+      holdActiveExecutionReads(m)
+      m.failNextSend()
+      act(() => {
+        hook.result.current.send('second question')
+      })
+      await waitFor(() => expect(hook.result.current.executionStatus).toBe('failed'))
+      expect(working(hook.result.current)).toBe(false)
+      // With no send pending, a replay of the previous turn behaves as before.
+      act(() =>
+        m.emitCatchup([
+          { type: 'agent', agentId: 'a', executionId: 'exec-1' },
+          { type: 'done', response: 'first answer', streamGroupId: 'S1', messageIds: ['m1'] },
+        ])
+      )
+      expect(hook.result.current.executionStatus).toBe('completed')
+    } finally {
+      hook.unmount()
+      qc.clear()
+    }
+  })
+
   test('a send into a running turn keeps the existing queued-intervention behavior', async () => {
     const m = makeMockClient({ activeExecution: { active: true, executionId: 'exec-1', status: 'running' } })
     const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
