@@ -1696,6 +1696,26 @@ if yq_is_mikefarah; then
 else
   log_warn "mikefarah yq not on PATH — skipping the user_data YAML cases"
 fi
+# First-boot packages: cloud-init installs setup-host.sh's source tools so the
+# apt work overlaps provision.sh's SSH wait and toolkit push.
+mkdir -p "${HK_TMP}/gen-pkgs"
+generate_vm_host_key "${HK_TMP}/gen-pkgs"
+hk_ud_pkgs=$(vm_host_key_user_data "${HK_TMP}/gen-pkgs" jq unzip ca-certificates)
+if yq_is_mikefarah; then
+  expect_eq 'vm_host_key_user_data: no packages, no first-boot apt work' \
+    "$(yq -o=json -I=0 '[has("packages"), has("package_update")]' "${hk_ud}")" '[false,false]'
+  expect_eq 'vm_host_key_user_data: packages are installed on first boot' \
+    "$(yq -o=json -I=0 '.packages' "${hk_ud_pkgs}")" '["jq","unzip","ca-certificates"]'
+  expect_eq 'vm_host_key_user_data: with an apt index refresh, no upgrade' \
+    "$(yq -o=json -I=0 '[.package_update, has("package_upgrade")]' "${hk_ud_pkgs}")" '[true,false]'
+  expect_eq 'vm_host_key_user_data: packages do not disturb the host key' \
+    "$(yq '.ssh_keys.ed25519_public' "${hk_ud_pkgs}")" "$(awk '{ print $1 " " $2 }' "${HK_TMP}/gen-pkgs/ssh_host_ed25519_key.pub")"
+fi
+expect_eq 'host_source_tool_packages: git modes need git' "$(host_source_tool_packages git-https)" 'git curl jq openssl unzip'
+expect_eq 'host_source_tool_packages: artifact mode never clones' "$(host_source_tool_packages artifact)" 'curl jq openssl unzip'
+expect_match 'setup-host.sh prepare_source_tools: checks the shared source-tool list' \
+  "$(sed -n '/^prepare_source_tools() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'host_source_tool_packages "\$\{SRC_MODE\}"'
+
 expect_eq 'hcloud_server_create_body: carries user_data from the file' \
   "$(hcloud_server_create_body acme cx32 fsn1 ubuntu-24.04 k "${hk_ud}" | jq -r .user_data)" "$(cat "${hk_ud}")"
 expect_eq 'do_droplet_create_body: carries user_data from the file' \
@@ -2906,6 +2926,8 @@ EOF
   expect_eq 'host keys, hetzner create: user_data is cloud-config' "$(head -n1 <<<"${hkp_ud}")" '#cloud-config'
   hkp_pub=$(yq '.ssh_keys.ed25519_public' <<<"${hkp_ud}")
   expect_match 'host keys, hetzner create: user_data installs an ed25519 host key' "${hkp_pub}" '^ssh-ed25519 [A-Za-z0-9+/=]+$'
+  expect_eq 'first boot, hetzner create: user_data installs the source tools (git-https)' \
+    "$(yq -o=json -I=0 '.packages' <<<"${hkp_ud}")" '["git","curl","jq","openssl","unzip","ca-certificates"]'
   (umask 077 && yq '.ssh_keys.ed25519_private' <<<"${hkp_ud}" >"${HKP}/priv")
   expect_eq 'host keys, hetzner create: user_data private key matches its public key' \
     "$(ssh-keygen -y -f "${HKP}/priv" | awk '{ print $1 " " $2 }')" "${hkp_pub}"
@@ -3018,6 +3040,8 @@ EOF
   expect_eq 'host keys, digitalocean create: succeeds non-interactively with no fingerprint supplied' "${hkp_rc}" '0'
   hkp_pub=$(jq -r '.user_data' "${HKP}/post.json" | yq '.ssh_keys.ed25519_public')
   expect_match 'host keys, digitalocean create: user_data installs an ed25519 host key' "${hkp_pub}" '^ssh-ed25519 '
+  expect_eq 'first boot, digitalocean create: user_data installs the source tools' \
+    "$(jq -r '.user_data' "${HKP}/post.json" | yq -o=json -I=0 '[.package_update, .packages]')" '[true,["git","curl","jq","openssl","unzip","ca-certificates"]]'
   expect_eq 'host keys, digitalocean create: ssh knows exactly that key for the droplet IP' \
     "$(sort -u "${HKP}/ssh/known_hosts")" "198.51.100.10 ${hkp_pub}"
   expect_eq 'host keys, digitalocean create: the key is saved by provider and droplet id' \
@@ -7679,6 +7703,132 @@ expect_eq "wait_for_first_boot_apt: no cloud-init is a no-op" "${rc}:$([[ -e ${A
 unset -f apt-get apt_calls timeout
 eval "${APT_SAVED_AS_ROOT}"
 rm -rf "${APT_T}"
+
+# ------------------------------------------------ one apt pass per host
+# host_missing_packages / install_host_packages with `have` answering from a
+# list of installed commands, and every host-changing call recorded.
+OAP_T=$(mktemp -d)
+oap_have() { [[ " ${OAP_INSTALLED:-} " == *" $1 "* ]]; }
+oap_missing() { # INSTALLED FAIL2BAN DB_MODE POOL CADDY
+  (
+    OAP_INSTALLED=$1
+    have() { oap_have "$@"; }
+    host_missing_packages "${@:2}" | tr '\n' ' '
+  )
+}
+expect_eq 'host_missing_packages: a fresh tenant (external db, pooler, caddy, fail2ban)' \
+  "$(oap_missing '' true external true true)" 'fail2ban postgresql-client pgbouncer caddy '
+expect_eq 'host_missing_packages: a self-hosted default (container db, nothing else)' \
+  "$(oap_missing '' false container false false)" 'docker.io '
+expect_eq 'host_missing_packages: pgbouncer only with external mode and pooling on' \
+  "$(oap_missing '' false container true false)$(oap_missing '' false external false false)" 'docker.io postgresql-client '
+expect_eq 'host_missing_packages: everything present is nothing to install' \
+  "$(oap_missing 'fail2ban-client pg_dump pgbouncer caddy' true external true true)" ''
+expect_eq 'host_missing_packages: only what is missing' \
+  "$(oap_missing 'fail2ban-client pg_dump' true external true true)" 'pgbouncer caddy '
+
+oap_run() { # INSTALLED FAIL2BAN DB_MODE POOL CADDY — prints every recorded call
+  : >"${OAP_T}/log"
+  (
+    OAP_INSTALLED=$1
+    have() { oap_have "$@"; }
+    as_root() { printf 'as_root %s\n' "$*" >>"${OAP_T}/log"; }
+    apt_update() { echo apt_update >>"${OAP_T}/log"; }
+    pgdg_apt_source_install() { echo pgdg_apt_source_install >>"${OAP_T}/log"; }
+    caddy_apt_source_install() { echo caddy_apt_source_install >>"${OAP_T}/log"; }
+    log_info() { :; }
+    install_host_packages "${@:2}"
+  )
+  cat "${OAP_T}/log"
+}
+expect_eq 'install_host_packages: a fresh tenant gets both sources, ONE update and ONE install' \
+  "$(oap_run '' true external true true)" 'pgdg_apt_source_install
+caddy_apt_source_install
+apt_update
+as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban postgresql-client pgbouncer caddy
+as_root systemctl disable --now pgbouncer.service'
+expect_eq 'install_host_packages: distro-only packages register no third-party source' \
+  "$(oap_run '' true container false false)" 'apt_update
+as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban docker.io'
+expect_eq 'install_host_packages: a re-run with everything present makes no apt call' \
+  "$(oap_run 'fail2ban-client pg_dump pgbouncer caddy' true external true true)" ''
+expect_eq 'install_host_packages: an apt failure stops setup' \
+  "$(bash -c 'set -euo pipefail; source "$1"; have() { return 1; }; as_root() { return 100; }; apt_update() { :; }; pgdg_apt_source_install() { :; }; log_info() { :; }; install_host_packages false external false false; echo unreachable' _ "${SCRIPT_DIR}/lib.sh" 2>/dev/null; echo "rc=$?")" 'rc=100'
+
+# The source registrations: fetched to temp files, refused when empty, and
+# only then installed.
+oap_source() { # FUNCTION CURL_MODE(ok|empty|fail) — prints recorded calls; rc last
+  local rc=0
+  : >"${OAP_T}/log"
+  (
+    OAP_CURL=$2
+    curl() {
+      local out='' a prev=''
+      for a in "$@"; do
+        [[ ${prev} == -o ]] && out=$a
+        prev=$a
+      done
+      echo "curl ${*: -1}" >>"${OAP_T}/log"
+      case ${OAP_CURL} in
+        ok) echo 'key-or-list' >"${out}" ;;
+        empty) : >"${out}" ;;
+        fail) return 22 ;;
+      esac
+    }
+    as_root() { printf 'as_root %s\n' "$*" >>"${OAP_T}/log"; }
+    install_rendered() { printf 'install_rendered %s\n' "$*" >>"${OAP_T}/log"; }
+    "$1"
+  ) 2>"${OAP_T}/err" || rc=$?
+  cat "${OAP_T}/log"
+  echo "rc=${rc}"
+}
+oap_out=$(oap_source pgdg_apt_source_install ok)
+expect_match 'pgdg_apt_source_install: fetches the PGDG key' "${oap_out}" 'curl https://www\.postgresql\.org/media/keys/ACCC4CF8\.asc'
+expect_match 'pgdg_apt_source_install: installs the key it fetched' "${oap_out}" 'as_root install -m 0644 [^ ]+ /usr/share/postgresql-common/pgdg/apt\.postgresql\.org\.asc'
+expect_match 'pgdg_apt_source_install: writes the signed-by source list' "${oap_out}" 'install_rendered 0644 root root /etc/apt/sources\.list\.d/pgdg\.list printf deb \[signed-by=/usr/share/postgresql-common/pgdg/apt\.postgresql\.org\.asc\]'
+expect_not_match 'pgdg_apt_source_install: never runs apt itself (the caller updates once)' "${oap_out}" 'apt-get|apt_update'
+oap_out=$(oap_source pgdg_apt_source_install empty)
+expect_eq 'pgdg_apt_source_install: an empty key installs nothing' "${oap_out}" 'curl https://www.postgresql.org/media/keys/ACCC4CF8.asc
+rc=1'
+expect_match 'pgdg_apt_source_install: ...and says why' "$(cat "${OAP_T}/err")" 'PGDG: .* returned an empty file'
+oap_out=$(oap_source caddy_apt_source_install ok)
+expect_match 'caddy_apt_source_install: dearmors the cloudsmith key into its own keyring' "${oap_out}" 'as_root gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring\.gpg'
+expect_match 'caddy_apt_source_install: installs the fetched list' "${oap_out}" 'as_root install -m 0644 [^ ]+ /etc/apt/sources\.list\.d/caddy-stable\.list'
+expect_match 'caddy_apt_source_install: fetches debian.deb.txt (debian.txt 404s)' "${oap_out}" 'curl https://dl\.cloudsmith\.io/public/caddy/stable/debian\.deb\.txt'
+oap_out=$(oap_source caddy_apt_source_install fail)
+expect_eq 'caddy_apt_source_install: a failed fetch installs nothing' "${oap_out}" 'curl https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+rc=1'
+oap_out=$(oap_source caddy_apt_source_install empty)
+expect_not_match 'caddy_apt_source_install: an empty key or list installs nothing' "${oap_out}" 'as_root'
+
+# install_caddy (shared with the control-plane setup) keeps its own two-update
+# sequence and simply skips when the one pass already installed caddy.
+oap_caddy=$( (
+  have() { [[ $1 == caddy ]] && [[ ${OAP_HAVE_CADDY:-0} == 1 ]]; }
+  as_root() { printf 'as_root %s\n' "$*"; }
+  apt_update() { echo apt_update; }
+  caddy_apt_source_install() { echo caddy_apt_source_install; }
+  log_info() { :; }
+  install_caddy
+))
+expect_eq 'install_caddy: unchanged sequence on its own' "${oap_caddy}" 'apt_update
+as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
+caddy_apt_source_install
+apt_update
+as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy'
+expect_eq 'install_caddy: skips when caddy is present' \
+  "$( (OAP_HAVE_CADDY=1; have() { [[ $1 == caddy ]]; }; apt_update() { echo apt_update; }; install_caddy))" ''
+
+# setup-host.sh phase_preflight: the pass runs after every config check (so a
+# bad config installs nothing) and before the per-feature steps it feeds.
+oap_pf=$(sed -n '/^phase_preflight() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")
+expect_eq 'phase_preflight: one install_host_packages call with the four settings' \
+  "$(grep -c 'install_host_packages "\${FAIL2BAN_ON}" "\${DB_MODE}" "\${POOL_ENABLED}" "\${CADDY_ENABLE}"' <<<"${oap_pf}")" 1
+expect_eq 'phase_preflight: the pass comes after the config checks and before the per-feature steps' \
+  "$(awk '/CADDY_KEY_PATH\} \]\] \|\| die/{k=NR} /DB_CA_PATH\} \]\] \|\| die/{c=NR} /^  install_host_packages /{p=NR} /^    ensure_fail2ban /{f=NR} /^      pgdg_apt_source_install$/{g=NR} END{print (k && c && p > k && p > c && f > p && g > p) ? "ordered" : "misordered"}' <<<"${oap_pf}")" ordered
+expect_match 'phase_preflight: pg_dump is verified even when the pass installed it' \
+  "${oap_pf}" '    fi'$'\n''    require_cmd pg_dump'
+rm -rf "${OAP_T}"
 
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]
