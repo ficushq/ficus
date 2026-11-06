@@ -36,8 +36,11 @@ log_step() { printf '\n%s %s==>%s %s\n' "$(_ts)" "$_C_STEP" "$_C_OFF" "$*" >&2 |
 
 # Total number of phase_step call sites in setup-host.sh. Pinned by a test in
 # lib.test.sh so adding a phase without a marker fails CI rather than silently
-# freezing a customer's progress display.
-FICUS_PHASE_TOTAL=14
+# freezing a customer's progress display. provision.sh reports its own outer
+# steps (vm, ssh, push) from a separate process with its own counter, so it
+# overrides this total after sourcing lib.sh; see the README's "Progress
+# markers" section for the full slug vocabulary and order.
+FICUS_PHASE_TOTAL=15
 _ficus_phase_n=0
 
 # Announce a phase on two channels at once:

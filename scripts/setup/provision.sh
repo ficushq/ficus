@@ -22,6 +22,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
+# This process reports its own outer steps (vm, ssh, push) through phase_step;
+# setup-host.sh, a separate process on the VM, then counts its own phases from
+# 1 against lib.sh's total. Ordinals are diagnostics only — the slug is the
+# contract. Pinned to the number of phase_step call sites here by lib.test.sh.
+FICUS_PHASE_TOTAL=3
 
 usage() {
   cat <<'EOF'
@@ -887,10 +892,10 @@ dns_upsert_a_record_cloudflare() { # HOST IP
   fi
 }
 
-log_step "step 1/5: provision VM (${PROVIDER})"
+phase_step vm "step 1/5: provision VM (${PROVIDER})"
 provision_vm
 
-log_step "step 2/5: wait for SSH at ${SSH_USER}@${VM_HOST}"
+phase_step ssh "step 2/5: wait for SSH at ${SSH_USER}@${VM_HOST}"
 retry_until 300 5 "SSH to ${SSH_USER}@${VM_HOST}" vm_ssh_ok ||
   die_unreachable_vm
 log_info "SSH is up"
@@ -905,7 +910,7 @@ cleanup_remote_secrets() {
 }
 trap 'cleanup_remote_secrets; cleanup_host_key_material' EXIT
 
-log_step "step 3/5: push toolkit + config + credentials"
+phase_step push "step 3/5: push toolkit + config + credentials"
 
 # Every unit template setup-host.sh (and the lib.sh installers it calls)
 # renders from ${REMOTE_DIR}/systemd on the VM. ONE list, read by both the
@@ -1018,6 +1023,8 @@ log_info "pushed toolkit, config, keys$( ((SECRETS_PUSHED)) && printf ', secrets
 
 # ---------------------------------------------------------- step 4: run setup
 
+# No marker of its own: setup-host.sh's first act is its `packages` marker,
+# so this step's own time (one SSH connect) is never a phase worth measuring.
 log_step "step 4/5: run setup-host.sh on ${VM_HOST} (streaming output)"
 "${SSH_BASE[@]}" "${SSH_USER}@${VM_HOST}" "${REMOTE_CMD}"
 

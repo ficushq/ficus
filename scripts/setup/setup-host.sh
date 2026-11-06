@@ -904,7 +904,13 @@ fi
 
 # ============================================================== phases
 
+# Host prerequisites: OS check, waiting out cloud-init's first-boot apt, the
+# missing base packages, and the pinned bun. Its own `packages` marker so this
+# time is measured on its own instead of being folded into whatever phase the
+# caller had open; it runs before `source` because acquiring the source needs
+# these tools (curl, openssl, git) on a fresh host.
 prepare_source_tools() {
+  phase_step packages "host packages + pinned bun"
   [[ $(uname -s) == Linux ]] || die "setup-host.sh runs ON the Linux target — from a control machine use provision.sh"
   [[ -d /run/systemd/system ]] || die "systemd is required (is this a container?)"
   if [[ -r /etc/os-release ]]; then
