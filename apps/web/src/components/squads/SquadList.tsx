@@ -27,7 +27,6 @@ import { Badge, type BadgeColor } from '../Badge'
 import { SquadAvatar } from './SquadAvatar'
 import { SquadIcon, DragHandleIcon } from '../icons'
 import { isLiveAgentStatus, type Squad, type Agent, type WorkStream } from '@ficus/shared'
-import { countableSquadAgents } from '../../lib/agentDisplay'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 
@@ -222,8 +221,7 @@ function SquadCardContent({
   workStreams: WorkStream[]
 }) {
   const activeWorkStreams = workStreams.filter((ws) => ws.status !== 'done' && ws.status !== 'canceled').length
-  const countableAgents = countableSquadAgents(agents)
-  const activeAgents = countableAgents.filter((a) => a.status === 'active').length
+  const activeAgents = agents.filter((a) => a.status === 'active').length
   const hasActiveAgent = hasWorkingAgent(agents)
 
   return (

@@ -171,6 +171,20 @@ describe('SquadDetailPage', () => {
     expect(html).not.toContain('Done work should not feed Home')
   })
 
+  test('counts an active consultant in the header active agent count', () => {
+    const consultant = {
+      id: 'consultant-1',
+      agentTypeId: 'consultant',
+      squadId: squad.id,
+      status: 'active',
+      metadata: { name: 'Working consultant' },
+      createdAt: now,
+    } as Agent
+    const html = renderSquadDetail({ activeAgents: [consultant] })
+
+    expect(html).toContain('>1 active agent</span>')
+  })
+
   // Archiving is rare and destructive, so it lives in Squad Settings > General
   // rather than permanently in the header of every squad page.
   test('keeps archive out of the squad header and offers it from Settings with squads:delete', () => {
