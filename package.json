@@ -136,7 +136,8 @@
     "eslint-plugin-prettier": "^5.5.7"
   },
   "overrides": {
-    "@types/react": "19.2.13"
+    "@types/react": "19.2.13",
+    "d3": "7.9.0"
   },
   "patchedDependencies": {
     "amtp-node@0.2.0": "patches/amtp-node@0.2.0.patch",
