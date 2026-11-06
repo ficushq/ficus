@@ -105,7 +105,11 @@ comes from:
   (`$XDG_STATE_HOME` is honoured) so a re-run that reuses the server still
   checks strictly. The image must run cloud-init (the default Ubuntu images
   do); otherwise the server presents a different key and the run stops with
-  a host-key error.
+  a host-key error. The same `user_data` asks cloud-init to install the base
+  packages `setup-host.sh` needs first (curl, jq, openssl, unzip, plus git
+  outside artifact mode), so that apt work runs while `provision.sh` waits for
+  SSH and pushes the toolkit. If it fails, `setup-host.sh` installs whatever
+  is still missing. Unattended upgrades are left on throughout.
 - **A reused hetzner/digitalocean server with no saved key** (created
   elsewhere, or its pin file was lost) has no out-of-band source, so it fails
   closed: `provision.sh` shows the scanned fingerprint and an interactive run
@@ -572,26 +576,26 @@ own total, so a full provision prints `1/3 … 3/3` and then `1/15 …`. A calle
 (such as a hosting control plane) maps slugs to its own labels — no product
 copy lives in the toolkit. Slugs, in the order a full provision emits them:
 
-| Slug         | Emitted by      | Covers                                                                                              |
-| ------------ | --------------- | --------------------------------------------------------------------------------------------------- |
-| `vm`         | `provision.sh`  | step 1/5: create or reuse the VM (and DNS record); the early `SERVER_IP=` line is printed here      |
-| `ssh`        | `provision.sh`  | step 2/5: wait until the VM answers SSH                                                             |
-| `push`       | `provision.sh`  | step 3/5: push the toolkit, config, keys and secrets                                                |
-| `packages`   | `setup-host.sh` | OS check, cloud-init's first-boot apt, missing base packages (curl, jq, openssl, unzip), pinned bun |
-| `source`     | `setup-host.sh` | phase 1/8: source acquisition (git or signed artifact)                                              |
-| `preflight`  | `setup-host.sh` | phase 0/8: swap, run user, host layout checks (runs after `source`, which it inspects)              |
-| `build`      | `setup-host.sh` | phase 2/8: dependencies + build                                                                     |
-| `database`   | `setup-host.sh` | phase 3/8: database                                                                                 |
-| `restore`    | `setup-host.sh` | phase 3.5/8: restore from backup (only with a restore URL)                                          |
-| `pooler`     | `setup-host.sh` | phase 3.7/8: PgBouncer                                                                              |
-| `env`        | `setup-host.sh` | phase 4/8: render `.env`                                                                            |
-| `migrations` | `setup-host.sh` | phase 5/8: database migrations                                                                      |
-| `artifacts`  | `setup-host.sh` | phase 5.5/8: platform-managed artifacts (only when configured)                                      |
-| `services`   | `setup-host.sh` | phase 6/8: systemd services                                                                         |
-| `ingress`    | `setup-host.sh` | phase 6.5/8: caddy ingress                                                                          |
-| `backup`     | `setup-host.sh` | phase 6.6/8: nightly encrypted backup                                                               |
-| `seed`       | `setup-host.sh` | phase 7/8: seed provider, secrets, starter squad                                                    |
-| `verify`     | `setup-host.sh` | phase 8/8: verify + handoff                                                                         |
+| Slug         | Emitted by      | Covers                                                                                                                                                                                                      |
+| ------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vm`         | `provision.sh`  | step 1/5: create or reuse the VM (and DNS record); the early `SERVER_IP=` line is printed here                                                                                                              |
+| `ssh`        | `provision.sh`  | step 2/5: wait until the VM answers SSH                                                                                                                                                                     |
+| `push`       | `provision.sh`  | step 3/5: push the toolkit, config, keys and secrets                                                                                                                                                        |
+| `packages`   | `setup-host.sh` | OS check, cloud-init's first-boot apt (which installs the base packages on hetzner/digitalocean), any base packages still missing (curl, jq, openssl, unzip), pinned bun                                    |
+| `source`     | `setup-host.sh` | phase 1/8: source acquisition (git or signed artifact)                                                                                                                                                      |
+| `preflight`  | `setup-host.sh` | phase 0/8: swap, run user, host layout checks (runs after `source`, which it inspects), then one apt pass for every configured host package (fail2ban, docker.io, PGDG postgresql-client, pgbouncer, caddy) |
+| `build`      | `setup-host.sh` | phase 2/8: dependencies + build                                                                                                                                                                             |
+| `database`   | `setup-host.sh` | phase 3/8: database                                                                                                                                                                                         |
+| `restore`    | `setup-host.sh` | phase 3.5/8: restore from backup (only with a restore URL)                                                                                                                                                  |
+| `pooler`     | `setup-host.sh` | phase 3.7/8: PgBouncer configuration and unit (the package comes from the `preflight` apt pass)                                                                                                             |
+| `env`        | `setup-host.sh` | phase 4/8: render `.env`                                                                                                                                                                                    |
+| `migrations` | `setup-host.sh` | phase 5/8: database migrations                                                                                                                                                                              |
+| `artifacts`  | `setup-host.sh` | phase 5.5/8: platform-managed artifacts (only when configured)                                                                                                                                              |
+| `services`   | `setup-host.sh` | phase 6/8: systemd services                                                                                                                                                                                 |
+| `ingress`    | `setup-host.sh` | phase 6.5/8: caddy ingress configuration and certificate (the package comes from the `preflight` apt pass)                                                                                                  |
+| `backup`     | `setup-host.sh` | phase 6.6/8: nightly encrypted backup                                                                                                                                                                       |
+| `seed`       | `setup-host.sh` | phase 7/8: seed provider, secrets, starter squad                                                                                                                                                            |
+| `verify`     | `setup-host.sh` | phase 8/8: verify + handoff                                                                                                                                                                                 |
 
 Steps 4/5 and 5/5 of `provision.sh` have no marker: step 4 is the SSH session
 whose first output is `setup-host.sh`'s `packages` marker, and step 5 is a
