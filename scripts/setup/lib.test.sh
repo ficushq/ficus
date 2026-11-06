@@ -2015,10 +2015,19 @@ EOF
   hetzner_last_line=$(printf '%s\n' "${hetzner_out}" | tail -n1)
   expect_match 'hetzner success path: last stdout line is SERVER_IP=<ip>' "${hetzner_last_line}" '^SERVER_IP=[0-9.]+$'
   expect_eq 'hetzner success path: SERVER_IP matches the polled server IP' "${hetzner_last_line}" 'SERVER_IP=203.0.113.9'
+  # The outer-step markers land on stdout, in order, without displacing the
+  # SERVER_IP trailer (asserted just above) — the early SERVER_IP sits inside
+  # the vm phase, where the VM is created.
+  expect_eq 'hetzner success path: provision.sh reports vm, ssh, push markers in order' \
+    "$(printf '%s\n' "${hetzner_out}" | grep -E '^(FICUS_PHASE=|SERVER_IP=)' | paste -sd' ' -)" \
+    'FICUS_PHASE=1/3 vm SERVER_IP=203.0.113.9 FICUS_PHASE=2/3 ssh FICUS_PHASE=3/3 push SERVER_IP=203.0.113.9'
 
   exe_out=$(bash "${SCRIPT_DIR}/provision.sh" --config "${PROV_TMP}/exe.yaml")
   expect_eq 'exe success path: output has no SERVER_IP line (byte-identical contract)' \
     "$(printf '%s\n' "${exe_out}" | grep -c '^SERVER_IP=' || true)" '0'
+  expect_eq 'exe success path: provision.sh reports vm, ssh, push markers in order' \
+    "$(printf '%s\n' "${exe_out}" | grep '^FICUS_PHASE=' | paste -sd' ' -)" \
+    'FICUS_PHASE=1/3 vm FICUS_PHASE=2/3 ssh FICUS_PHASE=3/3 push'
 
   # -- provider: exe --dry-run stdout is byte-identical to before the
   # digitalocean provider was added (golden text, captured against the
@@ -6305,8 +6314,8 @@ ps_out=$(
     phase_step preflight "phase 0/8: preflight"
     phase_step build "phase 2/8: dependencies + build"' 2>/dev/null
 )
-expect_eq 'phase_step marker 1 is on stdout' "$(printf '%s' "${ps_out}" | sed -n 1p)" 'FICUS_PHASE=1/14 preflight'
-expect_eq 'phase_step ordinal increments' "$(printf '%s' "${ps_out}" | sed -n 2p)" 'FICUS_PHASE=2/14 build'
+expect_eq 'phase_step marker 1 is on stdout' "$(printf '%s' "${ps_out}" | sed -n 1p)" 'FICUS_PHASE=1/15 preflight'
+expect_eq 'phase_step ordinal increments' "$(printf '%s' "${ps_out}" | sed -n 2p)" 'FICUS_PHASE=2/15 build'
 
 ps_err=$(
   bash -c '
@@ -6330,6 +6339,26 @@ expect_eq 'every phase in setup-host.sh goes through phase_step' \
   "$(grep -c 'log_step "phase' "${SCRIPT_DIR}/setup-host.sh" || true)" '0'
 expect_eq 'FICUS_PHASE_TOTAL matches the number of phase_step call sites' \
   "${declared}" "$(bash -c 'source "'"${SCRIPT_DIR}"'/lib.sh"; printf %s "${FICUS_PHASE_TOTAL}"')"
+
+# Host package and bun setup is its own measured phase, reported BEFORE
+# source acquisition (which needs those tools), and source still precedes
+# preflight (the deliberate order documented above phase_preflight).
+# (Checked on the top-level call sequence, not definition order: phase_preflight
+# is defined above phase_source but runs after it.)
+sh_calls=$(grep -E '^(prepare_source_tools|phase_source|phase_preflight)$' "${SCRIPT_DIR}/setup-host.sh" | paste -sd' ' -)
+expect_eq 'setup-host.sh: prepare_source_tools (packages) runs before phase_source, then phase_preflight' \
+  "${sh_calls}" 'prepare_source_tools phase_source phase_preflight'
+expect_eq 'setup-host.sh: the packages marker is the first line of prepare_source_tools' \
+  "$(sed -n '/^prepare_source_tools() {/{n;p;}' "${SCRIPT_DIR}/setup-host.sh" | sed 's/^[[:space:]]*//')" \
+  'phase_step packages "host packages + pinned bun"'
+
+# provision.sh is a separate process with its own counter and total: the same
+# pin, against its own call sites, so its markers read 1/3..3/3.
+prov_declared=$(grep -cE '^[[:space:]]*phase_step ' "${SCRIPT_DIR}/provision.sh" || true)
+expect_eq 'provision.sh: FICUS_PHASE_TOTAL matches its own phase_step call sites' \
+  "$(grep -E '^FICUS_PHASE_TOTAL=' "${SCRIPT_DIR}/provision.sh" | cut -d= -f2)" "${prov_declared}"
+expect_eq 'provision.sh: outer steps are reported as vm, ssh, push in that order' \
+  "$(grep -oE '^[[:space:]]*phase_step [a-z_]+' "${SCRIPT_DIR}/provision.sh" | awk '{print $2}' | paste -sd' ' -)" 'vm ssh push'
 
 # --- health probes hit the core's real public route -------------------------
 # The core's public liveness route is GET /health (apps/core/src/index.ts);
