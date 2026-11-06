@@ -335,6 +335,117 @@ apt_update() {
   done
 }
 
+# ------------------------------------------------ one apt pass per host
+#
+# Every apt-get update and every apt-get install costs a fixed overhead on a
+# small cloud VM (index reads, dpkg triggers, service restarts), and the
+# toolkit used to pay it once per package: the source tools, fail2ban, the
+# PGDG client, pgbouncer and Caddy each had their own install, with four
+# apt-get updates between them. setup-host.sh now registers the third-party
+# sources it needs, runs ONE apt_update and ONE apt-get install
+# (install_host_packages), and the per-feature installers below keep their
+# check-then-act guards, so they find the package present and skip; a
+# re-run, upgrade-host.sh and enable-pooler.sh behave exactly as before.
+# Measured in a fresh ubuntu:24.04 container (no man-db or needrestart, so a
+# lower bound for a real VM): the tenant sequence took 60-62 s before and
+# 31-36 s as one pass.
+
+# The packages that provide the commands setup-host.sh needs before it can
+# fetch a release (prepare_source_tools); package and command names match.
+# git is left out in artifact mode: that box never clones anything.
+# provision.sh asks cloud-init to install the same list on first boot, so on
+# a fresh hetzner/DigitalOcean VM the work overlaps the SSH wait and the
+# toolkit push instead of running after them. One space-separated line, read
+# with `read -r -a` (provision.sh may run under macOS's bash 3.2: no mapfile).
+host_source_tool_packages() { # SRC_MODE
+  if [[ $1 == artifact ]]; then
+    echo 'curl jq openssl unzip'
+  else
+    echo 'git curl jq openssl unzip'
+  fi
+}
+
+# Fetch URL to DEST and refuse an empty result: an apt key or source list is
+# always fetched to a file first and installed only once it is known good. A
+# `curl … | tee` writes an EMPTY apt source when the fetch 404s, and a
+# zero-byte .list poisons every later `apt-get update` on the host — observed
+# when cloudsmith's path moved.
+fetch_apt_source_file() { # URL DEST WHAT
+  curl -1sSLf -o "$2" "$1" || die "$3: could not fetch $1"
+  [[ -s $2 ]] || die "$3: $1 returned an empty file"
+}
+
+# PGDG (apt.postgresql.org): the source of postgresql-client for external
+# database mode (see phase_preflight in setup-host.sh for why not Ubuntu's).
+# Registers the source only; the caller runs apt_update.
+pgdg_apt_source_install() {
+  local key
+  key=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '${key}'" RETURN
+  fetch_apt_source_file https://www.postgresql.org/media/keys/ACCC4CF8.asc "${key}" 'PGDG'
+  as_root install -d /usr/share/postgresql-common/pgdg
+  as_root install -m 0644 "${key}" /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+  install_rendered 0644 root root /etc/apt/sources.list.d/pgdg.list \
+    printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' \
+    "$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
+}
+
+# Caddy's official Cloudsmith repository. Registers the source only; the
+# caller runs apt_update. The key is dearmored into its own keyring, which the
+# list names with signed-by, so no Debian keyring package is needed for it.
+caddy_apt_source_install() {
+  local _key _list
+  _key=$(mktemp) _list=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '${_key}' '${_list}'" RETURN
+  fetch_apt_source_file 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' "${_key}" 'caddy: the cloudsmith signing key'
+  # NOTE: 'debian.deb.txt', not 'debian.txt' — cloudsmith's older path 404s.
+  fetch_apt_source_file 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' "${_list}" 'caddy: the cloudsmith apt source list'
+  as_root gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg <"${_key}"
+  as_root install -m 0644 "${_list}" /etc/apt/sources.list.d/caddy-stable.list
+}
+
+# The host packages setup-host.sh's settings need and the host does not have
+# yet, one per line: fail2ban (host.fail2ban), docker.io (container
+# database), PGDG postgresql-client (external database, for pg_dump),
+# pgbouncer (database.pool.enabled, external only) and caddy (ingress.caddy).
+# Each test is the same one its installer uses to skip.
+host_missing_packages() { # FAIL2BAN_ON DB_MODE POOL_ENABLED CADDY_ENABLE
+  local fail2ban=$1 db_mode=$2 pool=$3 caddy=$4
+  if [[ ${fail2ban} == true ]] && ! have fail2ban-client; then echo fail2ban; fi
+  if [[ ${db_mode} == container ]] && ! have docker; then echo docker.io; fi
+  if [[ ${db_mode} == external ]] && ! have pg_dump; then echo postgresql-client; fi
+  if [[ ${db_mode} == external && ${pool} == true ]] && ! have pgbouncer; then echo pgbouncer; fi
+  if [[ ${caddy} == true ]] && ! have caddy; then echo caddy; fi
+  return 0
+}
+
+# setup-host.sh's single package pass: register the third-party sources the
+# missing packages need, then ONE apt_update and ONE apt-get install. Nothing
+# missing (a re-run) means no apt call at all. The distro pgbouncer unit is
+# switched off at once, as install_pooler does, so it never holds the port
+# until the pooler phase.
+install_host_packages() { # FAIL2BAN_ON DB_MODE POOL_ENABLED CADDY_ENABLE
+  local pkgs=() pkg
+  mapfile -t pkgs < <(host_missing_packages "$@")
+  [[ ${#pkgs[@]} -gt 0 ]] || return 0
+  log_info "installing host packages in one apt pass: ${pkgs[*]}"
+  for pkg in "${pkgs[@]}"; do
+    case ${pkg} in
+      postgresql-client) pgdg_apt_source_install ;;
+      caddy) caddy_apt_source_install ;;
+    esac
+  done
+  apt_update
+  as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${pkgs[@]}"
+  for pkg in "${pkgs[@]}"; do
+    if [[ ${pkg} == pgbouncer ]]; then
+      as_root systemctl disable --now pgbouncer.service >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 # ------------------------------------------------ host layout (phase 5)
 #
 # Where this host keeps its install root, config, units, backup script, HOME
@@ -2763,21 +2874,7 @@ install_caddy() {
   apt_update
   as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     debian-keyring debian-archive-keyring apt-transport-https curl
-  # Fetch to temp files FIRST, then install. `curl … | tee` writes an EMPTY
-  # apt source when the fetch 404s, and a zero-byte .list poisons every later
-  # `apt-get update` on the host — observed when cloudsmith's path moved.
-  local _key _list
-  _key=$(mktemp) _list=$(mktemp)
-  # shellcheck disable=SC2064
-  trap "rm -f '${_key}' '${_list}'" RETURN
-  curl -1sLf -o "${_key}" 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' ||
-    die "caddy: could not fetch the cloudsmith signing key"
-  # NOTE: 'debian.deb.txt', not 'debian.txt' — cloudsmith's older path 404s.
-  curl -1sLf -o "${_list}" 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' ||
-    die "caddy: could not fetch the cloudsmith apt source list"
-  [[ -s ${_key} && -s ${_list} ]] || die "caddy: cloudsmith returned an empty key or source list"
-  as_root gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg <"${_key}"
-  as_root install -m 0644 "${_list}" /etc/apt/sources.list.d/caddy-stable.list
+  caddy_apt_source_install
   apt_update
   as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
 }
@@ -3636,12 +3733,27 @@ generate_vm_host_key() { # DIR
 # Written to DIR/user_data (0600 — it holds the private key) and the path
 # printed. The private key never appears on a command line: the create-body
 # builders read this file with jq --rawfile.
-vm_host_key_user_data() { # DIR
-  local dir=$1 out="$1/user_data"
+#
+# PACKAGES (optional): distro packages cloud-init installs on first boot
+# (provision.sh passes host_source_tool_packages), so that apt work runs
+# while provision.sh waits for SSH and pushes the toolkit; setup-host.sh
+# waits for cloud-init (wait_for_first_boot_apt) and then finds them present.
+# A failed first-boot install is harmless: setup-host.sh installs whatever is
+# still missing. Unattended upgrades are deliberately left alone: deferring
+# them would leave a window with security updates off if a provision died
+# before re-enabling them, and the dpkg lock wait already absorbs them.
+vm_host_key_user_data() { # DIR [PACKAGE...]
+  local dir=$1 out="$1/user_data" pkg
+  shift
   (
     umask 077
     {
       printf '#cloud-config\n'
+      if [[ $# -gt 0 ]]; then
+        printf 'package_update: true\n'
+        printf 'packages:\n'
+        for pkg in "$@"; do printf '  - %s\n' "${pkg}"; done
+      fi
       printf 'ssh_deletekeys: true\n'
       printf 'ssh_genkeytypes: []\n'
       printf 'ssh_keys:\n'

@@ -770,6 +770,14 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   fi
   [[ ${DB_MODE} == container ]] && plan "ensure: docker (apt docker.io if missing; unmask if the image masks rootful docker)"
   [[ ${DB_MODE} == external ]] && plan "ensure: pg_dump via PGDG postgresql-client (latest major — Ubuntu's v16 cannot dump the managed cluster's v18; needed by the nightly backup timer)"
+  dry_host_pkgs=()
+  [[ ${FAIL2BAN_ON} == true ]] && dry_host_pkgs+=(fail2ban)
+  [[ ${DB_MODE} == container ]] && dry_host_pkgs+=(docker.io)
+  [[ ${DB_MODE} == external ]] && dry_host_pkgs+=(postgresql-client)
+  [[ ${DB_MODE} == external && ${POOL_ENABLED} == true ]] && dry_host_pkgs+=(pgbouncer)
+  [[ ${CADDY_ENABLE} == true ]] && dry_host_pkgs+=(caddy)
+  [[ ${#dry_host_pkgs[@]} -gt 0 ]] &&
+    plan "apt: one pass after the config checks — register the PGDG / Caddy sources needed, one apt-get update, one apt-get install of whichever of [${dry_host_pkgs[*]}] are missing"
   printf '\nPhase 1 — source (%s)\n' "${SRC_MODE}"
   case "${SRC_MODE}" in
     git-ssh)
@@ -866,7 +874,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   fi
   if [[ ${CADDY_ENABLE} == true ]]; then
     printf '\nPhase 6.5 — caddy ingress (%s)\n' "${CADDY_HOST}"
-    plan "install caddy from the official cloudsmith apt repo if absent"
+    plan "install caddy from the official cloudsmith apt repo if absent (normally done by the phase 0 apt pass)"
     # Only PATHS are printed here — the private key's contents never appear in
     # a plan, a log line, or the rendered Caddyfile.
     plan "install ${CADDY_CERT_PATH} → ${CADDY_TLS_CERT_PATH} (0644 root) and ${CADDY_KEY_PATH} → ${CADDY_TLS_KEY_PATH} (0600 caddy-owned; contents never printed)"
@@ -929,9 +937,10 @@ prepare_source_tools() {
   # git is dropped in artifact mode: an artifact box never clones anything —
   # phase_source downloads a signed tarball over curl and verifies it with
   # openssl — so requiring git would fail a fresh tenant VM on a package it
-  # never uses.
-  local required_pkgs=(git curl jq openssl unzip)
-  [[ ${SRC_MODE} == artifact ]] && required_pkgs=(curl jq openssl unzip)
+  # never uses. The list lives in lib.sh (host_source_tool_packages) because
+  # provision.sh has cloud-init install the same packages on first boot.
+  local required_pkgs=()
+  read -r -a required_pkgs <<<"$(host_source_tool_packages "${SRC_MODE}")"
   for pkg in "${required_pkgs[@]}"; do
     have "${pkg}" || missing+=("${pkg}")
   done
@@ -1006,38 +1015,6 @@ phase_preflight() {
   # and adds the groups it needs; nothing for root.
   ensure_run_user "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)"
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
-  if [[ ${FAIL2BAN_ON} == true ]]; then
-    ensure_fail2ban || die 'fail2ban could not be set up for sshd (see above)'
-  fi
-
-  if [[ ${DB_MODE} == container ]] && ! have docker; then
-    log_info "installing docker (docker.io) for the local database container"
-    apt_update
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io
-  fi
-
-  # External mode needs pg_dump for the nightly backup timer — and it must
-  # come from PGDG, not Ubuntu. Observed on the first live tenant: the timer
-  # fired with no pg_dump installed at all, and Ubuntu 24.04's packaged
-  # client is v16 while the managed cluster runs v18 — pg_dump only dumps
-  # servers up to its own major, so the distro package would fail anyway.
-  # PGDG's `postgresql-client` metapackage tracks the newest major, and a
-  # newer pg_dump handles older servers fine, so latest is the robust pick.
-  # Installed here at setup time, not discovered at 03:15 by a failing timer.
-  if [[ ${DB_MODE} == external ]] && ! have pg_dump; then
-    log_info "installing postgresql-client (PGDG) for the backup timer's pg_dump"
-    as_root install -d /usr/share/postgresql-common/pgdg
-    curl -fsS -o /tmp/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
-    as_root install -m 0644 /tmp/pgdg.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-    rm -f /tmp/pgdg.asc
-    install_rendered 0644 root root /etc/apt/sources.list.d/pgdg.list \
-      printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' \
-      "$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
-    apt_update
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
-    require_cmd pg_dump "postgresql-client install failed — the nightly backup cannot run without pg_dump"
-    log_info "pg_dump: $(pg_dump --version)"
-  fi
 
   if [[ ${SRC_MODE} == git-ssh ]]; then
     if [[ -z ${SRC_DEPLOY_KEY} ]]; then
@@ -1068,6 +1045,44 @@ phase_preflight() {
   # cannot connect at all, so catch it before phase 3 mutates anything.
   if [[ -n ${DB_CA_PATH} ]]; then
     [[ -f ${DB_CA_PATH} ]] || die "database.ca_path: CA certificate not found: ${DB_CA_PATH}"
+  fi
+
+  # Every package this host's settings need, in ONE apt pass (lib.sh, "one
+  # apt pass per host"): fail2ban, docker.io, PGDG postgresql-client,
+  # pgbouncer and caddy, whichever are configured and missing. After the
+  # checks above, so a bad config fails before anything is installed. The
+  # steps below and phase_pooler / phase_caddy keep their own guards and find
+  # the packages present.
+  install_host_packages "${FAIL2BAN_ON}" "${DB_MODE}" "${POOL_ENABLED}" "${CADDY_ENABLE}"
+
+  if [[ ${FAIL2BAN_ON} == true ]]; then
+    ensure_fail2ban || die 'fail2ban could not be set up for sshd (see above)'
+  fi
+
+  if [[ ${DB_MODE} == container ]] && ! have docker; then
+    log_info "installing docker (docker.io) for the local database container"
+    apt_update
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io
+  fi
+
+  # External mode needs pg_dump for the nightly backup timer — and it must
+  # come from PGDG, not Ubuntu. Observed on the first live tenant: the timer
+  # fired with no pg_dump installed at all, and Ubuntu 24.04's packaged
+  # client is v16 while the managed cluster runs v18 — pg_dump only dumps
+  # servers up to its own major, so the distro package would fail anyway.
+  # PGDG's `postgresql-client` metapackage tracks the newest major, and a
+  # newer pg_dump handles older servers fine, so latest is the robust pick.
+  # Installed here at setup time, not discovered at 03:15 by a failing timer
+  # (normally by install_host_packages above; this is its fallback).
+  if [[ ${DB_MODE} == external ]]; then
+    if ! have pg_dump; then
+      log_info "installing postgresql-client (PGDG) for the backup timer's pg_dump"
+      pgdg_apt_source_install
+      apt_update
+      as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client
+    fi
+    require_cmd pg_dump "postgresql-client install failed — the nightly backup cannot run without pg_dump"
+    log_info "pg_dump: $(pg_dump --version)"
   fi
 }
 
