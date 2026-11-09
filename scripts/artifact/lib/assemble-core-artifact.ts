@@ -40,6 +40,13 @@ import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile
 import { hostname, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { artifactPlatform, buildManifest, computeFilesMap, signManifest, type CoreArtifactManifest } from './manifest'
+import {
+  assertInstalledMatchesLock,
+  listInstalledPackages,
+  parseBunLockfile,
+  PRUNED_PROJECT_NAME,
+  prunedInstallPlan,
+} from './pruned-lockfile'
 
 export interface RunResult {
   exitCode: number
@@ -69,8 +76,8 @@ export const defaultRun: Run = async (cmd, opts) => {
 
 /**
  * The runtime externals `apps/core`'s build marks `--external`: they are not
- * bundled into `dist/`, so the artifact must carry them (spec §7.4). Pinned to
- * whatever the checkout resolved, never to a range.
+ * bundled into `dist/`, so the artifact must carry them (spec §7.4). Pinned,
+ * with their whole dependency closure, to the checkout's `bun.lock`.
  */
 export const RUNTIME_EXTERNALS = [
   'bun-pty',
@@ -308,11 +315,15 @@ async function stageLayout(checkoutRoot: string, treeRoot: string): Promise<void
 
 /**
  * Build the pruned `node_modules`: a scratch package.json holding exactly the
- * runtime externals at the versions the checkout resolved, installed
- * `--production --ignore-scripts` in a temp dir, then copied into the tree.
+ * runtime externals at their locked versions, plus a `bun.lock` pruned from the
+ * checkout's to their dependency closure (see `pruned-lockfile.ts`), installed
+ * `--production --ignore-scripts --frozen-lockfile` in a temp dir, then copied
+ * into the tree. Every transitive version is the one CI tested; a mismatch
+ * fails the install instead of re-resolving against the live registry.
  *
  * Copied rather than moved because the install leaves `.bin` symlinks behind
- * and {@link copyTree} is what materializes them (see the file header).
+ * and {@link copyTree} is what materializes them (see the file header). The
+ * copied tree is then checked against the lock once more.
  */
 async function stagePrunedNodeModules(
   checkoutRoot: string,
@@ -320,35 +331,65 @@ async function stagePrunedNodeModules(
   run: Run,
   log: (message: string) => void
 ): Promise<void> {
-  const dependencies: Record<string, string> = {}
+  const lockPath = join(checkoutRoot, 'bun.lock')
+  if (!(await pathExists(lockPath))) {
+    throw new Error(`the checkout has no bun.lock (${lockPath}); cannot pin the pruned node_modules`)
+  }
+  const plan = prunedInstallPlan(parseBunLockfile(await readFile(lockPath, 'utf8')), {
+    workspacePath: 'apps/core',
+    packages: RUNTIME_EXTERNALS,
+  })
+
+  // The bundles in dist/ were built against the checkout's node_modules, so
+  // shipping externals at any other version than the build saw is a mismatch.
+  // Resolved as apps/core resolves them: its own node_modules, then the root's.
   for (const pkg of RUNTIME_EXTERNALS) {
-    const packageJsonPath = join(checkoutRoot, 'node_modules', pkg, 'package.json')
-    if (!(await pathExists(packageJsonPath))) {
+    const candidates = ['apps/core/node_modules', 'node_modules'].map((dir) =>
+      join(checkoutRoot, dir, pkg, 'package.json')
+    )
+    let packageJsonPath: string | undefined
+    for (const candidate of candidates) {
+      if (await pathExists(candidate)) {
+        packageJsonPath = candidate
+        break
+      }
+    }
+    if (packageJsonPath === undefined) {
       throw new Error(
-        `runtime external ${pkg} is not installed in the checkout (${packageJsonPath}); cannot pin its version for the pruned node_modules`
+        `runtime external ${pkg} is not installed in the checkout (${candidates.at(-1)}); run bun install --frozen-lockfile before assembling`
       )
     }
     const version = JSON.parse(await readFile(packageJsonPath, 'utf8')).version
-    if (typeof version !== 'string' || version.length === 0) {
-      throw new Error(`runtime external ${pkg} has no version in ${packageJsonPath}`)
+    if (version !== plan.dependencies[pkg]) {
+      throw new Error(
+        `runtime external ${pkg} is installed in the checkout at ${String(version)}, but bun.lock pins ${plan.dependencies[pkg]}; run bun install --frozen-lockfile before assembling`
+      )
     }
-    dependencies[pkg] = version
   }
 
   const scratch = await mkdtemp(join(tmpdir(), 'ficus-core-artifact-prune-'))
   try {
-    await writeFile(
-      join(scratch, 'package.json'),
-      `${JSON.stringify({ name: 'ficus-core-artifact-externals', version: '0.0.0', private: true, dependencies }, null, 2)}\n`
-    )
+    const manifest = {
+      name: PRUNED_PROJECT_NAME,
+      version: '0.0.0',
+      private: true,
+      dependencies: plan.dependencies,
+      ...(Object.keys(plan.overrides).length > 0 ? { overrides: plan.overrides } : {}),
+    }
+    await writeFile(join(scratch, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+    await writeFile(join(scratch, 'bun.lock'), `${JSON.stringify(plan.lockfile, null, 2)}\n`)
     log(
-      `pruned node_modules: installing ${Object.entries(dependencies)
+      `pruned node_modules: installing ${Object.entries(plan.dependencies)
         .map(([n, v]) => `${n}@${v}`)
-        .join(' ')}`
+        .join(' ')} from a ${Object.keys(plan.lockfile.packages).length}-entry pruned bun.lock`
     )
-    const install = await run(['bun', 'install', '--production', '--ignore-scripts'], { cwd: scratch })
+    const install = await run(['bun', 'install', '--production', '--ignore-scripts', '--frozen-lockfile'], {
+      cwd: scratch,
+    })
     if (install.exitCode !== 0) {
-      throw new Error(`pruned bun install failed (exit ${install.exitCode}): ${install.stderr || install.stdout}`)
+      throw new Error(
+        `pruned bun install failed (exit ${install.exitCode}); the pruned bun.lock and the runtime externals disagree, or the registry is unreachable: ${install.stderr || install.stdout}`
+      )
     }
     const installed = join(scratch, 'node_modules')
     if (!(await pathExists(installed))) {
@@ -358,6 +399,10 @@ async function stagePrunedNodeModules(
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }
+
+  const shipped = await listInstalledPackages(join(treeRoot, 'node_modules'))
+  assertInstalledMatchesLock(shipped, plan)
+  log(`pruned node_modules: ${shipped.length} installed packages match bun.lock`)
 }
 
 /**
