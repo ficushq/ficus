@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Hono } from 'hono'
+import { coreGetPath } from './app-base-path'
 import { mountCoreDocs } from './docs-serve'
 
 test('Core docs serve on hosted and self-hosted origins without falling into the SPA', async () => {
@@ -24,7 +25,7 @@ test('Core docs serve on hosted and self-hosted origins without falling into the
     for (const origin of ['https://tenant.ficus.sh', 'http://localhost:3000']) {
       const redirect = await app.request(`${origin}/docs?mode=cloud`)
       expect(redirect.status).toBe(308)
-      expect(redirect.headers.get('location')).toBe('/docs/?mode=cloud')
+      expect(redirect.headers.get('location')).toBe('docs/?mode=cloud')
       expect(await (await app.request(`${origin}/docs/`)).text()).toBe('docs home')
       expect(await (await app.request(`${origin}/docs/guide/`)).text()).toBe('guide')
       expect(await (await app.request(`${origin}/docs/pagefind/pagefind.js`)).text()).toBe('search asset')
@@ -41,6 +42,33 @@ test('Core docs serve on hosted and self-hosted origins without falling into the
     absent.get('*', (c) => c.text('SPA'))
     expect((await absent.request('/docs/')).status).toBe(503)
   } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Core docs serve under a configured base path forwarded unchanged', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tau-core-docs-prefix-'))
+  const saved = { APP_URL: process.env.APP_URL, APP_BASE_PATH: process.env.APP_BASE_PATH }
+  process.env.APP_URL = 'https://team.example.com/ficus'
+  delete process.env.APP_BASE_PATH
+  try {
+    await writeFile(join(root, 'index.html'), 'docs home')
+    const app = new Hono({ getPath: coreGetPath })
+    mountCoreDocs(app, root)
+    app.get('*', (c) => c.text('SPA'))
+    expect(await (await app.request('https://team.example.com/ficus/docs/')).text()).toBe('docs home')
+    expect(await (await app.request('http://localhost:3000/docs/')).text()).toBe('docs home')
+    for (const path of ['/ficus/docs?mode=cloud', '/docs?mode=cloud']) {
+      const redirect = await app.request(`https://team.example.com${path}`)
+      expect(redirect.status).toBe(308)
+      // Relative: the browser resolves it against /ficus/docs or /docs.
+      expect(redirect.headers.get('location')).toBe('docs/?mode=cloud')
+    }
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
     await rm(root, { recursive: true, force: true })
   }
 })

@@ -3,6 +3,7 @@ import { requestBodyLimits } from './middleware/request-body-limits'
 import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
+import { coreGetPath } from './lib/app-base-path'
 import {
   getOpenAIServiceKey,
   initializeOpenAIServicesState,
@@ -200,7 +201,9 @@ if (heapSnapshotDirectory) {
   })
 }
 
-export const app = new Hono()
+// Routing sees the path without a configured base path prefix (for example
+// `/ficus`), so a reverse proxy may strip the prefix or forward it unchanged.
+export const app = new Hono({ getPath: coreGetPath })
 
 app.use('*', jsonBodyErrorMiddleware)
 app.onError((error, c) => {
