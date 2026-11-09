@@ -9,7 +9,7 @@
  */
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { completeSimple, getEnvApiKey, getModel } from '@earendil-works/pi-ai/compat'
 import { MONOREPO_ROOT } from '../../lib/paths'
 import { completeLight } from '../model-tiers/light-completion'

@@ -1,4 +1,4 @@
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { workflowPresetSchema, type WorkflowPreset } from '@ficus/shared'
 import { workflows } from '../../db'
 import { WORKFLOWS_DIR } from '../../lib/paths'

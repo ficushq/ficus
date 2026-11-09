@@ -1,4 +1,4 @@
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { agentTypes, db, modelTiers } from '../../db'
 import { MODEL_TIERS_DIR } from '../../lib/paths'
 import { type DynamicModelCatalog, validateModelSpecList } from '../../lib/utils/model-spec'
