@@ -452,12 +452,14 @@ caller could not page to anyway, and it never searches across conversations.
 - There is no dedicated index: a 50,000-message conversation searches in well under a second. If
   conversations grow far beyond that, a trigram index is the next step.
 
-The web chat view opens the search from its header or with Cmd/Ctrl+Shift+F (Cmd/Ctrl+F stays the
-browser's, or Ficus Desktop's, find in page). Choosing a result loads older history in larger pages
+The web chat view opens the search from a button in the composer controls (in the options sheet on
+phones; in the chat header when the chat has no composer) or with Cmd/Ctrl+Shift+F (Cmd/Ctrl+F stays
+the browser's, or Ficus Desktop's, find in page). Choosing a result loads older history in larger pages
 (up to 500 messages per request), then scrolls to and highlights the message. Because the transcript
 is not virtualized, a jump reaches at most 5,000 messages back; beyond that the result says it is too
 far back. The CLI's `ficus agent messages <id> --search <text>` lists matching messages with the same
-authorization.
+authorization. `apps/web/scripts/check-history-search-placement.ts` checks the button's placement in
+Chromium (desktop and phone widths, with and without a composer).
 
 ## Chat file attachments
 
