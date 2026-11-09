@@ -182,7 +182,7 @@ test('pinned Notion CLI uses fresh exec credentials without rewriting generated 
   try {
     const version = Bun.spawnSync([binary, '--version'], { stdout: 'pipe', stderr: 'pipe' })
     expect(version.exitCode).toBe(0)
-    expect(version.stdout.toString()).toContain('0.23.25')
+    expect(version.stdout.toString()).toContain('0.23.28')
 
     const exchanged = await transport.completeAuthorization({
       providerKey: 'notion',
@@ -252,7 +252,7 @@ test('pinned Notion CLI uses fresh exec credentials without rewriting generated 
     expect(assigned.publicDeclaration.readiness).toContainEqual({
       id: 'notion-cli',
       command: 'ntn --version',
-      expectedSubstring: '0.23.25',
+      expectedSubstring: '0.23.28',
     })
     await reconcile()
     expect(installCount).toBe(1)

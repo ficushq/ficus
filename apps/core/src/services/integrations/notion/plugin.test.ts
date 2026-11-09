@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { NotionClientError } from '@ficus/shared/oauth-providers/notion/client'
 import { integrationRegistry } from '../runtime'
 import { assertNotionIdentity } from './identity'
@@ -41,14 +43,33 @@ describe('notionPlugin', () => {
     })
     expect(plugin.sandbox.packages).toEqual(['nodejs@24.12.0'])
     expect(plugin.sandbox.setupSteps).toHaveLength(1)
-    expect(plugin.sandbox.setupSteps[0].id).toBe('notion-cli@0.23.25')
-    expect(plugin.sandbox.setupSteps[0].script).toContain('npm pack --silent ntn@0.23.25')
+    expect(plugin.sandbox.setupSteps[0].id).toBe('notion-cli@0.23.28')
+    expect(plugin.sandbox.setupSteps[0].script).toContain('npm pack --silent ntn@0.23.28')
     expect(plugin.sandbox.protectedBindings).toEqual([
       { name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration', field: 'workspaceId' } },
     ])
     expect(plugin.execution?.binaries).toEqual(['ntn'])
     expect(Object.keys(plugin.execution?.environment ?? {})).toEqual(['NOTION_API_TOKEN'])
     expect(plugin.runtime.provider.capabilities).toEqual({})
+  })
+
+  test('pins the same ntn version and tarball integrity as the Core dependency and lockfile', () => {
+    // A Dependabot ntn bump changes package.json and bun.lock but not plugin.ts;
+    // fail here, fast, instead of only in the CLI end-to-end tests.
+    const repoRoot = join(import.meta.dir, '../../../../../..')
+    const packageJson = JSON.parse(readFileSync(join(repoRoot, 'apps/core/package.json'), 'utf8')) as {
+      devDependencies: Record<string, string>
+    }
+    const locked = readFileSync(join(repoRoot, 'bun.lock'), 'utf8').match(
+      /^ {4}"ntn": \["ntn@([^"]+)", .*"sha512-([^"]+)"\],$/m
+    )
+    expect(locked).not.toBeNull()
+    const [, lockedVersion, lockedIntegrity] = locked!
+    expect(lockedVersion).toBe(packageJson.devDependencies.ntn)
+
+    const [setupStep] = createPlugin().sandbox.setupSteps
+    expect(setupStep.id).toBe(`notion-cli@${lockedVersion}`)
+    expect(setupStep.script).toContain(`test "$actual" = "${lockedIntegrity}"`)
   })
 
   test('strictly parses configuration and exposes only normalized workspace presentation', () => {

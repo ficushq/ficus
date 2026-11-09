@@ -14,8 +14,8 @@ import {
 } from '@ficus/shared/oauth-providers/notion/config'
 
 /** Pinned `ntn` release; keep in step with apps/core/package.json and the npm dist.integrity below. */
-const CLI_VERSION = '0.23.25'
-const CLI_INTEGRITY = 'eUgMS0qEvLuXcAfrmi+YDXsTO+m9R27r/C0wJeyxYdBnFJWjqbVjuXP9rMgEhIFu6gAQL5f9JfqyelwzhNeh/g=='
+const CLI_VERSION = '0.23.28'
+const CLI_INTEGRITY = '8XX88Roci3f7AZKvHZ8zobstDiqudybGVIBGW+nYccCpwddOuPzt7lTnr2N5qLBAmW6uM2ipznJf7pdKRy62XQ=='
 const CLI_SETUP_SCRIPT = [
   `archive=$(npm pack --silent ntn@${CLI_VERSION})`,
   `actual=$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$archive")`,

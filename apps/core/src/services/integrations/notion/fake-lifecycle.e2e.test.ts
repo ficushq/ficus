@@ -58,7 +58,7 @@ test('connect assign reconcile invoke rotate without reinstall and unassign', as
   const assigned = projectIntegrationAssignments([{ plugin, connection }])
   expect(assigned.publicDeclaration.packages).toEqual(['nodejs@24.12.0'])
   expect(assigned.publicDeclaration.readiness).toEqual([
-    { id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' },
+    { id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.28' },
   ])
   const firstEnv = Object.fromEntries(await resolveProtectedBindings(assigned))
   expect(firstEnv).toEqual({ NOTION_WORKSPACE_ID: 'workspace-1' })

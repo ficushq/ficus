@@ -22,6 +22,12 @@ updates:
       # update type, and stay out of the catch-all group.
       pi:
         patterns: ["@earendil-works/pi-*"]
+      # The Notion CLI (ntn) version and its npm tarball integrity are pinned in
+      # apps/core/src/services/integrations/notion/plugin.ts (CLI_VERSION and
+      # CLI_INTEGRITY), so every ntn bump needs a matching code change. Kept in its
+      # own PR so it can't hold back the rest of the minor-and-patch group.
+      ntn:
+        patterns: ["ntn"]
       # drizzle-orm and drizzle-kit are 0.x: a "minor" bump can change behaviour.
       # Kept apart so it can't hold back the rest of the minor-and-patch group,
       # and kept together because the ORM and its migration kit must match.
@@ -44,8 +50,8 @@ updates:
         update-types: ["major"]
       minor-and-patch:
         update-types: ["minor", "patch"]
-        # Pi updates always go to the pi group above, never the catch-all.
-        exclude-patterns: ["@earendil-works/*"]
+        # Pi and ntn updates always go to their groups above, never the catch-all.
+        exclude-patterns: ["@earendil-works/*", "ntn"]
     labels: ["dependencies"]
   - package-ecosystem: "github-actions"
     directory: "/"
