@@ -68,7 +68,7 @@ afterEach(async () => {
  * A chat whose loaded window holds only the newest message. Each older page it is asked for
  * prepends filler, and the target lands once enough older messages have been requested.
  */
-function Harness({ targetDepth }: { targetDepth: number }) {
+function Harness({ targetDepth, hideComposer }: { targetDepth: number; hideComposer: boolean }) {
   const [items, setItems] = useState<RenderItem[]>([item(message('newest', 'Newest message'))])
   const [hasOlder, setHasOlder] = useState(true)
   const [requested, setRequested] = useState(1)
@@ -79,7 +79,7 @@ function Harness({ targetDepth }: { targetDepth: number }) {
       items={items}
       dependencies={dependencies}
       onSend={() => undefined}
-      hideComposer
+      hideComposer={hideComposer}
       hasOlderMessages={hasOlder}
       onLoadOlder={(options) => {
         loadOlderCalls.push(options)
@@ -99,7 +99,11 @@ function Harness({ targetDepth }: { targetDepth: number }) {
 }
 let loadOlderCalls: Array<{ minimumMessages?: number } | undefined> = []
 
-async function render(targetDepth: number, response: MessageSearchResponse) {
+async function render(
+  targetDepth: number,
+  response: MessageSearchResponse,
+  { hideComposer = true }: { hideComposer?: boolean } = {}
+) {
   loadOlderCalls = []
   const scrollIntoView = mock(() => undefined)
   const dom = await acquireDomHarness({
@@ -127,7 +131,7 @@ async function render(targetDepth: number, response: MessageSearchResponse) {
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
           <PermissionsProvider usePermissions={usePermissionsMock}>
-            <Harness targetDepth={targetDepth} />
+            <Harness targetDepth={targetDepth} hideComposer={hideComposer} />
           </PermissionsProvider>
         </QueryClientProvider>
       </MemoryRouter>
@@ -223,6 +227,73 @@ describe('ChatView history search', () => {
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search this conversation"]')!
     await dom.act(async () => {
       fireEvent.keyDown(input, { key: 'Escape' })
+    })
+    expect(panel()).toBeNull()
+  })
+
+  test('keeps the button in the header only when there is no composer', async () => {
+    const { document } = await render(10, { results: [], nextCursor: null })
+    const button = document.querySelector('button[aria-label="Search this conversation"]')!
+    expect(button.closest('[data-testid="chat-header"]')).not.toBeNull()
+  })
+
+  test('puts the button with the composer controls instead of a header row of its own', async () => {
+    const { dom, document } = await render(10, { results: [], nextCursor: null }, { hideComposer: false })
+    const panel = () => document.querySelector('[data-testid="chat-history-search"]')
+    const buttons = document.querySelectorAll<HTMLButtonElement>('button[aria-label="Search this conversation"]')
+    expect(buttons.length).toBe(1)
+    const button = buttons[0]!
+
+    // Search was the header's only item, so no header row renders at all.
+    expect(document.querySelector('[data-testid="chat-header"]')).toBeNull()
+    expect(button.closest('.chat-composer-controls')).not.toBeNull()
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(button.title).toContain('+Shift+F')
+
+    await dom.act(async () => {
+      button.click()
+    })
+    expect(panel()).not.toBeNull()
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect(button.className).toContain('bg-accent/10')
+
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search this conversation"]')!
+    await dom.act(async () => {
+      fireEvent.keyDown(input, { key: 'Escape' })
+    })
+    await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+    expect(panel()).toBeNull()
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(document.activeElement).toBe(button)
+  })
+
+  test('offers search in the phone options sheet', async () => {
+    const { dom, document } = await render(10, { results: [], nextCursor: null }, { hideComposer: false })
+    const panel = () => document.querySelector('[data-testid="chat-history-search"]')
+    const sheet = () => document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')
+    const sheetSearch = () =>
+      Array.from(sheet()?.querySelectorAll('button') ?? []).find((b) =>
+        /^(Search this conversation|Close search)$/.test(b.textContent ?? '')
+      )
+
+    await dom.act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Attach or change controls"]')!.click()
+    })
+    expect(sheetSearch()?.textContent).toBe('Search this conversation')
+    await dom.act(async () => {
+      sheetSearch()!.click()
+    })
+    expect(panel()).not.toBeNull()
+    // The sheet closed and the panel's input kept focus.
+    expect(document.activeElement).toBe(document.querySelector('input[aria-label="Search this conversation"]'))
+
+    await dom.act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Attach or change controls"]')!.click()
+    })
+    expect(sheetSearch()?.textContent).toBe('Close search')
+    expect(sheetSearch()!.className).toContain('bg-accent/10')
+    await dom.act(async () => {
+      sheetSearch()!.click()
     })
     expect(panel()).toBeNull()
   })

@@ -1083,6 +1083,10 @@ export function ChatView({
     return cancel
   }, [focusMessageId, focusInboxMessageId, startFocus])
 
+  // The phone composer's options sheet (attach, voice, auto-scroll, raw text, history search).
+  const [attachSheetOpen, setAttachSheetOpen] = useState(false)
+  const attachSheetTriggerRef = useRef<HTMLButtonElement>(null)
+
   // History search: a panel under the header that searches the whole conversation on the
   // server and jumps to a result through startFocus.
   const historySearchAvailable = enableHistorySearch && !!agentId && !!onLoadOlder
@@ -1092,7 +1096,14 @@ export function ChatView({
   const openHistorySearch = useCallback(() => setHistorySearchOpen(true), [])
   const closeHistorySearch = useCallback(() => {
     setHistorySearchOpen(false)
-    requestAnimationFrame(() => historySearchButtonRef.current?.focus({ preventScroll: true }))
+    requestAnimationFrame(() => {
+      const button = historySearchButtonRef.current
+      button?.focus({ preventScroll: true })
+      // On phones the composer's search button is hidden and lives in the options sheet; its trigger takes focus.
+      if (button && button.ownerDocument.activeElement !== button) {
+        attachSheetTriggerRef.current?.focus({ preventScroll: true })
+      }
+    })
   }, [])
   const jumpToSearchResult = useCallback(
     (result: MessageSearchResult) => {
@@ -1168,8 +1179,6 @@ export function ChatView({
   const [showClearQueue, setShowClearQueue] = useState(false)
   const [confirmingClearQueue, setConfirmingClearQueue] = useState(false)
   const clearQueueConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [attachSheetOpen, setAttachSheetOpen] = useState(false)
-  const attachSheetTriggerRef = useRef<HTMLButtonElement>(null)
 
   // Track whether we've ever seen an empty pending queue (for "loaded with pending already" detection)
   const sawPendingEmptyRef = useRef(pendingItems.length === 0)
@@ -1996,22 +2005,31 @@ export function ChatView({
     </button>
   )
 
-  const historySearchButton = historySearchAvailable && (
-    <button
-      ref={historySearchButtonRef}
-      type="button"
-      onClick={() => (historySearchOpen ? closeHistorySearch() : openHistorySearch())}
-      aria-pressed={historySearchOpen}
-      className={clsx(
-        'ficus-button ficus-button-ghost p-1.5 rounded-md transition-colors shrink-0',
-        historySearchOpen && 'text-accent-light hover:text-accent-light bg-accent/10 hover:bg-accent/20'
-      )}
-      aria-label="Search this conversation"
-      title={`Search this conversation (${shortcutModifierLabel()}+Shift+F)`}
-    >
-      <SearchIcon className="w-4 h-4" />
-    </button>
-  )
+  // Like the raw text toggle: with the composer's controls (on phones, in the options sheet), so it never
+  // needs a header row of its own; in the header only when there is no composer.
+  const historySearchPlace: 'composer' | 'header' = shouldHideComposer ? 'header' : 'composer'
+  const toggleHistorySearch = () => (historySearchOpen ? closeHistorySearch() : openHistorySearch())
+  const historySearchButton = (place: 'composer' | 'header') =>
+    historySearchAvailable &&
+    historySearchPlace === place && (
+      <button
+        ref={historySearchButtonRef}
+        type="button"
+        onClick={toggleHistorySearch}
+        aria-pressed={historySearchOpen}
+        className={clsx(
+          'ficus-button ficus-button-ghost',
+          'rounded-md flex items-center justify-center transition-colors shrink-0',
+          place === 'composer' ? 'p-2.5 md:p-2 min-h-[44px] md:min-h-0' : 'p-1.5',
+          historySearchOpen && 'text-accent-light hover:text-accent-light bg-accent/10 hover:bg-accent/20'
+        )}
+        aria-label="Search this conversation"
+        title={`Search this conversation (${shortcutModifierLabel()}+Shift+F)`}
+      >
+        <SearchIcon className={place === 'composer' ? 'w-5 h-5' : 'w-4 h-4'} />
+      </button>
+    )
+  const headerHistorySearchButton = historySearchButton('header')
 
   const chatContent = (
     <div
@@ -2030,8 +2048,9 @@ export function ChatView({
       )}
     >
       {isDragging && <ChatDropOverlay />}
-      {(header || headerRawTextToggle || historySearchButton || fullscreenButton) && (
+      {(header || headerRawTextToggle || headerHistorySearchButton || fullscreenButton) && (
         <div
+          data-testid="chat-header"
           className={clsx(
             'px-3 md:px-4 py-0.5 md:py-2 border-b border-th-border shrink-0',
             isFullscreen && 'bg-surface-secondary'
@@ -2040,7 +2059,7 @@ export function ChatView({
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">{header}</div>
             {headerRawTextToggle}
-            {historySearchButton}
+            {headerHistorySearchButton}
             {fullscreenButton}
           </div>
         </div>
@@ -2846,6 +2865,7 @@ export function ChatView({
                         <AutoScrollIcon className="w-5 h-5" />
                       </button>
                       {rawTextToggle('composer')}
+                      {historySearchButton('composer')}
                     </div>
                     {composerStatus}
                   </div>
@@ -3079,6 +3099,22 @@ export function ChatView({
                         <CodeIcon className="w-5 h-5 text-muted" />
                       )}
                       {showRawText ? 'Show rendered markdown' : 'Show raw text'}
+                    </button>
+                  )}
+                  {historySearchAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachSheetOpen(false)
+                        toggleHistorySearch()
+                      }}
+                      className={clsx(
+                        'ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary',
+                        historySearchOpen && 'bg-accent/10 hover:bg-accent/20'
+                      )}
+                    >
+                      <SearchIcon className={clsx('w-5 h-5', historySearchOpen ? 'text-accent-light' : 'text-muted')} />
+                      {historySearchOpen ? 'Close search' : 'Search this conversation'}
                     </button>
                   )}
                 </MobileChatOptionsSheet>
