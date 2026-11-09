@@ -26,7 +26,7 @@
     "@emnapi/runtime": "1.11.3",
     "@types/bun": "^1.4.4",
     "parse5": "^8.0.0",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.2",
     "happy-dom": "^21.0.4"
   }
 }
