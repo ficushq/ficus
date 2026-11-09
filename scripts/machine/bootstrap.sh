@@ -228,27 +228,57 @@ if ! (return 0 2>/dev/null); then
 fi
 APT_LOCK_WAIT=(-o DPkg::Lock::Timeout=600)
 
+# Docker's apt source + signing keyring and the os-release it keys off. Under
+# FICUS_HOST_ROOT (empty in production) so tests can place them in a temp root.
+DOCKER_KEYRING="${FICUS_HOST_ROOT}/etc/apt/keyrings/docker.gpg"
+DOCKER_APT_LIST="${FICUS_HOST_ROOT}/etc/apt/sources.list.d/docker.list"
+OS_RELEASE_FILE="${FICUS_HOST_ROOT}/etc/os-release"
+
+# True when every named package is fully installed (dpkg status
+# "install ok installed"). Read-only; never touches apt, so it is safe to call
+# before deciding whether an `apt-get update`/`install` is needed at all.
+apt_packages_installed() {
+  local pkg
+  for pkg in "$@"; do
+    # shellcheck disable=SC2016  # ${Status} is a dpkg-query format field, not a shell expansion
+    [ "$(dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null)" = "install ok installed" ] || return 1
+  done
+}
+
+# Why the apt steps below are check-then-act: since the platform's early
+# bootstrap (control plane runs this script while the core is still building)
+# the script runs TWICE per new machine host. The second, core-driven run is
+# authoritative and gates readiness but lands on a host that already has
+# everything; re-running `apt-get update`/`install` there is pure wall-clock on
+# the provision's critical path. When every package is already installed the
+# step makes no apt call at all; if ANY is missing it updates and installs the
+# full list exactly as before so versions stay consistent.
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
-  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" update -y
   # Base toolchain + rootless-container prerequisites (uidmap/slirp4netns/
   # dbus-user-session/fuse-overlayfs). `unzip` is required by the official bun
   # installer (install_bun below unpacks the release with it) and is absent on a
   # truly minimal Ubuntu 24.04 image. `ca-certificates`/`gnupg` are needed to
   # add Docker's apt repo (install_docker_packages).
-  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends \
-    git \
-    curl \
-    unzip \
-    tmux \
-    jq \
-    build-essential \
-    ca-certificates \
-    gnupg \
-    uidmap \
-    dbus-user-session \
-    slirp4netns \
+  local packages=(
+    git
+    curl
+    unzip
+    tmux
+    jq
+    build-essential
+    ca-certificates
+    gnupg
+    uidmap
+    dbus-user-session
+    slirp4netns
     fuse-overlayfs
+  )
+  if apt_packages_installed "${packages[@]}"; then
+    return 0
+  fi
+  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" update -y
+  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends "${packages[@]}"
 }
 
 make_dirs() {
@@ -269,40 +299,52 @@ install_docker_packages() {
 
   # Docker's official apt repo (docker-ce-rootless-extras is NOT in Ubuntu's
   # default repos). Idempotent: the keyring + list are overwritten, not appended.
-  "${SUDO[@]}" install -m 0755 -d /etc/apt/keyrings
-  # The signing key is fetched to a file first and dearmored only when it is
-  # non-empty, with a bounded network budget: each attempt is capped at 5 s to
-  # connect and 10 s in total, and any failure is retried twice, 2 s apart, so
-  # a stalled server costs at most 34 s instead of hanging bootstrap. The same
-  # budget as fetch_apt_source_file in scripts/setup/lib.sh, which this
-  # standalone script cannot source. Every attempt failing stops bootstrap;
-  # there is no unverified fallback source.
-  local docker_key_url=https://download.docker.com/linux/ubuntu/gpg docker_key
-  docker_key=$(mktemp)
-  if ! curl -fsSL --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 2 --retry-all-errors \
-    -o "${docker_key}" "${docker_key_url}" || [ ! -s "${docker_key}" ]; then
-    rm -f "${docker_key}"
-    echo "bootstrap.sh: could not fetch Docker's apt signing key from ${docker_key_url} after 3 attempts" >&2
-    exit 1
-  fi
-  "${SUDO[@]}" gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg <"${docker_key}"
-  rm -f "${docker_key}"
-  "${SUDO[@]}" chmod a+r /etc/apt/keyrings/docker.gpg
-
-  local arch codename
+  # Check-then-act (see the note above install_base_packages): the key fetch +
+  # source rewrite run only when the source/keyring is not already in place with
+  # the expected content, and the `apt-get update` + install run only when a
+  # docker package is missing. A fresh host does all of it, in the old order.
+  local arch codename expected_source
   arch="$(dpkg --print-architecture)"
-  # shellcheck disable=SC1091  # /etc/os-release is a runtime file, not a source input
-  codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
-  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\n' \
-    "${arch}" "${codename}" \
-    | "${SUDO[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
+  # shellcheck disable=SC1090,SC1091  # os-release is a runtime file, not a source input
+  codename="$(. "${OS_RELEASE_FILE}" && printf '%s' "${VERSION_CODENAME}")"
+  expected_source="$(printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable' \
+    "${arch}" "${codename}")"
 
-  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" update -y
-  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends \
-    docker-ce \
-    docker-ce-cli \
-    containerd.io \
-    docker-ce-rootless-extras
+  local docker_packages=(docker-ce docker-ce-cli containerd.io docker-ce-rootless-extras)
+  local source_ok=false
+  if [ -s "${DOCKER_KEYRING}" ] && [ -f "${DOCKER_APT_LIST}" ] \
+    && [ "$(cat "${DOCKER_APT_LIST}")" = "${expected_source}" ]; then
+    source_ok=true
+  fi
+
+  if [ "${source_ok}" != true ]; then
+    "${SUDO[@]}" install -m 0755 -d "${DOCKER_KEYRING%/*}"
+    # The signing key is fetched to a file first and dearmored only when it is
+    # non-empty, with a bounded network budget: each attempt is capped at 5 s to
+    # connect and 10 s in total, and any failure is retried twice, 2 s apart, so
+    # a stalled server costs at most 34 s instead of hanging bootstrap. The same
+    # budget as fetch_apt_source_file in scripts/setup/lib.sh, which this
+    # standalone script cannot source. Every attempt failing stops bootstrap;
+    # there is no unverified fallback source.
+    local docker_key_url=https://download.docker.com/linux/ubuntu/gpg docker_key
+    docker_key=$(mktemp)
+    if ! curl -fsSL --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 2 --retry-all-errors \
+      -o "${docker_key}" "${docker_key_url}" || [ ! -s "${docker_key}" ]; then
+      rm -f "${docker_key}"
+      echo "bootstrap.sh: could not fetch Docker's apt signing key from ${docker_key_url} after 3 attempts" >&2
+      exit 1
+    fi
+    "${SUDO[@]}" gpg --batch --yes --dearmor -o "${DOCKER_KEYRING}" <"${docker_key}"
+    rm -f "${docker_key}"
+    "${SUDO[@]}" chmod a+r "${DOCKER_KEYRING}"
+
+    printf '%s\n' "${expected_source}" | "${SUDO[@]}" tee "${DOCKER_APT_LIST}" >/dev/null
+  fi
+
+  if ! apt_packages_installed "${docker_packages[@]}"; then
+    "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" update -y
+    "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends "${docker_packages[@]}"
+  fi
 
   # Close the root hole: the package enables a rootful system daemon by default.
   # Disable AND mask both the service and its socket so nothing (including
