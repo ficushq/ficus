@@ -327,7 +327,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
       plan "else POST ${HCLOUD_API_BASE}/servers {name:${VM_NAME}, server_type:${HZ_SERVER_TYPE}, location:${HZ_LOCATION}, image:${HZ_IMAGE}, ssh_keys:[${HZ_SSH_KEY_NAME:-<provision.hetzner.ssh_key_name — required>}]}"
       plan "poll GET ${HCLOUD_API_BASE}/servers/<id> until status=running and a public IPv4 is assigned (timeout 300s)"
       plan "SSH target = that IPv4 (not DNS — a freshly-upserted record may not have propagated yet)"
-      plan "host key: a fresh ed25519 host key generated here, installed by cloud-init user_data (which also apt-installs $(host_source_tool_packages "${SRC_MODE}") ca-certificates on first boot), pinned in $(host_key_pin_path hetzner '<id>'); a reused server uses that saved pin, else its scanned fingerprint must be confirmed (or --host-key-fingerprint)"
+      plan "host key: a fresh ed25519 host key generated here, installed by cloud-init user_data (which also apt-installs $(host_source_tool_packages "${SRC_MODE}") on first boot, skipping apt's translation, appstream and command-not-found indexes), pinned in $(host_key_pin_path hetzner '<id>'); a reused server uses that saved pin, else its scanned fingerprint must be confirmed (or --host-key-fingerprint)"
       ;;
     digitalocean)
       plan "GET ${DO_API_BASE}/droplets?tag_name=${DO_TAG} (Bearer \$DIGITALOCEAN_TOKEN), filtered to name=${VM_NAME} — reuse the first found"
@@ -342,7 +342,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
         plan "POST ${DO_API_BASE}/projects/${DO_PROJECT_ID}/resources {resources:[do:droplet:<id>]} — best-effort, a failure warns and continues"
       plan "poll GET ${DO_API_BASE}/droplets/<id> until status=active and a public IPv4 (networks.v4[].type==public) is assigned (timeout 300s)"
       plan "SSH target = that public IPv4 (not DNS — a freshly-upserted record may not have propagated yet)"
-      plan "host key: a fresh ed25519 host key generated here, installed by cloud-init user_data (which also apt-installs $(host_source_tool_packages "${SRC_MODE}") ca-certificates on first boot), pinned in $(host_key_pin_path digitalocean '<id>'); a reused droplet uses that saved pin, else its scanned fingerprint must be confirmed (or --host-key-fingerprint)"
+      plan "host key: a fresh ed25519 host key generated here, installed by cloud-init user_data (which also apt-installs $(host_source_tool_packages "${SRC_MODE}") on first boot, skipping apt's translation, appstream and command-not-found indexes), pinned in $(host_key_pin_path digitalocean '<id>'); a reused droplet uses that saved pin, else its scanned fingerprint must be confirmed (or --host-key-fingerprint)"
       ;;
     *)
       plan "ssh -i ${ACCOUNT_KEY:-<account key — required>} -o IdentitiesOnly=yes -o IdentityAgent=none exe.dev \\"
@@ -528,7 +528,7 @@ prepare_vm_host_key() {
   # vm_host_key_user_data, host_source_tool_packages).
   local first_boot_pkgs=()
   read -r -a first_boot_pkgs <<<"$(host_source_tool_packages "${SRC_MODE}")"
-  VM_USER_DATA=$(vm_host_key_user_data "${VM_HOST_KEY_DIR}" "${first_boot_pkgs[@]}" ca-certificates) || exit 1
+  VM_USER_DATA=$(vm_host_key_user_data "${VM_HOST_KEY_DIR}" "${first_boot_pkgs[@]}") || exit 1
 }
 
 # hetzner/DO, right after the create call returned the server id: save the

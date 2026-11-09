@@ -3761,6 +3761,10 @@ generate_vm_host_key() { # DIR
 
 # cloud-init user_data that installs DIR's generated key as the server's only
 # SSH host key (cc_ssh: drop the image's keys, generate none, install ours).
+# cc_ssh reads ssh_genkeytypes only when ssh_keys is absent, so it generates
+# nothing here; the list still names just ed25519 rather than [] because
+# cloud-init's schema requires at least one entry, and an invalid user_data
+# makes `cloud-init status --wait` exit 2 ("degraded done") on every boot.
 # Written to DIR/user_data (0600 — it holds the private key) and the path
 # printed. The private key never appears on a command line: the create-body
 # builders read this file with jq --rawfile.
@@ -3770,7 +3774,9 @@ generate_vm_host_key() { # DIR
 # while provision.sh waits for SSH and pushes the toolkit; setup-host.sh
 # waits for cloud-init (wait_for_first_boot_apt) and then finds them present.
 # A failed first-boot install is harmless: setup-host.sh installs whatever is
-# still missing. Unattended upgrades are deliberately left alone: deferring
+# still missing. Pass only packages the image may lack: naming one it already
+# has (ca-certificates) makes apt UPGRADE it on first boot, which cost ~18 s of
+# update-ca-certificates on a 2-vCPU droplet, on the critical path. Unattended upgrades are deliberately left alone: deferring
 # them would leave a window with security updates off if a provision died
 # before re-enabling them, and the dpkg lock wait already absorbs them.
 vm_host_key_user_data() { # DIR [PACKAGE...]
@@ -3784,9 +3790,23 @@ vm_host_key_user_data() { # DIR [PACKAGE...]
         printf 'package_update: true\n'
         printf 'packages:\n'
         for pkg in "$@"; do printf '  - %s\n' "${pkg}"; done
+        # Before that update (write_files runs in cloud-init's init stage, the
+        # package install in its final stage): skip the indexes a server never
+        # reads. Appstream (DEP-11) and command-not-found (CNF) index processing
+        # was ~60% of a first-boot update in a 24.04 benchmark; translations are
+        # dropped with them. Every later apt-get update on the host gains too.
+        # The sources and mirror are untouched.
+        printf 'write_files:\n'
+        printf '  - path: /etc/apt/apt.conf.d/60ficus-lean-indexes\n'
+        printf '    owner: root:root\n'
+        printf "    permissions: '0644'\n"
+        printf '    content: |\n'
+        printf '      Acquire::Languages "none";\n'
+        printf '      Acquire::IndexTargets::deb::DEP-11::DefaultEnabled "false";\n'
+        printf '      Acquire::IndexTargets::deb::CNF::DefaultEnabled "false";\n'
       fi
       printf 'ssh_deletekeys: true\n'
-      printf 'ssh_genkeytypes: []\n'
+      printf 'ssh_genkeytypes: [ed25519]\n'
       printf 'ssh_keys:\n'
       printf '  ed25519_private: |\n'
       sed 's/^/    /' "${dir}/ssh_host_ed25519_key"

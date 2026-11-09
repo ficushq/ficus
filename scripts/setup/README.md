@@ -109,7 +109,12 @@ comes from:
   packages `setup-host.sh` needs first (curl, jq, openssl, unzip, plus git
   outside artifact mode), so that apt work runs while `provision.sh` waits for
   SSH and pushes the toolkit. If it fails, `setup-host.sh` installs whatever
-  is still missing. Unattended upgrades are left on throughout.
+  is still missing. It does not name packages the image already has (an
+  installed `ca-certificates` would be upgraded, which is slow), and it writes
+  `/etc/apt/apt.conf.d/60ficus-lean-indexes` first, so apt skips the
+  translation, appstream (DEP-11) and command-not-found indexes on that update
+  and every later one. The sources and mirror are unchanged. Unattended
+  upgrades are left on throughout.
 - **A reused hetzner/digitalocean server with no saved key** (created
   elsewhere, or its pin file was lost) has no out-of-band source, so it fails
   closed: `provision.sh` shows the scanned fingerprint and an interactive run

@@ -1687,7 +1687,12 @@ expect_eq 'vm_host_key_user_data: 0600 (it holds the private key)' "$(stat -c %a
 expect_eq 'vm_host_key_user_data: is #cloud-config' "$(head -n1 "${hk_ud}")" '#cloud-config'
 if yq_is_mikefarah; then
   expect_eq 'vm_host_key_user_data: drops the image keys' "$(yq '.ssh_deletekeys' "${hk_ud}")" 'true'
-  expect_eq 'vm_host_key_user_data: generates no other key types' "$(yq -o=json -I=0 '.ssh_genkeytypes' "${hk_ud}")" '[]'
+  # cloud-init's schema needs at least one entry (an empty list fails
+  # validation, so `cloud-init status --wait` exits 2 on every first boot). With
+  # ssh_keys present cc_ssh never generates a key; the list only matters if it
+  # did, and then it must name nothing but the pinned type.
+  expect_eq 'vm_host_key_user_data: generates no key type but the pinned ed25519 (schema-valid, non-empty)' \
+    "$(yq -o=json -I=0 '.ssh_genkeytypes' "${hk_ud}")" '["ed25519"]'
   expect_eq 'vm_host_key_user_data: public key is the generated one' \
     "$(yq '.ssh_keys.ed25519_public' "${hk_ud}")" "$(awk '{ print $1 " " $2 }' "${HK_TMP}/gen/ssh_host_ed25519_key.pub")"
   (umask 077 && yq '.ssh_keys.ed25519_private' "${hk_ud}" >"${HK_TMP}/roundtrip")
@@ -1708,6 +1713,17 @@ if yq_is_mikefarah; then
     "$(yq -o=json -I=0 '.packages' "${hk_ud_pkgs}")" '["jq","unzip","ca-certificates"]'
   expect_eq 'vm_host_key_user_data: with an apt index refresh, no upgrade' \
     "$(yq -o=json -I=0 '[.package_update, has("package_upgrade")]' "${hk_ud_pkgs}")" '[true,false]'
+  # The first-boot apt-get update skips the indexes a server never reads. Its
+  # Post-Invoke hooks and index processing for appstream (DEP-11) and
+  # command-not-found (CNF) were ~60% of a first-boot update in a 24.04
+  # benchmark (8.7 s -> 3.2 s). write_files runs in cloud-init's init stage,
+  # before the final-stage package install, and leaves the apt mirror alone.
+  expect_eq 'vm_host_key_user_data: apt skips translation, appstream and command-not-found indexes' \
+    "$(yq -o=json -I=0 '[.write_files[] | select(.path == "/etc/apt/apt.conf.d/60ficus-lean-indexes") | .content]' "${hk_ud_pkgs}")" \
+    '["Acquire::Languages \"none\";\nAcquire::IndexTargets::deb::DEP-11::DefaultEnabled \"false\";\nAcquire::IndexTargets::deb::CNF::DefaultEnabled \"false\";\n"]'
+  expect_eq 'vm_host_key_user_data: the apt index config is world-readable, root-owned' \
+    "$(yq -o=json -I=0 '[.write_files[] | select(.path == "/etc/apt/apt.conf.d/60ficus-lean-indexes") | [.permissions, .owner]]' "${hk_ud_pkgs}")" \
+    '[["0644","root:root"]]'
   expect_eq 'vm_host_key_user_data: packages do not disturb the host key' \
     "$(yq '.ssh_keys.ed25519_public' "${hk_ud_pkgs}")" "$(awk '{ print $1 " " $2 }' "${HK_TMP}/gen-pkgs/ssh_host_ed25519_key.pub")"
 fi
@@ -1715,6 +1731,16 @@ expect_eq 'host_source_tool_packages: git modes need git' "$(host_source_tool_pa
 expect_eq 'host_source_tool_packages: artifact mode never clones' "$(host_source_tool_packages artifact)" 'curl jq openssl unzip'
 expect_match 'setup-host.sh prepare_source_tools: checks the shared source-tool list' \
   "$(sed -n '/^prepare_source_tools() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'host_source_tool_packages "\$\{SRC_MODE\}"'
+# The missing list must be taken AFTER cloud-init's first-boot install: taken
+# before, it still names what cloud-init installs during the wait, and setup
+# repeats an apt-get update + install for packages already present (observed on
+# a DigitalOcean provision, 2026-11-09: "installing missing packages: unzip"
+# right after cloud-init had installed unzip).
+pst_body=$(sed -n '/^prepare_source_tools() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")
+pst_wait=$(grep -n '^[[:space:]]*wait_for_first_boot_apt$' <<<"${pst_body}" | head -n1 | cut -d: -f1)
+pst_check=$(grep -n 'missing+=("${pkg}")' <<<"${pst_body}" | head -n1 | cut -d: -f1)
+expect_eq 'setup-host.sh prepare_source_tools: checks for missing tools only after the first-boot cloud-init wait' \
+  "$([[ -n ${pst_wait} && -n ${pst_check} && ${pst_wait} -lt ${pst_check} ]] && echo after || echo "before (wait line ${pst_wait:-none}, check line ${pst_check:-none})")" 'after'
 
 expect_eq 'hcloud_server_create_body: carries user_data from the file' \
   "$(hcloud_server_create_body acme cx32 fsn1 ubuntu-24.04 k "${hk_ud}" | jq -r .user_data)" "$(cat "${hk_ud}")"
@@ -2935,8 +2961,10 @@ EOF
   expect_eq 'host keys, hetzner create: user_data is cloud-config' "$(head -n1 <<<"${hkp_ud}")" '#cloud-config'
   hkp_pub=$(yq '.ssh_keys.ed25519_public' <<<"${hkp_ud}")
   expect_match 'host keys, hetzner create: user_data installs an ed25519 host key' "${hkp_pub}" '^ssh-ed25519 [A-Za-z0-9+/=]+$'
-  expect_eq 'first boot, hetzner create: user_data installs the source tools (git-https)' \
-    "$(yq -o=json -I=0 '.packages' <<<"${hkp_ud}")" '["git","curl","jq","openssl","unzip","ca-certificates"]'
+  # No ca-certificates: every Ubuntu image ships it, and naming it makes apt
+  # UPGRADE it on first boot (~18 s of update-ca-certificates on a droplet).
+  expect_eq 'first boot, hetzner create: user_data installs the source tools (git-https), and does not upgrade ca-certificates' \
+    "$(yq -o=json -I=0 '.packages' <<<"${hkp_ud}")" '["git","curl","jq","openssl","unzip"]'
   (umask 077 && yq '.ssh_keys.ed25519_private' <<<"${hkp_ud}" >"${HKP}/priv")
   expect_eq 'host keys, hetzner create: user_data private key matches its public key' \
     "$(ssh-keygen -y -f "${HKP}/priv" | awk '{ print $1 " " $2 }')" "${hkp_pub}"
@@ -3049,8 +3077,8 @@ EOF
   expect_eq 'host keys, digitalocean create: succeeds non-interactively with no fingerprint supplied' "${hkp_rc}" '0'
   hkp_pub=$(jq -r '.user_data' "${HKP}/post.json" | yq '.ssh_keys.ed25519_public')
   expect_match 'host keys, digitalocean create: user_data installs an ed25519 host key' "${hkp_pub}" '^ssh-ed25519 '
-  expect_eq 'first boot, digitalocean create: user_data installs the source tools' \
-    "$(jq -r '.user_data' "${HKP}/post.json" | yq -o=json -I=0 '[.package_update, .packages]')" '[true,["git","curl","jq","openssl","unzip","ca-certificates"]]'
+  expect_eq 'first boot, digitalocean create: user_data installs the source tools, and does not upgrade ca-certificates' \
+    "$(jq -r '.user_data' "${HKP}/post.json" | yq -o=json -I=0 '[.package_update, .packages]')" '[true,["git","curl","jq","openssl","unzip"]]'
   expect_eq 'host keys, digitalocean create: ssh knows exactly that key for the droplet IP' \
     "$(sort -u "${HKP}/ssh/known_hosts")" "198.51.100.10 ${hkp_pub}"
   expect_eq 'host keys, digitalocean create: the key is saved by provider and droplet id' \

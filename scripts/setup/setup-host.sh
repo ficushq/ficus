@@ -926,6 +926,26 @@ prepare_source_tools() {
   fi
   require_root_capability
 
+  # Make every apt call on this host wait for the dpkg lock instead of dying
+  # with exit 100. Fresh cloud VMs run unattended-upgrades on first boot, and
+  # provisioning reaches this phase within ~2 minutes of VM creation — both
+  # observed scratch-tenant provisions failed their FIRST attempt with
+  # provision.sh exit 100 (apt's failure code) and succeeded on retry minutes
+  # later, exactly the lock-release window. A config file (not per-call flags)
+  # covers all 13 apt invocations across the toolkit in one place.
+  printf 'DPkg::Lock::Timeout "120";\n' |
+    as_root tee /etc/apt/apt.conf.d/99ficus-lock-timeout >/dev/null
+  # The same setting under its name from before the Ficus naming: one copy.
+  # That option covers the dpkg lock only, not the lists lock that
+  # `apt-get update` takes, so first let cloud-init's own package phase
+  # finish; every update below goes through apt_update, which waits out the
+  # lists lock too (see lib.sh, "apt on a fresh VM").
+  wait_for_first_boot_apt
+
+  # Checked only now, after the cloud-init wait: provision.sh has cloud-init
+  # install these same tools on first boot, so a list taken before the wait
+  # names packages that are present by the time it is used, and setup repeats
+  # an apt-get update + install for nothing.
   local missing=()
   local pkg
   # unzip is NOT optional: bun's official installer unpacks a .zip and aborts
@@ -944,22 +964,6 @@ prepare_source_tools() {
   for pkg in "${required_pkgs[@]}"; do
     have "${pkg}" || missing+=("${pkg}")
   done
-
-  # Make every apt call on this host wait for the dpkg lock instead of dying
-  # with exit 100. Fresh cloud VMs run unattended-upgrades on first boot, and
-  # provisioning reaches this phase within ~2 minutes of VM creation — both
-  # observed scratch-tenant provisions failed their FIRST attempt with
-  # provision.sh exit 100 (apt's failure code) and succeeded on retry minutes
-  # later, exactly the lock-release window. A config file (not per-call flags)
-  # covers all 13 apt invocations across the toolkit in one place.
-  printf 'DPkg::Lock::Timeout "120";\n' |
-    as_root tee /etc/apt/apt.conf.d/99ficus-lock-timeout >/dev/null
-  # The same setting under its name from before the Ficus naming: one copy.
-  # That option covers the dpkg lock only, not the lists lock that
-  # `apt-get update` takes, so first let cloud-init's own package phase
-  # finish; every update below goes through apt_update, which waits out the
-  # lists lock too (see lib.sh, "apt on a fresh VM").
-  wait_for_first_boot_apt
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_info "installing missing packages: ${missing[*]}"
