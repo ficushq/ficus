@@ -19,6 +19,7 @@ import {
   resolveRequestBasePath,
   type BasePathRequest,
 } from '../../lib/app-base-path'
+import { copyPeerAddress } from '../../lib/client-address'
 import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('local-deployment-base-path')
@@ -83,11 +84,17 @@ export function decideLocalAppBase(
   return { kind: 'redirect', location: `${publicBase}${req.path}${url.search}` }
 }
 
-/** The request without the redirect marker, so the app never sees it. */
+/**
+ * The request without the redirect marker, so the app never sees it. The
+ * socket peer address is carried over, so X-Forwarded-For and a trusted
+ * proxy's X-Forwarded-Host still reach the app.
+ */
 export function withoutRedirectMarker(request: Request): Request {
   const url = new URL(request.url)
   url.searchParams.delete(LOCAL_APP_BASE_REDIRECT_PARAM)
-  return new Request(url, request)
+  const stripped = new Request(url, request)
+  copyPeerAddress(request, stripped)
+  return stripped
 }
 
 let warnedAfterRedirect = false

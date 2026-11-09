@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { LocalDeployment } from '@ficus/shared'
+import { attachPeerAddress, getClientAddress, isTrustedProxyPeer } from '../../lib/client-address'
 import {
   decideLocalAppBase,
   LOCAL_APP_BASE_REDIRECT_PARAM,
@@ -71,11 +72,16 @@ describe('decideLocalAppBase', () => {
     )
   })
 
-  test('the marker is removed before the request reaches the app', () => {
-    const stripped = withoutRedirectMarker(
-      new Request(`http://h/api/app/${ID}/?_ficus_token=t&${LOCAL_APP_BASE_REDIRECT_PARAM}=1`)
-    )
+  test('the marker is removed before the request reaches the app, keeping the socket peer', () => {
+    const original = new Request(`http://h/api/app/${ID}/?_ficus_token=t&${LOCAL_APP_BASE_REDIRECT_PARAM}=1`, {
+      headers: { 'x-forwarded-for': '203.0.113.7' },
+    })
+    attachPeerAddress(original, '127.0.0.1')
+    const stripped = withoutRedirectMarker(original)
     expect(new URL(stripped.url).search).toBe('?_ficus_token=t')
+    // A loopback peer is a trusted proxy: its X-Forwarded-For and X-Forwarded-Host stay believable.
+    expect(isTrustedProxyPeer(stripped)).toBe(true)
+    expect(getClientAddress(stripped)).toBe('203.0.113.7')
   })
 })
 
