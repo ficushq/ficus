@@ -1,14 +1,9 @@
+import { normalizeBasePath } from './app-base-path'
 import { resolvePublicAppUrl } from './public-app-url'
 
 interface BuildMobilePairingServerUrlInput {
   requestUrl: string
   originHeader?: string | null
-}
-
-function normalizeBasePath(path: string | undefined | null): string {
-  const trimmed = path?.trim()
-  if (!trimmed || trimmed === '/') return ''
-  return `/${trimmed.replace(/^\/+|\/+$/g, '')}`
 }
 
 function basePathFromRequestUrl(requestUrl: string): string {
