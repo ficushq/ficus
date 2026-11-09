@@ -310,6 +310,13 @@ A prefix whose first segment is also a Core or web app route (for example
 `/settings` or `/api`) is never removed from request paths, so it works only
 behind a proxy that removes the prefix; Settings warns about it.
 
+The embedded documentation follows the same path: Core renders each docs page
+for the request's base path (`/docs/` or `/ficus/docs/`) and rebases the one
+Starlight search script that carries the base, so links, assets and search work
+at both. `bun scripts/check-embedded-base.ts` (part of `build:embedded`) fails
+the build if an Astro or Starlight upgrade moves the base somewhere Core does
+not rebase.
+
 Squad local apps (`/api/app/<id>/`) are served under the public address's path
 on every listener: a link opened at the local root address redirects once to
 `/ficus/api/app/<id>/` on the same host, and Ficus restarts the apps it runs

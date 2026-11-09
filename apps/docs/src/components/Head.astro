@@ -1,7 +1,12 @@
 ---
 import DefaultHead from '@astrojs/starlight/components/Head.astro'
 import docsModeScript from '../scripts/docs-mode.js?raw'
+
+// Embedded in Core, the docs are served at <base path>/docs/ (for example /ficus/docs/):
+// Core fills this placeholder per request (apps/core/src/lib/docs-serve.ts).
+const embedded = process.env.FICUS_DOCS_EMBEDDED === '1'
 ---
 
 <DefaultHead />
+{embedded && <meta name="ficus-docs-base" content="__FICUS_DOCS_BASE__" />}
 <script is:inline set:html={docsModeScript} />

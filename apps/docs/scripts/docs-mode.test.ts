@@ -6,7 +6,7 @@ import { DOCS_MODE_STORAGE_KEY } from '../../../packages/shared/src/browser-keys
 const script = readFileSync(new URL('../src/scripts/docs-mode.js', import.meta.url), 'utf8')
 
 async function fixture(
-  options: { path?: string; stored?: string; blockedStorage?: boolean },
+  options: { path?: string; stored?: string; blockedStorage?: boolean; docsBase?: string },
   run: (window: Window) => void | Promise<void>
 ) {
   // Owned DOM only: never install browser globals into Bun's process.
@@ -20,6 +20,8 @@ async function fixture(
         },
       })
     }
+    if (options.docsBase !== undefined)
+      window.document.head.innerHTML = `<meta name="ficus-docs-base" content="${options.docsBase}">`
     window.document.body.innerHTML = `
       <select data-docs-mode-select><option value="cloud">Cloud</option><option value="self-hosted">Self-hosted</option></select>
       <select data-docs-mode-select><option value="cloud">Cloud</option><option value="self-hosted">Self-hosted</option></select>
@@ -131,5 +133,42 @@ test('embedded setup and search preserve docs mode without decorating app routes
     w.document.body.append(result)
     await w.happyDOM.waitUntilComplete()
     expect(result.getAttribute('href')).toBe('/docs/use/squads/?mode=self-hosted#start')
+  })
+})
+
+test('embedded under a base path, setup mode and link decoration follow the rendered docs base', async () => {
+  await fixture({ path: '/ficus/docs/start/self-host/', stored: 'cloud', docsBase: '/ficus/docs/' }, async (w) => {
+    expect(w.document.documentElement.dataset.docsMode).toBe('self-hosted')
+    // Not a documentation route under this base: left alone.
+    expect(w.document.getElementById('guide')?.getAttribute('href')).toBe('/use/assistant/?q=voice#talk')
+    const result = w.document.createElement('a')
+    result.href = '/ficus/docs/use/squads/#start'
+    w.document.body.append(result)
+    const unprefixed = w.document.createElement('a')
+    unprefixed.href = '/docs/use/squads/'
+    w.document.body.append(unprefixed)
+    await w.happyDOM.waitUntilComplete()
+    expect(result.getAttribute('href')).toBe('/ficus/docs/use/squads/?mode=self-hosted#start')
+    expect(unprefixed.getAttribute('href')).toBe('/docs/use/squads/')
+  })
+})
+
+test('an unrendered docs base placeholder falls back to /docs', async () => {
+  await fixture({ path: '/docs/start/cloud/', stored: 'self-hosted', docsBase: '__FICUS_DOCS_BASE__' }, async (w) => {
+    expect(w.document.documentElement.dataset.docsMode).toBe('cloud')
+    const result = w.document.createElement('a')
+    result.href = '/docs/use/squads/'
+    w.document.body.append(result)
+    await w.happyDOM.waitUntilComplete()
+    expect(result.getAttribute('href')).toBe('/docs/use/squads/?mode=cloud')
+  })
+})
+
+test('the hosted site (no docs base meta, served at the root) is unchanged', async () => {
+  await fixture({ path: '/start/self-host/', stored: 'cloud' }, async (w) => {
+    expect(w.document.documentElement.dataset.docsMode).toBe('self-hosted')
+    expect(w.document.getElementById('guide')?.getAttribute('href')).toBe(
+      '/use/assistant/?q=voice&mode=self-hosted#talk'
+    )
   })
 })
