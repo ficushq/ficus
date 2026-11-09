@@ -1,13 +1,42 @@
 /**
  * Where the farm lives relative to the rest of the instance. Core serves it at
- * `<APP_BASE_PATH>/farm/`; the API, WebSocket and web app all sit at the
- * instance root beside it.
+ * `<base path>/farm/`; the API, WebSocket and web app all sit at the instance
+ * base beside it.
+ *
+ * The base path is chosen per request: Core fills
+ * `<meta name="ficus-base-path" content="/ficus/">` into the farm's index.html
+ * (apps/core/src/lib/web-serve.ts), so one build serves at the local root and
+ * behind a `/ficus` reverse proxy at once. Without a usable meta (the dev
+ * server, tests) the farm's build-time base applies.
  */
 const FARM_SUFFIX = /\/farm\/?$/
+const PLACEHOLDER = '__FICUS_BASE_PATH__'
 
-/** The instance base path ('' or e.g. '/ficus'), derived from the farm's own base URL. */
-export function instanceBasePath(farmBaseUrl: string = import.meta.env.BASE_URL ?? '/farm/'): string {
-  return farmBaseUrl.replace(FARM_SUFFIX, '').replace(/\/+$/, '')
+/** The instance base path Core rendered (`''` or `/ficus`), or null without a usable meta. */
+export function runtimeInstanceBasePath(
+  doc: Document | undefined = typeof document === 'undefined' ? undefined : document
+): string | null {
+  const content = doc?.querySelector('meta[name="ficus-base-path"]')?.getAttribute('content')?.trim()
+  if (!content || content === PLACEHOLDER || !content.startsWith('/')) return null
+  if (content.includes('//') || /[\s"'<>\\]/.test(content)) return null
+  return content.replace(/\/+$/, '')
+}
+
+/**
+ * The instance base path (`''` or for example `/ficus`): from an explicit farm
+ * base URL when given, else the one Core rendered, else the build-time base.
+ */
+export function instanceBasePath(farmBaseUrl?: string): string {
+  if (farmBaseUrl === undefined) {
+    const runtime = runtimeInstanceBasePath()
+    if (runtime !== null) return runtime
+  }
+  return (farmBaseUrl ?? import.meta.env.BASE_URL ?? '/farm/').replace(FARM_SUFFIX, '').replace(/\/+$/, '')
+}
+
+/** Where the farm itself is served for this page: `/farm/` or `/ficus/farm/`. */
+export function farmBasePath(): string {
+  return `${instanceBasePath()}/farm/`
 }
 
 function pageOrigin(): string {
