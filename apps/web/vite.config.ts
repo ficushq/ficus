@@ -440,6 +440,19 @@ function computeBuiltinCssFingerprint(): string {
   return fnv1a(`${indexCss}\u0000${builtinsCss}`)
 }
 
+/**
+ * Vite `experimental.renderBuiltUrl`: asset URLs inside JS and CSS become
+ * relative to the importing file (`new URL('./x', import.meta.url)` in JS), so
+ * the bundle never hardcodes its base path. HTML keeps base-absolute URLs,
+ * which Core rebases per request.
+ */
+export function importerRelativeBuiltUrl(
+  _filename: string,
+  { hostType }: { hostType: 'js' | 'css' | 'html' }
+): { relative: true } | undefined {
+  return hostType === 'js' || hostType === 'css' ? { relative: true } : undefined
+}
+
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, path.resolve(process.cwd(), '../..'), ['VITE_', 'APP_'])
   const deployedBase = env.APP_BASE_PATH ? env.APP_BASE_PATH.replace(/\/?$/, '/') : '/'
@@ -460,25 +473,29 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     base,
+    // One build serves at any base path: Core rebases the absolute URLs in
+    // index.html per request (apps/core/src/lib/web-serve.ts), so every URL
+    // inside JS and CSS must be relative to the file that references it.
+    experimental: { renderBuiltUrl: importerRelativeBuiltUrl },
     define: {
       __FICUS_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
       __FICUS_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
-      __FICUS_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
       __FICUS_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),
     },
     plugins: [
       ...(devAccessToken ? [devAccessPlugin(devAccessToken)] : []),
       ...(isViteDev ? [devBackendControlPlugin(devBackendState)] : []),
       react(),
-      // The built index.html keeps __FICUS_ORIGIN__ for the server to fill in
-      // (apps/core/src/lib/web-serve.ts). The dev server serves the file itself,
-      // so blank it there: relative og:* values are harmless in development.
+      // The built index.html keeps __FICUS_ORIGIN__ and __FICUS_BASE_PATH__ for
+      // the server to fill in per request (apps/core/src/lib/web-serve.ts). The
+      // dev server serves the file itself at /, so fill them there: relative og:*
+      // values are harmless in development.
       {
         name: 'ficus-origin-placeholder',
         transformIndexHtml: {
           order: 'pre' as const,
           handler(html: string, ctx: { server?: unknown }) {
-            return ctx.server ? html.replaceAll('__FICUS_ORIGIN__', '') : html
+            return ctx.server ? html.replaceAll('__FICUS_ORIGIN__', '').replaceAll('__FICUS_BASE_PATH__', '/') : html
           },
         },
       },
@@ -514,8 +531,10 @@ export default defineConfig(({ mode, command }) => {
           name: 'Ficus - AI Task Management',
           short_name: 'Ficus',
           description: 'A workspace for teams of AI agents.',
-          start_url: base,
-          scope: base,
+          // Relative, so the same manifest works at every base path the server
+          // renders: resolved against the manifest's own URL (<base>/manifest.webmanifest).
+          start_url: './',
+          scope: './',
           display: 'standalone',
           orientation: 'portrait-primary',
           // Ficus brand: linen background, leaf theme color (brand/README.md).

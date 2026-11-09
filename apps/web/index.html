@@ -7,6 +7,9 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>Ficus</title>
+    <!-- The base path the browser used ("/" or "/ficus/"), filled in per request by
+         Core (apps/core/src/lib/web-serve.ts) and read by src/lib/basePath.ts. -->
+    <meta name="ficus-base-path" content="__FICUS_BASE_PATH__" />
 
     <!-- PWA manifest link is injected at build time by vite-plugin-pwa
          (base-path aware manifest.webmanifest). -->

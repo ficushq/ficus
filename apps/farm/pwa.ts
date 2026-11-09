@@ -6,7 +6,7 @@ import type { HtmlTagDescriptor, Plugin } from 'vite'
 /**
  * The farm's web app manifest and icons, so it installs to a home screen as
  * its own app beside Ficus. Every URL is relative to the farm's base
- * (`<APP_BASE_PATH>/farm/`): the app's id, start and scope are the farm,
+ * (`<base path>/farm/`): the app's id, start and scope are the farm,
  * whatever the instance base path, and its icons are the farm set in the
  * farm's public dir (brand/generated/farm).
  *

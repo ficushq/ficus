@@ -27,7 +27,7 @@ function hostOf(origin: string): string {
   }
 }
 
-/** The /add-passkey page a link points at (origin + APP_BASE_PATH), without the code fragment. */
+/** The /add-passkey page a link points at (origin plus its base path), without the code fragment. */
 function pageUrl(url: string): string {
   return url.split('#')[0]
 }
