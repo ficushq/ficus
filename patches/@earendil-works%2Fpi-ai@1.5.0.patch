@@ -1,8 +1,8 @@
 diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
-index 841da89..f1b102b 100644
+index de2b2d8..c0e2896 100644
 --- a/dist/api/anthropic-messages.js
 +++ b/dist/api/anthropic-messages.js
-@@ -777,8 +777,10 @@ export const streamSimple = (model, context, options) => {
+@@ -764,8 +764,10 @@ export const streamSimple = (model, context, options) => {
          thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
      });
  };
@@ -16,7 +16,7 @@ index 841da89..f1b102b 100644
  function createClient(model, apiKey, optionsHeaders, fetch, dynamicHeaders, sessionId, federation, identity) {
      // Copilot: Bearer auth.
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index 45bcd08..a59caaa 100644
+index 427df0a..3a6211b 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -50,7 +50,7 @@ function assertSuccessfulOutput(output) {
@@ -101,7 +101,7 @@ index 320e78a..5321cdb 100644
          models: Object.values(ANTHROPIC_MODELS),
          api: anthropicMessagesApi(),
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 1ae291c..3b24e55 100644
+index d33b806..ab99b7b 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -19,6 +19,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([

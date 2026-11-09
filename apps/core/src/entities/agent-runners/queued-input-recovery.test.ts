@@ -451,9 +451,11 @@ it('quiet termination never acknowledges an SDK memory entry whose real filesyst
     rmSync(file, { recursive: true, force: true })
   }
   expect(existsSync(file)).toBe(false)
+  // Pi 1.5 rolls the in-memory entry back when the append throws, so neither memory nor
+  // disk holds this delivery; quiet termination must still leave it pending for B.
   expect(
     manager.getEntries().some((e) => e.type === 'message' && e.deliveryId === claim!.metadata!.sessionDelivery!.id)
-  ).toBe(true)
+  ).toBe(false)
   await a.stopQuietly()
   const afterStop = await Agent.findMessage(u.id)
   expect(afterStop!.pending).toBe(true)
@@ -496,12 +498,18 @@ it('termination requires a complete durable JSONL receipt rather than a partial 
   } finally {
     rmSync(file, { recursive: true, force: true })
   }
-  const memoryEntry = manager
-    .getEntries()
-    .find((e) => e.type === 'message' && e.deliveryId === claim!.metadata!.sessionDelivery!.id)!
-  // A failed initial flush can leave a valid prefix and an incomplete final write.
+  // Pi 1.5 rolls the failed entry back in memory, so build the entry the failed flush would
+  // have written. A failed initial flush can leave a valid prefix and an incomplete final write.
   // Even parseable JSON at EOF is not a complete SDK newline-terminated append.
-  writeFileSync(file, `${JSON.stringify(manager.getHeader())}\n${JSON.stringify(memoryEntry)}`)
+  const partialEntry = {
+    type: 'message',
+    id: 'partial0',
+    parentId: manager.getLeafId(),
+    timestamp: new Date().toISOString(),
+    deliveryId: claim!.metadata!.sessionDelivery!.id,
+    message: { role: 'user', content: [{ type: 'text', text: u.content }], timestamp: Date.now() },
+  }
+  writeFileSync(file, `${JSON.stringify(manager.getHeader())}\n${JSON.stringify(partialEntry)}`)
   await runner.stopQuietly()
   expect((await Agent.findMessage(u.id))!.pending).toBe(true)
   expect((await Agent.findMessage(u.id))!.injectedAt).toBeNull()

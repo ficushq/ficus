@@ -113,12 +113,14 @@ it('verified receipts exclude a failed append to an already-flushed SDK session'
       rmSync(file, { recursive: true, force: true })
       renameSync(backup, file)
     }
+    // Pi 1.5 rolls the in-memory entry back when its append throws; the disk check below
+    // is still what proves which deliveries were persisted.
     expect(
       manager
         .getEntries()
         .filter((e) => e.type === 'message')
         .map((e) => e.deliveryId)
-    ).toEqual(['successful', 'failed'])
+    ).toEqual(['successful'])
     const receipts = manager.getPersistedEntries().filter((e) => e.type === 'message')
     expect(receipts.map((e) => e.deliveryId)).toEqual(['successful'])
     expect(receipts[0]!.id).toBe(first)
