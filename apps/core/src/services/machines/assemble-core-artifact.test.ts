@@ -42,8 +42,9 @@ async function write(path: string, contents: string): Promise<void> {
 /**
  * A fixture that stands in for a fully built checkout: every path the layout
  * names, plus decoys that must NOT end up in the artifact (`src/`, `.git/`,
- * `bun.lock`, `patches/`, sibling files inside directories we copy
- * selectively, and a `.DS_Store`).
+ * `patches/`, sibling files inside directories we copy selectively, and a
+ * `.DS_Store`). Its `bun.lock` pins the same external versions its
+ * `node_modules` holds, as a real `bun install --frozen-lockfile` would leave it.
  */
 async function makeCheckout(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'assemble-core-artifact-checkout-'))
@@ -122,6 +123,7 @@ async function makeCheckout(): Promise<string> {
     '{"name":"@aws-sdk/client-s3","version":"3.999.0"}\n'
   )
   await write(join(root, 'node_modules/typescript/package.json'), '{"name":"typescript","version":"5.7.0"}\n')
+  await write(join(root, 'bun.lock'), FIXTURE_BUN_LOCK)
 
   // Decoys: none of these may appear inside the artifact.
   // The repo's own root package.json in particular: the artifact carries a
@@ -133,9 +135,95 @@ async function makeCheckout(): Promise<string> {
   await write(join(root, 'src/index.ts'), 'export const x = 1\n')
   await write(join(root, 'apps/core/src/index.ts'), 'export const y = 1\n')
   await write(join(root, '.git/HEAD'), 'ref: refs/heads/main\n')
-  await write(join(root, 'bun.lock'), '{}\n')
   await write(join(root, 'patches/thing.patch'), 'diff\n')
   return root
+}
+
+/**
+ * The fixture checkout's lockfile, in Bun's JSONC text format. `apps/core`
+ * resolves the seven runtime externals; `jsdom` pulls in `tough-cookie` (the
+ * only transitive dependency); `typescript` and `left-pad` belong to other
+ * workspaces and must not reach the pruned lockfile.
+ */
+const FIXTURE_BUN_LOCK = `{
+  "lockfileVersion": 1,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "ficus",
+      "devDependencies": {
+        "typescript": "^5.7.0",
+      },
+    },
+    "apps/core": {
+      "name": "core",
+      "dependencies": {
+        "@aws-sdk/client-s3": "^3.999.0",
+        "@aws-sdk/client-ses": "^3.1005.0",
+        "@google-cloud/text-to-speech": "^6.4.0",
+        "@silvia-odwyer/photon-node": "0.3.3",
+        "bun-pty": "^0.4.8",
+        "jsdom": "^26.0.0",
+        "left-pad": "^1.3.0",
+        "playwright-core": "1.58.2",
+      },
+    },
+  },
+  "packages": {
+    "@aws-sdk/client-s3": ["@aws-sdk/client-s3@3.999.0", "", {}, "sha512-s3"],
+
+    "@aws-sdk/client-ses": ["@aws-sdk/client-ses@3.1005.0", "", {}, "sha512-ses"],
+
+    "@google-cloud/text-to-speech": ["@google-cloud/text-to-speech@6.4.0", "", {}, "sha512-tts"],
+
+    "@silvia-odwyer/photon-node": ["@silvia-odwyer/photon-node@0.3.3", "", {}, "sha512-photon"],
+
+    "bun-pty": ["bun-pty@0.4.8", "", {}, "sha512-pty"],
+
+    "jsdom": ["jsdom@26.0.0", "", { "dependencies": { "tough-cookie": "^5.0.0" } }, "sha512-jsdom"],
+
+    "left-pad": ["left-pad@1.3.0", "", {}, "sha512-pad"],
+
+    "playwright-core": ["playwright-core@1.58.2", "", {}, "sha512-pw"],
+
+    "tough-cookie": ["tough-cookie@5.1.2", "", {}, "sha512-cookie"],
+
+    "typescript": ["typescript@5.7.0", "", {}, "sha512-ts"],
+  }
+}
+`
+
+/** What the fixture's pruned install ships: one package.json per pinned package. */
+const FIXTURE_PRUNED_PACKAGES = [
+  '@aws-sdk/client-s3',
+  '@aws-sdk/client-ses',
+  '@google-cloud/text-to-speech',
+  '@silvia-odwyer/photon-node',
+  'bun-pty',
+  'jsdom',
+  'playwright-core',
+  'tough-cookie',
+]
+
+/**
+ * What a frozen `bun install` does with the scratch project, minus the network:
+ * every package the scratch `bun.lock` pins is written at its lockfile path
+ * with a `package.json` naming its locked version.
+ */
+async function installFromScratchLock(scratch: string): Promise<void> {
+  const lock = JSON.parse(await readFile(join(scratch, 'bun.lock'), 'utf8'))
+  for (const [key, entry] of Object.entries(lock.packages as Record<string, [string]>)) {
+    const id = entry[0]
+    const at = id.lastIndexOf('@')
+    const parts = key.split('/')
+    const segments: string[] = []
+    for (let i = 0; i < parts.length; i++)
+      segments.push(parts[i]!.startsWith('@') ? `${parts[i]}/${parts[++i]}` : parts[i]!)
+    await write(
+      join(scratch, 'node_modules', segments.join('/node_modules/'), 'package.json'),
+      `${JSON.stringify({ name: id.slice(0, at), version: id.slice(at + 1) })}\n`
+    )
+  }
 }
 
 interface FakeRun {
@@ -145,16 +233,25 @@ interface FakeRun {
 
 /**
  * Wraps {@link defaultRun}: `bun install` is faked (it would otherwise hit the
- * network) by writing a marker `node_modules` — including a symlink, so the
- * staging copy's symlink materialization is exercised on the pruned tree too.
- * `tar` (and anything else) runs for real. `migrateResult` overrides what the
- * smoke run's `bun …/migrate.js` reports.
+ * network) by {@link installFromScratchLock} plus a marker file and a symlink,
+ * so the staging copy's symlink materialization is exercised on the pruned
+ * tree too. `install` replaces the whole fake install when a test needs Bun to
+ * refuse or to drift. `tar` (and anything else) runs for real. `migrateResult`
+ * overrides what the smoke run's `bun …/migrate.js` reports.
  */
-function makeRun(opts: { migrateResult?: RunResult; extensionResult?: RunResult } = {}): FakeRun {
+function makeRun(
+  opts: {
+    migrateResult?: RunResult
+    extensionResult?: RunResult
+    install?: (scratch: string) => Promise<RunResult>
+  } = {}
+): FakeRun {
   const calls: string[][] = []
   const run: Run = async (cmd, runOpts) => {
     calls.push(cmd)
     if (cmd[0] === 'bun' && cmd[1] === 'install') {
+      if (opts.install) return opts.install(runOpts.cwd!)
+      await installFromScratchLock(runOpts.cwd!)
       const nodeModules = join(runOpts.cwd!, 'node_modules')
       await write(join(nodeModules, 'bun-pty', 'index.js'), 'pruned bun-pty\n')
       await mkdir(join(nodeModules, '.bin'), { recursive: true })
@@ -249,6 +346,7 @@ describe('assembleCoreArtifact', () => {
         'bigbrain/ficus-bigbrain-host.js',
         'bigbrain/provenance.json',
         'node_modules/bun-pty/index.js',
+        ...FIXTURE_PRUNED_PACKAGES.map((name) => `node_modules/${name}/package.json`),
         'package.json',
       ].sort()
     )
@@ -319,21 +417,23 @@ describe('assembleCoreArtifact', () => {
     expect(verifyManifestSignature(manifestBytes, sig, publicKeyPem)).toBe(true)
   })
 
-  it('prunes node_modules from a scratch manifest pinning exactly the runtime externals', async () => {
+  it('prunes node_modules from a scratch manifest and a pruned bun.lock, installed with a frozen lockfile', async () => {
     const fake = makeRun()
     let scratchPackageJson = ''
+    let scratchLock = ''
     const wrapped: FakeRun = {
       calls: fake.calls,
       run: async (cmd, opts) => {
         if (cmd[0] === 'bun' && cmd[1] === 'install') {
           scratchPackageJson = await readFile(join(opts.cwd!, 'package.json'), 'utf8')
+          scratchLock = await readFile(join(opts.cwd!, 'bun.lock'), 'utf8')
         }
         return fake.run(cmd, opts)
       },
     }
     await assemble({}, wrapped)
 
-    expect(JSON.parse(scratchPackageJson).dependencies).toEqual({
+    const pinned = {
       'bun-pty': '0.4.8',
       'playwright-core': '1.58.2',
       jsdom: '26.0.0',
@@ -341,9 +441,67 @@ describe('assembleCoreArtifact', () => {
       '@google-cloud/text-to-speech': '6.4.0',
       '@aws-sdk/client-ses': '3.1005.0',
       '@aws-sdk/client-s3': '3.999.0',
-    })
+    }
+    expect(JSON.parse(scratchPackageJson).dependencies).toEqual(pinned)
+    const lock = JSON.parse(scratchLock)
+    expect(lock.workspaces).toEqual({ '': { name: 'ficus-core-artifact-externals', dependencies: pinned } })
+    // The closure, with its locked versions and integrity hashes; nothing
+    // that only another workspace (or another apps/core dependency) needs.
+    expect(Object.keys(lock.packages)).toEqual([...FIXTURE_PRUNED_PACKAGES].sort())
+    expect(lock.packages['tough-cookie']).toEqual(['tough-cookie@5.1.2', '', {}, 'sha512-cookie'])
     const install = fake.calls.find((c) => c[0] === 'bun' && c[1] === 'install')
-    expect(install).toEqual(['bun', 'install', '--production', '--ignore-scripts'])
+    expect(install).toEqual(['bun', 'install', '--production', '--ignore-scripts', '--frozen-lockfile'])
+  })
+
+  it('fails loudly, never re-resolving, when the frozen pruned install is refused', async () => {
+    const fake = makeRun({
+      install: async () => ({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'error: lockfile had changes, but lockfile is frozen\n',
+      }),
+    })
+    await expect(assemble({}, fake)).rejects.toThrow(/pruned bun install failed .*lockfile had changes/s)
+    expect(fake.calls.filter((c) => c[0] === 'bun' && c[1] === 'install')).toHaveLength(1)
+  })
+
+  it('fails, naming the package and both versions, when the pruned install ships a version bun.lock does not pin', async () => {
+    const fake = makeRun({
+      install: async (scratch) => {
+        await installFromScratchLock(scratch)
+        // A transitive dependency re-resolved to a newer upstream release.
+        await write(
+          join(scratch, 'node_modules/tough-cookie/package.json'),
+          '{"name":"tough-cookie","version":"5.2.0"}\n'
+        )
+        return { exitCode: 0, stdout: '', stderr: '' }
+      },
+    })
+    await expect(assemble({}, fake)).rejects.toThrow(/node_modules\/tough-cookie is tough-cookie@5\.2\.0/)
+  })
+
+  it('fails, naming both versions, when the checkout installed an external at a version bun.lock does not pin', async () => {
+    const checkoutRoot = await makeCheckout()
+    await write(join(checkoutRoot, 'node_modules/jsdom/package.json'), '{"name":"jsdom","version":"26.1.0"}\n')
+    await expect(assemble({ checkoutRoot })).rejects.toThrow(
+      /jsdom is installed in the checkout at 26\.1\.0, but bun\.lock pins 26\.0\.0/
+    )
+  })
+
+  it('checks the external apps/core resolves, preferring its own node_modules over the root one', async () => {
+    const checkoutRoot = await makeCheckout()
+    await write(join(checkoutRoot, 'node_modules/jsdom/package.json'), '{"name":"jsdom","version":"26.1.0"}\n')
+    await write(
+      join(checkoutRoot, 'apps/core/node_modules/jsdom/package.json'),
+      '{"name":"jsdom","version":"26.0.0"}\n'
+    )
+    await expect(assemble({ checkoutRoot })).resolves.toBeDefined()
+  })
+
+  it('fails when the checkout has no bun.lock to pin the pruned node_modules to', async () => {
+    const checkoutRoot = await makeCheckout()
+    await rm(join(checkoutRoot, 'bun.lock'))
+    await expect(assemble({ checkoutRoot })).rejects.toThrow(/no bun\.lock/)
   })
 
   it('fails, naming the path, when a layout directory is missing from the checkout', async () => {
@@ -430,7 +588,7 @@ describe('assembleCoreArtifact', () => {
     const fake = makeRun()
     const { result } = await assemble({ smoke: true }, fake)
 
-    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 35 })
+    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 35 + FIXTURE_PRUNED_PACKAGES.length })
     expect(fake.calls).toContainEqual([
       'bun',
       expect.stringMatching(/apps\/core\/dist\/smoke-configured-extensions\.js$/),
