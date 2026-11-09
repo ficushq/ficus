@@ -1804,11 +1804,18 @@ render_egress_ruleset() {
   printf '%s\n' "${rules[@]}"
 }
 
+# Installs nftables when nft is missing. Refreshes apt's index first: on a
+# converged host install_base_packages makes no apt call (see the note above
+# it), so nothing earlier in this run has updated the index.
+ensure_nftables() {
+  command -v nft >/dev/null 2>&1 && return 0
+  export DEBIAN_FRONTEND=noninteractive
+  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" update -y
+  "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends nftables
+}
+
 apply_egress_lockdown() {
-  command -v nft >/dev/null 2>&1 || {
-    export DEBIAN_FRONTEND=noninteractive
-    "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends nftables
-  }
+  ensure_nftables
 
   # Idempotent: flush + recreate a dedicated table so re-runs never stack rules.
   "${SUDO[@]}" nft delete table inet tau_egress 2>/dev/null || true

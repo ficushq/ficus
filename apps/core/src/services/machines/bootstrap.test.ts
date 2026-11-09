@@ -881,6 +881,33 @@ describe('bootstrap.sh skips redundant apt work on re-run (stubbed host)', () =>
     }
   })
 
+  it('nftables: missing -> refreshes the index before installing (the base step may have skipped its update)', async () => {
+    const root = makeHost(BASE)
+    try {
+      // No real nft on this PATH (it lives in /usr/sbin on Linux), so the
+      // install branch runs; base packages are all present, so nothing else in
+      // this run has refreshed apt's index.
+      const r = await runHostFixture(
+        [
+          'bash',
+          '-c',
+          `set -eo pipefail; source "${join(repoRoot, 'scripts/machine/bootstrap.sh')}"; SUDO=(env); install_base_packages; ensure_nftables`,
+        ],
+        { HOST_ROOT: root, FICUS_HOST_ROOT: root, PATH: `${join(root, 'stubbin')}:/usr/bin:/bin` },
+        5_000
+      )
+      const callsPath = join(root, 'calls')
+      const calls = existsSync(callsPath) ? readFileSync(callsPath, 'utf8').split('\n').filter(Boolean) : []
+      expect(r.exitCode).toBe(0)
+      expect(apt(calls)).toEqual([
+        'apt-get -o DPkg::Lock::Timeout=600 update -y',
+        'apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends nftables',
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('base packages: one missing -> update then install of the full list', async () => {
     const root = makeHost(BASE.filter((p) => p !== 'fuse-overlayfs'))
     try {
