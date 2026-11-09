@@ -8,9 +8,13 @@ updates:
     # 10 was saturated: further updates queued silently behind the open PRs.
     # The groups below also fold packages that must move together into one PR.
     open-pull-requests-limit: 15
-    # A dependency joins the first group that matches it, so the narrow groups
-    # come before the catch-all minor-and-patch group. Groups only shape version
-    # updates; security updates still arrive as their own PRs.
+    # The narrow groups come before the catch-all minor-and-patch group, but
+    # order alone does not keep a dependency out of it: Dependabot gives a
+    # dependency matching several groups to the most specific one, and a group
+    # with no patterns (minor-and-patch) outranks a wildcard pattern such as
+    # "@earendil-works/pi-*". Packages that must stay out of the catch-all
+    # group are therefore listed in its exclude-patterns. Groups only shape
+    # version updates; security updates still arrive as their own PRs.
     groups:
       # The Pi packages pin each other at one exact version, and pi-ai and
       # pi-coding-agent carry patches keyed to that version (patchedDependencies),
@@ -40,6 +44,8 @@ updates:
         update-types: ["major"]
       minor-and-patch:
         update-types: ["minor", "patch"]
+        # Pi updates always go to the pi group above, never the catch-all.
+        exclude-patterns: ["@earendil-works/*"]
     labels: ["dependencies"]
   - package-ecosystem: "github-actions"
     directory: "/"
