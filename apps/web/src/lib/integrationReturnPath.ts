@@ -1,11 +1,13 @@
+import { appBasePath } from './basePath'
+
 type OAuthProvider = 'github' | 'notion' | 'slack'
 
 /** Authorization accepts paths only. The callback restores the integration query parameters. */
-export function integrationAuthorizationReturnPath(baseUrl = import.meta.env?.BASE_URL ?? '/') {
+export function integrationAuthorizationReturnPath(baseUrl = appBasePath()) {
   return `${baseUrl.replace(/\/$/, '')}/settings`
 }
 
-export function integrationSettingsPath(provider: OAuthProvider, baseUrl = import.meta.env?.BASE_URL ?? '/') {
+export function integrationSettingsPath(provider: OAuthProvider, baseUrl = appBasePath()) {
   return `${integrationAuthorizationReturnPath(baseUrl)}?section=integrations&setting=integration-${provider}`
 }
 
@@ -13,16 +15,12 @@ export function integrationSettingsPath(provider: OAuthProvider, baseUrl = impor
  * Personal GitHub identity links return here. Authorization accepts paths only, so this marker path
  * is mapped back to the account page's linked-GitHub setting by `integrationReturnPath`.
  */
-export function githubIdentityAuthorizationReturnPath(baseUrl = import.meta.env?.BASE_URL ?? '/') {
+export function githubIdentityAuthorizationReturnPath(baseUrl = appBasePath()) {
   return `${baseUrl.replace(/\/$/, '')}/settings/github-identity`
 }
 
 /** Older authorization flows saved only /settings, which opens the personal account page. */
-export function integrationReturnPath(
-  returnTo: string,
-  provider: OAuthProvider,
-  baseUrl = import.meta.env?.BASE_URL ?? '/'
-) {
+export function integrationReturnPath(returnTo: string, provider: OAuthProvider, baseUrl = appBasePath()) {
   const settingsPath = `${baseUrl.replace(/\/$/, '')}/settings`
   const pathname = returnTo.split(/[?#]/, 1)[0]?.replace(/\/$/, '')
   if (provider === 'github' && pathname === githubIdentityAuthorizationReturnPath(baseUrl))

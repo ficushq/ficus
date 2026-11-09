@@ -13,6 +13,7 @@
 
 import { installPwaUpdateChecks, readServiceWorkerVersion, type PwaUpdateController } from './pwaUpdater'
 import { PWA_AUTO_APPLY_TRANSITION_STORAGE_KEY, PWA_JUST_APPLIED_STORAGE_KEY } from '@ficus/shared/browser-keys'
+import { appBasePath } from './basePath'
 
 /** Build version baked into this page bundle; equals the SW's CACHE_VERSION for the same build. */
 export const APP_VERSION =
@@ -182,7 +183,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
   try {
     if (!swRegistration) {
-      const base = import.meta.env?.BASE_URL || '/'
+      const base = appBasePath()
       swRegistration = await navigator.serviceWorker.register(`${base.replace(/\/?$/, '/')}sw.js`)
       console.log('[PWA] Service worker registered:', swRegistration.scope)
     }

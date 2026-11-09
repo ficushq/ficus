@@ -4,7 +4,8 @@ import type { WorkflowDefinition, WorkflowSource } from '@ficus/shared'
 import { isWorkerAgentType } from '@ficus/shared'
 import clsx from 'clsx'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { queries } from '../../queryOptions'
+import { publicUrlQueries, queries } from '../../queryOptions'
+import { scheduleWebhookUrl } from '../../lib/scheduleWebhookUrl'
 import { queryKeys } from '../../queryKeys'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useEffect, useState } from 'react'
@@ -1069,7 +1070,8 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const webhookUrl = `${window.location.origin}/api/webhooks/trigger/${schedule.id}`
+  const publicAppUrl = useQuery(publicUrlQueries.runtime()).data?.url
+  const webhookUrl = scheduleWebhookUrl(schedule.id, publicAppUrl)
 
   return (
     <div className="space-y-3">

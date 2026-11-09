@@ -2,8 +2,7 @@ import { readApiErrorMessage } from '@ficus/client-core'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { AUTH_TOKEN_STORAGE_KEY } from '@ficus/shared/browser-keys'
 export { readApiErrorMessage } from '@ficus/client-core'
-
-const BASE_URL = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '')
+import { appBasePrefix } from '../lib/basePath'
 
 // Optional BUILD-TIME override for split-domain deployments (API on a
 // different origin than the page). Unset everywhere we deploy today.
@@ -16,8 +15,8 @@ const EXPLICIT_API_ORIGIN = import.meta.env?.DEV
 
 /**
  * Get the API base URL: `VITE_FICUS_API_URL` if the bundle was built with one,
- * otherwise the PAGE's own origin (plus APP_BASE_PATH via
- * import.meta.env.BASE_URL).
+ * otherwise the PAGE's own origin plus the runtime base path
+ * (lib/basePath.ts: the base Core rendered into index.html).
  *
  * There used to be hostname sniffing here mapping `<name>.ficus.sh` to
  * `https://api-<name>.ficus.sh` — the retired pre-platform deployment's
@@ -28,12 +27,10 @@ const EXPLICIT_API_ORIGIN = import.meta.env?.DEV
  * API location from the hostname is over: explicit env or same-origin.
  */
 export function getApiUrl(path: string = ''): string {
-  if (typeof window === 'undefined') {
-    return (BASE_URL === '/' ? 'http://localhost' : `http://localhost${BASE_URL}`) + path
-  }
+  if (typeof window === 'undefined') return `http://localhost${appBasePrefix()}${path}`
 
   const origin = EXPLICIT_API_ORIGIN ?? window.location.origin
-  return origin + (BASE_URL === '/' ? '' : BASE_URL) + path
+  return origin + appBasePrefix() + path
 }
 
 export function getApiHost(): string {

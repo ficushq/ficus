@@ -116,5 +116,34 @@ export default [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  {
+    // Runtime base path guard: the web app and the farm are served under a base
+    // path chosen per request (`/` or for example `/ficus/`), so a root-absolute
+    // URL that bypasses the router basename and the base path helpers escapes the
+    // prefix. (esquery regexes cannot contain `/`, hence `\x2F`.)
+    files: ['apps/web/src/**/*.{ts,tsx}', 'apps/farm/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/test/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          "JSXOpeningElement[name.name='a'] > JSXAttribute[name.name='href'] > Literal[value=/^\\x2F(?!\\x2F)/]",
+          "JSXOpeningElement[name.name='a'] > JSXAttribute[name.name='href'] > JSXExpressionContainer > Literal[value=/^\\x2F(?!\\x2F)/]",
+          "JSXOpeningElement[name.name='a'] > JSXAttribute[name.name='href'] > JSXExpressionContainer > TemplateLiteral > TemplateElement:first-child[value.raw=/^\\x2F(?!\\x2F)/]",
+          "TemplateLiteral > MemberExpression[object.name='location'][property.name='origin']",
+          "TemplateLiteral > MemberExpression[object.object.name='window'][object.property.name='location'][property.name='origin']",
+          "CallExpression[callee.object.name='window'][callee.property.name='open'] > Literal:first-child[value=/^\\x2F(?!\\x2F)/]",
+          "CallExpression[callee.object.name='window'][callee.property.name='open'] > TemplateLiteral:first-child > TemplateElement:first-child[value.raw=/^\\x2F(?!\\x2F)/]",
+          "CallExpression[callee.property.name=/^(assign|replace)$/][callee.object.property.name='location'] > Literal[value=/^\\x2F(?!\\x2F)/]",
+          "CallExpression[callee.property.name=/^(assign|replace)$/][callee.object.name='location'] > Literal[value=/^\\x2F(?!\\x2F)/]",
+          "AssignmentExpression[left.property.name='href'] > Literal.right[value=/^\\x2F(?!\\x2F)/]",
+        ].map((selector) => ({
+          selector,
+          message:
+            'Root-absolute URLs bypass the base path; use a router Link, appBasePrefix(), apiUrl() or farmHref().',
+        })),
+      ],
+    },
+  },
   prettierRecommended,
 ]

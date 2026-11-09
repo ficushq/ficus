@@ -9,6 +9,7 @@ import {
   InboxIcon,
   LightningIcon,
 } from './icons'
+import { appBasePath } from '../lib/basePath'
 
 /**
  * The navigation model: one list that every nav surface reads.
@@ -52,9 +53,9 @@ export const navItems: NavItem[] = [
 
 /**
  * The farm: its own app beside this one (apps/farm), served by Core at
- * `<APP_BASE_PATH>/farm/`, so a plain page link rather than a route here.
+ * `<base path>/farm/`, so a plain page link rather than a route here.
  */
-export function farmHref(base: string = import.meta.env.BASE_URL || '/'): string {
+export function farmHref(base: string = appBasePath()): string {
   return `${base.replace(/\/?$/, '/')}farm/`
 }
 

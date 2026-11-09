@@ -1,4 +1,5 @@
 import { desktopBridge } from './desktop'
+import { appBasePath } from './basePath'
 
 // Chromium's Navigation API exposes the *existing* session history, including
 // hash entries and forward entries. Keep a small structural type for TS versions
@@ -118,7 +119,7 @@ export function createDesktopHistory(host: Window, base = '/') {
 let history: ReturnType<typeof createDesktopHistory> | undefined
 /** Start before Router/auth bootstrap so even early redirects are observed. */
 export function initializeDesktopHistory() {
-  if (desktopBridge() && !history) history = createDesktopHistory(window, import.meta.env.BASE_URL || '/')
+  if (desktopBridge() && !history) history = createDesktopHistory(window, appBasePath())
 }
 export function getDesktopHistory() {
   return history

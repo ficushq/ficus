@@ -22,6 +22,7 @@ import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnP
 import { integrationErrorMessage, isFirstAdminIncomplete } from '../../lib/integrationErrorMessage'
 import { useOptionalAuth } from '../../providers/AuthProvider'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
+import { appBasePrefix } from '../../lib/basePath'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
 
@@ -80,9 +81,7 @@ export function GitHubIntegrationSettings({
     mutationFn: async (connectionId?: string) => {
       if (onboarding) await setIntegrationEnabled('github', true)
       return startIntegrationAuthorization('github', {
-        returnTo: onboarding
-          ? (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') + '/onboarding'
-          : integrationAuthorizationReturnPath(),
+        returnTo: onboarding ? appBasePrefix() + '/onboarding' : integrationAuthorizationReturnPath(),
         ...(connectionId ? { connectionId } : {}),
       })
     },

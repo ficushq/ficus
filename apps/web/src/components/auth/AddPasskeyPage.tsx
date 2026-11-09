@@ -5,6 +5,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import { type AddPasskeyContext } from '../../api/auth'
 import { ApiError } from '../../api/client'
 import { useAuthApi } from './authApi'
+import { appBasePath } from '../../lib/basePath'
 
 interface Props {
   onSuccess: () => void
@@ -179,7 +180,7 @@ export function AddPasskeyPage({ onSuccess }: Props) {
           </p>
         )}
         <p className="text-xs text-secondary mt-4 text-center">
-          <a href="/" className="text-accent-light hover:underline">
+          <a href={appBasePath()} className="text-accent-light hover:underline">
             Back to sign in
           </a>
         </p>
