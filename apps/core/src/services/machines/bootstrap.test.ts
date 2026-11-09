@@ -226,11 +226,11 @@ describe('machine script docker contract', () => {
     // a failure is retried a bounded number of times (scripts/setup/lib.sh's
     // fetch_apt_source_file uses the same budget).
     expect(bootstrapSh).toContain(
-      'curl -fsSL --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 2 --retry-all-errors \\\n    -o "${docker_key}" "${docker_key_url}" || [ ! -s "${docker_key}" ]; then'
+      'curl -fsSL --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 2 --retry-all-errors \\\n      -o "${docker_key}" "${docker_key_url}" || [ ! -s "${docker_key}" ]; then'
     )
     expect(bootstrapSh).toContain("could not fetch Docker's apt signing key from ${docker_key_url} after 3 attempts")
     // The key reaches gpg only from the checked file, never straight off a pipe.
-    expect(bootstrapSh).toContain('gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg <"${docker_key}"')
+    expect(bootstrapSh).toContain('gpg --batch --yes --dearmor -o "${DOCKER_KEYRING}" <"${docker_key}"')
     expect(bootstrapSh).not.toMatch(/download\.docker\.com\/linux\/ubuntu\/gpg[\s\\]*\|/)
   })
 
@@ -818,6 +818,201 @@ describe('bootstrap.sh --core-cidr validation + egress ruleset rendering', () =>
 // and logs any drift WARNING on stderr — with NO apt/nix/install side effects.
 // This proves prebaked nix/devbox ALWAYS use their baked tooling (drift warns but
 // never triggers a bricking reinstall over the baked /nix).
+// Behavior tests: source bootstrap.sh and run the apt steps against stub
+// apt-get / dpkg-query / curl / gpg on PATH. The platform runs the script twice
+// per new host (early + core-driven), so the second run on an already-bootstrapped
+// host must make no apt call, while a host missing anything still updates + installs.
+describe('bootstrap.sh skips redundant apt work on re-run (stubbed host)', () => {
+  const BASE =
+    'git curl unzip tmux jq build-essential ca-certificates gnupg uidmap dbus-user-session slirp4netns fuse-overlayfs'.split(
+      ' '
+    )
+  const DOCKER = ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-ce-rootless-extras']
+  const SOURCE_LINE =
+    'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable'
+
+  function makeHost(installed: string[], opts: { keyring?: boolean; list?: string | null } = {}) {
+    const root = mkdtempSync(join(tmpdir(), 'ficus-apt-skip-'))
+    const bin = join(root, 'stubbin')
+    mkdirSync(bin, { recursive: true })
+    mkdirSync(join(root, 'etc/apt/keyrings'), { recursive: true })
+    mkdirSync(join(root, 'etc/apt/sources.list.d'), { recursive: true })
+    writeFileSync(join(root, 'etc/os-release'), 'VERSION_CODENAME=noble\n')
+    writeFileSync(join(root, 'installed'), installed.join('\n') + '\n')
+    if (opts.keyring) writeFileSync(join(root, 'etc/apt/keyrings/docker.gpg'), 'KEY')
+    if (opts.list !== null && opts.list !== undefined)
+      writeFileSync(join(root, 'etc/apt/sources.list.d/docker.list'), opts.list + '\n')
+    const stub = (name: string, body: string) =>
+      writeFileSync(join(bin, name), `#!/bin/bash\n${body}\n`, { mode: 0o755 })
+    stub('apt-get', 'echo "apt-get $*" >> "$HOST_ROOT/calls"')
+    stub(
+      'curl',
+      'echo "curl $*" >> "$HOST_ROOT/calls"; while [ $# -gt 0 ]; do [ "$1" = -o ] && printf KEY > "$2"; shift; done'
+    )
+    stub('gpg', 'echo "gpg $*" >> "$HOST_ROOT/calls"; while [ $# -gt 0 ]; do [ "$1" = -o ] && cat > "$2"; shift; done')
+    stub('dpkg', 'echo amd64')
+    stub('systemctl', 'true')
+    stub(
+      'dpkg-query',
+      'pkg="${@: -1}"; if grep -qx -- "$pkg" "$HOST_ROOT/installed"; then printf "install ok installed"; else exit 1; fi'
+    )
+    return root
+  }
+
+  async function run(root: string, fn: string) {
+    const r = await runHostFixture(
+      ['bash', '-c', `set -eo pipefail; source "${join(repoRoot, 'scripts/machine/bootstrap.sh')}"; SUDO=(env); ${fn}`],
+      { HOST_ROOT: root, FICUS_HOST_ROOT: root, PATH: `${join(root, 'stubbin')}:${process.env.PATH}` },
+      5_000
+    )
+    const callsPath = join(root, 'calls')
+    const calls = existsSync(callsPath) ? readFileSync(callsPath, 'utf8').split('\n').filter(Boolean) : []
+    return { ...r, calls }
+  }
+  const apt = (calls: string[]) => calls.filter((c) => c.startsWith('apt-get'))
+
+  it('base packages: all present -> no apt-get update or install', async () => {
+    const root = makeHost(BASE)
+    try {
+      const r = await run(root, 'install_base_packages')
+      expect({ code: r.exitCode, apt: apt(r.calls) }).toEqual({ code: 0, apt: [] })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('nftables: missing -> refreshes the index before installing (the base step may have skipped its update)', async () => {
+    const root = makeHost(BASE)
+    try {
+      // No real nft on this PATH (it lives in /usr/sbin on Linux), so the
+      // install branch runs; base packages are all present, so nothing else in
+      // this run has refreshed apt's index.
+      const r = await runHostFixture(
+        [
+          'bash',
+          '-c',
+          `set -eo pipefail; source "${join(repoRoot, 'scripts/machine/bootstrap.sh')}"; SUDO=(env); install_base_packages; ensure_nftables`,
+        ],
+        { HOST_ROOT: root, FICUS_HOST_ROOT: root, PATH: `${join(root, 'stubbin')}:/usr/bin:/bin` },
+        5_000
+      )
+      const callsPath = join(root, 'calls')
+      const calls = existsSync(callsPath) ? readFileSync(callsPath, 'utf8').split('\n').filter(Boolean) : []
+      expect(r.exitCode).toBe(0)
+      expect(apt(calls)).toEqual([
+        'apt-get -o DPkg::Lock::Timeout=600 update -y',
+        'apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends nftables',
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('base packages: one missing -> update then install of the full list', async () => {
+    const root = makeHost(BASE.filter((p) => p !== 'fuse-overlayfs'))
+    try {
+      const r = await run(root, 'install_base_packages')
+      expect(r.exitCode).toBe(0)
+      const calls = apt(r.calls)
+      expect(calls).toHaveLength(2)
+      expect(calls[0]).toContain(' update -y')
+      expect(calls[1]).toContain(' install -y --no-install-recommends ' + BASE.join(' '))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('base packages: a half-installed package does not count as present', async () => {
+    const root = makeHost(BASE.slice(1))
+    try {
+      const r = await run(root, 'install_base_packages')
+      expect(apt(r.calls).map((c) => c.includes('update') || c.includes('install'))).toEqual([true, true])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('docker: packages + source + keyring in place -> no key fetch, no source rewrite, no apt call', async () => {
+    const root = makeHost(DOCKER, { keyring: true, list: SOURCE_LINE })
+    try {
+      const r = await run(root, 'install_docker_packages')
+      expect({ code: r.exitCode, calls: r.calls }).toEqual({ code: 0, calls: [] })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('docker: packages present but source differs -> source re-registered, still no update/install', async () => {
+    const root = makeHost(DOCKER, { keyring: true, list: 'deb [arch=amd64] https://example.invalid/old stable' })
+    try {
+      const r = await run(root, 'install_docker_packages')
+      expect(r.exitCode).toBe(0)
+      expect(apt(r.calls)).toEqual([])
+      expect(r.calls.some((c) => c.startsWith('curl ') && c.includes('--max-time 10'))).toBe(true)
+      expect(readFileSync(join(root, 'etc/apt/sources.list.d/docker.list'), 'utf8')).toBe(SOURCE_LINE + '\n')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('docker: packages present but keyring missing -> key re-fetched, no update/install', async () => {
+    const root = makeHost(DOCKER, { keyring: false, list: SOURCE_LINE })
+    try {
+      const r = await run(root, 'install_docker_packages')
+      expect(r.exitCode).toBe(0)
+      expect(apt(r.calls)).toEqual([])
+      expect(readFileSync(join(root, 'etc/apt/keyrings/docker.gpg'), 'utf8')).toBe('KEY')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('docker: one package missing -> update + install of the full docker list', async () => {
+    const root = makeHost(DOCKER.slice(1), { keyring: true, list: SOURCE_LINE })
+    try {
+      const r = await run(root, 'install_docker_packages')
+      expect(r.exitCode).toBe(0)
+      const calls = apt(r.calls)
+      expect(calls).toHaveLength(2)
+      expect(calls[0]).toContain(' update -y')
+      expect(calls[1]).toContain(' install -y --no-install-recommends ' + DOCKER.join(' '))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('docker: fresh host -> key fetch, source written, then update + install (in that order)', async () => {
+    const root = makeHost([])
+    try {
+      const r = await run(root, 'install_docker_packages')
+      expect(r.exitCode).toBe(0)
+      const kinds = r.calls.map(
+        (c) => c.split(' ')[0] + (c.startsWith('apt-get') ? (c.includes(' update') ? ':update' : ':install') : '')
+      )
+      expect(kinds).toEqual(['curl', 'gpg', 'apt-get:update', 'apt-get:install'])
+      expect(readFileSync(join(root, 'etc/apt/sources.list.d/docker.list'), 'utf8')).toBe(SOURCE_LINE + '\n')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('chromium apt deps: the only apt path is playwright --with-deps, gated on the Chromium-present check', () => {
+    // No separate apt call exists for the browser deps; Playwright's
+    // `install --with-deps` does it, and only inside the block that is skipped
+    // once the pinned Playwright + a complete Chromium build are present.
+    const body = bootstrapSh.slice(
+      bootstrapSh.indexOf('_browser_install_steps() {'),
+      bootstrapSh.indexOf('\ninstall_browser() {')
+    )
+    expect(body.match(/apt-get/g) ?? []).toEqual([])
+    const gate = body.indexOf(
+      'if [ "${installed}" != "${PLAYWRIGHT_VERSION}" ] || [ "${chromium_present}" != true ]; then'
+    )
+    expect(gate).toBeGreaterThan(-1)
+    expect(body.indexOf('install --with-deps chromium')).toBeGreaterThan(gate)
+  })
+})
+
 describe('bootstrap.sh prebaked-image decision (--print-prebaked-decision dry run)', () => {
   const bootstrapPath = join(repoRoot, 'scripts/machine/bootstrap.sh')
 
