@@ -372,13 +372,7 @@ function appCount(count: number): string {
 }
 
 /** What serving Ficus under the address's path means for the proxy, open tabs and running apps. */
-function BasePathNotes({
-  impact,
-  localUrl,
-}: {
-  impact: PublicAppUrlPreview['impact']
-  localUrl?: string | null
-}) {
+function BasePathNotes({ impact, localUrl }: { impact: PublicAppUrlPreview['impact']; localUrl?: string | null }) {
   const local = localUrl ? localUrl.replace(/\/+$/, '') : undefined
   return (
     <>
