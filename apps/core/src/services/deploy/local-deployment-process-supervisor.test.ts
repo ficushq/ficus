@@ -225,6 +225,29 @@ describe('LocalDeploymentProcessSupervisor', () => {
     }
   })
 
+  it('puts the public address base path in front of the deployment path', async () => {
+    const saved = { FICUS_APPS_DOMAIN: process.env.FICUS_APPS_DOMAIN, APP_URL: process.env.APP_URL }
+    delete process.env.FICUS_APPS_DOMAIN
+    process.env.APP_URL = 'https://team.example.com/ficus'
+    try {
+      const manager = new FakeSandboxManager()
+      const supervisor = new LocalDeploymentProcessSupervisor(manager)
+      await supervisor.startManagedLocalDeployment({
+        localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
+        sandboxId: 'squad_1',
+        command: 'bun run dev',
+        port: 5173,
+      })
+      const command = manager.execCalls[0].args.join(' ')
+      expect(command).toMatch(/FICUS_APP_BASE_PATH=\W*\/ficus\/api\/app\/abcdef12-1234-4234-8234-123456789abc\//)
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  })
+
   it('writes a launcher script under /workspace/.ficus/local-deployments/<id>/run.sh', async () => {
     const manager = new FakeSandboxManager()
     const supervisor = new LocalDeploymentProcessSupervisor(manager)

@@ -20,6 +20,7 @@
  *     every other Ficus cookie) by exact name.
  */
 import type { LocalDeployment } from '@ficus/shared'
+import { publicBasePath } from '../../lib/app-base-path'
 import { isTrustedProxyPeer } from '../../lib/client-address'
 import {
   getLocalDeployment,
@@ -42,8 +43,19 @@ export function localDeploymentCookieName(localDeploymentId: string): string {
   return `ficus_app_${localDeploymentId}`
 }
 
+/** The route path Core matches (after any base path prefix is stripped). */
 export function localDeploymentProxyPath(localDeploymentId: string): string {
   return `/api/app/${localDeploymentId}/`
+}
+
+/**
+ * Where the browser reaches a path-mounted app: the proxy path under the public
+ * base path (`/ficus/api/app/<id>/`). Path-mounted apps are served under exactly
+ * this one base on every listener, so the app's own URLs (FICUS_APP_BASE_PATH)
+ * and its access cookie's Path always agree. Built from configuration only.
+ */
+export function localDeploymentBrowserPath(localDeploymentId: string, basePath: string = publicBasePath()): string {
+  return `${basePath}${localDeploymentProxyPath(localDeploymentId)}`
 }
 
 /** Parse one cookie value out of a raw `Cookie` header. */
@@ -134,7 +146,7 @@ export function localDeploymentCookieHeader(input: {
   const secure = new URL(input.requestUrl).protocol === 'https:'
   const attributes = [
     `${localDeploymentCookieName(input.localDeploymentId)}=${encodeURIComponent(input.token)}`,
-    `Path=${localDeploymentProxyPath(input.localDeploymentId)}`,
+    `Path=${localDeploymentBrowserPath(input.localDeploymentId)}`,
     'HttpOnly',
     'SameSite=Lax',
     `Max-Age=${input.maxAgeSeconds ?? 12 * 60 * 60}`,
