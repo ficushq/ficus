@@ -208,7 +208,7 @@ describe('ficus server', () => {
       })
     }
   })
-  it('start and restart warn when the built web bundle was made for a different base path', async () => {
+  it('start and restart warn when the built web bundle predates runtime base paths', async () => {
     writeFileSync(
       join(root, '.env'),
       'PORT=3000\nDATABASE_URL=postgres://user:pw@db.example.com:5432/ficus\nAPP_BASE_PATH=/ficus\n'
@@ -236,22 +236,21 @@ describe('ficus server', () => {
     for (const verb of ['start', 'restart']) {
       const { printed, data } = await capture(['server', verb], false)
       const line = printed.find((l) => l.includes('warning:'))
-      expect(line).toContain('built for base "/"')
-      expect(line).toContain('APP_BASE_PATH=/ficus')
+      expect(line).toContain('predates runtime base paths')
       expect(line).toContain('bun run build:web')
-      expect(data.warnings).toEqual([expect.stringContaining('built for base "/"')])
+      expect(data.warnings).toEqual([expect.stringContaining('predates runtime base paths')])
     }
     // --json promised one machine-readable document: the warning rides in it, not stdout.
     const { printed, data } = await capture(['server', 'restart'], true)
     expect(printed.some((l) => l.includes('warning:'))).toBe(false)
-    expect(data.warnings).toEqual([expect.stringContaining('built for base "/"')])
+    expect(data.warnings).toEqual([expect.stringContaining('predates runtime base paths')])
   })
-  it('start and restart stay quiet when the bundle matches the base path', async () => {
+  it('start and restart stay quiet when the bundle reads its base path at runtime', async () => {
     writeFileSync(join(root, '.env'), 'PORT=3000\nAPP_BASE_PATH=/ficus\n')
     mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })
     writeFileSync(
       join(root, 'apps', 'web', 'dist', 'index.html'),
-      '<script type="module" crossorigin src="/ficus/assets/index-abc.js"></script>'
+      '<meta name="ficus-base-path" content="__FICUS_BASE_PATH__" /><script type="module" crossorigin src="/assets/index-abc.js"></script>'
     )
     const { run } = make()
     await run(['server', 'restart'])

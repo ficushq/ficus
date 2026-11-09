@@ -56,7 +56,7 @@ import { LOCAL_SUPERVISORS, type LocalSupervisor, type SetupOptions } from '../l
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { startingPostgresLine } from '../local-server/steps'
 import { narrate } from '../local-server/log'
-import { webDistWarning } from '../local-server/web-dist'
+import { staleWebDistWarning } from '../local-server/web-dist'
 
 export interface ServerDeps {
   runner: Runner
@@ -102,11 +102,11 @@ function rootEnv(root: string): Record<string, string> {
 
 /**
  * Checks that start/restart cannot fix but the operator must know about
- * (today: a web bundle built for another base path). Narrated as warnings
+ * (today: a web bundle that predates runtime base paths). Narrated as warnings
  * on a human run; under --json they ride in the document instead.
  */
 function narrateWarnings(root: string): { warnings?: string[] } {
-  const warnings = [webDistWarning(root, rootEnv(root))].filter((w): w is string => Boolean(w))
+  const warnings = [staleWebDistWarning(root)].filter((w): w is string => Boolean(w))
   if (warnings.length === 0) return {}
   if (!isJsonMode()) for (const warning of warnings) narrate(`  warning: ${warning}`)
   return { warnings }
