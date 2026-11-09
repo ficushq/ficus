@@ -1,3 +1,4 @@
+import { basePathForOrigin } from '../../lib/app-base-path'
 import { describePublicAppUrl, type PublicAppUrlState } from '../../lib/public-app-url'
 
 type UrlState = Pick<PublicAppUrlState, 'url' | 'localUrl'>
@@ -51,7 +52,7 @@ export function primaryWebOrigin(state: UrlState = describePublicAppUrl()): stri
 }
 
 /**
- * The web app's root URL: the primary origin plus APP_BASE_PATH (e.g. https://host/ficus),
+ * The web app's root URL: the primary origin plus its base path (e.g. https://host/ficus),
  * no trailing slash. Links that land on a WEB route (/settings, /register) must use this;
  * the bare origin is only for WebAuthn and cookies. Built from configuration only, never
  * from the request, so a caller cannot steer the link to another host or path.
@@ -60,10 +61,13 @@ export function primaryWebAppUrl(): string {
   return webAppUrlForOrigin(primaryWebOrigin())
 }
 
-/** The web app's root URL at one of this server's origins: that origin plus APP_BASE_PATH, no trailing slash. */
+/**
+ * The web app's root URL at one of this server's origins, no trailing slash: that origin
+ * plus the base path of the configured address with that origin (the public address's
+ * own path, the local address's root), else APP_BASE_PATH. See lib/app-base-path.ts.
+ */
 export function webAppUrlForOrigin(origin: string): string {
-  const basePath = (process.env.APP_BASE_PATH ?? '').trim().replace(/^\/+|\/+$/g, '')
-  return basePath ? `${origin}/${basePath}` : origin
+  return `${origin}${basePathForOrigin(origin)}`
 }
 
 /**

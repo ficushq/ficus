@@ -8,7 +8,9 @@ import {
 } from '../../lib/public-app-url'
 import { PUBLIC_APP_URL_FORMAT_ERROR } from '../../lib/public-app-url-format'
 import { getSettingsStore, SettingValidationError, SettingVersionConflictError } from '../settings/store'
-import { computePublicAppUrlChangeImpact, type PublicAppUrlChangeImpact } from './impact'
+import { publicBasePath } from '../../lib/app-base-path'
+import { getHostedAppsDomain, listLiveLocalDeployments } from '../deploy/local-deployment-service'
+import { computePublicAppUrlChangeImpact, type AffectedLocalApps, type PublicAppUrlChangeImpact } from './impact'
 
 export class PublicAppUrlError extends Error {
   constructor(
@@ -36,7 +38,7 @@ export interface PublicAppUrlStatus extends PublicAppUrlState {
   lastChange: PublicAppUrlLastChange | null
   /** Mobile & Pro needs an https address. */
   mobileReady: boolean
-  /** APP_BASE_PATH the web app was built with ('' at the root). */
+  /** The base path links and local apps use: the public address's path, else APP_BASE_PATH ('' at the root). */
   basePath: string
 }
 
@@ -86,7 +88,7 @@ export async function publicAppUrlStatus(): Promise<PublicAppUrlStatus> {
         }
       : null,
     mobileReady: state.url?.startsWith('https:') ?? false,
-    basePath: (process.env.APP_BASE_PATH ?? '').trim().replace(/\/+$/, ''),
+    basePath: publicBasePath(state),
   }
 }
 
@@ -108,19 +110,32 @@ function normalizeProposed(url: string | null): string | null {
   return normalized
 }
 
+/** Live, path-mounted local apps: managed ones Ficus restarts, attached ones the person restarts. */
+async function countPathMountedLocalApps(): Promise<AffectedLocalApps> {
+  if (getHostedAppsDomain()) return { managed: 0, external: 0 }
+  const live = await listLiveLocalDeployments()
+  const managed = live.filter((deployment) => deployment.mode === 'managed').length
+  return { managed, external: live.length - managed }
+}
+
 /** What the effective address would become, and what that affects. Never writes. */
-export function previewPublicAppUrl(url: string | null): {
+export async function previewPublicAppUrl(url: string | null): Promise<{
   normalizedUrl: string | null
   effectiveUrl: string | null
   impact: PublicAppUrlChangeImpact
-} {
+}> {
   const before = describePublicAppUrl()
   const normalizedUrl = normalizeProposed(url)
   const after = describePublicAppUrl(process.env, normalizedUrl ?? undefined)
   return {
     normalizedUrl,
     effectiveUrl: after.url ?? null,
-    impact: computePublicAppUrlChangeImpact(before.url, after.url),
+    impact: computePublicAppUrlChangeImpact(
+      before.url,
+      after.url,
+      process.env.APP_BASE_PATH,
+      await countPathMountedLocalApps()
+    ),
   }
 }
 

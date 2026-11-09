@@ -1,15 +1,42 @@
 import { expect, test } from 'bun:test'
 import { computePublicAppUrlChangeImpact } from './impact'
 
-test('a base-path-only change keeps the origin but needs a reconnect and warns about the build base path', () => {
+test('a base-path-only change keeps the origin, needs a reconnect and reports the new path', () => {
   expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example/ficus', '')).toMatchObject({
     originChanged: false,
     relayReconnectRequired: true,
     mobileReady: true,
-    basePathMismatch: true,
+    basePath: '/ficus',
+    basePathChanged: true,
+    basePathStrippable: true,
   })
+  // A legacy APP_BASE_PATH deployment adding the same path to its address changes nothing.
   expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example/ficus', '/ficus/')).toMatchObject({
-    basePathMismatch: false,
+    basePath: '/ficus',
+    basePathChanged: false,
+  })
+})
+
+test('a path that is also a Ficus route is reported as not strippable', () => {
+  for (const path of ['/settings', '/api', '/squads/x']) {
+    expect(computePublicAppUrlChangeImpact(undefined, `https://a.example${path}`, '')).toMatchObject({
+      basePath: path,
+      basePathStrippable: false,
+    })
+  }
+  expect(computePublicAppUrlChangeImpact(undefined, 'https://a.example', '').basePathStrippable).toBe(true)
+})
+
+test('running local apps are counted only when the base path changes', () => {
+  const apps = { managed: 2, external: 1 }
+  expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example/ficus', '', apps)).toMatchObject({
+    localAppsAffected: 2,
+    externalAppsAffected: 1,
+  })
+  expect(computePublicAppUrlChangeImpact('https://a.example', 'https://b.example', '', apps)).toMatchObject({
+    basePathChanged: false,
+    localAppsAffected: 0,
+    externalAppsAffected: 0,
   })
 })
 
@@ -17,17 +44,19 @@ test('unchanged and cleared addresses', () => {
   expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example', '')).toMatchObject({
     originChanged: false,
     relayReconnectRequired: false,
+    basePathChanged: false,
   })
-  const cleared = computePublicAppUrlChangeImpact('https://a.example', undefined, '')
+  const cleared = computePublicAppUrlChangeImpact('https://a.example/ficus', undefined, '')
   expect(cleared).toMatchObject({
     originChanged: true,
     relayReconnectRequired: true,
     mobileReady: false,
-    basePathMismatch: false,
+    basePath: '',
+    basePathChanged: true,
   })
   expect(cleared.webhooks[0]).toEqual({
     label: 'GitHub webhook',
-    before: 'https://a.example/api/webhooks/github',
+    before: 'https://a.example/ficus/api/webhooks/github',
     after: null,
   })
 })

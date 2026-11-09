@@ -1,3 +1,4 @@
+import { isStrippableBasePath, normalizeBasePath } from '../../lib/app-base-path'
 import { resolveOAuthCallbackUrl } from '../integrations/authorization/public-url'
 
 export interface UrlChange {
@@ -14,8 +15,19 @@ export interface PublicAppUrlChangeImpact {
   relayReconnectRequired: boolean
   /** Mobile & Pro requires HTTPS. */
   mobileReady: boolean
-  /** The URL's path differs from APP_BASE_PATH, which the web app is built with. */
-  basePathMismatch: boolean
+  /** The base path the web app and documentation will be served under ('' at the root). */
+  basePath: string
+  /** The base path differs from the current one: open tabs and installed apps must be reopened. */
+  basePathChanged: boolean
+  /**
+   * False when the path's first segment is also a Ficus page or API route: Core then
+   * never removes it from request paths, so only a reverse proxy that strips it works.
+   */
+  basePathStrippable: boolean
+  /** Running managed squad apps that Ficus restarts so their links use the new path. */
+  localAppsAffected: number
+  /** Running apps started outside Ficus (attached) that must be restarted by hand. */
+  externalAppsAffected: number
   oauthCallbacks: UrlChange[]
   webhooks: UrlChange[]
 }
@@ -31,13 +43,21 @@ function originOf(url: string | undefined): string | undefined {
   }
 }
 
-function pathOf(url: string): string {
-  return new URL(url).pathname.replace(/\/+$/, '')
+/** The base an address serves the web app under: its own path, else APP_BASE_PATH. */
+function basePathOf(url: string | undefined, legacyBasePath: string | undefined): string {
+  let path = ''
+  try {
+    path = url ? normalizeBasePath(new URL(url).pathname) : ''
+  } catch {
+    path = ''
+  }
+  return path || normalizeBasePath(legacyBasePath)
 }
 
-function normalizeBasePath(basePath: string | undefined): string {
-  const trimmed = (basePath ?? '').trim().replace(/^\/+|\/+$/g, '')
-  return trimmed ? `/${trimmed}` : ''
+/** Live path-mounted local apps whose links depend on the base path. */
+export interface AffectedLocalApps {
+  managed: number
+  external: number
 }
 
 function callbackFor(appUrl: string | undefined, basePath: string | undefined): string | null {
@@ -64,15 +84,23 @@ function providerUrls(appUrl: string | undefined, basePath: string | undefined) 
 export function computePublicAppUrlChangeImpact(
   before: string | undefined,
   after: string | undefined,
-  basePath: string | undefined = process.env.APP_BASE_PATH
+  basePath: string | undefined = process.env.APP_BASE_PATH,
+  apps: AffectedLocalApps = { managed: 0, external: 0 }
 ): PublicAppUrlChangeImpact {
   const b = providerUrls(before, basePath)
   const a = providerUrls(after, basePath)
+  const beforeBase = basePathOf(before, basePath)
+  const afterBase = basePathOf(after, basePath)
+  const basePathChanged = beforeBase !== afterBase
   return {
     originChanged: originOf(before) !== originOf(after),
     relayReconnectRequired: before !== after,
     mobileReady: after?.startsWith('https:') ?? false,
-    basePathMismatch: after !== undefined && pathOf(after) !== normalizeBasePath(basePath),
+    basePath: afterBase,
+    basePathChanged,
+    basePathStrippable: !afterBase || isStrippableBasePath(afterBase),
+    localAppsAffected: basePathChanged ? apps.managed : 0,
+    externalAppsAffected: basePathChanged ? apps.external : 0,
     oauthCallbacks: [
       { label: 'GitHub OAuth callback', before: b.oauthGithub, after: a.oauthGithub },
       { label: 'Other integrations OAuth callback', before: b.oauthOther, after: a.oauthOther },
