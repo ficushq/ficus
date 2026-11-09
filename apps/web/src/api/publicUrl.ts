@@ -46,7 +46,15 @@ export interface PublicAppUrlPreview {
     originChanged: boolean
     relayReconnectRequired: boolean
     mobileReady: boolean
-    basePathMismatch: boolean
+    /** The base path the web app and documentation will be served under ('' at the root). */
+    basePath: string
+    basePathChanged: boolean
+    /** False when the path is also a Ficus page or API prefix: only a proxy that removes it works. */
+    basePathStrippable: boolean
+    /** Running managed squad apps that restart so their links use the new path. */
+    localAppsAffected: number
+    /** Running apps started outside Ficus that must be restarted by hand. */
+    externalAppsAffected: number
     oauthCallbacks: UrlChange[]
     webhooks: UrlChange[]
   }

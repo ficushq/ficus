@@ -33,7 +33,11 @@ const preview: PublicAppUrlPreview = {
     originChanged: true,
     relayReconnectRequired: true,
     mobileReady: true,
-    basePathMismatch: false,
+    basePath: '',
+    basePathChanged: false,
+    basePathStrippable: true,
+    localAppsAffected: 0,
+    externalAppsAffected: 0,
     oauthCallbacks: [
       {
         label: 'GitHub OAuth callback',
@@ -55,7 +59,12 @@ type Reply = (body: unknown) => Response
 
 async function render(
   status: PublicAppUrlStatus,
-  options: { write?: boolean; put?: (body: unknown, reply: Reply) => Response; url?: string } = {}
+  options: {
+    write?: boolean
+    put?: (body: unknown, reply: Reply) => Response
+    url?: string
+    preview?: PublicAppUrlPreview
+  } = {}
 ) {
   const { write = true } = options
   const dom = await acquireDomHarness({ url: options.url ?? 'http://localhost:61896' })
@@ -66,7 +75,7 @@ async function render(
     const method = init?.method ?? 'GET'
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     requests.push({ method, path: url.pathname, body })
-    if (url.pathname === '/api/public-url/preview') return Response.json(preview)
+    if (url.pathname === '/api/public-url/preview') return Response.json(options.preview ?? preview)
     if (url.pathname === '/api/public-url' && method === 'PUT')
       return options.put
         ? options.put(body, (b) => Response.json(b))
@@ -232,4 +241,46 @@ test('warns when the address in use stops being allowed', async () => {
   const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
   expect(dialog.textContent).toContain('You’re using https://old.example.com')
   expect(dialog.textContent).toContain('You may be signed out here')
+})
+
+test('a path in the address explains the proxy, open tabs and running apps', async () => {
+  const withPath: PublicAppUrlPreview = {
+    normalizedUrl: 'https://ficus.example.com/settings',
+    effectiveUrl: 'https://ficus.example.com/settings',
+    impact: {
+      ...preview.impact,
+      basePath: '/settings',
+      basePathChanged: true,
+      basePathStrippable: false,
+      localAppsAffected: 2,
+      externalAppsAffected: 1,
+    },
+  }
+  const { container, dom } = await render(localOnly, { preview: withPath })
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Set public address…' })))
+  const field = getByRole(container, 'textbox', { name: 'New public address' }) as HTMLInputElement
+  await dom.act(async () => fireEvent.input(field, { target: { value: 'https://ficus.example.com/settings' } }))
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Review change' })))
+  const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
+  const text = (dialog.textContent ?? '').replace(/\s+/g, ' ')
+  expect(text).toContain('served under /settings')
+  expect(text).toContain('removing it or passing it through both work')
+  expect(text).toContain('http://localhost:61896/ keeps working')
+  expect(text).toContain('/settings is also a Ficus page or API path')
+  expect(text).toContain('http://localhost:61896/settings/, will not open the app')
+  expect(text).toContain('must be reopened or re-added from the new address')
+  expect(text).toContain('2 running apps in squads will be restarted')
+  expect(text).toContain('1 app started outside Ficus must be restarted by hand')
+  expect(text).not.toContain('APP_BASE_PATH')
+})
+
+test('a root address mentions no path', async () => {
+  const { container, dom } = await render(localOnly)
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Set public address…' })))
+  const field = getByRole(container, 'textbox', { name: 'New public address' }) as HTMLInputElement
+  await dom.act(async () => fireEvent.input(field, { target: { value: 'https://ficus.example.com' } }))
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Review change' })))
+  const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
+  expect(dialog.textContent).not.toContain('served under')
+  expect(dialog.textContent).not.toContain('restarted')
 })
