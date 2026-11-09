@@ -161,7 +161,9 @@ describe('embedded docs under a base path', () => {
     expect((await app.request('http://h.example/ficus/docs/', { method: 'HEAD' })).status).toBe(200)
     expect((await app.request('http://h.example/ficus/docs/', { method: 'POST' })).status).toBe(405)
     // URL parsing folds a dot-segment out of /docs entirely; an encoded slash reaches the docs app and stays inside it.
-    expect(await (await get('http://localhost:3000/docs/%2e%2e/%2e%2e/etc/passwd', 'localhost:3000')).text()).toBe('SPA')
+    expect(await (await get('http://localhost:3000/docs/%2e%2e/%2e%2e/etc/passwd', 'localhost:3000')).text()).toBe(
+      'SPA'
+    )
     const encoded = await get('http://localhost:3000/docs/..%2f..%2f..%2fetc%2fhostname', 'localhost:3000')
     expect(encoded.status).toBe(404)
   })
