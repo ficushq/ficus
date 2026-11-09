@@ -126,7 +126,8 @@ export async function previewPublicAppUrl(url: string | null): Promise<{
 }> {
   const before = describePublicAppUrl()
   const normalizedUrl = normalizeProposed(url)
-  const after = describePublicAppUrl(process.env, normalizedUrl ?? undefined)
+  // '' (not undefined) for a clear: undefined would fall back to the stored value.
+  const after = describePublicAppUrl(process.env, normalizedUrl ?? '')
   return {
     normalizedUrl,
     effectiveUrl: after.url ?? null,
