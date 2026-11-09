@@ -115,7 +115,7 @@ function make(
   const connections = createChannelConnections({
     plugins,
     fetch: fetchImpl,
-    webOrigin: () => 'https://ficus.example.test',
+    webAppUrl: () => 'https://ficus.example.test',
     randomSecret: () => 'generated-webhook-secret',
     resolveAuthority: () => options.authority ?? 'local',
   })
@@ -501,4 +501,24 @@ test('empty credential drafts never create a new connection without required cre
   const connections = make()
   await expect(connections.configure('slack', { botToken: '', signingSecret: '' }, 'test')).rejects.toThrow()
   expect(connections.stored('slack')).toBeUndefined()
+})
+
+test('the channel webhook URL carries the public address base path', () => {
+  const keys = ['APP_URL', 'FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_BASE_PATH'] as const
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]))
+  for (const k of keys) delete process.env[k]
+  process.env.APP_URL = 'https://h.example/ficus'
+  try {
+    const { fetchImpl } = fakeProviders()
+    const connections = createChannelConnections({
+      plugins: createChannelPlugins({ fetch: fetchImpl }),
+      fetch: fetchImpl,
+    })
+    expect(connections.webhookUrl('telegram')).toBe('https://h.example/ficus/api/webhooks/channels/telegram')
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
+  }
 })

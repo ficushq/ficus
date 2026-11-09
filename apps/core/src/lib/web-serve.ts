@@ -3,9 +3,8 @@ import { join } from 'node:path'
 import { serveStatic } from 'hono/bun'
 import type { Hono } from 'hono'
 import { resolveFarmDist, resolveWebDist } from './web-dist'
-import { hasConfiguredWebOrigin, primaryWebOrigin } from '../services/auth/web-origins'
 import { resolveRequestBasePath } from './app-base-path'
-import { describePublicAppUrl } from './public-app-url'
+import { publicAppUrlForRequest } from './request-app-url'
 
 type Log = { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
 
@@ -50,6 +49,8 @@ export function builtWebBase(indexHtml: string): string | null {
   const match = ASSET_URL_RE.exec(indexHtml)
   return match ? match[1] : null
 }
+
+export { publicAppUrlForRequest } from './request-app-url'
 
 export function escapeHtmlAttribute(value: string): string {
   return value
@@ -99,27 +100,6 @@ export function renderIndexHtml(html: string, options: RenderIndexHtmlOptions): 
 }
 
 type RequestLike = { req: { url: string; header: (name: string) => string | undefined } }
-
-/**
- * The absolute public app URL for og:url and og:image:
- *
- * 1. The configured public address whole (origin plus its own path), so a
- *    page served at the local root still advertises `https://host/ficus/`.
- * 2. Else an explicit FICUS_WEB_ORIGIN / WEBAUTHN_ORIGIN plus the request base.
- * 3. Else the reverse proxy's forwarded headers, else the request URL origin,
- *    plus the request base.
- */
-export function publicAppUrlForRequest(c: RequestLike, basePath: string): string {
-  const configured = describePublicAppUrl().url
-  if (configured) return configured.replace(/\/+$/, '')
-  if (hasConfiguredWebOrigin()) return `${primaryWebOrigin()}${basePath}`
-  const host = c.req.header('x-forwarded-host')?.split(',')[0].trim()
-  if (host) {
-    const proto = c.req.header('x-forwarded-proto')?.split(',')[0].trim() || 'https'
-    return `${proto}://${host}${basePath}`
-  }
-  return `${new URL(c.req.url).origin}${basePath}`
-}
 
 /** Render a built index.html (web app or farm) for the base path this request used. */
 async function renderIndexForRequest(

@@ -497,3 +497,38 @@ describe('GET /api/schedules kind/excludeKind', () => {
     expect(kinds.every((k) => k === 'subagent-watchdog')).toBe(true)
   })
 })
+
+describe('schedule webhook URLs', () => {
+  it('carry the public address base path when enabled and when the token is regenerated', async () => {
+    const saved = { APP_URL: process.env.APP_URL, APP_BASE_PATH: process.env.APP_BASE_PATH }
+    process.env.APP_URL = 'https://h.example/ficus'
+    delete process.env.APP_BASE_PATH
+    const { squad, agent } = await createLiveAgentScope(`${rbacPrefix}-webhook-url`)
+    const schedule = await Schedule.create({
+      scopeType: 'agent',
+      scopeId: agent.id,
+      name: 'Webhook URL',
+      schedule: { interval: '1h' },
+      action: { type: 'inbox_message', target: { type: 'agent', agentId: agent.id }, content: 'x' },
+    })
+    try {
+      for (const path of ['webhook/enable', 'webhook/regenerate-token']) {
+        const res = await app.request(`http://127.0.0.1:3000/api/schedules/${schedule.id}/${path}`, {
+          method: 'POST',
+          headers: { ...authHeaders(admin.token), host: '127.0.0.1:3000' },
+        })
+        expect(res.status).toBe(200)
+        expect(((await res.json()) as { webhookUrl: string }).webhookUrl).toBe(
+          `https://h.example/ficus/api/webhooks/trigger/${schedule.id}`
+        )
+      }
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      await db.delete(schedules).where(eq(schedules.id, schedule.id))
+      await db.delete(squads).where(eq(squads.id, squad.id))
+    }
+  })
+})

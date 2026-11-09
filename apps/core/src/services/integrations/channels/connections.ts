@@ -2,7 +2,7 @@ import { MIN_INTEGRATION_CREDENTIAL_LENGTH } from '../../security/integration-cr
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { createLogger } from '../../../lib/infra/logger'
-import { primaryWebOrigin } from '../../auth/web-origins'
+import { primaryWebAppUrl } from '../../auth/web-origins'
 import { getSecretStore, isManagedSecretKey } from '../../secrets'
 import { getSettingsStore } from '../../settings'
 import { IntegrationConnectionService, IntegrationConnectionCreateCommittedError } from '../connection-service'
@@ -161,7 +161,7 @@ export interface ChannelConnectionsDependencies {
   repository?: ChannelConnectionRepository
   fetch?: typeof fetch
   now?: () => Date
-  webOrigin?: () => string
+  webAppUrl?: () => string
   randomSecret?: () => string
   resolveAuthority?: () => OAuthAuthority
 }
@@ -198,7 +198,7 @@ export class ChannelConnections {
   readonly #repository: ChannelConnectionRepository
   readonly #fetch: typeof fetch
   readonly #now: () => Date
-  readonly #webOrigin: () => string
+  readonly #webAppUrl: () => string
   readonly #randomSecret: () => string
   readonly #service: IntegrationConnectionService
   readonly #resolveAuthority: () => OAuthAuthority
@@ -213,7 +213,7 @@ export class ChannelConnections {
     this.#repository = dependencies.repository ?? new DbIntegrationConnectionRepository()
     this.#fetch = dependencies.fetch ?? fetch
     this.#now = dependencies.now ?? (() => new Date())
-    this.#webOrigin = dependencies.webOrigin ?? primaryWebOrigin
+    this.#webAppUrl = dependencies.webAppUrl ?? primaryWebAppUrl
     this.#randomSecret = dependencies.randomSecret ?? (() => randomBytes(32).toString('hex'))
     this.#resolveAuthority = dependencies.resolveAuthority ?? resolveOAuthAuthority
     this.#service = new IntegrationConnectionService({
@@ -235,9 +235,9 @@ export class ChannelConnections {
 
   // ── Reads ──────────────────────────────────────────────────────────────
 
-  /** Public webhook/interactions URL for a provider on this instance. */
+  /** Public webhook/interactions URL for a provider on this instance: the web app URL, base path included. */
   webhookUrl(provider: ChannelProviderKey): string {
-    return `${this.#webOrigin()}/api/webhooks/channels/${provider}`
+    return `${this.#webAppUrl()}/api/webhooks/channels/${provider}`
   }
 
   /** Whether the provider switch is on. Off means "keep the material, stop the transport". */
