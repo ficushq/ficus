@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { getModels } from '@earendil-works/pi-ai/compat'
 import { MONOREPO_ROOT } from '../../lib/paths'
 

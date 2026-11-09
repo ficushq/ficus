@@ -1,7 +1,7 @@
 import { assertRecordLimit } from '../../lib/validation/request-collections'
 import { readdir, readFile } from 'fs/promises'
 import { join, relative, sep } from 'path'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { skills } from '../../db'
 import { Skill } from '../../entities/Skill'
 import { SKILLS_DIR } from '../../lib/paths'
@@ -47,7 +47,11 @@ export function validateSupportFilePath(path: string): void {
 function parseSkillFrontmatter(content: string): Record<string, unknown> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
   if (!match) return {}
-  const parsed = yaml.load(match[1])
+  // js-yaml 5 load() throws on input with no document (empty, whitespace or
+  // comment-only), which previously meant "no frontmatter fields".
+  const documents = yaml.loadAll(match[1])
+  if (documents.length > 1) throw new Error('Skill frontmatter must be a single YAML document')
+  const parsed = documents[0]
   if (parsed == null) return {}
   if (typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Skill frontmatter must be a YAML mapping')

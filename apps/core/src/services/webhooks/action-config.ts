@@ -1,4 +1,4 @@
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { readFile } from 'fs/promises'
 import { resolve } from 'path'
 import { expandTilde } from '@ficus/shared/node'

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { join } from 'node:path'
 import { MONOREPO_ROOT } from '../../lib/paths'
 const mapping: Record<string, string[]> = {

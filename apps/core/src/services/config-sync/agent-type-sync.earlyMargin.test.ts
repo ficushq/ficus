@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { AgentTypeSync } from './agent-type-sync'
 
 function minimalYaml(extraLines: string[] = []): string {

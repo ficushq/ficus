@@ -1,4 +1,4 @@
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { eq } from 'drizzle-orm'
 import { ConfigSync } from './ConfigSync'
 import { db } from '../../db'

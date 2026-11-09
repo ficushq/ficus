@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { AgentTypeSync, composeFromYaml } from './agent-type-sync'

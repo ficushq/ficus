@@ -39,6 +39,16 @@ describe('parseSkillMarkdown', () => {
     expect(parsed.requiredPermission).toBeNull()
   })
 
+  test('treats blank or comment-only frontmatter as no frontmatter fields', () => {
+    for (const inner of ['', '   ', '# only a comment']) {
+      const md = ['---', inner, '---', '', '# Blank', '', 'Body'].join('\n')
+
+      const parsed = parseSkillMarkdown(md, 'blank')
+
+      expect(parsed.requiredPermission).toBeNull()
+    }
+  })
+
   test('rejects empty required-permission value', () => {
     const md = ['---', 'required-permission: ""', '---', '', '# X'].join('\n')
 

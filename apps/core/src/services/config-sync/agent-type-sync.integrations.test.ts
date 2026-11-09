@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { AgentTypeSync } from './agent-type-sync'
 
 const base = `id: test\nname: Test\nmodel: openai:gpt-5\nsystemPrompt: test\n`

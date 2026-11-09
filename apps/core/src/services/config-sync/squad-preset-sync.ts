@@ -1,4 +1,4 @@
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { squadPresets } from '../../db'
 import { SQUAD_PRESETS_DIR } from '../../lib/paths'
 import { SquadPreset } from '../../entities/SquadPreset'
