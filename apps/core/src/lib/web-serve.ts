@@ -4,6 +4,8 @@ import { serveStatic } from 'hono/bun'
 import type { Hono } from 'hono'
 import { resolveFarmDist, resolveWebDist } from './web-dist'
 import { hasConfiguredWebOrigin, primaryWebOrigin } from '../services/auth/web-origins'
+import { resolveRequestBasePath } from './app-base-path'
+import { describePublicAppUrl } from './public-app-url'
 
 type Log = { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
 
@@ -30,23 +32,110 @@ const HASHED_ASSET = /\/assets\/[^/]+(?:-[A-Za-z0-9_-]{8,}|\.[0-9a-f]{8,})\.[a-z
  */
 export const ORIGIN_PLACEHOLDER = '__FICUS_ORIGIN__'
 
-export function renderIndexHtml(html: string, origin: string): string {
-  return html.replaceAll(ORIGIN_PLACEHOLDER, origin.replace(/\/+$/, ''))
+/**
+ * The placeholder `<meta name="ficus-base-path" content="__FICUS_BASE_PATH__">`
+ * in apps/web/index.html and apps/farm/index.html: the base path the browser
+ * used (`/` or `/ficus/`), read by the web app and the farm at runtime.
+ */
+export const BASE_PATH_PLACEHOLDER = '__FICUS_BASE_PATH__'
+
+const ASSET_URL_RE = /(?:src|href)="([^"]*?\/)assets\/[^"]+"/
+
+/**
+ * The base a built index.html was produced for (`/` for a root build,
+ * `/farm/` for the farm, `/tau/` for a legacy `APP_BASE_PATH=/tau` build),
+ * read from its first built asset URL; null without built assets.
+ */
+export function builtWebBase(indexHtml: string): string | null {
+  const match = ASSET_URL_RE.exec(indexHtml)
+  return match ? match[1] : null
+}
+
+export function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export interface RenderIndexHtmlOptions {
+  /** The base the HTML was built for, with leading and trailing slash ({@link builtWebBase}). */
+  builtBase: string
+  /** Where this document's own URLs live for this request: `/ficus/` for the web app, `/ficus/farm/` for the farm. */
+  runtimeBase: string
+  /** The instance base path for the meta tag: `''` at the root or `/ficus`. */
+  basePath: string
+  /** Absolute public app URL for og:url and og:image, no trailing slash. */
+  publicAppUrl: string
 }
 
 /**
- * This instance's public origin, for the placeholder above. The configured web
- * origin (FICUS_WEB_ORIGIN, or the effective public address — the same source WebAuthn trusts) wins; otherwise the
- * reverse proxy's forwarded headers; otherwise the request URL itself.
+ * Render a built index.html for one request, in this order:
+ *
+ * 1. Rebase every `src`/`href`/`content` attribute value that begins with the
+ *    built base onto the runtime base. This must come first: for a root build
+ *    every value beginning with `/` is rebased, so a meta already filled with
+ *    `/ficus/` would become `/ficus/ficus/`. The placeholders begin with `_`,
+ *    so this step never touches them.
+ * 2. Fill the base path meta with the instance base (`/` or `/ficus/`).
+ * 3. Fill the origin placeholder with the public app URL.
  */
-export function publicOrigin(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
-  if (hasConfiguredWebOrigin()) return primaryWebOrigin()
+export function renderIndexHtml(html: string, options: RenderIndexHtmlOptions): string {
+  let rendered = html
+  if (options.builtBase !== options.runtimeBase) {
+    // `(?!/)` keeps protocol-relative `//cdn…` values out of a root build's rewrite.
+    const pattern = new RegExp(`\\b(src|href|content)="${escapeRegExp(options.builtBase)}(?!/)`, 'g')
+    const runtime = escapeHtmlAttribute(options.runtimeBase)
+    rendered = rendered.replace(pattern, (_match, attribute: string) => `${attribute}="${runtime}`)
+  }
+  rendered = rendered.replaceAll(BASE_PATH_PLACEHOLDER, escapeHtmlAttribute(`${options.basePath}/`))
+  return rendered.replaceAll(ORIGIN_PLACEHOLDER, escapeHtmlAttribute(options.publicAppUrl.replace(/\/+$/, '')))
+}
+
+type RequestLike = { req: { url: string; header: (name: string) => string | undefined } }
+
+/**
+ * The absolute public app URL for og:url and og:image:
+ *
+ * 1. The configured public address whole (origin plus its own path), so a
+ *    page served at the local root still advertises `https://host/ficus/`.
+ * 2. Else an explicit FICUS_WEB_ORIGIN / WEBAUTHN_ORIGIN plus the request base.
+ * 3. Else the reverse proxy's forwarded headers, else the request URL origin,
+ *    plus the request base.
+ */
+export function publicAppUrlForRequest(c: RequestLike, basePath: string): string {
+  const configured = describePublicAppUrl().url
+  if (configured) return configured.replace(/\/+$/, '')
+  if (hasConfiguredWebOrigin()) return `${primaryWebOrigin()}${basePath}`
   const host = c.req.header('x-forwarded-host')?.split(',')[0].trim()
   if (host) {
     const proto = c.req.header('x-forwarded-proto')?.split(',')[0].trim() || 'https'
-    return `${proto}://${host}`
+    return `${proto}://${host}${basePath}`
   }
-  return new URL(c.req.url).origin
+  return `${new URL(c.req.url).origin}${basePath}`
+}
+
+/** Render a built index.html (web app or farm) for the base path this request used. */
+async function renderIndexForRequest(
+  c: RequestLike,
+  file: ReturnType<typeof Bun.file>,
+  app: 'web' | 'farm'
+): Promise<string> {
+  const html = await file.text()
+  const { basePath } = resolveRequestBasePath(c.req)
+  const suffix = app === 'farm' ? 'farm/' : ''
+  return renderIndexHtml(html, {
+    builtBase: builtWebBase(html) ?? `/${suffix}`,
+    runtimeBase: `${basePath}/${suffix}`,
+    basePath,
+    publicAppUrl: publicAppUrlForRequest(c, basePath),
+  })
 }
 
 /**
@@ -101,7 +190,7 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
   const serveIndex = async (c: Parameters<typeof staticHandler>[0]) => {
     c.header('Cache-Control', 'no-cache')
     c.header('Content-Type', 'text/html; charset=utf-8')
-    return c.body(renderIndexHtml(await indexFile.text(), publicOrigin(c)))
+    return c.body(await renderIndexForRequest(c, indexFile, 'web'))
   }
 
   const farm = maybeMountFarmUi(app, log)
@@ -158,10 +247,10 @@ function maybeMountFarmUi(app: Hono, log: Log): string | undefined {
   const serveIndex = async (c: Parameters<typeof staticHandler>[0]) => {
     c.header('Cache-Control', 'no-cache')
     c.header('Content-Type', 'text/html; charset=utf-8')
-    return c.body(await indexFile.text())
+    return c.body(await renderIndexForRequest(c, indexFile, 'farm'))
   }
 
-  // Relative, so the redirect survives a reverse proxy that strips APP_BASE_PATH.
+  // Relative, so the redirect survives a reverse proxy that strips the base path.
   app.get('/farm', (c) => c.redirect('farm/', 301))
   app.get('/farm/', (c) => serveIndex(c))
   app.get('/farm/index.html', (c) => serveIndex(c))
