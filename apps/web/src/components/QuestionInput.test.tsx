@@ -40,6 +40,10 @@ test('a text question shows its context and fills the answer from a suggestion',
     const chips = [...(group?.querySelectorAll('button') ?? [])]
     expect(chips.map((chip) => chip.textContent)).toEqual(['main', 'Release 1.4'])
     expect(chips.every((chip) => chip.getAttribute('aria-pressed') === 'false')).toBe(true)
+    // Rounded rectangles, not pills, so long suggestions that wrap still look right.
+    expect(
+      chips.every((chip) => chip.classList.contains('rounded-md') && !chip.classList.contains('rounded-full'))
+    ).toBe(true)
 
     await dom.act(async () => chips[1]!.click())
     expect(document.querySelector('textarea')?.value).toBe('release/1.4')

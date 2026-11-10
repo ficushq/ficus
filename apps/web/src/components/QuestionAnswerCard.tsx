@@ -24,7 +24,7 @@ export function QuestionAnswerList({ questions }: { questions: ResolvedQuestionA
                 {item.choices.map((choice, index) => (
                   <li
                     key={`${index}:${choice.value ?? choice.label}`}
-                    className="max-w-full whitespace-pre-wrap break-words rounded-full border border-accent/30 bg-chrome-paper/70 px-2 py-0.5 text-xs font-medium text-primary dark:bg-chrome-scrim/20"
+                    className="max-w-full whitespace-pre-wrap break-words rounded-md border border-accent/30 bg-chrome-paper/70 px-2 py-1 text-xs font-medium text-primary dark:bg-chrome-scrim/20"
                   >
                     {choice.label}
                   </li>
