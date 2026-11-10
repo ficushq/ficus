@@ -1,7 +1,14 @@
 import { test, expect } from 'bun:test'
 import { createBlankWorkflow } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
-import { workflowDraftKey, readWorkflowDraft } from './workflowDraftStorage'
+import {
+  discardWorkflowDraft,
+  readWorkflowDraft,
+  subscribeWorkflowDraftWrites,
+  workflowDraftKey,
+  workflowDraftWriteFailed,
+  writeWorkflowDraft,
+} from './workflowDraftStorage'
 
 test('draft storage isolates users and retains incomplete editable fields and graph positions', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -46,6 +53,59 @@ test('draft storage isolates users and retains incomplete editable fields and gr
     )
     expect(readWorkflowDraft(key)).toBeUndefined()
   } finally {
+    await dom.cleanup()
+  }
+})
+
+test('a refused draft write or discard is reported to subscribers until a later write succeeds', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const original = globalThis.localStorage
+  const values = new Map<string, string>()
+  let refuse = true
+  globalThis.localStorage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      if (refuse) throw new Error('quota')
+      values.set(key, value)
+    },
+    removeItem: (key: string) => {
+      if (refuse) throw new Error('blocked')
+      values.delete(key)
+    },
+  } as unknown as Storage
+  let notified = 0
+  const unsubscribe = subscribeWorkflowDraftWrites(() => notified++)
+  try {
+    const key = workflowDraftKey({ type: 'user', userId: 'writer' }, 'w')!
+    const draft = {
+      version: 1 as const,
+      positions: {},
+      id: 'w',
+      idEdited: false,
+      description: '',
+      source: { kind: 'inline' as const, definition: createBlankWorkflow() },
+    }
+    expect(workflowDraftWriteFailed(key)).toBe(false)
+    writeWorkflowDraft(key, draft)
+    expect(workflowDraftWriteFailed(key)).toBe(true)
+    expect(notified).toBe(1)
+    // The same outcome again does not notify.
+    writeWorkflowDraft(key, draft)
+    expect(notified).toBe(1)
+    refuse = false
+    writeWorkflowDraft(key, draft)
+    expect(workflowDraftWriteFailed(key)).toBe(false)
+    expect(notified).toBe(2)
+    expect(readWorkflowDraft(key)?.id).toBe('w')
+    refuse = true
+    expect(discardWorkflowDraft(key)).toBe(false)
+    expect(workflowDraftWriteFailed(key)).toBe(true)
+    refuse = false
+    expect(discardWorkflowDraft(key)).toBe(true)
+    expect(readWorkflowDraft(key)).toBeUndefined()
+  } finally {
+    unsubscribe()
+    globalThis.localStorage = original
     await dom.cleanup()
   }
 })
