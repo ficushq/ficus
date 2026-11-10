@@ -62,6 +62,7 @@ export function VoiceCompanionButton({
     toggleMicMuted,
   } = useVoice()
   const [panelOpen, setPanelOpen] = useState(false)
+  const [localCompact, setCompact] = useState(false)
   useEffect(() => {
     const open = () => {
       setPanelOpen(true)
@@ -82,7 +83,6 @@ export function VoiceCompanionButton({
   const [resetting, setResetting] = useState(false)
   const sessionConnected = useRef(false)
   const live = isConnected || resetting
-  const [localCompact, setCompact] = useState(false)
   const compact = embedded ? compactOverride : localCompact
   useEffect(() => {
     onActivityChange?.(live || status === 'connecting')

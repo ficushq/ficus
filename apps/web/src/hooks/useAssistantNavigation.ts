@@ -116,41 +116,41 @@ export function useAssistantNavigation() {
     [serialized, legacyId]
   )
   const query = params.get('commandQuery') ?? ''
-  const current = useStableRef({ entries, query })
+  const currentRef = useStableRef({ entries, query })
   const update = useCallback(
-    (next: AssistantDestination[], nextQuery = current.current.query) => {
+    (next: AssistantDestination[], nextQuery = currentRef.current.query) => {
       // Update the ref immediately so consecutive actions cannot overwrite a push.
-      current.current = { entries: next, query: nextQuery }
+      currentRef.current = { entries: next, query: nextQuery }
       setParams((previous) => assistantNavigationParams(previous, next, nextQuery), { replace: true })
     },
-    [current, setParams]
+    [currentRef, setParams]
   )
   const push = useCallback(
     (entry: AssistantDestination) => {
       if (entry.kind === 'chat') ephemeral.current.set(entry.id, entry)
-      update([...current.current.entries, entry])
+      update([...currentRef.current.entries, entry])
     },
-    [current, update]
+    [currentRef, update]
   )
-  const back = useCallback(() => update(current.current.entries.slice(0, -1)), [current, update])
+  const back = useCallback(() => update(currentRef.current.entries.slice(0, -1)), [currentRef, update])
   const reset = useCallback(() => update([]), [update])
-  const setQuery = useCallback((value: string) => update(current.current.entries, value), [current, update])
+  const setQuery = useCallback((value: string) => update(currentRef.current.entries, value), [currentRef, update])
   const replace = useCallback(
-    (entry: AssistantDestination) => update([...current.current.entries.slice(0, -1), entry]),
-    [current, update]
+    (entry: AssistantDestination) => update([...currentRef.current.entries.slice(0, -1), entry]),
+    [currentRef, update]
   )
   const chatCreated = useCallback(
     (draftId: string, agentId: string) => {
       update(
-        current.current.entries.map((entry) =>
+        currentRef.current.entries.map((entry) =>
           entry.kind === 'chat' && entry.id === draftId ? { ...entry, agentId } : entry
         )
       )
     },
-    [current, update]
+    [currentRef, update]
   )
   const close = useCallback(() => {
-    current.current = { entries: [], query: '' }
+    currentRef.current = { entries: [], query: '' }
     setParams(
       (previous) => {
         const next = new URLSearchParams(previous)
@@ -159,6 +159,6 @@ export function useAssistantNavigation() {
       },
       { replace: true }
     )
-  }, [current, setParams])
+  }, [currentRef, setParams])
   return { params, state, setState, entries, query, setQuery, push, back, reset, replace, close, chatCreated }
 }

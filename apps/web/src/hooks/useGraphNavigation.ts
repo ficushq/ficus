@@ -19,14 +19,14 @@ export function useGraphNavigation(
 ) {
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
-  const current = useStableRef({ zoom, offset, onZoom, onGestureStart })
+  const currentRef = useStableRef({ zoom, offset, onZoom, onGestureStart })
   const suppressClick = useRef(false)
   const pointers = useRef(new Map<number, Point>())
   const gesture = useRef<{ point: Point; distance?: number } | undefined>(undefined)
   const apply = (nextZoom: number, nextOffset: Point) => {
-    current.current = { ...current.current, zoom: nextZoom, offset: nextOffset }
+    currentRef.current = { ...currentRef.current, zoom: nextZoom, offset: nextOffset }
     setOffset(nextOffset)
-    current.current.onZoom(nextZoom)
+    currentRef.current.onZoom(nextZoom)
   }
   const focalZoom = (nextZoom: number, before: Point, after = before) => {
     const element = viewport.current
@@ -36,7 +36,7 @@ export function useGraphNavigation(
       x: rect.left + element.clientLeft - element.scrollLeft,
       y: rect.top + element.clientTop - element.scrollTop,
     }
-    const { zoom, offset } = current.current
+    const { zoom, offset } = currentRef.current
     const ratio = Math.min(1.6, Math.max(0.2, nextZoom)) / zoom
     apply(zoom * ratio, {
       x: after.x - origin.x - (before.x - origin.x - offset.x) * ratio,
@@ -52,16 +52,16 @@ export function useGraphNavigation(
       if (!event.ctrlKey) return // Ordinary wheel/trackpad scrolling retains native scrolling.
       event.preventDefault()
       if (safariZoom !== undefined) return
-      current.current.onGestureStart()
+      currentRef.current.onGestureStart()
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1)
-      focalZoomRef.current(current.current.zoom * Math.exp(-delta * 0.01), { x: event.clientX, y: event.clientY })
+      focalZoomRef.current(currentRef.current.zoom * Math.exp(-delta * 0.01), { x: event.clientX, y: event.clientY })
     }
     // Safari exposes trackpad pinch as GestureEvents instead of ctrl+wheel.
     const safariStart = (event: Event) => {
       event.preventDefault()
       if (pointers.current.size >= 2) return
-      safariZoom = current.current.zoom
-      current.current.onGestureStart()
+      safariZoom = currentRef.current.zoom
+      currentRef.current.onGestureStart()
     }
     const safariChange = (event: Event) => {
       if (safariZoom === undefined) return
@@ -83,7 +83,7 @@ export function useGraphNavigation(
       element.removeEventListener('gesturechange', safariChange)
       element.removeEventListener('gestureend', safariEnd)
     }
-  }, [viewport, current, focalZoomRef])
+  }, [viewport, currentRef, focalZoomRef])
   const measurement = () => {
     const [a, b] = [...pointers.current.values()]
     if (!a) return undefined
@@ -109,7 +109,7 @@ export function useGraphNavigation(
     panning,
     reset: () => {
       setOffset({ x: 0, y: 0 })
-      current.current.offset = { x: 0, y: 0 }
+      currentRef.current.offset = { x: 0, y: 0 }
     },
     handlers: {
       onClickCapture: (event: ReactMouseEvent) => {
@@ -125,7 +125,7 @@ export function useGraphNavigation(
         if (event.pointerType !== 'touch' && interactive) return
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
         if (interactive && pointers.current.size === 1) return
-        current.current.onGestureStart()
+        currentRef.current.onGestureStart()
         viewport.current?.focus()
         gesture.current = measurement()
         setPanning(true)
@@ -140,7 +140,7 @@ export function useGraphNavigation(
         capture(event)
         suppressClick.current = true
         focalZoom(
-          current.current.zoom * (before.distance && after.distance ? after.distance / before.distance : 1),
+          currentRef.current.zoom * (before.distance && after.distance ? after.distance / before.distance : 1),
           before.point,
           after.point
         )
