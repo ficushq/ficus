@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workflowAttachmentContentType } from '@ficus/shared'
 import { actionErrorMessage } from '../lib/actionError'
@@ -85,19 +85,33 @@ export function ReviewTabs({
   )
 }
 
-/** A blob URL for bytes, revoked when they change or the view unmounts. */
-function useObjectUrl(bytes: Uint8Array | undefined, type: string): string | undefined {
-  const [url, setUrl] = useState<string>()
-  useEffect(() => {
-    if (!bytes) return
-    const next = URL.createObjectURL(new Blob([bytes as BlobPart], { type }))
-    setUrl(next)
+/**
+ * An image of in-memory bytes, shown through a blob URL that is revoked when the bytes change or the
+ * image unmounts. The effect gives the element its URL directly, before paint, so no URL is kept in state.
+ */
+function BytesImage({
+  bytes,
+  type,
+  alt,
+  className,
+}: {
+  bytes: Uint8Array
+  type: string
+  alt: string
+  className: string
+}) {
+  const image = useRef<HTMLImageElement>(null)
+  useLayoutEffect(() => {
+    const element = image.current
+    if (!element) return
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }))
+    element.src = url
     return () => {
-      URL.revokeObjectURL(next)
-      setUrl(undefined)
+      element.removeAttribute('src')
+      URL.revokeObjectURL(url)
     }
   }, [bytes, type])
-  return url
+  return <img ref={image} alt={alt} className={className} />
 }
 
 function decodeText(bytes: Uint8Array): string | null {
@@ -119,10 +133,6 @@ export function AttachmentView({ workStreamId, attachment }: { workStreamId: str
   const queryClient = useQueryClient()
   const [downloadError, setDownloadError] = useState<string>()
   const [pdfFailed, setPdfFailed] = useState(false)
-  const imageUrl = useObjectUrl(
-    mode === 'image' ? bytes : undefined,
-    workflowAttachmentContentType(attachment.filename)
-  )
   const download = async () => {
     setDownloadError(undefined)
     try {
@@ -166,12 +176,19 @@ export function AttachmentView({ workStreamId, attachment }: { workStreamId: str
         {downloadButton}
       </FilePreview>
     )
-  else if (mode === 'image' && imageUrl)
+  else if (mode === 'image' && bytes)
     body = (
       <FilePreview
         fileName={attachment.filename}
         kind="image"
-        image={<img src={imageUrl} alt={attachment.filename} className="max-w-full object-contain" />}
+        image={
+          <BytesImage
+            bytes={bytes}
+            type={workflowAttachmentContentType(attachment.filename)}
+            alt={attachment.filename}
+            className="max-w-full object-contain"
+          />
+        }
       />
     )
   else if (mode === 'pdf' && bytes)

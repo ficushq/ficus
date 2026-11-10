@@ -100,7 +100,14 @@ export function PageEditorAssistant({
     [id, draftRef, conversationTitle]
   )
   useEffect(() => {
-    void sync().catch(() => {})
+    // An async task: sync's state updates all follow its awaited writes.
+    void (async () => {
+      try {
+        await sync()
+      } catch {
+        // sync reports the failure itself.
+      }
+    })()
   }, [draft, sync])
   const lifetime = useRef({ generation: 0 })
   useEffect(() => {

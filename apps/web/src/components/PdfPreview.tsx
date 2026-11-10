@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { openPdf as openPdfDefault, type OpenPdf, type PdfDocument } from '../lib/pdfDocument'
 import { useStableRef } from '../hooks/useStableRef'
 import { DocumentSkeleton } from './loading/Skeleton'
@@ -80,13 +80,11 @@ export function PdfPreview({
 function usePagesNearView(numPages: number) {
   const container = useRef<HTMLDivElement>(null)
   const [pages, setPages] = useState<ReadonlySet<number>>(() => new Set())
+  const observable = typeof IntersectionObserver !== 'undefined'
+  const allPages = useMemo(() => new Set(Array.from({ length: numPages }, (_, index) => index + 1)), [numPages])
   useEffect(() => {
     const element = container.current
-    if (!element || !numPages) return
-    if (typeof IntersectionObserver === 'undefined') {
-      setPages(new Set(Array.from({ length: numPages }, (_, index) => index + 1)))
-      return
-    }
+    if (!element || !numPages || !observable) return
     const observer = new IntersectionObserver(
       (entries) =>
         setPages((previous) => {
@@ -102,8 +100,8 @@ function usePagesNearView(numPages: number) {
     )
     for (const page of element.querySelectorAll('[data-pdf-page]')) observer.observe(page)
     return () => observer.disconnect()
-  }, [numPages])
-  return { container, pages }
+  }, [numPages, observable])
+  return { container, pages: observable ? pages : allPages }
 }
 
 function PdfPageCanvas({

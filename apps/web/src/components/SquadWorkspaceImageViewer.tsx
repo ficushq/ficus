@@ -21,9 +21,15 @@ export function WorkspaceImageViewer({ downloadUrl, alt, className }: WorkspaceI
   const [loading, setLoading] = useState(true)
   const urlRef = useRef<string | null>(null)
 
-  useEffect(() => {
+  // Another image shows as loading, without the previous error, from the render that receives it.
+  const [requestedUrl, setRequestedUrl] = useState(downloadUrl)
+  if (requestedUrl !== downloadUrl) {
+    setRequestedUrl(downloadUrl)
     setLoading(true)
     setError(null)
+  }
+
+  useEffect(() => {
     authFetch(downloadUrl)
       .then((response) => {
         if (!response.ok) throw new Error('Failed to load image')

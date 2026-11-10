@@ -22,9 +22,14 @@ export function PairingCode({
   const [openInApp] = useState(canOpenFicusApp)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    setNow(Date.now())
-    const interval = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(interval)
+    // Read the clock from timers: at once for a new pairing, then every second.
+    const tick = () => setNow(Date.now())
+    const first = setTimeout(tick, 0)
+    const interval = setInterval(tick, 1000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(interval)
+    }
   }, [pairing])
 
   const secondsLeft = Math.max(0, Math.round((pairing.expiresAt - now) / 1000))
