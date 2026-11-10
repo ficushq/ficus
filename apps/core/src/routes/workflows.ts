@@ -1,5 +1,5 @@
 import { loadReviewContexts } from '../services/workflows/review-context'
-import { deliveryInstructionsForRun } from '../services/workflows/completion-prompt'
+import { deliveryInstructionsForFlow, deliveryParticipantView } from '../services/workflows/completion-prompt'
 import { workflowWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
 import { listWorkflowReviewers } from '../services/workflows/reviewers'
 import { outputDeliveryHistory, outputDeliveryHistoryPage } from '../services/integrations/outputs/runtime'
@@ -48,6 +48,8 @@ import {
 } from '../services/workflows/catalog'
 
 const revisionSchema = z.strictObject({ revision: z.string().min(1).max(200) })
+/** The reading agent, so delivery instructions can say when the delivery participant is the reader. */
+const viewerAgentId = (identity: Identity | undefined) => (identity?.type === 'agent' ? identity.agentId : undefined)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** Multipart framing and the `path` field on top of the file's own bytes. */
 const MULTIPART_OVERHEAD = 64 * 1024
@@ -119,7 +121,8 @@ export const workflowsRouter = new Hono()
         workStreamStatus: stream.status,
         attemptAgents: run.attemptAgents,
         activeOutcomes: activeOutcomeBindings(run),
-        deliveryInstructions: deliveryInstructionsForRun(stream, run.state, run.version, notice),
+        deliveryInstructions: deliveryInstructionsForFlow(stream, run, notice, viewerAgentId(identity)),
+        deliveryParticipant: deliveryParticipantView(run, viewerAgentId(identity)) ?? null,
         openWaits: openWaits.map(toWaitJson),
         ...(integrationDeliveries ? { integrationDeliveries } : {}),
         usage,
@@ -255,23 +258,35 @@ export const workflowsRouter = new Hono()
         const current = await getFlow(stream.id)
         const currentStream = await WorkStream.mustFind(stream.id)
         if (current && current.version === result.version) {
-          const deliveryInstructions = deliveryInstructionsForRun(
+          const viewer = viewerAgentId(identity)
+          const deliveryInstructions = deliveryInstructionsForFlow(
             currentStream,
-            current.state,
-            current.version,
-            await stackNotice(db, currentStream)
+            current,
+            await stackNotice(db, currentStream),
+            viewer
           )
+          const deliveryParticipant = deliveryParticipantView(current, viewer) ?? null
           if (deliveryInstructions && current.state.definition.completion.mode === 'deliverable') {
             try {
               const finished = await finishFlow(stream.id, result.version, identity)
               return c.json({ ...result, workStreamStatus: finished.status })
             } catch (error) {
               if (error instanceof WorkflowError)
-                return c.json({ ...result, completionPending: error.message, deliveryInstructions })
+                return c.json({
+                  ...result,
+                  completionPending: error.message,
+                  deliveryParticipant,
+                  deliveryInstructions,
+                })
               throw error
             }
           }
-          return c.json({ ...result, workStreamStatus: currentStream.status, deliveryInstructions })
+          return c.json({
+            ...result,
+            workStreamStatus: currentStream.status,
+            deliveryParticipant,
+            deliveryInstructions,
+          })
         }
       }
       return c.json(result)

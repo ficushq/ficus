@@ -5,9 +5,60 @@ import {
   WORKFLOW_DECISION_BRIEF_LIMITS,
   effectiveWorkflowStep,
   isEarlierWorkflowStep,
+  activeWorkflowAttempts,
   type WorkflowAttempt,
   type WorkflowRun,
 } from '@ficus/shared'
+import { changeEventsElsewhere } from './completion-prompt'
+
+type Transition = WorkflowRun['definition']['steps'][number]['outcomes'][string]
+
+/**
+ * Whether following `target` can bring the flow to completion-ready without another agent step
+ * completing first: directly to finish, or only through human approvals or decision steps that can
+ * finish. Completing such an outcome makes this attempt the last completed agent attempt, which is
+ * exactly how `completionDeliveryOwner` resolves the delivery participant.
+ */
+function reachesCompletionWithoutAgent(state: WorkflowRun, target: Transition, seen = new Set<string>()): boolean {
+  if ('returnTo' in target) return false
+  const reaches = (stepId: string): boolean => {
+    if (stepId === 'finish') return true
+    if (seen.has(stepId)) return false
+    const step = state.definition.steps.find((entry) => entry.id === stepId)
+    if (!step || step.kind === 'agent') return false
+    seen.add(stepId)
+    return Object.values(step.outcomes).some((next) => reachesCompletionWithoutAgent(state, next, seen))
+  }
+  if ('next' in target) return reaches(target.next)
+  return target.parallel.every(reaches) && (!target.join || reaches(target.join))
+}
+
+/** Tell the agent which outcomes make it the delivery participant, and what that obliges it to do. */
+export function deliveryOwnershipInstructions(state: WorkflowRun, attempt: WorkflowAttempt): string[] {
+  const step = effectiveWorkflowStep(state, attempt)
+  if (step.kind !== 'agent') return []
+  const outcomes = Object.entries(step.outcomes)
+    .filter(([, target]) => reachesCompletionWithoutAgent(state, target))
+    .map(([name]) => `'${name}'`)
+  if (!outcomes.length) return []
+  const { completion } = state.definition
+  const pullRequest = completion.mode === 'pr-merge' || completion.mode === 'pr-auto-merge'
+  const others = activeWorkflowAttempts(state).some((entry) => entry.id !== attempt.id)
+  return [
+    [
+      `Delivery: if you complete with outcome ${outcomes.join(' or ')}, no later agent step runs before this flow reaches completion-ready, so you are the delivery participant for this stream (delivery policy: ${completion.mode}).`,
+      completion.mode === 'review-approval'
+        ? 'Delivery is your job: follow the deliveryInstructions in the advance response (also shown by ficus workstream flow) and present the result and evidence; under review-approval a human approves and finishes delivery.'
+        : `Ficus then routes the stream's delivery to you${pullRequest ? ', including the delivery pull request’s merge and close events' : ''}, and delivery is your job: follow the deliveryInstructions in the advance response (also shown by ficus workstream flow) and finish the stream yourself; do not wait for another agent to deliver it.`,
+      changeEventsElsewhere(completion, step.id).trim(),
+      others
+        ? 'Another branch of this flow is still running: if its agent completes after you, that agent delivers instead.'
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+  ]
+}
 
 /** Explain the actual run's capabilities, including the active attempt's pinned handoffs. */
 export function flowCapabilityInstructions(state: WorkflowRun, attempt: WorkflowAttempt, version = state.version) {
@@ -24,6 +75,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
           : `- ${name}: revise ${target.returnTo}, then ${target.afterRework === 'return-to-requester' ? `return directly to ${step.id}` : 'follow that step’s normal arrows'}`
     ),
   ]
+  lines.push(...deliveryOwnershipInstructions(state, attempt))
   if (step.kind === 'agent') {
     let humanNext = false
     for (const outcome of Object.keys(step.outcomes)) {

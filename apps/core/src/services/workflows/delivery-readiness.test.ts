@@ -8,7 +8,7 @@ import {
   deliveryReadinessContent,
   deliveryReadinessKey,
 } from './delivery-readiness'
-import type { DeliveryEvent } from './delivery-state'
+import { sourceReviewFacts, type DeliveryEvent } from './delivery-state'
 
 // Synthetic data only: an invented repository, pull request and commits.
 const metadata = { codeHost: { integration: 'github', repository: 'acme/repo', changeRequest: { number: 42 } } }
@@ -331,5 +331,35 @@ describe('missed merge reconciliation', () => {
     expect(content).toContain('Ficus has not finished the stream')
     expect(content).toContain('verifies the merge live')
     expect(content).not.toMatch(/(^|\s)#42\b/)
+  })
+})
+
+describe('review facts restored from raw sources', () => {
+  const projected = event('pull_request.reviewed', { state: 'approved', actor: 'reviewer', projection: 'content' })
+  const raw = (data: Record<string, unknown> = {}) =>
+    event('pull_request.reviewed', { state: 'approved', reviewedHeadSha: HEAD, authorAssociation: 'MEMBER', ...data })
+
+  test('the commit and association come from agreeing raw sources of the same review', () => {
+    expect(sourceReviewFacts(projected, [raw(), raw()])).toEqual({ reviewedHeadSha: HEAD, authorAssociation: 'MEMBER' })
+    // Restored facts make the routed approval count exactly like an unfiltered one.
+    const restored = { ...projected, data: { ...projected.data, ...sourceReviewFacts(projected, [raw()]) } }
+    expect(deliveryMergeReadiness(run(), metadata, [restored, greenCi(), clean()]).ready).toBe(true)
+    expect(deliveryMergeReadiness(run(), metadata, [projected, greenCi(), clean()])).toEqual({
+      ready: false,
+      reason: 'approval-missing',
+    })
+  })
+
+  test('disagreeing, foreign or malformed sources prove nothing', () => {
+    expect(sourceReviewFacts(projected, [])).toBeUndefined()
+    expect(sourceReviewFacts(projected, [raw(), raw({ reviewedHeadSha: OLD })])).toBeUndefined()
+    expect(sourceReviewFacts(projected, [raw({ reviewedHeadSha: 'not-a-sha' })])).toBeUndefined()
+    expect(sourceReviewFacts(projected, [raw({ repository: 'acme/other' })])).toBeUndefined()
+    expect(sourceReviewFacts(projected, [{ ...raw(), output: 'pull_request.comment' }])).toBeUndefined()
+    // An association the sources disagree on, or a malformed one, is dropped; the commit still holds.
+    expect(sourceReviewFacts(projected, [raw(), raw({ authorAssociation: 'NONE' })])).toEqual({ reviewedHeadSha: HEAD })
+    expect(sourceReviewFacts(projected, [raw({ authorAssociation: 'member; drop' })])).toEqual({
+      reviewedHeadSha: HEAD,
+    })
   })
 })

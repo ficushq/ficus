@@ -37,6 +37,9 @@ definition:
         Independently validate the reported findings, exploit prerequisites, severity, and suggested
         mitigations. Distinguish confirmed issues from hypotheses. Request corrections or approve an
         evidence-backed report; do not automatically implement fixes.
+        When you approve, this step delivers: no later agent step runs, so once the stream reaches completion-ready
+        you are its delivery participant. Follow the delivery instructions in the advance response and finish the
+        stream yourself; do not wait for another agent.
       output: Validated security report and residual uncertainty.
       outcomes:
         approved:

@@ -106,7 +106,7 @@ example, after agreeing to this arrangement (substitute actual IDs):
 
 ```bash
 ficus squad set-meta <squad-id> workflow '{"kind":"preset","id":"solo"}'
-ficus squad set-meta <squad-id> workflowSetup '{"guidance":"Use solo for routine work. Use independent review for customer-facing changes. Ask before relaxing a requested review.","choices":[{"when":"Customer-facing changes","source":{"kind":"preset","id":"builder-reviewer"}}],"completedAt":"2026-09-06T00:00:00.000Z"}'
+ficus squad set-meta <squad-id> workflowSetup '{"guidance":"Use solo for routine work. Use independent review for customer-facing changes. Ask before relaxing a requested review.","choices":[{"when":"Customer-facing changes","source":{"kind":"preset","id":"reviewed-coding"}}],"completedAt":"2026-09-06T00:00:00.000Z"}'
 ```
 
 Use the actual completion time. `when` and `guidance` are manager selection

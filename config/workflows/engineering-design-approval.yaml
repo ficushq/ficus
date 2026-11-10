@@ -60,7 +60,11 @@ definition:
       participant: reviewer
       instructions: >-
         Review the implementation against the requirements and the approved design. Request targeted
-        implementation changes when necessary. Prepare the change request for delivery when ready.
+        implementation changes when necessary. Prepare the change request for delivery when ready. When you
+        approve, this step delivers: no later agent step runs, so once the stream reaches completion-ready you are
+        its delivery participant. Follow the delivery instructions in the advance response and finish the stream
+        yourself; do not wait for another agent. CI results, pushes and review comments go to implement, while
+        merge and close events reach you.
       output: Review findings, validation evidence, and a change request ready for delivery.
       outcomes:
         approved:

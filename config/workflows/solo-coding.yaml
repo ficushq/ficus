@@ -6,6 +6,7 @@ definition:
   participants:
     engineer:
       agentTypeId: engineer
+      tier: deep
       session: reuse-within-stream
   entry: implement
   routing:
@@ -21,7 +22,9 @@ definition:
       instructions: >-
         Implement the requested change in the work-stream workspace. Run appropriate validation, inspect your
         own diff, and prepare the change request. Work directly without spawning other agents. Ask the owner
-        if the scope requires independent review or a different flow.
+        if the scope requires independent review or a different flow. This step delivers: when you complete it,
+        the stream reaches completion-ready with you as its delivery participant. Follow the delivery instructions
+        in the advance response and finish the stream yourself.
       output: Committed implementation, validation evidence, and a change request ready for delivery.
       outcomes:
         completed:

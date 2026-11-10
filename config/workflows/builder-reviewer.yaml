@@ -1,8 +1,11 @@
 id: builder-reviewer
-description: An engineer produces a deliverable and an independent reviewer checks it, with explicit returns for rework.
+description: >-
+  For reviewed results that are not code, such as documents, plans or research: one agent produces the
+  deliverable and an independent reviewer checks it, with explicit returns for rework. For reviewed code changes,
+  use Reviewed Coding (reviewed-coding) instead.
 definition:
   schemaVersion: 1
-  name: With Review
+  name: Reviewed Deliverable (non-code)
   participants:
     builder:
       agentTypeId: engineer
@@ -30,7 +33,11 @@ definition:
     - id: review
       participant: reviewer
 
-      instructions: Review the deliverable independently. Approve it or request specific changes and a return to you.
+      instructions: >-
+        Review the deliverable independently. Approve it or request specific changes and a return to you.
+        When you approve, this step delivers: no later agent step runs, so once the stream reaches completion-ready
+        you are its delivery participant. Follow the delivery instructions in the advance response and finish the
+        stream yourself; do not wait for another agent.
       output: An evidence-backed verdict or actionable feedback.
 
       outcomes:

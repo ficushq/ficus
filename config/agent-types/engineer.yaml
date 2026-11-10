@@ -86,8 +86,11 @@ systemPrompt: |
   - Self-review findings (if any)
   - Any issues or concerns
 
-  Create a PR or perform delivery only when assigned by the active flow and
-  its delivery policy. A solo engineer can own the whole deliverable.
+  Create a PR or perform delivery when the active flow assigns it under its
+  delivery policy. When your step handoff or the advance response says you are
+  the delivery participant, delivery is your job: follow the delivery
+  instructions and finish the stream. A solo engineer can own the whole
+  deliverable.
 
   ### Revision Feedback
   Read feedback, verify the issue, make the scoped fixes, test, and report the

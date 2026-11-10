@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { deliveryBindingSelfCheck, deliveryInstructionsForRun, flowCompletionInstructions } from './completion-prompt'
+import {
+  deliveryBindingSelfCheck,
+  deliveryInstructionsForFlow,
+  deliveryInstructionsForRun,
+  deliveryParticipantView,
+  flowCompletionInstructions,
+} from './completion-prompt'
 import {
   advanceWorkflowRun,
   createBlankWorkflow,
@@ -99,6 +105,85 @@ describe('delivery instructions composition', () => {
     expect(
       deliveryInstructionsForRun({ id, status: 'active', pause: { reason: 'hold' } }, run('pr-merge'), 4)
     ).toBeUndefined()
+  })
+})
+
+describe('the delivery participant is named at completion-ready', () => {
+  const BUILDER = 'builder-agent'
+  const REVIEWER = 'reviewer-agent'
+  const finish = (state: WorkflowRun, outcome: string) =>
+    advanceWorkflowRun(state, {
+      action: 'complete',
+      expectedVersion: state.version,
+      attemptId: state.activeAttemptId,
+      outcome,
+      evidence: 'Done.',
+    })
+  /** A two-step build then review flow, as the builder-reviewer preset ships it, approved by the reviewer. */
+  function withReview() {
+    const definition = createBlankWorkflow()
+    definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+    const build = definition.steps[0]!
+    definition.participants.reviewer = structuredClone(definition.participants.worker!)
+    build.outcomes = { completed: { next: 'review' } }
+    definition.steps.push({
+      kind: 'agent',
+      id: 'review',
+      participant: 'reviewer',
+      instructions: 'Review the deliverable.',
+      output: 'A verdict.',
+      outcomes: { approved: { next: 'finish' }, 'changes-requested': { returnTo: build.id } },
+    })
+    const state = finish(finish(createWorkflowRun(definition), 'completed'), 'approved')
+    expect(state.status).toBe('completion-ready')
+    return { state, version: state.version, attemptAgents: { '1': BUILDER, '2': REVIEWER } }
+  }
+  const stream = { id: 'ws', status: 'active' }
+
+  test('the reviewer of a two-step flow is told it is the delivery participant', () => {
+    const run = withReview()
+    const mine = deliveryInstructionsForFlow(stream, run, undefined, REVIEWER)!
+    expect(mine).toContain('Delivery participant: you (step review, attempt 2, participant reviewer).')
+    expect(mine).toContain('delivery is your job: follow these delivery instructions and finish the stream yourself')
+    expect(mine).not.toContain('no agent role intrinsically owns')
+    expect(deliveryParticipantView(run, REVIEWER)).toEqual({
+      agentId: REVIEWER,
+      attemptId: 2,
+      stepId: 'review',
+      participantId: 'reviewer',
+      you: true,
+    })
+    // Anyone else (the builder, a human) is told who delivers instead.
+    const theirs = deliveryInstructionsForFlow(stream, run, undefined, BUILDER)!
+    expect(theirs).toContain(`Delivery participant: agent ${REVIEWER} (step review, attempt 2, participant reviewer).`)
+    expect(theirs).not.toContain('Delivery participant: you')
+    expect(deliveryParticipantView(run)).toMatchObject({ agentId: REVIEWER, you: false })
+  })
+
+  test('a Solo flow names its only agent', () => {
+    const state = finish(createWorkflowRun(createBlankWorkflow()), 'completed')
+    const run = { state, version: state.version, attemptAgents: { '1': BUILDER } }
+    expect(deliveryInstructionsForFlow(stream, run, undefined, BUILDER)).toContain(
+      'Delivery participant: you (step execute, attempt 1, participant worker).'
+    )
+  })
+
+  test('nothing is named before completion-ready or without a bound agent', () => {
+    const running = createWorkflowRun(createBlankWorkflow())
+    expect(deliveryParticipantView({ state: running, attemptAgents: { '1': BUILDER } }, BUILDER)).toBeUndefined()
+    const state = finish(running, 'completed')
+    expect(deliveryParticipantView({ state, attemptAgents: {} })).toBeUndefined()
+    expect(deliveryInstructionsForFlow(stream, { state, version: state.version, attemptAgents: {} })).not.toContain(
+      'Delivery participant:'
+    )
+  })
+
+  test('the opening no longer suggests delivery belongs to someone else', () => {
+    for (const mode of ['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
+      const text = flowCompletionInstructions(mode)
+      expect(text).toContain('The flow, not an agent role, assigns delivery')
+      expect(text).toContain('If that is you, delivery is your job whatever your role.')
+    }
   })
 })
 

@@ -14,6 +14,32 @@ export function isInferredCIObservation(subscription: IntegrationSubscription): 
   )
 }
 
+/** The agent that owns delivery of a completion-ready flow. */
+export interface DeliveryOwner {
+  agentId: string
+  attemptId: number
+  stepId: string
+  participantId: string
+}
+
+/**
+ * The delivery participant of a completion-ready flow: the last completed agent attempt that has a
+ * bound agent. This is the single resolution behind `delivery-owner` routing (merged and closed
+ * events always, and change events unless the flow sends them to a named step), so every prompt
+ * that names the delivery participant agrees with where code-host and merge events go.
+ */
+export function completionDeliveryOwner(run: Pick<Run, 'state' | 'attemptAgents'>): DeliveryOwner | undefined {
+  if (run.state.status !== 'completion-ready') return undefined
+  for (const attempt of [...run.state.attempts].reverse()) {
+    if (attempt.status !== 'completed') continue
+    const step = attempt.step ?? run.state.definition.steps.find((step) => step.id === attempt.stepId)
+    const agentId = run.attemptAgents[String(attempt.id)]
+    if (step?.kind === 'agent' && agentId)
+      return { agentId, attemptId: attempt.id, stepId: attempt.stepId, participantId: step.participant }
+  }
+  return undefined
+}
+
 export function outputRecipients(
   run: Run,
   stream: Stream,
@@ -56,6 +82,10 @@ export function outputRecipients(
     targets = stream.assigneeAgentId
       ? targets.filter((target) => target.agentId === stream.assigneeAgentId).slice(0, 1)
       : targets.slice(-1)
+  if (!targets.length && to === 'delivery-owner') {
+    const owner = completionDeliveryOwner(run)
+    if (owner) targets = [{ agentId: owner.agentId, version: run.version }]
+  }
   if (!targets.length && run.state.status === 'completion-ready' && to !== 'active') {
     const last = [...run.state.attempts]
       .reverse()
