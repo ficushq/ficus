@@ -23,12 +23,14 @@ import {
   resolveStoredWorkflow,
   previewWorkflowRestore,
   revertWorkflow,
+  serializeWorkflow,
   setWorkflowDisabled,
   workflowTemplateDifferences,
   workflowFingerprint,
   workflowRevision,
 } from './catalog'
 import { persistWorkflowTransition, prepareWorkStreamFlow } from './store'
+import { describeWorkflowTemplateHold } from './template-hold'
 
 const prefix = `workflow-${randomUUID()}`
 const workerType = `${prefix}-workerType`
@@ -254,6 +256,171 @@ describe('workflow catalog', () => {
       } finally {
         await db.delete(squads).where(eq(squads.id, squad!.id))
       }
+    })
+  })
+  describe('held-back code updates', () => {
+    const customizing = (presetId: string, stepId = 'execute') => ({
+      workflow: {
+        kind: 'preset',
+        id: presetId,
+        customizations: [{ op: 'update-step', id: stepId, changes: { instructions: 'Ours.' } }],
+      },
+    })
+    async function read(id: string) {
+      const [row] = await db.select().from(workflows).where(eq(workflows.id, id))
+      return row!
+    }
+    /** A preset whose code update renames step execute to implement, held back by one squad. */
+    async function heldPreset(suffix: string, write: (value: WorkflowPreset) => Promise<void>) {
+      const value = preset(suffix)
+      await write(value)
+      const [squad] = await db
+        .insert(squads)
+        .values({ name: `${prefix} ${suffix}`, purpose: 'Customizes a step', metadata: customizing(value.id) })
+        .returning()
+      const update = structuredClone(value)
+      update.definition.entry = 'implement'
+      update.definition.steps[0]!.id = 'implement'
+      update.definition.steps[0]!.instructions = 'Renamed upstream.'
+      update.definition.name = 'Upstream name'
+      update.description = 'Upstream description'
+      await write(update)
+      return { value, update, squad: squad! }
+    }
+
+    test('a held-back update stays held and visible, and re-syncs are idempotent', async () => {
+      await withFixtureSync(async (_fixture, write) => {
+        const { value, update, squad } = await heldPreset('held-stays', write)
+        try {
+          const held = await read(value.id)
+          expect(held.definition.steps.map((step) => step.id)).toEqual(['execute'])
+          expect(held.description).toBe('Upstream description')
+          expect(held.yamlTemplateHold).toMatchObject({ base: { definition: value.definition } })
+          expect(serializeWorkflow(held).templateHeldBack).toBe(true)
+
+          await write(update)
+          const again = await read(value.id)
+          expect(again.definition).toEqual(held.definition)
+          expect(again.description).toBe(held.description)
+          expect(again.yamlTemplateHold).toEqual(held.yamlTemplateHold)
+          expect(again.yamlFieldOverrides).toEqual(['definition'])
+
+          const view = await describeWorkflowTemplateHold(again, () => true)
+          expect(view).toMatchObject({
+            heldAt: held.yamlTemplateHold!.heldAt,
+            blockedBy: 'squad-customizations',
+            affectedSquads: [{ squadId: squad.id, problems: ["Unknown step 'execute'"] }],
+            hiddenSquadCount: 0,
+          })
+          expect(view!.parts.map((part) => part.path)).toEqual(
+            expect.arrayContaining(['definition/entry', 'definition/steps/execute', 'definition/steps/implement'])
+          )
+          expect(await describeWorkflowTemplateHold(again, () => false)).toMatchObject({
+            affectedSquads: [],
+            hiddenSquadCount: 1,
+          })
+        } finally {
+          await db.delete(squads).where(eq(squads.id, squad.id))
+        }
+      })
+    })
+
+    test('a held-back update applies on a later sync once no squad depends on the old IDs', async () => {
+      await withFixtureSync(async (_fixture, write) => {
+        const { value, update, squad } = await heldPreset('held-applies', write)
+        try {
+          await db.update(squads).set({ metadata: {} }).where(eq(squads.id, squad.id))
+          const unblocked = await describeWorkflowTemplateHold(await read(value.id), () => true)
+          expect(unblocked).toMatchObject({ blockedBy: null, affectedSquads: [], hiddenSquadCount: 0 })
+
+          await write(update)
+          const applied = await read(value.id)
+          expect(applied.definition).toEqual(update.definition)
+          expect(applied.yamlTemplateHold).toBeNull()
+          expect(applied.yamlFieldOverrides).toEqual([])
+          expect(workflowTemplateDifferences(applied)).toEqual([])
+        } finally {
+          await db.delete(squads).where(eq(squads.id, squad.id))
+        }
+      })
+    })
+
+    test('a later code change to a held-back part is not treated as a local edit, and local edits still win', async () => {
+      await withFixtureSync(async (_fixture, write) => {
+        const { value, update, squad } = await heldPreset('held-later', write)
+        try {
+          // A local tier edit made while the update is held back.
+          const held = await read(value.id)
+          const custom = { id: value.id, description: held.description ?? undefined, definition: held.definition }
+          custom.definition = structuredClone(custom.definition)
+          custom.definition.participants.worker!.tier = tier
+          await replaceWorkflow(value.id, workflowRevision(held), custom)
+
+          // The code changes the held-back step again.
+          const newer = structuredClone(update)
+          newer.definition.steps[0]!.instructions = 'Changed again upstream.'
+          await write(newer)
+          const stillHeld = await read(value.id)
+          expect(stillHeld.definition.steps.map((step) => step.id)).toEqual(['execute'])
+          expect(stillHeld.yamlTemplateHold!.heldAt).toBe(held.yamlTemplateHold!.heldAt)
+
+          await db.update(squads).set({ metadata: {} }).where(eq(squads.id, squad.id))
+          await write(newer)
+          const applied = await read(value.id)
+          expect(applied.definition.steps.map((step) => step.id)).toEqual(['implement'])
+          expect(applied.definition.steps[0]!.instructions).toBe('Changed again upstream.')
+          expect(applied.definition.participants.worker!.tier).toBe(tier)
+          expect(applied.yamlTemplateHold).toBeNull()
+          expect(workflowTemplateDifferences(applied).map((item) => item.path)).toEqual([
+            'definition/participants/worker/tier',
+          ])
+        } finally {
+          await db.delete(squads).where(eq(squads.id, squad.id))
+        }
+      })
+    })
+
+    test('restoring held-back parts moves the merge base, and a full restore clears the hold', async () => {
+      await withFixtureSync(async (_fixture, write) => {
+        const { value, update, squad } = await heldPreset('held-restore', write)
+        try {
+          // Restoring only the name keeps the rename held back; the name now follows the template.
+          const held = await read(value.id)
+          const partial = await revertWorkflow(value.id, workflowRevision(held), { paths: ['definition/name'] })
+          expect(partial.definition.name).toBe('Upstream name')
+          expect(partial.definition.steps.map((step) => step.id)).toEqual(['execute'])
+          expect(partial.yamlTemplateHold).toMatchObject({
+            heldAt: held.yamlTemplateHold!.heldAt,
+            base: { definition: { name: 'Upstream name', entry: 'execute' } },
+          })
+
+          // A later code change to the restored name is a code change, not a conflict with a local edit.
+          const newer = structuredClone(update)
+          newer.definition.name = 'Newest name'
+          await db.update(squads).set({ metadata: {} }).where(eq(squads.id, squad.id))
+          await write(newer)
+          const applied = await read(value.id)
+          expect(applied.definition).toEqual(newer.definition)
+          expect(applied.yamlTemplateHold).toBeNull()
+
+          // A full restore leaves nothing held back.
+          await db
+            .update(squads)
+            .set({ metadata: customizing(value.id, 'implement') })
+            .where(eq(squads.id, squad.id))
+          const renamed = structuredClone(newer)
+          renamed.definition.entry = 'build'
+          renamed.definition.steps[0]!.id = 'build'
+          await write(renamed)
+          const heldAgain = await read(value.id)
+          expect(heldAgain.yamlTemplateHold).not.toBeNull()
+          const restored = await revertWorkflow(value.id, workflowRevision(heldAgain), { acknowledgeSquadImpact: true })
+          expect(restored.definition).toEqual(renamed.definition)
+          expect(restored.yamlTemplateHold).toBeNull()
+        } finally {
+          await db.delete(squads).where(eq(squads.id, squad.id))
+        }
+      })
     })
   })
 })

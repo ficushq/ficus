@@ -16,6 +16,50 @@ import {
 import { apiGet, apiPost, apiPut, apiDelete, apiGetRaw } from '../client'
 import { output, outputError } from '../output'
 
+interface TemplateDiffView {
+  hasDrift?: boolean
+  differences?: Array<{ path: string; label: string }>
+  heldBack?: {
+    heldAt: string
+    blockedBy: 'squad-customizations' | 'invalid-workflow' | null
+    invalidReason?: string
+    affectedSquads: Array<{ squadName: string; problems: string[] }>
+    hiddenSquadCount: number
+    parts: Array<{ path: string; label: string }>
+  } | null
+}
+
+/** Readable summary of a template diff: what differs, and why a code update is held back. */
+export function formatTemplateDiff(id: string, diff: TemplateDiffView): string {
+  const lines: string[] = []
+  const differences = diff.differences ?? []
+  if (!diff.hasDrift && !differences.length) lines.push(`Workflow '${id}' matches its code template.`)
+  else {
+    lines.push(`Workflow '${id}' differs from its code template in:`)
+    for (const item of differences) lines.push(`  - ${item.label} (${item.path})`)
+  }
+  const held = diff.heldBack
+  if (held) {
+    lines.push('', `A code update to the definition has been held back since ${held.heldAt}.`)
+    if (held.parts.length) {
+      lines.push('It changes:')
+      for (const part of held.parts) lines.push(`  - ${part.label} (${part.path})`)
+    }
+    if (held.blockedBy === 'squad-customizations') {
+      lines.push('It would break saved workflow customizations in:')
+      for (const squad of held.affectedSquads) lines.push(`  - ${squad.squadName}: ${squad.problems.join('; ')}`)
+      if (held.hiddenSquadCount)
+        lines.push(`  - ${held.hiddenSquadCount} squad${held.hiddenSquadCount === 1 ? '' : 's'} you cannot see`)
+      lines.push('It applies on the next sync once those squads are updated, or restore it with workflow revert.')
+    } else if (held.blockedBy === 'invalid-workflow') {
+      lines.push(`Merged with the local edits it is not a valid workflow: ${held.invalidReason ?? 'unknown error'}`)
+    } else {
+      lines.push('Nothing blocks it any more; it applies on the next sync.')
+    }
+  }
+  return lines.join('\n')
+}
+
 const defaults = { apiGet, apiPost, apiPut, apiDelete, apiGetRaw, output, outputError, print: console.log }
 export type WorkflowDependencies = typeof defaults
 
@@ -133,7 +177,8 @@ export function registerWorkflowCommands(program: Command, deps: WorkflowDepende
     .description('Compare a preset with its YAML template')
     .action((id: string) =>
       run(async () => {
-        deps.output(await deps.apiGet(`${path(id)}/template-diff`))
+        const diff = await deps.apiGet(`${path(id)}/template-diff`)
+        deps.output(diff, formatTemplateDiff(id, diff as TemplateDiffView))
       })
     )
   command

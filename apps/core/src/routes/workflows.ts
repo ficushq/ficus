@@ -50,6 +50,7 @@ import {
   setWorkflowDisabled,
   WorkflowError,
 } from '../services/workflows/catalog'
+import { describeWorkflowTemplateHold } from '../services/workflows/template-hold'
 
 const revisionSchema = z.strictObject({ revision: z.string().min(1).max(200) })
 const restorePathsSchema = z.array(z.string().min(1).max(500)).min(1).max(200).optional()
@@ -489,6 +490,7 @@ export const workflowsRouter = new Hono()
         ...(await workflowSync.getTemplateDiff(row.id)),
         revision: workflowRevision(row),
         differences: workflowTemplateDifferences(row),
+        heldBack: await describeWorkflowTemplateHold(row, await squadVisibility(c.get('identity')!)),
       })
     }
   )

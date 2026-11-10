@@ -58,6 +58,11 @@ function sortKeys(value: unknown): unknown {
   return value
 }
 
+/** Whether two template values are equal, ignoring key order. */
+export function sameTemplateValue(a: unknown, b: unknown): boolean {
+  return same(a, b)
+}
+
 function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(sortKeys(a ?? null)) === JSON.stringify(sortKeys(b ?? null))
 }
@@ -217,7 +222,19 @@ export function restoreWorkflowTemplatePaths(
   const known = new Set(diffWorkflowTemplate(current, template).map((item) => item.path))
   const unknown = paths.filter((path) => !known.has(path))
   if (unknown.length) throw new Error(`These parts do not differ from the code template: ${unknown.join(', ')}`)
-  const tree = toTree(current)
+  return copyTemplatePaths(current, template, paths)
+}
+
+/**
+ * Copy the template's values at `paths` into `target`, without checking that they differ. Used to
+ * move a held-back merge base forward for the parts a person restored.
+ */
+export function copyTemplatePaths(
+  target: TemplateFields,
+  template: TemplateFields,
+  paths: readonly string[]
+): TemplateFields {
+  const tree = toTree(target)
   const source = toTree(template)
   for (const path of paths) {
     const segments = path.split('/')

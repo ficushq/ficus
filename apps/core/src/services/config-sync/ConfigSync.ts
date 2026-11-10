@@ -12,6 +12,14 @@ export interface SyncResult {
   deleted: number
 }
 
+/** What a field-level sync stores for an existing record. */
+export interface ReconciledUpdate {
+  /** Data fields, compared with the template to compute field overrides. */
+  data: Record<string, unknown>
+  /** Domain-owned tracking columns stored alongside, such as a held-back merge base. */
+  tracking?: Record<string, unknown>
+}
+
 export interface TemplateDiff {
   hasDrift: boolean
   current: Record<string, unknown> | null
@@ -224,13 +232,20 @@ export abstract class ConfigSync<TYaml> {
       if (this.yamlFieldOverridesColumn) {
         const currentData = this.toComparable(existing)
         const storedOverrides = this.getStoredFieldOverrides(existing)
-        const nextData = await this.reconcileUpdate(id, record, existing, currentData, storedOverrides)
+        const { data: nextData, tracking } = await this.reconcileUpdate(
+          id,
+          record,
+          existing,
+          currentData,
+          storedOverrides
+        )
         const fieldOverrides = this.diffOverrideKeys(nextData, template)
 
         await db
           .update(this.table)
           .set({
             ...nextData,
+            ...tracking,
             [this.jsKey(this.yamlTemplateColumn)]: template,
             ...this.fieldOverridesSet(fieldOverrides),
             [this.jsKey(this.updatedAtColumn)]: new Date(),
@@ -495,8 +510,8 @@ export abstract class ConfigSync<TYaml> {
     _existing: Record<string, unknown>,
     current: Record<string, unknown>,
     fieldOverrides: string[]
-  ): Promise<Record<string, unknown>> {
-    return this.applyOverrideKeys(record, current, fieldOverrides)
+  ): Promise<ReconciledUpdate> {
+    return { data: this.applyOverrideKeys(record, current, fieldOverrides) }
   }
 
   /** The template a row was last reconciled with, before this sync replaces it. */

@@ -176,6 +176,7 @@ describe('template drift and restore', () => {
       definition,
       yamlTemplate: { id, description: 'Drift fixture', scope: { kind: 'instance' }, definition: template },
       yamlFieldOverrides: ['definition'],
+      yamlTemplateHold: { base: { description: 'Drift fixture', definition }, heldAt: '2026-11-10T00:00:00.000Z' },
     })
     const [customizer] = await db
       .insert(squads)
@@ -206,6 +207,20 @@ describe('template drift and restore', () => {
       expect(diff.differences.map((item: { path: string }) => item.path)).toEqual(
         expect.arrayContaining(['definition/entry', 'definition/steps/execute', 'definition/steps/implement'])
       )
+      expect(diff.heldBack).toMatchObject({
+        heldAt: '2026-11-10T00:00:00.000Z',
+        blockedBy: 'squad-customizations',
+        affectedSquads: [],
+        hiddenSquadCount: 1,
+      })
+      expect(diff.heldBack.parts.map((part: { path: string }) => part.path)).toEqual(
+        expect.arrayContaining(['definition/entry', 'definition/steps/execute', 'definition/steps/implement'])
+      )
+      const namedDiff = await (await request(`/${id}/template-diff`, admin)).json()
+      expect(namedDiff.heldBack.affectedSquads).toEqual([
+        { squadId: customizer!.id, squadName: `${prefix} customizer`, problems: ["Unknown step 'execute'"] },
+      ])
+      expect((await (await request(`/${id}`, reader)).json()).templateHeldBack).toBe(true)
       expect((await request(`/${id}/revert/preview`, reader, 'POST', {})).status).toBe(404)
 
       const named = await (await request(`/${id}/revert/preview`, admin, 'POST', {})).json()
@@ -233,7 +248,12 @@ describe('template drift and restore', () => {
         acknowledgeSquadImpact: true,
       })
       expect(restored.status).toBe(200)
-      expect(await restored.json()).toMatchObject({ definition: { entry: 'implement' }, yamlFieldOverrides: [] })
+      expect(await restored.json()).toMatchObject({
+        definition: { entry: 'implement' },
+        yamlFieldOverrides: [],
+        templateHeldBack: false,
+      })
+      expect((await (await request(`/${id}/template-diff`, reader)).json()).heldBack).toBeNull()
     } finally {
       await db.delete(squads).where(eq(squads.id, customizer!.id))
     }

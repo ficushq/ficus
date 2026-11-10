@@ -918,6 +918,12 @@ export const workflows = pgTable('workflows', {
   definition: jsonb('definition').$type<WorkflowDefinition>().notNull(),
   yamlTemplate: jsonb('yaml_template'),
   yamlFieldOverrides: jsonb('yaml_field_overrides').$type<string[]>().notNull().default([]),
+  // Set while a code update to the definition is held back (it would break a squad or is not a
+  // valid workflow): the merge base the next sync retries the update from. Null otherwise.
+  yamlTemplateHold: jsonb('yaml_template_hold').$type<{
+    base: { description?: unknown; definition?: unknown }
+    heldAt: string
+  }>(),
   disabled: boolean('disabled').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
