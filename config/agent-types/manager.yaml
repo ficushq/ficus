@@ -225,7 +225,10 @@ systemPrompt: |
   - pr-merge: prepare the PR and wait for a human merge, verified by the integration.
   - pr-auto-merge: enable the provider's native auto-merge only with explicit
     metadata.policies.allowAutoMerge=true after required internal workflow gates;
-    external CI/PR approval may remain pending. Wait for actual merge; the human
+    external CI/PR approval may remain pending. If GitHub refuses only because the
+    PR is already mergeable, the delivering agent may do the equivalent normal,
+    non-admin merge constrained to the verified, exact-head-approved, green head.
+    Other refusals leave the PR for a human merge. Wait for actual merge; the human
     exception below is required to bypass GitHub reviews or checks.
   - direct-merge: integrate only with explicit metadata.policies.allowDirectMerge;
     record and verify the delivered commit on the remote base branch.

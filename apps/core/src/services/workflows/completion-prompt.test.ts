@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  ALREADY_MERGEABLE_REFUSAL_GUIDANCE,
   deliveryBindingSelfCheck,
   deliveryInstructionsForFlow,
   deliveryInstructionsForRun,
@@ -315,6 +316,37 @@ describe('auto-merge enabling versus delivery', () => {
     }
     for (const mode of ['deliverable', 'review-approval'] as const)
       expect(flowCompletionInstructions(mode)).not.toContain('Merge authority:')
+  })
+
+  test('an already-mergeable refusal permits an equivalent head-constrained merge under every condition', () => {
+    const instructions = flowCompletionInstructions('pr-auto-merge')
+    expect(instructions).toContain(ALREADY_MERGEABLE_REFUSAL_GUIDANCE)
+    for (const text of [
+      'GitHub refuses to enable native auto-merge when the pull request is already mergeable (merge state CLEAN)',
+      'Only in that case, a normal merge is the equivalent of native auto-merge',
+      'verifying every one of these conditions live, immediately before merging',
+      'metadata.policies.allowAutoMerge is explicitly true',
+      'the live PR base and exact head match the configured base and the validated and reviewed deliverable',
+      'when the repository requires approval, a reviewer with write access submitted an approving review on that exact head',
+      'approvals retained from earlier heads do not count',
+      'every applicable check on that head passed, and skipped checks do not count as passes',
+      'every declared internal workflow gate is complete',
+      'Constrain the merge to that head and use the merge method native auto-merge would have used',
+      '--match-head-commit <validated-head-sha>` without --auto or --admin',
+      'Never use administrator powers or bypass reviews, checks, or branch protections for this merge',
+      'If any condition does not hold, do not merge',
+    ])
+      expect(instructions).toContain(text)
+    // Every other refusal keeps the human fallback, stated after the exception.
+    const other = 'If the provider refuses auto-merge for any other reason, leave the PR open for a human merge'
+    expect(instructions).toContain(other)
+    expect(instructions.indexOf('Already-mergeable refusal')).toBeLessThan(instructions.indexOf(other))
+    expect(instructions).not.toContain('the provider rejects auto-merge, leave the PR open')
+  })
+
+  test('the already-mergeable exception belongs to pr-auto-merge only', () => {
+    for (const mode of ['pr-merge', 'direct-merge', 'review-approval', 'deliverable', 'pr-review'] as const)
+      expect(flowCompletionInstructions(mode)).not.toContain('Already-mergeable refusal')
   })
 
   test('provider state, not a historical autoMergeRequest, proves delivery', () => {

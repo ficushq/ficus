@@ -115,7 +115,9 @@ work; a multi-step flow can assign that responsibility elsewhere.
 - `pr-merge`: create or reuse the PR; a human merges it.
 - `pr-auto-merge`: after required internal workflow validation/review and explicit
   current `allowAutoMerge=true`, enable provider-native auto-merge while external
-  CI/PR approval may remain pending. Never bypass protections; wait for actual merge.
+  CI/PR approval may remain pending. If GitHub refuses only because the PR is
+  already mergeable, perform the equivalent head-constrained normal merge under
+  the conditions below. Never bypass protections; wait for actual merge.
 - `direct-merge`: requires explicit squad policy and verified inclusion of the
   delivered commit in the remote base branch.
 
@@ -164,8 +166,22 @@ For GitHub, use the squad-authorized integration and configured merge method:
 `gh pr merge <pr-url> --auto --<configured-merge-method> --match-head-commit <validated-head-sha>`.
 Replace the method placeholder with an allowed method (e.g. `squash`). By default,
 do not use `--admin` or bypass required GitHub reviews, checks, or branch protections.
-If permission is missing or the provider rejects the request, leave the PR for a
-human merge and tell the owner unless the following human exception applies.
+If permission is missing, leave the PR for a human merge and tell the owner unless
+the following human exception applies.
+
+If GitHub refuses only because the PR is already mergeable (merge state CLEAN,
+common when approval arrives after CI finished), a normal merge is the equivalent
+of native auto-merge and you may perform it. Immediately before merging, verify
+live that `allowAutoMerge` is explicitly true; the base and exact head match the
+validated and reviewed deliverable; when approval is required, a reviewer with
+write access approved that exact head (retained approvals of earlier heads do not
+count); every applicable check on that head passed (skipped checks are not
+passes); and every declared internal workflow gate is complete. Then run
+`gh pr merge <pr-url> --<configured-merge-method> --match-head-commit <validated-head-sha>`
+without `--auto` or `--admin`, and record the refusal, head, approval, and check
+state in delivery evidence. Never use administrator powers or bypass reviews,
+checks, or branch protections. Any other refusal: leave the PR for a human merge
+and tell the owner unless the following human exception applies.
 
 An explicit, direct human instruction in trusted chat may authorize an exception
 for a specified PR or release workflow, including when default merge policy leaves

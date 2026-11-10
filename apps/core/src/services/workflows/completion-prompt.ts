@@ -8,6 +8,25 @@ import {
 } from '@ficus/shared'
 import { completionDeliveryOwner, type DeliveryOwner } from '../integrations/outputs/routing-audience'
 
+/**
+ * The one refusal that is not a reason to fall back to a human merge: GitHub will not enable native
+ * auto-merge on a pull request that is already mergeable (merge state CLEAN), which happens whenever
+ * the required approval arrives after CI has finished. Native auto-merge would have merged it at
+ * once, so a normal, head-constrained merge under the same conditions is its equivalent. Ficus
+ * itself still merges nothing; the delivering agent acts after verifying every condition live.
+ */
+export const ALREADY_MERGEABLE_REFUSAL_GUIDANCE = [
+  'Already-mergeable refusal: GitHub refuses to enable native auto-merge when the pull request is already mergeable (merge state CLEAN), which happens whenever the required approval arrives after CI has finished. Only in that case, a normal merge is the equivalent of native auto-merge and you may perform it yourself, after verifying every one of these conditions live, immediately before merging:',
+  '(1) the current squad metadata.policies.allowAutoMerge is explicitly true;',
+  '(2) the live PR base and exact head match the configured base and the validated and reviewed deliverable;',
+  '(3) when the repository requires approval, a reviewer with write access submitted an approving review on that exact head (approvals retained from earlier heads do not count);',
+  '(4) every applicable check on that head passed, and skipped checks do not count as passes;',
+  '(5) every declared internal workflow gate is complete.',
+  'Constrain the merge to that head and use the merge method native auto-merge would have used, for GitHub `gh pr merge <pr-url> --<configured-merge-method> --match-head-commit <validated-head-sha>` without --auto or --admin.',
+  'Never use administrator powers or bypass reviews, checks, or branch protections for this merge. If any condition does not hold, do not merge: wait for it (for example a fresh approval on the current head) or follow the fallback below.',
+  'Record the refusal reason, the verified head, the approval, and the check state in delivery evidence.',
+].join(' ')
+
 /** Delivery guidance is shared by every flow participant, independent of squad or agent type. */
 export function flowCompletionInstructions(mode: WorkflowDefinition['completion']['mode']): string {
   const guidance = {
@@ -24,7 +43,9 @@ export function flowCompletionInstructions(mode: WorkflowDefinition['completion'
       'Read the current squad metadata.policies.allowAutoMerge before enabling the provider’s native auto-merge. It must be explicitly true; a missing flag means permission is not granted. Do not enable that policy yourself.',
       'After completing the workflow’s required validation, self-review, and any declared independent review or human-approval gates, verify the live PR base and exact head match the configured base and validated/reviewed deliverable, then enable native auto-merge now. Do not add an independent reviewer to a Solo flow or skip a declared gate; new commits require authorized rework and affected checks/reviews again.',
       'GitHub required CI and external PR approvals may still be pending when you enable auto-merge; the provider must enforce them before the actual merge unless the explicit human authorization below permits a bypass. This is not authority to approve as a human or change branch protections. Native auto-merge is a code-host feature, not application publication or deployment permission.',
-      'If permission is absent or the provider rejects auto-merge, leave the PR open for a human merge and explain the fallback to the owner unless the explicit human authorization below applies.',
+      'If permission is absent, leave the PR open for a human merge and explain the fallback to the owner unless the explicit human authorization below applies.',
+      ALREADY_MERGEABLE_REFUSAL_GUIDANCE,
+      'If the provider refuses auto-merge for any other reason, leave the PR open for a human merge and explain the fallback to the owner unless the explicit human authorization below applies.',
       'Enabling auto-merge is not completion: wait until the configured code hosting integration confirms the PR is merged before finishing the flow. GitHub autoMergeRequest can be null after an immediate merge; inspect the live merged state rather than treating null as a failed enable.',
     ].join(' '),
     'direct-merge':
