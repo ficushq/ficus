@@ -31,6 +31,7 @@ import {
 import { SUBAGENT_WATCHDOG_KIND } from '../../lib/subagentWatchdog'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface SchedulesListDependencies {
   useWebSocket: typeof useWebSocket
@@ -670,12 +671,10 @@ function ScheduleDetailModal({
   const [editError, setEditError] = useState<string | null>(null)
 
   // Re-seed the editor when the schedule changes, while rendering.
-  const [editSource, setEditSource] = useState(schedule)
-  if (editSource !== schedule) {
-    setEditSource(schedule)
+  useAdjustOnChange([schedule], () => {
     setEditState(createScheduleEditState(schedule))
     setEditError(null)
-  }
+  })
 
   const invalidateQueries = () => {
     // Detail is backed by whichever filtered list is mounted (including the

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAdjustOnChange } from './useAdjustOnChange'
 import { useMediaQuery } from './useMediaQuery'
 import { useStableRef } from './useStableRef'
 
@@ -13,15 +14,13 @@ export function useAnimatedGraphPositions(target: Positions, enabled: boolean): 
   const animate = enabled && typeof requestAnimationFrame !== 'undefined' && !reducedMotion
   // Without animation the frame jumps straight to the target, while rendering, so a later
   // animation starts from where the graph is drawn.
-  const [snappedKey, setSnappedKey] = useState<string | null>(null)
-  if (!animate) {
-    if (snappedKey !== key) {
-      setSnappedKey(key)
-      setFrame(JSON.parse(key) as Positions)
-    }
-  } else if (snappedKey !== null) {
-    setSnappedKey(null)
-  }
+  useAdjustOnChange(
+    [animate ? null : key],
+    () => {
+      if (!animate) setFrame(JSON.parse(key) as Positions)
+    },
+    { onMount: true }
+  )
   useEffect(() => {
     if (!animate) return
     const next: Positions = JSON.parse(key)

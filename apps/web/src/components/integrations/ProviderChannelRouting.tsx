@@ -12,6 +12,7 @@ import {
   overrideRowsToMap,
   invalidOverrideRowIndexes,
 } from '../settings/channelFormHelpers'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /** One routing policy for the identity discovered from this provider's connection. */
 export function ProviderChannelRouting({
@@ -32,15 +33,18 @@ export function ProviderChannelRouting({
   const [allowPrivateChats, setAllowPrivateChats] = useState(query.data?.allowPrivateChats ?? true)
   const [error, setError] = useState('')
   // Re-seed the form from each new instance read, while rendering.
-  const [formData, setFormData] = useState<typeof query.data>()
-  if (query.data && formData !== query.data) {
-    setFormData(query.data)
-    setAllowPrivateChats(query.data.allowPrivateChats ?? true)
-    setRows(mapToOverrideRows(query.data.channelSquadMap))
-    setTrusted(query.data.trustedChannelIds ?? [])
-    setAllowed(query.data.allowedChannelIds ?? [])
-    setDenied(query.data.deniedChannelIds ?? [])
-  }
+  useAdjustOnChange(
+    [query.data],
+    () => {
+      if (!query.data) return
+      setAllowPrivateChats(query.data.allowPrivateChats ?? true)
+      setRows(mapToOverrideRows(query.data.channelSquadMap))
+      setTrusted(query.data.trustedChannelIds ?? [])
+      setAllowed(query.data.allowedChannelIds ?? [])
+      setDenied(query.data.deniedChannelIds ?? [])
+    },
+    { onMount: true }
+  )
   const save = useMutation({
     mutationFn: () =>
       updateChannelInstance(instanceId, {

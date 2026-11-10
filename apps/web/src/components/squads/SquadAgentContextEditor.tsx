@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface AgentTypeOption {
   systemOnly?: boolean
@@ -43,7 +44,6 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
   const [activeIds, setActiveIds] = useState<string[]>(() => activeIdsForTypeContext(typeContext ?? {}, agentTypes))
   const [values, setValues] = useState<Record<string, string>>(typeContext ?? {})
   const [locallyRemovedIds, setLocallyRemovedIds] = useState<Set<string>>(() => new Set())
-  const [syncedTypeContextSnapshot, setSyncedTypeContextSnapshot] = useState(typeContextSnapshot)
   const [saved, setSaved] = useState(false)
   const queryClient = useQueryClient()
 
@@ -60,27 +60,20 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
   // Sync from server state only when the saved type context changes semantically, while rendering.
   // Periodic query refreshes can produce new prop object/array identities with the
   // same saved values; those should not overwrite local dirty edits.
-  if (typeContextSnapshot !== syncedTypeContextSnapshot) {
-    setSyncedTypeContextSnapshot(typeContextSnapshot)
-    if (currentActiveSnapshot === syncedTypeContextSnapshot) {
+  // Local edits are kept unless they still match the previously synced context.
+  useAdjustOnChange([typeContextSnapshot], (previous) => {
+    if (currentActiveSnapshot === previous?.[0]) {
       const tc = typeContext ?? {}
       setValues(tc)
       setActiveIds(activeIdsForTypeContext(tc, agentTypes))
       setLocallyRemovedIds(new Set())
     }
-  }
+  })
 
   // If the agent type list changes (for example, it loads after the context),
   // reconcile visible rows without touching the textarea values. This also runs, while rendering,
   // when the saved context or the locally removed rows change.
-  const [reconciledFor, setReconciledFor] = useState({ agentTypeIdsKey, agentTypes, typeContext, locallyRemovedIds })
-  if (
-    reconciledFor.agentTypeIdsKey !== agentTypeIdsKey ||
-    reconciledFor.agentTypes !== agentTypes ||
-    reconciledFor.typeContext !== typeContext ||
-    reconciledFor.locallyRemovedIds !== locallyRemovedIds
-  ) {
-    setReconciledFor({ agentTypeIdsKey, agentTypes, typeContext, locallyRemovedIds })
+  useAdjustOnChange([agentTypeIdsKey, agentTypes, typeContext, locallyRemovedIds], () => {
     const agentTypeIds = new Set(agentTypes.map((t) => t.id))
     const savedActiveIds = activeIdsForTypeContext(typeContext ?? {}, agentTypes)
 
@@ -91,7 +84,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
       }
       return areStringArraysEqual(next, ids) ? ids : next
     })
-  }
+  })
 
   const dirty = currentActiveSnapshot !== typeContextSnapshot
 

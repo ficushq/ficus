@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, RefObject } from 'react'
 import { ASSISTANT_POSITION_STORAGE_KEY } from '@ficus/shared/browser-keys'
+import { useAdjustOnChange } from './useAdjustOnChange'
 
 export type AssistantCorner =
   'center' | 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
@@ -87,12 +88,14 @@ export function useAssistantPosition(
     }
   }, [])
   // Becoming visible picks up a corner another tab or a remount saved, while rendering.
-  const [seenVisible, setSeenVisible] = useState(false)
-  if (seenVisible !== visible) {
-    setSeenVisible(visible)
-    const saved = visible ? savedCorner() : null
-    if (saved) updateCorner(saved)
-  }
+  useAdjustOnChange(
+    [visible],
+    () => {
+      const saved = visible ? savedCorner() : null
+      if (saved) updateCorner(saved)
+    },
+    { onMount: true }
+  )
   const [point, setPoint] = useState<{ left: number; top: number; maxHeight?: number }>()
   const [dragging, setDragging] = useState(false)
   const drag = useRef<{ pointer: number; x: number; y: number; left: number; top: number; moved: boolean } | null>(null)

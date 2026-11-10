@@ -8,6 +8,7 @@ import {
   type ManagedBigbrainMemberInvite,
   type ManagedBigbrainVault,
 } from '../../api/integrations'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 function failureCode(error: unknown): string {
   return error instanceof ApiError && error.payload && typeof error.payload === 'object'
@@ -63,15 +64,13 @@ export function BigbrainMemberInviteDialog({
   // Any change of target or closing forgets the link (while rendering) and abandons an in-flight
   // request. The layout effect retires its generation in the same commit as the reset, so a response
   // that arrives afterwards can never show a link for the previous target.
-  const [dialogTarget, setDialogTarget] = useState({ vaultId: vault.vaultId, isOpen })
-  if (dialogTarget.vaultId !== vault.vaultId || dialogTarget.isOpen !== isOpen) {
-    setDialogTarget({ vaultId: vault.vaultId, isOpen })
+  useAdjustOnChange([vault.vaultId, isOpen], () => {
     setForm(draft())
     setInvite(null)
     setError(null)
     setCopied(false)
     setPending(false)
-  }
+  })
   useLayoutEffect(() => {
     generation.current += 1
   }, [vault.vaultId, isOpen])

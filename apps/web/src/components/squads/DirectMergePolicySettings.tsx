@@ -5,6 +5,7 @@ import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -28,13 +29,16 @@ export function DirectMergePolicySettings({ squadId }: Props) {
   const [saved, setSaved] = useState(false)
 
   // Re-seed the form whenever the squad data loads or changes, while rendering.
-  const [formSquad, setFormSquad] = useState<typeof squad>()
-  if (squad && formSquad !== squad) {
-    setFormSquad(squad)
-    setAllowDirectMerge(readPolicy(squad.metadata, 'allowDirectMerge'))
-    setAllowAutoMerge(readPolicy(squad.metadata, 'allowAutoMerge'))
-    setDirty(false)
-  }
+  useAdjustOnChange(
+    [squad],
+    () => {
+      if (!squad) return
+      setAllowDirectMerge(readPolicy(squad.metadata, 'allowDirectMerge'))
+      setAllowAutoMerge(readPolicy(squad.metadata, 'allowAutoMerge'))
+      setDirty(false)
+    },
+    { onMount: true }
+  )
 
   const mutation = useMutation({
     mutationFn: (value: { allowDirectMerge: boolean; allowAutoMerge: boolean }) =>

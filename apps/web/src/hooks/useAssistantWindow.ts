@@ -17,6 +17,7 @@ import {
 } from '../lib/assistantWindow'
 import { ASSISTANT_GUTTER, currentViewport, dockAssistant } from './useAssistantPosition'
 import { useStableRef } from './useStableRef'
+import { useAdjustOnChange } from './useAdjustOnChange'
 
 const KEY_STEP = 16
 /** Pointer travel before a press on the header becomes a drag (so clicks stay clicks). */
@@ -59,11 +60,13 @@ export function useAssistantWindow(
   )
 
   // A reopened assistant picks up a placement another tab or a remount saved, while rendering.
-  const [seenVisible, setSeenVisible] = useState(false)
-  if (seenVisible !== visible) {
-    setSeenVisible(visible)
-    if (visible) setPlacementState(readAssistantWindow())
-  }
+  useAdjustOnChange(
+    [visible],
+    () => {
+      if (visible) setPlacementState(readAssistantWindow())
+    },
+    { onMount: true }
+  )
 
   /** The window's current rect relative to the visual viewport, as drawn. */
   const currentRect = useCallback((): Rect | undefined => {

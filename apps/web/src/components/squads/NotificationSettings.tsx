@@ -6,6 +6,7 @@ import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
 import { DiscordIcon, SlackIcon, TelegramIcon } from '../icons'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -42,13 +43,16 @@ export function NotificationSettings({ squadId }: Props) {
   const [hasChanges, setHasChanges] = useState(false)
 
   // Reset form when squad data loads or changes, while rendering
-  const [formSquad, setFormSquad] = useState<typeof squad>()
-  if (squad && formSquad !== squad) {
-    setFormSquad(squad)
-    const notifications = (squad.metadata as { notifications?: NotificationConfig } | undefined)?.notifications || {}
-    setConfig(notifications)
-    setHasChanges(false)
-  }
+  useAdjustOnChange(
+    [squad],
+    () => {
+      if (!squad) return
+      const notifications = (squad.metadata as { notifications?: NotificationConfig } | undefined)?.notifications || {}
+      setConfig(notifications)
+      setHasChanges(false)
+    },
+    { onMount: true }
+  )
 
   // Validation: check for incomplete configs (has instanceId but no channelId)
   const validationErrors = useMemo(() => {

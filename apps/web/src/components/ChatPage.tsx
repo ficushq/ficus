@@ -25,6 +25,7 @@ import { useChatApi } from '../api/ChatApiProvider'
 import { getAgentName, getAgentPrimaryLabel, getAgentSecondaryLabel } from '../lib/agentDisplay'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 const SCOPE_FILTERS: { label: string; value: ChatScopeType | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -218,14 +219,16 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
   // Handle ?new search param from header button: enter new chat mode while rendering, then
   // consume the parameter and start the session from the effect.
   const newChatRequested = searchParams.has('new')
-  const [seenNewChatRequest, setSeenNewChatRequest] = useState(false)
-  if (seenNewChatRequest !== newChatRequested) {
-    setSeenNewChatRequest(newChatRequested)
-    if (newChatRequested) {
-      setNewChatMode(true)
-      setFocusTrigger((n) => n + 1)
-    }
-  }
+  useAdjustOnChange(
+    [newChatRequested],
+    () => {
+      if (newChatRequested) {
+        setNewChatMode(true)
+        setFocusTrigger((n) => n + 1)
+      }
+    },
+    { onMount: true }
+  )
   useEffect(() => {
     if (newChatRequested) {
       setSearchParams({}, { replace: true })

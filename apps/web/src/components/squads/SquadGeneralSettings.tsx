@@ -8,6 +8,7 @@ import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { SquadAvatarSettings } from './SquadAvatarSettings'
 import { updateSquadSchema, type UpdateSquadInput } from '@ficus/shared'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 type SettingsSection = 'general' | 'work' | 'workspace'
 
@@ -96,16 +97,14 @@ export function SquadGeneralSettings({
     blockedGraceMinutes,
     hostWorkspacePath,
   ]
-  const [syncedSeedValues, setSyncedSeedValues] = useState(seedValues)
-  if (seedValues.some((value, index) => !Object.is(value, syncedSeedValues[index]))) {
-    setSyncedSeedValues(seedValues)
+  useAdjustOnChange(seedValues, () => {
     setNameValue(name)
     setPurposeValue(purpose)
     setGlobalCollaborationEnabledValue(globalCollaborationEnabled)
     setMaxConcurrentWorkStreamsValue(maxConcurrentWorkStreams)
     setBlockedGraceMinutesValue(blockedGraceMinutes)
     setHostWorkspacePathValue(hostWorkspacePath)
-  }
+  })
 
   const dirty =
     section === 'general'

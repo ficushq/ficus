@@ -9,6 +9,7 @@ import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -53,17 +54,20 @@ export function SandboxSettings({ squadId }: Props) {
   const [hasChanges, setHasChanges] = useState(false)
 
   // Reset form when squad data loads or changes, while rendering
-  const [formSquad, setFormSquad] = useState<typeof squad>()
-  if (squad && formSquad !== squad) {
-    setFormSquad(squad)
-    const sandbox = (squad.metadata as { sandbox?: Partial<SandboxConfig> } | undefined)?.sandbox
-    setConfig({
-      alwaysOn: sandbox?.alwaysOn === true, // default: false
-      idleTimeoutMinutes: sandbox?.idleTimeoutMinutes ?? 60,
-      ephemeralStorageLimitGi: sandbox?.ephemeralStorageLimitGi,
-    })
-    setHasChanges(false)
-  }
+  useAdjustOnChange(
+    [squad],
+    () => {
+      if (!squad) return
+      const sandbox = (squad.metadata as { sandbox?: Partial<SandboxConfig> } | undefined)?.sandbox
+      setConfig({
+        alwaysOn: sandbox?.alwaysOn === true, // default: false
+        idleTimeoutMinutes: sandbox?.idleTimeoutMinutes ?? 60,
+        ephemeralStorageLimitGi: sandbox?.ephemeralStorageLimitGi,
+      })
+      setHasChanges(false)
+    },
+    { onMount: true }
+  )
 
   const updateMutation = useMutation({
     mutationFn: async (sandboxConfig: SandboxConfig) => {

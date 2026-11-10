@@ -92,6 +92,7 @@ import {
   startsGroup,
   type TimestampGroupEntry,
 } from '../lib/chatTimestamps'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 type ImageUploadStatus = 'pending' | 'uploading' | 'done' | 'error'
 
@@ -732,11 +733,9 @@ export function ChatView({
   const [hasInput, setHasInput] = useState(() => !!initialDraft.trim())
   // Another conversation's draft (a new storage key) decides hasInput in the same render;
   // the effect below then puts its text into the textarea.
-  const [draftStorageKey, setDraftStorageKey] = useState(inputStorageKey)
-  if (draftStorageKey !== inputStorageKey) {
-    setDraftStorageKey(inputStorageKey)
+  useAdjustOnChange([inputStorageKey], () => {
     if (inputStorageKey) setHasInput(!!readSavedDraft(inputStorageKey).trim())
-  }
+  })
   // Image state
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   // Composer errors, declared before the callbacks that clear them.
@@ -761,11 +760,9 @@ export function ChatView({
   // A new focus target turns auto-scroll off in the render that receives it; the effect
   // that runs the focus search only touches refs and the DOM.
   const focusTargetKey = focusRequested ? `${focusMessageId ?? ''}\n${focusInboxMessageId ?? ''}` : null
-  const [appliedFocusTargetKey, setAppliedFocusTargetKey] = useState(focusTargetKey)
-  if (appliedFocusTargetKey !== focusTargetKey) {
-    setAppliedFocusTargetKey(focusTargetKey)
+  useAdjustOnChange([focusTargetKey], () => {
     if (focusTargetKey) _setAutoScroll(false)
-  }
+  })
   const autoScrollRef = useRef(!focusRequested)
   const pendingManualTextareaScrollTopRef = useRef<number | null>(null)
   const updateAutoScroll = useCallback((value: boolean) => {
@@ -1151,11 +1148,7 @@ export function ChatView({
   )
   useEffect(() => () => historyJumpRef.current?.cancel(), [])
   // A different conversation: close the panel rather than search the old one.
-  const [historySearchAgentId, setHistorySearchAgentId] = useState(agentId)
-  if (historySearchAgentId !== agentId) {
-    setHistorySearchAgentId(agentId)
-    setHistorySearchOpen(false)
-  }
+  useAdjustOnChange([agentId], () => setHistorySearchOpen(false))
   const openHistorySearchRef = useStableRef(openHistorySearch)
   useEffect(() => {
     if (!historySearchAvailable) return
@@ -3429,18 +3422,16 @@ function StreamingBlockGroupSection({
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const [seen, setSeen] = useState({ defaultExpanded: !!defaultExpanded, blockCount: blocks.length })
 
   // Auto-expand when group becomes active (and again as it grows), auto-collapse when no longer active
-  if (seen.defaultExpanded !== !!defaultExpanded || seen.blockCount !== blocks.length) {
-    setSeen({ defaultExpanded: !!defaultExpanded, blockCount: blocks.length })
+  useAdjustOnChange([!!defaultExpanded, blocks.length], (previous) => {
     if (defaultExpanded) {
       setExpanded(true)
-    } else if (seen.defaultExpanded) {
+    } else if (previous?.[0]) {
       // Group is no longer the active/last group — auto-collapse
       setExpanded(false)
     }
-  }
+  })
 
   const summary = getStreamingGroupSummary(blocks)
   // A collapsed group still shows the actions its finished tool calls offer, then the images they read,
@@ -3536,11 +3527,7 @@ function StreamingToolCallItem({
   )
 
   // When defaultExpanded changes (e.g. a new tool call pushes this one up), sync
-  const [syncedDefaultExpanded, setSyncedDefaultExpanded] = useState(defaultExpanded)
-  if (syncedDefaultExpanded !== defaultExpanded) {
-    setSyncedDefaultExpanded(defaultExpanded)
-    setExpanded(defaultExpanded)
-  }
+  useAdjustOnChange([defaultExpanded], () => setExpanded(defaultExpanded))
 
   return (
     <div className="text-xs">

@@ -24,6 +24,7 @@ import { useOptionalAuth } from '../../providers/AuthProvider'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 import { appBasePrefix } from '../../lib/basePath'
 import { useTick } from '../../hooks/useTick'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
 
@@ -160,15 +161,13 @@ export function GitHubIntegrationSettings({
     }
   }, [device, canWrite, client])
   // Losing write access clears the secret, the acknowledgement and a device login, while rendering.
-  const [seenCanWrite, setSeenCanWrite] = useState(canWrite)
-  if (seenCanWrite !== canWrite) {
-    setSeenCanWrite(canWrite)
+  useAdjustOnChange([canWrite], () => {
     if (!canWrite) {
       setClientSecret('')
       setAcknowledged(false)
       setDevice(null)
     }
-  }
+  })
   const cancel = useMutation({
     mutationFn: () => cancelIntegrationDeviceAuthorization(device!.id),
     onMutate: clearFailure,

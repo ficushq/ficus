@@ -6,6 +6,7 @@ import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
 import { githubIdentityFromMetadata, githubIdentityToMetadata, type GithubIdentityForm } from './integrationMetadata'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
   const queryClient = useQueryClient()
@@ -20,11 +21,13 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
   const [hasChanges, setHasChanges] = useState(false)
   // Without local changes, the form follows the squad: re-seed it while rendering when the squad
   // data changes or the local changes are saved or discarded.
-  const [synced, setSynced] = useState<{ squad?: typeof squad; hasChanges: boolean }>({ hasChanges })
-  if (synced.squad !== squad || synced.hasChanges !== hasChanges) {
-    setSynced({ squad, hasChanges })
-    if (squad && !hasChanges) setGithubIdentity(githubIdentityFromMetadata(squad.metadata))
-  }
+  useAdjustOnChange(
+    [squad, hasChanges],
+    () => {
+      if (squad && !hasChanges) setGithubIdentity(githubIdentityFromMetadata(squad.metadata))
+    },
+    { onMount: true }
+  )
   const updateMutation = useMutation({
     mutationFn: () =>
       updateSquad(squadId, { metadata: githubIdentityToMetadata(squad?.metadata ?? {}, githubIdentity) }),

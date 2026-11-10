@@ -17,6 +17,7 @@ import { latestReplySuggestions } from '../lib/replySuggestions'
 import { SpinnerIcon } from './icons'
 import { useChatApi } from '../api/ChatApiProvider'
 import { webStatus } from '../lib/statusPresentation'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 const attentionStatus = webStatus('attention')
 
@@ -214,11 +215,7 @@ export function AgentChat({
 
   // Reset submitted state when agent status changes, while rendering
   const agentStatus = agent?.status
-  const [questionStatus, setQuestionStatus] = useState(agentStatus)
-  if (questionStatus !== agentStatus) {
-    setQuestionStatus(agentStatus)
-    setQuestionSubmitted(false)
-  }
+  useAdjustOnChange([agentStatus], () => setQuestionSubmitted(false))
 
   // Auto-navigate on completed navigate tool calls with prompt: false (Fix 2)
   const executedNavigations = useRef<Set<string>>(new Set())
@@ -272,11 +269,9 @@ export function AgentChat({
   // Text for the composer: the caller's drafts and edited reply chips (negative ids, so the two never collide).
   const [draftRequest, setDraftRequest] = useState(composerDraft)
   const chipDraftId = useRef(0)
-  const [seenComposerDraft, setSeenComposerDraft] = useState(composerDraft)
-  if (seenComposerDraft !== composerDraft) {
-    setSeenComposerDraft(composerDraft)
+  useAdjustOnChange([composerDraft], () => {
     if (composerDraft) setDraftRequest(composerDraft)
-  }
+  })
 
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {

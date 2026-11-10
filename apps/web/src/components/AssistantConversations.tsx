@@ -5,6 +5,7 @@ import type { Agent } from '@ficus/shared'
 import { getAgentPurpose, getAgentName } from '../lib/agentDisplay'
 import { Panel, usePopover } from './popover'
 import { ChevronDownIcon, PlusIcon } from './icons'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 export function assistantConversationTitle(agent: Agent): string {
   return (
@@ -107,14 +108,16 @@ export function AssistantConversationSwitcher({
   const popover = usePopover({ kind: 'dialog', id: 'assistant-conversations', open, onOpenChange: setOpenState })
   const { setOpen } = popover
   const [filter, setFilter] = useState('')
-  const [handledOpenRequest, setHandledOpenRequest] = useState(0)
-  if (handledOpenRequest !== openRequest) {
-    setHandledOpenRequest(openRequest)
-    if (openRequest) {
-      setOpenState(true)
-      setFilter('')
-    }
-  }
+  useAdjustOnChange(
+    [openRequest],
+    () => {
+      if (openRequest) {
+        setOpenState(true)
+        setFilter('')
+      }
+    },
+    { onMount: true }
+  )
   const row = useRef<HTMLDivElement>(null)
   const selected = agents.find((agent) => agent.id === selectedId)
   const filtered = agents.filter((agent) =>

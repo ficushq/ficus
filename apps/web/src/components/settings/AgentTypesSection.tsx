@@ -34,6 +34,7 @@ import { formatResolvedModel, modelChainWarnings } from './modelTierUi'
 import { ReplySuggestionsSetting } from './ReplySuggestionsSetting'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 const PROTECTED_AGENT_TYPES = ['manager', 'system-manager']
 
@@ -342,11 +343,7 @@ function AgentTypeRow({
   const [copyMsg, setCopyMsg] = useState('')
 
   // Re-seed the form when the agent type changes, while rendering.
-  const [formSource, setFormSource] = useState(agentType)
-  if (formSource !== agentType) {
-    setFormSource(agentType)
-    setForm(agentTypeToForm(agentType))
-  }
+  useAdjustOnChange([agentType], () => setForm(agentTypeToForm(agentType)))
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<AgentTypeConfig>) => updateAgentType(agentType.id, data),
@@ -1058,11 +1055,7 @@ export function TierChainEditor({
   const [entries, setEntries] = useState(() => tier.chain.split(',').filter(Boolean))
   const [customRows, setCustomRows] = useState<Set<number>>(() => new Set())
   const [dragged, setDragged] = useState<number | null>(null)
-  const [entriesChain, setEntriesChain] = useState(tier.chain)
-  if (entriesChain !== tier.chain) {
-    setEntriesChain(tier.chain)
-    setEntries(tier.chain.split(',').filter(Boolean))
-  }
+  useAdjustOnChange([tier.chain], () => setEntries(tier.chain.split(',').filter(Boolean)))
   const commit = (next: string[]) => {
     if (disabled) return
     setEntries(next)

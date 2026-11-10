@@ -11,6 +11,7 @@ import { integrationQueries } from '../../queryOptions'
 import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
 import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
 import { integrationQueryKeys } from '../../queryKeys'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function NotionIntegrationSettings({
   canRead,
@@ -41,14 +42,12 @@ export function NotionIntegrationSettings({
     onSettled: () => setClientSecret(''),
   })
   // Losing write access clears the secret and the acknowledgement, while rendering.
-  const [seenCanWrite, setSeenCanWrite] = useState(canWrite)
-  if (seenCanWrite !== canWrite) {
-    setSeenCanWrite(canWrite)
+  useAdjustOnChange([canWrite], () => {
     if (!canWrite) {
       setClientSecret('')
       setCapabilitiesAcknowledged(false)
     }
-  }
+  })
   const authorize = useMutation({
     mutationFn: (connectionId?: string) =>
       startIntegrationAuthorization('notion', {

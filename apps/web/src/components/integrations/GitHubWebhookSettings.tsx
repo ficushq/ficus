@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { configureGitHubWebhook } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean; managed: boolean }) {
   const client = useQueryClient()
@@ -10,11 +11,9 @@ export function GitHubWebhookSettings({ canWrite, managed }: { canWrite: boolean
   const [secret, setSecret] = useState('')
   const [notice, setNotice] = useState('')
   // Losing write access clears the secret, while rendering.
-  const [seenCanWrite, setSeenCanWrite] = useState(canWrite)
-  if (seenCanWrite !== canWrite) {
-    setSeenCanWrite(canWrite)
+  useAdjustOnChange([canWrite], () => {
     if (!canWrite) setSecret('')
-  }
+  })
   const save = useMutation({
     mutationFn: (value: string | null) => configureGitHubWebhook(value),
     onSuccess: (result) => {

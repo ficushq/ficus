@@ -6,6 +6,7 @@ import {
   type ManagedBigbrainOwnerInvite,
   type ManagedBigbrainVault,
 } from '../../api/integrations'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /** Why no link was created, and what to do. Never echoes server text (no secret ever lands here). */
 function inviteFailure(error: unknown): string {
@@ -46,14 +47,12 @@ export function BigbrainOwnerInviteDialog({
   // Any change of target or closing forgets the link (while rendering) and abandons an in-flight
   // request. The layout effect retires its generation in the same commit as the reset, so a response
   // that arrives afterwards can never show a link for the previous target.
-  const [dialogTarget, setDialogTarget] = useState({ vaultId: vault.vaultId, isOpen })
-  if (dialogTarget.vaultId !== vault.vaultId || dialogTarget.isOpen !== isOpen) {
-    setDialogTarget({ vaultId: vault.vaultId, isOpen })
+  useAdjustOnChange([vault.vaultId, isOpen], () => {
     setInvite(null)
     setError(null)
     setCopied(false)
     setPending(false)
-  }
+  })
   useLayoutEffect(() => {
     generation.current += 1
   }, [vault.vaultId, isOpen])

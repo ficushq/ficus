@@ -23,6 +23,7 @@ import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function SquadPresetsSection() {
   const queryClient = useQueryClient()
@@ -278,11 +279,7 @@ function SquadPresetRow({
   const [copyMsg, setCopyMsg] = useState('')
 
   // Re-seed the form when the preset changes, while rendering.
-  const [formSource, setFormSource] = useState(squadPreset)
-  if (formSource !== squadPreset) {
-    setFormSource(squadPreset)
-    setForm(squadPresetToForm(squadPreset))
-  }
+  useAdjustOnChange([squadPreset], () => setForm(squadPresetToForm(squadPreset)))
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<SquadPresetConfig>) => updateSquadPreset(squadPreset.id, data),

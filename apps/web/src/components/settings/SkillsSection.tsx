@@ -21,6 +21,7 @@ import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function SkillsSection() {
   const queryClient = useQueryClient()
@@ -97,11 +98,13 @@ export function SkillsSection() {
   const editingSkill = editing?.id ? skills.find((skill) => skill.id === editing.id) : null
 
   // Re-seed the editor from the skill it edits whenever that skill's data changes, while rendering.
-  const [seededFrom, setSeededFrom] = useState<typeof editingSkill>(null)
-  if (editing?.id && editingSkill && seededFrom !== editingSkill) {
-    setSeededFrom(editingSkill)
-    setEditing({ ...editingSkill, supportFiles: editingSkill.supportFiles ?? {} })
-  }
+  useAdjustOnChange(
+    [editing?.id, editingSkill],
+    () => {
+      if (editing?.id && editingSkill) setEditing({ ...editingSkill, supportFiles: editingSkill.supportFiles ?? {} })
+    },
+    { onMount: true }
+  )
 
   const skillFieldActions = (field: string) =>
     editingSkill?.hasTemplate ? (

@@ -4,6 +4,7 @@ import { getSshConfig, setSshConfig, getKnownHosts, setKnownHosts } from '../../
 import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -33,11 +34,13 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
   })
 
   // Sync when data loads or changes, while rendering
-  const [syncedConfig, setSyncedConfig] = useState<string>()
-  if (data?.config !== undefined && syncedConfig !== data.config) {
-    setSyncedConfig(data.config)
-    setValue(data.config)
-  }
+  useAdjustOnChange(
+    [data?.config],
+    () => {
+      if (data?.config !== undefined) setValue(data.config)
+    },
+    { onMount: true }
+  )
 
   const dirty = value !== (data?.config ?? '')
 
@@ -144,11 +147,13 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
   })
 
   // Sync when data loads or changes, while rendering
-  const [syncedKnownHosts, setSyncedKnownHosts] = useState<string>()
-  if (data?.knownHosts !== undefined && syncedKnownHosts !== data.knownHosts) {
-    setSyncedKnownHosts(data.knownHosts)
-    setValue(data.knownHosts)
-  }
+  useAdjustOnChange(
+    [data?.knownHosts],
+    () => {
+      if (data?.knownHosts !== undefined) setValue(data.knownHosts)
+    },
+    { onMount: true }
+  )
 
   const dirty = value !== (data?.knownHosts ?? '')
 

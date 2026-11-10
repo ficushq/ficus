@@ -11,6 +11,7 @@ import { formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
 import { Link, useLocation } from 'react-router'
 import { ChevronRightIcon } from './icons'
 import { webStatus } from '../lib/statusPresentation'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 const ALL_SQUADS: readonly string[] = []
 const completionKey = (stream: WorkStream) => `${stream.id}:${stream.completedAt}`
@@ -217,11 +218,9 @@ export function AccountFeedVisit({
   // This is visit-local presentation state, never a persisted seen watermark.
   const newestCompletion = Math.max(0, ...streams.map((stream) => new Date(stream.completedAt!).getTime()))
   const dismissed = dismissedThrough !== null && newestCompletion <= dismissedThrough
-  const [seenDismissed, setSeenDismissed] = useState(dismissed)
-  if (seenDismissed !== dismissed) {
-    setSeenDismissed(dismissed)
+  useAdjustOnChange([dismissed], () => {
     if (dismissed) setNewAbove(false)
-  }
+  })
   const dismiss = async () => {
     if (dismissingRef.current) return
     dismissingRef.current = true

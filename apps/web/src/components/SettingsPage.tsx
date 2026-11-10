@@ -70,6 +70,7 @@ import { accountEmailLabel, isPlaceholderEmail } from '@ficus/shared'
 import { AccountEmailForm } from './settings/AccountEmailForm'
 import { ViewportDebugSection } from './settings/ViewportDebugSection'
 import { HelpFeedbackSection } from './settings/HelpFeedbackSection'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 interface SettingsPageDependencies {
   useAuth: typeof useAuth
@@ -558,11 +559,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
     }
   }
 
-  const [seenDisplayName, setSeenDisplayName] = useState(user?.displayName)
-  if (seenDisplayName !== user?.displayName) {
-    setSeenDisplayName(user?.displayName)
-    setDisplayName(user?.displayName ?? '')
-  }
+  useAdjustOnChange([user?.displayName], () => setDisplayName(user?.displayName ?? ''))
 
   const profileMutation = useMutation({
     mutationFn: updateCurrentUser,

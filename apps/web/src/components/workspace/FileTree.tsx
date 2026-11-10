@@ -18,6 +18,7 @@ import { CopyPathButton } from './CopyPathButton'
 import type { WorkspaceSource } from './workspaceSource'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export interface FileTreeProps {
   source: WorkspaceSource
@@ -312,27 +313,26 @@ export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) 
   const queryClient = useQueryClient()
 
   // Expand all ancestor directories when selectedPath changes (e.g., from URL), while rendering
-  const [expandedFor, setExpandedFor] = useState<string>()
-  if (selectedPath && expandedFor !== selectedPath) {
-    setExpandedFor(selectedPath)
-
-    // Get all ancestor paths: "a/b/c/file.ts" -> ["a", "a/b", "a/b/c"]
-    const parts = selectedPath.split('/')
-    const ancestors: string[] = []
-    for (let i = 0; i < parts.length - 1; i++) {
-      ancestors.push(parts.slice(0, i + 1).join('/'))
-    }
-
-    if (ancestors.length > 0) {
-      setExpandedPaths((prev) => {
-        const next = new Set(prev)
-        for (const ancestor of ancestors) {
-          next.add(ancestor)
-        }
-        return next
-      })
-    }
-  }
+  useAdjustOnChange(
+    [selectedPath],
+    () => {
+      if (!selectedPath) return
+      // Get all ancestor paths: "a/b/c/file.ts" -> ["a", "a/b", "a/b/c"]
+      const parts = selectedPath.split('/')
+      const ancestors: string[] = []
+      for (let i = 0; i < parts.length - 1; i++) {
+        ancestors.push(parts.slice(0, i + 1).join('/'))
+      }
+      if (ancestors.length > 0) {
+        setExpandedPaths((prev) => {
+          const next = new Set(prev)
+          for (const ancestor of ancestors) next.add(ancestor)
+          return next
+        })
+      }
+    },
+    { onMount: true }
+  )
 
   // Fetch root tree
   const {

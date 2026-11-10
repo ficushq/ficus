@@ -24,6 +24,7 @@ import {
   activitySubjectLabel,
   squadActivityItemHref,
 } from './squadActivityView'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /** Hover detail for the label column: the purpose/name the label no longer shows. */
 function activityAgentDetail(agent: Agent | undefined): string | undefined {
@@ -257,12 +258,10 @@ export function SquadActivityTab({
   // while rendering (so returning to an earlier context never revives it); the effect stops
   // that context's requests and timers.
   const liveContextKey = `${squadId}:${filterKey}:${accessSignature}`
-  const [liveDataContextKey, setLiveDataContextKey] = useState(liveContextKey)
-  if (liveDataContextKey !== liveContextKey) {
-    setLiveDataContextKey(liveContextKey)
+  useAdjustOnChange([liveContextKey], () => {
     setLiveOverlay({ contextKey: '', items: new Map(), overflowed: false })
     setLiveHead({ contextKey: '', items: [] })
-  }
+  })
   useEffect(() => {
     generationRef.current += 1
     dirtyRef.current = false

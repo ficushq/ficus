@@ -17,6 +17,7 @@ import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /**
  * The API refuses to delete an include an agent type still references and names
@@ -182,15 +183,18 @@ export function SharedPromptsTab() {
 
   // A revert rewrites the stored record, so refresh the open editor from the
   // refetched include instead of leaving the pre-revert text on screen.
-  const [refreshedFrom, setRefreshedFrom] = useState<typeof existing>()
-  if (existing && refreshedFrom !== existing) {
-    setRefreshedFrom(existing)
-    setEditing((draft) =>
-      draft && draft.id === existing.id
-        ? { ...draft, name: existing.name, description: existing.description ?? '', content: existing.content }
-        : draft
-    )
-  }
+  useAdjustOnChange(
+    [existing],
+    () => {
+      if (!existing) return
+      setEditing((draft) =>
+        draft && draft.id === existing.id
+          ? { ...draft, name: existing.name, description: existing.description ?? '', content: existing.content }
+          : draft
+      )
+    },
+    { onMount: true }
+  )
 
   const fieldActions = (field: string) =>
     existing?.hasTemplate ? (

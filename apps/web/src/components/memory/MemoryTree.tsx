@@ -9,6 +9,7 @@ import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonRows } from '../
 
 import { FolderIcon } from '../icons/FolderIcon'
 import { FileIcon, ChevronDownIcon, ChevronRightIcon, RefreshIcon, SpinnerIcon } from '../icons'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export interface MemoryTreeProps {
   squadId: string
@@ -130,16 +131,19 @@ export function MemoryTree({ squadId, onSelectFile, selectedPath }: MemoryTreePr
   const queryClient = useQueryClient()
 
   // Expand the ancestors of a newly selected file while rendering.
-  const [expandedFor, setExpandedFor] = useState<string>()
-  if (selectedPath && expandedFor !== selectedPath) {
-    setExpandedFor(selectedPath)
-    const parts = selectedPath.split('/').filter(Boolean)
-    const ancestors: string[] = []
-    for (let i = 1; i < parts.length; i++) {
-      ancestors.push(`/${parts.slice(0, i).join('/')}`)
-    }
-    setExpandedPaths((prev) => new Set([...prev, ...ancestors]))
-  }
+  useAdjustOnChange(
+    [selectedPath],
+    () => {
+      if (!selectedPath) return
+      const parts = selectedPath.split('/').filter(Boolean)
+      const ancestors: string[] = []
+      for (let i = 1; i < parts.length; i++) {
+        ancestors.push(`/${parts.slice(0, i).join('/')}`)
+      }
+      setExpandedPaths((prev) => new Set([...prev, ...ancestors]))
+    },
+    { onMount: true }
+  )
 
   const {
     data: rootTree,

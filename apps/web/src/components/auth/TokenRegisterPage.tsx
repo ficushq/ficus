@@ -5,6 +5,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import { type TokenRegistrationContext } from '../../api/auth'
 import { useAuthApi } from './authApi'
 import { appBasePath } from '../../lib/basePath'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   onSuccess: () => void
@@ -35,14 +36,16 @@ export function TokenRegisterPage({ onSuccess }: Props) {
   // set up. This call does NOT consume the token. Its challenge isn't used:
   // Register fetches a fresh one (see handleRegister).
   // A link without a token is settled while rendering; one with a token is looked up by the effect.
-  const [seenToken, setSeenToken] = useState<string>()
-  if (seenToken !== token) {
-    setSeenToken(token)
-    if (!token) {
-      setChecking(false)
-      setError('This link is missing its token. Ask for a new invite.')
-    }
-  }
+  useAdjustOnChange(
+    [token],
+    () => {
+      if (!token) {
+        setChecking(false)
+        setError('This link is missing its token. Ask for a new invite.')
+      }
+    },
+    { onMount: true }
+  )
   useEffect(() => {
     let cancelled = false
     if (!token) return

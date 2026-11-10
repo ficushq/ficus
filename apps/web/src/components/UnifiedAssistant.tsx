@@ -19,6 +19,7 @@ import { AssistantConversationView, type AssistantViewControls } from './Assista
 import { AssistantSnapMenu } from './AssistantSnapMenu'
 import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon, ResizeCornerIcon } from './icons'
 import { OPEN_ASSISTANT_EVENT, TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 interface UnifiedAssistantProps {
   dependencies?: { ConversationComponent?: typeof AssistantConversationView; ChatComponent?: typeof AgentChat }
@@ -63,11 +64,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const open = state !== 'closed'
   const live = controls?.live ?? false
   // A session going live (or ending) sets compact mode to match, while rendering.
-  const [compactFollowsLive, setCompactFollowsLive] = useState<boolean>()
-  if (compactFollowsLive !== live) {
-    setCompactFollowsLive(live)
-    setCompact(live)
-  }
+  useAdjustOnChange([live], () => setCompact(live), { onMount: true })
   const small = live && (compact || !open)
   const voiceReason = !configured
     ? 'Enable realtime and configure OpenAI API services in Settings → Assistant & Memory.'

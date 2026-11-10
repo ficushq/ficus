@@ -8,6 +8,7 @@ import { useRealtimeVoiceAssistant } from './useRealtimeVoiceAssistant'
 import { Panel } from '../components/popover'
 import { MicIcon, CloseIcon, ExpandIcon, ChevronDownIcon, StopIcon, RefreshIcon } from '../components/icons'
 import { OPEN_ASSISTANT_EVENT, OPEN_VOICE_EVENT } from '@ficus/shared/browser-keys'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 type VoiceControls = Pick<
   ReturnType<typeof useRealtimeVoiceAssistant>,
@@ -100,22 +101,26 @@ export function VoiceCompanionButton({
 
   // Keep a live session with the user as they move around the page; show an error in full.
   // Both follow a change (or the first render), while rendering.
-  const [seenConnected, setSeenConnected] = useState<boolean>()
-  if (seenConnected !== isConnected) {
-    setSeenConnected(isConnected)
-    if (isConnected) {
-      setPanelOpen(true)
-      setCompact(true)
-    }
-  }
-  const [seenStatus, setSeenStatus] = useState<typeof status>()
-  if (seenStatus !== status) {
-    setSeenStatus(status)
-    if (status === 'error') {
-      setPanelOpen(true)
-      setCompact(false)
-    }
-  }
+  useAdjustOnChange(
+    [isConnected],
+    () => {
+      if (isConnected) {
+        setPanelOpen(true)
+        setCompact(true)
+      }
+    },
+    { onMount: true }
+  )
+  useAdjustOnChange(
+    [status],
+    () => {
+      if (status === 'error') {
+        setPanelOpen(true)
+        setCompact(false)
+      }
+    },
+    { onMount: true }
+  )
 
   // Auto-scroll transcript to bottom
   useEffect(() => {

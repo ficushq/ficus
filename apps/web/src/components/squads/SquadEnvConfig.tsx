@@ -5,6 +5,7 @@ import { getWorkspaceEnv, setWorkspaceEnv } from '../../api/squads'
 import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -26,11 +27,13 @@ export function SquadEnvConfig({ squadId }: Props) {
   })
 
   // Sync when data loads or changes, while rendering
-  const [syncedContent, setSyncedContent] = useState<string>()
-  if (data?.content !== undefined && syncedContent !== data.content) {
-    setSyncedContent(data.content)
-    setValue(data.content)
-  }
+  useAdjustOnChange(
+    [data?.content],
+    () => {
+      if (data?.content !== undefined) setValue(data.content)
+    },
+    { onMount: true }
+  )
 
   const dirty = value !== (data?.content ?? '')
 

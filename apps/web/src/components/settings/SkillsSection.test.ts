@@ -14,7 +14,7 @@ describe('SkillsSection support files editor', () => {
 
   test('syncs open edit form when refreshed skill data arrives', () => {
     // Re-seeded while rendering when the edited skill's data changes.
-    expect(source.includes('if (editing?.id && editingSkill && seededFrom !== editingSkill)')).toBe(true)
+    expect(source.includes('useAdjustOnChange(')).toBe(true)
     expect(source.includes('setEditing({ ...editingSkill')).toBe(true)
   })
 })

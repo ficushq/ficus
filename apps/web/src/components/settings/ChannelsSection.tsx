@@ -24,6 +24,7 @@ import {
   overrideRowsToMap,
   invalidOverrideRowIndexes,
 } from './channelFormHelpers'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function ChannelsSection({ provider }: { provider?: ProviderId } = {}) {
   const queryClient = useQueryClient()
@@ -533,12 +534,10 @@ export function ChannelRow({
   const panelId = useId()
 
   // Re-seed the form when the channel changes, while rendering.
-  const [formSource, setFormSource] = useState(channel)
-  if (formSource !== channel) {
-    setFormSource(channel)
+  useAdjustOnChange([channel], () => {
     setForm(channelToForm(channel))
     setSaveAttempted(false)
-  }
+  })
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<ChannelInstanceConfig>) => updateChannelInstance(channel.id, data),

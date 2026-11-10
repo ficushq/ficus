@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getSquadWorkspaceDownloadUrl } from '../api/workspace'
 import { authFetch } from '../api/client'
 import { LoadingSurface, SkeletonBlock } from './loading/Skeleton'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 export interface WorkspaceImageViewerProps {
   /** API path of the image download (e.g. a workspace or private-area download URL). */
@@ -22,12 +23,10 @@ export function WorkspaceImageViewer({ downloadUrl, alt, className }: WorkspaceI
   const urlRef = useRef<string | null>(null)
 
   // Another image shows as loading, without the previous error, from the render that receives it.
-  const [requestedUrl, setRequestedUrl] = useState(downloadUrl)
-  if (requestedUrl !== downloadUrl) {
-    setRequestedUrl(downloadUrl)
+  useAdjustOnChange([downloadUrl], () => {
     setLoading(true)
     setError(null)
-  }
+  })
 
   useEffect(() => {
     authFetch(downloadUrl)
