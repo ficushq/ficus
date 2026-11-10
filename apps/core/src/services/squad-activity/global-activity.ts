@@ -72,7 +72,11 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
   const accessRows = input.squadAccess.map(({ squadId, access }) => {
     const inboxAll = access.inbox.mode === 'all'
     const ownRecipient = access.inbox.mode === 'own' ? access.inbox.recipientId : null
-    return sql`(${squadId}::uuid,${access.agentsRead},${access.workstreamsRead},${inboxAll},${ownRecipient}::uuid)`
+    // Every column is cast: a VALUES row gives Postgres no context to infer a
+    // parameter type from, and postgres.js 4 sends JS booleans as untyped
+    // parameters, so an uncast flag is inferred as text and `NOT agents_read`
+    // fails with 42804 (v3 sent them typed as boolean).
+    return sql`(${squadId}::uuid,${access.agentsRead}::boolean,${access.workstreamsRead}::boolean,${inboxAll}::boolean,${ownRecipient}::uuid)`
   })
 
   const rows = await db.execute<GlobalRow>(sql`
@@ -93,7 +97,7 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
           OR (access_scope='workstreams' AND squad_access.workstreams_read)
           OR (access_scope='inbox' AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id))
           OR (access_scope='workstreams_inbox' AND squad_access.workstreams_read AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id)))
-        AND (${input.verbose} OR quiet_eligible)
+        AND (${input.verbose}::boolean OR quiet_eligible)
         AND ${
           input.kinds.length === 0
             ? sql`TRUE`

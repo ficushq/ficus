@@ -1,6 +1,4 @@
 import postgres from 'postgres'
-import net from 'node:net'
-import { Duplex } from 'node:stream'
 import { createLogger } from '../lib/infra/logger'
 import { resolveDatabaseTls } from './tls'
 
@@ -150,190 +148,37 @@ function getFailuresBeforeSwap(): number {
 const PROBE_TIMEOUT_MS = 5_000
 
 /**
- * Bun + postgres.js + TLS leaks every byte the server sends, forever.
+ * Idle seconds before the OS sends its first TCP keepalive probe, passed to
+ * postgres.js as `keep_alive`. postgres.js turns it into
+ * `setKeepAlive(true, 1000 * keep_alive)` on every connection (src/startup.js),
+ * which sets only this initial delay (TCP_KEEPIDLE); the per-probe interval and
+ * count stay at OS defaults and are not tunable here. 10s tightens postgres.js's
+ * own 60s default (#1149) without adding meaningful traffic on a healthy idle
+ * connection.
  *
- * postgres.js negotiates TLS STARTTLS-style: it attaches `once('data')` to the
- * raw net.Socket for the server's 'S' reply, then `removeAllListeners()` and
- * `tls.connect({ socket })`. On Bun (1.3.8 AND 1.3.14, measured) a raw socket
- * that is not in flowing mode at upgrade time keeps receiving a copy of every
- * decrypted chunk in its own readable buffer while the TLSSocket ALSO delivers
- * it — and nothing ever reads the raw side. Node does not do this. Observed
- * live on a tenant whose dashboard polls the API ~5 req/s against DigitalOcean
- * managed Postgres: the api process swelled to ~3 GB (heap diff: +245 MB of
- * Uint8Array in 4 minutes, all reachable from TLSSocket.kSocket →
- * _readableState.buffer, 25,700 chunks per pool connection), swap-thrashing a
- * 2 GB droplet. A/B against the same database: 2.7 GB streamed → 3.3 GB heap
- * retained without this; 2 GB streamed → ~20 MB with it (and ~60% more
- * throughput, since the leak was also CPU).
+ * Scope, measured 2026-08-24 (do NOT over-trust this setting): keepalive is a
+ * BACKSTOP, not a cure. A graceful Postgres restart or a peer that sends RST is
+ * detected in seconds regardless (postgres.js sees the close). A fully
+ * black-holed peer — frozen VM, dropped packets, no FIN/RST — is what keepalive
+ * is for, yet on Bun/macOS a paused peer's idle socket stayed open past 240s in
+ * testing (no probe interval/count or TCP_USER_TIMEOUT is exposed). Recovery of
+ * the common idle case rides on `idle_timeout` (60s here), which drops an idle
+ * connection locally without the peer. The unsolved gap is a connection kept
+ * continuously ACTIVE by polling whose in-flight query hangs on a dead socket:
+ * idle_timeout can't reclaim it and max_lifetime (30-60min) doesn't preempt it —
+ * that needs a client-side query deadline, tracked separately.
  *
- * The fix hands postgres.js a socket we own (its `socket` option) and, the
- * moment postgres.js strips the listeners before the upgrade, re-attaches a
- * no-op 'data' listener so the raw side stays flowing and its copy is dropped
- * on arrival. Bun-only; Node gets postgres.js's default socket. The override
- * lives on the instance, not the prototype, and postgres.js only ever calls
- * removeAllListeners() here and on final close, where it is harmless.
- *
- * Trade-off accepted: with a caller-supplied socket postgres.js skips its own
- * multi-host round-robin (`host=a,b`), so this connects to the first host. No
- * Ficus DSN uses multiple hosts.
+ * History: postgres.js v3 skipped its own keepalive whenever a `socket` factory
+ * was supplied, so the Bun TLS leak guard (#1100) had to call setKeepAlive
+ * itself. That guard was removed with the postgres.js 4 upgrade: v4's STARTTLS
+ * upgrade detaches its raw-socket listeners with off(), and measured on Bun
+ * 1.4.2 v4 retains none of the bytes streamed over TLS without any guard (v3
+ * without the guard retained all of them). v4 also bounds the whole connect
+ * attempt with connect_timeout and releases a failed connect's pool slot itself,
+ * the other two jobs the factory did. db/bun-tls-leak.test.ts keeps the leak
+ * from coming back unnoticed.
  */
-/**
- * Idle time before the OS sends its first TCP keepalive probe. Node/Bun's
- * `setKeepAlive(true, ms)` sets only this initial delay (TCP_KEEPIDLE); the
- * per-probe interval and count stay at OS defaults and are not tunable here,
- * which is why keepalive is only a backstop (see the call site). 10s tightens
- * postgres.js's own 60s default without adding meaningful traffic on a healthy
- * idle connection.
- */
-const KEEPALIVE_INITIAL_DELAY_MS = 10_000
-
-export function createBunTlsSafeSocketFactory(connect: typeof net.connect = net.connect) {
-  return async (options: {
-    host?: string[] | string
-    port?: number[] | number
-    /** postgres.js passes `false` here (not undefined) when no unix socket path is used. */
-    path?: string | false
-    /** postgres.js passes its full options object here; connect_timeout is in SECONDS. */
-    connect_timeout?: number
-  }): Promise<net.Socket> => {
-    const host = Array.isArray(options.host) ? options.host[0] : options.host
-    const port = Array.isArray(options.port) ? options.port[0] : options.port
-    const socket = options.path ? connect(options.path) : connect(Number(port ?? 5432), host ?? 'localhost')
-    // Restore TCP keepalive that supplying a `socket` factory silently turned
-    // OFF. postgres.js enables it itself (connection.js: `setKeepAlive(true,
-    // 1000 * keep_alive)`, keep_alive default 60) — but ONLY on its own socket
-    // path; the moment we hand it `options.socket`, that line is skipped and
-    // every tenant lost keepalive when the leak fix (which added this factory)
-    // shipped. Re-adding it here matches the factory-less behaviour, tightened
-    // to a 10s initial probe delay.
-    //
-    // Scope, measured 2026-08-24 (do NOT over-trust this line): keepalive is a
-    // BACKSTOP, not a cure. A graceful Postgres restart or a peer that sends
-    // RST is detected in seconds regardless (postgres.js sees the close). A
-    // fully black-holed peer — frozen VM, dropped packets, no FIN/RST — is what
-    // keepalive is for, yet on Bun/macOS a paused peer's idle socket stayed
-    // open past 240s in testing (Node exposes only the initial delay, not the
-    // probe interval/count, and no TCP_USER_TIMEOUT). Recovery of the common
-    // idle case rides on postgres.js's `idle_timeout` (60s here), which drops
-    // an idle connection locally without the peer. The unsolved gap is a
-    // connection kept continuously ACTIVE by polling whose in-flight query
-    // hangs on a dead socket: idle_timeout can't reclaim it and max_lifetime
-    // (30-60min) doesn't preempt it — that needs a client-side query deadline,
-    // tracked separately. This was the /api/auth/status hang that blanked the
-    // web UI until a manual `pm2 restart ficus-api`.
-    socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS)
-    // postgres.js reads these off the socket (servername for TLS, error text).
-    Object.assign(socket, { host, port })
-    const originalRemoveAllListeners = socket.removeAllListeners.bind(socket)
-    socket.removeAllListeners = ((...args: Parameters<net.Socket['removeAllListeners']>) => {
-      const result = originalRemoveAllListeners(...args)
-      queueMicrotask(() => {
-        if (!socket.destroyed && socket.listenerCount('data') === 0) socket.on('data', dropRawTlsCopy)
-      })
-      return result
-    }) as net.Socket['removeAllListeners']
-    // This wait MUST be deadline-bounded. postgres.js arms its own
-    // connect_timeout only AFTER the socket factory resolves
-    // (connection.js: `socket = await createSocket()` runs before
-    // `connectTimer.start()`), so the TCP connect below is otherwise the one
-    // unbounded await in the whole connection path: a SYN that goes
-    // unanswered (dropped under load, full accept backlog, stalled DNS)
-    // neither connects nor errors, and every query on the pool then waits
-    // forever with zero output. That exact silent-forever mode is what
-    // rotated through CI as 60s test-budget deaths in
-    // pickup.test.ts's restart matrix — a spawned worker whose first DB
-    // query never came back, killed only by the test timeout, stderr empty.
-    // Honouring connect_timeout here restores the same bound the default
-    // (factory-less) path has. The failure is reported through the socket
-    // itself (see failedConnection), not as a rejection, so postgres.js
-    // releases the connection instead of leaking its pool slot.
-    const timeoutSeconds = Number(options.connect_timeout)
-    const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 30_000
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          clearTimeout(timer)
-          socket.off('connect', onConnect)
-          socket.off('error', onError)
-        }
-        const onError = (error: Error) => {
-          cleanup()
-          reject(error)
-        }
-        const onConnect = () => {
-          cleanup()
-          resolve()
-        }
-        const timer = setTimeout(() => {
-          cleanup()
-          socket.destroy()
-          // `path` is `false` (not undefined) in postgres.js's options when unused.
-          const target = options.path ? options.path : `${host ?? 'localhost'}:${port ?? 5432}`
-          reject(
-            Object.assign(new Error(`CONNECT_TIMEOUT ${target}: TCP connect did not complete within ${timeoutMs}ms`), {
-              code: 'CONNECT_TIMEOUT',
-            })
-          )
-        }, timeoutMs)
-        socket.once('connect', onConnect)
-        socket.once('error', onError)
-      })
-    } catch (error) {
-      return failedConnection(socket, error as Error, { host, port: port === undefined ? undefined : Number(port) })
-    }
-    return socket
-  }
-}
-
-/**
- * Report a failed connect the way postgres.js's own socket does: 'error', then
- * 'close'. Do NOT reject instead. postgres.js answers a rejected socket factory
- * with error() but never runs its closed() handler, so the connection is never
- * released back to the pool: each failed connect (a database restart, a DNS
- * blip, a connect timeout) permanently used up a pool slot, and once they were
- * all gone every query on that client hung forever.
- *
- * The failed socket's own events race postgres.js attaching its listeners (its
- * 'close' can land before or after), so it is discarded and postgres.js gets a
- * stand-in that swallows writes and emits nothing by itself. postgres.js
- * attaches its listeners as soon as the factory resolves, before setImmediate
- * runs, so the failure then takes its normal release-and-reconnect path.
- */
-function failedConnection(failed: net.Socket, error: Error, endpoint: { host?: string; port?: number }): net.Socket {
-  failed.destroy()
-  let reported = false
-  const report = () => {
-    if (reported) return
-    reported = true
-    clearTimeout(fallback)
-    // Never throw an unheard 'error' out of a timer; without a listener there is
-    // no pool connection to release.
-    if (standIn.listenerCount('error') > 0) standIn.emit('error', error)
-    standIn.emit('close', true)
-    standIn.destroy()
-  }
-  const standIn = new Duplex({
-    emitClose: false,
-    read() {},
-    write(_chunk, _encoding, callback) {
-      callback()
-      // postgres.js writes its startup (or SSL request) as soon as the factory
-      // resolves, batched and flushed on setImmediate. Fail only after that
-      // flush: closing first cancels the flush but leaves the batch behind,
-      // and the next connection's startup is queued behind it and never sent.
-      setImmediate(report)
-    },
-  })
-  // postgres.js always writes first; this only covers a caller that never does.
-  const fallback = setTimeout(report, 1_000)
-  Object.assign(standIn, endpoint)
-  return standIn as unknown as net.Socket
-}
-
-/** Named so a heap snapshot / listener dump says what this listener is for. */
-function dropRawTlsCopy(): void {}
-
-const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
+const KEEPALIVE_INITIAL_DELAY_SECONDS = 10
 
 /**
  * Re-apply the type handlers drizzle installs in its own constructor.
@@ -359,9 +204,9 @@ const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
  * call `drizzle()` per call and were therefore always patched. Timestamps were
  * quietly damaged too: the restored date handlers truncate sub-second precision.
  *
- * So the patch must be re-applied by `build()` itself, exactly like the #1100
- * socket factory and #1149 keepalive, so a swapped-in instance is identical to
- * the one drizzle was constructed against.
+ * So the patch must be re-applied by `build()` itself, exactly like the #1149
+ * keepalive, so a swapped-in instance is identical to the one drizzle was
+ * constructed against.
  */
 export function applyDrizzleTypeHandlers(client: postgres.Sql): postgres.Sql {
   const transparent = (value: unknown) => value
@@ -422,8 +267,8 @@ export interface ResilientClientOptions {
  * while the underlying pool can be transparently recreated. A background
  * `setInterval` probes `current\`select 1\`` (raced against a timeout); after N
  * consecutive failures the wedged pool is destroyed (`end({ timeout: 0 })`) and
- * rebuilt via the same `build` closure, so the #1100 leak-guard socket factory
- * and #1149 keepalive apply to every freshly-swapped instance.
+ * rebuilt via the same `build` closure, so the #1149 keepalive applies to every
+ * freshly-swapped instance.
  *
  * The returned value is the Proxy (typed as `postgres.Sql`). It additionally
  * carries a non-enumerable `__stopHealthWatchdog()` (reachable only via property
@@ -603,16 +448,12 @@ export function createPostgresConnection(
   // an unknown GUC and be refused outright. See db/tls.ts.
   const { connectionString: dsn, ca } = resolveDatabaseTls(connectionString)
   // Factored out so every freshly-swapped `current` gets an identical instance:
-  // the #1100 Bun TLS leak-guard socket factory (a NEW factory per instance) and
-  // the #1149 keepalive apply to each one.
+  // the #1149 keepalive applies to each one.
   const build = (): postgres.Sql =>
     postgres(dsn, {
       max: getPoolMax(),
       idle_timeout: getIdleTimeout(),
-      // Applied for every DSN, not just CA-bearing ones: `?sslmode=require`
-      // without a CA takes the same leaking upgrade path, and on a plaintext
-      // connection the hook only ever fires at final close (harmless).
-      ...(isBun ? { socket: createBunTlsSafeSocketFactory() } : {}),
+      keep_alive: KEEPALIVE_INITIAL_DELAY_SECONDS,
       // Caller-supplied options win, so a single-connection user can pin max: 1
       // without inheriting the pool default.
       ...options,

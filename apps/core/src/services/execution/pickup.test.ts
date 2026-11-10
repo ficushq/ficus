@@ -2798,8 +2798,9 @@ describeSubprocess('attemptPickup result matrix', () => {
     // socket factory awaited TCP 'connect' unboundedly, and postgres.js only
     // arms connect_timeout AFTER the factory resolves, so a lost SYN on the
     // loaded runner meant a silent, empty-stderr child that only the test
-    // budget could kill. Fixed by bounding the factory's connect wait
-    // (db/connection.test.ts covers it); the harness waits below are also
+    // budget could kill. Fixed by bounding the factory's connect wait; since
+    // postgres.js 4 there is no factory and its own connect_timeout covers the
+    // whole connect (db/connection.test.ts covers it); the harness waits below are also
     // deadline-bounded now, so a wedged worker fails with a message naming
     // the awaited event instead of an anonymous budget death.
     test(`restarts real worker incarnations from ${target}`, async () => {
