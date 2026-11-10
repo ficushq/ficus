@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
@@ -24,7 +24,9 @@ afterEach(async () => {
 })
 function ControlledPicker({ initial = [] }: { initial?: string[] }) {
   const [selected, setSelected] = useState(initial)
-  value = selected
+  useEffect(() => {
+    value = selected
+  })
   return <PermissionPicker value={selected} onChange={setSelected} />
 }
 async function render(node: React.ReactNode) {

@@ -45,7 +45,9 @@ const useVoiceRecorderFixture = () => ({
 
 let openedToolAction: ToolInlineAction | null = null
 function TestToolInlineActionModal({ action, onClose }: ToolInlineActionModalProps) {
-  openedToolAction = action
+  useEffect(() => {
+    openedToolAction = action
+  })
   return (
     <button data-testid="tool-action-modal" onClick={onClose}>
       Close tool action
@@ -1422,7 +1424,9 @@ describe('ChatView microphone gating', () => {
     let setActive!: (active: boolean) => void
     function Harness() {
       const [active, updateActive] = useState(true)
-      setActive = updateActive
+      useEffect(() => {
+        setActive = updateActive
+      }, [updateActive])
       return (
         <>
           <input aria-label="Command search" />

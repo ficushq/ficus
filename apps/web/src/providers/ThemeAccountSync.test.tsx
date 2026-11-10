@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { act, StrictMode } from 'react'
+import { act, StrictMode, useEffect } from 'react'
 import { queryByRole } from '@testing-library/dom'
 import { readFileSync } from 'node:fs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -24,7 +24,10 @@ afterEach(async () => {
 })
 let store: ThemeSyncStore
 function Picker() {
-  store = useThemeSyncStore()
+  const syncStore = useThemeSyncStore()
+  useEffect(() => {
+    store = syncStore
+  })
   return <ThemeControl value={useTheme()} />
 }
 async function harness() {

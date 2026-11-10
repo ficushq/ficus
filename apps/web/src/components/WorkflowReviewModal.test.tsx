@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { brief as workflowReviewBriefFixture } from '@ficus/shared/test-fixtures/workflow-review'
 import { expect, spyOn, test } from 'bun:test'
 import type { ReactNode } from 'react'
@@ -326,7 +327,9 @@ test('deep links open the review over the page, and closing clears the link', as
   let location = ''
   function Probe() {
     const current = useLocation()
-    location = `${current.pathname}${current.search}`
+    useEffect(() => {
+      location = `${current.pathname}${current.search}`
+    })
     return null
   }
   try {

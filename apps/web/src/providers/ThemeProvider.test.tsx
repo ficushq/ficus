@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { ThemeProvider, useTheme, useThemePreview } from './ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
 
@@ -265,7 +265,10 @@ test('everything behind the app shell follows the active theme: html the surface
   document.head.append(sheet)
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
-    theme = useTheme()
+    const current = useTheme()
+    useEffect(() => {
+      theme = current
+    })
     return null
   }
   const { root } = dom.createRoot()
@@ -311,7 +314,10 @@ test('live custom surface alpha is serialized consistently for root, metadata an
   document.head.append(sheet)
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
-    theme = useTheme()
+    const current = useTheme()
+    useEffect(() => {
+      theme = current
+    })
     return null
   }
   const { root } = dom.createRoot()
@@ -353,7 +359,10 @@ test('setAppearance and toggleTheme keep the active custom theme and preset, res
   const { root } = dom.createRoot()
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
-    theme = useTheme()
+    const current = useTheme()
+    useEffect(() => {
+      theme = current
+    })
     return null
   }
   await act(async () => {
@@ -400,7 +409,10 @@ test('setThemeId deactivates the custom theme/preset ring without deleting anyth
   const { root } = dom.createRoot()
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
-    theme = useTheme()
+    const current = useTheme()
+    useEffect(() => {
+      theme = current
+    })
     return null
   }
   await act(async () => {
@@ -439,7 +451,10 @@ test('a real root paint persists a resolved pre-paint snapshot matching the appl
   const { root } = dom.createRoot()
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
-    theme = useTheme()
+    const current = useTheme()
+    useEffect(() => {
+      theme = current
+    })
     return null
   }
   await act(async () => {
@@ -479,7 +494,10 @@ test("the preview slot: last registrant wins, and a superseded registrant's clea
   localStorage.setItem('ficus-appearance', 'dark')
   let api: ReturnType<typeof useThemePreview> | undefined
   function PreviewProbe() {
-    api = useThemePreview()
+    const preview = useThemePreview()
+    useEffect(() => {
+      api = preview
+    })
     return null
   }
   const { root } = dom.createRoot()
@@ -545,7 +563,10 @@ test('a system-appearance palette preset snapshots BOTH resolved sides, not just
   await setSystemPrefersDark(false) // starts light
   let theme!: ReturnType<typeof useTheme>
   function Controls() {
-    theme = useTheme()
+    const current = useTheme()
+    useEffect(() => {
+      theme = current
+    })
     return null
   }
   const { root } = dom.createRoot()

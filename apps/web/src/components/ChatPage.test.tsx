@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -135,7 +136,9 @@ afterEach(async () => {
 })
 
 const TestAgentChat = (props: Record<string, unknown>) => {
-  capturedAgentChatProps = props
+  useEffect(() => {
+    capturedAgentChatProps = props
+  })
   return <div data-testid="agent-chat">{props.header as React.ReactNode}</div>
 }
 // Substitute at AgentChat, not at Chat: the header controls these tests assert on
