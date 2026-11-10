@@ -5,10 +5,10 @@
  * Supports creating new sessions and reattaching to existing ones.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, type ComponentType } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Terminal } from './Terminal'
+import { Terminal, type TerminalProps } from './Terminal'
 import { queries } from '../../queryOptions'
 import { killTerminalSession } from '../../api/workspace'
 import { DocumentSkeleton, SkeletonBlock } from '../loading/Skeleton'
@@ -18,6 +18,8 @@ export interface TerminalTabsProps {
   selectedShell?: string | null
   onSelectShell?: (shell: string | null) => void
   disabled?: boolean
+  /** Tests replace the terminal, which would otherwise open a live session. */
+  dependencies?: { TerminalComponent?: ComponentType<TerminalProps> }
 }
 
 interface Tab {
@@ -26,10 +28,52 @@ interface Tab {
   label: string
 }
 
-export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled = false }: TerminalTabsProps) {
-  const [tabs, setTabs] = useState<Tab[]>([])
-  const [initialized, setInitialized] = useState(false)
-  const tabCounterRef = useRef(0)
+export function TerminalTabs(props: TerminalTabsProps) {
+  // Fetch existing sessions on mount
+  const { data: existingSessions, isLoading } = useQuery({
+    ...queries.terminal.sessions(props.sandboxId),
+    enabled: !!props.sandboxId,
+    staleTime: 5000,
+  })
+  // The tabs are set up once, from the first answer (while rendering); later refetches leave them alone.
+  const [initialSessions, setInitialSessions] = useState<ReadonlyArray<{ sessionId: string }> | null>(null)
+  if (initialSessions === null && !isLoading) setInitialSessions(existingSessions ?? [])
+
+  // Don't render until initialized to prevent premature terminal connections
+  if (initialSessions === null) {
+    return (
+      <div className="flex h-full flex-col bg-[rgb(var(--term-bg))]">
+        <div className="flex h-11 items-center border-b border-panel-border bg-surface px-3">
+          <SkeletonBlock className="h-4 w-24 bg-[rgb(var(--term-loading-bg))]" />
+        </div>
+        <DocumentSkeleton label="Loading terminals" lines={8} className="flex-1 bg-[rgb(var(--term-bg))]" />
+      </div>
+    )
+  }
+  return <InitializedTerminalTabs {...props} initialSessions={initialSessions} />
+}
+
+function InitializedTerminalTabs({
+  sandboxId,
+  selectedShell,
+  onSelectShell,
+  disabled = false,
+  initialSessions,
+  dependencies,
+}: TerminalTabsProps & { initialSessions: ReadonlyArray<{ sessionId: string }> }) {
+  const TerminalComponent = dependencies?.TerminalComponent ?? Terminal
+  // Restore existing sessions, or start with one new tab. The URL picks the active restored tab via
+  // selectedShell, and is updated when a new tab's session is created via handleSessionCreated.
+  const [tabs, setTabs] = useState<Tab[]>(() =>
+    initialSessions.length > 0
+      ? initialSessions.map((session, index) => ({
+          id: session.sessionId,
+          sessionId: session.sessionId,
+          label: `Shell ${index + 1}`,
+        }))
+      : [{ id: crypto.randomUUID(), label: 'Shell 1' }]
+  )
+  const tabCounterRef = useRef(Math.max(initialSessions.length, 1))
   // Track pending active tab for new tabs that don't have a sessionId yet
   const [pendingActiveTabId, setPendingActiveTabId] = useState<string | null>(null)
 
@@ -71,36 +115,6 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
     tabCounterRef.current++
     return `Shell ${tabCounterRef.current}`
   }, [])
-
-  // Fetch existing sessions on mount
-  const { data: existingSessions, isLoading } = useQuery({
-    ...queries.terminal.sessions(sandboxId),
-    enabled: !!sandboxId,
-    staleTime: 5000,
-  })
-
-  // Initialize tabs once when sessions query completes
-  useEffect(() => {
-    if (initialized || isLoading) return
-
-    if (existingSessions && existingSessions.length > 0) {
-      // Restore existing sessions
-      const restoredTabs = existingSessions.map((session, index) => ({
-        id: session.sessionId,
-        sessionId: session.sessionId,
-        label: `Shell ${index + 1}`,
-      }))
-      tabCounterRef.current = existingSessions.length
-      setTabs(restoredTabs)
-      // URL will determine active tab via selectedShell prop
-    } else {
-      // No existing sessions, create initial tab
-      const initialTab: Tab = { id: crypto.randomUUID(), label: nextTabLabel() }
-      setTabs([initialTab])
-      // URL will be updated when session is created via handleSessionCreated
-    }
-    setInitialized(true)
-  }, [existingSessions, isLoading, initialized, nextTabLabel])
 
   const handleAddTab = useCallback(() => {
     const newTab: Tab = { id: crypto.randomUUID(), label: nextTabLabel() }
@@ -178,18 +192,6 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
     // For now, just leave it so the user can see the exit message
   }, [])
 
-  // Don't render until initialized to prevent premature terminal connections
-  if (!initialized) {
-    return (
-      <div className="flex h-full flex-col bg-[rgb(var(--term-bg))]">
-        <div className="flex h-11 items-center border-b border-panel-border bg-surface px-3">
-          <SkeletonBlock className="h-4 w-24 bg-[rgb(var(--term-loading-bg))]" />
-        </div>
-        <DocumentSkeleton label="Loading terminals" lines={8} className="flex-1 bg-[rgb(var(--term-bg))]" />
-      </div>
-    )
-  }
-
   if (tabs.length === 0 && disabled) {
     return (
       <div className="h-full flex items-center justify-center bg-[rgb(var(--term-bg))] text-[rgb(var(--term-muted))]">
@@ -250,7 +252,7 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
       <div className="flex-1 relative">
         {tabs.map((tab) => (
           <div key={tab.id} className={clsx('absolute inset-0', tab.id !== activeTabId && 'invisible')}>
-            <Terminal
+            <TerminalComponent
               sandboxId={sandboxId}
               sessionId={tab.sessionId}
               isActive={tab.id === activeTabId}

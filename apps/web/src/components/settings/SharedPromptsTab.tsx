@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Modal } from '../Modal'
 import { queries } from '../../queryOptions'
@@ -182,14 +182,15 @@ export function SharedPromptsTab() {
 
   // A revert rewrites the stored record, so refresh the open editor from the
   // refetched include instead of leaving the pre-revert text on screen.
-  useEffect(() => {
-    if (!existing) return
+  const [refreshedFrom, setRefreshedFrom] = useState<typeof existing>()
+  if (existing && refreshedFrom !== existing) {
+    setRefreshedFrom(existing)
     setEditing((draft) =>
       draft && draft.id === existing.id
         ? { ...draft, name: existing.name, description: existing.description ?? '', content: existing.content }
         : draft
     )
-  }, [existing])
+  }
 
   const fieldActions = (field: string) =>
     existing?.hasTemplate ? (

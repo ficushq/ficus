@@ -1,6 +1,6 @@
 import { CatalogSearch } from './CatalogSearch'
 import { Modal } from '../Modal'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -96,10 +96,12 @@ export function SkillsSection() {
 
   const editingSkill = editing?.id ? skills.find((skill) => skill.id === editing.id) : null
 
-  useEffect(() => {
-    if (!editing?.id || !editingSkill) return
+  // Re-seed the editor from the skill it edits whenever that skill's data changes, while rendering.
+  const [seededFrom, setSeededFrom] = useState<typeof editingSkill>(null)
+  if (editing?.id && editingSkill && seededFrom !== editingSkill) {
+    setSeededFrom(editingSkill)
     setEditing({ ...editingSkill, supportFiles: editingSkill.supportFiles ?? {} })
-  }, [editing?.id, editingSkill])
+  }
 
   const skillFieldActions = (field: string) =>
     editingSkill?.hasTemplate ? (

@@ -625,12 +625,11 @@ export function SquadAgentThreads({
     (group) => group.agentTypeId !== 'manager' && group.agentTypeId !== 'consultant'
   )
 
-  useEffect(() => {
-    if (handoffConsultantAgentId && selectedAgent?.id === handoffConsultantAgentId && handoffMessagesReady) {
-      setComposingConsultant(false)
-      setHandoffConsultantAgentId(null)
-    }
-  }, [handoffConsultantAgentId, selectedAgent?.id, handoffMessagesReady])
+  // Once the handed-off consultant is selected with its messages loaded, leave the composer (while rendering).
+  if (handoffConsultantAgentId && selectedAgent?.id === handoffConsultantAgentId && handoffMessagesReady) {
+    setComposingConsultant(false)
+    setHandoffConsultantAgentId(null)
+  }
 
   const handleSelectAgent = (agentId: string) => {
     setHandoffConsultantAgentId(null)

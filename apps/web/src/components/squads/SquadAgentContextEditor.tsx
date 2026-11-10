@@ -1,5 +1,5 @@
 import { isWorkerAgentType } from '@ficus/shared'
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queryKeys } from '../../queryKeys'
@@ -57,27 +57,30 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
     return stableTypeContextKey(currentActive)
   }, [values, activeIds])
 
-  // Sync from server state only when the saved type context changes semantically.
+  // Sync from server state only when the saved type context changes semantically, while rendering.
   // Periodic query refreshes can produce new prop object/array identities with the
   // same saved values; those should not overwrite local dirty edits.
-  useEffect(() => {
-    if (typeContextSnapshot === syncedTypeContextSnapshot) return
-
-    if (currentActiveSnapshot !== syncedTypeContextSnapshot) {
-      setSyncedTypeContextSnapshot(typeContextSnapshot)
-      return
-    }
-
-    const tc = typeContext ?? {}
-    setValues(tc)
-    setActiveIds(activeIdsForTypeContext(tc, agentTypes))
-    setLocallyRemovedIds(new Set())
+  if (typeContextSnapshot !== syncedTypeContextSnapshot) {
     setSyncedTypeContextSnapshot(typeContextSnapshot)
-  }, [agentTypes, currentActiveSnapshot, syncedTypeContextSnapshot, typeContext, typeContextSnapshot])
+    if (currentActiveSnapshot === syncedTypeContextSnapshot) {
+      const tc = typeContext ?? {}
+      setValues(tc)
+      setActiveIds(activeIdsForTypeContext(tc, agentTypes))
+      setLocallyRemovedIds(new Set())
+    }
+  }
 
   // If the agent type list changes (for example, it loads after the context),
-  // reconcile visible rows without touching the textarea values.
-  useEffect(() => {
+  // reconcile visible rows without touching the textarea values. This also runs, while rendering,
+  // when the saved context or the locally removed rows change.
+  const [reconciledFor, setReconciledFor] = useState({ agentTypeIdsKey, agentTypes, typeContext, locallyRemovedIds })
+  if (
+    reconciledFor.agentTypeIdsKey !== agentTypeIdsKey ||
+    reconciledFor.agentTypes !== agentTypes ||
+    reconciledFor.typeContext !== typeContext ||
+    reconciledFor.locallyRemovedIds !== locallyRemovedIds
+  ) {
+    setReconciledFor({ agentTypeIdsKey, agentTypes, typeContext, locallyRemovedIds })
     const agentTypeIds = new Set(agentTypes.map((t) => t.id))
     const savedActiveIds = activeIdsForTypeContext(typeContext ?? {}, agentTypes)
 
@@ -88,7 +91,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
       }
       return areStringArraysEqual(next, ids) ? ids : next
     })
-  }, [agentTypeIdsKey, agentTypes, locallyRemovedIds, typeContext, typeContextSnapshot])
+  }
 
   const dirty = currentActiveSnapshot !== typeContextSnapshot
 

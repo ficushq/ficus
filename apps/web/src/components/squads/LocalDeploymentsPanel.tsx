@@ -137,13 +137,13 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   const aliasLocalDeployment =
     localDeployments.find((localDeployment) => localDeployment.id === aliasLocalDeploymentId) ?? null
 
-  useEffect(() => {
-    if (
-      logsLocalDeploymentId &&
-      doneLocalDeployments.some((localDeployment) => localDeployment.id === logsLocalDeploymentId)
-    )
-      setShowDone(true)
-  }, [doneLocalDeployments, logsLocalDeploymentId])
+  // Viewing a finished deployment's logs keeps the finished section open, while rendering.
+  if (
+    !showDone &&
+    logsLocalDeploymentId &&
+    doneLocalDeployments.some((localDeployment) => localDeployment.id === logsLocalDeploymentId)
+  )
+    setShowDone(true)
 
   const copyUrl = async (localDeployment: LocalDeployment) => {
     await navigator.clipboard.writeText(getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost, publicAppUrl))
@@ -275,7 +275,14 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
         </section>
       )}
 
-      {logsLocalDeployment && <LocalDeploymentLogsModal localDeployment={logsLocalDeployment} onClose={closeLogs} />}
+      {logsLocalDeployment && (
+        // Keyed so another deployment's logs start empty, scrolled to follow, without the last error.
+        <LocalDeploymentLogsModal
+          key={logsLocalDeployment.id}
+          localDeployment={logsLocalDeployment}
+          onClose={closeLogs}
+        />
+      )}
       {aliasLocalDeployment && (
         <LocalDeploymentAliasModal
           localDeployment={aliasLocalDeployment}
@@ -584,14 +591,11 @@ function LocalDeploymentLogsModal({
   }, [setAutoScroll])
 
   useEffect(() => {
-    setLines([])
-    setError(null)
-    setAutoScroll(true)
     return subscribeToLocalDeploymentLogs(localDeployment.id, {
       onLines: (nextLines) => setLines((current) => [...current, ...nextLines].slice(-500)),
       onError: (err) => setError(err.message),
     })
-  }, [localDeployment.id, setAutoScroll])
+  }, [localDeployment.id])
 
   useEffect(() => {
     if (autoScrollRef.current) scrollToBottom()
