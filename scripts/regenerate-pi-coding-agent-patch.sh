@@ -4,18 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PI_MONO_DIR="${PI_MONO_DIR:-$ROOT_DIR/../../pi-mono}"
 PACKAGE="@earendil-works/pi-coding-agent"
-EXPECTED_REF="4a080252f06caf63a525d7873c5d94d3c23887e0"
-EXPECTED_AI_TARBALL_SHA1="2ddca1029bbe97e26298d998d3a66d09db7759e2"
-EXPECTED_CODING_AGENT_TARBALL_SHA1="7f5dd2a4f7fa46ed252465ac4d341831896b1fc2"
-SOURCE_ROOT="$ROOT_DIR/patches/pi-coding-agent-1.4.0-source"
-PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-coding-agent@1.4.0.patch"
+EXPECTED_REF="f9a26365568127461c47a07a37dcb42c140a3ac5"
+EXPECTED_AI_TARBALL_SHA1="ccae45df1c2d6dda4697516ae0ad87d9a3bea026"
+EXPECTED_CODING_AGENT_TARBALL_SHA1="5b3ae91e479299ad5c46be8c843f61d92ceb6044"
+SOURCE_ROOT="$ROOT_DIR/patches/pi-coding-agent-1.5.0-source"
+PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-coding-agent@1.5.0.patch"
 TEMP_DIR="$(mktemp -d)"
 # Keep compiler module identities consistent across macOS /var aliases.
 TEMP_DIR="$(cd "$TEMP_DIR" && pwd -P)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 WRITE_MODE=0
 
-AGENT_PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-agent-core@1.4.0.patch"
+AGENT_PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-agent-core@1.5.0.patch"
 AGENT_OUTPUT_FILES=(dist/agent.js dist/agent.js.map dist/agent.d.ts dist/agent.d.ts.map)
 SOURCE_FILES=(
   packages/agent/src/agent.ts
@@ -90,7 +90,7 @@ done
 test -f "$PATCH_ARTIFACT" || { echo "Missing committed patch artifact" >&2; exit 1; }
 
 FICUS_VERSION="$(node -p "require('./apps/core/package.json').dependencies['$PACKAGE']")"
-test "$FICUS_VERSION" = 1.4.0 || { echo "Expected Ficus dependency 1.4.0" >&2; exit 1; }
+test "$FICUS_VERSION" = 1.5.0 || { echo "Expected Ficus dependency 1.5.0" >&2; exit 1; }
 
 manifest_outputs() {
   local root="$1"
@@ -153,7 +153,7 @@ function update(dir) {
 update(root);
 NODE
   mkdir -p "$pack/ai" "$pack/coding"
-  local ai_tarball="$pack/ai/earendil-works-pi-ai-1.4.0.tgz"
+  local ai_tarball="$pack/ai/earendil-works-pi-ai-1.5.0.tgz"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-$FICUS_VERSION.tgz" --output "$ai_tarball"
   test "$(sha1sum "$ai_tarball" | cut -d' ' -f1)" = "$EXPECTED_AI_TARBALL_SHA1"
   tar -xzf "$ai_tarball" -C "$pack/ai"
@@ -161,7 +161,7 @@ NODE
   cp "$pack/ai/package/dist/providers/data/"*.json "$dir/packages/ai/src/providers/data/"
   cp "$pack/ai/package/dist/providers/data/.manifest.json" "$dir/packages/ai/src/providers/data/"
 
-  local coding_tarball="$pack/coding/earendil-works-pi-coding-agent-1.4.0.tgz"
+  local coding_tarball="$pack/coding/earendil-works-pi-coding-agent-1.5.0.tgz"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-$FICUS_VERSION.tgz" --output "$coding_tarball"
   test "$(sha1sum "$coding_tarball" | cut -d' ' -f1)" = "$EXPECTED_CODING_AGENT_TARBALL_SHA1"
   tar -xzf "$coding_tarball" -C "$pack/coding"
@@ -169,7 +169,7 @@ NODE
 
   mkdir -p "$pack/agent"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-$FICUS_VERSION.tgz" --output "$pack/agent/package.tgz"
-  test "$(sha1sum "$pack/agent/package.tgz" | cut -d' ' -f1)" = "97c8e22a52e9ba8d1d3d56ccb9bc3aa1506a7ea2"
+  test "$(sha1sum "$pack/agent/package.tgz" | cut -d' ' -f1)" = "21a2dab7b543a01d506723daf1efe540e4870b5c"
   tar -xzf "$pack/agent/package.tgz" -C "$pack/agent"
   mv "$pack/agent/package" "$TEMP_DIR/$label-agent-pristine"
   (cd "$dir" && bun run build:offline)
