@@ -212,10 +212,13 @@ export function AgentChat({
 
   const [questionSubmitted, setQuestionSubmitted] = useState(false)
 
-  // Reset submitted state when agent status changes
-  useEffect(() => {
+  // Reset submitted state when agent status changes, while rendering
+  const agentStatus = agent?.status
+  const [questionStatus, setQuestionStatus] = useState(agentStatus)
+  if (questionStatus !== agentStatus) {
+    setQuestionStatus(agentStatus)
     setQuestionSubmitted(false)
-  }, [agent?.status])
+  }
 
   // Auto-navigate on completed navigate tool calls with prompt: false (Fix 2)
   const executedNavigations = useRef<Set<string>>(new Set())
@@ -269,9 +272,11 @@ export function AgentChat({
   // Text for the composer: the caller's drafts and edited reply chips (negative ids, so the two never collide).
   const [draftRequest, setDraftRequest] = useState(composerDraft)
   const chipDraftId = useRef(0)
-  useEffect(() => {
+  const [seenComposerDraft, setSeenComposerDraft] = useState(composerDraft)
+  if (seenComposerDraft !== composerDraft) {
+    setSeenComposerDraft(composerDraft)
     if (composerDraft) setDraftRequest(composerDraft)
-  }, [composerDraft])
+  }
 
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {

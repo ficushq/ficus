@@ -72,9 +72,11 @@ export function AssistantCommandCenter({
   const [localQuery, setLocalQuery] = useState(externalQuery ?? '')
   // Update the controlled input synchronously; router transitions are deferred
   // and otherwise restore the old value after each keystroke, moving the caret.
-  useEffect(() => {
+  const [seenExternalQuery, setSeenExternalQuery] = useState(externalQuery)
+  if (seenExternalQuery !== externalQuery) {
+    setSeenExternalQuery(externalQuery)
     if (externalQuery !== undefined) setLocalQuery(externalQuery)
-  }, [externalQuery])
+  }
   const [rootSelected, setRootSelected] = useState(0)
   const [squadSelections, setSquadSelections] = useState<Record<string, number>>({})
   const [createdChats, setCreatedChats] = useState<Record<string, string>>({})
@@ -186,10 +188,12 @@ export function AssistantCommandCenter({
     onPush(next)
   }
   // A direct conversation link can enter through the parent rather than a result click.
-  useEffect(() => {
+  const [seenEntry, setSeenEntry] = useState<typeof entry>()
+  if (seenEntry !== entry) {
+    setSeenEntry(entry)
     if (entry?.kind === 'chat')
       setOpenedChats((current) => (current.some((chat) => chat.id === entry.id) ? current : [...current, entry]))
-  }, [entry])
+  }
   useEffect(() => {
     if (!active) return
     if (!entry || entry.kind === 'squad') searchInput.current?.focus()

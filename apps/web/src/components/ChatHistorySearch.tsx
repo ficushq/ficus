@@ -83,10 +83,13 @@ export function ChatHistorySearch({ agentId, onSelect, onClose }: ChatHistorySea
   const showingQuery = search.isPlaceholderData ? null : query
   const results = useMemo(() => search.data?.pages.flatMap((page) => page.results) ?? [], [search.data])
 
-  useEffect(() => {
+  // A new query starts at its first result, without the previous query's jump.
+  const [resultsQuery, setResultsQuery] = useState(query)
+  if (resultsQuery !== query) {
+    setResultsQuery(query)
     setActiveIndex(0)
     setJump(null)
-  }, [query])
+  }
 
   useEffect(() => {
     listRef.current
