@@ -583,6 +583,24 @@ describe('ChatPage scope routing behavior', () => {
   })
 })
 
+describe('ChatPage ?new requests', () => {
+  // The header's new chat button (phones only) navigates to /chat?new.
+  test("the header's ?new request opens a new chat and consumes the parameter", async () => {
+    mockAgentScopeTypes = { 'agent-1': 'system-manager' }
+    const fixture = await renderChatRoute('/chat/agent-1?scope=all', 390)
+    try {
+      expect(capturedAgentChatProps.agentId).toBe('agent-1')
+      await fixture.dom.act(async () => {
+        await fixture.router.navigate('/chat?new')
+      })
+      expect(route(fixture.router)).toBe('/chat')
+      expect(capturedAgentChatProps.agentId).toBeUndefined()
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+})
+
 describe('ChatPage handleAgentCreated routing', () => {
   test('navigates to /chat/:id?scope=... when onAgentCreated fires', async () => {
     mockAgentStatus = 'idle'
