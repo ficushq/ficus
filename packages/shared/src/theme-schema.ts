@@ -235,7 +235,7 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
       '--term-selection-background',
       // `none` preserves each selected cell's ANSI ink; otherwise RGB channels.
       '--term-selection-foreground',
-      // `auto` preserves native scrollbars; otherwise themes supply RGB channels.
+      // `auto` keeps xterm's default scrollbar slider; otherwise themes supply RGB channels.
       '--term-scrollbar-thumb',
       '--term-scrollbar-thumb-hover',
       '--term-scrollbar-thumb-active',

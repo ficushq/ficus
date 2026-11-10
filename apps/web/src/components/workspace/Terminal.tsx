@@ -14,6 +14,7 @@ import { fetchWsTicket } from '../../api/auth'
 import { useStableRef } from '../../hooks/useStableRef'
 import '@xterm/xterm/css/xterm.css'
 import { observeTerminalTheme, readTerminalTheme } from '../../theme/terminal'
+import { attachLegacyAltArrowKeys } from './altArrowKeys'
 
 export interface TerminalProps {
   sandboxId: string
@@ -192,6 +193,7 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
 
       terminal.loadAddon(fitAddon)
       terminal.loadAddon(webLinksAddon)
+      attachLegacyAltArrowKeys(terminal)
 
       stopThemeObserverRef.current = observeTerminalTheme(terminal, container)
       terminal.open(container)

@@ -24,11 +24,16 @@ const TERMINAL_TOKENS = {
   brightMagenta: '--term-bright-magenta',
   brightCyan: '--term-bright-cyan',
   brightWhite: '--term-bright-white',
+  // xterm 6 draws its own scrollbar slider. The log palette defines no
+  // `--log-scrollbar-*` tokens, so log viewers keep xterm's default slider.
+  scrollbarSliderBackground: '--term-scrollbar-thumb',
+  scrollbarSliderHoverBackground: '--term-scrollbar-thumb-hover',
+  scrollbarSliderActiveBackground: '--term-scrollbar-thumb-active',
 } as const satisfies Partial<Record<keyof ITheme, string>>
 
 /** Share the renderer-safe decimal serializer with graph/chart consumers.
- * `none` keeps selected ANSI ink and `auto` keeps native scrollbars; neither
- * sentinel is sent into xterm's color parser.
+ * `none` keeps selected ANSI ink and `auto` keeps xterm's default scrollbar
+ * slider; neither sentinel is sent into xterm's color parser.
  */
 export { terminalTokenColor }
 
@@ -60,12 +65,6 @@ export function observeTerminalTheme(
   const update = () => {
     const style = view.getComputedStyle(root)
     terminal.options.theme = readTerminalTheme(style, palette)
-    // xterm 5.5 has no scrollbar entries in ITheme. Its viewport is a native
-    // scrollbar; opt into CSS styling only when a theme replaces the auto token.
-    container.toggleAttribute(
-      'data-terminal-scrollbar',
-      !!terminalTokenColor(style.getPropertyValue('--term-scrollbar-thumb').trim())
-    )
   }
   const observer = new view.MutationObserver(update)
   observer.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-appearance'] })
