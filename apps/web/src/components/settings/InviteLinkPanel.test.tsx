@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { acquireDomHarness } from '../../test/domHarness'
 import type { IssuedInviteLink } from './InviteLinkPanel'
 

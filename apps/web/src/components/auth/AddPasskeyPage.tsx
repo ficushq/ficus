@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { startRegistration } from '@simplewebauthn/browser'
 import { type AddPasskeyContext } from '../../api/auth'
 import { ApiError } from '../../api/client'

@@ -73,7 +73,7 @@ describe('App auth gate', () => {
       import('./providers/AuthProvider'),
       import('./hooks/useWebSocket'),
       import('@tanstack/react-query'),
-      import('react-router-dom'),
+      import('react-router'),
       import('./providers/ThemeProvider'),
     ])
     const { MemoryRouter } = router

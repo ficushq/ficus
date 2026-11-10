@@ -2,7 +2,7 @@ import { acquireDomHarness } from '../../test/domHarness'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import type { Agent, GitHubFeedbackSummary, Squad, WorkStream } from '@ficus/shared'
 import type { ComponentProps } from 'react'
 

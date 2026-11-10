@@ -91,7 +91,7 @@ describe('AuthProvider first-admin funnel', () => {
   // (AuthProvider sits inside <BrowserRouter>).
   async function mount(children: ReactNode = <Probe />) {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const { MemoryRouter, useLocation } = await import('react-router-dom')
+    const { MemoryRouter, useLocation } = await import('react-router')
     function LocationProbe() {
       seenPathname = useLocation().pathname
       return null

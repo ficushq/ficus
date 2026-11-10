@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router'
 import { ChatPage } from './components/ChatPage'
 import { ChatDrawer } from './components/ChatDrawer'
 import { SquadsPage } from './components/SquadsPage'

@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from 'bun:test'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createWorkflowRun, advanceWorkflowRun, workflowPresetSchema, type WorkStream } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'

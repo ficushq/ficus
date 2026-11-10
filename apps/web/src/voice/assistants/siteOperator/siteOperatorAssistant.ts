@@ -2,7 +2,7 @@ import { useAssistantPageNavigation } from '../../../hooks/useAssistantPageNavig
 import { usePermissions } from '../../../hooks/usePermissions'
 import { useAssistantConversationBridge } from '../../AssistantConversationContext'
 import { useCallback, useEffect, useMemo } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router'
 import { getMyInbox, markAsRead } from '../../../api/inbox'
 import { listSquads, listSquadAgents } from '../../../api/squads'
 import { useStableRef } from '../../../hooks/useStableRef'

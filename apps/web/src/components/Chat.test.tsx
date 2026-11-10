@@ -1,7 +1,8 @@
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { describe, expect, mock, test, beforeEach } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter } from 'react-router'
+import { RouterProvider } from 'react-router/dom'
 import { acquireDomHarness } from '../test/domHarness'
 
 import { ReactQueryHooksProvider } from '../reactQueryHooks'

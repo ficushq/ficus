@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import type { AuthStatus, AuthValidation } from '../api/auth'
 import { apiUrl, authFetch, clearStoredToken, getApiHost } from '../api/client'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'

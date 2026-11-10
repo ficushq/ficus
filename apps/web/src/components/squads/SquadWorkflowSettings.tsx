@@ -6,7 +6,7 @@ import { queryKeys } from '../../queryKeys'
 import { updateSquad } from '../../api/squads'
 import { client } from '../../api/clientInstance'
 import { WorkflowPicker } from './WorkflowPicker'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { usePermissions } from '../../hooks/usePermissions'
 
 export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; canEdit: boolean }) {

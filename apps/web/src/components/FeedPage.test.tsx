@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import type { PendingAction } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 

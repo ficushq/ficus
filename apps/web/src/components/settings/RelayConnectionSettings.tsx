@@ -15,7 +15,7 @@ import {
 import { Modal } from '../Modal'
 import { OverflowMenu } from '../OverflowMenu'
 import { ExternalLink, SETTINGS_BUTTON_SIZE, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 
 const CONNECT_FORM_ID = 'ficus-account-connect'
 const SERVER_ADDRESS_HREF = '/settings?section=server-address&setting=server-address'

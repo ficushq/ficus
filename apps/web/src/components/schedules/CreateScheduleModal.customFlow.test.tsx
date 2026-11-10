@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { fireEvent, getByLabelText, getByText, queryByText } from '@testing-library/dom'
 import { createBlankWorkflow } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'

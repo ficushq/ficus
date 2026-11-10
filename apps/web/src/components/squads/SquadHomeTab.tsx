@@ -1,7 +1,7 @@
 import { SQUAD_RECENT_CHAT_LIMIT } from '../../lib/recentChats'
 import { WorkStreamList } from './WorkStreamList'
 import { SquadAgentThreads } from './SquadAgentThreads'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { ChatIcon, ChevronRightIcon } from '../icons'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import { getAgentPrimaryLabel } from '../../lib/agentDisplay'

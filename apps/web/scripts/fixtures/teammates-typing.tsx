@@ -2,7 +2,7 @@
 // (check-teammates-typing-layout.ts) sets who is typing with window.setTypers, delivered the way the
 // server does: agentChat.typing events on the agent's topic.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
 import type { AgentChatTypingEventData, Message } from '@ficus/shared'

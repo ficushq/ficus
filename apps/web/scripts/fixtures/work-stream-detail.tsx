@@ -1,7 +1,7 @@
 // Synthetic data only; queries are disabled so this fixture never contacts a backend.
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createBlankWorkflow, createWorkflowRun, type WorkStream } from '@ficus/shared'
 import { WorkStreamDetailModal } from '../../src/components/WorkStreamDetailModal'

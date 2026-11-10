@@ -1,7 +1,7 @@
 import { fireEvent } from '@testing-library/dom'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { squadEventRuleSchema } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { PermissionsProvider } from '../../hooks/usePermissions'

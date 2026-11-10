@@ -1,7 +1,7 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import { fireEvent } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import type { InboxMessageResponse, InboxMessagesPage } from '../api/inbox'
 import { INBOX_SEARCH_DEBOUNCE_MS } from '../hooks/useInboxFeed'
 import { queryKeys } from '../queryKeys'

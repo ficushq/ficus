@@ -3,7 +3,7 @@ import { fireEvent } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import {
   DECISION_PROVIDER_KIND_INFO,
   DECISION_PURPOSE_INFO,

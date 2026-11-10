@@ -1,4 +1,4 @@
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { afterEach, expect, test } from 'bun:test'
 import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'

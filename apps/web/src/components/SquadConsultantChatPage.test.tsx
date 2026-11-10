@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { queryKeys } from '../queryKeys'
 import type { Squad } from '@ficus/shared'
 

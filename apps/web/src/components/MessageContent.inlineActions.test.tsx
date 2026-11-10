@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { ReactElement } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import type { MessageMetadata, MessageToolCall } from '@ficus/shared'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
 import { acquireDomHarness } from '../test/domHarness'

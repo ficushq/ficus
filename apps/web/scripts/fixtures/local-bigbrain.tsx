@@ -2,7 +2,7 @@
 // with made-up data. The checker (check-local-bigbrain-layout.ts) answers the API requests.
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { IntegrationDirectoryCard } from '../../src/components/settings/IntegrationsSection'

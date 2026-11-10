@@ -13,7 +13,7 @@ import { client } from '../../api/clientInstance'
 import { assistantApi } from '../../api/assistant'
 import { assistantQueries, queries } from '../../queryOptions'
 import { PermissionsProvider } from '../../hooks/usePermissions'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 
 let cleanup: (() => Promise<void>) | undefined
 afterEach(async () => {

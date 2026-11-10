@@ -1,6 +1,6 @@
 // Real panel/header components; the browser checker serves synthetic API responses.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SandboxProcesses } from '../../src/components/sandbox/SandboxProcesses'
 import { SandboxStatusIndicator } from '../../src/components/squads/SandboxStatusIndicator'

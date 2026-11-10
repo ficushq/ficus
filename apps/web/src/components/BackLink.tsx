@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 
 export function BackLink({ to, children, onClick }: { to: string; children: string; onClick?: () => void }) {
   return (

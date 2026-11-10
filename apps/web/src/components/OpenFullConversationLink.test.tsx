@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
 import { OpenFullConversationLink } from './OpenFullConversationLink'
 

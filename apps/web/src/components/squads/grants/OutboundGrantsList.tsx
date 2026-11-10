@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SquadMemoryGrantDTO } from '@ficus/shared'
 import { deleteGrant } from '../../../api/grants'

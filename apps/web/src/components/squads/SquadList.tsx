@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useMemo, useState, useEffect, type CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,

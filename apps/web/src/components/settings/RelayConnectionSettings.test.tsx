@@ -7,7 +7,7 @@ import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePerm
 import { serverConnectionQueryKeys } from '../../queryKeys'
 import type { ServerConnection } from '../../api/serverConnection'
 import { webkitTap } from '../../test/webkitTap'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { RelayConnectionSettings } from './RelayConnectionSettings'
 
 let cleanup: (() => Promise<void>) | undefined

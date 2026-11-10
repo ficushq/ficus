@@ -213,7 +213,7 @@ test('graph edits share undo/redo and selecting a node opens only its inspector'
 
 test('assistant edits apply directly, share undo history, and cannot overwrite newer manual edits', async () => {
   const { spyOn } = await import('bun:test')
-  const { MemoryRouter } = await import('react-router-dom')
+  const { MemoryRouter } = await import('react-router')
   const { fireEvent, waitFor } = await import('@testing-library/dom')
   const { assistantApi } = await import('../../api/assistant')
   const { assistantQueries } = await import('../../queryOptions')

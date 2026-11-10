@@ -1,6 +1,6 @@
 // Settings → Spend with made-up data. The checker (check-spend-layout.ts) answers /api/spend/* requests.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { SpendSection } from '../../src/components/settings/spend/SpendSection'

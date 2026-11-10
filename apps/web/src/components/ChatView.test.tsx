@@ -9,7 +9,7 @@ import type { Message, MessageMetadata } from '@ficus/shared'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
 import type { ToolInlineActionModalProps } from './ToolInlineActionModal'
 import type { AgentConversation } from './AgentConversationBody'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 
 const useImageSrcsFixture = () => ({})
 

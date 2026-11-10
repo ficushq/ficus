@@ -1,5 +1,5 @@
 import { useCallback, useState, type FormEvent } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router'
 import { PairingCode } from '../settings/PairingCode'
 import { renderPairing } from '../settings/pairingQr'
 import { useAuthApi } from './authApi'

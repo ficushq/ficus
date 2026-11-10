@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { getApiUrl } from '../../api/client'
 import { usePermissions } from '../../hooks/usePermissions'
 import { serverConnectionQueries } from '../../queryOptions'

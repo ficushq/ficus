@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { ChatIcon, ChevronDownIcon, ChevronRightIcon } from './icons'
 import { WorkStreamReviewers } from './WorkStreamReviewers'

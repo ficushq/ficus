@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
 import { restPointerOn } from '../test/hoverTimer'
 import { queries } from '../queryOptions'

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { useStableRef } from './useStableRef'
 import { useKeepAssistantAcrossPages } from './useKeepAssistantAcrossPages'
 import type { CommandDestination } from '../lib/commandCenterSearch'

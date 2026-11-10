@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 
 /**
  * Opens an agent's full conversation in a new tab. A router Link, not a raw

@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { CatalogSearch } from './CatalogSearch'
 import { useEffect, useId, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createBlankWorkflow, workflowDefinitionSchema, workflowPresetSchema } from '@ficus/shared'
 import type { WorkflowCatalogEntry } from '@ficus/client-core'

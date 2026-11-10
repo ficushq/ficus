@@ -1,7 +1,7 @@
 // Isolated synthetic state only: a review gate whose producing agent is chatted with inline, and an
 // amendment that arrives while the review is open. Unexpected network requests fail in the runner.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
 import {

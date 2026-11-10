@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { Modal } from '../Modal'
 import { deleteSquad } from '../../api/squads'
 import { queryKeys } from '../../queryKeys'

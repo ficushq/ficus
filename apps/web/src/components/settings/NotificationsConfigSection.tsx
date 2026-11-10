@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { usePermissions } from '../../hooks/usePermissions'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'

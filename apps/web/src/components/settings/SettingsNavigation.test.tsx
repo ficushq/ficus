@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { useState } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../../test/domHarness'
 import { webkitTap } from '../../test/webkitTap'
 import { SettingsNavigation } from './SettingsNavigation'

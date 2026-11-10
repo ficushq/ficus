@@ -1,6 +1,6 @@
 // Real Feed layout, Updates, mobile dock and screenshot overlay; synthetic data only.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PendingAction } from '@ficus/shared'
 import { AccountFeedVisit } from '../../src/components/FeedVisitSummary'

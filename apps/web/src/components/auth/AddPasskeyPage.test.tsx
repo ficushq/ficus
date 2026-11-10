@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { acquireDomHarness } from '../../test/domHarness'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { AuthApiProvider } from './authApi'
 import { ApiError } from '../../api/client'
 

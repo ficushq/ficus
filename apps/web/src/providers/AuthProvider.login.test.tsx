@@ -75,7 +75,7 @@ describe('AuthProvider password login', () => {
 
   async function mount(children: ReactNode = <Probe />) {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const { MemoryRouter } = await import('react-router-dom')
+    const { MemoryRouter } = await import('react-router')
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>

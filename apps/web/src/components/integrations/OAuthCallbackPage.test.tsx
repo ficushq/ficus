@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent } from '@testing-library/dom'
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router'
 import { prepareOAuthCallbackHistory } from '../../lib/oauthCallbackBootstrap'
 import { acquireDomHarness } from '../../test/domHarness'
 

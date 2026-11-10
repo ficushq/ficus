@@ -3,7 +3,7 @@
 // The checker (check-history-search-placement.ts) opens it with ?composer=hidden for a read-only
 // transcript, where the history search button falls back to ChatView's header.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
 import type { Message } from '@ficus/shared'
