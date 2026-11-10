@@ -6,7 +6,7 @@
  * Supports file and folder upload via drag-and-drop.
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import type { TreeNode } from '../../api/workspace'
@@ -311,9 +311,10 @@ export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) 
   const [pendingUploads, setPendingUploads] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
 
-  // Expand all ancestor directories when selectedPath changes (e.g., from URL)
-  useEffect(() => {
-    if (!selectedPath) return
+  // Expand all ancestor directories when selectedPath changes (e.g., from URL), while rendering
+  const [expandedFor, setExpandedFor] = useState<string>()
+  if (selectedPath && expandedFor !== selectedPath) {
+    setExpandedFor(selectedPath)
 
     // Get all ancestor paths: "a/b/c/file.ts" -> ["a", "a/b", "a/b/c"]
     const parts = selectedPath.split('/')
@@ -331,7 +332,7 @@ export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) 
         return next
       })
     }
-  }, [selectedPath])
+  }
 
   // Fetch root tree
   const {

@@ -129,15 +129,17 @@ export function MemoryTree({ squadId, onSelectFile, selectedPath }: MemoryTreePr
   const [loadedPaths, setLoadedPaths] = useState<Set<string>>(new Set(['/memory']))
   const queryClient = useQueryClient()
 
-  useEffect(() => {
-    if (!selectedPath) return
+  // Expand the ancestors of a newly selected file while rendering.
+  const [expandedFor, setExpandedFor] = useState<string>()
+  if (selectedPath && expandedFor !== selectedPath) {
+    setExpandedFor(selectedPath)
     const parts = selectedPath.split('/').filter(Boolean)
     const ancestors: string[] = []
     for (let i = 1; i < parts.length; i++) {
       ancestors.push(`/${parts.slice(0, i).join('/')}`)
     }
     setExpandedPaths((prev) => new Set([...prev, ...ancestors]))
-  }, [selectedPath])
+  }
 
   const {
     data: rootTree,

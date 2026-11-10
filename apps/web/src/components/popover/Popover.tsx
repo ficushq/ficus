@@ -144,11 +144,14 @@ export function Popover({
   const [container, setContainer] = useState<HTMLElement | null>(null)
   const latest = useStableRef({ onDismiss, initialFocus, tabOut, trigger, dismissible, returnFocus })
 
+  // Portal into the modal the trigger (or anchor) sits in, read from the DOM before paint.
+  const triggerRef = trigger
+  const anchorRef = anchor
   useLayoutEffect(() => {
     if (!open || !portal) return
-    const from = trigger?.current ?? anchor?.current
+    const from = triggerRef?.current ?? anchorRef?.current
     setContainer(from?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body)
-  }, [open, portal, trigger, anchor])
+  }, [open, portal, triggerRef, anchorRef])
   const mounted = !portal || !!container
 
   const placement = usePopoverPosition({

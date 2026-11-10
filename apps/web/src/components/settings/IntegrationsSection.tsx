@@ -4,7 +4,7 @@ import { ExternalLink } from './SettingsRow'
 import { Link } from 'react-router'
 import { IntegrationCredentialSettings } from '../integrations/IntegrationCredentialSettings'
 import { IntegrationLogo } from '../integrations/IntegrationLogo'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { setIntegrationEnabled, type IntegrationCatalogItem } from '../../api/integrations'
@@ -238,19 +238,21 @@ export function IntegrationsSection() {
   const permissions = usePermissions()
   const catalog = useQuery(integrationQueries.catalog())
   const [search, setSearch] = useState('')
-  const [scrollTarget, setScrollTarget] = useState<string | null>(null)
+  // Each request to bring a card into view is a new object, handled once (also across catalog refetches).
+  const [scrollTarget, setScrollTarget] = useState<{ key: string } | null>(null)
+  const scrolledTarget = useRef<{ key: string } | null>(null)
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({})
   useEffect(() => {
-    if (!scrollTarget || !catalog.data?.integrations.some((entry) => entry.key === scrollTarget && entry.enabled))
-      return
-    const card = document.getElementById(`integration-card-${scrollTarget}`)
+    if (!scrollTarget || scrolledTarget.current === scrollTarget) return
+    if (!catalog.data?.integrations.some((entry) => entry.key === scrollTarget.key && entry.enabled)) return
+    const card = document.getElementById(`integration-card-${scrollTarget.key}`)
     if (!card) return
     card.focus({ preventScroll: true })
     card.scrollIntoView?.({
       behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
       block: 'start',
     })
-    setScrollTarget(null)
+    scrolledTarget.current = scrollTarget
   }, [scrollTarget, catalog.data])
   const ready = !permissions.isLoading && !permissions.isError
   const visible = (catalog.data?.integrations ?? []).filter(
@@ -333,7 +335,7 @@ export function IntegrationsSection() {
                     <IntegrationDirectoryCard
                       key={entry.key}
                       entry={entry}
-                      onEnabled={() => setScrollTarget(entry.key)}
+                      onEnabled={() => setScrollTarget({ key: entry.key })}
                       expanded={!!expandedKeys[entry.key]}
                       setExpanded={(expanded) => setExpandedKeys((current) => ({ ...current, [entry.key]: expanded }))}
                       canWrite={permissions.can(`integrations:write:${entry.key}`)}
