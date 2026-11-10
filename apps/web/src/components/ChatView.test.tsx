@@ -70,11 +70,35 @@ const { getImageAttachState } = await import('../lib/imageAttach')
 
 let activeDom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 
+/**
+ * FileReader reads still in flight in the current DOM. Happy DOM finishes a read over two timer
+ * turns, so a test that attaches an image waits for these (see `settleImageReads`) rather than
+ * guessing how long they take.
+ */
+const pendingFileReads = new Set<Promise<void>>()
+
+function trackingFileReader(Base: typeof FileReader): typeof FileReader {
+  return class TrackingFileReader extends Base {
+    override readAsDataURL(blob: Blob) {
+      const read = new Promise<void>((resolve) =>
+        this.addEventListener('loadend', () => {
+          pendingFileReads.delete(read)
+          resolve()
+        })
+      )
+      pendingFileReads.add(read)
+      super.readAsDataURL(blob)
+    }
+  }
+}
+
 async function installDom() {
   return (activeDom = await acquireDomHarness({
     url: 'http://localhost/chat',
     configureWindow(window) {
-      globalThis.FileReader = window.FileReader
+      // A read left unfinished by an earlier test belongs to its closed window and never ends.
+      pendingFileReads.clear()
+      globalThis.FileReader = trackingFileReader(window.FileReader as unknown as typeof FileReader)
       window.requestAnimationFrame = (callback: FrameRequestCallback) => window.setTimeout(callback, 0)
       window.cancelAnimationFrame = (id: number) => window.clearTimeout(id)
       window.ResizeObserver = class ResizeObserver {
@@ -115,6 +139,20 @@ function pasteFiles(
 
 async function flushReact() {
   await new Promise((resolve) => setTimeout(resolve, 10))
+}
+
+/**
+ * Waits for every image read the chat started to finish, then commits what they produced. A fixed
+ * `flushReact` sleep raced Happy DOM's two-step FileReader on a loaded runner: the sleep could end
+ * between the two steps, before the image was attached.
+ */
+async function settleImageReads(dom: Awaited<ReturnType<typeof acquireDomHarness>>) {
+  await dom.act(async () => {
+    while (pendingFileReads.size > 0) await Promise.all(pendingFileReads)
+    // A finished read resolves a promise chain that ends in a state update (in ChatView, and the page
+    // screenshot's upload and guess); one macrotask lets that chain run out, so act commits it.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 }
 
 function deferred<T>() {
@@ -1908,7 +1946,7 @@ describe('ChatView whole-surface drops and pastes', () => {
     const { messages } = chat(window)
     const dropped = await dom.act(async () => drag(window, 'drop', messages, [image(window), text(window)]))
     expect(dropped.defaultPrevented).toBe(true)
-    await flushReact()
+    await settleImageReads(dom)
     expect(attachedImages(window)).toBe(1)
     expect(uploadAgentFileMock).toHaveBeenCalledTimes(1)
   })
@@ -1983,12 +2021,12 @@ describe('ChatView whole-surface drops and pastes', () => {
     expect(window.document.activeElement).toBe(surface)
     const pasted = await dom.act(async () => pasteFiles(window, messages, [image(window)]))
     expect(pasted.defaultPrevented).toBe(true)
-    await flushReact()
+    await settleImageReads(dom)
     expect(attachedImages(window)).toBe(1)
     const textarea = window.document.querySelector('textarea') as HTMLTextAreaElement
     textarea.focus()
     await dom.act(async () => void pasteFiles(window, textarea, [image(window)]))
-    await flushReact()
+    await settleImageReads(dom)
     expect(attachedImages(window)).toBe(2)
   })
 
@@ -2053,7 +2091,7 @@ describe('ChatView whole-surface drops and pastes', () => {
     await dom.act(async () => void drag(window, 'dragover', messages))
     expect(pageOverlay()).toBeNull()
     await dom.act(async () => void drag(window, 'drop', messages, [image(window)]))
-    await flushReact()
+    await settleImageReads(dom)
     expect(attachedImages(window)).toBe(1)
     expect(guessed).toEqual([])
     expect(reviewCard()).toBeNull()
@@ -2062,13 +2100,13 @@ describe('ChatView whole-surface drops and pastes', () => {
     // screenshot review card, which files nothing until it is confirmed.
     surface.focus()
     await dom.act(async () => void pasteFiles(window, surface, [image(window)]))
-    await flushReact()
+    await settleImageReads(dom)
     expect(attachedImages(window)).toBe(2)
     expect(guessed).toEqual([])
     expect(reviewCard()).toBeNull()
     surface.blur()
     await dom.act(async () => void pasteFiles(window, page, [image(window)]))
-    await flushReact()
+    await settleImageReads(dom)
     expect(reviewCard()).not.toBeNull()
     expect(guessed).toEqual(['image-1'])
     expect(filed).toEqual([])
