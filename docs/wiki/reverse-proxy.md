@@ -220,20 +220,100 @@ single-origin mode (`FICUS_SERVE_WEB=1`), point it at Core:
 tailscale serve --bg --set-path=/ficus http://localhost:3000
 ```
 
-Ficus is then reachable at `https://<your-machine>.<tailnet>/ficus`. Because that
-URL carries a path, set the base path and the WebAuthn origin explicitly, or
-passkeys break:
+Ficus is then reachable at `https://<your-machine>.<tailnet>/ficus`. Set that
+address, path included, as the public address (Settings → Administration →
+Server address, or `APP_URL`); no rebuild and no `APP_BASE_PATH` are needed.
+Tailscale Serve removes the `/ficus` prefix and keeps the `Host` header, which
+is how Ficus recognizes the prefixed address (see [Path prefix](#path-prefix)):
 
 ```bash
 APP_URL=https://<your-machine>.<tailnet>/ficus
-APP_BASE_PATH=/ficus
-FICUS_WEB_ORIGIN=https://<your-machine>.<tailnet>   # bare origin, no path
+# Optional: FICUS_WEB_ORIGIN=https://<your-machine>.<tailnet>   (bare origin, no path)
 ```
 
-Serving at the tailnet root (`tailscale serve --bg http://localhost:3000`)
-avoids the base-path handling entirely. For a split web/API deployment, point
+Serving at the tailnet root (`tailscale serve --bg http://localhost:3000`) works
+too. For a split web/API deployment, point
 Tailscale at the Vite dev server (`http://localhost:5173`) or at the Caddy/nginx
 front end from the sections above instead of at Core.
+
+## Path prefix
+
+One web build serves Ficus at the root and under a path prefix such as
+`https://ficus.example.com/ficus` at the same time. Set the public address
+(Settings → Administration → Server address, or `APP_URL`) to the address with
+its path. Core resolves the path per request, from configuration only:
+
+1. A request path that starts with the configured prefix (the proxy forwarded
+   it unchanged) uses that prefix; Core removes it before routing.
+2. Otherwise the first of `X-Forwarded-Host`, `Host` and the request URL host
+   that equals the host of a configured address (the public address, the
+   launcher's local address `FICUS_LOCAL_APP_URL`, `FICUS_WEB_ORIGIN` entries)
+   selects that address's path (the proxy removed the prefix).
+3. Otherwise `APP_BASE_PATH`, else the root.
+
+Headers only choose among configured addresses; they never add a new one. Core
+renders `index.html` with that path (asset URLs and a `ficus-base-path` meta
+tag the web app reads), so the local root address and the prefixed public
+address work at once.
+
+Both proxy styles work. Caddy:
+
+```caddyfile
+# Prefix removed (Core sees /squads/1; the Host header selects /ficus)
+ficus.example.com {
+  handle_path /ficus/* {
+    reverse_proxy 127.0.0.1:3000
+  }
+}
+
+# Prefix forwarded unchanged (Core sees /ficus/squads/1 and removes it)
+ficus.example.com {
+  handle /ficus/* {
+    reverse_proxy 127.0.0.1:3000
+  }
+}
+```
+
+nginx:
+
+```nginx
+# Prefix removed: the trailing slash on proxy_pass strips /ficus/.
+location /ficus/ {
+  proxy_pass http://127.0.0.1:3000/;
+  proxy_set_header Host $host;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection $connection_upgrade;
+}
+
+# Or forwarded unchanged: no URI on proxy_pass.
+location /ficus/ {
+  proxy_pass http://127.0.0.1:3000;
+  proxy_set_header Host $host;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection $connection_upgrade;
+}
+```
+
+A proxy that removes the prefix must preserve `Host` or send
+`X-Forwarded-Host`; otherwise Core sees an unknown host and serves the root
+path. A proxy that forwards the prefix needs neither.
+
+With a prefix configured, `/ficus/*` is an alias for every Core route on every
+listener: `/ficus/api/…` reaches the API exactly as `/api/…` does. Any proxy
+path rule (blocks, authentication, rate limits, IP allow-lists) must cover both
+the prefixed and the unprefixed form, or forward only the prefixed form to
+Core.
+
+A prefix whose first segment is also a Core or web app route (for example
+`/settings` or `/api`) is never removed from request paths, so it works only
+behind a proxy that removes the prefix; Settings warns about it.
+
+Squad local apps (`/api/app/<id>/`) are served under the public address's path
+on every listener: a link opened at the local root address redirects once to
+`/ficus/api/app/<id>/` on the same host, and Ficus restarts the apps it runs
+when the path changes.
 
 ## Client addresses
 

@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { startRegistration } from '@simplewebauthn/browser'
 import { type TokenRegistrationContext } from '../../api/auth'
 import { useAuthApi } from './authApi'
+import { appBasePath } from '../../lib/basePath'
 
 interface Props {
   onSuccess: () => void
@@ -126,7 +127,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
               link from the sign-in page.
             </p>
             <p className="text-xs text-secondary mt-4 text-center">
-              <a href="/" className="text-accent-light hover:underline">
+              <a href={appBasePath()} className="text-accent-light hover:underline">
                 Back to sign in
               </a>
             </p>

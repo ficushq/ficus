@@ -13,7 +13,7 @@ running it, and [reverse-proxy](reverse-proxy.md) for serving it statically.
 
 The farm installs as its own app, beside Ficus: `apps/farm/pwa.ts` emits
 `manifest.webmanifest` at the farm's base with relative `id`, `start_url` and
-`scope` (`./`, i.e. `<APP_BASE_PATH>/farm/`), so "Add to Home Screen" or
+`scope` (`./`, i.e. `<base path>/farm/`, where the base path is resolved per request), so "Add to Home Screen" or
 "Install" on the farm makes a "Ficus Farm" app that opens straight into it. Its icons are the farm set,
 `brand/generated/farm/` (the Ficus mark standing in the meadow under the farm's
 sky), which is also the farm's Vite public dir. Their URLs in the manifest and

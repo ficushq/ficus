@@ -688,8 +688,8 @@ Passkeys are strict about the origin, and this is the common footgun:
 
 - **`FICUS_WEB_ORIGIN`** must be the **bare origin** — `scheme://host[:port]`,
   **no path**. If the app is served under a base path
-  (`APP_URL=https://home.example.com/ficus` with `APP_BASE_PATH=/ficus`), set
-  `FICUS_WEB_ORIGIN=https://home.example.com`. WebAuthn rejects an origin with a
+  (`APP_URL=https://home.example.com/ficus`), set
+  `FICUS_WEB_ORIGIN=https://home.example.com` if you set it at all. WebAuthn rejects an origin with a
   path, which surfaces as a **500 on passkey registration**
   (`Unexpected registration response origin … expected …/ficus`). It also drives
   the CORS allowlist and the session-cookie SameSite/Secure choice.

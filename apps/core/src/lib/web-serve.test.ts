@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Hono } from 'hono'
-import { maybeMountWebUi } from './web-serve'
+import { coreGetPath } from './app-base-path'
+import { builtWebBase, escapeHtmlAttribute, maybeMountWebUi, renderIndexHtml } from './web-serve'
 
 function fakeLog() {
   const calls: { level: string; args: unknown[] }[] = []
@@ -14,12 +15,22 @@ function fakeLog() {
   }
 }
 
+const INDEX_HTML = [
+  '<!doctype html><html><head>',
+  '<meta name="ficus-base-path" content="__FICUS_BASE_PATH__" />',
+  '<link rel="icon" href="/icons/favicon-32x32.png" />',
+  '<link rel="preconnect" href="//cdn.example.com" />',
+  '<meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />',
+  '<meta property="og:url" content="__FICUS_ORIGIN__/" />',
+  '<meta property="og:image" content="__FICUS_ORIGIN__/social-preview.png" />',
+  '<script type="module" crossorigin src="/assets/index-C2ucfeeU.js"></script>',
+  '<link rel="manifest" href="/manifest.webmanifest">',
+  '</head><body>app</body></html>',
+].join('')
+
 function buildFixture(): string {
   const dir = mkdtempSync(join(tmpdir(), 'ficus-web-fixture-'))
-  writeFileSync(
-    join(dir, 'index.html'),
-    '<!doctype html><html><head><meta property="og:image" content="__FICUS_ORIGIN__/social-preview.png" /></head><body>app</body></html>'
-  )
+  writeFileSync(join(dir, 'index.html'), INDEX_HTML)
   writeFileSync(join(dir, 'sw.js'), 'self.addEventListener("fetch", () => {})')
   writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"Ficus"}')
   mkdirSync(join(dir, 'assets'), { recursive: true })
@@ -171,6 +182,175 @@ describe('maybeMountWebUi', () => {
         headers: { Accept: 'text/html,application/xhtml+xml' },
       })
       expect(await res.text()).toContain('content="http://ficus.local/social-preview.png"')
+    })
+  })
+
+  describe('base path rendering', () => {
+    const KEYS = [
+      'FICUS_WEB_ORIGIN',
+      'WEBAUTHN_ORIGIN',
+      'APP_URL',
+      'PUBLIC_URL',
+      'FICUS_LOCAL_APP_URL',
+      'APP_BASE_PATH',
+    ] as const
+    const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
+    beforeEach(() => {
+      for (const k of KEYS) delete process.env[k]
+      process.env.FICUS_SERVE_WEB = '1'
+      process.env.FICUS_LOCAL_APP_URL = 'http://localhost:3000'
+    })
+    afterEach(() => {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k]
+        else process.env[k] = saved[k]
+      }
+    })
+
+    function setupPrefixedApp() {
+      const app = new Hono({ getPath: coreGetPath })
+      app.get('/api/health', (c) => c.json({ status: 'ok' }))
+      maybeMountWebUi(app, fakeLog())
+      app.all('*', (c) => c.json({ error: 'not-found' }, 404))
+      return app
+    }
+
+    const metaOf = (html: string) => /name="ficus-base-path" content="([^"]*)"/.exec(html)?.[1]
+    const ogUrlOf = (html: string) => /property="og:url" content="([^"]*)"/.exec(html)?.[1]
+
+    it('leaves a root page at the local address unchanged apart from the placeholders', async () => {
+      const app = setupPrefixedApp()
+      const html = await (await app.request('http://localhost:3000/', { headers: { host: 'localhost:3000' } })).text()
+      expect(html).toBe(
+        INDEX_HTML.replace('__FICUS_BASE_PATH__', '/').replaceAll('__FICUS_ORIGIN__', 'http://localhost:3000')
+      )
+      expect(metaOf(html)).toBe('/')
+      expect(ogUrlOf(html)).toBe('http://localhost:3000/')
+    })
+
+    it('rebases every root-absolute URL for the public base when the proxy strips the prefix', async () => {
+      process.env.APP_URL = 'https://team.example.com/ficus'
+      const app = setupPrefixedApp()
+      const html = await (await app.request('http://127.0.0.1:3000/', { headers: { host: 'team.example.com' } })).text()
+      expect(metaOf(html)).toBe('/ficus/')
+      expect(ogUrlOf(html)).toBe('https://team.example.com/ficus/')
+      expect(html).toContain('href="/ficus/icons/favicon-32x32.png"')
+      expect(html).toContain('content="/ficus/icons/icon-144x144.png"')
+      expect(html).toContain('src="/ficus/assets/index-C2ucfeeU.js"')
+      expect(html).toContain('href="/ficus/manifest.webmanifest"')
+      expect(html).toContain('href="//cdn.example.com"')
+      expect(html).toContain('content="https://team.example.com/ficus/social-preview.png"')
+      for (const [, value] of html.matchAll(/(?:src|href|content)="(\/[^"]*)"/g)) {
+        if (!value.startsWith('//')) expect(value.startsWith('/ficus/')).toBe(true)
+      }
+      expect(html).not.toContain('/ficus/ficus/')
+    })
+
+    it('serves the root base at the local address and still advertises the public address', async () => {
+      process.env.APP_URL = 'https://team.example.com/ficus'
+      const app = setupPrefixedApp()
+      const html = await (await app.request('http://localhost:3000/', { headers: { host: 'localhost:3000' } })).text()
+      expect(metaOf(html)).toBe('/')
+      expect(html).toContain('src="/assets/index-C2ucfeeU.js"')
+      expect(ogUrlOf(html)).toBe('https://team.example.com/ficus/')
+    })
+
+    it('renders a pass-through deep link like the host-matched one and still reaches the API', async () => {
+      process.env.APP_URL = 'https://team.example.com/ficus'
+      const app = setupPrefixedApp()
+      const viaHost = await (
+        await app.request('http://127.0.0.1:3000/squads/1', {
+          headers: { host: 'team.example.com', accept: 'text/html' },
+        })
+      ).text()
+      const passThrough = await (
+        await app.request('http://127.0.0.1:3000/ficus/squads/1', {
+          headers: { host: '127.0.0.1:3000', accept: 'text/html' },
+        })
+      ).text()
+      expect(passThrough).toBe(viaHost)
+      expect(metaOf(passThrough)).toBe('/ficus/')
+      expect((await app.request('http://127.0.0.1:3000/api/health')).status).toBe(200)
+      expect((await app.request('http://127.0.0.1:3000/ficus/api/health')).status).toBe(200)
+      const asset = await app.request('http://127.0.0.1:3000/ficus/assets/index-C2ucfeeU.js')
+      expect(asset.status).toBe(200)
+      expect(asset.headers.get('Cache-Control')).toContain('immutable')
+    })
+
+    it('rebases a legacy APP_BASE_PATH build down to the root', async () => {
+      writeFileSync(join(dist, 'index.html'), INDEX_HTML.replaceAll('="/', '="/tau/').replace('"/tau//cdn', '"//cdn'))
+      const app = setupPrefixedApp()
+      const html = await (await app.request('http://localhost:3000/', { headers: { host: 'localhost:3000' } })).text()
+      expect(html).toContain('src="/assets/index-C2ucfeeU.js"')
+      expect(html).toContain('href="/icons/favicon-32x32.png"')
+      expect(html).not.toContain('/tau/')
+      expect(metaOf(html)).toBe('/')
+    })
+
+    it('serves the farm index rebased for the request base', async () => {
+      const farm = mkdtempSync(join(tmpdir(), 'ficus-farm-base-'))
+      try {
+        writeFileSync(
+          join(farm, 'index.html'),
+          '<html><head><meta name="ficus-base-path" content="__FICUS_BASE_PATH__"><script type="module" src="/farm/assets/farm-AbCdEfGh.js"></script><link rel="icon" href="/farm/icons/i.png"></head><body>farm</body></html>'
+        )
+        process.env.FICUS_FARM_DIST = farm
+        process.env.APP_URL = 'https://team.example.com/ficus'
+        const app = setupPrefixedApp()
+        const html = await (
+          await app.request('http://127.0.0.1:3000/ficus/farm/', { headers: { host: '127.0.0.1:3000' } })
+        ).text()
+        expect(html).toContain('src="/ficus/farm/assets/farm-AbCdEfGh.js"')
+        expect(html).toContain('href="/ficus/farm/icons/i.png"')
+        expect(metaOf(html)).toBe('/ficus/')
+        const local = await (
+          await app.request('http://localhost:3000/farm/', { headers: { host: 'localhost:3000' } })
+        ).text()
+        expect(local).toContain('src="/farm/assets/farm-AbCdEfGh.js"')
+        expect(metaOf(local)).toBe('/')
+      } finally {
+        rmSync(farm, { recursive: true, force: true })
+      }
+    })
+  })
+
+  describe('renderIndexHtml', () => {
+    it('is a placeholder-only substitution when the bases are equal', () => {
+      const html = renderIndexHtml(INDEX_HTML, {
+        builtBase: '/',
+        runtimeBase: '/',
+        basePath: '',
+        publicAppUrl: 'https://h/',
+      })
+      expect(html).toBe(INDEX_HTML.replace('__FICUS_BASE_PATH__', '/').replaceAll('__FICUS_ORIGIN__', 'https://h'))
+    })
+
+    it('detects the built base from the first asset URL', () => {
+      expect(builtWebBase(INDEX_HTML)).toBe('/')
+      expect(builtWebBase('<script src="/tau/assets/a.js">')).toBe('/tau/')
+      expect(builtWebBase('<script src="/farm/assets/a.js">')).toBe('/farm/')
+      expect(builtWebBase('<html></html>')).toBeNull()
+    })
+
+    it('renders a base path with $&, a quote and an ampersand literally and escaped', () => {
+      const html = renderIndexHtml(INDEX_HTML, {
+        builtBase: '/',
+        runtimeBase: "/a$&'b&c/",
+        basePath: "/a$&'b&c",
+        publicAppUrl: "https://h/a$&'b&c",
+      })
+      expect(html).toContain('name="ficus-base-path" content="/a$&amp;&#39;b&amp;c/"')
+      expect(html).toContain('src="/a$&amp;&#39;b&amp;c/assets/index-C2ucfeeU.js"')
+      expect(html).toContain('property="og:url" content="https://h/a$&amp;&#39;b&amp;c/"')
+      expect(html).not.toContain('__FICUS')
+      // Removing the escaped path leaves exactly the root rendering: nothing else changed.
+      expect(html.replaceAll('/a$&amp;&#39;b&amp;c', '')).toBe(
+        renderIndexHtml(INDEX_HTML, { builtBase: '/', runtimeBase: '/', basePath: '', publicAppUrl: 'https://h' })
+      )
+    })
+
+    it('escapes attribute values', () => {
+      expect(escapeHtmlAttribute(`/a"b'<c>&`)).toBe('/a&quot;b&#39;&lt;c&gt;&amp;')
     })
   })
 

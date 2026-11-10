@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   isValidLocalDeploymentRouteParameter,
+  localDeploymentBrowserPath,
   localDeploymentCookieHeader,
   localDeploymentCookieName,
   localDeploymentProxyPath,
@@ -75,6 +76,43 @@ describe('local deployment browser auth', () => {
     expect(header).toContain('SameSite=Lax')
     expect(header).toContain('Secure')
     expect(header).not.toMatch(/(?:^|;)\s*Domain=/i)
+  })
+
+  it('scopes the cookie under the public base path, whatever address the request used', () => {
+    const saved = process.env.APP_URL
+    process.env.APP_URL = 'https://t.example/ficus'
+    try {
+      for (const requestUrl of [`https://t.example/api/app/${ID}/`, `http://localhost:3000/ficus/api/app/${ID}/`]) {
+        const header = localDeploymentCookieHeader({ localDeploymentId: ID, token: 'abc', requestUrl })
+        expect(header).toContain(`Path=/ficus/api/app/${ID}/;`)
+      }
+      expect(localDeploymentBrowserPath(ID)).toBe(`/ficus/api/app/${ID}/`)
+    } finally {
+      if (saved === undefined) delete process.env.APP_URL
+      else process.env.APP_URL = saved
+    }
+  })
+
+  it('never puts a public base path that is not cookie-safe into Set-Cookie', () => {
+    const saved = process.env.APP_URL
+    try {
+      for (const unsafe of ['https://t.example/a;b', 'https://t.example/a,b', "https://t.example/a'b"]) {
+        process.env.APP_URL = unsafe
+        const header = localDeploymentCookieHeader({
+          localDeploymentId: ID,
+          token: 'abc',
+          requestUrl: `https://t.example/api/app/${ID}/`,
+        })
+        expect(header).toContain(`Path=/api/app/${ID}/;`)
+        expect(header).not.toMatch(/\/a[;,']b/)
+        expect(localDeploymentBrowserPath(ID)).toBe(`/api/app/${ID}/`)
+      }
+      process.env.APP_URL = 'https://t.example/team-1/ficus~x'
+      expect(localDeploymentBrowserPath(ID)).toBe(`/team-1/ficus~x/api/app/${ID}/`)
+    } finally {
+      if (saved === undefined) delete process.env.APP_URL
+      else process.env.APP_URL = saved
+    }
   })
 
   it('omits Secure over plain http so a localhost self-host still works', () => {

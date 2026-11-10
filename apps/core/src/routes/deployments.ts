@@ -21,6 +21,7 @@ import {
   listLocalDeployments,
   normalizeRequestedLocalDeploymentAlias,
   setLocalDeploymentAlias,
+  getHostedAppsDomain,
   stopLocalDeploymentRecord,
 } from '../services/deploy/local-deployment-service'
 import { LocalDeploymentAliasError } from '../services/deploy/local-deployment-alias'
@@ -34,6 +35,11 @@ import {
 } from '../services/deploy/local-deployment-health'
 import { normalizeLocalDeploymentInput } from '../services/deploy/local-deployment-validation'
 import { type LocalAppProxyServer, proxyLocalDeploymentRequest } from '../services/deploy/local-deployment-proxy'
+import {
+  decideLocalAppBase,
+  warnLocalAppServedAfterRedirect,
+  withoutRedirectMarker,
+} from '../services/deploy/local-deployment-base-path'
 import { localDeploymentProxyJsonError } from '../services/deploy/local-deployment-proxy-response'
 import { deploymentProviders } from '../services/deploy/providers'
 import { requirePermission, requireSquadPermission } from '../middleware'
@@ -287,10 +293,22 @@ export const deploymentsRouter = new Hono()
     const localDeploymentId = c.get('resolvedLocalDeploymentId') ?? routeParameter
     const path = c.req.path.split(`/api/app/${routeParameter}/`)[1] ?? ''
     try {
+      // Path-mounted apps live under the public base path on every listener
+      // (their URLs and cookie Path are built for it): send a request that used
+      // another base there once. See local-deployment-base-path.ts.
+      const decision = decideLocalAppBase(
+        { url: c.req.url, header: (name) => c.req.header(name), path: c.req.path, method: c.req.method },
+        { hostedAppsDomain: !!getHostedAppsDomain() }
+      )
+      if (decision.kind === 'redirect') return c.redirect(decision.location, 307)
+      if (decision.kind === 'reject-upgrade')
+        return localDeploymentProxyJsonError('Open this app from its link under the server address path.', 404)
+      if (decision.afterRedirect) warnLocalAppServedAfterRedirect(localDeploymentId)
+      const request = decision.stripMarker ? withoutRedirectMarker(c.req.raw) : c.req.raw
       // Bun's server (index.ts hands it to app.fetch as env) accepts WebSocket
       // upgrades and extends this request's idle timeout for a slow app.
       const server = c.env ? getBunServer<LocalAppProxyServer>(c) : undefined
-      return await getDependencies().proxyLocalDeploymentRequest(localDeploymentId, c.req.raw, path, server)
+      return await getDependencies().proxyLocalDeploymentRequest(localDeploymentId, request, path, server)
     } catch (err) {
       if (err instanceof AmbiguousPrefixError) {
         return localDeploymentProxyJsonError(AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR, 409)

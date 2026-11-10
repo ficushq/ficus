@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#a3bb5d" />
     <!-- Lets Ficus Desktop tell a Core that serves the farm from one whose /farm falls back to the web app. -->
     <meta name="ficus-app" content="farm" />
+    <!-- The instance base path ("/" or "/ficus/"), filled in per request by Core and read by src/api/base.ts. -->
+    <meta name="ficus-base-path" content="__FICUS_BASE_PATH__" />
     <!-- The manifest, favicon and home-screen icon links are added by pwa.ts, with content-hashed URLs. -->
     <!-- Launched from the home screen: full screen under a translucent status bar (the HUD keeps to the safe area). -->
     <meta name="mobile-web-app-capable" content="yes" />

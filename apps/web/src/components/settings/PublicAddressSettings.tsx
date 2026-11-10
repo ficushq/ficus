@@ -355,12 +355,7 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
                 </li>
               )}
               {!impact.mobileReady && <li>The Ficus app and Mobile & Pro need an HTTPS address.</li>}
-              {impact.basePathMismatch && (
-                <li>
-                  The path in this address doesn’t match the path the web app was built for (APP_BASE_PATH). Links may
-                  not open until they match.
-                </li>
-              )}
+              <BasePathNotes impact={impact} localUrl={status.localUrl} />
               <li>Ficus checks the address format only. It doesn’t check that the address reaches this server.</li>
             </ul>
             <UrlChanges title="Update these in your OAuth apps" changes={impact.oauthCallbacks} />
@@ -369,5 +364,52 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
         )}
       </Modal>
     </div>
+  )
+}
+
+function appCount(count: number): string {
+  return count === 1 ? '1 running app' : `${count} running apps`
+}
+
+/** What serving Ficus under the address's path means for the proxy, open tabs and running apps. */
+function BasePathNotes({ impact, localUrl }: { impact: PublicAppUrlPreview['impact']; localUrl?: string | null }) {
+  const local = localUrl ? localUrl.replace(/\/+$/, '') : undefined
+  return (
+    <>
+      {impact.basePath && (
+        <li>
+          The web app and documentation will be served under {impact.basePath}. Your reverse proxy must send that path
+          to Ficus (removing it or passing it through both work).
+          {local && ` ${local}/ keeps working.`}
+        </li>
+      )}
+      {impact.basePath && !impact.basePathStrippable && (
+        <li>
+          {impact.basePath} is also a Ficus page or API path, so Ficus never removes it from request paths: use a proxy
+          that removes the prefix. A proxy that passes the prefix through
+          {local ? `, and ${local}${impact.basePath}/,` : ''} will not open the app.
+        </li>
+      )}
+      {impact.basePath && !impact.localAppsUnderBasePath && (
+        <li>
+          {impact.basePath} has characters that cannot be used for squad apps, so apps will not open under that path.
+          {local ? ` Open them from ${local}/.` : ' Open them from the server’s local address.'}
+        </li>
+      )}
+      {impact.basePathChanged && (
+        <li>
+          Open tabs and installed home-screen apps at the old path must be reopened or re-added from the new address.
+        </li>
+      )}
+      {impact.localAppsAffected > 0 && (
+        <li>{appCount(impact.localAppsAffected)} in squads will be restarted so their links use the new path.</li>
+      )}
+      {impact.externalAppsAffected > 0 && (
+        <li>
+          {impact.externalAppsAffected === 1 ? '1 app' : `${impact.externalAppsAffected} apps`} started outside Ficus
+          must be restarted by hand.
+        </li>
+      )}
+    </>
   )
 }

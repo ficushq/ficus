@@ -630,6 +630,12 @@ jobs:
       - name: Build web
         run: bun run --filter web build
 
+      # One web build must serve at any base path (Core rebases index.html per
+      # request): no root-absolute asset URL inside JS/CSS, the base path meta
+      # placeholder present, a relative manifest.
+      - name: Check the web build is base-path independent
+        run: bun scripts/check-web-dist-base.ts
+
   # Dedicated runner for the real-subprocess flake family: these apps/core
   # test files spawn real bun subprocesses / real builds / full migration
   # runs. They have 8-25x local headroom but flake under CI scheduling

@@ -10,7 +10,7 @@ import {
 } from '../sandbox/tmux'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
-import { localDeploymentProxyPath } from './local-deployment-auth'
+import { localDeploymentBrowserPath } from './local-deployment-auth'
 import {
   buildResolveAttachedLogPathCommand,
   buildStreamAttachedLogCommand,
@@ -109,10 +109,12 @@ export class LocalDeploymentProcessSupervisor {
       // $PORT needs no configuration and cannot collide with a sibling box on
       // the same machine; FICUS_LOCAL_DEPLOYMENT_PORT stays for existing commands.
       PORT: String(args.port),
-      // Hosted apps occupy their origin root; self-hosted apps keep the legacy
-      // proxy prefix. Passing both through one variable lets framework config
-      // stay portable without hardcoding a deployment id.
-      FICUS_APP_BASE_PATH: getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId),
+      // Hosted apps occupy their origin root; self-hosted apps keep the proxy
+      // prefix under the public address's base path (`/ficus/api/app/<id>/`).
+      // Passing both through one variable lets framework config stay portable
+      // without hardcoding a deployment id. A base path change restarts managed
+      // apps (local-deployment-base-path.ts) so this never goes stale.
+      FICUS_APP_BASE_PATH: getHostedAppsDomain() ? '/' : localDeploymentBrowserPath(args.localDeploymentId),
       FICUS_LOCAL_DEPLOYMENT_CWD: cwd,
       FICUS_LOCAL_DEPLOYMENT_DIR: dir,
       FICUS_LOCAL_DEPLOYMENT_COMMAND: args.command,

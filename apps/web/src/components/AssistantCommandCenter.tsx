@@ -29,6 +29,7 @@ import { ALL_SECTIONS, isSectionAllowed } from './settings/settingsSections'
 import { AgentChat } from './AgentChat'
 import { ActionItem } from './ActionItem'
 import { MarkdownContent } from './MarkdownContent'
+import { OpenFullConversationLink } from './OpenFullConversationLink'
 import { SparklesIcon, ChevronRightIcon } from './icons'
 import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@ficus/shared'
 
@@ -371,16 +372,7 @@ export function AssistantCommandCenter({
                 {data.squads.find((s) => s.id === destination.squadId)?.name}
               </span>
               {currentAgentId && (
-                <a
-                  className="ficus-button ficus-button-ghost shrink-0 p-1.5 hover:text-accent-light"
-                  href={`/squads/${encodeURIComponent(slugFor(destination.squadId))}/agents?agent=${encodeURIComponent(currentAgentId)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open full conversation"
-                  aria-label="Open full conversation"
-                >
-                  ↗
-                </a>
+                <OpenFullConversationLink squadSlug={slugFor(destination.squadId)} agentId={currentAgentId} />
               )}
             </>
           )}

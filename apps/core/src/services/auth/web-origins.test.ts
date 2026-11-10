@@ -5,6 +5,7 @@ import {
   hasConfiguredWebOrigin,
   isAllowedWsOrigin,
   primaryWebAppUrl,
+  webAppUrlForOrigin,
   primaryWebOrigin,
   rpOriginForRequest,
 } from './web-origins'
@@ -60,6 +61,18 @@ describe('primaryWebAppUrl', () => {
       else process.env.APP_BASE_PATH = base
       expect(primaryWebAppUrl()).toBe('https://home.example.com')
     }
+  })
+})
+
+describe('webAppUrlForOrigin', () => {
+  test('uses the path of the configured address with that origin', () => {
+    for (const k of KEYS) delete process.env[k]
+    process.env.APP_URL = 'https://home.example.com/ficus'
+    process.env.FICUS_LOCAL_APP_URL = 'http://localhost:3000'
+    process.env.FICUS_WEB_ORIGIN = 'https://home.example.com'
+    expect(primaryWebAppUrl()).toBe('https://home.example.com/ficus')
+    expect(webAppUrlForOrigin('https://home.example.com')).toBe('https://home.example.com/ficus')
+    expect(webAppUrlForOrigin('http://localhost:3000')).toBe('http://localhost:3000')
   })
 })
 

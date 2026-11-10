@@ -3,6 +3,7 @@ import { requestBodyLimits } from './middleware/request-body-limits'
 import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
+import { coreGetPath } from './lib/app-base-path'
 import {
   getOpenAIServiceKey,
   initializeOpenAIServicesState,
@@ -200,7 +201,9 @@ if (heapSnapshotDirectory) {
   })
 }
 
-export const app = new Hono()
+// Routing sees the path without a configured base path prefix (for example
+// `/ficus`), so a reverse proxy may strip the prefix or forward it unchanged.
+export const app = new Hono({ getPath: coreGetPath })
 
 app.use('*', jsonBodyErrorMiddleware)
 app.onError((error, c) => {
@@ -917,8 +920,19 @@ if (import.meta.main) {
 
       const { PUBLIC_APP_URL_SETTING_KEY } = await import('./lib/public-app-url')
       const { relayServerConnection } = await import('./services/push/server-connection')
+      // Managed path-mounted local apps carry the public base path in
+      // FICUS_APP_BASE_PATH: restart them when it changed (also since the last start).
+      const { reconcileLocalAppBasePath } = await import('./services/deploy/local-deployment-base-path')
+      const reconcileLocalApps = () =>
+        reconcileLocalAppBasePath().catch((error) =>
+          log.error('Failed to restart local apps for the public address base path:', error)
+        )
+      void reconcileLocalApps()
       settingsStore.onChange(async (key) => {
-        if (key === PUBLIC_APP_URL_SETTING_KEY) await relayServerConnection.handlePublicAddressChange()
+        if (key === PUBLIC_APP_URL_SETTING_KEY) {
+          await relayServerConnection.handlePublicAddressChange()
+          void reconcileLocalApps()
+        }
         if (isChannelEnabledSettingKey(key)) await channelConnections.refresh()
         if (key === PROVIDER_HEALTH_STATE_KEY) await providerHealth.hydrateFromPersistence()
       })

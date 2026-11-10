@@ -1,4 +1,5 @@
 import { authFetch } from '../api/client'
+import { appBasePath } from '../lib/basePath'
 
 // --- Types ---
 
@@ -86,7 +87,7 @@ const CONNECTION_STATS_SAMPLE_MS = 10_000
 const DTLN_WORKLET_PATH = 'voice/dtln/processor.js?v=3'
 const DTLN_PROCESSOR_NAME = 'ficus-dtln-denoiser'
 
-export function resolveDtlnWorkletUrl(baseUrl = import.meta.env.BASE_URL): string {
+export function resolveDtlnWorkletUrl(baseUrl = appBasePath()): string {
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
   return `${normalizedBase}${DTLN_WORKLET_PATH}`
 }

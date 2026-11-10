@@ -1,5 +1,5 @@
 import { resumeSurface } from '@ficus/shared/app-surface'
-import { webAppUrl } from '../api/base'
+import { farmBasePath, webAppUrl } from '../api/base'
 
 /** Running as an installed home-screen app (not a browser tab, not Ficus Desktop). */
 export function isInstalledApp(): boolean {
@@ -15,7 +15,7 @@ export function isInstalledApp(): boolean {
  * leaving for the web app, so the caller skips booting the farm.
  */
 export function resumeLastApp(
-  farmBase: string = import.meta.env.BASE_URL || '/farm/',
+  farmBase: string = farmBasePath(),
   go: (url: string) => void = (url) => window.location.replace(url)
 ): boolean {
   try {

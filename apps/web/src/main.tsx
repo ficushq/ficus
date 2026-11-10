@@ -16,6 +16,7 @@ import { DevBackendBar } from './components/DevBackendBar'
 import { prepareOAuthCallbackHistory } from './lib/oauthCallbackBootstrap'
 import { resumeLastApp } from './lib/appSurface'
 import { initializeDesktopHistory } from './lib/desktopHistory'
+import { appBasePrefix } from './lib/basePath'
 
 // OAuth callback capabilities and codes must leave the URL before service
 // worker registration, auth bootstrap, or any other network-capable work.
@@ -56,7 +57,7 @@ function boot() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <BrowserRouter basename={import.meta.env.BASE_URL?.replace(/\/$/, '')}>
+      <BrowserRouter basename={appBasePrefix()}>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
             <div className="flex h-full min-h-0 flex-col">

@@ -62,6 +62,40 @@ ficus.example.com {
 
 `FICUS_WEB_ORIGIN` must be a bare origin: scheme, host and optional port, without a path. Passkey registration depends on it. `APP_URL` controls user-facing links; `FICUS_API_URL` serves other API-client/runtime connections and does not need to be changed to the public hostname for this same-machine proxy example.
 
+## Serve Ficus under a path prefix
+
+To serve Ficus at a path such as `https://ficus.example.com/ficus`, set the **Public address** (or `APP_URL`) to that address, path included. The same web build serves every path, so nothing needs to be rebuilt, and the server's local address (for example Ficus Desktop's `http://localhost:<port>/`) keeps working at the root at the same time. Links, phone pairing, integration OAuth callbacks and webhook URLs use the path.
+
+Your reverse proxy can either remove the prefix before forwarding or forward it unchanged; Ficus accepts both. With Caddy:
+
+```text
+# Prefix removed: Ficus sees /squads/1 and recognizes the address from the Host header.
+ficus.example.com {
+  handle_path /ficus/* {
+    reverse_proxy 127.0.0.1:3000
+  }
+}
+
+# Or prefix forwarded unchanged: Ficus sees /ficus/squads/1 and removes it itself.
+ficus.example.com {
+  handle /ficus/* {
+    reverse_proxy 127.0.0.1:3000
+  }
+}
+```
+
+When the proxy removes the prefix, it must keep the original `Host` header (Caddy and nginx's `proxy_set_header Host $host` do) or send `X-Forwarded-Host`; otherwise Ficus cannot tell the request came through the prefixed address. A proxy that forwards the prefix needs neither.
+
+With a prefix configured, `/ficus/…` reaches every Ficus route exactly as the unprefixed path does, on every listener. Any proxy path rule (blocks, authentication, rate limits, IP allow-lists) must cover both forms, or forward only the prefixed form to Ficus.
+
+When you move an existing server to a new path:
+
+- Open tabs and installed home-screen apps at the old path must be reopened or re-added from the new address.
+- Squad apps that Ficus runs restart automatically so their links use the new path. Apps you started yourself and attached must be restarted by hand.
+- A path that is also a Ficus page or API path (such as `/settings` or `/api`) works only behind a proxy that removes the prefix. Settings warns about this.
+
+`APP_BASE_PATH` is no longer needed when the public address carries the path. Servers that set it keep working: it still sets the build-time path of the web app and is the path for origins listed in `FICUS_WEB_ORIGIN`.
+
 ## Where the public address comes from
 
 Ficus uses one public address for links, sign-in, integration OAuth callbacks, webhooks and the Ficus app. It is resolved in this order:
@@ -92,7 +126,7 @@ After a change:
 - **Ficus account (Mobile & Pro):** connect the account again. Pending approvals for the old address are cancelled. Devices and Instance Pro slots stay with the old address in your Ficus account and do not move.
 - **Integrations:** update OAuth redirect URLs and GitHub or Linear webhook URLs with your providers. The confirmation lists the old and new values.
 - Links that were already sent keep the old address. Agents and sandboxes see the new address on their next command or session.
-- The address's path must match `APP_BASE_PATH`, which the web app is built with.
+- If the address has a path (for example `/ficus`), the web app is served under it without a rebuild. See [Serve Ficus under a path prefix](#serve-ficus-under-a-path-prefix).
 
 The worker and internal event ports are not browser endpoints. Keep them on the private side of the deployment. If your proxy runs in another container or machine, configure a reachable private API bind address and firewall rules for that topology; `127.0.0.1` in the proxy then refers to the proxy itself.
 

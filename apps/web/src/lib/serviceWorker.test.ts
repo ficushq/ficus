@@ -341,3 +341,23 @@ describe('service worker update availability', () => {
     expect(serviceWorker.getServiceWorkerState().updateAvailable).toBe(true)
   })
 })
+
+describe('service worker registration under a base path', () => {
+  test('registers sw.js under the runtime base path Core rendered', async () => {
+    const dom = await acquireDomHarness({
+      url: 'http://localhost/ficus/',
+      configureWindow: (w) =>
+        w.document.head.insertAdjacentHTML('beforeend', '<meta name="ficus-base-path" content="/ficus/">'),
+    })
+    serviceWorker.__resetServiceWorkerForTests()
+    try {
+      installNavigator(createFakeRegistration(null))
+      await serviceWorker.registerServiceWorker()
+      const register = globalThis.navigator.serviceWorker.register as unknown as ReturnType<typeof mock>
+      expect(register.mock.calls[0]?.[0]).toBe('/ficus/sw.js')
+    } finally {
+      serviceWorker.__resetServiceWorkerForTests()
+      await dom.cleanup()
+    }
+  })
+})

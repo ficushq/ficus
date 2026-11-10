@@ -13,6 +13,7 @@ import { hasPermission } from '../services/rbac'
 import type { Identity } from '../services/rbac'
 import { ScheduleExecutionError } from '../services/scheduling/failure-classifier'
 import { routeParam } from '../lib/route-param'
+import { publicAppUrlForRequest } from '../lib/request-app-url'
 
 const schedulesRouter = new Hono()
 
@@ -226,10 +227,8 @@ schedulesRouter.post(
     const schedule = await Schedule.find(c.req.param('id'))
     if (!schedule) return c.json({ error: 'Not found' }, 404)
 
-    // Get base URL from request or config
-    const baseUrl = c.req.header('x-forwarded-host')
-      ? `${c.req.header('x-forwarded-proto') || 'https'}://${c.req.header('x-forwarded-host')}`
-      : new URL(c.req.url).origin
+    // The public address (with its base path), else this request's origin and base path.
+    const baseUrl = publicAppUrlForRequest(c)
 
     try {
       const result = await schedule.enableWebhook(baseUrl)
@@ -262,10 +261,8 @@ schedulesRouter.post(
     const schedule = await Schedule.find(c.req.param('id'))
     if (!schedule) return c.json({ error: 'Not found' }, 404)
 
-    // Get base URL from request or config
-    const baseUrl = c.req.header('x-forwarded-host')
-      ? `${c.req.header('x-forwarded-proto') || 'https'}://${c.req.header('x-forwarded-host')}`
-      : new URL(c.req.url).origin
+    // The public address (with its base path), else this request's origin and base path.
+    const baseUrl = publicAppUrlForRequest(c)
 
     try {
       const result = await schedule.regenerateWebhookToken(baseUrl)

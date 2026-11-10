@@ -5,9 +5,13 @@ import { devProxy, devWriteGuard, resolveDevBackend } from './devProxy'
 import { farmManifestPlugin } from './pwa'
 
 /**
- * The farm is served by Core at `<APP_BASE_PATH>/farm/`, beside the web UI
+ * The farm is served by Core at `<base path>/farm/`, beside the web UI
  * (apps/core/src/lib/web-serve.ts). The dev server keeps the `/farm/` prefix
  * so every URL the app builds is the same shape in development and production.
+ *
+ * The build keeps base-absolute URLs only in index.html, which Core rebases
+ * for each request's base path; URLs inside JS and CSS are relative to the
+ * importing file (`renderBuiltUrl`), so one build serves at any base path.
  */
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, path.resolve(process.cwd(), '../..'), ['VITE_', 'APP_', 'FICUS_'])
@@ -25,6 +29,10 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     base,
+    experimental: {
+      renderBuiltUrl: (_filename: string, { hostType }: { hostType: 'js' | 'css' | 'html' }) =>
+        hostType === 'js' || hostType === 'css' ? { relative: true } : undefined,
+    },
     plugins: [react(), farmManifestPlugin(iconDir), ...(backend ? [devWriteGuard(backend)] : [])],
     server: {
       host: '127.0.0.1',

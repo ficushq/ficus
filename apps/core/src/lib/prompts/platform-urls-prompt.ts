@@ -1,3 +1,4 @@
+import { normalizeBasePath } from '../app-base-path'
 import { resolvePublicAppUrl } from '../public-app-url'
 
 /**
@@ -39,10 +40,4 @@ export function buildPlatformUrlsPrompt(): string {
 - **Web UI:** ${appUrl}
 - **API:** ${apiUrl}
 - **Webhook endpoint:** ${apiBaseUrl}/api/webhooks/<provider> (e.g. ${apiBaseUrl}/api/webhooks/github)`
-}
-
-function normalizeBasePath(path: string | undefined): string {
-  const trimmed = path?.trim()
-  if (!trimmed || trimmed === '/') return ''
-  return `/${trimmed.replace(/^\/+|\/+$/g, '')}`
 }

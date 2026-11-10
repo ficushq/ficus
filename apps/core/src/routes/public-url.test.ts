@@ -149,6 +149,24 @@ describe('public url routes', () => {
     expect(getSettingsStore().getStoredValue(KEY)).toBeUndefined()
   })
 
+  test('previewing a clear shows the address it falls back to, with its base path', async () => {
+    clearEnv()
+    process.env.FICUS_LOCAL_APP_URL = 'http://localhost:61896'
+    const saved = await app.request(
+      '/api/public-url',
+      json(admin.token, 'PUT', { url: 'https://ficus.example.com/ficus', expectedVersion: 'unset' })
+    )
+    const { version } = (await saved.json()) as { version: string }
+    try {
+      const res = await app.request('/api/public-url/preview', json(admin.token, 'POST', { url: null }))
+      const preview = (await res.json()) as { effectiveUrl: string; impact: PublicAppUrlChangeImpact }
+      expect(preview.effectiveUrl).toBe('http://localhost:61896')
+      expect(preview.impact).toMatchObject({ basePath: '', basePathChanged: true, originChanged: true })
+    } finally {
+      await app.request('/api/public-url', json(admin.token, 'PUT', { url: null, expectedVersion: version }))
+    }
+  })
+
   test('rejects invalid values and malformed bodies', async () => {
     clearEnv()
     for (const url of [

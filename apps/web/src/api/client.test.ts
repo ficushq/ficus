@@ -49,6 +49,21 @@ test('apiUrl resolves against the current Window instead of a DOM captured at mo
   }
 })
 
+test('API and WebSocket URLs carry the runtime base path', async () => {
+  const { apiUrl, getWsUrl } = await import('./client')
+  const dom = await acquireDomHarness({
+    url: 'http://h.local/ficus/settings',
+    configureWindow: (w) =>
+      w.document.head.insertAdjacentHTML('beforeend', '<meta name="ficus-base-path" content="/ficus/">'),
+  })
+  try {
+    expect(apiUrl('/status')).toBe('http://h.local/ficus/api/status')
+    expect(getWsUrl()).toBe('ws://h.local/ficus/ws')
+  } finally {
+    await dom.cleanup()
+  }
+})
+
 describe('readApiErrorMessage', () => {
   let dom: Awaited<ReturnType<typeof acquireDomHarness>>
 

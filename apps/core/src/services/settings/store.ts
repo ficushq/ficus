@@ -125,6 +125,12 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     default: '',
     description: 'When the one-time APP_URL/PUBLIC_URL to public address seed ran (internal).',
   },
+  LOCAL_APPS_BASE_PATH: {
+    type: 'string',
+    default: '',
+    description:
+      'The public address base path managed local apps were last restarted for, and the restarts still to retry (internal, JSON).',
+  },
   STORAGE_SCAN_INTERVAL_HOURS: {
     type: 'number',
     default: '1',

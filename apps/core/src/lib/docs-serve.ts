@@ -2,11 +2,18 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/bun'
+import { coreGetPath } from './app-base-path'
 import { resolveCoreDocsDist } from './web-dist'
 
-/** Static product documentation is available on every Core, independent of SPA serving. */
+/**
+ * Static product documentation is available on every Core, independent of SPA serving.
+ *
+ * The nested app strips a configured base path like the main app does, so
+ * `/ficus/docs/…` forwarded unchanged by a reverse proxy serves the same file
+ * as `/docs/…`.
+ */
 export function mountCoreDocs(app: Hono, dist = resolveCoreDocsDist()) {
-  const docs = new Hono()
+  const docs = new Hono({ getPath: coreGetPath })
   docs.use('*', async (c, next) => {
     c.header('X-Content-Type-Options', 'nosniff')
     c.header('Cache-Control', 'no-cache')
@@ -27,7 +34,8 @@ export function mountCoreDocs(app: Hono, dist = resolveCoreDocsDist()) {
   app.all('/docs', (c) => {
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD')
       return c.text('Method not allowed', 405, { Allow: 'GET, HEAD' })
-    return c.redirect(`/docs/${new URL(c.req.url).search}`, 308)
+    // Relative, so `/ficus/docs` lands on `/ficus/docs/` through any proxy.
+    return c.redirect(`docs/${new URL(c.req.url).search}`, 308)
   })
   app.all('/docs/*', (c) => docs.fetch(c.req.raw))
 }

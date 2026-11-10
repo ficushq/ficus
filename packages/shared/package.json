@@ -17,6 +17,7 @@
     "./farm-embed": "./src/farm-embed.ts",
     "./robot-moods": "./src/robot-moods.ts",
     "./app-surface": "./src/app-surface.ts",
+    "./web-routes": "./src/web-routes.ts",
     "./theme-preset": "./src/theme-preset.ts",
     "./theme-derivation": "./src/theme-derivation.ts",
     "./theme-triples": "./src/theme-triples.ts",
