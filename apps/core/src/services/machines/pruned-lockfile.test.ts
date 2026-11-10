@@ -119,10 +119,14 @@ describe('prunedInstallPlan', () => {
         true
       )
     }
-    // Every carried entry is byte-for-byte a lockfile entry, integrity included.
-    const original = new Map(Object.values(lock.packages).map((entry) => [entry[0], JSON.stringify(entry)]))
+    // Every carried entry is byte-for-byte a lockfile entry, integrity included. One resolution can
+    // appear more than once (a top-level tslib@2.8.1 and a copy bundled inside another package).
+    const original = new Map<string, string[]>()
+    for (const entry of Object.values(lock.packages)) {
+      original.set(entry[0], [...(original.get(entry[0]) ?? []), JSON.stringify(entry)])
+    }
     for (const entry of Object.values(plan.lockfile.packages)) {
-      expect(original.get(entry[0])).toBe(JSON.stringify(entry))
+      expect(original.get(entry[0])).toContain(JSON.stringify(entry))
       expect(entry[3]).toMatch(/^sha512-/)
     }
   })
