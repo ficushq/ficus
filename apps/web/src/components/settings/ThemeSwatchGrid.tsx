@@ -89,7 +89,7 @@ export function ThemeSwatchGrid({
             aria-checked={selected}
             aria-label={option.accessibleLabel}
             tabIndex={index === rovingIndex ? 0 : -1}
-            className="group flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-3 text-center hover:bg-surface-hover focus:outline-none"
+            className="group flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-3 text-center hover:bg-surface-hover focus:outline-hidden"
             onMouseEnter={() => onPreview?.(option)}
             onClick={() => onSelect(option)}
             onKeyDown={(event) => {

@@ -124,7 +124,7 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
       {mismatchLines.length > 0 && (
         <ul className="text-xs text-secondary space-y-1">
           {mismatchLines.map((line) => (
-            <li key={line} className="font-mono break-words">
+            <li key={line} className="font-mono wrap-break-word">
               {line}
             </li>
           ))}

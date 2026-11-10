@@ -62,7 +62,7 @@ export function ReviewTabs({
         role="tablist"
         aria-label="Review documents"
         onKeyDown={onKeyDown}
-        className="mx-auto flex w-full max-w-[72ch] gap-0.5 overflow-x-auto px-3 py-1.5 [scrollbar-width:none] sm:px-6 [&::-webkit-scrollbar]:hidden"
+        className="mx-auto flex w-full max-w-[72ch] gap-0.5 overflow-x-auto px-3 py-1.5 scrollbar-none sm:px-6 [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((tab) => (
           <button

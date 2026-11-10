@@ -250,7 +250,7 @@ export function Popover({
         data-popover=""
         data-placement={placement?.side}
         onKeyDown={onSurfaceKeyDown}
-        className={clsx('fixed outline-none', scroll && 'overflow-y-auto overscroll-contain', className)}
+        className={clsx('fixed outline-hidden', scroll && 'overflow-y-auto overscroll-contain', className)}
         style={{
           left: placement?.left ?? 0,
           top: placement?.top ?? 0,

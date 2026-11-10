@@ -426,7 +426,7 @@ export function WorkflowGraph({
       <div className={clsx('relative min-w-0', fill && 'flex flex-1 min-h-0 flex-col')}>
         <div
           className={clsx(
-            'absolute z-20 max-h-[calc(100%-1.5rem)] overflow-y-auto flex flex-col rounded-lg border border-th-border bg-surface/95 shadow-lg backdrop-blur-sm',
+            'absolute z-20 max-h-[calc(100%-1.5rem)] overflow-y-auto flex flex-col rounded-lg border border-th-border bg-surface/95 shadow-lg backdrop-blur-xs',
             editable ? 'bottom-3 left-3 gap-1 p-2' : 'bottom-2 left-2 p-1'
           )}
           role="toolbar"
@@ -481,9 +481,9 @@ export function WorkflowGraph({
           ref={viewport}
           {...navigation.handlers}
           className={clsx(
-            'touch-none min-w-0 w-full max-w-full overflow-auto [contain:inline-size] rounded-lg border border-th-border bg-surface',
+            'touch-none min-w-0 w-full max-w-full overflow-auto contain-[inline-size] rounded-lg border border-th-border bg-surface',
             navigation.panning ? 'cursor-grabbing' : 'cursor-grab',
-            fill ? 'flex-1 min-h-0' : editable ? 'h-[34rem]' : 'max-h-96'
+            fill ? 'flex-1 min-h-0' : editable ? 'h-136' : 'max-h-96'
           )}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
@@ -789,7 +789,7 @@ export function WorkflowGraph({
                         .join('\n')}
                       aria-label={`${node.label}: ${isCompletion ? completionLabel + ' · ' : ''}${label}`}
                       className={clsx(
-                        'absolute border py-2 text-left text-sm disabled:cursor-default focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+                        'absolute border py-2 text-left text-sm disabled:cursor-default focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent',
                         isCompletion ? 'px-6' : 'px-3',
                         terminal ? 'rounded-full flex flex-col items-center justify-center' : 'rounded-lg',
                         dropTarget ? 'bg-accent/10 ring-2 ring-accent-light' : 'bg-surface',
@@ -1045,7 +1045,7 @@ export function WorkflowGraph({
               role="alert"
               className="ficus-overlay pointer-events-auto flex max-w-lg items-start gap-3 rounded-lg border border-th-border bg-surface p-4 text-sm shadow-lg"
             >
-              <div className="min-w-0 flex-1 space-y-2 break-words">
+              <div className="min-w-0 flex-1 space-y-2 wrap-break-word">
                 <p className="font-medium leading-5 text-status-attention-400">Workflow needs attention</p>
                 <p className="leading-relaxed text-primary">{notice.message}</p>
                 {notice.hint && <p className="text-xs leading-relaxed text-secondary">{notice.hint}</p>}

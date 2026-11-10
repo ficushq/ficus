@@ -112,7 +112,7 @@ export function SpendSection() {
               key={dimension}
               className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-th-border px-2 py-0.5 text-xs text-primary"
             >
-              <span className="min-w-0 break-words">
+              <span className="min-w-0 wrap-break-word">
                 {DIMENSION_LABELS[dimension]}: {value.label}
               </span>
               <button

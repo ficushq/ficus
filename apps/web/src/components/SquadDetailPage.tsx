@@ -301,7 +301,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           <BackLink to="/squads">Squads</BackLink>
         </div>
         <div data-testid="mobile-squad-header-title-row" className="flex items-start gap-3">
-          <LoadingContent loading={!squad} fallback={<SkeletonBlock className="h-12 w-12 shrink-0 !rounded-full" />}>
+          <LoadingContent loading={!squad} fallback={<SkeletonBlock className="h-12 w-12 shrink-0 rounded-full!" />}>
             {squad && <SquadAvatar name={squad.name} avatarUrl={squad.avatarUrl} size={48} />}
           </LoadingContent>
           <div className="flex-1 min-w-0">
@@ -344,7 +344,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           <div className="min-w-0 flex-1 flex items-start gap-3">
             <LoadingContent
               loading={!squad}
-              fallback={<SkeletonBlock className="squad-detail-header-avatar h-14 w-14 shrink-0 !rounded-full" />}
+              fallback={<SkeletonBlock className="squad-detail-header-avatar h-14 w-14 shrink-0 rounded-full!" />}
             >
               {squad && (
                 <SquadAvatar

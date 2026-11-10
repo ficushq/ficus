@@ -106,7 +106,7 @@ export function AgentContextPanel({ agentId }: Props) {
                       {todo.completed && <CheckIcon className="w-3 h-3" />}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <span className={clsx('text-primary', todo.completed && 'line-through !text-muted')}>
+                      <span className={clsx('text-primary', todo.completed && 'line-through text-muted!')}>
                         {index + 1}. {todo.text}
                       </span>
                       {todo.depends.length > 0 && (

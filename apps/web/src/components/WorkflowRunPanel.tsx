@@ -136,7 +136,7 @@ function WorkflowRunPanelContent({
   }
   const failure = advance.error ?? save.error
   return (
-    <section className="min-w-0 border-t border-th-border pt-4 space-y-3 [overflow-wrap:anywhere]">
+    <section className="min-w-0 border-t border-th-border pt-4 space-y-3 wrap-anywhere">
       <div className="flex justify-between gap-3">
         <h3 className="min-w-0 flex-1 text-sm font-medium">
           <button
@@ -145,12 +145,12 @@ function WorkflowRunPanelContent({
             aria-expanded={previewExpanded}
             aria-controls={previewId}
             onClick={() => setPreviewExpanded((expanded) => !expanded)}
-            className="flex w-full items-center gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="flex w-full items-center gap-2 rounded text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
           >
             <span aria-hidden="true" className="shrink-0">
               {previewExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
             </span>
-            <span className="min-w-0 [overflow-wrap:anywhere]">Workflow{workflowName && ` · ${workflowName}`}</span>
+            <span className="min-w-0 wrap-anywhere">Workflow{workflowName && ` · ${workflowName}`}</span>
           </button>
         </h3>
       </div>

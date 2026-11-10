@@ -403,8 +403,8 @@ function QuestionField({
                 localTextarea.current?.focus()
               }}
               className={clsx(
-                'max-w-full break-words rounded-md border px-2.5 py-1 text-left text-xs transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                'max-w-full wrap-break-word rounded-md border px-2.5 py-1 text-left text-xs transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60',
+                'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
                 textValue === option.value
                   ? 'border-selection-border bg-selection text-primary'
                   : 'border-th-border text-secondary hover:border-th-border-hover hover:bg-surface-hover'

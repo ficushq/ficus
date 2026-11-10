@@ -221,9 +221,9 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
         display: !open && !live ? 'none' : undefined,
       }}
       className={clsx(
-        'ficus-assistant-panel fixed z-[60] ficus-glass rounded-2xl overflow-hidden flex flex-col transition-[left,top,width,height] duration-200 motion-reduce:transition-none max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
+        'ficus-assistant-panel fixed z-60 ficus-glass rounded-2xl overflow-hidden flex flex-col transition-[left,top,width,height] duration-200 motion-reduce:transition-none max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)]',
         // The default card keeps one size whether searching or in a conversation.
-        small ? 'w-64 touch-none cursor-grab' : 'w-[44rem] h-[min(40rem,calc(100dvh-1rem))]'
+        small ? 'w-64 touch-none cursor-grab' : 'w-176 h-[min(40rem,calc(100dvh-1rem))]'
       )}
     >
       {!small && (
@@ -451,7 +451,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           aria-label="Resize assistant"
           title="Drag to resize · double-click to reset"
           {...assistantWindow.resizeHandle}
-          className="absolute bottom-0.5 right-0.5 z-10 flex h-5 w-5 cursor-nwse-resize touch-none items-center justify-center rounded text-muted opacity-60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="absolute bottom-0.5 right-0.5 z-10 flex h-5 w-5 cursor-nwse-resize touch-none items-center justify-center rounded text-muted opacity-60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent"
         >
           <ResizeCornerIcon className="h-3.5 w-3.5" />
         </button>

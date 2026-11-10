@@ -63,7 +63,7 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 // inline-flex + items-center keep the link text on the row's centerline, beside the separators and
 // elapsed time, even if the link box ends up taller than the 16px text row.
 const FEED_METADATA_LINK_CLASS =
-  'relative z-10 inline-flex items-center rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'relative z-10 inline-flex items-center rounded-xs text-muted hover:text-link hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent'
 
 // --- Filter types ---
 
@@ -468,7 +468,7 @@ function WorkStreamRow({
           onClick={onClick}
         >
           <span className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', statusDotClass)} aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 break-words">
+          <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 wrap-break-word">
             {workStreamTitle(workStream)}
           </span>
           <WorkStreamStatusBadges workStream={workStream} className="max-w-[50%] sm:max-w-none" />
@@ -613,7 +613,7 @@ function WorkStreamRow({
           >
             {WS_STATUS_ICONS[state] ?? '○'}
           </span>
-          <span className="line-clamp-2 break-words text-sm font-medium text-primary flex-1 min-w-0">
+          <span className="line-clamp-2 wrap-break-word text-sm font-medium text-primary flex-1 min-w-0">
             {workStreamTitle(workStream)}
           </span>
           {pullRequests.map((pullRequest) =>

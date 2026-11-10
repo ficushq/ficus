@@ -72,7 +72,7 @@ export function IdleConsultantsDialog({ squad, retentionDays, onClose, onDone }:
             {consultants.map((consultant) => (
               <li key={consultant.id} className="flex items-baseline justify-between gap-4 px-3 py-2">
                 <span className="min-w-0">
-                  <span className="block break-words text-primary">{consultant.label}</span>
+                  <span className="block wrap-break-word text-primary">{consultant.label}</span>
                   <span className="block text-xs">
                     {consultant.lastMessageAt
                       ? `Last active ${daysAgoLabel(consultant.lastMessageAt)}`

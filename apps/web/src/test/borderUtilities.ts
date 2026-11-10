@@ -1,10 +1,5 @@
-import { createRequire } from 'node:module'
-import postcss, { type PluginCreator } from 'postcss'
-import type { Config } from 'tailwindcss'
 import ts from 'typescript'
-const require = createRequire(import.meta.url)
-const postcssConfig = require('../../postcss.config.js').default as { plugins: Record<string, Record<string, unknown>> }
-const tailwindConfig = require('../../tailwind.config.js').default as Config
+import { compileUtilities, unescapeClass } from './tailwind'
 
 type Source = { path: string; text: string }
 type BorderUtility = { utility: string; path: string; line: number; column: number }
@@ -43,37 +38,29 @@ export function collectBorderUtilities({ path, text }: Source): BorderUtility[] 
 }
 
 /**
- * Run the production PostCSS plugin chain and Tailwind configuration, replacing
- * only content discovery with the collected synthetic/static candidates. This is
- * the CSS generation stage used by Vite, not a separate utility-name validator.
+ * Compile the collected synthetic/static candidates with the production Tailwind
+ * configuration (src/tailwind.css), replacing only content discovery. This is the
+ * CSS generation stage used by Vite, not a separate utility-name validator.
  */
 export async function checkBorderUtilities(sources: Source[]): Promise<string[]> {
   const candidates = sources.flatMap(collectBorderUtilities)
   if (candidates.length === 0) return []
-  const plugins = Object.entries(postcssConfig.plugins).map(([name, options]) => {
-    if (name === 'tailwindcss') {
-      return (require(name) as PluginCreator<Config>)({
-        ...tailwindConfig,
-        content: [{ raw: [...new Set(candidates.map(({ utility }) => utility))].join(' '), extension: 'html' }],
-      })
-    }
-    return (require(name) as PluginCreator<Record<string, unknown>>)(options)
-  })
-  const result = await postcss(plugins).process('@tailwind utilities;', { from: undefined })
+  const result = await compileUtilities(new Set(candidates.map(({ utility }) => utility)))
   const emitted = new Set<string>()
-  result.root.walkRules((rule) => {
-    if (
-      !rule.nodes.some(
-        (node) =>
-          node.type === 'decl' &&
-          /^border(?:-(?:top|right|bottom|left|inline-start|inline-end))?-color$/.test(node.prop)
-      )
+  result.walkRules((rule) => {
+    let colored = false
+    // Tailwind 4 nests the color-mix() form of an opacity modifier in @supports.
+    rule.walkDecls(
+      /^border(?:-(?:top|right|bottom|left|inline|block|inline-start|inline-end|block-start|block-end))?-color$/,
+      () => {
+        colored = true
+      }
     )
-      return
+    if (!colored) return
     // Our bounded candidates have only ASCII word characters, :, /, ! and .;
     // decode their CSS escapes without confusing pseudo-classes with the name.
     for (const match of rule.selector.matchAll(/\.((?:\\.|[\w-])+)/g)) {
-      emitted.add(match[1]!.replace(/\\(.)/g, '$1'))
+      emitted.add(unescapeClass(match[1]!))
     }
   })
   return candidates

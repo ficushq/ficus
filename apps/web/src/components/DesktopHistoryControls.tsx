@@ -46,7 +46,7 @@ export function DesktopHistoryControls() {
           title={direction === -1 ? 'Go back (⌘[)' : 'Go forward (⌘])'}
           disabled={direction === -1 ? !available.back : !available.forward}
           onClick={() => history?.go(direction)}
-          className="ficus-button ficus-button-ghost p-1.5 rounded-md disabled:opacity-30 disabled:cursor-default focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="ficus-button ficus-button-ghost p-1.5 rounded-md disabled:opacity-30 disabled:cursor-default focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent"
         >
           <svg
             aria-hidden="true"

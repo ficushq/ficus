@@ -16,7 +16,7 @@ import type { HoverCardState } from './popover/useHoverCard'
 
 const staleTime = 30_000
 const quickLinkClass =
-  'flex min-w-0 items-center gap-1.5 rounded px-1 py-1 -mx-1 text-xs text-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'flex min-w-0 items-center gap-1.5 rounded px-1 py-1 -mx-1 text-xs text-secondary hover:bg-surface-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent'
 
 /** The hover card for an `EntityReferenceLink`: a work stream or agent summary with quick links. */
 export function EntityReferencePreview({
@@ -86,7 +86,7 @@ function WorkSummary({ work, onNavigate, onOpenAgent }: { work: WorkStream } & A
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <p className="line-clamp-2 break-words font-semibold">{workStreamTitle(data)}</p>
+        <p className="line-clamp-2 wrap-break-word font-semibold">{workStreamTitle(data)}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <WorkStreamStatusBadges workStream={data} />
@@ -171,7 +171,7 @@ function AgentSummary({ agent, onNavigate, onOpenAgent }: { agent: Agent } & Age
     <div className="space-y-2">
       <div className="space-y-1">
         {secondary && <p className="truncate text-xs text-muted">{secondary}</p>}
-        <p className="line-clamp-2 break-words font-semibold">{getAgentPrimaryLabel(data)}</p>
+        <p className="line-clamp-2 wrap-break-word font-semibold">{getAgentPrimaryLabel(data)}</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <Badge color="accent-1">{type}</Badge>

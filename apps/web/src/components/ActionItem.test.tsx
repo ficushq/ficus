@@ -1323,7 +1323,7 @@ describe('ActionItem expanded body spacing', () => {
       for (const body of bodies) expect(body?.classList.contains('pt-2')).toBe(true)
       // The body padding owns the gap, so a leading Markdown paragraph adds no extra margin on top.
       for (const markdown of dom.window.document.querySelectorAll('.prose'))
-        expect(markdown.classList.contains('[&>:first-child]:mt-0')).toBe(true)
+        expect(markdown.classList.contains('*:first:mt-0')).toBe(true)
     } finally {
       await dom.cleanup()
     }

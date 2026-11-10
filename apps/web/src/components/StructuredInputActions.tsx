@@ -135,11 +135,11 @@ function StructuredDecisionActions({
             if (!locked && value.trim()) mutation.mutate({ action: 'provide', expectedVersion: version, value })
           }}
         >
-          <label className="block text-sm text-secondary break-words" htmlFor={`input-${id}`}>
+          <label className="block text-sm text-secondary wrap-break-word" htmlFor={`input-${id}`}>
             {taskInputLabel(request.input)}
           </label>
           {request.input.type === 'config-value' && (
-            <p className="text-xs text-muted break-words">
+            <p className="text-xs text-muted wrap-break-word">
               Declared in <code>{request.input.declaredIn}</code>
             </p>
           )}

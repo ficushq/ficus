@@ -32,7 +32,7 @@ export function InboxLoadMore({ isFetching, onLoadMore }: InboxLoadMoreProps) {
       onClick={() => onLoadMore()}
       disabled={isFetching}
       data-testid="inbox-load-more"
-      className="ficus-button ficus-button-ghost w-full rounded-lg py-2 text-center text-xs text-muted focus-visible:outline-offset-[-2px]"
+      className="ficus-button ficus-button-ghost w-full rounded-lg py-2 text-center text-xs text-muted focus-visible:-outline-offset-2"
     >
       {isFetching ? 'Loading more…' : 'Load more'}
     </button>

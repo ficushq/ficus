@@ -13,7 +13,7 @@ export function ChatDropOverlay() {
     <div
       data-testid="chat-drop-overlay"
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-accent bg-page/90 p-4 backdrop-blur-sm"
+      className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-accent bg-page/90 p-4 backdrop-blur-xs"
     >
       <div className="flex max-w-sm flex-col items-center gap-2 rounded-xl border border-th-border bg-surface px-8 py-6 text-center">
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent/10 text-accent">

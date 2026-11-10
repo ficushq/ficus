@@ -111,7 +111,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               {instance && (
                 <span
                   data-testid="desktop-instance-label"
-                  className="ficus-app-header-instance ml-2 text-sm font-normal text-muted truncate max-w-[12rem]"
+                  className="ficus-app-header-instance ml-2 text-sm font-normal text-muted truncate max-w-48"
                 >
                   {instance.name}
                 </span>
@@ -340,7 +340,7 @@ export function MobileBottomNav({
                 <span
                   aria-label={showActionBadge && actionsError ? 'Action Center unavailable' : undefined}
                   className={clsx(
-                    'absolute top-1.5 left-1/2 translate-x-1/2 text-[10px] font-bold rounded-full min-w-[1rem] h-4 flex items-center justify-center px-1',
+                    'absolute top-1.5 left-1/2 translate-x-1/2 text-[10px] font-bold rounded-full min-w-4 h-4 flex items-center justify-center px-1',
                     showActionBadge && actionsError ? NAV_BADGE_ERROR_CLASS : NAV_BADGE_CLASS
                   )}
                 >

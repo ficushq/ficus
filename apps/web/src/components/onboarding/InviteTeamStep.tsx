@@ -92,7 +92,7 @@ function InvitedMember({
     <div className="space-y-2 py-3" data-team-member={user.id}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="break-words text-sm font-medium text-primary">{user.displayName || user.email}</p>
+          <p className="wrap-break-word text-sm font-medium text-primary">{user.displayName || user.email}</p>
           {user.displayName && <p className="break-all text-xs text-muted">{user.email}</p>}
           <p className="text-xs text-muted">
             {user.disabledAt ? 'Disabled' : user.hasPasskey ? 'Joined' : expired ? 'Invite expired' : 'Invited'}

@@ -39,7 +39,7 @@ export function ToolImageStrip({
     <>
       <div
         data-tool-image-strip
-        className={clsx('flex max-w-full gap-1.5 overflow-x-auto pb-1', underRow && 'mt-1 ml-[1.125rem]')}
+        className={clsx('flex max-w-full gap-1.5 overflow-x-auto pb-1', underRow && 'mt-1 ml-4.5')}
       >
         {visible.map((image, index) => (
           // A button, never a link: the desktop shell has no tabs, so a link would replace the app.
@@ -64,7 +64,7 @@ export function ToolImageStrip({
               loading="lazy"
               decoding="async"
               onError={() => markFailed(image.id)}
-              className="block h-20 w-auto max-w-[12rem] rounded-md border border-th-border bg-surface-secondary object-cover transition-colors hover:border-accent-light"
+              className="block h-20 w-auto max-w-48 rounded-md border border-th-border bg-surface-secondary object-cover transition-colors hover:border-accent-light"
             />
           </button>
         ))}

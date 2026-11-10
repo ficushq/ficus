@@ -222,7 +222,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                             'flex h-5 items-center lg:col-start-1',
                             isGlobalFeed
                               ? 'col-start-3 row-start-1 lg:col-start-1'
-                              : 'order-last ml-auto lg:order-none lg:ml-0'
+                              : 'order-last ml-auto lg:order-0 lg:ml-0'
                           )}
                         >
                           <SkeletonLine className="w-10" />
@@ -300,7 +300,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                         'tabular-nums whitespace-nowrap lg:col-start-1',
                         isGlobalFeed
                           ? 'col-start-3 row-start-1 lg:col-start-1'
-                          : 'order-last ml-auto lg:order-none lg:ml-0',
+                          : 'order-last ml-auto lg:order-0 lg:ml-0',
                         ACTIVITY_SMALL_TEXT_CLASS
                       )}
                     >
@@ -314,7 +314,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(chip.href)
                         }}
-                        className="pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
+                        className="pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
                         data-activity-column="squad"
                         aria-label={`Open activity for ${chip.label}`}
                         title={chip.label}
@@ -346,7 +346,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                   </div>
                   <span
                     className={clsx(
-                      'pointer-events-none relative z-10 min-w-0 break-words lg:col-span-1',
+                      'pointer-events-none relative z-10 min-w-0 wrap-break-word lg:col-span-1',
                       isGlobalFeed ? 'lg:col-start-4' : 'lg:col-start-3',
                       item.kind !== 'message' && ACTIVITY_SMALL_TEXT_CLASS
                     )}
@@ -364,7 +364,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(workStreamChip.href)
                         }}
-                        className="pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Open work stream #${workStreamChip.number}`}
                       >
                         #{workStreamChip.number}

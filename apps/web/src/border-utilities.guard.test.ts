@@ -5,14 +5,15 @@ import { checkBorderUtilities, collectBorderUtilities } from './test/borderUtili
 
 const fixture = (text: string) => ({ path: 'synthetic.tsx', text })
 
-test('reports the incident and an unknown themed border with actionable locations', async () => {
+test('reports an unknown themed border with an actionable location', async () => {
+  // Tailwind 3 emitted nothing for border-current/20 (the original incident); Tailwind 4 emits a
+  // color-mix() of currentColor, so only the unknown themed color is reported now.
   const findings = await checkBorderUtilities([
     fixture('<div\n className="border-l border-current/20 hover:border-th-typo border-current" />'),
   ])
-  expect(findings).toHaveLength(2)
-  expect(findings[0]).toContain('synthetic.tsx:2:22')
-  expect(findings[0]).toContain('border-current/20')
-  expect(findings[1]).toContain('hover:border-th-typo')
+  expect(findings).toHaveLength(1)
+  expect(findings[0]).toContain('synthetic.tsx:2:40')
+  expect(findings[0]).toContain('hover:border-th-typo')
   for (const finding of findings) {
     expect(finding).toContain('border-th-border')
     expect(finding).toContain('border-status-danger-500/30')

@@ -470,7 +470,7 @@ export function AssistantCommandCenter({
         <WorkPreview key={destination.id} id={destination.id} squadId={destination.squadId} onPush={push} />
       )}
       {destination?.kind === 'action' && (
-        <div data-command-preview tabIndex={-1} className="p-4 min-h-0 overflow-y-auto focus:outline-none">
+        <div data-command-preview tabIndex={-1} className="p-4 min-h-0 overflow-y-auto focus:outline-hidden">
           {actions.isLoading ? (
             <CommandRowsSkeleton label="Loading attention item" />
           ) : data.actions.find((a) => a.id === destination.id) ? (
@@ -591,7 +591,7 @@ function SquadPreview({
     .slice(0, 8)
   const work = data.streams.filter((w) => w.squadId === id && ['active', 'queued'].includes(w.status))
   return (
-    <div data-command-preview tabIndex={-1} className="min-h-0 overflow-y-auto p-4 space-y-5 focus:outline-none">
+    <div data-command-preview tabIndex={-1} className="min-h-0 overflow-y-auto p-4 space-y-5 focus:outline-hidden">
       <p className="text-sm text-muted">{squad?.purpose}</p>
       {squad?.managerAgentId && (
         <PreviewRow
@@ -780,7 +780,7 @@ function WorkPreview({
     (a) => ids.has(a.id) && a.id !== origin?.id && a.status !== 'terminated' && a.status !== 'dormant'
   )
   return (
-    <div data-command-preview tabIndex={-1} className="p-4 min-h-0 overflow-y-auto space-y-5 focus:outline-none">
+    <div data-command-preview tabIndex={-1} className="p-4 min-h-0 overflow-y-auto space-y-5 focus:outline-hidden">
       <div className="flex gap-3 text-xs text-muted">
         <CommandWorkStatus work={row} />
         <span className="py-1">{row.priority} priority</span>

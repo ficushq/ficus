@@ -28,7 +28,7 @@ export function SnippetText({ snippet }: { snippet: MessageSearchSnippet }) {
     if (start < at || end <= start) continue
     if (start > at) parts.push(snippet.text.slice(at, start))
     parts.push(
-      <mark key={start} className="rounded-sm bg-accent/25 text-primary px-0.5 -mx-0.5">
+      <mark key={start} className="rounded-xs bg-accent/25 text-primary px-0.5 -mx-0.5">
         {snippet.text.slice(start, end)}
       </mark>
     )
@@ -203,7 +203,7 @@ export function ChatHistorySearch({ agentId, onSelect, onClose }: ChatHistorySea
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-primary break-words line-clamp-2">
+                  <p className="mt-0.5 text-primary wrap-break-word line-clamp-2">
                     <SnippetText snippet={result.snippet} />
                   </p>
                   {(jumpState === 'not-found' || jumpState === 'too-far') && (

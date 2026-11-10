@@ -317,7 +317,7 @@ function HumanMessageRow({
         <div
           className={clsx(
             'max-w-[90%] md:max-w-[80%] rounded-lg',
-            auto ? 'break-words' : 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent break-words'
+            auto ? 'wrap-break-word' : 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent wrap-break-word'
           )}
         >
           <HumanMessageContent
@@ -486,7 +486,7 @@ function PendingMessageRow({
       <div
         aria-busy={updating || undefined}
         className={clsx(
-          'max-w-[90%] md:max-w-[80%] rounded-lg break-words transition-opacity',
+          'max-w-[90%] md:max-w-[80%] rounded-lg wrap-break-word transition-opacity',
           !auto && 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent',
           updating && 'opacity-70'
         )}
@@ -2042,7 +2042,7 @@ export function ChatView({
       onDragLeave={handleDragLeave}
       onPaste={handleSurfacePaste}
       className={clsx(
-        'relative flex flex-col bg-surface min-h-0 grow outline-none',
+        'relative flex flex-col bg-surface min-h-0 grow outline-hidden',
         isFullscreen ? 'h-full rounded-lg shadow-xl overflow-hidden' : 'rounded-lg',
         className
       )}
@@ -2089,7 +2089,7 @@ export function ChatView({
           // (PLANT_HIDE_MS) is over so it never covers the end of the transcript.
           peekingWorkItem
             ? 'pb-8 md:pb-9'
-            : 'transition-[padding] delay-[600ms] duration-300 ease-out motion-reduce:transition-none'
+            : 'transition-[padding] delay-600 duration-300 ease-out motion-reduce:transition-none'
         )}
       >
         {showBeforeMessages && (
@@ -2701,7 +2701,7 @@ export function ChatView({
                     textareaRef={textareaRef}
                   />
                 )}
-                <p className="text-xs text-placeholder !mt-1 hidden md:block">
+                <p className="text-xs text-placeholder mt-1! hidden md:block">
                   {voiceState === 'recording' ? (
                     <span className="text-status-danger-500 dark:text-status-danger-400 flex items-center gap-1">
                       <span className="inline-block w-2 h-2 bg-status-danger-500 rounded-full animate-pulse" />

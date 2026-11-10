@@ -113,7 +113,7 @@ export function MemoryFileViewer({ squadId, filePath }: MemoryFileViewerProps) {
         ) : !file ? (
           <p className="p-4 text-sm text-muted">Memory file not found</p>
         ) : (
-          <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:!inline">
+          <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:inline!">
             <SyntaxHighlighter
               language={language}
               style={syntaxTheme}

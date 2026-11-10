@@ -163,7 +163,7 @@ export function SandboxSettings({ squadId }: Props) {
               setHasChanges(true)
             }}
             className={clsx(
-              'relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+              'relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
               config.alwaysOn ? 'bg-accent' : 'bg-surface-secondary'
             )}
           >

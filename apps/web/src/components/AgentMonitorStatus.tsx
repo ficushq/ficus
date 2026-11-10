@@ -62,7 +62,7 @@ export function AgentMonitorStatus({
             aria-live="polite"
             aria-atomic="true"
             // Opaque and above the plant, so the plant's pot hides behind it.
-            className="relative z-10 min-w-0 border-b border-th-border bg-surface px-3 py-2 text-xs text-secondary [overflow-wrap:anywhere]"
+            className="relative z-10 min-w-0 border-b border-th-border bg-surface px-3 py-2 text-xs text-secondary wrap-anywhere"
           >
             {/* Inline with the text, so it stays centered on the first line whatever its height. */}
             <MonitorIcon className="mr-2 inline-block h-3 w-3 align-[-0.15em] text-accent-light" />
@@ -72,7 +72,7 @@ export function AgentMonitorStatus({
                 {index > 0 && ' · '}
                 <button
                   type="button"
-                  className="text-left [overflow-wrap:anywhere] underline decoration-dotted underline-offset-2 hover:text-primary hover:decoration-solid focus-visible:decoration-solid"
+                  className="text-left wrap-anywhere underline decoration-dotted underline-offset-2 hover:text-primary hover:decoration-solid focus-visible:decoration-solid"
                   title={monitor.description ?? undefined}
                   aria-haspopup="dialog"
                   onClick={() => setSelected(monitor)}

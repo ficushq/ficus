@@ -67,7 +67,7 @@ export function StoredFilesSection() {
             {summary.squads.map((squad) => (
               <div key={squad.id} className="flex justify-between gap-4 py-2 text-sm">
                 <span className="min-w-0">
-                  <span className="block break-words font-medium">{squad.name}</span>
+                  <span className="block wrap-break-word font-medium">{squad.name}</span>
                   <span className="block text-xs text-secondary">{breakdown(summary, squad.sources)}</span>
                 </span>
                 <span className="shrink-0 tabular-nums">{storageSize(squad.bytes)}</span>

@@ -113,7 +113,7 @@ export function WorkStreamDependencies({
             <li
               key={row.wait?.id ?? row.id ?? index}
               data-blocking={row.wait ? true : undefined}
-              className="grid min-w-0 grid-cols-[0.75rem_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-sm [overflow-wrap:anywhere]"
+              className="grid min-w-0 grid-cols-[0.75rem_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-sm wrap-anywhere"
             >
               <DependencyLink id={row.id} dependency={dependency} onSelect={onSelectWorkStream} />
               {(statusLabel || row.wait) && (
@@ -197,7 +197,7 @@ function DependencyLink({
           />
         )}
         {dependency ? (
-          <span className="min-w-0 break-words">{workStreamTitle(dependency)}</span>
+          <span className="min-w-0 wrap-break-word">{workStreamTitle(dependency)}</span>
         ) : (
           <span className="min-w-0">
             A dependency{id && <span className="ml-1 font-mono text-xs">{id.slice(0, 8)}</span>}

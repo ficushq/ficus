@@ -190,7 +190,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   return (
     <div className="space-y-3 min-w-0">
       {actionError && (
-        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400 break-words">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400 wrap-break-word">
           Couldn&apos;t {actionError.action} {actionErrorAppName}: {actionError.message}
         </p>
       )}
@@ -353,7 +353,7 @@ function LocalDeploymentRows({
                     {appHost}
                   </div>
                 )}
-                <div className="mt-0.5 text-xs text-muted break-words">
+                <div className="mt-0.5 text-xs text-muted wrap-break-word">
                   {localDeployment.mode.toLowerCase()}
                   {localDeployment.mode === 'attached'
                     ? ` · logs ${localDeployment.logPath ? 'captured' : 'not captured'}`

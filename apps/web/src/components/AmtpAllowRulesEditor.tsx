@@ -62,7 +62,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
         )}
         {rules.map((rule) => (
           <div key={rule.id} className="flex items-center justify-between gap-2 text-sm">
-            <span className="min-w-0 break-words text-secondary">
+            <span className="min-w-0 wrap-break-word text-secondary">
               {peers.find((peer) => peer.instanceId === rule.peerInstanceId)?.localAlias ?? rule.peerInstanceId} ·{' '}
               {rule.principalKind === 'any' ? 'Any sender' : 'Handle'}
               {rule.principalKind === 'handle' && rule.principalValue ? `:${rule.principalValue}` : ''}

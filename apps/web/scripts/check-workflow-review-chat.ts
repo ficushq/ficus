@@ -13,7 +13,7 @@ import { createServer } from 'vite'
 import type { Browser, Locator, Page } from 'playwright-core'
 
 const root = resolve(import.meta.dir, '..')
-// PostCSS/Tailwind resolve their content configuration from cwd, even with a Vite root.
+// Run from apps/web like the other checks (Tailwind reads its sources from src/tailwind.css).
 process.chdir(root)
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
   'playwright-core'

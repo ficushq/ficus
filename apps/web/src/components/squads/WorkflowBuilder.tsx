@@ -313,7 +313,7 @@ export function WorkflowBuilder({
         )}
       >
         {can('chat:send') && (
-          <div className="min-w-0 min-h-[28rem] lg:min-h-0 flex flex-col" data-flow-shortcuts="off">
+          <div className="min-w-0 min-h-112 lg:min-h-0 flex flex-col" data-flow-shortcuts="off">
             <PageEditorAssistant
               draft={draft}
               onProposal={applyAssistantEdit}
@@ -395,7 +395,7 @@ export function WorkflowBuilder({
               ref={canvas}
               tabIndex={0}
               aria-label="Edit flow graph"
-              className="flex min-w-0 min-h-0 flex-1 flex-col rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="flex min-w-0 min-h-0 flex-1 flex-col rounded-md focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent"
               onKeyDown={(event) => {
                 if (
                   disabled ||
@@ -563,7 +563,7 @@ export function WorkflowBuilder({
             {inspecting && (
               <aside
                 aria-label="Flow inspector"
-                className="min-w-0 min-h-0 max-h-[32rem] lg:max-h-none flex flex-col overflow-hidden rounded-lg border border-th-border bg-surface lg:w-[22rem] shrink-0"
+                className="min-w-0 min-h-0 max-h-128 lg:max-h-none flex flex-col overflow-hidden rounded-lg border border-th-border bg-surface lg:w-88 shrink-0"
               >
                 <div className="flex shrink-0 items-center justify-between px-4 py-3">
                   <h4 className="text-sm font-medium">

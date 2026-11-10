@@ -709,15 +709,15 @@ function EventDetail({
               : ''}
           </p>
           {detail.content.title && (
-            <p className="text-sm font-medium text-primary break-words">{detail.content.title}</p>
+            <p className="text-sm font-medium text-primary wrap-break-word">{detail.content.title}</p>
           )}
           {/* External text is rendered as plain text only; markdown, HTML and links stay inert. */}
-          <pre className="ficus-inset max-h-80 overflow-auto whitespace-pre-wrap break-words p-3 text-xs text-primary">
+          <pre className="ficus-inset max-h-80 overflow-auto whitespace-pre-wrap wrap-break-word p-3 text-xs text-primary">
             {detail.content.body || '(empty)'}
           </pre>
           <details className="text-xs">
             <summary className="cursor-pointer text-muted">Agent-facing message</summary>
-            <pre className="ficus-inset mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words p-3 text-primary">
+            <pre className="ficus-inset mt-2 max-h-60 overflow-auto whitespace-pre-wrap wrap-break-word p-3 text-primary">
               {detail.content.deliveryText}
             </pre>
             {detail.content.deliveryTruncated && (

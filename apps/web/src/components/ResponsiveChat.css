@@ -1,123 +1,132 @@
-/* Portals live outside the keyboard-sized app shell. Every modal must track the
-   visible viewport, not just full-screen chat dialogs. */
-.ficus-modal-backdrop {
-  top: var(--modal-viewport-top, 0px);
-  bottom: auto;
-  height: var(--modal-viewport-height, 100dvh);
-  /* The height a dialog panel may use: the visible viewport less any band reserved at the top. */
-  --modal-panel-height: calc(var(--modal-viewport-height, 100dvh) - var(--modal-top-reserve, 0px));
-}
+/* App imports this before index.css, so in Tailwind 3 these unlayered rules came before its output:
+   they competed with utilities by specificity and lost ties. Tailwind 4 uses native cascade layers,
+   where unlayered CSS beats every layer. In the utilities layer, ahead of the generated utilities,
+   the old cascade holds. The order statement (Tailwind's own, properties first) keeps the layer
+   order although this file is bundled before index.css. */
+@layer properties, theme, base, components, utilities;
 
-/* Ficus Desktop draws the macOS window controls natively over the title bar, above any
-   web content, so a dialog can never cover them. The scrim still dims the whole window
-   (keeping the header unclickable), but panels sit below the title bar instead of under
-   the controls. */
-:root[data-desktop-shell='inset'] .ficus-modal-backdrop {
-  --modal-top-reserve: var(--desktop-titlebar-height);
-  padding-top: var(--modal-top-reserve);
-}
-
-.ficus-modal-backdrop > [data-modal-size='default'] {
-  max-height: calc(var(--modal-panel-height, 100dvh) * 0.9 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-}
-
-.ficus-modal-backdrop > [data-modal-size='editor'] {
-  height: calc(var(--modal-panel-height, 100dvh) * 0.9);
-  max-height: calc(var(--modal-panel-height, 100dvh) * 0.9);
-}
-
-/* A working surface (a review, a long document): nearly the whole viewport, capped on wide screens. */
-.ficus-modal-backdrop > [data-modal-size='workspace'] {
-  height: calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  max-height: calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  max-width: min(80rem, calc(100vw - 2rem));
-}
-
-@media (max-width: 767px) {
-  .mobile-chat-modal > [data-modal-size] {
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    max-width: none;
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+@layer utilities {
+  /* Portals live outside the keyboard-sized app shell. Every modal must track the
+     visible viewport, not just full-screen chat dialogs. */
+  .ficus-modal-backdrop {
+    top: var(--modal-viewport-top, 0px);
+    bottom: auto;
+    height: var(--modal-viewport-height, 100dvh);
+    /* The height a dialog panel may use: the visible viewport less any band reserved at the top. */
+    --modal-panel-height: calc(var(--modal-viewport-height, 100dvh) - var(--modal-top-reserve, 0px));
   }
 
-  .mobile-chat-modal .modal-heading {
-    flex-wrap: nowrap;
-    align-items: center;
+  /* Ficus Desktop draws the macOS window controls natively over the title bar, above any
+     web content, so a dialog can never cover them. The scrim still dims the whole window
+     (keeping the header unclickable), but panels sit below the title bar instead of under
+     the controls. */
+  :root[data-desktop-shell='inset'] .ficus-modal-backdrop {
+    --modal-top-reserve: var(--desktop-titlebar-height);
+    padding-top: var(--modal-top-reserve);
   }
 
-  .mobile-chat-modal .modal-heading > h3 {
-    flex: 1;
-    font-size: 14px;
+  .ficus-modal-backdrop > [data-modal-size='default'] {
+    max-height: calc(var(--modal-panel-height, 100dvh) * 0.9 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 
-  /* Keep the message full-width even while Stop and delivery controls are present. */
-  .chat-composer {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
+  .ficus-modal-backdrop > [data-modal-size='editor'] {
+    height: calc(var(--modal-panel-height, 100dvh) * 0.9);
+    max-height: calc(var(--modal-panel-height, 100dvh) * 0.9);
   }
 
-  .chat-composer > * {
-    margin-top: 0;
-    margin-bottom: 0;
+  /* A working surface (a review, a long document): nearly the whole viewport, capped on wide screens. */
+  .ficus-modal-backdrop > [data-modal-size='workspace'] {
+    height: calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(var(--modal-panel-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-width: min(80rem, calc(100vw - 2rem));
   }
 
-  .chat-composer > textarea {
-    min-width: 0;
-    box-shadow: none;
+  @media (max-width: 767px) {
+    .mobile-chat-modal > [data-modal-size] {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      max-width: none;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    .mobile-chat-modal .modal-heading {
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+
+    .mobile-chat-modal .modal-heading > h3 {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    /* Keep the message full-width even while Stop and delivery controls are present. */
+    .chat-composer {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .chat-composer > * {
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+
+    .chat-composer > textarea {
+      min-width: 0;
+      box-shadow: none;
+    }
+
+    .chat-composer-controls {
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .chat-composer-send {
+      margin-left: auto;
+    }
+
+    .chat-composer .chat-composer-stop {
+      color: rgb(var(--status-danger-600));
+      background: transparent;
+    }
+
+    .dark .chat-composer .chat-composer-stop {
+      color: rgb(var(--status-danger-400));
+    }
+
+    .chat-composer .chat-composer-stop:hover {
+      background: rgb(var(--color-bg-surface-hover));
+    }
+
+    /* The Interrupt / Follow up split button keeps its mode colour while empty; only its send half dims. */
+    .chat-composer-send button[type='submit']:disabled:not(.chat-composer-submit) {
+      background: rgb(var(--color-bg-pill));
+      color: rgb(var(--color-text-muted));
+    }
+
+    .chat-composer .chat-composer-submit,
+    .chat-composer .chat-composer-mode {
+      min-height: 44px;
+    }
+
+    .chat-composer .chat-composer-mode {
+      min-width: 36px;
+      justify-content: center;
+    }
   }
 
-  .chat-composer-controls {
-    min-width: 0;
-    flex-wrap: wrap;
+  .mobile-chat-options {
+    top: var(--chat-options-top, 0px);
+    height: var(--chat-options-height, 100dvh);
+    padding-top: max(16px, env(safe-area-inset-top, 0px));
   }
 
-  .chat-composer-send {
-    margin-left: auto;
+  .mobile-chat-options-panel {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
-
-  .chat-composer .chat-composer-stop {
-    color: rgb(var(--status-danger-600));
-    background: transparent;
-  }
-
-  .dark .chat-composer .chat-composer-stop {
-    color: rgb(var(--status-danger-400));
-  }
-
-  .chat-composer .chat-composer-stop:hover {
-    background: rgb(var(--color-bg-surface-hover));
-  }
-
-  /* The Interrupt / Follow up split button keeps its mode colour while empty; only its send half dims. */
-  .chat-composer-send button[type='submit']:disabled:not(.chat-composer-submit) {
-    background: rgb(var(--color-bg-pill));
-    color: rgb(var(--color-text-muted));
-  }
-
-  .chat-composer .chat-composer-submit,
-  .chat-composer .chat-composer-mode {
-    min-height: 44px;
-  }
-
-  .chat-composer .chat-composer-mode {
-    min-width: 36px;
-    justify-content: center;
-  }
-}
-
-.mobile-chat-options {
-  top: var(--chat-options-top, 0px);
-  height: var(--chat-options-height, 100dvh);
-  padding-top: max(16px, env(safe-area-inset-top, 0px));
-}
-
-.mobile-chat-options-panel {
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }

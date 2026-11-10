@@ -171,7 +171,7 @@ function HomeAgentRowsSkeleton({ count, coordinator = false }: { count: number; 
         {(index) => (
           <div key={index} className="flex items-center gap-2 px-3 py-3 text-sm">
             <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-              <SkeletonBlock className="h-2 w-2 !rounded-full" />
+              <SkeletonBlock className="h-2 w-2 rounded-full!" />
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex h-5 items-center">

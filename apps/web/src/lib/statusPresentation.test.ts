@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { StatusRole } from '@ficus/shared'
-import colors from 'tailwindcss/colors'
+import colors from '../theme/fixtures/tailwind3-palette.json'
 import { acquireDomHarness } from '../test/domHarness'
 import { WEB_STATUS, webStatus, readStatusMarkerColor } from './statusPresentation'
 import { channelsToHex, contrastRatio, variants } from '../theme/test/palette'
 
-// Independent compatibility oracle: the legacy Tailwind palette, not runtime classes.
+// Independent compatibility oracle: the legacy Tailwind 3 palette, not runtime classes.
 const legacyRoleColors = {
   progress: 'blue',
   queue: 'cyan',

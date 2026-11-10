@@ -26,7 +26,7 @@ export function SquadNavigation<T extends SquadTab>({
           focus ring inside their own box instead of the shared offset ring. Browsers leave a
           mostly visible focused tab where it is, so focus also brings the whole tab into view. */}
       <nav
-        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Squad sections"
       >
@@ -40,7 +40,7 @@ export function SquadNavigation<T extends SquadTab>({
               aria-selected={activeTab === tab.path}
               onClick={() => onChange(tab.path)}
               onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })}
-              className="ficus-button ficus-button-ghost ficus-nav-item shrink-0 whitespace-nowrap px-2 py-2.5 text-xs font-medium focus-visible:outline-offset-[-2px] sm:px-4 sm:text-sm"
+              className="ficus-button ficus-button-ghost ficus-nav-item shrink-0 whitespace-nowrap px-2 py-2.5 text-xs font-medium focus-visible:-outline-offset-2 sm:px-4 sm:text-sm"
             >
               {tab.label}
             </button>
@@ -52,7 +52,7 @@ export function SquadNavigation<T extends SquadTab>({
           heading="Squad tools"
           openOnHover
           className={clsx(
-            'ficus-button ficus-button-ghost flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs focus-visible:outline-offset-[-2px] sm:text-sm',
+            'ficus-button ficus-button-ghost flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs focus-visible:-outline-offset-2 sm:text-sm',
             selectedSecondary && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
           )}
           items={secondary.map((tab) => ({

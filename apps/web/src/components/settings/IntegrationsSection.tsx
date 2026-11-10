@@ -114,20 +114,20 @@ export function IntegrationDirectoryCard({
             disabled={!canWrite || toggle.isPending || unavailable}
             onClick={() => toggle.mutate(!enabled)}
             className={clsx(
-              'relative mt-1 h-6 w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-light disabled:cursor-not-allowed disabled:opacity-50',
+              'relative mt-1 h-6 w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-light disabled:cursor-not-allowed disabled:opacity-50',
               enabled ? 'border-accent bg-accent' : 'border-panel-border bg-surface-secondary'
             )}
           >
             <span
               className={clsx(
-                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full shadow transition-transform',
+                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full shadow-sm transition-transform',
                 // On the accent track the thumb takes the on-accent ink, like text on an accent button.
                 enabled ? 'translate-x-4 bg-on-accent' : 'translate-x-0 bg-chrome-toggle-thumb'
               )}
             />
           </button>
         </div>
-        <p className="mt-3 min-h-[4.5rem] text-sm leading-relaxed text-muted">{describe(entry)}</p>
+        <p className="mt-3 min-h-18 text-sm leading-relaxed text-muted">{describe(entry)}</p>
         <div className="mt-auto">
           {entry.key === 'bigbrain' && (
             <ExternalLink href="https://bigbrain.cool" className="mt-2 inline-flex text-sm">

@@ -307,15 +307,15 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
           data-voice-current-agent-source="system-manager-chat-drawer"
           data-voice-current-agent-id={isOpen && mode === 'text' && conversation ? effectiveAgentId : undefined}
           className={clsx(
-            'ficus-assistant-panel fixed z-[60] flex flex-col ficus-glass shadow-theme-lg rounded-2xl overflow-hidden transition-all duration-200 motion-reduce:transition-none',
+            'ficus-assistant-panel fixed z-60 flex flex-col ficus-glass shadow-theme-lg rounded-2xl overflow-hidden transition-all duration-200 motion-reduce:transition-none',
             compactVoice && 'touch-none select-none cursor-grab active:cursor-grabbing',
             compactVoice
               ? 'top-20 right-4 w-64 max-sm:top-[calc(var(--chat-viewport-top,0px)+0.5rem)] max-sm:right-2 max-w-[calc(100vw-1rem)]'
               : conversation && mode === 'text' && isExpanded
-                ? 'bottom-4 right-4 left-4 top-16 md:left-auto md:top-4 md:w-[48rem]'
+                ? 'bottom-4 right-4 left-4 top-16 md:left-auto md:top-4 md:w-3xl'
                 : clsx(
                     'top-20 right-4 w-[calc(100vw-2rem)] max-h-[calc(100dvh-7rem)] max-sm:top-[calc(var(--chat-viewport-top,0px)+0.5rem)] max-sm:right-2 max-sm:w-[calc(100vw-1rem)] max-sm:max-h-[calc(var(--chat-viewport-height,100dvh)-1rem)]',
-                    mode === 'voice' ? 'md:w-[28rem]' : 'md:w-[36rem]'
+                    mode === 'voice' ? 'md:w-md' : 'md:w-xl'
                   ),
             isOpen &&
               conversation &&

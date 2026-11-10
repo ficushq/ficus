@@ -93,7 +93,7 @@ export function InboxPopup() {
       <SkeletonRows count={Math.max(1, loadingRowCount)}>
         {(index) => (
           <div key={index} className="flex min-h-16 items-center gap-3 px-4 py-3">
-            <SkeletonBlock className="h-2 w-2 shrink-0 !rounded-full" />
+            <SkeletonBlock className="h-2 w-2 shrink-0 rounded-full!" />
             <div className="flex-1 space-y-2">
               <SkeletonLine className={index % 2 ? 'w-2/5' : 'w-1/2'} />
               <SkeletonLine className="w-4/5" />
@@ -208,7 +208,7 @@ export function InboxPopup() {
                   <button
                     onClick={() => setShowRead(!showRead)}
                     // Its focus ring sits inside: outside, the scrolling list clips it and it spills past the popup's edge.
-                    className="ficus-button ficus-button-ghost w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm focus-visible:outline-offset-[-2px]"
+                    className="ficus-button ficus-button-ghost w-full rounded-lg py-2 pl-6 pr-3 flex items-center gap-2 text-sm focus-visible:-outline-offset-2"
                   >
                     {showRead ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
                     <span>Read messages ({read.totalCount})</span>

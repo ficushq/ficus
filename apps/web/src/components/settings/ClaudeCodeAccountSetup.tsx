@@ -56,7 +56,7 @@ export function ClaudeCodeAccountSetup({
             ) : null}
             :
           </p>
-          <pre className="whitespace-pre-wrap break-words rounded-md bg-surface-secondary px-3 py-2 font-mono text-xs text-primary">
+          <pre className="whitespace-pre-wrap wrap-break-word rounded-md bg-surface-secondary px-3 py-2 font-mono text-xs text-primary">
             {status.detail}
           </pre>
           {status.candidates && status.candidates.length > 1 && (

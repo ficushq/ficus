@@ -301,7 +301,7 @@ export function WorkStreamDetailModal({
       headerActions={<WorkStreamActionsMenu key={workStream.id} stream={workStream} controls={pauseControls} />}
       maxWidth="readable"
     >
-      <div className="space-y-6 text-sm [&>details:not([open])+div:last-child]:!mt-3">
+      <div className="space-y-6 text-sm [&>details:not([open])+div:last-child]:mt-3!">
         {workStream.status !== 'done' && workStream.status !== 'canceled' && (
           <WorkStreamPauseControls stream={workStream} controls={pauseControls} />
         )}
@@ -548,7 +548,7 @@ export function WorkStreamDetailModal({
                   href={githubRepository.repositoryUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-start gap-1.5 text-accent hover:underline break-words"
+                  className="inline-flex items-start gap-1.5 text-accent hover:underline wrap-break-word"
                 >
                   <GitHubIcon className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{githubRepository.repository}</span>
@@ -751,7 +751,7 @@ export function WorkStreamDetailModal({
 
         {/* Description */}
         {workStream.description && (
-          <div className="min-w-0 [overflow-wrap:anywhere]">
+          <div className="min-w-0 wrap-anywhere">
             <label className="text-xs font-medium text-secondary">Description</label>
             <div className="mt-3 text-sm leading-relaxed text-secondary">
               <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
@@ -834,7 +834,7 @@ export function WorkStreamDetailModal({
               {Object.entries(displayMetadata).map(([key, value]) => (
                 <div key={key}>
                   <dt className="text-xs text-muted">{key}</dt>
-                  <dd className="text-xs font-mono text-secondary whitespace-pre-wrap break-words">
+                  <dd className="text-xs font-mono text-secondary whitespace-pre-wrap wrap-break-word">
                     {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
                   </dd>
                 </div>

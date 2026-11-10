@@ -46,7 +46,7 @@ export function SettingsRow({
         {children}
       </div>
       {value !== undefined && (
-        <div className="min-w-0 break-words text-sm text-secondary sm:max-w-[60%] sm:text-right">{value}</div>
+        <div className="min-w-0 wrap-break-word text-sm text-secondary sm:max-w-[60%] sm:text-right">{value}</div>
       )}
       {control && (
         <div className={clsx('flex shrink-0 flex-wrap items-center gap-3 sm:mt-0', !inlineControl && 'mt-2')}>

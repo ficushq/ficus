@@ -264,7 +264,7 @@ export function AccountFeedVisit({
         <div className="pointer-events-none sticky top-2 z-10 flex h-0 items-start justify-end">
           <button
             type="button"
-            className="ficus-button ficus-button-secondary pointer-events-auto shrink-0 rounded-full px-3 py-2 text-sm shadow-sm"
+            className="ficus-button ficus-button-secondary pointer-events-auto shrink-0 rounded-full px-3 py-2 text-sm shadow-xs"
             onClick={() => {
               if (section.current) {
                 section.current.open = true
@@ -329,7 +329,9 @@ export function AccountFeedVisit({
                     >
                       <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-badge" />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium text-primary break-words">{conversation.title}</span>
+                        <span className="block text-sm font-medium text-primary wrap-break-word">
+                          {conversation.title}
+                        </span>
                         {latest && <span className="mt-0.5 block truncate text-xs text-muted">{latest.preview}</span>}
                         <span className="mt-1 block text-xs text-muted">
                           {conversation.unreadUpdates === 1
@@ -371,7 +373,7 @@ export function AccountFeedVisit({
                         className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', webStatus('success').markerClass)}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium text-primary break-words">
+                        <span className="block text-sm font-medium text-primary wrap-break-word">
                           {workStreamTitle(stream)}
                         </span>
                         <span className="mt-1 block text-xs text-muted">

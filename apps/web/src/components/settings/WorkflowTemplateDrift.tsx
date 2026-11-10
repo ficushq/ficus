@@ -41,7 +41,7 @@ function Difference({
           />
         )}
         <details className="min-w-0 flex-1">
-          <summary className="cursor-pointer break-words text-sm text-primary">{item.label}</summary>
+          <summary className="cursor-pointer wrap-break-word text-sm text-primary">{item.label}</summary>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {(
               [
@@ -51,7 +51,7 @@ function Difference({
             ).map(([heading, value]) => (
               <div key={heading} className="min-w-0">
                 <p className="text-xs font-medium text-muted">{heading}</p>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-secondary p-2 text-xs">
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word rounded-md bg-surface-secondary p-2 text-xs">
                   {show(value)}
                 </pre>
               </div>
@@ -75,7 +75,7 @@ function SquadImpact({ impact }: { impact: WorkflowRestoreImpact }) {
       {!!impact.affectedSquads.length && (
         <ul className="list-disc space-y-1 pl-5">
           {impact.affectedSquads.map((squad) => (
-            <li key={squad.squadId} className="break-words">
+            <li key={squad.squadId} className="wrap-break-word">
               <span className="font-medium">{squad.squadName}</span>: {squad.problems.join('; ')}
             </li>
           ))}
@@ -114,7 +114,7 @@ function HeldBack({ hold }: { hold: WorkflowTemplateHold }) {
       {!!hold.affectedSquads.length && (
         <ul className="list-disc space-y-1 pl-5">
           {hold.affectedSquads.map((squad) => (
-            <li key={squad.squadId} className="break-words">
+            <li key={squad.squadId} className="wrap-break-word">
               <span className="font-medium">{squad.squadName}</span>: {squad.problems.join('; ')}
             </li>
           ))}
@@ -126,7 +126,7 @@ function HeldBack({ hold }: { hold: WorkflowTemplateHold }) {
         </p>
       )}
       {!!hold.parts.length && (
-        <p className="break-words text-muted">It changes: {hold.parts.map((part) => part.label).join(', ')}.</p>
+        <p className="wrap-break-word text-muted">It changes: {hold.parts.map((part) => part.label).join(', ')}.</p>
       )}
     </div>
   )

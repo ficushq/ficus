@@ -82,7 +82,7 @@ function SlotStatusRow({ label, names, kind }: { label: string; names: readonly 
       className="flex min-w-0 items-start gap-2 px-3 py-2 text-xs text-secondary"
     >
       <Icon className="mt-0.5 h-3 w-3 shrink-0" />
-      <span className="min-w-0 [overflow-wrap:anywhere]">
+      <span className="min-w-0 wrap-anywhere">
         {label}: {names.join(' · ')}
       </span>
     </div>

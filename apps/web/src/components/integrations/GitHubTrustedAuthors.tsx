@@ -98,8 +98,8 @@ export function GitHubTrustedAuthors({ squadId }: { squadId: string }) {
           return (
             <li key={author.accountId} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <div className="min-w-0">
-                <p className="text-sm text-primary break-words">{authorLabel(author)}</p>
-                <p className="text-xs text-muted break-words">
+                <p className="text-sm text-primary wrap-break-word">{authorLabel(author)}</p>
+                <p className="text-xs text-muted wrap-break-word">
                   ID {author.accountId} · {author.origins.map(trustOriginLabel).join('; ')}
                 </p>
               </div>

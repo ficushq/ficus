@@ -142,7 +142,7 @@ export function ThemeQuickPicker({
                 role="radio"
                 aria-checked={selected}
                 aria-label={circle.label}
-                className="group flex h-8 w-8 shrink-0 items-center justify-center focus:outline-none"
+                className="group flex h-8 w-8 shrink-0 items-center justify-center focus:outline-hidden"
                 onMouseEnter={() => hover.start(circle)}
                 onClick={() => selectCircle(circle)}
                 onKeyDown={(event) => {

@@ -98,7 +98,7 @@ export default [
     },
   },
   {
-    files: ['**/*.cjs', 'apps/web/tailwind.config.js', 'apps/web/postcss.config.js'],
+    files: ['**/*.cjs', 'apps/web/postcss.config.js'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
       'no-undef': 'off',

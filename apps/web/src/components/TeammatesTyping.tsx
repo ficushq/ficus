@@ -51,7 +51,7 @@ export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
 /** The rounded bubble itself, its tail corner toward the composer like a sent message. */
 function TypingBubble({ children }: { children: React.ReactNode }) {
   return (
-    <div className="inline-flex h-8 min-w-[3.25rem] items-center justify-center gap-1 rounded-2xl rounded-br-md bg-pill px-3 text-muted">
+    <div className="inline-flex h-8 min-w-13 items-center justify-center gap-1 rounded-2xl rounded-br-md bg-pill px-3 text-muted">
       {children}
     </div>
   )

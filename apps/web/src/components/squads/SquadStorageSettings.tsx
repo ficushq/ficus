@@ -151,7 +151,7 @@ function SquadStoredFilesSummary({ storedFiles }: { storedFiles: SquadStorageVie
       <div className="divide-y divide-th-border">
         {sources.map((source) => (
           <div key={source.key} className="flex justify-between gap-4 py-2 text-sm">
-            <span className="min-w-0 break-words">
+            <span className="min-w-0 wrap-break-word">
               {source.label}
               {!source.countsTowardQuota && (
                 <span className="block text-xs text-secondary">Does not count toward the attachment quota</span>

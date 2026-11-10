@@ -46,7 +46,7 @@ function AgentRow({ folder, action }: { folder: StorageFolder; action?: ReactNod
   const row = (
     <span className="inline-flex w-full min-w-0 items-center justify-between gap-4">
       <span className="min-w-0">
-        <span className="block break-words text-primary" title={folder.path}>
+        <span className="block wrap-break-word text-primary" title={folder.path}>
           {agent ? agent.label : 'Agent'}
         </span>
         <span className="block text-xs text-secondary">
@@ -160,7 +160,7 @@ export function StorageSquadView({
       <summary className="flex cursor-pointer list-none items-center gap-2 py-3 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon className="h-4 w-4 shrink-0 text-secondary" />
         <span className="inline-flex w-full min-w-0 justify-between gap-4 text-sm">
-          <span className="min-w-0 break-words font-medium">{squad.name}</span>
+          <span className="min-w-0 wrap-break-word font-medium">{squad.name}</span>
           <span className="flex shrink-0 items-baseline gap-3 tabular-nums">
             {squad.growth && (
               <span className="text-xs">

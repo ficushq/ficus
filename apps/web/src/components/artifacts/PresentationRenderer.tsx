@@ -201,7 +201,7 @@ function TimelineBlockView({ block }: { block: TimelineBlock }) {
         <li key={`${item.title}-${item.at ?? index}`} className="relative">
           <span
             aria-hidden="true"
-            className="absolute -left-[21px] top-1.5 h-3 w-3 rounded-full border-2 border-surface bg-status-progress-500"
+            className="absolute left-[-21px] top-1.5 h-3 w-3 rounded-full border-2 border-surface bg-status-progress-500"
           />
           <div className="flex flex-wrap items-baseline gap-x-2">
             <h3 className="font-medium text-primary">{item.title}</h3>

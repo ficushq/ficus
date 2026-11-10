@@ -579,14 +579,14 @@ export function CustomThemeEditor({
         {can('chat:send') && (
           // tabIndex makes this a valid one-shot focus target for "New theme"
           // (see the `focusAssistant` effect above); it is not meant to be a
-          // persistent tab stop otherwise. `order-2 lg:order-none` puts it
+          // persistent tab stop otherwise. `order-2 lg:order-0` puts it
           // full-width BELOW the editor on narrow widths (source order would
           // otherwise place it above, ahead of the fields being described)
           // while restoring the side-by-side column order at `lg`.
           <div
             ref={assistantPanel}
             tabIndex={-1}
-            className="order-2 min-w-0 min-h-[24rem] flex flex-col outline-none lg:order-none lg:min-h-0"
+            className="order-2 min-w-0 min-h-96 flex flex-col outline-hidden lg:order-0 lg:min-h-0"
           >
             <PageEditorAssistant
               draft={editorDraft}
@@ -600,7 +600,7 @@ export function CustomThemeEditor({
             />
           </div>
         )}
-        <div className="order-1 flex min-w-0 flex-col gap-3 lg:order-none">
+        <div className="order-1 flex min-w-0 flex-col gap-3 lg:order-0">
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"

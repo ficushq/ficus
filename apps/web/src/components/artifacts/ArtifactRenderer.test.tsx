@@ -124,7 +124,7 @@ describe('ArtifactRenderer', () => {
     expect(html).toContain('sandbox="allow-scripts"')
     expect(html).not.toContain('# Hello World Dashboard')
     expect(html).toContain('&lt;div style=&quot;min-height: 360px&quot;&gt;')
-    expect(html).not.toContain('min-h-[100dvh]')
+    expect(html).not.toContain('min-h-dvh')
   })
 
   test('renders explicit presentation HTML blocks as sandboxed HTML', () => {

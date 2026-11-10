@@ -46,7 +46,7 @@ test('starts Notion OAuth with the server-accepted safe return and renders lifec
   const callbackUrl = container.querySelector('[data-testid="notion-callback-url"]')!
   expect(callbackUrl.textContent).toContain('https://ficus.example/settings/integrations/oauth/callback')
   expect(callbackUrl.className).toContain('break-all')
-  expect(callbackUrl.className).toContain('[overflow-wrap:anywhere]')
+  expect(callbackUrl.className).toContain('wrap-anywhere')
   expect(callbackUrl.parentElement?.className).not.toContain('break-all')
   const button = [...container.querySelectorAll('button')].find(
     (candidate) => candidate.textContent === 'Connect Notion'

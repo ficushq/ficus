@@ -75,7 +75,7 @@ function TaskQuestion({
       </p>
     )
   return (
-    <details ref={details} open className="min-w-0 rounded-xl bg-surface p-3 [overflow-wrap:anywhere]">
+    <details ref={details} open className="min-w-0 rounded-xl bg-surface p-3 wrap-anywhere">
       <summary className="cursor-pointer text-sm font-medium text-accent-light">
         {task.label} · Needs your answer
       </summary>

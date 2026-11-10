@@ -121,7 +121,7 @@ describe('WorkStreamGraph', () => {
     node.focus()
 
     expect(document.activeElement).toBe(node)
-    expect(node.getAttribute('class')).toContain('focus-visible:outline-none')
+    expect(node.getAttribute('class')).toContain('focus-visible:outline-hidden')
     expect(node.querySelector('div')?.className).toContain('group-focus-visible:ring-2')
   })
 

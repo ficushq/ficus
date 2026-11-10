@@ -744,7 +744,7 @@ function WorkStreamReviewActionContent({
         <div className="min-w-0 text-sm text-secondary">
           <MarkdownContent
             compactPullRequestLinks
-            className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 [&>:last-child]:mb-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
+            className="text-sm leading-relaxed text-secondary prose-p:my-2 *:first:mt-0 *:last:mb-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline prose-a:hover:underline"
           >
             {data.wait.message ?? data.prompt.message}
           </MarkdownContent>
@@ -841,7 +841,7 @@ function WorkStreamBlockedActionContent({
       <div className="min-w-0 text-sm text-secondary">
         <MarkdownContent
           compactPullRequestLinks
-          className="text-sm leading-relaxed text-secondary prose-p:my-2 [&>:first-child]:mt-0 [&>:last-child]:mb-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline hover:prose-a:underline"
+          className="text-sm leading-relaxed text-secondary prose-p:my-2 *:first:mt-0 *:last:mb-0 prose-a:text-accent-light prose-a:font-medium prose-a:no-underline prose-a:hover:underline"
         >
           {data.wait.message ?? data.prompt.message}
         </MarkdownContent>

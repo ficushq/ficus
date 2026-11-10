@@ -55,7 +55,7 @@ export function SpendTotals({
         </li>
         {subscriptions.map((line) => (
           <li key={`${line.provider}/${line.accountId}`} className="flex items-baseline justify-between gap-4 py-2">
-            <span className="min-w-0 break-words text-primary">
+            <span className="min-w-0 wrap-break-word text-primary">
               {line.needsChoice
                 ? `${line.label}: subscription, plan unknown`
                 : `${line.label}: ${line.planLabel ?? line.plan ?? 'subscription'}`}

@@ -242,7 +242,7 @@ export function DecisionRoutingEditor({
                 disabled={!canWrite}
                 aria-invalid={!timeoutValid}
                 onChange={(event) => setTimeoutText(event.target.value)}
-                className={clsx(DECISION_INPUT_CLASS, 'max-w-[7rem]')}
+                className={clsx(DECISION_INPUT_CLASS, 'max-w-28')}
               />
               <span className="text-sm text-muted">seconds</span>
             </div>

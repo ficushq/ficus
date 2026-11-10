@@ -81,11 +81,11 @@ describe('PendingQuestionsBanner', () => {
     // Opaque base surface with the attention tint layered over it (the tint alone is translucent in dark themes).
     for (const name of [
       'bg-surface',
-      'bg-gradient-to-r',
+      'bg-linear-to-r',
       'from-status-attention-surface',
       'to-status-attention-surface',
       'border-status-attention-border',
-      'hover:bg-gradient-to-r',
+      'hover:bg-linear-to-r',
     ]) {
       expect(button.classList.contains(name)).toBe(true)
     }

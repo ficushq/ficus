@@ -202,7 +202,7 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
     <>
       {dragging && <ScreenshotDropOverlay reviewing={isReview(card)} />}
       {card && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-20 z-[70] flex justify-center px-4 md:bottom-6">
+        <div className="pointer-events-none fixed inset-x-0 bottom-20 z-70 flex justify-center px-4 md:bottom-6">
           {isReview(card) ? (
             <ScreenshotReviewCard
               key={card.id}
@@ -249,7 +249,7 @@ export function ScreenshotDropOverlay({ reviewing = false }: { reviewing?: boole
     <div
       data-testid="screenshot-drop-overlay"
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-page/70 p-6 backdrop-blur-sm"
+      className="pointer-events-none fixed inset-0 z-80 flex items-center justify-center bg-page/70 p-6 backdrop-blur-xs"
     >
       <div className="flex max-w-sm flex-col items-center gap-3 rounded-xl border-2 border-dashed border-accent bg-surface px-10 py-8 text-center">
         <ImageIcon className="h-8 w-8 text-accent" />
@@ -445,7 +445,7 @@ export function ScreenshotReviewCard({
           event.preventDefault()
           onConfirm()
         }}
-        className="ficus-field mt-3 block max-h-40 min-h-[3.25rem] w-full resize-y px-2.5 py-1.5 text-sm"
+        className="ficus-field mt-3 block max-h-40 min-h-13 w-full resize-y px-2.5 py-1.5 text-sm"
       />
 
       {upload.status !== 'failed' && (

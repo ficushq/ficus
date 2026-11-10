@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import postcss, { type Rule } from 'postcss'
-import tailwindcss from 'tailwindcss'
-import tailwindConfig from '../../tailwind.config.js'
+import { compileUtilities, evaluateColorMath, utilityDeclarations } from '../test/tailwind'
+import legacyPalette from './fixtures/tailwind3-palette.json'
 import { variants } from './test/palette'
 
 // Compare the actual generated declarations, after full substitution, with the
-// pre-migration Tailwind classes. This catches missing utility generation,
+// pre-migration Tailwind 3 classes. This catches missing utility generation,
 // incorrect shades, neutral special cases, and lost/doubled intrinsic alpha.
+// The legacy side is the frozen Tailwind 3 palette: Tailwind 4 changed its own.
 const roles = {
   progress: 'blue',
   queue: 'cyan',
@@ -53,48 +53,49 @@ for (const [i, [color, shade]] of [
 }
 pairs.push(['text-on-accent', 'text-white', 'text-white'])
 
-function resolve(rule: Rule, variables: Record<string, string>): string {
-  const declarations: Record<string, string> = { ...variables }
-  rule.walkDecls((decl) => {
-    declarations[decl.prop] = decl.value
-  })
+function resolve(utility: Record<string, string>, variables: Record<string, string>): string {
+  const declarations: Record<string, string> = { ...variables, ...utility }
   let value = declarations.color ?? declarations['background-color'] ?? declarations['border-color']!
   for (let i = 0; value.includes('var(') && i < 10; i++) {
     value = value.replace(/var\((--[\w-]+)(?:,\s*([^()]+))?\)/g, (_, name, fallback) => declarations[name] ?? fallback)
   }
-  value = value.replace(/calc\(([\d.\s*]+)\)/g, (_, factors: string) =>
-    String(
-      factors
-        .split('*')
-        .map(Number)
-        .reduce((a, b) => a * b, 1)
-    )
-  )
+  value = evaluateColorMath(value)
   expect(value).toMatch(/^rgb\(\d+ \d+ \d+ \/ [\d.]+\)$/)
   return value
 }
 
+/** What a Tailwind 3 palette class such as `hover:bg-blue-900/30` or `text-white` resolved to. */
+function legacy(utility: string): string {
+  const [, color, shade, opacity] = /^(?:hover:)?(?:bg|text|border)-([a-z]+)(?:-(\d+))?(?:\/(\d+))?$/.exec(utility)!
+  const palette = legacyPalette as unknown as Record<string, string | Record<string, string>>
+  const entry = palette[color!]!
+  const hex = typeof entry === 'string' ? entry : entry[shade!]!
+  const full = hex.length === 4 ? hex.replace(/[0-9a-f]/gi, (c) => c + c) : hex
+  const channels = full
+    .slice(1)
+    .match(/../g)!
+    .map((part) => parseInt(part, 16))
+  return `rgb(${channels.join(' ')} / ${opacity ? Number(opacity) / 100 : 1})`
+}
+
 describe('semantic color compatibility', () => {
   test('all migrated role, Badge, identity and on-accent utilities exactly match both legacy appearances', async () => {
-    const classes = [...new Set(pairs.flat())]
-    const output = await postcss([
-      tailwindcss({ ...tailwindConfig, content: [{ raw: classes.join(' '), extension: 'html' }], plugins: [] }),
-    ]).process('@tailwind utilities', { from: undefined })
-    const rules = new Map<string, Rule>()
-    output.root.walkRules((rule) => {
-      const name = rule.selector
-        .slice(1)
-        .replaceAll('\\', '')
-        .replace(/:hover$/, '')
-      rules.set(name, rule)
-    })
+    const classes = [...new Set(pairs.map(([tokenClass]) => tokenClass))]
+    const rules = utilityDeclarations(await compileUtilities(classes))
     expect([...rules.keys()].sort()).toEqual([...classes].sort())
     for (const [tokenClass, light, dark] of pairs) {
-      for (const [variant, legacy] of [
+      for (const [variant, legacyClass] of [
         ['light', light],
         ['dark', dark],
       ] as const) {
-        expect(resolve(rules.get(tokenClass)!, variants[variant])).toBe(resolve(rules.get(legacy)!, variants[variant]))
+        const [r, g, b, a] = resolve(rules.get(tokenClass)!, variants[variant])
+          .match(/[\d.]+/g)!
+          .map(Number)
+        const [lr, lg, lb, la] = legacy(legacyClass)
+          .match(/[\d.]+/g)!
+          .map(Number)
+        expect([r, g, b]).toEqual([lr, lg, lb])
+        expect(a).toBeCloseTo(la!, 10)
       }
     }
     // Prove the indirection, not just equal constants: independently supplied

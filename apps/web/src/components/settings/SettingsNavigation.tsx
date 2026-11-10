@@ -295,7 +295,7 @@ export function SettingsNavigation({
           {content('mobile')}
         </Panel>
       </div>
-      <aside className="ficus-panel ficus-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3">
+      <aside className="ficus-panel ficus-glass hidden md:block w-60 shrink-0 h-full overflow-y-auto p-3">
         <h2 className="px-2 pb-4 pt-1 text-sm font-semibold text-primary">{scopeTitle ?? 'Settings'}</h2>
         {content('desktop')}
       </aside>

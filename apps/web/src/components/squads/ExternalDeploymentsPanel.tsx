@@ -144,7 +144,7 @@ function DeploymentRows({
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="text-sm font-medium text-primary truncate">{deployment.name}</div>
-              <div className="text-xs text-muted break-words">
+              <div className="text-xs text-muted wrap-break-word">
                 {deployment.provider} · {deployment.environment} · {deployment.status} · updated{' '}
                 {new Date(deployment.updatedAt).toLocaleString()}
               </div>

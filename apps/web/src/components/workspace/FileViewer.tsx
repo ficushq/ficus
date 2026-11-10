@@ -215,7 +215,7 @@ export function FileViewer({ source, filePath }: FileViewerProps) {
   return (
     <div className="h-full flex flex-col">
       <FileHeader path={filePath} size={file.size} language={language} source={source} />
-      <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:!inline">
+      <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:inline!">
         <SyntaxHighlighter
           language={language}
           style={syntaxTheme}

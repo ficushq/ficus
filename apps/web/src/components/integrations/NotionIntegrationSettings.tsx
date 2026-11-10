@@ -98,7 +98,7 @@ export function NotionIntegrationSettings({
         <p className="mt-1 text-xs text-muted">
           Connect a workspace with OAuth. In the Notion Developer Portal enable Read content, Insert content, and Update
           content, then use this callback URL:{' '}
-          <span data-testid="notion-callback-url" className="break-all [overflow-wrap:anywhere]">
+          <span data-testid="notion-callback-url" className="break-all wrap-anywhere">
             {settings?.callbackUrl ?? 'Loading…'}
           </span>
         </p>

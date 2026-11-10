@@ -4,9 +4,8 @@ import { BUILT_IN_THEMES } from './theme/registry'
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import postcss, { type Root, type Rule } from 'postcss'
-import tailwindcss from 'tailwindcss'
-import tailwindConfig from '../tailwind.config.js'
+import postcss, { type Rule } from 'postcss'
+import { compileUtilities, evaluateColorMath, themeColors, utilityDeclarations } from './test/tailwind'
 
 /** Validates a raw (v1 or v2) document, then compiles the resolved variant. */
 function compileRaw(raw: unknown, appearance: 'light' | 'dark' | 'constant') {
@@ -21,6 +20,8 @@ function compileRaw(raw: unknown, appearance: 'light' | 'dark' | 'constant') {
 //    intrinsic alpha substituted to invalid rgb(R G B / intrinsic / requested).
 // Both the actual generated rules AND their fully substituted values must be
 // checked. Intrinsic opacity is multiplied by a modifier, never discarded.
+// Since Tailwind 4 a modifier is color-mix(in oklab, <color> N%, transparent),
+// which scales the alpha of the complete channel-form color.
 
 const srcRoot = import.meta.dir
 const sourceCss = postcss.parse(readFileSync(join(srcRoot, 'index.css'), 'utf8'))
@@ -48,25 +49,10 @@ const scopes = {
   dark: scopeVariables('.dark'),
 }
 
-/** Flatten Tailwind DEFAULT keys into the real utility name. */
-function colorEntries(node: unknown, prefix = ''): Array<[string, string]> {
-  if (typeof node === 'string') return [[prefix, node]]
-  return Object.entries(node as Record<string, unknown>).flatMap(([key, value]) =>
-    colorEntries(value, key === 'DEFAULT' ? prefix : [prefix, key].filter(Boolean).join('-'))
-  )
-}
+const colors = themeColors()
 
-const colors = colorEntries(tailwindConfig.theme.extend.colors)
-
-async function compile(classes: string[]): Promise<Root> {
-  const result = await postcss([
-    tailwindcss({
-      ...tailwindConfig,
-      content: [{ raw: classes.join(' '), extension: 'html' }],
-      plugins: [],
-    }),
-  ]).process('@tailwind utilities', { from: undefined })
-  return result.root
+async function compile(classes: string[]) {
+  return utilityDeclarations(await compileUtilities(classes))
 }
 
 /** Resolve the real scope variables, generated opacity variables and fallbacks. */
@@ -80,16 +66,10 @@ function substitute(value: string, variables: Record<string, string>): string {
     if (next === value) throw new Error(`Unresolved or cyclic variable in ${value}`)
     value = next
   }
-  // The adapter's only arithmetic is multiplication of two scalar alphas.
-  // Reject anything else rather than silently accepting an unevaluated calc.
-  return value.replace(/calc\(([\d.\s*]+)\)/g, (_, factors: string) =>
-    String(
-      factors
-        .split('*')
-        .map(Number)
-        .reduce((a, b) => a * b, 1)
-    )
-  )
+  // The adapter's only arithmetic is multiplication of scalar alphas, plus the
+  // modifier's color-mix() with transparent. Anything else stays unevaluated and
+  // fails the strict RGB grammar below.
+  return evaluateColorMath(value)
 }
 
 /** Strict Color-4 numeric RGB grammar; double-alpha separators cannot pass. */
@@ -120,11 +100,12 @@ function intrinsicAlpha(name: string, appearance: 'light' | 'dark') {
 }
 
 describe('tailwind theme color opacity after variable substitution', () => {
-  test('every mapped color is channel-form with an opacity placeholder', () => {
+  test('every mapped color is channel-form with a custom alpha', () => {
     expect(colors.length).toBeGreaterThan(20)
     for (const [, mapping] of colors) {
-      expect(mapping).toContain('<alpha-value>')
-      expect(mapping).toMatch(/^rgb\(var\(--custom-rgb-[a-z0-9-]+, var\(--[a-z0-9-]+\)\) \/ /)
+      expect(mapping).toMatch(
+        /^rgb\(var\(--custom-rgb-([a-z0-9-]+), var\(--[a-z0-9-]+\)\) \/ (calc\()?var\(--custom-alpha-\1, 1\)/
+      )
       const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
       // Audit ALL mappings: none may embed an alpha before the adapter adds it.
       for (const variables of Object.values(scopes)) {
@@ -154,20 +135,14 @@ describe('tailwind theme color opacity after variable substitution', () => {
   test('all semantic utilities resolve to valid RGB, plain and modified, in BOTH appearances', async () => {
     const modifiers = ['', '/25', '/50', '/100']
     const expectedClasses = colors.flatMap(([name]) => modifiers.map((modifier) => `border-${name}${modifier}`))
-    const generated = await compile(expectedClasses)
-    const rules = new Map<string, Rule>()
-    generated.walkRules((rule) => {
-      // These generated selectors need only Tailwind's escaped slash removed.
-      rules.set(rule.selector.replaceAll('\\', '').slice(1), rule)
-    })
+    const rules = await compile(expectedClasses)
     expect([...rules.keys()].sort()).toEqual([...expectedClasses].sort())
 
     for (const [appearance, variables] of Object.entries(scopes) as Array<['light' | 'dark', Record<string, string>]>) {
       for (const [name, mapping] of colors) {
         const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
         for (const modifier of modifiers) {
-          const rule = rules.get(`border-${name}${modifier}`)!
-          const declared = declarations(rule)
+          const declared = rules.get(`border-${name}${modifier}`)!
           const resolved = substitute(declared['border-color']!, { ...variables, ...declared })
           const { channels, alpha } = numericRgb(resolved)
           expect(channels).toEqual(variables[token]!.split(/\s+/).map(Number))
@@ -179,10 +154,7 @@ describe('tailwind theme color opacity after variable substitution', () => {
   })
 
   test('custom rgba composes with intrinsic alpha AND Tailwind modifiers for every mapped token', async () => {
-    const rules = new Map<string, Rule>()
-    ;(await compile(colors.map(([name]) => `border-${name}/50`))).walkRules((rule) => {
-      rules.set(rule.selector.replaceAll('\\', '').slice(1), rule)
-    })
+    const rules = await compile(colors.map(([name]) => `border-${name}/50`))
     for (const [appearance, base] of Object.entries(scopes) as Array<['light' | 'dark', Record<string, string>]>) {
       for (const [name, mapping] of colors) {
         const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
@@ -193,7 +165,7 @@ describe('tailwind theme color opacity after variable substitution', () => {
           { format: 'ficus-custom-theme', version: 1, name: 'Alpha', base: 'iris', appearance, overrides },
           appearance
         )
-        const declared = declarations(rules.get(`border-${name}/50`)!)
+        const declared = rules.get(`border-${name}/50`)!
         const color = numericRgb(substitute(declared['border-color']!, { ...base, ...variables, ...declared }))
         expect(color.channels).toEqual([12, 34, 56])
         expect(color.alpha).toBeCloseTo(0.5 * 0.5 * intrinsicAlpha(name, appearance), 8)
@@ -213,6 +185,8 @@ describe('tailwind theme color opacity after variable substitution', () => {
     // Audit every direct consumer, including borders, autofill and inset shadows.
     let consumers = 0
     for (const path of new Bun.Glob('**/*.css').scanSync({ cwd: srcRoot })) {
+      // tailwind.css maps the utilities themselves (audited above), not a direct consumer.
+      if (path === 'tailwind.css') continue
       const sheet = postcss.parse(readFileSync(join(srcRoot, path), 'utf8'))
       sheet.walkDecls((declaration) => {
         const matched = /var\(--color-(panel-border|input-border)\)/.exec(declaration.value)
@@ -239,19 +213,19 @@ describe('tailwind theme color opacity after variable substitution', () => {
 
   test('non-border opacity utilities still compile (including the original divide regression)', async () => {
     const compiled = (
-      await compile(['bg-surface/50', 'divide-th-border/50', 'text-accent/70', 'ring-focus/30'])
+      await compileUtilities(['bg-surface/50', 'divide-th-border/50', 'text-accent/70', 'ring-focus/30'])
     ).toString()
     expect(compiled).toContain(
-      'rgb(var(--custom-rgb-color-bg-surface, var(--color-bg-surface)) / calc(var(--custom-alpha-color-bg-surface, 1) * 0.5))'
+      'color-mix(in oklab, rgb(var(--custom-rgb-color-bg-surface, var(--color-bg-surface)) / var(--custom-alpha-color-bg-surface, 1)) 50%, transparent)'
     )
     expect(compiled).toContain(
-      'rgb(var(--custom-rgb-color-border, var(--color-border)) / calc(var(--custom-alpha-color-border, 1) * 0.5))'
+      'color-mix(in oklab, rgb(var(--custom-rgb-color-border, var(--color-border)) / var(--custom-alpha-color-border, 1)) 50%, transparent)'
     )
     expect(compiled).toContain(
-      'rgb(var(--custom-rgb-color-primary, var(--color-primary)) / calc(var(--custom-alpha-color-primary, 1) * 0.7))'
+      'color-mix(in oklab, rgb(var(--custom-rgb-color-primary, var(--color-primary)) / var(--custom-alpha-color-primary, 1)) 70%, transparent)'
     )
     expect(compiled).toContain(
-      'rgb(var(--custom-rgb-color-focus, var(--color-focus)) / calc(var(--custom-alpha-color-focus, 1) * 0.3))'
+      'color-mix(in oklab, rgb(var(--custom-rgb-color-focus, var(--color-focus)) / var(--custom-alpha-color-focus, 1)) 30%, transparent)'
     )
   })
 })
@@ -259,12 +233,11 @@ describe('tailwind theme color opacity after variable substitution', () => {
 test('actual spinner and narrow Stop CSS follows custom status colors without changing builtin defaults', async () => {
   const spinner = readFileSync(join(srcRoot, 'components/VoiceFormFillButton.tsx'), 'utf8')
   expect(spinner).toContain('border-t-status-danger-600')
-  const generated = await compile(['border-t-status-danger-600', 'dark:border-t-status-danger-400'])
-  const css = await postcss([
-    tailwindcss({ ...tailwindConfig, content: [{ raw: 'chat-composer-stop' }], plugins: [] }),
-  ]).process(readFileSync(join(srcRoot, 'components/ResponsiveChat.css'), 'utf8'), { from: undefined })
+  const generated = await compileUtilities(['border-t-status-danger-600', 'dark:border-t-status-danger-400'])
+  // ResponsiveChat.css has no Tailwind directives: the PostCSS plugin passes it through unchanged.
+  const css = postcss.parse(readFileSync(join(srcRoot, 'components/ResponsiveChat.css'), 'utf8'))
   const stop: string[] = []
-  css.root.walkRules((rule) => {
+  css.walkRules((rule) => {
     if (rule.selector.endsWith('.chat-composer .chat-composer-stop'))
       rule.walkDecls('color', (decl) => {
         stop.push(decl.value)
@@ -338,11 +311,7 @@ test('new storage warnings preserve main shades and opacity while accepting cust
     ],
   ] as const
   for (const [file, utility] of expected) expect(readFileSync(join(srcRoot, file), 'utf8')).toContain(utility)
-  const generated = await compile(expected.map(([, utility]) => utility))
-  const rules = new Map<string, Rule>()
-  generated.walkRules((rule) => {
-    rules.set(rule.selector.slice(1).replaceAll('\\', ''), rule)
-  })
+  const rules = await compile(expected.map(([, utility]) => utility))
   const custom = compileRaw(
     {
       format: 'ficus-custom-theme',
@@ -355,7 +324,7 @@ test('new storage warnings preserve main shades and opacity while accepting cust
     'light'
   )
   for (const [, utility, prop, , opacity, channels] of expected) {
-    const decls = declarations(rules.get(utility)!)
+    const decls = rules.get(utility)!
     for (const { tokens } of palettes) {
       expect(numericRgb(substitute(decls[prop]!, { ...tokens, ...decls }))).toEqual({ channels, alpha: opacity })
       expect(numericRgb(substitute(decls[prop]!, { ...tokens, ...decls, ...custom }))).toEqual({
