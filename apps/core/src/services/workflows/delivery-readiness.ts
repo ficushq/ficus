@@ -35,6 +35,9 @@ import {
  * It is a hint, never an authority: Ficus does not merge, enable auto-merge or
  * finish anything here. The participant re-verifies the live head, approval
  * and checks before it acts, exactly as its delivery instructions require.
+ * Because a pull request this wake reports is usually already mergeable, GitHub
+ * may refuse to enable auto-merge; the delivery instructions then let the
+ * participant itself perform the equivalent head-constrained normal merge.
  *
  * Missed-merge reconciliation shares the same wake. When the authorized code-host
  * poller observes every designated delivery pull request merged, but no merge event
@@ -288,7 +291,7 @@ export function deliveryReadinessContent(
   return [
     `The delivery pull request for work stream ${ref} looks actionable: the code host reports it merge-ready, a reviewer with write access approved the current head, and auto-merge is not enabled on that head.`,
     ...lines,
-    `Ficus has not merged or enabled anything. Before acting, re-verify live that the head is unchanged, that the effective required approval is on that exact head, and that all applicable checks passed, then follow the delivery instructions from \`ficus workstream flow ${ref}\`. This notice is sent once per head.`,
+    `Ficus has not merged or enabled anything. Before acting, re-verify live that the head is unchanged, that the effective required approval is on that exact head, and that all applicable checks passed (skipped checks are not passes), then follow the delivery instructions from \`ficus workstream flow ${ref}\`. If GitHub refuses to enable native auto-merge because the pull request is already mergeable, those instructions let you perform a normal merge constrained to that head, with the merge method auto-merge would have used, as its equivalent; never use administrator powers or bypass reviews, checks or branch protections. This notice is sent once per head.`,
   ].join('\n')
 }
 

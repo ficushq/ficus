@@ -269,6 +269,12 @@ describe('delivery readiness wake', () => {
     expect(content).toContain(`Approval commit: ${HEAD} (approved by @reviewer, a reviewer with write access: MEMBER)`)
     expect(content).toContain('Checks: success; mergeability: clean')
     expect(content).toContain('Ficus has not merged or enabled anything')
+    expect(content).toContain('skipped checks are not passes')
+    expect(content).toContain(
+      'If GitHub refuses to enable native auto-merge because the pull request is already mergeable'
+    )
+    expect(content).toContain('a normal merge constrained to that head')
+    expect(content).toContain('never use administrator powers or bypass reviews, checks or branch protections')
     expect(content).toContain('ficus workstream flow 77')
     // No bare work-stream style references for pull requests.
     expect(content).not.toMatch(/(^|\s)#42\b/)

@@ -263,6 +263,18 @@ Settling all active graph paths and direct-return requests puts the flow at `com
 | `pr-auto-merge`   | The agent may enable GitHub auto-merge only when the current squad explicitly allows it; Ficus still verifies the PR is merged. |
 | `direct-merge`    | Explicit squad permission allows direct merge; Ficus checks the recorded commit is included in the remote base branch.          |
 
+### Auto-merge refused because the pull request is already mergeable
+
+GitHub refuses to enable native auto-merge on a pull request that is already mergeable (merge state `CLEAN`). That happens every time the required approval arrives after CI has finished. Native auto-merge would have merged such a pull request at once, so the `pr-auto-merge` delivery instructions (`flowCompletionInstructions` in `apps/core/src/services/workflows/completion-prompt.ts`) treat a normal merge as its equivalent in that case only. The delivering agent may perform it after verifying every one of these conditions live, immediately before merging:
+
+- the current squad's `metadata.policies.allowAutoMerge` is explicitly `true`;
+- the live base and the exact head match the configured base and the validated and reviewed deliverable;
+- when the repository requires approval, a reviewer with write access submitted an approving review on that exact head (approvals retained from earlier heads do not count);
+- every applicable check on that head passed, and skipped checks do not count as passes;
+- every declared internal workflow gate is complete.
+
+The merge is constrained to that head and uses the merge method native auto-merge would have used, for GitHub `gh pr merge <pr-url> --<configured-merge-method> --match-head-commit <validated-head-sha>` without `--auto` or `--admin`. It never uses administrator powers or bypasses reviews, checks or branch protections, and the agent records the refusal reason, head, approval and check state in delivery evidence. Ficus itself still merges nothing. Any other refusal keeps the previous fallback: the pull request stays open for a human merge and the agent tells the owner. `pr-merge`, `direct-merge` and the explicit human merge authorization below are unchanged.
+
 These modes preserve the earlier PR policies. `pr-merge` does not mean auto-merge. Absent a scoped human instruction as described below, denied direct merge requires an authorized policy/flow change; it does not silently bypass the configured policy. Shared instructions explain delivery to every flow participant; completion does not belong intrinsically to a reviewer agent type.
 
 ### Explicit human merge authorization
@@ -445,7 +457,7 @@ After code-host evidence is recorded for a completion-ready stream (a routed del
 
 The stream must also be `active`, unpaused, activated and free of open waits. The recipient is the agent that merged and closed events reach (the `delivery-owner` target, at `completion-ready` the last completed agent attempt), bound to the current flow version. Core sends it one system inbox message (`metadata.source: delivery-readiness`) naming each pull request, its head, the approval commit, the approver and their write-access association, and the check and mergeability state. The message is deduplicated per stream, flow version and set of heads, so repeated events never send a second wake for the same head, while a new head that becomes ready again sends a new one. At delivery the inbox re-checks that the stream, flow version, recipient and readiness are unchanged, so a wake queued before a merge, a new push or a new wait is dropped.
 
-The wake is a hint and grants nothing. Ficus never merges, enables auto-merge or finishes the flow itself; the participant re-verifies the live head, the effective approval and all applicable checks before acting under its delivery instructions. Merged and closed events still route to the delivery participant exactly as before, and `pr-merge` (human merge) deliveries never receive this wake.
+The wake is a hint and grants nothing. Ficus never merges, enables auto-merge or finishes the flow itself; the participant re-verifies the live head, the effective approval and all applicable checks (skipped checks are not passes) before acting under its delivery instructions. A pull request the wake reports is usually already mergeable, so GitHub may refuse to enable auto-merge; the wake text then points the participant to the [already-mergeable refusal](#auto-merge-refused-because-the-pull-request-is-already-mergeable) rule, under which it performs the equivalent head-constrained normal merge itself. Merged and closed events still route to the delivery participant exactly as before, and `pr-merge` (human merge) deliveries never receive this wake.
 
 ### Missed merge reconciliation
 
