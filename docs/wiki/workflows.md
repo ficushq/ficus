@@ -39,9 +39,29 @@ ficus workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FR
 ficus workflow export PRESET_ID
 ficus workflow schema human-approval   # step kinds and their fields, generated from the schema
 ficus workflow template-diff PRESET_ID
-ficus workflow revert PRESET_ID --revision REVISION_FROM_GET
+ficus workflow revert-preview PRESET_ID [--path PATH ...]
+ficus workflow revert PRESET_ID --revision REVISION_FROM_GET [--path PATH ...] [--accept-squad-impact]
 ficus workflow disable PRESET_ID --revision REVISION_FROM_GET
 ```
+
+### Edits to shared presets and code updates
+
+Shipped presets come from `config/workflows/*.yaml`, and `WorkflowSync` applies changes to them on every Core start. A shared preset can also be edited in the web editor or through the API. Those local edits and later code updates are merged part by part (`apps/core/src/services/workflows/template-merge.ts`):
+
+- Each row keeps the code template it was last reconciled with (`yamlTemplate`). On the next start that template is the base of a three-way merge between the local row and the new YAML.
+- The merge compares objects key by key, steps by step ID (with the step order kept separately) and participants by participant ID. Other arrays, such as `subscriptions`, are compared whole.
+- A part changed only in code takes the code value; a part changed only locally keeps the local value. So a tier change on one participant no longer stops renamed steps or new instructions from arriving.
+- A part changed on both sides keeps the local value. The sync logs it as a conflict, and it shows as a difference from the code template. A part both sides added under the same ID (for example a new step `qa`) with different content keeps the local part whole, with one conflict at its path; fields from the code version are not mixed into it.
+- When the merged result is not a valid workflow, the local definition is kept unchanged and the sync logs why.
+- When the update would rename or remove a step or participant that a squad's saved default workflow, recorded workflow choices or integration triggers customize by ID, the definition update is held back (the current definition is kept) and the sync logs the affected squads. Applying it would make those squads' stream creation fail with errors such as `Unknown step 'execute'`. Squad metadata is validated against the current preset (`validateSquadWorkflows`), so a squad cannot adopt the new IDs while the update is held back. Resolve it in one of two orders: remove or adjust the affected customizations first and then restore, or restore with `acknowledgeSquadImpact` and then update the squads to the new IDs.
+
+`yamlFieldOverrides` still lists the top-level fields (`description`, `definition`) that differ from the template. `GET /api/workflows/:id/template-diff` also returns `revision` and `differences`: one entry per differing part, with its `path` (for example `definition/participants/engineer/tier` or `definition/steps/implement/instructions`), a readable `label`, and the `current` and `template` values. A missing value means only one side has that part.
+
+`POST /api/workflows/:id/revert` takes `{ revision, paths?, acknowledgeSquadImpact? }`. Without `paths` it restores the whole preset; with `paths` (from `differences`) it restores only those parts, and refuses when the result would not be a valid workflow (restoring a renamed step usually needs its participant, entry and outcomes too). It refuses with `409` and code `WORKFLOW_RESTORE_BREAKS_SQUADS` when the restore would break saved squad customizations, unless `acknowledgeSquadImpact` is true. `POST /api/workflows/:id/revert/preview` takes `{ paths? }` and reports `affectedSquads` and `hiddenSquadCount` without changing anything. Both need `workflows:update` on the preset, so agents still cannot restore instance-scope presets. Affected squads are named only to callers who can read them; others are counted.
+
+The web catalog (**Administration → Workflows**) marks such presets **Differs from code template**. **Compare with code template** lists each differing part with both values, and people with update permission can **Restore selected** or **Restore everything**. A warning names the affected squads before a restore that would break them. The editor shows the same list, without restore controls.
+
+Rows that were frozen before this merge existed already have the latest template stored as their base, so their stale parts count as local edits and stay. Review them with the template diff and restore them; nothing is discarded automatically.
 
 ## Structured CLI input
 

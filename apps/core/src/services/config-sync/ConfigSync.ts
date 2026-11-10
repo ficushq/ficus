@@ -224,7 +224,7 @@ export abstract class ConfigSync<TYaml> {
       if (this.yamlFieldOverridesColumn) {
         const currentData = this.toComparable(existing)
         const storedOverrides = this.getStoredFieldOverrides(existing)
-        const nextData = this.applyOverrideKeys(record, currentData, storedOverrides)
+        const nextData = await this.reconcileUpdate(id, record, existing, currentData, storedOverrides)
         const fieldOverrides = this.diffOverrideKeys(nextData, template)
 
         await db
@@ -482,6 +482,26 @@ export abstract class ConfigSync<TYaml> {
 
   protected diffOverrideKeys(current: Record<string, unknown>, template: Record<string, unknown>): string[] {
     return Object.keys(template).filter((field) => field !== 'id' && !this.deepEqual(current[field], template[field]))
+  }
+
+  /**
+   * Field-level domains: the data to store when the YAML template changes. By default every
+   * overridden top-level field keeps its current value and every other field takes the YAML value.
+   * `existing` still holds the previous template, so a domain can merge at a finer grain.
+   */
+  protected async reconcileUpdate(
+    _id: string,
+    record: Record<string, unknown>,
+    _existing: Record<string, unknown>,
+    current: Record<string, unknown>,
+    fieldOverrides: string[]
+  ): Promise<Record<string, unknown>> {
+    return this.applyOverrideKeys(record, current, fieldOverrides)
+  }
+
+  /** The template a row was last reconciled with, before this sync replaces it. */
+  protected storedTemplate(row: Record<string, unknown>): Record<string, unknown> | null {
+    return (row[this.jsKey(this.yamlTemplateColumn)] as Record<string, unknown> | null) ?? null
   }
 
   protected applyOverrideKeys(

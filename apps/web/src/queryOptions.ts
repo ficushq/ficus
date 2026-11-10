@@ -190,6 +190,11 @@ export const queries = {
         queryFn: () => client.workflows.reviewers(squadId),
       }),
     list: () => queryOptions({ queryKey: queryKeys.workflows.list(), queryFn: client.workflows.list }),
+    templateDiff: (id: string) =>
+      queryOptions({
+        queryKey: queryKeys.workflows.templateDiff(id),
+        queryFn: () => client.workflows.templateDiff(id),
+      }),
     run: (id: string) =>
       queryOptions({ queryKey: queryKeys.workflows.run(id), queryFn: () => client.workflows.run(id) }),
     /** A handoff file's bytes; attachments never change, so one fetch serves every later view. */

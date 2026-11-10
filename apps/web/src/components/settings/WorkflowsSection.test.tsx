@@ -20,6 +20,7 @@ const identity = { type: 'user' as const, userId: 'workflow-user' }
 let permissions: string[]
 const squadId = 'squad-test'
 let metadata: Record<string, unknown>
+let restoreImpact: Record<string, unknown>
 
 beforeEach(async () => {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -30,6 +31,7 @@ beforeEach(async () => {
   requests = []
   permissions = ['workflows:read', 'workflows:create', 'workflows:update', 'workflows:delete']
   metadata = {}
+  restoreImpact = { revision: 'revision-1', affectedSquads: [], hiddenSquadCount: 0 }
   catalog = [
     {
       id: 'solo',
@@ -68,6 +70,29 @@ beforeEach(async () => {
       catalog = catalog.filter((entry) => entry.id !== 'solo')
       return Response.json({ ok: true })
     }
+    if (url.endsWith('/workflows/solo/template-diff'))
+      return Response.json({
+        hasDrift: true,
+        revision: catalog[0].revision,
+        fieldOverrides: ['definition'],
+        differences: [
+          {
+            path: 'definition/participants/worker/tier',
+            label: 'Participant worker: tier',
+            current: 'deep',
+          },
+          {
+            path: 'definition/steps/execute',
+            label: 'Step execute',
+            current: { id: 'execute' },
+          },
+        ],
+      })
+    if (url.endsWith('/workflows/solo/revert/preview')) return Response.json(restoreImpact)
+    if (url.endsWith('/workflows/solo/revert')) {
+      catalog[0] = { ...catalog[0], yamlFieldOverrides: [], revision: 'revision-restored' }
+      return Response.json(catalog[0])
+    }
     if (url.endsWith(`/squads/${squadId}`)) return Response.json({ id: squadId, metadata })
     return Response.json({})
   }) as typeof fetch
@@ -102,6 +127,17 @@ async function render(node = <WorkflowsSection />, url = '/', seedCatalog = true
   return dom.window.document.body
 }
 
+/** Wait for a condition while letting React commit between checks (act defers commits otherwise). */
+async function eventually(check: () => void) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return check()
+    } catch (error) {
+      if (attempt >= 100) throw error
+      await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+    }
+  }
+}
 const click = async (button: HTMLElement) => dom.act(async () => fireEvent.click(button))
 const change = async (field: HTMLElement, value: string) =>
   dom.act(async () => fireEvent.change(field, { target: { value } }))
@@ -310,4 +346,66 @@ test('edit deep links wait for the catalog before opening the editor', async () 
   })
   expect(body.querySelector('[aria-label="Preset ID"]')).toBeNull()
   expect((getByLabelText(body, 'Name') as HTMLInputElement).value).toBe(catalog[0].definition.name)
+})
+
+test('shows where a shared preset differs from its code template and restores selected parts', async () => {
+  catalog[0].yamlFieldOverrides = ['definition']
+  const body = await render()
+  const solo = [...body.querySelectorAll('article')].find((card) => card.textContent?.includes('solo ·'))!
+  expect(solo.textContent).toContain('Differs from code template')
+  await click(getByText(solo, 'Compare with code template'))
+  await eventually(() => expect(solo.textContent).toContain('Participant worker: tier'))
+  expect(solo.textContent).toContain('code updates to them are not applied')
+  await click(getByLabelText(solo, 'Restore Participant worker: tier'))
+  await click(getByText(solo, 'Restore selected'))
+  await eventually(() => expect(solo.textContent).toContain('Restore 1 selected part'))
+  expect(requests.find((request) => request.url.endsWith('/revert/preview'))?.body).toEqual({
+    paths: ['definition/participants/worker/tier'],
+  })
+  await click(getByText(solo, 'Restore'))
+  await eventually(() => expect(requests.some((request) => request.url.endsWith('/revert'))).toBe(true))
+  expect(requests.find((request) => request.url.endsWith('/revert'))?.body).toEqual({
+    revision: 'revision-1',
+    paths: ['definition/participants/worker/tier'],
+  })
+})
+
+test('warns and names affected squads before a restore that breaks their customizations', async () => {
+  catalog[0].yamlFieldOverrides = ['definition']
+  restoreImpact = {
+    revision: 'revision-1',
+    affectedSquads: [{ squadId, squadName: 'Platform squad', problems: ["Unknown step 'execute'"] }],
+    hiddenSquadCount: 1,
+  }
+  const body = await render()
+  const solo = [...body.querySelectorAll('article')].find((card) => card.textContent?.includes('solo ·'))!
+  await click(getByText(solo, 'Compare with code template'))
+  await eventually(() => expect((getByText(solo, 'Restore everything') as HTMLButtonElement).disabled).toBe(false))
+  await click(getByText(solo, 'Restore everything'))
+  await eventually(() => expect(solo.textContent).toContain('Platform squad'))
+  expect(solo.textContent).toContain("Unknown step 'execute'")
+  expect(solo.textContent).toContain('1 affected squad is not visible to you')
+  expect(requests.some((request) => request.url.endsWith('/revert'))).toBe(false)
+  await click(getByText(solo, 'Restore anyway'))
+  await eventually(() => expect(requests.some((request) => request.url.endsWith('/revert'))).toBe(true))
+  expect(requests.find((request) => request.url.endsWith('/revert'))?.body).toEqual({
+    revision: 'revision-1',
+    acknowledgeSquadImpact: true,
+  })
+})
+
+test('the editor shows template drift without restore controls; readers see no restore controls', async () => {
+  catalog[0].yamlFieldOverrides = ['definition']
+  const body = await render(<WorkflowsSection />, '/?editWorkflow=solo')
+  const notice = getByText(body, /This preset differs from its code template, so code updates/)
+  await click(notice)
+  await eventually(() => expect(body.textContent).toContain('Participant worker: tier'))
+  expect(queryByText(body.querySelector('[role="dialog"]')!, 'Restore everything')).toBeNull()
+  await dom.act(async () => mounted.root.unmount())
+  permissions = ['workflows:read']
+  const reader = await render()
+  const solo = [...reader.querySelectorAll('article')].find((card) => card.textContent?.includes('solo ·'))!
+  await click(getByText(solo, 'Compare with code template'))
+  await eventually(() => expect(solo.textContent).toContain('Participant worker: tier'))
+  expect(queryByText(solo, 'Restore everything')).toBeNull()
 })

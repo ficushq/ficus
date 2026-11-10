@@ -22,7 +22,13 @@ export * from './resources/squads'
 export * from './resources/push'
 export * from './resources/notificationConfig'
 
-export type { WorkflowCatalogEntry, WorkflowRunDetail } from './resources/workflows'
+export type {
+  WorkflowCatalogEntry,
+  WorkflowRestoreImpact,
+  WorkflowRunDetail,
+  WorkflowTemplateDiff,
+  WorkflowTemplateDifference,
+} from './resources/workflows'
 
 export * from './resources/workStreams'
 

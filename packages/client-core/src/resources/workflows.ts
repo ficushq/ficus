@@ -21,6 +21,34 @@ export interface WorkflowCatalogEntry extends WorkflowPreset {
   revision: string
   disabled: boolean
   hasTemplate: boolean
+  /** Top-level fields (`description`, `definition`) that differ from the code template. */
+  yamlFieldOverrides?: string[]
+}
+
+/** One place where a shared preset differs from its code template. */
+export interface WorkflowTemplateDifference {
+  /** Path for a selective restore, such as `definition/participants/engineer/tier`. */
+  path: string
+  /** A readable name, such as "Participant engineer: tier". */
+  label: string
+  /** Absent when only the code template has this part. */
+  current?: unknown
+  /** Absent when only the preset has this part. */
+  template?: unknown
+}
+
+export interface WorkflowTemplateDiff {
+  hasDrift: boolean
+  revision: string
+  fieldOverrides: string[]
+  differences: WorkflowTemplateDifference[]
+}
+
+/** Squads whose saved customizations a restore would break. Only squads the caller may see are named. */
+export interface WorkflowRestoreImpact {
+  revision: string
+  affectedSquads: Array<{ squadId: string; squadName: string; problems: string[] }>
+  hiddenSquadCount: number
 }
 export interface WorkflowRunDetail {
   workStreamId: string
@@ -104,6 +132,19 @@ export function workflowsResource(t: Transport) {
       }),
     delete: (id: string, revision: string) =>
       t.request<{ ok: true }>(`/workflows/${encodeURIComponent(id)}`, { method: 'DELETE', body: { revision } }),
+    templateDiff: (id: string) => t.request<WorkflowTemplateDiff>(`/workflows/${encodeURIComponent(id)}/template-diff`),
+    /** What restoring `paths` (or everything) would break for squads, without applying it. */
+    previewRestore: (id: string, paths?: string[]) =>
+      t.request<WorkflowRestoreImpact>(`/workflows/${encodeURIComponent(id)}/revert/preview`, {
+        method: 'POST',
+        body: paths ? { paths } : {},
+      }),
+    /** Restore the preset, or only `paths`, to its code template. */
+    restore: (id: string, revision: string, options: { paths?: string[]; acknowledgeSquadImpact?: boolean } = {}) =>
+      t.request<WorkflowCatalogEntry>(`/workflows/${encodeURIComponent(id)}/revert`, {
+        method: 'POST',
+        body: { revision, ...options },
+      }),
     parse: (squadId: string, text: string) =>
       t.request<WorkflowDefinition>('/workflows/parse', { method: 'POST', body: { squadId, text } }),
     resolve: (squadId: string, source: WorkflowSource) =>

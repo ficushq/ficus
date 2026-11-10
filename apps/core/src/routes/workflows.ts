@@ -35,19 +35,36 @@ import {
   filterAccessibleWorkflows,
 } from '../services/workflows/access'
 import { hasPermission, type Identity } from '../services/rbac'
+import { resolvePermissionSquadScope, scopeAllows } from '../services/rbac/permission-scope'
 import { workflowSync } from '../services/config-sync'
 import {
   createWorkflow,
   deleteWorkflow,
   replaceWorkflow,
+  previewWorkflowRestore,
   revertWorkflow,
   resolveStoredWorkflow,
+  workflowRevision,
+  workflowTemplateDifferences,
   serializeWorkflow,
   setWorkflowDisabled,
   WorkflowError,
 } from '../services/workflows/catalog'
 
 const revisionSchema = z.strictObject({ revision: z.string().min(1).max(200) })
+const restorePathsSchema = z.array(z.string().min(1).max(500)).min(1).max(200).optional()
+const restoreSchema = z.strictObject({
+  revision: z.string().min(1).max(200),
+  paths: restorePathsSchema,
+  acknowledgeSquadImpact: z.boolean().optional(),
+})
+const restorePreviewSchema = z.strictObject({ paths: restorePathsSchema })
+
+/** Squads the caller may read, so restore warnings name only those. */
+async function squadVisibility(identity: Identity) {
+  const scope = await resolvePermissionSquadScope(identity, 'squads:read')
+  return (squadId: string) => scopeAllows(scope, squadId)
+}
 /** The reading agent, so delivery instructions can say when the delivery participant is the reader. */
 const viewerAgentId = (identity: Identity | undefined) => (identity?.type === 'agent' ? identity.agentId : undefined)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -426,8 +443,35 @@ export const workflowsRouter = new Hono()
       await authorizeWorkflow(c.get('identity')!, 'workflows:update', c.req.param('id'))
       await next()
     },
-    zValidator('json', revisionSchema),
-    async (c) => c.json(serializeWorkflow(await revertWorkflow(c.req.param('id'), c.req.valid('json').revision)))
+    zValidator('json', restoreSchema),
+    async (c) => {
+      const { revision, paths, acknowledgeSquadImpact } = c.req.valid('json')
+      return c.json(
+        serializeWorkflow(
+          await revertWorkflow(c.req.param('id'), revision, {
+            paths,
+            acknowledgeSquadImpact,
+            canSeeSquad: await squadVisibility(c.get('identity')!),
+          })
+        )
+      )
+    }
+  )
+  // What a restore would change for squads, before the person confirms it. Same permission as the restore.
+  .post(
+    '/:id/revert/preview',
+    async (c, next) => {
+      await authorizeWorkflow(c.get('identity')!, 'workflows:update', c.req.param('id'))
+      await next()
+    },
+    zValidator('json', restorePreviewSchema),
+    async (c) =>
+      c.json(
+        await previewWorkflowRestore(c.req.param('id'), {
+          paths: c.req.valid('json').paths,
+          canSeeSquad: await squadVisibility(c.get('identity')!),
+        })
+      )
   )
   .get(
     '/:id/template-diff',
@@ -437,10 +481,14 @@ export const workflowsRouter = new Hono()
     },
     async (c) => {
       const [row] = await db
-        .select({ id: workflows.id })
+        .select()
         .from(workflows)
         .where(eq(workflows.id, c.req.param('id')))
       if (!row) return c.json({ error: 'Workflow not found' }, 404)
-      return c.json(await workflowSync.getTemplateDiff(row.id))
+      return c.json({
+        ...(await workflowSync.getTemplateDiff(row.id)),
+        revision: workflowRevision(row),
+        differences: workflowTemplateDifferences(row),
+      })
     }
   )

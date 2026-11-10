@@ -15,6 +15,8 @@ import { WorkflowGraph } from '../WorkflowGraph'
 import { WorkflowEditor } from '../squads/WorkflowEditor'
 import { useURLState } from '../../hooks/useURLState'
 import { readWorkflowDraft, workflowDraftKey, type WorkflowDraft } from '../../lib/workflowDraftStorage'
+import { WorkflowTemplateDrift } from './WorkflowTemplateDrift'
+import { hasTemplateDrift } from '../../lib/workflowTemplateDrift'
 
 const field = 'ficus-field w-full min-w-0 border border-th-border bg-surface px-3 py-2 text-sm'
 
@@ -133,6 +135,8 @@ function WorkflowCard({
   const canDelete = permissions.can('workflows:delete')
   const cache = useQueryClient()
   const [preview, setPreview] = useState(false)
+  const drift = hasTemplateDrift(entry)
+  const [compare, setCompare] = useState(false)
   const mutation = useMutation({
     mutationFn: async (action: 'toggle' | 'delete') =>
       action === 'delete'
@@ -153,6 +157,7 @@ function WorkflowCard({
                 ? 'Personal preset'
                 : 'Available to all squads'}
             {entry.disabled ? ' · Disabled' : ''}
+            {drift ? ' · Differs from code template' : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -188,7 +193,17 @@ function WorkflowCard({
       >
         {preview ? 'Hide flow' : 'Preview flow'}
       </button>
+      {drift && (
+        <button
+          className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
+          aria-expanded={compare}
+          onClick={() => setCompare(!compare)}
+        >
+          {compare ? 'Hide template comparison' : 'Compare with code template'}
+        </button>
+      )}
       {preview && <WorkflowGraph definition={entry.definition} />}
+      {compare && <WorkflowTemplateDrift entry={entry} canRestore={canUpdate} />}
       {mutation.isError && (
         <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {mutation.error.message}
@@ -407,6 +422,21 @@ function WorkflowModal({
             </span>
           </label>
         </section>
+        {updating && hasTemplateDrift(entry) && (
+          <details className="shrink-0">
+            <summary className="cursor-pointer text-sm text-status-warning-700 dark:text-status-warning-400">
+              This preset differs from its code template, so code updates to those parts are not applied. Show what
+              differs.
+            </summary>
+            <div className="mt-2">
+              <WorkflowTemplateDrift entry={entry} canRestore={false} />
+              <p className="mt-1 text-xs text-muted">
+                To restore parts to the code template, close the editor and use Compare with code template on the
+                workflow card.
+              </p>
+            </div>
+          </details>
+        )}
         <WorkflowEditor
           definitionOnly
           nameInHeader

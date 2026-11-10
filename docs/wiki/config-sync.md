@@ -76,7 +76,7 @@ Schedule templates support cron/interval actions such as inbox messages, agent s
 
 ### Workflows
 
-`WorkflowSync` validates each preset with `workflowPresetSchema` and stores its ID, description, scope, and flow definition. Presets default to instance scope. Selecting a style governs participation and delivery for a work stream; see [Workflows, flows, and squads](workflows.md).
+`WorkflowSync` validates each preset with `workflowPresetSchema` and stores its ID, description, scope, and flow definition. Presets default to instance scope. Selecting a style governs participation and delivery for a work stream; see [Workflows, flows, and squads](workflows.md). Unlike other field-level domains, it does not keep a whole edited `definition`: it merges code updates into local edits part by part against the previously stored template, and holds a definition update back when it would break a squad's saved customization. See [Edits to shared presets and code updates](workflows.md#edits-to-shared-presets-and-code-updates). The `reconcileUpdate()` hook on `ConfigSync` is where a domain can merge at a finer grain.
 
 ### Channels
 
@@ -96,6 +96,7 @@ Template-diff responses include `{ hasDrift, current, template, fieldOverrides }
 - `POST /api/agent-types/:id/revert-to-template`
 - `POST /api/agent-types/:id/revert-template-fields`
 - `GET /api/workflows/:id/template-diff`
-- `POST /api/workflows/:id/revert` (requires the current revision)
+- `POST /api/workflows/:id/revert` (requires the current revision; optional `paths` and `acknowledgeSquadImpact`)
+- `POST /api/workflows/:id/revert/preview`
 
 Use the domain's current routes or CLI help instead of assuming every domain exposes identical CRUD or revert endpoints. Template snapshots keep diffs and reverts independent of filesystem reads. Webhook shell actions remain file-only and are outside these synchronized domains.
