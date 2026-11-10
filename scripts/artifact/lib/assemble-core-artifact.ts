@@ -210,7 +210,7 @@ async function copyRegularFile(src: string, dest: string): Promise<void> {
   try {
     stats = await stat(src)
   } catch (error) {
-    throw new Error(`cannot stage ${src} (broken symlink?): ${String(error)}`)
+    throw new Error(`cannot stage ${src} (broken symlink?): ${String(error)}`, { cause: error })
   }
   await mkdir(dirname(dest), { recursive: true })
   await copyFile(src, dest)
@@ -232,7 +232,7 @@ async function copyTree(src: string, dest: string): Promise<void> {
       try {
         isDirectory = (await stat(from)).isDirectory()
       } catch (error) {
-        throw new Error(`cannot stage symlink ${from} (broken target?): ${String(error)}`)
+        throw new Error(`cannot stage symlink ${from} (broken target?): ${String(error)}`, { cause: error })
       }
     }
     if (isDirectory) await copyTree(from, to)

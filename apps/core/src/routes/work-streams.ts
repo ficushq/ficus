@@ -1415,7 +1415,7 @@ export const workStreamsRouter = new Hono()
     if (!existing) return c.json({ error: 'Work stream not found' }, 404)
     // Tolerant body parse (like park): an empty body stays valid for existing
     // callers; a note, when present, is validated and passed through (§4b).
-    let body: unknown = {}
+    let body: unknown
     try {
       const text = await c.req.text()
       body = text ? JSON.parse(text) : {}
@@ -1569,7 +1569,7 @@ export const workStreamsRouter = new Hono()
       if (!existing) {
         return c.json({ error: 'Work stream not found' }, 404)
       }
-      let body: unknown = {}
+      let body: unknown
       try {
         const text = await c.req.text()
         body = text ? JSON.parse(text) : {}

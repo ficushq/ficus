@@ -502,7 +502,7 @@ export async function handleMaterializeAttachment(req: MaterializeAttachmentRequ
             const existing = await fs.open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
             try {
               if (!Buffer.from(await existing.readFile()).equals(content))
-                throw new Error('ATTACHMENT_MATERIALIZATION_CONFLICT')
+                throw new Error('ATTACHMENT_MATERIALIZATION_CONFLICT', { cause: error })
             } finally {
               await existing.close()
             }

@@ -46,7 +46,7 @@ function resultImageSrcs(result: string | undefined | null): string[] {
   if (!result || !HAS_IMAGE_PART.test(result)) return []
   const cached = srcCache.get(result)
   if (cached) return cached
-  let srcs: string[] = []
+  let srcs: string[]
   try {
     srcs = imageSrcsFromContent((JSON.parse(result) as { content?: unknown } | null)?.content)
   } catch {

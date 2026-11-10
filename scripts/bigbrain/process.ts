@@ -97,8 +97,9 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
     if (timedOut) throw new Error('operation_failed')
     return { code, stdout: code === 0 ? stdout : '' }
   } catch (error) {
-    if (overflow || (error instanceof Error && error.message === 'output_limit')) throw new Error('output_limit')
-    throw new Error('operation_failed')
+    if (overflow || (error instanceof Error && error.message === 'output_limit'))
+      throw new Error('output_limit', { cause: error })
+    throw new Error('operation_failed', { cause: error })
   } finally {
     clearTimeout(timer)
     kill()

@@ -110,7 +110,7 @@ export async function completeOnceWithClaudeCode(
     }
     throw new Error(aborted ? 'Claude Code one-shot call aborted' : 'Claude Code exited without an answer')
   } catch (error) {
-    if (aborted) throw new Error('Claude Code one-shot call aborted')
+    if (aborted) throw new Error('Claude Code one-shot call aborted', { cause: error })
     throw error
   } finally {
     request.signal.removeEventListener('abort', onAbort)

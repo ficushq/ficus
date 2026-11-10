@@ -1622,7 +1622,7 @@ export class DockerSandboxManager implements ISandboxManager {
   }
 
   spawnShell(sandboxId: string, cols: number, rows: number, workspacePath?: string, cwd?: string): IPty | null {
-    let containerId: string | null = null
+    let containerId: string | null
 
     // Check in-memory cache first
     const sandbox = this.sandboxes.get(sandboxId)

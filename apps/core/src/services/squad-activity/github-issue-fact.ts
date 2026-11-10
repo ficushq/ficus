@@ -169,8 +169,8 @@ export function extractGitHubIssueDispatchFact(
         : null
   if (!nativeId) return null
 
-  let occurredAt: string | null = null
-  let actorLogin: string | null = null
+  let occurredAt: string | null
+  let actorLogin: string | null
   let detail: string | null = null
   if (eventType === 'issues') {
     // A close carries its own authoritative timestamp; the poller's synthesized `updated_at` is

@@ -55,7 +55,7 @@ function originOf(url: string | undefined): string | undefined {
 
 /** The base an address serves the web app under: its own path, else APP_BASE_PATH. */
 function basePathOf(url: string | undefined, legacyBasePath: string | undefined): string {
-  let path = ''
+  let path: string
   try {
     path = url ? normalizeBasePath(new URL(url).pathname) : ''
   } catch {

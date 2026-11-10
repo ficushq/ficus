@@ -448,7 +448,9 @@ export class AdmissionScope {
         try {
           await cleanup?.(value)
         } catch (cleanupError) {
-          throw new AggregateError([finishError, cleanupError], 'Admission effect finish and cleanup both failed')
+          throw new AggregateError([finishError, cleanupError], 'Admission effect finish and cleanup both failed', {
+            cause: cleanupError,
+          })
         }
         throw finishError
       }
@@ -458,7 +460,8 @@ export class AdmissionScope {
         } catch (cleanupError) {
           throw new AggregateError(
             [new Error('Admission effect was revoked or superseded'), cleanupError],
-            'Admission effect revocation cleanup failed'
+            'Admission effect revocation cleanup failed',
+            { cause: cleanupError }
           )
         }
         throw new Error('Admission effect was revoked or superseded')

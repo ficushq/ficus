@@ -108,9 +108,10 @@ export async function publishWorkspaceUpload(options: {
             signal,
           })
         } catch (error) {
-          if (error instanceof SandboxHttpError && error.status === 413) throw new Error(upgradeMessage)
+          if (error instanceof SandboxHttpError && error.status === 413)
+            throw new Error(upgradeMessage, { cause: error })
           if (!(error instanceof SandboxHttpError && error.status === 404)) throw error
-          if (!legacyUploadFits(targetPath, file.bytes)) throw new Error(upgradeMessage)
+          if (!legacyUploadFits(targetPath, file.bytes)) throw new Error(upgradeMessage, { cause: error })
           signal?.throwIfAborted()
           const bytes = await Bun.file(file.tempPath).arrayBuffer()
           response = await client.write(

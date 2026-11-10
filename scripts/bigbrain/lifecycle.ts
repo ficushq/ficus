@@ -47,7 +47,7 @@ async function present(path: string): Promise<boolean> {
     return true
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false
-    throw new Error('storage_unavailable')
+    throw new Error('storage_unavailable', { cause: error })
   }
 }
 const adminFor = (deps: LifecycleDeps) => (record: ControlReceipt) =>

@@ -142,7 +142,7 @@ export async function recordRestorePlan(
 ): Promise<RestorePlan> {
   const dir = join(options.root ?? BIGBRAIN_STATE_ROOT, 'restore')
   const plan = restorePlanSchema.parse({ schema: 2, manifestDigest, vaults })
-  let existing: RestorePlan | null = null
+  let existing: RestorePlan | null
   try {
     existing = await readPrivateJson(dir, 'plan.json', restorePlanSchema, { uid: options.uid })
   } catch {

@@ -447,7 +447,10 @@ export async function materializeAttachmentBytes(
               cleanupError = cleanupError ? new AggregateError([cleanupError, failure]) : failure
             }
           }
-          if (cleanupError) throw new AggregateError([error, cleanupError], 'Attachment materialization cleanup failed')
+          if (cleanupError)
+            throw new AggregateError([error, cleanupError], 'Attachment materialization cleanup failed', {
+              cause: error,
+            })
           throw error
         } finally {
           closeMaterializationDescriptors([finalFd, temporary.fd], published)

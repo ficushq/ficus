@@ -202,7 +202,7 @@ export async function runDomOrderGate(argv = Bun.argv.slice(2), io: GatePrimitiv
     const signals = ['SIGINT', 'SIGTERM'] as NodeJS.Signals[],
       listeners = signals.map((signal) => () => child.kill(signal))
     signals.forEach((signal, index) => io.onSignal(signal, listeners[index]!))
-    let stderr = '',
+    let stderr: string,
       code = -1
     try {
       ;[, stderr, code] = await Promise.all([

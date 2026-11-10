@@ -260,6 +260,10 @@ export class K8sSandboxManager implements ISandboxManager {
       log.info(`HTTP client ready for sandbox: ${sandboxId}`)
     } catch (err) {
       client.close()
+      // No cause on purpose: classifyProvisionFailure walks the cause chain, and
+      // an executor connection error (ECONNREFUSED, abort) would reclassify this
+      // sandbox failure as a control-plane outage or a cancellation.
+      // eslint-disable-next-line preserve-caught-error -- see the comment above
       throw new Error(`Failed to connect to sandbox ${sandboxId}: ${err}`)
     }
 

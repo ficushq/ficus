@@ -402,7 +402,7 @@ export function registerRemoteHostsCommands(program: Command) {
           await apiDelete(`/api/remote-hosts/${host.id}`)
         } catch (error) {
           if (error instanceof Error && /not found/i.test(error.message)) {
-            throw new Error(`Remote host "${name}" not found.`)
+            throw new Error(`Remote host "${name}" not found.`, { cause: error })
           }
           throw error
         }

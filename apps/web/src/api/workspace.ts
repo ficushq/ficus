@@ -272,7 +272,9 @@ export async function restartSandbox(squadId: string): Promise<void> {
     await apiFetch(`/squads/${squadId}/sandbox/restart`, { method: 'POST', signal: AbortSignal.timeout(100_000) })
   } catch (error) {
     if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-      throw new Error('Restart request timed out; its outcome is unknown. Check sandbox status before retrying.')
+      throw new Error('Restart request timed out; its outcome is unknown. Check sandbox status before retrying.', {
+        cause: error,
+      })
     }
     throw error
   }

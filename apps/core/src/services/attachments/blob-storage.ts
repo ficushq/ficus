@@ -150,7 +150,7 @@ async function writeCollectionBlob(
             }
           }
           if (cleanupErrors.length) {
-            throw new AggregateError([error, ...cleanupErrors], 'Attachment blob cleanup failed')
+            throw new AggregateError([error, ...cleanupErrors], 'Attachment blob cleanup failed', { cause: error })
           }
           throw error
         } finally {
@@ -236,7 +236,7 @@ async function readVerifiedCollectionBlob(
     return bytes
   } catch (error) {
     if (error instanceof Error && error.message === 'ATTACHMENT_MATERIALIZATION_CONFLICT') {
-      throw new Error('ATTACHMENT_BLOB_CORRUPT')
+      throw new Error('ATTACHMENT_BLOB_CORRUPT', { cause: error })
     }
     throw error
   } finally {

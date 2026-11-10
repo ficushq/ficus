@@ -1465,7 +1465,7 @@ describe('async agent questions', () => {
       const unsubscribe = eventEmitter.on('agent-question.answered', (event) => answeredEvents.push(event))
       const ensureFlowDispatch = spyOn(await import('../workflows/execution'), 'ensureFlowDispatch')
 
-      let resolved: Awaited<ReturnType<typeof resolveAgentQuestionWithRelayedAnswer>> = null
+      let resolved: Awaited<ReturnType<typeof resolveAgentQuestionWithRelayedAnswer>>
       try {
         resolved = await resolveAgentQuestionWithRelayedAnswer(q.id, {
           relayedByAgentId: agent.id,

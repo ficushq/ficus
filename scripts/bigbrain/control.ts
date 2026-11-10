@@ -57,7 +57,7 @@ async function present(path: string): Promise<boolean> {
     return true
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false
-    throw new Error('storage_unavailable')
+    throw new Error('storage_unavailable', { cause: error })
   }
 }
 function code(error: unknown): ManagedBigbrainErrorCode {
@@ -445,7 +445,7 @@ export async function controlMain(args: string[]): Promise<void> {
     } catch (error) {
       const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
       console.error(`Managed BigBrain control isolation refused at ${stage.name} (${reason})`)
-      throw new Error('unsupported_host')
+      throw new Error('unsupported_host', { cause: error })
     }
     const bytes = await readBoundedControlBytes(Bun.stdin.stream())
     let input: unknown

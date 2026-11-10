@@ -66,7 +66,7 @@ async function present(path: string): Promise<boolean> {
     return true
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false
-    throw new Error('storage_unavailable')
+    throw new Error('storage_unavailable', { cause: error })
   }
 }
 
@@ -157,7 +157,7 @@ export async function cachedMemberInvite(options: {
       invites = before
       await write()
     }
-    throw new Error(code)
+    throw new Error(code, { cause: error })
   }
   if (Date.parse(minted.expiresAt) !== Date.parse(pending.expiresAt)) throw new Error('upstream_protocol')
   invites = [...before, { ...pending, phase: 'complete', inviteId: minted.inviteId, secret: minted.secret }]

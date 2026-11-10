@@ -161,6 +161,10 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
                 const message = error instanceof Error ? error.message : String(error)
                 throw new Error(
                   `${message}\n\nRecovery accounting is unavailable. Do not repeat the operation until its affected state can be reconciled.`,
+                  // The cause is deliberately the operation's own error, not the
+                  // accounting failure (logged above): callers walk this chain for
+                  // the operation's restart context and failure details.
+                  // eslint-disable-next-line preserve-caught-error -- see the comment above
                   { cause: error }
                 )
               }

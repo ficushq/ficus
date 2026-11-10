@@ -191,7 +191,7 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
     } catch (error) {
       log.warn(`Issue events withheld: repository identity ${reason}; cursor retained`)
       if (error instanceof EventPollingBudgetExceededError) throw error
-      throw new Error(`GitHub issue repository identity lookup failed (${reason})`)
+      throw new Error(`GitHub issue repository identity lookup failed (${reason})`, { cause: error })
     }
   }
 }

@@ -49,7 +49,7 @@ describe('VM setup lease contention', () => {
       events.push('first-exit')
     })
     const pending: Promise<unknown>[] = [first]
-    let settled: PromiseSettledResult<unknown>[] = []
+    let settled: PromiseSettledResult<unknown>[]
     try {
       await bounded(entered.promise)
       const second = withVmSetupLease(
@@ -168,7 +168,7 @@ describe('VM setup lease contention', () => {
       { signal: abort.signal }
     )
     const pending: Promise<unknown>[] = [first]
-    let settled: PromiseSettledResult<unknown>[] = []
+    let settled: PromiseSettledResult<unknown>[]
     try {
       await bounded(entered.promise)
       abort.abort()

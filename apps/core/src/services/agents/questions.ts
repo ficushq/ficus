@@ -467,7 +467,7 @@ export async function setQuestionBlocking(
       .for('update')
     if (!row) return null
 
-    let changedWorkStreams: ChangedWorkStream[] = []
+    let changedWorkStreams: ChangedWorkStream[]
     if (blocking) {
       const message = (row.questionData as QuestionData | null)?.questions
         ?.map((q) => q.question)

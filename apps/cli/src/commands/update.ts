@@ -110,7 +110,8 @@ export async function applyUpdate(opts: { offline?: boolean; ref?: string }, dep
       }
       if (!localRoot || !isLocalTarget(target, deps.localPort(localRoot))) {
         throw new Error(
-          `${target} is unreachable (${(error as Error).message}). To update the checkout on this machine instead, run \`ficus server update\` (or \`ficus update apply --offline\`).`
+          `${target} is unreachable (${(error as Error).message}). To update the checkout on this machine instead, run \`ficus server update\` (or \`ficus update apply --offline\`).`,
+          { cause: error }
         )
       }
       deps.log(`${target} is unreachable (${(error as Error).message}) — updating its checkout offline`)

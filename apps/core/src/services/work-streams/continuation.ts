@@ -526,7 +526,7 @@ export async function reportPersistentIdleIfCurrent(input: {
     }
 
     input.afterAgentLock?.()
-    let notified = false
+    let notified: boolean
     try {
       notified = await persistWorkStreamPersistentIdleInTransaction(
         tx,

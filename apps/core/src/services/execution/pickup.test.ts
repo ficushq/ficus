@@ -2523,7 +2523,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       },
     })
     await executionLocked
-    let recoveryResult: string[] = []
+    let recoveryResult: string[]
     try {
       const reservationProbe = await secondConnection`
         SELECT execution_id FROM execution_admission_reservations

@@ -16,13 +16,12 @@ export function findSessionFile(dir: string): string | null {
   return join(dir, files[files.length - 1])
 }
 
-export function openOrCreateSession(agentId: string, cwd?: string): SessionManager {
+export function openOrCreateSession(agentId: string, _cwd?: string): SessionManager {
   const sessionDir = getSessionDir(agentId)
-  // CWD is just symbolic since we control the sessions completely. If no CWD is
-  // provided (probably the workspace path), just use the session directory.
-  cwd ??= sessionDir
+  // CWD is just symbolic since we control the sessions completely, so the
+  // session directory is used as the CWD and the caller's CWD is ignored.
   // continueRecent finds the most recent (only) session file in the directory,
-  // and if it exists, opens it (but uses our provided CWD), otherwise creates a
+  // and if it exists, opens it (but uses the session directory as CWD), otherwise creates a
   // new session.
   return SessionManager.continueRecent(sessionDir, sessionDir)
 }

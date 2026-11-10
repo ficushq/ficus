@@ -247,7 +247,9 @@ export class BashInvocationRegistry {
       try {
         await unpublishedLease?.complete('failed')
       } catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], 'Bash reservation rollback could not be persisted')
+        throw new AggregateError([error, cleanupError], 'Bash reservation rollback could not be persisted', {
+          cause: cleanupError,
+        })
       }
       throw error
     }
@@ -614,7 +616,8 @@ export class BashInvocationRegistry {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         const existing = JSON.parse(await readFile(path, 'utf8')) as BashInvocationRecord
-        if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error('TERMINAL_GENERATION_CONFLICT')
+        if (JSON.stringify(existing) !== JSON.stringify(record))
+          throw new Error('TERMINAL_GENERATION_CONFLICT', { cause: error })
       }
     })
   }

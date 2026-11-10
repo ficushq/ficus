@@ -210,7 +210,9 @@ export async function listInstalledPackages(nodeModulesDir: string, prefix = '')
       try {
         manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
       } catch (error) {
-        throw new Error(`installed package node_modules/${path} has no readable package.json: ${String(error)}`)
+        throw new Error(`installed package node_modules/${path} has no readable package.json: ${String(error)}`, {
+          cause: error,
+        })
       }
       found.push({ path, name: String(manifest.name), version: String(manifest.version) })
       found.push(...(await listInstalledPackages(join(dir, 'node_modules'), path)))

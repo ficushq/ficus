@@ -349,7 +349,7 @@ export const deploymentsRouter = new Hono()
       return c.json({ error: publicErrorMessage(err as Error) }, 400)
     }
 
-    let localDeployment: LocalDeployment | null = null
+    let localDeployment: LocalDeployment
     try {
       await deps.ensureSquadSandbox(squad)
       localDeployment = await createLocalDeployment(squad, input)

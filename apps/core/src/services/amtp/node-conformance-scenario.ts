@@ -94,7 +94,9 @@ export class ScenarioScope {
       try {
         await this.dispose()
       } catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], `Scenario ${this.id} and its cleanup failed`)
+        throw new AggregateError([error, cleanupError], `Scenario ${this.id} and its cleanup failed`, {
+          cause: cleanupError,
+        })
       }
       throw error
     }

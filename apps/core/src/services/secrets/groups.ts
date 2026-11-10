@@ -22,7 +22,7 @@ export function globToRegExp(pattern: string): RegExp {
 function load(): Record<string, RegExp[]> {
   if (groupsCache) return groupsCache
 
-  let parsed: GroupsFile = {}
+  let parsed: GroupsFile
   try {
     parsed = (parse(readFileSync(join(CONFIG_DIR, 'secrets', 'groups.yaml'), 'utf-8')) as GroupsFile) ?? {}
   } catch {
