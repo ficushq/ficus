@@ -141,7 +141,7 @@ function SectionHeader({
   const content = (
     <div className="flex items-center gap-2">
       {/* From sm up, reserve the chevron's width so the title lines up with collapsible headers. On phones the
-          spacer is dropped so the header and its rows (FEED_ROW_INSET) start at the page edge. */}
+          spacer is dropped so the header title and its rows (FEED_ROW_INSET) share the 12px padding edge. */}
       {alignDisclosure && !collapsible && <span aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" />}
       {collapsible &&
         (collapsed ? (
