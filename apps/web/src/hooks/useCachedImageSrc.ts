@@ -20,12 +20,11 @@ function parseImageId(url: string): string | null {
  * signed image path (e.g. a `data:` preview).
  */
 export function useCachedImageSrc(url: string | null | undefined): string | null {
-  const [src, setSrc] = useState<string | null>(url ?? null)
+  // The cached blob for one signed URL; any other URL shows as is until its own blob is ready.
+  const [cached, setCached] = useState<{ url: string; objectUrl: string } | null>(null)
 
   useEffect(() => {
-    // Show the (valid) signed URL right away; if it's cacheable-by-id we upgrade to the blob below.
-    setSrc(url ?? null)
-
+    // The (valid) signed URL shows right away; if it's cacheable-by-id we upgrade to the blob below.
     if (!url) return
     const id = parseImageId(url)
     if (!id || typeof caches === 'undefined') return
@@ -46,18 +45,22 @@ export function useCachedImageSrc(url: string | null | undefined): string | null
         }
         const blob = await res.blob()
         if (cancelled) return
-        objectUrl = URL.createObjectURL(blob)
-        setSrc(objectUrl)
+        const created = URL.createObjectURL(blob)
+        objectUrl = created
+        setCached({ url, objectUrl: created })
       } catch {
-        // Any failure: keep the raw signed URL already set above.
+        // Any failure: keep showing the raw signed URL.
       }
     })()
 
     return () => {
       cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      if (!objectUrl) return
+      const revoked = objectUrl
+      URL.revokeObjectURL(revoked)
+      setCached((current) => (current?.objectUrl === revoked ? null : current))
     }
   }, [url])
 
-  return src
+  return cached && cached.url === url ? cached.objectUrl : (url ?? null)
 }

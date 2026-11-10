@@ -86,11 +86,13 @@ export function useAssistantPosition(
       // Keep positioning usable when browser storage is unavailable.
     }
   }, [])
-  useLayoutEffect(() => {
-    if (!visible) return
-    const saved = savedCorner()
+  // Becoming visible picks up a corner another tab or a remount saved, while rendering.
+  const [seenVisible, setSeenVisible] = useState(false)
+  if (seenVisible !== visible) {
+    setSeenVisible(visible)
+    const saved = visible ? savedCorner() : null
     if (saved) updateCorner(saved)
-  }, [visible])
+  }
   const [point, setPoint] = useState<{ left: number; top: number; maxHeight?: number }>()
   const [dragging, setDragging] = useState(false)
   const drag = useRef<{ pointer: number; x: number; y: number; left: number; top: number; moved: boolean } | null>(null)

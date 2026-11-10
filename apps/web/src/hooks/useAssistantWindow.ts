@@ -53,13 +53,16 @@ export function useAssistantWindow(
     saveAssistantWindow(next)
   }, [])
 
-  // A reopened assistant picks up a placement another tab or a remount saved.
+  // A reopened assistant picks up a placement another tab or a remount saved, while rendering;
+  // the layout effect then brings the ref that gestures read up to date.
+  const [seenVisible, setSeenVisible] = useState(false)
+  if (seenVisible !== visible) {
+    setSeenVisible(visible)
+    if (visible) setPlacementState(readAssistantWindow())
+  }
   useLayoutEffect(() => {
-    if (!visible) return
-    const saved = readAssistantWindow()
-    placementRef.current = saved
-    setPlacementState(saved)
-  }, [visible])
+    placementRef.current = placement
+  }, [placement])
 
   /** The window's current rect relative to the visual viewport, as drawn. */
   const currentRect = useCallback((): Rect | undefined => {
