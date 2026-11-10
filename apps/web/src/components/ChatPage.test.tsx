@@ -599,6 +599,39 @@ describe('ChatPage ?new requests', () => {
       await fixture.cleanup()
     }
   })
+
+  // On desktop the first agent is auto-selected; a ?new request must win over that.
+  for (const entry of ['direct', 'navigated'] as const) {
+    test(`on desktop a ${entry} ?new request opens a new chat instead of the first agent`, async () => {
+      mockAgentScopeTypes = { 'agent-1': 'system-manager' }
+      const fixture = await renderChatRoute(entry === 'direct' ? '/chat?new' : '/chat/agent-1?scope=all', 1280)
+      try {
+        if (entry === 'navigated') {
+          await fixture.dom.act(async () => {
+            await fixture.router.navigate('/chat?new')
+          })
+        }
+        expect(route(fixture.router)).toBe('/chat')
+        expect(capturedAgentChatProps.agentId).toBeUndefined()
+      } finally {
+        await fixture.cleanup()
+      }
+    })
+  }
+
+  // The render-time exit from new chat mode for a non-creatable scope must wait for ?new, which
+  // consumes its parameters (the scope with them, as on main), leaving All, where chats can be created.
+  test('a ?new request from a scope that cannot create chats still opens a new chat', async () => {
+    mockAgentScopeTypes = { 'agent-1': 'squad-manager' }
+    const fixture = await renderChatRoute('/chat?new&scope=squad-manager', 1280)
+    try {
+      expect(route(fixture.router)).toBe('/chat')
+      expect(capturedAgentChatProps.agentId).toBeUndefined()
+      expect(fixture.rendered.container.querySelector('[data-testid="agent-chat"]')).not.toBeNull()
+    } finally {
+      await fixture.cleanup()
+    }
+  })
 })
 
 describe('ChatPage handleAgentCreated routing', () => {
