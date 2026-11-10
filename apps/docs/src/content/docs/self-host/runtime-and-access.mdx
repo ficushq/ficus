@@ -64,7 +64,7 @@ ficus.example.com {
 
 ## Serve Ficus under a path prefix
 
-To serve Ficus at a path such as `https://ficus.example.com/ficus`, set the **Public address** (or `APP_URL`) to that address, path included. The same web build serves every path, so nothing needs to be rebuilt, and the server's local address (for example Ficus Desktop's `http://localhost:<port>/`) keeps working at the root at the same time. Links, phone pairing, integration OAuth callbacks and webhook URLs use the path.
+To serve Ficus at a path such as `https://ficus.example.com/ficus`, set the **Public address** (or `APP_URL`) to that address, path included. The same web build serves every path, so nothing needs to be rebuilt, and the server's local address (for example Ficus Desktop's `http://localhost:<port>/`) keeps working at the root at the same time. Links, phone pairing, integration OAuth callbacks and webhook URLs use the path. This documentation is served under the path too, at `https://ficus.example.com/ficus/docs/`, with working links and search.
 
 Your reverse proxy can either remove the prefix before forwarding or forward it unchanged; Ficus accepts both. With Caddy:
 

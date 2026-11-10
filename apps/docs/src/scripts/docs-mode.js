@@ -3,9 +3,16 @@
 ;(() => {
   const storageKey = 'ficus-docs-mode'
   const validMode = (value) => (value === 'cloud' || value === 'self-hosted' ? value : null)
-  const embedded = /^\/docs(?:\/|$)/.test(location.pathname)
+  // Embedded in Core, the docs live at <base path>/docs/; Core fills this meta per request
+  // (`/docs/` or `/ficus/docs/`). Unrendered (a static check of the build) it means /docs.
+  const docsBase = document.querySelector('meta[name="ficus-docs-base"]')?.getAttribute('content') ?? ''
+  const rendered = docsBase.startsWith('/') && !docsBase.startsWith('//')
+  const docsPrefix = rendered ? docsBase.replace(/\/+$/, '') : '/docs'
+  const escapedPrefix = docsPrefix.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')
+  const docsPrefixPattern = new RegExp('^' + escapedPrefix + '(?=/|$)')
+  const embedded = rendered || docsPrefixPattern.test(location.pathname)
   const setupMode = (pathname) => {
-    if (embedded) pathname = pathname.replace(/^\/docs(?=\/|$)/, '') || '/'
+    if (embedded) pathname = pathname.replace(docsPrefixPattern, '') || '/'
     if (/^\/start\/cloud\/?$/.test(pathname)) return 'cloud'
     if (/^\/start\/self-host\/?$/.test(pathname)) return 'self-hosted'
     return null
@@ -28,7 +35,7 @@
       const url = new URL(href, location.href)
       // Only decorate documentation routes, never assets, external sites or protocols.
       if (url.origin !== location.origin || !/^https?:$/.test(url.protocol) || /\.[^/]+$/.test(url.pathname)) continue
-      if (embedded && !/^\/docs(?:\/|$)/.test(url.pathname)) continue
+      if (embedded && !docsPrefixPattern.test(url.pathname)) continue
       const targetMode = setupMode(url.pathname) || validMode(link.dataset.docsModeLink) || mode
       url.searchParams.set('mode', targetMode)
       const nextHref = url.pathname + url.search + url.hash

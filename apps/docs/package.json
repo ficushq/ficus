@@ -14,7 +14,7 @@
     "check:links": "bun scripts/check-links.ts",
     "test": "bun test scripts",
     "check": "bun run typecheck && bun run test && bun run build && bun run check:links && bun run build:embedded",
-    "build:embedded": "ASTRO_TELEMETRY_DISABLED=1 FICUS_DOCS_EMBEDDED=1 astro build && bun scripts/check-links.ts --embedded"
+    "build:embedded": "ASTRO_TELEMETRY_DISABLED=1 FICUS_DOCS_EMBEDDED=1 astro build && bun scripts/check-links.ts --embedded && bun scripts/check-embedded-base.ts"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.10",
