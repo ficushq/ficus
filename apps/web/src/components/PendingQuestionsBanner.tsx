@@ -4,6 +4,7 @@ import { AgentQuestionCard } from './AgentQuestionCard'
 import { Modal } from './Modal'
 import { ChevronRightIcon, QuestionIcon } from './icons'
 import clsx from 'clsx'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 interface QuestionCardProps {
   question: AgentQuestion
@@ -40,23 +41,28 @@ export function PendingQuestionsBanner({ questions, className, dependencies }: P
     }
   }, [questions])
 
-  useEffect(() => {
-    if (!questions) return
-    setOptimisticallyAnswered((current) => {
-      const currentQuestionIds = new Set(questions.map((question) => question.id))
-      const next = new Set([...current].filter((id) => currentQuestionIds.has(id)))
-      return next.size === current.size ? current : next
-    })
-  }, [questions])
+  // Forget optimistic answers for questions that are gone, while rendering each new list.
+  useAdjustOnChange(
+    [questions],
+    () => {
+      if (!questions) return
+      setOptimisticallyAnswered((current) => {
+        const currentQuestionIds = new Set(questions.map((question) => question.id))
+        const next = new Set([...current].filter((id) => currentQuestionIds.has(id)))
+        return next.size === current.size ? current : next
+      })
+    },
+    { onMount: true }
+  )
 
   const visibleQuestions = useMemo(
     () => questions?.filter((question) => !optimisticallyAnswered.has(question.id)) ?? [],
     [optimisticallyAnswered, questions]
   )
 
-  useEffect(() => {
+  useAdjustOnChange([visibleQuestions.length], () => {
     if (visibleQuestions.length === 0) setIsOpen(false)
-  }, [visibleQuestions.length])
+  })
 
   if (visibleQuestions.length === 0) return null
 

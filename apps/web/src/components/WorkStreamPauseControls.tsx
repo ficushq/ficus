@@ -4,6 +4,7 @@ import type { WorkStream } from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 export function useWorkStreamPauseControls(stream: WorkStream) {
   const { can } = usePermissions(stream.squadId)
@@ -26,10 +27,14 @@ export function useWorkStreamPauseControls(stream: WorkStream) {
   const eligible = can('workstreams:update') && !['done', 'canceled'].includes(stream.status)
   const paused = Boolean(stream?.pause)
   const { reset } = action
-  useEffect(() => {
+  // Another stream, or a change in its pause state or eligibility, closes the editor while rendering;
+  // the effect clears the previous action's result.
+  useAdjustOnChange([stream.id, paused, eligible], () => {
     setEditing(false)
     setReason('')
     setMinutes('')
+  })
+  useEffect(() => {
     reset()
   }, [stream.id, paused, eligible, reset])
   return {

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { AssistantActivityPage } from '@ficus/shared'
@@ -22,8 +23,11 @@ const page = (unreadConversations: number): AssistantActivityPage => ({
 
 let latest: ReturnType<typeof useAssistantActivity> | undefined
 function Probe() {
-  latest = useAssistantActivity()
-  return <span data-testid="count">{latest.unreadConversations}</span>
+  const activity = useAssistantActivity()
+  useEffect(() => {
+    latest = activity
+  })
+  return <span data-testid="count">{activity.unreadConversations}</span>
 }
 
 function seed(queryClient: QueryClient, userId: string, permissions: string[]) {

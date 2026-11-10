@@ -6,7 +6,10 @@ const source = readFileSync(join(import.meta.dir, 'SquadPresetsSection.tsx'), 'u
 
 describe('SquadPresetsSection template revert refresh', () => {
   test('syncs expanded row form state when refreshed squad preset data arrives', () => {
-    expect(source.includes('useEffect')).toBe(true)
+    // Re-seeded while rendering when the squad preset object changes.
+    expect(source.includes('useAdjustOnChange([squadPreset], () => setForm(squadPresetToForm(squadPreset)))')).toBe(
+      true
+    )
     expect(source.includes('setForm(squadPresetToForm(squadPreset))')).toBe(true)
   })
 })

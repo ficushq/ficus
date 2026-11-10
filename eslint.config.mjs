@@ -5,15 +5,28 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import prettierRecommended from 'eslint-plugin-prettier/recommended'
 import unusedImports from 'eslint-plugin-unused-imports'
 
-// eslint-plugin-react-hooks 7 adds the React Compiler rules (set-state-in-effect,
-// refs, globals, immutability, purity, ...) to `recommended` as errors. The web
-// app has not been adopted to them yet, so report them as warnings for now and
-// keep the two classic rules at their usual levels: rules-of-hooks stays an
-// error and exhaustive-deps stays a warning. Rules a later plugin release adds
-// to `recommended` are also warnings until they are adopted deliberately.
+// eslint-plugin-react-hooks 7 adds the React Compiler rules to `recommended`.
+// The web app follows the ones adopted below, so they are errors and stay
+// fixed. rules-of-hooks stays an error and exhaustive-deps stays a warning.
+// Rules a later plugin release adds to `recommended` are warnings until they
+// are adopted deliberately (add them to the adopted list once the code follows them).
+const ADOPTED_REACT_COMPILER_RULES = [
+  'react-hooks/set-state-in-effect',
+  'react-hooks/refs',
+  'react-hooks/globals',
+  'react-hooks/immutability',
+  'react-hooks/preserve-manual-memoization',
+  'react-hooks/purity',
+  'react-hooks/static-components',
+  'react-hooks/use-memo',
+]
 const reactHooksRules = Object.fromEntries(
   Object.keys(reactHooks.configs.recommended.rules).map((rule) => [rule, 'warn'])
 )
+for (const rule of ADOPTED_REACT_COMPILER_RULES) {
+  if (!(rule in reactHooksRules)) throw new Error(`eslint-plugin-react-hooks no longer recommends ${rule}`)
+  reactHooksRules[rule] = 'error'
+}
 reactHooksRules['react-hooks/rules-of-hooks'] = 'error'
 reactHooksRules['react-hooks/exhaustive-deps'] = 'warn'
 

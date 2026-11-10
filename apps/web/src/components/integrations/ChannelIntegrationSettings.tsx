@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   configureChannelIntegration,
@@ -17,6 +17,7 @@ import { IntegrationCredentialSettings } from './IntegrationCredentialSettings'
 import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
 import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
 import { integrationErrorMessage } from '../../lib/integrationErrorMessage'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 const identityLabels: Record<string, string> = {
   botId: 'Bot ID',
@@ -53,7 +54,8 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
   const { data: squads = [] } = useQuery({ ...queries.squads.list(), queryFn: () => listSquads() })
   const data = view.data as View | undefined
   const [guildId, setGuildId] = useState('')
-  useEffect(() => setGuildId(data?.identity?.guildId ?? ''), [data?.identity?.guildId])
+  const savedGuildId = data?.identity?.guildId
+  useAdjustOnChange([savedGuildId], () => setGuildId(savedGuildId ?? ''), { onMount: true })
   const [authError, setAuthError] = useState('')
   const [disconnectArmed, setDisconnectArmed] = useState(false)
 

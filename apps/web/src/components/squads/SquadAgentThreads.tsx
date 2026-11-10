@@ -505,18 +505,19 @@ export function SquadAgentThreads({
 
   // Auto-select the first agent on initial load — but NOT on the dedicated pages: the
   // consultant page defaults to compose, the manager page locks to one agent.
-  const initialAgentRef = useRef<string | null>(null)
-  if (!lockedAgentId && !defaultCompose && !initialAgentRef.current && sortedAgents.length > 0) {
-    initialAgentRef.current =
-      sortedAgents.find(
-        (agent) =>
-          !activeAgentsOnly ||
-          agent.agentTypeId === 'manager' ||
-          agent.agentTypeId === 'consultant' ||
-          agent.status !== 'idle'
-      )?.id ?? null
+  // Chosen once, while rendering, and kept even as the list changes.
+  const [initialAgentId, setInitialAgentId] = useState<string | null>(null)
+  if (!lockedAgentId && !defaultCompose && !initialAgentId && sortedAgents.length > 0) {
+    const firstAgentId = sortedAgents.find(
+      (agent) =>
+        !activeAgentsOnly ||
+        agent.agentTypeId === 'manager' ||
+        agent.agentTypeId === 'consultant' ||
+        agent.status !== 'idle'
+    )?.id
+    if (firstAgentId) setInitialAgentId(firstAgentId)
   }
-  const effectiveAgentId = lockedAgentId ?? (selectedAgentId || initialAgentRef.current)
+  const effectiveAgentId = lockedAgentId ?? (selectedAgentId || initialAgentId)
 
   // Support ID prefix matching - look in both active and recently terminated agents
   // Terminated agents page in, so the server total is authoritative for them;
@@ -624,12 +625,11 @@ export function SquadAgentThreads({
     (group) => group.agentTypeId !== 'manager' && group.agentTypeId !== 'consultant'
   )
 
-  useEffect(() => {
-    if (handoffConsultantAgentId && selectedAgent?.id === handoffConsultantAgentId && handoffMessagesReady) {
-      setComposingConsultant(false)
-      setHandoffConsultantAgentId(null)
-    }
-  }, [handoffConsultantAgentId, selectedAgent?.id, handoffMessagesReady])
+  // Once the handed-off consultant is selected with its messages loaded, leave the composer (while rendering).
+  if (handoffConsultantAgentId && selectedAgent?.id === handoffConsultantAgentId && handoffMessagesReady) {
+    setComposingConsultant(false)
+    setHandoffConsultantAgentId(null)
+  }
 
   const handleSelectAgent = (agentId: string) => {
     setHandoffConsultantAgentId(null)

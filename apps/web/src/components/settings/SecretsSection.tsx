@@ -258,27 +258,26 @@ function SecretRow({
   const [mode, setMode] = useState<'view' | 'edit' | 'reveal'>('view')
   const [value, setValue] = useState('')
   const [revealedValue, setRevealedValue] = useState<string | null>(null)
-  const [displayValue, setDisplayValue] = useState<string | null>(null)
+  const [loadedValue, setLoadedValue] = useState<{ secretKey: string; value: string } | null>(null)
   const [lastValidation, setLastValidation] = useState<SecretValidation | null>(null)
   const validated = isGitHubTokenSecretKey(secretKey)
 
-  // For non-sensitive fields, auto-load the current value for display
+  // For non-sensitive fields, auto-load the current value for display. It shows only while the
+  // field is still a set, non-sensitive value of the same key.
   useEffect(() => {
-    if (!sensitive && isSet) {
-      getSecret(secretKey)
-        .then((r) => setDisplayValue(r.value))
-        .catch(() => {})
-    } else {
-      setDisplayValue(null)
-    }
+    if (sensitive || !isSet) return
+    getSecret(secretKey)
+      .then((r) => setLoadedValue({ secretKey, value: r.value }))
+      .catch(() => {})
   }, [sensitive, isSet, secretKey])
+  const displayValue = !sensitive && isSet && loadedValue?.secretKey === secretKey ? loadedValue.value : null
 
   const saveMutation = useMutation({
     mutationFn: (vars: { value: string; force?: boolean }) => setSecret(secretKey, vars.value, { force: vars.force }),
     onSuccess: (result) => {
       setLastValidation(result.validation ?? null)
       setMode('view')
-      setDisplayValue(value)
+      setLoadedValue({ secretKey, value })
       setValue('')
       onChanged(!!requiresRestart)
     },
@@ -293,7 +292,7 @@ function SecretRow({
       setMode('view')
       setValue('')
       setRevealedValue(null)
-      setDisplayValue(null)
+      setLoadedValue(null)
       setLastValidation(null)
       onChanged(!!requiresRestart)
     },

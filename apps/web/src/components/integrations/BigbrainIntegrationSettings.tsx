@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { integrationAction, removeIntegration, type IntegrationConnection } from '../../api/integrations'
@@ -9,6 +9,7 @@ import { ConfirmButton } from '../ConfirmButton'
 import { useStableRef } from '../../hooks/useStableRef'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { BigbrainLocalSetupPanel } from './BigbrainLocalSetupPanel'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 function boundedError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message.slice(0, 200) : fallback
@@ -105,15 +106,15 @@ export function BigbrainIntegrationSettings({
   const clearCredentialDrafts = useCallback(() => {
     setConfirmation(null)
   }, [])
-  useEffect(() => {
-    if (!canWrite) {
-      feedbackSequence.current += 1
-      clearCredentialDrafts()
-    }
-  }, [canWrite, clearCredentialDrafts])
-  useEffect(() => {
-    setConfirmation(null)
-  }, [connectionIds])
+  // Losing write access, or another set of connections, drops a pending confirmation while
+  // rendering. The layout effect retires feedback from requests made with write access in that same
+  // commit, so a response that arrives afterwards cannot show feedback to a reader.
+  useAdjustOnChange([canWrite, connectionIds], (previous) => {
+    if (!canWrite || previous?.[1] !== connectionIds) clearCredentialDrafts()
+  })
+  useLayoutEffect(() => {
+    if (!canWrite) feedbackSequence.current += 1
+  }, [canWrite])
 
   const action = useMutation({
     mutationFn: (variables: {

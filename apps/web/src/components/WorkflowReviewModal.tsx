@@ -93,7 +93,7 @@ export function WorkflowReviewModal({
   focusWaitId?: string
   onClose: () => void
 } & ReviewNavigation) {
-  const { data: run } = useQuery(queries.workflows.run(stream.id))
+  const { data: run, dataUpdatedAt: runUpdatedAt } = useQuery(queries.workflows.run(stream.id))
   const { can, identity } = usePermissions(stream.squadId)
   const attempt = run
     ? attemptId != null
@@ -125,6 +125,7 @@ export function WorkflowReviewModal({
           key={attempt.id}
           stream={stream}
           run={run}
+          runUpdatedAt={runUpdatedAt}
           attempt={attempt}
           gate={gate}
           onClose={onClose}
@@ -154,6 +155,7 @@ export function WorkflowReviewModal({
 function ReviewLayout({
   stream,
   run,
+  runUpdatedAt,
   attempt,
   gate,
   onClose,
@@ -162,6 +164,8 @@ function ReviewLayout({
 }: {
   stream: WorkStream
   run: WorkflowRunDetail
+  /** When the run was last read; a revision is labelled against at least this time. */
+  runUpdatedAt: number
   attempt: WorkflowAttempt
   gate: HumanGateContext
   onClose: () => void
@@ -180,7 +184,7 @@ function ReviewLayout({
   const summaryInDocument = layout === 'stacked' || layout === 'chat-tabs'
   const historyInDocument = layout !== 'columns'
   const [pane, setPane] = useState<'brief' | 'chat'>('brief')
-  const revisions = useSeenRevisions(stream, attempt, run)
+  const revisions = useSeenRevisions(stream, attempt, run, runUpdatedAt)
   const refresh = useWorkflowRefresh(stream)
   const draftKey = reviewDraftKey(stream, attempt, gate.gateWait?.id)
   const [notes, setNotesState] = useState(() => readReviewDraft(draftKey))
@@ -591,7 +595,7 @@ function isRevisedError(error: unknown): boolean {
  * sources shown; a later amendment, or a source that was not on screen when it opened, stays unseen
  * until the reviewer marks it reviewed (the shared rule in workflowReviewSeenState).
  */
-function useSeenRevisions(stream: WorkStream, attempt: WorkflowAttempt, run: WorkflowRunDetail) {
+function useSeenRevisions(stream: WorkStream, attempt: WorkflowAttempt, run: WorkflowRunDetail, runUpdatedAt: number) {
   const current = workflowGateRevisions(run.state, attempt)
   const key = reviewSeenRevisionsKey(stream, attempt)
   const [initial] = useState(() => {
@@ -604,15 +608,16 @@ function useSeenRevisions(stream: WorkStream, attempt: WorkflowAttempt, run: Wor
   }, [initial, key])
   const { unseen, reviewed } = workflowReviewSeenState(current, seen)
   const [now, setNow] = useState(() => Date.now())
+  // Unseen work arrives with a new read of the run, so its labels start from that read's time, then
+  // follow the clock every 30 seconds while anything is unseen.
   useEffect(() => {
     if (!unseen.length) return
-    setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(timer)
   }, [unseen.length])
   return {
     unseen,
-    now,
+    now: Math.max(now, runUpdatedAt),
     reviewed,
     acknowledge: () => {
       const next = workflowMarkRevisionsSeen(seen, current)

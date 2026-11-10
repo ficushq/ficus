@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { Modal } from '../Modal'
 import { ACCESS_LABEL } from './bigbrainMemberAccess'
@@ -8,6 +8,7 @@ import {
   type ManagedBigbrainMemberInvite,
   type ManagedBigbrainVault,
 } from '../../api/integrations'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 function failureCode(error: unknown): string {
   return error instanceof ApiError && error.payload && typeof error.payload === 'object'
@@ -60,14 +61,18 @@ export function BigbrainMemberInviteDialog({
   const [copied, setCopied] = useState(false)
   const generation = useRef(0)
 
-  // Any change of target or closing forgets the link and abandons an in-flight request.
-  useEffect(() => {
-    generation.current += 1
+  // Any change of target or closing forgets the link (while rendering) and abandons an in-flight
+  // request. The layout effect retires its generation in the same commit as the reset, so a response
+  // that arrives afterwards can never show a link for the previous target.
+  useAdjustOnChange([vault.vaultId, isOpen], () => {
     setForm(draft())
     setInvite(null)
     setError(null)
     setCopied(false)
     setPending(false)
+  })
+  useLayoutEffect(() => {
+    generation.current += 1
   }, [vault.vaultId, isOpen])
 
   useEffect(() => {

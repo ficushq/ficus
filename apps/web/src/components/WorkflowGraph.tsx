@@ -121,7 +121,16 @@ export function WorkflowGraph({
   const [localPositions, setLocalPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [arranged, setArranged] = useState(false)
   const initialArrange = arrangeOnMount && !arranged
-  const positions = initialArrange ? {} : (savedPositions ?? localPositions)
+  const storedPositions = savedPositions ?? localPositions
+  // The auto layout an arrangeOnMount editor settles on once measured. It is shown, and saved by the
+  // effect below, until the stored positions change to it.
+  const [arrangement, setArrangement] = useState<{ key: string; replaces: typeof storedPositions } | null>(null)
+  const showsArrangement = arrangement !== null && arrangement.replaces === storedPositions
+  const positions = initialArrange
+    ? {}
+    : showsArrangement
+      ? (JSON.parse(arrangement.key) as typeof storedPositions)
+      : storedPositions
   const setPositions = (next: Record<string, { x: number; y: number }>) => {
     setLocalPositions(next)
     onPositionsChange?.(next)
@@ -249,15 +258,17 @@ export function WorkflowGraph({
   const fitZoom = Math.min(1, Math.max(0.2, Math.min(bounds.width / graph.width, bounds.height / graph.height)))
   const targetZoom = manualZoom ?? (fill ? fitZoom : 0.8)
   const zoom = useAnimatedGraphPositions({ zoom: { x: targetZoom, y: 0 } }, animateZoom).zoom!.x
+  // Once an editor is measured, its zoom stops following the fit and generated positions are kept:
+  // the local state settles while rendering, and the effect saves the positions.
+  const savesPositions = editable && measured && (initialArrange || positionsKey !== frozenKey || showsArrangement)
+  if (editable && measured && manualZoom === undefined) setManualZoom(targetZoom)
+  if (savesPositions && !arranged) {
+    setArranged(true)
+    if (initialArrange) setArrangement({ key: frozenKey, replaces: storedPositions })
+  }
   useEffect(() => {
-    if (editable && measured) {
-      setManualZoom((current) => current ?? targetZoom)
-      if (initialArrange || positionsKey !== frozenKey) {
-        setArranged(true)
-        savePositions.current(JSON.parse(frozenKey))
-      }
-    }
-  }, [editable, measured, initialArrange, positionsKey, frozenKey, savePositions, targetZoom])
+    if (savesPositions) savePositions.current(JSON.parse(frozenKey))
+  }, [savesPositions, frozenKey, savePositions])
   // An editor is a full-size workspace, not a centered thumbnail. Keep its
   // drawing surface at least as large as the viewport at every zoom level.
   const canvasWidth = fill && editable ? Math.max(graph.width, bounds.width / zoom) : graph.width
@@ -1005,13 +1016,15 @@ export function WorkflowGraph({
                             onPointerDown={(event) => {
                               event.stopPropagation()
                               suppressClick.current = false
-                              wireStart.current = point(event.clientX, event.clientY)
-                              setWire({
-                                from: node.id,
-                                outcome: port.outcome,
-                                branch: port.branch,
-                                ...wireStart.current,
-                              })
+                              // The same position point() computes, read here so the wire state is
+                              // built from the event's own measurement rather than a value read back from a ref.
+                              const bounds = surface.current!.getBoundingClientRect()
+                              const start = {
+                                x: (event.clientX - bounds.left) / zoom,
+                                y: (event.clientY - bounds.top) / zoom,
+                              }
+                              wireStart.current = start
+                              setWire({ from: node.id, outcome: port.outcome, branch: port.branch, ...start })
                               event.currentTarget.setPointerCapture?.(event.pointerId)
                             }}
                             onClick={() => {

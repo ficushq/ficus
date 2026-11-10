@@ -1,11 +1,12 @@
 import { FormSkeleton } from '../loading/Skeleton'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '../../reactQueryHooks'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
 import { type SettingMetadata } from '../../api/settings'
 import { useSettingsApi } from './settingsApi'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function AgentExecutionSection() {
   const { data: settings, isLoading, isError } = useQuery(queries.settings.list())
@@ -51,9 +52,7 @@ export function NumberSetting({
   const [draft, setDraft] = useState(setting.value)
 
   // Re-seed when the server value changes (a save landing, or another operator).
-  useEffect(() => {
-    setDraft(setting.value)
-  }, [setting.value])
+  useAdjustOnChange([setting.value], () => setDraft(setting.value))
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
 

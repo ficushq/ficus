@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS, updateSquadSchema } from '@ficus/shared'
 import { updateSquad } from '../../api/squads'
 import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -26,10 +27,11 @@ export function ConsultantDormancySettings({ squadId, consultantIdleDormancyDays
   const canUpdate = !isLoading && can('squads:update')
   const queryClient = useQueryClient()
 
-  useEffect(() => {
+  // Re-seed the form when the saved value changes, while rendering.
+  useAdjustOnChange([consultantIdleDormancyDays], () => {
     setEnabled(consultantIdleDormancyDays !== null)
     setRaw(String(consultantIdleDormancyDays ?? DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS))
-  }, [consultantIdleDormancyDays])
+  })
 
   const value = enabled ? (raw.trim() === '' ? Number.NaN : Number(raw)) : null
   const error = value === null ? null : daysError(value)

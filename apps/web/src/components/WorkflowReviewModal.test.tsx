@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { brief as workflowReviewBriefFixture } from '@ficus/shared/test-fixtures/workflow-review'
 import { expect, spyOn, test } from 'bun:test'
 import type { ReactNode } from 'react'
@@ -40,6 +41,7 @@ function StubConversation({ agentId, sendOptions, placeholder }: ReviewConversat
     </div>
   )
 }
+const renderStubConversation = (props: ReviewConversationProps) => <StubConversation {...props} />
 
 const preset = workflowPresetSchema.parse(
   Bun.YAML.parse(await Bun.file(new URL('../../../../config/workflows/solo.yaml', import.meta.url)).text())
@@ -143,7 +145,9 @@ async function fixture({
         root.root.render(
           <MemoryRouter initialEntries={initialEntries}>
             <QueryClientProvider client={queryClient}>
-              <ReviewConversationContext.Provider value={StubConversation}>{node}</ReviewConversationContext.Provider>
+              <ReviewConversationContext.Provider value={renderStubConversation}>
+                {node}
+              </ReviewConversationContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )
@@ -326,7 +330,9 @@ test('deep links open the review over the page, and closing clears the link', as
   let location = ''
   function Probe() {
     const current = useLocation()
-    location = `${current.pathname}${current.search}`
+    useEffect(() => {
+      location = `${current.pathname}${current.search}`
+    })
     return null
   }
   try {

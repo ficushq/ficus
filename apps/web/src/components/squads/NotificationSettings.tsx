@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queries } from '../../queryOptions'
@@ -6,6 +6,7 @@ import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
 import { DiscordIcon, SlackIcon, TelegramIcon } from '../icons'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -41,14 +42,17 @@ export function NotificationSettings({ squadId }: Props) {
   const [config, setConfig] = useState<NotificationConfig>({})
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Reset form when squad data loads
-  useEffect(() => {
-    if (squad) {
+  // Reset form when squad data loads or changes, while rendering
+  useAdjustOnChange(
+    [squad],
+    () => {
+      if (!squad) return
       const notifications = (squad.metadata as { notifications?: NotificationConfig } | undefined)?.notifications || {}
       setConfig(notifications)
       setHasChanges(false)
-    }
-  }, [squad])
+    },
+    { onMount: true }
+  )
 
   // Validation: check for incomplete configs (has instanceId but no channelId)
   const validationErrors = useMemo(() => {

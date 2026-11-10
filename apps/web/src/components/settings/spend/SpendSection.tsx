@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { SPEND_DIMENSION_FILTER, type SpendDimension, type SpendFilters } from '@ficus/shared'
 import { usePermissions } from '../../../hooks/usePermissions'
+import { useTick } from '../../../hooks/useTick'
 import { queries } from '../../../queryOptions'
 import { SegmentedControl } from '../../SegmentedControl'
 import { SpendBreakdownTable } from './SpendBreakdownTable'
@@ -26,7 +27,8 @@ function toQueryFilters(active: ActiveFilters): SpendFilters {
 export function SpendSection() {
   const { can } = usePermissions()
   const [period, setPeriod] = useState<SpendPeriod>('30d')
-  const today = utcDay(Date.now())
+  // Re-read the clock each minute so the default ranges roll over at UTC midnight.
+  const today = utcDay(useTick(60_000))
   const [custom, setCustom] = useState({ from: today, to: today })
   const [active, setActive] = useState<ActiveFilters>({})
   const [by, setBy] = useState<SpendDimension>('feature')

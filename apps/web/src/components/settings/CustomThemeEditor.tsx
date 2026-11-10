@@ -354,13 +354,13 @@ export function CustomThemeEditor({
   // so two edits arriving before React commits the first still see each
   // other (never a stale revision), and manual edits share the same
   // past/future stacks as assistant edits.
-  const current = useStableRef({ draft, revision, past, future, insights, tab, preset })
+  const currentRef = useStableRef({ draft, revision, past, future, insights, tab, preset })
   const applyAssistantEdit = (proposal: AssistantEditorProposal): AssistantEditorSync | undefined => {
     // An assistant proposal (or an Undo/Redo click, which also routes through
     // here) is always its own step — never merged with an in-progress typed
     // session, so a keystroke resumed afterward starts fresh.
     closeTypingSession()
-    const latest = current.current
+    const latest = currentRef.current
     const target = latest.preset ? { presetId: latest.preset.id } : {}
     if (proposal.historyAction) {
       if (proposal.baseRevision !== latest.revision) {
@@ -381,7 +381,7 @@ export function CustomThemeEditor({
       const nextRevision = latest.revision + 1
       setRevision(nextRevision)
       setNotice('')
-      current.current = { ...latest, draft: saved, revision: nextRevision, past: nextPast, future: nextFuture }
+      currentRef.current = { ...latest, draft: saved, revision: nextRevision, past: nextPast, future: nextFuture }
       return {
         kind: 'theme',
         target,
@@ -412,7 +412,7 @@ export function CustomThemeEditor({
       setDraft(validation.document)
       setRevision(nextRevision)
     }
-    current.current = {
+    currentRef.current = {
       ...latest,
       draft: validation.document,
       revision: nextRevision,

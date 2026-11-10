@@ -13,7 +13,8 @@ describe('SkillsSection support files editor', () => {
   })
 
   test('syncs open edit form when refreshed skill data arrives', () => {
-    expect(source.includes('useEffect')).toBe(true)
+    // Re-seeded while rendering when the edited skill's data changes.
+    expect(source.includes('useAdjustOnChange(')).toBe(true)
     expect(source.includes('setEditing({ ...editingSkill')).toBe(true)
   })
 })

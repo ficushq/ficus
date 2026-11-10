@@ -32,6 +32,7 @@ import { MarkdownContent } from './MarkdownContent'
 import { OpenFullConversationLink } from './OpenFullConversationLink'
 import { SparklesIcon, ChevronRightIcon } from './icons'
 import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@ficus/shared'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 const suggestions = ['What needs my attention?', 'Summarize progress across my squads', 'Help me set up a new project']
 type CompletedPreferences = { expanded: boolean; days: 7 | 30 }
@@ -72,9 +73,9 @@ export function AssistantCommandCenter({
   const [localQuery, setLocalQuery] = useState(externalQuery ?? '')
   // Update the controlled input synchronously; router transitions are deferred
   // and otherwise restore the old value after each keystroke, moving the caret.
-  useEffect(() => {
+  useAdjustOnChange([externalQuery], () => {
     if (externalQuery !== undefined) setLocalQuery(externalQuery)
-  }, [externalQuery])
+  })
   const [rootSelected, setRootSelected] = useState(0)
   const [squadSelections, setSquadSelections] = useState<Record<string, number>>({})
   const [createdChats, setCreatedChats] = useState<Record<string, string>>({})
@@ -186,10 +187,14 @@ export function AssistantCommandCenter({
     onPush(next)
   }
   // A direct conversation link can enter through the parent rather than a result click.
-  useEffect(() => {
-    if (entry?.kind === 'chat')
-      setOpenedChats((current) => (current.some((chat) => chat.id === entry.id) ? current : [...current, entry]))
-  }, [entry])
+  useAdjustOnChange(
+    [entry],
+    () => {
+      if (entry?.kind === 'chat')
+        setOpenedChats((current) => (current.some((chat) => chat.id === entry.id) ? current : [...current, entry]))
+    },
+    { onMount: true }
+  )
   useEffect(() => {
     if (!active) return
     if (!entry || entry.kind === 'squad') searchInput.current?.focus()

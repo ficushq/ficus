@@ -1,5 +1,5 @@
 import { SquadWorkflowSettings } from './SquadWorkflowSettings'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queryKeys } from '../../queryKeys'
@@ -8,6 +8,7 @@ import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { SquadAvatarSettings } from './SquadAvatarSettings'
 import { updateSquadSchema, type UpdateSquadInput } from '@ficus/shared'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 type SettingsSection = 'general' | 'work' | 'workspace'
 
@@ -86,15 +87,24 @@ export function SquadGeneralSettings({
   const { data: sandboxStatus } = useQuery(queries.sandbox.status(squadId))
   const isHostRuntime = sandboxStatus?.runtime === 'host'
 
-  // Sync when props change (e.g. from another tab)
-  useEffect(() => {
+  // Sync when props change (e.g. from another tab), while rendering. Any changed prop re-seeds
+  // every field, as before.
+  const seedValues = [
+    name,
+    purpose,
+    globalCollaborationEnabled,
+    maxConcurrentWorkStreams,
+    blockedGraceMinutes,
+    hostWorkspacePath,
+  ]
+  useAdjustOnChange(seedValues, () => {
     setNameValue(name)
     setPurposeValue(purpose)
     setGlobalCollaborationEnabledValue(globalCollaborationEnabled)
     setMaxConcurrentWorkStreamsValue(maxConcurrentWorkStreams)
     setBlockedGraceMinutesValue(blockedGraceMinutes)
     setHostWorkspacePathValue(hostWorkspacePath)
-  }, [name, purpose, globalCollaborationEnabled, maxConcurrentWorkStreams, blockedGraceMinutes, hostWorkspacePath])
+  })
 
   const dirty =
     section === 'general'

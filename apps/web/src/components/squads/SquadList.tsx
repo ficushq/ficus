@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useMemo, useState, useEffect, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -38,10 +38,9 @@ const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
 
 // Detect if we're on a touch device (mobile/tablet)
 function useIsTouchDevice() {
-  const [isTouch, setIsTouch] = useState(false)
-  useEffect(() => {
-    setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0)
-  }, [])
+  const [isTouch] = useState(
+    () => typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+  )
   return isTouch
 }
 

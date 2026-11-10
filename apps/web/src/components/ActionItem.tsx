@@ -37,6 +37,7 @@ import {
   WS_STATUS_ICONS,
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -97,9 +98,16 @@ export function ActionItem({
   const [isExpanded, setExpanded] = useState(defaultExpanded)
   const expanded = embedded || isExpanded
   const itemRef = useRef<HTMLDivElement>(null)
+  // Becoming the focused item expands it while rendering; the effect scrolls it into view.
+  useAdjustOnChange(
+    [focused],
+    () => {
+      if (focused) setExpanded(true)
+    },
+    { onMount: true }
+  )
   useEffect(() => {
     if (!focused) return
-    setExpanded(true)
     const frame = requestAnimationFrame(() => {
       itemRef.current?.scrollIntoView({ block: 'nearest' })
       itemRef.current?.focus()

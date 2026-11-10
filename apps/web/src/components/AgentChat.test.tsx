@@ -10,6 +10,7 @@
  * that the onAgentCreated useEffect fires when conv.agentId resolves — the two
  * responsibilities that are unique to AgentChat vs. the underlying hook or ChatView.
  */
+import { useEffect } from 'react'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query'
@@ -74,18 +75,21 @@ const TestChatView = ({
   composerDraft?: { id: number; text: string }
   [key: string]: unknown
 }) => {
-  _capturedComposerDraft = composerDraft
-  _capturedOnDraftChange = onDraftChange
-  _capturedSuggestedDelivery = suggestedDelivery
-  _capturedOnSend = onSend
-  _capturedItems = items
-  _capturedAfterMessages = afterMessages ?? null
-  _capturedHideComposer = hideComposer ?? false
-  _capturedDeliveryMode = deliveryMode ?? null
-  _capturedOnDeliveryModeChange = onDeliveryModeChange ?? null
-  _capturedSendLabel = sendLabel
-  _capturedOnStop = onStop
-  _capturedOnCancelQueue = onCancelQueue
+  // Record the latest committed props in an effect: render must stay pure.
+  useEffect(() => {
+    _capturedComposerDraft = composerDraft
+    _capturedOnDraftChange = onDraftChange
+    _capturedSuggestedDelivery = suggestedDelivery
+    _capturedOnSend = onSend
+    _capturedItems = items
+    _capturedAfterMessages = afterMessages ?? null
+    _capturedHideComposer = hideComposer ?? false
+    _capturedDeliveryMode = deliveryMode ?? null
+    _capturedOnDeliveryModeChange = onDeliveryModeChange ?? null
+    _capturedSendLabel = sendLabel
+    _capturedOnStop = onStop
+    _capturedOnCancelQueue = onCancelQueue
+  })
   return (
     <div
       data-testid="chat-view"

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { startRegistration } from '@simplewebauthn/browser'
 import { type AddPasskeyContext } from '../../api/auth'
@@ -12,15 +12,22 @@ interface Props {
 }
 
 /** Read `#code=…` once and strip it from the address bar and history, so the secret doesn't linger. */
-function takeCodeFromFragment(): string {
-  const match = /(?:^#|&)code=([^&]+)/.exec(window.location.hash)
+const FRAGMENT_CODE_PATTERN = /(?:^#|&)code=([^&]+)/
+
+/** The code a link carries in its fragment, or ''. stripCodeFromFragment removes it from the address. */
+function readCodeFromFragment(): string {
+  const match = FRAGMENT_CODE_PATTERN.exec(window.location.hash)
   if (!match) return ''
-  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
   try {
     return decodeURIComponent(match[1])
   } catch {
     return match[1]
   }
+}
+
+function stripCodeFromFragment() {
+  if (!FRAGMENT_CODE_PATTERN.test(window.location.hash)) return
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
 }
 
 function redeemErrorMessage(err: unknown): string {
@@ -45,18 +52,20 @@ function redeemErrorMessage(err: unknown): string {
 export function AddPasskeyPage({ onSuccess }: Props) {
   const navigate = useNavigate()
   const { getAddPasskeyOptions, verifyAddPasskey } = useAuthApi()
+  // A code from the link's fragment is read once, when the page opens, and looked up at once.
+  const [linkCode] = useState(readCodeFromFragment)
   const [code, setCode] = useState('')
-  const [typed, setTyped] = useState('')
+  const [typed, setTyped] = useState(linkCode)
   const [context, setContext] = useState<AddPasskeyContext | null>(null)
   const [credentialName, setCredentialName] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [checking, setChecking] = useState(false)
+  const [checking, setChecking] = useState(linkCode !== '')
   const [loading, setLoading] = useState(false)
 
-  const lookUp = useCallback(
+  // Callers show the lookup as checking first (a typed code from its submit handler; a link's code
+  // starts that way); every state update here follows the awaited request.
+  const requestLookUp = useCallback(
     async (value: string) => {
-      setChecking(true)
-      setError(null)
       try {
         const ctx = await getAddPasskeyOptions(value)
         setCode(value)
@@ -71,18 +80,23 @@ export function AddPasskeyPage({ onSuccess }: Props) {
     [getAddPasskeyOptions]
   )
 
+  // Strip the link's code from the address, and look it up once (also under StrictMode's replay).
+  const linkLookedUp = useRef(false)
   useEffect(() => {
-    const fromLink = takeCodeFromFragment()
-    if (fromLink) {
-      setTyped(fromLink)
-      void lookUp(fromLink)
-    }
-  }, [lookUp])
+    stripCodeFromFragment()
+    if (!linkCode || linkLookedUp.current) return
+    linkLookedUp.current = true
+    void (async () => {
+      await requestLookUp(linkCode)
+    })()
+  }, [linkCode, requestLookUp])
 
   const submitCode = (e: React.FormEvent) => {
     e.preventDefault()
     if (checking || !typed.trim()) return
-    void lookUp(typed.trim())
+    setChecking(true)
+    setError(null)
+    void requestLookUp(typed.trim())
   }
 
   const register = async (e: React.FormEvent) => {

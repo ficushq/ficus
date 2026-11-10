@@ -1,5 +1,5 @@
 import { ChannelIdsEditor } from '../settings/ChannelIdsEditor'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -12,6 +12,7 @@ import {
   overrideRowsToMap,
   invalidOverrideRowIndexes,
 } from '../settings/channelFormHelpers'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /** One routing policy for the identity discovered from this provider's connection. */
 export function ProviderChannelRouting({
@@ -31,14 +32,19 @@ export function ProviderChannelRouting({
   const [denied, setDenied] = useState<string[]>([])
   const [allowPrivateChats, setAllowPrivateChats] = useState(query.data?.allowPrivateChats ?? true)
   const [error, setError] = useState('')
-  useEffect(() => {
-    if (!query.data) return
-    setAllowPrivateChats(query.data.allowPrivateChats ?? true)
-    setRows(mapToOverrideRows(query.data.channelSquadMap))
-    setTrusted(query.data.trustedChannelIds ?? [])
-    setAllowed(query.data.allowedChannelIds ?? [])
-    setDenied(query.data.deniedChannelIds ?? [])
-  }, [query.data])
+  // Re-seed the form from each new instance read, while rendering.
+  useAdjustOnChange(
+    [query.data],
+    () => {
+      if (!query.data) return
+      setAllowPrivateChats(query.data.allowPrivateChats ?? true)
+      setRows(mapToOverrideRows(query.data.channelSquadMap))
+      setTrusted(query.data.trustedChannelIds ?? [])
+      setAllowed(query.data.allowedChannelIds ?? [])
+      setDenied(query.data.deniedChannelIds ?? [])
+    },
+    { onMount: true }
+  )
   const save = useMutation({
     mutationFn: () =>
       updateChannelInstance(instanceId, {

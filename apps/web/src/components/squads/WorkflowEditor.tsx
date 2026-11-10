@@ -62,18 +62,18 @@ export function WorkflowEditor({
   const [future, setFuture] = useState<Snapshot[]>([])
   const snapshot: Snapshot = { source: value, preset }
   const previous = useRef(snapshot)
-  const localValue = useStableRef(snapshot)
+  const localValueRef = useStableRef(snapshot)
   const onChange = (next: WorkflowSource | undefined, nextPreset = preset) => {
     if (next?.kind === 'inline') next = { ...next, definition: normalizeWorkflowJoins(next.definition) }
     const nextSnapshot = { source: next, preset: nextPreset }
-    if (JSON.stringify(nextSnapshot) === JSON.stringify(localValue.current)) return
-    const before = structuredClone(localValue.current)
+    if (JSON.stringify(nextSnapshot) === JSON.stringify(localValueRef.current)) return
+    const before = structuredClone(localValueRef.current)
     if (historyKey(before.source) !== historyKey(next)) {
       if (before.source) setPast((items) => [...items.slice(-49), before])
       setFuture([])
     }
     previous.current = nextSnapshot
-    localValue.current = nextSnapshot
+    localValueRef.current = nextSnapshot
     setRevision((revision) => revision + 1)
     changeSource(next)
     if (nextPreset) onPresetChange?.(nextPreset)
@@ -112,7 +112,7 @@ export function WorkflowEditor({
       setFuture([...future, snapshot])
     }
     previous.current = next
-    localValue.current = next
+    localValueRef.current = next
     setRevision((revision) => revision + 1)
     changeSource(next.source)
     return {

@@ -7,7 +7,7 @@ import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
 import { LinkedGitHubAccount } from './settings/LinkedGitHubAccount'
 import { SECTION_GROUPS, isSectionAllowed, isValidSection, type SectionId } from './settings/settingsSections'
 import { SettingsSearchDestination } from './settings/SettingsSearchDestination'
-import { useState, useEffect, useCallback, type FormEvent } from 'react'
+import { useState, useCallback, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { startRegistration } from '@simplewebauthn/browser'
 import clsx from 'clsx'
@@ -70,6 +70,7 @@ import { accountEmailLabel, isPlaceholderEmail } from '@ficus/shared'
 import { AccountEmailForm } from './settings/AccountEmailForm'
 import { ViewportDebugSection } from './settings/ViewportDebugSection'
 import { HelpFeedbackSection } from './settings/HelpFeedbackSection'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 interface SettingsPageDependencies {
   useAuth: typeof useAuth
@@ -558,9 +559,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
     }
   }
 
-  useEffect(() => {
-    setDisplayName(user?.displayName ?? '')
-  }, [user?.displayName])
+  useAdjustOnChange([user?.displayName], () => setDisplayName(user?.displayName ?? ''))
 
   const profileMutation = useMutation({
     mutationFn: updateCurrentUser,

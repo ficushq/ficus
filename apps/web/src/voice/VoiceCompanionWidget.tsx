@@ -8,6 +8,7 @@ import { useRealtimeVoiceAssistant } from './useRealtimeVoiceAssistant'
 import { Panel } from '../components/popover'
 import { MicIcon, CloseIcon, ExpandIcon, ChevronDownIcon, StopIcon, RefreshIcon } from '../components/icons'
 import { OPEN_ASSISTANT_EVENT, OPEN_VOICE_EVENT } from '@ficus/shared/browser-keys'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 type VoiceControls = Pick<
   ReturnType<typeof useRealtimeVoiceAssistant>,
@@ -62,6 +63,7 @@ export function VoiceCompanionButton({
     toggleMicMuted,
   } = useVoice()
   const [panelOpen, setPanelOpen] = useState(false)
+  const [localCompact, setCompact] = useState(false)
   useEffect(() => {
     const open = () => {
       setPanelOpen(true)
@@ -82,7 +84,6 @@ export function VoiceCompanionButton({
   const [resetting, setResetting] = useState(false)
   const sessionConnected = useRef(false)
   const live = isConnected || resetting
-  const [localCompact, setCompact] = useState(false)
   const compact = embedded ? compactOverride : localCompact
   useEffect(() => {
     onActivityChange?.(live || status === 'connecting')
@@ -98,19 +99,28 @@ export function VoiceCompanionButton({
     }
   }, [isConnected, onConnected])
 
-  // Keep a live session with the user as they move around the page.
-  useEffect(() => {
-    if (isConnected) {
-      setPanelOpen(true)
-      setCompact(true)
-    }
-  }, [isConnected])
-  useEffect(() => {
-    if (status === 'error') {
-      setPanelOpen(true)
-      setCompact(false)
-    }
-  }, [status])
+  // Keep a live session with the user as they move around the page; show an error in full.
+  // Both follow a change (or the first render), while rendering.
+  useAdjustOnChange(
+    [isConnected],
+    () => {
+      if (isConnected) {
+        setPanelOpen(true)
+        setCompact(true)
+      }
+    },
+    { onMount: true }
+  )
+  useAdjustOnChange(
+    [status],
+    () => {
+      if (status === 'error') {
+        setPanelOpen(true)
+        setCompact(false)
+      }
+    },
+    { onMount: true }
+  )
 
   // Auto-scroll transcript to bottom
   useEffect(() => {

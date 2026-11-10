@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { AuthStatus } from '../api/auth'
 import { acquireDomHarness } from '../test/domHarness'
@@ -16,8 +17,10 @@ function PasskeyRegisterFixture({
   onSuccess: (firstAdmin: boolean) => void
   onFailure?: () => void
 }) {
-  capturedRegistrationSuccess = onSuccess
-  capturedRegistrationFailure = onFailure
+  useEffect(() => {
+    capturedRegistrationSuccess = onSuccess
+    capturedRegistrationFailure = onFailure
+  })
   return <div>Passkey registration fixture</div>
 }
 

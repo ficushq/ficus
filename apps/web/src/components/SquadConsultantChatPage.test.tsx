@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -7,16 +7,15 @@ import type { Squad } from '@ficus/shared'
 
 import { SquadConsultantChatPage } from './SquadConsultantChatPage'
 
-let capturedProps: Record<string, unknown> | null = null
-const ThreadsStub = (props: Record<string, unknown>) => {
-  capturedProps = props
-  return <div data-testid="agent-threads">threads</div>
-}
+// Server rendering runs no effects, so a spy records the props the threads panel
+// receives instead of assigning them to a variable during render.
+const ThreadsStub = mock((_props: Record<string, unknown>) => <div data-testid="agent-threads">threads</div>)
+const capturedProps = (): Record<string, unknown> | null => ThreadsStub.mock.calls.at(-1)?.[0] ?? null
 
 const squad = { id: 'squad-1', name: 'Ficus' } as Squad
 
 function renderPage() {
-  capturedProps = null
+  ThreadsStub.mockClear()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(queryKeys.squads.detail(squad.id), squad)
   queryClient.setQueryData(queryKeys.squads.agentsWithRecent(squad.id), { agents: [], recentlyTerminated: [] })
@@ -38,7 +37,7 @@ describe('SquadConsultantChatPage', () => {
   test('renders the agent panel in consultant page mode with default-compose', () => {
     const html = renderPage()
     expect(html).toContain('data-testid="agent-threads"')
-    expect(capturedProps).toMatchObject({
+    expect(capturedProps()).toMatchObject({
       layout: 'page',
       agentTypeFilter: 'consultant',
       defaultCompose: true,
@@ -48,6 +47,6 @@ describe('SquadConsultantChatPage', () => {
 
   test('passes a back link via headerLeading', () => {
     renderPage()
-    expect(capturedProps?.headerLeading).toBeTruthy()
+    expect(capturedProps()?.headerLeading).toBeTruthy()
   })
 })

@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { STORAGE_ALERT_HYSTERESIS_POINTS, type StorageWarning } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'
+import { useTick } from '../hooks/useTick'
 
 const DISMISS_KEY = 'ficus.storageBanner.dismissed'
 const DISMISS_MS = 7 * 24 * 60 * 60 * 1000
@@ -35,6 +36,11 @@ function readDismissal(storage: DismissalStorage | null): Dismissal | null {
   }
 }
 
+/** A dismissal of warnings up to `threshold` that lasts a week from now. Call it from the click handler, not render. */
+function dismissalFromNow(threshold: number): Dismissal {
+  return { until: Date.now() + DISMISS_MS, threshold }
+}
+
 function saveDismissal(storage: DismissalStorage | null, dismissal: Dismissal) {
   try {
     storage?.setItem(DISMISS_KEY, JSON.stringify(dismissal))
@@ -57,11 +63,13 @@ export function StorageBanner({ storage = browserStorage() }: { storage?: Dismis
   const allowed = !isLoading && can('system:logs')
   const { data } = useQuery({ ...queries.system.storageStatus(), enabled: allowed })
   const [dismissal, setDismissal] = useState(() => readDismissal(storage))
+  // A dismissal lasts a week; a minute is precise enough to end it on time.
+  const now = useTick(60_000)
   if (!allowed || !data?.warnings.length) return null
   const worst = [...data.warnings].sort((a, b) => b.threshold - a.threshold || b.percent - a.percent)[0]!
-  if (dismissal && Date.now() < dismissal.until && worst.threshold <= dismissal.threshold) return null
+  if (dismissal && now < dismissal.until && worst.threshold <= dismissal.threshold) return null
   const dismiss = () => {
-    const next = { until: Date.now() + DISMISS_MS, threshold: worst.threshold }
+    const next = dismissalFromNow(worst.threshold)
     saveDismissal(storage, next)
     setDismissal(next)
   }

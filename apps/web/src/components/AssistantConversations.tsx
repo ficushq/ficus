@@ -1,10 +1,11 @@
 import clsx from 'clsx'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import type { Agent } from '@ficus/shared'
 import { getAgentPurpose, getAgentName } from '../lib/agentDisplay'
 import { Panel, usePopover } from './popover'
 import { ChevronDownIcon, PlusIcon } from './icons'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 export function assistantConversationTitle(agent: Agent): string {
   return (
@@ -102,15 +103,21 @@ export function AssistantConversationSwitcher({
   canCreate: boolean
   openRequest?: number
 }) {
-  const popover = usePopover({ kind: 'dialog', id: 'assistant-conversations' })
+  // Open state lives here so a new openRequest can open the list while rendering.
+  const [open, setOpenState] = useState(false)
+  const popover = usePopover({ kind: 'dialog', id: 'assistant-conversations', open, onOpenChange: setOpenState })
   const { setOpen } = popover
   const [filter, setFilter] = useState('')
-  useEffect(() => {
-    if (openRequest) {
-      setOpen(true)
-      setFilter('')
-    }
-  }, [openRequest, setOpen])
+  useAdjustOnChange(
+    [openRequest],
+    () => {
+      if (openRequest) {
+        setOpenState(true)
+        setFilter('')
+      }
+    },
+    { onMount: true }
+  )
   const row = useRef<HTMLDivElement>(null)
   const selected = agents.find((agent) => agent.id === selectedId)
   const filtered = agents.filter((agent) =>

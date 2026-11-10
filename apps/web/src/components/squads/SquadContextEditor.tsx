@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -14,10 +15,8 @@ export function SquadContextEditor({ squadId, context }: Props) {
   const [saved, setSaved] = useState(false)
   const queryClient = useQueryClient()
 
-  // Sync when prop changes (e.g. from another tab)
-  useEffect(() => {
-    setValue(context ?? '')
-  }, [context])
+  // Sync when prop changes (e.g. from another tab), while rendering
+  useAdjustOnChange([context], () => setValue(context ?? ''))
 
   const dirty = value !== (context ?? '')
 

@@ -6,6 +6,7 @@ import { queries } from '../queryOptions'
 import { dayLabel, fullTimestamp, messageTimeLabel } from '../lib/chatTimestamps'
 import { CloseIcon, SearchIcon, SpinnerIcon } from './icons'
 import { senderLabel } from '../lib/chatHistorySearch'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 /** Wait this long after typing stops before searching. */
 const SEARCH_DEBOUNCE_MS = 250
@@ -83,10 +84,11 @@ export function ChatHistorySearch({ agentId, onSelect, onClose }: ChatHistorySea
   const showingQuery = search.isPlaceholderData ? null : query
   const results = useMemo(() => search.data?.pages.flatMap((page) => page.results) ?? [], [search.data])
 
-  useEffect(() => {
+  // A new query starts at its first result, without the previous query's jump.
+  useAdjustOnChange([query], () => {
     setActiveIndex(0)
     setJump(null)
-  }, [query])
+  })
 
   useEffect(() => {
     listRef.current

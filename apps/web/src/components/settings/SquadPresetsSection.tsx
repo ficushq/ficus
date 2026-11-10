@@ -2,7 +2,7 @@ import { CatalogSearch } from './CatalogSearch'
 import { SquadPresetWorkflowsEditor } from './SquadPresetWorkflowsEditor'
 import type { SquadPresetWorkflows } from '@ficus/shared'
 import { Modal } from '../Modal'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { queries } from '../../queryOptions'
@@ -23,6 +23,7 @@ import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function SquadPresetsSection() {
   const queryClient = useQueryClient()
@@ -277,9 +278,8 @@ function SquadPresetRow({
   const [form, setForm] = useState(() => squadPresetToForm(squadPreset))
   const [copyMsg, setCopyMsg] = useState('')
 
-  useEffect(() => {
-    setForm(squadPresetToForm(squadPreset))
-  }, [squadPreset])
+  // Re-seed the form when the preset changes, while rendering.
+  useAdjustOnChange([squadPreset], () => setForm(squadPresetToForm(squadPreset)))
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<SquadPresetConfig>) => updateSquadPreset(squadPreset.id, data),

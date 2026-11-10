@@ -36,7 +36,10 @@ export function useOfflineCache(): UseOfflineCacheReturn {
 
   // Fetch cache stats on mount and when online status changes
   useEffect(() => {
-    refreshStats()
+    // An async task: refreshStats sets state only after the stats are read.
+    void (async () => {
+      await refreshStats()
+    })()
   }, [refreshStats, isOnline])
 
   const handleClearCache = useCallback(async () => {

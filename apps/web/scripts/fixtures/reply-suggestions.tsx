@@ -1,6 +1,6 @@
 // An agent chat with made-up messages and one-tap reply suggestions floating over the end of the
 // transcript. The checker (check-reply-suggestions-layout.ts) toggles the replies with window.setReplies.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -53,7 +53,10 @@ const initialReplies = params.get('replies') === '0' ? [] : ['Yes, start it', 'N
 
 function Fixture() {
   const [replies, setReplies] = useState(initialReplies)
-  window.setReplies = setReplies
+  // Expose the setter to the layout checker after mount, not during render.
+  useEffect(() => {
+    window.setReplies = setReplies
+  }, [])
   return (
     <div className="fixed inset-0 flex flex-col bg-page p-0 text-primary md:p-4">
       <ChatView

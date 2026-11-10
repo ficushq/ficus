@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
@@ -48,7 +49,9 @@ function status(overrides: Partial<AgentPrivateStatus> = {}): AgentPrivateStatus
 let location = ''
 function LocationProbe() {
   const current = useLocation()
-  location = current.search
+  useEffect(() => {
+    location = current.search
+  })
   return null
 }
 

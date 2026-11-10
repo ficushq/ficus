@@ -26,6 +26,7 @@ import { applyCustomTheme, customSelection, persistResolvedSnapshot, removeCusto
 import { ThemeSyncStore } from '../theme/sync'
 import { CUSTOM_THEME_KEY } from '../theme/custom'
 import { THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY } from '../theme/storage'
+import { useStableRef } from '../hooks/useStableRef'
 
 /**
  * The resolved appearance (light/dark). Kept as `theme` for the existing
@@ -213,12 +214,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // The preview slot (see useThemePreview's doc comment above): `previewRef`
   // holds the currently-registered painter (or null), and `realPaintRef`
   // always holds a FRESH closure that paints the real, current selection —
-  // reassigned every render (the "latest ref" pattern, not memoized), so the
-  // preview-clearing restore below is never stale even if it runs long after
-  // the render that registered it.
+  // refreshed after every render by useStableRef (the "latest ref" pattern,
+  // not memoized), so the preview-clearing restore below is never stale even
+  // if it runs long after the render that registered it. A restore that runs
+  // during the very commit that changes the selection is repainted by the
+  // layout effect below.
   const previewRef = useRef<ThemePreviewPainter | null>(null)
-  const realPaintRef = useRef<() => void>(() => {})
-  realPaintRef.current = () => {
+  const realPaintRef = useStableRef(() => {
     const root = document.documentElement
     removeCustomProperties(root)
     applyResolvedTheme(root, resolvedThemeDefinition, resolvedAppearance)
@@ -228,20 +230,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {
       store.recoverCustom()
     }
-  }
-  const setPreview = useCallback((painter: ThemePreviewPainter) => {
-    previewRef.current = painter
-    painter()
-    return () => {
-      // Only clear if we're still the registered painter — a later
-      // registrant (e.g. the editor opening while a quick-picker hover
-      // preview is still technically "active") already owns the slot, and
-      // this stale cleanup must not clobber it.
-      if (previewRef.current !== painter) return
-      previewRef.current = null
-      realPaintRef.current()
-    }
-  }, [])
+  })
+  const setPreview = useCallback(
+    (painter: ThemePreviewPainter) => {
+      previewRef.current = painter
+      painter()
+      return () => {
+        // Only clear if we're still the registered painter — a later
+        // registrant (e.g. the editor opening while a quick-picker hover
+        // preview is still technically "active") already owns the slot, and
+        // this stale cleanup must not clobber it.
+        if (previewRef.current !== painter) return
+        previewRef.current = null
+        realPaintRef.current()
+      }
+    },
+    [realPaintRef]
+  )
 
   useLayoutEffect(() => {
     const root = document.documentElement

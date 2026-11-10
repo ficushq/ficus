@@ -35,16 +35,16 @@ export function Menu({
   children,
   ...props
 }: MenuProps) {
-  const latest = useStableRef({ itemSelector, onDismiss, trigger })
+  const latestRef = useStableRef({ itemSelector, onDismiss, trigger })
   const assignRoles = useCallback(
     (node: HTMLDivElement | null) => {
       if (typeof ref === 'function') ref(node)
       else if (ref) ref.current = node
-      node?.querySelectorAll(latest.current.itemSelector).forEach((item) => {
+      node?.querySelectorAll(latestRef.current.itemSelector).forEach((item) => {
         if (!item.getAttribute('role')) item.setAttribute('role', 'menuitem')
       })
     },
-    [ref, latest]
+    [ref, latestRef]
   )
 
   const activate = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -77,7 +77,7 @@ export function Menu({
       onDismiss={onDismiss}
       tabOut="close"
       initialFocus={(surface) => {
-        const items = listItems(surface, latest.current.itemSelector)
+        const items = listItems(surface, latestRef.current.itemSelector)
         if (initialFocus === 'none') return null
         if (initialFocus === 'selected')
           return (

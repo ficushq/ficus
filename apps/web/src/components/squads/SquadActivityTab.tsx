@@ -24,6 +24,7 @@ import {
   activitySubjectLabel,
   squadActivityItemHref,
 } from './squadActivityView'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /** Hover detail for the label column: the purpose/name the label no longer shows. */
 function activityAgentDetail(agent: Agent | undefined): string | undefined {
@@ -109,38 +110,42 @@ export function SquadActivityTab({
   const overflowPendingRef = useRef(false)
   const filterKey = JSON.stringify(filters)
 
-  const fetchHead = useCallback(async () => {
-    if (inFlightRef.current) {
-      dirtyRef.current = true
-      return
-    }
-    inFlightRef.current = true
-    const generation = generationRef.current
-    try {
-      const current = contextRef.current
-      if (!current.accessResolved) return false
-      const contextKey = `${current.squadId}:${JSON.stringify(current.filters)}:${current.accessSignature}`
-      const controller = new AbortController()
-      abortRef.current = controller
-      const head = await listSquadActivity(current.squadId, {
-        ...current.filters,
-        limit: 50,
-        signal: controller.signal,
-      })
-      if (generation !== generationRef.current) return false
-      setLiveHead({ contextKey, items: head.items.slice(0, 50) })
-      return true
-    } catch {
-      // WebSocket frames are hints; the cursor query remains the error surface.
-      return false
-    } finally {
-      abortRef.current = null
-      inFlightRef.current = false
-      if (dirtyRef.current && mountedRef.current) {
-        dirtyRef.current = false
-        void fetchHead()
+  const fetchHead = useCallback(() => {
+    // A run that finds the head dirty again starts the next one itself.
+    const run = async (): Promise<boolean | undefined> => {
+      if (inFlightRef.current) {
+        dirtyRef.current = true
+        return
+      }
+      inFlightRef.current = true
+      const generation = generationRef.current
+      try {
+        const current = contextRef.current
+        if (!current.accessResolved) return false
+        const contextKey = `${current.squadId}:${JSON.stringify(current.filters)}:${current.accessSignature}`
+        const controller = new AbortController()
+        abortRef.current = controller
+        const head = await listSquadActivity(current.squadId, {
+          ...current.filters,
+          limit: 50,
+          signal: controller.signal,
+        })
+        if (generation !== generationRef.current) return false
+        setLiveHead({ contextKey, items: head.items.slice(0, 50) })
+        return true
+      } catch {
+        // WebSocket frames are hints; the cursor query remains the error surface.
+        return false
+      } finally {
+        abortRef.current = null
+        inFlightRef.current = false
+        if (dirtyRef.current && mountedRef.current) {
+          dirtyRef.current = false
+          void run()
+        }
       }
     }
+    return run()
   }, [contextRef])
 
   const reconcileSoon = useCallback(() => {
@@ -249,6 +254,14 @@ export function SquadActivityTab({
     }
   }, [accessSignature, refreshActivityAccess])
 
+  // A new squad, filter or access context drops the live data gathered for the previous one
+  // while rendering (so returning to an earlier context never revives it); the effect stops
+  // that context's requests and timers.
+  const liveContextKey = `${squadId}:${filterKey}:${accessSignature}`
+  useAdjustOnChange([liveContextKey], () => {
+    setLiveOverlay({ contextKey: '', items: new Map(), overflowed: false })
+    setLiveHead({ contextKey: '', items: [] })
+  })
   useEffect(() => {
     generationRef.current += 1
     dirtyRef.current = false
@@ -256,8 +269,6 @@ export function SquadActivityTab({
     abortRef.current?.abort()
     if (timerRef.current) clearTimeout(timerRef.current)
     if (overflowRetryTimerRef.current) clearTimeout(overflowRetryTimerRef.current)
-    setLiveOverlay({ contextKey: '', items: new Map(), overflowed: false })
-    setLiveHead({ contextKey: '', items: [] })
   }, [squadId, filterKey, accessSignature])
 
   useEffect(() => {

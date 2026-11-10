@@ -39,16 +39,25 @@ export function OAuthCallbackPage() {
   // state as the completion payload (see oauthCallbackBootstrap.ts) — reading
   // it here, rather than consuming a one-shot sessionStorage value, means a
   // reload after a retryable failure still knows the right provider.
+  //
+  // What the callback carries is read once, when the page opens.
+  const [prepared] = useState(readPreparedOAuthCallback)
   const [provider] = useState<'github' | 'notion' | 'slack'>(() => {
     if (window.location.pathname.endsWith('/oauth/callback/github')) return 'github'
-    const prepared = readPreparedOAuthCallback()
     return prepared?.kind === 'broker' && prepared.provider === 'slack' ? 'slack' : 'notion'
   })
   const queryClient = useQueryClient()
   const initialized = useRef(false)
   const request = useRef<CompletionRequest | undefined>(undefined)
   const inFlight = useRef(false)
-  const [pageState, setPageState] = useState<PageState>('working')
+  // A broker or local completion starts working at once; anything else is already settled.
+  const [pageState, setPageState] = useState<PageState>(() =>
+    prepared?.kind === 'broker' || prepared?.kind === 'local'
+      ? 'working'
+      : prepared?.kind === 'cancelled'
+        ? 'cancelled'
+        : 'terminal_failure'
+  )
 
   const complete = useCallback(() => {
     if (!request.current || inFlight.current) return
@@ -86,7 +95,6 @@ export function OAuthCallbackPage() {
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
-    const prepared = readPreparedOAuthCallback()
     if (prepared?.kind === 'broker' || prepared?.kind === 'local') {
       request.current = prepared
       if (prepared.kind === 'local') clearPreparedOAuthCallback()
@@ -94,8 +102,7 @@ export function OAuthCallbackPage() {
       return
     }
     clearPreparedOAuthCallback()
-    setPageState(prepared?.kind === 'cancelled' ? 'cancelled' : 'terminal_failure')
-  }, [complete])
+  }, [complete, prepared])
 
   return (
     <section className="mx-auto max-w-lg rounded-lg border border-th-border bg-surface p-6 text-center">

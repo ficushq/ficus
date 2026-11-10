@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -27,13 +28,17 @@ export function DirectMergePolicySettings({ squadId }: Props) {
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => {
-    if (squad) {
+  // Re-seed the form whenever the squad data loads or changes, while rendering.
+  useAdjustOnChange(
+    [squad],
+    () => {
+      if (!squad) return
       setAllowDirectMerge(readPolicy(squad.metadata, 'allowDirectMerge'))
       setAllowAutoMerge(readPolicy(squad.metadata, 'allowAutoMerge'))
       setDirty(false)
-    }
-  }, [squad])
+    },
+    { onMount: true }
+  )
 
   const mutation = useMutation({
     mutationFn: (value: { allowDirectMerge: boolean; allowAutoMerge: boolean }) =>

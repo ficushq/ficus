@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { openPdf as openPdfDefault, type OpenPdf, type PdfDocument } from '../lib/pdfDocument'
 import { useStableRef } from '../hooks/useStableRef'
 import { DocumentSkeleton } from './loading/Skeleton'
@@ -50,13 +50,13 @@ export function PdfPreview({
       void current?.destroy()
     }
   }, [bytes, openPdf, onErrorRef])
-  const near = usePagesNearView(document?.numPages ?? 0)
+  const { container: nearContainerRef, pages: nearPageSet } = usePagesNearView(document?.numPages ?? 0)
   if (!document) return <DocumentSkeleton label={`Loading ${fileName}`} lines={10} className="min-h-64" />
-  const nearPages = [...near.pages]
+  const nearPages = [...nearPageSet]
   const first = Math.min(...nearPages)
   const last = Math.max(...nearPages)
   return (
-    <div ref={near.container} className="space-y-3">
+    <div ref={nearContainerRef} className="space-y-3">
       <p className="text-xs text-muted">{document.numPages === 1 ? '1 page' : `${document.numPages} pages`}</p>
       {Array.from({ length: document.numPages }, (_, index) => index + 1).map((page) => (
         <PdfPageCanvas
@@ -64,7 +64,7 @@ export function PdfPreview({
           document={document}
           page={page}
           label={`${fileName}, page ${page} of ${document.numPages}`}
-          draw={near.pages.has(page)}
+          draw={nearPageSet.has(page)}
           keep={nearPages.length > 0 && page >= first - KEEP_PAGES && page <= last + KEEP_PAGES}
           onError={onError}
         />
@@ -80,13 +80,11 @@ export function PdfPreview({
 function usePagesNearView(numPages: number) {
   const container = useRef<HTMLDivElement>(null)
   const [pages, setPages] = useState<ReadonlySet<number>>(() => new Set())
+  const observable = typeof IntersectionObserver !== 'undefined'
+  const allPages = useMemo(() => new Set(Array.from({ length: numPages }, (_, index) => index + 1)), [numPages])
   useEffect(() => {
     const element = container.current
-    if (!element || !numPages) return
-    if (typeof IntersectionObserver === 'undefined') {
-      setPages(new Set(Array.from({ length: numPages }, (_, index) => index + 1)))
-      return
-    }
+    if (!element || !numPages || !observable) return
     const observer = new IntersectionObserver(
       (entries) =>
         setPages((previous) => {
@@ -102,8 +100,8 @@ function usePagesNearView(numPages: number) {
     )
     for (const page of element.querySelectorAll('[data-pdf-page]')) observer.observe(page)
     return () => observer.disconnect()
-  }, [numPages])
-  return { container, pages }
+  }, [numPages, observable])
+  return { container, pages: observable ? pages : allPages }
 }
 
 function PdfPageCanvas({

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useStableRef } from './useStableRef'
 import { useKeepAssistantAcrossPages } from './useKeepAssistantAcrossPages'
@@ -97,7 +97,8 @@ export function useAssistantNavigation() {
     },
     [paramsRef, setParams]
   )
-  const ephemeral = useRef(new Map<string, CommandDestination>())
+  // Chats opened in this tab keep their label and initial text, which the URL does not carry.
+  const [ephemeral, setEphemeral] = useState<ReadonlyMap<string, CommandDestination>>(() => new Map())
   const serialized = params.get('commandStack')
   const legacyId = params.get('assistantConversation')
   const entries = useMemo(
@@ -108,49 +109,49 @@ export function useAssistantNavigation() {
           ...(legacyId ? { assistantConversation: legacyId } : {}),
         })
       ).map((entry) => {
-        const cached = ephemeral.current.get(entry.id)
+        const cached = ephemeral.get(entry.id)
         return cached && entry.kind === 'chat'
           ? { ...entry, label: cached.label, initialText: cached.kind === 'chat' ? cached.initialText : undefined }
           : entry
       }),
-    [serialized, legacyId]
+    [serialized, legacyId, ephemeral]
   )
   const query = params.get('commandQuery') ?? ''
-  const current = useStableRef({ entries, query })
+  const currentRef = useStableRef({ entries, query })
   const update = useCallback(
-    (next: AssistantDestination[], nextQuery = current.current.query) => {
+    (next: AssistantDestination[], nextQuery = currentRef.current.query) => {
       // Update the ref immediately so consecutive actions cannot overwrite a push.
-      current.current = { entries: next, query: nextQuery }
+      currentRef.current = { entries: next, query: nextQuery }
       setParams((previous) => assistantNavigationParams(previous, next, nextQuery), { replace: true })
     },
-    [current, setParams]
+    [currentRef, setParams]
   )
   const push = useCallback(
     (entry: AssistantDestination) => {
-      if (entry.kind === 'chat') ephemeral.current.set(entry.id, entry)
-      update([...current.current.entries, entry])
+      if (entry.kind === 'chat') setEphemeral((current) => new Map(current).set(entry.id, entry))
+      update([...currentRef.current.entries, entry])
     },
-    [current, update]
+    [currentRef, update]
   )
-  const back = useCallback(() => update(current.current.entries.slice(0, -1)), [current, update])
+  const back = useCallback(() => update(currentRef.current.entries.slice(0, -1)), [currentRef, update])
   const reset = useCallback(() => update([]), [update])
-  const setQuery = useCallback((value: string) => update(current.current.entries, value), [current, update])
+  const setQuery = useCallback((value: string) => update(currentRef.current.entries, value), [currentRef, update])
   const replace = useCallback(
-    (entry: AssistantDestination) => update([...current.current.entries.slice(0, -1), entry]),
-    [current, update]
+    (entry: AssistantDestination) => update([...currentRef.current.entries.slice(0, -1), entry]),
+    [currentRef, update]
   )
   const chatCreated = useCallback(
     (draftId: string, agentId: string) => {
       update(
-        current.current.entries.map((entry) =>
+        currentRef.current.entries.map((entry) =>
           entry.kind === 'chat' && entry.id === draftId ? { ...entry, agentId } : entry
         )
       )
     },
-    [current, update]
+    [currentRef, update]
   )
   const close = useCallback(() => {
-    current.current = { entries: [], query: '' }
+    currentRef.current = { entries: [], query: '' }
     setParams(
       (previous) => {
         const next = new URLSearchParams(previous)
@@ -159,6 +160,6 @@ export function useAssistantNavigation() {
       },
       { replace: true }
     )
-  }, [current, setParams])
+  }, [currentRef, setParams])
   return { params, state, setState, entries, query, setQuery, push, back, reset, replace, close, chatCreated }
 }

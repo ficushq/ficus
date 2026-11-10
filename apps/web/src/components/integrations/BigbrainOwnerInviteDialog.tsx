@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { Modal } from '../Modal'
 import {
@@ -6,6 +6,7 @@ import {
   type ManagedBigbrainOwnerInvite,
   type ManagedBigbrainVault,
 } from '../../api/integrations'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 /** Why no link was created, and what to do. Never echoes server text (no secret ever lands here). */
 function inviteFailure(error: unknown): string {
@@ -43,13 +44,17 @@ export function BigbrainOwnerInviteDialog({
   const [copied, setCopied] = useState(false)
   const generation = useRef(0)
 
-  // Any change of target or closing forgets the link and abandons an in-flight request.
-  useEffect(() => {
-    generation.current += 1
+  // Any change of target or closing forgets the link (while rendering) and abandons an in-flight
+  // request. The layout effect retires its generation in the same commit as the reset, so a response
+  // that arrives afterwards can never show a link for the previous target.
+  useAdjustOnChange([vault.vaultId, isOpen], () => {
     setInvite(null)
     setError(null)
     setCopied(false)
     setPending(false)
+  })
+  useLayoutEffect(() => {
+    generation.current += 1
   }, [vault.vaultId, isOpen])
 
   useEffect(() => {

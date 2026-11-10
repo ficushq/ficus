@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router'
 import clsx from 'clsx'
@@ -19,6 +19,7 @@ import { AssistantConversationView, type AssistantViewControls } from './Assista
 import { AssistantSnapMenu } from './AssistantSnapMenu'
 import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon, ResizeCornerIcon } from './icons'
 import { OPEN_ASSISTANT_EVENT, TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 interface UnifiedAssistantProps {
   dependencies?: { ConversationComponent?: typeof AssistantConversationView; ChatComponent?: typeof AgentChat }
@@ -62,6 +63,8 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const realtime = configured && can('ai:voice')
   const open = state !== 'closed'
   const live = controls?.live ?? false
+  // A session going live (or ending) sets compact mode to match, while rendering.
+  useAdjustOnChange([live], () => setCompact(live), { onMount: true })
   const small = live && (compact || !open)
   const voiceReason = !configured
     ? 'Enable realtime and configure OpenAI API services in Settings → Assistant & Memory.'
@@ -121,9 +124,6 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
     [idRef, navigationRef]
   )
   const onControls = useCallback((next: AssistantViewControls) => setControls(next), [])
-  useLayoutEffect(() => {
-    setCompact(live)
-  }, [live])
   const openConversation = useCallback(
     (conversation: AssistantConversationLink) => {
       const nav = navigationRef.current

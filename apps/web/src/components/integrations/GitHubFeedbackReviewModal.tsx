@@ -72,15 +72,17 @@ export function GitHubFeedbackReviewModal({
   const [withheldIds, setWithheldIds] = useState<Set<string>>(() => new Set())
   // Each opening starts on the requested queue; selections deliberately survive close/reopen.
   const [wasOpen, setWasOpen] = useState(isOpen)
-  // Set whenever the dialog just (re)opened; consumed once the pending list has refetched, so a
-  // selection decided by someone else while this was closed stops counting toward the 50 cap.
-  const pruneOnReopen = useRef(false)
+  // Counts reopenings; each one is pruned once the pending list has refetched (prunedReopening
+  // remembers the last), so a selection decided by someone else while this was closed stops
+  // counting toward the 50 cap.
+  const [reopening, setReopening] = useState(0)
+  const prunedReopening = useRef(0)
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen)
     if (isOpen) {
       setQueue(initialQueue)
       setFocusedId(null)
-      pruneOnReopen.current = true
+      setReopening((count) => count + 1)
     }
   }
   // An unconfirmed (network/5xx) attempt keeps its request ID so a retry is idempotent server-side.
@@ -96,8 +98,8 @@ export function GitHubFeedbackReviewModal({
     enabled: isOpen && !!focusedId,
   })
 
-  useEffect(() => {
-    if (!detail.data) return
+  // Record what the fetched detail says while rendering; this settles once the set agrees.
+  if (detail.data && withheldIds.has(detail.data.id) !== !!detail.data.contentWithheld) {
     const id = detail.data.id
     const withheld = !!detail.data.contentWithheld
     setWithheldIds((current) => {
@@ -107,14 +109,14 @@ export function GitHubFeedbackReviewModal({
       else next.delete(id)
       return next
     })
-  }, [detail.data])
+  }
 
   // Reopening re-enables the pending list query; refetch it explicitly (refetch() ignores
   // `enabled`) and prune against its result rather than guessing when an incidental
   // refetch-on-mount lands.
   useEffect(() => {
-    if (!isOpen || queue !== 'pending' || !pruneOnReopen.current) return
-    pruneOnReopen.current = false
+    if (!isOpen || queue !== 'pending' || prunedReopening.current === reopening) return
+    prunedReopening.current = reopening
     void list.refetch().then((result) => {
       const freshRows = result.data?.pages.flatMap((page) => page.items) ?? []
       const stillPending = new Set(freshRows.map((row) => row.id))
@@ -123,7 +125,7 @@ export function GitHubFeedbackReviewModal({
     // `list` itself isn't a meaningful dependency (a new object every render); only `refetch`'s
     // behavior matters here, and it closes over the current queue/squadId already.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, queue])
+  }, [isOpen, queue, reopening])
 
   // Tab stays inside the dialog. Both "activeElement is the dialog root" (the resting focus right
   // after open) and "activeElement is outside the dialog entirely" count as wrap cases, in either

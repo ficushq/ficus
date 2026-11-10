@@ -154,9 +154,9 @@ export function WorkflowBuilder({
     }),
     [presetId, revision, definition, selected, history, preset]
   )
-  const current = useStableRef({ definition, revision, disabled, onChange, onHistory, draft })
+  const currentRef = useStableRef({ definition, revision, disabled, onChange, onHistory, draft })
   const applyAssistantEdit = (proposal: AssistantEditorProposal) => {
-    const latest = current.current
+    const latest = currentRef.current
     if (proposal.historyAction) {
       if (latest.disabled || proposal.baseRevision !== latest.revision) {
         setAssistantError('The draft changed. Ask the assistant to read it before undoing or redoing.')
@@ -174,7 +174,12 @@ export function WorkflowBuilder({
         revision: latest.revision + 1,
         history: restored.history,
       }
-      current.current = { ...latest, definition: restored.definition, revision: nextDraft.revision, draft: nextDraft }
+      currentRef.current = {
+        ...latest,
+        definition: restored.definition,
+        revision: nextDraft.revision,
+        draft: nextDraft,
+      }
       setAssistantError(undefined)
       setLastEdit(undefined)
       if (workflowHistoryKey(restored.definition) !== workflowHistoryKey(latest.definition))
@@ -210,7 +215,7 @@ export function WorkflowBuilder({
       setInspectedChanges([])
       setLastEdit({ summary: proposal.summary, before: structuredClone(latest.definition), after: parsed.data })
       // Update immediately so consecutive responses cannot reuse the old revision before React renders.
-      current.current = { ...latest, definition: parsed.data, revision: nextDraft.revision, draft: nextDraft }
+      currentRef.current = { ...latest, definition: parsed.data, revision: nextDraft.revision, draft: nextDraft }
       latest.onChange(parsed.data, nextDraft.preset)
     }
     return nextDraft

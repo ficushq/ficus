@@ -1,6 +1,6 @@
 import { CatalogSearch } from './CatalogSearch'
 import { Modal } from '../Modal'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -21,6 +21,7 @@ import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function SkillsSection() {
   const queryClient = useQueryClient()
@@ -96,10 +97,14 @@ export function SkillsSection() {
 
   const editingSkill = editing?.id ? skills.find((skill) => skill.id === editing.id) : null
 
-  useEffect(() => {
-    if (!editing?.id || !editingSkill) return
-    setEditing({ ...editingSkill, supportFiles: editingSkill.supportFiles ?? {} })
-  }, [editing?.id, editingSkill])
+  // Re-seed the editor from the skill it edits whenever that skill's data changes, while rendering.
+  useAdjustOnChange(
+    [editing?.id, editingSkill],
+    () => {
+      if (editing?.id && editingSkill) setEditing({ ...editingSkill, supportFiles: editingSkill.supportFiles ?? {} })
+    },
+    { onMount: true }
+  )
 
   const skillFieldActions = (field: string) =>
     editingSkill?.hasTemplate ? (

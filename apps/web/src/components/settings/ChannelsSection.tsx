@@ -1,5 +1,5 @@
 import { ChannelIdsEditor } from './ChannelIdsEditor'
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { queries } from '../../queryOptions'
@@ -24,6 +24,7 @@ import {
   overrideRowsToMap,
   invalidOverrideRowIndexes,
 } from './channelFormHelpers'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 export function ChannelsSection({ provider }: { provider?: ProviderId } = {}) {
   const queryClient = useQueryClient()
@@ -532,10 +533,11 @@ export function ChannelRow({
   const [saveAttempted, setSaveAttempted] = useState(false)
   const panelId = useId()
 
-  useEffect(() => {
+  // Re-seed the form when the channel changes, while rendering.
+  useAdjustOnChange([channel], () => {
     setForm(channelToForm(channel))
     setSaveAttempted(false)
-  }, [channel])
+  })
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<ChannelInstanceConfig>) => updateChannelInstance(channel.id, data),

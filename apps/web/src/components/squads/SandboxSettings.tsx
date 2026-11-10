@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ConfirmButton } from '../ConfirmButton'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -9,6 +9,7 @@ import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import clsx from 'clsx'
 import { FormSkeleton } from '../loading/Skeleton'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 
 interface Props {
   squadId: string
@@ -52,9 +53,11 @@ export function SandboxSettings({ squadId }: Props) {
   const [config, setConfig] = useState<SandboxConfig>(DEFAULT_CONFIG)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Reset form when squad data loads
-  useEffect(() => {
-    if (squad) {
+  // Reset form when squad data loads or changes, while rendering
+  useAdjustOnChange(
+    [squad],
+    () => {
+      if (!squad) return
       const sandbox = (squad.metadata as { sandbox?: Partial<SandboxConfig> } | undefined)?.sandbox
       setConfig({
         alwaysOn: sandbox?.alwaysOn === true, // default: false
@@ -62,8 +65,9 @@ export function SandboxSettings({ squadId }: Props) {
         ephemeralStorageLimitGi: sandbox?.ephemeralStorageLimitGi,
       })
       setHasChanges(false)
-    }
-  }, [squad])
+    },
+    { onMount: true }
+  )
 
   const updateMutation = useMutation({
     mutationFn: async (sandboxConfig: SandboxConfig) => {

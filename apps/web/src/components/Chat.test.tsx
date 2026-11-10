@@ -52,16 +52,15 @@ const reactQueryOverrides = {
 
 const usePermissionsMock = () => ({ permissions: [], can: (_action: string) => true, isLoading: false, isError: false })
 
-let capturedAgentChatProps: Record<string, unknown> = {}
-const AgentChatFixture = (props: Record<string, unknown>) => {
-  capturedAgentChatProps = props
-  return (
-    <div data-testid="agent-chat">
-      {/* Render the header so its contents are in the output */}
-      {props.header as React.ReactNode}
-    </div>
-  )
-}
+// These tests render on the server, where effects never run, so a spy records the
+// props AgentChat receives instead of assigning them to a variable during render.
+const AgentChatFixture = mock((props: Record<string, unknown>) => (
+  <div data-testid="agent-chat">
+    {/* Render the header so its contents are in the output */}
+    {props.header as React.ReactNode}
+  </div>
+))
+const capturedAgentChatProps = (): Record<string, unknown> => AgentChatFixture.mock.calls.at(-1)?.[0] ?? {}
 
 let mockAgentStatus: 'idle' | 'active' = 'idle'
 let mockExecutionData: { status: string; active: boolean } | null = null
@@ -96,7 +95,7 @@ function renderChat(element: React.ReactElement, entry = '/chat/agent-1?scope=al
 }
 
 beforeEach(() => {
-  capturedAgentChatProps = {}
+  AgentChatFixture.mockClear()
   mockAgentStatus = 'idle'
   mockExecutionData = null
   mockSandboxStatus = undefined
@@ -116,7 +115,7 @@ describe('Chat thinking label', () => {
 
     renderChat(<Chat agentId="agent-1" scope={{ type: 'system-manager' }} />)
 
-    expect(capturedAgentChatProps.thinkingLabel).toBe('Agent is working...')
+    expect(capturedAgentChatProps().thinkingLabel).toBe('Agent is working...')
   })
 
   test('docker runtime still reports a sandbox that is not running yet', () => {
@@ -126,7 +125,7 @@ describe('Chat thinking label', () => {
 
     renderChat(<Chat agentId="agent-1" scope={{ type: 'system-manager' }} />)
 
-    expect(capturedAgentChatProps.thinkingLabel).toBe('Sandbox is starting...')
+    expect(capturedAgentChatProps().thinkingLabel).toBe('Sandbox is starting...')
   })
 
   test('docker runtime reports an installing devbox', () => {
@@ -136,7 +135,7 @@ describe('Chat thinking label', () => {
 
     renderChat(<Chat agentId="agent-1" scope={{ type: 'system-manager' }} />)
 
-    expect(capturedAgentChatProps.thinkingLabel).toBe('Sandbox is starting...')
+    expect(capturedAgentChatProps().thinkingLabel).toBe('Sandbox is starting...')
   })
 })
 
@@ -144,7 +143,7 @@ describe('Chat header rendering', () => {
   test('passes the consultant squad scope before the first agent exists', () => {
     renderChat(<Chat scope={{ type: 'consultant', id: 'squad-1' }} />)
 
-    expect(capturedAgentChatProps.squadId).toBe('squad-1')
+    expect(capturedAgentChatProps().squadId).toBe('squad-1')
   })
 
   test('checks chat permission in the squad the server checks, for a squad-scoped role', () => {
@@ -168,16 +167,16 @@ describe('Chat header rendering', () => {
       )
 
     render(<Chat scope={{ type: 'consultant', id: 'squad-1' }} />)
-    expect(capturedAgentChatProps.inputDisabled).toBe(false)
+    expect(capturedAgentChatProps().inputDisabled).toBe(false)
 
     render(<Chat scope={{ type: 'system-manager' }} />)
-    expect(capturedAgentChatProps.inputDisabled).toBe(true)
+    expect(capturedAgentChatProps().inputDisabled).toBe(true)
   })
 
   test('preserves squadless system-manager chats', () => {
     renderChat(<Chat scope={{ type: 'system-manager' }} />)
 
-    expect(capturedAgentChatProps.squadId).toBeUndefined()
+    expect(capturedAgentChatProps().squadId).toBeUndefined()
   })
 
   test('renders the default chat header title for standalone chat views', () => {
@@ -229,12 +228,12 @@ describe('Chat header rendering', () => {
     const onAgentCreated = mock(() => undefined)
     renderChat(<Chat agentId="agent-1" scope={{ type: 'system-manager' }} onAgentCreated={onAgentCreated} />)
 
-    expect(capturedAgentChatProps.agentId).toBe('agent-1')
-    expect((capturedAgentChatProps.scope as { type: string })?.type).toBe('system-manager')
-    expect(capturedAgentChatProps.onAgentCreated).toBeDefined()
+    expect(capturedAgentChatProps().agentId).toBe('agent-1')
+    expect((capturedAgentChatProps().scope as { type: string })?.type).toBe('system-manager')
+    expect(capturedAgentChatProps().onAgentCreated).toBeDefined()
 
     // Invoking the captured onAgentCreated should forward to the prop
-    ;(capturedAgentChatProps.onAgentCreated as (id: string) => void)('new-agent-id')
+    ;(capturedAgentChatProps().onAgentCreated as (id: string) => void)('new-agent-id')
     expect(onAgentCreated).toHaveBeenCalledWith('new-agent-id')
   })
 
@@ -244,7 +243,7 @@ describe('Chat header rendering', () => {
     // can() => true (and thus canSendChat=true), verify the prop is undefined in that case.
     renderChat(<Chat agentId="agent-1" scope={{ type: 'system-manager' }} />)
     // canSendChat=true → no placeholder override
-    expect(capturedAgentChatProps.placeholder).toBeUndefined()
+    expect(capturedAgentChatProps().placeholder).toBeUndefined()
   })
 })
 
@@ -269,7 +268,7 @@ test('hands AgentChat navigation to the owning real router', async () => {
   try {
     await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
     expect(router.state.location.pathname + router.state.location.search).toBe('/chat/agent-1?scope=all')
-    const onNavigate = capturedAgentChatProps.onNavigate as (path: string) => void
+    const onNavigate = capturedAgentChatProps().onNavigate as (path: string) => void
     expect(onNavigate).toBeFunction()
     await dom.act(async () => onNavigate('/chat/agent-2?scope=system'))
     expect(router.state.location.pathname + router.state.location.search).toBe('/chat/agent-2?scope=system')
@@ -281,16 +280,16 @@ test('hands AgentChat navigation to the owning real router', async () => {
 describe('Chat composer draft key', () => {
   test('an existing agent chat keeps its manager draft key', () => {
     renderChat(<Chat agentId="agent-1" scope={{ type: 'consultant', id: 'squad-1' }} />)
-    expect(capturedAgentChatProps.inputStorageKey).toBe('manager:agent-1')
+    expect(capturedAgentChatProps().inputStorageKey).toBe('manager:agent-1')
   })
 
   test('a new consultant composer persists its draft per squad', () => {
     renderChat(<Chat scope={{ type: 'consultant', id: 'squad-1' }} />)
-    expect(capturedAgentChatProps.inputStorageKey).toBe('consultant-new:squad-1')
+    expect(capturedAgentChatProps().inputStorageKey).toBe('consultant-new:squad-1')
   })
 
   test('other new chats without an agent stay unpersisted', () => {
     renderChat(<Chat scope={{ type: 'system-manager' }} />)
-    expect(capturedAgentChatProps.inputStorageKey).toBeUndefined()
+    expect(capturedAgentChatProps().inputStorageKey).toBeUndefined()
   })
 })

@@ -17,6 +17,7 @@ import { latestReplySuggestions } from '../lib/replySuggestions'
 import { SpinnerIcon } from './icons'
 import { useChatApi } from '../api/ChatApiProvider'
 import { webStatus } from '../lib/statusPresentation'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 const attentionStatus = webStatus('attention')
 
@@ -212,10 +213,9 @@ export function AgentChat({
 
   const [questionSubmitted, setQuestionSubmitted] = useState(false)
 
-  // Reset submitted state when agent status changes
-  useEffect(() => {
-    setQuestionSubmitted(false)
-  }, [agent?.status])
+  // Reset submitted state when agent status changes, while rendering
+  const agentStatus = agent?.status
+  useAdjustOnChange([agentStatus], () => setQuestionSubmitted(false))
 
   // Auto-navigate on completed navigate tool calls with prompt: false (Fix 2)
   const executedNavigations = useRef<Set<string>>(new Set())
@@ -269,9 +269,9 @@ export function AgentChat({
   // Text for the composer: the caller's drafts and edited reply chips (negative ids, so the two never collide).
   const [draftRequest, setDraftRequest] = useState(composerDraft)
   const chipDraftId = useRef(0)
-  useEffect(() => {
+  useAdjustOnChange([composerDraft], () => {
     if (composerDraft) setDraftRequest(composerDraft)
-  }, [composerDraft])
+  })
 
   // Send routing: review feedback takes priority over normal send
   const handleSend = async (message: string, imageIds?: string[]) => {
@@ -475,7 +475,8 @@ export function AgentChat({
           {preparationError && (
             <div role="alert">
               {preparationError}
-              {!initialMessageSent.current && initialMessage && (
+              {/* A preparation error is only ever set by a failed attempt, which also clears initialMessageSent. */}
+              {initialMessage && (
                 <button
                   className="ficus-button ficus-button-ghost px-1.5 py-0.5 ml-2"
                   onClick={() => setInitialPreparationAttempt((value) => value + 1)}

@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useStableRef } from '../hooks/useStableRef'
 
 /** A user scroll that leaves the box further than this above the bottom pauses following. */
 const PAUSE_DISTANCE_PX = 30
@@ -36,8 +37,7 @@ function useFollowScroll<T extends HTMLElement>(follow: boolean) {
   const ref = useRef<T>(null)
   const [paused, setPausedState] = useState(false)
   const pausedRef = useRef(false)
-  const followRef = useRef(follow)
-  followRef.current = follow
+  const followRef = useStableRef(follow)
   /** Last scrollTop seen, to tell whether a scroll event moved up or down. */
   const lastScrollTopRef = useRef(0)
   const touchYRef = useRef<number | null>(null)
@@ -53,7 +53,7 @@ function useFollowScroll<T extends HTMLElement>(follow: boolean) {
     if (!el || !followRef.current || pausedRef.current) return
     el.scrollTop = el.scrollHeight
     lastScrollTopRef.current = el.scrollTop
-  }, [])
+  }, [followRef])
 
   // Every commit (new streamed text, toggling follow, resuming) re-pins before paint.
   useLayoutEffect(pin)
@@ -78,7 +78,7 @@ function useFollowScroll<T extends HTMLElement>(follow: boolean) {
     const el = ref.current
     if (!el || !followRef.current) return
     if (el.scrollHeight > el.clientHeight && el.scrollTop > 0) setPaused(true)
-  }, [setPaused])
+  }, [setPaused, followRef])
 
   const onWheel = useCallback(
     (event: WheelEvent<T>) => {
@@ -115,7 +115,7 @@ function useFollowScroll<T extends HTMLElement>(follow: boolean) {
     } else if (pausedRef.current && el.scrollTop > previousTop && distance < RESUME_DISTANCE_PX) {
       setPaused(false)
     }
-  }, [setPaused])
+  }, [setPaused, followRef])
 
   const resume = useCallback(() => {
     pausedRef.current = false

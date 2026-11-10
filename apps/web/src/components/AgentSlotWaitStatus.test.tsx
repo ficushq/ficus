@@ -214,6 +214,29 @@ describe('AgentSlotWaitStatus', () => {
     await eventually(() => expect(text()).not.toContain('Holding'))
   })
 
+  test('a lease that expired after mount but before its data arrived is not shown as live', async () => {
+    let now = 1_800_000_000_000
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      let resolve!: (response: Response) => void
+      pendingHoldResponse = new Promise((r) => {
+        resolve = r
+      })
+      await render()
+      await eventually(() => expect(holdRequests).toHaveLength(1))
+      now += 120_000
+      const expiredInFlight = { poolKey: 'build', expiresAt: new Date(now - 60_000).toISOString() }
+      await dom.act(async () => resolve(new Response(JSON.stringify([expiredInFlight]))))
+      await eventually(() => expect(text()).toContain('Waiting for slot:'))
+      // Let the immediate expiry deadline run, then the lease must be gone.
+      await dom.act(() => new Promise((done) => setTimeout(done, 0)))
+      expect(text()).toContain('Waiting for slot:')
+      expect(text()).not.toContain('Holding')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   test('lease expiry removes ownership locally without polling; renewal reschedules its deadline', async () => {
     let now = 1_800_000_000_000
     const clock = spyOn(Date, 'now').mockImplementation(() => now)

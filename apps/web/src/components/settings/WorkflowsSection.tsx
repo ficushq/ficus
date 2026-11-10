@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { CatalogSearch } from './CatalogSearch'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createBlankWorkflow, workflowDefinitionSchema, workflowPresetSchema } from '@ficus/shared'
@@ -14,7 +14,15 @@ import { ConfirmButton } from '../ConfirmButton'
 import { WorkflowGraph } from '../WorkflowGraph'
 import { WorkflowEditor } from '../squads/WorkflowEditor'
 import { useURLState } from '../../hooks/useURLState'
-import { readWorkflowDraft, workflowDraftKey, type WorkflowDraft } from '../../lib/workflowDraftStorage'
+import {
+  discardWorkflowDraft,
+  readWorkflowDraft,
+  subscribeWorkflowDraftWrites,
+  workflowDraftKey,
+  workflowDraftWriteFailed,
+  writeWorkflowDraft,
+  type WorkflowDraft,
+} from '../../lib/workflowDraftStorage'
 import { WorkflowTemplateDrift } from './WorkflowTemplateDrift'
 import { hasTemplateDrift } from '../../lib/workflowTemplateDrift'
 
@@ -250,16 +258,10 @@ function WorkflowModal({
       }
   )
   const { id, idEdited, description, source } = draft
-  const [storageError, setStorageError] = useState(false)
   useEffect(() => {
-    if (!draftKey) return
-    try {
-      localStorage.setItem(draftKey, JSON.stringify(draft))
-      setStorageError(false)
-    } catch {
-      setStorageError(true)
-    }
+    if (draftKey) writeWorkflowDraft(draftKey, draft)
   }, [draftKey, draft])
+  const storageError = useSyncExternalStore(subscribeWorkflowDraftWrites, () => workflowDraftWriteFailed(draftKey))
   const { data: catalog = [] } = useQuery(queries.workflows.list())
   const nameId =
     source?.kind === 'inline'
@@ -318,12 +320,7 @@ function WorkflowModal({
                 className="px-3 py-2 text-sm"
                 disabled={save.isPending}
                 onConfirm={() => {
-                  try {
-                    localStorage.removeItem(draftKey)
-                    onClose()
-                  } catch {
-                    setStorageError(true)
-                  }
+                  if (discardWorkflowDraft(draftKey)) onClose()
                 }}
               />
             </div>

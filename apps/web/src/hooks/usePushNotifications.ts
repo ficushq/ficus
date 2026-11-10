@@ -45,7 +45,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   }, [])
 
   useEffect(() => {
-    refresh()
+    // An async task: refresh sets state only after the subscriptions are fetched.
+    void (async () => {
+      await refresh()
+    })()
   }, [refresh])
 
   // Service worker registration is handled by lib/serviceWorker.ts in main.tsx

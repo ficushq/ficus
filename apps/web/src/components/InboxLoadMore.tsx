@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useStableRef } from '../hooks/useStableRef'
 
 interface InboxLoadMoreProps {
   isFetching: boolean
@@ -12,8 +13,7 @@ interface InboxLoadMoreProps {
  */
 export function InboxLoadMore({ isFetching, onLoadMore }: InboxLoadMoreProps) {
   const ref = useRef<HTMLButtonElement | null>(null)
-  const onLoadMoreRef = useRef(onLoadMore)
-  onLoadMoreRef.current = onLoadMore
+  const onLoadMoreRef = useStableRef(onLoadMore)
 
   useEffect(() => {
     const node = ref.current
@@ -23,7 +23,7 @@ export function InboxLoadMore({ isFetching, onLoadMore }: InboxLoadMoreProps) {
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [isFetching])
+  }, [isFetching, onLoadMoreRef])
 
   return (
     <button

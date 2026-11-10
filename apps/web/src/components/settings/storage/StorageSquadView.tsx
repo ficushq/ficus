@@ -6,6 +6,7 @@ import {
   type StorageSquad,
 } from '@ficus/shared'
 import { usePermissions } from '../../../hooks/usePermissions'
+import { useTick } from '../../../hooks/useTick'
 import { removeDormantAgents } from '../../../api/system'
 import { terminateSquadAgent } from '../../../api/squads'
 import { ChevronRightIcon } from '../../icons'
@@ -118,6 +119,7 @@ export function StorageSquadView({
   const canCleanup = canGlobal('system:cleanup')
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const close = () => setDialog(null)
+  const now = useTick(60_000)
 
   const workspace = squad.folders.filter((folder) => !isAgentFolder(folder))
   const agentFolders = squad.folders.filter(isAgentFolder)
@@ -131,7 +133,7 @@ export function StorageSquadView({
   const dormantSummary = `${dormant.length} dormant · ${approximateSum(dormant)} · ${
     !removalDate
       ? `removed automatically after ${retentionDays} days`
-      : removalDate.getTime() <= Date.now()
+      : removalDate.getTime() <= now
         ? 'removal pending'
         : `removed automatically from ${removalDate.toLocaleDateString()}`
   }`

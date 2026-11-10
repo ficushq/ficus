@@ -25,6 +25,7 @@ import { useChatApi } from '../api/ChatApiProvider'
 import { getAgentName, getAgentPrimaryLabel, getAgentSecondaryLabel } from '../lib/agentDisplay'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 const SCOPE_FILTERS: { label: string; value: ChatScopeType | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -174,12 +175,11 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
     }
   }, [agentId, newChatMode, selectAgent])
 
-  // Exit new chat mode when switching to a scope that doesn't support it
-  useEffect(() => {
-    if (newChatMode && !canCreateChat(scopeFilter)) {
-      setNewChatMode(false)
-    }
-  }, [scopeFilter, newChatMode])
+  // Exit new chat mode when switching to a scope that doesn't support it (while rendering). A
+  // pending ?new request is about to switch the scope itself, so it is left alone until then.
+  if (newChatMode && !searchParams.has('new') && !canCreateChat(scopeFilter)) {
+    setNewChatMode(false)
+  }
 
   // Auto-select first agent if none selected (skip if user clicked back to browse)
   // Don't navigate away if viewing a specific agent that's not in the current filter
@@ -216,16 +216,26 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
     isDesktop,
   ])
 
-  // Handle ?new search param from header button
+  // Handle ?new search param from header button: enter new chat mode while rendering, then
+  // consume the parameter and start the session from the effect.
+  const newChatRequested = searchParams.has('new')
+  useAdjustOnChange(
+    [newChatRequested],
+    () => {
+      if (newChatRequested) {
+        setNewChatMode(true)
+        setFocusTrigger((n) => n + 1)
+      }
+    },
+    { onMount: true }
+  )
   useEffect(() => {
-    if (searchParams.has('new')) {
+    if (newChatRequested) {
       setSearchParams({}, { replace: true })
       if (!canCreateChat(scopeFilter)) setScopeFilter('system-manager')
-      setNewChatMode(true)
       startNewChat()
-      setFocusTrigger((n) => n + 1)
     }
-  }, [searchParams, setSearchParams, scopeFilter, startNewChat, setScopeFilter])
+  }, [newChatRequested, setSearchParams, scopeFilter, startNewChat, setScopeFilter])
 
   const handleNewChat = () => {
     const newChatScope = canCreateChat(scopeFilter) ? scopeFilter : 'system-manager'
