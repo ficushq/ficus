@@ -60,14 +60,19 @@ export function BigbrainMemberInviteDialog({
   const [copied, setCopied] = useState(false)
   const generation = useRef(0)
 
-  // Any change of target or closing forgets the link and abandons an in-flight request.
-  useEffect(() => {
-    generation.current += 1
+  // Any change of target or closing forgets the link (while rendering) and abandons an in-flight
+  // request (the effect retires its generation).
+  const [dialogTarget, setDialogTarget] = useState({ vaultId: vault.vaultId, isOpen })
+  if (dialogTarget.vaultId !== vault.vaultId || dialogTarget.isOpen !== isOpen) {
+    setDialogTarget({ vaultId: vault.vaultId, isOpen })
     setForm(draft())
     setInvite(null)
     setError(null)
     setCopied(false)
     setPending(false)
+  }
+  useEffect(() => {
+    generation.current += 1
   }, [vault.vaultId, isOpen])
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   configureChannelIntegration,
@@ -53,7 +53,12 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
   const { data: squads = [] } = useQuery({ ...queries.squads.list(), queryFn: () => listSquads() })
   const data = view.data as View | undefined
   const [guildId, setGuildId] = useState('')
-  useEffect(() => setGuildId(data?.identity?.guildId ?? ''), [data?.identity?.guildId])
+  const savedGuildId = data?.identity?.guildId
+  const [seenGuildId, setSeenGuildId] = useState<typeof savedGuildId>()
+  if (seenGuildId !== savedGuildId) {
+    setSeenGuildId(savedGuildId)
+    setGuildId(savedGuildId ?? '')
+  }
   const [authError, setAuthError] = useState('')
   const [disconnectArmed, setDisconnectArmed] = useState(false)
 

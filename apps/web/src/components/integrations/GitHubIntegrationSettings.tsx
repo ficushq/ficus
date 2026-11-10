@@ -159,13 +159,16 @@ export function GitHubIntegrationSettings({
       clearTimeout(timer)
     }
   }, [device, canWrite, client])
-  useEffect(() => {
+  // Losing write access clears the secret, the acknowledgement and a device login, while rendering.
+  const [seenCanWrite, setSeenCanWrite] = useState(canWrite)
+  if (seenCanWrite !== canWrite) {
+    setSeenCanWrite(canWrite)
     if (!canWrite) {
       setClientSecret('')
       setAcknowledged(false)
       setDevice(null)
     }
-  }, [canWrite])
+  }
   const cancel = useMutation({
     mutationFn: () => cancelIntegrationDeviceAuthorization(device!.id),
     onMutate: clearFailure,

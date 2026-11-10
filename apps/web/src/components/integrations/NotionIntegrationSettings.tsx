@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   configureIntegrationOAuthApp,
@@ -40,12 +40,15 @@ export function NotionIntegrationSettings({
     },
     onSettled: () => setClientSecret(''),
   })
-  useEffect(() => {
+  // Losing write access clears the secret and the acknowledgement, while rendering.
+  const [seenCanWrite, setSeenCanWrite] = useState(canWrite)
+  if (seenCanWrite !== canWrite) {
+    setSeenCanWrite(canWrite)
     if (!canWrite) {
       setClientSecret('')
       setCapabilitiesAcknowledged(false)
     }
-  }, [canWrite])
+  }
   const authorize = useMutation({
     mutationFn: (connectionId?: string) =>
       startIntegrationAuthorization('notion', {

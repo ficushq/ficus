@@ -1,5 +1,5 @@
 import { ChannelIdsEditor } from '../settings/ChannelIdsEditor'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -31,14 +31,16 @@ export function ProviderChannelRouting({
   const [denied, setDenied] = useState<string[]>([])
   const [allowPrivateChats, setAllowPrivateChats] = useState(query.data?.allowPrivateChats ?? true)
   const [error, setError] = useState('')
-  useEffect(() => {
-    if (!query.data) return
+  // Re-seed the form from each new instance read, while rendering.
+  const [formData, setFormData] = useState<typeof query.data>()
+  if (query.data && formData !== query.data) {
+    setFormData(query.data)
     setAllowPrivateChats(query.data.allowPrivateChats ?? true)
     setRows(mapToOverrideRows(query.data.channelSquadMap))
     setTrusted(query.data.trustedChannelIds ?? [])
     setAllowed(query.data.allowedChannelIds ?? [])
     setDenied(query.data.deniedChannelIds ?? [])
-  }, [query.data])
+  }
   const save = useMutation({
     mutationFn: () =>
       updateChannelInstance(instanceId, {

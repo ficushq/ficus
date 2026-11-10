@@ -105,15 +105,16 @@ export function BigbrainIntegrationSettings({
   const clearCredentialDrafts = useCallback(() => {
     setConfirmation(null)
   }, [])
+  // Losing write access, or another set of connections, drops a pending confirmation while
+  // rendering; the effect retires feedback from requests made with write access.
+  const [confirmationContext, setConfirmationContext] = useState({ canWrite, connectionIds })
+  if (confirmationContext.canWrite !== canWrite || confirmationContext.connectionIds !== connectionIds) {
+    setConfirmationContext({ canWrite, connectionIds })
+    if (!canWrite || confirmationContext.connectionIds !== connectionIds) clearCredentialDrafts()
+  }
   useEffect(() => {
-    if (!canWrite) {
-      feedbackSequence.current += 1
-      clearCredentialDrafts()
-    }
-  }, [canWrite, clearCredentialDrafts])
-  useEffect(() => {
-    setConfirmation(null)
-  }, [connectionIds])
+    if (!canWrite) feedbackSequence.current += 1
+  }, [canWrite])
 
   const action = useMutation({
     mutationFn: (variables: {
