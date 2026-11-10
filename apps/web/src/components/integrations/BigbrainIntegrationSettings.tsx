@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { integrationAction, removeIntegration, type IntegrationConnection } from '../../api/integrations'
@@ -106,13 +106,14 @@ export function BigbrainIntegrationSettings({
     setConfirmation(null)
   }, [])
   // Losing write access, or another set of connections, drops a pending confirmation while
-  // rendering; the effect retires feedback from requests made with write access.
+  // rendering. The layout effect retires feedback from requests made with write access in that same
+  // commit, so a response that arrives afterwards cannot show feedback to a reader.
   const [confirmationContext, setConfirmationContext] = useState({ canWrite, connectionIds })
   if (confirmationContext.canWrite !== canWrite || confirmationContext.connectionIds !== connectionIds) {
     setConfirmationContext({ canWrite, connectionIds })
     if (!canWrite || confirmationContext.connectionIds !== connectionIds) clearCredentialDrafts()
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!canWrite) feedbackSequence.current += 1
   }, [canWrite])
 

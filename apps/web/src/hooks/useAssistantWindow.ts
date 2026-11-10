@@ -16,6 +16,7 @@ import {
   type Snap,
 } from '../lib/assistantWindow'
 import { ASSISTANT_GUTTER, currentViewport, dockAssistant } from './useAssistantPosition'
+import { useStableRef } from './useStableRef'
 
 const KEY_STEP = 16
 /** Pointer travel before a press on the header becomes a drag (so clicks stay clicks). */
@@ -36,7 +37,8 @@ export function useAssistantWindow(
   { visible, small, layoutKey }: { visible: boolean; small: boolean; layoutKey?: string }
 ) {
   const [placement, setPlacementState] = useState<AssistantWindowPlacement>(() => readAssistantWindow())
-  const placementRef = useRef(placement)
+  // Gestures read the placement from this ref; setPlacement also writes it at once, before React renders.
+  const placementRef = useStableRef(placement)
   const gesture = useRef<Gesture | null>(null)
   const [live, setLiveState] = useState<Rect>()
   // The gesture's latest rect, for committing on release without waiting for a render.
@@ -47,22 +49,21 @@ export function useAssistantWindow(
   }
   const [style, setStyle] = useState<CSSProperties>({})
 
-  const setPlacement = useCallback((next: AssistantWindowPlacement) => {
-    placementRef.current = next
-    setPlacementState(next)
-    saveAssistantWindow(next)
-  }, [])
+  const setPlacement = useCallback(
+    (next: AssistantWindowPlacement) => {
+      placementRef.current = next
+      setPlacementState(next)
+      saveAssistantWindow(next)
+    },
+    [placementRef]
+  )
 
-  // A reopened assistant picks up a placement another tab or a remount saved, while rendering;
-  // the layout effect then brings the ref that gestures read up to date.
+  // A reopened assistant picks up a placement another tab or a remount saved, while rendering.
   const [seenVisible, setSeenVisible] = useState(false)
   if (seenVisible !== visible) {
     setSeenVisible(visible)
     if (visible) setPlacementState(readAssistantWindow())
   }
-  useLayoutEffect(() => {
-    placementRef.current = placement
-  }, [placement])
 
   /** The window's current rect relative to the visual viewport, as drawn. */
   const currentRect = useCallback((): Rect | undefined => {
@@ -125,7 +126,7 @@ export function useAssistantWindow(
       window.visualViewport?.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('scroll', update)
     }
-  }, [ref, visible, small, layoutKey, placement, live])
+  }, [ref, visible, small, layoutKey, placement, live, placementRef])
 
   const snap = useCallback(
     (next: Snap) => setPlacement({ snap: next, rect: snapRect(next, currentViewport()) }),

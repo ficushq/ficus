@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { Modal } from '../Modal'
 import {
@@ -44,7 +44,8 @@ export function BigbrainOwnerInviteDialog({
   const generation = useRef(0)
 
   // Any change of target or closing forgets the link (while rendering) and abandons an in-flight
-  // request (the effect retires its generation).
+  // request. The layout effect retires its generation in the same commit as the reset, so a response
+  // that arrives afterwards can never show a link for the previous target.
   const [dialogTarget, setDialogTarget] = useState({ vaultId: vault.vaultId, isOpen })
   if (dialogTarget.vaultId !== vault.vaultId || dialogTarget.isOpen !== isOpen) {
     setDialogTarget({ vaultId: vault.vaultId, isOpen })
@@ -53,7 +54,7 @@ export function BigbrainOwnerInviteDialog({
     setCopied(false)
     setPending(false)
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     generation.current += 1
   }, [vault.vaultId, isOpen])
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { restoreVoiceConversation } from './voiceConversationRecovery'
 import { createMicState } from './micState'
 import { parseRealtimeRateLimitRetryDelay } from './realtimeErrors'
@@ -257,7 +257,6 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
   const controllerRef = useStableRef(controller)
   const envRef = useStableRef(env)
   const statusRef = useStableRef(status)
-  const runtimeRef = useRef<VoiceAssistantRuntime<TState>>(null as unknown as VoiceAssistantRuntime<TState>)
   // The mic state holds transportRef, so it is created on first use from a callback or effect,
   // never during render, and kept for the life of the hook.
   const micStateRef = useRef<ReturnType<typeof createMicState> | null>(null)
@@ -268,35 +267,6 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
   const applyMicEnabled = useCallback(() => {
     getMicState().applyMicEnabled()
   }, [getMicState])
-
-  const flushPendingMessages = useCallback(() => {
-    const transport = transportRef.current
-    if (!transport?.isConnected || responseActiveRef.current || statusRef.current === 'user-speaking') return
-    const now = Date.now()
-    pendingMessagesRef.current = pendingMessagesRef.current.filter(
-      (message) => !message.expiresAt || message.expiresAt > now
-    )
-    const message = pendingMessagesRef.current.shift()
-    if (!message) return
-    activeMessageRef.current = message
-    if (message.historyEntry)
-      setHistory((history) =>
-        history.some((entry) => entry.id === message.historyEntry!.id) ? history : [...history, message.historyEntry!]
-      )
-    message.onStart?.(runtimeRef.current)
-    if (message.disableMic !== false) getMicState().setMicEnabled(false)
-    transport.sendEvent({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: message.text }],
-      },
-    })
-    responseActiveRef.current = true
-    setStatus('processing')
-    transport.requestResponse(responseModalityRef.current)
-  }, [getMicState, statusRef])
 
   const flushText = useCallback(() => {
     const transport = transportRef.current
@@ -320,8 +290,10 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
     transport.requestResponse('text')
   }, [])
 
-  const runtime = useMemo<VoiceAssistantRuntime<TState>>(
-    () => ({
+  // The runtime the controller drives. Everything it uses is stable for the life of the hook, so it is
+  // created once and can refer to itself (flushPendingMessages hands it to a starting message).
+  const [runtime] = useState<VoiceAssistantRuntime<TState>>(() => {
+    const runtime: VoiceAssistantRuntime<TState> = {
       getState: () => stateRef.current,
       setState: setRuntimeState,
       updateInstructions: (instructions) => {
@@ -357,9 +329,38 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
         if (activeKey === key) return
         if (pendingMessagesRef.current.some((queued) => (queued.dedupeKey ?? queued.id) === key)) return
         pendingMessagesRef.current.push(message)
-        flushPendingMessages()
+        runtime.flushPendingMessages()
       },
-      flushPendingMessages,
+      flushPendingMessages: () => {
+        const transport = transportRef.current
+        if (!transport?.isConnected || responseActiveRef.current || statusRef.current === 'user-speaking') return
+        const now = Date.now()
+        pendingMessagesRef.current = pendingMessagesRef.current.filter(
+          (message) => !message.expiresAt || message.expiresAt > now
+        )
+        const message = pendingMessagesRef.current.shift()
+        if (!message) return
+        activeMessageRef.current = message
+        if (message.historyEntry)
+          setHistory((history) =>
+            history.some((entry) => entry.id === message.historyEntry!.id)
+              ? history
+              : [...history, message.historyEntry!]
+          )
+        message.onStart?.(runtime)
+        if (message.disableMic !== false) getMicState().setMicEnabled(false)
+        transport.sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: message.text }],
+          },
+        })
+        responseActiveRef.current = true
+        setStatus('processing')
+        transport.requestResponse(responseModalityRef.current)
+      },
       setMicEnabled: (enabled) => {
         getMicState().setMicEnabled(enabled)
       },
@@ -367,12 +368,10 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
       markResponseActive: (active) => {
         responseActiveRef.current = active
       },
-    }),
-    [flushPendingMessages, getMicState, setRuntimeState]
-  )
-  useLayoutEffect(() => {
-    runtimeRef.current = runtime
-  }, [runtime])
+    }
+    return runtime
+  })
+  const flushPendingMessages = runtime.flushPendingMessages
 
   useControllerEffects(runtime, env, status)
 
@@ -380,15 +379,15 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
     const activeMessage = activeMessageRef.current
     if (!activeMessage) return
     activeMessageRef.current = null
-    activeMessage.onDone?.(runtimeRef.current)
-  }, [runtimeRef])
+    activeMessage.onDone?.(runtime)
+  }, [runtime])
 
   const cancelActiveMessage = useCallback(() => {
     const activeMessage = activeMessageRef.current
     if (!activeMessage) return
     activeMessageRef.current = null
-    activeMessage.onCancel?.(runtimeRef.current)
-  }, [runtimeRef])
+    activeMessage.onCancel?.(runtime)
+  }, [runtime])
 
   const flushPendingResponseCreate = useCallback((transport: RealtimeTransport) => {
     if (!pendingResponseCreateRef.current || transportRef.current !== transport || !transport.isConnected) return
@@ -561,7 +560,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
             name,
             toolArgs: args,
             env: envRef.current,
-            runtime: runtimeRef.current,
+            runtime: runtime,
           })
           const toolResult = result.result
           const failed =
@@ -591,7 +590,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
       pendingToolCallsRef.current.set(callId, promise)
       return promise
     },
-    [addToolCall, controllerRef, envRef, finishToolCall, runtimeRef]
+    [addToolCall, controllerRef, envRef, finishToolCall, runtime]
   )
 
   const handleServerEvent = useCallback(
@@ -644,9 +643,9 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
           outputAudioActiveRef.current = false
           const shouldNotifyStopped = !outputAudioStoppedHandledRef.current
           outputAudioStoppedHandledRef.current = true
-          getMicState().markResponseInactive(runtimeRef.current)
+          getMicState().markResponseInactive(runtime)
           setStatus('listening')
-          if (shouldNotifyStopped) controllerRef.current.onOutputAudioStopped?.(runtimeRef.current, envRef.current)
+          if (shouldNotifyStopped) controllerRef.current.onOutputAudioStopped?.(runtime, envRef.current)
           completeActiveMessage()
           flushPendingMessages()
           flushPendingResponseCreate(transport)
@@ -728,9 +727,9 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
                 // guard before creating the follow-up response with function results; otherwise
                 // requestResponse() queues behind a response that has no more audio/stopped events.
                 responseActiveRef.current = false
-                runtimeRef.current.requestResponse()
+                runtime.requestResponse()
               } else {
-                getMicState().markResponseInactive(runtimeRef.current)
+                getMicState().markResponseInactive(runtime)
                 setStatus('listening')
                 completeActiveMessage()
                 flushPendingMessages()
@@ -740,11 +739,11 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
           } else if (outputAudioActiveRef.current) {
             setStatus((prev) => (prev === 'speaking' ? prev : 'speaking'))
           } else {
-            getMicState().markResponseInactive(runtimeRef.current)
+            getMicState().markResponseInactive(runtime)
             setStatus('listening')
             if (!outputAudioStoppedHandledRef.current) {
               outputAudioStoppedHandledRef.current = true
-              controllerRef.current.onOutputAudioStopped?.(runtimeRef.current, envRef.current)
+              controllerRef.current.onOutputAudioStopped?.(runtime, envRef.current)
             }
             completeActiveMessage()
             flushPendingMessages()
@@ -826,7 +825,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
             break
           }
           if (isRecoverableVoiceConnectionError(errMsg)) resumeResponse.current ||= responseActiveRef.current
-          getMicState().markResponseInactive(runtimeRef.current)
+          getMicState().markResponseInactive(runtime)
           setError(errMsg)
           setStatus('error')
           break
@@ -837,7 +836,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
           break
       }
 
-      controllerRef.current.onServerEvent?.(event, runtimeRef.current, envRef.current)
+      controllerRef.current.onServerEvent?.(event, runtime, envRef.current)
     },
     [
       addUserPlaceholder,
@@ -853,7 +852,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
       flushPendingMessages,
       flushText,
       flushPendingResponseCreate,
-      runtimeRef,
+      runtime,
       getMicState,
       scheduleRateLimitRetry,
       shouldRequestFollowUp,
@@ -1017,9 +1016,9 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
         applyMicEnabled()
         setIsMicMuted(!getMicState().getUserMicEnabled())
         setStatus('listening')
-        controllerRef.current.onConnected?.(runtimeRef.current, envRef.current)
+        controllerRef.current.onConnected?.(runtime, envRef.current)
         flushText()
-        if (resumeResponse.current && !responseActiveRef.current) runtimeRef.current.requestResponse()
+        if (resumeResponse.current && !responseActiveRef.current) runtime.requestResponse()
         resumeResponse.current = false
       } catch (err) {
         if (!isCurrentConnection() || (err instanceof DOMException && err.name === 'AbortError')) return
@@ -1046,7 +1045,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
       reconnectClock,
       getMicState,
       resetRuntimeState,
-      runtimeRef,
+      runtime,
       setRuntimeState,
     ]
   )
@@ -1113,7 +1112,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
     outputAudioActiveRef.current = false
     outputAudioStoppedHandledRef.current = true
     cancelActiveMessage()
-    controllerRef.current.onInterrupt?.(runtimeRef.current, envRef.current)
+    controllerRef.current.onInterrupt?.(runtime, envRef.current)
     const transport = transportRef.current
     if (!transport?.isConnected) return
 
@@ -1131,7 +1130,7 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
     controllerRef,
     envRef,
     markCurrentAssistantInterrupted,
-    runtimeRef,
+    runtime,
   ])
 
   const restartFresh = useCallback(async () => {
