@@ -173,7 +173,7 @@ describe('role-independent delivery guidance', () => {
         const generated = flowCompletionInstructions(mode)
         const composed = `${base}\n\n${generated}`
         expect(composed.split(`Delivery policy: ${mode}.`)).toHaveLength(2)
-        expect(generated).toContain('no agent role intrinsically owns PR creation or completion')
+        expect(generated).toContain('The flow, not an agent role, assigns delivery')
         expect(generated.includes('metadata.policies.allowAutoMerge')).toBe(mode === 'pr-auto-merge')
         expect(generated.includes('metadata.policies.allowDirectMerge')).toBe(mode === 'direct-merge')
         if (mode === 'pr-auto-merge') {

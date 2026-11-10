@@ -9,7 +9,7 @@ import {
   type WorkflowDefinition,
   type WorkflowRun,
 } from '@ficus/shared'
-import { outputRecipients } from './routing-audience'
+import { completionDeliveryOwner, outputRecipients } from './routing-audience'
 import { CodeHostingRegistry } from '../code-hosting/registry'
 import { githubCodeHostingAdapter } from '../github/code-hosting'
 
@@ -211,4 +211,31 @@ test('inferred CI informs implementation when the configured review target has n
   expect(recipients({ ...subscription, deliver: { ...subscription.deliver, to: { step: 'review' } } })).toEqual([
     { agentId: ENGINEER, attemptId: 1 },
   ])
+})
+
+test('the named delivery participant is exactly where merge and close events are routed', async () => {
+  for (const changeEventsTo of [undefined, 'delivery-owner' as const, { step: 'implement' }]) {
+    const definition = await reviewedCoding()
+    if (changeEventsTo === undefined) delete definition.completion.changeEventsTo
+    else definition.completion.changeEventsTo = changeEventsTo
+    const state = complete(complete(createWorkflowRun(definition), 'completed'), 'approved')
+    const run = { state, version: state.version, attemptAgents: { '1': ENGINEER, '2': REVIEWER } }
+    expect(completionDeliveryOwner(run)).toEqual({
+      agentId: REVIEWER,
+      attemptId: 2,
+      stepId: 'review',
+      participantId: 'reviewer',
+    })
+    for (const output of DELIVERY_EVENTS)
+      expect(approved(definition)(output)).toEqual([completionDeliveryOwner(run)!.agentId])
+  }
+  // Before completion-ready nobody is named, and an attempt without a bound agent is skipped.
+  const definition = await reviewedCoding()
+  const reviewingState = complete(createWorkflowRun(definition), 'completed')
+  expect(completionDeliveryOwner({ state: reviewingState, attemptAgents: { '1': ENGINEER } })).toBeUndefined()
+  const done = complete(reviewingState, 'approved')
+  expect(completionDeliveryOwner({ state: done, attemptAgents: { '1': ENGINEER } })).toMatchObject({
+    agentId: ENGINEER,
+    stepId: 'implement',
+  })
 })

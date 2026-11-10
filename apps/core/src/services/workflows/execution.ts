@@ -1,6 +1,6 @@
 import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
-import { deliveryInstructionsForRun } from './completion-prompt'
+import { deliveryInstructionsForFlow } from './completion-prompt'
 import { isWorkflowReviewer } from './reviewers'
 import {
   attemptLimitResolutionHint,
@@ -1135,7 +1135,7 @@ export async function flowWorkerContext(agentId: string) {
     participantId: binding.participantId,
     state: run.state,
     deliveryInstructions: stream
-      ? deliveryInstructionsForRun(stream, run.state, run.version, await stackNotice(db, stream))
+      ? deliveryInstructionsForFlow(stream, run, await stackNotice(db, stream), agentId)
       : undefined,
   }
 }

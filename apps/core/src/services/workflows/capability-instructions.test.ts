@@ -1,5 +1,13 @@
-import { expect, test } from 'bun:test'
-import { advanceWorkflowRun, createBlankWorkflow, createWorkflowRun, workflowCommandSchema } from '@ficus/shared'
+import { describe, expect, test } from 'bun:test'
+import { resolve } from 'node:path'
+import {
+  advanceWorkflowRun,
+  createBlankWorkflow,
+  createWorkflowRun,
+  workflowCommandSchema,
+  workflowPresetSchema,
+  type WorkflowRun,
+} from '@ficus/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 test('Solo assignments explicitly disable delegation and require management for live revisions', () => {
@@ -136,4 +144,130 @@ test('flexible explicit human returns explain authoring and include a schema-val
   expect(example.action).toBe('return')
   expect('targetStepId' in example && example.targetStepId).toBe('gate')
   expect(() => advanceWorkflowRun(run, example)).not.toThrow()
+})
+
+describe('delivery participant in the step handoff', () => {
+  const root = resolve(import.meta.dir, '../../../../..')
+  const preset = async (id: string) =>
+    workflowPresetSchema.parse(Bun.YAML.parse(await Bun.file(`${root}/config/workflows/${id}.yaml`).text())).definition
+  const complete = (run: WorkflowRun, outcome: string) =>
+    advanceWorkflowRun(run, {
+      expectedVersion: run.version,
+      attemptId: run.activeAttemptId,
+      action: 'complete',
+      outcome,
+      evidence: 'Done',
+    })
+  const running = (run: WorkflowRun) => run.attempts.find((attempt) => attempt.id === run.activeAttemptId)!
+
+  test('in a With Review flow the reviewer is told it delivers on approval and the builder is not', async () => {
+    const definition = await preset('builder-reviewer')
+    definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+    const build = createWorkflowRun(definition)
+    const builder = flowCapabilityInstructions(build, running(build))
+    expect(builder).not.toContain('delivery participant for this stream')
+    const review = complete(build, 'completed')
+    const reviewer = flowCapabilityInstructions(review, running(review))
+    expect(reviewer).toContain(
+      "Delivery: if you complete with outcome 'approved', no later agent step runs before this flow reaches completion-ready, so you are the delivery participant for this stream (delivery policy: pr-auto-merge)."
+    )
+    expect(reviewer).toContain('including the delivery pull request’s merge and close events')
+    expect(reviewer).toContain('finish the stream yourself; do not wait for another agent to deliver it')
+    // A return outcome never makes the reviewer the delivery participant.
+    expect(reviewer).not.toContain("'changes-requested'")
+  })
+
+  test('a Solo step delivers when it completes', () => {
+    const run = createWorkflowRun(createBlankWorkflow())
+    expect(flowCapabilityInstructions(run, run.attempts[0]!)).toContain(
+      "Delivery: if you complete with outcome 'completed', no later agent step runs before this flow reaches completion-ready, so you are the delivery participant for this stream (delivery policy: deliverable)."
+    )
+  })
+
+  test('only a later agent step takes delivery away; a human gate or a named change-event step does not', async () => {
+    const definition = await preset('engineering-design-approval')
+    const design = createWorkflowRun(definition)
+    // The design step is followed by a human gate and then implementation by another agent.
+    expect(flowCapabilityInstructions(design, running(design))).not.toContain('Delivery: if you complete')
+    const gated = createBlankWorkflow()
+    gated.steps[0]!.outcomes = { completed: { next: 'approve' } }
+    gated.steps.push({
+      id: 'approve',
+      kind: 'human-approval',
+      approver: 'reviewers',
+      instructions: 'Check it.',
+      output: 'A verdict.',
+      outcomes: { approved: { next: 'finish' }, 'changes-requested': { returnTo: gated.steps[0]!.id } },
+    })
+    const run = createWorkflowRun(gated)
+    expect(flowCapabilityInstructions(run, running(run))).toContain(
+      "Delivery: if you complete with outcome 'completed', no later agent step runs"
+    )
+    const reviewed = await preset('reviewed-coding')
+    const review = complete(createWorkflowRun(reviewed), 'completed')
+    const text = flowCapabilityInstructions(review, running(review))
+    expect(text).toContain("Delivery: if you complete with outcome 'approved'")
+    expect(text).toContain('Change events (CI results, reviews, comments) go to step implement instead')
+  })
+
+  test('review-approval leaves the finish to a human', () => {
+    const definition = createBlankWorkflow()
+    definition.completion = { mode: 'review-approval' }
+    const run = createWorkflowRun(definition)
+    const text = flowCapabilityInstructions(run, run.attempts[0]!)
+    expect(text).toContain('a human approves and finishes delivery')
+    expect(text).not.toContain('finish the stream yourself')
+  })
+
+  // Step IDs, kinds, participants and routing as shipped before the delivery wording was added.
+  const shipped: Record<string, string> = {
+    'builder-reviewer':
+      'build:agent:builder:completed>review|review:agent:reviewer:approved>finish,changes-requested<build',
+    'code-review': 'review:agent:reviewer:completed>finish',
+    'engineering-design-approval':
+      'design:agent:architect:completed>design-approval|design-approval:human-approval:-:approved>implement,changes-requested<design|implement:agent:engineer:completed>review|review:agent:reviewer:approved>finish,changes-requested<implement',
+    engineering:
+      'design:agent:architect:completed>implement|implement:agent:engineer:completed>review,redesign-needed<design|review:agent:reviewer:approved>finish,changes-requested<implement,redesign-needed<design',
+    'research-brief':
+      'research:agent:researcher:completed>review|review:agent:reviewer:approved>finish,changes-requested<research',
+    'reviewed-coding':
+      'implement:agent:engineer:completed>review|review:agent:reviewer:approved>finish,changes-requested<implement',
+    'security-review':
+      'assess:agent:assessor:completed>review|review:agent:reviewer:approved>finish,changes-requested<assess',
+    'solo-coding': 'implement:agent:engineer:completed>finish',
+    solo: 'execute:agent:worker:completed>finish',
+  }
+  test('Solo Coding defaults its engineer to the deep model tier and changes nothing else about it', async () => {
+    expect((await preset('solo-coding')).participants).toEqual({
+      engineer: { agentTypeId: 'engineer', tier: 'deep', session: 'reuse-within-stream' },
+    })
+  })
+
+  test.each(Object.keys(shipped))('the %s preset says its final step delivers, with routing unchanged', async (id) => {
+    const definition = await preset(id)
+    const shape = definition.steps
+      .map(
+        (step) =>
+          `${step.id}:${step.kind ?? 'agent'}:${step.kind === 'agent' || !step.kind ? step.participant : '-'}:${Object.entries(
+            step.outcomes
+          )
+            .map(([name, target]) =>
+              'next' in target ? `${name}>${target.next}` : 'returnTo' in target ? `${name}<${target.returnTo}` : name
+            )
+            .join(',')}`
+      )
+      .join('|')
+    expect(shape).toBe(shipped[id]!)
+    const final = definition.steps.filter((step) =>
+      Object.values(step.outcomes).some((t) => 'next' in t && t.next === 'finish')
+    )
+    expect(final.length).toBeGreaterThan(0)
+    for (const step of final) {
+      expect(step.kind ?? 'agent').toBe('agent')
+      expect(step.instructions).toContain('delivery participant')
+      expect(step.instructions).toContain('finish the stream yourself')
+    }
+    for (const step of definition.steps.filter((step) => !final.includes(step)))
+      expect(step.instructions).not.toContain('delivery participant')
+  })
 })

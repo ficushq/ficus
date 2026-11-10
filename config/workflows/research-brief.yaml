@@ -35,6 +35,9 @@ definition:
       instructions: >-
         Check that the cited sources support the claims, the scope answers the question, and uncertainty and
         contrary evidence are represented fairly. Request targeted corrections or approve the brief.
+        When you approve, this step delivers: no later agent step runs, so once the stream reaches completion-ready
+        you are its delivery participant. Follow the delivery instructions in the advance response and finish the
+        stream yourself; do not wait for another agent.
       output: A source-checked verdict and any corrections required.
       outcomes:
         approved:

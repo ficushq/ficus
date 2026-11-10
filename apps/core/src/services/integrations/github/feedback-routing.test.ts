@@ -25,6 +25,7 @@ import {
   integrationAuditEvents,
   githubFeedbackScreenings,
   decisionLog,
+  integrationEventPollingCursors,
 } from '../../../db'
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 import { InboxMessage } from '../../../entities/InboxMessage'
@@ -4767,3 +4768,169 @@ test.each([false, true])(
     }
   }
 )
+
+describe('delivery readiness with the author filter ON', () => {
+  // Regression for a production gap: with the author filter on (the default), a routed review keeps
+  // only its content projection, which omits the review commit and the reviewer's association, so an
+  // exact-head approval could never be proven and the "Delivery pull request ready" wake never fired.
+  const HEAD = 'c'.repeat(40)
+  const author = { id: 2, login: 'author', type: 'User' }
+  const pr = {
+    id: 20,
+    number: 3,
+    title: 'Delivery',
+    body: '',
+    user: author,
+    state: 'open',
+    html_url: 'https://github.com/acme/project/pull/3',
+    updated_at: new Date(Date.now() - 120_000).toISOString(),
+    head: { sha: HEAD, ref: 'work' },
+    base: { ref: 'main', repo: { full_name: 'acme/project' } },
+    auto_merge: null,
+  }
+  const review = {
+    id: 50,
+    node_id: 'PRR_fixture50',
+    user: author,
+    body: '',
+    state: 'approved',
+    commit_id: HEAD,
+    author_association: 'MEMBER',
+    html_url: 'https://github.com/acme/project/pull/3#pullrequestreview-50',
+    submitted_at: new Date(Date.now() - 120_000).toISOString(),
+  }
+
+  test('an author-filtered approval on the exact head makes the delivery actionable and wakes its participant', async () => {
+    const h = await fixture()
+    try {
+      await h.trust()
+      h.read.mockImplementation(
+        async <T>(path: string): Promise<T | null> =>
+          (path === '/repositories/10'
+            ? { id: 10, full_name: 'acme/project' }
+            : path === '/repos/acme/project/pulls/3'
+              ? pr
+              : path === '/repos/acme/project/pulls/3/reviews/50'
+                ? { ...review, state: 'APPROVED' }
+                : null) as T | null
+      )
+      const [squad] = await db.select().from(squads).where(eq(squads.id, h.squadId))
+      expect(squad!.githubAuthorFilter).toBe(true)
+      await db
+        .update(squads)
+        .set({ metadata: { ...(squad!.metadata as object), policies: { allowAutoMerge: true } } })
+        .where(eq(squads.id, h.squadId))
+      const [stream] = await db
+        .insert(workStreams)
+        .values({
+          squadId: h.squadId,
+          title: 'Delivery',
+          status: 'active',
+          metadata: {
+            codeHost: { integration: 'github', repository: 'acme/project', changeRequest: { number: 3 } },
+            git: { branch: 'work', baseBranch: 'main' },
+          },
+        })
+        .returning()
+      const definition = createBlankWorkflow()
+      definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+      const initial = createWorkflowRun(definition)
+      const { advanceWorkflowRun } = await import('@ficus/shared')
+      const state = advanceWorkflowRun(initial, {
+        action: 'complete',
+        expectedVersion: initial.version,
+        attemptId: initial.activeAttemptId,
+        outcome: 'completed',
+        evidence: 'PR open',
+      })
+      expect(state.status).toBe('completion-ready')
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream!.id,
+        version: state.version,
+        activated: true,
+        state,
+        attemptAgents: { '1': h.managerId },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'a'.repeat(64),
+        createdBy: 'test',
+        source: { schemaVersion: 1, definition, source: { kind: 'inline' } },
+      })
+      const approval = githubOutputAdapter.normalize({
+        type: 'pull_request_review',
+        githubObservation: { kind: 'webhook', deliveryId: crypto.randomUUID() },
+        payload: {
+          action: 'submitted',
+          repository: { id: 10, full_name: 'acme/project' },
+          pull_request: pr,
+          review,
+          sender: author,
+        },
+      })[0]!
+      await publishIntegrationOutput('github', approval, h.authority)
+
+      const { loadDeliveryEvidence } = await import('../../workflows/delivery-state')
+      const { deliveryMergeReadiness, wakeDeliveryParticipantIfReady } =
+        await import('../../workflows/delivery-readiness')
+      const [evidence] = await loadDeliveryEvidence(db, [stream!.id])
+      const routed = evidence!.events.find((event) => event.output === 'pull_request.reviewed')!
+      // The routed fact is the reviewed content projection, never the raw webhook data...
+      expect(routed.data.projection).toBe('content')
+      // ...but delivery evidence carries the commit and association its raw source proved.
+      expect(routed.data).toMatchObject({ reviewedHeadSha: HEAD, authorAssociation: 'MEMBER', actor: 'author' })
+
+      // GitHub's mergeability turning clean arrives only through the delivery poller's snapshot.
+      const resourceKey = `${h.squadId}:${h.authority.connectionId}:acme/project#3`
+      await db.insert(integrationEventPollingCursors).values({
+        providerKey: 'github',
+        resourceKey,
+        cursor: {
+          deliveryPresentation: {
+            version: 1,
+            squadId: h.squadId,
+            connectionId: h.authority.connectionId,
+            repository: 'acme/project',
+            number: 3,
+            observedAt: new Date().toISOString(),
+            source: 'graphql',
+            headSha: HEAD,
+            headBranch: 'work',
+            baseBranch: 'main',
+            state: 'open',
+            draft: false,
+            mergeState: 'clean',
+            reviewDecision: 'approved',
+            checksState: 'success',
+            pendingHumanReview: false,
+          },
+        },
+      })
+      try {
+        const [ready] = await loadDeliveryEvidence(db, [stream!.id])
+        expect(deliveryMergeReadiness(ready!.state, ready!.metadata, ready!.events, ready!.policies)).toMatchObject({
+          ready: true,
+          pullRequests: [{ number: 3, headSha: HEAD, approvalCommit: HEAD, approverAssociation: 'MEMBER' }],
+        })
+        expect(await wakeDeliveryParticipantIfReady(stream!.id)).toBe('woken')
+        const [wake] = await db
+          .select()
+          .from(inbox)
+          .where(
+            sql`${inbox.metadata}->>'source' = 'delivery-readiness' AND ${inbox.metadata}->>'workStreamId' = ${stream!.id}`
+          )
+        expect(wake!.recipientId).toBe(h.managerId)
+        expect(wake!.content).toContain(`Approval commit: ${HEAD} (approved by @author`)
+      } finally {
+        await db
+          .delete(integrationEventPollingCursors)
+          .where(
+            and(
+              eq(integrationEventPollingCursors.providerKey, 'github'),
+              eq(integrationEventPollingCursors.resourceKey, resourceKey)
+            )
+          )
+      }
+    } finally {
+      await h.close()
+    }
+  })
+})

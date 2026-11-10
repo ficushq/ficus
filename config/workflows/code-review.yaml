@@ -29,7 +29,9 @@ definition:
         advice. State what was reviewed, what was tested, and remaining uncertainty; explicitly say if no actionable
         findings were found. Work directly without delegating, implementing fixes, or merging changes. If a PR is
         attached, publish the requested review through the code host and report its link; otherwise deliver the
-        report to the work stream.
+        report to the work stream. This step delivers: when you complete it, the stream reaches completion-ready
+        with you as its delivery participant. Follow the delivery instructions in the advance response and finish
+        the stream yourself.
       output: A prioritized review with evidence, coverage, limitations, and a recommendation about readiness.
       outcomes:
         completed:

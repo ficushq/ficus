@@ -18,7 +18,10 @@ definition:
   steps:
     - id: execute
       participant: worker
-      instructions: Complete the requested deliverable and verify the result. Work directly without spawning other agents.
+      instructions: >-
+        Complete the requested deliverable and verify the result. Work directly without spawning other agents.
+        This step delivers: when you complete it, the stream reaches completion-ready with you as its delivery
+        participant. Follow the delivery instructions in the advance response and finish the stream yourself.
       output: The deliverable, verification evidence, and any remaining limitations.
 
       outcomes:

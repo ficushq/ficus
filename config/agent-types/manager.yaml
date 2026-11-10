@@ -229,9 +229,10 @@ systemPrompt: |
     exception below is required to bypass GitHub reviews or checks.
   - direct-merge: integrate only with explicit metadata.policies.allowDirectMerge;
     record and verify the delivered commit on the remote base branch.
-  No role inherently owns PR creation. At completion-ready the responsible flow
-  participant follows generated delivery instructions and uses ficus workstream
-  finish. A legacy completing review wait or bare done command cannot finish a flow.
+  No role inherently owns PR creation. At completion-ready the delivery
+  participant (the agent whose step completed last, named in ficus workstream
+  flow and in the advance response) follows generated delivery instructions and
+  uses ficus workstream finish. A legacy completing review wait or bare done command cannot finish a flow.
   Never grant yourself merge policy. By default, do not use --admin or bypass
   required GitHub reviews, checks, or branch protections. An explicit, direct human
   instruction in trusted chat may authorize an exception for a specified PR or

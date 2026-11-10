@@ -12,7 +12,7 @@ Ficus ships these starting workflows. An administrator can customize or disable 
 | Workflow                         | Process                                                                     | Good starting point for                    |
 | -------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------ |
 | Solo                             | One worker produces and verifies the result                                 | A bounded task or investigation            |
-| With Review                      | An engineer builds a deliverable for independent review                     | A deliverable needing a second assessment  |
+| Reviewed Deliverable (non-code)  | One agent produces a deliverable that is not code for independent review    | Reviewed documents, plans, or research     |
 | Solo Coding                      | One engineer implements, validates, and prepares delivery                   | Routine changes and fixes                  |
 | Reviewed Coding                  | Implementation followed by independent code review                          | Changes needing a second pair of eyes      |
 | Planned Coding                   | Architecture, implementation, and independent review                        | Changes needing design decisions           |
@@ -20,6 +20,8 @@ Ficus ships these starting workflows. An administrator can customize or disable 
 | Research Brief                   | Research and an independent source/evidence review                          | A decision supported by cited findings     |
 | Code Review                      | One reviewer assesses existing code and delivers findings                   | A holistic PR, diff, or codebase review    |
 | Security Review                  | Security assessment and independent finding validation                      | A report on risks and mitigations          |
+
+Reviewed Deliverable (`builder-reviewer`, formerly With Review) is for results that are not code, such as documents, plans, or research. For reviewed code changes, use Reviewed Coding, which follows the change request through merge.
 
 Code Review has no implementation step and finishes when its report is delivered, rather than waiting for a merge. It follows code-hosting events when a resource is attached. Security Review uses two reviewer agents: the first produces a security assessment and the second independently validates the findings.
 
@@ -29,7 +31,7 @@ In Planned Coding, a reviewer-requested redesign goes back to the architect, the
 
 Use **Engineering with design approval** (`engineering-design-approval`) when you want to approve the design before implementation starts. The architect's design goes to a human approval step that any squad member with review permission can decide. **Approved** starts implementation; **Changes requested** sends your feedback back to the architect, whose revised design returns for approval. After implementation, an independent reviewer approves the change or sends it back to the engineer. Rework is unlimited unless you add an attempt cap.
 
-Solo Coding, Reviewed Coding, Planned Coding, and Engineering with design approval wait for a human to merge their change request. The other shipped workflows deliver a report or artifact. Security Review does not automatically implement fixes. Choose the delivery policy separately from the number of agents.
+Solo Coding's engineer uses the deep model tier by default; customize the participant's tier to change it. Solo Coding, Reviewed Coding, Planned Coding, and Engineering with design approval wait for a human to merge their change request. In every shipped workflow the final agent step delivers: the agent that completes it last is the delivery participant, and Ficus tells it so in its step handoff and at completion-ready. The other shipped workflows deliver a report or artifact. Security Review does not automatically implement fixes. Choose the delivery policy separately from the number of agents.
 
 ## Build your own flow
 
@@ -55,7 +57,7 @@ For complete YAML examples and every setting—including participants, routing, 
 
 When starting a work stream through a consultant, name the workflow in your brief:
 
-> Use With Review for this comparison. The reviewer should check that every recommendation follows from the supplied evidence.
+> Use Reviewed Deliverable for this comparison. The reviewer should check that every recommendation follows from the supplied evidence.
 
 You can also select a preset in the work-stream creation controls. Inspect its steps and completion policy before starting. A saved preset is copied into the new stream as a snapshot; later preset edits do not silently rewrite an already running task.
 
@@ -67,7 +69,7 @@ Every new work stream uses a flow. Without an explicit choice, it inherits the s
 
 Open the squad's **More → Settings → Work**. Choose a default and describe when alternatives should be used. For example:
 
-> Default to Solo for short research. Use With Review for recommendations that will go to the whole team. Ask before using Planned Coding.
+> Default to Solo for short research. Use Reviewed Deliverable for recommendations that will go to the whole team. Ask before using Planned Coding.
 
 This guidance helps the manager choose; it is not an automatic classifier that guarantees a workflow based on text alone. Name a workflow explicitly when the choice matters.
 

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { eq, inArray, like } from 'drizzle-orm'
-import { type WorkflowDefinition, type WorkflowScope } from '@ficus/shared'
+import { advanceWorkflowRun, type WorkflowDefinition, type WorkflowScope } from '@ficus/shared'
 import { db, agentExtraScopes, agents, agentTypes, squads, workflows, workStreamFlowRuns, workStreams } from '../db'
 import { Agent } from '../entities/Agent'
 import { resolveToken } from '../services/auth/resolve-token'
@@ -331,6 +331,91 @@ test('delivery guidance arrives on completion-ready advance/read and disappears 
     expect(await replay.json()).not.toHaveProperty('deliveryInstructions')
   } finally {
     await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
+  }
+})
+
+test('the advance response and flow output name the delivery participant and tell it that it delivers', async () => {
+  await db.update(agentTypes).set({ model: 'anthropic:claude-sonnet-4-5' }).where(eq(agentTypes.id, profile))
+  const flow = sync.parse(
+    await Bun.file(new URL('../../../../config/workflows/builder-reviewer.yaml', import.meta.url)).text()
+  ).definition
+  flow.participants.builder!.agentTypeId = profile
+  flow.participants.reviewer!.agentTypeId = profile
+  flow.completion = { mode: 'pr-auto-merge', followChanges: true }
+  const builder = await Agent.create({ agentTypeId: profile, squadId })
+  const reviewer = await Agent.create({ agentTypeId: profile, squadId })
+  await db
+    .insert(agentExtraScopes)
+    .values(
+      [builder.id, reviewer.id].flatMap((agentId) =>
+        ['workstreams:read', 'workstreams:respond'].map((permission) => ({ agentId, permission }))
+      )
+    )
+  const [stream] = await db
+    .insert(workStreams)
+    .values({ squadId, title: `${prefix}-delivery-participant` })
+    .returning()
+  try {
+    await db.transaction(async (tx) => {
+      await attachFlow(tx, stream!, { kind: 'inline', definition: flow })
+    })
+    // The build step completed; the review attempt runs as the reviewer agent.
+    const [attached] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+    const reviewing = advanceWorkflowRun(attached!.state, {
+      action: 'complete',
+      expectedVersion: attached!.state.version,
+      attemptId: attached!.state.activeAttemptId,
+      outcome: 'completed',
+      evidence: 'Built.',
+    })
+    await db
+      .update(workStreamFlowRuns)
+      .set({ state: reviewing, version: reviewing.version, attemptAgents: { '1': builder.id, '2': reviewer.id } })
+      .where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+    await db.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, stream!.id))
+    const reviewerHeaders = authHeaders((await reviewer.getOrCreateToken())!)
+    const builderHeaders = authHeaders((await builder.getOrCreateToken())!)
+    const asAgent = (path: string, headers: Record<string, string>, body?: unknown) =>
+      app.request(`/api/workflows${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    const read = await asAgent(`/runs/${stream!.id}`, reviewerHeaders)
+    const before = await read.json()
+    expect({ status: read.status, before }).toMatchObject({ status: 200, before: { deliveryParticipant: null } })
+    const response = await asAgent(`/runs/${stream!.id}/advance`, reviewerHeaders, {
+      requestId: randomUUID(),
+      command: {
+        expectedVersion: reviewing.version,
+        attemptId: 2,
+        action: 'complete',
+        outcome: 'approved',
+        evidence: 'Reviewed.',
+      },
+    })
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    expect(result.stateStatus).toBe('completion-ready')
+    const named = { agentId: reviewer.id, attemptId: 2, stepId: 'review', participantId: 'reviewer' }
+    expect(result.deliveryParticipant).toEqual({ ...named, you: true })
+    expect(result.deliveryInstructions).toContain(
+      'Delivery participant: you (step review, attempt 2, participant reviewer).'
+    )
+    expect(result.deliveryInstructions).toContain('finish the stream yourself')
+    // The flow output agrees, and tells everyone else who delivers.
+    const mine = await (await asAgent(`/runs/${stream!.id}`, reviewerHeaders)).json()
+    expect(mine.deliveryParticipant).toEqual({ ...named, you: true })
+    expect(mine.deliveryInstructions).toBe(result.deliveryInstructions)
+    const theirs = await (await asAgent(`/runs/${stream!.id}`, builderHeaders)).json()
+    expect(theirs.deliveryParticipant).toEqual({ ...named, you: false })
+    expect(theirs.deliveryInstructions).toContain(`Delivery participant: agent ${reviewer.id} (step review`)
+    expect(theirs.deliveryInstructions).not.toContain('Delivery participant: you')
+    const human = await (await request(`/runs/${stream!.id}`, admin)).json()
+    expect(human.deliveryParticipant).toEqual({ ...named, you: false })
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
+    await db.delete(agents).where(inArray(agents.id, [builder.id, reviewer.id]))
   }
 })
 

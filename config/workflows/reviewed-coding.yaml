@@ -33,7 +33,10 @@ definition:
 
       instructions: >-
         Independently inspect the implementation and validation. Request actionable changes and return to this
-        review, or approve and prepare the change request for delivery.
+        review, or approve and prepare the change request for delivery. When you approve, this step delivers: no
+        later agent step runs, so once the stream reaches completion-ready you are its delivery participant. Follow
+        the delivery instructions in the advance response and finish the stream yourself; do not wait for another
+        agent. CI results, pushes and review comments go to implement, while merge and close events reach you.
       output: An evidence-backed verdict or actionable feedback.
       outcomes:
         approved:

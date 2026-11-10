@@ -11,6 +11,7 @@ import {
   integrationOutputEvents,
   integrationOutputDeliveries,
   integrationEventPollingCursors,
+  githubFeedbackSources,
 } from '../../db'
 import type { DbHandle } from '../work-streams/waits'
 import { codeHostingRegistry } from '../integrations/code-hosting'
@@ -546,11 +547,15 @@ export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Prom
         candidates.map((run) => run.id)
       )
     )
+  const reviewFacts = await loadSourceReviewFacts(store, rows)
   const byStream = new Map<string, DeliveryEvent[]>()
   for (const row of rows) {
     const facts = byStream.get(row.id) ?? []
+    const revisionId = canonicalReviewRevision(row)
+    const proven = revisionId ? reviewFacts.get(revisionId) : undefined
     facts.push({
       ...row.fact,
+      ...(proven ? { data: { ...row.fact.data, ...proven } } : {}),
       integration: row.integration,
       observedAt: row.observedAt.toISOString(),
       ...(row.authority.kind === 'connection' ? { connectionId: row.authority.connectionId } : {}),
@@ -592,6 +597,91 @@ export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Prom
         .map((snapshot) => deliverySnapshotEvent(snapshot, now)),
     ],
   }))
+}
+
+type EvidenceRow = {
+  fact: IntegrationOutputFact & { github?: { revisionId?: unknown } }
+  integration: string
+  authority: { kind: string; squadId?: string; connectionId?: string }
+}
+
+/** The feedback revision of a routed GitHub review, which carries only the content projection. */
+function canonicalReviewRevision(row: EvidenceRow): string | undefined {
+  const revisionId = row.fact.github?.revisionId
+  return row.integration === 'github' && row.fact.output === 'pull_request.reviewed' && typeof revisionId === 'string'
+    ? revisionId
+    : undefined
+}
+
+const SHA = /^[a-f0-9]{40}$/
+const ASSOCIATION = /^[A-Z_]{1,40}$/
+
+/**
+ * The server-normalized review facts behind one routed review: the commit it was submitted on and
+ * the reviewer's repository association. A routed (author-filtered) review keeps only the reviewed
+ * content projection, which omits both, so without them an exact-head approval can never be proven
+ * and the delivery readiness wake never fires. Every raw source of the revision must be the same
+ * review on the same pull request; disagreeing sources prove nothing (fail closed). Pure.
+ */
+export function sourceReviewFacts(
+  canonical: IntegrationOutputFact,
+  sources: IntegrationOutputFact[]
+): { reviewedHeadSha: string; authorAssociation?: string } | undefined {
+  const number = (fact: IntegrationOutputFact) => (fact.data.pullRequest as { number?: unknown } | undefined)?.number
+  const same = sources.filter(
+    (source) =>
+      source.output === 'pull_request.reviewed' &&
+      source.data.repository === canonical.data.repository &&
+      number(source) === number(canonical)
+  )
+  if (!same.length || same.length !== sources.length) return undefined
+  const commits = new Set(same.map((source) => source.data.reviewedHeadSha))
+  const commit = [...commits][0]
+  if (commits.size !== 1 || typeof commit !== 'string' || !SHA.test(commit)) return undefined
+  const associations = new Set(same.map((source) => source.data.authorAssociation))
+  const association = [...associations][0]
+  return {
+    reviewedHeadSha: commit,
+    ...(associations.size === 1 && typeof association === 'string' && ASSOCIATION.test(association)
+      ? { authorAssociation: association }
+      : {}),
+  }
+}
+
+/** Raw source facts for the routed reviews among `rows`, under the same authority, by revision. Local reads only. */
+async function loadSourceReviewFacts(store: DbHandle, rows: EvidenceRow[]) {
+  const canonical = new Map<string, EvidenceRow>()
+  for (const row of rows) {
+    const revisionId = canonicalReviewRevision(row)
+    if (revisionId) canonical.set(revisionId, row)
+  }
+  const result = new Map<string, { reviewedHeadSha: string; authorAssociation?: string }>()
+  if (!canonical.size) return result
+  const sources = await store
+    .select({
+      revisionId: githubFeedbackSources.revisionId,
+      fact: integrationOutputEvents.fact,
+      authority: integrationOutputEvents.authority,
+    })
+    .from(githubFeedbackSources)
+    .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, githubFeedbackSources.eventId))
+    .where(
+      and(
+        inArray(githubFeedbackSources.revisionId, [...canonical.keys()]),
+        eq(integrationOutputEvents.integration, 'github'),
+        sql`${integrationOutputEvents.sourceKey} NOT LIKE 'github-feedback:%'`
+      )
+    )
+  const sameAuthority = (a: EvidenceRow['authority'], b: EvidenceRow['authority']) =>
+    a.kind === b.kind && a.squadId === b.squadId && a.connectionId === b.connectionId
+  for (const [revisionId, row] of canonical) {
+    const facts = sources
+      .filter((source) => source.revisionId === revisionId && sameAuthority(source.authority, row.authority))
+      .map((source) => source.fact)
+    const proven = sourceReviewFacts(row.fact, facts)
+    if (proven) result.set(revisionId, proven)
+  }
+  return result
 }
 
 /** Batched local reads only: serialization never performs provider requests. */

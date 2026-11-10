@@ -766,7 +766,7 @@ describe('SquadWorkerRunner typeContext injection', () => {
           continue
         }
         expect(systemPrompt).toContain(`Delivery policy: ${mode}.`)
-        expect(systemPrompt).toContain('no agent role intrinsically owns PR creation')
+        expect(systemPrompt).toContain('The flow, not an agent role, assigns delivery')
         expect(systemPrompt).toContain('ficus workstream finish')
         expect(systemPrompt.includes('metadata.policies.allowAutoMerge')).toBe(mode === 'pr-auto-merge')
         expect(systemPrompt.includes('metadata.policies.allowDirectMerge')).toBe(mode === 'direct-merge')
