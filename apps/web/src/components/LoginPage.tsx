@@ -15,6 +15,20 @@ import { CSRF_HEADER } from '@ficus/shared/http-headers'
 // Referer to any third-party resource the page loads. A fragment is neither.
 const BOOTSTRAP_FRAGMENT_PATTERN = /^#setup=(.+)$/
 
+type BootstrapFragment = { kind: 'none' } | { kind: 'invalid' } | { kind: 'password'; password: string }
+
+/** The `#setup=` fragment in the current address, decoded. */
+function readBootstrapFragment(): BootstrapFragment {
+  if (typeof window === 'undefined') return { kind: 'none' }
+  const match = BOOTSTRAP_FRAGMENT_PATTERN.exec(window.location.hash)
+  if (!match) return { kind: 'none' }
+  try {
+    return { kind: 'password', password: decodeURIComponent(match[1]!) }
+  } catch {
+    return { kind: 'invalid' }
+  }
+}
+
 type LoginPageAuth = Pick<ReturnType<typeof useAuth>, 'authStatus' | 'isAuthenticated' | 'login' | 'loginWithToken'> &
   Partial<Pick<ReturnType<typeof useAuth>, 'refreshSession'>>
 type LoginPageDependencies = {
@@ -48,23 +62,21 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
   const [showRecovery, setShowRecovery] = useState(false)
   // Bootstrap: whether the instance password step has been satisfied for first-admin setup.
   const [bootstrapAuthed, setBootstrapAuthed] = useState(false)
+  // The `#setup=` fragment, read once on the first render, before the effect below strips it from
+  // the address bar. Reading it in a state initializer makes it a fixed mount-time capture, also
+  // under StrictMode (both initializer calls see the same, not yet stripped, hash). It is decoded
+  // here too; a value that does not decode is kept as invalid so the gate can say so.
+  const [bootstrapFragment] = useState<BootstrapFragment>(readBootstrapFragment)
   // Whether the fragment-prefilled auto-login is in flight, so we can show a
   // brief "Signing you in…" state instead of the manual password form.
-  // Seeded synchronously from a mount-time hash check (not the gate — that
-  // isn't known yet on first render) so that, once the gate DOES open, the
-  // "Signing you in…" state renders on the first paint instead of flashing
-  // the manual form for a frame first. Harmless when the gate never opens:
-  // this value is only ever read inside the needsBootstrapPassword branch.
-  const [autoLoginPending, setAutoLoginPending] = useState(
-    () => typeof window !== 'undefined' && BOOTSTRAP_FRAGMENT_PATTERN.test(window.location.hash)
-  )
-  // The raw (still-encoded) `#setup=` value captured at mount, or null if
-  // there was none — see the mount-capture effect below. `undefined` means
-  // the capture effect hasn't run yet.
-  const capturedFragmentRef = useRef<string | null | undefined>(undefined)
-  // Consume the captured fragment exactly once — guards against React
-  // re-renders (and strict-mode's double effect invocation) re-running the
-  // auto-login.
+  // Seeded from the mount-time fragment (not the gate — that isn't known yet
+  // on first render) so that, once the gate DOES open, the "Signing you in…"
+  // state renders on the first paint instead of flashing the manual form for a
+  // frame first. Harmless when the gate never opens: this value is only ever
+  // read inside the needsBootstrapPassword branch.
+  const [autoLoginPending, setAutoLoginPending] = useState(() => bootstrapFragment.kind !== 'none')
+  // Consume the fragment exactly once — guards against React re-renders (and
+  // strict-mode's double effect invocation) re-running the auto-login.
   const fragmentConsumedRef = useRef(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,9 +100,13 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
   // passkey setup authenticated. Only PasskeyRegister's success promotes to full auth.
   // Shared by the manual form submit and the fragment-prefilled auto-login below —
   // `invalidMessage` differs so a stale/wrong link reads as a link problem, not a typo.
-  const runBootstrapLogin = async (pw: string, invalidMessage: string): Promise<boolean> => {
+  // beginBootstrapLogin shows the attempt; submitBootstrapPassword makes it. The fragment path
+  // begins while rendering (when the gate opens) and submits from its effect.
+  const beginBootstrapLogin = () => {
     setError(null)
     setLoading(true)
+  }
+  const submitBootstrapPassword = async (pw: string, invalidMessage: string): Promise<boolean> => {
     try {
       const res = await fetch(apiUrl('/auth/login'), {
         method: 'POST',
@@ -126,7 +142,8 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
   const handleBootstrapLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!password.trim() || loading) return
-    await runBootstrapLogin(password, 'Invalid password')
+    beginBootstrapLogin()
+    await submitBootstrapPassword(password, 'Invalid password')
   }
 
   // First-admin setup password gate. See handleBootstrapLogin's comment for why this
@@ -135,76 +152,58 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
   const needsBootstrapPassword =
     !!authStatus && !authStatus.hasUsers && authStatus.mode === 'password' && !bootstrapAuthed && !isAuthenticated
 
-  // Capture-and-strip is UNCONDITIONAL: a `#setup=<password>` credential must
-  // never linger in the address bar or a bookmark, regardless of whether this
+  // Stripping is UNCONDITIONAL: a `#setup=<password>` credential must never
+  // linger in the address bar or a bookmark, regardless of whether this
   // instance is even in the needs-bootstrap-password state (already has
   // users, invite-passkey mode, or the still-loading→not-bootstrap
   // resolution). Deliberately NOT gated on needsBootstrapPassword, unlike the
-  // auto-LOGIN below. Only captures the raw value for the consume effect to
-  // decide what to do with; it never decodes or acts on it itself, so a
-  // closed gate never triggers a network call, an error message, or any
-  // other visible state change.
-  //
-  // Idempotent by construction (the `!== undefined` guard, with the ref
-  // initialized to `undefined`): this is what makes it safe under
-  // StrictMode's mount→cleanup→mount replay (active in main.tsx), which
-  // invokes this effect twice in the same commit. Without the guard, the
-  // fragment is already stripped from `location.hash` by the first
-  // invocation, so the replay's `else` branch would see no match and
-  // overwrite the real capture with `null` — invisible whenever the gate
-  // was already open at mount (the consume effect's own single-fire guard
-  // latches during the first invocation, before the replay can clobber
-  // anything), but silently dropping the auto-login on the real production
-  // shape: authStatus starts `null` and resolves asynchronously, so the gate
-  // is still closed during this replay and only opens on a later render —
-  // by which point the already-clobbered `null` looked like "nothing was
-  // ever captured".
+  // auto-LOGIN below. It never acts on the value itself, so a closed gate
+  // never triggers a network call, an error message, or any other visible
+  // state change. Idempotent: StrictMode's replay finds the hash already gone.
   useEffect(() => {
-    if (capturedFragmentRef.current !== undefined) return
-    const match = BOOTSTRAP_FRAGMENT_PATTERN.exec(window.location.hash)
-    if (match) {
+    if (BOOTSTRAP_FRAGMENT_PATTERN.test(window.location.hash)) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search)
-      capturedFragmentRef.current = match[1]!
-    } else {
-      capturedFragmentRef.current = null
     }
   }, [])
 
-  // Auto-consume whatever the capture effect above found, strictly gated on the
-  // needs-bootstrap-password first-run state — no other auth mode (local
-  // self-host, invite-passkey, ordinary login) is touched. The capture effect
-  // (declared above this one) always runs first within any given commit, and
-  // is idempotent (see its comment), so `capturedFragmentRef.current` holds
-  // the ORIGINAL mount-time capture by the time this reads it — including on
-  // a later render where the gate opens only after an async authStatus
-  // resolution, and including under StrictMode's mount-time effect replay.
+  // When the needs-bootstrap-password gate opens (at mount, or later once an
+  // async authStatus resolves) without a usable fragment, settle the optimistic
+  // "Signing you in…" seed while rendering: with no fragment there is nothing to
+  // do, and a fragment that does not decode shows why the manual form is back.
+  // No other auth mode (local self-host, invite-passkey, ordinary login) is touched.
+  // A decoded fragment begins its login in the same render instead.
+  const [fragmentSettled, setFragmentSettled] = useState(false)
+  if (needsBootstrapPassword && !fragmentSettled) {
+    setFragmentSettled(true)
+    if (bootstrapFragment.kind === 'password') {
+      beginBootstrapLogin()
+    } else {
+      setAutoLoginPending(false)
+      if (bootstrapFragment.kind === 'invalid') {
+        setError("That sign-in link didn't work — enter the instance password below.")
+      }
+    }
+  }
+
+  // Submit the decoded fragment once the gate is open. autoLoginPending is
+  // already true from its seed, and clears when the attempt finishes.
   useEffect(() => {
     if (fragmentConsumedRef.current) return
-    if (!needsBootstrapPassword) return
-    const raw = capturedFragmentRef.current
-    if (!raw) {
-      // Nothing was captured (or the gate opened before the capture effect
-      // ran, which shouldn't happen given effect ordering, but resolve any
-      // optimistic "Signing you in…" seed either way rather than risk a stuck state).
-      setAutoLoginPending(false)
-      return
-    }
+    if (!needsBootstrapPassword || bootstrapFragment.kind !== 'password') return
     fragmentConsumedRef.current = true
-
-    let pw: string
-    try {
-      pw = decodeURIComponent(raw)
-    } catch {
-      setAutoLoginPending(false)
-      setError("That sign-in link didn't work — enter the instance password below.")
-      return
-    }
-
-    setAutoLoginPending(true)
-    void runBootstrapLogin(pw, "That sign-in link didn't work — enter the instance password below.").finally(() => {
-      setAutoLoginPending(false)
-    })
-  }, [needsBootstrapPassword])
+    // An async task: every state update in it follows the awaited request.
+    void (async () => {
+      try {
+        await submitBootstrapPassword(
+          bootstrapFragment.password,
+          "That sign-in link didn't work — enter the instance password below."
+        )
+      } finally {
+        setAutoLoginPending(false)
+      }
+    })()
+    // submitBootstrapPassword is recreated each render and only ever runs once here.
+  }, [needsBootstrapPassword, bootstrapFragment])
 
   if (authStatus && !authStatus.hasUsers) {
     return (

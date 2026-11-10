@@ -34,13 +34,18 @@ export function TokenRegisterPage({ onSuccess }: Props) {
   // Look the link up on mount so the page can name the account it is about to
   // set up. This call does NOT consume the token. Its challenge isn't used:
   // Register fetches a fresh one (see handleRegister).
-  useEffect(() => {
-    let cancelled = false
+  // A link without a token is settled while rendering; one with a token is looked up by the effect.
+  const [seenToken, setSeenToken] = useState<string>()
+  if (seenToken !== token) {
+    setSeenToken(token)
     if (!token) {
       setChecking(false)
       setError('This link is missing its token. Ask for a new invite.')
-      return
     }
+  }
+  useEffect(() => {
+    let cancelled = false
+    if (!token) return
     getTokenRegistrationOptions(token)
       .then((ctx) => {
         if (cancelled) return

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { startRegistration } from '@simplewebauthn/browser'
 import { useAuthApi } from './authApi'
 
@@ -15,35 +15,33 @@ interface Props {
   emailOptional?: boolean
 }
 
+/** The email and code an admin invite link carries, if the page was opened from one. */
+function readInviteLink(): { email: string; code: string } | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const email = params.get('invite')
+  const code = params.get('code')
+  return email && code ? { email, code } : null
+}
+
 export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false, emailOptional = false }: Props) {
   const { getRegistrationOptions, sendVerificationEmail, verifyRegistration } = useAuthApi()
-  const [step, setStep] = useState<'email' | 'verify' | 'passkey'>('email')
-  const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
+  // An admin invite link (?invite=<email>&code=<code>) pre-fills email + code and skips the send
+  // step. It is read once, when the form mounts.
+  const [invite] = useState(readInviteLink)
+  const [step, setStep] = useState<'email' | 'verify' | 'passkey'>(invite ? 'verify' : 'email')
+  const [email, setEmail] = useState(invite?.email ?? '')
+  const [code, setCode] = useState(invite?.code ?? '')
   const [displayName, setDisplayName] = useState('')
   const [credentialName, setCredentialName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   // Whether outbound email is set up. When false, the code is surfaced (auto-filled for the first
   // admin, or carried in an invite link) rather than mailed.
-  const [emailConfigured, setEmailConfigured] = useState(true)
-  const [fromInvite, setFromInvite] = useState(false)
+  const [emailConfigured, setEmailConfigured] = useState(!invite)
+  const fromInvite = !!invite
   // True when the server (or an invite link) supplied the code: nothing to type.
   const codeAutoFilled = !emailConfigured && code !== ''
-
-  // An admin invite link (?invite=<email>&code=<code>) pre-fills email + code and skips the send step.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const inviteEmail = params.get('invite')
-    const inviteCode = params.get('code')
-    if (inviteEmail && inviteCode) {
-      setEmail(inviteEmail)
-      setCode(inviteCode)
-      setFromInvite(true)
-      setEmailConfigured(false)
-      setStep('verify')
-    }
-  }, [])
 
   const handleSendCode = async () => {
     setError(null)
