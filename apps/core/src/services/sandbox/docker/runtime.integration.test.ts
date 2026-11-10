@@ -210,7 +210,7 @@ describe.skipIf(!enabled)('Docker runtime identity integration', () => {
     const workspace = mkdtempSync(path.join(tmpdir(), 'ficus-manager-runtime-'))
     chmodSync(workspace, 0o777)
     const containerName = `ficus-sandbox-${sandboxId}`
-    let firstImageId = ''
+    let firstImageId: string
     let secondImageId = ''
     let cleanupManager: any
     const prepare = (manager: any) => {

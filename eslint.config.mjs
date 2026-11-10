@@ -5,6 +5,18 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import prettierRecommended from 'eslint-plugin-prettier/recommended'
 import unusedImports from 'eslint-plugin-unused-imports'
 
+// eslint-plugin-react-hooks 7 adds the React Compiler rules (set-state-in-effect,
+// refs, globals, immutability, purity, ...) to `recommended` as errors. The web
+// app has not been adopted to them yet, so report them as warnings for now and
+// keep the two classic rules at their usual levels: rules-of-hooks stays an
+// error and exhaustive-deps stays a warning. Rules a later plugin release adds
+// to `recommended` are also warnings until they are adopted deliberately.
+const reactHooksRules = Object.fromEntries(
+  Object.keys(reactHooks.configs.recommended.rules).map((rule) => [rule, 'warn'])
+)
+reactHooksRules['react-hooks/rules-of-hooks'] = 'error'
+reactHooksRules['react-hooks/exhaustive-deps'] = 'warn'
+
 export default [
   {
     ignores: [
@@ -112,7 +124,7 @@ export default [
       'react-refresh': reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      ...reactHooksRules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },

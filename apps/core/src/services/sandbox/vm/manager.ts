@@ -2425,7 +2425,7 @@ export class VmSandboxManager implements ISandboxManager {
     }
     const apiUrl = apiTransport.url
     const candidate = this.deps.createClient(`127.0.0.1:${localPort}`, box.authToken ?? undefined)
-    let completionLine = ''
+    let completionLine: string
     try {
       const health = await candidate.health()
       const uptimeAfterSeconds = Math.max(0, Math.floor(health.uptimeSeconds ?? 0))

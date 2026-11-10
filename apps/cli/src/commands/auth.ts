@@ -127,7 +127,8 @@ export function registerAuthCommands(program: Command): void {
             // Without this hint an unreachable server leaves the user unable to remove local
             // credentials at all, with nothing pointing at the escape hatch.
             throw new Error(
-              `${(error as Error).message}. Re-run with --local-only to remove the local credentials without revoking the paired device.`
+              `${(error as Error).message}. Re-run with --local-only to remove the local credentials without revoking the paired device.`,
+              { cause: error }
             )
           }
         }

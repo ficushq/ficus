@@ -82,7 +82,7 @@ test('durably counts real failures once, opens manager wait on third and automat
   expect(record.state.failures).toBe(1)
   expect((await api.recordRecoveryFailure(origin, input('one'))).state.failures).toBe(1)
   expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
-  record = await api.recordRecoveryFailure(origin, input('two'))
+  await api.recordRecoveryFailure(origin, input('two'))
   record = await api.recordRecoveryFailure(origin, input('three'))
   expect(record.state.state).toBe('waiting-manager')
   let [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record.waitId!))
@@ -164,7 +164,7 @@ test('unknown or foreign recovery references cannot open an early wait and Stop 
   await expect(api.recordRecoveryFailure({ ...origin, agentId: squad.managerAgentId! }, input)).rejects.toThrow(
     'execution'
   )
-  record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'two' })
+  await api.recordRecoveryFailure(origin, { ...input, invocationId: 'two' })
   record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'three' })
   record = await api.decideRecovery(
     record.id,

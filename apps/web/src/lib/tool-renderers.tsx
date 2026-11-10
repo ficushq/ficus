@@ -856,7 +856,7 @@ const dispatchRenderer: ToolRenderer = {
   },
   ResultView: ({ result, isError }) => {
     if (isError) return <CodeBlock isError>{extractResultText(result)}</CodeBlock>
-    let children: Array<{ subagentId: string; label: string }> = []
+    let children: Array<{ subagentId: string; label: string }>
     const details = extractToolResultDetails(result)
     if (Array.isArray(details?.subagents)) children = details.subagents
     else return <CodeBlock>{extractResultText(result)}</CodeBlock>
@@ -894,7 +894,7 @@ const checkSubagentsRenderer: ToolRenderer = {
       status: string
       lastActivityAt: string | null
       resultStatus: string | null
-    }> = []
+    }>
     const details = extractToolResultDetails(result)
     if (Array.isArray(details?.subagents)) children = details.subagents
     else return <CodeBlock>{extractResultText(result)}</CodeBlock>

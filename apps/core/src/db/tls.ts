@@ -119,7 +119,8 @@ function readCa(path: string, origin: string): string {
       `Postgres CA certificate configured by ${origin} could not be read: ${path} ` +
         `(${err instanceof Error ? err.message : String(err)}). ` +
         'Refusing to connect without certificate verification — fix the path/permissions, ' +
-        "or remove the CA setting to fall back to the DSN's own sslmode."
+        "or remove the CA setting to fall back to the DSN's own sslmode.",
+      { cause: err }
     )
   }
 }

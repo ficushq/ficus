@@ -82,7 +82,7 @@ async function readProvider<T>(read: () => Promise<T>): Promise<T | null> {
   try {
     return await read()
   } catch (error) {
-    if (error instanceof GitHubApiUnavailableError) throw new Error('feedback_provider_unavailable')
+    if (error instanceof GitHubApiUnavailableError) throw new Error('feedback_provider_unavailable', { cause: error })
     // Any other failure is uncertainty: fail closed (held for review).
     return null
   }

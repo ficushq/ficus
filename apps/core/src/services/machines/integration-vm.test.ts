@@ -357,7 +357,8 @@ describe.skipIf(!process.env.FICUS_TEST_SSH_HOST)('vm runtime (integration, real
         // Surface the server's own log to make a real-run failure diagnosable.
         const logRes = await runner.run(machine, 'cat /tmp/box-server.log 2>/dev/null | tail -40').catch(() => null)
         throw new Error(
-          `box server never became healthy: ${(err as Error).message}\n--- box-server.log ---\n${logRes?.stdout ?? '(unavailable)'}`
+          `box server never became healthy: ${(err as Error).message}\n--- box-server.log ---\n${logRes?.stdout ?? '(unavailable)'}`,
+          { cause: err }
         )
       }
 

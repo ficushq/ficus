@@ -180,7 +180,7 @@ function AddSquadPresetForm({ onClose, onCreated }: { onClose: () => void; onCre
       return
     }
 
-    let scheduleTemplates: unknown[] = []
+    let scheduleTemplates: unknown[]
     try {
       scheduleTemplates = form.scheduleTemplates.trim() ? JSON.parse(form.scheduleTemplates) : []
     } catch {
@@ -327,7 +327,7 @@ function SquadPresetRow({
   )
 
   const handleSave = () => {
-    let scheduleTemplates: unknown[] = []
+    let scheduleTemplates: unknown[]
     try {
       scheduleTemplates = form.scheduleTemplates.trim() ? JSON.parse(form.scheduleTemplates) : []
     } catch {

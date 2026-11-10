@@ -603,7 +603,7 @@ export class LocalUpdateManager {
     try {
       repoSlug = await this.githubRepoSlug(cfg)
     } catch (err) {
-      throw new Error(`Unable to resolve GitHub repository for update: ${this.errorMessage(err)}`)
+      throw new Error(`Unable to resolve GitHub repository for update: ${this.errorMessage(err)}`, { cause: err })
     }
 
     let token: string
@@ -622,6 +622,10 @@ export class LocalUpdateManager {
       })
       return (await this.git(['rev-parse', 'FETCH_HEAD'], { env: this.nonInteractiveGitEnv() })).trim()
     } catch (err) {
+      // No cause on purpose: the raw git error can carry the GitHub token, which
+      // is why the message is sanitized. Chaining it would expose the token to
+      // anything that logs this error.
+      // eslint-disable-next-line preserve-caught-error -- see the comment above
       throw new Error(
         `Unable to fetch GitHub update from ${repoSlug} ${cfg.branch}: ${this.sanitizeErrorMessage(err, token)}`
       )

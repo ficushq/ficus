@@ -312,7 +312,7 @@ export class BigbrainLocalSetup {
 
     const { connection, outcome } = await this.#upsertConnection(entry, configuration, vault, actor)
     let current = connection
-    let enabled = connection.enabled
+    let enabled: boolean
     try {
       current = connection.enabled
         ? await this.connections.validate(connection.id, actor)

@@ -467,7 +467,8 @@ async function restartManagedLocalDeploymentOnce(
       throw new Error(
         confirmedFailure
           ? 'Managed app launch failed; check startup logs. Automatic recovery will retry after cooldown.'
-          : 'Managed app launch outcome is unverified; check box connectivity. Reconciliation will inspect before retrying.'
+          : 'Managed app launch outcome is unverified; check box connectivity. Reconciliation will inspect before retrying.',
+        { cause: error }
       )
     }
 

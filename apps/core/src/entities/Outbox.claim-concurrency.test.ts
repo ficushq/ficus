@@ -100,7 +100,7 @@ async function waitForExactAdvisoryWaiters(
   expiresAt: number
 ): Promise<AdvisoryWaiter[]> {
   const expectedByPid = new Map(expected.map(({ pid, applicationName }) => [pid, applicationName]))
-  let observations: AdvisoryWaiter[] = []
+  let observations: AdvisoryWaiter[]
 
   for (;;) {
     observations = await db.execute<AdvisoryWaiter>(sql`
@@ -479,7 +479,7 @@ test('readiness deadline drains a transaction held before its handshake', async 
     | { status: 'rejected'; reason: unknown }
     | { status: 'guard-expired' }
     | undefined
-  let outcomes: PromiseSettledResult<unknown>[] = []
+  let outcomes: PromiseSettledResult<unknown>[]
 
   try {
     coordinatorWork = coordinator

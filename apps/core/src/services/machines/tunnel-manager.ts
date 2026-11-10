@@ -757,7 +757,7 @@ export class MachineTunnelManager {
     const record = this.masters.get(machine.id)
     let master: ForwardRefreshResult['master'] = 'preserved'
     if (localPort !== undefined && record) {
-      let alive = false
+      let alive: boolean
       try {
         alive = await this.isMasterAlive(record)
       } catch {
@@ -974,7 +974,8 @@ export class MachineTunnelManager {
       if (!(error instanceof TunnelTimeoutError)) throw error
       try {
         const cancelled = await this.runControl(record, 'cancel', ['-R', `${pinned}:127.0.0.1:${localPort}`])
-        if (cancelled.exitCode !== 0) throw new Error('exact reverse cancellation was not acknowledged')
+        if (cancelled.exitCode !== 0)
+          throw new Error('exact reverse cancellation was not acknowledged', { cause: error })
       } catch (cancelError) {
         this.taintedMachines.add(machine.id)
         this.purgeForwards(machine.id)
@@ -998,7 +999,7 @@ export class MachineTunnelManager {
         this.taintedMachines.add(machine.id)
         this.purgeForwards(machine.id)
         this.purgeReverses(machine.id)
-        let dead = false
+        let dead: boolean
         try {
           const exited = await this.runControl(record, 'exit')
           dead = exited.exitCode === 0 && !(await this.isMasterAlive(record))
@@ -1191,9 +1192,8 @@ export class MachineTunnelManager {
 
   /** `-O exit` (best-effort) a master record and drop all registry state for the machine. */
   private async exitAndForget(machineId: string, record: MasterRecord | undefined): Promise<void> {
-    let quarantined = false
     if (record) {
-      quarantined = await access(this.quarantinePath(record)).then(
+      const quarantined = await access(this.quarantinePath(record)).then(
         () => true,
         () => false
       )

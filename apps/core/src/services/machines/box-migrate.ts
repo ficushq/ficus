@@ -562,7 +562,9 @@ export async function migrateBox(
         // A genuine conflicting terminal state still fails closed.
         if (settlement.kind !== 'missing') requireForceMigrationSettlement(settlement)
       } catch (auditError) {
-        throw new AggregateError([error, auditError], 'Fence and forced migration audit settlement both failed')
+        throw new AggregateError([error, auditError], 'Fence and forced migration audit settlement both failed', {
+          cause: auditError,
+        })
       }
     }
     await failEvacuationSourceRetained(operationId)

@@ -57,7 +57,7 @@ async function present(path: string): Promise<boolean> {
     return true
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false
-    throw new Error('storage_unavailable')
+    throw new Error('storage_unavailable', { cause: error })
   }
 }
 function stamp(record: ControlReceipt) {
@@ -237,7 +237,7 @@ export async function prepareVaultImage(input: ControlReceipt, options: Options 
         'operation_failed',
       ].includes(message)
     )
-      throw new Error(message)
-    throw new Error('operation_failed')
+      throw new Error(message, { cause: error })
+    throw new Error('operation_failed', { cause: error })
   }
 }

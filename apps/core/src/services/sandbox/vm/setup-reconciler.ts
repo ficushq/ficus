@@ -150,6 +150,10 @@ export async function reconcileVmSetup(
           lastFailureClass: transportFailure(error)?.kind ?? 'command_outcome_ambiguous',
           now: deps.now(),
         })
+        // No cause on purpose: startupRetryCode walks the cause chain, and a
+        // database or machine-readiness error here would turn this fingerprint
+        // change into a retryable startup failure.
+        // eslint-disable-next-line preserve-caught-error -- see the comment above
         if (!degraded) throw new Error(`VM setup fingerprint changed while settling ${input.sandboxId}`)
         return degraded
       }
@@ -200,6 +204,8 @@ export async function reconcileVmSetup(
           if (
             !(await deps.setPendingInvocation(input.sandboxId, input.fingerprint, error.invocationId, 'devbox_install'))
           ) {
+            // No cause on purpose: see the fingerprint change while settling above.
+            // eslint-disable-next-line preserve-caught-error -- startupRetryCode walks the cause chain
             throw new Error(`VM setup fingerprint changed while fencing ${input.sandboxId}`)
           }
         }

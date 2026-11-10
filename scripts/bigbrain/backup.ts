@@ -91,7 +91,7 @@ async function present(path: string): Promise<boolean> {
     return true
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false
-    throw new Error('storage_unavailable')
+    throw new Error('storage_unavailable', { cause: error })
   }
 }
 async function vaultRecords(root: string, uid: number): Promise<ControlReceipt[]> {
@@ -226,7 +226,7 @@ export async function stageManagedBackup(options: BackupOptions): Promise<{
     } catch {
       // The lease stays for reconcileMaintenance; the original failure is what we report.
     }
-    throw new Error(safeCode(error))
+    throw new Error(safeCode(error), { cause: error })
   }
   async function stageVault(r: ControlReceipt, archive: string): Promise<void> {
     {

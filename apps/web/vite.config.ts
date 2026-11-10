@@ -47,7 +47,7 @@ function readCliBackends(): Record<string, CliBackend> {
   try {
     parsed = JSON.parse(readFileSync(authPath, 'utf8'))
   } catch (error) {
-    throw new Error(`Could not read Ficus CLI auth store at ${authPath}: ${(error as Error).message}`)
+    throw new Error(`Could not read Ficus CLI auth store at ${authPath}: ${(error as Error).message}`, { cause: error })
   }
 
   if (!parsed || typeof parsed !== 'object') return {}

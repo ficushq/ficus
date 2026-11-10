@@ -569,7 +569,8 @@ export async function probeBoxDocker(docker: DockerRunner = runDocker): Promise<
     throw new Error(
       timedOut(error)
         ? `Docker did not answer within ${DOCKER_HEALTH_TIMEOUT_MS / 1_000}s`
-        : 'Docker is not available in this box'
+        : 'Docker is not available in this box',
+      { cause: error }
     )
   }
 }

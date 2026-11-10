@@ -187,7 +187,7 @@ export function createWebFetchTool(): WebToolWithKey {
           details: { url, format, contentType, size: arrayBuffer.byteLength },
         }
       } catch (err: any) {
-        throw new Error(err.name === 'AbortError' ? 'Request timed out' : err.message)
+        throw new Error(err.name === 'AbortError' ? 'Request timed out' : err.message, { cause: err })
       } finally {
         clearTimeout(timeoutId)
       }
@@ -283,7 +283,7 @@ export function createWebSearchTool(): WebSearchToolWithKey {
           details: { query: params.query, numResults },
         }
       } catch (err: any) {
-        throw new Error(err.name === 'AbortError' ? 'Search request timed out' : err.message)
+        throw new Error(err.name === 'AbortError' ? 'Search request timed out' : err.message, { cause: err })
       } finally {
         clearTimeout(timeoutId)
       }

@@ -45,7 +45,7 @@ describe('ficus chat', () => {
       return true
     }) as typeof process.stdout.write)
     const log = spyOn(console, 'log').mockImplementation(() => {})
-    let footers = 0
+    let footers: number
     try {
       await run(['chat', 'Reply with PONG'])
       // mockRestore() discards the recorded calls, so count before restoring.

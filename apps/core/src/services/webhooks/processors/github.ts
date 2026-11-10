@@ -212,7 +212,7 @@ export const handleGithubPush: WebhookHandler = async (ctx) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     log.error('push command failed:', errorMsg)
-    throw new Error(`Push command failed: ${errorMsg}`)
+    throw new Error(`Push command failed: ${errorMsg}`, { cause: error })
   }
 }
 

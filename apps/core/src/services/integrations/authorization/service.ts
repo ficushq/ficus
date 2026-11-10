@@ -316,7 +316,8 @@ export class IntegrationAuthorizationService {
         try {
           if (this.#dependencies.flowReceipts) {
             const terminal = await this.#dependencies.flowReceipts.markTerminal(input.localFlowId, code)
-            if (!terminal?.terminalAt) throw new Error('Authorization flow terminal disposition failed')
+            if (!terminal?.terminalAt)
+              throw new Error('Authorization flow terminal disposition failed', { cause: error })
           }
           await this.#dependencies.states.burnByFlow({ localFlowId: input.localFlowId, handleHash })
         } catch {

@@ -34,7 +34,7 @@ export function loadAuthStore(path = getAuthStorePath()): AuthStore {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf-8'))
   } catch (error) {
-    throw new Error(`Failed to read Ficus auth store at ${path}: ${(error as Error).message}`)
+    throw new Error(`Failed to read Ficus auth store at ${path}: ${(error as Error).message}`, { cause: error })
   }
 
   if (!parsed || typeof parsed !== 'object') throw new Error(`Invalid Ficus auth store at ${path}`)

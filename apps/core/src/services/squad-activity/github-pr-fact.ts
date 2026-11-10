@@ -137,7 +137,7 @@ export function extractGitHubPrDispatchFact(
         : null
   if (!nativeId) return null
 
-  let occurredAt: string | null = null
+  let occurredAt: string | null
   let actorLogin: string | null = null
   if (eventType === 'pull_request') {
     occurredAt =

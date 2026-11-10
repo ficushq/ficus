@@ -53,9 +53,13 @@ export async function smokeConfiguredExtensions(
       manifest = JSON.parse(await readFile(join(extensionRoot, 'package.json'), 'utf8')) as PiPackageManifest
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new Error(`configured extension ${extensionName} has no package.json at ${extensionRoot}`)
+        throw new Error(`configured extension ${extensionName} has no package.json at ${extensionRoot}`, {
+          cause: error,
+        })
       }
-      throw new Error(`configured extension ${extensionName} has an invalid package.json: ${String(error)}`)
+      throw new Error(`configured extension ${extensionName} has an invalid package.json: ${String(error)}`, {
+        cause: error,
+      })
     }
 
     const configuredPaths = manifest.pi?.extensions
