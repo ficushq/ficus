@@ -202,7 +202,6 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
         setAutoLoginPending(false)
       }
     })()
-    // submitBootstrapPassword is recreated each render and only ever runs once here.
   }, [needsBootstrapPassword, bootstrapFragment])
 
   if (authStatus && !authStatus.hasUsers) {
