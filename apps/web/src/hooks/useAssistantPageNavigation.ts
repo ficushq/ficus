@@ -5,12 +5,12 @@ import { useStableRef } from './useStableRef'
 
 /** Change the underlying page without dismissing the active Assistant conversation. */
 export function useAssistantPageNavigation() {
-  const location = useStableRef(useLocation())
-  const navigate = useStableRef(useNavigate())
+  const locationRef = useStableRef(useLocation())
+  const navigateRef = useStableRef(useNavigate())
   return useCallback(
     (path: string) => {
-      navigate.current(assistantNavigationPath(path, `${location.current.pathname}${location.current.search}`))
+      navigateRef.current(assistantNavigationPath(path, `${locationRef.current.pathname}${locationRef.current.search}`))
     },
-    [location, navigate]
+    [locationRef, navigateRef]
   )
 }
