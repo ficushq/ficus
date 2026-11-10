@@ -5,13 +5,23 @@ type LegacyMediaQueryList = MediaQueryList & {
   removeListener: (listener: () => void) => void
 }
 
-function hasMatchMedia(): boolean {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-}
+// One MediaQueryList per query, so rendering reads `.matches` instead of allocating a new list each
+// time. Keyed by the matchMedia function as well, so a replaced window (tests) never reuses old lists.
+const mediaLists = new WeakMap<typeof window.matchMedia, Map<string, MediaQueryList>>()
 
-function matches(query: string, fallback: boolean): boolean {
-  if (!hasMatchMedia()) return fallback
-  return window.matchMedia(query).matches
+function mediaList(query: string): MediaQueryList | null {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null
+  let lists = mediaLists.get(window.matchMedia)
+  if (!lists) {
+    lists = new Map()
+    mediaLists.set(window.matchMedia, lists)
+  }
+  let media = lists.get(query)
+  if (!media) {
+    media = window.matchMedia(query)
+    lists.set(query, media)
+  }
+  return media
 }
 
 /**
@@ -22,8 +32,8 @@ function matches(query: string, fallback: boolean): boolean {
 export function useMediaQuery(query: string, fallback = true): boolean {
   const subscribe = useCallback(
     (onChange: () => void) => {
-      if (!hasMatchMedia()) return () => {}
-      const media = window.matchMedia(query)
+      const media = mediaList(query)
+      if (!media) return () => {}
       if ('addEventListener' in media && typeof media.addEventListener === 'function') {
         media.addEventListener('change', onChange)
         return () => media.removeEventListener('change', onChange)
@@ -35,6 +45,6 @@ export function useMediaQuery(query: string, fallback = true): boolean {
     },
     [query]
   )
-  const snapshot = () => matches(query, fallback)
+  const snapshot = () => mediaList(query)?.matches ?? fallback
   return useSyncExternalStore(subscribe, snapshot, snapshot)
 }

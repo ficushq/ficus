@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { useEffect } from 'react'
+import { waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { useCachedImageSrc } from './useCachedImageSrc'
 
@@ -44,19 +45,21 @@ test('shows the signed URL at once, upgrades to the cached blob, and starts over
     return null
   }
   const { root } = dom.createRoot()
-  const settle = () => dom!.act(() => new Promise((done) => setTimeout(done, 10)))
+  // Wait for the observable upgrade rather than a fixed delay.
+  const eventually = (assert: () => void) =>
+    dom!.act(async () => {
+      await waitFor(assert)
+    })
 
   await dom.act(async () => root.render(<Probe url="/api/images/one?sig=a" />))
   expect(seen[0]).toBe('/api/images/one?sig=a')
-  await settle()
-  expect(seen.at(-1)).toBe('blob:image-1')
+  await eventually(() => expect(seen.at(-1)).toBe('blob:image-1'))
 
   // Another image shows its own signed URL first, never the previous image's blob.
   await dom.act(async () => root.render(<Probe url="/api/images/two?sig=b" />))
   expect(seen.at(-2)).toBe('/api/images/two?sig=b')
   expect(revoke).toHaveBeenCalledWith('blob:image-1')
-  await settle()
-  expect(seen.at(-1)).toBe('blob:image-2')
+  await eventually(() => expect(seen.at(-1)).toBe('blob:image-2'))
 
   await dom.act(async () => root.unmount())
   expect(revoke).toHaveBeenCalledWith('blob:image-2')
@@ -75,7 +78,6 @@ test('a URL that is not a signed image path is used as is', async () => {
   }
   const { root } = dom.createRoot()
   await dom.act(async () => root.render(<Probe />))
-  await dom.act(() => new Promise((done) => setTimeout(done, 10)))
   expect(value).toBe('data:image/png;base64,AA==')
   await dom.act(async () => root.unmount())
 })

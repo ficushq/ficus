@@ -103,6 +103,8 @@ test('a refused draft write or discard is reported to subscribers until a later 
     refuse = false
     expect(discardWorkflowDraft(key)).toBe(true)
     expect(readWorkflowDraft(key)).toBeUndefined()
+    // A successful discard clears the failure, so reopening the editor shows no stale error.
+    expect(workflowDraftWriteFailed(key)).toBe(false)
   } finally {
     unsubscribe()
     globalThis.localStorage = original

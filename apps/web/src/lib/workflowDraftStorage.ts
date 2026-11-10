@@ -95,7 +95,7 @@ export function readWorkflowDraft(key: string | undefined): WorkflowDraft | unde
 
 // Whether the last write of each draft key failed. Writes happen in an effect; render reads the
 // result as an external store (useSyncExternalStore), so a failure needs no state set from the effect.
-const draftWriteFailures = new Map<string, boolean>()
+const draftWriteFailures = new Set<string>()
 const draftWriteListeners = new Set<() => void>()
 
 /** Save a draft under its key and record whether the browser accepted it. */
@@ -113,6 +113,8 @@ export function writeWorkflowDraft(key: string, draft: WorkflowDraft) {
 export function discardWorkflowDraft(key: string): boolean {
   try {
     localStorage.removeItem(key)
+    // The draft is gone, so a later editor for this key starts without the old failure.
+    recordDraftWrite(key, false)
     return true
   } catch {
     recordDraftWrite(key, true)
@@ -120,9 +122,11 @@ export function discardWorkflowDraft(key: string): boolean {
   }
 }
 
+// Only failing keys are kept, so the map never grows past the drafts that currently cannot be saved.
 function recordDraftWrite(key: string, failed: boolean) {
-  if ((draftWriteFailures.get(key) ?? false) === failed) return
-  draftWriteFailures.set(key, failed)
+  if (draftWriteFailures.has(key) === failed) return
+  if (failed) draftWriteFailures.add(key)
+  else draftWriteFailures.delete(key)
   for (const listener of draftWriteListeners) listener()
 }
 
@@ -135,5 +139,5 @@ export function subscribeWorkflowDraftWrites(listener: () => void): () => void {
 
 /** Whether the last write of this draft key failed. */
 export function workflowDraftWriteFailed(key: string | undefined): boolean {
-  return key !== undefined && draftWriteFailures.get(key) === true
+  return key !== undefined && draftWriteFailures.has(key)
 }
