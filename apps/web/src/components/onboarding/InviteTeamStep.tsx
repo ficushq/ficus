@@ -4,6 +4,7 @@ import { createInviteLink, resendInvite, type InvitedUser, type UserListEntry } 
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useTick } from '../../hooks/useTick'
 import { InviteUserForm } from '../settings/InviteUserForm'
 import { userSetupStatus } from '../settings/userSetupStatus'
 
@@ -77,7 +78,8 @@ function InvitedMember({
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const status = userSetupStatus(user)
   const pending = status.pending && !user.disabledAt
-  const expired = user.inviteExpiresAt !== null && new Date(user.inviteExpiresAt).getTime() <= Date.now()
+  const now = useTick(60_000)
+  const expired = user.inviteExpiresAt !== null && new Date(user.inviteExpiresAt).getTime() <= now
   const link = pending && !expired ? invitation?.inviteUrl : undefined
   const mutation = useMutation({
     mutationFn: (delivery: 'link' | 'email') =>

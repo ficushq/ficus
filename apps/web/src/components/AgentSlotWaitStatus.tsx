@@ -22,22 +22,25 @@ export function AgentSlotWaitStatus({
     (permissions.can('slots:use') || permissions.can('slots:write'))
   const waits = useQuery({ ...queries.agents.slotWaits(squadId, agentId), enabled })
   const holds = useQuery({ ...queries.agents.slotHolds(squadId, agentId), enabled })
-  const [leaseTick, setLeaseTick] = useState(0)
+  // The clock leases are judged against. Render reads this state instead of
+  // the wall clock, so it stays pure; the deadline below advances it.
+  const [now, setNow] = useState(() => Date.now())
   // A missed expiry frame must not leave a lease displayed as live. This is a
   // local expiry deadline, not a poll or a new reconciliation mechanism. It
   // keeps running during background refetches, which still show the last
-  // known holds, so a lease expires on time even if no refetch arrives.
+  // known holds, so a lease expires on time even if no refetch arrives. A lease
+  // that is live by `now` but already over by the wall clock (it expired before
+  // its data arrived) gets an immediate deadline, so it is never left displayed.
   useEffect(() => {
     if (!enabled || holds.isError) return
-    const now = Date.now()
     const deadlines = (holds.data ?? []).map((hold) => Date.parse(hold.expiresAt)).filter((end) => end > now)
     if (!deadlines.length) return
     const timer = setTimeout(
-      () => setLeaseTick((tick) => tick + 1),
-      Math.min(Math.min(...deadlines) - now, 2_147_483_647)
+      () => setNow(Date.now()),
+      Math.min(Math.max(Math.min(...deadlines) - Date.now(), 0), 2_147_483_647)
     )
     return () => clearTimeout(timer)
-  }, [enabled, holds.data, holds.isError, leaseTick])
+  }, [enabled, holds.data, holds.isError, now])
 
   if (!enabled) return null
   // Each read has its own visibility/error boundary. Optional older server
@@ -49,11 +52,7 @@ export function AgentSlotWaitStatus({
   const heldNames =
     holds.isError || !holds.isFetchedAfterMount
       ? []
-      : [
-          ...new Set(
-            (holds.data ?? []).filter((hold) => Date.parse(hold.expiresAt) > Date.now()).map((hold) => hold.poolKey)
-          ),
-        ]
+      : [...new Set((holds.data ?? []).filter((hold) => Date.parse(hold.expiresAt) > now).map((hold) => hold.poolKey))]
   const waitNames =
     waits.isError || !waits.isFetchedAfterMount ? [] : [...new Set((waits.data ?? []).map((wait) => wait.poolKey))]
   if (!heldNames.length && !waitNames.length && !waits.isError) return null

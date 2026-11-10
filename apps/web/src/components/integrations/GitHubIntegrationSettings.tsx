@@ -23,6 +23,7 @@ import { integrationErrorMessage, isFirstAdminIncomplete } from '../../lib/integ
 import { useOptionalAuth } from '../../providers/AuthProvider'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 import { appBasePrefix } from '../../lib/basePath'
+import { useTick } from '../../hooks/useTick'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
 
@@ -56,8 +57,12 @@ export function GitHubIntegrationSettings({
     if (onboarding && canRead && pool.isSuccess) void client.invalidateQueries({ queryKey: onboardingQueryKeys.all })
   }, [client, onboarding, canRead, pool.isSuccess, pool.data, pool.dataUpdatedAt, catalog.data, catalog.dataUpdatedAt])
   const [device, setDevice] = useState<DeviceLogin | null>(null)
+  // When the device code arrived, read in the event handler: the ticking clock
+  // may predate it by up to one tick, and render must not read the wall clock.
+  const [deviceStartedAt, setDeviceStartedAt] = useState(0)
+  const now = Math.max(useTick(15_000, device !== null), deviceStartedAt)
   const deviceMinutesRemaining = device
-    ? Math.max(0, Math.ceil((new Date(device.expiresAt).getTime() - Date.now()) / 60_000))
+    ? Math.max(0, Math.ceil((new Date(device.expiresAt).getTime() - now) / 60_000))
     : 0
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -92,7 +97,10 @@ export function GitHubIntegrationSettings({
     },
     onSuccess: (result) => {
       if ('authorizationUrl' in result) window.location.assign(result.authorizationUrl)
-      else setDevice(result)
+      else {
+        setDeviceStartedAt(Date.now())
+        setDevice(result)
+      }
     },
     onError: (failure) => {
       setError(integrationErrorMessage(failure, "Couldn't start GitHub login."))
