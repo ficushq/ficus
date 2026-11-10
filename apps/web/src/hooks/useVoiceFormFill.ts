@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { useVoiceRecorder } from './useVoiceRecorder'
 import { transcribeAudio } from '../api/transcribe'
 import { extractFormFields, type ExtractField } from '../api/extract'
+import { useStableRef } from './useStableRef'
 
 export type FormFillState = 'idle' | 'recording' | 'transcribing' | 'extracting'
 
@@ -15,10 +16,8 @@ interface UseVoiceFormFillOptions {
 
 export function useVoiceFormFill({ fields, context, onResult, onError, disabled }: UseVoiceFormFillOptions) {
   const [extracting, setExtracting] = useState(false)
-  const fieldsRef = useRef(fields)
-  fieldsRef.current = fields
-  const contextRef = useRef(context)
-  contextRef.current = context
+  const fieldsRef = useStableRef(fields)
+  const contextRef = useStableRef(context)
 
   const handleTranscription = useCallback(
     async (text: string) => {
@@ -36,7 +35,7 @@ export function useVoiceFormFill({ fields, context, onResult, onError, disabled 
         setExtracting(false)
       }
     },
-    [onResult, onError]
+    [onResult, onError, fieldsRef, contextRef]
   )
 
   const handleError = useCallback(

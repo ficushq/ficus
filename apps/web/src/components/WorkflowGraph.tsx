@@ -1005,13 +1005,15 @@ export function WorkflowGraph({
                             onPointerDown={(event) => {
                               event.stopPropagation()
                               suppressClick.current = false
-                              wireStart.current = point(event.clientX, event.clientY)
-                              setWire({
-                                from: node.id,
-                                outcome: port.outcome,
-                                branch: port.branch,
-                                ...wireStart.current,
-                              })
+                              // The same position point() computes, read here so the wire state is
+                              // built from the event's own measurement rather than a value read back from a ref.
+                              const bounds = surface.current!.getBoundingClientRect()
+                              const start = {
+                                x: (event.clientX - bounds.left) / zoom,
+                                y: (event.clientY - bounds.top) / zoom,
+                              }
+                              wireStart.current = start
+                              setWire({ from: node.id, outcome: port.outcome, branch: port.branch, ...start })
                               event.currentTarget.setPointerCapture?.(event.pointerId)
                             }}
                             onClick={() => {

@@ -46,7 +46,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const navigate = useNavigate()
   const location = useLocation()
   const isChat = location.pathname.startsWith('/chat')
-  const inboxPopup = useInboxPopup()
+  const { triggerRef: inboxTriggerRef, hover: inboxHover, open: inboxOpen } = useInboxPopup()
   const { can, isLoading: permissionsLoading } = usePermissions()
   const theme = useTheme()
   // Optional: AppHeader renders in some standalone/test contexts without
@@ -226,14 +226,14 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
 
             {/* Hovering opens the inbox popup and leaving closes it, unless a click pinned it (as the squad switcher). */}
             <button
-              ref={inboxPopup.triggerRef}
-              {...inboxPopup.hover.triggerProps}
-              aria-expanded={inboxPopup.open}
+              ref={inboxTriggerRef}
+              {...inboxHover.triggerProps}
+              aria-expanded={inboxOpen}
               aria-controls={INBOX_POPUP_ID}
               className={clsx(
                 'ficus-button ficus-button-ghost',
                 'relative hidden md:flex items-center justify-center p-2 rounded-md',
-                inboxPopup.open && 'text-accent-light hover:text-accent-light'
+                inboxOpen && 'text-accent-light hover:text-accent-light'
               )}
               title="Inbox (I)"
             >

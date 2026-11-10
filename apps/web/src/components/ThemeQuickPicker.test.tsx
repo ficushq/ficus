@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
@@ -44,7 +44,9 @@ function Harness({
 }) {
   const value = useTheme()
   const store = useThemeSyncStore()
-  if (storeRef) storeRef.current = store
+  useEffect(() => {
+    if (storeRef) storeRef.current = store
+  })
   return <ThemeQuickPicker value={value} enabled={enabled} presets={presets} />
 }
 

@@ -475,7 +475,8 @@ export function AgentChat({
           {preparationError && (
             <div role="alert">
               {preparationError}
-              {!initialMessageSent.current && initialMessage && (
+              {/* A preparation error is only ever set by a failed attempt, which also clears initialMessageSent. */}
+              {initialMessage && (
                 <button
                   className="ficus-button ficus-button-ghost px-1.5 py-0.5 ml-2"
                   onClick={() => setInitialPreparationAttempt((value) => value + 1)}

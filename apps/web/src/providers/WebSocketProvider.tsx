@@ -3,6 +3,7 @@ import { WebSocketContext, type WebSocketContextValue } from '../hooks/useWebSoc
 import { requestUpdateCheck } from '../lib/serviceWorker'
 import { SocketLivenessTracker, watchSocketLiveness } from '../lib/socketLiveness'
 import { createSocketHeartbeat, type SocketHeartbeatOptions } from '../lib/socketHeartbeat'
+import { useStableRef } from '../hooks/useStableRef'
 
 interface WebSocketProviderProps {
   /** Resolve the WS URL per connection (mints a fresh single-use ticket each time). */
@@ -30,8 +31,7 @@ const HEARTBEAT_TIMEOUT_MS = 10_000
 export function WebSocketProvider({ getUrl, heartbeat: heartbeatOptions, children }: WebSocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false)
   const [lastReconnect, setLastReconnect] = useState<{ gapMs: number } | null>(null)
-  const heartbeatOptionsRef = useRef(heartbeatOptions)
-  heartbeatOptionsRef.current = heartbeatOptions
+  const heartbeatOptionsRef = useStableRef(heartbeatOptions)
   // When the page last saw life on the previous connection, for the gap a reconnect reports.
   const lastSeenAtRef = useRef<number | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -224,7 +224,7 @@ export function WebSocketProvider({ getUrl, heartbeat: heartbeatOptions, childre
       }
       wsRef.current?.close()
     }
-  }, [getUrl])
+  }, [getUrl, heartbeatOptionsRef])
 
   // Internal implementation — the type safety comes from the overloaded
   // signatures declared on WebSocketContextValue.

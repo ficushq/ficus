@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AssistantEntry, AssistantMailbox, AssistantMailboxUpdate } from '@ficus/shared'
 import { buildAssistantCatchUpBatch, type AssistantCatchUpBatch } from '../voice/assistantCatchUp'
 import { useStableRef } from './useStableRef'
@@ -50,7 +50,7 @@ export function assistantBatchEntryId(messageIds: string[]): string {
  * lease stops new presentation; closing releases the lease and never stops delegated work.
  */
 export function useAssistantInboxConsumer(options: AssistantInboxConsumerOptions): { consumerId: string } {
-  const consumerId = useRef(crypto.randomUUID())
+  const [consumerId] = useState(() => crypto.randomUUID())
   const received = useRef(new Set<string>())
   const pendingAcks = useRef<Array<{ messageIds: string[]; entryId: string }>>([])
   const inFlight = useRef(false)
@@ -60,7 +60,7 @@ export function useAssistantInboxConsumer(options: AssistantInboxConsumerOptions
     if (!enabled) return
     let stopped = false
     let timer: unknown
-    const consumer = consumerId.current
+    const consumer = consumerId
     const scheduler = latest.current.scheduler ?? {
       setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
       clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
@@ -167,6 +167,6 @@ export function useAssistantInboxConsumer(options: AssistantInboxConsumerOptions
       scheduler.clearTimeout(timer)
       void latest.current.api.release(conversationId, consumer).catch(() => {})
     }
-  }, [conversationId, enabled, realtime, latest])
-  return { consumerId: consumerId.current }
+  }, [conversationId, enabled, realtime, latest, consumerId])
+  return { consumerId }
 }

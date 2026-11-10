@@ -1950,6 +1950,10 @@ export function ChatView({
     endPress,
     cancelPress,
     isPressing,
+    // Justified exception: useVoiceRecorderHook is injectable for tests, so the compiler cannot see that it
+    // is a hook and treats it as a plain function that might call these ref-reading callbacks during render.
+    // The recorder only calls them from recording events, never while rendering.
+    // eslint-disable-next-line react-hooks/refs
   } = useVoiceRecorderHook({
     onTranscription: handleTranscription,
     onAutoSend: handleAutoSend,

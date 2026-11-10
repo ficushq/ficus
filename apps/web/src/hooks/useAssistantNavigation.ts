@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useStableRef } from './useStableRef'
 import { useKeepAssistantAcrossPages } from './useKeepAssistantAcrossPages'
@@ -97,7 +97,8 @@ export function useAssistantNavigation() {
     },
     [paramsRef, setParams]
   )
-  const ephemeral = useRef(new Map<string, CommandDestination>())
+  // Chats opened in this tab keep their label and initial text, which the URL does not carry.
+  const [ephemeral, setEphemeral] = useState<ReadonlyMap<string, CommandDestination>>(() => new Map())
   const serialized = params.get('commandStack')
   const legacyId = params.get('assistantConversation')
   const entries = useMemo(
@@ -108,12 +109,12 @@ export function useAssistantNavigation() {
           ...(legacyId ? { assistantConversation: legacyId } : {}),
         })
       ).map((entry) => {
-        const cached = ephemeral.current.get(entry.id)
+        const cached = ephemeral.get(entry.id)
         return cached && entry.kind === 'chat'
           ? { ...entry, label: cached.label, initialText: cached.kind === 'chat' ? cached.initialText : undefined }
           : entry
       }),
-    [serialized, legacyId]
+    [serialized, legacyId, ephemeral]
   )
   const query = params.get('commandQuery') ?? ''
   const currentRef = useStableRef({ entries, query })
@@ -127,7 +128,7 @@ export function useAssistantNavigation() {
   )
   const push = useCallback(
     (entry: AssistantDestination) => {
-      if (entry.kind === 'chat') ephemeral.current.set(entry.id, entry)
+      if (entry.kind === 'chat') setEphemeral((current) => new Map(current).set(entry.id, entry))
       update([...currentRef.current.entries, entry])
     },
     [currentRef, update]
