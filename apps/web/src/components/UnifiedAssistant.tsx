@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router'
 import clsx from 'clsx'
@@ -62,6 +62,12 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const realtime = configured && can('ai:voice')
   const open = state !== 'closed'
   const live = controls?.live ?? false
+  // A session going live (or ending) sets compact mode to match, while rendering.
+  const [compactFollowsLive, setCompactFollowsLive] = useState<boolean>()
+  if (compactFollowsLive !== live) {
+    setCompactFollowsLive(live)
+    setCompact(live)
+  }
   const small = live && (compact || !open)
   const voiceReason = !configured
     ? 'Enable realtime and configure OpenAI API services in Settings → Assistant & Memory.'
@@ -121,9 +127,6 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
     [idRef, navigationRef]
   )
   const onControls = useCallback((next: AssistantViewControls) => setControls(next), [])
-  useLayoutEffect(() => {
-    setCompact(live)
-  }, [live])
   const openConversation = useCallback(
     (conversation: AssistantConversationLink) => {
       const nav = navigationRef.current

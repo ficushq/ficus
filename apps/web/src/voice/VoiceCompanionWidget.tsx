@@ -98,19 +98,24 @@ export function VoiceCompanionButton({
     }
   }, [isConnected, onConnected])
 
-  // Keep a live session with the user as they move around the page.
-  useEffect(() => {
+  // Keep a live session with the user as they move around the page; show an error in full.
+  // Both follow a change (or the first render), while rendering.
+  const [seenConnected, setSeenConnected] = useState<boolean>()
+  if (seenConnected !== isConnected) {
+    setSeenConnected(isConnected)
     if (isConnected) {
       setPanelOpen(true)
       setCompact(true)
     }
-  }, [isConnected])
-  useEffect(() => {
+  }
+  const [seenStatus, setSeenStatus] = useState<typeof status>()
+  if (seenStatus !== status) {
+    setSeenStatus(status)
     if (status === 'error') {
       setPanelOpen(true)
       setCompact(false)
     }
-  }, [status])
+  }
 
   // Auto-scroll transcript to bottom
   useEffect(() => {

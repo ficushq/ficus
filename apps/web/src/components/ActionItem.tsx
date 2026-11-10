@@ -97,9 +97,14 @@ export function ActionItem({
   const [isExpanded, setExpanded] = useState(defaultExpanded)
   const expanded = embedded || isExpanded
   const itemRef = useRef<HTMLDivElement>(null)
+  // Becoming the focused item expands it while rendering; the effect scrolls it into view.
+  const [seenFocused, setSeenFocused] = useState(false)
+  if (seenFocused !== focused) {
+    setSeenFocused(focused)
+    if (focused) setExpanded(true)
+  }
   useEffect(() => {
     if (!focused) return
-    setExpanded(true)
     const frame = requestAnimationFrame(() => {
       itemRef.current?.scrollIntoView({ block: 'nearest' })
       itemRef.current?.focus()

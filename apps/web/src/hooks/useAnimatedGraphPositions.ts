@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useMediaQuery } from './useMediaQuery'
 import { useStableRef } from './useStableRef'
 
 type Positions = Record<string, { x: number; y: number }>
@@ -8,16 +9,22 @@ export function useAnimatedGraphPositions(target: Positions, enabled: boolean): 
   const [frame, setFrame] = useState<Positions>(target)
   const rendered = useStableRef(enabled ? frame : target)
   const key = JSON.stringify(target)
-  useEffect(() => {
-    const next: Positions = JSON.parse(key)
-    if (
-      !enabled ||
-      typeof requestAnimationFrame === 'undefined' ||
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ) {
-      setFrame(next)
-      return
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)', false)
+  const animate = enabled && typeof requestAnimationFrame !== 'undefined' && !reducedMotion
+  // Without animation the frame jumps straight to the target, while rendering, so a later
+  // animation starts from where the graph is drawn.
+  const [snappedKey, setSnappedKey] = useState<string | null>(null)
+  if (!animate) {
+    if (snappedKey !== key) {
+      setSnappedKey(key)
+      setFrame(JSON.parse(key) as Positions)
     }
+  } else if (snappedKey !== null) {
+    setSnappedKey(null)
+  }
+  useEffect(() => {
+    if (!animate) return
+    const next: Positions = JSON.parse(key)
     const start = rendered.current
     let startTime: number | undefined
     let handle: number
@@ -37,6 +44,6 @@ export function useAnimatedGraphPositions(target: Positions, enabled: boolean): 
     }
     handle = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(handle)
-  }, [key, enabled, rendered])
+  }, [key, animate, rendered])
   return enabled ? frame : target
 }

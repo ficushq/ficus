@@ -1,4 +1,5 @@
 import { useEffect, useState, type AnimationEvent } from 'react'
+import { useMediaQuery } from './useMediaQuery'
 
 /** How long the plant's jump out of sight takes (index.css .ficus-plant-peek), the fallback if animationend never fires. */
 export const PLANT_HIDE_MS = 600
@@ -13,17 +14,15 @@ export const PLANT_HIDE_MS = 600
  */
 export function usePlantPresence(visible: boolean) {
   const [shown, setShown] = useState(visible)
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)', false)
   if (visible && !shown) setShown(true)
+  if (!visible && shown && reducedMotion) setShown(false)
 
   useEffect(() => {
-    if (visible || !shown) return
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setShown(false)
-      return
-    }
+    if (visible || !shown || reducedMotion) return
     const timeout = window.setTimeout(() => setShown(false), PLANT_HIDE_MS + 80)
     return () => window.clearTimeout(timeout)
-  }, [visible, shown])
+  }, [visible, shown, reducedMotion])
 
   return {
     shown,
