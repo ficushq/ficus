@@ -70,8 +70,16 @@ async function warnings(claimId: string) {
     .orderBy(slotNotifications.createdAt)
 }
 
+/**
+ * Deliver one queued notification. The warning's next_attempt_at is the
+ * database's clock_timestamp() (microseconds), and the drain compares it with
+ * `now` sent as a millisecond ISO string. A drain within the same millisecond
+ * as the queueing sweep would truncate `now` to just before next_attempt_at and
+ * find nothing due (seen in CI once the driver made the two round trips fast
+ * enough). One millisecond ahead is never earlier than a moment already past.
+ */
 async function drain(notificationId: string) {
-  return new SlotNotificationNotifier().drain({ now: new Date(), notificationId })
+  return new SlotNotificationNotifier().drain({ now: new Date(Date.now() + 1), notificationId })
 }
 
 test('a claim is warned only once it is within ten minutes of expiry', async () => {
