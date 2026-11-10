@@ -40,23 +40,27 @@ export function PendingQuestionsBanner({ questions, className, dependencies }: P
     }
   }, [questions])
 
-  useEffect(() => {
-    if (!questions) return
+  // Forget optimistic answers for questions that are gone, while rendering each new list.
+  const [prunedForQuestions, setPrunedForQuestions] = useState<typeof questions>()
+  if (questions && questions !== prunedForQuestions) {
+    setPrunedForQuestions(questions)
     setOptimisticallyAnswered((current) => {
       const currentQuestionIds = new Set(questions.map((question) => question.id))
       const next = new Set([...current].filter((id) => currentQuestionIds.has(id)))
       return next.size === current.size ? current : next
     })
-  }, [questions])
+  }
 
   const visibleQuestions = useMemo(
     () => questions?.filter((question) => !optimisticallyAnswered.has(question.id)) ?? [],
     [optimisticallyAnswered, questions]
   )
 
-  useEffect(() => {
+  const [seenVisibleCount, setSeenVisibleCount] = useState(visibleQuestions.length)
+  if (seenVisibleCount !== visibleQuestions.length) {
+    setSeenVisibleCount(visibleQuestions.length)
     if (visibleQuestions.length === 0) setIsOpen(false)
-  }, [visibleQuestions.length])
+  }
 
   if (visibleQuestions.length === 0) return null
 

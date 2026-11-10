@@ -26,10 +26,17 @@ export function useWorkStreamPauseControls(stream: WorkStream) {
   const eligible = can('workstreams:update') && !['done', 'canceled'].includes(stream.status)
   const paused = Boolean(stream?.pause)
   const { reset } = action
-  useEffect(() => {
+  // Another stream, or a change in its pause state or eligibility, closes the editor while rendering;
+  // the effect clears the previous action's result.
+  const controlsKey = `${stream.id}\n${paused}\n${eligible}`
+  const [seenControlsKey, setSeenControlsKey] = useState(controlsKey)
+  if (seenControlsKey !== controlsKey) {
+    setSeenControlsKey(controlsKey)
     setEditing(false)
     setReason('')
     setMinutes('')
+  }
+  useEffect(() => {
     reset()
   }, [stream.id, paused, eligible, reset])
   return {

@@ -181,22 +181,20 @@ export function AccountFeedVisit({
   const [retained, setRetained] = useState<WorkStream[]>([])
   const section = useRef<HTMLDetailsElement>(null)
   const [newAbove, setNewAbove] = useState(false)
-  useEffect(() => {
-    if (!completed.isSuccess || !completed.isFetchedAfterMount) return
-    const incoming = completed.data.pages.flatMap((page) => page.items)
-    setRetained((previous) => {
-      const keys = new Set(previous.map(completionKey))
-      const added = incoming.filter((stream) => {
-        const key = completionKey(stream)
-        if (keys.has(key)) return false
-        keys.add(key)
-        return true
-      })
-      if (!added.length) return previous
-      // Append, rather than reorder existing rows underneath the reader.
-      return [...previous, ...added]
-    })
-  }, [completed.data, completed.isSuccess, completed.isFetchedAfterMount])
+  // Retain newly fetched completions while rendering: append only rows not retained yet, so this
+  // settles after one update.
+  if (completed.isSuccess && completed.isFetchedAfterMount) {
+    const retainedKeys = new Set(retained.map(completionKey))
+    const added: WorkStream[] = []
+    for (const stream of completed.data.pages.flatMap((page) => page.items)) {
+      const key = completionKey(stream)
+      if (retainedKeys.has(key)) continue
+      retainedKeys.add(key)
+      added.push(stream)
+    }
+    // Append, rather than reorder existing rows underneath the reader.
+    if (added.length) setRetained([...retained, ...added])
+  }
   useEffect(() => {
     if (retained.length && section.current && section.current.getBoundingClientRect().top < 0) setNewAbove(true)
   }, [retained])
@@ -219,9 +217,11 @@ export function AccountFeedVisit({
   // This is visit-local presentation state, never a persisted seen watermark.
   const newestCompletion = Math.max(0, ...streams.map((stream) => new Date(stream.completedAt!).getTime()))
   const dismissed = dismissedThrough !== null && newestCompletion <= dismissedThrough
-  useEffect(() => {
+  const [seenDismissed, setSeenDismissed] = useState(dismissed)
+  if (seenDismissed !== dismissed) {
+    setSeenDismissed(dismissed)
     if (dismissed) setNewAbove(false)
-  }, [dismissed])
+  }
   const dismiss = async () => {
     if (dismissingRef.current) return
     dismissingRef.current = true
