@@ -17,19 +17,26 @@ complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../..
   HSL values rather than approximating them by integer hexes. Memory code and
   image-preview framing keep their separate backgrounds; image content is not
   recolored.
-- `terminal.ts` converts channels to concrete comma-form RGB(A) for xterm 5.5.
+- `terminal.ts` converts channels to concrete comma-form RGB(A) for xterm 6.
   The constructor reads the applied root before `open()`. A root attribute
   observer updates the existing instance after theme, appearance or inline token
   overrides change; it does not reconnect a socket or discard scrollback.
 - `--term-selection-foreground: none` is a deliberate sentinel: omit xterm's
   selection foreground override, retaining the selected cells' individual ANSI
   ink. A theme can instead supply RGB channels.
-- xterm **5.5 has no scrollbar fields in `ITheme`**. The three scrollbar tokens
-  default to `auto`, leaving the existing native scrollbar unchanged. To opt into
-  themed viewport scrollbars, supply RGB channels for all three thumb states;
-  the adapter enables the CSS rules. Iris’s hover/active tokens alias the normal
-  thumb, so a partial override of just that thumb also stays valid. This is not a
-  dependency upgrade.
+- xterm 6 draws its own scrollbar slider (it no longer uses a native viewport
+  scrollbar). `--term-scrollbar-thumb`, `-hover` and `-active` map to
+  `ITheme.scrollbarSliderBackground`, `scrollbarSliderHoverBackground` and
+  `scrollbarSliderActiveBackground`. Every built-in keeps `auto`, which omits
+  the fields so xterm uses its default slider (the terminal foreground at 20%,
+  40% and 50% opacity); with xterm 5.5 `auto` meant the browser's native
+  scrollbar, which xterm 6 no longer offers. A theme that supplies RGB channels
+  colors the slider; Iris’s hover/active tokens alias the normal thumb, so a
+  partial override of just that thumb also stays valid. Log viewers have no
+  `--log-scrollbar-*` tokens and always keep the default slider, as they kept
+  the native scrollbar before. xterm writes the slider colors into an unscoped style element, so when
+  two terminals with different slider colors share a page, the one later in the
+  document colors both sliders (an upstream limitation).
 - `--term-*` and `--ansi-*` use the same sixteen slot **names**, not identical
   values. Aliasing their legacy palettes would visibly change one surface. Hue
   tests keep red red-ish, green green-ish, and so on, including bright slots.
@@ -58,7 +65,9 @@ arbitrary utility tone combinations and authored artifacts are not accessibility
   owner-approved syntax ink exceptions; all ANSI rules and legacy xterm values; semantic ANSI hues; exact supporting colors; raw-color
   guard on every migrated consumer.
 - `terminal.test.ts`: constructor ordering, real DOM observer updates, custom
-  overrides/reset and disposal without creating a terminal session.
+  overrides/reset and disposal without creating a terminal session, plus the
+  slider colors a real xterm instance renders for the normal, hover and active
+  states and after live token changes.
 - Existing token completeness, opacity-substitution and initial-flash suites
   remain authoritative. No persistence or flash script change is needed: these
   colors are available synchronously in the existing resolved CSS scopes.
