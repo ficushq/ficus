@@ -1,5 +1,8 @@
-/* Explicit component roles; existing utilities can still supply layout and density. */
-@layer components {
+/* Explicit component roles; existing utilities can still supply layout and density. Tailwind 3 put
+   these in its components layer of one flat stylesheet, so a more specific component rule (a hover
+   or [aria-current] state) beat a plain utility. index.css keeps that by placing them in the
+   utilities layer ahead of the generated utilities. */
+@layer utilities {
   .ficus-section {
     background: transparent;
     border: 0;
@@ -435,288 +438,292 @@
   }
 }
 
-[data-setting-target] {
-  scroll-margin-block: 6rem;
-}
-[data-setting-highlight] {
-  outline: 2px solid rgb(var(--color-focus));
-  outline-offset: 6px;
-  border-radius: 4px;
-  background: rgb(var(--color-selection-bg));
-}
+/* Plain CSS in Tailwind 3, competing with utilities (and the typography plugin's .prose) by
+   specificity; see the note at the top of index.css. */
+@layer utilities {
+  [data-setting-target] {
+    scroll-margin-block: 6rem;
+  }
+  [data-setting-highlight] {
+    outline: 2px solid rgb(var(--color-focus));
+    outline-offset: 6px;
+    border-radius: 4px;
+    background: rgb(var(--color-selection-bg));
+  }
 
-/* Short, non-spring motion keeps menus anchored and never shifts page layout. */
-@keyframes ficus-surface-in {
-  from {
-    opacity: 0;
-    translate: 0 4px;
-    scale: 0.99;
+  /* Short, non-spring motion keeps menus anchored and never shifts page layout. */
+  @keyframes ficus-surface-in {
+    from {
+      opacity: 0;
+      translate: 0 4px;
+      scale: 0.99;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+      scale: 1;
+    }
   }
-  to {
-    opacity: 1;
-    translate: 0 0;
-    scale: 1;
+  @keyframes ficus-surface-out {
+    to {
+      opacity: 0;
+      translate: 0 3px;
+      scale: 0.99;
+    }
   }
-}
-@keyframes ficus-surface-out {
-  to {
-    opacity: 0;
-    translate: 0 3px;
-    scale: 0.99;
+  @keyframes ficus-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
-}
-@keyframes ficus-backdrop-in {
-  from {
-    opacity: 0;
+  @keyframes ficus-backdrop-out {
+    to {
+      opacity: 0;
+    }
   }
-  to {
-    opacity: 1;
+  @media (prefers-reduced-motion: no-preference) {
+    .ficus-overlay,
+    .ficus-presence[data-state='open'] {
+      animation: ficus-surface-in 160ms ease-out;
+    }
+    .ficus-presence[data-state='closed'] {
+      animation: ficus-surface-out 120ms ease-in forwards;
+      pointer-events: none;
+    }
+    .ficus-modal-backdrop[data-state='open'] {
+      animation: ficus-backdrop-in 160ms ease-out;
+    }
+    .ficus-modal-backdrop[data-state='closed'] {
+      animation: ficus-backdrop-out 120ms ease-in forwards;
+    }
   }
-}
-@keyframes ficus-backdrop-out {
-  to {
-    opacity: 0;
+  @media (prefers-reduced-motion: reduce) {
+    .ficus-overlay,
+    .ficus-presence {
+      animation: none;
+    }
   }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .ficus-overlay,
-  .ficus-presence[data-state='open'] {
-    animation: ficus-surface-in 160ms ease-out;
-  }
-  .ficus-presence[data-state='closed'] {
-    animation: ficus-surface-out 120ms ease-in forwards;
-    pointer-events: none;
-  }
-  .ficus-modal-backdrop[data-state='open'] {
-    animation: ficus-backdrop-in 160ms ease-out;
-  }
-  .ficus-modal-backdrop[data-state='closed'] {
-    animation: ficus-backdrop-out 120ms ease-in forwards;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ficus-overlay,
-  .ficus-presence {
-    animation: none;
-  }
-}
 
-@keyframes ficus-voice-settle {
-  from {
-    opacity: 0.6;
-    transform: translateY(6px) scale(0.98);
+  @keyframes ficus-voice-settle {
+    from {
+      opacity: 0.6;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+  @media (prefers-reduced-motion: no-preference) {
+    .ficus-voice-panel[data-state='open'][data-compact='true'] {
+      animation: ficus-voice-settle 180ms ease-out;
+    }
   }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .ficus-voice-panel[data-state='open'][data-compact='true'] {
-    animation: ficus-voice-settle 180ms ease-out;
+
+  /* Fit assistant guides to content; supporting browsers interpolate intrinsic heights. */
+  .ficus-assistant-panel {
+    border: 1px solid rgb(var(--color-border-hover));
+    box-shadow:
+      0 24px 64px -12px rgb(var(--color-shadow-lg)),
+      0 8px 24px rgb(var(--color-shadow-lg));
+    interpolate-size: allow-keywords;
   }
-}
 
-/* Fit assistant guides to content; supporting browsers interpolate intrinsic heights. */
-.ficus-assistant-panel {
-  border: 1px solid rgb(var(--color-border-hover));
-  box-shadow:
-    0 24px 64px -12px rgb(var(--color-shadow-lg)),
-    0 8px 24px rgb(var(--color-shadow-lg));
-  interpolate-size: allow-keywords;
-}
-
-@supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
-  /* The shared glass component is emitted later by Tailwind; keep this override more specific. */
-  .ficus-assistant-panel.ficus-glass {
-    background: color-mix(in srgb, rgb(var(--color-bg-surface)) 80%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+  @supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
+    /* The shared glass component is emitted later by Tailwind; keep this override more specific. */
+    .ficus-assistant-panel.ficus-glass {
+      background: color-mix(in srgb, rgb(var(--color-bg-surface)) 80%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
   }
-}
 
-@media (prefers-reduced-transparency: reduce) {
-  .ficus-assistant-panel.ficus-glass {
-    background: rgb(var(--color-bg-surface));
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+  @media (prefers-reduced-transparency: reduce) {
+    .ficus-assistant-panel.ficus-glass {
+      background: rgb(var(--color-bg-surface));
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
   }
-}
 
-/* Text fields use one focus edge, including legacy fields with Tailwind rings.
-   Keep the offset keyboard outline on buttons, links, checkboxes, and radios. */
-:root
-  :is(
-    input:not(
-      [type='checkbox'],
-      [type='radio'],
-      [type='range'],
-      [type='color'],
-      [type='file'],
-      [type='button'],
-      [type='submit'],
-      [type='reset']
-    ),
-    textarea,
-    select
-  ):focus-visible {
-  border-color: rgb(var(--color-focus));
-  outline: 2px solid rgb(var(--color-focus));
-  outline-offset: -1px;
-  box-shadow: none;
-}
-
-/* Field geometry is shared across pages; utility classes must not vary the radius.
-   Chat composers may round their outer surface independently. */
-.ficus-field:not([type='checkbox']):not([type='radio']) {
-  border-radius: 8px;
-}
-
-/* Inspector fields stack within the panel, independently of the viewport width. */
-.workflow-inspector-form .grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-.workflow-inspector-form label:has(> .ficus-field) {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.workflow-inspector-form label:has(> .ficus-field) > .ficus-field {
-  order: 1;
-  flex-shrink: 0;
-  min-width: 0;
-}
-.workflow-inspector-form label:has(> .ficus-field) > span {
-  order: 2;
-  margin: 0;
-  line-height: 1.5;
-}
-
-/* Author gradients and inset shadows vanish under forced colors. Keep real
-   control boundaries/focus using system colors; do not opt out of the user's
-   palette. Theme choices (including custom themes) are cosmetic in this mode. */
-@media (forced-colors: active) {
-  .ficus-button,
-  .ficus-field {
-    outline: 1px solid ButtonText;
+  /* Text fields use one focus edge, including legacy fields with Tailwind rings.
+     Keep the offset keyboard outline on buttons, links, checkboxes, and radios. */
+  :root
+    :is(
+      input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='color'],
+        [type='file'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+      textarea,
+      select
+    ):focus-visible {
+    border-color: rgb(var(--color-focus));
+    outline: 2px solid rgb(var(--color-focus));
     outline-offset: -1px;
+    box-shadow: none;
   }
-  .ficus-button:focus-visible,
-  .ficus-field:focus-visible {
-    outline: 2px solid Highlight;
-    outline-offset: 3px;
-  }
-  /* Inline navigation stays text. */
-  .ficus-button-link:not(:focus-visible) {
-    outline: none;
-  }
-  .voice-orb {
-    outline: 2px solid ButtonText !important;
-  }
-  .voice-orb:focus-visible {
-    outline: 3px solid Highlight !important;
-    outline-offset: 4px;
-  }
-  .voice-orb__glow,
-  .voice-orb__swirl,
-  .voice-orb__shade,
-  .voice-orb__rim,
-  .voice-orb__shine {
-    display: none;
-  }
-  .voice-orb-status {
-    display: block !important;
-    width: auto;
-    height: auto;
-  }
-  .voice-orb-status > span {
-    display: none;
-  }
-  .voice-orb-status::after {
-    content: attr(aria-label);
-    color: CanvasText;
-    white-space: nowrap;
-  }
-}
 
-/* Markdown inside a user bubble (bg-accent + text-on-accent). Every prose colour inherits the bubble's
-   on-accent ink, so text stays legible on any theme's primary; links are marked by underline and inline code
-   by a tint of that same ink. These selectors out-rank the page-level link, entity-reference and code colours. */
-.prose.prose-on-accent {
-  --tw-prose-body: currentColor;
-  --tw-prose-headings: currentColor;
-  --tw-prose-lead: currentColor;
-  --tw-prose-links: currentColor;
-  --tw-prose-bold: currentColor;
-  --tw-prose-counters: currentColor;
-  --tw-prose-bullets: currentColor;
-  --tw-prose-hr: currentColor;
-  --tw-prose-quotes: currentColor;
-  --tw-prose-quote-borders: currentColor;
-  --tw-prose-captions: currentColor;
-  --tw-prose-kbd: currentColor;
-  --tw-prose-code: currentColor;
-  --tw-prose-th-borders: currentColor;
-  --tw-prose-td-borders: currentColor;
-  color: inherit;
-}
-.prose.prose-on-accent :is(a, button) {
-  color: inherit;
-}
-.prose.prose-on-accent a {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.prose.prose-on-accent :not(pre) > code {
-  color: inherit;
-  background: color-mix(in srgb, currentColor 16%, transparent);
-}
+  /* Field geometry is shared across pages; utility classes must not vary the radius.
+     Chat composers may round their outer surface independently. */
+  .ficus-field:not([type='checkbox']):not([type='radio']) {
+    border-radius: 8px;
+  }
 
-/* Embedded documents (work stream descriptions, handoffs, review proposals). Prose's display sizes make a
-   `# Title` larger than the dialog that holds it; here headings sit on a reading scale relative to the body
-   (an H1 is at most 1.2× the text, so about 1.2rem in the review document) and never outrank the surface
-   title. Chat messages keep the default prose scale. */
-.prose.prose-document h1,
-.prose.prose-document h2,
-.prose.prose-document h3,
-.prose.prose-document h4 {
-  letter-spacing: -0.005em;
-  line-height: 1.35;
-}
-.prose.prose-document h1 {
-  font-size: 1.2em;
-  font-weight: 650;
-  margin-top: 1.75em;
-  margin-bottom: 0.6em;
-}
-.prose.prose-document h2 {
-  font-size: 1.1em;
-  font-weight: 600;
-  margin-top: 1.6em;
-  margin-bottom: 0.5em;
-}
-.prose.prose-document h3 {
-  font-size: 1em;
-  font-weight: 600;
-  margin-top: 1.4em;
-  margin-bottom: 0.4em;
-}
-.prose.prose-document h4 {
-  font-size: 0.95em;
-  font-weight: 600;
-  margin-top: 1.25em;
-  margin-bottom: 0.35em;
-}
-.prose.prose-document > :first-child {
-  margin-top: 0;
-}
-.prose.prose-document > :last-child {
-  margin-bottom: 0;
-}
+  /* Inspector fields stack within the panel, independently of the viewport width. */
+  .workflow-inspector-form .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workflow-inspector-form label:has(> .ficus-field) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .workflow-inspector-form label:has(> .ficus-field) > .ficus-field {
+    order: 1;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .workflow-inspector-form label:has(> .ficus-field) > span {
+    order: 2;
+    margin: 0;
+    line-height: 1.5;
+  }
 
-/* A collapsed preview that fades out instead of scrolling inside its container. */
-.ficus-fade-bottom {
-  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
-  mask-image: linear-gradient(to bottom, black 55%, transparent);
+  /* Author gradients and inset shadows vanish under forced colors. Keep real
+     control boundaries/focus using system colors; do not opt out of the user's
+     palette. Theme choices (including custom themes) are cosmetic in this mode. */
+  @media (forced-colors: active) {
+    .ficus-button,
+    .ficus-field {
+      outline: 1px solid ButtonText;
+      outline-offset: -1px;
+    }
+    .ficus-button:focus-visible,
+    .ficus-field:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 3px;
+    }
+    /* Inline navigation stays text. */
+    .ficus-button-link:not(:focus-visible) {
+      outline: none;
+    }
+    .voice-orb {
+      outline: 2px solid ButtonText !important;
+    }
+    .voice-orb:focus-visible {
+      outline: 3px solid Highlight !important;
+      outline-offset: 4px;
+    }
+    .voice-orb__glow,
+    .voice-orb__swirl,
+    .voice-orb__shade,
+    .voice-orb__rim,
+    .voice-orb__shine {
+      display: none;
+    }
+    .voice-orb-status {
+      display: block !important;
+      width: auto;
+      height: auto;
+    }
+    .voice-orb-status > span {
+      display: none;
+    }
+    .voice-orb-status::after {
+      content: attr(aria-label);
+      color: CanvasText;
+      white-space: nowrap;
+    }
+  }
+
+  /* Markdown inside a user bubble (bg-accent + text-on-accent). Every prose colour inherits the bubble's
+     on-accent ink, so text stays legible on any theme's primary; links are marked by underline and inline code
+     by a tint of that same ink. These selectors out-rank the page-level link, entity-reference and code colours. */
+  .prose.prose-on-accent {
+    --tw-prose-body: currentColor;
+    --tw-prose-headings: currentColor;
+    --tw-prose-lead: currentColor;
+    --tw-prose-links: currentColor;
+    --tw-prose-bold: currentColor;
+    --tw-prose-counters: currentColor;
+    --tw-prose-bullets: currentColor;
+    --tw-prose-hr: currentColor;
+    --tw-prose-quotes: currentColor;
+    --tw-prose-quote-borders: currentColor;
+    --tw-prose-captions: currentColor;
+    --tw-prose-kbd: currentColor;
+    --tw-prose-code: currentColor;
+    --tw-prose-th-borders: currentColor;
+    --tw-prose-td-borders: currentColor;
+    color: inherit;
+  }
+  .prose.prose-on-accent :is(a, button) {
+    color: inherit;
+  }
+  .prose.prose-on-accent a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .prose.prose-on-accent :not(pre) > code {
+    color: inherit;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+  }
+
+  /* Embedded documents (work stream descriptions, handoffs, review proposals). Prose's display sizes make a
+     `# Title` larger than the dialog that holds it; here headings sit on a reading scale relative to the body
+     (an H1 is at most 1.2× the text, so about 1.2rem in the review document) and never outrank the surface
+     title. Chat messages keep the default prose scale. */
+  .prose.prose-document h1,
+  .prose.prose-document h2,
+  .prose.prose-document h3,
+  .prose.prose-document h4 {
+    letter-spacing: -0.005em;
+    line-height: 1.35;
+  }
+  .prose.prose-document h1 {
+    font-size: 1.2em;
+    font-weight: 650;
+    margin-top: 1.75em;
+    margin-bottom: 0.6em;
+  }
+  .prose.prose-document h2 {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-top: 1.6em;
+    margin-bottom: 0.5em;
+  }
+  .prose.prose-document h3 {
+    font-size: 1em;
+    font-weight: 600;
+    margin-top: 1.4em;
+    margin-bottom: 0.4em;
+  }
+  .prose.prose-document h4 {
+    font-size: 0.95em;
+    font-weight: 600;
+    margin-top: 1.25em;
+    margin-bottom: 0.35em;
+  }
+  .prose.prose-document > :first-child {
+    margin-top: 0;
+  }
+  .prose.prose-document > :last-child {
+    margin-bottom: 0;
+  }
+
+  /* A collapsed preview that fades out instead of scrolling inside its container. */
+  .ficus-fade-bottom {
+    -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+    mask-image: linear-gradient(to bottom, black 55%, transparent);
+  }
 }

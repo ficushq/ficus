@@ -118,7 +118,7 @@ test('page and popup share rounded, spaced cards for personal/system and unread/
   expect(popup.querySelector('[data-testid="inbox-row-meta-mobile"]')).toBeNull()
   const pageReadToggle = [...page.querySelectorAll('button')].find((button) => button.textContent === 'Read2')!
   expect(pageReadToggle.classList.contains('rounded-lg')).toBe(true)
-  expect(pageReadToggle.classList.contains('focus-visible:outline-offset-[-2px]')).toBe(true)
+  expect(pageReadToggle.classList.contains('focus-visible:-outline-offset-2')).toBe(true)
   await dom.act(async () => pageReadToggle.click())
   expect(pageReadToggle.getAttribute('aria-expanded')).toBe('false')
   expect(page.querySelectorAll('[aria-label="Collapse"]')).toHaveLength(2)

@@ -386,7 +386,7 @@ function RegisterMachineForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Name"
-            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-40')}
           />
           {provider === 'ssh' && (
             <>
@@ -394,7 +394,7 @@ function RegisterMachineForm() {
                 value={sshHost}
                 onChange={(e) => setSshHost(e.target.value)}
                 placeholder="Host"
-                className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
+                className={clsx('ficus-field', inputClass, 'flex-1 min-w-40')}
               />
               <input
                 value={sshPort}

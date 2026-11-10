@@ -358,7 +358,7 @@ function ReviewLayout({
       // Both panes stay mounted on phones, so switching keeps scroll, drafts and in-flight sends.
       hidden={tabsMode && pane !== 'brief'}
       className={clsx(
-        'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-none',
+        'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-hidden',
         tabsMode && pane !== 'brief' && 'hidden'
       )}
     >
@@ -850,7 +850,7 @@ function NotesField({
       rows={rows}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="ficus-field block w-full resize-none rounded-md border border-th-border px-3 py-2.5 text-base leading-relaxed sm:text-sm"
+      className="ficus-field block w-full resize-none rounded-md border border-th-border px-3 py-2.5 text-base leading-relaxed sm:text-sm sm:leading-5"
     />
   )
 }

@@ -65,7 +65,7 @@ export function SquadIntegrationCard({
           >
             <span
               className={clsx(
-                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-chrome-paper shadow transition-transform',
+                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-chrome-paper shadow-sm transition-transform',
                 enabled ? 'translate-x-4' : 'translate-x-0'
               )}
             />

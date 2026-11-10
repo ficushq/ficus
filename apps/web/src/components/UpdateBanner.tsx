@@ -23,7 +23,7 @@ export function UpdateBanner({ usePWA: usePWAProp = usePWA }: { usePWA?: typeof 
   return (
     <div className="shrink-0 bg-accent text-on-accent px-4 py-2 flex items-center justify-between gap-4">
       <div className="flex items-center gap-2">
-        <RefreshIcon className="w-5 h-5 flex-shrink-0" />
+        <RefreshIcon className="w-5 h-5 shrink-0" />
         <span className="text-sm font-medium">{isApplying ? 'Applying update…' : 'A new version is available'}</span>
       </div>
       <button

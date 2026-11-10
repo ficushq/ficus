@@ -134,7 +134,7 @@ describe('AttentionMenu', () => {
 
   test('the clipped radio lends its keyboard focus ring to the visible label', () => {
     const html = renderSquadContent({ decisions: 'show', progress: 'show' })
-    expect(levelLabel(html, 'Decisions: Show')).toContain('has-[:focus-visible]:outline')
+    expect(levelLabel(html, 'Decisions: Show')).toContain('has-focus-visible:outline-solid')
     // The radio keeps focus through a level change: nothing disables it mid-request.
     expect(radio(html, 'Decisions: Show')).not.toContain('disabled')
   })
@@ -176,8 +176,8 @@ const openPanel = (dom: Awaited<ReturnType<typeof acquireDomHarness>>) =>
 
 describe('AttentionMenu panel', () => {
   /**
-   * `bg-surface-primary` was not a token — tailwind.config.js defines surface DEFAULT/secondary/
-   * hover and no `primary` — so the panel rendered with no background and the page read through
+   * `bg-surface-primary` was not a token — src/tailwind.css defines surface, surface-secondary and
+   * surface-hover and no `surface-primary` — so the panel rendered with no background and the page read through
    * it on a phone. Pin the surface classes the repo's other popovers use.
    */
   test('the panel uses the shared popover surface, not an undefined token, and fits a phone', async () => {

@@ -845,7 +845,7 @@ const dispatchRenderer: ToolRenderer = {
               )}
             </div>
             {str(spec.instructions) && (
-              <p className="text-[11px] text-secondary whitespace-pre-wrap break-words">
+              <p className="text-[11px] text-secondary whitespace-pre-wrap wrap-break-word">
                 {truncate(str(spec.instructions), 240)}
               </p>
             )}

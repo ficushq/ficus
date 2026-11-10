@@ -404,7 +404,7 @@ test('sticky content ends the message flow and floats above the plant while it p
   )
   // The room shrinks back only once the plant's jump out of sight is over.
   expect(messages.classList.contains('pb-8')).toBe(false)
-  expect(messages.classList.contains('delay-[600ms]')).toBe(true)
+  expect(messages.classList.contains('delay-600')).toBe(true)
 })
 
 describe('ChatView image upload targeting and recovery', () => {

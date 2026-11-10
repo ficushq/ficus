@@ -1,64 +1,73 @@
-.squad-chat-sidebar {
-  background: rgb(var(--color-bg-surface));
-  background: color-mix(in srgb, rgb(var(--color-bg-surface)) 88%, transparent);
+/* App imports this before index.css, so in Tailwind 3 these unlayered rules came before its output:
+   they competed with utilities by specificity and lost ties. Tailwind 4 uses native cascade layers,
+   where unlayered CSS beats every layer. In the utilities layer, ahead of the generated utilities,
+   the old cascade holds. The order statement (Tailwind's own, properties first) keeps the layer
+   order although this file is bundled before index.css. */
+@layer properties, theme, base, components, utilities;
 
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
+@layer utilities {
+  .squad-chat-sidebar {
+    background: rgb(var(--color-bg-surface));
+    background: color-mix(in srgb, rgb(var(--color-bg-surface)) 88%, transparent);
 
-.squad-chat-toolbar {
-  background: rgb(var(--color-bg-surface-secondary));
-  background: color-mix(in srgb, rgb(var(--color-bg-surface-secondary)) 72%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
 
-.squad-chat-agent {
-  border-radius: 8px;
-  background: color-mix(in srgb, rgb(var(--color-bg-surface-secondary)) 55%, transparent);
-  transition: background-color 120ms ease;
-}
+  .squad-chat-toolbar {
+    background: rgb(var(--color-bg-surface-secondary));
+    background: color-mix(in srgb, rgb(var(--color-bg-surface-secondary)) 72%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
 
-.squad-chat-agent:hover {
-  background: rgb(var(--color-bg-surface-hover));
-}
-
-.squad-chat-agent.is-selected {
-  background: color-mix(in srgb, rgb(var(--color-primary)) 10%, rgb(var(--color-bg-surface)));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, rgb(var(--color-primary)) 18%, transparent);
-}
-
-.squad-chat-agent.is-selected:hover {
-  background: color-mix(in srgb, rgb(var(--color-primary)) 14%, rgb(var(--color-bg-surface)));
-}
-
-/* The select button is stretched over the whole row, so its ghost hover fill would paint over the
-   row's selected tint and inset outline, leaving only antialiased outline fragments at the rounded
-   corners. The row owns the hover treatment; the button stays transparent and keeps its focus ring.
-   Scoped under the row so it outranks `.ficus-button-ghost:hover` whatever the stylesheet order. */
-.squad-chat-agent > .squad-chat-agent-select,
-.squad-chat-agent > .squad-chat-agent-select:hover {
-  background: transparent;
-}
-
-.squad-chat-filter[aria-pressed='true'] {
-  color: rgb(var(--color-primary));
-  background: color-mix(in srgb, rgb(var(--color-primary)) 9%, rgb(var(--color-bg-surface)));
-  border-color: color-mix(in srgb, rgb(var(--color-primary)) 32%, rgb(var(--color-border)));
-}
-
-.dark .squad-chat-filter[aria-pressed='true'] {
-  color: rgb(var(--decoration-4-300));
-}
-
-.squad-chat-category {
-  color: rgb(var(--color-text-secondary));
-  font-size: 11px;
-  font-weight: 500;
-}
-
-@media (prefers-reduced-motion: reduce) {
   .squad-chat-agent {
-    transition: none;
+    border-radius: 8px;
+    background: color-mix(in srgb, rgb(var(--color-bg-surface-secondary)) 55%, transparent);
+    transition: background-color 120ms ease;
+  }
+
+  .squad-chat-agent:hover {
+    background: rgb(var(--color-bg-surface-hover));
+  }
+
+  .squad-chat-agent.is-selected {
+    background: color-mix(in srgb, rgb(var(--color-primary)) 10%, rgb(var(--color-bg-surface)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, rgb(var(--color-primary)) 18%, transparent);
+  }
+
+  .squad-chat-agent.is-selected:hover {
+    background: color-mix(in srgb, rgb(var(--color-primary)) 14%, rgb(var(--color-bg-surface)));
+  }
+
+  /* The select button is stretched over the whole row, so its ghost hover fill would paint over the
+     row's selected tint and inset outline, leaving only antialiased outline fragments at the rounded
+     corners. The row owns the hover treatment; the button stays transparent and keeps its focus ring.
+     Scoped under the row so it outranks `.ficus-button-ghost:hover` whatever the stylesheet order. */
+  .squad-chat-agent > .squad-chat-agent-select,
+  .squad-chat-agent > .squad-chat-agent-select:hover {
+    background: transparent;
+  }
+
+  .squad-chat-filter[aria-pressed='true'] {
+    color: rgb(var(--color-primary));
+    background: color-mix(in srgb, rgb(var(--color-primary)) 9%, rgb(var(--color-bg-surface)));
+    border-color: color-mix(in srgb, rgb(var(--color-primary)) 32%, rgb(var(--color-border)));
+  }
+
+  .dark .squad-chat-filter[aria-pressed='true'] {
+    color: rgb(var(--decoration-4-300));
+  }
+
+  .squad-chat-category {
+    color: rgb(var(--color-text-secondary));
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .squad-chat-agent {
+      transition: none;
+    }
   }
 }

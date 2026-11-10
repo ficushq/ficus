@@ -118,7 +118,7 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
                     onSelectWorkStream(stream.id)
                   }
                 }}
-                className="group cursor-pointer focus-visible:outline-none"
+                className="group cursor-pointer focus-visible:outline-hidden"
               >
                 <foreignObject
                   x={node.x}

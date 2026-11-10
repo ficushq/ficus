@@ -151,7 +151,7 @@ export function Modal({
       ref={overlayRef}
       tabIndex={-1}
       className={clsx(
-        'ficus-modal-backdrop fixed inset-x-0 z-[60] bg-chrome-scrim/50 flex items-center justify-center outline-none',
+        'ficus-modal-backdrop fixed inset-x-0 z-60 bg-chrome-scrim/50 flex items-center justify-center outline-hidden',
         mobileFullscreen && 'mobile-chat-modal',
         overlayClassName
       )}
@@ -179,7 +179,7 @@ export function Modal({
         {!!title && (
           <div className="flex items-start justify-between shrink-0 border-b border-panel-border px-4 py-3">
             <div className="modal-heading flex items-baseline gap-3 min-w-0 flex-1 flex-wrap">
-              <h3 className="min-w-0 font-semibold text-primary break-words">{titleContent ?? title}</h3>
+              <h3 className="min-w-0 font-semibold text-primary wrap-break-word">{titleContent ?? title}</h3>
               {headerExtra}
             </div>
             <div className="flex shrink-0 items-center gap-2">

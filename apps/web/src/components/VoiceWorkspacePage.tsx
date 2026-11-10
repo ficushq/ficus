@@ -53,7 +53,7 @@ export function VoiceWorkspacePage({
 } = {}) {
   if (!supportsRealtimeVoice(environment)) {
     return (
-      <main className="min-h-[100dvh] bg-page text-primary flex items-center justify-center p-8">
+      <main className="min-h-dvh bg-page text-primary flex items-center justify-center p-8">
         <p className="max-w-md text-center text-sm text-muted">
           Voice workspace requires microphone support in a secure browser context. Open Ficus over HTTPS or localhost in
           a browser that supports WebRTC.
@@ -153,7 +153,7 @@ function VoiceWorkspaceSession({
   })
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-page text-primary">
+    <main className="relative min-h-dvh overflow-hidden bg-page text-primary">
       <ArtifactStage artifact={activeArtifact} context={artifactContextQuery.data} />
       <div className="pointer-events-none absolute inset-0 voice-page-glow" />
       <VoiceInputModeControl inputMode={inputMode} onInputModeChange={onInputModeChange} />
@@ -179,7 +179,7 @@ function VoiceWorkspaceSession({
         onStartUserSpeech={startManualSpeech}
         onSubmitUserSpeech={submitUserSpeech}
       />
-      {/* <div className="fixed bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-surface/75 px-3 py-1 text-center text-xs text-muted shadow-sm backdrop-blur-md">
+      {/* <div className="fixed bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-surface/75 px-3 py-1 text-center text-xs text-muted shadow-xs backdrop-blur-md">
         {inputMode === 'manual'
           ? 'Hold the orb or space bar to speak. Release to submit.'
           : 'Listening...'}
@@ -426,11 +426,11 @@ function ArtifactStage({ artifact, context }: { artifact: ArtifactIndexItem | nu
   if (!hasRenderableContent) return null
 
   return (
-    <section className="relative z-0 h-[100dvh] w-full overflow-auto bg-page text-primary">
+    <section className="relative z-0 h-dvh w-full overflow-auto bg-page text-primary">
       <ArtifactRenderer
         entry={entry}
         content={context?.content}
-        className={entry.type === 'presentation' ? undefined : 'h-[100dvh]'}
+        className={entry.type === 'presentation' ? undefined : 'h-dvh'}
         presentationChrome="none"
       />
     </section>
@@ -508,7 +508,7 @@ function VoiceOrb({
         aria-label={actionLabel}
         style={{ '--voice-input-level': Math.max(0, Math.min(inputLevel, 1)) } as CSSProperties}
         className={clsx(
-          'voice-orb group relative h-24 w-24 rounded-full outline-none transition-transform duration-300 disabled:cursor-default disabled:opacity-100',
+          'voice-orb group relative h-24 w-24 rounded-full outline-hidden transition-transform duration-300 disabled:cursor-default disabled:opacity-100',
           canClickOrb && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-decoration-10-200/80',
           isConnected && 'voice-orb--live',
           canInterrupt && 'voice-orb--active',

@@ -53,7 +53,7 @@ export function LinkedChatAccounts() {
       {query.data?.links.map((link) => (
         <div key={link.id} className="flex items-center gap-3 justify-between">
           <div className="min-w-0">
-            <p className="text-sm text-primary break-words">
+            <p className="text-sm text-primary wrap-break-word">
               {link.externalUserName} · {link.instanceName}
             </p>
             <p className="text-xs text-muted break-all">

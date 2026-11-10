@@ -78,7 +78,7 @@ export function PermissionPicker({ value, onChange, disabled = false }: Props) {
           Show selected only
         </label>
       </div>
-      <div className="max-h-[32rem] overflow-y-auto rounded-xl border border-panel-border divide-y divide-panel-border">
+      <div className="max-h-128 overflow-y-auto rounded-xl border border-panel-border divide-y divide-panel-border">
         {groups.map((group) => {
           const open = !!query || selectedOnly || expanded.has(group.resource)
           const count = GROUPS.find((item) => item.resource === group.resource)!.entries.filter((entry) =>

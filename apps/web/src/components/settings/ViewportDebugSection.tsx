@@ -111,7 +111,7 @@ export function ViewportDebugOverlay({ onClose }: { onClose: () => void }) {
   return (
     <div
       data-testid="viewport-debug-overlay"
-      className="fixed left-2 top-1/4 z-[9999] rounded-lg bg-chrome-scrim/85 p-3 font-mono text-[11px] leading-4 text-status-success-300 shadow-lg"
+      className="fixed left-2 top-1/4 z-9999 rounded-lg bg-chrome-scrim/85 p-3 font-mono text-[11px] leading-4 text-status-success-300 shadow-lg"
     >
       <div className="mb-1 flex items-center justify-between gap-4">
         <span className="font-bold text-on-strong">viewport debug</span>

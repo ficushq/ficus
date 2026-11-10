@@ -24,11 +24,23 @@ Glass belongs on app framing and sidebars. Use an approximately 88% surface fill
 
 ## Tokens and implementation
 
-Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/index.css` and `src/theme/builtins.css` define them for every built-in theme and appearance; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Add or change a token before introducing a color; palette utilities and literal colors fail `src/no-raw-colors.test.ts`. See [web themes](theme/README.md).
+Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/index.css` and `src/theme/builtins.css` define them for every built-in theme and appearance; `src/tailwind.css` (the Tailwind 4 theme) exposes them to components; `src/design-system.css` contains explicit shared component roles. Add or change a token before introducing a color; palette utilities and literal colors fail `src/no-raw-colors.test.ts`. See [web themes](theme/README.md).
 
 In the default Ficus theme the light canvas is linen (`#f1e9db`), with a lighter linen reading surface (`#f5f0e6`) and leaf-tinted secondary fills. Dark mode uses a soil canvas (`#1c1a17`), a warmer soil surface (`#2f2a24`), and leaf-tinted control fills. Leaf green (`#3f6b4f`, sage `#9fb57f` in dark mode) is Ficus's primary action and selection color, with terracotta and moss as its secondary and tertiary swatch colors. Iris keeps the original purple; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`. A link's hover color is `text-link-hover` (`--color-link-hover`), which gains contrast in both appearances; `accent-hover` is a button fill that darkens in dark themes, so never use it for text.
 
 Use `ficus-field`, `ficus-nav-item`, and `ficus-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+
+### Tailwind 4 setup
+
+The web app uses Tailwind CSS 4 through `@tailwindcss/postcss` (`postcss.config.js`). There is no `tailwind.config.js`: `src/tailwind.css` holds the CSS-first configuration (class sources, the typography plugin, the class-based `dark` variant, the theme colors and the Tailwind 3 compatibility rules), and `src/index.css` imports it. The theme colors are declared with `@theme inline reference`, so they are inlined into utilities and never emitted as `--color-*` variables, which would collide with the app's own `--color-*` tokens.
+
+The UI was migrated from Tailwind 3 without visual changes, so a few Tailwind 3 behaviors are kept on purpose; keep them when editing the CSS:
+
+- **One cascade for app CSS and utilities.** Tailwind 3 emitted one flat stylesheet in which component rules and utilities competed by specificity. Tailwind 4 uses native cascade layers, where a later layer always wins and unlayered CSS beats every layer. So the app's own rules (`design-system.css`, the element rules in `index.css`, `ResponsiveChat.css`, `SquadAgentThreads.css`) live in the `utilities` layer; only the token definitions and the `html`/`body` rules stay in `base`, ordered around the generated utilities (`@tailwind utilities` inside `index.css`) the way Tailwind 3 ordered them. Put new app CSS in that layer too; unlayered CSS would override every utility.
+- **Defaults.** `src/tailwind.css` restores Tailwind 3's default border, placeholder and ring colors, its font stacks, its absolute font-size line heights, the `hover` variant without the `(hover: hover)` media query, the `space-y` and `divide-y` sibling selectors (with `index.css` cancelling Tailwind 4's own rules), and the form-control, table-cell and search-input defaults that Tailwind 4's preflight changed.
+- **Renamed utilities.** Use the Tailwind 4 names: `shadow-xs`/`shadow-sm` (formerly `shadow-sm`/`shadow`), `rounded-xs` (formerly `rounded-sm`), `outline-hidden` (formerly `outline-none`), `shrink-0`, and the trailing important modifier (`p-0!`). Bare `rounded` stays the 0.5rem control radius.
+
+Tests compile utilities with the production configuration through `src/test/tailwind.ts`. The color parity tests compare against the frozen Tailwind 3 palette in `src/theme/fixtures/tailwind3-palette.json`, because Tailwind 4 changed its own palette.
 
 `ficus-button` is only a base (radius, weight, transitions) with no fill or border. Always pair it with exactly one variant; `components/buttonVariants.guard.test.ts` enforces this:
 

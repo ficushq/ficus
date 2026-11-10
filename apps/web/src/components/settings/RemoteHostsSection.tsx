@@ -364,13 +364,13 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Name"
-            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-40')}
           />
           <input
             value={sshHost}
             onChange={(e) => setSshHost(e.target.value)}
             placeholder="Host"
-            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[10rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-40')}
           />
           <input
             value={sshPort}
@@ -396,7 +396,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Description (optional)"
-            className={clsx('ficus-field', inputClass, 'flex-1 min-w-[12rem]')}
+            className={clsx('ficus-field', inputClass, 'flex-1 min-w-48')}
           />
           <button
             onClick={() => registerMutation.mutate()}

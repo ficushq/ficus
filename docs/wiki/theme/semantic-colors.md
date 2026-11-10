@@ -65,7 +65,7 @@ These do not use the badge token, because they show state rather than a count of
 
 ## Verification and coverage boundary
 
-`theme/semanticParity.test.ts` compiles the real new and old Tailwind utilities and compares fully substituted colors for both appearances, including hover and neutral special cases. `theme-color-opacity.test.ts` also checks `/25`, `/50`, and `/100` without double alpha. Identity contrast remains ≥4.5:1 on both original and actual app surfaces. Component tests pin token routing, not concrete palette utility names.
+`theme/semanticParity.test.ts` compiles the real new Tailwind utilities and compares their fully substituted colors with the old palette utilities (the frozen Tailwind 3 palette in `theme/fixtures/tailwind3-palette.json`) for both appearances, including hover and neutral special cases. `theme-color-opacity.test.ts` also checks `/25`, `/50`, and `/100` without double alpha. Identity contrast remains ≥4.5:1 on both original and actual app surfaces. Component tests pin token routing, not concrete palette utility names.
 
 No legacy-file waiver remains: every app-owned color resolves through a registered token. Status tone steps retain the exact old control palette without changing lifecycle classifications; decorative ramps remain separate for indigo/pink/rose/emerald/violet identity surfaces. Voice material, log viewers, brand assets and black/white chrome are also tokenized. See [complete coverage](complete-coverage.md) for the closed exception list and verification boundary.
 
@@ -77,19 +77,20 @@ Use `border-th-border` for neutral separators, alongside a width such as
 colors (`border-t-status-danger-600`), variants (`hover:border-th-border-hover`,
 `md:focus:border-th-border/50`) and numeric opacity modifiers are supported.
 
-The web app's locked Tailwind 3 compiler emits **no rule** for
-`border-current/20` (or `/25`); plain `border-current` does emit `currentColor`.
-A width utility alone therefore remains without the intended color override.
-This is a compiler-output fact for this app, not a ban on opacity modifiers or
-an assertion about another Tailwind version. Prefer a semantic neutral border
-rather than trying to fade the surrounding text color.
+Under Tailwind 3 the web app's compiler emitted **no rule** for
+`border-current/20`, so a width utility alone kept the default border color.
+Tailwind 4 emits it (a `color-mix()` of `currentColor`), but a semantic neutral
+border is still preferred over fading the surrounding text color. A misspelled
+themed color such as `border-th-typo` still emits nothing, which is what the
+guard catches.
 
-`apps/web/src/border-utilities.guard.test.ts` checks actual CSS emission using
-the production `postcss.config.js` plugin chain and `tailwind.config.js`, including
-its plugins. Only content discovery is replaced with the collected candidates;
-the input is the utility-generation directive, not a second compiler or a
-handwritten list of valid classes. It checks for a border-color declaration
-under the exact generated class selector, including variant selectors.
+`apps/web/src/border-utilities.guard.test.ts` checks actual CSS emission with
+the production Tailwind configuration (`src/tailwind.css`, including its
+plugins), through `src/test/tailwind.ts`. Only content discovery is replaced with
+the collected candidates; the input is the utility-generation directive, not a
+second compiler or a handwritten list of valid classes. It checks for a
+border-color declaration under the exact generated class selector, including
+variant selectors.
 
 The bounded source scan covers complete literal `border-th-*`, `border-status-*`
 and `border-current` tokens (including directional forms, simple variants,

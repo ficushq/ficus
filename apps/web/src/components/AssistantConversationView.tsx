@@ -329,7 +329,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
 
   const questions = data && (
     <div
-      className="min-w-0 space-y-2 px-3 py-2 [overflow-wrap:anywhere]"
+      className="min-w-0 space-y-2 px-3 py-2 wrap-anywhere"
       data-assistant-questions
       aria-label="Assistant questions"
     >
@@ -411,7 +411,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
   )
   return (
     <div
-      className="flex flex-1 min-h-0 min-w-0 max-w-full flex-col overflow-hidden [overflow-wrap:anywhere]"
+      className="flex flex-1 min-h-0 min-w-0 max-w-full flex-col overflow-hidden wrap-anywhere"
       style={{ display: props.visible ? undefined : 'none' }}
     >
       {voice.isLiveAudio && (

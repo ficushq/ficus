@@ -119,7 +119,7 @@ export function DecisionTryResult({
         {outcome.errors.length > 0 && (
           <ul className="space-y-1">
             {outcome.errors.map((failure, index) => (
-              <li key={`${failure.providerId}-${index}`} className="break-words text-xs text-secondary">
+              <li key={`${failure.providerId}-${index}`} className="wrap-break-word text-xs text-secondary">
                 <span className="font-medium text-primary">{providerName(providers, failure.providerId)}:</span>{' '}
                 <span className="text-status-danger-600 dark:text-status-danger-400">{failure.error}</span>
               </li>

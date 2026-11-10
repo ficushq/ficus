@@ -70,7 +70,7 @@ export function MobileChatOptionsSheet({
     <Presence
       open={open}
       ref={layerRef}
-      className="mobile-chat-options md:hidden fixed inset-x-0 z-[70] flex items-end bg-chrome-scrim/40"
+      className="mobile-chat-options md:hidden fixed inset-x-0 z-70 flex items-end bg-chrome-scrim/40"
       onClick={(event) => {
         event.stopPropagation()
         if (event.target === event.currentTarget) onClose()
@@ -78,7 +78,7 @@ export function MobileChatOptionsSheet({
     >
       <div
         ref={panelRef}
-        className="mobile-chat-options-panel ficus-overlay relative w-full max-h-full overflow-y-auto overscroll-contain rounded-t-2xl border border-th-border bg-surface p-3 outline-none"
+        className="mobile-chat-options-panel ficus-overlay relative w-full max-h-full overflow-y-auto overscroll-contain rounded-t-2xl border border-th-border bg-surface p-3 outline-hidden"
         role="dialog"
         aria-modal="true"
         aria-label="Attach or change controls"

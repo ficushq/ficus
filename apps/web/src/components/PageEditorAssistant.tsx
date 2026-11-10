@@ -181,7 +181,7 @@ export function PageEditorAssistant({
   const useRealtime = realtime && can('ai:voice')
   return (
     <section
-      className="flex min-w-0 flex-col rounded-xl border border-th-border bg-surface h-[28rem] shrink-0 lg:h-auto lg:shrink lg:flex-1 min-h-0 overflow-hidden"
+      className="flex min-w-0 flex-col rounded-xl border border-th-border bg-surface h-112 shrink-0 lg:h-auto lg:shrink lg:flex-1 min-h-0 overflow-hidden"
       aria-label="Design conversation"
     >
       <header className="shrink-0 p-3 border-b border-th-border space-y-2">
@@ -210,7 +210,7 @@ export function PageEditorAssistant({
       {syncError && (
         <p
           role="alert"
-          className="max-h-28 shrink-0 overflow-y-auto break-words p-3 text-sm text-status-danger-600 dark:text-status-danger-400"
+          className="max-h-28 shrink-0 overflow-y-auto wrap-break-word p-3 text-sm text-status-danger-600 dark:text-status-danger-400"
         >
           {summarizeAssistantError(syncError)}{' '}
           <button type="button" onClick={() => void sync().catch(() => {})}>

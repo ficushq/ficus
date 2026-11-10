@@ -34,7 +34,7 @@ const LEVEL_LABEL: Record<AttentionLevel, string> = { mute: 'Mute', show: 'Show'
 // The radio itself is `sr-only`, and `clip: rect(0,0,0,0)` would clip its focus outline away, so
 // the visible label wears the ring while the hidden input holds the keyboard focus.
 const LABEL_FOCUS_RING =
-  'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus'
+  'has-focus-visible:outline-solid has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus'
 
 const SUMMARY_LABEL: Record<AttentionLevel | 'custom', string> = {
   notify: 'Notify',
@@ -255,7 +255,7 @@ export function AttentionMenu({
         <div className="p-3">{panel}</div>
       ) : (
         // `ficus-overlay` + `bg-surface` is the repo's popover surface. (`bg-surface-primary` is not a defined
-        // token — there is no `surface.primary` in tailwind.config.js — and once left the panel transparent.)
+        // token — there is no `--color-surface-primary` in src/tailwind.css — and once left the panel transparent.)
         <Panel
           {...hover.popoverProps}
           id={panelId}

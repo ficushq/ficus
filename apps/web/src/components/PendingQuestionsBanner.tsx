@@ -80,8 +80,8 @@ export function PendingQuestionsBanner({ questions, className, dependencies }: P
           // attention tint (translucent in dark themes) is a gradient layer over the opaque surface.
           // The ghost hover rule resets `background`, so the hover tint is restated as a hover utility.
           'ficus-button ficus-button-ghost flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-status-attention-border px-3 py-2 text-left text-sm shadow-md',
-          'bg-surface bg-gradient-to-r from-status-attention-surface to-status-attention-surface',
-          'hover:bg-surface-hover hover:bg-gradient-to-r hover:from-status-attention-badge-surface hover:to-status-attention-badge-surface',
+          'bg-surface bg-linear-to-r from-status-attention-surface to-status-attention-surface',
+          'hover:bg-surface-hover hover:bg-linear-to-r hover:from-status-attention-badge-surface hover:to-status-attention-badge-surface',
           className
         )}
         aria-label={label}

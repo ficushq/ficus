@@ -157,7 +157,7 @@ test('tabs and More draw an inset focus ring so the scrolling row cannot clip it
     container.querySelector<HTMLElement>('[aria-label="More squad tools"]')!,
   ]
   expect(controls).toHaveLength(3)
-  for (const control of controls) expect(control.classList.contains('focus-visible:outline-offset-[-2px]')).toBe(true)
+  for (const control of controls) expect(control.classList.contains('focus-visible:-outline-offset-2')).toBe(true)
   // A focused tab partly past the scroller's edge is brought fully into view, ring included.
   const scrolls: unknown[] = []
   const tab = controls[1]!

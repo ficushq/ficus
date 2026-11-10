@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import postcss from 'postcss'
-import tailwindcss from 'tailwindcss'
-import tailwindConfig from '../../tailwind.config.js'
+import { compileUtilities, utilityDeclarations } from '../test/tailwind'
+import palette from './fixtures/tailwind3-palette.json'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -160,48 +160,31 @@ describe('default content palette parity', () => {
   }
 
   test('generated component utilities retain fully substituted colors and human-code alpha', async () => {
+    // The legacy side is what the pre-migration classes painted (named in comments), from the
+    // frozen Tailwind 3 palette: Tailwind 4 changed its own palette.
     const pairs = [
-      ['bg-[#0e0f1a]', 'bg-[rgb(var(--term-bg))]', 'background-color'],
-      ['bg-[#1e1e1e]', 'bg-[rgb(var(--syntax-image-bg))]', 'background-color'],
-      ['text-red-500', 'text-[rgb(var(--syntax-error-fg))]', 'color'],
-      ['bg-gray-700', 'bg-[rgb(var(--term-loading-bg))]', 'background-color'],
+      ['#0e0f1a', 'bg-[rgb(var(--term-bg))]', 'background-color'], // bg-[#0e0f1a]
+      ['#1e1e1e', 'bg-[rgb(var(--syntax-image-bg))]', 'background-color'], // bg-[#1e1e1e]
+      [palette.red['500'], 'text-[rgb(var(--syntax-error-fg))]', 'color'], // text-red-500
+      [palette.gray['700'], 'bg-[rgb(var(--term-loading-bg))]', 'background-color'], // bg-gray-700
       // Phase 5 approved muted ink replaces gray-500; other utility pairs retain parity.
-      ['text-[#767d8b]', 'text-[rgb(var(--term-muted))]', 'color'],
-      ['prose-a:text-blue-200', 'prose-a:text-[rgb(var(--syntax-human-link))]', 'color'],
-      ['prose-code:text-blue-100', 'prose-code:text-[rgb(var(--syntax-human-code-fg))]', 'color'],
+      ['#767d8b', 'text-[rgb(var(--term-muted))]', 'color'], // text-[#767d8b]
+      [palette.blue['200'], 'prose-a:text-[rgb(var(--syntax-human-link))]', 'color'], // prose-a:text-blue-200
+      [palette.blue['100'], 'prose-code:text-[rgb(var(--syntax-human-code-fg))]', 'color'], // prose-code:text-blue-100
       [
-        'prose-code:bg-blue-700/50',
+        `${palette.blue['700']}80`, // prose-code:bg-blue-700/50
         'prose-code:bg-[rgb(var(--custom-rgb-syntax-human-code-bg,var(--syntax-human-code-bg))/calc(var(--custom-alpha-syntax-human-code-bg,1)*0.5))]',
         'background-color',
       ],
     ] as const
-    const compiled = await postcss([
-      tailwindcss({
-        ...tailwindConfig,
-        content: [{ raw: pairs.flatMap(([before, after]) => [before, after]).join(' '), extension: 'html' }],
-      }),
-    ]).process('@tailwind utilities', { from: undefined })
-    const generated: Record<string, Record<string, string>> = {}
-    compiled.root.walkRules((rule) => {
-      // Keep the utility itself, dropping typography's descendant selector.
-      const utility = rule.selector
-        .replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-        .replaceAll('\\', '')
-        .split(' :is')[0]!
-        .slice(1)
-      const declarations: Record<string, string> = {}
-      rule.walkDecls((decl) => {
-        declarations[decl.prop] = decl.value
-      })
-      generated[utility] = declarations
-    })
+    // Keyed by the utility itself; typography variants add a descendant selector after it.
+    const generated = utilityDeclarations(await compileUtilities(pairs.map(([, after]) => after)))
     for (const variables of Object.values(scopes)) {
       for (const [before, after, property] of pairs) {
-        expect(generated[before]).toBeDefined()
-        expect(generated[after]).toBeDefined()
-        expect(normalizeColors(substitute(generated[after]![property]!, { ...variables, ...generated[after] }))).toBe(
-          normalizeColors(substitute(generated[before]![property]!, { ...variables, ...generated[before] }))
-        )
+        expect(generated.get(after)).toBeDefined()
+        expect(
+          normalizeColors(substitute(generated.get(after)![property]!, { ...variables, ...generated.get(after) }))
+        ).toBe(normalizeColors(before))
       }
     }
   })

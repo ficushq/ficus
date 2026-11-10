@@ -89,7 +89,7 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
               <p
                 className={clsx(
                   'font-medium text-primary',
-                  compact ? 'text-xs truncate' : 'text-sm leading-relaxed line-clamp-2 break-words'
+                  compact ? 'text-xs truncate' : 'text-sm leading-relaxed line-clamp-2 wrap-break-word'
                 )}
               >
                 {message.subject}
@@ -231,7 +231,7 @@ export function SectionHeader({ title, count, collapsible, collapsed, onToggle }
         aria-expanded={!collapsed}
         className={clsx(
           'ficus-button ficus-button-ghost',
-          'w-full rounded-lg pl-6 pr-3 py-2 text-left focus-visible:outline-offset-[-2px]'
+          'w-full rounded-lg pl-6 pr-3 py-2 text-left focus-visible:-outline-offset-2'
         )}
       >
         {content}

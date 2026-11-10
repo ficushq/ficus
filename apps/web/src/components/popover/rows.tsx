@@ -18,7 +18,7 @@ export function PopoverRowContent({
   return (
     <>
       {icon}
-      <span className="min-w-0 flex-1 break-words">
+      <span className="min-w-0 flex-1 wrap-break-word">
         <span>{label}</span>
         {description && (
           <span id={descriptionId} className="mt-1 block text-xs font-normal text-secondary">

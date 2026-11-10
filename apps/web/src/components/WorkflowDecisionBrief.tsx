@@ -25,7 +25,7 @@ export function WorkflowDecisionBrief({
   const brief = workflowReviewBriefForAttempt(run, attempt)
   if (brief.kind === 'legacy') return null
   return (
-    <article aria-label="Decision brief" className="space-y-5 [overflow-wrap:anywhere]">
+    <article aria-label="Decision brief" className="space-y-5 wrap-anywhere">
       <h2 className="text-lg font-semibold text-primary">Decision brief</h2>
       {brief.kind === 'none' && <p className="text-sm text-secondary">No decision brief for this gate</p>}
       {[...brief.sources, ...(brief.carriedSources ?? [])].map((source) => (

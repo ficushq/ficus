@@ -11,7 +11,7 @@ export function AssistantPositionControl({
   return (
     <label
       title="Move assistant"
-      className="relative flex h-8 w-6 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover focus-within:outline focus-within:outline-2 focus-within:outline-accent"
+      className="relative flex h-8 w-6 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover focus-within:outline-solid focus-within:outline-2 focus-within:outline-accent"
     >
       <DragHandleIcon className="h-4 w-4" />
       <select

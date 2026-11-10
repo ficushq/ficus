@@ -90,7 +90,7 @@ export function WorkflowRevisionChanges({
                   ['Now', now],
                 ] as const
               ).map(([heading, text]) => (
-                <div key={heading} className="min-w-0 [overflow-wrap:anywhere]">
+                <div key={heading} className="min-w-0 wrap-anywhere">
                   <p className="mb-0.5 text-xs font-medium text-muted">{heading}</p>
                   {text ? (
                     <MarkdownContent variant="document" className="text-sm leading-relaxed text-primary">

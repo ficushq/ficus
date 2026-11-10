@@ -404,7 +404,7 @@ export function NotificationsConfigSection() {
                 {canWrite && notificationFieldActions(`rules.${ruleTemplateKey(rule)}`)}
               </div>
               {rule.match && (
-                <pre className="mt-1 whitespace-pre-wrap break-words">{JSON.stringify(rule.match, null, 2)}</pre>
+                <pre className="mt-1 whitespace-pre-wrap wrap-break-word">{JSON.stringify(rule.match, null, 2)}</pre>
               )}
             </div>
           ))}

@@ -124,7 +124,7 @@ export function InlineActionNotice({
       role="status"
       aria-live="polite"
       data-inline-action-notice
-      className="fixed bottom-6 left-1/2 z-[70] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg border border-th-border bg-surface px-3 py-2 text-sm shadow-theme-lg"
+      className="fixed bottom-6 left-1/2 z-70 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg border border-th-border bg-surface px-3 py-2 text-sm shadow-theme-lg"
     >
       <span>{message}</span>
       <button

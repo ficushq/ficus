@@ -86,10 +86,7 @@ export function AssistantUpdateChip({
       {open && (
         <ul id={panelId} className="mt-1 space-y-1">
           {updates.map((update) => (
-            <li
-              key={update.messageId}
-              className="rounded-xl bg-surface-secondary px-3 py-2 text-sm [overflow-wrap:anywhere]"
-            >
+            <li key={update.messageId} className="rounded-xl bg-surface-secondary px-3 py-2 text-sm wrap-anywhere">
               <AssistantUpdateCard update={update} fullBody />
             </li>
           ))}

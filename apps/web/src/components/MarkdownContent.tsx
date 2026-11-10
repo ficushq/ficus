@@ -39,10 +39,14 @@ export function MarkdownContent({
   /** Shorten bare GitHub PR URLs in compact action summaries, preserving explicit labels. */
   compactPullRequestLinks?: boolean
 }) {
+  // A caller's own size modifier (prose-base) replaces the default prose-sm. Tailwind 3 let the later
+  // modifier win when both were present; Tailwind 4 orders them differently, so never send both.
+  const sized = /(?:^|\s)prose-(?:base|lg|xl|2xl)(?:\s|$)/.test(className ?? '')
   return (
     <div
       className={clsx(
-        'prose prose-sm max-w-none',
+        'prose max-w-none',
+        !sized && 'prose-sm',
         variant === 'human' ? 'prose-on-accent' : 'prose-gray dark:prose-invert',
         variant === 'document' && 'prose-document',
         className
@@ -100,7 +104,7 @@ function AttachmentOrRemoteLink({ children, ...props }: ComponentProps<'a'>) {
 
 function Pre({ children, ...props }: ComponentProps<'pre'>) {
   return (
-    <pre {...props} className="!bg-transparent !p-0">
+    <pre {...props} className="bg-transparent! p-0!">
       {children}
     </pre>
   )
@@ -134,7 +138,7 @@ function Code({ className, children, ...props }: ComponentProps<'code'>) {
 // Scroll tables horizontally if necessary.
 const Table: Components['table'] = ({ children, className, ...props }) => (
   <div className="overflow-x-auto px-2">
-    <table {...props} className={clsx('ficus-table', '!min-w-max !my-2', className)}>
+    <table {...props} className={clsx('ficus-table', 'min-w-max! my-2!', className)}>
       {children}
     </table>
   </div>

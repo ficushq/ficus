@@ -929,7 +929,7 @@ export function ProviderAccountsList({
                     autoFocus
                   />
                 ) : (
-                  <span className="block break-words text-sm font-medium text-primary">
+                  <span className="block wrap-break-word text-sm font-medium text-primary">
                     {account.label || account.id}
                   </span>
                 )}
@@ -1534,7 +1534,7 @@ export function DeviceCodeStep({
       <p className="text-xs text-muted">Open the verification page and enter this code:</p>
       <div className="flex items-center gap-2">
         <div className="flex min-h-7 items-center font-mono text-lg text-primary tracking-widest">
-          {need ? need.userCode : <SkeletonLine className="h-6 w-40 !bg-th-border" />}
+          {need ? need.userCode : <SkeletonLine className="h-6 w-40 bg-th-border!" />}
         </div>
         <button
           onClick={copyCode}
@@ -1560,11 +1560,11 @@ export function DeviceCodeStep({
             {need.verificationUri}
           </a>
         ) : (
-          <SkeletonLine className="h-4 w-64 max-w-full !bg-th-border" />
+          <SkeletonLine className="h-4 w-64 max-w-full bg-th-border!" />
         )}
       </div>
       {!need ? (
-        <SkeletonLine className="h-4 w-28 !bg-th-border" />
+        <SkeletonLine className="h-4 w-28 bg-th-border!" />
       ) : need.expiresInSeconds ? (
         <p className="text-xs text-muted">
           Expires in{' '}

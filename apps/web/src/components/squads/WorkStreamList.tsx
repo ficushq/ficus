@@ -394,7 +394,7 @@ export function WorkStreamList({
     <>
       {renderExplorer(true, false)}
       <Modal isOpen onClose={exitFullscreen} title="Work Stream Graph" size="default" maxWidth="wide" noChildPadding>
-        <div ref={fullscreenContentRef} tabIndex={-1} className="min-h-0 outline-none">
+        <div ref={fullscreenContentRef} tabIndex={-1} className="min-h-0 outline-hidden">
           {renderExplorer(false, true)}
         </div>
       </Modal>
@@ -422,7 +422,7 @@ function StatusColumn({
   onLoadMore?: () => void
 }) {
   return (
-    <div className="flex-shrink-0 w-64 flex flex-col min-h-0 h-full">
+    <div className="shrink-0 w-64 flex flex-col min-h-0 h-full">
       <div
         className={clsx(
           'rounded-lg p-3 flex flex-col min-h-0 h-full',

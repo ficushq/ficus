@@ -134,7 +134,7 @@ function formatRelativeTime(date: Date | string): string {
 
 // On phones a 24px line height gives these compact links a touch-sized target, with the text centred in it.
 const workLinkClass =
-  'pointer-events-auto relative whitespace-nowrap rounded-sm max-md:leading-6 text-secondary hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
+  'pointer-events-auto relative whitespace-nowrap rounded-xs max-md:leading-6 text-secondary hover:text-primary hover:underline focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-1'
 
 /**
  * The work stream number (plus `+N` for further streams) opening the agent's most relevant work stream
@@ -192,7 +192,7 @@ function AgentWorkStreamLink({ primary, others, href }: { primary: WorkStream; o
           aria-hidden="true"
           tabIndex={-1}
           data-testid="agent-row-more-work-streams"
-          className={clsx(workLinkClass, 'min-w-0 shrink-[10000] truncate')}
+          className={clsx(workLinkClass, 'min-w-0 shrink-10000 truncate')}
         >
           +{others.length}
         </Link>
@@ -1140,7 +1140,7 @@ export function SquadAgentThreads({
             aria-valuemax={CHAT_SIDEBAR_MAX_WIDTH}
             tabIndex={0}
             title="Drag to resize · double-click to reset"
-            className="group hidden md:flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center rounded-md focus-visible:outline-none"
+            className="group hidden md:flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center rounded-md focus-visible:outline-hidden"
             {...sidebar.handle}
           >
             <span

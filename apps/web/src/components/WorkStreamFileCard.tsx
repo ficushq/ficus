@@ -131,7 +131,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
         isOpen={isFullscreen}
         onClose={exitFullscreen}
         title={fileName}
-        overlayClassName="!border-0"
+        overlayClassName="border-0!"
         headerExtra={<span className="text-xs text-muted bg-surface-secondary px-2 py-0.5 rounded">{contentType}</span>}
         maxWidth="readable"
       >
@@ -234,7 +234,7 @@ export function StoredAssetList({
           setOpen(null)
         }}
         title={open?.filename ?? ''}
-        overlayClassName="!border-0"
+        overlayClassName="border-0!"
         maxWidth="readable"
       >
         {open && <AttachmentView key={open.id} workStreamId={workStreamId} attachment={open} />}

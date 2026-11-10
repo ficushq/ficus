@@ -126,7 +126,7 @@ export function SpendBreakdownTable({
             <tbody>
               {rows.map((row) => (
                 <tr key={`${row.key ?? ''}|${row.key2 ?? ''}`}>
-                  <td className="break-words">
+                  <td className="wrap-break-word">
                     {dimension ? (
                       <button
                         type="button"
@@ -144,7 +144,7 @@ export function SpendBreakdownTable({
                     </span>
                   </td>
                   {second && (
-                    <td className="break-words">
+                    <td className="wrap-break-word">
                       <button
                         type="button"
                         className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-left"

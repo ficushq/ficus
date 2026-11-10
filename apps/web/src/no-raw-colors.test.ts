@@ -36,7 +36,7 @@ const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {
   ],
   'palette-lookup': [],
   'literal-hex': ['components/settings/CustomThemeEditor.tsx', 'components/FicusLogo.tsx'],
-  'color-function': ['theme/flash.ts'],
+  'color-function': ['theme/flash.ts', 'tailwind.css'],
   'inline-color-style': ['components/squads/SquadUniverse.tsx'],
 }
 const ENTRY_REASONS: Readonly<Record<string, string>> = {
@@ -46,6 +46,8 @@ const ENTRY_REASONS: Readonly<Record<string, string>> = {
     'Only sandboxed HTML canvas is exempt; surrounding presentation chrome is tokenized.',
   'components/settings/CustomThemeEditor.tsx': 'Theme-authoring sample and contrast endpoints, not app chrome.',
   'theme/flash.ts': 'Minimal pre-CSS builtin surface definitions, verified against authored CSS.',
+  'tailwind.css':
+    "Tailwind 3's default border, placeholder and ring colors, kept so Tailwind 4 renders the UI as before.",
   'components/squads/SquadUniverse.tsx': 'Hovered-node swatch comes from the live graph/status token reader.',
   'components/FicusLogo.tsx':
     'The brand mark is fixed identity artwork (brand/ficus-mark*.svg) — it renders its own palette by resolved light/dark appearance, not the selected in-app theme.',
@@ -87,6 +89,15 @@ describe('no-raw-colors guard', () => {
     expect(flash).toHaveLength(15)
     expect(flash.every(({ category }) => category === 'color-function')).toBe(true)
   })
+
+  test('the Tailwind configuration keeps only the three Tailwind 3 default colors', () => {
+    const config = scanSourceForRawColors('tailwind.css', readFileSync(join(srcRoot, 'tailwind.css'), 'utf8'))
+    expect(config.map(({ category, match }) => ({ category, match }))).toEqual([
+      { category: 'color-function', match: 'rgb(59 130 246 / 0.5);' },
+      { category: 'color-function', match: 'rgb(229 231 235);' },
+      { category: 'color-function', match: 'rgb(156 163 175);' },
+    ])
+  })
   test('every raw-color category in apps/web/src is allowlisted (no NEW violations)', () => {
     const files = [...new Bun.Glob('**/*.{ts,tsx,js,jsx,css}').scanSync({ cwd: srcRoot })]
       .filter((path) => !isTestArtifact(path))
@@ -118,9 +129,9 @@ describe('no-raw-colors guard', () => {
     }
 
     expect(
-      `NEW raw colors (use theme tokens; see src/index.css + tailwind.config.js):\n${offenders.join('\n')}\nSTALE allowlist entries (migrated files must be removed from the allowlist):\n${stale.join('\n')}`
+      `NEW raw colors (use theme tokens; see src/index.css + src/tailwind.css):\n${offenders.join('\n')}\nSTALE allowlist entries (migrated files must be removed from the allowlist):\n${stale.join('\n')}`
     ).toBe(
-      `NEW raw colors (use theme tokens; see src/index.css + tailwind.config.js):\n\nSTALE allowlist entries (migrated files must be removed from the allowlist):\n`
+      `NEW raw colors (use theme tokens; see src/index.css + src/tailwind.css):\n\nSTALE allowlist entries (migrated files must be removed from the allowlist):\n`
     )
   })
 

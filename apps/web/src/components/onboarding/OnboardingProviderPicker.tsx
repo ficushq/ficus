@@ -117,7 +117,7 @@ export function OnboardingProviderPicker({
             <span className="min-w-0 flex-1">
               {selectedOther ? (
                 <>
-                  <span className="block break-words font-medium text-primary">{selectedOther.name}</span>
+                  <span className="block wrap-break-word font-medium text-primary">{selectedOther.name}</span>
                   <span className="mt-0.5 block text-xs text-muted">
                     From more providers · <span className="text-accent-light">Change</span>
                   </span>
@@ -191,7 +191,7 @@ function ProviderChoiceCard({
         <ProviderLogo providerId={option.id} className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block break-words font-medium text-primary">{option.name}</span>
+        <span className="block wrap-break-word font-medium text-primary">{option.name}</span>
         {option.description && (
           <span id={descriptionId} className="mt-0.5 block text-xs text-muted">
             {option.description}
@@ -291,14 +291,14 @@ function ProviderSearchModal({
                     <span className="min-w-0 flex-1">
                       <span
                         className={clsx(
-                          'block break-words text-sm font-medium',
+                          'block wrap-break-word text-sm font-medium',
                           selected ? 'text-accent-light' : 'text-primary'
                         )}
                       >
                         {option.name}
                       </span>
                       {option.description && (
-                        <span className="block break-words text-xs text-muted">{option.description}</span>
+                        <span className="block wrap-break-word text-xs text-muted">{option.description}</span>
                       )}
                     </span>
                     {selected && <CheckIcon className="h-4 w-4 shrink-0 text-accent-light" />}

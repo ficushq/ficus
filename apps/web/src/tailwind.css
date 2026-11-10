@@ -1,0 +1,960 @@
+/* Tailwind 4 configuration (CSS-first; replaces tailwind.config.js). index.css imports this after
+   Tailwind's own stylesheet. Tests compile it with only the utilities they check (src/test/tailwind.ts). */
+
+/* The class sources Tailwind 3 scanned (its content setting); test files under src are included. */
+@source '../index.html';
+@source './**/*.{js,ts,jsx,tsx}';
+
+@plugin '@tailwindcss/typography';
+
+/* Theme scopes put the literal `dark` class on <html>, matching Tailwind 3's darkMode: 'class'. */
+@custom-variant dark (&:is(.dark *));
+
+/* Tailwind 3 applied hover: on every device, so a tap on a touch screen shows hover styles (some
+   controls are revealed by group-hover). Keep that instead of Tailwind 4's (hover: hover) query. */
+@custom-variant hover (&:hover);
+
+/* Semantic theme colors. Token values in the scopes below (and theme/builtins.css) are RGB channel
+   triplets; custom themes override them through --custom-rgb-* / --custom-alpha-* pairs, and some
+   tokens carry an intrinsic --opacity-* that multiplies the requested alpha. Opacity modifiers
+   (bg-surface/50) multiply that alpha through color-mix(), so plain and modified utilities always
+   resolve to a valid color. Guarded by src/theme-color-opacity.test.ts.
+
+   `inline reference` inlines each value into its utilities and never emits these as variables:
+   several utility names (primary, focus, overlay, panel-border, ...) would otherwise define a
+   --color-* variable that collides with the app's own --color-* tokens of the same name. */
+@theme inline reference {
+  --color-chrome-paper: rgb(var(--custom-rgb-chrome-paper, var(--chrome-paper)) / var(--custom-alpha-chrome-paper, 1));
+  --color-chrome-scrim: rgb(var(--custom-rgb-chrome-scrim, var(--chrome-scrim)) / var(--custom-alpha-chrome-scrim, 1));
+  --color-chrome-highlight: rgb(
+    var(--custom-rgb-chrome-highlight, var(--chrome-highlight)) / var(--custom-alpha-chrome-highlight, 1)
+  );
+  --color-on-strong: rgb(var(--custom-rgb-on-strong, var(--on-strong)) / var(--custom-alpha-on-strong, 1));
+  --color-chrome-toggle-thumb: rgb(
+    var(--custom-rgb-chrome-toggle-thumb, var(--chrome-toggle-thumb)) / var(--custom-alpha-chrome-toggle-thumb, 1)
+  );
+  --color-status-progress-50: rgb(
+    var(--custom-rgb-status-progress-50, var(--status-progress-50)) / var(--custom-alpha-status-progress-50, 1)
+  );
+  --color-status-progress-100: rgb(
+    var(--custom-rgb-status-progress-100, var(--status-progress-100)) / var(--custom-alpha-status-progress-100, 1)
+  );
+  --color-status-progress-200: rgb(
+    var(--custom-rgb-status-progress-200, var(--status-progress-200)) / var(--custom-alpha-status-progress-200, 1)
+  );
+  --color-status-progress-300: rgb(
+    var(--custom-rgb-status-progress-300, var(--status-progress-300)) / var(--custom-alpha-status-progress-300, 1)
+  );
+  --color-status-progress-400: rgb(
+    var(--custom-rgb-status-progress-400, var(--status-progress-400)) / var(--custom-alpha-status-progress-400, 1)
+  );
+  --color-status-progress-500: rgb(
+    var(--custom-rgb-status-progress-500, var(--status-progress-500)) / var(--custom-alpha-status-progress-500, 1)
+  );
+  --color-status-progress-600: rgb(
+    var(--custom-rgb-status-progress-600, var(--status-progress-600)) / var(--custom-alpha-status-progress-600, 1)
+  );
+  --color-status-progress-700: rgb(
+    var(--custom-rgb-status-progress-700, var(--status-progress-700)) / var(--custom-alpha-status-progress-700, 1)
+  );
+  --color-status-progress-800: rgb(
+    var(--custom-rgb-status-progress-800, var(--status-progress-800)) / var(--custom-alpha-status-progress-800, 1)
+  );
+  --color-status-progress-900: rgb(
+    var(--custom-rgb-status-progress-900, var(--status-progress-900)) / var(--custom-alpha-status-progress-900, 1)
+  );
+  --color-status-progress-950: rgb(
+    var(--custom-rgb-status-progress-950, var(--status-progress-950)) / var(--custom-alpha-status-progress-950, 1)
+  );
+  --color-status-queue-50: rgb(
+    var(--custom-rgb-status-queue-50, var(--status-queue-50)) / var(--custom-alpha-status-queue-50, 1)
+  );
+  --color-status-queue-100: rgb(
+    var(--custom-rgb-status-queue-100, var(--status-queue-100)) / var(--custom-alpha-status-queue-100, 1)
+  );
+  --color-status-queue-200: rgb(
+    var(--custom-rgb-status-queue-200, var(--status-queue-200)) / var(--custom-alpha-status-queue-200, 1)
+  );
+  --color-status-queue-300: rgb(
+    var(--custom-rgb-status-queue-300, var(--status-queue-300)) / var(--custom-alpha-status-queue-300, 1)
+  );
+  --color-status-queue-400: rgb(
+    var(--custom-rgb-status-queue-400, var(--status-queue-400)) / var(--custom-alpha-status-queue-400, 1)
+  );
+  --color-status-queue-500: rgb(
+    var(--custom-rgb-status-queue-500, var(--status-queue-500)) / var(--custom-alpha-status-queue-500, 1)
+  );
+  --color-status-queue-600: rgb(
+    var(--custom-rgb-status-queue-600, var(--status-queue-600)) / var(--custom-alpha-status-queue-600, 1)
+  );
+  --color-status-queue-700: rgb(
+    var(--custom-rgb-status-queue-700, var(--status-queue-700)) / var(--custom-alpha-status-queue-700, 1)
+  );
+  --color-status-queue-800: rgb(
+    var(--custom-rgb-status-queue-800, var(--status-queue-800)) / var(--custom-alpha-status-queue-800, 1)
+  );
+  --color-status-queue-900: rgb(
+    var(--custom-rgb-status-queue-900, var(--status-queue-900)) / var(--custom-alpha-status-queue-900, 1)
+  );
+  --color-status-queue-950: rgb(
+    var(--custom-rgb-status-queue-950, var(--status-queue-950)) / var(--custom-alpha-status-queue-950, 1)
+  );
+  --color-status-review-50: rgb(
+    var(--custom-rgb-status-review-50, var(--status-review-50)) / var(--custom-alpha-status-review-50, 1)
+  );
+  --color-status-review-100: rgb(
+    var(--custom-rgb-status-review-100, var(--status-review-100)) / var(--custom-alpha-status-review-100, 1)
+  );
+  --color-status-review-200: rgb(
+    var(--custom-rgb-status-review-200, var(--status-review-200)) / var(--custom-alpha-status-review-200, 1)
+  );
+  --color-status-review-300: rgb(
+    var(--custom-rgb-status-review-300, var(--status-review-300)) / var(--custom-alpha-status-review-300, 1)
+  );
+  --color-status-review-400: rgb(
+    var(--custom-rgb-status-review-400, var(--status-review-400)) / var(--custom-alpha-status-review-400, 1)
+  );
+  --color-status-review-500: rgb(
+    var(--custom-rgb-status-review-500, var(--status-review-500)) / var(--custom-alpha-status-review-500, 1)
+  );
+  --color-status-review-600: rgb(
+    var(--custom-rgb-status-review-600, var(--status-review-600)) / var(--custom-alpha-status-review-600, 1)
+  );
+  --color-status-review-700: rgb(
+    var(--custom-rgb-status-review-700, var(--status-review-700)) / var(--custom-alpha-status-review-700, 1)
+  );
+  --color-status-review-800: rgb(
+    var(--custom-rgb-status-review-800, var(--status-review-800)) / var(--custom-alpha-status-review-800, 1)
+  );
+  --color-status-review-900: rgb(
+    var(--custom-rgb-status-review-900, var(--status-review-900)) / var(--custom-alpha-status-review-900, 1)
+  );
+  --color-status-review-950: rgb(
+    var(--custom-rgb-status-review-950, var(--status-review-950)) / var(--custom-alpha-status-review-950, 1)
+  );
+  --color-status-human-wait-50: rgb(
+    var(--custom-rgb-status-human-wait-50, var(--status-human-wait-50)) / var(--custom-alpha-status-human-wait-50, 1)
+  );
+  --color-status-human-wait-100: rgb(
+    var(--custom-rgb-status-human-wait-100, var(--status-human-wait-100)) / var(--custom-alpha-status-human-wait-100, 1)
+  );
+  --color-status-human-wait-200: rgb(
+    var(--custom-rgb-status-human-wait-200, var(--status-human-wait-200)) / var(--custom-alpha-status-human-wait-200, 1)
+  );
+  --color-status-human-wait-300: rgb(
+    var(--custom-rgb-status-human-wait-300, var(--status-human-wait-300)) / var(--custom-alpha-status-human-wait-300, 1)
+  );
+  --color-status-human-wait-400: rgb(
+    var(--custom-rgb-status-human-wait-400, var(--status-human-wait-400)) / var(--custom-alpha-status-human-wait-400, 1)
+  );
+  --color-status-human-wait-500: rgb(
+    var(--custom-rgb-status-human-wait-500, var(--status-human-wait-500)) / var(--custom-alpha-status-human-wait-500, 1)
+  );
+  --color-status-human-wait-600: rgb(
+    var(--custom-rgb-status-human-wait-600, var(--status-human-wait-600)) / var(--custom-alpha-status-human-wait-600, 1)
+  );
+  --color-status-human-wait-700: rgb(
+    var(--custom-rgb-status-human-wait-700, var(--status-human-wait-700)) / var(--custom-alpha-status-human-wait-700, 1)
+  );
+  --color-status-human-wait-800: rgb(
+    var(--custom-rgb-status-human-wait-800, var(--status-human-wait-800)) / var(--custom-alpha-status-human-wait-800, 1)
+  );
+  --color-status-human-wait-900: rgb(
+    var(--custom-rgb-status-human-wait-900, var(--status-human-wait-900)) / var(--custom-alpha-status-human-wait-900, 1)
+  );
+  --color-status-human-wait-950: rgb(
+    var(--custom-rgb-status-human-wait-950, var(--status-human-wait-950)) / var(--custom-alpha-status-human-wait-950, 1)
+  );
+  --color-status-external-wait-50: rgb(
+    var(--custom-rgb-status-external-wait-50, var(--status-external-wait-50)) /
+      var(--custom-alpha-status-external-wait-50, 1)
+  );
+  --color-status-external-wait-100: rgb(
+    var(--custom-rgb-status-external-wait-100, var(--status-external-wait-100)) /
+      var(--custom-alpha-status-external-wait-100, 1)
+  );
+  --color-status-external-wait-200: rgb(
+    var(--custom-rgb-status-external-wait-200, var(--status-external-wait-200)) /
+      var(--custom-alpha-status-external-wait-200, 1)
+  );
+  --color-status-external-wait-300: rgb(
+    var(--custom-rgb-status-external-wait-300, var(--status-external-wait-300)) /
+      var(--custom-alpha-status-external-wait-300, 1)
+  );
+  --color-status-external-wait-400: rgb(
+    var(--custom-rgb-status-external-wait-400, var(--status-external-wait-400)) /
+      var(--custom-alpha-status-external-wait-400, 1)
+  );
+  --color-status-external-wait-500: rgb(
+    var(--custom-rgb-status-external-wait-500, var(--status-external-wait-500)) /
+      var(--custom-alpha-status-external-wait-500, 1)
+  );
+  --color-status-external-wait-600: rgb(
+    var(--custom-rgb-status-external-wait-600, var(--status-external-wait-600)) /
+      var(--custom-alpha-status-external-wait-600, 1)
+  );
+  --color-status-external-wait-700: rgb(
+    var(--custom-rgb-status-external-wait-700, var(--status-external-wait-700)) /
+      var(--custom-alpha-status-external-wait-700, 1)
+  );
+  --color-status-external-wait-800: rgb(
+    var(--custom-rgb-status-external-wait-800, var(--status-external-wait-800)) /
+      var(--custom-alpha-status-external-wait-800, 1)
+  );
+  --color-status-external-wait-900: rgb(
+    var(--custom-rgb-status-external-wait-900, var(--status-external-wait-900)) /
+      var(--custom-alpha-status-external-wait-900, 1)
+  );
+  --color-status-external-wait-950: rgb(
+    var(--custom-rgb-status-external-wait-950, var(--status-external-wait-950)) /
+      var(--custom-alpha-status-external-wait-950, 1)
+  );
+  --color-status-attention-50: rgb(
+    var(--custom-rgb-status-attention-50, var(--status-attention-50)) / var(--custom-alpha-status-attention-50, 1)
+  );
+  --color-status-attention-100: rgb(
+    var(--custom-rgb-status-attention-100, var(--status-attention-100)) / var(--custom-alpha-status-attention-100, 1)
+  );
+  --color-status-attention-200: rgb(
+    var(--custom-rgb-status-attention-200, var(--status-attention-200)) / var(--custom-alpha-status-attention-200, 1)
+  );
+  --color-status-attention-300: rgb(
+    var(--custom-rgb-status-attention-300, var(--status-attention-300)) / var(--custom-alpha-status-attention-300, 1)
+  );
+  --color-status-attention-400: rgb(
+    var(--custom-rgb-status-attention-400, var(--status-attention-400)) / var(--custom-alpha-status-attention-400, 1)
+  );
+  --color-status-attention-500: rgb(
+    var(--custom-rgb-status-attention-500, var(--status-attention-500)) / var(--custom-alpha-status-attention-500, 1)
+  );
+  --color-status-attention-600: rgb(
+    var(--custom-rgb-status-attention-600, var(--status-attention-600)) / var(--custom-alpha-status-attention-600, 1)
+  );
+  --color-status-attention-700: rgb(
+    var(--custom-rgb-status-attention-700, var(--status-attention-700)) / var(--custom-alpha-status-attention-700, 1)
+  );
+  --color-status-attention-800: rgb(
+    var(--custom-rgb-status-attention-800, var(--status-attention-800)) / var(--custom-alpha-status-attention-800, 1)
+  );
+  --color-status-attention-900: rgb(
+    var(--custom-rgb-status-attention-900, var(--status-attention-900)) / var(--custom-alpha-status-attention-900, 1)
+  );
+  --color-status-attention-950: rgb(
+    var(--custom-rgb-status-attention-950, var(--status-attention-950)) / var(--custom-alpha-status-attention-950, 1)
+  );
+  --color-status-danger-50: rgb(
+    var(--custom-rgb-status-danger-50, var(--status-danger-50)) / var(--custom-alpha-status-danger-50, 1)
+  );
+  --color-status-danger-100: rgb(
+    var(--custom-rgb-status-danger-100, var(--status-danger-100)) / var(--custom-alpha-status-danger-100, 1)
+  );
+  --color-status-danger-200: rgb(
+    var(--custom-rgb-status-danger-200, var(--status-danger-200)) / var(--custom-alpha-status-danger-200, 1)
+  );
+  --color-status-danger-300: rgb(
+    var(--custom-rgb-status-danger-300, var(--status-danger-300)) / var(--custom-alpha-status-danger-300, 1)
+  );
+  --color-status-danger-400: rgb(
+    var(--custom-rgb-status-danger-400, var(--status-danger-400)) / var(--custom-alpha-status-danger-400, 1)
+  );
+  --color-status-danger-500: rgb(
+    var(--custom-rgb-status-danger-500, var(--status-danger-500)) / var(--custom-alpha-status-danger-500, 1)
+  );
+  --color-status-danger-600: rgb(
+    var(--custom-rgb-status-danger-600, var(--status-danger-600)) / var(--custom-alpha-status-danger-600, 1)
+  );
+  --color-status-danger-700: rgb(
+    var(--custom-rgb-status-danger-700, var(--status-danger-700)) / var(--custom-alpha-status-danger-700, 1)
+  );
+  --color-status-danger-800: rgb(
+    var(--custom-rgb-status-danger-800, var(--status-danger-800)) / var(--custom-alpha-status-danger-800, 1)
+  );
+  --color-status-danger-900: rgb(
+    var(--custom-rgb-status-danger-900, var(--status-danger-900)) / var(--custom-alpha-status-danger-900, 1)
+  );
+  --color-status-danger-950: rgb(
+    var(--custom-rgb-status-danger-950, var(--status-danger-950)) / var(--custom-alpha-status-danger-950, 1)
+  );
+  --color-status-success-50: rgb(
+    var(--custom-rgb-status-success-50, var(--status-success-50)) / var(--custom-alpha-status-success-50, 1)
+  );
+  --color-status-success-100: rgb(
+    var(--custom-rgb-status-success-100, var(--status-success-100)) / var(--custom-alpha-status-success-100, 1)
+  );
+  --color-status-success-200: rgb(
+    var(--custom-rgb-status-success-200, var(--status-success-200)) / var(--custom-alpha-status-success-200, 1)
+  );
+  --color-status-success-300: rgb(
+    var(--custom-rgb-status-success-300, var(--status-success-300)) / var(--custom-alpha-status-success-300, 1)
+  );
+  --color-status-success-400: rgb(
+    var(--custom-rgb-status-success-400, var(--status-success-400)) / var(--custom-alpha-status-success-400, 1)
+  );
+  --color-status-success-500: rgb(
+    var(--custom-rgb-status-success-500, var(--status-success-500)) / var(--custom-alpha-status-success-500, 1)
+  );
+  --color-status-success-600: rgb(
+    var(--custom-rgb-status-success-600, var(--status-success-600)) / var(--custom-alpha-status-success-600, 1)
+  );
+  --color-status-success-700: rgb(
+    var(--custom-rgb-status-success-700, var(--status-success-700)) / var(--custom-alpha-status-success-700, 1)
+  );
+  --color-status-success-800: rgb(
+    var(--custom-rgb-status-success-800, var(--status-success-800)) / var(--custom-alpha-status-success-800, 1)
+  );
+  --color-status-success-900: rgb(
+    var(--custom-rgb-status-success-900, var(--status-success-900)) / var(--custom-alpha-status-success-900, 1)
+  );
+  --color-status-success-950: rgb(
+    var(--custom-rgb-status-success-950, var(--status-success-950)) / var(--custom-alpha-status-success-950, 1)
+  );
+  --color-status-neutral-50: rgb(
+    var(--custom-rgb-status-neutral-50, var(--status-neutral-50)) / var(--custom-alpha-status-neutral-50, 1)
+  );
+  --color-status-neutral-100: rgb(
+    var(--custom-rgb-status-neutral-100, var(--status-neutral-100)) / var(--custom-alpha-status-neutral-100, 1)
+  );
+  --color-status-neutral-200: rgb(
+    var(--custom-rgb-status-neutral-200, var(--status-neutral-200)) / var(--custom-alpha-status-neutral-200, 1)
+  );
+  --color-status-neutral-300: rgb(
+    var(--custom-rgb-status-neutral-300, var(--status-neutral-300)) / var(--custom-alpha-status-neutral-300, 1)
+  );
+  --color-status-neutral-400: rgb(
+    var(--custom-rgb-status-neutral-400, var(--status-neutral-400)) / var(--custom-alpha-status-neutral-400, 1)
+  );
+  --color-status-neutral-500: rgb(
+    var(--custom-rgb-status-neutral-500, var(--status-neutral-500)) / var(--custom-alpha-status-neutral-500, 1)
+  );
+  --color-status-neutral-600: rgb(
+    var(--custom-rgb-status-neutral-600, var(--status-neutral-600)) / var(--custom-alpha-status-neutral-600, 1)
+  );
+  --color-status-neutral-700: rgb(
+    var(--custom-rgb-status-neutral-700, var(--status-neutral-700)) / var(--custom-alpha-status-neutral-700, 1)
+  );
+  --color-status-neutral-800: rgb(
+    var(--custom-rgb-status-neutral-800, var(--status-neutral-800)) / var(--custom-alpha-status-neutral-800, 1)
+  );
+  --color-status-neutral-900: rgb(
+    var(--custom-rgb-status-neutral-900, var(--status-neutral-900)) / var(--custom-alpha-status-neutral-900, 1)
+  );
+  --color-status-neutral-950: rgb(
+    var(--custom-rgb-status-neutral-950, var(--status-neutral-950)) / var(--custom-alpha-status-neutral-950, 1)
+  );
+  --color-decoration-8-100: rgb(
+    var(--custom-rgb-decoration-8-100, var(--decoration-8-100)) / var(--custom-alpha-decoration-8-100, 1)
+  );
+  --color-decoration-8-300: rgb(
+    var(--custom-rgb-decoration-8-300, var(--decoration-8-300)) / var(--custom-alpha-decoration-8-300, 1)
+  );
+  --color-decoration-8-400: rgb(
+    var(--custom-rgb-decoration-8-400, var(--decoration-8-400)) / var(--custom-alpha-decoration-8-400, 1)
+  );
+  --color-decoration-8-600: rgb(
+    var(--custom-rgb-decoration-8-600, var(--decoration-8-600)) / var(--custom-alpha-decoration-8-600, 1)
+  );
+  --color-decoration-8-700: rgb(
+    var(--custom-rgb-decoration-8-700, var(--decoration-8-700)) / var(--custom-alpha-decoration-8-700, 1)
+  );
+  --color-decoration-8-900: rgb(
+    var(--custom-rgb-decoration-8-900, var(--decoration-8-900)) / var(--custom-alpha-decoration-8-900, 1)
+  );
+  --color-decoration-9-100: rgb(
+    var(--custom-rgb-decoration-9-100, var(--decoration-9-100)) / var(--custom-alpha-decoration-9-100, 1)
+  );
+  --color-decoration-9-400: rgb(
+    var(--custom-rgb-decoration-9-400, var(--decoration-9-400)) / var(--custom-alpha-decoration-9-400, 1)
+  );
+  --color-decoration-9-600: rgb(
+    var(--custom-rgb-decoration-9-600, var(--decoration-9-600)) / var(--custom-alpha-decoration-9-600, 1)
+  );
+  --color-decoration-9-900: rgb(
+    var(--custom-rgb-decoration-9-900, var(--decoration-9-900)) / var(--custom-alpha-decoration-9-900, 1)
+  );
+  --color-decoration-10-200: rgb(
+    var(--custom-rgb-decoration-10-200, var(--decoration-10-200)) / var(--custom-alpha-decoration-10-200, 1)
+  );
+  --color-decoration-11-50: rgb(
+    var(--custom-rgb-decoration-11-50, var(--decoration-11-50)) / var(--custom-alpha-decoration-11-50, 1)
+  );
+  --color-decoration-11-100: rgb(
+    var(--custom-rgb-decoration-11-100, var(--decoration-11-100)) / var(--custom-alpha-decoration-11-100, 1)
+  );
+  --color-decoration-11-300: rgb(
+    var(--custom-rgb-decoration-11-300, var(--decoration-11-300)) / var(--custom-alpha-decoration-11-300, 1)
+  );
+  --color-decoration-11-500: rgb(
+    var(--custom-rgb-decoration-11-500, var(--decoration-11-500)) / var(--custom-alpha-decoration-11-500, 1)
+  );
+  --color-decoration-11-600: rgb(
+    var(--custom-rgb-decoration-11-600, var(--decoration-11-600)) / var(--custom-alpha-decoration-11-600, 1)
+  );
+  --color-decoration-11-700: rgb(
+    var(--custom-rgb-decoration-11-700, var(--decoration-11-700)) / var(--custom-alpha-decoration-11-700, 1)
+  );
+  --color-decoration-11-900: rgb(
+    var(--custom-rgb-decoration-11-900, var(--decoration-11-900)) / var(--custom-alpha-decoration-11-900, 1)
+  );
+  --color-decoration-4-50: rgb(
+    var(--custom-rgb-decoration-4-50, var(--decoration-4-50)) / var(--custom-alpha-decoration-4-50, 1)
+  );
+  --color-decoration-4-300: rgb(
+    var(--custom-rgb-decoration-4-300, var(--decoration-4-300)) / var(--custom-alpha-decoration-4-300, 1)
+  );
+  --color-decoration-4-500: rgb(
+    var(--custom-rgb-decoration-4-500, var(--decoration-4-500)) / var(--custom-alpha-decoration-4-500, 1)
+  );
+  --color-decoration-4-600: rgb(
+    var(--custom-rgb-decoration-4-600, var(--decoration-4-600)) / var(--custom-alpha-decoration-4-600, 1)
+  );
+  --color-status-progress-fg: rgb(
+    var(--custom-rgb-status-progress-fg, var(--status-progress-fg)) / var(--custom-alpha-status-progress-fg, 1)
+  );
+  --color-status-progress-solid: rgb(
+    var(--custom-rgb-status-progress-solid, var(--status-progress-solid)) / var(--custom-alpha-status-progress-solid, 1)
+  );
+  --color-status-progress-surface: rgb(
+    var(--custom-rgb-status-progress-surface, var(--status-progress-surface)) /
+      calc(var(--custom-alpha-status-progress-surface, 1) * var(--opacity-status-progress-surface))
+  );
+  --color-status-progress-border: rgb(
+    var(--custom-rgb-status-progress-border, var(--status-progress-border)) /
+      var(--custom-alpha-status-progress-border, 1)
+  );
+  --color-status-progress-badge-fg: rgb(
+    var(--custom-rgb-status-progress-badge-fg, var(--status-progress-badge-fg)) /
+      var(--custom-alpha-status-progress-badge-fg, 1)
+  );
+  --color-status-progress-badge-surface: rgb(
+    var(--custom-rgb-status-progress-badge-surface, var(--status-progress-badge-surface)) /
+      calc(var(--custom-alpha-status-progress-badge-surface, 1) * var(--opacity-status-progress-badge-surface))
+  );
+  --color-status-progress-badge-hover: rgb(
+    var(--custom-rgb-status-progress-badge-hover, var(--status-progress-badge-hover)) /
+      calc(var(--custom-alpha-status-progress-badge-hover, 1) * var(--opacity-status-progress-badge-hover))
+  );
+  --color-status-queue-fg: rgb(
+    var(--custom-rgb-status-queue-fg, var(--status-queue-fg)) / var(--custom-alpha-status-queue-fg, 1)
+  );
+  --color-status-queue-solid: rgb(
+    var(--custom-rgb-status-queue-solid, var(--status-queue-solid)) / var(--custom-alpha-status-queue-solid, 1)
+  );
+  --color-status-queue-surface: rgb(
+    var(--custom-rgb-status-queue-surface, var(--status-queue-surface)) /
+      calc(var(--custom-alpha-status-queue-surface, 1) * var(--opacity-status-queue-surface))
+  );
+  --color-status-queue-border: rgb(
+    var(--custom-rgb-status-queue-border, var(--status-queue-border)) / var(--custom-alpha-status-queue-border, 1)
+  );
+  --color-status-queue-badge-fg: rgb(
+    var(--custom-rgb-status-queue-badge-fg, var(--status-queue-badge-fg)) / var(--custom-alpha-status-queue-badge-fg, 1)
+  );
+  --color-status-queue-badge-surface: rgb(
+    var(--custom-rgb-status-queue-badge-surface, var(--status-queue-badge-surface)) /
+      calc(var(--custom-alpha-status-queue-badge-surface, 1) * var(--opacity-status-queue-badge-surface))
+  );
+  --color-status-queue-badge-hover: rgb(
+    var(--custom-rgb-status-queue-badge-hover, var(--status-queue-badge-hover)) /
+      calc(var(--custom-alpha-status-queue-badge-hover, 1) * var(--opacity-status-queue-badge-hover))
+  );
+  --color-status-review-fg: rgb(
+    var(--custom-rgb-status-review-fg, var(--status-review-fg)) / var(--custom-alpha-status-review-fg, 1)
+  );
+  --color-status-review-solid: rgb(
+    var(--custom-rgb-status-review-solid, var(--status-review-solid)) / var(--custom-alpha-status-review-solid, 1)
+  );
+  --color-status-review-surface: rgb(
+    var(--custom-rgb-status-review-surface, var(--status-review-surface)) /
+      calc(var(--custom-alpha-status-review-surface, 1) * var(--opacity-status-review-surface))
+  );
+  --color-status-review-border: rgb(
+    var(--custom-rgb-status-review-border, var(--status-review-border)) / var(--custom-alpha-status-review-border, 1)
+  );
+  --color-status-review-badge-fg: rgb(
+    var(--custom-rgb-status-review-badge-fg, var(--status-review-badge-fg)) /
+      var(--custom-alpha-status-review-badge-fg, 1)
+  );
+  --color-status-review-badge-surface: rgb(
+    var(--custom-rgb-status-review-badge-surface, var(--status-review-badge-surface)) /
+      calc(var(--custom-alpha-status-review-badge-surface, 1) * var(--opacity-status-review-badge-surface))
+  );
+  --color-status-review-badge-hover: rgb(
+    var(--custom-rgb-status-review-badge-hover, var(--status-review-badge-hover)) /
+      calc(var(--custom-alpha-status-review-badge-hover, 1) * var(--opacity-status-review-badge-hover))
+  );
+  --color-status-human-wait-fg: rgb(
+    var(--custom-rgb-status-human-wait-fg, var(--status-human-wait-fg)) / var(--custom-alpha-status-human-wait-fg, 1)
+  );
+  --color-status-human-wait-solid: rgb(
+    var(--custom-rgb-status-human-wait-solid, var(--status-human-wait-solid)) /
+      var(--custom-alpha-status-human-wait-solid, 1)
+  );
+  --color-status-human-wait-surface: rgb(
+    var(--custom-rgb-status-human-wait-surface, var(--status-human-wait-surface)) /
+      calc(var(--custom-alpha-status-human-wait-surface, 1) * var(--opacity-status-human-wait-surface))
+  );
+  --color-status-human-wait-border: rgb(
+    var(--custom-rgb-status-human-wait-border, var(--status-human-wait-border)) /
+      var(--custom-alpha-status-human-wait-border, 1)
+  );
+  --color-status-human-wait-badge-fg: rgb(
+    var(--custom-rgb-status-human-wait-badge-fg, var(--status-human-wait-badge-fg)) /
+      var(--custom-alpha-status-human-wait-badge-fg, 1)
+  );
+  --color-status-human-wait-badge-surface: rgb(
+    var(--custom-rgb-status-human-wait-badge-surface, var(--status-human-wait-badge-surface)) /
+      calc(var(--custom-alpha-status-human-wait-badge-surface, 1) * var(--opacity-status-human-wait-badge-surface))
+  );
+  --color-status-human-wait-badge-hover: rgb(
+    var(--custom-rgb-status-human-wait-badge-hover, var(--status-human-wait-badge-hover)) /
+      calc(var(--custom-alpha-status-human-wait-badge-hover, 1) * var(--opacity-status-human-wait-badge-hover))
+  );
+  --color-status-external-wait-fg: rgb(
+    var(--custom-rgb-status-external-wait-fg, var(--status-external-wait-fg)) /
+      var(--custom-alpha-status-external-wait-fg, 1)
+  );
+  --color-status-external-wait-solid: rgb(
+    var(--custom-rgb-status-external-wait-solid, var(--status-external-wait-solid)) /
+      var(--custom-alpha-status-external-wait-solid, 1)
+  );
+  --color-status-external-wait-surface: rgb(
+    var(--custom-rgb-status-external-wait-surface, var(--status-external-wait-surface)) /
+      calc(var(--custom-alpha-status-external-wait-surface, 1) * var(--opacity-status-external-wait-surface))
+  );
+  --color-status-external-wait-border: rgb(
+    var(--custom-rgb-status-external-wait-border, var(--status-external-wait-border)) /
+      var(--custom-alpha-status-external-wait-border, 1)
+  );
+  --color-status-external-wait-badge-fg: rgb(
+    var(--custom-rgb-status-external-wait-badge-fg, var(--status-external-wait-badge-fg)) /
+      var(--custom-alpha-status-external-wait-badge-fg, 1)
+  );
+  --color-status-external-wait-badge-surface: rgb(
+    var(--custom-rgb-status-external-wait-badge-surface, var(--status-external-wait-badge-surface)) /
+      calc(
+        var(--custom-alpha-status-external-wait-badge-surface, 1) * var(--opacity-status-external-wait-badge-surface)
+      )
+  );
+  --color-status-external-wait-badge-hover: rgb(
+    var(--custom-rgb-status-external-wait-badge-hover, var(--status-external-wait-badge-hover)) /
+      calc(var(--custom-alpha-status-external-wait-badge-hover, 1) * var(--opacity-status-external-wait-badge-hover))
+  );
+  --color-status-attention-fg: rgb(
+    var(--custom-rgb-status-attention-fg, var(--status-attention-fg)) / var(--custom-alpha-status-attention-fg, 1)
+  );
+  --color-status-attention-solid: rgb(
+    var(--custom-rgb-status-attention-solid, var(--status-attention-solid)) /
+      var(--custom-alpha-status-attention-solid, 1)
+  );
+  --color-status-attention-surface: rgb(
+    var(--custom-rgb-status-attention-surface, var(--status-attention-surface)) /
+      calc(var(--custom-alpha-status-attention-surface, 1) * var(--opacity-status-attention-surface))
+  );
+  --color-status-attention-border: rgb(
+    var(--custom-rgb-status-attention-border, var(--status-attention-border)) /
+      var(--custom-alpha-status-attention-border, 1)
+  );
+  --color-status-attention-badge-fg: rgb(
+    var(--custom-rgb-status-attention-badge-fg, var(--status-attention-badge-fg)) /
+      var(--custom-alpha-status-attention-badge-fg, 1)
+  );
+  --color-status-attention-badge-surface: rgb(
+    var(--custom-rgb-status-attention-badge-surface, var(--status-attention-badge-surface)) /
+      calc(var(--custom-alpha-status-attention-badge-surface, 1) * var(--opacity-status-attention-badge-surface))
+  );
+  --color-status-attention-badge-hover: rgb(
+    var(--custom-rgb-status-attention-badge-hover, var(--status-attention-badge-hover)) /
+      calc(var(--custom-alpha-status-attention-badge-hover, 1) * var(--opacity-status-attention-badge-hover))
+  );
+  --color-status-danger-fg: rgb(
+    var(--custom-rgb-status-danger-fg, var(--status-danger-fg)) / var(--custom-alpha-status-danger-fg, 1)
+  );
+  --color-status-danger-solid: rgb(
+    var(--custom-rgb-status-danger-solid, var(--status-danger-solid)) / var(--custom-alpha-status-danger-solid, 1)
+  );
+  --color-status-danger-surface: rgb(
+    var(--custom-rgb-status-danger-surface, var(--status-danger-surface)) /
+      calc(var(--custom-alpha-status-danger-surface, 1) * var(--opacity-status-danger-surface))
+  );
+  --color-status-danger-border: rgb(
+    var(--custom-rgb-status-danger-border, var(--status-danger-border)) / var(--custom-alpha-status-danger-border, 1)
+  );
+  --color-status-danger-badge-fg: rgb(
+    var(--custom-rgb-status-danger-badge-fg, var(--status-danger-badge-fg)) /
+      var(--custom-alpha-status-danger-badge-fg, 1)
+  );
+  --color-status-danger-badge-surface: rgb(
+    var(--custom-rgb-status-danger-badge-surface, var(--status-danger-badge-surface)) /
+      calc(var(--custom-alpha-status-danger-badge-surface, 1) * var(--opacity-status-danger-badge-surface))
+  );
+  --color-status-danger-badge-hover: rgb(
+    var(--custom-rgb-status-danger-badge-hover, var(--status-danger-badge-hover)) /
+      calc(var(--custom-alpha-status-danger-badge-hover, 1) * var(--opacity-status-danger-badge-hover))
+  );
+  --color-status-success-fg: rgb(
+    var(--custom-rgb-status-success-fg, var(--status-success-fg)) / var(--custom-alpha-status-success-fg, 1)
+  );
+  --color-status-success-solid: rgb(
+    var(--custom-rgb-status-success-solid, var(--status-success-solid)) / var(--custom-alpha-status-success-solid, 1)
+  );
+  --color-status-success-surface: rgb(
+    var(--custom-rgb-status-success-surface, var(--status-success-surface)) /
+      calc(var(--custom-alpha-status-success-surface, 1) * var(--opacity-status-success-surface))
+  );
+  --color-status-success-border: rgb(
+    var(--custom-rgb-status-success-border, var(--status-success-border)) / var(--custom-alpha-status-success-border, 1)
+  );
+  --color-status-success-badge-fg: rgb(
+    var(--custom-rgb-status-success-badge-fg, var(--status-success-badge-fg)) /
+      var(--custom-alpha-status-success-badge-fg, 1)
+  );
+  --color-status-success-badge-surface: rgb(
+    var(--custom-rgb-status-success-badge-surface, var(--status-success-badge-surface)) /
+      calc(var(--custom-alpha-status-success-badge-surface, 1) * var(--opacity-status-success-badge-surface))
+  );
+  --color-status-success-badge-hover: rgb(
+    var(--custom-rgb-status-success-badge-hover, var(--status-success-badge-hover)) /
+      calc(var(--custom-alpha-status-success-badge-hover, 1) * var(--opacity-status-success-badge-hover))
+  );
+  --color-status-neutral-fg: rgb(
+    var(--custom-rgb-status-neutral-fg, var(--status-neutral-fg)) / var(--custom-alpha-status-neutral-fg, 1)
+  );
+  --color-status-neutral-solid: rgb(
+    var(--custom-rgb-status-neutral-solid, var(--status-neutral-solid)) / var(--custom-alpha-status-neutral-solid, 1)
+  );
+  --color-status-neutral-surface: rgb(
+    var(--custom-rgb-status-neutral-surface, var(--status-neutral-surface)) /
+      calc(var(--custom-alpha-status-neutral-surface, 1) * var(--opacity-status-neutral-surface))
+  );
+  --color-status-neutral-border: rgb(
+    var(--custom-rgb-status-neutral-border, var(--status-neutral-border)) / var(--custom-alpha-status-neutral-border, 1)
+  );
+  --color-status-neutral-badge-fg: rgb(
+    var(--custom-rgb-status-neutral-badge-fg, var(--status-neutral-badge-fg)) /
+      var(--custom-alpha-status-neutral-badge-fg, 1)
+  );
+  --color-status-neutral-badge-surface: rgb(
+    var(--custom-rgb-status-neutral-badge-surface, var(--status-neutral-badge-surface)) /
+      calc(var(--custom-alpha-status-neutral-badge-surface, 1) * var(--opacity-status-neutral-badge-surface))
+  );
+  --color-status-neutral-badge-hover: rgb(
+    var(--custom-rgb-status-neutral-badge-hover, var(--status-neutral-badge-hover)) /
+      calc(var(--custom-alpha-status-neutral-badge-hover, 1) * var(--opacity-status-neutral-badge-hover))
+  );
+  --color-badge-accent-1-fg: rgb(
+    var(--custom-rgb-badge-accent-1-fg, var(--badge-accent-1-fg)) / var(--custom-alpha-badge-accent-1-fg, 1)
+  );
+  --color-badge-accent-1-surface: rgb(
+    var(--custom-rgb-badge-accent-1-surface, var(--badge-accent-1-surface)) /
+      calc(var(--custom-alpha-badge-accent-1-surface, 1) * var(--opacity-badge-accent-1-surface))
+  );
+  --color-badge-accent-1-hover: rgb(
+    var(--custom-rgb-badge-accent-1-hover, var(--badge-accent-1-hover)) /
+      calc(var(--custom-alpha-badge-accent-1-hover, 1) * var(--opacity-badge-accent-1-hover))
+  );
+  --color-badge-accent-2-fg: rgb(
+    var(--custom-rgb-badge-accent-2-fg, var(--badge-accent-2-fg)) / var(--custom-alpha-badge-accent-2-fg, 1)
+  );
+  --color-badge-accent-2-surface: rgb(
+    var(--custom-rgb-badge-accent-2-surface, var(--badge-accent-2-surface)) /
+      calc(var(--custom-alpha-badge-accent-2-surface, 1) * var(--opacity-badge-accent-2-surface))
+  );
+  --color-badge-accent-2-hover: rgb(
+    var(--custom-rgb-badge-accent-2-hover, var(--badge-accent-2-hover)) /
+      calc(var(--custom-alpha-badge-accent-2-hover, 1) * var(--opacity-badge-accent-2-hover))
+  );
+  --color-badge-accent-3-fg: rgb(
+    var(--custom-rgb-badge-accent-3-fg, var(--badge-accent-3-fg)) / var(--custom-alpha-badge-accent-3-fg, 1)
+  );
+  --color-badge-accent-3-surface: rgb(
+    var(--custom-rgb-badge-accent-3-surface, var(--badge-accent-3-surface)) /
+      calc(var(--custom-alpha-badge-accent-3-surface, 1) * var(--opacity-badge-accent-3-surface))
+  );
+  --color-badge-accent-3-hover: rgb(
+    var(--custom-rgb-badge-accent-3-hover, var(--badge-accent-3-hover)) /
+      calc(var(--custom-alpha-badge-accent-3-hover, 1) * var(--opacity-badge-accent-3-hover))
+  );
+  --color-badge-accent-4-fg: rgb(
+    var(--custom-rgb-badge-accent-4-fg, var(--badge-accent-4-fg)) / var(--custom-alpha-badge-accent-4-fg, 1)
+  );
+  --color-badge-accent-4-surface: rgb(
+    var(--custom-rgb-badge-accent-4-surface, var(--badge-accent-4-surface)) /
+      calc(var(--custom-alpha-badge-accent-4-surface, 1) * var(--opacity-badge-accent-4-surface))
+  );
+  --color-badge-accent-4-hover: rgb(
+    var(--custom-rgb-badge-accent-4-hover, var(--badge-accent-4-hover)) /
+      calc(var(--custom-alpha-badge-accent-4-hover, 1) * var(--opacity-badge-accent-4-hover))
+  );
+  --color-badge-accent-5-fg: rgb(
+    var(--custom-rgb-badge-accent-5-fg, var(--badge-accent-5-fg)) / var(--custom-alpha-badge-accent-5-fg, 1)
+  );
+  --color-badge-accent-5-surface: rgb(
+    var(--custom-rgb-badge-accent-5-surface, var(--badge-accent-5-surface)) /
+      calc(var(--custom-alpha-badge-accent-5-surface, 1) * var(--opacity-badge-accent-5-surface))
+  );
+  --color-badge-accent-5-hover: rgb(
+    var(--custom-rgb-badge-accent-5-hover, var(--badge-accent-5-hover)) /
+      calc(var(--custom-alpha-badge-accent-5-hover, 1) * var(--opacity-badge-accent-5-hover))
+  );
+  --color-badge-accent-6-fg: rgb(
+    var(--custom-rgb-badge-accent-6-fg, var(--badge-accent-6-fg)) / var(--custom-alpha-badge-accent-6-fg, 1)
+  );
+  --color-badge-accent-6-surface: rgb(
+    var(--custom-rgb-badge-accent-6-surface, var(--badge-accent-6-surface)) /
+      calc(var(--custom-alpha-badge-accent-6-surface, 1) * var(--opacity-badge-accent-6-surface))
+  );
+  --color-badge-accent-6-hover: rgb(
+    var(--custom-rgb-badge-accent-6-hover, var(--badge-accent-6-hover)) /
+      calc(var(--custom-alpha-badge-accent-6-hover, 1) * var(--opacity-badge-accent-6-hover))
+  );
+  --color-badge-accent-7-fg: rgb(
+    var(--custom-rgb-badge-accent-7-fg, var(--badge-accent-7-fg)) / var(--custom-alpha-badge-accent-7-fg, 1)
+  );
+  --color-badge-accent-7-surface: rgb(
+    var(--custom-rgb-badge-accent-7-surface, var(--badge-accent-7-surface)) /
+      calc(var(--custom-alpha-badge-accent-7-surface, 1) * var(--opacity-badge-accent-7-surface))
+  );
+  --color-badge-accent-7-hover: rgb(
+    var(--custom-rgb-badge-accent-7-hover, var(--badge-accent-7-hover)) /
+      calc(var(--custom-alpha-badge-accent-7-hover, 1) * var(--opacity-badge-accent-7-hover))
+  );
+  --color-agent-type-1: rgb(
+    var(--custom-rgb-agent-type-1-fg, var(--agent-type-1-fg)) / var(--custom-alpha-agent-type-1-fg, 1)
+  );
+  --color-agent-type-2: rgb(
+    var(--custom-rgb-agent-type-2-fg, var(--agent-type-2-fg)) / var(--custom-alpha-agent-type-2-fg, 1)
+  );
+  --color-agent-type-3: rgb(
+    var(--custom-rgb-agent-type-3-fg, var(--agent-type-3-fg)) / var(--custom-alpha-agent-type-3-fg, 1)
+  );
+  --color-agent-type-4: rgb(
+    var(--custom-rgb-agent-type-4-fg, var(--agent-type-4-fg)) / var(--custom-alpha-agent-type-4-fg, 1)
+  );
+  --color-agent-type-5: rgb(
+    var(--custom-rgb-agent-type-5-fg, var(--agent-type-5-fg)) / var(--custom-alpha-agent-type-5-fg, 1)
+  );
+  --color-agent-type-6: rgb(
+    var(--custom-rgb-agent-type-6-fg, var(--agent-type-6-fg)) / var(--custom-alpha-agent-type-6-fg, 1)
+  );
+  --color-on-accent: rgb(var(--custom-rgb-on-accent-fg, var(--on-accent-fg)) / var(--custom-alpha-on-accent-fg, 1));
+  --color-badge: rgb(var(--custom-rgb-badge, var(--badge)) / var(--custom-alpha-badge, 1));
+  --color-on-badge: rgb(var(--custom-rgb-on-badge, var(--on-badge)) / var(--custom-alpha-on-badge, 1));
+  --color-page: rgb(var(--custom-rgb-color-bg-page, var(--color-bg-page)) / var(--custom-alpha-color-bg-page, 1));
+  --color-surface: rgb(
+    var(--custom-rgb-color-bg-surface, var(--color-bg-surface)) / var(--custom-alpha-color-bg-surface, 1)
+  );
+  --color-surface-secondary: rgb(
+    var(--custom-rgb-color-bg-surface-secondary, var(--color-bg-surface-secondary)) /
+      var(--custom-alpha-color-bg-surface-secondary, 1)
+  );
+  --color-surface-hover: rgb(
+    var(--custom-rgb-color-bg-surface-hover, var(--color-bg-surface-hover)) /
+      var(--custom-alpha-color-bg-surface-hover, 1)
+  );
+  --color-inset: rgb(var(--custom-rgb-color-bg-inset, var(--color-bg-inset)) / var(--custom-alpha-color-bg-inset, 1));
+  --color-pill: rgb(var(--custom-rgb-color-bg-pill, var(--color-bg-pill)) / var(--custom-alpha-color-bg-pill, 1));
+  --color-primary: rgb(
+    var(--custom-rgb-color-text-primary, var(--color-text-primary)) / var(--custom-alpha-color-text-primary, 1)
+  );
+  --color-secondary: rgb(
+    var(--custom-rgb-color-text-secondary, var(--color-text-secondary)) / var(--custom-alpha-color-text-secondary, 1)
+  );
+  --color-muted: rgb(
+    var(--custom-rgb-color-text-muted, var(--color-text-muted)) / var(--custom-alpha-color-text-muted, 1)
+  );
+  --color-placeholder: rgb(
+    var(--custom-rgb-color-text-placeholder, var(--color-text-placeholder)) /
+      var(--custom-alpha-color-text-placeholder, 1)
+  );
+  --color-th-border: rgb(var(--custom-rgb-color-border, var(--color-border)) / var(--custom-alpha-color-border, 1));
+  --color-th-border-hover: rgb(
+    var(--custom-rgb-color-border-hover, var(--color-border-hover)) / var(--custom-alpha-color-border-hover, 1)
+  );
+  --color-selection: rgb(
+    var(--custom-rgb-color-selection-bg, var(--color-selection-bg)) / var(--custom-alpha-color-selection-bg, 1)
+  );
+  --color-selection-border: rgb(
+    var(--custom-rgb-color-selection-border, var(--color-selection-border)) /
+      var(--custom-alpha-color-selection-border, 1)
+  );
+  --color-overlay: rgb(var(--custom-rgb-color-overlay, var(--color-overlay)) / var(--custom-alpha-color-overlay, 1));
+  --color-focus: rgb(var(--custom-rgb-color-focus, var(--color-focus)) / var(--custom-alpha-color-focus, 1));
+  --color-panel-border: rgb(
+    var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+      calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+  );
+  --color-input-bg: rgb(
+    var(--custom-rgb-color-input-bg, var(--color-input-bg)) / var(--custom-alpha-color-input-bg, 1)
+  );
+  --color-input-border: rgb(
+    var(--custom-rgb-color-input-border, var(--color-input-border)) /
+      calc(var(--custom-alpha-color-input-border, 1) * var(--opacity-input-border))
+  );
+  --color-code-bg: rgb(var(--custom-rgb-color-code-bg, var(--color-code-bg)) / var(--custom-alpha-color-code-bg, 1));
+  --color-code-text: rgb(
+    var(--custom-rgb-color-code-text, var(--color-code-text)) / var(--custom-alpha-color-code-text, 1)
+  );
+  --color-link-hover: rgb(
+    var(--custom-rgb-color-link-hover, var(--color-link-hover)) / var(--custom-alpha-color-link-hover, 1)
+  );
+  --color-accent: rgb(var(--custom-rgb-color-primary, var(--color-primary)) / var(--custom-alpha-color-primary, 1));
+  --color-accent-hover: rgb(
+    var(--custom-rgb-color-primary-hover, var(--color-primary-hover)) / var(--custom-alpha-color-primary-hover, 1)
+  );
+  --color-accent-active: rgb(
+    var(--custom-rgb-color-primary-active, var(--color-primary-active)) / var(--custom-alpha-color-primary-active, 1)
+  );
+  --color-accent-light: rgb(
+    var(--custom-rgb-color-primary-light, var(--color-primary-light)) / var(--custom-alpha-color-primary-light, 1)
+  );
+}
+
+@theme {
+  /* Tailwind 3's default font stacks (Tailwind 4 changed the sans stack). */
+  --font-sans:
+    ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+  /* `rounded` and `rounded-md` share the 0.5rem control radius; lg and xl are one step larger than
+     Tailwind's defaults. */
+  --radius: 0.5rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Tailwind 3's font-size line heights were lengths, inherited as lengths: a 12px table header in a
+     text-sm table kept the 20px line. Tailwind 4 made them ratios, which children rescale. */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+
+  --default-transition-duration: 140ms;
+
+  /* Tailwind 3's default ring color, for ring-* widths used without a ring color. */
+  --default-ring-color: rgb(59 130 246 / 0.5);
+}
+
+/* Inlined like the colors: the shadow tokens resolve on the element, so scoped theme previews
+   ([data-theme-scope]) get their own shadow colors. */
+@theme inline reference {
+  --shadow-theme: none;
+  --shadow-theme-lg: 0 16px 48px -12px rgb(var(--color-shadow-lg)), 0 2px 8px rgb(var(--color-shadow));
+}
+
+/* Tailwind 3's space-y and divide-y: a top margin or border on every visible child after the first.
+   Tailwind 4 puts a bottom margin or border on every child but the last, which leaves a gap or line
+   after the last visible child when the final child is hidden (the chat's empty:hidden suggestions
+   row, for example) and moves the line to the other row. These restore the Tailwind 3 rules; index.css
+   cancels Tailwind 4's own (zero-specificity) rules right after the generated utilities. */
+@utility space-y-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    margin-top: calc(var(--spacing) * --value(number));
+    margin-bottom: 0;
+  }
+}
+
+@utility divide-y {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-top-width: 1px;
+    border-bottom-width: 0;
+  }
+}
+
+@utility divide-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-color: --value(--color-*);
+    border-color: --alpha(--value(--color-*) / calc(--modifier(integer) * 1%));
+  }
+}
+
+/* Tailwind 3 preflight behavior that Tailwind 4's preflight changed, so the UI renders as before.
+   index.css sets the interactive cursors (Tailwind 4 also dropped cursor: pointer on buttons). */
+@layer base {
+  /* Borders without a color class used gray-200; Tailwind 4 uses currentColor. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: rgb(229 231 235);
+  }
+
+  /* Placeholders used gray-400; Tailwind 4 uses the text color at half opacity. */
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(156 163 175);
+  }
+
+  /* Tailwind 3 reset these only for buttons; Tailwind 4 makes every form control transparent,
+     square and opaque. `revert` restores the browser's own defaults. */
+  input:where(:not([type='button'], [type='reset'], [type='submit'])),
+  select,
+  optgroup,
+  textarea {
+    background-color: revert;
+    border-radius: revert;
+    opacity: revert;
+  }
+
+  /* Tailwind 4 also resets margin, padding and border on every element and the file button, where
+     Tailwind 3 reset them for a list of elements: the file button, list options and table cells
+     (whose 1px is the table's cellpadding default, which `revert` does not restore) kept theirs. */
+  ::file-selector-button {
+    margin: revert;
+    padding: revert;
+    border: revert;
+    background-color: revert;
+    border-radius: revert;
+    opacity: revert;
+  }
+
+  option {
+    padding: revert;
+  }
+
+  td,
+  th {
+    padding: 1px;
+  }
+
+  /* Dropped from Tailwind 4's preflight. */
+  [type='search'] {
+    -webkit-appearance: textfield;
+    outline-offset: -2px;
+  }
+
+  /* Tailwind 4 normalizes date and time inputs (mainly for Safari); Tailwind 3 left them alone. */
+  ::-webkit-date-and-time-value {
+    min-height: revert;
+    text-align: revert;
+  }
+
+  ::-webkit-datetime-edit {
+    display: revert;
+  }
+
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: revert;
+  }
+
+  ::-webkit-datetime-edit,
+  ::-webkit-datetime-edit-year-field,
+  ::-webkit-datetime-edit-month-field,
+  ::-webkit-datetime-edit-day-field,
+  ::-webkit-datetime-edit-hour-field,
+  ::-webkit-datetime-edit-minute-field,
+  ::-webkit-datetime-edit-second-field,
+  ::-webkit-datetime-edit-millisecond-field,
+  ::-webkit-datetime-edit-meridiem-field {
+    padding-block: revert;
+  }
+
+  ::-webkit-calendar-picker-indicator {
+    line-height: revert;
+  }
+}

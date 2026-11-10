@@ -270,7 +270,7 @@ describe('AgentSlotWaitStatus', () => {
     await render()
     await eventually(() => expect(text()).toBe(`Waiting for slot: ${name}`))
     const label = dom.window.document.querySelector('[role="status"] span:last-child')!
-    expect(label.className).toContain('[overflow-wrap:anywhere]')
+    expect(label.className).toContain('wrap-anywhere')
     expect(label.className).not.toMatch(/truncate|line-clamp|overflow-hidden/)
   })
 

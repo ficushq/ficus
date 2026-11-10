@@ -156,7 +156,7 @@ export function FollowScrollBox({ as = 'div', follow, className, children }: Fol
         <button
           type="button"
           onClick={resume}
-          className="ficus-button ficus-button-primary absolute bottom-2 right-2 p-1 rounded text-[10px] shadow-sm"
+          className="ficus-button ficus-button-primary absolute bottom-2 right-2 p-1 rounded text-[10px] shadow-xs"
           title="Resume auto-scroll"
         >
           ↓ Follow

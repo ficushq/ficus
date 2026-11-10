@@ -1,9 +1,15 @@
+/* Tailwind 3 emitted one flat stylesheet: preflight, base, components, its utilities, then plain CSS,
+   all competing by specificity and then source order. Tailwind 4 uses native cascade layers, where a
+   later layer wins regardless of specificity and unlayered CSS beats every layer. To keep the Tailwind 3
+   cascade, Tailwind's theme and preflight keep their own layers, while the app's component and base
+   rules share the utilities layer with the generated utilities, in Tailwind 3's order: design-system.css
+   and the base rules below, then the generated utilities, then the app's own utilities and plain CSS. */
+@layer properties, theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import './tailwind.css';
 @import './design-system.css';
 @import './theme/builtins.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 /* ============================================
    THEME COLOR TOKENS
@@ -1082,40 +1088,13 @@
   }
 }
 
-/* Safe area padding for iOS devices with notch/home indicator */
-@layer utilities {
-  .safe-area-pb {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  .safe-area-pt {
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-
-  /* env(safe-area-inset-top) is 0 exactly when the status bar is opaque and
-     outside the webview (browser tabs, PWA installs that predate the
-     black-translucent meta — iOS snapshots that meta at Add-to-Home-Screen
-     time) and the real inset when the bar is translucent. Trust it: forcing a
-     minimum height paints dead padding under opaque bars. */
-  .safe-area-status-bar-scrim::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: env(safe-area-inset-top, 0px);
-    background: rgb(var(--color-status-bar-scrim));
-    pointer-events: none;
-  }
-}
-
 /* Touch targets on phones: standalone design-system buttons get WCAG 2.5.8's 24px minimum.
    Links, link-style buttons (.ficus-button-link) and unstyled text buttons usually sit in a
    line of text and keep its line height, which the criterion's inline exception allows. A
    minimum height on those made the line taller than its text, so an icon pinned to the first
    line sat above it. Fixed-size custom controls (toggle switches, graph handles) keep their
    size. :where() keeps the specificity at zero, so size utilities (min-h-0, min-h-[44px]) win. */
-@layer base {
+@layer utilities {
   @media (max-width: 767px) {
     :where(.ficus-button:not(.ficus-button-link)) {
       min-height: 1.5rem;
@@ -1126,13 +1105,15 @@
 /* Selection uses the existing soft interaction surface and readable primary text.
    The selection-border token remains for bordered selection UI: ::selection does
    not support borders. This intentionally replaces the browser's default look. */
-::selection {
-  background-color: rgb(var(--color-selection-bg));
-  color: rgb(var(--color-text-primary));
+@layer utilities {
+  ::selection {
+    background-color: rgb(var(--color-selection-bg));
+    color: rgb(var(--color-text-primary));
+  }
 }
 
 /* A shared visible focus treatment for keyboard navigation. */
-@layer base {
+@layer utilities {
   :where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
     outline: 2px solid rgb(var(--color-focus));
     outline-offset: 3px;
@@ -1204,6 +1185,52 @@
       var(--custom-rgb-color-input-border, var(--color-input-border)) /
         calc(var(--custom-alpha-color-input-border, 1) * var(--opacity-input-border))
     ) !important;
+  }
+}
+
+/* Tailwind's generated utilities, including the typography plugin's .prose (a component in
+   Tailwind 3). Sources and theme: src/tailwind.css. */
+@layer utilities {
+  @tailwind utilities source(none);
+
+  /* Cancel Tailwind 4's own space-y and divide rules (zero specificity, so a child's own margin or
+     border utilities still win); the Tailwind 3 rules in src/tailwind.css apply instead. */
+  :where([class*='space-y-'] > :not(:last-child)) {
+    margin-block-start: revert-layer;
+    margin-block-end: revert-layer;
+  }
+
+  :where([class*='divide-'] > :not(:last-child)) {
+    border-top-width: revert-layer;
+    border-bottom-width: revert-layer;
+    border-color: revert-layer;
+  }
+}
+
+/* Safe area padding for iOS devices with notch/home indicator */
+@layer utilities {
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-pt {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* env(safe-area-inset-top) is 0 exactly when the status bar is opaque and
+     outside the webview (browser tabs, PWA installs that predate the
+     black-translucent meta — iOS snapshots that meta at Add-to-Home-Screen
+     time) and the real inset when the bar is translucent. Trust it: forcing a
+     minimum height paints dead padding under opaque bars. */
+  .safe-area-status-bar-scrim::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: rgb(var(--color-status-bar-scrim));
+    pointer-events: none;
   }
 }
 
@@ -1383,306 +1410,311 @@
   }
 }
 
-/* Staggered three-dot "agent is working" pulse (see TypingIndicator). */
-/* The working indicator (TypingIndicator): the Ficus mark's leaves dance. Each
-   leaf group pivots at its base, the pot's rim. */
-.ficus-dance-left,
-.ficus-dance-right,
-.ficus-dance-center {
-  transform-box: view-box;
-  transform-origin: 0 0;
-  animation: ficus-sway-left 1.4s ease-in-out infinite;
-}
-
-.ficus-dance-right {
-  animation-name: ficus-sway-right;
-  animation-delay: -0.35s;
-}
-
-.ficus-dance-center {
-  animation-name: ficus-bob;
-  animation-delay: -0.7s;
-}
-
-.ficus-dance {
-  animation: ficus-hop 1.4s ease-in-out infinite;
-}
-
-/* The working plant's one jump (crouch, leap, squash on landing, a little bounce),
-   used three ways: leaping up from behind the composer when work starts (ChatView
-   PeekingPlant), on a click (TypingIndicator), and leaping then falling back out of
-   sight when work ends. */
-.ficus-plant-peek {
-  transform-origin: 50% 100%;
-}
-
-.ficus-plant-peek[data-state='in'] {
-  animation: ficus-plant-pop-in 600ms ease-out both;
-}
-
-.ficus-plant-peek[data-state='out'] {
-  animation: ficus-plant-pop-out 600ms ease-in-out forwards;
-}
-
-/* While the agent idles on a monitor, the plant hangs upside down from the chat's
-   Monitoring banner, pot half hidden behind it (AgentMonitorStatus HangingPlant): the
-   same plant, pop and jump mirrored vertically, so it drops down into view and
-   retreats up behind the banner. Its drop waits out the composer plant's jump out of
-   sight (PLANT_HIDE_MS), so only one plant is ever up. */
-.ficus-plant-hang {
-  transform: translateY(-26%) scaleY(-1);
-}
-
-.ficus-plant-hang .ficus-plant-peek[data-state='in'] {
-  animation-delay: 600ms;
-}
-
-.ficus-plant-jump {
-  display: block;
-  transform-origin: 50% 100%;
-}
-
-/* A click: crouch, jump, squash on landing, a little bounce (two names so every click restarts it). */
-.ficus-plant-jump[data-jump='a'] {
-  animation: ficus-plant-jump-a 600ms ease-out;
-}
-
-.ficus-plant-jump[data-jump='b'] {
-  animation: ficus-plant-jump-b 600ms ease-out;
-}
-
-@keyframes ficus-plant-jump-a {
-  0%,
-  100% {
-    transform: translateY(0) scale(1, 1);
-  }
-  14% {
-    transform: translateY(0) scale(1.14, 0.84);
-  }
-  42% {
-    transform: translateY(-60%) scale(0.9, 1.12);
-  }
-  66% {
-    transform: translateY(0) scale(1.16, 0.84);
-  }
-  82% {
-    transform: translateY(-10%) scale(0.97, 1.04);
-  }
-}
-
-@keyframes ficus-plant-jump-b {
-  0%,
-  100% {
-    transform: translateY(0) scale(1, 1);
-  }
-  14% {
-    transform: translateY(0) scale(1.14, 0.84);
-  }
-  42% {
-    transform: translateY(-60%) scale(0.9, 1.12);
-  }
-  66% {
-    transform: translateY(0) scale(1.16, 0.84);
-  }
-  82% {
-    transform: translateY(-10%) scale(0.97, 1.04);
-  }
-}
-
-@keyframes ficus-plant-pop-in {
-  /* From hiding: the jump's leap, landing and bounce. */
-  0% {
-    transform: translateY(110%) scale(1, 1);
-  }
-  42% {
-    transform: translateY(-60%) scale(0.9, 1.12);
-  }
-  66% {
-    transform: translateY(0) scale(1.16, 0.84);
-  }
-  82% {
-    transform: translateY(-10%) scale(0.97, 1.04);
-  }
-  100% {
-    transform: translateY(0) scale(1, 1);
-  }
-}
-
-@keyframes ficus-plant-pop-out {
-  /* The jump's crouch and leap, then down past its spot into hiding. */
-  0% {
-    transform: translateY(0) scale(1, 1);
-  }
-  14% {
-    transform: translateY(0) scale(1.14, 0.84);
-  }
-  42% {
-    transform: translateY(-60%) scale(0.9, 1.12);
-  }
-  100% {
-    transform: translateY(115%) scale(1, 1);
-  }
-}
-
-@keyframes ficus-sway-left {
-  0%,
-  100% {
-    transform: rotate(6deg);
-  }
-  50% {
-    transform: rotate(-16deg);
-  }
-}
-
-@keyframes ficus-sway-right {
-  0%,
-  100% {
-    transform: rotate(-6deg);
-  }
-  50% {
-    transform: rotate(16deg);
-  }
-}
-
-@keyframes ficus-bob {
-  0%,
-  100% {
-    transform: rotate(-7deg) scale(1, 0.96);
-  }
-  50% {
-    transform: rotate(7deg) scale(1, 1.06);
-  }
-}
-
-@keyframes ficus-hop {
-  0%,
-  50%,
-  100% {
-    transform: translateY(0);
-  }
-  25%,
-  75% {
-    transform: translateY(-1.5px);
-  }
-}
-
-/* Teammates typing in an agent's chat (TeammatesTyping.tsx): each dot rises in turn. */
-.ficus-typing-dot {
-  animation: ficus-typing-dot 1.2s ease-in-out infinite;
-}
-
-@keyframes ficus-typing-dot {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.45;
-  }
-  30% {
-    transform: translateY(-3px);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ficus-typing-dot,
-  .ficus-plant-jump[data-jump],
-  .ficus-plant-peek[data-state='in'],
-  .ficus-plant-peek[data-state='out'],
-  .ficus-dance,
+/* Everything below was unlayered CSS after the utilities in Tailwind 3, so it won ties with them
+   but lost to more specific utilities (dark:, group-hover:). In Tailwind 4 unlayered CSS beats
+   every layer, so it lives at the end of the utilities layer to keep the same cascade. */
+@layer utilities {
+  /* Staggered three-dot "agent is working" pulse (see TypingIndicator). */
+  /* The working indicator (TypingIndicator): the Ficus mark's leaves dance. Each
+     leaf group pivots at its base, the pot's rim. */
   .ficus-dance-left,
   .ficus-dance-right,
   .ficus-dance-center {
-    animation: none;
+    transform-box: view-box;
+    transform-origin: 0 0;
+    animation: ficus-sway-left 1.4s ease-in-out infinite;
   }
-}
 
-/* Ficus Desktop inset title bar (html[data-desktop-shell='inset'], set by
-   useDesktopShellChrome only inside the desktop app while windowed). The macOS
-   window controls sit over the top-left of the page, so the app header becomes
-   the title bar: exactly 56px tall, a window drag region, with history arrows 24px after
-   the window controls followed by the compact logo. Browsers and mobile never get the attribute. */
-:root[data-desktop-shell='inset'] {
-  /* Also reserved above dialogs (ResponsiveChat.css) so panels never sit under the window controls. */
-  --desktop-titlebar-height: 56px;
-}
+  .ficus-dance-right {
+    animation-name: ficus-sway-right;
+    animation-delay: -0.35s;
+  }
 
-:root[data-desktop-shell='inset'] .ficus-app-header {
-  height: var(--desktop-titlebar-height);
-  padding-top: 0;
-  -webkit-app-region: drag;
-}
+  .ficus-dance-center {
+    animation-name: ficus-bob;
+    animation-delay: -0.7s;
+  }
 
-/* Pages without the app header (sign-in, setup) drag the window by this strip
-   instead (added by useDesktopShellChrome). Clicks pass through it to the page;
-   controls under it stay clickable through the no-drag rule below. */
-.ficus-desktop-drag-strip {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 56px;
-  pointer-events: none;
-  -webkit-app-region: drag;
-}
+  .ficus-dance {
+    animation: ficus-hop 1.4s ease-in-out infinite;
+  }
 
-:root:has(.ficus-app-header) .ficus-desktop-drag-strip {
-  display: none;
-}
+  /* The working plant's one jump (crouch, leap, squash on landing, a little bounce),
+     used three ways: leaping up from behind the composer when work starts (ChatView
+     PeekingPlant), on a click (TypingIndicator), and leaping then falling back out of
+     sight when work ends. */
+  .ficus-plant-peek {
+    transform-origin: 50% 100%;
+  }
 
-:root[data-desktop-shell='inset'] .ficus-app-header-bar {
-  height: 100%;
-  padding-top: 0;
-  padding-bottom: 0;
-  /* Title-bar chrome spans the window like a native toolbar: history controls sit a
-     fixed 24px after the window controls (which end near x=72px) at every
-     width instead of drifting with the page's centered content column. */
-  max-width: none;
-  padding-left: 96px;
-  padding-right: 1rem;
-}
+  .ficus-plant-peek[data-state='in'] {
+    animation: ficus-plant-pop-in 600ms ease-out both;
+  }
 
-/* A compact app mark rather than a web page masthead. */
-:root[data-desktop-shell='inset'] .ficus-app-header-logo {
-  font-size: 1rem;
-  line-height: 1.5rem;
-  font-weight: 600;
-}
+  .ficus-plant-peek[data-state='out'] {
+    animation: ficus-plant-pop-out 600ms ease-in-out forwards;
+  }
 
-:root[data-desktop-shell='inset'] .ficus-app-header-logo svg {
-  width: 1.375rem;
-  height: 1.375rem;
-}
+  /* While the agent idles on a monitor, the plant hangs upside down from the chat's
+     Monitoring banner, pot half hidden behind it (AgentMonitorStatus HangingPlant): the
+     same plant, pop and jump mirrored vertically, so it drops down into view and
+     retreats up behind the banner. Its drop waits out the composer plant's jump out of
+     sight (PLANT_HIDE_MS), so only one plant is ever up. */
+  .ficus-plant-hang {
+    transform: translateY(-26%) scaleY(-1);
+  }
 
-/* The instance label (which Desktop instance this window shows) only makes
-   sense next to the compact inset title-bar logo; a full-width web masthead
-   never needs it. */
-.ficus-app-header-instance {
-  display: none;
-}
+  .ficus-plant-hang .ficus-plant-peek[data-state='in'] {
+    animation-delay: 600ms;
+  }
 
-:root[data-desktop-shell='inset'] .ficus-app-header-instance {
-  display: inline;
-}
+  .ficus-plant-jump {
+    display: block;
+    transform-origin: 50% 100%;
+  }
 
-/* Everything interactive in the title bar, and any overlay that can cover it,
-   must stay clickable rather than drag the window. */
-:root[data-desktop-shell='inset']
-  .ficus-app-header
-  :is(
-    a,
-    button,
-    input,
-    select,
-    textarea,
-    summary,
-    label,
-    [role='button'],
-    [role='menu'],
-    [role='menuitem'],
-    [role='listbox'],
-    [role='option'],
-    [role='dialog'],
-    [tabindex]
-  ),
-:root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .ficus-overlay, .fixed.inset-0) {
-  -webkit-app-region: no-drag;
+  /* A click: crouch, jump, squash on landing, a little bounce (two names so every click restarts it). */
+  .ficus-plant-jump[data-jump='a'] {
+    animation: ficus-plant-jump-a 600ms ease-out;
+  }
+
+  .ficus-plant-jump[data-jump='b'] {
+    animation: ficus-plant-jump-b 600ms ease-out;
+  }
+
+  @keyframes ficus-plant-jump-a {
+    0%,
+    100% {
+      transform: translateY(0) scale(1, 1);
+    }
+    14% {
+      transform: translateY(0) scale(1.14, 0.84);
+    }
+    42% {
+      transform: translateY(-60%) scale(0.9, 1.12);
+    }
+    66% {
+      transform: translateY(0) scale(1.16, 0.84);
+    }
+    82% {
+      transform: translateY(-10%) scale(0.97, 1.04);
+    }
+  }
+
+  @keyframes ficus-plant-jump-b {
+    0%,
+    100% {
+      transform: translateY(0) scale(1, 1);
+    }
+    14% {
+      transform: translateY(0) scale(1.14, 0.84);
+    }
+    42% {
+      transform: translateY(-60%) scale(0.9, 1.12);
+    }
+    66% {
+      transform: translateY(0) scale(1.16, 0.84);
+    }
+    82% {
+      transform: translateY(-10%) scale(0.97, 1.04);
+    }
+  }
+
+  @keyframes ficus-plant-pop-in {
+    /* From hiding: the jump's leap, landing and bounce. */
+    0% {
+      transform: translateY(110%) scale(1, 1);
+    }
+    42% {
+      transform: translateY(-60%) scale(0.9, 1.12);
+    }
+    66% {
+      transform: translateY(0) scale(1.16, 0.84);
+    }
+    82% {
+      transform: translateY(-10%) scale(0.97, 1.04);
+    }
+    100% {
+      transform: translateY(0) scale(1, 1);
+    }
+  }
+
+  @keyframes ficus-plant-pop-out {
+    /* The jump's crouch and leap, then down past its spot into hiding. */
+    0% {
+      transform: translateY(0) scale(1, 1);
+    }
+    14% {
+      transform: translateY(0) scale(1.14, 0.84);
+    }
+    42% {
+      transform: translateY(-60%) scale(0.9, 1.12);
+    }
+    100% {
+      transform: translateY(115%) scale(1, 1);
+    }
+  }
+
+  @keyframes ficus-sway-left {
+    0%,
+    100% {
+      transform: rotate(6deg);
+    }
+    50% {
+      transform: rotate(-16deg);
+    }
+  }
+
+  @keyframes ficus-sway-right {
+    0%,
+    100% {
+      transform: rotate(-6deg);
+    }
+    50% {
+      transform: rotate(16deg);
+    }
+  }
+
+  @keyframes ficus-bob {
+    0%,
+    100% {
+      transform: rotate(-7deg) scale(1, 0.96);
+    }
+    50% {
+      transform: rotate(7deg) scale(1, 1.06);
+    }
+  }
+
+  @keyframes ficus-hop {
+    0%,
+    50%,
+    100% {
+      transform: translateY(0);
+    }
+    25%,
+    75% {
+      transform: translateY(-1.5px);
+    }
+  }
+
+  /* Teammates typing in an agent's chat (TeammatesTyping.tsx): each dot rises in turn. */
+  .ficus-typing-dot {
+    animation: ficus-typing-dot 1.2s ease-in-out infinite;
+  }
+
+  @keyframes ficus-typing-dot {
+    0%,
+    60%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.45;
+    }
+    30% {
+      transform: translateY(-3px);
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ficus-typing-dot,
+    .ficus-plant-jump[data-jump],
+    .ficus-plant-peek[data-state='in'],
+    .ficus-plant-peek[data-state='out'],
+    .ficus-dance,
+    .ficus-dance-left,
+    .ficus-dance-right,
+    .ficus-dance-center {
+      animation: none;
+    }
+  }
+
+  /* Ficus Desktop inset title bar (html[data-desktop-shell='inset'], set by
+     useDesktopShellChrome only inside the desktop app while windowed). The macOS
+     window controls sit over the top-left of the page, so the app header becomes
+     the title bar: exactly 56px tall, a window drag region, with history arrows 24px after
+     the window controls followed by the compact logo. Browsers and mobile never get the attribute. */
+  :root[data-desktop-shell='inset'] {
+    /* Also reserved above dialogs (ResponsiveChat.css) so panels never sit under the window controls. */
+    --desktop-titlebar-height: 56px;
+  }
+
+  :root[data-desktop-shell='inset'] .ficus-app-header {
+    height: var(--desktop-titlebar-height);
+    padding-top: 0;
+    -webkit-app-region: drag;
+  }
+
+  /* Pages without the app header (sign-in, setup) drag the window by this strip
+     instead (added by useDesktopShellChrome). Clicks pass through it to the page;
+     controls under it stay clickable through the no-drag rule below. */
+  .ficus-desktop-drag-strip {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 56px;
+    pointer-events: none;
+    -webkit-app-region: drag;
+  }
+
+  :root:has(.ficus-app-header) .ficus-desktop-drag-strip {
+    display: none;
+  }
+
+  :root[data-desktop-shell='inset'] .ficus-app-header-bar {
+    height: 100%;
+    padding-top: 0;
+    padding-bottom: 0;
+    /* Title-bar chrome spans the window like a native toolbar: history controls sit a
+       fixed 24px after the window controls (which end near x=72px) at every
+       width instead of drifting with the page's centered content column. */
+    max-width: none;
+    padding-left: 96px;
+    padding-right: 1rem;
+  }
+
+  /* A compact app mark rather than a web page masthead. */
+  :root[data-desktop-shell='inset'] .ficus-app-header-logo {
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+  }
+
+  :root[data-desktop-shell='inset'] .ficus-app-header-logo svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  /* The instance label (which Desktop instance this window shows) only makes
+     sense next to the compact inset title-bar logo; a full-width web masthead
+     never needs it. */
+  .ficus-app-header-instance {
+    display: none;
+  }
+
+  :root[data-desktop-shell='inset'] .ficus-app-header-instance {
+    display: inline;
+  }
+
+  /* Everything interactive in the title bar, and any overlay that can cover it,
+     must stay clickable rather than drag the window. */
+  :root[data-desktop-shell='inset']
+    .ficus-app-header
+    :is(
+      a,
+      button,
+      input,
+      select,
+      textarea,
+      summary,
+      label,
+      [role='button'],
+      [role='menu'],
+      [role='menuitem'],
+      [role='listbox'],
+      [role='option'],
+      [role='dialog'],
+      [tabindex]
+    ),
+  :root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .ficus-overlay, .fixed.inset-0) {
+    -webkit-app-region: no-drag;
+  }
 }

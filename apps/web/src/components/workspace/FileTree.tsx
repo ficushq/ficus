@@ -145,7 +145,7 @@ function TreeItem({
         )}
         {!isDirectory && <span className="w-4" />}
         {isPending ? (
-          <SpinnerIcon className="w-4 h-4 animate-spin text-accent-light flex-shrink-0" />
+          <SpinnerIcon className="w-4 h-4 animate-spin text-accent-light shrink-0" />
         ) : (
           <span className="text-muted">
             {isDirectory ? (

@@ -89,13 +89,14 @@ test('forced-colors retains real boundaries/focus and visible voice status witho
   css.walkAtRules('media', (media) => {
     if (media.params !== '(forced-colors: active)') return
     media.walkRules((rule) => {
-      declarations[rule.selector] = {}
+      const selector = rule.selectors.join(', ')
+      declarations[selector] = {}
       rule.walkDecls((decl) => {
-        declarations[rule.selector]![decl.prop] = decl.value
+        declarations[selector]![decl.prop] = decl.value
       })
     })
   })
-  expect(declarations['.ficus-button,\n  .ficus-field']?.outline).toBe('1px solid ButtonText')
+  expect(declarations['.ficus-button, .ficus-field']?.outline).toBe('1px solid ButtonText')
   expect(declarations['.voice-orb']?.outline).toBe('2px solid ButtonText')
   expect(declarations['.voice-orb:focus-visible']?.outline).toBe('3px solid Highlight')
   expect(declarations['.voice-orb-status']?.display).toBe('block')

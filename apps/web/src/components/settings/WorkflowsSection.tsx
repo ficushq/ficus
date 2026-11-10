@@ -148,7 +148,7 @@ function WorkflowCard({
     <article className="min-w-0 rounded-xl border border-panel-border bg-surface p-4 space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="break-words font-semibold text-primary">{entry.definition.name}</h4>
+          <h4 className="wrap-break-word font-semibold text-primary">{entry.definition.name}</h4>
           <p className="break-all text-xs text-muted">
             {entry.id} ·{' '}
             {entry.scope?.kind === 'squad'
@@ -186,7 +186,7 @@ function WorkflowCard({
           )}
         </div>
       </div>
-      {entry.description && <p className="break-words text-sm text-muted">{entry.description}</p>}
+      {entry.description && <p className="wrap-break-word text-sm text-muted">{entry.description}</p>}
       <button
         className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
         aria-expanded={preview}

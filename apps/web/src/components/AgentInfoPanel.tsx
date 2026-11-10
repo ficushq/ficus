@@ -61,7 +61,7 @@ function ModelLabel({ model, catalog }: { model: ParsedDisplayModelSpec; catalog
         : undefined
   return (
     <div className="min-w-0">
-      <p className="text-sm font-medium text-primary break-words">{name}</p>
+      <p className="text-sm font-medium text-primary wrap-break-word">{name}</p>
       <p className="mt-0.5 text-xs text-muted">
         {providerLabel(model.provider)}
         {model.provider && thinking && ' · '}

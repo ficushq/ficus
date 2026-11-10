@@ -11,12 +11,14 @@ export function QuestionAnswerList({ questions }: { questions: ResolvedQuestionA
     <dl className="space-y-2.5">
       {questions.map((item) => (
         <div key={item.questionId} className="min-w-0">
-          <dt className="whitespace-pre-wrap break-words text-xs text-secondary">{item.question || item.questionId}</dt>
+          <dt className="whitespace-pre-wrap wrap-break-word text-xs text-secondary">
+            {item.question || item.questionId}
+          </dt>
           <dd className="mt-0.5">
             {item.choices.length === 0 ? (
               <span className="text-sm italic text-muted">Skipped</span>
             ) : item.choices.length === 1 ? (
-              <span className="whitespace-pre-wrap break-words text-sm font-medium text-primary">
+              <span className="whitespace-pre-wrap wrap-break-word text-sm font-medium text-primary">
                 {item.choices[0].label}
               </span>
             ) : (
@@ -24,7 +26,7 @@ export function QuestionAnswerList({ questions }: { questions: ResolvedQuestionA
                 {item.choices.map((choice, index) => (
                   <li
                     key={`${index}:${choice.value ?? choice.label}`}
-                    className="max-w-full whitespace-pre-wrap break-words rounded-md border border-accent/30 bg-chrome-paper/70 px-2 py-1 text-xs font-medium text-primary dark:bg-chrome-scrim/20"
+                    className="max-w-full whitespace-pre-wrap wrap-break-word rounded-md border border-accent/30 bg-chrome-paper/70 px-2 py-1 text-xs font-medium text-primary dark:bg-chrome-scrim/20"
                   >
                     {choice.label}
                   </li>

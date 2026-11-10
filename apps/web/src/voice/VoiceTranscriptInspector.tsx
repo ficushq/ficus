@@ -40,9 +40,7 @@ export function VoiceTranscriptInspector({
   const last = history.at(-1)
   const streamingText = last?.role === 'assistant' && !last.final && Boolean(last.text)
   return (
-    <div
-      className={clsx('flex min-w-0 flex-col gap-1 [overflow-wrap:anywhere]', alignContent ? 'p-3' : 'p-2', className)}
-    >
+    <div className={clsx('flex min-w-0 flex-col gap-1 wrap-anywhere', alignContent ? 'p-3' : 'p-2', className)}>
       {history.map((entry, i) => {
         if (activityLabel && entry.role === 'assistant' && !entry.final && !entry.text) return null
         const prev = i > 0 ? history[i - 1] : null
@@ -135,7 +133,7 @@ function TranscriptBubble({
         )}
       >
         {!isUser && entry.text ? (
-          <MarkdownContent className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">{entry.text}</MarkdownContent>
+          <MarkdownContent className="*:first:mt-0 *:last:mb-0">{entry.text}</MarkdownContent>
         ) : (
           entry.text || '...'
         )}
@@ -217,7 +215,7 @@ function ToolTranscriptEntry({
           )}
         </button>
         {failed && (
-          <p className="px-2 py-1 text-xs text-status-danger-600 dark:text-status-danger-400 break-words">
+          <p className="px-2 py-1 text-xs text-status-danger-600 dark:text-status-danger-400 wrap-break-word">
             {summarizeAssistantError(error ?? 'Tool failed. Expand for details.')}
           </p>
         )}

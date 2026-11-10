@@ -1,7 +1,5 @@
 import { expect, test } from 'bun:test'
-import postcss from 'postcss'
-import tailwindcss from 'tailwindcss'
-import config from '../../tailwind.config.js'
+import { compileUtilities, utilityDeclarations } from '../test/tailwind'
 import { STATUS_TOKENS, validateThemeTokenOverrides } from '@ficus/shared'
 import fixture from './fixtures/legacy-utility-colors.json'
 import { palettes, tokenRgba } from './test/builtins'
@@ -20,15 +18,9 @@ test('remaining utility ramps preserve their original concrete colors and are co
 })
 test('every migrated ramp compiles to a real token utility with alpha composition', async () => {
   const classes = Object.keys(fixture).flatMap((name) => [`text-${name}`, `bg-${name}/30`])
-  const result = await postcss([
-    tailwindcss({ ...config, content: [{ raw: classes.join(' '), extension: 'html' }], plugins: [] }),
-  ]).process('@tailwind utilities', { from: undefined })
-  const selectors: string[] = []
-  result.root.walkRules((rule) => {
-    selectors.push(rule.selector.slice(1).replaceAll('\\', ''))
-  })
-  expect(selectors.sort()).toEqual(classes.sort())
-  for (const name of Object.keys(fixture)) expect(result.css).toContain(`var(--${name})`)
+  const result = await compileUtilities(classes)
+  expect([...utilityDeclarations(result).keys()].sort()).toEqual(classes.sort())
+  for (const name of Object.keys(fixture)) expect(result.toString()).toContain(`var(--${name})`)
 })
 test('status ramp overrides cannot bypass atomic status coherence', () => {
   expect(STATUS_TOKENS).toContain('--status-danger-600')

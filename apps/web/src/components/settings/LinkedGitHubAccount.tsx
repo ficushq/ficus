@@ -142,7 +142,7 @@ export function LinkedGitHubAccount() {
       {data?.linked && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm text-primary break-words">
+            <p className="text-sm text-primary wrap-break-word">
               Linked <strong>@{data.linked.login}</strong>
             </p>
             <p className="text-xs text-muted break-all">
