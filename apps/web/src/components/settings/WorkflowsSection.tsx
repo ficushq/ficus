@@ -158,6 +158,7 @@ function WorkflowCard({
                 : 'Available to all squads'}
             {entry.disabled ? ' · Disabled' : ''}
             {drift ? ' · Differs from code template' : ''}
+            {entry.templateHeldBack ? ' · Code update held back' : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">

@@ -76,7 +76,7 @@ Schedule templates support cron/interval actions such as inbox messages, agent s
 
 ### Workflows
 
-`WorkflowSync` validates each preset with `workflowPresetSchema` and stores its ID, description, scope, and flow definition. Presets default to instance scope. Selecting a style governs participation and delivery for a work stream; see [Workflows, flows, and squads](workflows.md). Unlike other field-level domains, it does not keep a whole edited `definition`: it merges code updates into local edits part by part against the previously stored template, and holds a definition update back when it would break a squad's saved customization. See [Edits to shared presets and code updates](workflows.md#edits-to-shared-presets-and-code-updates). The `reconcileUpdate()` hook on `ConfigSync` is where a domain can merge at a finer grain.
+`WorkflowSync` validates each preset with `workflowPresetSchema` and stores its ID, description, scope, and flow definition. Presets default to instance scope. Selecting a style governs participation and delivery for a work stream; see [Workflows, flows, and squads](workflows.md). Unlike other field-level domains, it does not keep a whole edited `definition`: it merges code updates into local edits part by part against the previously stored template, and holds a definition update back when it would break a squad's saved customization, keeping the old merge base in `yamlTemplateHold` so a later sync applies it once nothing blocks it. See [Edits to shared presets and code updates](workflows.md#edits-to-shared-presets-and-code-updates). The `reconcileUpdate()` hook on `ConfigSync` is where a domain can merge at a finer grain; it returns the data fields and any domain-owned tracking columns to store with them.
 
 ### Channels
 

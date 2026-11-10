@@ -184,6 +184,38 @@ describe('workflow CLI', () => {
     await f.run('export', 'solo')
     expect(f.printed.at(-1)).toBe('id: solo\n')
   })
+  test('template-diff prints the differences and why a code update is held back', async () => {
+    const diff = {
+      hasDrift: true,
+      differences: [{ path: 'definition/steps/@order', label: 'Step order' }],
+      heldBack: {
+        heldAt: '2026-11-10T00:00:00.000Z',
+        blockedBy: 'squad-customizations',
+        affectedSquads: [{ squadId: 's1', squadName: 'Alpha', problems: ["Unknown step 'execute'"] }],
+        hiddenSquadCount: 1,
+        parts: [{ path: 'definition/steps/execute', label: 'Step execute' }],
+      },
+    }
+    const f = fixture(diff)
+    await f.run('template-diff', 'solo')
+    expect(f.calls).toEqual([{ method: 'GET', path: '/api/workflows/solo/template-diff', body: undefined }])
+    expect(f.printed).toEqual([diff])
+    const text = f.messages.at(-1)!
+    expect(text).toContain('Step order (definition/steps/@order)')
+    expect(text).toContain('held back since 2026-11-10T00:00:00.000Z')
+    expect(text).toContain("Alpha: Unknown step 'execute'")
+    expect(text).toContain('1 squad you cannot see')
+    expect(text).toContain('Step execute (definition/steps/execute)')
+    const unblocked = fixture({
+      ...diff,
+      heldBack: { ...diff.heldBack, blockedBy: null, affectedSquads: [], hiddenSquadCount: 0 },
+    })
+    await unblocked.run('template-diff', 'solo')
+    expect(unblocked.messages.at(-1)).toContain('applies on the next sync')
+    const clean = fixture({ hasDrift: false, differences: [], heldBack: null })
+    await clean.run('template-diff', 'solo')
+    expect(clean.messages.at(-1)).toBe("Workflow 'solo' matches its code template.")
+  })
 })
 
 test('workstream flow commands preserve inspected versions and retry IDs, and reject invalid commands locally', async () => {

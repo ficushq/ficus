@@ -21,6 +21,7 @@ let permissions: string[]
 const squadId = 'squad-test'
 let metadata: Record<string, unknown>
 let restoreImpact: Record<string, unknown>
+let heldBack: Record<string, unknown> | null
 
 beforeEach(async () => {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -32,6 +33,7 @@ beforeEach(async () => {
   permissions = ['workflows:read', 'workflows:create', 'workflows:update', 'workflows:delete']
   metadata = {}
   restoreImpact = { revision: 'revision-1', affectedSquads: [], hiddenSquadCount: 0 }
+  heldBack = null
   catalog = [
     {
       id: 'solo',
@@ -87,6 +89,7 @@ beforeEach(async () => {
             current: { id: 'execute' },
           },
         ],
+        heldBack,
       })
     if (url.endsWith('/workflows/solo/revert/preview')) return Response.json(restoreImpact)
     if (url.endsWith('/workflows/solo/revert')) {
@@ -368,6 +371,27 @@ test('shows where a shared preset differs from its code template and restores se
     revision: 'revision-1',
     paths: ['definition/participants/worker/tier'],
   })
+})
+
+test('marks a held-back code update and names the squads and IDs that block it', async () => {
+  catalog[0].yamlFieldOverrides = ['definition']
+  catalog[0].templateHeldBack = true
+  heldBack = {
+    heldAt: '2026-11-10T00:00:00.000Z',
+    blockedBy: 'squad-customizations',
+    affectedSquads: [{ squadId, squadName: 'Platform squad', problems: ["Unknown step 'execute'"] }],
+    hiddenSquadCount: 1,
+    parts: [{ path: 'definition/steps/execute', label: 'Step execute' }],
+  }
+  const body = await render()
+  const solo = [...body.querySelectorAll('article')].find((card) => card.textContent?.includes('solo ·'))!
+  expect(solo.textContent).toContain('Code update held back')
+  await click(getByText(solo, 'Compare with code template'))
+  await eventually(() => expect(solo.textContent).toContain('A code update to this preset is held back'))
+  expect(solo.textContent).toContain('saved workflow customizations in 2 squads')
+  expect(solo.textContent).toContain("Platform squad: Unknown step 'execute'")
+  expect(solo.textContent).toContain('1 affected squad is not visible to you')
+  expect(solo.textContent).toContain('It changes: Step execute.')
 })
 
 test('warns and names affected squads before a restore that breaks their customizations', async () => {

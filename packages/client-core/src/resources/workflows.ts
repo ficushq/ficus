@@ -23,6 +23,8 @@ export interface WorkflowCatalogEntry extends WorkflowPreset {
   hasTemplate: boolean
   /** Top-level fields (`description`, `definition`) that differ from the code template. */
   yamlFieldOverrides?: string[]
+  /** A code update to the definition is held back; the template diff says why. */
+  templateHeldBack?: boolean
 }
 
 /** One place where a shared preset differs from its code template. */
@@ -42,6 +44,24 @@ export interface WorkflowTemplateDiff {
   revision: string
   fieldOverrides: string[]
   differences: WorkflowTemplateDifference[]
+  /** Absent on older servers; null when no code update is held back. */
+  heldBack?: WorkflowTemplateHold | null
+}
+
+/**
+ * A code update to a preset's definition that sync held back. Every sync retries it, and it
+ * applies automatically once nothing blocks it.
+ */
+export interface WorkflowTemplateHold {
+  heldAt: string
+  /** What holds it back now; null when nothing does and it applies on the next sync. */
+  blockedBy: 'squad-customizations' | 'invalid-workflow' | null
+  invalidReason?: string
+  /** Squads whose saved customizations it would break, named only when the caller may read them. */
+  affectedSquads: Array<{ squadId: string; squadName: string; problems: string[] }>
+  hiddenSquadCount: number
+  /** The parts of the definition the update would change. */
+  parts: Array<{ path: string; label: string }>
 }
 
 /** Squads whose saved customizations a restore would break. Only squads the caller may see are named. */

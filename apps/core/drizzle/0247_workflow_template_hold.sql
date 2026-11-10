@@ -1,0 +1,1 @@
+ALTER TABLE "workflows" ADD COLUMN "yaml_template_hold" jsonb;

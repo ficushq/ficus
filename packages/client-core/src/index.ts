@@ -28,6 +28,7 @@ export type {
   WorkflowRunDetail,
   WorkflowTemplateDiff,
   WorkflowTemplateDifference,
+  WorkflowTemplateHold,
 } from './resources/workflows'
 
 export * from './resources/workStreams'

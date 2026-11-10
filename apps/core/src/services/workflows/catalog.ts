@@ -19,6 +19,7 @@ import {
   type WorkflowTemplateDifference,
 } from './template-merge'
 import { describeSquadBreaks, findBrokenSquadCustomizations, visibleSquadBreaks } from './squad-impact'
+import { holdAfterRestore } from './template-hold'
 
 type Store = typeof db | DbTx
 export type WorkflowRow = typeof workflows.$inferSelect
@@ -83,6 +84,7 @@ export function serializeWorkflow(row: WorkflowRow) {
     disabled: row.disabled,
     hasTemplate: row.yamlTemplate !== null,
     yamlFieldOverrides: row.yamlFieldOverrides,
+    templateHeldBack: Boolean(row.yamlTemplateHold),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -291,6 +293,11 @@ export async function revertWorkflow(
         description: value.description ?? null,
         definition: value.definition,
         yamlFieldOverrides: overrides(row, { id, ...value }),
+        yamlTemplateHold: holdAfterRestore(
+          row.yamlTemplateHold,
+          row.yamlTemplate as Record<string, unknown>,
+          options.paths
+        ),
         updatedAt: new Date(),
       })
       .where(eq(workflows.id, id))

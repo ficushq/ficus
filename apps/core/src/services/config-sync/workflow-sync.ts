@@ -2,9 +2,9 @@ import * as yaml from 'js-yaml'
 import { workflowPresetSchema, type WorkflowDefinition, type WorkflowPreset } from '@ficus/shared'
 import { workflows } from '../../db'
 import { WORKFLOWS_DIR } from '../../lib/paths'
-import { ConfigSync } from './ConfigSync'
-import { mergeWorkflowTemplate, parseMergedPreset } from '../workflows/template-merge'
+import { ConfigSync, type ReconciledUpdate } from './ConfigSync'
 import { describeSquadBreaks, findBrokenSquadCustomizations } from '../workflows/squad-impact'
+import { nextTemplateHold, planWorkflowTemplateUpdate, type WorkflowTemplateHold } from '../workflows/template-hold'
 
 export class WorkflowSync extends ConfigSync<WorkflowPreset> {
   readonly name = 'workflows'
@@ -45,9 +45,10 @@ export class WorkflowSync extends ConfigSync<WorkflowPreset> {
   /**
    * Merge a code update into a preset field by field instead of keeping the whole edited
    * definition. Local edits win where both sides changed the same part; those parts are logged
-   * and stay visible through the template diff. The merged definition is not applied, and the
-   * current one is kept, when it is not a valid workflow or when it would break a squad's saved
-   * customization of this preset; a person can then review the drift and restore the template.
+   * and stay visible through the template diff. The definition update is held back, and the
+   * current definition kept, when the merged preset is not a valid workflow or would break a
+   * squad's saved customization of this preset. A held-back update keeps its merge base in
+   * `yamlTemplateHold`, so every later sync retries it and it applies once nothing blocks it.
    */
   protected override async reconcileUpdate(
     id: string,
@@ -55,46 +56,54 @@ export class WorkflowSync extends ConfigSync<WorkflowPreset> {
     existing: Record<string, unknown>,
     current: Record<string, unknown>,
     fieldOverrides: string[]
-  ): Promise<Record<string, unknown>> {
-    const base = this.storedTemplate(existing)
-    let next = base ? this.merge(id, base, current, record) : this.applyOverrideKeys(record, current, fieldOverrides)
-    const before = current.definition as WorkflowDefinition
-    const after = next.definition as WorkflowDefinition
-    if (!this.deepEqual(before, after)) {
-      const breaks = await findBrokenSquadCustomizations(id, before, after)
-      if (breaks.length) {
-        this.log.warn(
-          `Holding back the code update to workflow '${id}': it would break saved squad customizations of ` +
-            `${describeSquadBreaks({ affectedSquads: breaks, hiddenSquadCount: 0 })}. ` +
-            'Review the template diff and restore the preset once the squads are updated.'
-        )
-        next = { ...next, definition: current.definition }
-      }
+  ): Promise<ReconciledUpdate> {
+    const hold = (existing.yamlTemplateHold as WorkflowTemplateHold | null | undefined) ?? null
+    const base = hold?.base ?? this.storedTemplate(existing)
+    if (!base) return { data: await this.applyWithoutBase(id, record, current, fieldOverrides) }
+    const plan = await planWorkflowTemplateUpdate(id, base, current as { definition: WorkflowDefinition }, record)
+    if (plan.conflicts.length)
+      this.log.warn(
+        `Workflow '${id}' keeps local edits where the code template also changed: ${plan.conflicts.join(', ')}`
+      )
+    if (plan.blocked?.reason === 'invalid-workflow')
+      this.log.warn(
+        `Holding back the code update to workflow '${id}': merging it with local edits gives an invalid workflow, ` +
+          `so its local definition is kept. ${plan.blocked.detail}`
+      )
+    else if (plan.blocked)
+      this.log.warn(
+        `Holding back the code update to workflow '${id}': it would break saved squad customizations of ` +
+          `${describeSquadBreaks({ affectedSquads: plan.blocked.breaks, hiddenSquadCount: 0 })}. ` +
+          'It applies on a later sync once those squads are updated, or restore the preset from the template diff.'
+      )
+    else if (hold) this.log.info(`Applied the held-back code update to workflow '${id}'`)
+    return {
+      data: { ...record, description: plan.description, definition: plan.definition },
+      tracking: { yamlTemplateHold: nextTemplateHold(plan, hold, base, record) },
     }
-    return next
   }
 
-  private merge(
+  /**
+   * A row with no stored template has no merge base: overridden fields keep their values, and a
+   * definition update that breaks a squad is held back without a stored hold.
+   */
+  private async applyWithoutBase(
     id: string,
-    base: Record<string, unknown>,
+    record: Record<string, unknown>,
     current: Record<string, unknown>,
-    record: Record<string, unknown>
-  ): Record<string, unknown> {
-    const { merged, conflicts } = mergeWorkflowTemplate(base, current, record)
-    try {
-      const value = parseMergedPreset(id, merged)
-      if (conflicts.length)
-        this.log.warn(
-          `Workflow '${id}' keeps local edits where the code template also changed: ${conflicts.join(', ')}`
-        )
-      return { ...record, description: value.description ?? null, definition: value.definition }
-    } catch (error) {
-      this.log.warn(
-        `Workflow '${id}': merging the code update with local edits gives an invalid workflow, so its local ` +
-          `definition is kept unchanged. ${error instanceof Error ? error.message : String(error)}`
-      )
-      return { ...record, description: merged.description ?? null, definition: current.definition }
-    }
+    fieldOverrides: string[]
+  ): Promise<Record<string, unknown>> {
+    const next = this.applyOverrideKeys(record, current, fieldOverrides)
+    const before = current.definition as WorkflowDefinition
+    const after = next.definition as WorkflowDefinition
+    if (this.deepEqual(before, after)) return next
+    const breaks = await findBrokenSquadCustomizations(id, before, after)
+    if (!breaks.length) return next
+    this.log.warn(
+      `Holding back the code update to workflow '${id}': it would break saved squad customizations of ` +
+        `${describeSquadBreaks({ affectedSquads: breaks, hiddenSquadCount: 0 })}.`
+    )
+    return { ...next, definition: current.definition }
   }
 
   toYaml(row: Record<string, unknown>): string {

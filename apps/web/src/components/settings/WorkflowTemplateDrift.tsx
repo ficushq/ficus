@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WorkflowCatalogEntry, WorkflowRestoreImpact, WorkflowTemplateDifference } from '@ficus/client-core'
+import type {
+  WorkflowCatalogEntry,
+  WorkflowRestoreImpact,
+  WorkflowTemplateDifference,
+  WorkflowTemplateHold,
+} from '@ficus/client-core'
 import { client } from '../../api/clientInstance'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -85,6 +90,48 @@ function SquadImpact({ impact }: { impact: WorkflowRestoreImpact }) {
   )
 }
 
+function HeldBack({ hold }: { hold: WorkflowTemplateHold }) {
+  const count = hold.affectedSquads.length + hold.hiddenSquadCount
+  return (
+    <div aria-label="Held-back code update" className="space-y-2 text-sm">
+      <p className="font-medium text-primary">A code update to this preset is held back</p>
+      {hold.blockedBy === 'squad-customizations' && (
+        <p className="text-muted">
+          It would break saved workflow customizations in {count} squad{count === 1 ? '' : 's'}, so this preset keeps
+          its current definition. Every sync retries it, and it applies automatically once those squads stop referring
+          to the old steps or participants.
+        </p>
+      )}
+      {hold.blockedBy === 'invalid-workflow' && (
+        <p className="text-muted">
+          Merged with this preset’s edits it is not a valid workflow, so this preset keeps its current definition.
+          {hold.invalidReason ? ` ${hold.invalidReason}` : ''}
+        </p>
+      )}
+      {hold.blockedBy === null && (
+        <p className="text-muted">Nothing blocks it any more; it applies on the next sync.</p>
+      )}
+      {!!hold.affectedSquads.length && (
+        <ul className="list-disc space-y-1 pl-5">
+          {hold.affectedSquads.map((squad) => (
+            <li key={squad.squadId} className="break-words">
+              <span className="font-medium">{squad.squadName}</span>: {squad.problems.join('; ')}
+            </li>
+          ))}
+        </ul>
+      )}
+      {hold.hiddenSquadCount > 0 && (
+        <p className="text-muted">
+          {hold.hiddenSquadCount} affected squad{hold.hiddenSquadCount === 1 ? ' is' : 's are'} not visible to you.
+        </p>
+      )}
+      {!!hold.parts.length && (
+        <p className="break-words text-muted">It changes: {hold.parts.map((part) => part.label).join(', ')}.</p>
+      )}
+    </div>
+  )
+}
+
 /**
  * Shows where a shared preset differs from its code template. Code updates still apply to every
  * other part; the parts listed here keep this preset's values. With `canRestore`, people can
@@ -132,6 +179,7 @@ export function WorkflowTemplateDrift({ entry, canRestore }: { entry: WorkflowCa
           {canRestore ? ' Restore them to take the code version.' : ''}
         </p>
       </div>
+      {diff.data?.heldBack && <HeldBack hold={diff.data.heldBack} />}
       {diff.isPending ? (
         <p className="text-sm text-muted">Comparing with the code template…</p>
       ) : (
