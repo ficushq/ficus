@@ -41,6 +41,7 @@ function StubConversation({ agentId, sendOptions, placeholder }: ReviewConversat
     </div>
   )
 }
+const renderStubConversation = (props: ReviewConversationProps) => <StubConversation {...props} />
 
 const preset = workflowPresetSchema.parse(
   Bun.YAML.parse(await Bun.file(new URL('../../../../config/workflows/solo.yaml', import.meta.url)).text())
@@ -144,7 +145,9 @@ async function fixture({
         root.root.render(
           <MemoryRouter initialEntries={initialEntries}>
             <QueryClientProvider client={queryClient}>
-              <ReviewConversationContext.Provider value={StubConversation}>{node}</ReviewConversationContext.Provider>
+              <ReviewConversationContext.Provider value={renderStubConversation}>
+                {node}
+              </ReviewConversationContext.Provider>
             </QueryClientProvider>
           </MemoryRouter>
         )

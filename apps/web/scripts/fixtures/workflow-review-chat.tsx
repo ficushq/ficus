@@ -182,6 +182,7 @@ function FixtureConversation({ agentId, sendOptions, placeholder }: ReviewConver
     />
   )
 }
+const renderFixtureConversation = (props: ReviewConversationProps) => <FixtureConversation {...props} />
 
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter>
@@ -189,7 +190,7 @@ createRoot(document.getElementById('root')!).render(
       <PermissionsProvider
         usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
       >
-        <ReviewConversationContext.Provider value={FixtureConversation}>
+        <ReviewConversationContext.Provider value={renderFixtureConversation}>
           <WorkflowReviewModal stream={stream} attemptId={2} onClose={() => {}} />
         </ReviewConversationContext.Provider>
       </PermissionsProvider>

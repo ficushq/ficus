@@ -6,8 +6,13 @@ import { attemptSummary } from '../lib/workflowReview'
 import { ReviewConversationContext, type ReviewConversationProps } from '../lib/reviewConversation'
 import { AgentConversation } from './AgentConversation'
 
-/** The agent's own conversation: the same agent and session as its full chat page. */
-function AgentReviewConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {
+/**
+ * The agent's own conversation: the same agent and session as its full chat page, unless a stand-in
+ * is provided through ReviewConversationContext (tests and the browser fixture).
+ */
+function ReviewConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {
+  const renderStandIn = useContext(ReviewConversationContext)
+  if (renderStandIn) return renderStandIn({ agentId, sendOptions, placeholder })
   return (
     <AgentConversation
       agentId={agentId}
@@ -38,7 +43,6 @@ export function WorkflowReviewChat({
   /** Whether the viewer may decide this gate, and so consults the agent as its reviewer. */
   consult: boolean
 }) {
-  const Conversation = useContext(ReviewConversationContext) ?? AgentReviewConversation
   const [selected, setSelected] = useState(agents[0]?.agentId)
   const current = agents.find((entry) => entry.agentId === selected) ?? agents[0]
   if (!current) return null
@@ -72,7 +76,7 @@ export function WorkflowReviewChat({
         )}
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        <Conversation
+        <ReviewConversation
           key={current.agentId}
           agentId={current.agentId}
           placeholder={consult ? 'Ask about this proposal or request a refinement' : 'Message the agent'}
