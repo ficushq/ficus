@@ -7,7 +7,8 @@ const source = readFileSync(join(import.meta.dir, 'AgentTypesSection.tsx'), 'utf
 
 describe('AgentTypesSection template revert refresh', () => {
   test('syncs expanded row form state when refreshed agent type data arrives', () => {
-    expect(source.includes('useEffect')).toBe(true)
+    // Re-seeded while rendering when the agent type object changes.
+    expect(source.includes('if (formSource !== agentType)')).toBe(true)
     expect(source.includes('setForm(agentTypeToForm(agentType))')).toBe(true)
   })
 
