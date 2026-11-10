@@ -3,6 +3,7 @@ import { join, normalize, sep } from 'node:path'
 import { Hono, type Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { coreGetPath, resolveRequestBasePath } from './app-base-path'
+import { escapeHtmlAttribute } from './web-serve'
 import { resolveCoreDocsDist } from './web-dist'
 
 /**
@@ -21,16 +22,35 @@ const DOCS_SCRIPT_LITERAL = /(["'`])\/docs\/\1/g
 /**
  * Render an embedded documentation page for a base path (`''` or `/ficus`):
  * rebase the attribute values the build roots at `/docs` first, then fill the
- * docs base meta (so the filled value is never rebased twice).
+ * docs base meta (so the filled value is never rebased twice). The base is
+ * escaped for the HTML attribute it lands in, and inserted with function
+ * replacers so a `$` in it is never read as a replacement pattern.
  */
 export function renderDocsHtml(html: string, basePath: string): string {
-  const rebased = basePath ? html.replace(DOCS_ATTRIBUTE, `$1="${basePath}/docs$2`) : html
-  return rebased.replaceAll(DOCS_BASE_PLACEHOLDER, `${basePath}/docs/`)
+  const attributeBase = escapeHtmlAttribute(basePath)
+  const rebased = basePath
+    ? html.replace(
+        DOCS_ATTRIBUTE,
+        (_match, attribute: string, after: string) => `${attribute}="${attributeBase}/docs${after}`
+      )
+    : html
+  const docsBase = escapeHtmlAttribute(`${basePath}/docs/`)
+  return rebased.replaceAll(DOCS_BASE_PLACEHOLDER, () => docsBase)
+}
+
+/** Escape a value for the inside of a JavaScript string literal delimited by `quote`. */
+function escapeScriptLiteral(value: string, quote: string): string {
+  const escaped = value.replaceAll('\\', () => '\\\\').replaceAll(quote, () => `\\${quote}`)
+  return quote === '`' ? escaped.replaceAll('${', () => '\\${') : escaped
 }
 
 /** Rebase the `/docs/` literals in an embedded docs script for a base path; unchanged at the root. */
 export function rebaseDocsScript(js: string, basePath: string): string {
-  return basePath ? js.replace(DOCS_SCRIPT_LITERAL, `$1${basePath}/docs/$1`) : js
+  if (!basePath) return js
+  return js.replace(
+    DOCS_SCRIPT_LITERAL,
+    (_match, quote: string) => `${quote}${escapeScriptLiteral(`${basePath}/docs/`, quote)}${quote}`
+  )
 }
 
 const MAX_CACHE_ENTRIES = 512

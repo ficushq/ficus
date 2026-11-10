@@ -168,6 +168,24 @@ describe('embedded docs under a base path', () => {
     expect(encoded.status).toBe(404)
   })
 
+  test('a base with $&, a quote and an ampersand renders exactly that path, escaped, and nothing else changes', () => {
+    const base = "/a$&'b&c"
+    const escaped = '/a$&amp;&#39;b&amp;c'
+    const html = renderDocsHtml(PAGE, base)
+    expect(html).toContain(`href="${escaped}/docs/guide/"`)
+    expect(html).toContain(`src="${escaped}/docs/_astro/i.svg"`)
+    expect(html).toContain(`name="ficus-docs-base" content="${escaped}/docs/"`)
+    expect(html.replaceAll(escaped, '')).toBe(renderDocsHtml(PAGE, ''))
+
+    const js = rebaseDocsScript(SEARCH, base)
+    expect(js.replaceAll(base.replace("'", "\\'"), '').replaceAll(base, '')).toBe(SEARCH)
+    // Every rebased literal evaluates to exactly the intended path, whatever its quote.
+    for (const quote of ['"', "'", '`']) {
+      const literal = rebaseDocsScript(`${quote}/docs/${quote}`, '/q$&\'"${x}`')
+      expect(new Function(`const x = 'X'; return ${literal}`)()).toBe('/q$&\'"${x}`/docs/')
+    }
+  })
+
   test('renderDocsHtml rebases before filling the placeholder', () => {
     expect(renderDocsHtml('<meta content="__FICUS_DOCS_BASE__"><a href="/docs">x</a>', '/ficus')).toBe(
       '<meta content="/ficus/docs/"><a href="/ficus/docs">x</a>'
