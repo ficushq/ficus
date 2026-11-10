@@ -949,6 +949,60 @@ describe('ChatView clear pending queue', () => {
     expect(window.document.querySelector('[role="alert"]')).toBeNull()
   })
 
+  test('shows Clear at once for a queue present on load or while streaming, and after a delay otherwise', async () => {
+    const queued: RenderItem[] = [{ kind: 'pending', id: 'q1', content: 'Queued', status: 'queued', queued: true }]
+    const clearButton = () =>
+      [...loaded.window.document.querySelectorAll('button')].find((candidate) =>
+        candidate.textContent?.includes('pending message')
+      )
+    const view = (items: RenderItem[], isStreaming = false) => (
+      <MemoryRouter initialEntries={['/chat']}>
+        <PermissionsProvider usePermissions={usePermissionsMock}>
+          <ChatView
+            items={items}
+            isStreaming={isStreaming}
+            onSend={() => undefined}
+            onCancelQueue={async () => undefined}
+            dependencies={chatViewDependencies}
+          />
+        </PermissionsProvider>
+      </MemoryRouter>
+    )
+    // Loaded with a queue already present: shown at once.
+    const loaded = await renderChatView(
+      <ChatView items={queued} onSend={() => undefined} onCancelQueue={async () => undefined} />
+    )
+    expect(clearButton()).toBeDefined()
+
+    // A queue that appears after the chat was seen empty waits out the delay...
+    const realSetTimeout = globalThis.setTimeout
+    const delayed: Array<() => void> = []
+    globalThis.setTimeout = ((callback: () => void, delay?: number, ...args: unknown[]) => {
+      if (delay === 5000) {
+        delayed.push(callback)
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      }
+      return realSetTimeout(callback, delay, ...args)
+    }) as typeof setTimeout
+    try {
+      await loaded.dom.act(async () => loaded.root.render(view([])))
+      expect(clearButton()).toBeUndefined()
+      await loaded.dom.act(async () => loaded.root.render(view(queued)))
+      expect(clearButton()).toBeUndefined()
+      expect(delayed).toHaveLength(1)
+      await loaded.dom.act(async () => delayed[0]!())
+      expect(clearButton()).toBeDefined()
+
+      // ...unless the agent is streaming, which shows it at once.
+      await loaded.dom.act(async () => loaded.root.render(view([])))
+      expect(clearButton()).toBeUndefined()
+      await loaded.dom.act(async () => loaded.root.render(view(queued, true)))
+      expect(clearButton()).toBeDefined()
+    } finally {
+      globalThis.setTimeout = realSetTimeout
+    }
+  })
+
   test('right-aligns the clear pending button above the chat input', async () => {
     const pendingItems: RenderItem[] = [
       {
@@ -3357,6 +3411,44 @@ describe('ChatView persisted draft', () => {
     const composer = await mountComposer(dom)
     expect(composer.textarea.value).toBe('half-written question')
     await composer.unmount()
+  })
+
+  test("switching conversations in place shows the next conversation's draft and send state", async () => {
+    const dom = await installDom()
+    dom.window.localStorage.setItem('chat-draft:agent-a', 'draft for a')
+    dom.window.localStorage.removeItem('chat-draft:agent-b')
+    const { root, container } = dom.createRoot()
+    const renderFor = (key: string) =>
+      dom.act(async () => {
+        root.render(
+          <MemoryRouter initialEntries={['/chat']}>
+            <PermissionsProvider usePermissions={usePermissionsMock}>
+              <ChatView
+                items={[]}
+                onSend={() => undefined}
+                enableFullscreen={false}
+                inputStorageKey={key}
+                dependencies={chatViewDependencies}
+              />
+            </PermissionsProvider>
+          </MemoryRouter>
+        )
+      })
+    const textarea = () => container.querySelector('textarea') as HTMLTextAreaElement
+    const sendDisabled = () => container.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled
+    await renderFor('agent-a')
+    await flushReact()
+    expect(textarea().value).toBe('draft for a')
+    expect(sendDisabled()).toBe(false)
+    await renderFor('agent-b')
+    await flushReact()
+    expect(textarea().value).toBe('')
+    expect(sendDisabled()).toBe(true)
+    await renderFor('agent-a')
+    await flushReact()
+    expect(textarea().value).toBe('draft for a')
+    expect(sendDisabled()).toBe(false)
+    await dom.act(async () => root.unmount())
   })
 
   test('leaving within the save debounce still keeps the typed draft', async () => {

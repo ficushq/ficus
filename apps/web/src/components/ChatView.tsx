@@ -590,6 +590,15 @@ export function agentFileErrorText(error?: string): string {
   return AGENT_FILE_ERROR_TEXT[error] ?? error
 }
 
+/** The draft saved for a conversation's composer, or '' when there is none or storage is unavailable. */
+function readSavedDraft(storageKey: string): string {
+  try {
+    return localStorage.getItem(`chat-draft:${storageKey}`) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export function ChatView({
   items,
   onSend,
@@ -717,25 +726,46 @@ export function ChatView({
   // Uncontrolled textarea — value lives in a ref to avoid re-rendering
   // the entire component on every keystroke. Only `hasInput` (boolean)
   // is state so the send button / voice shortcuts update on empty↔non-empty.
-  const inputRef = useRef(
-    (() => {
-      if (!inputStorageKey) return ''
-      try {
-        return localStorage.getItem(`chat-draft:${inputStorageKey}`) ?? ''
-      } catch {
-        return ''
-      }
-    })()
-  )
-  const [hasInput, setHasInput] = useState(() => !!inputRef.current.trim())
+  // The saved draft is read once, when the composer mounts.
+  const [initialDraft] = useState(() => (inputStorageKey ? readSavedDraft(inputStorageKey) : ''))
+  const inputRef = useRef(initialDraft)
+  const [hasInput, setHasInput] = useState(() => !!initialDraft.trim())
+  // Another conversation's draft (a new storage key) decides hasInput in the same render;
+  // the effect below then puts its text into the textarea.
+  const [draftStorageKey, setDraftStorageKey] = useState(inputStorageKey)
+  if (draftStorageKey !== inputStorageKey) {
+    setDraftStorageKey(inputStorageKey)
+    if (inputStorageKey) setHasInput(!!readSavedDraft(inputStorageKey).trim())
+  }
+  // Image state
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  // Composer errors, declared before the callbacks that clear them.
+  const [imagePreparationError, setImagePreparationError] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [clearQueueError, setClearQueueError] = useState<string | null>(null)
   const onDraftChangeRef = useStableRef(onDraftChange)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // The textarea is uncontrolled: when it mounts (or remounts after the composer was
+  // hidden) it starts from the text kept in inputRef, without reading the ref in render.
+  const attachTextarea = useCallback((textarea: HTMLTextAreaElement | null) => {
+    textareaRef.current = textarea
+    if (textarea) textarea.value = inputRef.current
+  }, [])
   const inputContainerRef = useRef<HTMLDivElement>(null)
   // When a focus target is requested, start with auto-scroll disabled so the initial
   // scroll-to-bottom effect doesn't fire before we've had a chance to jump to the target.
   const focusRequested = !!(focusMessageId || focusInboxMessageId)
   const [autoScroll, _setAutoScroll] = useState(() => !focusRequested)
+  // A new focus target turns auto-scroll off in the render that receives it; the effect
+  // that runs the focus search only touches refs and the DOM.
+  const focusTargetKey = focusRequested ? `${focusMessageId ?? ''}\n${focusInboxMessageId ?? ''}` : null
+  const [appliedFocusTargetKey, setAppliedFocusTargetKey] = useState(focusTargetKey)
+  if (appliedFocusTargetKey !== focusTargetKey) {
+    setAppliedFocusTargetKey(focusTargetKey)
+    if (focusTargetKey) _setAutoScroll(false)
+  }
   const autoScrollRef = useRef(!focusRequested)
   const pendingManualTextareaScrollTopRef = useRef<number | null>(null)
   const updateAutoScroll = useCallback((value: boolean) => {
@@ -790,18 +820,25 @@ export function ChatView({
   const canUploadImages = !permissionsLoading && can('agents:write')
   const imageAttachState = getImageAttachState({ canUploadImages, selectedModelSupportsImages })
 
-  /** Set the textarea value imperatively (ref + DOM + hasInput state) */
-  const setInputValue = useCallback(
+  /** Put text in the uncontrolled textarea (ref + DOM) and report it, without touching state. */
+  const writeComposerText = useCallback(
     (value: string) => {
       inputRef.current = value
       if (textareaRef.current) {
         textareaRef.current.value = value
         resizeTextarea(textareaRef.current)
       }
-      setHasInput(!!value.trim())
       onDraftChangeRef.current?.(value)
     },
     [resizeTextarea, onDraftChangeRef]
+  )
+  /** Set the textarea value imperatively (ref + DOM + hasInput state) */
+  const setInputValue = useCallback(
+    (value: string) => {
+      writeComposerText(value)
+      setHasInput(!!value.trim())
+    },
+    [writeComposerText]
   )
 
   // Debounced localStorage save — driven from onChange, not useEffect. The pending write remembers
@@ -837,17 +874,13 @@ export function ChatView({
   // Write any pending draft on unmount instead of dropping it
   useEffect(() => flushDraft, [flushDraft])
 
-  // Reload draft when the storage key changes (e.g. navigating between agents)
+  // Reload draft when the storage key changes (e.g. navigating between agents). hasInput
+  // already followed the key during render.
   useEffect(() => {
     flushDraft()
     if (!inputStorageKey) return
-    try {
-      const draft = localStorage.getItem(`chat-draft:${inputStorageKey}`) ?? ''
-      setInputValue(draft)
-    } catch {
-      setInputValue('')
-    }
-  }, [inputStorageKey, setInputValue, flushDraft])
+    writeComposerText(readSavedDraft(inputStorageKey))
+  }, [inputStorageKey, writeComposerText, flushDraft])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const agentFileInputRef = useRef<HTMLInputElement>(null)
@@ -977,7 +1010,8 @@ export function ChatView({
       focusRunRef.current = run
       focusSearchActiveRef.current = true
       focusModeRef.current = true
-      updateAutoScroll(false)
+      // Callers turn the autoScroll state off: during render for a focus prop, in the handler for a jump.
+      autoScrollRef.current = false
       const scrollToItem = (itemId: string) => {
         scrollContainerRef.current
           ?.querySelector<HTMLElement>(`[data-message-id~="${itemId}"]`)
@@ -1108,6 +1142,7 @@ export function ChatView({
   const jumpToSearchResult = useCallback(
     (result: MessageSearchResult) => {
       historyJumpRef.current?.cancel()
+      _setAutoScroll(false)
       const jump = startFocus({ messageId: result.id }, { newerCount: result.newerCount, onMissing: 'stay' })
       historyJumpRef.current = jump
       return jump.outcome
@@ -1115,10 +1150,12 @@ export function ChatView({
     [startFocus]
   )
   useEffect(() => () => historyJumpRef.current?.cancel(), [])
-  useEffect(() => {
-    // A different conversation: close the panel rather than search the old one.
+  // A different conversation: close the panel rather than search the old one.
+  const [historySearchAgentId, setHistorySearchAgentId] = useState(agentId)
+  if (historySearchAgentId !== agentId) {
+    setHistorySearchAgentId(agentId)
     setHistorySearchOpen(false)
-  }, [agentId])
+  }
   const openHistorySearchRef = useStableRef(openHistorySearch)
   useEffect(() => {
     if (!historySearchAvailable) return
@@ -1148,8 +1185,6 @@ export function ChatView({
     }
   }, [])
 
-  // Image state
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   // Every change a person makes to the composer tells teammates they're typing, until it's empty.
   const pendingImageCountRef = useRef(pendingImages.length)
   const { composerChanged } = teammateTyping
@@ -1181,41 +1216,35 @@ export function ChatView({
   const clearQueueConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Track whether we've ever seen an empty pending queue (for "loaded with pending already" detection)
-  const sawPendingEmptyRef = useRef(pendingItems.length === 0)
+  const queueEmpty = pendingItems.length === 0
+  const [sawPendingEmpty, setSawPendingEmpty] = useState(queueEmpty)
 
-  // Show clear queue button when there are pending (queued/failed) items
+  // Show clear queue button when there are pending (queued/failed) items. The immediate cases are
+  // decided while rendering; only the delayed one needs a timer.
+  if (queueEmpty) {
+    if (showClearQueue) setShowClearQueue(false)
+    if (confirmingClearQueue) setConfirmingClearQueue(false)
+    if (!sawPendingEmpty) setSawPendingEmpty(true)
+  } else if (!showClearQueue && (isStreaming || !sawPendingEmpty)) {
+    // Show immediately if streaming (interrupt/follow-up), or if we loaded with pending items
+    // already (hydration / refresh scenario): we never saw the queue empty since mount, so the
+    // data arrived with pending already present.
+    setShowClearQueue(true)
+  }
   useEffect(() => {
-    if (pendingItems.length === 0) {
-      setShowClearQueue(false)
-      setConfirmingClearQueue(false)
-      sawPendingEmptyRef.current = true
-      if (clearQueueConfirmTimeoutRef.current) {
-        clearTimeout(clearQueueConfirmTimeoutRef.current)
-        clearQueueConfirmTimeoutRef.current = null
-      }
-      return
-    }
-
-    // Show immediately if streaming (interrupt/follow-up)
-    if (isStreaming) {
-      setShowClearQueue(true)
-      return
-    }
-
-    // Show immediately if we loaded with pending items already (hydration / refresh scenario):
-    // we never saw the queue empty since mount, so the data arrived with pending already present
-    if (!sawPendingEmptyRef.current) {
-      setShowClearQueue(true)
-      return
-    }
-
+    if (!queueEmpty || !clearQueueConfirmTimeoutRef.current) return
+    clearTimeout(clearQueueConfirmTimeoutRef.current)
+    clearQueueConfirmTimeoutRef.current = null
+  }, [queueEmpty])
+  useEffect(() => {
+    if (queueEmpty || isStreaming || !sawPendingEmpty) return
     // Otherwise, delay showing the button to avoid flicker when agent picks up quickly
     const timer = setTimeout(() => {
       setShowClearQueue(true)
     }, 5000)
 
     return () => clearTimeout(timer)
-  }, [pendingItems.length, isStreaming])
+  }, [pendingItems.length, queueEmpty, isStreaming, sawPendingEmpty])
 
   // File mention autocomplete
   const { mentionState, checkForMention, closeMention, selectFile } = useFileMention(
@@ -1882,10 +1911,6 @@ export function ChatView({
     setTimeout(() => setVoiceError(null), 3000)
   }, [])
 
-  const [imagePreparationError, setImagePreparationError] = useState<string | null>(null)
-  const [imageError, setImageError] = useState<string | null>(null)
-  const [sendError, setSendError] = useState<string | null>(null)
-  const [clearQueueError, setClearQueueError] = useState<string | null>(null)
   const [isSendingNow, setIsSendingNow] = useState(false)
   const [sendNowError, setSendNowError] = useState<string | null>(null)
   const handleSendQueuedNow = useCallback(async () => {
@@ -2133,17 +2158,21 @@ export function ChatView({
           // message (agent reply, system notice) resets it, so a user's name
           // re-appears whenever their message follows a non-user message — not
           // just above the very first user message on the page.
-          let prevSenderUserId: string | undefined
+          // The running context lives in one object created during this render: the
+          // callbacks below update it while items are mapped, never after render.
+          const run: {
+            prevSenderUserId: string | undefined
+            prevGroupEntry: TimestampGroupEntry | null
+            prevDayKey: string | null
+          } = { prevSenderUserId: undefined, prevGroupEntry: null, prevDayKey: null }
           // Timestamps: a human or agent message shows its clock time only when it
           // starts a group (see startsGroup); system rows, automated deliveries and
           // optimistic/streaming items reset grouping. A divider precedes the first
           // rendered message of each local calendar day.
-          let prevGroupEntry: TimestampGroupEntry | null = null
-          let prevDayKey: string | null = null
           const now = new Date()
           const groupHeadTime = (entry: TimestampGroupEntry): Date | null => {
-            const head = startsGroup(prevGroupEntry, entry)
-            prevGroupEntry = entry
+            const head = startsGroup(run.prevGroupEntry, entry)
+            run.prevGroupEntry = entry
             return head ? entry.at : null
           }
           return items.map((item) => {
@@ -2168,8 +2197,8 @@ export function ChatView({
                 ...(item.mergedFrom?.map((merged) => merged.createdAt) ?? []),
               ])
               const dayKey = at ? localDayKey(at) : null
-              const dayDivider = at && dayKey !== prevDayKey ? <DayDivider label={dayLabel(at, now)} /> : null
-              if (dayKey) prevDayKey = dayKey
+              const dayDivider = at && dayKey !== run.prevDayKey ? <DayDivider label={dayLabel(at, now)} /> : null
+              if (dayKey) run.prevDayKey = dayKey
               const wrap = (node: React.ReactNode) => (
                 <Fragment key={item.id}>
                   {dayDivider}
@@ -2187,17 +2216,17 @@ export function ChatView({
                 </Fragment>
               )
               if (m.content.startsWith('[System]')) {
-                prevSenderUserId = undefined
-                prevGroupEntry = null
+                run.prevSenderUserId = undefined
+                run.prevGroupEntry = null
                 return wrap(<SystemMessageRow content={m.content} />)
               }
               if (m.role === 'human') {
                 const sender = m.metadata?.sender
                 const showSenderLabel =
-                  !!sender && sender.userId !== viewingUserId && sender.userId !== prevSenderUserId
-                prevSenderUserId = sender?.userId
+                  !!sender && sender.userId !== viewingUserId && sender.userId !== run.prevSenderUserId
+                run.prevSenderUserId = sender?.userId
                 let time: Date | null = null
-                if (automatedSource(m)) prevGroupEntry = null
+                if (automatedSource(m)) run.prevGroupEntry = null
                 else time = groupHeadTime({ kind: 'human', senderKey: sender?.userId ?? null, at })
                 return wrap(
                   <HumanMessageRow
@@ -2210,7 +2239,7 @@ export function ChatView({
                   />
                 )
               }
-              prevSenderUserId = undefined
+              run.prevSenderUserId = undefined
               return wrap(
                 <AssistantMessageRow
                   message={m}
@@ -2225,8 +2254,8 @@ export function ChatView({
             }
 
             if (item.kind === 'system') {
-              prevSenderUserId = undefined
-              prevGroupEntry = null
+              run.prevSenderUserId = undefined
+              run.prevGroupEntry = null
               return <SystemMessageRow key={item.id} content={item.text} />
             }
 
@@ -2261,7 +2290,7 @@ export function ChatView({
 
             if (item.kind === 'streaming') {
               // Not persisted yet: no time, and the persisted reply that follows starts a group.
-              prevGroupEntry = null
+              run.prevGroupEntry = null
               // Notices that arrived mid-response sit between the runs of content they split.
               const segments = segmentAtNotices<StreamingContentBlock>(item.blocks)
               const liveSegment = lastBlocksSegmentIndex(segments)
@@ -2288,7 +2317,7 @@ export function ChatView({
             }
 
             // pending: optimistic, no persisted time
-            prevGroupEntry = null
+            run.prevGroupEntry = null
             return (
               <PendingMessageRow
                 key={item.id}
@@ -2633,9 +2662,8 @@ export function ChatView({
                 ) : null}
 
                 <textarea
-                  ref={textareaRef}
+                  ref={attachTextarea}
                   onClick={expandMobileComposer}
-                  defaultValue={inputRef.current}
                   onChange={(e) => {
                     if (isSubmittingRef.current) {
                       e.target.value = inputRef.current
@@ -3397,18 +3425,18 @@ function StreamingBlockGroupSection({
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const wasExpanded = useRef(defaultExpanded)
+  const [seen, setSeen] = useState({ defaultExpanded: !!defaultExpanded, blockCount: blocks.length })
 
-  // Auto-expand when group becomes active, auto-collapse when no longer active
-  useEffect(() => {
+  // Auto-expand when group becomes active (and again as it grows), auto-collapse when no longer active
+  if (seen.defaultExpanded !== !!defaultExpanded || seen.blockCount !== blocks.length) {
+    setSeen({ defaultExpanded: !!defaultExpanded, blockCount: blocks.length })
     if (defaultExpanded) {
       setExpanded(true)
-    } else if (wasExpanded.current) {
+    } else if (seen.defaultExpanded) {
       // Group is no longer the active/last group — auto-collapse
       setExpanded(false)
     }
-    wasExpanded.current = !!defaultExpanded
-  }, [defaultExpanded, blocks.length])
+  }
 
   const summary = getStreamingGroupSummary(blocks)
   // A collapsed group still shows the actions its finished tool calls offer, then the images they read,
@@ -3504,9 +3532,11 @@ function StreamingToolCallItem({
   )
 
   // When defaultExpanded changes (e.g. a new tool call pushes this one up), sync
-  useEffect(() => {
+  const [syncedDefaultExpanded, setSyncedDefaultExpanded] = useState(defaultExpanded)
+  if (syncedDefaultExpanded !== defaultExpanded) {
+    setSyncedDefaultExpanded(defaultExpanded)
     setExpanded(defaultExpanded)
-  }, [defaultExpanded])
+  }
 
   return (
     <div className="text-xs">

@@ -68,13 +68,21 @@ afterEach(async () => {
  * A chat whose loaded window holds only the newest message. Each older page it is asked for
  * prepends filler, and the target lands once enough older messages have been requested.
  */
-function Harness({ targetDepth, hideComposer }: { targetDepth: number; hideComposer: boolean }) {
+function Harness({
+  targetDepth,
+  hideComposer,
+  agentId = 'agent-1',
+}: {
+  targetDepth: number
+  hideComposer: boolean
+  agentId?: string
+}) {
   const [items, setItems] = useState<RenderItem[]>([item(message('newest', 'Newest message'))])
   const [hasOlder, setHasOlder] = useState(true)
   const [requested, setRequested] = useState(1)
   return (
     <ChatView
-      agentId="agent-1"
+      agentId={agentId}
       enableHistorySearch
       items={items}
       dependencies={dependencies}
@@ -126,17 +134,19 @@ async function render(
     queryClient.clear()
     await dom.cleanup()
   }
-  await dom.act(async () => {
-    root.render(
-      <MemoryRouter>
-        <QueryClientProvider client={queryClient}>
-          <PermissionsProvider usePermissions={usePermissionsMock}>
-            <Harness targetDepth={targetDepth} hideComposer={hideComposer} />
-          </PermissionsProvider>
-        </QueryClientProvider>
-      </MemoryRouter>
-    )
-  })
+  const show = (agentId?: string) =>
+    dom.act(async () => {
+      root.render(
+        <MemoryRouter>
+          <QueryClientProvider client={queryClient}>
+            <PermissionsProvider usePermissions={usePermissionsMock}>
+              <Harness targetDepth={targetDepth} hideComposer={hideComposer} agentId={agentId} />
+            </PermissionsProvider>
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    })
+  await show()
   const document = dom.window.document
   const wait = async (condition: () => boolean, label: string) => {
     const deadline = Date.now() + 5000
@@ -157,7 +167,7 @@ async function render(
     await wait(() => document.querySelectorAll('[role="option"]').length > 0, 'results')
     return input
   }
-  return { dom, document, search, scrollIntoView, wait, openAndSearch }
+  return { dom, document, search, scrollIntoView, wait, openAndSearch, switchAgent: show }
 }
 
 describe('ChatView history search', () => {
@@ -228,6 +238,19 @@ describe('ChatView history search', () => {
     await dom.act(async () => {
       fireEvent.keyDown(input, { key: 'Escape' })
     })
+    expect(panel()).toBeNull()
+  })
+
+  test('closes when the chat switches to another agent', async () => {
+    const { dom, document, switchAgent } = await render(10, { results: [], nextCursor: null })
+    const panel = () => document.querySelector('[data-testid="chat-history-search"]')
+    await dom.act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Search this conversation"]')!.click()
+    })
+    expect(panel()).not.toBeNull()
+    await switchAgent('agent-1')
+    expect(panel()).not.toBeNull()
+    await switchAgent('agent-2')
     expect(panel()).toBeNull()
   })
 
