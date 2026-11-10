@@ -1,4 +1,4 @@
-import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { AuthIdentity } from '@ficus/client-core'
 import { getApiUrl } from '../api/client'
 import { usePermissions } from './usePermissions'
@@ -51,31 +51,31 @@ export function useLoadingShapeCount(
   { fallbackCount = 5, maxCount = 12 }: LoadingShapeCountOptions = {}
 ): number {
   const owner = useContext(LoadingShapeOwnerContext)
-  const backendScope = useMemo(loadingShapeBackendScope, [])
+  // The backend scope is fixed for the life of the page, so read it once.
+  const [backendScope] = useState(loadingShapeBackendScope)
   const scope = backendScope && owner ? `${backendScope}|${owner}` : null
-  const [count, setCount] = useState(() => {
+  const source = `${scope ?? backendScope ?? ''}\n${surfaceKey}\n${fallbackCount}\n${maxCount}`
+  const readRemembered = () => {
     if (!backendScope || typeof window === 'undefined') return Math.min(fallbackCount, maxCount)
-    return readRecentLoadingShapeCount(window.localStorage, backendScope, surfaceKey, fallbackCount, maxCount)
-  })
-
-  useEffect(() => {
-    if (!backendScope || typeof window === 'undefined') {
-      setCount(Math.min(fallbackCount, maxCount))
-      return
-    }
-    setCount(
-      scope
-        ? readLoadingShapeCount(window.localStorage, scope, surfaceKey, fallbackCount, maxCount)
-        : readRecentLoadingShapeCount(window.localStorage, backendScope, surfaceKey, fallbackCount, maxCount)
-    )
-  }, [backendScope, fallbackCount, maxCount, scope, surfaceKey])
+    return scope
+      ? readLoadingShapeCount(window.localStorage, scope, surfaceKey, fallbackCount, maxCount)
+      : readRecentLoadingShapeCount(window.localStorage, backendScope, surfaceKey, fallbackCount, maxCount)
+  }
+  const [remembered, setRemembered] = useState(() => ({ source, count: readRemembered() }))
+  const live =
+    scope && liveCount !== undefined && typeof window !== 'undefined'
+      ? Math.min(Math.max(0, Math.round(liveCount)), maxCount)
+      : undefined
+  // Adjust the remembered count while rendering rather than in an effect: re-read
+  // it when the surface or its owner changes, and keep the latest live count so a
+  // refetch with no data yet still renders the last known shape.
+  if (remembered.source !== source) setRemembered({ source, count: readRemembered() })
+  else if (live !== undefined && live !== remembered.count) setRemembered({ source, count: live })
 
   useEffect(() => {
     if (!scope || liveCount === undefined || typeof window === 'undefined') return
-    const bounded = Math.min(Math.max(0, Math.round(liveCount)), maxCount)
-    setCount(bounded)
     writeLoadingShapeCount(window.localStorage, scope, surfaceKey, liveCount, maxCount)
   }, [liveCount, maxCount, scope, surfaceKey])
 
-  return count
+  return live ?? remembered.count
 }
