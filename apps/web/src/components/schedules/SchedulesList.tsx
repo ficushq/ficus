@@ -554,7 +554,7 @@ function ScheduleCard({
           <ScopeBadge
             schedule={schedule}
             squads={squads}
-            className="hidden sm:inline-flex"
+            className="max-sm:hidden"
             onClick={(e) => e.stopPropagation()}
           />
         )}

@@ -1079,7 +1079,7 @@ export function SquadAgentThreads({
         {!isPage && (
           <LoadingSurface
             label="Loading agent conversations"
-            className="hidden w-72 shrink-0 border-r border-th-border md:block"
+            className="w-72 shrink-0 border-r border-th-border max-md:hidden"
           >
             <SkeletonRows count={Math.max(1, agentSkeletonCount)}>
               {(index) => (

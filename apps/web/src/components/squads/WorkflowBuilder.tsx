@@ -385,11 +385,11 @@ export function WorkflowBuilder({
                 }}
               >
                 {panel === 'participants' ? (
-                  <ParticipantsIcon className="hidden h-4 w-4 sm:block" />
+                  <ParticipantsIcon className="h-4 w-4 max-sm:hidden sm:block" />
                 ) : panel === 'settings' ? (
-                  <SettingsIcon className="hidden h-4 w-4 sm:block" />
+                  <SettingsIcon className="h-4 w-4 max-sm:hidden sm:block" />
                 ) : (
-                  <InspectorIcon className="hidden h-4 w-4 sm:block" />
+                  <InspectorIcon className="h-4 w-4 max-sm:hidden sm:block" />
                 )}
                 {panel === 'inspector' ? 'Inspector' : panel === 'participants' ? 'Participants' : 'Settings'}
               </button>
