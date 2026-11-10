@@ -93,6 +93,28 @@ describe('local deployment browser auth', () => {
     }
   })
 
+  it('never puts a public base path that is not cookie-safe into Set-Cookie', () => {
+    const saved = process.env.APP_URL
+    try {
+      for (const unsafe of ['https://t.example/a;b', 'https://t.example/a,b', "https://t.example/a'b"]) {
+        process.env.APP_URL = unsafe
+        const header = localDeploymentCookieHeader({
+          localDeploymentId: ID,
+          token: 'abc',
+          requestUrl: `https://t.example/api/app/${ID}/`,
+        })
+        expect(header).toContain(`Path=/api/app/${ID}/;`)
+        expect(header).not.toMatch(/\/a[;,']b/)
+        expect(localDeploymentBrowserPath(ID)).toBe(`/api/app/${ID}/`)
+      }
+      process.env.APP_URL = 'https://t.example/team-1/ficus~x'
+      expect(localDeploymentBrowserPath(ID)).toBe(`/team-1/ficus~x/api/app/${ID}/`)
+    } finally {
+      if (saved === undefined) delete process.env.APP_URL
+      else process.env.APP_URL = saved
+    }
+  })
+
   it('omits Secure over plain http so a localhost self-host still works', () => {
     // A Secure cookie is silently dropped on http, which presents as "assets
     // 401 on localhost only".

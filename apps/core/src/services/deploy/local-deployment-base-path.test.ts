@@ -7,14 +7,17 @@ import {
   parseLocalAppsBaseMarker,
   reconcileLocalAppBasePath,
   withoutRedirectMarker,
+  type LocalAppBaseDecision,
   type ReconcileLocalAppBasePathDependencies,
 } from './local-deployment-base-path'
 
 const ID = '11111111-2222-4333-8444-555555555555'
 
-function appRequest(url: string, headers: Record<string, string> = {}) {
+/** A browser page navigation by default; pass other headers or a method to describe other requests. */
+function appRequest(url: string, headers: Record<string, string> = {}, method = 'GET') {
   const path = new URL(url).pathname.replace(/^\/ficus(?=\/)/, '')
-  return { url, path, header: (name: string) => headers[name.toLowerCase()] }
+  const all: Record<string, string> = { 'sec-fetch-mode': 'navigate', ...headers }
+  return { url, path, method, header: (name: string) => all[name.toLowerCase()] || undefined }
 }
 
 describe('decideLocalAppBase', () => {
@@ -53,6 +56,29 @@ describe('decideLocalAppBase', () => {
     expect(second).toEqual({ kind: 'proxy', stripMarker: true, afterRedirect: true })
   })
 
+  test('only page navigations are redirected; API calls are served where they arrived', () => {
+    const proxy: LocalAppBaseDecision = { kind: 'proxy', stripMarker: false, afterRedirect: false }
+    const at = `http://localhost:3000/api/app/${ID}/api/items?_ficus_token=t`
+    const decide = (req: ReturnType<typeof appRequest>) => decideLocalAppBase(req, { ...opts, requestBase: '' })
+    // A POST, even one a browser sends as a navigation (a form), and a script's fetch.
+    expect(decide(appRequest(at, {}, 'POST'))).toEqual(proxy)
+    expect(decide(appRequest(at, { 'sec-fetch-mode': 'cors', accept: 'text/html' }))).toEqual(proxy)
+    // Clients without Sec-Fetch-Mode (agents, curl): only an HTML request counts as a page.
+    expect(decide(appRequest(at, { 'sec-fetch-mode': '', accept: 'application/json' }))).toEqual(proxy)
+    expect(decide(appRequest(at, { 'sec-fetch-mode': '' }))).toEqual(proxy)
+    expect(decide(appRequest(at, { 'sec-fetch-mode': '', accept: 'text/html,*/*' })).kind).toBe('redirect')
+    expect(decide(appRequest(at, {}, 'HEAD')).kind).toBe('redirect')
+  })
+
+  test('a base that cannot go in a cookie Path is not used for local apps', () => {
+    const req = appRequest(`http://localhost:3000/api/app/${ID}/`)
+    expect(decideLocalAppBase(req, { hostedAppsDomain: false, publicBase: '/a;b', requestBase: '' })).toEqual({
+      kind: 'proxy',
+      stripMarker: false,
+      afterRedirect: false,
+    })
+  })
+
   test('refuses a WebSocket upgrade under another base', () => {
     expect(
       decideLocalAppBase(appRequest(`http://localhost:3000/api/app/${ID}/ws`, { upgrade: 'websocket' }), {
@@ -64,7 +90,7 @@ describe('decideLocalAppBase', () => {
 
   test('serves in place for hosted apps, a root base and a base Core never strips', () => {
     const req = appRequest(`http://localhost:3000/api/app/${ID}/`)
-    const proxy = { kind: 'proxy', stripMarker: false, afterRedirect: false }
+    const proxy: LocalAppBaseDecision = { kind: 'proxy', stripMarker: false, afterRedirect: false }
     expect(decideLocalAppBase(req, { ...opts, hostedAppsDomain: true, requestBase: '' })).toEqual(proxy)
     expect(decideLocalAppBase(req, { hostedAppsDomain: false, publicBase: '', requestBase: '' })).toEqual(proxy)
     expect(decideLocalAppBase(req, { hostedAppsDomain: false, publicBase: '/settings', requestBase: '' })).toEqual(
@@ -99,7 +125,7 @@ function harness(opts: {
   const restarts: string[] = []
   const state = { marker: opts.marker }
   const deps: ReconcileLocalAppBasePathDependencies = {
-    publicBasePath: () => opts.basePath,
+    localAppsBasePath: () => opts.basePath,
     hostedAppsDomain: () => opts.hosted ?? false,
     listLive: async () => opts.live,
     restart: async (id) => {

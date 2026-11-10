@@ -64,3 +64,18 @@ test('unchanged and cleared addresses', () => {
 test('http addresses are not mobile-ready', () => {
   expect(computePublicAppUrlChangeImpact(undefined, 'http://192.0.2.1:3000', '').mobileReady).toBe(false)
 })
+
+test('a path that cannot be used for squad apps is reported, and their base does not change', () => {
+  const apps = { managed: 2, external: 1 }
+  expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example/a;b', '', apps)).toMatchObject({
+    basePath: '/a;b',
+    basePathChanged: true,
+    localAppsUnderBasePath: false,
+    localAppsAffected: 0,
+    externalAppsAffected: 0,
+  })
+  expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example/ficus', '', apps)).toMatchObject({
+    localAppsUnderBasePath: true,
+    localAppsAffected: 2,
+  })
+})

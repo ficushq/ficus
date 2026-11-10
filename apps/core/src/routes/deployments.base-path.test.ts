@@ -48,11 +48,25 @@ afterEach(() => {
 describe('local app requests and the public base path', () => {
   it('redirects the local root to the public base on the same host', async () => {
     const res = await app.request(`http://localhost:3000/api/app/${ID}/x?_ficus_token=t`, {
-      headers: { host: 'localhost:3000' },
+      headers: { host: 'localhost:3000', 'sec-fetch-mode': 'navigate', accept: 'text/html' },
     })
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(`/ficus/api/app/${ID}/x?_ficus_token=t&_ficus_base_redirect=1`)
     expect(proxied).toHaveLength(0)
+  })
+
+  it('serves a POST and an API call at the local root in place instead of redirecting them', async () => {
+    const post = await app.request(`http://localhost:3000/api/app/${ID}/api/items?_ficus_token=t`, {
+      method: 'POST',
+      headers: { host: 'localhost:3000', 'content-type': 'application/json' },
+      body: '{}',
+    })
+    expect(post.status).toBe(200)
+    const json = await app.request(`http://localhost:3000/api/app/${ID}/api/items?_ficus_token=t`, {
+      headers: { host: 'localhost:3000', accept: 'application/json' },
+    })
+    expect(json.status).toBe(200)
+    expect(proxied.map((r) => r.method)).toEqual(['POST', 'GET'])
   })
 
   it('proxies a request under the public base, by path or by host', async () => {
@@ -83,7 +97,9 @@ describe('local app requests and the public base path', () => {
 
   it('serves in place at the root base', async () => {
     process.env.APP_URL = 'http://localhost:8080'
-    const res = await app.request(`http://localhost:3000/api/app/${ID}/x`, { headers: { host: 'localhost:3000' } })
+    const res = await app.request(`http://localhost:3000/api/app/${ID}/x`, {
+      headers: { host: 'localhost:3000', 'sec-fetch-mode': 'navigate' },
+    })
     expect(res.status).toBe(200)
   })
 })

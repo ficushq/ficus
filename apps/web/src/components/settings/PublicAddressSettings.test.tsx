@@ -36,6 +36,7 @@ const preview: PublicAppUrlPreview = {
     basePath: '',
     basePathChanged: false,
     basePathStrippable: true,
+    localAppsUnderBasePath: true,
     localAppsAffected: 0,
     externalAppsAffected: 0,
     oauthCallbacks: [
@@ -283,4 +284,23 @@ test('a root address mentions no path', async () => {
   const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
   expect(dialog.textContent).not.toContain('served under')
   expect(dialog.textContent).not.toContain('restarted')
+})
+
+test('a path squad apps cannot use says apps will not open under it', async () => {
+  const unsafe: PublicAppUrlPreview = {
+    normalizedUrl: 'https://ficus.example.com/a;b',
+    effectiveUrl: 'https://ficus.example.com/a;b',
+    impact: { ...preview.impact, basePath: '/a;b', basePathChanged: true, localAppsUnderBasePath: false },
+  }
+  const { container, dom } = await render(localOnly, { preview: unsafe })
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Set public address…' })))
+  const field = getByRole(container, 'textbox', { name: 'New public address' }) as HTMLInputElement
+  await dom.act(async () => fireEvent.input(field, { target: { value: 'https://ficus.example.com/a;b' } }))
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Review change' })))
+  const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
+  const text = (dialog.textContent ?? '').replace(/\s+/g, ' ')
+  expect(text).toContain(
+    '/a;b has characters that cannot be used for squad apps, so apps will not open under that path.'
+  )
+  expect(text).toContain('Open them from http://localhost:61896/.')
 })

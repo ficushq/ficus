@@ -390,15 +390,21 @@ function BasePathNotes({ impact, localUrl }: { impact: PublicAppUrlPreview['impa
           {local ? `, and ${local}${impact.basePath}/,` : ''} will not open the app.
         </li>
       )}
+      {impact.basePath && !impact.localAppsUnderBasePath && (
+        <li>
+          {impact.basePath} has characters that cannot be used for squad apps, so apps will not open under that path.
+          {local ? ` Open them from ${local}/.` : ' Open them from the server’s local address.'}
+        </li>
+      )}
       {impact.basePathChanged && (
         <li>
           Open tabs and installed home-screen apps at the old path must be reopened or re-added from the new address.
         </li>
       )}
-      {impact.basePathChanged && impact.localAppsAffected > 0 && (
+      {impact.localAppsAffected > 0 && (
         <li>{appCount(impact.localAppsAffected)} in squads will be restarted so their links use the new path.</li>
       )}
-      {impact.basePathChanged && impact.externalAppsAffected > 0 && (
+      {impact.externalAppsAffected > 0 && (
         <li>
           {impact.externalAppsAffected === 1 ? '1 app' : `${impact.externalAppsAffected} apps`} started outside Ficus
           must be restarted by hand.

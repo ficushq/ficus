@@ -127,6 +127,28 @@ export function isStrippableBasePath(basePath: string): boolean {
   return !!first && !NEVER_STRIPPED_SEGMENTS.has(first.toLowerCase())
 }
 
+/**
+ * Characters a base path may contain to be used in a cookie `Path` attribute or
+ * an app's URLs: unreserved characters and percent-encoded bytes, in `/`-separated
+ * segments. Public address validation allows more (for example `;`), which would
+ * end or widen a cookie Path, so such a base is never used for local apps.
+ */
+const COOKIE_SAFE_BASE_PATH = /^(?:\/(?:[A-Za-z0-9\-._~]|%[0-9A-Fa-f]{2})+)+$/
+
+/** Whether a non-empty base path can be used in a cookie Path (see {@link localAppsBasePath}). */
+export function isCookieSafeBasePath(basePath: string): boolean {
+  return COOKIE_SAFE_BASE_PATH.test(basePath)
+}
+
+/**
+ * The base path path-mounted local apps are served under: the public base when it
+ * is cookie-safe, else the root (`''`), so an unusual address path never reaches a
+ * `Set-Cookie` attribute or an app's FICUS_APP_BASE_PATH.
+ */
+export function localAppsBasePath(publicBase: string = publicBasePath()): string {
+  return publicBase && isCookieSafeBasePath(publicBase) ? publicBase : ''
+}
+
 /** The distinct, non-empty, strippable configured base paths, longest first. */
 export function strippableBasePaths(state: BasePathState = describePublicAppUrl(), env: Env = process.env): string[] {
   const bases = new Set([...knownAppAddresses(state, env).map((a) => a.basePath), legacyBasePath(env)])

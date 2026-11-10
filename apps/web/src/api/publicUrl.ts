@@ -51,6 +51,8 @@ export interface PublicAppUrlPreview {
     basePathChanged: boolean
     /** False when the path is also a Ficus page or API prefix: only a proxy that removes it works. */
     basePathStrippable: boolean
+    /** False when the path cannot be used for squad apps (characters a cookie path cannot carry). */
+    localAppsUnderBasePath: boolean
     /** Running managed squad apps that restart so their links use the new path. */
     localAppsAffected: number
     /** Running apps started outside Ficus that must be restarted by hand. */

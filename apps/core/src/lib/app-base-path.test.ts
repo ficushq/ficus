@@ -3,7 +3,9 @@ import { Hono } from 'hono'
 import { getPath as honoGetPath } from 'hono/utils/url'
 import {
   basePathForOrigin,
+  isCookieSafeBasePath,
   isStrippableBasePath,
+  localAppsBasePath,
   knownAppAddresses,
   normalizeBasePath,
   publicBasePath,
@@ -147,5 +149,19 @@ describe('stripKnownBasePath', () => {
     expect(prefixed.status).toBe(200)
     expect(await prefixed.text()).toBe('/api/health')
     expect((await app.request('http://h/api/health')).status).toBe(200)
+  })
+})
+
+describe('cookie-safe base paths for local apps', () => {
+  test('allow unreserved characters and percent-encoded bytes only', () => {
+    for (const ok of ['/ficus', '/a/b', '/team-1_x.y~z', '/caf%C3%A9']) expect(isCookieSafeBasePath(ok)).toBe(true)
+    for (const bad of ['/a;b', '/a,b', "/a'b", '/a b', '/a%2', '/a=b', '/a!b', ''])
+      expect(isCookieSafeBasePath(bad)).toBe(false)
+  })
+
+  test('local apps fall back to the root when the public base is not cookie-safe', () => {
+    expect(localAppsBasePath('/ficus')).toBe('/ficus')
+    expect(localAppsBasePath('/a;b')).toBe('')
+    expect(localAppsBasePath('')).toBe('')
   })
 })

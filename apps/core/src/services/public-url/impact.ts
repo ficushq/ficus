@@ -1,4 +1,9 @@
-import { isStrippableBasePath, normalizeBasePath } from '../../lib/app-base-path'
+import {
+  isCookieSafeBasePath,
+  isStrippableBasePath,
+  localAppsBasePath,
+  normalizeBasePath,
+} from '../../lib/app-base-path'
 import { resolveOAuthCallbackUrl } from '../integrations/authorization/public-url'
 
 export interface UrlChange {
@@ -24,7 +29,12 @@ export interface PublicAppUrlChangeImpact {
    * never removes it from request paths, so only a reverse proxy that strips it works.
    */
   basePathStrippable: boolean
-  /** Running managed squad apps that Ficus restarts so their links use the new path. */
+  /**
+   * False when the path has characters that cannot go in a cookie Path (for example `;`):
+   * squad apps are then served only at the unprefixed `/api/app/<id>/`, not under this path.
+   */
+  localAppsUnderBasePath: boolean
+  /** Running managed squad apps that Ficus restarts so their links use the new path (when the apps' base changes). */
   localAppsAffected: number
   /** Running apps started outside Ficus (attached) that must be restarted by hand. */
   externalAppsAffected: number
@@ -92,6 +102,8 @@ export function computePublicAppUrlChangeImpact(
   const beforeBase = basePathOf(before, basePath)
   const afterBase = basePathOf(after, basePath)
   const basePathChanged = beforeBase !== afterBase
+  // Local apps restart only when the base they are served under changes.
+  const localAppsBaseChanged = localAppsBasePath(beforeBase) !== localAppsBasePath(afterBase)
   return {
     originChanged: originOf(before) !== originOf(after),
     relayReconnectRequired: before !== after,
@@ -99,8 +111,9 @@ export function computePublicAppUrlChangeImpact(
     basePath: afterBase,
     basePathChanged,
     basePathStrippable: !afterBase || isStrippableBasePath(afterBase),
-    localAppsAffected: basePathChanged ? apps.managed : 0,
-    externalAppsAffected: basePathChanged ? apps.external : 0,
+    localAppsUnderBasePath: !afterBase || isCookieSafeBasePath(afterBase),
+    localAppsAffected: localAppsBaseChanged ? apps.managed : 0,
+    externalAppsAffected: localAppsBaseChanged ? apps.external : 0,
     oauthCallbacks: [
       { label: 'GitHub OAuth callback', before: b.oauthGithub, after: a.oauthGithub },
       { label: 'Other integrations OAuth callback', before: b.oauthOther, after: a.oauthOther },

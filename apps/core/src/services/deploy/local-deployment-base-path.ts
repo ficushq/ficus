@@ -15,7 +15,7 @@
 import type { LocalDeployment } from '@ficus/shared'
 import {
   isStrippableBasePath,
-  publicBasePath,
+  localAppsBasePath,
   resolveRequestBasePath,
   type BasePathRequest,
 } from '../../lib/app-base-path'
@@ -44,18 +44,32 @@ export type LocalAppBaseDecision =
 export interface LocalAppBaseRequest extends BasePathRequest {
   /** The routed path, with any base path prefix already stripped (`c.req.path`). */
   path: string
+  method: string
+}
+
+/**
+ * A browser loading a page: only these need the redirect, so the app's URLs and
+ * its cookie Path agree in the address bar. API calls from scripts or agents
+ * (which may not follow redirects) are served where they arrived.
+ */
+function isDocumentNavigation(req: LocalAppBaseRequest): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false
+  const mode = req.header('sec-fetch-mode')
+  if (mode) return mode.toLowerCase() === 'navigate'
+  return (req.header('accept') ?? '').includes('text/html')
 }
 
 /**
  * Decide how to answer a request for a path-mounted local app:
  *
- * - hosted apps (per-app origins), a root public base, or a base Core never
- *   strips: serve in place;
+ * - hosted apps (per-app origins), a root or not cookie-safe public base
+ *   ({@link localAppsBasePath}), or a base Core never strips: serve in place;
  * - the request already used the public base: serve;
  * - a WebSocket upgrade under another base: refuse (an upgrade cannot follow a
  *   redirect; a page loaded under the public base opens its sockets there);
- * - otherwise: redirect once to the same path and query under the public base,
- *   adding {@link LOCAL_APP_BASE_REDIRECT_PARAM}.
+ * - anything but a GET or HEAD page navigation: serve in place;
+ * - a page navigation: redirect once to the same path and query under the
+ *   public base, adding {@link LOCAL_APP_BASE_REDIRECT_PARAM}.
  *
  * Loop safety: behind a proxy that strips the prefix and rewrites Host without
  * sending X-Forwarded-Host, the redirected request arrives looking like the
@@ -74,12 +88,13 @@ export function decideLocalAppBase(
     afterRedirect,
   })
   if (opts.hostedAppsDomain) return serve()
-  const publicBase = opts.publicBase ?? publicBasePath()
+  const publicBase = localAppsBasePath(opts.publicBase)
   if (!publicBase || !isStrippableBasePath(publicBase)) return serve()
   const requestBase = opts.requestBase ?? resolveRequestBasePath(req).basePath
   if (requestBase === publicBase) return serve()
   if (marked) return serve(true)
   if (req.header('upgrade')?.toLowerCase() === 'websocket') return { kind: 'reject-upgrade' }
+  if (!isDocumentNavigation(req)) return serve()
   url.searchParams.set(LOCAL_APP_BASE_REDIRECT_PARAM, '1')
   return { kind: 'redirect', location: `${publicBase}${req.path}${url.search}` }
 }
@@ -140,7 +155,7 @@ export function parseLocalAppsBaseMarker(value: string | undefined): LocalAppsBa
 }
 
 export interface ReconcileLocalAppBasePathDependencies {
-  publicBasePath: () => string
+  localAppsBasePath: () => string
   hostedAppsDomain: () => boolean
   listLive: () => Promise<LocalDeployment[]>
   restart: (localDeploymentId: string) => Promise<unknown>
@@ -162,7 +177,7 @@ async function defaultDependencies(): Promise<ReconcileLocalAppBasePathDependenc
   ])
   const store = getSettingsStore()
   return {
-    publicBasePath: () => publicBasePath(),
+    localAppsBasePath: () => localAppsBasePath(),
     hostedAppsDomain: () => !!service.getHostedAppsDomain(),
     listLive: service.listLiveLocalDeployments,
     restart: (id) => health.restartManagedLocalDeployment(id, { explicit: true }),
@@ -197,7 +212,7 @@ export function reconcileLocalAppBasePath(
 }
 
 async function reconcileOnce(d: ReconcileLocalAppBasePathDependencies): Promise<ReconcileLocalAppBasePathResult> {
-  const basePath = d.publicBasePath()
+  const basePath = d.localAppsBasePath()
   const marker = parseLocalAppsBaseMarker(d.readMarker())
   const baseChanged = marker.basePath !== basePath
   if (!baseChanged && marker.failed.length === 0) return { basePath, restarted: [], failed: [] }

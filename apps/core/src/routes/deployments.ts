@@ -297,7 +297,7 @@ export const deploymentsRouter = new Hono()
       // (their URLs and cookie Path are built for it): send a request that used
       // another base there once. See local-deployment-base-path.ts.
       const decision = decideLocalAppBase(
-        { url: c.req.url, header: (name) => c.req.header(name), path: c.req.path },
+        { url: c.req.url, header: (name) => c.req.header(name), path: c.req.path, method: c.req.method },
         { hostedAppsDomain: !!getHostedAppsDomain() }
       )
       if (decision.kind === 'redirect') return c.redirect(decision.location, 307)
