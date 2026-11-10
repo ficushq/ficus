@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { queries } from '../../queryOptions'
@@ -41,14 +41,14 @@ export function NotificationSettings({ squadId }: Props) {
   const [config, setConfig] = useState<NotificationConfig>({})
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Reset form when squad data loads
-  useEffect(() => {
-    if (squad) {
-      const notifications = (squad.metadata as { notifications?: NotificationConfig } | undefined)?.notifications || {}
-      setConfig(notifications)
-      setHasChanges(false)
-    }
-  }, [squad])
+  // Reset form when squad data loads or changes, while rendering
+  const [formSquad, setFormSquad] = useState<typeof squad>()
+  if (squad && formSquad !== squad) {
+    setFormSquad(squad)
+    const notifications = (squad.metadata as { notifications?: NotificationConfig } | undefined)?.notifications || {}
+    setConfig(notifications)
+    setHasChanges(false)
+  }
 
   // Validation: check for incomplete configs (has instanceId but no channelId)
   const validationErrors = useMemo(() => {

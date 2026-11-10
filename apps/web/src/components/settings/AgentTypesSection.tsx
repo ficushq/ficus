@@ -341,9 +341,12 @@ function AgentTypeRow({
   const [form, setForm] = useState(() => agentTypeToForm(agentType))
   const [copyMsg, setCopyMsg] = useState('')
 
-  useEffect(() => {
+  // Re-seed the form when the agent type changes, while rendering.
+  const [formSource, setFormSource] = useState(agentType)
+  if (formSource !== agentType) {
+    setFormSource(agentType)
     setForm(agentTypeToForm(agentType))
-  }, [agentType])
+  }
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<AgentTypeConfig>) => updateAgentType(agentType.id, data),
@@ -1055,7 +1058,11 @@ export function TierChainEditor({
   const [entries, setEntries] = useState(() => tier.chain.split(',').filter(Boolean))
   const [customRows, setCustomRows] = useState<Set<number>>(() => new Set())
   const [dragged, setDragged] = useState<number | null>(null)
-  useEffect(() => setEntries(tier.chain.split(',').filter(Boolean)), [tier.chain])
+  const [entriesChain, setEntriesChain] = useState(tier.chain)
+  if (entriesChain !== tier.chain) {
+    setEntriesChain(tier.chain)
+    setEntries(tier.chain.split(',').filter(Boolean))
+  }
   const commit = (next: string[]) => {
     if (disabled) return
     setEntries(next)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
 import { integrationQueries, queries } from '../../queryOptions'
@@ -18,10 +18,13 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
   })
   const [githubIdentity, setGithubIdentity] = useState<GithubIdentityForm>({ gitUserName: '', gitUserEmail: '' })
   const [hasChanges, setHasChanges] = useState(false)
-  useEffect(() => {
-    if (!squad || hasChanges) return
-    setGithubIdentity(githubIdentityFromMetadata(squad.metadata))
-  }, [squad, hasChanges])
+  // Without local changes, the form follows the squad: re-seed it while rendering when the squad
+  // data changes or the local changes are saved or discarded.
+  const [synced, setSynced] = useState<{ squad?: typeof squad; hasChanges: boolean }>({ hasChanges })
+  if (synced.squad !== squad || synced.hasChanges !== hasChanges) {
+    setSynced({ squad, hasChanges })
+    if (squad && !hasChanges) setGithubIdentity(githubIdentityFromMetadata(squad.metadata))
+  }
   const updateMutation = useMutation({
     mutationFn: () =>
       updateSquad(squadId, { metadata: githubIdentityToMetadata(squad?.metadata ?? {}, githubIdentity) }),

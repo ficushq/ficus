@@ -669,10 +669,13 @@ function ScheduleDetailModal({
   const [editState, setEditState] = useState(() => createScheduleEditState(schedule))
   const [editError, setEditError] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Re-seed the editor when the schedule changes, while rendering.
+  const [editSource, setEditSource] = useState(schedule)
+  if (editSource !== schedule) {
+    setEditSource(schedule)
     setEditState(createScheduleEditState(schedule))
     setEditError(null)
-  }, [schedule])
+  }
 
   const invalidateQueries = () => {
     // Detail is backed by whichever filtered list is mounted (including the

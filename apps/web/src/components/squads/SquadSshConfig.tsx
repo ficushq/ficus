@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getSshConfig, setSshConfig, getKnownHosts, setKnownHosts } from '../../api/squads'
 import clsx from 'clsx'
@@ -32,12 +32,12 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
     queryFn: () => getSshConfig(squadId),
   })
 
-  // Sync when data loads
-  useEffect(() => {
-    if (data?.config !== undefined) {
-      setValue(data.config)
-    }
-  }, [data?.config])
+  // Sync when data loads or changes, while rendering
+  const [syncedConfig, setSyncedConfig] = useState<string>()
+  if (data?.config !== undefined && syncedConfig !== data.config) {
+    setSyncedConfig(data.config)
+    setValue(data.config)
+  }
 
   const dirty = value !== (data?.config ?? '')
 
@@ -143,12 +143,12 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
     queryFn: () => getKnownHosts(squadId),
   })
 
-  // Sync when data loads
-  useEffect(() => {
-    if (data?.knownHosts !== undefined) {
-      setValue(data.knownHosts)
-    }
-  }, [data?.knownHosts])
+  // Sync when data loads or changes, while rendering
+  const [syncedKnownHosts, setSyncedKnownHosts] = useState<string>()
+  if (data?.knownHosts !== undefined && syncedKnownHosts !== data.knownHosts) {
+    setSyncedKnownHosts(data.knownHosts)
+    setValue(data.knownHosts)
+  }
 
   const dirty = value !== (data?.knownHosts ?? '')
 

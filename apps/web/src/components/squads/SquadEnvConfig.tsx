@@ -25,12 +25,12 @@ export function SquadEnvConfig({ squadId }: Props) {
     queryFn: () => getWorkspaceEnv(squadId),
   })
 
-  // Sync when data loads
-  useEffect(() => {
-    if (data?.content !== undefined) {
-      setValue(data.content)
-    }
-  }, [data?.content])
+  // Sync when data loads or changes, while rendering
+  const [syncedContent, setSyncedContent] = useState<string>()
+  if (data?.content !== undefined && syncedContent !== data.content) {
+    setSyncedContent(data.content)
+    setValue(data.content)
+  }
 
   const dirty = value !== (data?.content ?? '')
 

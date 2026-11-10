@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ConfirmButton } from '../ConfirmButton'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -52,18 +52,18 @@ export function SandboxSettings({ squadId }: Props) {
   const [config, setConfig] = useState<SandboxConfig>(DEFAULT_CONFIG)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Reset form when squad data loads
-  useEffect(() => {
-    if (squad) {
-      const sandbox = (squad.metadata as { sandbox?: Partial<SandboxConfig> } | undefined)?.sandbox
-      setConfig({
-        alwaysOn: sandbox?.alwaysOn === true, // default: false
-        idleTimeoutMinutes: sandbox?.idleTimeoutMinutes ?? 60,
-        ephemeralStorageLimitGi: sandbox?.ephemeralStorageLimitGi,
-      })
-      setHasChanges(false)
-    }
-  }, [squad])
+  // Reset form when squad data loads or changes, while rendering
+  const [formSquad, setFormSquad] = useState<typeof squad>()
+  if (squad && formSquad !== squad) {
+    setFormSquad(squad)
+    const sandbox = (squad.metadata as { sandbox?: Partial<SandboxConfig> } | undefined)?.sandbox
+    setConfig({
+      alwaysOn: sandbox?.alwaysOn === true, // default: false
+      idleTimeoutMinutes: sandbox?.idleTimeoutMinutes ?? 60,
+      ephemeralStorageLimitGi: sandbox?.ephemeralStorageLimitGi,
+    })
+    setHasChanges(false)
+  }
 
   const updateMutation = useMutation({
     mutationFn: async (sandboxConfig: SandboxConfig) => {

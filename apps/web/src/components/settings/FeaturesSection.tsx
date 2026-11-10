@@ -1,5 +1,5 @@
 import { FormSkeleton } from '../loading/Skeleton'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '../../reactQueryHooks'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -51,9 +51,11 @@ export function NumberSetting({
   const [draft, setDraft] = useState(setting.value)
 
   // Re-seed when the server value changes (a save landing, or another operator).
-  useEffect(() => {
+  const [draftSource, setDraftSource] = useState(setting.value)
+  if (draftSource !== setting.value) {
+    setDraftSource(setting.value)
     setDraft(setting.value)
-  }, [setting.value])
+  }
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
 
