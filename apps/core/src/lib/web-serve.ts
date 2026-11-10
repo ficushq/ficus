@@ -95,8 +95,11 @@ export function renderIndexHtml(html: string, options: RenderIndexHtmlOptions): 
     const runtime = escapeHtmlAttribute(options.runtimeBase)
     rendered = rendered.replace(pattern, (_match, attribute: string) => `${attribute}="${runtime}`)
   }
-  rendered = rendered.replaceAll(BASE_PATH_PLACEHOLDER, escapeHtmlAttribute(`${options.basePath}/`))
-  return rendered.replaceAll(ORIGIN_PLACEHOLDER, escapeHtmlAttribute(options.publicAppUrl.replace(/\/+$/, '')))
+  // Function replacers: a `$` in an address path must not be read as a replacement pattern.
+  const basePath = escapeHtmlAttribute(`${options.basePath}/`)
+  const publicAppUrl = escapeHtmlAttribute(options.publicAppUrl.replace(/\/+$/, ''))
+  rendered = rendered.replaceAll(BASE_PATH_PLACEHOLDER, () => basePath)
+  return rendered.replaceAll(ORIGIN_PLACEHOLDER, () => publicAppUrl)
 }
 
 type RequestLike = { req: { url: string; header: (name: string) => string | undefined } }

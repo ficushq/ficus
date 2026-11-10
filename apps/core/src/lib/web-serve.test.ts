@@ -332,6 +332,23 @@ describe('maybeMountWebUi', () => {
       expect(builtWebBase('<html></html>')).toBeNull()
     })
 
+    it('renders a base path with $&, a quote and an ampersand literally and escaped', () => {
+      const html = renderIndexHtml(INDEX_HTML, {
+        builtBase: '/',
+        runtimeBase: "/a$&'b&c/",
+        basePath: "/a$&'b&c",
+        publicAppUrl: "https://h/a$&'b&c",
+      })
+      expect(html).toContain('name="ficus-base-path" content="/a$&amp;&#39;b&amp;c/"')
+      expect(html).toContain('src="/a$&amp;&#39;b&amp;c/assets/index-C2ucfeeU.js"')
+      expect(html).toContain('property="og:url" content="https://h/a$&amp;&#39;b&amp;c/"')
+      expect(html).not.toContain('__FICUS')
+      // Removing the escaped path leaves exactly the root rendering: nothing else changed.
+      expect(html.replaceAll('/a$&amp;&#39;b&amp;c', '')).toBe(
+        renderIndexHtml(INDEX_HTML, { builtBase: '/', runtimeBase: '/', basePath: '', publicAppUrl: 'https://h' })
+      )
+    })
+
     it('escapes attribute values', () => {
       expect(escapeHtmlAttribute(`/a"b'<c>&`)).toBe('/a&quot;b&#39;&lt;c&gt;&amp;')
     })
