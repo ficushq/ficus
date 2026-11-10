@@ -77,22 +77,57 @@ export function registerWorkflowCommands(program: Command, deps: WorkflowDepende
         deps.output({ id, deleted: true })
       })
     )
-  for (const name of ['enable', 'disable', 'revert'] as const) {
+  for (const name of ['enable', 'disable'] as const) {
     command
       .command(`${name} <id>`)
-      .description(name === 'revert' ? 'Restore the current YAML template' : `${name} a saved preset`)
+      .description(`${name} a saved preset`)
       .requiredOption('--revision <revision>', 'Revision from workflow get')
       .action((id: string, options: { revision: string }) =>
         run(async () => {
           deps.output(
-            await deps.apiPost(`${path(id)}/${name === 'revert' ? 'revert' : 'disabled'}`, {
-              revision: options.revision,
-              ...(name === 'revert' ? {} : { disabled: name === 'disable' }),
-            })
+            await deps.apiPost(`${path(id)}/disabled`, { revision: options.revision, disabled: name === 'disable' })
           )
         })
       )
   }
+  command
+    .command('revert <id>')
+    .description(
+      'Restore the current YAML template, or only the parts named with --path (paths from workflow template-diff). ' +
+        'Refuses when this would break saved squad customizations unless --accept-squad-impact is given.'
+    )
+    .requiredOption('--revision <revision>', 'Revision from workflow get')
+    .option('--path <path>', 'Restore only this part; repeat for several', (value: string, all: string[] = []) => [
+      ...all,
+      value,
+    ])
+    .option('--accept-squad-impact', 'Restore even though it breaks saved squad workflow customizations')
+    .action((id: string, options: { revision: string; path?: string[]; acceptSquadImpact?: boolean }) =>
+      run(async () => {
+        deps.output(
+          await deps.apiPost(`${path(id)}/revert`, {
+            revision: options.revision,
+            ...(options.path?.length ? { paths: options.path } : {}),
+            ...(options.acceptSquadImpact ? { acknowledgeSquadImpact: true } : {}),
+          })
+        )
+      })
+    )
+  command
+    .command('revert-preview <id>')
+    .description('Show which squads a revert would break, without applying it')
+    .option(
+      '--path <path>',
+      'Preview restoring only this part; repeat for several',
+      (value: string, all: string[] = []) => [...all, value]
+    )
+    .action((id: string, options: { path?: string[] }) =>
+      run(async () => {
+        deps.output(
+          await deps.apiPost(`${path(id)}/revert/preview`, options.path?.length ? { paths: options.path } : {})
+        )
+      })
+    )
   command
     .command('template-diff <id>')
     .description('Compare a preset with its YAML template')

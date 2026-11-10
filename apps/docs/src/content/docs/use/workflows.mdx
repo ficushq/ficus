@@ -107,6 +107,14 @@ Open **Participants** in the graph toolbar to create or edit shared agent settin
 
 With **Reuse within work stream**, sequential steps using the same participant reuse a session and its context. Parallel branches each get a separate session; the main track continues in its own session after they join. **Fresh each attempt** starts a new session for each step attempt.
 
+### Edit a shipped workflow
+
+Ficus ships its workflows with the product and updates them in new releases. You can still edit a shared, shipped workflow. Your edits and later updates are combined part by part: if you change one participant's model tier, a release that renames steps or rewrites instructions elsewhere still applies. Where a release changes the same part you edited, your version stays.
+
+In **Administration → Workflows**, a workflow that no longer matches the shipped version is marked **Differs from code template**. Choose **Compare with code template** to see each part that differs, with your value and the shipped value. These are the parts where updates are not applied. If you can edit the workflow, select parts and choose **Restore selected**, or choose **Restore everything**. A restore must leave a complete workflow, so restoring a renamed step may also need its participant and connections.
+
+Squads can customize a workflow by step and participant names. If a restore or an update would remove or rename a step or participant that a squad customizes, Ficus warns you first and names the affected squads you can see. Releases do not apply such a change automatically: the workflow keeps its current version until someone restores it, so those squads can keep creating work. Update the squads' workflow settings, then restore.
+
 A one-off inline flow belongs to its stream; a saved workflow can be reused. Agent-type changes affect which model, tools, and instructions a participant receives. Coordinate those changes with [agent configuration](/configure/agents/).
 
 The [CLI reference](/reference/cli/) includes commands for listing and inspecting workflows. The [review guide](/use/review-and-intervene/) explains how to respond while a flow runs.

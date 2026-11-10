@@ -17,6 +17,7 @@ export const queryKeys = {
     reviewers: (squadId: string) => ['workflows', 'reviewers', squadId] as const,
     list: () => ['workflows', 'list'] as const,
     run: (id: string) => ['workflows', 'run', id] as const,
+    templateDiff: (id: string) => ['workflows', 'template-diff', id] as const,
   },
   /** Immutable handoff file bytes: outside `workflows` so run invalidations never refetch them. */
   workflowAttachments: {

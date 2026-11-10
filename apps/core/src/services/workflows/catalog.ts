@@ -10,7 +10,15 @@ import {
   type WorkflowPreset,
   type ResolvedWorkflow,
 } from '@ficus/shared'
+import { z } from 'zod'
 import { agentTypes, db, modelTiers, workflows, type DbTx } from '../../db'
+import {
+  diffWorkflowTemplate,
+  parseMergedPreset,
+  restoreWorkflowTemplatePaths,
+  type WorkflowTemplateDifference,
+} from './template-merge'
+import { describeSquadBreaks, findBrokenSquadCustomizations, visibleSquadBreaks } from './squad-impact'
 
 type Store = typeof db | DbTx
 export type WorkflowRow = typeof workflows.$inferSelect
@@ -197,22 +205,92 @@ export async function deleteWorkflow(id: string, revision: string): Promise<void
   })
 }
 
-/** Reset the whole graph together; partial graph resets could leave dangling edges. */
-export async function revertWorkflow(id: string, revision: string): Promise<WorkflowRow> {
+export interface WorkflowRestoreOptions {
+  /** Template paths to restore (from the template diff); omit to restore the whole preset. */
+  paths?: string[]
+  /** Restore even though it breaks saved squad customizations. */
+  acknowledgeSquadImpact?: boolean
+  /** Which squads the caller may see by name; the rest are counted. Defaults to none. */
+  canSeeSquad?: (squadId: string) => boolean
+}
+
+export const WORKFLOW_RESTORE_BREAKS_SQUADS = 'WORKFLOW_RESTORE_BREAKS_SQUADS'
+
+/** Where and how the preset differs from its code template. */
+export function workflowTemplateDifferences(row: WorkflowRow): WorkflowTemplateDifference[] {
+  if (!row.yamlTemplate) return []
+  return diffWorkflowTemplate(row, row.yamlTemplate as Record<string, unknown>)
+}
+
+/** The preset that a restore would store, validated as a complete workflow. */
+function restoredPreset(row: WorkflowRow, paths: string[] | undefined) {
+  if (!row.yamlTemplate) throw new WorkflowError('Workflow has no YAML template')
+  const template = row.yamlTemplate as Record<string, unknown>
+  let fields: { description?: unknown; definition?: unknown } = template
+  if (paths) {
+    if (!paths.length) throw new WorkflowError('Choose at least one part to restore')
+    try {
+      fields = restoreWorkflowTemplatePaths(row, template, paths)
+    } catch (error) {
+      throw new WorkflowError(error instanceof Error ? error.message : 'Invalid restore')
+    }
+  }
+  try {
+    return parseMergedPreset(row.id, fields)
+  } catch (error) {
+    const detail = error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join('; ') : ''
+    throw new WorkflowError(
+      `Restoring only the selected parts leaves an invalid workflow${detail ? ` (${detail})` : ''}. ` +
+        'Select the related parts too, or restore everything.'
+    )
+  }
+}
+
+/**
+ * What a restore would do, without applying it: whether the result is a valid workflow and which
+ * saved squad customizations it would break.
+ */
+export async function previewWorkflowRestore(id: string, options: WorkflowRestoreOptions = {}) {
+  const [row] = await db.select().from(workflows).where(eq(workflows.id, id))
+  if (!row) throw new WorkflowError('Workflow not found', 404)
+  const value = restoredPreset(row, options.paths)
+  const breaks = await findBrokenSquadCustomizations(id, row.definition, value.definition)
+  return { revision: workflowRevision(row), ...visibleSquadBreaks(breaks, options.canSeeSquad ?? (() => false)) }
+}
+
+/**
+ * Restore a preset, or only the selected paths, to its code template. A partial restore must
+ * still form a valid graph. Refuses with {@link WORKFLOW_RESTORE_BREAKS_SQUADS} when the result
+ * would break saved squad customizations, unless the caller acknowledged that impact.
+ */
+export async function revertWorkflow(
+  id: string,
+  revision: string,
+  options: WorkflowRestoreOptions = {}
+): Promise<WorkflowRow> {
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(workflows).where(eq(workflows.id, id)).for('update')
     if (!row) throw new WorkflowError('Workflow not found', 404)
     if (workflowRevision(row) !== revision) throw new WorkflowError('Workflow changed; reload it before reverting', 409)
-    if (!row.yamlTemplate) throw new WorkflowError('Workflow has no YAML template')
-    const template = row.yamlTemplate as Record<string, unknown>
-    const value = workflowPresetSchema.parse({ ...template, description: template.description ?? undefined })
+    const value = restoredPreset(row, options.paths)
     await validateWorkflowParticipants(value.definition, tx)
+    if (!options.acknowledgeSquadImpact) {
+      const breaks = await findBrokenSquadCustomizations(id, row.definition, value.definition, tx)
+      if (breaks.length)
+        throw new WorkflowError(
+          'Restoring this preset would break saved workflow customizations in ' +
+            `${describeSquadBreaks(visibleSquadBreaks(breaks, options.canSeeSquad ?? (() => false)))}. ` +
+            'Update those squads first, or confirm the restore anyway.',
+          409,
+          WORKFLOW_RESTORE_BREAKS_SQUADS
+        )
+    }
     const [updated] = await tx
       .update(workflows)
       .set({
         description: value.description ?? null,
         definition: value.definition,
-        yamlFieldOverrides: [],
+        yamlFieldOverrides: overrides(row, { id, ...value }),
         updatedAt: new Date(),
       })
       .where(eq(workflows.id, id))

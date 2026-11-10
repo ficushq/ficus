@@ -74,6 +74,7 @@ describe('workflow API authorization and catalog lifecycle', () => {
       ['/missing', 'DELETE', { revision: 'old' }],
       ['/missing/disabled', 'POST', { revision: 'old', disabled: true }],
       ['/missing/revert', 'POST', { revision: 'old' }],
+      ['/missing/revert/preview', 'POST', {}],
       ['/missing/export', 'GET', undefined],
       ['/missing/template-diff', 'GET', undefined],
     ] as const) {
@@ -160,6 +161,82 @@ describe('workflow API authorization and catalog lifecycle', () => {
     expect((await request('', admin, 'POST', { id: `${prefix}-missing-profile`, definition: invalid })).status).toBe(
       400
     )
+  })
+})
+
+describe('template drift and restore', () => {
+  test('the template diff lists differing parts and restores warn, naming only squads the caller can read', async () => {
+    const id = `${prefix}-drift`
+    const template = structuredClone(definition)
+    template.entry = 'implement'
+    template.steps[0]!.id = 'implement'
+    await db.insert(workflows).values({
+      id,
+      description: 'Drift fixture',
+      definition,
+      yamlTemplate: { id, description: 'Drift fixture', scope: { kind: 'instance' }, definition: template },
+      yamlFieldOverrides: ['definition'],
+    })
+    const [customizer] = await db
+      .insert(squads)
+      .values({
+        name: `${prefix} customizer`,
+        purpose: 'Customizes the drift fixture',
+        metadata: {
+          workflowSetup: {
+            choices: [
+              {
+                source: {
+                  kind: 'preset',
+                  id,
+                  customizations: [{ op: 'update-step', id: 'execute', changes: { instructions: 'Ours.' } }],
+                },
+              },
+            ],
+          },
+        },
+      })
+      .returning()
+    const restorer = await createTestUser({ prefix })
+    const restoreRole = await createTestRole({ prefix, permissions: ['workflows:read', 'workflows:update'] })
+    await assignRole({ userId: restorer.id, roleId: restoreRole.id, scope: 'system' })
+    try {
+      const diff = await (await request(`/${id}/template-diff`, reader)).json()
+      expect(diff.hasDrift).toBe(true)
+      expect(diff.differences.map((item: { path: string }) => item.path)).toEqual(
+        expect.arrayContaining(['definition/entry', 'definition/steps/execute', 'definition/steps/implement'])
+      )
+      expect((await request(`/${id}/revert/preview`, reader, 'POST', {})).status).toBe(404)
+
+      const named = await (await request(`/${id}/revert/preview`, admin, 'POST', {})).json()
+      expect(named.affectedSquads).toEqual([
+        { squadId: customizer!.id, squadName: `${prefix} customizer`, problems: ["Unknown step 'execute'"] },
+      ])
+      const counted = await (await request(`/${id}/revert/preview`, restorer, 'POST', {})).json()
+      expect(counted).toMatchObject({ affectedSquads: [], hiddenSquadCount: 1 })
+
+      const refused = await request(`/${id}/revert`, restorer, 'POST', { revision: diff.revision })
+      expect(refused.status).toBe(409)
+      const body = await refused.json()
+      expect(body.code).toBe('WORKFLOW_RESTORE_BREAKS_SQUADS')
+      expect(body.error).toContain('1 squad you cannot see')
+      expect(body.error).not.toContain('customizer')
+      const invalid = await request(`/${id}/revert`, admin, 'POST', {
+        revision: diff.revision,
+        paths: ['definition/steps/execute'],
+      })
+      expect(invalid.status).toBe(400)
+      expect((await invalid.json()).error).toContain('invalid workflow')
+
+      const restored = await request(`/${id}/revert`, admin, 'POST', {
+        revision: diff.revision,
+        acknowledgeSquadImpact: true,
+      })
+      expect(restored.status).toBe(200)
+      expect(await restored.json()).toMatchObject({ definition: { entry: 'implement' }, yamlFieldOverrides: [] })
+    } finally {
+      await db.delete(squads).where(eq(squads.id, customizer!.id))
+    }
   })
 })
 

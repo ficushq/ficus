@@ -5,15 +5,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq, like } from 'drizzle-orm'
 import { type WorkflowDefinition, type WorkflowPreset, workflowPresetSchema } from '@ficus/shared'
-import { agentTypes, db, squads, workStreams, workStreamFlowRuns, workStreamFlowTransitions, workflows } from '../../db'
+import {
+  agentTypes,
+  db,
+  modelTiers,
+  squads,
+  workStreams,
+  workStreamFlowRuns,
+  workStreamFlowTransitions,
+  workflows,
+} from '../../db'
 import { WorkflowSync } from '../config-sync/workflow-sync'
 import {
   createWorkflow,
   deleteWorkflow,
   replaceWorkflow,
   resolveStoredWorkflow,
+  previewWorkflowRestore,
   revertWorkflow,
   setWorkflowDisabled,
+  workflowTemplateDifferences,
   workflowFingerprint,
   workflowRevision,
 } from './catalog'
@@ -21,6 +32,7 @@ import { persistWorkflowTransition, prepareWorkStreamFlow } from './store'
 
 const prefix = `workflow-${randomUUID()}`
 const workerType = `${prefix}-workerType`
+const tier = `${prefix}-tier`
 const sync = new WorkflowSync()
 let definition: WorkflowDefinition
 let squadId: string
@@ -51,6 +63,7 @@ beforeAll(async () => {
   ).definition
   definition.participants.worker!.agentTypeId = workerType
   await db.insert(agentTypes).values({ id: workerType, name: 'Test worker', model: '', systemPrompt: 'Test.' })
+  await db.insert(modelTiers).values({ slug: tier, label: 'Test tier', chain: 'anthropic:claude-test' })
   const [squad] = await db.insert(squads).values({ name: prefix, purpose: 'Workflow tests' }).returning()
   squadId = squad!.id
 })
@@ -59,6 +72,7 @@ afterAll(async () => {
   if (squadId) await db.delete(squads).where(eq(squads.id, squadId))
   await db.delete(workflows).where(like(workflows.id, `${prefix}%`))
   await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
+  await db.delete(modelTiers).where(eq(modelTiers.slug, tier))
 })
 
 describe('workflow catalog', () => {
@@ -158,7 +172,117 @@ describe('workflow catalog', () => {
       await rm(directory, { recursive: true, force: true })
     }
   })
+  test('a local tier edit no longer holds back code updates to the rest of the preset', async () => {
+    await withFixtureSync(async (fixture, write) => {
+      const value = preset('merge')
+      await write(value)
+      const [row] = await db.select().from(workflows).where(eq(workflows.id, value.id))
+      const custom = structuredClone(value)
+      custom.definition.participants.worker!.tier = tier
+      const edited = await replaceWorkflow(value.id, workflowRevision(row!), custom)
+      expect(edited.yamlFieldOverrides).toEqual(['definition'])
+
+      // The code renames the step and rewrites its instructions; the tier edit must survive.
+      const update = structuredClone(value)
+      update.definition.entry = 'implement'
+      update.definition.steps[0]!.id = 'implement'
+      update.definition.steps[0]!.instructions = 'Upstream instructions.'
+      await write(update)
+      const [merged] = await db.select().from(workflows).where(eq(workflows.id, value.id))
+      expect(merged!.definition.participants.worker!.tier).toBe(tier)
+      expect(merged!.definition.entry).toBe('implement')
+      expect(merged!.definition.steps.map((step) => step.id)).toEqual(['implement'])
+      expect(merged!.definition.steps[0]!.instructions).toBe('Upstream instructions.')
+      expect(workflowTemplateDifferences(merged!).map((item) => item.path)).toEqual([
+        'definition/participants/worker/tier',
+      ])
+      expect(merged!.yamlFieldOverrides).toEqual(['definition'])
+
+      // Restoring only the tier clears the drift.
+      const restored = await revertWorkflow(value.id, workflowRevision(merged!), {
+        paths: ['definition/participants/worker/tier'],
+      })
+      expect(restored.definition.participants.worker!.tier).toBeUndefined()
+      expect(restored.yamlFieldOverrides).toEqual([])
+    })
+  })
+  test('code updates and restores that break a squad customization are held back or need confirmation', async () => {
+    await withFixtureSync(async (fixture, write) => {
+      const value = preset('impact')
+      await write(value)
+      const [squad] = await db
+        .insert(squads)
+        .values({
+          name: `${prefix} customizer`,
+          purpose: 'Customizes a step',
+          metadata: {
+            workflow: {
+              kind: 'preset',
+              id: value.id,
+              customizations: [{ op: 'update-step', id: 'execute', changes: { instructions: 'Ours.' } }],
+            },
+          },
+        })
+        .returning()
+      try {
+        const update = structuredClone(value)
+        update.definition.entry = 'implement'
+        update.definition.steps[0]!.id = 'implement'
+        await write(update)
+        const [held] = await db.select().from(workflows).where(eq(workflows.id, value.id))
+        expect(held!.definition.steps.map((step) => step.id)).toEqual(['execute'])
+        expect(held!.yamlFieldOverrides).toEqual(['definition'])
+        expect((await fixture.getTemplateDiff(value.id)).hasDrift).toBe(true)
+
+        const visible = await previewWorkflowRestore(value.id, { canSeeSquad: (id) => id === squad!.id })
+        expect(visible.affectedSquads).toEqual([
+          { squadId: squad!.id, squadName: `${prefix} customizer`, problems: ["Unknown step 'execute'"] },
+        ])
+        expect(visible.hiddenSquadCount).toBe(0)
+        const hidden = await previewWorkflowRestore(value.id)
+        expect(hidden).toMatchObject({ affectedSquads: [], hiddenSquadCount: 1 })
+
+        const refusal = revertWorkflow(value.id, workflowRevision(held!), { canSeeSquad: () => true })
+        await expect(refusal).rejects.toMatchObject({ status: 409, code: 'WORKFLOW_RESTORE_BREAKS_SQUADS' })
+        await expect(refusal).rejects.toThrow(`${prefix} customizer`)
+        const unchanged = await db.select().from(workflows).where(eq(workflows.id, value.id))
+        expect(unchanged[0]!.definition.steps[0]!.id).toBe('execute')
+
+        const restored = await revertWorkflow(value.id, workflowRevision(held!), { acknowledgeSquadImpact: true })
+        expect(restored.definition.steps[0]!.id).toBe('implement')
+        expect(restored.yamlFieldOverrides).toEqual([])
+      } finally {
+        await db.delete(squads).where(eq(squads.id, squad!.id))
+      }
+    })
+  })
 })
+
+/**
+ * Runs a WorkflowSync over a scratch directory. `write` saves the preset as the only fixture
+ * file and syncs. Existing templates are copied in so the sync does not remove other records.
+ */
+async function withFixtureSync(
+  body: (fixture: WorkflowSync, write: (value: WorkflowPreset) => Promise<void>) => Promise<void>
+) {
+  const directory = await mkdtemp(join(tmpdir(), 'ficus-workflow-config-'))
+  class FixtureSync extends WorkflowSync {
+    override readonly directory = directory
+  }
+  const fixture = new FixtureSync()
+  const existing = await db.select().from(workflows)
+  for (const row of existing)
+    if (row.yamlTemplate)
+      await Bun.write(join(directory, `${row.id}.yaml`), sync.toYaml(row.yamlTemplate as Record<string, unknown>))
+  try {
+    await body(fixture, async (value) => {
+      await Bun.write(join(directory, `${value.id}.yaml`), fixture.toYaml(value))
+      await fixture.sync()
+    })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
 
 describe('durable prepared flow storage', () => {
   test('inline flow is durable without publishing a catalog entry; preparation retries are idempotent', async () => {

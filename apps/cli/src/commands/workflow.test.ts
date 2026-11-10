@@ -155,6 +155,30 @@ describe('workflow CLI', () => {
       { method: 'POST', path: '/api/workflows/solo/revert', body: { revision: 'current' } },
       { method: 'DELETE', path: '/api/workflows/solo', body: { revision: 'current' } },
     ])
+    await f.run(
+      'revert',
+      'solo',
+      '--revision',
+      'current',
+      '--path',
+      'definition/participants/engineer/tier',
+      '--path',
+      'description',
+      '--accept-squad-impact'
+    )
+    await f.run('revert-preview', 'solo', '--path', 'description')
+    expect(f.calls.slice(-2)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/workflows/solo/revert',
+        body: {
+          revision: 'current',
+          paths: ['definition/participants/engineer/tier', 'description'],
+          acknowledgeSquadImpact: true,
+        },
+      },
+      { method: 'POST', path: '/api/workflows/solo/revert/preview', body: { paths: ['description'] } },
+    ])
     await f.run('get', 'solo')
     expect(f.printed.at(-1)).toEqual({ revision: 'current' })
     await f.run('export', 'solo')
