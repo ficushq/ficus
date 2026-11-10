@@ -122,6 +122,31 @@ describe('mergeWorkflowTemplate', () => {
     const steps = (merged.definition as WorkflowPreset['definition']).steps.map((step) => step.id)
     expect(steps).toEqual([ids[0]!, 'theirs', ...ids.slice(1), 'ours'])
   })
+  test('a step both sides added with the same ID keeps the local step whole and reports one conflict', async () => {
+    const template = await base()
+    const first = template.definition.steps[0]!
+    const local = structuredClone(template)
+    local.definition.steps.push({
+      ...structuredClone(first),
+      id: 'qa',
+      instructions: 'Our QA.',
+      output: 'Our result.',
+      outcomes: { done: { next: 'finish' } },
+    } as typeof first)
+    const update = structuredClone(template)
+    update.definition.steps.push({
+      ...structuredClone(first),
+      id: 'qa',
+      instructions: 'Upstream QA.',
+      output: 'Upstream result.',
+      outcomes: { passed: { next: 'finish' } },
+    } as typeof first)
+    const { merged, conflicts } = mergeWorkflowTemplate(template, local, update)
+    expect(conflicts).toEqual(['definition/steps/qa'])
+    const qa = (merged.definition as WorkflowPreset['definition']).steps.find((step) => step.id === 'qa')!
+    expect(qa).toEqual(local.definition.steps.at(-1)!)
+    expect(Object.keys(qa.outcomes)).toEqual(['done'])
+  })
 })
 
 describe('diffWorkflowTemplate and restore', () => {

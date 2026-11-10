@@ -134,11 +134,12 @@ function mergeNode(base: unknown, local: unknown, theirs: unknown, path: string[
   if (same(local, theirs)) return local
   if (same(local, base)) return theirs
   if (same(theirs, base)) return local
-  if (isObject(local) && isObject(theirs) && (base === undefined || isObject(base))) {
-    const baseTree = base ?? {}
+  // Recurse only into a part both sides inherited. A part both sides added with different content
+  // (such as a step with the same new ID) stays local as a whole, so no code fields leak into it.
+  if (isObject(local) && isObject(theirs) && isObject(base)) {
     const merged: Tree = {}
-    for (const key of new Set([...Object.keys(local), ...Object.keys(theirs), ...Object.keys(baseTree)]))
-      merged[key] = mergeNode(baseTree[key], local[key], theirs[key], [...path, key], conflicts)
+    for (const key of new Set([...Object.keys(local), ...Object.keys(theirs), ...Object.keys(base)]))
+      merged[key] = mergeNode(base[key], local[key], theirs[key], [...path, key], conflicts)
     return merged
   }
   conflicts.push(path.join('/'))
