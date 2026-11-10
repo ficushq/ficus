@@ -957,9 +957,10 @@ describe('WorkStreamList feed section headers', () => {
     const feed = renderWorkStreamList(streams, feedProps, '/?collapsed=0')
     // The Feed toggle used to drop its inline padding, so the chevron sat on the highlight edge.
     expect(tagBefore(feed, 'button', 'Recently completed')).toMatch(/class="[^"]*\bpx-3\b/)
-    // "Active work" cannot collapse on the Feed: it keeps the padding and reserves the chevron's width.
+    // "Active work" cannot collapse on the Feed: it keeps the padding and, from sm up only, reserves the
+    // chevron's width. Phones drop the spacer so the header lines up with the tighter rows.
     expect(feed).toMatch(
-      /<div class="[^"]*\bpx-3\b[^"]*"><div class="flex items-center gap-2"><span aria-hidden="true" class="h-4 w-4 shrink-0"><\/span><span[^>]*>Active work</
+      /<div class="[^"]*\bpx-3\b[^"]*"><div class="flex items-center gap-2"><span aria-hidden="true" class="hidden h-4 w-4 shrink-0 sm:block"><\/span><span[^>]*>Active work</
     )
 
     const standard = renderWorkStreamList(streams, { hideFilters: true }, '/?collapsed=0')
@@ -970,8 +971,25 @@ describe('WorkStreamList feed section headers', () => {
     const feed = renderWorkStreamList(streams, feedProps, '/?collapsed=0')
     const rows = feed.match(/<li class="[^"]*" data-testid="feed-work-row"/g) ?? []
     expect(rows).toHaveLength(2)
-    // 12px header padding + 16px chevron + 8px gap.
-    for (const row of rows) expect(row).toMatch(/\bpl-9\b/)
+    for (const row of rows) {
+      // From sm up: 12px header padding + 16px chevron + 8px gap.
+      expect(row).toMatch(/\bsm:pl-9\b/)
+      // Phones: only the 12px header padding, so titles keep the width.
+      expect(row).toMatch(/\bpl-3\b/)
+      expect(row).not.toMatch(/(?<!:)\bpl-9\b/)
+    }
+  })
+
+  test('space every feed metadata separator the same way', () => {
+    const active = workStream({ runtime: { totalMs: 12_000, activeCount: 0, computedAt: now.toISOString() } })
+    const done = workStream({ id: 'ws-done', status: 'done', completedAt: now })
+    const feed = renderWorkStreamList([active, done], feedProps, '/?collapsed=0')
+    // Each dot is its own flex item so the row's gap spaces both sides evenly; no text embeds a dot.
+    const separators = feed.match(/<span aria-hidden="true">·<\/span>/g) ?? []
+    // One before the active row's runtime and one before the completed row's date.
+    expect(separators).toHaveLength(2)
+    expect(feed).toContain('<span>12s</span>')
+    expect(feed).not.toMatch(/>· /)
   })
 })
 

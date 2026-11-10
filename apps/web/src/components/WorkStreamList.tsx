@@ -65,6 +65,11 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-xs text-muted hover:text-link hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent'
 
+// Left inset for feed rows and their skeleton. From sm up it is 12px header padding + 16px chevron + 8px gap,
+// so the status dot sits under the section title. On phones it matches the header padding alone, so the dot
+// lines up with the section chevrons and titles keep the width.
+const FEED_ROW_INSET = 'pl-3 sm:pl-9'
+
 // --- Filter types ---
 
 export type WsStatusFilterValue =
@@ -135,7 +140,9 @@ function SectionHeader({
 }) {
   const content = (
     <div className="flex items-center gap-2">
-      {alignDisclosure && !collapsible && <span aria-hidden="true" className="h-4 w-4 shrink-0" />}
+      {/* From sm up, reserve the chevron's width so the title lines up with collapsible headers. On phones the
+          spacer is dropped so the header and its rows (FEED_ROW_INSET) start at the page edge. */}
+      {alignDisclosure && !collapsible && <span aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" />}
       {collapsible &&
         (collapsed ? (
           <ChevronRightIcon className="w-4 h-4 text-placeholder" />
@@ -462,7 +469,10 @@ function WorkStreamRow({
   if (feedLayout) {
     const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
     return (
-      <li className="relative rounded-lg pl-9 pr-3 py-2.5 hover:bg-surface-hover" data-testid="feed-work-row">
+      <li
+        className={clsx('relative rounded-lg pr-3 py-2.5 hover:bg-surface-hover', FEED_ROW_INSET)}
+        data-testid="feed-work-row"
+      >
         <button
           className="flex w-full items-start gap-2 text-left after:absolute after:inset-0 after:rounded-lg"
           onClick={onClick}
@@ -496,11 +506,19 @@ function WorkStreamRow({
             </>
           )}
           {isDone && Number.isFinite(completedAt.getTime()) && (
-            <time dateTime={completedAt.toISOString()}>
-              · {completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-            </time>
+            <>
+              <span aria-hidden="true">·</span>
+              <time dateTime={completedAt.toISOString()}>
+                {completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </time>
+            </>
           )}
-          {!isDone && elapsed > 1000 && <span>· {formatDuration(elapsed)}</span>}
+          {!isDone && elapsed > 1000 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{formatDuration(elapsed)}</span>
+            </>
+          )}
           {pullRequests.map((pullRequest) =>
             pullRequest.url ? (
               <Fragment key={pullRequest.key}>
@@ -1074,7 +1092,7 @@ function WorkStreamRowsSkeleton({ count, label, feedLayout }: { count: number; l
       <div className="space-y-1">
         <SkeletonRows count={Math.max(1, count)}>
           {(index) => (
-            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? 'pl-9' : 'pl-3')}>
+            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? FEED_ROW_INSET : 'pl-3')}>
               <div className="hidden h-5 items-center gap-2 md:flex">
                 <SkeletonBlock className="h-3 w-3 shrink-0 rounded-full" />
                 <SkeletonLine className={index % 3 === 0 ? 'w-2/3' : 'w-1/2'} />
