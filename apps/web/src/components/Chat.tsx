@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '../reactQueryHooks'
 import { compactAgent, resetAgent, stopAgent } from '../api/agents'
 import { useNotificationSound } from '../hooks/useNotificationSound'

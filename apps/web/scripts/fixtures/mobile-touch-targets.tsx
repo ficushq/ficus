@@ -1,7 +1,7 @@
 // Inline text controls and standalone controls with made-up data, for check-mobile-touch-targets.ts.
 // The chat header rows are the real components; the checker answers their /api/* requests.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { AgentSlotWaitStatus } from '../../src/components/AgentSlotWaitStatus'

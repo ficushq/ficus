@@ -3,7 +3,7 @@ import { agentGraphColor, squadGraphColor, relationshipGraphColor, graphColor } 
 import { useThemeColors } from '../../theme/useThemeColors'
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { useQueries } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { listSquadAgents } from '../../api/squads'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import { CanvasSkeleton } from '../loading/Skeleton'

@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { useState } from 'react'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
 import { queries, integrationQueries } from '../queryOptions'

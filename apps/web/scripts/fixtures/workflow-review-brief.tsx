@@ -1,7 +1,7 @@
 // Isolated synthetic state only. Unexpected network requests fail in the browser runner.
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import {
   createBlankWorkflow,

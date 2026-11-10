@@ -1,7 +1,7 @@
 import { isDeploymentIntegrationKey } from '@ficus/shared'
 import { DeploymentIntegrationSettings } from '../integrations/DeploymentIntegrationSettings'
 import { ExternalLink } from './SettingsRow'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { IntegrationCredentialSettings } from '../integrations/IntegrationCredentialSettings'
 import { IntegrationLogo } from '../integrations/IntegrationLogo'
 import { useEffect, useState } from 'react'

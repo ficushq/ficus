@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { STORAGE_ALERT_HYSTERESIS_POINTS, type StorageWarning } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'

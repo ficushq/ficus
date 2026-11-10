@@ -203,7 +203,7 @@ describe('AgentWorkStreamsPanel', () => {
 
 test('open agent-panel details stay live across off/on saves and cleanup state changes', async () => {
   const { spyOn } = await import('bun:test')
-  const { MemoryRouter } = await import('react-router-dom')
+  const { MemoryRouter } = await import('react-router')
   const { acquireDomHarness } = await import('../../test/domHarness')
   const { client } = await import('../../api/clientInstance')
   const dom = await acquireDomHarness({ url: 'http://localhost/agents/agent-1' })

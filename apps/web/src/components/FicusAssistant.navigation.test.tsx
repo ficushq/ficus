@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
 import { queries, integrationQueries } from '../queryOptions'

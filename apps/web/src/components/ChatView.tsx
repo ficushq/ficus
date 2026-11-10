@@ -6,7 +6,7 @@ import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
 import { Fragment, useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { flushSync } from 'react-dom'
 import type {
   MessageMetadata,

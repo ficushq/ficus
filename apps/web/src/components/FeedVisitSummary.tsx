@@ -8,7 +8,7 @@ import { feedQueries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router'
 import { ChevronRightIcon } from './icons'
 import { webStatus } from '../lib/statusPresentation'
 

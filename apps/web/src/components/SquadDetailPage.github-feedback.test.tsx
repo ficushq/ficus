@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent } from '@testing-library/dom'
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import type { Squad, WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { githubFeedbackQueryKeys, queryKeys } from '../queryKeys'

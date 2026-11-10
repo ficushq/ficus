@@ -1,6 +1,6 @@
 // Real Feed component and theme styles, with synthetic data and a pending receipt for disabled-state checks.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import type { WorkStream } from '@ficus/shared'
 import { AccountFeedVisit } from '../../src/components/FeedVisitSummary'
 import { ReactQueryHooksProvider } from '../../src/reactQueryHooks'

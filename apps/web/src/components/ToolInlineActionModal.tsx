@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { workStreamRef } from '@ficus/shared'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
 import { queries } from '../queryOptions'

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { fireEvent } from '@testing-library/dom'
 import type { Agent } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'

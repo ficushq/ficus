@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { acquireDomHarness } from '../../test/domHarness'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { AuthApiProvider } from './authApi'
 
 const demoPair = mock(async (_secret: string) => ({

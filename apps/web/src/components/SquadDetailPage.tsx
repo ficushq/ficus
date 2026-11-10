@@ -1,6 +1,6 @@
 import { SQUAD_TABS as TABS } from '../lib/squadNavigation'
 import type { SquadWithRelationships } from '@ficus/shared'
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ComponentProps, type ComponentType, useCallback, useEffect, useState, useMemo } from 'react'
 import { queries } from '../queryOptions'

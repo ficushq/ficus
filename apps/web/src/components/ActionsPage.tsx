@@ -1,6 +1,6 @@
 import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendingActions'
 import { ActionCenterContent } from './ActionCenterContent'
-import { useParams } from 'react-router-dom'
+import { useParams } from 'react-router'
 
 export function ActionsPage() {
   const { actionId } = useParams<{ actionId: string }>()

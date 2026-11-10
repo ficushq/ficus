@@ -1,5 +1,5 @@
 import { SQUAD_SETTINGS_SECTIONS as SECTIONS, resolveSquadSettingsSection } from '../../lib/squadNavigation'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { SquadGeneralSettings } from './SquadGeneralSettings'
 import { SquadContextEditor } from './SquadContextEditor'

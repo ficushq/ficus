@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   MAX_IMAGE_ATTACHMENT_BYTES,

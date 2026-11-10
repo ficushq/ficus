@@ -188,7 +188,9 @@ export function isSharedProductionModuleMock(mock: ModuleMock, sources: SourceMa
   ])
   if (path === 'test-setup.ts' && safePreloadTargets.has(specifier)) return false
   if (specifier.startsWith('<dynamic:')) return true
-  if (specifier === 'react-router' || specifier === 'react-router-dom') return true
+  // The router package and its subpath entries (react-router/dom) share one
+  // module-level context; replacing any of them breaks every routed suite.
+  if (specifier === 'react-router' || specifier.startsWith('react-router/')) return true
   if (specifier === '@tanstack/react-query' || /(?:^|\/)usePermissions$/.test(specifier)) return true
   // Public aliases are covered even when tsconfig/bundler resolution is unavailable to this standalone guard.
   if (isPublicApiAlias(specifier)) return true
@@ -263,7 +265,7 @@ describe('shared module mock isolation', () => {
       { path: 'components/a.test.tsx', specifier: '~/providers/AuthProvider' },
     ]
     expect(mocks.map((moduleMock) => isSharedProductionModuleMock(moduleMock))).toEqual([true, true, true, true])
-    expect(isSharedProductionModuleMock({ path: 'components/a.test.tsx', specifier: 'react-router-dom' })).toBe(true)
+    expect(isSharedProductionModuleMock({ path: 'components/a.test.tsx', specifier: 'react-router/dom' })).toBe(true)
     expect(isSharedProductionModuleMock({ path: 'components/a.test.tsx', specifier: 'react-router' })).toBe(true)
   })
 
@@ -291,7 +293,7 @@ describe('shared module mock isolation', () => {
     const source = `
       import { mock } from 'bun:test'
       test('local', () => { const target = '../hooks/usePWA'; mock.module(target, () => ({})) })
-      test('package', () => { const target = 'react-router-dom'; mock.module(target, () => ({})) })
+      test('package', () => { const target = 'react-router/dom'; mock.module(target, () => ({})) })
     `
     const found = findModuleMocks(source, 'components/shadowed.test.ts')
     expect(found).toEqual([
@@ -344,7 +346,7 @@ describe('shared module mock isolation', () => {
   test('allows unrelated third-party mocks while rejecting routers and local test fixtures', () => {
     const thirdParty = findModuleMocks(`mock.module('qrcode', () => ({}))`, 'components/a.test.ts')
     const routers = findModuleMocks(
-      `mock.module('react-router-dom', () => ({})); mock.module('react-router', () => ({}))`,
+      `mock.module('react-router/dom', () => ({})); mock.module('react-router', () => ({}))`,
       'components/a.test.ts'
     )
     const localFixture = findModuleMocks(`mock.module('./Fixture', () => ({}))`, 'components/a.test.ts')

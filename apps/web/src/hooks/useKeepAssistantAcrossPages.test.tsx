@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { useLayoutEffect } from 'react'
-import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
 import { CLOSE_ASSISTANT_STATE, useKeepAssistantAcrossPages } from './useKeepAssistantAcrossPages'
 

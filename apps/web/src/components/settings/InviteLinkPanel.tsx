@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { desktopBridge, desktopInstance } from '../../lib/desktop'
 import { useOptionalAuth } from '../../providers/AuthProvider'
 

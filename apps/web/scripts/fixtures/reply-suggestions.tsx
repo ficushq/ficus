@@ -2,7 +2,7 @@
 // transcript. The checker (check-reply-suggestions-layout.ts) toggles the replies with window.setReplies.
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
 import type { Message } from '@ficus/shared'

@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { LoginPage } from './LoginPage'
 import { VoiceWorkspacePage, type VoiceWorkspaceEnvironment } from './VoiceWorkspacePage'
 import type { useRealtimeVoiceAssistant } from '../voice/useRealtimeVoiceAssistant'

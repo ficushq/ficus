@@ -2,7 +2,7 @@ import { SegmentedControl, type SegmentedControlOption } from '../SegmentedContr
 import { matchesSetting, settingMatchRank, SETTINGS_PAGE_KEYWORDS, SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 import clsx from 'clsx'
 import { useId, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { ChevronDownIcon, SettingsIcon } from '../icons'
 import { SETTINGS_SECTION_ICONS as icons } from './settingsIcons'
 import { Panel, usePopover } from '../popover'

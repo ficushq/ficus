@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import type { AgentQuestion } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queries } from '../queryOptions'

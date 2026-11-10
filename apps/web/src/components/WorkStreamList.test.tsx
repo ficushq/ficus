@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { queryKeys } from '../queryKeys'
 import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from '@ficus/shared'
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router'
 import clsx from 'clsx'
 import { useAssistantNavigation, assistantNavigationParams } from '../hooks/useAssistantNavigation'
 import { useRealtimeEnabled } from '../hooks/useVoiceEnabled'

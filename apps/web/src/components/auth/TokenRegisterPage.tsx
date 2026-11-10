@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router'
 import { startRegistration } from '@simplewebauthn/browser'
 import { type TokenRegistrationContext } from '../../api/auth'
 import { useAuthApi } from './authApi'

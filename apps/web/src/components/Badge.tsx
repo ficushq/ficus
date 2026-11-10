@@ -1,6 +1,6 @@
 import type { StatusRole } from '@ficus/shared'
 import clsx from 'clsx'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 
 // Decorative accents are deliberately separate from status meaning.
 export type BadgeColor =

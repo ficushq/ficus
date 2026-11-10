@@ -14,7 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { SQUAD_RECENT_CHAT_LIMIT } from '../../lib/recentChats'
 import { queries } from '../../queryOptions'

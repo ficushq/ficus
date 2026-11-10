@@ -146,7 +146,8 @@ test('work stream references resolve by ID and present a closable permission/err
 })
 
 test('agent prefixes navigate to squad Chats with the full ID and preserve Back history', async () => {
-  const { createMemoryRouter, RouterProvider } = await import('react-router-dom')
+  const { createMemoryRouter } = await import('react-router')
+  const { RouterProvider } = await import('react-router/dom')
   const { queries } = await import('../queryOptions')
   const dom = await acquireDomHarness({})
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -196,7 +197,7 @@ test('agent prefixes navigate to squad Chats with the full ID and preserve Back 
 
 for (const status of [403, 404, 409]) {
   test(`agent resolution ${status} never invokes Activity's opener or leaks response details`, async () => {
-    const { MemoryRouter } = await import('react-router-dom')
+    const { MemoryRouter } = await import('react-router')
     const dom = await acquireDomHarness({
       configureWindow(window) {
         window.fetch = async () => new window.Response(JSON.stringify({ error: 'private agent detail' }), { status })

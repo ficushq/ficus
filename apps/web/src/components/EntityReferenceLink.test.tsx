@@ -1,6 +1,6 @@
 import { expect, test, spyOn } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
 import { webkitTap } from '../test/webkitTap'
 import { queries } from '../queryOptions'

@@ -1,6 +1,6 @@
 import type { Agent } from '@ficus/shared'
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useStableRef } from '../hooks/useStableRef'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { queries } from '../queryOptions'

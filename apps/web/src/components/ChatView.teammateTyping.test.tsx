@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import { fireEvent } from '@testing-library/dom'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import type { AgentChatTypingClientMessage } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { WebSocketContext, type WebSocketContextValue } from '../hooks/useWebSocket'

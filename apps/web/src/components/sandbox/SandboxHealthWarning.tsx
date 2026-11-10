@@ -1,6 +1,6 @@
 import { hasSandboxPressureWarning } from '@ficus/shared'
 import { useId, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import type { SandboxStatus } from '../../api/workspace'
 import { WarningIcon } from '../icons'
 import { HoverCard, useHoverCard } from '../popover'

@@ -16,7 +16,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { FileIcon, KeyIcon } from '../icons'
