@@ -148,6 +148,9 @@ ficus inbox read m1
 
       expect(html).toContain('Question answered')
       expect(html).toContain('aria-label="Chosen options"')
+      // Chosen-option chips are rounded rectangles, so long wrapped answers do not become ovals.
+      expect(html).toMatch(/<li class="[^"]*\brounded-md\b[^"]*">Staging</)
+      expect(html).not.toContain('rounded-full')
       expect(html).toContain('>Staging<')
       expect(html).toContain('>Production<')
       expect(html).toContain('Which **environments**?')
