@@ -24,9 +24,12 @@ export function SquadNavigation<T extends SquadTab>({
       {/* Scrolls sideways on narrow screens rather than squeezing the tabs; More stays pinned.
           The scroller clips overflow on both axes, so the tabs (and More, to match) draw their
           focus ring inside their own box instead of the shared offset ring. Browsers leave a
-          mostly visible focused tab where it is, so focus also brings the whole tab into view. */}
+          mostly visible focused tab where it is, so focus also brings the whole tab into view.
+          The trailing edge fades out, its last 0.5rem fully, so a tab cut off beside More reads as
+          more to scroll rather than a stray sliver of its first letter; a spacer as wide as the fade
+          lets the last tab scroll fully clear of it. */}
       <nav
-        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden"
+        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none [--squad-tabs-fade:1.5rem] [mask-image:linear-gradient(to_left,transparent_0.5rem,#000_var(--squad-tabs-fade))] after:w-(--squad-tabs-fade) after:shrink-0 after:content-[''] [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Squad sections"
       >

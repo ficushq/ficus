@@ -61,10 +61,12 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted" />
         </SelectionPopup>
       </div>
+      {/* Hidden below lg with a max-lg variant: SegmentedControl sets its own inline-flex, which Tailwind 4
+          orders after an unprefixed hidden, so "hidden lg:inline-flex" would leave it displayed on phones. */}
       <SegmentedControl
         size="compact"
         ariaLabel="Agent view"
-        className="hidden lg:inline-flex"
+        className="max-lg:hidden"
         value={activeTab}
         onChange={onChange}
         options={tabs.map((tab) => {

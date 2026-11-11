@@ -20,7 +20,8 @@ afterEach(async () => {
 
 test('preserves desktop tabs/counts and offers themed mobile and tablet triggers instead of a native select', () => {
   const html = renderToStaticMarkup(<AgentViewTabs activeTab="inbox" onChange={mock()} tabs={tabs} />)
-  expect(html).toContain('hidden lg:inline-flex')
+  expect(html).toContain('max-lg:hidden')
+  expect(html).not.toContain('hidden lg:inline-flex')
   expect(html).toContain('hidden md:block lg:hidden')
   expect(html).toContain('md:hidden')
   expect(html).toContain('aria-checked="true"')
