@@ -511,6 +511,24 @@ test('Dismiss uses a compact ghost control while preserving its pending state an
   expect(text()).not.toContain('Updates')
 })
 
+test('Updates shares the Feed section geometry: hanging chevron below sm, row dots on the title column', async () => {
+  const view = await setup()
+  await view.render()
+  const summary = dom!.window.document.querySelector('summary')!
+  // Below sm the header pulls its chevron into the page padding; from sm up it keeps 12px of padding.
+  for (const token of ['-ml-3', 'pl-1', 'pr-3', 'sm:ml-0', 'sm:pl-3'])
+    expect(summary.classList.contains(token)).toBe(true)
+  const chevron = summary.querySelector('span[aria-hidden="true"]')!
+  for (const token of ['-mr-1', 'sm:mr-0']) expect(chevron.classList.contains(token)).toBe(true)
+  const rows = [...dom!.window.document.querySelectorAll('ul .rounded-lg')]
+  expect(rows.length).toBeGreaterThan(0)
+  for (const row of rows) {
+    expect(row.classList.contains('pl-3')).toBe(true)
+    expect(row.classList.contains('sm:pl-9')).toBe(true)
+    expect(row.classList.contains('pl-9')).toBe(false)
+  }
+})
+
 test('Dismiss explicitly receipts all loaded pages including offscreen rows but never unfetched rows', async () => {
   const view = await setup()
   view.setRows([stream('first'), stream('offscreen'), stream('last-page')])

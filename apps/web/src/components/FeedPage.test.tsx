@@ -215,13 +215,16 @@ describe('FeedPage', () => {
       const start = html.lastIndexOf(`<${tag}`, html.indexOf('Needs you'))
       return html.slice(start, html.indexOf('>', start) + 1)
     }
+    // From sm up the padding is 12px. Below sm the header hangs its chevron into the page padding, like the
+    // other collapsible Feed sections, and keeps 4px of padding inside the highlight.
+    const padded = /class="[^"]*(?<!:)-ml-3\b[^"]*\bpl-1\b[^"]*\bpr-3\b[^"]*\bsm:ml-0\b[^"]*\bsm:pl-3\b/
     pendingActions = [action()]
-    expect(headerTag(renderFeedPage(), 'summary')).toMatch(/class="[^"]*\bpx-3\b/)
+    expect(headerTag(renderFeedPage(), 'summary')).toMatch(padded)
 
     pendingActions = []
     const caughtUp = headerTag(renderFeedPage(), 'button')
     expect(caughtUp).toContain('disabled')
-    expect(caughtUp).toMatch(/class="[^"]*\bpx-3\b/)
+    expect(caughtUp).toMatch(padded)
   })
 
   test('shows the Needs you loading state before the initial result resolves', () => {
