@@ -955,16 +955,24 @@ describe('WorkStreamList feed section headers', () => {
 
   test('pad the highlight like every other caller of the header', () => {
     const feed = renderWorkStreamList(streams, feedProps, '/?collapsed=0')
-    // The Feed toggle used to drop its inline padding, so the chevron sat on the highlight edge.
-    expect(tagBefore(feed, 'button', 'Recently completed')).toMatch(/class="[^"]*\bpx-3\b/)
+    // The Feed toggle used to drop its inline padding, so the chevron sat on the highlight edge. From sm up it
+    // keeps the 12px padding; below sm the header hangs its chevron into the page padding but keeps 4px of it.
+    const recent = tagBefore(feed, 'button', 'Recently completed')
+    expect(recent).toMatch(/class="[^"]*\bsm:pl-3\b/)
+    expect(recent).toMatch(/class="[^"]*(?<!:)-ml-3\b[^"]*\bpl-1\b[^"]*\bsm:ml-0\b/)
+    // The chevron pulls the title onto the same column as "Active work" below sm.
+    expect(feed).toMatch(/<svg[^>]*class="[^"]*-mr-1 sm:mr-0[^"]*"[^>]*>.*?<\/svg><span[^>]*>Recently completed</)
     // "Active work" cannot collapse on the Feed: it keeps the padding and, from sm up only, reserves the
     // chevron's width. Phones drop the spacer so the header lines up with the tighter rows.
     expect(feed).toMatch(
       /<div class="[^"]*\bpx-3\b[^"]*"><div class="flex items-center gap-2"><span aria-hidden="true" class="hidden h-4 w-4 shrink-0 sm:block"><\/span><span[^>]*>Active work</
     )
 
+    // Headers outside the Feed keep their plain padding and chevron.
     const standard = renderWorkStreamList(streams, { hideFilters: true }, '/?collapsed=0')
     expect(tagBefore(standard, 'button', 'Done')).toMatch(/class="[^"]*\bpx-3\b/)
+    expect(tagBefore(standard, 'button', 'Done')).not.toContain('-ml-3')
+    expect(standard).not.toContain('-mr-1')
   })
 
   test('indent feed rows so their status dot stays under the header title', () => {

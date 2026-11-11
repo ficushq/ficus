@@ -30,6 +30,7 @@ import {
 } from './loading/Skeleton'
 import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
 import type { WorkStream, WorkStreamStatus, Squad, Agent } from '@ficus/shared'
+import { FEED_DISCLOSURE_CHEVRON_CLASS, FEED_DISCLOSURE_HEADER_CLASS, FEED_ROW_INSET_CLASS } from './feedSectionLayout'
 
 // --- Status constants ---
 
@@ -64,11 +65,6 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 // elapsed time, even if the link box ends up taller than the 16px text row.
 const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-xs text-muted hover:text-link hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent'
-
-// Left inset for feed rows and their skeleton. From sm up it is 12px header padding + 16px chevron + 8px gap,
-// so the status dot sits under the section title. On phones it matches the header padding alone, so the dot
-// lines up with the section chevrons and titles keep the width.
-const FEED_ROW_INSET = 'pl-3 sm:pl-9'
 
 // --- Filter types ---
 
@@ -128,7 +124,7 @@ function SectionHeader({
   collapsed,
   onToggle,
   actions,
-  alignDisclosure,
+  feedLayout,
 }: {
   title: string
   count?: ReactNode
@@ -136,18 +132,23 @@ function SectionHeader({
   collapsed?: boolean
   onToggle?: () => void
   actions?: ReactNode
-  alignDisclosure?: boolean
+  /** Put the title on the Feed's shared text column and hang the chevron left of it (see feedSectionLayout). */
+  feedLayout?: boolean
 }) {
   const content = (
     <div className="flex items-center gap-2">
-      {/* From sm up, reserve the chevron's width so the title lines up with collapsible headers. On phones the
-          spacer is dropped so the header title and its rows (FEED_ROW_INSET) share the 12px padding edge. */}
-      {alignDisclosure && !collapsible && <span aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" />}
+      {/* From sm up, reserve the chevron's width so the title lines up with collapsible headers. Below sm the
+          title column is the header padding itself, so there is nothing to reserve. */}
+      {feedLayout && !collapsible && <span aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" />}
       {collapsible &&
         (collapsed ? (
-          <ChevronRightIcon className="w-4 h-4 text-placeholder" />
+          <ChevronRightIcon
+            className={clsx('w-4 h-4 shrink-0 text-placeholder', feedLayout && FEED_DISCLOSURE_CHEVRON_CLASS)}
+          />
         ) : (
-          <ChevronDownIcon className="w-4 h-4 text-placeholder" />
+          <ChevronDownIcon
+            className={clsx('w-4 h-4 shrink-0 text-placeholder', feedLayout && FEED_DISCLOSURE_CHEVRON_CLASS)}
+          />
         ))}
       <span className="text-sm font-semibold text-secondary">{title}</span>
       {count !== undefined && <span className="text-xs text-muted tabular-nums">{count}</span>}
@@ -157,7 +158,13 @@ function SectionHeader({
   if (collapsible && onToggle) {
     return (
       <div className="flex items-center">
-        <button onClick={onToggle} className="ficus-button ficus-button-ghost min-w-0 flex-1 px-3 py-2 text-left">
+        <button
+          onClick={onToggle}
+          className={clsx(
+            'ficus-button ficus-button-ghost min-w-0 flex-1 py-2 text-left',
+            feedLayout ? FEED_DISCLOSURE_HEADER_CLASS : 'px-3'
+          )}
+        >
           {content}
         </button>
         {actions && <div className="flex shrink-0 items-center gap-1 px-2">{actions}</div>}
@@ -470,7 +477,7 @@ function WorkStreamRow({
     const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
     return (
       <li
-        className={clsx('relative rounded-lg pr-3 py-2.5 hover:bg-surface-hover', FEED_ROW_INSET)}
+        className={clsx('relative rounded-lg pr-3 py-2.5 hover:bg-surface-hover', FEED_ROW_INSET_CLASS)}
         data-testid="feed-work-row"
       >
         <button
@@ -957,7 +964,7 @@ export function WorkStreamList({
             <section className="space-y-2">
               <SectionHeader
                 title={feedLayout ? 'Active work' : 'Active'}
-                alignDisclosure={feedLayout}
+                feedLayout={feedLayout}
                 count={activePending ? <SkeletonText className="w-5" /> : activeStreams.length}
                 collapsible={activeCollapsible}
                 collapsed={activeCollapsed}
@@ -999,6 +1006,7 @@ export function WorkStreamList({
             <section className="space-y-2">
               <SectionHeader
                 title={doneTitle}
+                feedLayout={feedLayout}
                 count={
                   donePending ? (
                     <SkeletonText className="w-5" />
@@ -1092,7 +1100,7 @@ function WorkStreamRowsSkeleton({ count, label, feedLayout }: { count: number; l
       <div className="space-y-1">
         <SkeletonRows count={Math.max(1, count)}>
           {(index) => (
-            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? FEED_ROW_INSET : 'pl-3')}>
+            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? FEED_ROW_INSET_CLASS : 'pl-3')}>
               <div className="hidden h-5 items-center gap-2 md:flex">
                 <SkeletonBlock className="h-3 w-3 shrink-0 rounded-full" />
                 <SkeletonLine className={index % 3 === 0 ? 'w-2/3' : 'w-1/2'} />

@@ -10,6 +10,12 @@ import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
 import { Link, useLocation } from 'react-router'
 import { ChevronRightIcon } from './icons'
+import {
+  FEED_DISCLOSURE_CHEVRON_CLASS,
+  FEED_DISCLOSURE_HEADER_CLASS,
+  FEED_ROW_INSET_CLASS,
+  FEED_ROW_TEXT_INSET_CLASS,
+} from './feedSectionLayout'
 import { webStatus } from '../lib/statusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
@@ -141,12 +147,12 @@ function CompletionExposure({
         )}
       </div>
       {receipt?.state === 'changed' && (
-        <p role="status" className="ml-9 text-xs text-muted">
+        <p role="status" className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-xs text-muted')}>
           {receipt.message}
         </p>
       )}
       {receipt?.state === 'failed' && (
-        <p role="status" className="ml-9 text-xs text-muted">
+        <p role="status" className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-xs text-muted')}>
           Could not save seen state.{' '}
           <button
             type="button"
@@ -277,10 +283,18 @@ export function AccountFeedVisit({
         </div>
       )}
       <details ref={section} open className="mb-4 group" data-testid="feed-visit-summary">
-        <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
+        <summary
+          className={clsx(
+            'ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden',
+            FEED_DISCLOSURE_HEADER_CLASS
+          )}
+        >
           <span
             aria-hidden="true"
-            className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
+            className={clsx(
+              'shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none',
+              FEED_DISCLOSURE_CHEVRON_CLASS
+            )}
           >
             <ChevronRightIcon className="h-4 w-4" />
           </span>
@@ -301,7 +315,7 @@ export function AccountFeedVisit({
         </summary>
         <div className="space-y-3 pb-3 pt-3">
           {completed.isError && (
-            <p role="alert" className="ml-9 text-sm text-muted">
+            <p role="alert" className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-sm text-muted')}>
               Could not load updates.{' '}
               <button
                 type="button"
@@ -324,7 +338,10 @@ export function AccountFeedVisit({
                   <li key={conversation.id}>
                     <Link
                       to={{ pathname: location.pathname, search: params.toString() }}
-                      className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
+                      className={clsx(
+                        'flex items-start gap-2 rounded-lg py-2.5 pr-3 hover:bg-surface-hover',
+                        FEED_ROW_INSET_CLASS
+                      )}
                     >
                       <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-badge" />
                       <span className="min-w-0 flex-1">
@@ -365,7 +382,10 @@ export function AccountFeedVisit({
                   >
                     <Link
                       to={{ pathname: location.pathname, search: params.toString() }}
-                      className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-14 hover:bg-surface-hover"
+                      className={clsx(
+                        'flex items-start gap-2 rounded-lg py-2.5 pr-14 hover:bg-surface-hover',
+                        FEED_ROW_INSET_CLASS
+                      )}
                     >
                       <span
                         aria-hidden="true"
@@ -394,7 +414,7 @@ export function AccountFeedVisit({
           {completed.hasNextPage && (
             <button
               type="button"
-              className="ficus-button ficus-button-ghost ml-7 px-2 py-1 text-xs"
+              className="ficus-button ficus-button-ghost ml-1 px-2 py-1 text-xs sm:ml-7"
               disabled={completed.isFetchingNextPage}
               onClick={() => void completed.fetchNextPage()}
             >
@@ -402,7 +422,10 @@ export function AccountFeedVisit({
             </button>
           )}
           {completed.isFetchNextPageError && (
-            <p role="alert" className="ml-9 text-sm text-status-danger-600 dark:text-status-danger-400">
+            <p
+              role="alert"
+              className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-sm text-status-danger-600 dark:text-status-danger-400')}
+            >
               Could not load more updates. Try again.
             </p>
           )}

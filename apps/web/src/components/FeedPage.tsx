@@ -7,7 +7,9 @@ import { PullToRefresh } from './PullToRefresh'
 import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendingActions'
 import { queryKeys } from '../queryKeys'
 import { SkeletonBlock } from './loading/Skeleton'
+import clsx from 'clsx'
 import { ChevronRightIcon } from './icons'
+import { FEED_DISCLOSURE_CHEVRON_CLASS, FEED_DISCLOSURE_HEADER_CLASS } from './feedSectionLayout'
 import { useURLStringArrayState } from '../hooks/useURLState'
 import { filterPendingActionsBySquads } from '../lib/pendingActionSquads'
 
@@ -66,10 +68,18 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
 
       {actionsError || actions.length > 0 ? (
         <details open className="mb-4 group">
-          <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
+          <summary
+            className={clsx(
+              'ficus-button ficus-button-ghost flex cursor-pointer list-none items-center gap-2 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden',
+              FEED_DISCLOSURE_HEADER_CLASS
+            )}
+          >
             <span
               aria-hidden="true"
-              className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              className={clsx(
+                'shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none',
+                FEED_DISCLOSURE_CHEVRON_CLASS
+              )}
             >
               <ChevronRightIcon className="h-4 w-4" />
             </span>
@@ -93,10 +103,16 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
         <button
           type="button"
           disabled
-          className="ficus-button ficus-button-ghost mb-4 flex w-full items-center gap-2 px-3 py-2 text-left text-muted"
+          className={clsx(
+            'ficus-button ficus-button-ghost mb-4 flex w-full items-center gap-2 py-2 text-left text-muted',
+            FEED_DISCLOSURE_HEADER_CLASS
+          )}
           aria-busy={actionsLoading || undefined}
         >
-          <span aria-hidden="true" className="shrink-0 text-placeholder opacity-50">
+          <span
+            aria-hidden="true"
+            className={clsx('shrink-0 text-placeholder opacity-50', FEED_DISCLOSURE_CHEVRON_CLASS)}
+          >
             <ChevronRightIcon className="h-4 w-4" />
           </span>
           <span className="text-sm font-semibold">Needs you</span>
