@@ -148,11 +148,11 @@ assert_caps() {
   check 'user.slice floor' "$([ "$(systemctl show -p MemoryLow --value user.slice)" -gt 0 ] && echo yes)" yes
   check 'system.slice floor' "$([ "$(systemctl show -p MemoryLow --value system.slice)" -gt 0 ] && echo yes)" yes
   # systemd 255 accepts the oomd policy on the server unit and Docker's slice.
-  # It prints the limit with two decimals (50.00%).
+  # `show` prints the limit as a fraction of 2^32: 50% is 2147483648.
   check 'server unit delegation and oomd policy' \
     "$(userctl show -p Delegate -p DelegateSubgroup -p ManagedOOMMemoryPressure -p ManagedOOMMemoryPressureLimit \
-      ficus-sandbox-server.service | sed 's/^\(ManagedOOMMemoryPressureLimit=50\)\(\.00\)\?%$/\1%/' | LC_ALL=C sort | paste -sd' ' -)" \
-    'Delegate=yes DelegateSubgroup=supervisor ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=50%'
+      ficus-sandbox-server.service | LC_ALL=C sort | paste -sd' ' -)" \
+    'Delegate=yes DelegateSubgroup=supervisor ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=2147483648'
   check 'Docker slice oomd policy' "$(userctl show -p ManagedOOMMemoryPressure --value ficus-docker.slice)" kill
   read -r quota period extra <"/sys/fs/cgroup$parent/cpu.max"
   [ -z "$extra" ] && [ "$quota" -gt 0 ] && [ "$quota" -eq "$period" ]
