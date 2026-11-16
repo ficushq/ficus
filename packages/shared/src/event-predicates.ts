@@ -19,7 +19,7 @@ const DECISION_LIST_MAX = 50
 const scalar = z.union([z.string().max(2000), z.number().finite(), z.boolean()])
 export const eventPredicateSchema = z.strictObject({
   field: integrationDataPathSchema,
-  op: z.enum(['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte', 'contains', 'exists']),
+  op: z.enum(['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte', 'contains', 'not-contains', 'exists']),
   value: z.union([scalar, z.array(scalar).min(1).max(100)]),
 })
 export type EventPredicate = z.infer<typeof eventPredicateSchema>
@@ -64,7 +64,7 @@ export const isEventDecisionPredicate = (predicate: EventRulePredicate): predica
 export const EVENT_DECISION_PREDICATES_MAX = 4
 
 export function eventPredicateOperators(field: EventPredicateField): EventPredicate['op'][] {
-  if (field.type === 'string[]') return ['contains', 'exists']
+  if (field.type === 'string[]') return ['contains', 'not-contains', 'exists']
   return ['eq', 'neq', 'in', ...(field.type === 'number' ? (['gt', 'gte', 'lt', 'lte'] as const) : []), 'exists']
 }
 export function validateEventPredicates(
@@ -98,20 +98,23 @@ export function validateEventPredicates(
   })
 }
 
-/** No coercion. Missing/null never satisfy comparisons, including neq. Empty collections are present. */
+/**
+ * No coercion. Missing/null never satisfy comparisons, including neq and not-contains. Empty collections are
+ * present: they never contain a member and always satisfy not-contains.
+ */
 export function eventPredicateMatches(predicate: EventPredicate, field: EventPredicateField, data: unknown): boolean {
   const actual = integrationValueAt(data, predicate.field)
   if (predicate.op === 'exists') return (actual !== undefined && actual !== null) === predicate.value
   if (actual === undefined || actual === null) return false
   const normalize = (value: unknown) =>
     field.normalize === 'lowercase' && typeof value === 'string' ? value.toLowerCase() : value
-  if (field.type === 'string[]')
-    return (
-      predicate.op === 'contains' &&
-      Array.isArray(actual) &&
-      actual.every((item) => typeof item === 'string') &&
-      actual.some((item) => normalize(item) === normalize(predicate.value))
-    )
+  if (field.type === 'string[]') {
+    if (!Array.isArray(actual) || !actual.every((item) => typeof item === 'string')) return false
+    const member = actual.some((item) => normalize(item) === normalize(predicate.value))
+    if (predicate.op === 'contains') return member
+    if (predicate.op === 'not-contains') return !member
+    return false
+  }
   if (typeof actual !== field.type || (typeof actual === 'number' && !Number.isFinite(actual))) return false
   const expected = normalize(predicate.value)
   const value = normalize(actual)

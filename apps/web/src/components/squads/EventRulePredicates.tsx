@@ -12,6 +12,9 @@ import {
 } from '@ficus/shared'
 import { EventRuleDecisionCondition } from './EventRuleDecisionCondition'
 
+/** Operator ids read as themselves, except where a phrase is clearer. */
+const operatorLabels: Partial<Record<EventPredicate['op'], string>> = { 'not-contains': 'does not contain' }
+
 const initialDecisionPredicate = (): EventDecisionPredicate => ({
   kind: 'decision',
   question: { type: 'yesno', instructions: '' },
@@ -44,9 +47,10 @@ export function EventRulePredicates({
       <h5 className="text-sm font-medium">Typed conditions</h5>
       <p className="text-xs text-muted">
         All conditions must match, AND the shared scope and other filters. Missing or null values fail comparisons
-        (including neq); exists treats both as absent. Collection contains checks one exact member. Empty collections
-        are present. A decision condition asks a decision model a question about the event; it is asked last, only when
-        everything else matches.
+        (including neq and does not contain); exists treats both as absent. Collection contains checks one exact member;
+        does not contain matches when no member equals the value. Empty collections are present, so they never contain a
+        value and always match does not contain. A decision condition asks a decision model a question about the event;
+        it is asked last, only when everything else matches.
       </p>
       {predicates.map((predicate, index) => {
         const prefix = `Rule ${position} condition ${index + 1}`
@@ -101,7 +105,9 @@ export function EventRulePredicates({
                 }}
               >
                 {(field ? eventPredicateOperators(field) : []).map((op) => (
-                  <option key={op}>{op}</option>
+                  <option key={op} value={op}>
+                    {operatorLabels[op] ?? op}
+                  </option>
                 ))}
               </select>
             </label>
