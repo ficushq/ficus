@@ -627,6 +627,8 @@ export function createHttpBashOperations(
           } as Record<string, string>,
           sourceEnv: true,
           activateDevbox: true,
+          // Kill notices for this agent's own earlier background commands.
+          ...(opts?.agentId ? { owner: opts.agentId } : {}),
         })
 
         let finalExitCode: number | null = null

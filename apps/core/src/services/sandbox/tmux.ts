@@ -36,6 +36,8 @@
  * {@link TmuxServerUnreachableError}, never as "session gone".
  */
 
+import { TMUX_SERVER_WORKLOAD_LEAF, WORKLOAD_LEAF_SHELL_FUNCTIONS } from './workload-leaf'
+
 /** Ficus's own tmux socket name (`tmux -L ficus`). */
 export const FICUS_TMUX_SOCKET = 'ficus'
 /** The socket sessions were created on before {@link FICUS_TMUX_SOCKET}. */
@@ -86,12 +88,14 @@ const MISMATCH_PATTERNS = ['server exited unexpectedly', 'protocol version misma
  *   server/session, 2 when the server cannot be reached.
  * - `ficus_tmux_has NAME`: 0 alive on either socket, 1 missing on both, 2 unknown.
  * - `ficus_tmux_kill NAME`: kill on both sockets; 0 unless a server is unreachable.
- * - `ficus_tmux_new NAME CMD`: create on the Ficus socket with the pinned binary.
+ * - `ficus_tmux_new NAME CMD`: create on the Ficus socket with the pinned binary,
+ *   then move the tmux server into its own workload cgroup leaf (workload-leaf.ts).
  * - `ficus_tmux_unreachable`: print the marker and exit with its status.
  */
 export function tmuxShellFunctions(candidates: readonly string[] = candidatesOverride ?? TMUX_CANDIDATES): string {
   const mismatch = MISMATCH_PATTERNS.map((pattern) => `*${JSON.stringify(pattern)}*`).join('|')
-  return `ficus_tmux_bins=()
+  return `${WORKLOAD_LEAF_SHELL_FUNCTIONS}
+ficus_tmux_bins=()
 for ficus_tmux_c in ${candidates.join(' ')}; do
   if [ -x "$ficus_tmux_c" ]; then ficus_tmux_bins+=("$ficus_tmux_c"); fi
 done
@@ -132,7 +136,14 @@ ficus_tmux_kill() {
 ficus_tmux_new() {
   local out
   if [ -z "$FICUS_TMUX" ]; then ficus_tmux_error='tmux is not installed on this box'; return 2; fi
-  if out=$("$FICUS_TMUX" -L ${FICUS_TMUX_SOCKET} new-session -d -s "$1" "$2" 2>&1); then return 0; fi
+  if out=$("$FICUS_TMUX" -L ${FICUS_TMUX_SOCKET} new-session -d -s "$1" "$2" 2>&1); then
+    # Out of the creating command's leaf, so an oomd kill of that command
+    # cannot end every session. Sessions' commands move to their own leaves.
+    local server_pid
+    server_pid=$("$FICUS_TMUX" -L ${FICUS_TMUX_SOCKET} display-message -p '#{pid}' 2>/dev/null) || server_pid=''
+    case "$server_pid" in ''|*[!0-9]*) ;; *) ficus_workload_leaf ${TMUX_SERVER_WORKLOAD_LEAF} "$server_pid" ;; esac
+    return 0
+  fi
   ficus_tmux_error="$FICUS_TMUX: $out"
   case "$out" in
     ${mismatch}) return 2 ;;

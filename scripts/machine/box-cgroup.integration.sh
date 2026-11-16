@@ -108,6 +108,13 @@ as_box() {
 }
 docker_box() { as_box docker --host="unix:///run/user/$uid/docker.sock" "$@"; }
 
+# Name the failing check: a bare [ ] under set -e fails without saying which.
+check() { # DESCRIPTION ACTUAL EXPECTED
+  if [ "$2" != "$3" ]; then
+    printf 'CHECK FAILED: %s: expected %q, got %q\n' "$1" "$3" "$2" >&2
+    return 1
+  fi
+}
 assert_pid() {
   local pid="$1" role="$2" cg
   cg="$(sed -n 's/^0:://p' "/proc/$pid/cgroup")"
@@ -135,16 +142,18 @@ assert_caps() {
   expected="$(bash "$TARGET" --print-slice-limits --memtotal-kb 1048576 --nproc 2 --unix-user "$BOX" --sandbox-id squad_cgroup_ci --with-docker)"
   low="$(sed -n 's/^MemoryLow=//p' <<<"$expected")"
   swap="$(sed -n 's/^MemorySwapMax=//p' <<<"$expected")"
-  [ "$low" -gt 0 ]
-  [ "$(cat "/sys/fs/cgroup$parent/memory.low")" -eq "$((low / page_size * page_size))" ]
-  [ "$(cat "/sys/fs/cgroup$parent/memory.swap.max")" -eq "$((swap / page_size * page_size))" ]
-  [ "$(systemctl show -p MemoryLow --value user.slice)" -gt 0 ]
-  [ "$(systemctl show -p MemoryLow --value system.slice)" -gt 0 ]
+  check 'box floor is set' "$([ "$low" -gt 0 ] && echo yes)" yes
+  check 'box memory.low' "$(cat "/sys/fs/cgroup$parent/memory.low")" "$((low / page_size * page_size))"
+  check 'box memory.swap.max' "$(cat "/sys/fs/cgroup$parent/memory.swap.max")" "$((swap / page_size * page_size))"
+  check 'user.slice floor' "$([ "$(systemctl show -p MemoryLow --value user.slice)" -gt 0 ] && echo yes)" yes
+  check 'system.slice floor' "$([ "$(systemctl show -p MemoryLow --value system.slice)" -gt 0 ] && echo yes)" yes
   # systemd 255 accepts the oomd policy on the server unit and Docker's slice.
-  [ "$(userctl show -p Delegate -p DelegateSubgroup -p ManagedOOMMemoryPressure -p ManagedOOMMemoryPressureLimit \
-    ficus-sandbox-server.service | LC_ALL=C sort | paste -sd' ' -)" = \
-    'Delegate=yes DelegateSubgroup=supervisor ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=50%' ]
-  [ "$(userctl show -p ManagedOOMMemoryPressure --value ficus-docker.slice)" = kill ]
+  # It prints the limit with two decimals (50.00%).
+  check 'server unit delegation and oomd policy' \
+    "$(userctl show -p Delegate -p DelegateSubgroup -p ManagedOOMMemoryPressure -p ManagedOOMMemoryPressureLimit \
+      ficus-sandbox-server.service | sed 's/^\(ManagedOOMMemoryPressureLimit=50\)\(\.00\)\?%$/\1%/' | LC_ALL=C sort | paste -sd' ' -)" \
+    'Delegate=yes DelegateSubgroup=supervisor ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=50%'
+  check 'Docker slice oomd policy' "$(userctl show -p ManagedOOMMemoryPressure --value ficus-docker.slice)" kill
   read -r quota period extra <"/sys/fs/cgroup$parent/cpu.max"
   [ -z "$extra" ] && [ "$quota" -gt 0 ] && [ "$quota" -eq "$period" ]
   [ "$(docker_box info --format '{{.CgroupDriver}} {{.CgroupVersion}}')" = 'systemd 2' ]
@@ -275,4 +284,5 @@ timeout --kill-after=5s 20s loginctl disable-linger "$BOX"
 timeout --kill-after=5s 20s systemctl stop "user@$uid.service"
 provision
 assert_workload manager-recreation
-printf '5 real rootless containment phases and 2 delegated workload phases passed\n'
+printf '2 delegated workload phases passed\n'
+printf '5 real rootless containment phases passed\n'

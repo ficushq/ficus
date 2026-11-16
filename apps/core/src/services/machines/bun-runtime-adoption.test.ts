@@ -176,6 +176,7 @@ DEFER_SOCKET_START=true
 UNIX_USER=fixture
 SANDBOX_ID=fixture
 PORT=50000
+HOST_MEMORY_PRESSURE_EXIT=69
 provision_box
 `
   const result = Bun.spawnSync(['bash', '-c', program])

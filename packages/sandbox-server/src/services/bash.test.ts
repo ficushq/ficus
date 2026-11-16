@@ -1099,27 +1099,27 @@ describe('handleBash memory protection', () => {
     expect(collectOutput(await consumeSSE(resp))).toMatchObject({ exitCode: 3, errors: [] })
   })
 
-  it('tells the next command when an earlier background command was killed', async () => {
+  it('tells the same agent, at its next command, that its earlier background command was killed', async () => {
     const workloads = await workloadsIn(testDir)
-    const first = handleBash(
-      { command: 'true', invocationId: 'bg-1', cwd: testDir, sourceEnv: false, activateDevbox: false },
-      undefined,
-      { workloads: () => workloads }
-    )
-    await consumeSSE(first)
+    const run = (invocationId: string, command: string, owner?: string) =>
+      consumeSSE(
+        handleBash(
+          { command, invocationId, owner, cwd: testDir, sourceEnv: false, activateDevbox: false } as any,
+          undefined,
+          { workloads: () => workloads }
+        )
+      )
+    await run('bg-1', 'true', 'agent-a')
     writeFileSync(join(workloads.workloadDir, 'inv-bg-1', 'xattr.user.oomd_ooms'), '1')
     writeFileSync(join(workloads.workloadDir, 'inv-bg-1', 'cgroup.events'), 'populated 0\n')
-    const next = handleBash(
-      { command: 'echo next', invocationId: 'bg-2', cwd: testDir, sourceEnv: false, activateDevbox: false },
-      undefined,
-      { workloads: () => workloads }
-    )
-    const { stdout, stderr, exitCode } = collectOutput(await consumeSSE(next))
+    // Another agent of the same squad box does not hear about it.
+    expect(collectOutput(await run('bg-2', 'echo other', 'agent-b')).stderr).toBe('')
+    const { stdout, stderr, exitCode } = collectOutput(await run('bg-3', 'echo next', 'agent-a'))
     expect(exitCode).toBe(0)
     expect(stdout).toBe('next\n')
     expect(stderr).toBe(
-      '[ficus] systemd-oomd killed the processes started by an earlier command in this box (`true`) because the box ' +
-        'was under sustained memory pressure. Restart it only if you still need it.\n'
+      '[ficus] systemd-oomd killed the processes started by an earlier command of yours in this box (`true`) because ' +
+        'the box was under sustained memory pressure. Restart it only if you still need it.\n'
     )
   })
 

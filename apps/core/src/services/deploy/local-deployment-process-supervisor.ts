@@ -19,6 +19,7 @@ import {
   shellQuote,
 } from './local-deployment-log-path'
 import { getHostedAppsDomain } from './local-deployment-service'
+import { WORKLOAD_LEAF_SHELL_FUNCTIONS } from '../sandbox/workload-leaf'
 
 /** The executor reported a terminal, nonzero launch exit (not a lost stream). */
 export class LocalDeploymentLaunchFailedError extends Error {
@@ -61,16 +62,22 @@ const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 
 export const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
+${WORKLOAD_LEAF_SHELL_FUNCTIONS}
 mkdir -p "$FICUS_LOCAL_DEPLOYMENT_DIR/logs"
 ${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/startedAt" || true
 ${loadLaunchPathLines('FICUS_LOCAL_DEPLOYMENT_DIR')}
 cd "$FICUS_LOCAL_DEPLOYMENT_CWD"
 set +e
 {
+  # The app (not this launcher) gets its own workload cgroup leaf: a memory
+  # kill stops only this app, and the launcher still records why it ended.
+  ficus_workload_leaf "app-$FICUS_LOCAL_DEPLOYMENT_ID"
   echo "[ficus] starting localDeployment $FICUS_LOCAL_DEPLOYMENT_ID on port $FICUS_LOCAL_DEPLOYMENT_PORT"
   ${runWithLaunchPath('FICUS_LOCAL_DEPLOYMENT_COMMAND')}
 } 2>&1 | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
+ficus_workload_kill_reason "app-$FICUS_LOCAL_DEPLOYMENT_ID" | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"
+rmdir "$(ficus_workload_leaf_dir "app-$FICUS_LOCAL_DEPLOYMENT_ID")" 2>/dev/null || true
 set -e
 echo "$status" > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitCode"
 ${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitedAt" || true

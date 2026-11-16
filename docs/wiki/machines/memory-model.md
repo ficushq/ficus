@@ -109,6 +109,13 @@ What can be killed, and what never is:
   its own `workload/inv-<invocation id>` leaf while it is still stopped in
   admission, so a dev server, build or test run is a separate kill candidate,
   together with everything it started.
+- **Managed apps and monitors, one at a time.** They run under the box's single
+  tmux server. `ficus_tmux_new` moves the tmux server into `workload/tmux-server`,
+  which the server creates marked `user.oomd_omit` (it holds only tmux and the
+  small launchers, and killing it would end every session). Each launcher moves
+  its command, not itself, into `app-<id>` or `monitor-<id>`
+  (`apps/core/src/services/sandbox/workload-leaf.ts`), so a kill stops only
+  that app or monitor.
 - **A user-mode box's rootless Docker:** `ficus-docker.slice` (dockerd and
   every container scope) is monitored the same way through
   `/etc/systemd/user/ficus-docker.slice.d/50-ficus-oomd.conf`.
@@ -142,9 +149,16 @@ before (the server logs `Workload cgroups: off`).
   count in `memory.events`
   (`packages/sandbox-server/src/services/workload-cgroup.ts`).
 - **A background process started by an earlier command** (a dev server, a test
-  database started with `&`): the next command run in that box starts its output
-  with a `[ficus] systemd-oomd killed the processes started by an earlier command
-  in this box (...)` notice naming the command that started it.
+  database started with `&`): the next command run in that box by the SAME agent
+  starts its output with a `[ficus] systemd-oomd killed the processes started by
+  an earlier command of yours in this box (...)` notice naming the command that
+  started it. Core sends each agent's id with its bash and squad bash commands
+  (the request's `owner`); other agents sharing a squad box, and Core's own
+  housekeeping commands, never receive another agent's notices.
+- **A managed app or monitor:** its launcher survives the kill, records exit
+  status 137 as usual, and appends `[ficus] Killed by systemd-oomd: ...` (or the
+  kernel OOM killer line) to the app's or monitor's log, judged from the killed
+  leaf's `memory.events` and memory pressure.
 
 ## Starting a dev server twice
 

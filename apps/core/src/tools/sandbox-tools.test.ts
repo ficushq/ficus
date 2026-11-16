@@ -1370,6 +1370,29 @@ describe('createHttpBashOperations', () => {
     expect(output.join('')).toBe('compiling\n')
   })
 
+  test('names the agent as the command owner so the box routes its kill notices only to it', async () => {
+    const requests: any[] = []
+    const stream = createMockStream()
+    const manager = {
+      getClientForSandbox: mock(() => ({
+        bash: mock((request: any) => {
+          requests.push(request)
+          queueMicrotask(() => {
+            stream.emitData({ exitCode: 0 })
+            stream.emitEnd()
+          })
+          return stream
+        }),
+      })),
+      podManager: { namespace: 'tau-sandboxes' },
+    } as unknown as K8sSandboxManager
+    await createHttpBashOperations(manager, 'squad_s1', undefined, { agentId: 'agent-7' }).exec('ls', '/workspace', {
+      onData: () => {},
+    })
+    await createHttpBashOperations(manager, 'squad_s1').exec('ls', '/workspace', { onData: () => {} })
+    expect(requests.map((request) => request.owner)).toEqual(['agent-7', undefined])
+  })
+
   test('passes a notice about an earlier background kill through to the agent output', async () => {
     const mockStream = createMockStream()
     const manager = createMockManager(mockStream)
@@ -1379,7 +1402,7 @@ describe('createHttpBashOperations', () => {
       onData: (chunk: Buffer) => output.push(chunk.toString()),
     })
     const notice =
-      '[ficus] systemd-oomd killed the processes started by an earlier command in this box (`next dev --port 34562`) ' +
+      '[ficus] systemd-oomd killed the processes started by an earlier command of yours in this box (`next dev --port 34562`) ' +
       'because the box was under sustained memory pressure. Restart it only if you still need it.\n'
     mockStream.emitData({ stderr: Buffer.from(notice).toString('base64') })
     mockStream.emitData({ exitCode: 0 })

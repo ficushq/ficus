@@ -56,6 +56,16 @@ interface BashRequest {
   timeoutSeconds?: number
   sourceEnv?: boolean
   activateDevbox?: boolean
+  /**
+   * The agent the command runs for (Core's agent id). Only used to route
+   * notices about this agent's own killed background processes back to it.
+   */
+  owner?: string
+}
+
+/** A usable owner id, or undefined (no notices are routed for it). */
+function requestOwner(owner: unknown): string | undefined {
+  return typeof owner === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(owner) ? owner : undefined
 }
 
 export async function reconcileBashRecord(
@@ -377,6 +387,7 @@ export function handleBash(
   const preamble = buildPreamble({ sourceEnv, activateDevbox })
   const fullCommand = preamble + req.command
   const invocationId = req.invocationId ?? randomUUID()
+  const owner = requestOwner(req.owner)
   let activeProcess: ChildProcess | undefined
   let activeLease: BashInvocationLease | undefined
   let initialized: Promise<void> = Promise.resolve()
@@ -524,7 +535,10 @@ export function handleBash(
           })
           exited = new Promise((resolve) => proc.once('close', resolve))
           const admission = workloads
-            ? { ...dependencies, placeWorkload: (pid: number) => workloads.place(pid, invocationId, req.command) }
+            ? {
+                ...dependencies,
+                placeWorkload: (pid: number) => workloads.place(pid, invocationId, req.command, owner),
+              }
             : dependencies
           initialized = admitStoppedProcess(proc, lease, admission, exited).then(async (identity) => {
             admitted = true
@@ -539,9 +553,9 @@ export function handleBash(
                 startedAt: new Date().toISOString(),
               },
             })
-            // Earlier commands' background processes killed for memory since
-            // the last command: say so before this command's own output.
-            const notices = (await workloads?.takeNotices().catch(() => [])) ?? []
+            // This agent's earlier commands' background processes killed for
+            // memory since its last command: say so before this command's output.
+            const notices = (await workloads?.takeNotices(owner).catch(() => [])) ?? []
             for (const notice of notices) send({ stderr: Buffer.from(`${notice}\n`).toString('base64') })
           })
           await initialized

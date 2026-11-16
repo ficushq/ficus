@@ -184,6 +184,11 @@ export interface BashRequest {
   timeoutSeconds?: number
   sourceEnv?: boolean
   activateDevbox?: boolean
+  /**
+   * The agent this command runs for. The box routes notices about this
+   * agent's own background processes killed for memory back to it only.
+   */
+  owner?: string
 }
 
 export interface BashResponse {

@@ -18,15 +18,23 @@
  *      admission (bash.ts), before it runs anything.
  *
  * Layout under the server unit's cgroup:
- *   supervisor/          the server (user.oomd_omit=1)
- *   workload/inv-<id>/   one bash invocation and everything it starts,
- *                        including background dev servers
+ *   supervisor/            the server (user.oomd_omit=1)
+ *   workload/inv-<id>/     one bash invocation and everything it starts,
+ *                          including background dev servers
+ *   workload/tmux-server/  the box's tmux server and the small launchers of
+ *                          managed apps and monitors (user.oomd_omit=1: a kill
+ *                          would end every session)
+ *   workload/app-<id>/, workload/monitor-<id>/
+ *                          a managed app's or monitor's command, moved there by
+ *                          its launcher (apps/core/src/services/sandbox/workload-leaf.ts),
+ *                          which records the exit and why it ended
  *
  * oomd counts every kill in the `user.oomd_ooms` xattr of the cgroup it
  * killed, and the kernel counts its own OOM kills (the box reaching MemoryMax)
  * in `memory.events`. Those counters name the kill: as the invocation's
  * terminal error when it is still attached, otherwise as a notice prepended to
- * the next command's output.
+ * the next command of the SAME agent (the request's `owner`) in this box.
+ * Commands without an owner (Core's own housekeeping) never receive notices.
  *
  * Everything is fail-open: off Linux, on k8s/docker sandboxes, and on units
  * provisioned before delegation the server runs commands in its own cgroup
@@ -42,6 +50,8 @@ const MAX_CONTROL_FILE_BYTES = 64 * 1024
 /** The subgroup box-provision.sh's `DelegateSubgroup=` starts the server in. */
 export const SUPERVISOR_SUBGROUP = 'supervisor'
 export const WORKLOAD_SUBGROUP = 'workload'
+/** The tmux server's leaf; created here so it carries the omit mark from the start. */
+export const TMUX_SERVER_LEAF = 'tmux-server'
 /** The xattr systemd-oomd reads to skip a candidate entirely. */
 export const OOMD_OMIT_XATTR = 'user.oomd_omit'
 /** The xattr systemd-oomd increments on every cgroup it kills. */
@@ -112,6 +122,8 @@ function leafName(invocationId: string): string | undefined {
 
 interface TrackedLeaf {
   command: string
+  /** The agent whose command started this leaf; its notices go only to that agent. */
+  owner?: string
   reported: WorkloadKills
   /** Its invocation is still streaming: its kills are reported as its own error, not as a notice. */
   attached: boolean
@@ -119,7 +131,7 @@ interface TrackedLeaf {
 
 export class WorkloadCgroups {
   private readonly tracked = new Map<string, TrackedLeaf>()
-  private readonly pendingNotices: string[] = []
+  private readonly pendingNotices = new Map<string, string[]>()
 
   private constructor(
     private readonly backend: WorkloadCgroupBackend,
@@ -164,6 +176,12 @@ export class WorkloadCgroups {
       const workloadDir = `${unitDir}/${WORKLOAD_SUBGROUP}`
       await backend.mkdir(workloadDir)
       if (enable) await backend.writeFile(`${workloadDir}/cgroup.subtree_control`, enable)
+      await backend.mkdir(`${workloadDir}/${TMUX_SERVER_LEAF}`)
+      try {
+        backend.setXattr(`${workloadDir}/${TMUX_SERVER_LEAF}`, OOMD_OMIT_XATTR, '1')
+      } catch (error) {
+        log(`WARN: could not mark the tmux server cgroup ${OOMD_OMIT_XATTR}: ${errorMessage(error)}`)
+      }
       log(`Workload cgroups: on (${controllers.join(', ') || 'no controllers'}; server omitted from systemd-oomd)`)
       return new WorkloadCgroups(backend, workloadDir, log)
     } catch (error) {
@@ -176,14 +194,19 @@ export class WorkloadCgroups {
    * Move a stopped, not yet running invocation into its own workload leaf.
    * Returns false (the command still runs, in the server's cgroup) on failure.
    */
-  async place(pid: number, invocationId: string, command: string): Promise<boolean> {
+  async place(pid: number, invocationId: string, command: string, owner?: string): Promise<boolean> {
     const name = leafName(invocationId)
     if (!name || !Number.isSafeInteger(pid) || pid <= 1) return false
     const leaf = `${this.workloadDir}/${name}`
     try {
       await this.backend.mkdir(leaf)
       await this.backend.writeFile(`${leaf}/cgroup.procs`, String(pid))
-      this.tracked.set(name, { command: summarizeCommand(command), reported: NO_KILLS, attached: true })
+      this.tracked.set(name, {
+        command: summarizeCommand(command),
+        ...(owner ? { owner } : {}),
+        reported: NO_KILLS,
+        attached: true,
+      })
       return true
     } catch (error) {
       this.log(`WARN: could not place invocation ${invocationId} in a workload cgroup: ${errorMessage(error)}`)
@@ -210,57 +233,71 @@ export class WorkloadCgroups {
   }
 
   /**
-   * Notices for kills of earlier invocations' leaves (background processes the
-   * agent is no longer attached to), then removes leaves that are empty.
-   * Returns the notices not yet delivered and clears them.
+   * Notices for kills of `owner`'s earlier invocations (background processes
+   * the agent is no longer attached to), queued per owner so each reaches only
+   * the agent whose command started it. Also removes empty leaves (except the
+   * tmux server's). Returns and clears `owner`'s queue; a request without an
+   * owner gets nothing.
    */
-  async takeNotices(): Promise<string[]> {
-    let names: string[]
-    try {
-      names = (await this.backend.readdir(this.workloadDir)).filter((name) => name.startsWith('inv-'))
-    } catch {
-      names = []
-    }
-    for (const name of names) {
-      const entry = this.tracked.get(name) ?? { command: '', reported: NO_KILLS, attached: false }
-      if (entry.attached) continue
-      const kills = await this.readKills(name)
-      if (kills.oomd > entry.reported.oomd) {
-        this.pendingNotices.push(
-          `[ficus] systemd-oomd killed the processes started by an earlier command in this box ` +
-            `(${entry.command ? `\`${entry.command}\`` : name}) because the box was under sustained memory ` +
-            'pressure. Restart it only if you still need it.'
-        )
-      } else if (kills.kernel > entry.reported.kernel) {
-        this.pendingNotices.push(
-          `[ficus] The kernel OOM killer stopped ${kills.kernel - entry.reported.kernel} process(es) started by an ` +
-            `earlier command in this box (${entry.command ? `\`${entry.command}\`` : name}) because the box reached ` +
-            'its memory limit. Restart it only if you still need it.'
-        )
-      }
-      entry.reported = kills
-      this.tracked.set(name, entry)
-      if (!(await this.populated(name))) {
-        try {
-          await this.backend.rmdir(`${this.workloadDir}/${name}`)
-          this.tracked.delete(name)
-        } catch {
-          // A process joined or the leaf is already gone; the next sweep retries.
-        }
+  async takeNotices(owner?: string): Promise<string[]> {
+    for (const name of await this.leafNames().catch(() => [] as string[])) {
+      if (name === TMUX_SERVER_LEAF) continue
+      if (name.startsWith('inv-')) await this.collectKills(name)
+      const entry = this.tracked.get(name)
+      if (entry?.attached || (await this.populated(name))) continue
+      try {
+        await this.backend.rmdir(`${this.workloadDir}/${name}`)
+        this.tracked.delete(name)
+      } catch {
+        // A process joined or the leaf is already gone; the next sweep retries.
       }
     }
-    return this.pendingNotices.splice(0)
+    if (!owner) return []
+    const notices = this.pendingNotices.get(owner) ?? []
+    this.pendingNotices.delete(owner)
+    return notices
+  }
+
+  /** Queue a notice for a kill of a finished invocation's leaf, for its owner. */
+  private async collectKills(name: string): Promise<void> {
+    const entry = this.tracked.get(name)
+    // Unknown leaves (no record of who started them) and attached invocations,
+    // which report their own kill, are not announced.
+    if (!entry || entry.attached) return
+    const kills = await this.readKills(name)
+    let notice: string | undefined
+    if (kills.oomd > entry.reported.oomd) {
+      notice =
+        `[ficus] systemd-oomd killed the processes started by an earlier command of yours in this box ` +
+        `(\`${entry.command}\`) because the box was under sustained memory pressure. ` +
+        'Restart it only if you still need it.'
+    } else if (kills.kernel > entry.reported.kernel) {
+      notice =
+        `[ficus] The kernel OOM killer stopped ${kills.kernel - entry.reported.kernel} process(es) started by an ` +
+        `earlier command of yours in this box (\`${entry.command}\`) because the box reached its memory limit. ` +
+        'Restart it only if you still need it.'
+    }
+    entry.reported = kills
+    if (notice && entry.owner) {
+      const queue = this.pendingNotices.get(entry.owner) ?? []
+      queue.push(notice)
+      this.pendingNotices.set(entry.owner, queue)
+    }
   }
 
   /** Processes in every workload leaf (for the idle-exit census). */
   async countProcesses(): Promise<number> {
     let count = 0
-    for (const name of await this.backend.readdir(this.workloadDir)) {
-      if (!name.startsWith('inv-')) continue
+    for (const name of await this.leafNames()) {
       const procs = await this.backend.readFile(`${this.workloadDir}/${name}/cgroup.procs`).catch(() => '')
       count += procs.split('\n').filter(Boolean).length
     }
     return count
+  }
+
+  /** Child cgroups of workload/ (every kernel control file has a dot; leaf names never do). */
+  private async leafNames(): Promise<string[]> {
+    return (await this.backend.readdir(this.workloadDir)).filter((name) => /^[A-Za-z0-9_-]+$/.test(name))
   }
 
   private async readKills(name: string): Promise<WorkloadKills> {

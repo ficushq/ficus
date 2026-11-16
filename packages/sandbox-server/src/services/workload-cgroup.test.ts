@@ -36,6 +36,8 @@ describe('WorkloadCgroups.initialize', () => {
     expect(readFileSync(join(unit, 'supervisor', `xattr.${OOMD_OMIT_XATTR}`), 'utf8')).toBe('1')
     expect(workloads.workloadDir).toBe(join(unit, 'workload'))
     expect(readFileSync(join(unit, 'workload', 'cgroup.subtree_control'), 'utf8')).toBe('+memory +pids')
+    // The tmux server's leaf exists up front, already skipped by systemd-oomd.
+    expect(readFileSync(join(unit, 'workload', 'tmux-server', `xattr.${OOMD_OMIT_XATTR}`), 'utf8')).toBe('1')
     expect(logs.at(-1)).toContain('Workload cgroups: on')
   })
 
@@ -98,7 +100,7 @@ describe('WorkloadCgroups placement and kill reporting', () => {
     )
     expect(await workloads.takeInvocationKills('inv1')).toEqual({ oomd: 0, kernel: 0 })
     writeFileSync(join(unit, 'workload', 'inv-inv1', 'cgroup.events'), 'populated 1\nfrozen 0\n')
-    expect(await workloads.takeNotices()).toEqual([])
+    expect(await workloads.takeNotices('agent-a')).toEqual([])
   })
 
   it('names a kernel OOM kill (the box reached MemoryMax) from memory.events', async () => {
@@ -113,39 +115,69 @@ describe('WorkloadCgroups placement and kill reporting', () => {
     )
   })
 
-  it('announces a later kill of a finished command (a background dev server) once, and removes empty leaves', async () => {
+  it('announces a later kill of a finished command (a background dev server) once, to its owner only', async () => {
     const { workloads, unit } = await setUp()
-    await workloads.place(4242, 'bg', 'nohup next dev --port 34562 > dev.log 2>&1 &')
+    await workloads.place(4242, 'bg', 'nohup next dev --port 34562 > dev.log 2>&1 &', 'agent-a')
     expect(await workloads.takeInvocationKills('bg')).toEqual({ oomd: 0, kernel: 0 })
     const leaf = join(unit, 'workload', 'inv-bg')
     writeFileSync(join(leaf, 'cgroup.events'), 'populated 1\n')
-    expect(await workloads.takeNotices()).toEqual([])
+    expect(await workloads.takeNotices('agent-a')).toEqual([])
     writeFileSync(join(leaf, `xattr.${OOMD_KILL_COUNT_XATTR}`), '1')
     writeFileSync(join(leaf, 'cgroup.events'), 'populated 0\n')
-    expect(await workloads.takeNotices()).toEqual([
-      '[ficus] systemd-oomd killed the processes started by an earlier command in this box ' +
+    // Another agent sharing the squad box, and Core's own unowned commands, hear nothing.
+    expect(await workloads.takeNotices('agent-b')).toEqual([])
+    expect(await workloads.takeNotices()).toEqual([])
+    expect(existsSync(leaf)).toBe(false)
+    expect(await workloads.takeNotices('agent-a')).toEqual([
+      '[ficus] systemd-oomd killed the processes started by an earlier command of yours in this box ' +
         '(`nohup next dev --port 34562 > dev.log 2>&1 &`) because the box was under sustained memory pressure. ' +
         'Restart it only if you still need it.',
     ])
-    expect(existsSync(leaf)).toBe(false)
+    expect(await workloads.takeNotices('agent-a')).toEqual([])
+  })
+
+  it('never announces a kill of a command that had no owner', async () => {
+    const { workloads, unit } = await setUp()
+    await workloads.place(4242, 'core', 'tail -F app.log')
+    await workloads.takeInvocationKills('core')
+    writeFileSync(join(unit, 'workload', 'inv-core', `xattr.${OOMD_KILL_COUNT_XATTR}`), '1')
     expect(await workloads.takeNotices()).toEqual([])
+    expect(await workloads.takeNotices('agent-a')).toEqual([])
+  })
+
+  it('removes empty app and monitor leaves but never the tmux server leaf', async () => {
+    const { workloads, unit } = await setUp()
+    for (const name of ['app-1', 'monitor-2']) {
+      mkdirSync(join(unit, 'workload', name))
+      writeFileSync(join(unit, 'workload', name, 'cgroup.events'), 'populated 0\n')
+    }
+    mkdirSync(join(unit, 'workload', 'app-busy'))
+    writeFileSync(join(unit, 'workload', 'app-busy', 'cgroup.events'), 'populated 1\n')
+    writeFileSync(join(unit, 'workload', 'tmux-server', 'cgroup.events'), 'populated 0\n')
+    await workloads.takeNotices('agent-a')
+    expect(existsSync(join(unit, 'workload', 'app-1'))).toBe(false)
+    expect(existsSync(join(unit, 'workload', 'monitor-2'))).toBe(false)
+    expect(existsSync(join(unit, 'workload', 'app-busy'))).toBe(true)
+    expect(existsSync(join(unit, 'workload', 'tmux-server'))).toBe(true)
   })
 
   it('leaves a running attached invocation to report its own kill', async () => {
     const { workloads, unit } = await setUp()
     await workloads.place(4242, 'live', 'next build')
     writeFileSync(join(unit, 'workload', 'inv-live', `xattr.${OOMD_KILL_COUNT_XATTR}`), '1')
-    expect(await workloads.takeNotices()).toEqual([])
+    expect(await workloads.takeNotices('agent-a')).toEqual([])
     expect((await workloads.takeInvocationKills('live')).oomd).toBe(1)
   })
 
-  it('counts processes across workload leaves for the idle-exit census', async () => {
+  it('counts processes across workload leaves (tmux and apps included) for the idle-exit census', async () => {
     const { workloads, unit } = await setUp()
     await workloads.place(10, 'a', 'x')
     await workloads.place(11, 'b', 'y')
     writeFileSync(join(unit, 'workload', 'inv-a', 'cgroup.procs'), '10\n12\n')
-    mkdirSync(join(unit, 'workload', 'not-a-leaf'))
-    expect(await workloads.countProcesses()).toBe(3)
+    writeFileSync(join(unit, 'workload', 'tmux-server', 'cgroup.procs'), '20\n')
+    mkdirSync(join(unit, 'workload', 'app-x'))
+    writeFileSync(join(unit, 'workload', 'app-x', 'cgroup.procs'), '30\n')
+    expect(await workloads.countProcesses()).toBe(5)
   })
 })
 
