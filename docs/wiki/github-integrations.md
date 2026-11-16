@@ -220,14 +220,14 @@ To route Dependabot-authored review requests to the manager instead of creating 
 
 Authorship is routing evidence only; authorization, moderation and content-admission checks still apply. This example sends matching admitted events to the manager. It does **not** batch PRs or enable multi-PR review completion, and adding this capability does not change saved squad rules.
 
-| Field type              | Operators                     |
-| ----------------------- | ----------------------------- |
-| String, number, boolean | `eq`, `neq`, `in`, `exists`   |
-| Number                  | Also `gt`, `gte`, `lt`, `lte` |
-| String array            | `contains`, `exists`          |
+| Field type              | Operators                                                          |
+| ----------------------- | ------------------------------------------------------------------ |
+| String, number, boolean | `eq`, `neq`, `in`, `exists`                                        |
+| Number                  | Also `gt`, `gte`, `lt`, `lte`                                      |
+| String array            | `contains`, `not-contains` (shown as "does not contain"), `exists` |
 
-- `in` takes a nonempty array of the field's scalar type; `contains` takes one string and checks for an **exact member**, not a substring. No regular expressions, expression trees, coercion or arbitrary payload traversal.
-- All comparisons, **including `neq`**, fail for absent/null values. `exists: true` checks non-null presence; `exists: false` checks missing or null. Empty strings, false, zero and empty arrays are present; an empty array never satisfies `contains`.
+- `in` takes a nonempty array of the field's scalar type; `contains` and `not-contains` take one string and check for an **exact member**, not a substring: `contains` matches when some member equals it, `not-contains` when none does. No regular expressions, expression trees, coercion or arbitrary payload traversal.
+- All comparisons, **including `neq` and `not-contains`**, fail for absent/null values. `exists: true` checks non-null presence; `exists: false` checks missing or null. Empty strings, false, zero and empty arrays are present; an empty array never satisfies `contains` and always satisfies `not-contains`. GitHub issue and pull request events without labels carry an empty `labels` array, so `{ "field": "labels", "op": "not-contains", "value": "blocked" }` skips only events labeled `blocked` (labels are case-sensitive). A missing or null collection fails `not-contains`, so the rule does not fire when an output omits the field.
 - GitHub repository/login fields and assignee collection members compare case-insensitively. Labels, review states, workflow names, paths and Linear identifiers are case-sensitive. Only the existing repository-pattern filter interprets `*` as a wildcard; typed equality does not.
 - At most 16 conditions per rule, 100 operands per `in`, and 2,000 characters per string. Unsupported fields/operators, wrong operand types, null operands and extra properties are rejected on squad configuration writes. Changing the event in the editor clears incompatible conditions. An omitted or empty conditions list adds no restriction.
 

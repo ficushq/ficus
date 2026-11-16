@@ -229,6 +229,43 @@ test('event-specific predicates match normalized review, CI, collection, boolean
   }
 })
 
+test('a labels not-contains condition skips GitHub issues labeled blocked and keeps unlabeled ones', async () => {
+  const { previewSquadEventRules, selectSquadEventRule, squadEventRuleSchema } = await import('@ficus/shared')
+  const rule = squadEventRuleSchema.parse({
+    id: 'unheld-issues',
+    source: { integration: 'github', output: 'issue.assigned', version: 1 },
+    filters: { audience: 'any' },
+    predicates: [{ field: 'labels', op: 'not-contains', value: 'blocked' }],
+    action: { type: 'start-workstream' },
+  })
+  const metadata = { integrationRules: { github: [rule] } }
+  const issue = (labels?: unknown) => {
+    const [fact] = githubOutputAdapter.normalize({
+      type: 'issues',
+      payload: {
+        action: 'assigned',
+        repository,
+        assignee: { login: 'Noah' },
+        issue: { id: 11, number: 4, title: 'Investigate latency', updated_at: date, labels },
+      },
+    })
+    integrationOutputRegistry.validateFact('github', fact!)
+    return fact!
+  }
+  // The selected rule is what routing acts on: undefined means the event is skipped by this rule.
+  for (const [labels, selected] of [
+    [[{ name: 'bug' }, { name: 'blocked' }], undefined],
+    [[{ name: 'bug' }], 'unheld-issues'],
+    [[], 'unheld-issues'],
+    // A payload without a labels array normalizes to an empty collection, so the issue is not skipped.
+    [undefined, 'unheld-issues'],
+  ] as const) {
+    const fact = issue(labels)
+    expect(selectSquadEventRule(metadata, 'github', fact, 'bot')?.id).toBe(selected)
+    expect(previewSquadEventRules(metadata, 'github', fact, 'bot').selectedRuleId).toBe(selected ?? null)
+  }
+})
+
 test('PR snapshots preserve provider aggregate merge state, not individual CI success', () => {
   const [fact] = githubOutputAdapter.normalize({
     type: 'pull_request',

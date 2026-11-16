@@ -144,6 +144,7 @@ test('event-aware predicates accept only typed operators and allowlisted fields 
     { field: 'repository', op: 'eq', value: 'ACME/REPO' },
     { field: 'issue.number', op: 'gte', value: 1 },
     { field: 'labels', op: 'contains', value: 'bug' },
+    { field: 'labels', op: 'not-contains', value: 'blocked' },
     { field: 'assignee', op: 'in', value: ['BOT', 'reviewer'] },
     { field: 'actor', op: 'exists', value: false },
   ]
@@ -155,6 +156,11 @@ test('event-aware predicates accept only typed operators and allowlisted fields 
     [{ field: 'issue.number', op: 'in', value: [1, '2'] }],
     [{ field: 'labels', op: 'eq', value: ['bug'] }],
     [{ field: 'labels', op: 'contains', value: 1 }],
+    [{ field: 'labels', op: 'not-contains', value: 1 }],
+    [{ field: 'labels', op: 'not-contains', value: ['blocked'] }],
+    [{ field: 'labels', op: 'not-contains', value: true }],
+    [{ field: 'actor', op: 'not-contains', value: 'bot' }],
+    [{ field: 'issue.number', op: 'not-contains', value: 1 }],
     [{ field: 'actor', op: 'exists', value: 'false' }],
     [{ field: 'actor', op: 'eq', value: null }],
     [{ field: 'actor', op: 'in', value: [] }],
@@ -329,6 +335,15 @@ test('scalar operators discriminate boundaries without coercion and collections 
   expect(matches('assignee', 'neq', 'BOT', { assignee: 'bot' })).toBe(false)
   expect(matches('labels', 'contains', 'bug', { labels: ['debug'] })).toBe(false)
   expect(matches('labels', 'contains', 'bug', { labels: ['docs', 'bug'] })).toBe(true)
+  expect(matches('labels', 'not-contains', 'blocked', { labels: ['docs', 'blocked'] })).toBe(false)
+  expect(matches('labels', 'not-contains', 'blocked', { labels: ['docs', 'unblocked'] })).toBe(true)
+  expect(matches('labels', 'not-contains', 'blocked', { labels: [] })).toBe(true)
+  // Labels are case-sensitive; assignees normalize to lowercase on both sides.
+  expect(matches('labels', 'not-contains', 'blocked', { labels: ['Blocked'] })).toBe(true)
+  expect(matches('assignees', 'not-contains', 'bot', { assignees: ['BoT'] })).toBe(false)
+  expect(matches('assignees', 'not-contains', 'BOT', { assignees: ['human'] })).toBe(true)
+  for (const data of [{}, { labels: null }, { labels: 'blocked' }, { labels: ['docs', 1] }])
+    expect(matches('labels', 'not-contains', 'blocked', data)).toBe(false)
   expect(matches('actor', 'exists', true, { actor: '' })).toBe(true)
   expect(matches('actor', 'exists', false, { actor: null })).toBe(true)
   expect(matches('actor', 'exists', false, {})).toBe(true)
@@ -416,4 +431,38 @@ test('Dependabot PR author routing survives save/reload and agrees with preview 
     )
     expect(selectSquadEventRule(reloaded, 'github', event, 'someone-else')).toBeUndefined()
   }
+})
+
+test('collection fields offer contains, not-contains and exists; scalar fields never offer not-contains', async () => {
+  const { eventPredicateOperators } = await import('./event-predicates')
+  const { eventPredicateField } = await import('./event-predicate-catalog')
+  for (const integration of ['github', 'linear']) {
+    const labels = eventPredicateField({ integration, output: 'issue.updated', version: 1 }, 'labels')!
+    expect(eventPredicateOperators(labels)).toEqual(['contains', 'not-contains', 'exists'])
+  }
+  expect(eventPredicateOperators({ type: 'string', description: '' })).not.toContain('not-contains')
+  expect(eventPredicateOperators({ type: 'number', description: '' })).not.toContain('not-contains')
+})
+
+test('a labels not-contains rule skips blocked issues and explains itself in the preview trace', async () => {
+  const { previewSquadEventRules } = await import('./squad-event-rules')
+  const item = squadEventRuleSchema.parse({
+    ...rule('triage'),
+    predicates: [{ field: 'labels', op: 'not-contains', value: 'blocked' }],
+  })
+  const metadata = { integrationRules: { github: [item] } }
+  const withLabels = (labels: unknown) => ({ ...fact, data: { ...fact.data, labels } })
+  expect(selectSquadEventRule(metadata, 'github', withLabels(['bug', 'blocked']), 'bot')).toBeUndefined()
+  expect(selectSquadEventRule(metadata, 'github', withLabels(['bug']), 'bot')?.id).toBe('triage')
+  expect(selectSquadEventRule(metadata, 'github', withLabels([]), 'bot')?.id).toBe('triage')
+  expect(selectSquadEventRule(metadata, 'github', withLabels(null), 'bot')).toBeUndefined()
+  const preview = previewSquadEventRules(metadata, 'github', withLabels(['blocked']), 'bot')
+  expect(preview.selectedRuleId).toBeNull()
+  expect(preview.rules[0]?.checks).toContainEqual({
+    kind: 'predicate',
+    passed: false,
+    description:
+      'labels not-contains: requires a present collection without that member; empty collections match, missing and null do not.',
+  })
+  expect(JSON.stringify(preview)).not.toContain('blocked')
 })

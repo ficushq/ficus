@@ -590,3 +590,73 @@ test('PR author fields can be selected, saved, reloaded and previewed independen
     await dom.cleanup()
   }
 })
+
+test('collection fields offer does not contain, which saves, reloads and previews against sample labels', async () => {
+  const { githubOutputCatalog } = await import('@ficus/shared')
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
+  client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
+  let value: SquadEventRule[] = []
+  function Editor({ initial }: { initial?: SquadEventRule[] }) {
+    const [rules, setRules] = useState(
+      initial ?? [
+        squadEventRuleSchema.parse({
+          id: 'unheld-issues',
+          source: { integration: 'github', output: 'issue.assigned', version: 1 },
+          filters: { audience: 'any' },
+          action: { type: 'notify-manager' },
+        }),
+      ]
+    )
+    value = rules
+    return <SquadEventRulesEditor squadId="test" provider="github" value={rules} onChange={setRules} disabled={false} />
+  }
+  const root = dom.createRoot()
+  const input = (label: string) => document.querySelector(`[aria-label="${label}"]`)!
+  const render = (initial?: SquadEventRule[]) =>
+    dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <Editor key={initial ? 'reloaded' : 'initial'} initial={initial} />
+        </QueryClientProvider>
+      )
+    )
+  try {
+    await render()
+    await dom.act(async () =>
+      Array.from(document.querySelectorAll('button'))
+        .find((b) => b.textContent === 'Add condition')!
+        .click()
+    )
+    await dom.act(async () => fireEvent.change(input('Rule 1 condition 1 field'), { target: { value: 'labels' } }))
+    const operator = () => input('Rule 1 condition 1 operator') as HTMLSelectElement
+    expect(Array.from(operator().options).map((o) => [o.value, o.textContent])).toEqual([
+      ['contains', 'contains'],
+      ['not-contains', 'does not contain'],
+      ['exists', 'exists'],
+    ])
+    await dom.act(async () => fireEvent.change(operator(), { target: { value: 'not-contains' } }))
+    await dom.act(async () => fireEvent.input(input('Rule 1 condition 1 value'), { target: { value: 'blocked' } }))
+    expect(document.body.textContent).toContain('always match does not contain')
+    const saved = value.map((rule) => squadEventRuleSchema.parse(JSON.parse(JSON.stringify(rule))))
+    expect(saved[0]!.predicates).toEqual([{ field: 'labels', op: 'not-contains', value: 'blocked' }])
+    await render(saved)
+    expect(operator().value).toBe('not-contains')
+    expect(operator().selectedOptions[0]!.textContent).toBe('does not contain')
+    await dom.act(async () => fireEvent.change(input('Sample event'), { target: { value: 'issue.assigned@1' } }))
+    for (const [labels, matches] of [
+      [['bug', 'blocked'], false],
+      [['bug'], true],
+      [[], true],
+    ] as const) {
+      await dom.act(async () =>
+        fireEvent.input(input('Sample fields (JSON)'), { target: { value: JSON.stringify({ labels }) } })
+      )
+      expect(document.body.textContent!.includes('Selected: unheld-issues → notify-manager')).toBe(matches)
+    }
+  } finally {
+    client.clear()
+    await dom.cleanup()
+  }
+})

@@ -6,6 +6,7 @@ import {
   isEventDecisionPredicate,
   type EventDecisionOutcome,
   type EventDecisionPredicate,
+  type EventPredicate,
 } from './event-predicates'
 import { eventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
@@ -374,7 +375,7 @@ export function evaluateSquadEventRules(
       check(
         'predicate',
         !!field && eventPredicateMatches(predicate, field, fact.data),
-        `${predicate.field} ${predicate.op}: ${predicate.op === 'exists' ? 'missing and null are absent.' : 'requires a present, correctly typed value.'}`
+        `${predicate.field} ${predicate.op}: ${predicateCheckDescription(predicate.op)}`
       )
     }
     check(
@@ -415,6 +416,15 @@ export function evaluateSquadEventRules(
     }
   }
   return { selected, preview, ...(pending ? { pending } : {}) }
+}
+
+/** Explains a field condition's semantics without disclosing its operand or the event's value. */
+function predicateCheckDescription(op: EventPredicate['op']) {
+  if (op === 'exists') return 'missing and null are absent.'
+  if (op === 'contains') return 'requires a present collection with an exact member; empty collections do not match.'
+  if (op === 'not-contains')
+    return 'requires a present collection without that member; empty collections match, missing and null do not.'
+  return 'requires a present, correctly typed value.'
 }
 
 /** Says how the outcome was reached, never the event's content or the answer's numbers. */
