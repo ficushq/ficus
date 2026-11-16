@@ -81,6 +81,11 @@ export function eventRepositoryMatches(pattern: string, repository: string) {
     'i'
   ).test(repository)
 }
+/** GitHub label names are unique regardless of case, so label filters, like label conditions, ignore case. */
+function labelsOverlap(wanted: string[], labels: unknown): boolean {
+  const present = new Set(strings(labels).map((label) => label.toLowerCase()))
+  return wanted.some((label) => present.has(label.toLowerCase()))
+}
 export function matchesGitHubRouting(metadata: unknown, repository: unknown, labels?: unknown): boolean {
   return (
     typeof repository === 'string' &&
@@ -89,9 +94,7 @@ export function matchesGitHubRouting(metadata: unknown, repository: unknown, lab
       (route: any) =>
         typeof route?.repo === 'string' &&
         eventRepositoryMatches(route.repo, repository) &&
-        (labels === undefined ||
-          !strings(route.labels).length ||
-          strings(route.labels).some((label) => strings(labels).includes(label)))
+        (labels === undefined || !strings(route.labels).length || labelsOverlap(strings(route.labels), labels))
     )
   )
 }
@@ -354,8 +357,8 @@ export function evaluateSquadEventRules(
     if (filters.labels?.length)
       check(
         'labels',
-        filters.labels.some((label) => strings(data.labels).includes(label)),
-        'At least one per-rule label must be present (case-sensitive).'
+        labelsOverlap(filters.labels, data.labels),
+        'At least one per-rule label must be present (case-insensitive).'
       )
     if (filters.teamId) check('team', filters.teamId === data.teamId, 'Per-rule team must match exactly.')
     if (rule.match)

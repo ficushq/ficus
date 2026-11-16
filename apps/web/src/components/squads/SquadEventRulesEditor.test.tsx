@@ -639,6 +639,7 @@ test('collection fields offer does not contain, which saves, reloads and preview
     await dom.act(async () => fireEvent.change(operator(), { target: { value: 'not-contains' } }))
     await dom.act(async () => fireEvent.input(input('Rule 1 condition 1 value'), { target: { value: 'blocked' } }))
     expect(document.body.textContent).toContain('always match does not contain')
+    expect(document.body.textContent).toContain('Issue or pull request labels. Compared case-insensitively.')
     const saved = value.map((rule) => squadEventRuleSchema.parse(JSON.parse(JSON.stringify(rule))))
     expect(saved[0]!.predicates).toEqual([{ field: 'labels', op: 'not-contains', value: 'blocked' }])
     await render(saved)
@@ -647,6 +648,7 @@ test('collection fields offer does not contain, which saves, reloads and preview
     await dom.act(async () => fireEvent.change(input('Sample event'), { target: { value: 'issue.assigned@1' } }))
     for (const [labels, matches] of [
       [['bug', 'blocked'], false],
+      [['bug', 'Blocked'], false],
       [['bug'], true],
       [[], true],
     ] as const) {

@@ -199,7 +199,10 @@ test('typed predicates AND with fixed and legacy filters, normalizing only decla
       'bot'
     )
   expect(select()?.id).toBe('typed')
-  expect(select({ ...fact.data, labels: ['BUG'] })).toBeUndefined()
+  expect(select({ ...fact.data, labels: ['BUG'] })?.id).toBe('typed')
+  expect(
+    select({ ...fact.data, issue: { number: 1, title: 'Bug' } }, [{ field: 'issue.title', op: 'eq', value: 'bug' }])
+  ).toBeUndefined()
   expect(select({ ...fact.data, issue: { number: 0 } })).toBeUndefined()
   for (const actual of [undefined, null, '1']) {
     for (const op of ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'])
@@ -216,6 +219,60 @@ test('typed predicates AND with fixed and legacy filters, normalizing only decla
     expect(!!select(data, [{ field: 'labels', op: 'exists', value: true }])).toBe(expected)
   expect(select({ labels: [] }, [{ field: 'labels', op: 'contains', value: 'bug' }])).toBeUndefined()
   expect(select({ assignees: ['BoT'] }, [{ field: 'assignees', op: 'contains', value: 'bot' }])?.id).toBe('typed')
+})
+
+test('GitHub and Linear label conditions ignore case on both the event and the saved rule', () => {
+  const linearFact: IntegrationOutputFact = {
+    ...fact,
+    output: 'issue.updated',
+    resourceKey: 'linear-issue',
+    data: { teamId: 'team-1', labels: ['Blocked', 'bug'] },
+  }
+  const githubFact: IntegrationOutputFact = { ...fact, data: { ...fact.data, labels: ['Blocked', 'bug'] } }
+  for (const [integration, event] of [
+    ['github', githubFact],
+    ['linear', linearFact],
+  ] as const) {
+    const select = (predicates: unknown, labels: string[]) =>
+      selectSquadEventRule(
+        {
+          integrationRules: {
+            [integration]: [
+              {
+                ...rule('labelled'),
+                source: { integration, output: event.output, version: 1 },
+                predicates,
+              },
+            ],
+          },
+        },
+        integration,
+        { ...event, data: { ...event.data, labels } },
+        'bot'
+      )?.id
+    for (const value of ['blocked', 'BLOCKED', 'Blocked']) {
+      expect(select([{ field: 'labels', op: 'contains', value }], ['Blocked'])).toBe('labelled')
+      expect(select([{ field: 'labels', op: 'contains', value }], ['blocked'])).toBe('labelled')
+      expect(select([{ field: 'labels', op: 'not-contains', value }], ['Blocked', 'bug'])).toBeUndefined()
+      expect(select([{ field: 'labels', op: 'not-contains', value }], ['bug'])).toBe('labelled')
+      expect(select([{ field: 'labels', op: 'contains', value }], ['blocked-by-design'])).toBeUndefined()
+    }
+  }
+})
+
+test('per-rule and shared-scope label filters ignore case', () => {
+  const filtered = { ...rule('filtered'), filters: { audience: 'any' as const, squadRouting: true, labels: ['BUG'] } }
+  const select = (labels: string[], sharedLabels = ['Ui']) =>
+    selectSquadEventRule(
+      { github: [{ repo: 'acme/repo', labels: sharedLabels }], integrationRules: { github: [filtered] } },
+      'github',
+      { ...fact, data: { ...fact.data, labels } },
+      'bot'
+    )?.id
+  expect(select(['bug', 'ui'])).toBe('filtered')
+  expect(select(['Bug', 'UI'])).toBe('filtered')
+  expect(select(['bug'])).toBeUndefined()
+  expect(select(['ui'])).toBeUndefined()
 })
 
 test('preview traces array order, failed checks, suppression and first-match shadowing without disclosing data', async () => {
@@ -338,8 +395,8 @@ test('scalar operators discriminate boundaries without coercion and collections 
   expect(matches('labels', 'not-contains', 'blocked', { labels: ['docs', 'blocked'] })).toBe(false)
   expect(matches('labels', 'not-contains', 'blocked', { labels: ['docs', 'unblocked'] })).toBe(true)
   expect(matches('labels', 'not-contains', 'blocked', { labels: [] })).toBe(true)
-  // Labels are case-sensitive; assignees normalize to lowercase on both sides.
-  expect(matches('labels', 'not-contains', 'blocked', { labels: ['Blocked'] })).toBe(true)
+  // Labels and assignees normalize to lowercase on both sides.
+  expect(matches('labels', 'not-contains', 'blocked', { labels: ['Blocked'] })).toBe(false)
   expect(matches('assignees', 'not-contains', 'bot', { assignees: ['BoT'] })).toBe(false)
   expect(matches('assignees', 'not-contains', 'BOT', { assignees: ['human'] })).toBe(true)
   for (const data of [{}, { labels: null }, { labels: 'blocked' }, { labels: ['docs', 1] }])

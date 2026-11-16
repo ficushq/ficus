@@ -61,7 +61,11 @@ describe('linear output catalog', () => {
       expect(Object.keys(entry.predicateFields ?? {}).sort()).toEqual(
         [...Object.keys(expectedFieldTypes), 'labels'].sort()
       )
-      expect(entry.predicateFields?.labels).toEqual({ type: 'string[]', description: expect.any(String) })
+      expect(entry.predicateFields?.labels).toEqual({
+        type: 'string[]',
+        normalize: 'lowercase',
+        description: expect.any(String),
+      })
     }
   })
 
@@ -79,6 +83,13 @@ describe('linear output catalog', () => {
       expect(assigned.fields[path]).toBeDefined()
     }
   })
+})
+
+test('GitHub labels are a case-insensitive collection on every event that exposes them', () => {
+  const withLabels = githubOutputCatalog.filter((event) => eventPredicateField(event, 'labels'))
+  expect(withLabels.length).toBeGreaterThan(0)
+  for (const event of withLabels)
+    expect(eventPredicateField(event, 'labels')).toMatchObject({ type: 'string[]', normalize: 'lowercase' })
 })
 
 test('PR author predicate fields are exposed only for GitHub PR events', () => {
