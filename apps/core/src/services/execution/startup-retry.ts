@@ -25,6 +25,23 @@ export const BOX_PORT_BUSY_RETRY_CODE = 'box_port_busy'
 /** Host lock contention shares the existing bounded provisioning retry budget. */
 export const BOX_LOCK_TIMEOUT_RETRY_CODE = 'box_lock_timeout'
 
+/**
+ * A shared VM provisioning failure replayed while the provisioner's own backoff
+ * is still active (VmProvisionFailedError with a future retryAt). No new
+ * physical attempt ran, so this is a wait, not a new failure: the execution is
+ * requeued until the retry-after time instead of failing and spending the
+ * unexplained-failure recovery budget. The genuine attempt that runs after the
+ * window still fails (and counts) normally.
+ */
+export const SANDBOX_PROVISION_BACKOFF_RETRY_CODE = 'sandbox_provision_backoff'
+/** At most this many backoff waits per execution; the provisioner backoff
+ * doubles from 30 seconds, so three waits cover several genuine attempts. */
+export const SANDBOX_PROVISION_BACKOFF_RETRY_SLOTS = [30_000, 60_000, 120_000] as const
+/** Land just after retryAt so the requeued startup is not refused again by clock skew. */
+const PROVISION_BACKOFF_SLACK_MS = 1_000
+/** The provisioner caps its backoff at 15 minutes; never wait longer than that. */
+const PROVISION_BACKOFF_MAX_WAIT_MS = 15 * 60_000 + PROVISION_BACKOFF_SLACK_MS
+
 /** Machine statuses that come back to `ready` by themselves; anything else fails at once. */
 const TRANSIENT_MACHINE_STATUSES = new Set(['registered', 'bootstrapping', 'unreachable', 'capacity'])
 const MACHINE_READINESS_ERRORS = new Set(['MachineUnavailableError', 'MachineNotReadyError'])
@@ -33,6 +50,7 @@ const MACHINE_READINESS_ERRORS = new Set(['MachineUnavailableError', 'MachineNot
 export function startupRetryDelays(code: string): readonly number[] {
   if (code === 'box_stop_unverified') return STOP_VERIFICATION_STARTUP_RETRY_DELAYS_MS
   if (code === BOX_PORT_BUSY_RETRY_CODE || code === BOX_LOCK_TIMEOUT_RETRY_CODE) return BOX_PORT_BUSY_RETRY_DELAYS_MS
+  if (code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE) return SANDBOX_PROVISION_BACKOFF_RETRY_SLOTS
   return code.startsWith('machine_') ? MACHINE_STARTUP_RETRY_DELAYS_MS : STARTUP_RETRY_DELAYS_MS
 }
 
@@ -73,6 +91,10 @@ export function startupRetryCode(error: unknown): string | null {
   while (error instanceof Error && !seen.has(error)) {
     seen.add(error)
     if (error.name === 'VmPostProvisionSetupError') setupFallback = 'sandbox_readiness_pending'
+    // A more specific allowlisted cause (busy port, machine readiness, ...)
+    // keeps its own schedule; only an otherwise unretryable replay waits out
+    // the provisioner's backoff.
+    if (!setupFallback && provisionBackoffRetryAt(error) !== null) setupFallback = SANDBOX_PROVISION_BACKOFF_RETRY_CODE
     const code = (error as Error & { code?: unknown }).code
     if (typeof code === 'string' && DATABASE_CONNECTION_ERRORS.has(code)) return code
     const machineStatus = (error as Error & { machineStatus?: unknown }).machineStatus
@@ -102,6 +124,27 @@ export function startupRetryCode(error: unknown): string | null {
   return setupFallback
 }
 
+function provisionBackoffRetryAt(error: Error): Date | null {
+  if (error.name !== 'VmProvisionFailedError') return null
+  const retryAt = (error as Error & { retryAt?: unknown }).retryAt
+  return retryAt instanceof Date && Number.isFinite(retryAt.getTime()) ? retryAt : null
+}
+
+/**
+ * How long to wait before retrying a startup refused inside the provisioner's
+ * backoff window: until its retryAt (plus a small slack), at least one second
+ * and never longer than the provisioner's own 15-minute cap.
+ */
+export function provisionBackoffRetryDelayMs(error: unknown, now = Date.now()): number | undefined {
+  const replay = findInCauseChain(error, 'VmProvisionFailedError')
+  const retryAt = replay ? provisionBackoffRetryAt(replay) : null
+  if (!retryAt) return undefined
+  return Math.min(
+    PROVISION_BACKOFF_MAX_WAIT_MS,
+    Math.max(PROVISION_BACKOFF_SLACK_MS, retryAt.getTime() - now + PROVISION_BACKOFF_SLACK_MS)
+  )
+}
+
 /** The first error in the cause chain with this name, if any. */
 export function findInCauseChain(error: unknown, name: string): Error | null {
   const seen = new Set<object>()
@@ -125,6 +168,8 @@ export function startupRetryNotice(error: unknown): string {
   if (code === 'box_bash_busy')
     return 'The sandbox is finishing another startup command; this will retry automatically.'
   if (code === 'sandbox_readiness_pending') return 'The sandbox is finishing setup; this will retry automatically.'
+  if (code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE)
+    return 'The sandbox is waiting out the backoff after a failed provisioning attempt; this will retry automatically.'
   if (code === BOX_PORT_BUSY_RETRY_CODE) {
     const summary = (findInCauseChain(error, 'BoxPortBusyError') as (Error & { summary?: unknown }) | null)?.summary
     const reason = typeof summary === 'string' ? ` (${summary})` : ''

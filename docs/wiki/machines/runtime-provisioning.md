@@ -315,6 +315,23 @@ classification for transient `machine_*`, port-busy (75), host-lock timeout (73)
 Bash contention, stop-verification and readiness-pending errors. Each uses the same execution retry
 schedule as the owner; budget exhaustion still terminates the execution.
 
+Any other shared failure replayed while the backoff is still active (a
+`VmProvisionFailedError` with a future `retryAt`, and no more specific
+allowlisted cause) is a wait, not a new failure: no physical attempt ran. Its
+startup code is `sandbox_provision_backoff`, and execution startup requeues the
+same execution until `retryAt` plus one second (at least one second, at most the
+15-minute backoff cap) without spending the unexplained-failure recovery budget.
+Each execution gets at most three such waits; if they run out, the failure is
+counted as an ordinary unexplained startup failure. The genuine physical attempt
+that runs after the window fails, and counts, normally. Before this, executions
+woken by recovery one, two and four seconds after the first failure all landed
+inside the 30-second window and exhausted the three-attempt budget in seconds.
+
+An agent box with no recorded spec hash (typically its first provision) still
+goes through the drift self-heal path, but its admission phase is reported as
+`sandbox-ensure`; only a recorded hash that differs from the desired spec is
+reported as `sandbox-drift-recreate`.
+
 Clean API and worker shutdown mark **only their own** running generations failed
 with `failureClass=interrupted`, `retryAt=completedAt=now` and failure count zero.
 Ownership registration includes inserts crossing shutdown, and late callbacks
