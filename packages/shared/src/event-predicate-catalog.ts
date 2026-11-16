@@ -59,7 +59,7 @@ export type EventPredicateField = Omit<IntegrationOutputField, 'type'> & {
   type: IntegrationOutputField['type'] | 'string[]'
 }
 const collectionFields: Record<string, EventPredicateField> = {
-  labels: { type: 'string[]', description: 'Issue or pull request labels (case-sensitive).' },
+  labels: { type: 'string[]', normalize: 'lowercase', description: 'Issue or pull request labels.' },
   assignees: { type: 'string[]', normalize: 'lowercase', description: 'Assigned GitHub logins.' },
   actorType: { type: 'string', description: 'Actor account type, e.g. User or Bot.' },
   mergeConflict: { type: 'boolean', description: 'True when GitHub reports a merge conflict; otherwise absent.' },
@@ -104,7 +104,7 @@ const linearFields: Record<string, IntegrationOutputField> = {
 }
 const linearPredicateFields: Record<string, EventPredicateField> = {
   ...linearFields,
-  labels: { type: 'string[]', description: 'Issue labels.' },
+  labels: { type: 'string[]', normalize: 'lowercase', description: 'Issue labels.' },
 }
 const linearOutputs: Record<string, string> = {
   'issue.assigned': 'Issue assigned',

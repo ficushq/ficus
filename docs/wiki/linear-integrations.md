@@ -19,7 +19,7 @@ A verified `Issue` or `Comment` webhook normalizes into one of these typed outpu
 | `issue.updated`    | State, title, or labels change. `action` is `state`, `title`, or `labels`, or `updated` for any other field change; `state` carries the Linear workflow state's _type_ (e.g. `started`, `completed`), not its display name |
 | `issue.comment`    | A comment is created or edited                                                                                                                                                                                             |
 
-Fields: `issue.id`, `issue.number`, `issue.identifier` (e.g. `ENG-123`), `issue.title`, `teamId`, `teamKey`, `assignee`, `action`, `actor`, `state`, plus the predicate-only `labels`. Linear's `Issue` create and remove events produce no output. There is no polling fallback for Linear — every output depends on webhook delivery.
+Fields: `issue.id`, `issue.number`, `issue.identifier` (e.g. `ENG-123`), `issue.title`, `teamId`, `teamKey`, `assignee`, `action`, `actor`, `state`, plus the predicate-only `labels`, whose names compare case-insensitively in event rule conditions (`contains blocked` matches `Blocked`). Linear's `Issue` create and remove events produce no output. There is no polling fallback for Linear — every output depends on webhook delivery.
 
 ## Authority model
 

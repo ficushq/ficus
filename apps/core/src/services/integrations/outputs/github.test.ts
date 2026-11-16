@@ -266,6 +266,45 @@ test('a labels not-contains condition skips GitHub issues labeled blocked and ke
   }
 })
 
+test('GitHub label conditions match regardless of the casing on the issue or in the saved rule', async () => {
+  const { previewSquadEventRules, selectSquadEventRule, squadEventRuleSchema } = await import('@ficus/shared')
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'issues',
+    payload: {
+      action: 'assigned',
+      repository,
+      assignee: { login: 'Noah' },
+      issue: { id: 11, number: 4, title: 'Investigate latency', updated_at: date, labels: [{ name: 'Blocked' }] },
+    },
+  })
+  integrationOutputRegistry.validateFact('github', fact!)
+  // The stored fact keeps GitHub's casing; only the comparison ignores it.
+  expect(fact!.data.labels).toEqual(['Blocked'])
+  for (const [op, value, selected] of [
+    ['not-contains', 'blocked', undefined],
+    ['not-contains', 'BLOCKED', undefined],
+    ['contains', 'blocked', 'labels'],
+    ['contains', 'Blocked', 'labels'],
+    ['not-contains', 'bug', 'labels'],
+  ] as const) {
+    const metadata = {
+      integrationRules: {
+        github: [
+          squadEventRuleSchema.parse({
+            id: 'labels',
+            source: { integration: 'github', output: 'issue.assigned', version: 1 },
+            filters: { audience: 'any' },
+            predicates: [{ field: 'labels', op, value }],
+            action: { type: 'start-workstream' },
+          }),
+        ],
+      },
+    }
+    expect(selectSquadEventRule(metadata, 'github', fact!, 'bot')?.id).toBe(selected)
+    expect(previewSquadEventRules(metadata, 'github', fact!, 'bot').selectedRuleId).toBe(selected ?? null)
+  }
+})
+
 test('PR snapshots preserve provider aggregate merge state, not individual CI success', () => {
   const [fact] = githubOutputAdapter.normalize({
     type: 'pull_request',

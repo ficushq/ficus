@@ -109,6 +109,37 @@ test('other updates report which field changed', () => {
   expect(fact.subject).toBe('Linear issue updated: ENG-123 Fix bug')
 })
 
+test('Linear label conditions match regardless of the casing on the issue or in the saved rule', async () => {
+  const { previewSquadEventRules, selectSquadEventRule, squadEventRuleSchema } = await import('@ficus/shared')
+  const fact = only(issueEvent({ labelIds: [] }, { labels: [{ id: 'label-uuid', name: 'Blocked' }] }))
+  expect(fact.output).toBe('issue.updated')
+  // The stored fact keeps Linear's casing; only the comparison ignores it.
+  expect(fact.data.labels).toEqual(['Blocked'])
+  for (const [op, value, selected] of [
+    ['not-contains', 'blocked', undefined],
+    ['not-contains', 'BLOCKED', undefined],
+    ['contains', 'blocked', 'labels'],
+    ['contains', 'Blocked', 'labels'],
+    ['not-contains', 'bug', 'labels'],
+  ] as const) {
+    const metadata = {
+      integrationRules: {
+        linear: [
+          squadEventRuleSchema.parse({
+            id: 'labels',
+            source: { integration: 'linear', output: 'issue.updated', version: 1 },
+            filters: { audience: 'any' },
+            predicates: [{ field: 'labels', op, value }],
+            action: { type: 'notify-manager' },
+          }),
+        ],
+      },
+    }
+    expect(selectSquadEventRule(metadata, 'linear', fact, '')?.id).toBe(selected)
+    expect(previewSquadEventRules(metadata, 'linear', fact, '').selectedRuleId).toBe(selected ?? null)
+  }
+})
+
 test('comments become issue facts keyed by the issue', () => {
   const fact = only(commentEvent())
   expect(fact.output).toBe('issue.comment')
