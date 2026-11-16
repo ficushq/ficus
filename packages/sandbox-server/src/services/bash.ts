@@ -18,6 +18,8 @@ import vmDevboxRouting from './devbox-routing.sh' with { type: 'text' }
 import { buildSandboxChildEnv } from './env'
 import { readExecutorCommandIdentity } from './command-identity'
 import { waitForDockerReady } from '../docker'
+import { checkDevServerPort, DEV_SERVER_PORT_HELD_EXIT_CODE, devServerPort } from './dev-server-guard'
+import { workloadKillMessage, type WorkloadCgroups } from './workload-cgroup'
 import {
   processSessionDriver,
   terminateOwnedSession,
@@ -186,6 +188,20 @@ export interface BashAdmissionDependencies {
   processDriver: ProcessSessionDriver
   admissionTimeoutMs: number
   waitForAdmissionPoll(): Promise<void>
+  /** Move the stopped process into its workload cgroup before it runs (workload-cgroup.ts). */
+  placeWorkload?(pid: number): Promise<unknown>
+}
+
+/** The exit status reported for a command whose processes were killed for memory (128 + SIGKILL). */
+export const MEMORY_KILL_EXIT_CODE = 137
+
+let activeWorkloadCgroups: WorkloadCgroups | null = null
+/** Installed once at server start when the unit delegates workload cgroups. */
+export function setWorkloadCgroups(workloads: WorkloadCgroups | null): void {
+  activeWorkloadCgroups = workloads
+}
+export function getWorkloadCgroups(): WorkloadCgroups | null {
+  return activeWorkloadCgroups
 }
 
 interface BashDependencies extends BashAdmissionDependencies {
@@ -195,6 +211,13 @@ interface BashDependencies extends BashAdmissionDependencies {
   onSpawnDecision?: (decision: 'cancelled' | 'spawn') => void
   /** Release the server request reservation once registry ownership or no-spawn cleanup is proven. */
   onAdmissionFenced?: () => void
+  workloads(): WorkloadCgroups | null
+  /**
+   * A refusal message when the command would start a second dev server on a
+   * held port. Synchronously undefined for every other command, so admission
+   * stays synchronous for them.
+   */
+  checkDevServerPort(command: string): Promise<string | undefined> | undefined
 }
 
 const defaultBashDependencies: BashDependencies = {
@@ -203,6 +226,8 @@ const defaultBashDependencies: BashDependencies = {
   admissionTimeoutMs: 5_000,
   waitForAdmissionPoll: () => new Promise((resolve) => setTimeout(resolve, 10)),
   spawn,
+  workloads: () => activeWorkloadCgroups,
+  checkDevServerPort: (command) => (devServerPort(command) === undefined ? undefined : checkDevServerPort(command)),
   scheduleTimeout(callback, delayMs) {
     const timer = setTimeout(callback, delayMs)
     return () => clearTimeout(timer)
@@ -284,6 +309,8 @@ export async function admitStoppedProcess(
           sid: observed.sid,
           startToken: observed.startToken,
         })
+        // Still stopped: nothing it starts can be left behind in the server's cgroup.
+        await dependencies.placeWorkload?.(observed.pid)
         const confirmed = await dependencies.processDriver.readIdentity(observed.pid)
         if (!stoppedIdentityMatches(confirmed, observed)) {
           throw new BashAdmissionError('spawned bash identity changed before CONT', observed)
@@ -434,7 +461,18 @@ export function handleBash(
           done()
           return
         }
+        // A second copy of a dev server on a port this box already holds is
+        // refused before anything spawns (dev-server-guard.ts).
+        const portCheck = dependencies.checkDevServerPort(req.command)
+        const refusal = portCheck ? await portCheck.catch(() => undefined) : undefined
+        if (refusal) {
+          settleAdmissionFence()
+          send({ error: refusal, exitCode: DEV_SERVER_PORT_HELD_EXIT_CODE })
+          done()
+          return
+        }
         admitting = true
+        const workloads = dependencies.workloads()
 
         let proc: ChildProcess
         let lease: BashInvocationLease | undefined
@@ -485,7 +523,10 @@ export function handleBash(
             send({ stderr: chunk.toString('base64') })
           })
           exited = new Promise((resolve) => proc.once('close', resolve))
-          initialized = admitStoppedProcess(proc, lease, dependencies, exited).then((identity) => {
+          const admission = workloads
+            ? { ...dependencies, placeWorkload: (pid: number) => workloads.place(pid, invocationId, req.command) }
+            : dependencies
+          initialized = admitStoppedProcess(proc, lease, admission, exited).then(async (identity) => {
             admitted = true
             send({
               invocation: {
@@ -498,6 +539,10 @@ export function handleBash(
                 startedAt: new Date().toISOString(),
               },
             })
+            // Earlier commands' background processes killed for memory since
+            // the last command: say so before this command's own output.
+            const notices = (await workloads?.takeNotices().catch(() => [])) ?? []
+            for (const notice of notices) send({ stderr: Buffer.from(`${notice}\n`).toString('base64') })
           })
           await initialized
         } catch (error) {
@@ -556,14 +601,19 @@ export function handleBash(
           }, timeoutSeconds * 1000)
         }
 
-        void processExited.then((code) => {
+        void processExited.then(async (code) => {
           cancelTimer?.()
           refreshDevboxShellEnvIfDirty()
+          // Always taken (it also hands later kills of this leaf to the notices);
+          // only a failed command is explained by it.
+          const kills = await workloads?.takeInvocationKills(invocationId).catch(() => undefined)
+          const killMessage = code !== 0 && kills ? workloadKillMessage(kills) : undefined
           if (!terminating) {
             void initialized
               .then(() => lease!.complete(code === 0 ? 'success' : 'failed'))
               .then(() => {
-                send({ exitCode: code ?? 1 })
+                if (killMessage) send({ error: killMessage, exitCode: MEMORY_KILL_EXIT_CODE })
+                else send({ exitCode: code ?? 1 })
                 done()
               })
               .catch((error) => {

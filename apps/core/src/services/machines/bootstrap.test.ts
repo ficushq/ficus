@@ -1013,6 +1013,215 @@ describe('bootstrap.sh skips redundant apt work on re-run (stubbed host)', () =>
   })
 })
 
+describe('bootstrap.sh host memory protection (stubbed host)', () => {
+  const GIB_KB = 1024 * 1024
+
+  // A host whose swap, disk, apt and systemd are stubs recording their calls.
+  // swapon lists the paths in $HOST_ROOT/swaps and activates by appending.
+  function makeHost(opts: { memGib?: number; freeMb?: number; swaps?: string[]; oomd?: boolean } = {}) {
+    const root = mkdtempSync(join(tmpdir(), 'ficus-memory-host-'))
+    const bin = join(root, 'stubbin')
+    mkdirSync(bin, { recursive: true })
+    mkdirSync(join(root, 'proc'), { recursive: true })
+    mkdirSync(join(root, 'etc'), { recursive: true })
+    writeFileSync(
+      join(root, 'proc/meminfo'),
+      `MemTotal:       ${(opts.memGib ?? 8) * GIB_KB} kB\nSwapTotal:       0 kB\n`
+    )
+    writeFileSync(join(root, 'etc/fstab'), 'LABEL=cloudimg-rootfs / ext4 defaults 0 1\n')
+    writeFileSync(join(root, 'swaps'), (opts.swaps ?? []).map((path) => `${path}\n`).join(''))
+    if (opts.oomd) {
+      mkdirSync(join(root, 'usr/lib/systemd'), { recursive: true })
+      writeFileSync(join(root, 'usr/lib/systemd/systemd-oomd'), '', { mode: 0o755 })
+    }
+    const stub = (name: string, body: string) =>
+      writeFileSync(join(bin, name), `#!/bin/bash\necho "${name} $*" >> "$HOST_ROOT/calls"\n${body}\n`, { mode: 0o755 })
+    stub('swapon', '[ "$1" = --show=NAME ] && { cat "$HOST_ROOT/swaps"; exit 0; }; echo "$1" >> "$HOST_ROOT/swaps"')
+    stub('mkswap', 'true')
+    stub('fallocate', 'touch "${@: -1}"')
+    stub('df', `printf 'Avail\\n%s\\n' "${opts.freeMb ?? 100_000}"`)
+    stub('apt-get', 'true')
+    stub('systemctl', 'true')
+    return root
+  }
+
+  async function run(root: string, fn: string) {
+    const r = await runHostFixture(
+      ['bash', '-c', `set -eo pipefail; source "${join(repoRoot, 'scripts/machine/bootstrap.sh')}"; SUDO=(env); ${fn}`],
+      { HOST_ROOT: root, FICUS_HOST_ROOT: root, PATH: `${join(root, 'stubbin')}:${process.env.PATH}` },
+      5_000
+    )
+    const callsPath = join(root, 'calls')
+    const calls = existsSync(callsPath) ? readFileSync(callsPath, 'utf8').split('\n').filter(Boolean) : []
+    return { ...r, calls }
+  }
+  const fstabSwapLines = (root: string) =>
+    readFileSync(join(root, 'etc/fstab'), 'utf8')
+      .split('\n')
+      .filter((line) => line.includes(' swap '))
+
+  it('creates, activates and persists a swapfile of 25% of RAM on a fresh 8 GiB host', async () => {
+    const root = makeHost()
+    try {
+      const r = await run(root, 'ensure_machine_swap')
+      expect(r.exitCode).toBe(0)
+      expect(r.calls.filter((c) => c.startsWith('fallocate '))).toEqual([
+        expect.stringMatching(new RegExp(`^fallocate -l 2048M ${root}/swapfile\\.ficus-new\\.\\d+$`)),
+      ])
+      expect(r.calls.some((c) => c.startsWith('mkswap '))).toBe(true)
+      expect(r.calls).toContain(`swapon ${root}/swapfile`)
+      expect(existsSync(join(root, 'swapfile'))).toBe(true)
+      expect(statSync(join(root, 'swapfile')).mode & 0o777).toBe(0o600)
+      expect(fstabSwapLines(root)).toEqual(['/swapfile none swap sw 0 0'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('re-running on a converged host changes nothing', async () => {
+    const root = makeHost()
+    try {
+      expect((await run(root, 'ensure_machine_swap')).exitCode).toBe(0)
+      rmSync(join(root, 'calls'))
+      const again = await run(root, 'ensure_machine_swap')
+      expect(again.exitCode).toBe(0)
+      expect(again.calls.filter((c) => !c.startsWith('swapon --show'))).toEqual([])
+      expect(fstabSwapLines(root)).toEqual(['/swapfile none swap sw 0 0'])
+      expect(again.stderr).toContain('swap: managed /swapfile is active')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('re-activates an existing inactive swapfile after a reboot without re-creating it', async () => {
+    const root = makeHost()
+    try {
+      writeFileSync(join(root, 'swapfile'), 'existing')
+      const r = await run(root, 'ensure_machine_swap')
+      expect(r.exitCode).toBe(0)
+      expect(r.calls.filter((c) => /^(fallocate|mkswap|dd) /.test(c))).toEqual([])
+      expect(r.calls).toContain(`swapon ${root}/swapfile`)
+      expect(readFileSync(join(root, 'swapfile'), 'utf8')).toBe('existing')
+      expect(fstabSwapLines(root)).toEqual(['/swapfile none swap sw 0 0'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a host that already has another swap device alone', async () => {
+    const root = makeHost({ swaps: ['/dev/zram0'] })
+    try {
+      const r = await run(root, 'ensure_machine_swap')
+      expect(r.exitCode).toBe(0)
+      expect(r.calls.filter((c) => !c.startsWith('swapon --show'))).toEqual([])
+      expect(fstabSwapLines(root)).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not take disk the boxes need: refuses when less than the size plus 5 GiB is free', async () => {
+    const root = makeHost({ freeMb: 2048 + 5120 - 1 })
+    try {
+      const r = await run(root, 'ensure_machine_swap')
+      expect(r.exitCode).toBe(1)
+      expect(r.stderr).toContain('not creating a 2048 MiB swapfile')
+      expect(existsSync(join(root, 'swapfile'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    [2, 1024],
+    [4, 1024],
+    [16, 4096],
+    [64, 4096],
+  ])('sizes swap for a %i GiB host at %i MiB', async (memGib, mb) => {
+    const root = makeHost({ memGib })
+    try {
+      expect((await run(root, 'machine_swap_mb')).stdout).toBe(String(mb))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('installs systemd-oomd when missing, sets the 20s pressure window and starts it', async () => {
+    const root = makeHost()
+    try {
+      const r = await run(root, 'ensure_oomd')
+      expect(r.exitCode).toBe(0)
+      expect(r.calls).toEqual([
+        'systemctl daemon-reload',
+        'apt-get -o DPkg::Lock::Timeout=600 update -y',
+        'apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends systemd-oomd',
+        'systemctl enable systemd-oomd.service',
+        'systemctl restart systemd-oomd.service',
+      ])
+      expect(readFileSync(join(root, 'etc/systemd/oomd.conf.d/50-ficus.conf'), 'utf8')).toBe(
+        '# Ficus machine host: see docs/wiki/machines/memory-model.md\n[OOM]\nDefaultMemoryPressureDurationSec=20s\n'
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  // The package's own defaults could pick a box's sandbox server or user
+  // manager: same-named /etc files replace them before the package installs.
+  it('replaces the package default policies before installing it', async () => {
+    const root = makeHost()
+    try {
+      expect((await run(root, 'ensure_oomd')).exitCode).toBe(0)
+      expect(readFileSync(join(root, 'etc/systemd/system/-.slice.d/10-oomd-root-slice-defaults.conf'), 'utf8')).toBe(
+        '# Ficus machine host: replaces the systemd-oomd package default (docs/wiki/machines/memory-model.md)\n' +
+          '[Slice]\nManagedOOMSwap=auto\n'
+      )
+      expect(
+        readFileSync(join(root, 'etc/systemd/system/user@.service.d/10-oomd-user-service-defaults.conf'), 'utf8')
+      ).toBe(
+        '# Ficus machine host: replaces the systemd-oomd package default (docs/wiki/machines/memory-model.md)\n' +
+          '[Service]\nManagedOOMMemoryPressure=auto\n'
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('a converged oomd host only makes sure it runs (no reload, no apt, no restart)', async () => {
+    const root = makeHost({ oomd: true })
+    try {
+      expect((await run(root, 'ensure_oomd')).exitCode).toBe(0)
+      rmSync(join(root, 'calls'))
+      const again = await run(root, 'ensure_oomd')
+      expect(again.calls).toEqual(['systemctl enable systemd-oomd.service', 'systemctl start systemd-oomd.service'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('clears failed per-user manager units', async () => {
+    const root = makeHost()
+    try {
+      const r = await run(root, 'reset_failed_user_managers')
+      expect(r.calls).toEqual(['systemctl reset-failed user@*.service user-runtime-dir@*.service'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('main runs all three on every bootstrap, prebaked or not, and none can fail it', () => {
+    const main = bootstrapSh.slice(
+      bootstrapSh.indexOf('\nmain() {'),
+      bootstrapSh.indexOf('\n}\n', bootstrapSh.indexOf('\nmain() {'))
+    )
+    const afterManifest = main.slice(main.indexOf('  write_manifest'))
+    expect(afterManifest).toContain('ensure_machine_swap ||')
+    expect(afterManifest).toContain('ensure_oomd ||')
+    expect(afterManifest).toContain('reset_failed_user_managers')
+    expect(main.indexOf('  write_manifest')).toBeGreaterThan(main.indexOf('install_browser || true'))
+  })
+})
+
 describe('bootstrap.sh prebaked-image decision (--print-prebaked-decision dry run)', () => {
   const bootstrapPath = join(repoRoot, 'scripts/machine/bootstrap.sh')
 
@@ -2391,8 +2600,22 @@ describe('box-provision.sh per-box slice limits (--print-slice-limits dry run)',
   const boxProvisionPath = join(repoRoot, 'scripts/machine/box-provision.sh')
 
   async function printSliceLimits(memtotalKb: string, nproc = '4'): Promise<{ stdout: string; exitCode: number }> {
+    // Box count and swap are pinned so the dry run never reads this host's
+    // accounts or /proc/meminfo swap.
     const proc = Bun.spawn(
-      ['bash', boxProvisionPath, '--print-slice-limits', '--memtotal-kb', memtotalKb, '--nproc', nproc],
+      [
+        'bash',
+        boxProvisionPath,
+        '--print-slice-limits',
+        '--memtotal-kb',
+        memtotalKb,
+        '--swaptotal-kb',
+        '2097152',
+        '--box-count',
+        '20',
+        '--nproc',
+        nproc,
+      ],
       {
         stdin: 'ignore',
         stdout: 'pipe',
@@ -2403,13 +2626,18 @@ describe('box-provision.sh per-box slice limits (--print-slice-limits dry run)',
     return { stdout: stdout.trim(), exitCode }
   }
 
-  it('scales MemoryHigh (35%) and MemoryMax (50%) from host RAM in bytes and bounds tasks', async () => {
-    // An 8GB DigitalOcean host reports MemTotal ≈ 8131584 kB.
+  it('scales the floor and caps with host RAM (docs/wiki/machines/memory-model.md) and bounds tasks', async () => {
+    // An 8GB DigitalOcean host reports MemTotal ≈ 8131584 kB: reserve 10%,
+    // MemoryMax 40%, MemoryHigh the 2.5 GiB floor (above 30%), and each of 20
+    // boxes a floor of 40% of the box budget / 20 (below the 256 MiB cap).
     const { stdout, exitCode } = await printSliceLimits('8131584')
     expect(exitCode).toBe(0)
+    const reserveKb = Math.floor((8131584 * 10) / 100)
     expect(stdout.split('\n')).toEqual([
-      `MemoryHigh=${Math.floor((8131584 * 35) / 100) * 1024}`,
-      `MemoryMax=${Math.floor((8131584 * 50) / 100) * 1024}`,
+      `MemoryLow=${Math.floor(Math.floor(((8131584 - reserveKb) * 40) / 100) / 20) * 1024}`,
+      `MemoryHigh=${2560 * 1024 * 1024}`,
+      `MemoryMax=${Math.floor((8131584 * 40) / 100) * 1024}`,
+      `MemorySwapMax=${Math.floor((2097152 * 25) / 100) * 1024}`,
       'TasksMax=8192',
       'CPUQuota=200%',
     ])
@@ -2501,7 +2729,10 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         'EnvironmentFile=-/home/box_abc123abc123/.ficus/server.env',
         'ExecStartPre=-/bin/bash /opt/ficus/bin/box-provision.sh --unix-user box_abc123abc123 --prepare-nix-cache',
         'ExecStart=/opt/ficus/bin/bun /opt/ficus/server/server.js --service-cgroup',
-        'Delegate=no',
+        'Delegate=yes',
+        'DelegateSubgroup=supervisor',
+        'ManagedOOMMemoryPressure=kill',
+        'ManagedOOMMemoryPressureLimit=50%',
         'ExitType=main',
         'KillMode=control-group',
         'Restart=on-failure',
@@ -2573,7 +2804,10 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         'EnvironmentFile=-%h/.ficus/server.env',
         'ExecStartPre=-/bin/bash /opt/ficus/bin/box-provision.sh --unix-user box_abc123abc123 --prepare-nix-cache',
         'ExecStart=/opt/ficus/bin/bun /opt/ficus/server/server.js --service-cgroup',
-        'Delegate=no',
+        'Delegate=yes',
+        'DelegateSubgroup=supervisor',
+        'ManagedOOMMemoryPressure=kill',
+        'ManagedOOMMemoryPressureLimit=50%',
         'ExitType=main',
         'KillMode=control-group',
         'Restart=on-failure',
@@ -2692,7 +2926,11 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
       // that host.env/server.env content could replace.
       expect(service).not.toContain('EXECUTOR_SERVICE_CGROUP')
       // The pinned #1363 lifecycle lines stay byte-identical alongside it.
-      expect(service).toContain('Delegate=no')
+      // Delegated so commands run in workload cgroups systemd-oomd may kill,
+      // never the server's own supervisor subgroup (workload-cgroup.ts).
+      expect(service).toContain('Delegate=yes')
+      expect(service).toContain('DelegateSubgroup=supervisor')
+      expect(service).toContain('ManagedOOMMemoryPressure=kill')
       expect(service).toContain('ExitType=main')
       expect(service).toContain('KillMode=control-group')
       expect(service).toMatch(/^EnvironmentFile=-.*\.ficus\/host\.env$/m)

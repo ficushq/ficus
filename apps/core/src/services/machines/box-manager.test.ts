@@ -69,7 +69,8 @@ import {
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
 import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
-import { startupRetryCode } from '../execution/startup-retry'
+import { startupRetryCode, startupRetryNotice } from '../execution/startup-retry'
+import { BOX_HOST_MEMORY_PRESSURE_EXIT_CODE, BoxHostMemoryPressureError } from './box-host-memory-pressure'
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -1141,6 +1142,27 @@ describe('ensureBox', () => {
       BUSY_STDERR.replace('TIME-WAIT 0 0 127.0.0.1:51276 127.0.0.1:50080', '<none>')
     )) as BoxPortBusyError
     expect(busy.summary).toContain('Failed to create listening socket (127.0.0.1:51276): Address already in use')
+  })
+
+  // Exit 69: systemd could not reload the box limits while the host was under
+  // memory pressure. A named, retryable wait, never a containment failure.
+  const PRESSURE_STDERR = [
+    'box-provision.sh: FICUS_HOST_MEMORY_PRESSURE box=box_test some avg10=97.10 full avg10=95.03',
+    'box-provision.sh: host memory pressure: systemctl daemon-reload did not finish within 20s while installing the limits for box_test; this is transient, retry once the host recovers',
+  ].join('\n')
+
+  it('installBoxOnMachine turns the host-pressure exit into a retryable BoxHostMemoryPressureError', async () => {
+    const error = await provisionWith(BOX_HOST_MEMORY_PRESSURE_EXIT_CODE, PRESSURE_STDERR)
+    expect(error).toBeInstanceOf(BoxHostMemoryPressureError)
+    expect((error as Error).message).toContain('delayed by host memory pressure (will retry)')
+    expect((error as Error).message).not.toContain('Docker containment failed')
+    expect((error as BoxHostMemoryPressureError).summary).toBe(
+      `memory pressure some avg10=97.10 full avg10=95.03 on ${makeMachine().name}`
+    )
+    expect(startupRetryCode(new Error('ensure failed', { cause: error }))).toBe('box_host_memory_pressure')
+    expect(startupRetryNotice(error)).toBe(
+      `The sandbox machine is under heavy memory pressure (memory pressure some avg10=97.10 full avg10=95.03 on ${makeMachine().name}), so the sandbox could not be set up yet; this will retry automatically.`
+    )
   })
 
   it.each([1, 2, 3])('installBoxOnMachine keeps exit %d a plain (terminal) error', async (exitCode) => {

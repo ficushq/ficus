@@ -16,6 +16,14 @@ export const MACHINE_STARTUP_RETRY_DELAYS_MS = [10_000, 20_000, 30_000, 60_000, 
  */
 export const BOX_PORT_BUSY_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 160_000] as const
 
+/**
+ * A machine host under memory pressure (BoxHostMemoryPressureError). The host's
+ * memory floors, swap and systemd-oomd need tens of seconds to relieve it, and
+ * a human may need to act, so the schedule is longer (~15 minutes) than for a
+ * busy port.
+ */
+export const BOX_HOST_MEMORY_PRESSURE_RETRY_DELAYS_MS = [30_000, 60_000, 120_000, 240_000, 480_000] as const
+
 /** Align the three stop-proof retries with physical-generation cooldowns so
  * each retry can make a new authoritative verification attempt. */
 export const STOP_VERIFICATION_STARTUP_RETRY_DELAYS_MS = [30_000, 60_000, 120_000] as const
@@ -24,6 +32,8 @@ export const STOP_VERIFICATION_STARTUP_RETRY_DELAYS_MS = [30_000, 60_000, 120_00
 export const BOX_PORT_BUSY_RETRY_CODE = 'box_port_busy'
 /** Host lock contention shares the existing bounded provisioning retry budget. */
 export const BOX_LOCK_TIMEOUT_RETRY_CODE = 'box_lock_timeout'
+/** The startup retry code for a machine host under memory pressure. */
+export const BOX_HOST_MEMORY_PRESSURE_RETRY_CODE = 'box_host_memory_pressure'
 
 /**
  * A shared VM provisioning failure replayed while the provisioner's own backoff
@@ -50,6 +60,7 @@ const MACHINE_READINESS_ERRORS = new Set(['MachineUnavailableError', 'MachineNot
 export function startupRetryDelays(code: string): readonly number[] {
   if (code === 'box_stop_unverified') return STOP_VERIFICATION_STARTUP_RETRY_DELAYS_MS
   if (code === BOX_PORT_BUSY_RETRY_CODE || code === BOX_LOCK_TIMEOUT_RETRY_CODE) return BOX_PORT_BUSY_RETRY_DELAYS_MS
+  if (code === BOX_HOST_MEMORY_PRESSURE_RETRY_CODE) return BOX_HOST_MEMORY_PRESSURE_RETRY_DELAYS_MS
   if (code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE) return SANDBOX_PROVISION_BACKOFF_RETRY_SLOTS
   return code.startsWith('machine_') ? MACHINE_STARTUP_RETRY_DELAYS_MS : STARTUP_RETRY_DELAYS_MS
 }
@@ -82,7 +93,8 @@ const DATABASE_CONNECTION_ERRORS = new Set([
  * Why a startup failure is worth retrying, or null. Drizzle and admission effects can wrap the
  * original error, so the cause chain is walked. A machine that isn't ready yet yields
  * `machine_<status>`; port and host-lock contention yield `box_port_busy` and
- * `box_lock_timeout` (matched by name to avoid importing the machine modules here).
+ * `box_lock_timeout`, and host memory pressure `box_host_memory_pressure`
+ * (matched by name to avoid importing the machine modules here).
  * Any other box provisioning failure is not retried.
  */
 export function startupRetryCode(error: unknown): string | null {
@@ -119,6 +131,7 @@ export function startupRetryCode(error: unknown): string | null {
     if (error.name === 'BoxPortBusyError') return BOX_PORT_BUSY_RETRY_CODE
     if (error.name === 'BoxStopUnverifiedError') return 'box_stop_unverified'
     if (error.name === 'BoxLockTimeoutError') return BOX_LOCK_TIMEOUT_RETRY_CODE
+    if (error.name === 'BoxHostMemoryPressureError') return BOX_HOST_MEMORY_PRESSURE_RETRY_CODE
     error = error.cause
   }
   return setupFallback
@@ -177,6 +190,12 @@ export function startupRetryNotice(error: unknown): string {
   }
   if (code === BOX_LOCK_TIMEOUT_RETRY_CODE) {
     return 'The sandbox provisioning lock is busy; this will retry automatically.'
+  }
+  if (code === BOX_HOST_MEMORY_PRESSURE_RETRY_CODE) {
+    const summary = (findInCauseChain(error, 'BoxHostMemoryPressureError') as (Error & { summary?: unknown }) | null)
+      ?.summary
+    const reason = typeof summary === 'string' ? ` (${summary})` : ''
+    return `The sandbox machine is under heavy memory pressure${reason}, so the sandbox could not be set up yet; this will retry automatically.`
   }
   if (code === 'machine_capacity') {
     return 'The sandbox is waiting for host capacity or another sandbox startup to finish; this will retry with bounded backoff for up to 30 minutes.'

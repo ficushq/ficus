@@ -13,7 +13,11 @@ import {
   buildPreamble,
   MAX_BASH_TIMEOUT_SECONDS,
   normalizeBashTimeoutSeconds,
+  MEMORY_KILL_EXIT_CODE,
 } from './bash'
+import { DEV_SERVER_PORT_HELD_EXIT_CODE } from './dev-server-guard'
+import { WorkloadCgroups } from './workload-cgroup'
+import { fakeCgroupBackend } from '../test-fixtures/fake-cgroup'
 import {
   BashInvocationRegistry,
   type BashInvocationLease,
@@ -1039,4 +1043,105 @@ it('k8s and VM agent/squad preambles put executable wrappers after devbox activa
     if (oldWorkspace === undefined) delete process.env.WORKSPACE_PATH
     else process.env.WORKSPACE_PATH = oldWorkspace
   }
+})
+
+describe('handleBash memory protection', () => {
+  const UNIT = '/user.slice/user-1001.slice/user@1001.service/app.slice/ficus-sandbox-server.service'
+
+  async function workloadsIn(root: string): Promise<WorkloadCgroups> {
+    const backend = fakeCgroupBackend(root, `${UNIT}/supervisor`)
+    return (await WorkloadCgroups.initialize({ backend, platform: 'linux', log: () => {} }))!
+  }
+
+  it('runs each command in its own workload leaf before it starts', async () => {
+    const workloads = await workloadsIn(testDir)
+    const resp = handleBash(
+      { command: 'echo placed', invocationId: 'placed-1', cwd: testDir, sourceEnv: false, activateDevbox: false },
+      undefined,
+      { workloads: () => workloads }
+    )
+    const events = await consumeSSE(resp)
+    const started = events.find((event) => event.invocation)
+    expect(collectOutput(events)).toMatchObject({ stdout: 'placed\n', exitCode: 0 })
+    expect(readFileSync(join(workloads.workloadDir, 'inv-placed-1', 'cgroup.procs'), 'utf8')).toBe(
+      String(started.invocation.pid)
+    )
+  })
+
+  it('names a systemd-oomd kill of the command as its terminal error', async () => {
+    const workloads = await workloadsIn(testDir)
+    const leaf = join(workloads.workloadDir, 'inv-oomd-1')
+    // What systemd-oomd does: count the kill on the leaf, SIGKILL everything in it.
+    const resp = handleBash(
+      {
+        command: `printf 1 > '${leaf}/xattr.user.oomd_ooms'; kill -KILL $$`,
+        invocationId: 'oomd-1',
+        cwd: testDir,
+        sourceEnv: false,
+        activateDevbox: false,
+      },
+      undefined,
+      { workloads: () => workloads }
+    )
+    const { exitCode, errors } = collectOutput(await consumeSSE(resp))
+    expect(exitCode).toBe(MEMORY_KILL_EXIT_CODE)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toStartWith('Killed by systemd-oomd: this box was under sustained memory pressure')
+  })
+
+  it('a plain failure is not blamed on memory', async () => {
+    const workloads = await workloadsIn(testDir)
+    const resp = handleBash(
+      { command: 'exit 3', invocationId: 'plain-1', cwd: testDir, sourceEnv: false, activateDevbox: false },
+      undefined,
+      { workloads: () => workloads }
+    )
+    expect(collectOutput(await consumeSSE(resp))).toMatchObject({ exitCode: 3, errors: [] })
+  })
+
+  it('tells the next command when an earlier background command was killed', async () => {
+    const workloads = await workloadsIn(testDir)
+    const first = handleBash(
+      { command: 'true', invocationId: 'bg-1', cwd: testDir, sourceEnv: false, activateDevbox: false },
+      undefined,
+      { workloads: () => workloads }
+    )
+    await consumeSSE(first)
+    writeFileSync(join(workloads.workloadDir, 'inv-bg-1', 'xattr.user.oomd_ooms'), '1')
+    writeFileSync(join(workloads.workloadDir, 'inv-bg-1', 'cgroup.events'), 'populated 0\n')
+    const next = handleBash(
+      { command: 'echo next', invocationId: 'bg-2', cwd: testDir, sourceEnv: false, activateDevbox: false },
+      undefined,
+      { workloads: () => workloads }
+    )
+    const { stdout, stderr, exitCode } = collectOutput(await consumeSSE(next))
+    expect(exitCode).toBe(0)
+    expect(stdout).toBe('next\n')
+    expect(stderr).toBe(
+      '[ficus] systemd-oomd killed the processes started by an earlier command in this box (`true`) because the box ' +
+        'was under sustained memory pressure. Restart it only if you still need it.\n'
+    )
+  })
+
+  it('refuses a second dev server on a held port without spawning', async () => {
+    const spawnMock = mock(() => {
+      throw new Error('spawn must not run')
+    })
+    const fenced = mock(() => {})
+    const resp = handleBash(
+      { command: 'next dev --port 34562', cwd: testDir, sourceEnv: false, activateDevbox: false },
+      undefined,
+      {
+        spawn: spawnMock,
+        onAdmissionFenced: fenced,
+        checkDevServerPort: async () => 'Refusing to start a dev server on port 34562: held by process 4321',
+      }
+    )
+    expect(collectOutput(await consumeSSE(resp))).toMatchObject({
+      exitCode: DEV_SERVER_PORT_HELD_EXIT_CODE,
+      errors: ['Refusing to start a dev server on port 34562: held by process 4321'],
+    })
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(fenced).toHaveBeenCalledTimes(1)
+  })
 })

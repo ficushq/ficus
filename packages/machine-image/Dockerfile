@@ -37,7 +37,9 @@ USER root
 # Same list, same --no-install-recommends. Most are already in exeuntu; the
 # rootless-docker prereqs (uidmap, slirp4netns, fuse-overlayfs) and tmux/gnupg/
 # nftables are the real additions. nftables is baked for the --egress-lockdown
-# path (bootstrap otherwise apt-installs it at apply time).
+# path (bootstrap otherwise apt-installs it at apply time). systemd-oomd is
+# bootstrap.sh's ensure_oomd (the memory-pressure backstop, see
+# docs/wiki/machines/memory-model.md); bootstrap installs it when missing.
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -53,7 +55,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
       dbus-user-session \
       slirp4netns \
       fuse-overlayfs \
-      nftables && \
+      nftables \
+      systemd-oomd && \
     rm -rf /var/lib/apt/lists/*
 
 # --- bootstrap.sh make_dirs (+ box-provision.sh's archive dir) ---------------

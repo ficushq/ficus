@@ -16,6 +16,7 @@ import { AgentType } from '../../entities/AgentType'
 import { Execution } from '../../entities/Execution'
 import * as runners from '../../entities/agent-runners'
 import {
+  BOX_HOST_MEMORY_PRESSURE_RETRY_DELAYS_MS,
   BOX_PORT_BUSY_RETRY_DELAYS_MS,
   MACHINE_STARTUP_RETRY_DELAYS_MS,
   SANDBOX_PROVISION_BACKOFF_RETRY_CODE,
@@ -30,6 +31,7 @@ import {
 import { installBoxOnMachine, boxUnixUser } from '../machines/box-manager'
 import type { Machine } from '../machines/queries'
 import { BoxPortBusyError } from '../machines/box-port-busy'
+import { BoxHostMemoryPressureError } from '../machines/box-host-memory-pressure'
 import { streamManager } from '../streaming/buffer'
 import { MachineUnavailableError, resolvePlacement } from '../machines/placement'
 import { MachineNotReadyError } from '../machines/queries'
@@ -164,6 +166,34 @@ describe('busy box port startup retry classification', () => {
 
   it('keeps a short bounded backoff schedule', () => {
     expect([...BOX_PORT_BUSY_RETRY_DELAYS_MS]).toEqual([10_000, 20_000, 40_000, 80_000, 160_000])
+  })
+})
+
+describe('host memory pressure startup retry classification', () => {
+  const pressure = () =>
+    new BoxHostMemoryPressureError(
+      'squad_x',
+      'mh-test',
+      'box-provision.sh: FICUS_HOST_MEMORY_PRESSURE box=box_test some avg10=97.10 full avg10=95.03'
+    )
+
+  it('waits out host memory pressure, through wrappers, on its own longer schedule', () => {
+    expect(startupRetryCode(new Error('ensure failed', { cause: pressure() }))).toBe('box_host_memory_pressure')
+    expect([...startupRetryDelays('box_host_memory_pressure')]).toEqual([...BOX_HOST_MEMORY_PRESSURE_RETRY_DELAYS_MS])
+    expect([...BOX_HOST_MEMORY_PRESSURE_RETRY_DELAYS_MS]).toEqual([30_000, 60_000, 120_000, 240_000, 480_000])
+  })
+
+  it('names host memory pressure in the stream notice', () => {
+    expect(startupRetryNotice(pressure())).toBe(
+      'The sandbox machine is under heavy memory pressure (memory pressure some avg10=97.10 full avg10=95.03 on mh-test), ' +
+        'so the sandbox could not be set up yet; this will retry automatically.'
+    )
+  })
+
+  it('does not treat a containment failure that mentions memory as pressure', () => {
+    expect(
+      startupRetryCode(new Error('box-provision failed (exit 1): Docker containment failed: memory pressure'))
+    ).toBeNull()
   })
 })
 
@@ -538,6 +568,7 @@ describe('durable startup retry', () => {
   it.each([
     ['BoxPortBusyError', 'box_port_busy'],
     ['BoxLockTimeoutError', 'box_lock_timeout'],
+    ['BoxHostMemoryPressureError', 'box_host_memory_pressure'],
     ['BoxStopUnverifiedError', 'box_stop_unverified'],
     ['MachineUnavailableError', 'machine_unreachable'],
     ['MachineNotReadyError', 'machine_bootstrapping'],

@@ -20,27 +20,92 @@ expect_eq() { # DESCRIPTION ACTUAL EXPECTED
   fi
 }
 
-# The normal provisioner's pure dry run must reserve working-set headroom for
-# database-capable squads without raising their hard memory/CPU/task caps.
-for mem_kb in 1048576 8131584 16375616 67108864; do
+# --- per-box memory model (docs/wiki/machines/memory-model.md) ---------------
+# Caps scale with host size: a percentage on large hosts, most of the host on
+# small ones. reserve R = max(512 MiB, 10%); MemoryMax = min(MemTotal - R,
+# max(40%, 3 GiB)); MemoryHigh = min(MemoryMax - 256 MiB, max(30%, 2.5 GiB)).
+# Every role gets the same caps. Values in KiB, printed in bytes.
+limits_for() { # MEM_KB [ARGS...]
+  local mem_kb=$1
+  shift
+  bash "$TARGET" --print-slice-limits --memtotal-kb "$mem_kb" --swaptotal-kb 0 --box-count 1 --nproc 8 "$@"
+}
+memory_line() { # KEY LIMITS
+  sed -n "s/^$1=//p" <<<"$2"
+}
+GIB=$((1024 * 1024))
+MIB=1024
+#            host   MemoryMax (KiB)                MemoryHigh (KiB)
+for row in \
+  "2  $((1536 * MIB))               $((1280 * MIB))" \
+  "4  $((3 * GIB))                  $((2560 * MIB))" \
+  "8  $((8 * GIB * 40 / 100))       $((2560 * MIB))" \
+  "16 $((16 * GIB * 40 / 100))      $((16 * GIB * 30 / 100))" \
+  "32 $((32 * GIB * 40 / 100))      $((32 * GIB * 30 / 100))"; do
+  read -r gib max_kb high_kb <<<"$row"
   for role in squad_test agent_test system_manager_test legacy; do
     for docker in false true; do
-      args=(--print-slice-limits --memtotal-kb "$mem_kb" --nproc 8 --sandbox-id "$role" --unit-mode user)
-      high_pct=35
-      if [ "$docker" = true ]; then
-        args+=(--with-docker)
-        [ "$role" != squad_test ] || high_pct=45
-      fi
-      expect_eq "slice limits: ${mem_kb} kB ${role} docker=${docker}" \
-        "$(bash "$TARGET" "${args[@]}")" \
-        "$(printf 'MemoryHigh=%s\nMemoryMax=%s\nTasksMax=8192\nCPUQuota=400%%' \
-          "$((mem_kb * high_pct / 100 * 1024))" "$((mem_kb * 50 / 100 * 1024))")"
+      args=(--sandbox-id "$role" --unit-mode user)
+      [ "$docker" = false ] || args+=(--with-docker)
+      limits="$(limits_for "$((gib * GIB))" "${args[@]}")"
+      expect_eq "caps: ${gib} GiB host ${role} docker=${docker}: MemoryMax" \
+        "$(memory_line MemoryMax "$limits")" "$((max_kb * 1024))"
+      expect_eq "caps: ${gib} GiB host ${role} docker=${docker}: MemoryHigh" \
+        "$(memory_line MemoryHigh "$limits")" "$((high_kb * 1024))"
     done
   done
 done
-expect_eq 'slice limits: missing role keeps conservative default even with Docker' \
-  "$(bash "$TARGET" --print-slice-limits --memtotal-kb 1048576 --nproc 1 --with-docker)" \
-  $'MemoryHigh=375809024\nMemoryMax=536870912\nTasksMax=8192\nCPUQuota=100%'
+# The amendment's worked examples, in GiB (two decimals).
+for row in '2 1.50 1.25' '4 3.00 2.50' '8 3.20 2.50' '16 6.40 4.80' '32 12.80 9.60'; do
+  read -r gib max high <<<"$row"
+  limits="$(limits_for "$((gib * GIB))" --sandbox-id squad_test --with-docker)"
+  expect_eq "caps: ${gib} GiB host in GiB" \
+    "$(awk -v m="$(memory_line MemoryMax "$limits")" -v h="$(memory_line MemoryHigh "$limits")" \
+      'BEGIN { printf "%.2f %.2f", m / 1073741824, h / 1073741824 }')" "${max} ${high}"
+done
+expect_eq 'slice limits: the full drop-in for one 16 GiB host box with 4 GiB of swap' \
+  "$(bash "$TARGET" --print-slice-limits --memtotal-kb $((16 * GIB)) --swaptotal-kb $((4 * GIB)) --box-count 1 --nproc 1)" \
+  "$(printf 'MemoryLow=%s\nMemoryHigh=%s\nMemoryMax=%s\nMemorySwapMax=%s\nTasksMax=8192\nCPUQuota=100%%' \
+    $((256 * MIB * 1024)) $((16 * GIB * 30 / 100 * 1024)) $((16 * GIB * 40 / 100 * 1024)) $((GIB * 1024)))"
+
+# Protection floor: 256 MiB per box until the boxes would together claim more
+# than 40% of the box budget (MemTotal - reserve), then an equal share of it.
+# 57 boxes x 256 MiB = 14.6 GB was already too much for the 16 GB incident host.
+budget_kb=$((16 * GIB - 16 * GIB * 10 / 100))
+for row in "1 $((256 * MIB))" "23 $((256 * MIB))" "24 $((budget_kb * 40 / 100 / 24))" "57 $((budget_kb * 40 / 100 / 57))"; do
+  read -r boxes low_kb <<<"$row"
+  expect_eq "floor: 16 GiB host with ${boxes} boxes" \
+    "$(memory_line MemoryLow "$(bash "$TARGET" --print-slice-limits --memtotal-kb $((16 * GIB)) --swaptotal-kb 0 --box-count "$boxes" --nproc 8)")" \
+    "$((low_kb * 1024))"
+done
+expect_eq 'floor: 57 boxes on a 16 GiB host stay within 40% of the box budget' \
+  "$(( $(memory_line MemoryLow "$(bash "$TARGET" --print-slice-limits --memtotal-kb $((16 * GIB)) --swaptotal-kb 0 --box-count 57 --nproc 8)") * 57 <= budget_kb * 1024 * 40 / 100 ))" 1
+# Swap: one box may use a quarter of the host's swap, and none without swap.
+expect_eq 'swap share: a quarter of 4 GiB' \
+  "$(memory_line MemorySwapMax "$(limits_for $((16 * GIB)) --swaptotal-kb $((4 * GIB)))")" "$((GIB * 1024))"
+expect_eq 'swap share: none on a host without swap' "$(memory_line MemorySwapMax "$(limits_for $((16 * GIB)))")" 0
+expect_eq 'slice limits: unreadable MemTotal fails instead of installing garbage' \
+  "$(bash "$TARGET" --print-slice-limits --memtotal-kb bogus >/dev/null 2>&1 && echo ok || echo failed)" failed
+
+# Host floors: system.slice and the provisioning user keep the control path
+# answering; user.slice and ficus.slice carry the boxes' pool as a hard bound.
+floors_for() { # SUDO_UID BOX_COUNT UNIT_MODE
+  SUDO_UID="$1" bash "$TARGET" --print-host-floors --memtotal-kb $((16 * GIB)) --box-count "$2" \
+    --unix-user box_aaaaaaaaaaaa --port 20001 --unit-mode "$3"
+}
+reserve_kb=$((16 * GIB * 10 / 100))
+share_kb=$((budget_kb * 40 / 100 / 57))
+FLOOR_ROOT=$(mktemp -d)
+expect_eq 'host floors: 57 user-mode boxes provisioned by root' \
+  "$(FICUS_HOST_ROOT="$FLOOR_ROOT" floors_for 0 57 user)" \
+  "$(printf 'system.slice=%s\nuser-0.slice=%s\nuser.slice=%s\nficus.slice=0\nficus-box.slice=0' \
+    $((reserve_kb / 2 * 1024)) $((reserve_kb / 4 * 1024)) $(( (57 * share_kb + reserve_kb / 4) * 1024 )))"
+expect_eq 'host floors: a system-mode box provisioned through sudo by uid 1000' \
+  "$(FICUS_HOST_ROOT="$FLOOR_ROOT" floors_for 1000 57 system)" \
+  "$(printf 'system.slice=%s\nuser-0.slice=%s\nuser-1000.slice=%s\nuser.slice=%s\nficus.slice=%s\nficus-box.slice=%s' \
+    $((reserve_kb / 2 * 1024)) $((reserve_kb / 4 * 1024)) $((reserve_kb / 4 * 1024)) \
+    $(( (56 * share_kb + 2 * (reserve_kb / 4)) * 1024 )) $((share_kb * 1024)) $((share_kb * 1024)))"
+rm -rf "$FLOOR_ROOT"
 
 # Pull prune_box_archives out of the script, with SUDO stubbed to nothing.
 extract_prune() {
@@ -155,6 +220,11 @@ else
     printf '#!/bin/sh\n' >"${R}/usr/lib/systemd/systemd-socket-proxyd"
     chmod +x "${R}/usr/lib/systemd/systemd-socket-proxyd"
     printf 'root:x:0:0:root:/root:/bin/bash\n' >"${R}/fakedb/passwd"
+    # The account file the floor pool counts boxes in, and a calm host's PSI.
+    mkdir -p "${R}/etc" "${R}/proc/pressure"
+    ln -s ../fakedb/passwd "${R}/etc/passwd"
+    printf 'some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n' \
+      >"${R}/proc/pressure/memory"
     printf 'root:x:0:\nficus-browser:x:998:\n' >"${R}/fakedb/group"
     # run_as_box pins PATH for the box user; keep the shims first on it so the
     # docker tooling below is stubbed too (never the host's real setuptool).
@@ -223,6 +293,8 @@ done
 installs() { sed -n "s/^$1=//p" "$dir/$2" 2>/dev/null; }
 case "$verb" in
   daemon-reload)
+    # A PID1 reload that does not finish in time: timeout(1) reports 124.
+    if [ -z "${manager_args[*]}" ] && [ -f "$STUB_R/fakedb/reload-timeout" ]; then exit 124; fi
     if [ -z "${manager_args[*]}" ] && [ -d "$STUB_R/sys/fs/cgroup/user.slice/user-1001.slice" ]; then
       [ ! -f "$STUB_R/fakedb/fail-limits" ] || exit 91
       cg="$STUB_R/sys/fs/cgroup/user.slice/user-1001.slice"
@@ -653,7 +725,7 @@ exec env -i PATH="$PATH" STUB_R="$STUB_R" "$@"'
   docker_provision() {
     : >"${R}/calls.log"
     provision --sandbox-id squad_x --unit-mode user --with-docker \
-      --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
+      --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --swaptotal-kb 0 --nproc 8
   }
   docker_verbs() { # VERB → how many times provisioning ran it on docker.service
     grep -c "^systemctl --machine=${BOX}@.host --user $1 docker.service$" "${R}/calls.log" || true
@@ -746,18 +818,20 @@ exec env -i PATH="$PATH" STUB_R="$STUB_R" "$@"'
     'systemctl daemon-reload'
   expect_eq 'docker containment: kernel CPU cap matches the owning box' \
     "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/cpu.max")" '400000 100000'
-  expect_eq 'database squad: normal provision writes raised soft cap, unchanged hard cap' \
+  # 8131584 kB host: reserve 10%, MemoryMax 40%, MemoryHigh the 2.5 GiB floor,
+  # the only box gets the full 256 MiB floor; this host has no swap.
+  expect_eq 'docker squad: provision writes the host-scaled floor and caps' \
     "$(cat "${R}/etc/systemd/system/user-1001.slice.d/50-ficus-box.conf")" \
-    "$(printf '[Slice]\nMemoryHigh=%s\nMemoryMax=%s\nTasksMax=8192\nCPUQuota=400%%' \
-      "$((8131584 * 45 / 100 * 1024))" "$((8131584 * 50 / 100 * 1024))")"
-  # Model an already-provisioned slice still using the previous soft cap.
-  sed -i "s/^MemoryHigh=.*/MemoryHigh=$((8131584 * 35 / 100 * 1024))/" \
+    "$(printf '[Slice]\nMemoryLow=%s\nMemoryHigh=%s\nMemoryMax=%s\nMemorySwapMax=0\nTasksMax=8192\nCPUQuota=400%%' \
+      "$((256 * 1024 * 1024))" "$((2560 * 1024 * 1024))" "$((8131584 * 40 / 100 * 1024))")"
+  # Model an already-provisioned slice still using the previous 45% soft cap.
+  sed -i "s/^MemoryHigh=.*/MemoryHigh=$((8131584 * 45 / 100 * 1024))/" \
     "${R}/etc/systemd/system/user-1001.slice.d/50-ficus-box.conf"
-  echo "$((8131584 * 35 / 100 * 1024))" >"${R}/sys/fs/cgroup/user.slice/user-1001.slice/memory.high"
+  echo "$((8131584 * 45 / 100 * 1024))" >"${R}/sys/fs/cgroup/user.slice/user-1001.slice/memory.high"
   docker_provision
-  expect_eq 'database squad: reprovision converges the existing slice soft cap' \
-    "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/memory.high")" "$((8131584 * 45 / 100 * 1024))"
-  expect_eq 'database squad: changing only the memory cap does not restart Docker' "$(docker_verbs restart)" 0
+  expect_eq 'docker squad: reprovision converges the existing slice to the trimmed soft cap' \
+    "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/memory.high")" "$((2560 * 1024 * 1024))"
+  expect_eq 'docker squad: changing only the memory cap does not restart Docker' "$(docker_verbs restart)" 0
   expect_eq 'docker containment: no global or peer service mutation' \
     "$(grep -c -E '^systemctl (stop|restart|set-property).*user@(1000|1002)|^systemctl (stop|restart) docker.service' "${R}/calls.log" || true)" 0
   # A transient "Transport endpoint is not connected" from the user manager's
@@ -824,6 +898,94 @@ exec env -i PATH="$PATH" STUB_R="$STUB_R" "$@"'
       "$(grep -c 'Docker containment failed' "${R}/stderr.log" || true)" 1
     rm -rf "${R}"
   done
+
+  # -- memory protection: units, host floors, oomd, pressure ------------------------
+  make_host
+  docker_shims
+  docker_provision
+  expect_eq 'oomd: provision succeeds' "$PROV_RC" 0
+  UNIT_FILE="${R}/home/${BOX}/.config/systemd/user/ficus-sandbox-server.service"
+  expect_eq 'oomd: the server unit is delegated, runs in supervisor/, and is monitored at 50%' \
+    "$(grep -E '^(Delegate|DelegateSubgroup|ManagedOOM[A-Za-z]*)=' "${UNIT_FILE}")" \
+    "$(printf 'Delegate=yes\nDelegateSubgroup=supervisor\nManagedOOMMemoryPressure=kill\nManagedOOMMemoryPressureLimit=50%%')"
+  expect_eq 'oomd: rootless Docker (dockerd and every container) is monitored too, root-owned' \
+    "$(cat "${R}/etc/systemd/user/ficus-docker.slice.d/50-ficus-oomd.conf")" \
+    "$(printf '[Slice]\nManagedOOMMemoryPressure=kill\nManagedOOMMemoryPressureLimit=50%%')"
+  expect_eq 'host floors: system.slice is protected' \
+    "$(cat "${R}/etc/systemd/system/system.slice.d/50-ficus-memory-floor.conf")" \
+    "$(printf '[Slice]\nMemoryLow=%s' "$((8131584 * 10 / 100 / 2 * 1024))")"
+  expect_eq 'host floors: the provisioning user (root) is protected' \
+    "$(cat "${R}/etc/systemd/system/user-0.slice.d/50-ficus-memory-floor.conf")" \
+    "$(printf '[Slice]\nMemoryLow=%s' "$((8131584 * 10 / 100 / 4 * 1024))")"
+  expect_eq 'host floors: user.slice bounds the user-mode boxes plus root' \
+    "$(cat "${R}/etc/systemd/system/user.slice.d/50-ficus-memory-floor.conf")" \
+    "$(printf '[Slice]\nMemoryLow=%s' "$(( (256 * 1024 + 8131584 * 10 / 100 / 4) * 1024 ))")"
+  expect_eq 'failed units: dead user managers are reset before the reload' \
+    "$(grep -E "^systemctl (reset-failed|daemon-reload)" "${R}/calls.log" | head -n2 | paste -sd'|' -)" \
+    'systemctl reset-failed user@*.service user-runtime-dir@*.service|systemctl daemon-reload'
+  rm -rf "${R}"
+
+  # A reload that times out while the HOST is under memory pressure is a
+  # transient, named host condition (exit 69, Core retries), not a Docker
+  # containment failure; Docker is left exactly as it was.
+  make_host
+  docker_shims
+  docker_provision
+  touch "${R}/fakedb/active-docker.service" "${R}/fakedb/reload-timeout"
+  printf 'some avg10=97.10 avg60=88.00 avg300=60.00 total=1\nfull avg10=95.03 avg60=80.00 avg300=50.00 total=1\n' \
+    >"${R}/proc/pressure/memory"
+  docker_provision
+  expect_eq 'pressure: exits with the host-pressure status' "$PROV_RC" 69
+  expect_eq 'pressure: prints the marker with the PSI reading' \
+    "$(grep -c "^box-provision.sh: FICUS_HOST_MEMORY_PRESSURE box=${BOX} some avg10=97.10 full avg10=95.03$" "${R}/stderr.log")" 1
+  expect_eq 'pressure: names host memory pressure' \
+    "$(grep -c 'host memory pressure: systemctl daemon-reload did not finish within 20s' "${R}/stderr.log")" 1
+  expect_eq 'pressure: not reported as a containment failure' \
+    "$(grep -c 'Docker containment failed' "${R}/stderr.log" || true)" 0
+  expect_eq 'pressure: Docker is not stopped or disabled' "$(( $(docker_verbs stop) + $(docker_verbs disable) ))" 0
+  expect_eq 'pressure: no success UID marker' "$(cat "${R}/stdout.log")" ''
+  expect_eq 'pressure: linger untouched in the failed run' "$(grep -c '^loginctl enable-linger' "${R}/calls.log" || true)" 0
+  # The same timeout on a calm host is still a containment failure.
+  printf 'some avg10=0.50 avg60=0.10 avg300=0.00 total=1\nfull avg10=0.20 avg60=0.10 avg300=0.00 total=1\n' \
+    >"${R}/proc/pressure/memory"
+  docker_provision
+  expect_eq 'no pressure: a reload timeout stays a terminal failure' "$PROV_RC" 1
+  expect_eq 'no pressure: reported as a containment failure' \
+    "$(grep -c 'Docker containment failed' "${R}/stderr.log")" 1
+  expect_eq 'no pressure: no host-pressure marker' "$(grep -c FICUS_HOST_MEMORY_PRESSURE "${R}/stderr.log" || true)" 0
+  # A host without PSI cannot prove pressure either.
+  rm "${R}/proc/pressure/memory"
+  docker_provision
+  expect_eq 'no PSI: a reload timeout stays a terminal failure' "$PROV_RC" 1
+  rm -rf "${R}"
+
+  # A reload that FAILS (rather than timing out) under pressure is not blamed on it.
+  make_host
+  docker_shims
+  touch "${R}/fakedb/fail-limits"
+  printf 'some avg10=97.10 avg60=0 avg300=0 total=1\nfull avg10=95.03 avg60=0 avg300=0 total=1\n' \
+    >"${R}/proc/pressure/memory"
+  docker_provision
+  expect_eq 'pressure + reload error: stays a containment failure' "$PROV_RC" 1
+  expect_eq 'pressure + reload error: no host-pressure marker' "$(grep -c FICUS_HOST_MEMORY_PRESSURE "${R}/stderr.log" || true)" 0
+  rm -rf "${R}"
+
+  # Removal stops the box's user manager through systemd (never only SIGKILL)
+  # and resets its units, so dead managers do not pile up as failed units.
+  make_host
+  provision --sandbox-id squad_x --unit-mode user
+  shim pkill 'echo "pkill $*" >>"$STUB_R/calls.log"'
+  shim pgrep 'exit 1'
+  shim userdel 'echo "userdel $*" >>"$STUB_R/calls.log"; grep -v "^${!#}:" "$STUB_R/fakedb/passwd" >"$STUB_R/fakedb/passwd.new"; mv "$STUB_R/fakedb/passwd.new" "$STUB_R/fakedb/passwd"'
+  : >"${R}/calls.log"
+  PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" \
+    bash "${TARGET}" --unix-user "${BOX}" --remove >"${R}/stdout.log" 2>"${R}/stderr.log" || PROV_RC=$?
+  expect_eq 'remove: the user manager is stopped through systemd before any SIGKILL' \
+    "$(grep -E '^(systemctl stop user@1001.service|pkill )' "${R}/calls.log" | head -n1)" 'systemctl stop user@1001.service'
+  expect_eq 'remove: its units are reset after the account is gone' \
+    "$(grep -E '^(userdel|systemctl reset-failed user@1001)' "${R}/calls.log" | cut -d' ' -f1-3 | paste -sd'|' -)" \
+    'userdel -r box_aaaaaaaaaaaa|systemctl reset-failed user@1001.service'
+  rm -rf "${R}"
 
   # -- reserved box ports ---------------------------------------------------------
   # The kernel's ephemeral range contains the box range, so an outgoing loopback

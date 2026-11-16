@@ -13,6 +13,7 @@ import {
 } from './sandbox-tools'
 import { CONFIG_DIR, AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, getSandboxSkillsDir } from '../services/agent/skill-materializer'
+import { ToolFeedbackError } from './tool-feedback'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import * as fs from 'node:fs'
@@ -1344,6 +1345,47 @@ describe('createHttpBashOperations', () => {
     mockStream.emitData({ error: 'Command not found' })
 
     await expect(execPromise).rejects.toThrow('Command not found')
+  })
+
+  // The box server names a memory kill of the command (packages/sandbox-server
+  // workload-cgroup.ts): systemd-oomd under sustained pressure, or the kernel
+  // OOM killer at the box's limit. The agent must see that name, not a bare
+  // exit status.
+  test('surfaces a systemd-oomd kill as the named command failure', async () => {
+    const mockStream = createMockStream()
+    const manager = createMockManager(mockStream)
+    const operations = createHttpBashOperations(manager, 'test-sandbox')
+    const output: string[] = []
+    const execPromise = operations.exec('next build', '/workspace', {
+      onData: (chunk: Buffer) => output.push(chunk.toString()),
+    })
+    const message =
+      'Killed by systemd-oomd: this box was under sustained memory pressure and this command was using the most memory'
+    mockStream.emitData({ stdout: Buffer.from('compiling\n').toString('base64') })
+    mockStream.emitData({ error: message, exitCode: 137 })
+
+    const error = await execPromise.catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ToolFeedbackError)
+    expect(error).toMatchObject({ kind: 'exit', exitCode: 137, message })
+    expect(output.join('')).toBe('compiling\n')
+  })
+
+  test('passes a notice about an earlier background kill through to the agent output', async () => {
+    const mockStream = createMockStream()
+    const manager = createMockManager(mockStream)
+    const operations = createHttpBashOperations(manager, 'test-sandbox')
+    const output: string[] = []
+    const execPromise = operations.exec('ls', '/workspace', {
+      onData: (chunk: Buffer) => output.push(chunk.toString()),
+    })
+    const notice =
+      '[ficus] systemd-oomd killed the processes started by an earlier command in this box (`next dev --port 34562`) ' +
+      'because the box was under sustained memory pressure. Restart it only if you still need it.\n'
+    mockStream.emitData({ stderr: Buffer.from(notice).toString('base64') })
+    mockStream.emitData({ exitCode: 0 })
+    mockStream.emitEnd()
+    await expect(execPromise).resolves.toEqual({ exitCode: 0 })
+    expect(output.join('')).toBe(notice)
   })
 
   test('handles abort signal by cancelling stream', async () => {

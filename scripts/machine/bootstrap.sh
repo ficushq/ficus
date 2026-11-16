@@ -2142,6 +2142,179 @@ print_capabilities() {
     "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${box_ports}" "${socket_bind}" "${BUN_CONVERGENCE:-deferred}" "${browser_json}"
 }
 
+# --- Host memory protection ---------------------------------------------------
+#
+# The host half of the memory model (docs/wiki/machines/memory-model.md); the
+# per-box half (floors, caps, swap share, oomd policy) is installed by
+# box-provision.sh on every provision. Both are per-boot convergent and NEVER
+# fail bootstrap: a host without them still runs, as it did before.
+
+MEMINFO_FILE="${FICUS_HOST_ROOT}/proc/meminfo"
+FSTAB_FILE="${FICUS_HOST_ROOT}/etc/fstab"
+
+# Swap: a modest SWAPFILE gives the kernel somewhere to put cold pages (idle
+# sandbox servers, the unused heap of a dev server) so that reclaim under
+# pressure is not limited to evicting the file cache every box shares, which
+# is how one box stalled a whole 16 GB host on 2026-11-16 (no swap). A file,
+# not zram: zram needs a kernel module some provider kernels lack, and its
+# compressed pages still live in RAM and cost CPU exactly when the host has
+# neither to spare. Each box may use only a share of it (MemorySwapMax in
+# box-provision.sh), so one box cannot fill it.
+# Same state machine as ensure_swapfile in scripts/setup/lib.sh (this script
+# is streamed standalone, so it cannot source that file): keep an active
+# managed swapfile, leave any other active swap alone, re-activate an existing
+# file, otherwise allocate through a temporary file only when the disk has room.
+SWAPFILE_PATH=/swapfile
+MACHINE_SWAP_PCT=25
+MACHINE_SWAP_MIN_MB=1024
+MACHINE_SWAP_MAX_MB=4096
+# Free disk the swapfile must leave behind: boxes' workspaces and archives
+# need it more than the host needs swap.
+MACHINE_SWAP_DISK_HEADROOM_MB=5120
+
+# Swap size for this host: MACHINE_SWAP_PCT of MemTotal within [min, max].
+machine_swap_mb() {
+  local total_kb mb
+  total_kb="$(awk '/^MemTotal:/ {print $2}' "${MEMINFO_FILE}")"
+  [[ "${total_kb}" =~ ^[0-9]+$ ]] || return 1
+  mb=$(( total_kb / 1024 * MACHINE_SWAP_PCT / 100 ))
+  [ "${mb}" -ge "${MACHINE_SWAP_MIN_MB}" ] || mb="${MACHINE_SWAP_MIN_MB}"
+  [ "${mb}" -le "${MACHINE_SWAP_MAX_MB}" ] || mb="${MACHINE_SWAP_MAX_MB}"
+  printf '%s' "${mb}"
+}
+
+machine_swap_active() { # PATH
+  swapon --show=NAME --noheadings 2>/dev/null | awk -v path="$1" '$1 == path { found = 1 } END { exit !found }'
+}
+
+ensure_machine_swap_fstab() {
+  if awk -v path="${SWAPFILE_PATH}" '$1 == path && $3 == "swap" { found = 1 } END { exit !found }' "${FSTAB_FILE}" 2>/dev/null; then
+    return 0
+  fi
+  printf '%s none swap sw 0 0\n' "${SWAPFILE_PATH}" | "${SUDO[@]}" tee -a "${FSTAB_FILE}" >/dev/null
+}
+
+ensure_machine_swap() {
+  local file="${FICUS_HOST_ROOT}${SWAPFILE_PATH}" mb available temp
+  if machine_swap_active "${file}"; then
+    "${SUDO[@]}" chmod 0600 "${file}"
+    ensure_machine_swap_fstab
+    echo "swap: managed ${SWAPFILE_PATH} is active" >&2
+    return 0
+  fi
+  if swapon --show=NAME --noheadings 2>/dev/null | awk 'NF { found = 1 } END { exit !found }'; then
+    echo 'swap: another swap device is active; leaving it alone' >&2
+    return 0
+  fi
+  if [ -e "${file}" ] && [ ! -f "${file}" ]; then
+    echo "swap: ${SWAPFILE_PATH} exists and is not a regular file; not touching it" >&2
+    return 1
+  fi
+  if [ -f "${file}" ]; then
+    "${SUDO[@]}" chmod 0600 "${file}" && "${SUDO[@]}" swapon "${file}" || return 1
+    ensure_machine_swap_fstab
+    echo "swap: re-activated ${SWAPFILE_PATH}" >&2
+    return 0
+  fi
+  mb="$(machine_swap_mb)" || return 1
+  available="$(df -B1M --output=avail "$(dirname "${file}")" 2>/dev/null | awk 'NR == 2 { print $1 }')"
+  if [[ ! "${available}" =~ ^[0-9]+$ ]] || [ "${available}" -lt $(( mb + MACHINE_SWAP_DISK_HEADROOM_MB )) ]; then
+    echo "swap: only ${available:-unknown} MiB free; not creating a ${mb} MiB swapfile (needs ${MACHINE_SWAP_DISK_HEADROOM_MB} MiB left over)" >&2
+    return 1
+  fi
+  temp="${file}.ficus-new.$$"
+  "${SUDO[@]}" rm -f "${temp}"
+  echo "swap: creating a ${mb} MiB swapfile at ${SWAPFILE_PATH}" >&2
+  if ! { "${SUDO[@]}" fallocate -l "${mb}M" "${temp}" 2>/dev/null ||
+    "${SUDO[@]}" dd if=/dev/zero of="${temp}" bs=1M count="${mb}" status=none; } ||
+    ! "${SUDO[@]}" chmod 0600 "${temp}" ||
+    ! "${SUDO[@]}" mkswap "${temp}" >/dev/null ||
+    ! "${SUDO[@]}" mv "${temp}" "${file}"; then
+    "${SUDO[@]}" rm -f "${temp}"
+    return 1
+  fi
+  "${SUDO[@]}" swapon "${file}" || return 1
+  ensure_machine_swap_fstab
+}
+
+# systemd-oomd: the backstop that ends a thrashing workload. box-provision.sh
+# puts each box's commands and Docker under ManagedOOMMemoryPressure=kill at
+# 50%; this sets how long the pressure must last. oomd's default is 30s; 20s
+# ends a runaway sooner while still letting a build's short reclaim bursts
+# (seconds) pass. Ubuntu ships oomd as its own package.
+OOMD_BIN="${FICUS_HOST_ROOT}/usr/lib/systemd/systemd-oomd"
+OOMD_DROPIN="${FICUS_HOST_ROOT}/etc/systemd/oomd.conf.d/50-ficus.conf"
+OOMD_PRESSURE_DURATION=20s
+# Ubuntu's package also ships two default policies, and a same-named file in
+# /etc replaces each. Both are turned off here, because neither can be steered
+# away from a box's sandbox server: oomd honors the server's user.oomd_omit
+# mark only below a cgroup the box user owns.
+#   -.slice: ManagedOOMSwap=kill kills whichever cgroup on the host swaps the
+#     most once swap is 90% full; each box's MemorySwapMax bounds swap instead.
+#   user@.service: ManagedOOMMemoryPressure=kill could pick the box's own user
+#     manager (init.scope) or an admin session; box-provision.sh monitors the
+#     box's server unit and Docker slice instead.
+OOMD_DEFAULT_OVERRIDES=(
+  "${FICUS_HOST_ROOT}/etc/systemd/system/-.slice.d/10-oomd-root-slice-defaults.conf"
+  "${FICUS_HOST_ROOT}/etc/systemd/system/user@.service.d/10-oomd-user-service-defaults.conf"
+)
+
+render_oomd_dropin() {
+  printf '%s\n' \
+    '# Ficus machine host: see docs/wiki/machines/memory-model.md' \
+    '[OOM]' \
+    "DefaultMemoryPressureDurationSec=${OOMD_PRESSURE_DURATION}"
+}
+
+render_oomd_default_override() { # PATH
+  printf '%s\n' '# Ficus machine host: replaces the systemd-oomd package default (docs/wiki/machines/memory-model.md)'
+  case "$1" in
+    */-.slice.d/*) printf '%s\n' '[Slice]' 'ManagedOOMSwap=auto' ;;
+    *) printf '%s\n' '[Service]' 'ManagedOOMMemoryPressure=auto' ;;
+  esac
+}
+
+ensure_oomd() {
+  local changed=false units_changed=false override
+  # Replace the package's default policies BEFORE installing it, so they never
+  # apply, even for the moment between the install and this function's reload.
+  for override in "${OOMD_DEFAULT_OVERRIDES[@]}"; do
+    if [ "$(cat "${override}" 2>/dev/null)" != "$(render_oomd_default_override "${override}")" ]; then
+      "${SUDO[@]}" install -d -m 0755 "$(dirname "${override}")" || return 1
+      render_oomd_default_override "${override}" | "${SUDO[@]}" install -m 0644 /dev/stdin "${override}" || return 1
+      units_changed=true
+    fi
+  done
+  if [ "${units_changed}" = true ]; then
+    "${SUDO[@]}" timeout --kill-after=5s 60s systemctl daemon-reload || return 1
+  fi
+  if [ ! -x "${OOMD_BIN}" ]; then
+    export DEBIAN_FRONTEND=noninteractive
+    "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" update -y || return 1
+    "${SUDO[@]}" apt-get "${APT_LOCK_WAIT[@]}" install -y --no-install-recommends systemd-oomd || return 1
+  fi
+  if [ "$(cat "${OOMD_DROPIN}" 2>/dev/null)" != "$(render_oomd_dropin)" ]; then
+    "${SUDO[@]}" install -d -m 0755 "$(dirname "${OOMD_DROPIN}")" || return 1
+    render_oomd_dropin | "${SUDO[@]}" install -m 0644 /dev/stdin "${OOMD_DROPIN}" || return 1
+    changed=true
+  fi
+  "${SUDO[@]}" systemctl enable systemd-oomd.service >/dev/null 2>&1 || return 1
+  if [ "${changed}" = true ]; then
+    "${SUDO[@]}" systemctl restart systemd-oomd.service
+  else
+    "${SUDO[@]}" systemctl start systemd-oomd.service
+  fi
+}
+
+# Dead per-user managers stay loaded as failed units until reset, and every
+# loaded unit slows each daemon-reload (1,107 of them on one host,
+# 2026-11-16). box-provision.sh now stops box managers cleanly on removal and
+# runs this sweep on every provision; bootstrap clears what older removals left.
+reset_failed_user_managers() {
+  "${SUDO[@]}" timeout --kill-after=2s 30s systemctl reset-failed 'user@*.service' 'user-runtime-dir@*.service' \
+    >/dev/null 2>&1 || true
+}
+
 # C-FIN normal paths refuse old/pending layouts before any host effects.
 # Kept byte-identical to Core's privileged automatic-bootstrap preflight.
 require_machine_layout_ready() {
@@ -2233,6 +2406,13 @@ main() {
     install_browser || true
   fi
   write_manifest
+  # Per-boot on both paths (a prebaked image may predate them): swap, oomd and
+  # failed-unit hygiene. Never fails bootstrap; see the memory model doc.
+  ensure_machine_swap ||
+    echo 'bootstrap.sh: WARNING no swap configured on this host; boxes cannot page out cold memory' >&2
+  ensure_oomd ||
+    echo 'bootstrap.sh: WARNING systemd-oomd is not running; a box thrashing under memory pressure will not be stopped' >&2
+  reset_failed_user_managers
   # Per-boot too: keep the kernel from auto-assigning Ficus's loopback ports
   # (see ensure_box_port_reservation). Never fails bootstrap. box-provision.sh
   # re-checks it on every provision, and the capabilities report the result.
