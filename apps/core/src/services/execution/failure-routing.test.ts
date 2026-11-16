@@ -50,6 +50,24 @@ describe('routeFailure', () => {
     })
   })
 
+  it('never halts a sandbox provisioning failure as a rate limit, even when its id contains 429', () => {
+    const error =
+      'Sandbox squad_0b1e2c3d-4f5a-4b6c-8d7e-0a1bc24297ef provision attempt 20535 failed; retry after 2026-11-16T20:01:00.000Z'
+    expect(routeFailure(error)).toEqual({
+      systemMessage: `[System] Execution failed: ${error}`,
+      disposition: { status: 'idle' },
+    })
+  })
+
+  it('routes by the typed sandbox cause before reading the message', () => {
+    const cause = new Error('Failed to prepare sandbox', {
+      cause: Object.assign(new Error('429 Too Many Requests'), { name: 'VmPostProvisionSetupError' }),
+    })
+    expect(routeFailure('429 Too Many Requests', undefined, cause).disposition).toEqual({ status: 'idle' })
+    // Without the typed cause the same text is still a provider rate limit.
+    expect(routeFailure('429 Too Many Requests').disposition.status).toBe('waiting-input')
+  })
+
   it('routes generic errors to an idle disposition with a generic system message', () => {
     const route = routeFailure('boom: something unexpected broke')
 

@@ -1,6 +1,6 @@
 import { restartResumeFailedChatNotice, type RestartContext } from '@ficus/shared/restart-context'
 import { QuestionData } from '@ficus/shared'
-import { getErrorSystemMessage } from '../../lib/error'
+import { getErrorSystemMessage, isSandboxInfrastructureError } from '../../lib/error'
 
 /**
  * The outcome of classifying an execution failure: the system message to
@@ -26,9 +26,15 @@ export interface FailureRoute {
  *   waiting-input with an `all_providers_exhausted` question.
  * - Everything else → idle, with a generic `[System] Execution failed: …`
  *   message.
+ *
+ * `cause` is the original thrown error when the failure site still has it. A
+ * sandbox or provisioning failure (by type, or by message shape when only the
+ * string survives) is never a provider error, whatever its text contains, so it
+ * always takes the generic route.
  */
-export function routeFailure(error: string, restart?: RestartContext): FailureRoute {
-  const systemMessage = getErrorSystemMessage(error)
+export function routeFailure(error: string, restart?: RestartContext, cause?: unknown): FailureRoute {
+  const sandboxFailure = isSandboxInfrastructureError(cause) || isSandboxInfrastructureError(error)
+  const systemMessage = sandboxFailure ? null : getErrorSystemMessage(error)
   if (systemMessage) {
     return {
       systemMessage,
@@ -47,7 +53,7 @@ export function routeFailure(error: string, restart?: RestartContext): FailureRo
         },
       },
     }
-  } else if (error.includes('provider exhausted')) {
+  } else if (!sandboxFailure && error.includes('provider exhausted')) {
     // All providers exhausted (ModelSelectionError from selectModelSpec). Route
     // to waiting-input with a clear message so the user can retry after
     // cooldowns expire, rather than a generic idle error.

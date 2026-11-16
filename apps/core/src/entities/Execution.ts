@@ -144,6 +144,8 @@ export type TransitionOutcome =
       kind: 'failed'
       error: string
       /** Structural classification, persisted with the terminal write. */ failure?: ExecutionFailure
+      /** The original thrown error, when the failure site has it (routing only, never persisted). */
+      cause?: unknown
     }
   | { kind: 'stopped' }
   | { kind: 'force-stopped'; reason?: string }
@@ -476,7 +478,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   async transitionTo(outcome: TransitionOutcome, options?: TransitionOptions): Promise<boolean> {
     // Failure routing is pure and doesn't touch the DB — compute it up front
     // so the disposition is known before entering the transaction.
-    const route = outcome.kind === 'failed' ? routeFailure(outcome.error, this.restartContext) : undefined
+    const route =
+      outcome.kind === 'failed' ? routeFailure(outcome.error, this.restartContext, outcome.cause) : undefined
     const disposition = agentDispositionFor(outcome, route?.disposition)
 
     // Capture the agent's pre-write snapshot BEFORE the transaction — needed
@@ -1047,23 +1050,26 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * Fail this execution (→ failed, agent → idle or waiting-input for rate limits
    * or all-providers-exhausted). `failure` is the structural classification
    * from the failure site; absent it stays NULL (legacy/unclassified).
+   * `recovery.cause` is the original thrown error, so routing can recognize a
+   * sandbox or provisioning failure by type rather than by its message.
    */
   async fail(
     error: string,
     admissionLease?: AdmissionLease,
     failure?: ExecutionFailure,
-    recovery?: { safeStartupRetry?: boolean; explained?: boolean }
+    recovery?: { safeStartupRetry?: boolean; explained?: boolean; cause?: unknown }
   ): Promise<boolean> {
     const attemptIdentity = this.runnerClaimToken ?? this.runStartedAt?.toISOString() ?? 'queued'
+    const cause = recovery?.cause
     const terminalized = await this.transitionTo(
-      { kind: 'failed', error, ...(failure ? { failure } : {}) },
+      { kind: 'failed', error, ...(failure ? { failure } : {}), ...(cause !== undefined ? { cause } : {}) },
       { admissionLease }
     )
     if (terminalized) {
       const { isUnexplainedExecutionFailure, EXECUTION_RECOVERY_OPERATION } =
         await import('../services/recovery/executions')
       const resumed = await this.resumedRunFailureContext()
-      const counted = !recovery?.explained && isUnexplainedExecutionFailure(error, failure)
+      const counted = !recovery?.explained && isUnexplainedExecutionFailure(error, failure, cause)
       let record: import('../services/recovery/store').RecoveryRecord | undefined
       if (counted) {
         const { recordRecoveryFailure } = await import('../services/recovery/store')
@@ -1564,6 +1570,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         const terminalized = await this.fail(errorMsg, admissionLease, classifySetupFailure(err), {
           safeStartupRetry: startupFailure && unexplainedStartup,
           explained: startupFailure && !unexplainedStartup,
+          cause: err,
         })
         if (admissionLease && !terminalized) {
           if (await closeStoppedStartup()) return
@@ -1585,7 +1592,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       }
       log.error(`Failed to run agent (${agent.id}) execution ${this.id}:`, err)
       if (admissionLeaseFromError(err)) throw err
-      await this.fail(errorMsg, undefined, classifySetupFailure(err))
+      await this.fail(errorMsg, undefined, classifySetupFailure(err), { cause: err })
     }
   }
 }
