@@ -1,5 +1,6 @@
 import { loadLaunchPathLines, recordLaunchPathCommand, runWithLaunchPath } from '../sandbox/launch-path'
 import { TMUX_UNREACHABLE_MARKER, tmuxShellFunctions } from '../sandbox/tmux'
+import { WORKLOAD_LEAF_SHELL_FUNCTIONS } from '../sandbox/workload-leaf'
 import { isHostRuntime, isVmRuntime } from '../sandbox/runtime'
 import { WORKSPACE_DOT_DIR } from '../workspace/dot-dir'
 import {
@@ -160,6 +161,7 @@ export function monitorLaunchTimeoutSeconds(
  */
 export const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
+${WORKLOAD_LEAF_SHELL_FUNCTIONS}
 mkdir -p "$FICUS_MONITOR_DIR/logs"
 ${TIMESTAMP} > "$FICUS_MONITOR_DIR/startedAt" || true
 ${loadLaunchPathLines('FICUS_MONITOR_DIR')}
@@ -198,7 +200,8 @@ trap "trap '' HUP INT TERM; stop_watchdog; stop_job; exit 129" HUP INT TERM
 # Run directory setup inside the captured pipeline too: a failed cd is a normal
 # command failure, with diagnostics and exitCode, not unexplained process loss.
 set -m
-( set +m; ( ${COMMAND_IDENTITY}; cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
+# The command (not this launcher) runs in its own workload cgroup leaf.
+( set +m; ( ficus_workload_leaf "monitor-\${FICUS_MONITOR_ID:-unnamed}"; ${COMMAND_IDENTITY}; cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
 job=$!
 kill -0 -- -"$job" 2>/dev/null && job_group=1
 if [ -n "$deadline" ]; then
@@ -234,6 +237,8 @@ elif [ "$job_group" = 1 ]; then
   signal_job HUP
 fi
 trap - HUP INT TERM
+ficus_workload_kill_reason "monitor-\${FICUS_MONITOR_ID:-unnamed}" >> "$FICUS_MONITOR_DIR/logs/current.log"
+rmdir "$(ficus_workload_leaf_dir "monitor-\${FICUS_MONITOR_ID:-unnamed}")" 2>/dev/null || true
 set -e
 echo "$status" > "$FICUS_MONITOR_DIR/exitCode"
 ${TIMESTAMP} > "$FICUS_MONITOR_DIR/exitedAt" || true

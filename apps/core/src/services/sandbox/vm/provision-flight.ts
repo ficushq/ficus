@@ -129,6 +129,7 @@ function sharedFailure(row: Attempt): never {
     Object.assign(cause, { result: row.capacityFailure ?? {} })
   } else if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
   else if (retryCode === 'box_lock_timeout') cause.name = 'BoxLockTimeoutError'
+  else if (retryCode === 'box_host_memory_pressure') cause.name = 'BoxHostMemoryPressureError'
   else if (retryCode === 'box_stop_unverified') cause.name = 'BoxStopUnverifiedError'
   else if (retryCode === 'box_bash_busy') cause.name = 'BoxBashBusyError'
   else if (retryCode === 'sandbox_readiness_pending') cause.name = 'SandboxReadinessPendingError'

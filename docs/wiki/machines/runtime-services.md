@@ -57,28 +57,23 @@ runs its **own rootless dockerd** instead (spec §5):
   It never enables the rootful daemon, adds host privileges, changes global
   delegation, or removes security/port restrictions. CPU quota bounds scheduled
   CPU time, not host load averages or all sources of I/O pressure.
-- **Database-capable squad memory sizing.** For `squad_*` boxes provisioned
-  with `--with-docker`, `box-provision.sh` sets `MemoryHigh` to **45% of host
-  MemTotal**, instead of the default 35%. This is 90% of the unchanged
-  **50% MemoryMax**: test databases, their clients, builds and the box server
-  share one working set, with 10% of the hard cap left for reclaim before a
-  slice-local OOM. Docker capability is the stable provisioning predicate; the
-  script does not inspect transient running containers or raise/lower limits
-  every time a test database starts/stops. Agent boxes, system-manager boxes,
-  non-Docker squads and unknown roles retain 35%. CPU remains half the host's
-  cores (minimum one core), and `TasksMax` remains 8192.
+- **Box memory sizing.** Every box role gets the same host-scaled caps, a
+  protection floor, a swap share and a systemd-oomd policy; see the
+  [machine host memory model](memory-model.md). The earlier special case, a
+  45% `MemoryHigh` under a 50% `MemoryMax` for `squad_*` boxes provisioned with
+  `--with-docker` (35% for every other role), was replaced on 2026-11-16 after
+  one squad box held about 8 GB of a 16 GB host: caps are now
+  min(MemTotal - reserve, max(40%, 3 GiB)) and
+  min(`MemoryMax` - 256 MiB, max(30%, 2.5 GiB)), and test databases, their
+  clients and builds still share one slice with the box server. CPU remains
+  half the host's cores (minimum one core), and `TasksMax` remains 8192. Values
+  are floored to whole KiB in the provisioner; kernel readback can additionally
+  round down to page size.
 
-  This chooses bounded soft-cap headroom rather than relocating test databases
-  or increasing the hard cap. It does **not** reserve RAM, guarantee that all
-  colocated boxes fit simultaneously, or fix CPU/I/O contention. Workload
-  concurrency still needs admission control; raising the soft cap allows more
-  resident memory before reclaim, while the hard host-share boundary remains
-  unchanged. Small hosts receive the same proportional bound, not an absolute
-  floor that could exceed their capacity. Values are floored to whole KiB in
-  the provisioner; kernel readback can additionally round down to page size.
-
-  The motivating measurement was a **5.97 GB** historical peak against a
-  **5.87 GB** soft cap on a database-running squad. Lifetime `memory.events`
+  The earlier 45% soft cap was motivated by a **5.97 GB** historical peak
+  against a **5.87 GB** soft cap on a database-running squad. On a 16 GB host
+  the soft cap is now about 4.8 GiB, so such a squad is throttled sooner and
+  leans on its swap share; watch its `memory.events` `high` deltas. Lifetime `memory.events`
   counts are not evidence of current pressure: retain timestamped per-run
   deltas in the validation report rather than treating them as a current rate.
   Provisioning fixtures prove selection and convergence, not live-host
@@ -86,7 +81,7 @@ runs its **own rootless dockerd** instead (spec §5):
 
   After the updated artifact reaches the target through authorized normal
   provisioning, read that **same parent slice**, not just the Docker service:
-  `memory.high`, `memory.max`, `cpu.max`, `memory.current`, `memory.peak`,
+  `memory.low`, `memory.high`, `memory.max`, `memory.swap.max`, `cpu.max`, `memory.current`, `memory.peak`,
   `memory.events`, `memory.pressure`, `cpu.pressure` and `cpu.stat`. Capture UTC
   and monotonic timestamps immediately before and after the same focused
   workload, plus host load and available memory. Compare counter/PSI **deltas**

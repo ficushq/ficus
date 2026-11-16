@@ -178,6 +178,9 @@ PRINT_PORT_GUARD=false
 PREPARE_NIX_CACHE=false
 PUBLISH_NIX_CACHE=false
 MEMTOTAL_KB_OVERRIDE=""
+SWAPTOTAL_KB_OVERRIDE=""
+BOX_COUNT_OVERRIDE=""
+PRINT_HOST_FLOORS=false
 NPROC_OVERRIDE=""
 BOX_LOCK_WAIT_SECONDS="${FICUS_BOX_LOCK_WAIT_SECONDS:-180}"
 
@@ -193,6 +196,10 @@ SUBGID_FILE="/etc/subgid"
 # box-provision.test.sh sets it.
 FICUS_HOST_ROOT="${FICUS_HOST_ROOT:-}"
 SYSTEMD_SYSTEM_DIR="${FICUS_HOST_ROOT}/etc/systemd/system"
+# Read (never written) to count the host's box accounts for the floor pool.
+PASSWD_FILE="${FICUS_HOST_ROOT}/etc/passwd"
+# Linux pressure stall information; read to classify a reload timeout.
+HOST_PRESSURE_MEMORY_FILE="${FICUS_HOST_ROOT}/proc/pressure/memory"
 LINGER_DIR="${FICUS_HOST_ROOT}/var/lib/systemd/linger"
 
 # The box HOME dot dir: host.env and server.env (the units' EnvironmentFiles),
@@ -280,14 +287,31 @@ while [ "$#" -gt 0 ]; do
       ;;
     --print-slice-limits)
       # Side-effect-free dry run: print the per-box slice resource limits this
-      # host would install (MemoryHigh/MemoryMax/TasksMax), then exit. Pair
-      # with --memtotal-kb to pin the host size. Used by tests.
+      # host would install (MemoryLow/MemoryHigh/MemoryMax/MemorySwapMax/
+      # TasksMax/CPUQuota), then exit. Pair with --memtotal-kb, --swaptotal-kb,
+      # --box-count and --nproc to pin the host. Used by tests.
       PRINT_SLICE_LIMITS=true
       shift
       ;;
     --memtotal-kb)
       MEMTOTAL_KB_OVERRIDE="${2:-}"
       shift 2
+      ;;
+    --swaptotal-kb)
+      # Dry-run seam like --memtotal-kb: pin the host's swap size.
+      SWAPTOTAL_KB_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --box-count)
+      # Dry-run seam: pin the number of boxes sharing the floor pool.
+      BOX_COUNT_OVERRIDE="${2:-}"
+      shift 2
+      ;;
+    --print-host-floors)
+      # Side-effect-free dry run: print the host-level slice floors
+      # (install_host_memory_floors) as <slice>=<bytes>, then exit.
+      PRINT_HOST_FLOORS=true
+      shift
       ;;
     --nproc)
       NPROC_OVERRIDE="${2:-}"
@@ -386,14 +410,46 @@ SUBID_BASE=100000
 # memory.max is the hard stop (the kernel OOM-kills inside THAT slice only).
 # TasksMax bounds fork bombs the same way. Written as root under
 # /etc/systemd/system so a box user cannot raise its own limits.
-SLICE_MEMORY_HIGH_PCT=35
-# Database-capable squads keep test databases and their clients in the same
-# slice. Give that combined working set 90% of the unchanged hard cap before
-# reclaim throttling, leaving 10% for reclaim before a slice-local OOM. Use the
-# provisioned role/capability, not transient container inventory, so the limit
-# stays stable across test DB starts/stops. Other box roles remain conservative.
-SLICE_DATABASE_SQUAD_MEMORY_HIGH_PCT=45
-SLICE_MEMORY_MAX_PCT=50
+#
+# The memory model (docs/wiki/machines/memory-model.md): a box may BURST to a
+# sizable share of an otherwise idle host, and neighbors are protected by
+# memory floors (MemoryLow), a little swap, and systemd-oomd killing the
+# box's own workloads under sustained pressure, not only by the cap. One box
+# taking ~8 GB of a 16 GB host at once (incident 2026-11-16) was still too much,
+# so the caps scale with host size: a percentage on large hosts, most of the
+# host on small ones (where the floors, swap and oomd protect the neighbors).
+#   reserve    R    = max(SLICE_HOST_RESERVE_FLOOR, SLICE_HOST_RESERVE_PCT% of MemTotal)
+#   MemoryMax       = min(MemTotal - R, max(SLICE_MEMORY_MAX_PCT%, SLICE_MEMORY_MAX_FLOOR))
+#   MemoryHigh      = min(MemoryMax - SLICE_MEMORY_HIGH_HEADROOM,
+#                         max(SLICE_MEMORY_HIGH_PCT%, SLICE_MEMORY_HIGH_FLOOR))
+# 2 GiB host: 1.5 / 1.25 GiB; 4 GiB: 3 / 2.5; 8 GiB: 3.2 / 2.5; 16 GiB: 6.4 / 4.8.
+# Every box role gets the same caps (the database-squad 45%/50% special case
+# went with the flat percentages).
+SLICE_HOST_RESERVE_FLOOR_KB=$((512 * 1024))
+SLICE_HOST_RESERVE_PCT=10
+SLICE_MEMORY_MAX_PCT=40
+SLICE_MEMORY_MAX_FLOOR_KB=$((3 * 1024 * 1024))
+SLICE_MEMORY_HIGH_PCT=30
+SLICE_MEMORY_HIGH_FLOOR_KB=$((2560 * 1024))
+SLICE_MEMORY_HIGH_HEADROOM_KB=$((256 * 1024))
+# Protection floor (MemoryLow): memory the kernel reclaims from a box only when
+# every unprotected page on the host is gone, so a greedy neighbor reclaims
+# from itself first. At most SLICE_MEMORY_LOW_MAX per box, and all box floors
+# together stay within SLICE_MEMORY_LOW_POOL_PCT% of the box budget
+# (MemTotal - R): 57 boxes x 256 MiB would be 14.6 GB on a 16 GB host. The
+# share is recomputed from the box count on every provision, and the parent
+# slices carry the pool as a hard bound in between (install_host_memory_floors).
+SLICE_MEMORY_LOW_MAX_KB=$((256 * 1024))
+SLICE_MEMORY_LOW_POOL_PCT=40
+# Swap: one box may use at most this share of the host's swap, so a single box
+# cannot fill it and leave the others nothing to page to.
+SLICE_SWAP_MAX_PCT=25
+# Host-critical floors, as shares of the reserve R: system.slice (systemd,
+# journald, sshd, every box's socket proxy, the browser service) and the
+# provisioning user's own session slice (Core's SSH commands and tunnels; root
+# is user-0). These keep the control path answering under pressure.
+HOST_SYSTEM_MEMORY_LOW_PCT=50
+HOST_ADMIN_MEMORY_LOW_PCT=25
 SLICE_TASKS_MAX=8192
 # CPU: one box may use at most half the host's cores (never below one full
 # core). Memory caps (above) stop a build from paging the host out; this stops
@@ -442,9 +498,46 @@ host_memtotal_kb() {
   awk '/^MemTotal:/ {print $2}' /proc/meminfo
 }
 
-# Prints "MemoryHigh=<bytes>\nMemoryMax=<bytes>\nTasksMax=<n>" for this host.
-slice_limits() {
-  local total_kb high_kb max_kb
+host_swaptotal_kb() {
+  if [ -n "${SWAPTOTAL_KB_OVERRIDE}" ]; then
+    printf '%s' "${SWAPTOTAL_KB_OVERRIDE}"
+    return
+  fi
+  awk '/^SwapTotal:/ {print $2}' /proc/meminfo
+}
+
+# Box accounts on this host (box_<12 hex>), and how many of them run under the
+# system manager (a ficus-box-<user>.service unit). Read from the account and
+# unit files only: never from box homes, and never refusing anything.
+host_box_count() {
+  if [ -n "${BOX_COUNT_OVERRIDE}" ]; then
+    printf '%s' "${BOX_COUNT_OVERRIDE}"
+    return
+  fi
+  local n
+  n="$(awk -F: '$1 ~ /^box_[0-9a-f]{12}$/ { n++ } END { print n + 0 }' "${PASSWD_FILE}" 2>/dev/null)" || n=0
+  # The box being provisioned counts even before its account exists.
+  if [[ "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]] && ! awk -F: -v u="${UNIX_USER}" '$1 == u { found = 1 } END { exit !found }' "${PASSWD_FILE}" 2>/dev/null; then
+    n=$((n + 1))
+  fi
+  [ "${n:-0}" -ge 1 ] || n=1
+  printf '%s' "${n}"
+}
+
+host_system_box_count() {
+  local n=0 unit
+  for unit in "${SYSTEMD_SYSTEM_DIR}"/ficus-box-box_*.service; do
+    # The server unit only, never its -proxy sibling.
+    [[ "${unit##*/}" =~ ^ficus-box-box_[0-9a-f]{12}\.service$ ]] && [ -f "${unit}" ] && n=$((n + 1))
+  done
+  printf '%s' "${n}"
+}
+
+min_kb() { if [ "$1" -le "$2" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
+max_kb() { if [ "$1" -ge "$2" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
+
+read_memtotal_kb() {
+  local total_kb
   total_kb="$(host_memtotal_kb)"
   case "${total_kb}" in
     ''|*[!0-9]*)
@@ -452,12 +545,45 @@ slice_limits() {
       return 1
       ;;
   esac
-  local high_pct="${SLICE_MEMORY_HIGH_PCT}"
-  if [[ "${SANDBOX_ID}" == squad_* ]] && [ "${WITH_DOCKER}" = true ]; then
-    high_pct="${SLICE_DATABASE_SQUAD_MEMORY_HIGH_PCT}"
-  fi
-  high_kb=$(( total_kb * high_pct / 100 ))
-  max_kb=$(( total_kb * SLICE_MEMORY_MAX_PCT / 100 ))
+  printf '%s' "${total_kb}"
+}
+
+# The memory kept for the host's own services: R in the model above.
+host_reserve_kb() {
+  max_kb "${SLICE_HOST_RESERVE_FLOOR_KB}" "$(( $1 * SLICE_HOST_RESERVE_PCT / 100 ))"
+}
+
+# One box's protection floor: its share of the floor pool, at most
+# SLICE_MEMORY_LOW_MAX. Args: MemTotal kB, number of boxes.
+box_memory_low_kb() {
+  local reserve pool
+  reserve="$(host_reserve_kb "$1")"
+  pool=$(( ($1 - reserve) * SLICE_MEMORY_LOW_POOL_PCT / 100 ))
+  min_kb "${SLICE_MEMORY_LOW_MAX_KB}" "$(( pool / $2 ))"
+}
+
+# Prints this box's slice properties, one KEY=VALUE per line: MemoryLow,
+# MemoryHigh, MemoryMax, MemorySwapMax (bytes), TasksMax and CPUQuota.
+slice_limits() {
+  local total_kb reserve_kb high_kb max_kb low_kb swap_kb boxes
+  total_kb="$(read_memtotal_kb)" || return 1
+  reserve_kb="$(host_reserve_kb "${total_kb}")"
+  max_kb="$(min_kb "$(( total_kb - reserve_kb ))" \
+    "$(max_kb "$(( total_kb * SLICE_MEMORY_MAX_PCT / 100 ))" "${SLICE_MEMORY_MAX_FLOOR_KB}")")"
+  high_kb="$(min_kb "$(( max_kb - SLICE_MEMORY_HIGH_HEADROOM_KB ))" \
+    "$(max_kb "$(( total_kb * SLICE_MEMORY_HIGH_PCT / 100 ))" "${SLICE_MEMORY_HIGH_FLOOR_KB}")")"
+  boxes="$(host_box_count)"
+  case "${boxes}" in
+    ''|*[!0-9]*|0)
+      echo "box-provision.sh: invalid box count (${boxes:-empty})" >&2
+      return 1
+      ;;
+  esac
+  low_kb="$(box_memory_low_kb "${total_kb}" "${boxes}")"
+  swap_kb="$(host_swaptotal_kb)"
+  case "${swap_kb}" in
+    ''|*[!0-9]*) swap_kb=0 ;;
+  esac
   local n quota
   n="$(host_nproc)"
   case "${n}" in
@@ -468,7 +594,69 @@ slice_limits() {
   esac
   quota=$(( n * SLICE_CPU_SHARE_PCT ))
   [ "${quota}" -lt 100 ] && quota=100
-  printf 'MemoryHigh=%s\nMemoryMax=%s\nTasksMax=%s\nCPUQuota=%s%%\n' "$(( high_kb * 1024 ))" "$(( max_kb * 1024 ))" "${SLICE_TASKS_MAX}" "${quota}"
+  printf 'MemoryLow=%s\nMemoryHigh=%s\nMemoryMax=%s\nMemorySwapMax=%s\nTasksMax=%s\nCPUQuota=%s%%\n' \
+    "$(( low_kb * 1024 ))" "$(( high_kb * 1024 ))" "$(( max_kb * 1024 ))" \
+    "$(( swap_kb * SLICE_SWAP_MAX_PCT / 100 * 1024 ))" "${SLICE_TASKS_MAX}" "${quota}"
+}
+
+# Host-level memory floors (MemoryLow) for the slices ABOVE the boxes, written
+# on every provision (only rewritten when the value changed) and reloaded by
+# install_slice_limits' daemon-reload:
+#   system.slice          host services, so the control path keeps working
+#   user-0.slice and the provisioning user's own user-<uid>.slice
+#   user.slice            the user-mode boxes' floors plus the two above
+#   ficus.slice, ficus-box.slice   the system-mode boxes' floors
+# A child's floor is only effective up to its parent's, so the parents are the
+# hard bound on the total even when a box provisioned earlier (with fewer
+# neighbors) still carries a larger share.
+host_memory_floors() {
+  local total_kb reserve_kb boxes system_boxes user_boxes low_kb system_low admin_low admin_uid
+  total_kb="$(read_memtotal_kb)" || return 1
+  reserve_kb="$(host_reserve_kb "${total_kb}")"
+  boxes="$(host_box_count)"
+  system_boxes="$(host_system_box_count)"
+  # The box being provisioned in system mode may not have its unit yet.
+  if [ "${UNIT_MODE}" = system ] && [ ! -f "$(system_unit_path)" ]; then
+    system_boxes=$((system_boxes + 1))
+  fi
+  [ "${system_boxes}" -le "${boxes}" ] || system_boxes="${boxes}"
+  user_boxes=$((boxes - system_boxes))
+  low_kb="$(box_memory_low_kb "${total_kb}" "${boxes}")"
+  system_low=$(( reserve_kb * HOST_SYSTEM_MEMORY_LOW_PCT / 100 ))
+  admin_low=$(( reserve_kb * HOST_ADMIN_MEMORY_LOW_PCT / 100 ))
+  admin_uid="${SUDO_UID:-0}"
+  [[ "${admin_uid}" =~ ^[0-9]+$ ]] || admin_uid=0
+  printf 'system.slice=%s\n' "$(( system_low * 1024 ))"
+  printf 'user-0.slice=%s\n' "$(( admin_low * 1024 ))"
+  local user_slice_kb=$(( user_boxes * low_kb + admin_low ))
+  if [ "${admin_uid}" != 0 ]; then
+    printf 'user-%s.slice=%s\n' "${admin_uid}" "$(( admin_low * 1024 ))"
+    user_slice_kb=$(( user_slice_kb + admin_low ))
+  fi
+  printf 'user.slice=%s\n' "$(( user_slice_kb * 1024 ))"
+  printf 'ficus.slice=%s\n' "$(( system_boxes * low_kb * 1024 ))"
+  printf 'ficus-box.slice=%s\n' "$(( system_boxes * low_kb * 1024 ))"
+}
+
+HOST_FLOOR_DROPIN=50-ficus-memory-floor.conf
+
+# Writes host_memory_floors as one drop-in per slice. Returns 0 either way the
+# content compares; the caller's daemon-reload applies it.
+install_host_memory_floors() {
+  local floors line slice bytes dir file
+  floors="$(host_memory_floors)" || return 1
+  while IFS= read -r line; do
+    slice="${line%%=*}"
+    bytes="${line#*=}"
+    dir="${SYSTEMD_SYSTEM_DIR}/${slice}.d"
+    file="${dir}/${HOST_FLOOR_DROPIN}"
+    if [ "$(cat "${file}" 2>/dev/null)" = "$(printf '[Slice]\nMemoryLow=%s' "${bytes}")" ]; then
+      continue
+    fi
+    "${SUDO[@]}" install -d -m 0755 "${dir}" || return 1
+    printf '[Slice]\nMemoryLow=%s\n' "${bytes}" \
+      | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${file}" || return 1
+  done <<<"${floors}"
 }
 
 # ~/.ficus/host.env: per-box facts the HOST decides (Core never sees nproc). The
@@ -501,6 +689,87 @@ slice_dropin_dir() {
   fi
 }
 
+# --- systemd-oomd backstop ----------------------------------------------------
+#
+# Floors and swap slow a runaway box down; systemd-oomd ends it. Under
+# sustained memory pressure (the full avg10 PSI of the monitored cgroup above
+# OOMD_MEMORY_PRESSURE_LIMIT for oomd.conf's DefaultMemoryPressureDurationSec,
+# 20s, set by bootstrap.sh) oomd SIGKILLs the leaf cgroup below it that is
+# reclaiming the most. It never picks the box's sandbox server:
+#   - the server unit is delegated, and the server itself runs in the
+#     `supervisor` subgroup systemd creates for it (DelegateSubgroup=). Every
+#     command it runs is moved into workload/<invocation> before it starts
+#     (packages/sandbox-server/src/services/workload-cgroup.ts), and the server
+#     marks `supervisor` with the user.oomd_omit xattr, which oomd honors for a
+#     cgroup owned by the same user as the monitored unit;
+#   - a user-mode box's rootless Docker (ficus-docker.slice: dockerd and every
+#     container scope) is monitored separately with the same limit.
+# 50% full pressure means the box's tasks are all stalled on memory half the
+# time: it is thrashing, not merely busy (oomd's own default is 60%). The
+# server names the kill to the agent that ran the command.
+OOMD_MEMORY_PRESSURE_LIMIT=50%
+SERVER_OOM_DIRECTIVES=(
+  'Delegate=yes'
+  'DelegateSubgroup=supervisor'
+  'ManagedOOMMemoryPressure=kill'
+  "ManagedOOMMemoryPressureLimit=${OOMD_MEMORY_PRESSURE_LIMIT}"
+)
+# Read by every user manager on the host (root-owned, like the slice limits).
+USER_DOCKER_OOMD_DROPIN="${FICUS_HOST_ROOT}/etc/systemd/user/ficus-docker.slice.d/50-ficus-oomd.conf"
+
+render_docker_oomd_dropin() {
+  printf '%s\n' \
+    '[Slice]' \
+    'ManagedOOMMemoryPressure=kill' \
+    "ManagedOOMMemoryPressureLimit=${OOMD_MEMORY_PRESSURE_LIMIT}"
+}
+
+install_docker_oomd_dropin() {
+  if [ "$(cat "${USER_DOCKER_OOMD_DROPIN}" 2>/dev/null)" = "$(render_docker_oomd_dropin)" ]; then
+    return 0
+  fi
+  "${SUDO[@]}" install -d -m 0755 "$(dirname "${USER_DOCKER_OOMD_DROPIN}")" || return 1
+  render_docker_oomd_dropin \
+    | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${USER_DOCKER_OOMD_DROPIN}"
+}
+
+# --- Host memory pressure -----------------------------------------------------
+#
+# Exit status for "systemd could not finish reloading because the HOST is
+# under memory pressure". Core treats exactly this status as transient and
+# retries with backoff (BOX_HOST_MEMORY_PRESSURE_EXIT_CODE in
+# apps/core/src/services/machines/box-host-memory-pressure.ts). 69 is sysexits'
+# EX_UNAVAILABLE. A reload that fails or times out on a host WITHOUT pressure
+# stays a terminal containment failure: this must never hide another cause.
+HOST_MEMORY_PRESSURE_EXIT=69
+# The full avg10 (percent of the last 10s in which every task on the host was
+# stalled on memory) at or above which a reload timeout is blamed on pressure.
+# Measured 95% during the 2026-11-16 incident; a healthy host reads 0.
+HOST_MEMORY_PRESSURE_FULL_AVG10_MIN=10
+DAEMON_RELOAD_TIMEOUT=20s
+
+# Prints "some avg10=<x> full avg10=<y>" from /proc/pressure/memory and
+# returns 0 when full avg10 is at or above the threshold. Returns 1 when PSI is
+# unavailable or below it.
+host_memory_pressure() {
+  local some full
+  [ -r "${HOST_PRESSURE_MEMORY_FILE}" ] || return 1
+  some="$(awk '$1 == "some" { for (i = 2; i <= NF; i++) if ($i ~ /^avg10=/) { sub(/^avg10=/, "", $i); print $i } }' "${HOST_PRESSURE_MEMORY_FILE}")"
+  full="$(awk '$1 == "full" { for (i = 2; i <= NF; i++) if ($i ~ /^avg10=/) { sub(/^avg10=/, "", $i); print $i } }' "${HOST_PRESSURE_MEMORY_FILE}")"
+  [[ "${full}" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+  printf 'some avg10=%s full avg10=%s' "${some:-unknown}" "${full}"
+  awk -v f="${full}" -v t="${HOST_MEMORY_PRESSURE_FULL_AVG10_MIN}" 'BEGIN { exit !(f + 0 >= t + 0) }'
+}
+
+# Dead per-user managers stay loaded as failed units (user@<uid>.service,
+# user-runtime-dir@<uid>.service) until reset. The host in the 2026-11-16
+# incident carried 1,107 of them, and every unit makes each daemon-reload
+# slower. Clearing a failed state never stops anything. Bounded, never fatal.
+reset_failed_user_managers() {
+  "${SUDO[@]}" timeout --kill-after=2s 10s systemctl reset-failed 'user@*.service' 'user-runtime-dir@*.service' \
+    >/dev/null 2>&1 || true
+}
+
 install_slice_limits() {
   local limits
   limits="$(slice_limits)" || return 1
@@ -509,10 +778,26 @@ install_slice_limits() {
   "${SUDO[@]}" install -d -m 0755 "${dir}" || return 1
   printf '[Slice]\n%s\n' "${limits}" \
     | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-ficus-box.conf" || return 1
-  # The port guard lives in the same slice and reaches systemd with the same
-  # daemon-reload below.
+  # The port guard, the host floors and the user managers' Docker oomd policy
+  # reach systemd with the same daemon-reload below.
   install_port_guard || return 1
-  "${SUDO[@]}" timeout --kill-after=5s 20s systemctl daemon-reload
+  install_host_memory_floors || return 1
+  if [ "${WITH_DOCKER}" = true ]; then
+    install_docker_oomd_dropin || return 1
+  fi
+  reset_failed_user_managers
+  local rc=0 pressure
+  "${SUDO[@]}" timeout --kill-after=5s "${DAEMON_RELOAD_TIMEOUT}" systemctl daemon-reload || rc=$?
+  [ "${rc}" = 0 ] && return 0
+  # timeout(1): 124 when the reload was stopped at the deadline, 137 when it
+  # then had to be killed.
+  if { [ "${rc}" = 124 ] || [ "${rc}" = 137 ]; } && pressure="$(host_memory_pressure)"; then
+    echo "box-provision.sh: FICUS_HOST_MEMORY_PRESSURE box=${UNIX_USER} ${pressure}" >&2
+    echo "box-provision.sh: host memory pressure: systemctl daemon-reload did not finish within ${DAEMON_RELOAD_TIMEOUT} while installing the limits for ${UNIX_USER}; this is transient, retry once the host recovers" >&2
+    return "${HOST_MEMORY_PRESSURE_EXIT}"
+  fi
+  echo "box-provision.sh: systemctl daemon-reload failed (exit ${rc}) while installing the limits for ${UNIX_USER}" >&2
+  return "${rc}"
 }
 
 # Removal drops BOTH modes' drop-ins: the box is going away entirely, and a box
@@ -1299,6 +1584,11 @@ remove_box() {
   remove_slice_limits
   # Give the per-user manager a moment to exit so its files aren't in the tar.
   "${SUDO[@]}" loginctl terminate-user "${UNIX_USER}" >/dev/null 2>&1 || true
+  # Stop the manager through systemd BEFORE the pkill below. A manager that is
+  # SIGKILLed instead leaves user@<uid>.service failed, and failed units stay
+  # loaded until reset: they piled up to 1,107 on one host and slowed every
+  # daemon-reload (2026-11-16).
+  "${SUDO[@]}" timeout --kill-after=5s 20s systemctl stop "user@${uid}.service" >/dev/null 2>&1 || true
 
   # loginctl terminate-user is ASYNC and does not reliably reap a rootless
   # dockerd (or other detached processes) that isn't tracked in a login session,
@@ -1340,6 +1630,10 @@ remove_box() {
   "${SUDO[@]}" userdel -r "${UNIX_USER}" >/dev/null 2>&1 ||
     "${SUDO[@]}" userdel -rf "${UNIX_USER}" >/dev/null 2>&1 ||
     "${SUDO[@]}" userdel "${UNIX_USER}"
+  # Whatever state the manager ended in, nothing of this account remains to
+  # run: drop its units from systemd's table.
+  "${SUDO[@]}" timeout --kill-after=2s 10s systemctl reset-failed \
+    "user@${uid}.service" "user-runtime-dir@${uid}.service" >/dev/null 2>&1 || true
   echo "box-provision.sh: removed box user ${UNIX_USER}" >&2
 }
 
@@ -1723,7 +2017,7 @@ render_unit() {
       "EnvironmentFile=-${home}/${HOME_DOT_DIR}/server.env"
       "ExecStartPre=-/bin/bash ${FICUS_ROOT}/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
       "ExecStart=${FICUS_ROOT}/bin/bun ${FICUS_ROOT}/server/server.js --service-cgroup"
-      'Delegate=no'
+      "${SERVER_OOM_DIRECTIVES[@]}"
       'ExitType=main'
       'KillMode=control-group'
       'Restart=on-failure'
@@ -1751,7 +2045,7 @@ render_unit() {
       'EnvironmentFile=-%h/.ficus/server.env'
       "ExecStartPre=-/bin/bash ${FICUS_ROOT}/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
       "ExecStart=${FICUS_ROOT}/bin/bun ${FICUS_ROOT}/server/server.js --service-cgroup"
-      'Delegate=no'
+      "${SERVER_OOM_DIRECTIVES[@]}"
       'ExitType=main'
       'KillMode=control-group'
       'Restart=on-failure'
@@ -1973,7 +2267,16 @@ provision_box() {
   prepare_box_home "${home}"
   ensure_dirs "${home}"
   init_shared_nix_cache
-  if ! install_slice_limits; then
+  local limits_rc=0
+  install_slice_limits || limits_rc=$?
+  if [ "${limits_rc}" = "${HOST_MEMORY_PRESSURE_EXIT}" ]; then
+    # Not a containment failure: the reload never finished, so the limits
+    # loaded by the last successful provision still apply, and linger (which
+    # would start Docker) has not been touched in this run. Stopping Docker
+    # now would only queue more work on a manager that cannot answer.
+    return "${limits_rc}"
+  fi
+  if [ "${limits_rc}" != 0 ]; then
     if [ "${WITH_DOCKER}" = true ]; then
       docker_containment_failure 'could not install/reload the root-owned box limits'
     fi
@@ -2093,6 +2396,12 @@ fi
 if [ "${PRINT_PORT_GUARD}" = true ]; then
   render_port_guard
   exit 0
+fi
+
+# Side-effect-free dry run (tests): print the host-level slice floors.
+if [ "${PRINT_HOST_FLOORS}" = true ]; then
+  host_memory_floors
+  exit $?
 fi
 
 # The root-owned inode is never unlinked: removing a lock file would let a new

@@ -12,6 +12,7 @@ The detailed runtime documentation is organized by topic below.
 - [VM runtime services](runtime-services.md)
 - [VM runtime operations](runtime-operations.md)
 - [VM runtime health and recovery](runtime-recovery.md)
+- [Machine host memory model](memory-model.md): caps, floors, swap, systemd-oomd and the dev-server guard
 
 ## Section navigation
 

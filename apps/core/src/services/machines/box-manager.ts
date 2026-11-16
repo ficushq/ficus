@@ -31,6 +31,7 @@ import {
 import type { Machine, MachineBox } from './queries'
 import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
 import { BOX_LOCK_TIMEOUT_EXIT_CODE, BoxLockTimeoutError } from './box-lock-timeout'
+import { BOX_HOST_MEMORY_PRESSURE_EXIT_CODE, BoxHostMemoryPressureError } from './box-host-memory-pressure'
 import { buildPushFileCommand, defaultSshRunner, defaultSshStreamer } from './ssh'
 import type { SshRunner, SshStreamer } from './ssh'
 import { machineTunnels } from './tunnel-manager'
@@ -1239,6 +1240,11 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   }
   if (provRes.exitCode === BOX_LOCK_TIMEOUT_EXIT_CODE) {
     throw new BoxLockTimeoutError(sandboxId, machine.name, provRes.stderr)
+  }
+  // systemd could not reload the box limits in time while the host was under
+  // memory pressure (box-provision.sh checks the PSI before using this status).
+  if (provRes.exitCode === BOX_HOST_MEMORY_PRESSURE_EXIT_CODE) {
+    throw new BoxHostMemoryPressureError(sandboxId, machine.name, provRes.stderr)
   }
   if (provRes.exitCode !== 0) {
     throw new Error(`box-provision failed for ${sandboxId} (exit ${provRes.exitCode}): ${provRes.stderr.trim()}`)

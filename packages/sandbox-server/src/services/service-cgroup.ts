@@ -44,7 +44,8 @@ export const SERVICE_CGROUP_ARG = '--service-cgroup'
 
 /**
  * Whether this server runs inside its pinned systemd service cgroup
- * (`Delegate=no`, `ExitType=main`, `KillMode=control-group`) and therefore
+ * (`ExitType=main`, `KillMode=control-group`; delegated since 2026-11-16 so
+ * commands run in workload cgroups, see workload-cgroup.ts) and therefore
  * must run the residual-child census before an idle exit.
  *
  * The AUTHORITATIVE signal is the ExecStart argv switch: host.env and

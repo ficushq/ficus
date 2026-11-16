@@ -61,6 +61,12 @@ cleanup() {
       rm -f -- "/etc/systemd/system/user-$uid.slice.d/50-ficus-box.conf" \
         "/etc/systemd/system/user-$uid.slice.d/60-ficus-box-ports.conf"
       rmdir -- "/etc/systemd/system/user-$uid.slice.d" || rc=1
+      for slice in system.slice user.slice user-0.slice ficus.slice ficus-box.slice; do
+        rm -f -- "/etc/systemd/system/$slice.d/50-ficus-memory-floor.conf"
+        rmdir -- "/etc/systemd/system/$slice.d" 2>/dev/null || true
+      done
+      rm -f -- "/etc/systemd/user/ficus-docker.slice.d/50-ficus-oomd.conf"
+      rmdir -- /etc/systemd/user/ficus-docker.slice.d 2>/dev/null || true
     fi
     if [ -n "$uid" ]; then timeout --kill-after=5s 10s userdel --remove "$BOX" || rc=1; fi
     rm -rf -- /opt/ficus
@@ -102,6 +108,13 @@ as_box() {
 }
 docker_box() { as_box docker --host="unix:///run/user/$uid/docker.sock" "$@"; }
 
+# Name the failing check: a bare [ ] under set -e fails without saying which.
+check() { # DESCRIPTION ACTUAL EXPECTED
+  if [ "$2" != "$3" ]; then
+    printf 'CHECK FAILED: %s: expected %q, got %q\n' "$1" "$3" "$2" >&2
+    return 1
+  fi
+}
 assert_pid() {
   local pid="$1" role="$2" cg
   cg="$(sed -n 's/^0:://p' "/proc/$pid/cgroup")"
@@ -117,11 +130,30 @@ assert_caps() {
   parent="/user.slice/user-$uid.slice"
   [ "$(systemctl show -p ControlGroup --value "user@$uid.service")" = "$parent/user@$uid.service" ]
   [ "$(cat "/sys/fs/cgroup$parent/memory.max")" = 536870912 ]
-  # Docker-capable squads use 45% of 1048576 KiB, rounded down to a
-  # kernel page. Check convergence too: the old 35% value must NOT pass.
+  # A 1 GiB host keeps a 512 MiB reserve, so the cap is the other 512 MiB and
+  # the soft cap 256 MiB below it (docs/wiki/machines/memory-model.md). The
+  # previous 45% value must NOT pass.
   high="$(cat "/sys/fs/cgroup$parent/memory.high")"
   page_size="$(getconf PAGESIZE)"
-  [ "$high" -eq "$((483183616 / page_size * page_size))" ]
+  [ "$high" -eq "$((268435456 / page_size * page_size))" ]
+  # The floor and swap share the provisioner computed for this host reach the
+  # kernel (page-rounded); the slice is never left unprotected.
+  local expected low swap
+  expected="$(bash "$TARGET" --print-slice-limits --memtotal-kb 1048576 --nproc 2 --unix-user "$BOX" --sandbox-id squad_cgroup_ci --with-docker)"
+  low="$(sed -n 's/^MemoryLow=//p' <<<"$expected")"
+  swap="$(sed -n 's/^MemorySwapMax=//p' <<<"$expected")"
+  check 'box floor is set' "$([ "$low" -gt 0 ] && echo yes)" yes
+  check 'box memory.low' "$(cat "/sys/fs/cgroup$parent/memory.low")" "$((low / page_size * page_size))"
+  check 'box memory.swap.max' "$(cat "/sys/fs/cgroup$parent/memory.swap.max")" "$((swap / page_size * page_size))"
+  check 'user.slice floor' "$([ "$(systemctl show -p MemoryLow --value user.slice)" -gt 0 ] && echo yes)" yes
+  check 'system.slice floor' "$([ "$(systemctl show -p MemoryLow --value system.slice)" -gt 0 ] && echo yes)" yes
+  # systemd 255 accepts the oomd policy on the server unit and Docker's slice.
+  # `show` prints the limit as a fraction of 2^32: 50% is 2147483648.
+  check 'server unit delegation and oomd policy' \
+    "$(userctl show -p Delegate -p DelegateSubgroup -p ManagedOOMMemoryPressure -p ManagedOOMMemoryPressureLimit \
+      ficus-sandbox-server.service | LC_ALL=C sort | paste -sd' ' -)" \
+    'Delegate=yes DelegateSubgroup=supervisor ManagedOOMMemoryPressure=kill ManagedOOMMemoryPressureLimit=2147483648'
+  check 'Docker slice oomd policy' "$(userctl show -p ManagedOOMMemoryPressure --value ficus-docker.slice)" kill
   read -r quota period extra <"/sys/fs/cgroup$parent/cpu.max"
   [ -z "$extra" ] && [ "$quota" -gt 0 ] && [ "$quota" -eq "$period" ]
   [ "$(docker_box info --format '{{.CgroupDriver}} {{.CgroupVersion}}')" = 'systemd 2' ]
@@ -170,7 +202,64 @@ assert_workload() { # PHASE [CONTAINER_PARENT]
   echo "PASS real cgroup ancestry and caps: $phase"
 }
 
+# The sandbox server's own steps (packages/sandbox-server/src/services/
+# workload-cgroup.ts), run by python under a unit with the same delegation
+# settings, in both managers: start in supervisor/, enable memory+pids below
+# the unit, mark supervisor user.oomd_omit, and move a child into
+# workload/inv-<id>. Proves ownership, xattr and controller semantics on real
+# systemd 255 + kernel; oomd itself is not exercised here.
+WORKLOAD_PROBE='
+import os, subprocess, sys, time
+own = open("/proc/self/cgroup").read().strip().split("::", 1)[1]
+assert own.endswith("/supervisor"), own
+sup = "/sys/fs/cgroup" + own
+unit = os.path.dirname(sup)
+with open(unit + "/cgroup.subtree_control", "w") as f: f.write("+memory +pids")
+os.setxattr(sup, "user.oomd_omit", b"1")
+os.makedirs(unit + "/workload/inv-ci", exist_ok=True)
+with open(unit + "/workload/cgroup.subtree_control", "w") as f: f.write("+memory +pids")
+child = subprocess.Popen(["sleep", "60"])
+with open(unit + "/workload/inv-ci/cgroup.procs", "w") as f: f.write(str(child.pid))
+with open(sys.argv[1], "w") as f: f.write(unit)
+time.sleep(60)
+'
+assert_delegated_workloads() { # MANAGER(system|user)
+  local manager="$1" marker_dir marker unit_cg
+  # The box user writes its unit's cgroup path here; never into the poisoned caller dir.
+  marker_dir="$(mktemp -d /tmp/ficus-delegate.XXXXXX)"
+  chown "$BOX" "$marker_dir"
+  marker="$marker_dir/unit"
+  local -a run=(timeout --kill-after=5s 30s systemd-run --unit "ficus-ci-delegate-$manager" --collect
+    -p Delegate=yes -p DelegateSubgroup=supervisor -p ManagedOOMMemoryPressure=kill -p ManagedOOMMemoryPressureLimit=50%)
+  if [ "$manager" = system ]; then
+    run+=(--uid "$BOX" --gid "$BOX")
+  else
+    run+=("--machine=$BOX@.host" --user)
+  fi
+  "${run[@]}" /usr/bin/python3 -c "$WORKLOAD_PROBE" "$marker"
+  for _ in $(seq 1 100); do [ -s "$marker" ] && break; sleep 0.1; done
+  unit_cg="$(cat "$marker")"
+  python3 - "$unit_cg" <<'PY'
+import os, sys
+unit = sys.argv[1]
+assert os.getxattr(unit + "/supervisor", "user.oomd_omit") == b"1"
+pids = open(unit + "/workload/inv-ci/cgroup.procs").read().split()
+assert len(pids) == 1, pids
+assert os.path.exists(unit + "/workload/inv-ci/memory.current"), "memory controller missing in the leaf"
+assert open(unit + "/supervisor/cgroup.procs").read().split(), "server left its supervisor subgroup"
+PY
+  if [ "$manager" = system ]; then
+    timeout --kill-after=5s 20s systemctl stop "ficus-ci-delegate-$manager.service"
+  else
+    userctl stop "ficus-ci-delegate-$manager.service"
+  fi
+  rm -rf -- "$marker_dir"
+  echo "PASS delegated workload cgroups: $manager manager"
+}
+
 provision
+assert_delegated_workloads system
+assert_delegated_workloads user
 # One small public fixture image; no workload/build/test DB images or host daemon.
 docker_box pull busybox:1.37.0 >/dev/null
 assert_workload first-provision
@@ -195,4 +284,5 @@ timeout --kill-after=5s 20s loginctl disable-linger "$BOX"
 timeout --kill-after=5s 20s systemctl stop "user@$uid.service"
 provision
 assert_workload manager-recreation
+printf '2 delegated workload phases passed\n'
 printf '5 real rootless containment phases passed\n'

@@ -30,9 +30,12 @@ import {
   cancelBashInvocation,
   handleBash,
   hasActiveBashInvocations,
+  getWorkloadCgroups,
   reconcileBashInvocations,
+  setWorkloadCgroups,
   terminateAllBashInvocations,
 } from './services/bash'
+import { WorkloadCgroups } from './services/workload-cgroup'
 import {
   IdleExitCoordinator,
   beginRequestOrDrainingResponse,
@@ -193,8 +196,13 @@ async function main(): Promise<void> {
   // target) is up immediately — do NOT block pod-ready on dockerd cold-start.
   // Health starts promptly, but bash admission waits for durable cleanup.
   let bashReconciliationSettled = false
-  const bashReady = reconcileBashInvocations()
-    .then((report) => {
+  // Commands run in their own workload cgroups when the unit delegates them
+  // (workload-cgroup.ts); set up before the first command is admitted.
+  const workloadsReady = SERVICE_CGROUP_MANAGED
+    ? WorkloadCgroups.initialize({ log }).then(setWorkloadCgroups)
+    : Promise.resolve()
+  const bashReady = Promise.all([reconcileBashInvocations(), workloadsReady])
+    .then(([report]) => {
       if (report.quarantined.length)
         log(
           `Bash reconciliation degraded: quarantined=${report.quarantined.length} keys=${report.quarantined.join(',')}`
@@ -547,7 +555,9 @@ async function main(): Promise<void> {
       if (!claim) return
       void (async () => {
         try {
-          const childCount = SERVICE_CGROUP_MANAGED ? await countOwnServiceCgroupChildren() : 0
+          const childCount = SERVICE_CGROUP_MANAGED
+            ? (await countOwnServiceCgroupChildren()) + ((await getWorkloadCgroups()?.countProcesses()) ?? 0)
+            : 0
           if (childCount > 0) console.warn(formatDetachedProcessWarning(childCount))
           clearInterval(idleTimer)
           log(`idle for ${Math.round((now - lastActivityAt) / 1000)}s, exiting`)

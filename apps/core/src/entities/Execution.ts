@@ -33,6 +33,7 @@ import { isActiveExecutionStatus } from '../services/execution/status'
 import {
   BOX_PORT_BUSY_RETRY_CODE,
   BOX_LOCK_TIMEOUT_RETRY_CODE,
+  BOX_HOST_MEMORY_PRESSURE_RETRY_CODE,
   SANDBOX_PROVISION_BACKOFF_RETRY_CODE,
   STARTUP_RETRY_DELAYS_MS,
   provisionBackoffRetryDelayMs,
@@ -1193,17 +1194,22 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           ? "Retrying execution startup: the box's socket port is busy"
           : code === BOX_LOCK_TIMEOUT_RETRY_CODE
             ? 'Retrying execution startup: the box provisioning lock is busy'
-            : code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE
-              ? 'Retrying execution startup after the sandbox provision backoff window'
-              : code.startsWith('machine_')
-                ? "Retrying execution startup: the box's machine is not ready yet"
-                : 'Retrying execution startup after a transient database failure',
+            : code === BOX_HOST_MEMORY_PRESSURE_RETRY_CODE
+              ? "Retrying execution startup: the box's machine is under memory pressure"
+              : code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE
+                ? 'Retrying execution startup after the sandbox provision backoff window'
+                : code.startsWith('machine_')
+                  ? "Retrying execution startup: the box's machine is not ready yet"
+                  : 'Retrying execution startup after a transient database failure',
       {
         executionId: this.id,
         agentId: this.agentId,
         code,
         // The busy-port error carries systemd's own reason and the port holder.
         ...(code === BOX_PORT_BUSY_RETRY_CODE ? { reason: findInCauseChain(error, 'BoxPortBusyError')?.message } : {}),
+        ...(code === BOX_HOST_MEMORY_PRESSURE_RETRY_CODE
+          ? { reason: findInCauseChain(error, 'BoxHostMemoryPressureError')?.message }
+          : {}),
         attempt: this.startupRetryCount,
         ...(capacityWait ? { capacityWait: true } : { maxRetries: delays.length }),
         retryAt: this.startupRetryAt?.toISOString(),
