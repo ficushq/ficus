@@ -33,7 +33,9 @@ import { isActiveExecutionStatus } from '../services/execution/status'
 import {
   BOX_PORT_BUSY_RETRY_CODE,
   BOX_LOCK_TIMEOUT_RETRY_CODE,
+  SANDBOX_PROVISION_BACKOFF_RETRY_CODE,
   STARTUP_RETRY_DELAYS_MS,
+  provisionBackoffRetryDelayMs,
   findInCauseChain,
   startupRetryCode,
   startupRetryNotice,
@@ -1165,7 +1167,13 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     // Admission waiting is not a failed startup attempt. Keep the exact CAS/
     // lease fencing and a quiet poll deadline, but never consume the failure budget.
     if (capacityWait && capacityRefusalDetails(error).reason === 'unknown') return false
-    const delayMs = capacityWait ? capacityWaitDelay(this.startupCapacityWaitAt) : delays[this.startupRetryCount]
+    let delayMs: number | undefined
+    if (capacityWait) delayMs = capacityWaitDelay(this.startupCapacityWaitAt)
+    else if (code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE) {
+      // Wait until the provisioner allows a new physical attempt, within this
+      // execution's bounded number of startup retries.
+      delayMs = this.startupRetryCount < delays.length ? provisionBackoffRetryDelayMs(error) : undefined
+    } else delayMs = delays[this.startupRetryCount]
     if (delayMs === undefined) return false
     const requeued = await this.transitionTo(
       { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length, capacityWait },
@@ -1179,9 +1187,11 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           ? "Retrying execution startup: the box's socket port is busy"
           : code === BOX_LOCK_TIMEOUT_RETRY_CODE
             ? 'Retrying execution startup: the box provisioning lock is busy'
-            : code.startsWith('machine_')
-              ? "Retrying execution startup: the box's machine is not ready yet"
-              : 'Retrying execution startup after a transient database failure',
+            : code === SANDBOX_PROVISION_BACKOFF_RETRY_CODE
+              ? 'Retrying execution startup after the sandbox provision backoff window'
+              : code.startsWith('machine_')
+                ? "Retrying execution startup: the box's machine is not ready yet"
+                : 'Retrying execution startup after a transient database failure',
       {
         executionId: this.id,
         agentId: this.agentId,
@@ -1545,9 +1555,15 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
 
         // Commit the fenced failure before presenting it. A stop can win between
         // the read above and this CAS; in that case close only this old stream.
+        // Exhausting the provision-backoff waits means repeated physical
+        // failures kept renewing the window: count it like any unexplained
+        // startup failure (bounded budget plus a retry wake) rather than
+        // terminalizing silently as an explained wait.
+        const retryCode = startupRetryCode(err)
+        const unexplainedStartup = !retryCode || retryCode === SANDBOX_PROVISION_BACKOFF_RETRY_CODE
         const terminalized = await this.fail(errorMsg, admissionLease, classifySetupFailure(err), {
-          safeStartupRetry: startupFailure && !startupRetryCode(err),
-          explained: startupFailure && Boolean(startupRetryCode(err)),
+          safeStartupRetry: startupFailure && unexplainedStartup,
+          explained: startupFailure && !unexplainedStartup,
         })
         if (admissionLease && !terminalized) {
           if (await closeStoppedStartup()) return

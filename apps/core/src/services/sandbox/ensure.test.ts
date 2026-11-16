@@ -374,7 +374,8 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
       manager: any,
       isActive: boolean,
       sandboxId = 'agent_heal_1',
-      setupProgress?: (event: SandboxSetupProgressEvent) => void
+      setupProgress?: (event: SandboxSetupProgressEvent) => void,
+      admissionScope?: any
     ) {
       const tmp = mkdtempSync(join(tmpdir(), 'ficus-k8s-heal-'))
       const fakeCliSrc = join(tmp, 'ficus.js')
@@ -382,7 +383,7 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
 
       try {
         await ensureWorkspaceSandbox(
-          { sandboxId, workspaceId: sandboxId, setupProgress },
+          { sandboxId, workspaceId: sandboxId, setupProgress, admissionScope },
           {
             isK8sRuntime: () => true,
             getSandboxManager: () => manager,
@@ -468,6 +469,34 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
       await runEnsure(manager, false)
       expect(calls.recreate).toBe(1)
       expect(calls.ensure).toBe(0)
+    })
+
+    function phaseRecorder() {
+      const phases: string[] = []
+      const scope = {
+        runEffect: async <T>(spec: AdmissionEffectSpec, operation: (context: any) => Promise<T>) => {
+          phases.push(spec.phase)
+          return operation({ operationId: 'test-operation', signal: new AbortController().signal, phaseSequence: 1 })
+        },
+      }
+      return { phases, scope }
+    }
+
+    it('labels the first provision of a box with no recorded spec hash as sandbox-ensure, not drift', async () => {
+      const { manager, calls } = makeDriftManager(null)
+      const { phases, scope } = phaseRecorder()
+      await runEnsure(manager, false, 'agent_heal_first', undefined, scope)
+      // The physical path is unchanged: the idle box is still (re)provisioned.
+      expect(calls.recreate).toBe(1)
+      expect(phases).toEqual(['sandbox-ensure'])
+    })
+
+    it('keeps the sandbox-drift-recreate phase for a genuinely drifted box', async () => {
+      const { manager, calls } = makeDriftManager('STALE')
+      const { phases, scope } = phaseRecorder()
+      await runEnsure(manager, false, 'agent_heal_drift', undefined, scope)
+      expect(calls.recreate).toBe(1)
+      expect(phases).toEqual(['sandbox-drift-recreate'])
     })
 
     it('defers a ready box with a null durable hash while its session is active', async () => {

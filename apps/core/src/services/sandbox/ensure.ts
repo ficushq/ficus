@@ -467,8 +467,18 @@ export async function ensureWorkspaceSandbox(
         } else if (inspectionAllowed) {
           const runningHash = await manager.getRunningSandboxSpecHash(sandboxId)
           if (runningHash !== manager.computeSpecHash(sandboxOpts) && !deps.isSessionActive(agentId)) {
-            log.info(`Agent sandbox spec drifted and no active session; recreating sandbox: ${sandboxId}`)
-            const recreate = runSandboxEffect(admissionScope, 'sandbox-drift-recreate', sandboxId, (signal) =>
+            // No recorded spec hash (typically a brand-new box) is not evidence
+            // of drift. The physical path stays the same; only the reported
+            // phase is truthful, so a first-provision failure is not labeled
+            // as a drift recreate.
+            const firstProvision = runningHash === null
+            log.info(
+              firstProvision
+                ? `Agent sandbox has no recorded spec and no active session; provisioning sandbox: ${sandboxId}`
+                : `Agent sandbox spec drifted and no active session; recreating sandbox: ${sandboxId}`
+            )
+            const phase = firstProvision ? 'sandbox-ensure' : 'sandbox-drift-recreate'
+            const recreate = runSandboxEffect(admissionScope, phase, sandboxId, (signal) =>
               manager.recreateSandbox!(sandboxId, { ...sandboxOpts, signal })
             ).finally(() => inflightDriftRecreates.delete(sandboxId))
             inflightDriftRecreates.set(

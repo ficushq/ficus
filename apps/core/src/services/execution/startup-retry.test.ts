@@ -1,9 +1,16 @@
 import { HostCapacityUnavailableError } from '../machines/host-capacity-store'
-import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
+import { VmProvisionFailedError, coalesceVmProvision } from '../sandbox/vm/provision-flight'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTypes, executions, executionAdmissionReservations, vmBoxProvisionAttempts } from '../../db/schema'
+import {
+  agents,
+  agentTypes,
+  executions,
+  executionAdmissionReservations,
+  recoveryEpisodes,
+  vmBoxProvisionAttempts,
+} from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Execution } from '../../entities/Execution'
@@ -11,7 +18,9 @@ import * as runners from '../../entities/agent-runners'
 import {
   BOX_PORT_BUSY_RETRY_DELAYS_MS,
   MACHINE_STARTUP_RETRY_DELAYS_MS,
+  SANDBOX_PROVISION_BACKOFF_RETRY_CODE,
   STARTUP_RETRY_DELAYS_MS,
+  provisionBackoffRetryDelayMs,
   capacityWaitDelay,
   capacityRefusalDetails,
   startupRetryCode,
@@ -69,6 +78,35 @@ describe('startup retry classification', () => {
     const error = new Error('cycle')
     error.cause = error
     expect(startupRetryCode(error)).toBeNull()
+  })
+})
+
+describe('sandbox provision backoff startup retry classification', () => {
+  it('treats a replayed failure inside the provisioner backoff as a wait until retryAt', () => {
+    const now = Date.now()
+    const replay = new VmProvisionFailedError('agent_x', 7, new Date(now + 30_000))
+    expect(startupRetryCode(new Error('setup wrapper', { cause: replay }))).toBe(SANDBOX_PROVISION_BACKOFF_RETRY_CODE)
+    expect(provisionBackoffRetryDelayMs(replay, now)).toBe(31_000)
+    expect(startupRetryNotice(replay)).toContain('backoff')
+  })
+
+  it('bounds the wait between one second and the 15-minute provisioner cap', () => {
+    const now = Date.now()
+    expect(provisionBackoffRetryDelayMs(new VmProvisionFailedError('agent_x', 1, new Date(now - 5_000)), now)).toBe(
+      1_000
+    )
+    expect(
+      provisionBackoffRetryDelayMs(new VmProvisionFailedError('agent_x', 1, new Date(now + 60 * 60_000)), now)
+    ).toBe(15 * 60_000 + 1_000)
+  })
+
+  it('keeps a more specific allowlisted cause and ignores a replay without a retry time', () => {
+    const busy = Object.assign(new Error('busy'), { name: 'BoxPortBusyError' })
+    expect(startupRetryCode(new VmProvisionFailedError('agent_x', 1, new Date(Date.now() + 30_000), busy))).toBe(
+      'box_port_busy'
+    )
+    expect(startupRetryCode(new VmProvisionFailedError('agent_x', 1, null))).toBeNull()
+    expect(provisionBackoffRetryDelayMs(new Error('ssh command timed out after 30000ms'))).toBeUndefined()
   })
 })
 
@@ -550,6 +588,103 @@ describe('durable startup retry', () => {
       expect(execution.startupRetryCount).toBe(startupRetryDelays(code).length)
     } finally {
       runner.mockRestore()
+    }
+  })
+
+  it('does not spend the recovery budget on executions retried inside one provision backoff window', async () => {
+    // Reproduces the reported burst: one genuine provision failure (SSH timeout)
+    // opens a 30-second backoff, then three executions start inside that window.
+    const sandboxId = `agent_backoff_burst_${crypto.randomUUID()}`
+    await expect(
+      coalesceVmProvision(
+        sandboxId,
+        async () => {
+          throw new Error('ssh command timed out after 30000ms')
+        },
+        async () => ''
+      )
+    ).rejects.toThrow('ssh command timed out')
+    const [failedAttempt] = await db
+      .select()
+      .from(vmBoxProvisionAttempts)
+      .where(eq(vmBoxProvisionAttempts.sandboxId, sandboxId))
+    expect(failedAttempt.retryAt!.getTime()).toBeGreaterThan(Date.now())
+    let physicalAttempts = 0
+    const runner = spyOn(runners, 'createRunner').mockImplementation(async () => {
+      await coalesceVmProvision(
+        sandboxId,
+        async () => {
+          physicalAttempts++
+          throw new Error('ssh command timed out after 30000ms')
+        },
+        async () => ''
+      )
+      throw new Error('unreachable: provisioning was mocked to fail')
+    })
+    try {
+      for (let i = 0; i < 3; i++) {
+        const execution = await agent.queueExecution({ message: `Burst execution ${i}` })
+        expect(await execution.start()).toBe(true)
+        await execution.run()
+        const requeued = await Execution.mustFind(execution.id)
+        // Waiting, not failed: no terminal failure and no failure class.
+        expect(requeued.status).toBe('queued')
+        expect(requeued.failureClass).toBeNull()
+        expect(requeued.startupRetryAt!.getTime()).toBeGreaterThanOrEqual(failedAttempt.retryAt!.getTime())
+        // Nothing may pick it up again before the provisioner's retry-after time.
+        expect(await requeued.start()).toBe(false)
+        await requeued.stop()
+      }
+      expect(physicalAttempts).toBe(0)
+      // No unexplained failure was recorded, so no Continue/Stop wait can open.
+      expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))).toEqual([])
+
+      // Once the window passes, a genuinely new physical attempt runs, and its
+      // failure is counted against the bounded budget exactly once.
+      await db
+        .update(vmBoxProvisionAttempts)
+        .set({ retryAt: new Date(Date.now() - 1_000) })
+        .where(eq(vmBoxProvisionAttempts.id, failedAttempt.id))
+      const genuine = await agent.queueExecution({ message: 'After the window' })
+      expect(await genuine.start()).toBe(true)
+      await genuine.run()
+      expect(physicalAttempts).toBe(1)
+      expect((await Execution.mustFind(genuine.id)).status).toBe('failed')
+      const [episode] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
+      expect(episode.state).toMatchObject({ state: 'recovering', failures: 1, cycleFailures: 1 })
+    } finally {
+      runner.mockRestore()
+      await db.delete(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
+      await db.delete(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.sandboxId, sandboxId))
+    }
+  })
+
+  it('counts a startup that keeps landing in renewed provision backoff windows once its waits run out', async () => {
+    const replay = new VmProvisionFailedError('agent_renewed', 3, new Date(Date.now() + 30_000))
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(replay)
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep waiting' })
+      for (let i = 0; i < 3; i++) {
+        expect(await execution.start()).toBe(true)
+        await execution.run()
+        execution = await Execution.mustFind(execution.id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(i + 1)
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, execution.id))
+      }
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      expect((await Execution.mustFind(execution.id)).status).toBe('failed')
+      // Bounded: the exhausted wait is an unexplained failure with a retry wake,
+      // never a silent explained terminal state.
+      const [episode] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
+      expect(episode.state).toMatchObject({ failures: 1, startupOnly: true })
+    } finally {
+      runner.mockRestore()
+      await db.delete(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
     }
   })
 
