@@ -2237,6 +2237,45 @@ ensure_machine_swap() {
   ensure_machine_swap_fstab
 }
 
+# Each box's swap share (MemorySwapMax in its root-owned 50-ficus-box.conf) is
+# computed by box-provision.sh from the host's SwapTotal at provision time, so a
+# box provisioned before this host had swap carries a share of 0. Converge every
+# existing box here, right after the swap exists, instead of waiting for each
+# box's next re-provision: rewrite only the MemorySwapMax line where it differs
+# (appending it to drop-ins that predate it) and reload systemd ONCE for the
+# whole host. A converged host changes nothing and does not reload. This lives
+# in bootstrap (not box-provision.sh) because bootstrap may run before the
+# current box-provision.sh artifact reaches the host. Keep
+# BOX_SWAP_SHARE_PCT equal to SLICE_SWAP_MAX_PCT in box-provision.sh
+# (bootstrap.test.ts checks it). A provision racing this writes the same value,
+# from the same SwapTotal; each file is replaced atomically.
+BOX_SWAP_SHARE_PCT=25
+BOX_SLICE_DROPIN=50-ficus-box.conf
+
+refresh_box_swap_shares() {
+  local swap_kb share file content updated changed=0
+  swap_kb="$(awk '/^SwapTotal:/ {print $2}' "${MEMINFO_FILE}")"
+  [[ "${swap_kb}" =~ ^[0-9]+$ ]] || return 1
+  share=$(( swap_kb * BOX_SWAP_SHARE_PCT / 100 * 1024 ))
+  for file in "${FICUS_HOST_ROOT}"/etc/systemd/system/user-*.slice.d/"${BOX_SLICE_DROPIN}" \
+    "${FICUS_HOST_ROOT}"/etc/systemd/system/ficus-box-*.slice.d/"${BOX_SLICE_DROPIN}"; do
+    [ -f "${file}" ] || continue
+    content="$(cat "${file}")" || continue
+    if grep -q '^MemorySwapMax=' <<<"${content}"; then
+      updated="$(sed "s/^MemorySwapMax=.*/MemorySwapMax=${share}/" <<<"${content}")"
+    else
+      updated="$(printf '%s\nMemorySwapMax=%s' "${content}" "${share}")"
+    fi
+    [ "${updated}" = "${content}" ] && continue
+    printf '%s\n' "${updated}" | "${SUDO[@]}" install -m 0644 /dev/stdin "${file}.ficus-new" &&
+      "${SUDO[@]}" mv "${file}.ficus-new" "${file}" || return 1
+    changed=$((changed + 1))
+  done
+  [ "${changed}" -gt 0 ] || return 0
+  echo "swap: set the swap share of ${changed} existing box(es) to ${share} bytes" >&2
+  "${SUDO[@]}" timeout --kill-after=5s 60s systemctl daemon-reload
+}
+
 # systemd-oomd: the backstop that ends a thrashing workload. box-provision.sh
 # puts each box's commands and Docker under ManagedOOMMemoryPressure=kill at
 # 50%; this sets how long the pressure must last. oomd's default is 30s; 20s
@@ -2410,6 +2449,8 @@ main() {
   # failed-unit hygiene. Never fails bootstrap; see the memory model doc.
   ensure_machine_swap ||
     echo 'bootstrap.sh: WARNING no swap configured on this host; boxes cannot page out cold memory' >&2
+  refresh_box_swap_shares ||
+    echo 'bootstrap.sh: WARNING could not update the swap share of existing boxes; they converge on their next provision' >&2
   ensure_oomd ||
     echo 'bootstrap.sh: WARNING systemd-oomd is not running; a box thrashing under memory pressure will not be stopped' >&2
   reset_failed_user_managers

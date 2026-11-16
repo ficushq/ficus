@@ -86,6 +86,18 @@ device is left alone, an existing file is re-activated, and a new file is
 allocated through a temporary file. Each box may use at most 25% of the host's
 swap (`MemorySwapMax`, `SLICE_SWAP_MAX_PCT`), so one box cannot fill it.
 
+`box-provision.sh` computes that share from the host's `SwapTotal` when it
+provisions a box, so a box provisioned before the host had swap starts with a
+share of 0. Right after it ensures the swapfile, `bootstrap.sh`
+(`refresh_box_swap_shares`) sets `MemorySwapMax` in every existing box's
+`50-ficus-box.conf` to the current share: it rewrites only that line where it
+differs, adds it to drop-ins that predate it, and reloads systemd once for the
+whole host. A converged host changes nothing and does not reload. This is done
+in bootstrap rather than on every ensure so that a host with many boxes never
+reloads systemd once per box, and because bootstrap can run before the newest
+`box-provision.sh` reaches the host. `BOX_SWAP_SHARE_PCT` in `bootstrap.sh` must
+equal `SLICE_SWAP_MAX_PCT`; a test checks it.
+
 A swapfile rather than zram: zram needs a kernel module that some provider
 kernels lack, and its compressed pages still live in RAM and cost CPU exactly
 when the host has neither to spare. With swap, cold pages (idle sandbox
@@ -197,7 +209,8 @@ clears a failed state and never stops anything.
 
 No manual host step is needed for hosts that re-bootstrap automatically.
 
-1. **Host level (swap, systemd-oomd, oomd duration, failed-unit sweep).** These
+1. **Host level (swap, every existing box's swap share, systemd-oomd, oomd
+   duration, failed-unit sweep).** These
    live in `bootstrap.sh`, and the bootstrap version hashes both machine
    scripts. After a Core upgrade that contains this change, the worker's
    boot-time bootstrap-drift reconcile re-runs `bootstrap.sh` on every ready
@@ -212,8 +225,9 @@ No manual host step is needed for hosts that re-bootstrap automatically.
    server arrive together. To converge every box at once, use the offline
    reprovision tool (see [runtime recovery](runtime-recovery.md)).
 3. **Until a box is re-provisioned** it keeps its old caps and unit, so oomd
-   does not watch its commands. The host floors appear with the first provision
-   on that host after the upgrade, whichever box it is.
+   does not watch its commands; its swap share is already converged by step 1.
+   The host floors appear with the first provision on that host after the
+   upgrade, whichever box it is.
 
 Note that the oomd policy only acts once both halves have landed: oomd running
 on the host (bootstrap) and the box's delegated unit (provision).

@@ -1209,6 +1209,106 @@ describe('bootstrap.sh host memory protection (stubbed host)', () => {
     }
   })
 
+  // A box provisioned before the host had swap carries a swap share of 0; the
+  // bootstrap that creates the swap converges it without a re-provision.
+  const GIB_BYTES = 1024 * 1024 * 1024
+  function boxDropIn(swapKb: number): string {
+    const result = Bun.spawnSync([
+      'bash',
+      join(repoRoot, 'scripts/machine/box-provision.sh'),
+      '--print-slice-limits',
+      '--memtotal-kb',
+      String(16 * GIB_KB),
+      '--swaptotal-kb',
+      String(swapKb),
+      '--box-count',
+      '1',
+      '--nproc',
+      '4',
+    ])
+    expect(result.exitCode).toBe(0)
+    return `[Slice]\n${result.stdout.toString()}`
+  }
+  function withBoxes(root: string, swapKb: number, dropIns: Record<string, string>) {
+    writeFileSync(join(root, 'proc/meminfo'), `MemTotal:       ${16 * GIB_KB} kB\nSwapTotal:      ${swapKb} kB\n`)
+    for (const [slice, content] of Object.entries(dropIns)) {
+      mkdirSync(join(root, 'etc/systemd/system', `${slice}.d`), { recursive: true })
+      writeFileSync(join(root, 'etc/systemd/system', `${slice}.d`, '50-ficus-box.conf'), content)
+    }
+  }
+  const dropIn = (root: string, slice: string) =>
+    readFileSync(join(root, 'etc/systemd/system', `${slice}.d`, '50-ficus-box.conf'), 'utf8')
+
+  it('gives boxes provisioned before the swap existed their share, with one reload for the host', async () => {
+    const root = makeHost()
+    try {
+      withBoxes(root, 4 * GIB_KB, {
+        'user-1001.slice': boxDropIn(0),
+        'ficus-box-box_aaaaaaaaaaaa.slice': boxDropIn(0),
+      })
+      const r = await run(root, 'refresh_box_swap_shares')
+      expect(r.exitCode).toBe(0)
+      // Exactly what provisioning on this host now would write.
+      expect(dropIn(root, 'user-1001.slice')).toBe(boxDropIn(4 * GIB_KB))
+      expect(dropIn(root, 'ficus-box-box_aaaaaaaaaaaa.slice')).toBe(boxDropIn(4 * GIB_KB))
+      expect(boxDropIn(4 * GIB_KB)).toContain(`MemorySwapMax=${GIB_BYTES}\n`)
+      expect(r.calls).toEqual(['systemctl daemon-reload'])
+      expect(r.stderr).toContain('set the swap share of 2 existing box(es)')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('re-running on a converged host changes nothing and does not reload', async () => {
+    const root = makeHost()
+    try {
+      withBoxes(root, 4 * GIB_KB, { 'user-1001.slice': boxDropIn(4 * GIB_KB) })
+      const before = dropIn(root, 'user-1001.slice')
+      const r = await run(root, 'refresh_box_swap_shares')
+      expect(r.exitCode).toBe(0)
+      expect(r.calls).toEqual([])
+      expect(dropIn(root, 'user-1001.slice')).toBe(before)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('bounds the swap of a box provisioned before swap shares existed', async () => {
+    const root = makeHost()
+    try {
+      withBoxes(root, 4 * GIB_KB, { 'user-1002.slice': '[Slice]\nMemoryHigh=1\nMemoryMax=2\n' })
+      expect((await run(root, 'refresh_box_swap_shares')).calls).toEqual(['systemctl daemon-reload'])
+      expect(dropIn(root, 'user-1002.slice')).toBe(`[Slice]\nMemoryHigh=1\nMemoryMax=2\nMemorySwapMax=${GIB_BYTES}\n`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves other slices and other drop-ins alone', async () => {
+    const root = makeHost()
+    try {
+      withBoxes(root, 4 * GIB_KB, {})
+      mkdirSync(join(root, 'etc/systemd/system/user-1001.slice.d'), { recursive: true })
+      writeFileSync(join(root, 'etc/systemd/system/user-1001.slice.d/60-ficus-box-ports.conf'), '[Slice]\n')
+      mkdirSync(join(root, 'etc/systemd/system/system.slice.d'), { recursive: true })
+      writeFileSync(join(root, 'etc/systemd/system/system.slice.d/50-ficus-box.conf'), '[Slice]\nMemorySwapMax=0\n')
+      const r = await run(root, 'refresh_box_swap_shares')
+      expect(r.calls).toEqual([])
+      expect(readFileSync(join(root, 'etc/systemd/system/system.slice.d/50-ficus-box.conf'), 'utf8')).toBe(
+        '[Slice]\nMemorySwapMax=0\n'
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('uses the same swap share as box-provision.sh', () => {
+    const boxProvision = readFileSync(join(repoRoot, 'scripts/machine/box-provision.sh'), 'utf8')
+    expect(bootstrapSh.match(/^BOX_SWAP_SHARE_PCT=(\d+)$/m)?.[1]).toBe(
+      boxProvision.match(/^SLICE_SWAP_MAX_PCT=(\d+)$/m)?.[1]
+    )
+  })
+
   it('main runs all three on every bootstrap, prebaked or not, and none can fail it', () => {
     const main = bootstrapSh.slice(
       bootstrapSh.indexOf('\nmain() {'),
@@ -1216,6 +1316,9 @@ describe('bootstrap.sh host memory protection (stubbed host)', () => {
     )
     const afterManifest = main.slice(main.indexOf('  write_manifest'))
     expect(afterManifest).toContain('ensure_machine_swap ||')
+    expect(afterManifest.indexOf('refresh_box_swap_shares ||')).toBeGreaterThan(
+      afterManifest.indexOf('ensure_machine_swap ||')
+    )
     expect(afterManifest).toContain('ensure_oomd ||')
     expect(afterManifest).toContain('reset_failed_user_managers')
     expect(main.indexOf('  write_manifest')).toBeGreaterThan(main.indexOf('install_browser || true'))
