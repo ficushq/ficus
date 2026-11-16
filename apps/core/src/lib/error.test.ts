@@ -7,6 +7,7 @@ import {
   getErrorSystemMessage,
   isDurableProviderTransportFailure,
   isInternalExecutionError,
+  isSandboxInfrastructureError,
   providerErrorText,
 } from './error'
 
@@ -482,6 +483,104 @@ describe('internal errors are never attributed to the provider', () => {
   test('isInternalExecutionError is case-insensitive and substring-based', () => {
     expect(isInternalExecutionError('WRAPPED: Admission Effect Fence Was Revoked (retrying)')).toBe(true)
     expect(isInternalExecutionError('a totally unrelated failure')).toBe(false)
+  })
+})
+
+/**
+ * A squad's sandbox could not be provisioned, and every failure halted its agents
+ * as "[System] Rate limit or plan credit exhaustion" because the squad id ended
+ * in `…c24297ef`: the bare `429` substring matched inside the id. The id below is
+ * synthetic but has the same shape.
+ */
+describe('sandbox failures and identifiers are never provider rate limits', () => {
+  const squadId = '0b1e2c3d-4f5a-4b6c-8d7e-0a1bc24297ef'
+  const sandboxId = `squad_${squadId}`
+  const sandboxErrors = [
+    `Sandbox ${sandboxId} provision attempt 20535 failed; retry after 2026-11-16T20:01:00.000Z`,
+    `Sandbox ${sandboxId} provision attempt 7 failed; retry after placement refresh`,
+    `box-provision failed for ${sandboxId} (exit 1): systemd-run: CPUQuota=400% rejected, quota exceeded`,
+    `Sandbox \`${sandboxId}\` (the shared squad box) is currently unavailable (reason: capacity). Automatic recovery has started.`,
+    `[System] Sandbox ${sandboxId} is still unavailable after ~12 minutes`,
+    `Sandbox ${sandboxId} is no longer running (failed)`,
+    `Sandbox ${sandboxId} was stopped`,
+    'Sandbox scheduling is temporarily unavailable.',
+    'The machine is busy starting sandboxes; work waits for a host capacity startup slot.',
+    'Host capacity wait exceeded 30 minutes (machine m-429, reason quota). Check the host capacity and active startup owners before retrying.',
+  ]
+
+  test.each(sandboxErrors)('%p: no rate-limit message, no exhaustion, no account health signal', (error) => {
+    expect(getErrorSystemMessage(error)).toBeNull()
+    expect(classifyProviderError(error)).toBeNull()
+    expect(classifyCaughtProviderError(error)).toBeNull()
+    expect(classifyCaughtProviderError(new Error(error))).toBeNull()
+    expect(isSandboxInfrastructureError(error) || isInternalExecutionError(error)).toBe(true)
+  })
+
+  test('typed sandbox errors are recognized anywhere in the cause chain, whatever their message', () => {
+    // The post-provision setup error reuses its cause's message, which can be
+    // arbitrary remote stderr, so only the type can say it is not a provider's.
+    const setup = Object.assign(new Error('429 Too Many Requests: quota exceeded'), {
+      name: 'VmPostProvisionSetupError',
+    })
+    const wrapped = new Error('Failed query', { cause: setup })
+    const outage = Object.assign(new Error('rate limit'), { code: 'SANDBOX_UNAVAILABLE' })
+    for (const error of [setup, wrapped, outage]) {
+      expect(isSandboxInfrastructureError(error)).toBe(true)
+      expect(classifyCaughtProviderError(error)).toBeNull()
+    }
+    for (const name of ['VmProvisionFailedError', 'SandboxOutageError', 'HostCapacityUnavailableError']) {
+      expect(isSandboxInfrastructureError(Object.assign(new Error('status 429'), { name }))).toBe(true)
+    }
+    expect(isSandboxInfrastructureError(new Error('429 Too Many Requests'))).toBe(false)
+    expect(isSandboxInfrastructureError(undefined)).toBe(false)
+  })
+
+  const identifiers = [
+    `execution 7c771429-0b1e-4c3d-8f5a-4b6c8d7e0a1b failed: tool exited 1`,
+    `agent ${squadId} could not read its worktree`,
+    'merge of 429e1f0c9a8b7d6e5f4a3b2c1d0e9f8a7b6c5d4e failed with conflicts',
+    'commit a1b2c3d4290f failed the pre-commit hook',
+    'unit file sets CPUQuota=200% and MemoryMax=4G',
+    'config key cpuQuota is invalid',
+    'capacityPlanner returned no candidates',
+    'request to the internal load balancer failed: connection refused',
+    'accreditation check failed',
+  ]
+
+  test.each(identifiers)('%p is not a rate limit or plan exhaustion', (error) => {
+    expect(getErrorSystemMessage(error)).toBeNull()
+    expect(classifyProviderError(error)).toBeNull()
+    expect(classifyCaughtProviderError(error)).toBeNull()
+  })
+
+  test('a real HTTP 429 still classifies in its status forms', () => {
+    for (const error of [
+      '429 Too Many Requests',
+      '429 status code (no body)',
+      '429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}',
+      'API Error: 429 {"type":"error"}',
+      'Request failed with status 429',
+      'HTTP/1.1 429',
+      '{"error":{"message":"Provider returned error","code":429}}',
+    ]) {
+      expect(classifyProviderError(error)?.reason).toBe('rate-limit')
+      expect(getErrorSystemMessage(error)).toContain('Rate limit')
+    }
+  })
+
+  test('real quota, credit and capacity errors still classify', () => {
+    expect(classifyProviderError('insufficient_quota')?.reason).toBe('plan-credit')
+    expect(classifyProviderError('Quota exceeded for quota metric')?.reason).toBe('plan-credit')
+    expect(classifyProviderError('Your credit balance is too low to access the Anthropic API.')?.reason).toBe(
+      'plan-credit'
+    )
+    expect(classifyProviderError('You have run out of credits')?.reason).toBe('plan-credit')
+    expect(classifyProviderError('Selected model is at capacity. Please try a different model.')?.reason).toBe(
+      'capacity'
+    )
+    expect(classifyProviderError('Service tier capacity exceeded for this model.')?.reason).toBe('capacity')
+    expect(getErrorSystemMessage('insufficient_quota')).toContain('Rate limit')
+    expect(getErrorSystemMessage('The service is at capacity')).toContain('Rate limit')
   })
 })
 

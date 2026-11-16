@@ -21,6 +21,7 @@ import {
 import { AgentType } from './AgentType'
 import { Agent } from './Agent'
 import { Execution } from './Execution'
+import { VmProvisionFailedError } from '../services/sandbox/vm/provision-flight'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { concurrencyLimiter } from '../services/execution/concurrency-limiter-instance'
 
@@ -411,6 +412,18 @@ describe('Execution.transitionTo', () => {
       expect(testAgent.status).toBe('waiting-input')
       const question = (testAgent.questionData as any).questions[0]
       expect(question.id).toBe('rate_limit')
+    })
+
+    it('failed (sandbox provision, id containing 429): agent idle, never a rate_limit halt', async () => {
+      const execution = await testAgent.queueExecution({ message: 'fail-sandbox-provision' })
+      await execution.start()
+
+      const cause = new VmProvisionFailedError('squad_0b1e2c3d-4f5a-4b6c-8d7e-0a1bc24297ef', 20535, null)
+      await execution.transitionTo({ kind: 'failed', error: cause.message, cause })
+
+      await testAgent.reload()
+      expect(testAgent.status).toBe('idle')
+      expect(testAgent.questionData ?? null).toBeNull()
     })
 
     it('failed (all providers exhausted): agent waiting-input with all_providers_exhausted question', async () => {

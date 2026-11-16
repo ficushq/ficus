@@ -104,14 +104,46 @@ const CODEX_USAGE_LIMIT_MARKERS = [
 ]
 
 /**
- * Rules that map error substrings to an exhaustion reason + cooldown policy.
+ * Context-bound matchers for the provider signals that are also common inside
+ * identifiers and configuration text. Error text routinely embeds UUIDs, sandbox
+ * ids and commit SHAs, and a bare substring match turned any id containing `429`
+ * (for example `…-df16c24297ef`) into a provider rate limit. Every matcher here
+ * runs against lowercased text.
+ *
+ * - `429` counts only as an HTTP status: right after `status`, `code`, `http` or
+ *   `error` ("status 429", "HTTP/1.1 429", "API Error: 429", `"statusCode":429`),
+ *   or as the leading status of the message ("429 Too Many Requests", the SDKs'
+ *   `${status} ${body}` form). A digit run inside an id never matches.
+ * - `quota`, `credit` and `balance` must start a word (underscores and hyphens
+ *   separate words), so `insufficient_quota` matches and `CPUQuota=` does not.
+ *   `balance` must also end one, so a load balancer is not an empty account.
+ * - `capacity` needs a provider-exhaustion context ("at capacity", "over
+ *   capacity", "capacity exceeded", …); Ficus's own host and session capacity
+ *   messages do not.
+ */
+const HTTP_429_STATUS = /(?:^\s*|(?:status|code|http(?:\/\d(?:\.\d)?)?|error)\W{0,3})429\b/
+const QUOTA_WORD = /(?<![a-z0-9])quota/
+const CREDIT_WORD = /(?<![a-z0-9])credit/
+const BALANCE_WORD = /(?<![a-z0-9])balance(?![a-z0-9])/
+const PROVIDER_CAPACITY =
+  /\b(?:at|over|out of|insufficient|no|exceeded|reached)\s+capacity\b|\bcapacity[\s_-]+(?:exceeded|reached|limit|constraints?|unavailable|error)\b/
+
+/** A literal substring or a context-bound matcher, applied to lowercased text. */
+type ErrorPattern = string | RegExp
+
+function matchesErrorPattern(lower: string, pattern: ErrorPattern): boolean {
+  return typeof pattern === 'string' ? lower.includes(pattern) : pattern.test(lower)
+}
+
+/**
+ * Rules that map error patterns to an exhaustion reason + cooldown policy.
  *
  * Order matters: more specific/specifically-persistent reasons (plan-credit)
  * are checked before transient ones (rate-limit) so that e.g. "insufficient
  * quota" (matched via 'quota') is classified as plan-credit rather than a generic
  * rate limit.
  */
-const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; cooldownMs: number }> = [
+const EXHAUSTION_RULES: Array<{ patterns: ErrorPattern[]; reason: ExhaustionReason; cooldownMs: number }> = [
   {
     // Hard plan-window limits (e.g. z.ai "429 Weekly/Monthly Limit Exhausted",
     // codex `usage_limit_reached`). These carry a leading "429"/"limit"/
@@ -125,11 +157,11 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
     // claimed (and hedged on its announced window) by classifyCodexUsageLimit
     // ahead of these rules; it stays listed here as the backstop for a payload
     // that carries the code without any codex window at all.
-    substrings: [
+    patterns: [
       'plan credit',
-      'quota',
-      'balance',
-      'credit',
+      QUOTA_WORD,
+      BALANCE_WORD,
+      CREDIT_WORD,
       'billing',
       'limit exhausted',
       'limit will reset',
@@ -147,12 +179,12 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
     cooldownMs: PLAN_CREDIT_COOLDOWN_MS,
   },
   {
-    substrings: ['capacity', 'overloaded', 'service unavailable', 'no allowed providers available'],
+    patterns: [PROVIDER_CAPACITY, 'overloaded', 'service unavailable', 'no allowed providers available'],
     reason: 'capacity',
     cooldownMs: 5 * 60_000,
   },
   {
-    substrings: ['rate limit', 'usage limit', '429', 'too many requests'],
+    patterns: ['rate limit', 'usage limit', HTTP_429_STATUS, 'too many requests'],
     reason: 'rate-limit',
     cooldownMs: RATE_LIMIT_COOLDOWN_MS,
   },
@@ -174,7 +206,9 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
  * refuses again, and the loop repeats while the real cause stays invisible.
  *
  * This is a closed set: every string here is one Ficus itself throws, so matching
- * them is exact rather than a guess about a provider's wording.
+ * them is exact rather than a guess about a provider's wording. Sandbox and
+ * provisioning messages embed sandbox ids, so those are matched by shape in
+ * {@link SANDBOX_INFRASTRUCTURE_ERROR_PATTERNS}.
  */
 const INTERNAL_EXECUTION_ERROR_MARKERS = [
   'execution session capacity reservation was refused',
@@ -184,12 +218,82 @@ const INTERNAL_EXECUTION_ERROR_MARKERS = [
   'sandbox provisioning failed',
   'sandbox provisioning was cancelled',
   'sandbox provisioning result expired',
+  // Host capacity admission (HostCapacityUnavailableError, capacityWaitFailureNotice).
+  'work waits for a host capacity startup slot',
+  'host capacity wait exceeded',
+  'host cpu capacity could not be determined',
 ]
+
+/**
+ * Sandbox and provisioning failures, by error class name. A sandbox that cannot
+ * be provisioned or reached is never a model provider's error, but these
+ * messages embed sandbox ids (`squad_<uuid>`), wrapped remote stderr and
+ * placement reasons that the provider classifiers would otherwise read. Matched
+ * by name, as in startup-retry.ts, so this module does not import the sandbox
+ * and machine services.
+ */
+const SANDBOX_INFRASTRUCTURE_ERROR_NAMES = new Set([
+  'VmProvisionFailedError',
+  'VmPostProvisionSetupError',
+  'SandboxOutageError',
+  'SandboxReadinessPendingError',
+  'SandboxProvisionError',
+  'HostCapacityUnavailableError',
+  'BoxPortBusyError',
+  'BoxLockTimeoutError',
+  'BoxStopUnverifiedError',
+  'MachineUnavailableError',
+  'MachineNotReadyError',
+])
+
+/**
+ * The text fallback for {@link SANDBOX_INFRASTRUCTURE_ERROR_NAMES}, for when only
+ * the message survived (a stored execution error, a plain `Error` thrown by the
+ * box manager). Each pattern is the shape of a message Ficus itself writes.
+ */
+const SANDBOX_INFRASTRUCTURE_ERROR_PATTERNS = [
+  // VmProvisionFailedError: "Sandbox <id> provision attempt <n> failed; retry after <time>"
+  /\bsandbox \S+ provision attempt \d+ failed\b/,
+  // BoxManager: "box-provision failed for <id> (exit <code>): <stderr>"
+  /\bbox-provision failed for \S+/,
+  // SandboxOutageError: "Sandbox `<id>` (<box>) is currently unavailable"
+  /\bsandbox `[^`]*` \([^)]*\) is currently unavailable\b/,
+  // Recovery watch notice: "Sandbox <ids> is/are still unavailable after ~<time>"
+  /\bsandbox .{1,400}? (?:is|are) still unavailable after\b/,
+  /\bsandbox (?:scheduling|provisioning coordination) is temporarily unavailable\b/,
+  // Agent routes: "Sandbox <id> was stopped" / "Sandbox <id> is no longer running (<status>)"
+  /\bsandbox \S+ (?:was stopped|is no longer running)\b/,
+  /\bsandbox post-provision setup did not complete\b/,
+]
+
+function isSandboxInfrastructureText(lower: string): boolean {
+  return SANDBOX_INFRASTRUCTURE_ERROR_PATTERNS.some((pattern) => pattern.test(lower))
+}
+
+/**
+ * True when the error is a sandbox or provisioning failure, never a provider's.
+ * Prefers the typed error anywhere in its cause chain (class name, or the
+ * outage's `SANDBOX_UNAVAILABLE` code) and falls back to the message shapes
+ * when a string, or an untyped error, is all that is available.
+ */
+export function isSandboxInfrastructureError(error: unknown): boolean {
+  if (typeof error === 'string') return isSandboxInfrastructureText(error.toLowerCase())
+  const seen = new Set<object>()
+  let current: unknown = error
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current)
+    if (SANDBOX_INFRASTRUCTURE_ERROR_NAMES.has(current.name)) return true
+    if ((current as Error & { code?: unknown }).code === 'SANDBOX_UNAVAILABLE') return true
+    if (isSandboxInfrastructureText(current.message.toLowerCase())) return true
+    current = current.cause
+  }
+  return false
+}
 
 /** True when the error is Ficus's own, not a provider's. */
 export function isInternalExecutionError(error: string): boolean {
   const lower = error.toLowerCase()
-  return INTERNAL_EXECUTION_ERROR_MARKERS.some((marker) => lower.includes(marker))
+  return INTERNAL_EXECUTION_ERROR_MARKERS.some((marker) => lower.includes(marker)) || isSandboxInfrastructureText(lower)
 }
 
 export function classifyCaughtProviderError(
@@ -197,6 +301,8 @@ export function classifyCaughtProviderError(
   opts: { now?: number } = {}
 ): CaughtProviderErrorClassification | null {
   const now = opts.now ?? Date.now()
+  // Sandbox and provisioning failures are classified first, by type.
+  if (isSandboxInfrastructureError(error)) return null
   const text = providerErrorText(error)
   if (text && isInternalExecutionError(text)) return null
   // Claude Code failures the user must fix on their machine: park that account and fail over.
@@ -493,7 +599,7 @@ export function classifyProviderError(error: string, opts: { now?: number } = {}
   const codex = classifyCodexUsageLimit(error, lower)
   if (codex) return codex
   for (const rule of EXHAUSTION_RULES) {
-    if (rule.substrings.some((s) => lower.includes(s))) {
+    if (rule.patterns.some((pattern) => matchesErrorPattern(lower, pattern))) {
       return {
         exhausted: true,
         reason: rule.reason,
@@ -686,19 +792,19 @@ export function getErrorSystemMessage(error: string): string | null {
   // capacity reservation.
   if (isInternalExecutionError(error)) return null
   const lower = error.toLowerCase()
-  for (const { substrings, message } of ERROR_CONFIG) {
-    if (substrings.some((s) => lower.includes(s))) return message
+  for (const { patterns, message } of ERROR_CONFIG) {
+    if (patterns.some((pattern) => matchesErrorPattern(lower, pattern))) return message
   }
   return isAuthenticationErrorText(error) ? AUTH_ERROR_SYSTEM_MESSAGE : null
 }
 
-const ERROR_CONFIG: Array<{ substrings: string[]; message: string }> = [
+const ERROR_CONFIG: Array<{ patterns: ErrorPattern[]; message: string }> = [
   {
-    substrings: ['rate limit', 'usage limit', '429', 'quota', 'plan credit', 'capacity'],
+    patterns: ['rate limit', 'usage limit', HTTP_429_STATUS, QUOTA_WORD, 'plan credit', PROVIDER_CAPACITY],
     message: '[System] Rate limit or plan credit exhaustion. Execution stopped.',
   },
   {
-    substrings: ['overloaded_error'],
+    patterns: ['overloaded_error'],
     message: '[System] Provider is overloaded. Execution stopped.',
   },
 ]
