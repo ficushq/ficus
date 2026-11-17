@@ -31,6 +31,31 @@ describe('AgentSession', () => {
     selSpy.mockRestore()
   })
 
+  it('pins Pi cache warming and Anthropic message threads to the Pi 1.5.0 behavior', async () => {
+    const selSpy = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+      selected: 'anthropic:claude-sonnet-4-5',
+      candidates: [
+        { spec: 'anthropic:claude-sonnet-4-5', provider: 'anthropic', modelId: 'claude-sonnet-4-5', usable: true },
+      ],
+    })
+
+    try {
+      const session = await AgentSession.create({
+        model: 'anthropic:claude-sonnet-4-5',
+        systemPrompt: 'You are a test agent.',
+      })
+
+      // Pi 1.5.1 defaults to "idle", which keeps billing cache refreshes after a run settles.
+      expect(session.pi.settingsManager.getCacheWarmingMode()).toBe('streaming')
+      // Pi 1.5.1 enables message threads for api.anthropic.com; Core sends full requests.
+      expect(session.pi.model?.baseUrl).toContain('api.anthropic.com')
+      expect((session.pi.model?.compat as { supportsMessageThreads?: boolean })?.supportsMessageThreads).toBe(false)
+      session.dispose()
+    } finally {
+      selSpy.mockRestore()
+    }
+  })
+
   it('selects the first usable model from a priority list at session creation', async () => {
     // Simulate a priority list where anthropic lacks auth and openai-codex is
     // usable — selection should resolve to openai-codex and feed only that
