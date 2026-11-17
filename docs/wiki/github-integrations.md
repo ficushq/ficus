@@ -178,7 +178,9 @@ rework (the active flow attempt, or the `changeEventsTo` step at
 completion-ready), the reminder lives here once instead of in every delivery
 prompt: once the fixes are pushed and ready for re-review, re-request review from
 the reviewer, named by their validated GitHub login
-(`gh pr edit <number> --repo <owner/repo> --add-reviewer <login>`). Requesting
+(`gh api -X POST repos/<owner>/<repo>/pulls/<number>/requested_reviewers -f 'reviewers[]=<login>'`;
+the REST form is used because older gh releases fail `gh pr edit --add-reviewer`
+on GitHub's Projects (classic) deprecation without requesting anyone). Requesting
 reviewers needs the GitHub App's `Pull requests: write` permission and a user
 with write or triage access to the repository. Other review states are shown
 unchanged.

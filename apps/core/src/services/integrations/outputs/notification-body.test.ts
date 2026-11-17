@@ -203,7 +203,7 @@ test('changes-requested reviews tell the reworking agent to re-request review fr
   expect(body).toContain('Handle the empty list.')
   expect(body).toContain('Ficus guidance')
   expect(body).toContain('pushed and ready for re-review')
-  expect(body).toContain('gh pr edit 3 --repo acme/project --add-reviewer octo-reviewer')
+  expect(body).toContain("gh api -X POST repos/acme/project/pulls/3/requested_reviewers -f 'reviewers[]=octo-reviewer'")
   // Only the re-request reminder is added: one short paragraph after the review text.
   expect(body.slice(fact.body.length).trim().split('\n')).toHaveLength(1)
   // Presentation only: the canonical fact and its hashed evidence are unchanged.
@@ -214,7 +214,7 @@ test('changes-requested reviews tell the reworking agent to re-request review fr
 
 test('re-request guidance falls back to a generic reviewer when the review author is unknown', () => {
   const body = integrationOutputRegistry.notificationBody('github', review('changes_requested', null))
-  expect(body).toContain('--add-reviewer <reviewer-login>')
+  expect(body).toContain("-f 'reviewers[]=<reviewer-login>'")
   expect(body).not.toContain('octo-reviewer')
 })
 

@@ -26,8 +26,9 @@ function changesRequestedReReviewGuidance(fact: IntegrationOutputFact): string {
     typeof data.repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(data.repository) ? data.repository : ''
   const known = typeof data.actor === 'string' && /^[a-z0-9-]+(?:\[bot\])?$/i.test(data.actor)
   const login = known ? (data.actor as string) : '<reviewer-login>'
-  const repo = repository ? ` --repo ${repository}` : ''
-  return `Ficus guidance (not part of the GitHub review): once your fixes for this review are pushed and ready for re-review, re-request review from ${known ? login : 'the reviewer who requested changes'} so GitHub notifies them: \`gh pr edit ${number}${repo} --add-reviewer ${login}\`.`
+  // The REST endpoint, not `gh pr edit --add-reviewer`: older gh releases fail that command on
+  // GitHub's Projects (classic) deprecation and request nobody.
+  return `Ficus guidance (not part of the GitHub review): once your fixes for this review are pushed and ready for re-review, re-request review from ${known ? login : 'the reviewer who requested changes'} so GitHub notifies them: \`gh api -X POST repos/${repository || '<owner>/<repo>'}/pulls/${number}/requested_reviewers -f 'reviewers[]=${login}'\`.`
 }
 
 function digest(value: unknown) {
