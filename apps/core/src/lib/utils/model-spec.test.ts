@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test'
+import type { Api, Model } from '@earendil-works/pi-ai'
+import { streamSimple as streamAnthropic } from '@earendil-works/pi-ai/api/anthropic-messages'
 import {
   parseModelSpec,
   parseModelPriorityList,
@@ -145,6 +147,53 @@ describe('model-spec', () => {
           require_parameters: true,
         })
       }
+    })
+  })
+
+  describe('Anthropic message threads', () => {
+    /** Send one session request and return what reached the wire. */
+    async function captureRequest(model: Model<Api>): Promise<{ beta: string; body: Record<string, unknown> }> {
+      let captured: { beta: string; body: Record<string, unknown> } | undefined
+      const fetch = (async (_url: unknown, init?: RequestInit) => {
+        captured = {
+          beta: new Headers(init?.headers).get('anthropic-beta') ?? '',
+          body: JSON.parse(String(init?.body)),
+        }
+        return new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'stop' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as typeof globalThis.fetch
+      await streamAnthropic(
+        model as Model<'anthropic-messages'>,
+        { messages: [{ role: 'user', content: 'hi', timestamp: Date.now() }] },
+        { apiKey: 'sk-ant-api03-test', sessionId: crypto.randomUUID(), fetch, maxRetries: 0 }
+      ).result()
+      if (!captured) throw new Error('no request was sent')
+      return captured
+    }
+
+    it('turns message threads off for Anthropic agent models', () => {
+      const { model } = resolveAgentModelSpec('anthropic:claude-sonnet-4-5')
+      expect(model.baseUrl).toContain('api.anthropic.com')
+      expect((model.compat as { supportsMessageThreads?: boolean }).supportsMessageThreads).toBe(false)
+    })
+
+    it('sends full requests without the thread beta or thread field', async () => {
+      // Control: Pi's registry model on api.anthropic.com opts into threads by default.
+      const registry = await captureRequest(resolveModelSpec('anthropic:claude-sonnet-4-5'))
+      expect(registry.beta).toContain('message-threads')
+      expect(registry.body.thread).toEqual({ type: 'create' })
+
+      const { model } = resolveAgentModelSpec('anthropic:claude-sonnet-4-5')
+      const request = await captureRequest(model)
+      expect(request.beta).not.toContain('message-threads')
+      expect(request.body.thread).toBeUndefined()
+    })
+
+    it('leaves models on other APIs unchanged', () => {
+      const { model } = resolveAgentModelSpec('openai-codex:gpt-5.6-sol')
+      expect((model.compat as { supportsMessageThreads?: boolean } | undefined)?.supportsMessageThreads).toBeUndefined()
     })
   })
 
