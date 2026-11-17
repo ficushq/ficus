@@ -3,6 +3,7 @@ import type { ProcessIdentity } from './process-session'
 import {
   KEEP_RUNNING_ENV,
   LeftoverProcesses,
+  MAX_TRACKED,
   LeftoverSelectorError,
   leftoverStopNotice,
   parseLeftoverSelector,
@@ -117,7 +118,7 @@ describe('LeftoverProcesses', () => {
       identity(100, 100, 10),
       false
     )
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     expect(await leftovers.list()).toEqual([
       expect.objectContaining({
         invocationId: 'inv-1',
@@ -139,7 +140,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(202, 202, 12) }) // called setsid: a new session, same leaf
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT }, 'docker compose up -d', identity(200, 200, 10), true)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     const [group] = await leftovers.list()
     expect(group?.pids).toEqual([201, 202])
   })
@@ -151,14 +152,19 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(401, 400, 41) }) // agent B, same stream, attempt 3
     fake.add({ identity: identity(501, 500, 51) }) // agent A, another stream
     const leftovers = new LeftoverProcesses(fake.backend, log)
-    const record = (id: string, sid: number, ticks: number, ownership: Parameters<LeftoverProcesses['record']>[1]) => {
+    const record = async (
+      id: string,
+      sid: number,
+      ticks: number,
+      ownership: Parameters<LeftoverProcesses['record']>[1]
+    ) => {
       leftovers.record(id, ownership, `cmd ${id}`, identity(sid, sid, ticks), false)
-      leftovers.detach(id)
+      await leftovers.detach(id)
     }
-    record('a1', 100, 10, { agentId: AGENT, workStreamId: STREAM, attemptId: 1 })
-    record('a2', 300, 30, { agentId: AGENT, workStreamId: STREAM, attemptId: 2 })
-    record('b3', 400, 40, { agentId: OTHER, workStreamId: STREAM, attemptId: 3 })
-    record('a-other', 500, 50, { agentId: AGENT, workStreamId: 'stream-2', attemptId: 1 })
+    await record('a1', 100, 10, { agentId: AGENT, workStreamId: STREAM, attemptId: 1 })
+    await record('a2', 300, 30, { agentId: AGENT, workStreamId: STREAM, attemptId: 2 })
+    await record('b3', 400, 40, { agentId: OTHER, workStreamId: STREAM, attemptId: 3 })
+    await record('a-other', 500, 50, { agentId: AGENT, workStreamId: 'stream-2', attemptId: 1 })
 
     const attempt = await leftovers.stop({ workStreamId: STREAM, attemptId: 1 }, 'attempt-ended')
     expect(attempt.stopped.map((group) => group.invocationId)).toEqual(['a1'])
@@ -183,7 +189,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(102, 100, 12), ignoresTerm: true })
     const leftovers = new LeftoverProcesses(fake.backend, log, 0)
     leftovers.record('inv-1', { agentId: AGENT }, 'serve', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     const { stopped } = await leftovers.stop({ agentId: AGENT }, 'agent-dormant')
     expect(fake.signals).toEqual([
       { pid: 101, signal: 'SIGTERM' },
@@ -199,7 +205,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(101, 100, 11), unkillable: true })
     const leftovers = new LeftoverProcesses(fake.backend, log, 0)
     leftovers.record('inv-1', { agentId: AGENT }, 'stuck', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     const { stopped } = await leftovers.stop({ agentId: AGENT }, 'agent-dormant')
     expect(stopped[0]?.survivingPids).toEqual([101])
     // Still tracked, so a later stop or the process list can see it.
@@ -213,7 +219,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(103, 100, 13) })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT }, 'serve', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     const { stopped } = await leftovers.stop({ agentId: AGENT }, 'stream-finished')
     expect(stopped[0]).toMatchObject({ pids: [103], keptPids: [101, 102] })
     expect([...fake.processes.keys()].sort()).toEqual([101, 102])
@@ -230,7 +236,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(102, 100, 12, 'Z') })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT }, 'x', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     expect((await leftovers.stop({ agentId: AGENT }, 'agent-dormant')).stopped).toEqual([])
     expect(fake.signals).toEqual([])
   })
@@ -241,7 +247,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(101, 100, 100) })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT }, 'x', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     expect(await leftovers.list()).toEqual([])
     expect(fake.signals).toEqual([])
   })
@@ -251,7 +257,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(101, 100, 5) })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT }, 'x', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     expect(await leftovers.list()).toEqual([])
   })
 
@@ -260,7 +266,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(101, 100, 11) })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', undefined, 'ficus_tmux_new app', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     expect(await leftovers.list()).toEqual([])
   })
 
@@ -269,7 +275,7 @@ describe('LeftoverProcesses', () => {
     fake.add({ identity: identity(101, 100, 11) })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT, workStreamId: STREAM }, 'astro dev', identity(100, 100, 10), false)
-    leftovers.detach('inv-1')
+    await leftovers.detach('inv-1')
     await leftovers.stop({ workStreamId: STREAM }, 'stream-finished')
     expect(leftovers.takeNotices(OTHER)).toEqual([])
     const [notice] = leftovers.takeNotices(AGENT)
@@ -280,6 +286,82 @@ describe('LeftoverProcesses', () => {
     expect(leftovers.takeNotices(AGENT)).toEqual([])
     expect(leftovers.takeNotices(undefined)).toEqual([])
     expect(await leftovers.list()).toEqual([])
+  })
+
+  it('forgets a finished command that left nothing running as soon as it returns', async () => {
+    const fake = fakeBackend()
+    fake.add({ identity: identity(101, 100, 11) })
+    const leftovers = new LeftoverProcesses(fake.backend, log)
+    leftovers.record('left', { agentId: AGENT }, 'npm run dev &', identity(100, 100, 10), false)
+    leftovers.record('empty', { agentId: AGENT }, 'ls', identity(200, 200, 20), false)
+    await leftovers.detach('left')
+    await leftovers.detach('empty')
+    expect(leftovers.trackedCount).toBe(1)
+    expect((await leftovers.list()).map((group) => group.invocationId)).toEqual(['left'])
+  })
+
+  it('never forgets a live leftover for space, however many commands run after it', async () => {
+    const fake = fakeBackend()
+    // An early dev server of a long attempt, still running.
+    fake.add({ identity: identity(101, 100, 11) })
+    const leftovers = new LeftoverProcesses(fake.backend, log, 0)
+    leftovers.record(
+      'dev',
+      { agentId: AGENT, workStreamId: STREAM, attemptId: 1 },
+      'astro dev &',
+      identity(100, 100, 10),
+      false
+    )
+    await leftovers.detach('dev')
+    // More than MAX_TRACKED later commands. Their detach checks have not run
+    // yet when capacity is exceeded, so only the verified prune can make room.
+    for (let i = 0; i < MAX_TRACKED + 50; i++)
+      leftovers.record(
+        `later-${i}`,
+        { agentId: i % 2 ? AGENT : OTHER, workStreamId: `s-${i}`, attemptId: 2 },
+        'ls',
+        identity(1_000 + i, 1_000 + i, 20),
+        false
+      )
+    for (let i = 0; i < MAX_TRACKED + 50; i++) await leftovers.detach(`later-${i}`)
+    expect(leftovers.trackedCount).toBe(1)
+    expect((await leftovers.list()).map((group) => group.invocationId)).toEqual(['dev'])
+    const { stopped } = await leftovers.stop({ workStreamId: STREAM, attemptId: 1 }, 'attempt-ended')
+    expect(stopped.map((group) => group.pids)).toEqual([[101]])
+    expect(fake.processes.size).toBe(0)
+  })
+
+  it('over capacity evicts only finished commands verified empty, never live ones', async () => {
+    const fake = fakeBackend()
+    const leftovers = new LeftoverProcesses(fake.backend, log)
+    // Every remembered command still has a live process: none may be evicted.
+    for (let i = 0; i <= MAX_TRACKED; i++) {
+      fake.add({ identity: identity(10_001 + i * 2, 10_000 + i * 2, 20) })
+      leftovers.record(`live-${i}`, { agentId: AGENT }, 'serve', identity(10_000 + i * 2, 10_000 + i * 2, 10), false)
+    }
+    for (let i = 0; i <= MAX_TRACKED; i++) await leftovers.detach(`live-${i}`)
+    leftovers.record('one-more', { agentId: AGENT }, 'ls', identity(5, 5, 10), false)
+    await Bun.sleep(0)
+    expect(leftovers.trackedCount).toBe(MAX_TRACKED + 2)
+    expect((await leftovers.list({ agentId: AGENT })).some((group) => group.invocationId === 'live-0')).toBe(true)
+  })
+
+  it('keeps tracking a command whose child was forked during the stop grace period', async () => {
+    const fake = fakeBackend()
+    fake.add({ identity: identity(101, 100, 11) })
+    const backend: LeftoverBackend = {
+      ...fake.backend,
+      signal: (pid, signal) => {
+        fake.backend.signal(pid, signal)
+        // The dying process forks a child into the same session.
+        if (pid === 101) fake.add({ identity: identity(102, 100, 12) })
+      },
+    }
+    const leftovers = new LeftoverProcesses(backend, log, 0)
+    leftovers.record('inv-1', { agentId: AGENT }, 'serve', identity(100, 100, 10), false)
+    await leftovers.detach('inv-1')
+    await leftovers.stop({ agentId: AGENT }, 'agent-dormant')
+    expect((await leftovers.list()).map((group) => group.pids)).toEqual([[102]])
   })
 
   it('words each reason for the owner', () => {
@@ -325,7 +407,7 @@ describe.skipIf(process.platform !== 'linux')('LeftoverProcesses on real process
         2_000
       )
       leftovers.record('inv-real', { agentId: AGENT, workStreamId: STREAM, attemptId: 1 }, 'sleep &', leader!, false)
-      leftovers.detach('inv-real')
+      await leftovers.detach('inv-real')
       const result = await leftovers.stop({ workStreamId: STREAM, attemptId: 1 }, 'attempt-ended')
       expect(result.stopped[0]).toMatchObject({ pids: [stopPid], keptPids: [keepPid], survivingPids: [] })
       expect(await processSessionDriver.readIdentity(stopPid!)).toBeUndefined()

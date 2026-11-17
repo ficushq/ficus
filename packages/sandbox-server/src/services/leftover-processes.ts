@@ -45,8 +45,12 @@ export const LEFTOVER_STOP_GRACE_MS = 5_000
 /** How long to wait for SIGKILL to take effect before reporting a survivor. */
 const KILL_CONFIRM_MS = 2_000
 const POLL_MS = 50
-/** Upper bound on remembered invocations; the oldest finished ones are forgotten first. */
-const MAX_TRACKED = 2_000
+/**
+ * Past this many remembered invocations, finished ones verified to have left
+ * nothing running are forgotten, oldest first. One with a live leftover is
+ * never forgotten for space: it is what a later stop must find.
+ */
+export const MAX_TRACKED = 2_000
 
 /** Who started a command, as Core sent it with the bash request. */
 export interface ProcessOwnership {
@@ -204,14 +208,14 @@ const REASON_TEXT: Record<LeftoverStopReason, string> = {
   'stream-finished': 'its work stream is done or canceled',
 }
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 'es'}`
+function processCount(count: number): string {
+  return `${count} process${count === 1 ? '' : 'es'}`
 }
 
 /** The notice an owner sees before the output of its next command in this box. */
 export function leftoverStopNotice(group: StoppedLeftoverGroup, reason: LeftoverStopReason): string {
   return (
-    `[ficus] Stopped ${plural(group.pids.length, 'process')} left running by an earlier command of yours in ` +
+    `[ficus] Stopped ${processCount(group.pids.length)} left running by an earlier command of yours in ` +
     `this box (\`${group.command}\`) because ${REASON_TEXT[reason]}. To keep a service running past that, ` +
     `start it with ${KEEP_RUNNING_ENV}=1 in its environment, or use \`ficus deploy\` for an app.`
   )
@@ -220,6 +224,7 @@ export function leftoverStopNotice(group: StoppedLeftoverGroup, reason: Leftover
 export class LeftoverProcesses {
   private readonly entries = new Map<string, Entry>()
   private readonly pendingNotices = new Map<string, string[]>()
+  private pruning: Promise<void> | undefined
 
   constructor(
     private readonly backend: LeftoverBackend,
@@ -247,26 +252,59 @@ export class LeftoverProcesses {
       inLeaf,
       attached: true,
     })
-    if (this.entries.size > MAX_TRACKED) {
-      for (const [id, entry] of this.entries) {
-        if (this.entries.size <= MAX_TRACKED) break
-        if (!entry.attached) this.entries.delete(id)
-      }
+    if (this.entries.size > MAX_TRACKED) void this.prune()
+  }
+
+  /**
+   * The command returned; what it left running is now a leftover. A command
+   * that left nothing running is forgotten at once (one leaf read or session
+   * scan), so the record holds only the few commands that left something.
+   * Never rejects.
+   */
+  async detach(invocationId: string): Promise<void> {
+    const entry = this.entries.get(invocationId)
+    if (!entry) return
+    entry.attached = false
+    try {
+      if ((await this.candidates(entry)).length === 0 && this.entries.get(invocationId) === entry)
+        this.entries.delete(invocationId)
+    } catch (error) {
+      // Kept: a later list or stop looks again.
+      this.log(`WARN: could not check what invocation ${invocationId} left running: ${(error as Error).message}`)
     }
   }
 
-  /** The command returned; what it left running is now a leftover. */
-  detach(invocationId: string): void {
-    const entry = this.entries.get(invocationId)
-    if (entry) entry.attached = false
+  /** Forget finished entries verified empty, oldest first, until back under MAX_TRACKED. */
+  private prune(): Promise<void> {
+    this.pruning ??= (async () => {
+      try {
+        const protectedPids = await this.backend.protectedPids()
+        for (const entry of [...this.entries.values()]) {
+          if (this.entries.size <= MAX_TRACKED) break
+          if (entry.attached) continue
+          if ((await this.candidates(entry, protectedPids)).length === 0) this.entries.delete(entry.invocationId)
+        }
+      } catch (error) {
+        this.log(`WARN: could not prune the leftover record: ${(error as Error).message}`)
+      } finally {
+        this.pruning = undefined
+      }
+    })()
+    return this.pruning
+  }
+
+  /** Test seam: the number of remembered invocations. */
+  get trackedCount(): number {
+    return this.entries.size
   }
 
   /** Leftovers still running, optionally only those matching `selector`. Forgets finished ones. */
   async list(selector?: LeftoverSelector): Promise<LeftoverGroup[]> {
     const groups: LeftoverGroup[] = []
+    const protectedPids = await this.backend.protectedPids()
     for (const entry of [...this.entries.values()]) {
       if (entry.attached || (selector && !matches(entry, selector))) continue
-      const candidates = await this.candidates(entry)
+      const candidates = await this.candidates(entry, protectedPids)
       if (candidates.length === 0) {
         this.entries.delete(entry.invocationId)
         continue
@@ -285,9 +323,10 @@ export class LeftoverProcesses {
       throw new LeftoverSelectorError('a selector must name an agentId or a workStreamId')
     const targets: Array<{ entry: Entry; candidates: Candidate[] }> = []
     const kept: LeftoverGroup[] = []
+    const protectedPids = await this.backend.protectedPids()
     for (const entry of [...this.entries.values()]) {
       if (entry.attached || !matches(entry, selector)) continue
-      const candidates = await this.candidates(entry)
+      const candidates = await this.candidates(entry, protectedPids)
       if (candidates.length === 0) {
         this.entries.delete(entry.invocationId)
       } else if (candidates.every((candidate) => candidate.kept)) {
@@ -317,7 +356,13 @@ export class LeftoverProcesses {
         survivingPids: group.pids.filter((pid) => surviving.has(pid)),
       }
       stopped.push(result)
-      if (group.keptPids.length === 0 && result.survivingPids.length === 0) this.entries.delete(entry.invocationId)
+      // Rescan before forgetting it: a child forked during the grace period stays tracked.
+      if (
+        group.keptPids.length === 0 &&
+        result.survivingPids.length === 0 &&
+        (await this.candidates(entry, protectedPids)).length === 0
+      )
+        this.entries.delete(entry.invocationId)
       this.queueNotice(entry.ownership.agentId, leftoverStopNotice(result, reason))
       this.log(
         `Stopped leftover processes (${reason}) of agent ${entry.ownership.agentId}` +
@@ -368,8 +413,8 @@ export class LeftoverProcesses {
   }
 
   /** The command's processes that are still running, each with its opt-out state. */
-  private async candidates(entry: Entry): Promise<Candidate[]> {
-    const protectedPids = await this.backend.protectedPids()
+  private async candidates(entry: Entry, protectedPidsHint?: Set<number>): Promise<Candidate[]> {
+    const protectedPids = protectedPidsHint ?? (await this.backend.protectedPids())
     let identities: ProcessIdentity[]
     if (entry.inLeaf) {
       const pids = (await this.backend.leafPids(entry.invocationId)) ?? []

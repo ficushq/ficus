@@ -100,13 +100,15 @@ export function createDockerSandboxedBashTool(
   cwd: string,
   workspacePath: string,
   sandboxId: string,
-  ficusToken?: string
+  ficusToken?: string,
+  /** The calling agent and its execution: attribute what its commands leave running. */
+  opts?: { agentId?: string; invocationOwnerId?: string }
 ): AgentTool<any> {
   const manager = getDockerManager()
   if (!manager.getClientForSandbox(sandboxId)) {
     throw new Error(`No sandbox executor found for ${sandboxId}. Ensure ensureSandbox() was called.`)
   }
-  return createK8sSandboxedBashTool(cwd, sandboxId, manager, ficusToken)
+  return createK8sSandboxedBashTool(cwd, sandboxId, manager, ficusToken, opts)
 }
 
 /** Canonical keys for sandboxed tools; use these in agent type YAML tools.allow / tools.deny. */

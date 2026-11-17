@@ -41,6 +41,11 @@ attempt:
 Commands without an owner (Core's own housekeeping, managed app and monitor
 launchers) are never recorded, so they are never stopped.
 
+When a command returns, the server checks once whether it left anything running
+and forgets it if not, so the record holds only commands with live leftovers.
+Past 2,000 remembered commands it forgets only finished ones verified empty; a
+command with a live leftover is never forgotten for space.
+
 The record lives in the box server's memory. That is enough: restarting the
 server unit (or the container) ends every process in it, and the server does
 not exit for idleness while a workload leaf still has processes.

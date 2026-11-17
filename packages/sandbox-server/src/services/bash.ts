@@ -635,8 +635,10 @@ export function handleBash(
 
         void processExited.then(async (code) => {
           cancelTimer?.()
-          // What it started and left running is a leftover from now on.
-          leftovers.detach(invocationId)
+          // What it started and left running is a leftover from now on. Marked
+          // synchronously; the check that forgets a command that left nothing
+          // (one leaf read or session scan) runs beside the reply, never delaying it.
+          void leftovers.detach(invocationId)
           refreshDevboxShellEnvIfDirty()
           // Always taken (it also hands later kills of this leaf to the notices);
           // only a failed command is explained by it.

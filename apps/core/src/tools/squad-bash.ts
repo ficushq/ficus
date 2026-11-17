@@ -89,7 +89,8 @@ export function createSquadBashTool(
       squadWorkspaceHostPath,
       squadWorkspaceHostPath,
       warmSandboxId,
-      ficusToken
+      ficusToken,
+      { agentId, invocationOwnerId }
     )
   }
 
