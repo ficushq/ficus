@@ -15,8 +15,8 @@
  * The box stops them with SIGTERM, then SIGKILL after a short grace period,
  * and never touches running commands, Core's own commands, managed apps,
  * monitors, the tmux server, or processes started with FICUS_KEEP_RUNNING=1.
- * Every stop is logged here and told to the owning agent in a non-waking
- * inbox message, and the box repeats it before that agent's next command.
+ * Every stop is logged here and on the box, and told to the owning agent in
+ * a non-waking inbox message (not in a later command's output).
  *
  * Best-effort throughout: a box that is down has nothing running, and an
  * older box server without the route is skipped. Never throws.

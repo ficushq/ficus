@@ -5,7 +5,6 @@ import {
   LeftoverProcesses,
   MAX_TRACKED,
   LeftoverSelectorError,
-  leftoverStopNotice,
   parseLeftoverSelector,
   parseLeftoverStopReason,
   requestOwnership,
@@ -270,21 +269,15 @@ describe('LeftoverProcesses', () => {
     expect(await leftovers.list()).toEqual([])
   })
 
-  it('queues a plain-words notice for the owner only, and forgets groups that are gone', async () => {
+  it('forgets groups that are gone once stopped, and queues nothing in the box (Core tells the owner)', async () => {
     const fake = fakeBackend()
     fake.add({ identity: identity(101, 100, 11) })
     const leftovers = new LeftoverProcesses(fake.backend, log)
     leftovers.record('inv-1', { agentId: AGENT, workStreamId: STREAM }, 'astro dev', identity(100, 100, 10), false)
     await leftovers.detach('inv-1')
-    await leftovers.stop({ workStreamId: STREAM }, 'stream-finished')
-    expect(leftovers.takeNotices(OTHER)).toEqual([])
-    const [notice] = leftovers.takeNotices(AGENT)
-    expect(notice).toContain('Stopped 1 process left running by an earlier command of yours')
-    expect(notice).toContain('`astro dev`')
-    expect(notice).toContain('its work stream is done or canceled')
-    expect(notice).toContain(`${KEEP_RUNNING_ENV}=1`)
-    expect(leftovers.takeNotices(AGENT)).toEqual([])
-    expect(leftovers.takeNotices(undefined)).toEqual([])
+    const { stopped } = await leftovers.stop({ workStreamId: STREAM }, 'stream-finished')
+    expect(stopped[0]).toMatchObject({ agentId: AGENT, command: 'astro dev', pids: [101] })
+    expect('takeNotices' in leftovers).toBe(false)
     expect(await leftovers.list()).toEqual([])
   })
 
@@ -362,22 +355,6 @@ describe('LeftoverProcesses', () => {
     await leftovers.detach('inv-1')
     await leftovers.stop({ agentId: AGENT }, 'agent-dormant')
     expect((await leftovers.list()).map((group) => group.pids)).toEqual([[102]])
-  })
-
-  it('words each reason for the owner', () => {
-    const group = {
-      invocationId: 'i',
-      agentId: AGENT,
-      command: 'c',
-      startedAt: '',
-      pids: [1, 2],
-      keptPids: [],
-      killedPids: [],
-      survivingPids: [],
-    }
-    expect(leftoverStopNotice(group, 'attempt-ended')).toContain('Stopped 2 processes')
-    expect(leftoverStopNotice(group, 'attempt-ended')).toContain('the flow step it was started in ended')
-    expect(leftoverStopNotice(group, 'agent-dormant')).toContain('because you went dormant')
   })
 })
 

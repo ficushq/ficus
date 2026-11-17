@@ -1147,7 +1147,7 @@ describe('handleBash memory protection', () => {
 })
 
 describe.skipIf(process.platform !== 'linux')('handleBash leftover processes', () => {
-  it('attributes a background process to its agent, stream and attempt, stops it by attempt, and tells only that agent', async () => {
+  it('attributes a background process to its agent, stream and attempt, stops it by attempt, and adds nothing to later output', async () => {
     const { LeftoverProcesses, linuxLeftoverBackend } = await import('./leftover-processes')
     const leftovers = new LeftoverProcesses(
       linuxLeftoverBackend(() => null),
@@ -1187,13 +1187,11 @@ describe.skipIf(process.platform !== 'linux')('handleBash leftover processes', (
         expect(await processSessionDriver.readIdentity(pid)).toBeUndefined()
         expect(await processSessionDriver.readIdentity(unownedPid)).toBeDefined()
 
-        // Only the owning agent hears about it, once, before its next command's output.
-        expect(collectOutput(await run('left-2', 'echo b', { owner: 'agent-b' })).stderr).toBe('')
-        const next = collectOutput(await run('left-3', 'echo a', { owner: 'agent-a' }))
-        expect(next.stdout).toBe('a\n')
-        expect(next.stderr).toContain('[ficus] Stopped 1 process left running by an earlier command of yours')
-        expect(next.stderr).toContain('the flow step it was started in ended')
-        expect(collectOutput(await run('left-4', 'true', { owner: 'agent-a' })).stderr).toBe('')
+        // The owner hears about it in its inbox (Core), not in a later command's output.
+        expect(collectOutput(await run('left-3', 'echo a', { owner: 'agent-a' }))).toMatchObject({
+          stdout: 'a\n',
+          stderr: '',
+        })
       } finally {
         try {
           process.kill(unownedPid, 'SIGKILL')

@@ -70,7 +70,7 @@ export interface LeftoverSelector {
   attemptId?: number
 }
 
-/** Why Core asked for the stop; the owner's notice says it in words. */
+/** Why Core asked for the stop; Core tells the owning agent in words (its inbox message). */
 export const LEFTOVER_STOP_REASONS = ['attempt-ended', 'agent-dormant', 'stream-finished'] as const
 export type LeftoverStopReason = (typeof LEFTOVER_STOP_REASONS)[number]
 
@@ -202,28 +202,8 @@ export function requestOwnership(body: {
   return ownership
 }
 
-const REASON_TEXT: Record<LeftoverStopReason, string> = {
-  'attempt-ended': 'the flow step it was started in ended',
-  'agent-dormant': 'you went dormant',
-  'stream-finished': 'its work stream is done or canceled',
-}
-
-function processCount(count: number): string {
-  return `${count} process${count === 1 ? '' : 'es'}`
-}
-
-/** The notice an owner sees before the output of its next command in this box. */
-export function leftoverStopNotice(group: StoppedLeftoverGroup, reason: LeftoverStopReason): string {
-  return (
-    `[ficus] Stopped ${processCount(group.pids.length)} left running by an earlier command of yours in ` +
-    `this box (\`${group.command}\`) because ${REASON_TEXT[reason]}. To keep a service running past that, ` +
-    `start it with ${KEEP_RUNNING_ENV}=1 in its environment, or use \`ficus deploy\` for an app.`
-  )
-}
-
 export class LeftoverProcesses {
   private readonly entries = new Map<string, Entry>()
-  private readonly pendingNotices = new Map<string, string[]>()
   private pruning: Promise<void> | undefined
 
   constructor(
@@ -316,7 +296,7 @@ export class LeftoverProcesses {
 
   /**
    * Stop the leftovers matching `selector`: SIGTERM, then SIGKILL after the
-   * grace period. Queues a notice for each owner and logs every stop.
+   * grace period. Logs every stop; Core tells each owning agent.
    */
   async stop(selector: LeftoverSelector, reason: LeftoverStopReason): Promise<LeftoverStopResult> {
     if (selector.agentId === undefined && selector.workStreamId === undefined)
@@ -363,7 +343,6 @@ export class LeftoverProcesses {
         (await this.candidates(entry, protectedPids)).length === 0
       )
         this.entries.delete(entry.invocationId)
-      this.queueNotice(entry.ownership.agentId, leftoverStopNotice(result, reason))
       this.log(
         `Stopped leftover processes (${reason}) of agent ${entry.ownership.agentId}` +
           `${entry.ownership.workStreamId ? ` stream ${entry.ownership.workStreamId}` : ''}` +
@@ -376,14 +355,6 @@ export class LeftoverProcesses {
     return { reason, stopped, kept }
   }
 
-  /** Returns and clears `owner`'s queued stop notices. */
-  takeNotices(owner?: string): string[] {
-    if (!owner) return []
-    const notices = this.pendingNotices.get(owner) ?? []
-    this.pendingNotices.delete(owner)
-    return notices
-  }
-
   /** Ownership of each live leftover process by pid (for the process list). */
   async attribution(): Promise<Map<number, LeftoverGroup>> {
     const byPid = new Map<number, LeftoverGroup>()
@@ -391,12 +362,6 @@ export class LeftoverProcesses {
       for (const pid of [...group.pids, ...group.keptPids]) byPid.set(pid, group)
     }
     return byPid
-  }
-
-  private queueNotice(owner: string, notice: string): void {
-    const queue = this.pendingNotices.get(owner) ?? []
-    queue.push(notice)
-    this.pendingNotices.set(owner, queue)
   }
 
   private group(entry: Entry, candidates: Candidate[]): LeftoverGroup {
