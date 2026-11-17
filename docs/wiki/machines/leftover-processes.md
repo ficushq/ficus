@@ -140,14 +140,15 @@ a dormancy or a stream completion.
 ## How it is made visible
 
 - **Core log:** one `leftover-processes` line per stopped group: box, reason,
-  agent, stream, attempt, pids, which were killed after the grace period, which
+  agent, stream, attempt, slot claim, pids, which were killed after the grace period, which
   survived, and the command.
 - **Box log:** the same line in the box server's log.
 - **The owning agent:** one inbox message per cleanup, in plain words: what was
   stopped, in which box, why, and how to keep a service next time. It is a
-  system message and does not wake the agent.
-- **The agent's next command in that box** starts with a `[ficus] Stopped N
-processes left running by an earlier command of yours ...` notice.
+  system message and does not wake the agent. Unlike the memory-kill notice of
+  the [memory model](memory-model.md#how-the-agent-hears-about-it), nothing is
+  added to the output of the agent's later commands: the inbox message is
+  enough.
 - **`sandbox-ps`:** a process an agent's finished command left running shows a
   `LEFT BY` column with the agent, stream and attempt (and `(kept)` when opted
   out); `--json` carries it as `startedBy`.

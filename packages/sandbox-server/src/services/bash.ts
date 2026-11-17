@@ -574,8 +574,6 @@ export function handleBash(
             // This agent's earlier commands' background processes killed for
             // memory since its last command: say so before this command's output.
             const notices = (await workloads?.takeNotices(owner).catch(() => [])) ?? []
-            // And what was stopped because the work it belonged to ended.
-            notices.push(...leftovers.takeNotices(owner))
             for (const notice of notices) send({ stderr: Buffer.from(`${notice}\n`).toString('base64') })
           })
           await initialized
