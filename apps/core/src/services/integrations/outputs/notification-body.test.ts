@@ -202,13 +202,10 @@ test('changes-requested reviews tell the reworking agent to re-request review fr
   expect(body.startsWith(fact.body)).toBe(true)
   expect(body).toContain('Handle the empty list.')
   expect(body).toContain('Ficus guidance')
+  expect(body).toContain('pushed and ready for re-review')
   expect(body).toContain('gh pr edit 3 --repo acme/project --add-reviewer octo-reviewer')
-  expect(body).toContain('repos/acme/project/pulls/3/requested_reviewers')
-  expect(body).toContain('internal re-review')
-  expect(body).toContain('Reply on each unresolved review thread')
-  expect(body).toContain('Do not re-request review while fixes are still in progress')
-  expect(body).toContain('dismiss')
-  expect(body).toContain('pull request comment')
+  // Only the re-request reminder is added: one short paragraph after the review text.
+  expect(body.slice(fact.body.length).trim().split('\n')).toHaveLength(1)
   // Presentation only: the canonical fact and its hashed evidence are unchanged.
   expect(fact).toEqual(before)
   expect(fact.body).not.toContain('Ficus guidance')

@@ -27,14 +27,7 @@ function changesRequestedReReviewGuidance(fact: IntegrationOutputFact): string {
   const known = typeof data.actor === 'string' && /^[a-z0-9-]+(?:\[bot\])?$/i.test(data.actor)
   const login = known ? (data.actor as string) : '<reviewer-login>'
   const repo = repository ? ` --repo ${repository}` : ''
-  const endpoint = `repos/${repository || '<owner>/<repo>'}/pulls/${number}/requested_reviewers`
-  return [
-    'Ficus guidance (added by Ficus, not part of the GitHub review):',
-    `If you own the rework for this review, fix the requested changes, push them, and complete any internal re-review your workflow requires. Then re-request review from ${known ? login : 'the reviewer who requested changes'} so GitHub notifies them that the pull request is ready for another look (their changes-requested review keeps blocking it until they review again): \`gh pr edit ${number}${repo} --add-reviewer ${login}\` (or POST \`${endpoint}\` with that login in \`reviewers\`).`,
-    'Reply on each unresolved review thread saying what changed.',
-    'Do not re-request review while fixes are still in progress, do not dismiss the review, and do not resolve the reviewer’s threads on their behalf.',
-    'If GitHub refuses the request (for example because the credential lacks pull request write access), say in a pull request comment that the fixes are ready for another look and tell the owner.',
-  ].join(' ')
+  return `Ficus guidance (not part of the GitHub review): once your fixes for this review are pushed and ready for re-review, re-request review from ${known ? login : 'the reviewer who requested changes'} so GitHub notifies them: \`gh pr edit ${number}${repo} --add-reviewer ${login}\`.`
 }
 
 function digest(value: unknown) {

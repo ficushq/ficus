@@ -172,19 +172,13 @@ descriptions are not added to feedback. Existing provider text-size limits still
 apply; this policy is not a new blanket truncation limit.
 
 A submitted review whose state is `changes_requested` keeps its review text and
-then gets one Ficus-authored paragraph, labeled as Ficus guidance rather than
+then gets one Ficus-authored sentence, labeled as Ficus guidance rather than
 review content. Because this notification is what reaches the agent that owns the
 rework (the active flow attempt, or the `changeEventsTo` step at
-completion-ready), the re-review reminder lives here once instead of in every
-delivery prompt. It tells that agent to push the requested fixes and finish any
-internal re-review the flow requires, and only then re-request review from the
-reviewer, named by their validated GitHub login
-(`gh pr edit <number> --repo <owner/repo> --add-reviewer <login>`, or the
-`requested_reviewers` REST endpoint). The agent replies on each unresolved review
-thread saying what changed, and does not dismiss the review or resolve the
-reviewer's threads. If GitHub refuses the request (for example because the
-connection lacks pull request write access), the agent comments on the pull
-request that the fixes are ready and tells the owner instead. Requesting
+completion-ready), the reminder lives here once instead of in every delivery
+prompt: once the fixes are pushed and ready for re-review, re-request review from
+the reviewer, named by their validated GitHub login
+(`gh pr edit <number> --repo <owner/repo> --add-reviewer <login>`). Requesting
 reviewers needs the GitHub App's `Pull requests: write` permission and a user
 with write or triage access to the repository. Other review states are shown
 unchanged.
