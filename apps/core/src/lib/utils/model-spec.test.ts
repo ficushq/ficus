@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import { streamSimple as streamAnthropic } from '@earendil-works/pi-ai/api/anthropic-messages'
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import {
   parseModelSpec,
   parseModelPriorityList,
@@ -166,7 +167,7 @@ describe('model-spec', () => {
       }) as typeof globalThis.fetch
       await streamAnthropic(
         model as Model<'anthropic-messages'>,
-        { messages: [{ role: 'user', content: 'hi', timestamp: Date.now() }] },
+        normalizeContext({ messages: [{ role: 'user', content: 'hi', timestamp: Date.now() }] }),
         { apiKey: 'sk-ant-api03-test', sessionId: crypto.randomUUID(), fetch, maxRetries: 0 }
       ).result()
       if (!captured) throw new Error('no request was sent')
