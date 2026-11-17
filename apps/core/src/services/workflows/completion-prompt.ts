@@ -108,7 +108,7 @@ export function deliveryBindingSelfCheck(
 export function changeEventsElsewhere(completion: WorkflowDefinition['completion'], stepId: string): string {
   const target = completion.changeEventsTo
   return typeof target === 'object' && target.step !== stepId
-    ? ` Change events (CI results, reviews, comments) go to step ${target.step} instead, which completion-ready rework reopens.`
+    ? ` Change events (CI results, reviews, comments) go to step ${target.step} instead, which completion-ready rework reopens. The delivery participant can still request that rework itself: send action rework with the latest completed ${target.step} attempt as attemptId, even when another agent owns that attempt.`
     : ''
 }
 

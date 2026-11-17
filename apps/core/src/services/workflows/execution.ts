@@ -1,6 +1,7 @@
 import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
 import { deliveryInstructionsForFlow } from './completion-prompt'
+import { completionDeliveryOwner } from '../integrations/outputs/routing-audience'
 import { isWorkflowReviewer } from './reviewers'
 import {
   attemptLimitResolutionHint,
@@ -34,6 +35,8 @@ import {
   workflowGateRevisions,
   WORKFLOW_REVIEW_REVISED_CODE,
   workflowReviewDecisionRefusal,
+  workflowReworkAttempt,
+  workflowReworkReference,
 } from '@ficus/shared'
 import {
   db,
@@ -505,6 +508,24 @@ export async function ensureFlowDispatch(id: string): Promise<boolean> {
   return true
 }
 
+/** Who may request completion-ready rework and which attempt it must reference. */
+function reworkRefusal(run: { state: WorkflowRun; attemptAgents: Record<string, string> }): string {
+  const owner = completionDeliveryOwner(run)
+  const expected = workflowReworkAttempt(run.state)
+  const expectedOwner = expected && run.attemptAgents[String(expected.id)]
+  const who = [
+    `the delivery participant${owner ? ` (agent ${owner.agentId})` : ''}`,
+    expected && expectedOwner && expectedOwner !== owner?.agentId
+      ? `the agent that owns attempt ${expected.id} (agent ${expectedOwner})`
+      : undefined,
+    'a delivery approver while final delivery approval is open',
+    'or a flow manager',
+  ].filter(Boolean)
+  const reference =
+    run.state.status === 'completion-ready' ? ` The request must reference ${workflowReworkReference(run.state)}.` : ''
+  return `Only ${who.join(', ')} can request rework.${reference}`
+}
+
 export async function advanceFlow(id: string, input: unknown, requestId: string, identity: Identity) {
   const command = workflowCommandSchema.parse(input)
   const streamBefore = await WorkStream.mustFind(id)
@@ -601,15 +622,14 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     if (command.action === 'rework') {
       const decidingDelivery =
         canDecideDelivery && (await listOpenWaits(tx, id)).some((wait) => isDeliveryApprovalWait(id, wait))
-      if (
-        !canRevise &&
-        !decidingDelivery &&
-        (identity.type !== 'agent' || run.attemptAgents[String(command.attemptId)] !== identity.agentId)
-      )
-        throw new WorkflowError(
-          'Only the delivery participant, a delivery approver, or a flow manager can request rework',
-          403
-        )
+      // The delivery participant may rework even when changeEventsTo points the rework at an
+      // attempt another agent owns (the engineer's implement attempt in reviewed flows).
+      const deliveryOwner = completionDeliveryOwner(run)
+      const agentMayRework =
+        identity.type === 'agent' &&
+        (run.attemptAgents[String(command.attemptId)] === identity.agentId ||
+          deliveryOwner?.agentId === identity.agentId)
+      if (!canRevise && !decidingDelivery && !agentMayRework) throw new WorkflowError(reworkRefusal(run), 403)
     } else if (command.action !== 'revise' && command.action !== 'amend' && command.action !== 'raise-limit') {
       if (step?.kind === 'decision') {
         if (!attempt?.decision?.awaitingPerson)

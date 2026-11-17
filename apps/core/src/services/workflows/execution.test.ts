@@ -1691,7 +1691,9 @@ test('completion-ready rework is authorized, idempotent, tracked, and respects u
   }
   await expect(
     advanceFlow(id, command, randomUUID(), { type: 'agent', agentId: ready.attemptAgents['1']!, squadId })
-  ).rejects.toThrow('delivery participant')
+  ).rejects.toThrow(
+    `Only the delivery participant (agent ${ready.attemptAgents['2']}), a delivery approver while final delivery approval is open, or a flow manager can request rework. The request must reference attempt 2 (step review), the latest completed agent attempt.`
+  )
   const { wait } = await openWait(db, {
     workStreamId: id,
     type: 'manual',
@@ -1725,6 +1727,65 @@ test('completion-ready rework is authorized, idempotent, tracked, and respects u
   await advance(id, 'approved')
   expect((await getFlow(id))!.state.status).toBe('completion-ready')
   expect(await listOpenWaits(db, id)).toHaveLength(1)
+})
+
+test('the delivery participant can rework the changeEventsTo attempt another agent owns; others are refused with directions', async () => {
+  const definition = structuredClone(flow)
+  definition.completion.mode = 'deliverable'
+  definition.completion.changeEventsTo = { step: 'build' }
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  await advance(id, 'approved')
+  const ready = (await getFlow(id))!
+  expect(ready.state.status).toBe('completion-ready')
+  const builder = ready.attemptAgents['1']!
+  const reviewer = ready.attemptAgents['2']!
+  expect(builder).not.toBe(reviewer)
+  const other = (await getFlow(await create()))!.attemptAgents['1']!
+  const rework = (attemptId: number) => ({
+    action: 'rework',
+    expectedVersion: ready.version,
+    attemptId,
+    feedback: 'Merge the moved base branch before the pull request opens',
+  })
+  const as = (agentId: string) => ({ type: 'agent' as const, agentId, squadId })
+
+  // An agent that is neither the delivery participant nor the attempt owner is still refused, and told who may act.
+  await expect(advanceFlow(id, rework(1), randomUUID(), as(other))).rejects.toMatchObject({
+    status: 403,
+    message:
+      `Only the delivery participant (agent ${reviewer}), the agent that owns attempt 1 (agent ${builder}), ` +
+      'a delivery approver while final delivery approval is open, or a flow manager can request rework. ' +
+      'The request must reference attempt 1 (step build), the latest completed attempt of step build (completion.changeEventsTo).',
+  })
+  // The delivery participant referencing its own review attempt is told which attempt to send.
+  await expect(advanceFlow(id, rework(2), randomUUID(), as(reviewer))).rejects.toMatchObject({
+    status: 409,
+    message:
+      'Rework must reference attempt 1 (step build), the latest completed attempt of step build (completion.changeEventsTo); this request referenced attempt 2.',
+  })
+  expect((await getFlow(id))!.version).toBe(ready.version)
+
+  const result = await advanceFlow(id, rework(1), randomUUID(), as(reviewer))
+  expect(result.stateStatus).toBe('running')
+  const run = (await getFlow(id))!
+  expect(run.state.attempts[2]).toMatchObject({ id: 3, stepId: 'build', sourceAttemptIds: [1] })
+  expect(run.attemptAgents['3']).toBe(builder)
+  await advance(id, 'completed')
+  await advance(id, 'approved')
+  const again = (await getFlow(id))!
+  expect(again.state.status).toBe('completion-ready')
+  // The owner of the referenced attempt keeps the right to request rework.
+  expect(
+    (
+      await advanceFlow(
+        id,
+        { ...rework(3), expectedVersion: again.version, feedback: 'CI failed on the new head' },
+        randomUUID(),
+        as(builder)
+      )
+    ).stateStatus
+  ).toBe('running')
 })
 
 test('a human who can approve delivery can send it back, but only while delivery approval is open', async () => {
