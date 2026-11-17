@@ -29,7 +29,7 @@ import { consultantScratchPath, consultantSandboxSquadId } from '../../services/
  * "## Host runtime" section, which replaces the devbox section entirely.
  */
 
-import { FOREGROUND_BASH_GUIDANCE } from '../bash-contract'
+import { FOREGROUND_BASH_GUIDANCE, LEFTOVER_PROCESS_GUIDANCE } from '../bash-contract'
 
 import { userInfo } from 'os'
 import { isHostRuntime, isVmRuntime } from '../../services/sandbox/runtime'
@@ -245,6 +245,7 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
   }
 
   if (hasBash || hasSquadBash) out.push('', FOREGROUND_BASH_GUIDANCE)
+  if ((hasBash || hasSquadBash) && !host) out.push('', LEFTOVER_PROCESS_GUIDANCE)
 
   // Devbox guidance only makes sense when a shell tool is available.
   if ((hasBash || hasSquadBash) && host) {

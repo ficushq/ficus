@@ -285,6 +285,26 @@ export class WorkloadCgroups {
     }
   }
 
+  /**
+   * The processes in an invocation's own leaf (its command and everything it
+   * started, even after they were reparented), or undefined when the leaf does
+   * not exist (never placed, or already removed because it emptied).
+   */
+  async leafPids(invocationId: string): Promise<number[] | undefined> {
+    const name = leafName(invocationId)
+    if (!name) return undefined
+    let procs: string
+    try {
+      procs = await this.backend.readFile(`${this.workloadDir}/${name}/cgroup.procs`)
+    } catch {
+      return undefined
+    }
+    return procs
+      .split('\n')
+      .map((line) => Number(line.trim()))
+      .filter((pid) => Number.isSafeInteger(pid) && pid > 1)
+  }
+
   /** Processes in every workload leaf (for the idle-exit census). */
   async countProcesses(): Promise<number> {
     let count = 0

@@ -1393,6 +1393,55 @@ describe('createHttpBashOperations', () => {
     expect(requests.map((request) => request.owner)).toEqual(['agent-7', undefined])
   })
 
+  test("sends the execution's current work stream and flow attempt so the box can stop what the command leaves running", async () => {
+    const requests: any[] = []
+    const manager = {
+      getClientForSandbox: mock(() => ({
+        bash: mock((request: any) => {
+          requests.push(request)
+          const stream = createMockStream()
+          queueMicrotask(() => {
+            stream.emitData({ exitCode: 0 })
+            stream.emitEnd()
+          })
+          return stream
+        }),
+      })),
+      podManager: { namespace: 'tau-sandboxes' },
+    } as unknown as K8sSandboxManager
+    // The attempt is read per command: an inline handoff rebinds a running execution.
+    let attemptId = 4
+    const lookups: string[] = []
+    const resolveFlowOwnership = async (executionId: string) => {
+      lookups.push(executionId)
+      return { workStreamId: 'stream-9', attemptId: attemptId++ }
+    }
+    const operations = createHttpBashOperations(manager, 'squad_s1', undefined, {
+      agentId: 'agent-7',
+      executionId: 'exec-1',
+      resolveFlowOwnership,
+    })
+    await operations.exec('ls', '/workspace', { onData: () => {} })
+    await operations.exec('ls', '/workspace', { onData: () => {} })
+    // Without an agent there is nothing to attribute; without flow context only the agent is sent.
+    await createHttpBashOperations(manager, 'squad_s1', undefined, {
+      executionId: 'exec-2',
+      resolveFlowOwnership,
+    }).exec('ls', '/workspace', { onData: () => {} })
+    await createHttpBashOperations(manager, 'squad_s1', undefined, {
+      agentId: 'agent-8',
+      executionId: 'exec-3',
+      resolveFlowOwnership: async () => undefined,
+    }).exec('ls', '/workspace', { onData: () => {} })
+    expect(requests.map(({ owner, workStreamId, attemptId }) => ({ owner, workStreamId, attemptId }))).toEqual([
+      { owner: 'agent-7', workStreamId: 'stream-9', attemptId: 4 },
+      { owner: 'agent-7', workStreamId: 'stream-9', attemptId: 5 },
+      { owner: undefined, workStreamId: undefined, attemptId: undefined },
+      { owner: 'agent-8', workStreamId: undefined, attemptId: undefined },
+    ])
+    expect(lookups).toEqual(['exec-1', 'exec-1'])
+  })
+
   test('passes a notice about an earlier background kill through to the agent output', async () => {
     const mockStream = createMockStream()
     const manager = createMockManager(mockStream)

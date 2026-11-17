@@ -20,6 +20,7 @@ import { readExecutorCommandIdentity } from './command-identity'
 import { waitForDockerReady } from '../docker'
 import { checkDevServerPort, DEV_SERVER_PORT_HELD_EXIT_CODE, devServerPort } from './dev-server-guard'
 import { workloadKillMessage, type WorkloadCgroups } from './workload-cgroup'
+import { LeftoverProcesses, linuxLeftoverBackend, requestOwnership } from './leftover-processes'
 import {
   processSessionDriver,
   terminateOwnedSession,
@@ -57,15 +58,15 @@ interface BashRequest {
   sourceEnv?: boolean
   activateDevbox?: boolean
   /**
-   * The agent the command runs for (Core's agent id). Only used to route
-   * notices about this agent's own killed background processes back to it.
+   * The agent the command runs for (Core's agent id). Routes notices about
+   * this agent's own background processes back to it, and attributes what the
+   * command leaves running to it (leftover-processes.ts).
    */
   owner?: string
-}
-
-/** A usable owner id, or undefined (no notices are routed for it). */
-function requestOwner(owner: unknown): string | undefined {
-  return typeof owner === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(owner) ? owner : undefined
+  /** The work stream the agent's command runs for, if any. */
+  workStreamId?: string
+  /** The flow attempt the agent's command runs for, if any. */
+  attemptId?: number
 }
 
 export async function reconcileBashRecord(
@@ -214,6 +215,12 @@ export function getWorkloadCgroups(): WorkloadCgroups | null {
   return activeWorkloadCgroups
 }
 
+/** What owned commands left running in this box, for attribution and cleanup. */
+const leftoverProcesses = new LeftoverProcesses(linuxLeftoverBackend(() => activeWorkloadCgroups))
+export function getLeftoverProcesses(): LeftoverProcesses {
+  return leftoverProcesses
+}
+
 interface BashDependencies extends BashAdmissionDependencies {
   waitForDockerReady: typeof waitForDockerReady
   spawn(command: string, args: readonly string[], options: SpawnOptions): ChildProcess
@@ -222,6 +229,7 @@ interface BashDependencies extends BashAdmissionDependencies {
   /** Release the server request reservation once registry ownership or no-spawn cleanup is proven. */
   onAdmissionFenced?: () => void
   workloads(): WorkloadCgroups | null
+  leftovers(): LeftoverProcesses
   /**
    * A refusal message when the command would start a second dev server on a
    * held port. Synchronously undefined for every other command, so admission
@@ -237,6 +245,7 @@ const defaultBashDependencies: BashDependencies = {
   waitForAdmissionPoll: () => new Promise((resolve) => setTimeout(resolve, 10)),
   spawn,
   workloads: () => activeWorkloadCgroups,
+  leftovers: () => leftoverProcesses,
   checkDevServerPort: (command) => (devServerPort(command) === undefined ? undefined : checkDevServerPort(command)),
   scheduleTimeout(callback, delayMs) {
     const timer = setTimeout(callback, delayMs)
@@ -387,7 +396,8 @@ export function handleBash(
   const preamble = buildPreamble({ sourceEnv, activateDevbox })
   const fullCommand = preamble + req.command
   const invocationId = req.invocationId ?? randomUUID()
-  const owner = requestOwner(req.owner)
+  const ownership = requestOwnership(req)
+  const owner = ownership?.agentId
   let activeProcess: ChildProcess | undefined
   let activeLease: BashInvocationLease | undefined
   let initialized: Promise<void> = Promise.resolve()
@@ -484,6 +494,8 @@ export function handleBash(
         }
         admitting = true
         const workloads = dependencies.workloads()
+        const leftovers = dependencies.leftovers()
+        let placedInLeaf = false
 
         let proc: ChildProcess
         let lease: BashInvocationLease | undefined
@@ -537,11 +549,15 @@ export function handleBash(
           const admission = workloads
             ? {
                 ...dependencies,
-                placeWorkload: (pid: number) => workloads.place(pid, invocationId, req.command, owner),
+                placeWorkload: async (pid: number) => {
+                  placedInLeaf = await workloads.place(pid, invocationId, req.command, owner)
+                  return placedInLeaf
+                },
               }
             : dependencies
           initialized = admitStoppedProcess(proc, lease, admission, exited).then(async (identity) => {
             admitted = true
+            leftovers.record(invocationId, ownership, req.command, identity, placedInLeaf)
             send({
               invocation: {
                 id: invocationId,
@@ -617,6 +633,10 @@ export function handleBash(
 
         void processExited.then(async (code) => {
           cancelTimer?.()
+          // What it started and left running is a leftover from now on. Marked
+          // synchronously; the check that forgets a command that left nothing
+          // (one leaf read or session scan) runs beside the reply, never delaying it.
+          void leftovers.detach(invocationId)
           refreshDevboxShellEnvIfDirty()
           // Always taken (it also hands later kills of this leaf to the notices);
           // only a failed command is explained by it.

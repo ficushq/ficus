@@ -151,6 +151,36 @@ describe('agent-cleanup', () => {
     }
   })
 
+  it('stops every agent leftover processes of a work stream when it is done or canceled', async () => {
+    const leftovers = await import('../sandbox/leftover-processes')
+    const calls: Array<[string, string]> = []
+    let resolveCalled = () => {}
+    const stop = spyOn(leftovers, 'stopLeftoversForFinishedStream').mockImplementation(
+      async (workStreamId, squadId) => {
+        calls.push([workStreamId, squadId])
+        resolveCalled()
+        return []
+      }
+    )
+    const unregister = registerCleanupHandlers()
+    try {
+      for (const event of ['workStream.done', 'workStream.canceled'] as const) {
+        const called = new Promise<void>((resolve) => {
+          resolveCalled = resolve
+        })
+        eventEmitter.emit(event, { workStreamId: `stream-${event}`, squadId: testSquadId, agentIds: [] })
+        await called
+      }
+      expect(calls).toEqual([
+        ['stream-workStream.done', testSquadId],
+        ['stream-workStream.canceled', testSquadId],
+      ])
+    } finally {
+      unregister()
+      stop.mockRestore()
+    }
+  })
+
   it("terminal-settles a terminated agent's surviving never-started executions on agent.terminated", async () => {
     // The incident shape: an execution queued for an agent that was then
     // unspawned/terminated survives in a demand state forever. The cleanup

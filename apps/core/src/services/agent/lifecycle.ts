@@ -66,11 +66,10 @@ export function setFinalizationEffectHookForTest(
 ): void {
   finalizationEffectHook = hook
 }
-let dormancyEffectHook:
-  ((stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox') => Promise<void>) | undefined
-export function setDormancyEffectHookForTest(
-  hook: ((stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox') => Promise<void>) | undefined
-): void {
+/** The dormancy teardown stages, in the order they run. */
+export type DormancyEffectStage = 'monitors' | 'tokens' | 'children' | 'schedules' | 'processes' | 'sandbox'
+let dormancyEffectHook: ((stage: DormancyEffectStage) => Promise<void>) | undefined
+export function setDormancyEffectHookForTest(hook: ((stage: DormancyEffectStage) => Promise<void>) | undefined): void {
   dormancyEffectHook = hook
 }
 export function setCompleteWakeBeforeClearHookForTest(hook: (() => Promise<void>) | undefined): void {
@@ -641,10 +640,7 @@ async function runDormancyCompletionEffects(agentId: string, claim: DormancyComp
   const targetMetadata = target.metadata as Record<string, unknown> | null
   const resourceGeneration = targetMetadata?.dormancyResourceGeneration
   const parentResourceGeneration = targetMetadata?.resourceGeneration
-  const runStage = async (
-    stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox',
-    effect: () => Promise<boolean | void>
-  ): Promise<boolean> => {
+  const runStage = async (stage: DormancyEffectStage, effect: () => Promise<boolean | void>): Promise<boolean> => {
     await dormancyEffectHook?.(stage)
     if (!(await isDormancyClaimCurrent(agentId, claim.episodeId, claim.id))) return false
     return (await effect()) !== false
@@ -697,6 +693,15 @@ async function runDormancyCompletionEffects(agentId: string, claim: DormancyComp
       if (scheduleResult.failed > 0) {
         throw new Error(`Failed to reconcile ${scheduleResult.failed} dormant schedule(s)`)
       }
+    }))
+  )
+    return false
+  if (
+    !(await runStage('processes', async () => {
+      // What the agent's finished commands left running in its squad box.
+      // Best-effort and never throws: a box that is down has nothing running.
+      const { stopLeftoversForDormantAgent } = await import('../sandbox/leftover-processes')
+      await stopLeftoversForDormantAgent(agentId, target.squadId)
     }))
   )
     return false

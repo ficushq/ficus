@@ -186,9 +186,40 @@ export interface BashRequest {
   activateDevbox?: boolean
   /**
    * The agent this command runs for. The box routes notices about this
-   * agent's own background processes killed for memory back to it only.
+   * agent's own background processes back to it only, and attributes what the
+   * command leaves running to it, so it can be stopped when the work ends.
    */
   owner?: string
+  /** The work stream the agent's command runs for (attribution of leftovers). */
+  workStreamId?: string
+  /** The flow attempt the agent's command runs for (attribution of leftovers). */
+  attemptId?: number
+}
+
+/** Which leftover processes to act on; every field given must match. */
+export interface LeftoverProcessSelector {
+  agentId?: string
+  workStreamId?: string
+  attemptId?: number
+}
+
+export type LeftoverStopReason = 'attempt-ended' | 'agent-dormant' | 'stream-finished'
+
+export interface LeftoverProcessGroup {
+  invocationId: string
+  agentId: string
+  workStreamId?: string
+  attemptId?: number
+  command: string
+  startedAt: string
+  pids: number[]
+  keptPids: number[]
+}
+
+export interface LeftoverStopResponse {
+  reason: LeftoverStopReason
+  stopped: Array<LeftoverProcessGroup & { killedPids: number[]; survivingPids: number[] }>
+  kept: LeftoverProcessGroup[]
 }
 
 export interface BashResponse {
@@ -901,6 +932,18 @@ export class SandboxClient {
   /** What the box is running: load, the box user's processes by current CPU, and its containers. */
   async listProcesses(): Promise<SandboxProcesses> {
     return this.post<SandboxProcesses>('/processes', {})
+  }
+
+  /**
+   * Stop the processes agents' finished commands left running that match
+   * `selector` (SIGTERM, then SIGKILL after a grace period on the box).
+   */
+  async stopLeftoverProcesses(
+    selector: LeftoverProcessSelector,
+    reason: LeftoverStopReason
+  ): Promise<LeftoverStopResponse> {
+    // The box waits up to 5s for SIGTERM and 2s more for SIGKILL.
+    return this.post('/processes/leftovers/stop', { selector, reason }, undefined, 30_000)
   }
 
   /** Signal one process the box user owns; the server refuses anything else (403). */

@@ -30,12 +30,14 @@ import {
   cancelBashInvocation,
   handleBash,
   hasActiveBashInvocations,
+  getLeftoverProcesses,
   getWorkloadCgroups,
   reconcileBashInvocations,
   setWorkloadCgroups,
   terminateAllBashInvocations,
 } from './services/bash'
 import { WorkloadCgroups } from './services/workload-cgroup'
+import { LeftoverSelectorError, parseLeftoverSelector, parseLeftoverStopReason } from './services/leftover-processes'
 import {
   IdleExitCoordinator,
   beginRequestOrDrainingResponse,
@@ -138,6 +140,8 @@ const JSON_BODY_PATHS = new Set([
   '/toolchain-ready',
   '/processes',
   '/processes/signal',
+  '/processes/leftovers',
+  '/processes/leftovers/stop',
   '/containers/stop',
   '/bash',
   '/bash/cancel',
@@ -375,10 +379,50 @@ async function main(): Promise<void> {
                 return Response.json({ error: 'Managed toolchain activation failed' }, { status: 500 })
               }
             case '/processes': {
-              const [snapshot, containers] = await Promise.all([listBoxProcessSnapshot(), listBoxContainers()])
+              const [snapshot, containers, startedBy] = await Promise.all([
+                listBoxProcessSnapshot(),
+                listBoxContainers(),
+                getLeftoverProcesses()
+                  .attribution()
+                  .catch(() => new Map()),
+              ])
               boxRuntimeHealth.observeContainers(containers)
-              return Response.json({ ...snapshot, containers })
+              // Which agent's finished command left each process running.
+              const processes = snapshot.processes.map((process) => {
+                const group = startedBy.get(process.pid)
+                return group
+                  ? {
+                      ...process,
+                      startedBy: {
+                        agentId: group.agentId,
+                        ...(group.workStreamId ? { workStreamId: group.workStreamId } : {}),
+                        ...(group.attemptId ? { attemptId: group.attemptId } : {}),
+                        command: group.command,
+                        kept: group.keptPids.includes(process.pid),
+                      },
+                    }
+                  : process
+              })
+              return Response.json({ ...snapshot, processes, containers })
             }
+            case '/processes/leftovers':
+            case '/processes/leftovers/stop':
+              try {
+                if (pathname === '/processes/leftovers') {
+                  const selector = body.selector === undefined ? undefined : parseLeftoverSelector(body.selector)
+                  return Response.json({ leftovers: await getLeftoverProcesses().list(selector) })
+                }
+                return Response.json(
+                  await getLeftoverProcesses().stop(
+                    parseLeftoverSelector(body.selector),
+                    parseLeftoverStopReason(body.reason)
+                  )
+                )
+              } catch (error) {
+                if (error instanceof LeftoverSelectorError)
+                  return Response.json({ error: error.message }, { status: 400 })
+                throw error
+              }
             case '/processes/signal':
             case '/containers/stop':
               try {

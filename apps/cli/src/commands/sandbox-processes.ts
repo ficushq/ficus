@@ -4,6 +4,7 @@ import {
   sandboxPressureDetail,
   SANDBOX_PROCESS_SIGNALS,
   type SandboxProcesses,
+  type SandboxProcessStartedBy,
 } from '@ficus/shared'
 import { apiGet, apiPost } from '../client'
 import { isJsonMode, output, outputError, outputTable } from '../output'
@@ -20,6 +21,15 @@ function formatMemory(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${mb}M`
 }
 
+/** Who left a process running: short agent, stream and attempt ids, and whether it is kept. */
+export function formatStartedBy(startedBy: SandboxProcessStartedBy | undefined): string {
+  if (!startedBy) return ''
+  const parts = [`agent ${startedBy.agentId.slice(0, 8)}`]
+  if (startedBy.workStreamId) parts.push(`stream ${startedBy.workStreamId.slice(0, 8)}`)
+  if (startedBy.attemptId) parts.push(`attempt ${startedBy.attemptId}`)
+  return `${parts.join(' ')}${startedBy.kept ? ' (kept)' : ''}`
+}
+
 /** Human rendering of a sandbox's processes: load, processes by current CPU, containers. */
 export function renderSandboxProcesses(result: SandboxProcesses, limit: number): void {
   if (result.pressure) {
@@ -33,20 +43,27 @@ export function renderSandboxProcesses(result: SandboxProcesses, limit: number):
     console.log(sandboxPressureDetail(result.pressure))
     console.log('')
   }
+  const shown = result.processes.slice(0, limit)
+  const leftovers = shown.some((process) => process.startedBy)
   outputTable(
-    result.processes.slice(0, limit).map((process) => ({
+    shown.map((process) => ({
       PID: process.protected ? `${process.pid}*` : String(process.pid),
       START: process.startTicks === undefined ? '' : String(process.startTicks),
       CPU: `${process.cpuPercent.toFixed(0)}%`,
       MEM: formatMemory(process.memRssMb),
       AGE: formatAge(process.ageSeconds),
       PROTECTION: process.protected ? (process.protectionReason ?? 'Runs the sandbox') : '',
+      ...(leftovers ? { 'LEFT BY': formatStartedBy(process.startedBy) } : {}),
       COMMAND: process.command.length > 100 ? `${process.command.slice(0, 99)}…` : process.command,
     })),
-    ['PID', 'START', 'CPU', 'MEM', 'AGE', 'PROTECTION', 'COMMAND']
+    ['PID', 'START', 'CPU', 'MEM', 'AGE', 'PROTECTION', ...(leftovers ? ['LEFT BY'] : []), 'COMMAND']
   )
   if (result.processes.some((process) => process.protected))
     console.log('* protected infrastructure; cannot be signalled')
+  if (leftovers)
+    console.log(
+      'LEFT BY: started by an agent command that has returned; stopped automatically when that attempt, agent or stream ends, unless kept'
+    )
   console.log('')
   if (!result.containers.available) {
     console.log(`Containers: ${result.containers.reason}`)

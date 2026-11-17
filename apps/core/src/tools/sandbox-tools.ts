@@ -19,6 +19,7 @@ import { runIdempotentSandboxOperation } from '../services/sandbox/vm/retry'
 import {
   BASH_OUTPUT_TRUNCATION_NOTE,
   FOREGROUND_BASH_GUIDANCE,
+  LEFTOVER_PROCESS_GUIDANCE,
   normalizeBashTimeoutSeconds,
 } from '../lib/bash-contract'
 
@@ -64,6 +65,7 @@ import {
   vmWorkspaceLayout,
 } from '../services/sandbox/workspace-layout'
 import type { SandboxedToolWithKey } from '../services/sandbox/types'
+import { executionFlowOwnership, type BashFlowOwnership } from '../services/sandbox/bash-ownership'
 
 import { AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, SANDBOX_SKILLS_DIR } from '../services/agent/skill-materializer'
@@ -575,9 +577,16 @@ export function createHttpBashOperations(
   manager: SandboxToolsManager,
   sandboxId: string,
   ficusToken?: string,
-  opts?: { agentId?: string; invocationId?: string }
+  opts?: {
+    agentId?: string
+    invocationId?: string
+    /** The execution running the command; its current flow attempt is sent with it. */
+    executionId?: string
+    resolveFlowOwnership?: (executionId: string) => Promise<BashFlowOwnership | undefined>
+  }
 ): BashOperations {
   const mapFailure = createOutageMapper(manager, sandboxId, opts?.agentId)
+  const resolveFlowOwnership = opts?.resolveFlowOwnership ?? executionFlowOwnership
   return {
     exec: async (
       command: string,
@@ -597,6 +606,9 @@ export function createHttpBashOperations(
       }
 
       const timeout = normalizeBashTimeoutSeconds(options.timeout)
+      // Which stream and attempt this agent's command belongs to, so the box can
+      // stop what it leaves running when that work ends (leftover-processes.ts).
+      const flowOwnership = opts?.agentId && opts.executionId ? await resolveFlowOwnership(opts.executionId) : undefined
 
       let cancelForRestart: (restart: RestartContext) => Promise<void> = async () => {}
       const running = new Promise<{ exitCode: number | null }>((resolve, reject) => {
@@ -627,8 +639,10 @@ export function createHttpBashOperations(
           } as Record<string, string>,
           sourceEnv: true,
           activateDevbox: true,
-          // Kill notices for this agent's own earlier background commands.
+          // Kill notices for this agent's own earlier background commands, and
+          // attribution of what this command leaves running.
           ...(opts?.agentId ? { owner: opts.agentId } : {}),
+          ...(flowOwnership ? { workStreamId: flowOwnership.workStreamId, attemptId: flowOwnership.attemptId } : {}),
         })
 
         let finalExitCode: number | null = null
@@ -878,7 +892,11 @@ export function createK8sSandboxedBashTool(
 ): AgentTool<any> {
   const makeTool = (invocationId?: string) =>
     createBashTool(cwd, {
-      operations: createHttpBashOperations(manager, sandboxId, ficusToken, { ...opts, invocationId }),
+      operations: createHttpBashOperations(manager, sandboxId, ficusToken, {
+        agentId: opts?.agentId,
+        invocationId,
+        executionId: opts?.invocationOwnerId,
+      }),
       persistFullOutput: false,
     })
   const tool = makeTool()
@@ -892,7 +910,7 @@ export function createK8sSandboxedBashTool(
       return makeTool(invocationId).execute(toolCallId, params, signal, onUpdate)
     }
   }
-  tool.description = `Execute a bash command in the current working directory. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: 180s / 3 minutes, max: 3600s / 1 hour). ${FOREGROUND_BASH_GUIDANCE}`
+  tool.description = `Execute a bash command in the current working directory. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: 180s / 3 minutes, max: 3600s / 1 hour). ${FOREGROUND_BASH_GUIDANCE} ${LEFTOVER_PROCESS_GUIDANCE}`
   return tool
 }
 
