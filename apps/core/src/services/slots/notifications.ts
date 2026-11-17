@@ -4,6 +4,7 @@ import { AgentTerminatedError } from '../../entities/Agent'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { createLogger } from '../../lib/infra/logger'
 import { deliverInboxMessagesToAgent } from '../inbox/inboxDelivery'
+import { endedSlotClaimCleanup } from './ended-claim-cleanup'
 
 const log = createLogger('slot-notifier')
 const MAX_NOTIFICATION_CLAIM_LIMIT = 100
@@ -157,17 +158,17 @@ export function renderSlotNotification(claim: SlotNotificationClaim): string {
       `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expires at ${claim.expiresAt?.toISOString()}.`,
       `If you still need it, renew it now: ficus slot renew ${claim.claimId}`,
       `If the protected work is finished, release it now: ficus slot release ${claim.claimId}`,
-      'If it expires, the capacity is freed but nothing you started under it is stopped: you would have to clean up and claim again.',
+      'If it expires, the capacity is freed and the background processes your commands started while holding it are stopped, unless you still hold another claim they were started under.',
     ].join('\n')
   }
   if (claim.kind === 'expired') {
-    // Expiry frees capacity but cannot stop what the owner started under it.
-    // Detached containers and test databases outlive the claim and silently
-    // overload the shared box, so the owner must clean up explicitly.
+    // Expiry stops the background processes the owner's commands started
+    // under the claim (sandbox/leftover-processes.ts), but not containers run
+    // by the Docker daemon, such as test databases: the owner cleans those up.
     return [
       `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expired at ${claim.expiresAt?.toISOString()} because it was not released or renewed. You no longer hold this capacity.`,
-      'Ficus did not stop any work you started under this claim. Clean up now:',
-      "- Stop every heavy process, container and test database you started under it: run the repository's project-scoped test:db:down (for example `bun run test:db:down`), docker stop the containers you started, and kill your background jobs.",
+      'Ficus is stopping the background processes your commands started while you held this claim (unless they were started with FICUS_KEEP_RUNNING=1 or you still hold another claim they were started under); a separate message lists anything it stopped. Clean up the rest now:',
+      "- Stop the containers and test databases you started under it, which Ficus does not stop: run the repository's project-scoped test:db:down (for example `bun run test:db:down`) and docker stop the containers you started.",
       `- Claim again before resuming heavy work: ficus slot claim ${claim.poolKey} --squad ${claim.squadId}`,
       '- Release claims as soon as the work is done: ficus slot release <claim-id>',
     ].join('\n')
@@ -286,6 +287,17 @@ export class SlotNotificationNotifier {
     if (!state || state.notificationStatus !== 'delivering' || state.notificationClaimToken !== claim.claimToken) {
       return false
     }
+    // Expiry trigger: stop what the owner started while holding the claim, in
+    // the background so a grace period never holds up the notice. Repeating
+    // it on a delivery retry is harmless: nothing is left to stop.
+    if (claim.kind === 'expired' && claim.claimId)
+      endedSlotClaimCleanup({
+        claimId: claim.claimId,
+        agentId: claim.recipientAgentId,
+        squadId: claim.squadId,
+        poolKey: claim.poolKey,
+        reason: 'claim-expired',
+      })
     if ((claim.kind === 'granted' || claim.kind === 'expiring') && state.claimStatus !== 'active') {
       await settleTerminal(claim, now, 'claim_inactive')
       return false

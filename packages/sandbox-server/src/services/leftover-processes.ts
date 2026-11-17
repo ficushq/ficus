@@ -16,7 +16,8 @@
  *     its children stay in that session unless they call setsid themselves.
  *
  * Core asks the box to stop an agent's leftovers when its flow attempt ends,
- * when the agent goes dormant, and when its work stream is done or canceled
+ * when the agent goes dormant, when its work stream is done or canceled, and
+ * when a slot claim it held while starting them is released or expires
  * (`POST /processes/leftovers/stop`). A stop is SIGTERM, then SIGKILL for what
  * is still running after a short grace period.
  *
@@ -52,11 +53,16 @@ const POLL_MS = 50
  */
 export const MAX_TRACKED = 2_000
 
+/** At most this many slot claims are recorded per command (an agent holds one per pool). */
+export const MAX_SLOT_CLAIMS_PER_COMMAND = 32
+
 /** Who started a command, as Core sent it with the bash request. */
 export interface ProcessOwnership {
   agentId: string
   workStreamId?: string
   attemptId?: number
+  /** The slot claims the agent held when the command started. */
+  slotClaimIds?: string[]
 }
 
 /**
@@ -68,10 +74,24 @@ export interface LeftoverSelector {
   agentId?: string
   workStreamId?: string
   attemptId?: number
+  /** Only commands started while this slot claim was held. */
+  slotClaimId?: string
+  /**
+   * With `slotClaimId`: claims the agent still holds. A command started under
+   * any of them is still covered by a reservation and is left alone; it is
+   * stopped when the last claim it was started under ends.
+   */
+  heldSlotClaimIds?: string[]
 }
 
 /** Why Core asked for the stop; Core tells the owning agent in words (its inbox message). */
-export const LEFTOVER_STOP_REASONS = ['attempt-ended', 'agent-dormant', 'stream-finished'] as const
+export const LEFTOVER_STOP_REASONS = [
+  'attempt-ended',
+  'agent-dormant',
+  'stream-finished',
+  'claim-released',
+  'claim-expired',
+] as const
 export type LeftoverStopReason = (typeof LEFTOVER_STOP_REASONS)[number]
 
 /** One finished command's processes that are still running. */
@@ -80,6 +100,8 @@ export interface LeftoverGroup {
   agentId: string
   workStreamId?: string
   attemptId?: number
+  /** The slot claims the agent held when the command started. */
+  slotClaimIds?: string[]
   /** A single-line excerpt of the command that started them. */
   command: string
   startedAt: string
@@ -152,7 +174,22 @@ function matches(entry: Entry, selector: LeftoverSelector): boolean {
   if (selector.agentId !== undefined && entry.ownership.agentId !== selector.agentId) return false
   if (selector.workStreamId !== undefined && entry.ownership.workStreamId !== selector.workStreamId) return false
   if (selector.attemptId !== undefined && entry.ownership.attemptId !== selector.attemptId) return false
+  if (selector.slotClaimId !== undefined) {
+    const claims = entry.ownership.slotClaimIds ?? []
+    if (!claims.includes(selector.slotClaimId)) return false
+    if (selector.heldSlotClaimIds?.some((held) => claims.includes(held))) return false
+  }
   return true
+}
+
+function parseIdList(value: unknown, field: string): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_SLOT_CLAIMS_PER_COMMAND ||
+    !value.every((id) => typeof id === 'string' && ID_PATTERN.test(id))
+  )
+    throw new LeftoverSelectorError(`${field} must be a list of at most ${MAX_SLOT_CLAIMS_PER_COMMAND} ids`)
+  return [...new Set(value as string[])]
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/
@@ -176,6 +213,16 @@ export function parseLeftoverSelector(value: unknown): LeftoverSelector {
       throw new LeftoverSelectorError('attemptId must be a positive integer')
     selector.attemptId = raw.attemptId
   }
+  if (raw.slotClaimId !== undefined) {
+    if (typeof raw.slotClaimId !== 'string' || !ID_PATTERN.test(raw.slotClaimId))
+      throw new LeftoverSelectorError('slotClaimId must be an id')
+    selector.slotClaimId = raw.slotClaimId
+  }
+  if (raw.heldSlotClaimIds !== undefined) {
+    if (selector.slotClaimId === undefined)
+      throw new LeftoverSelectorError('heldSlotClaimIds is only valid with slotClaimId')
+    selector.heldSlotClaimIds = parseIdList(raw.heldSlotClaimIds, 'heldSlotClaimIds')
+  }
   if (selector.agentId === undefined && selector.workStreamId === undefined)
     throw new LeftoverSelectorError('a selector must name an agentId or a workStreamId')
   return selector
@@ -192,6 +239,7 @@ export function requestOwnership(body: {
   owner?: unknown
   workStreamId?: unknown
   attemptId?: unknown
+  slotClaimIds?: unknown
 }): ProcessOwnership | undefined {
   if (typeof body.owner !== 'string' || !ID_PATTERN.test(body.owner)) return undefined
   const ownership: ProcessOwnership = { agentId: body.owner }
@@ -199,6 +247,13 @@ export function requestOwnership(body: {
     ownership.workStreamId = body.workStreamId
   if (typeof body.attemptId === 'number' && Number.isSafeInteger(body.attemptId) && body.attemptId > 0)
     ownership.attemptId = body.attemptId
+  if (Array.isArray(body.slotClaimIds)) {
+    // Malformed entries are dropped rather than failing the command.
+    const claims = [
+      ...new Set(body.slotClaimIds.filter((id): id is string => typeof id === 'string' && ID_PATTERN.test(id))),
+    ].slice(0, MAX_SLOT_CLAIMS_PER_COMMAND)
+    if (claims.length > 0) ownership.slotClaimIds = claims
+  }
   return ownership
 }
 
@@ -347,6 +402,7 @@ export class LeftoverProcesses {
         `Stopped leftover processes (${reason}) of agent ${entry.ownership.agentId}` +
           `${entry.ownership.workStreamId ? ` stream ${entry.ownership.workStreamId}` : ''}` +
           `${entry.ownership.attemptId ? ` attempt ${entry.ownership.attemptId}` : ''}` +
+          `${entry.ownership.slotClaimIds ? ` slot claims ${entry.ownership.slotClaimIds.join(',')}` : ''}` +
           `: pids ${group.pids.join(',')}${result.killedPids.length ? ` (killed after grace: ${result.killedPids.join(',')})` : ''}` +
           `${result.survivingPids.length ? ` (still running: ${result.survivingPids.join(',')})` : ''}` +
           `${group.keptPids.length ? ` (kept: ${group.keptPids.join(',')})` : ''} from \`${entry.command}\``
@@ -370,6 +426,7 @@ export class LeftoverProcesses {
       agentId: entry.ownership.agentId,
       ...(entry.ownership.workStreamId ? { workStreamId: entry.ownership.workStreamId } : {}),
       ...(entry.ownership.attemptId ? { attemptId: entry.ownership.attemptId } : {}),
+      ...(entry.ownership.slotClaimIds ? { slotClaimIds: entry.ownership.slotClaimIds } : {}),
       command: entry.command,
       startedAt: entry.startedAt,
       pids: candidates.filter((c) => !c.kept).map((c) => c.identity.pid),

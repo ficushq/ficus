@@ -67,6 +67,8 @@ interface BashRequest {
   workStreamId?: string
   /** The flow attempt the agent's command runs for, if any. */
   attemptId?: number
+  /** The slot claims the agent held when the command started, if any. */
+  slotClaimIds?: string[]
 }
 
 export async function reconcileBashRecord(

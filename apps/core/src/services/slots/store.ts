@@ -28,6 +28,7 @@ import {
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { slotNotificationNotifier } from './notifications'
 import { orderedSlotWaiters } from './queue-order'
+import { endedSlotClaimCleanup } from './ended-claim-cleanup'
 
 type SlotPoolRow = typeof slotPools.$inferSelect
 type SlotClaimRow = typeof slotClaims.$inferSelect
@@ -956,6 +957,10 @@ export async function releaseSlot(
   })
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'release', result.promotion, result.response.outcome === 'released' ? 1 : 0)
+  // Release trigger: what the owner started while holding the claim. An
+  // expired claim is handled when its expiry notice is delivered.
+  if (result.response.outcome === 'released')
+    endedSlotClaimCleanup({ claimId, agentId, squadId, poolKey: normalizeKey(key), reason: 'claim-released' })
   return result.response
 }
 

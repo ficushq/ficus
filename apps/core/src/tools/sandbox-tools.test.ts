@@ -1170,9 +1170,14 @@ describe('sandbox outage mapping', () => {
     try {
       const mockStream = createMockStream()
       const manager = deadBoxManager(mockStream)
-      const operations = createHttpBashOperations(manager, 'squad_s1', undefined, { agentId: 'a9' })
+      const operations = createHttpBashOperations(manager, 'squad_s1', undefined, {
+        agentId: 'a9',
+        resolveHeldSlotClaims: async () => undefined,
+      })
 
       const execPromise = operations.exec('command', '/workspace/s1', { onData: () => {} })
+      // The request is sent after the agent's slot claims are looked up.
+      await new Promise((resolve) => setTimeout(resolve, 0))
       mockStream.emitError(new Error('connection lost'))
 
       await expect(execPromise).rejects.toThrow(/shared squad box/)
@@ -1386,7 +1391,10 @@ describe('createHttpBashOperations', () => {
       })),
       podManager: { namespace: 'tau-sandboxes' },
     } as unknown as K8sSandboxManager
-    await createHttpBashOperations(manager, 'squad_s1', undefined, { agentId: 'agent-7' }).exec('ls', '/workspace', {
+    await createHttpBashOperations(manager, 'squad_s1', undefined, {
+      agentId: 'agent-7',
+      resolveHeldSlotClaims: async () => undefined,
+    }).exec('ls', '/workspace', {
       onData: () => {},
     })
     await createHttpBashOperations(manager, 'squad_s1').exec('ls', '/workspace', { onData: () => {} })
@@ -1420,6 +1428,7 @@ describe('createHttpBashOperations', () => {
       agentId: 'agent-7',
       executionId: 'exec-1',
       resolveFlowOwnership,
+      resolveHeldSlotClaims: async () => undefined,
     })
     await operations.exec('ls', '/workspace', { onData: () => {} })
     await operations.exec('ls', '/workspace', { onData: () => {} })
@@ -1432,6 +1441,7 @@ describe('createHttpBashOperations', () => {
       agentId: 'agent-8',
       executionId: 'exec-3',
       resolveFlowOwnership: async () => undefined,
+      resolveHeldSlotClaims: async () => undefined,
     }).exec('ls', '/workspace', { onData: () => {} })
     expect(requests.map(({ owner, workStreamId, attemptId }) => ({ owner, workStreamId, attemptId }))).toEqual([
       { owner: 'agent-7', workStreamId: 'stream-9', attemptId: 4 },
@@ -1440,6 +1450,48 @@ describe('createHttpBashOperations', () => {
       { owner: 'agent-8', workStreamId: undefined, attemptId: undefined },
     ])
     expect(lookups).toEqual(['exec-1', 'exec-1'])
+  })
+
+  test('sends the slot claims the agent holds as each command starts, so the box can stop it when they end', async () => {
+    const requests: any[] = []
+    const manager = {
+      getClientForSandbox: mock(() => ({
+        bash: mock((request: any) => {
+          requests.push(request)
+          const stream = createMockStream()
+          queueMicrotask(() => {
+            stream.emitData({ exitCode: 0 })
+            stream.emitEnd()
+          })
+          return stream
+        }),
+      })),
+      podManager: { namespace: 'tau-sandboxes' },
+    } as unknown as K8sSandboxManager
+    // Claims are read per command: one granted or released between commands changes the next one.
+    const held: Array<string[] | undefined> = [[], ['claim-1', 'claim-2'], ['claim-2'], undefined]
+    const lookups: string[] = []
+    const operations = createHttpBashOperations(manager, 'squad_s1', undefined, {
+      agentId: 'agent-7',
+      resolveHeldSlotClaims: async (agentId) => {
+        lookups.push(agentId)
+        return held.shift()
+      },
+    })
+    for (let i = 0; i < 4; i++) await operations.exec('ls', '/workspace', { onData: () => {} })
+    // Without an agent nothing is attributed, so nothing is looked up.
+    await createHttpBashOperations(manager, 'squad_s1', undefined, {
+      resolveHeldSlotClaims: async () => ['claim-x'],
+    }).exec('ls', '/workspace', { onData: () => {} })
+    expect(requests.map((request) => request.slotClaimIds)).toEqual([
+      undefined,
+      ['claim-1', 'claim-2'],
+      ['claim-2'],
+      // A failed lookup attributes the command to no claim rather than failing it.
+      undefined,
+      undefined,
+    ])
+    expect(lookups).toEqual(['agent-7', 'agent-7', 'agent-7', 'agent-7'])
   })
 
   test('passes a notice about an earlier background kill through to the agent output', async () => {
@@ -1609,7 +1661,10 @@ describe('createHttpBashOperations', () => {
     try {
       const result = createHttpBashOperations(createMockManager(stream), 'squad_test', undefined, {
         agentId: 'agent-1',
+        resolveHeldSlotClaims: async () => undefined,
       }).exec('SECRET_COMMAND_TEXT', '/workspace', { onData: () => {}, timeout: 240 })
+      // The request is sent after the agent's slot claims are looked up.
+      await new Promise((resolve) => setTimeout(resolve, 0))
       stream.emitData({ invocation: { id: 'stable-invocation' } } as BashResponse)
       stream.emitData({ stdout: Buffer.from('twelve bytes').toString('base64') })
       stream.emitEnd()

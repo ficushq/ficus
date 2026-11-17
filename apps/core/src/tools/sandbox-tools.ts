@@ -65,7 +65,7 @@ import {
   vmWorkspaceLayout,
 } from '../services/sandbox/workspace-layout'
 import type { SandboxedToolWithKey } from '../services/sandbox/types'
-import { executionFlowOwnership, type BashFlowOwnership } from '../services/sandbox/bash-ownership'
+import { executionFlowOwnership, heldSlotClaimIds, type BashFlowOwnership } from '../services/sandbox/bash-ownership'
 
 import { AGENT_DIR, SKILLS_DIR } from '../lib/paths'
 import { MATERIALIZED_SKILLS_DIR, SANDBOX_SKILLS_DIR } from '../services/agent/skill-materializer'
@@ -583,10 +583,12 @@ export function createHttpBashOperations(
     /** The execution running the command; its current flow attempt is sent with it. */
     executionId?: string
     resolveFlowOwnership?: (executionId: string) => Promise<BashFlowOwnership | undefined>
+    resolveHeldSlotClaims?: (agentId: string) => Promise<string[] | undefined>
   }
 ): BashOperations {
   const mapFailure = createOutageMapper(manager, sandboxId, opts?.agentId)
   const resolveFlowOwnership = opts?.resolveFlowOwnership ?? executionFlowOwnership
+  const resolveHeldSlotClaims = opts?.resolveHeldSlotClaims ?? heldSlotClaimIds
   return {
     exec: async (
       command: string,
@@ -608,7 +610,14 @@ export function createHttpBashOperations(
       const timeout = normalizeBashTimeoutSeconds(options.timeout)
       // Which stream and attempt this agent's command belongs to, so the box can
       // stop what it leaves running when that work ends (leftover-processes.ts).
-      const flowOwnership = opts?.agentId && opts.executionId ? await resolveFlowOwnership(opts.executionId) : undefined
+      // And which slot claims the agent holds as it starts, so the box can stop
+      // it once the last of them is released or expires.
+      const [flowOwnership, slotClaimIds] = opts?.agentId
+        ? await Promise.all([
+            opts.executionId ? resolveFlowOwnership(opts.executionId) : undefined,
+            resolveHeldSlotClaims(opts.agentId),
+          ])
+        : [undefined, undefined]
 
       let cancelForRestart: (restart: RestartContext) => Promise<void> = async () => {}
       const running = new Promise<{ exitCode: number | null }>((resolve, reject) => {
@@ -643,6 +652,7 @@ export function createHttpBashOperations(
           // attribution of what this command leaves running.
           ...(opts?.agentId ? { owner: opts.agentId } : {}),
           ...(flowOwnership ? { workStreamId: flowOwnership.workStreamId, attemptId: flowOwnership.attemptId } : {}),
+          ...(slotClaimIds?.length ? { slotClaimIds } : {}),
         })
 
         let finalExitCode: number | null = null

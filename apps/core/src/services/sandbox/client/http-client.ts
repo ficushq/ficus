@@ -194,6 +194,8 @@ export interface BashRequest {
   workStreamId?: string
   /** The flow attempt the agent's command runs for (attribution of leftovers). */
   attemptId?: number
+  /** The slot claims the agent holds as the command starts (attribution of leftovers). */
+  slotClaimIds?: string[]
 }
 
 /** Which leftover processes to act on; every field given must match. */
@@ -201,15 +203,21 @@ export interface LeftoverProcessSelector {
   agentId?: string
   workStreamId?: string
   attemptId?: number
+  /** Only commands started while this slot claim was held. */
+  slotClaimId?: string
+  /** With slotClaimId: claims still held; a command started under any of them is left alone. */
+  heldSlotClaimIds?: string[]
 }
 
-export type LeftoverStopReason = 'attempt-ended' | 'agent-dormant' | 'stream-finished'
+export type LeftoverStopReason =
+  'attempt-ended' | 'agent-dormant' | 'stream-finished' | 'claim-released' | 'claim-expired'
 
 export interface LeftoverProcessGroup {
   invocationId: string
   agentId: string
   workStreamId?: string
   attemptId?: number
+  slotClaimIds?: string[]
   command: string
   startedAt: string
   pids: number[]

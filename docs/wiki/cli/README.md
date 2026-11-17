@@ -173,6 +173,14 @@ same configuration; canceled waiters do not return. A disabled pool can still be
 edited, and unregistered once empty. Disable, enable and guidance changes need
 `slots:write`.
 
+When a claim is released or expires, Ficus stops the background processes the
+holder's commands started while holding it (in the squad box and the holder's
+own box), once the holder holds none of the claims a command was started under.
+Commands started before the claim was granted, still-running commands, and
+processes started with `FICUS_KEEP_RUNNING=1` are left alone, and containers are
+never stopped. The holder is told what was stopped. See
+[leftover processes](../machines/leftover-processes.md#slot-claims).
+
 `ficus slot claim` joins the slot queue when no capacity is free, returning
 `queued` with a waiter id, so a contended claim no longer needs a second
 `subscribe` call. Pass `--no-subscribe` to get the immediate-only answer
