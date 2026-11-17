@@ -173,3 +173,57 @@ test('older or custom facts without a valid resource identity retain their origi
   fact.data = {}
   expect(integrationOutputRegistry.notificationBody('github', fact)).toBe(fact.body)
 })
+
+function review(state: string, user: unknown = { id: 77, type: 'User', login: 'octo-reviewer' }) {
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'pull_request_review',
+    payload: {
+      action: 'submitted',
+      repository,
+      pull_request: pr,
+      review: {
+        id: 20,
+        submitted_at: date,
+        state,
+        user,
+        body: 'Handle the empty list.',
+        html_url: 'https://github.com/acme/project/pull/3#pullrequestreview-20',
+      },
+    },
+  })
+  return fact!
+}
+
+test('changes-requested reviews tell the reworking agent to re-request review from that reviewer once fixes are pushed', () => {
+  const fact = review('changes_requested')
+  const before = structuredClone(fact)
+  const body = integrationOutputRegistry.notificationBody('github', fact)
+  // The reviewer's own content stays intact and comes first.
+  expect(body.startsWith(fact.body)).toBe(true)
+  expect(body).toContain('Handle the empty list.')
+  expect(body).toContain('Ficus guidance')
+  expect(body).toContain('gh pr edit 3 --repo acme/project --add-reviewer octo-reviewer')
+  expect(body).toContain('repos/acme/project/pulls/3/requested_reviewers')
+  expect(body).toContain('internal re-review')
+  expect(body).toContain('Reply on each unresolved review thread')
+  expect(body).toContain('Do not re-request review while fixes are still in progress')
+  expect(body).toContain('dismiss')
+  expect(body).toContain('pull request comment')
+  // Presentation only: the canonical fact and its hashed evidence are unchanged.
+  expect(fact).toEqual(before)
+  expect(fact.body).not.toContain('Ficus guidance')
+  expect(integrationOutputRegistry.notificationBody('github', structuredClone(fact))).toBe(body)
+})
+
+test('re-request guidance falls back to a generic reviewer when the review author is unknown', () => {
+  const body = integrationOutputRegistry.notificationBody('github', review('changes_requested', null))
+  expect(body).toContain('--add-reviewer <reviewer-login>')
+  expect(body).not.toContain('octo-reviewer')
+})
+
+test('other review states keep their original body without re-request guidance', () => {
+  for (const state of ['approved', 'commented', 'dismissed']) {
+    const fact = review(state)
+    expect(integrationOutputRegistry.notificationBody('github', fact)).toBe(fact.body)
+  }
+})
