@@ -172,6 +172,13 @@ before (the server logs `Workload cgroups: off`).
   kernel OOM killer line) to the app's or monitor's log, judged from the killed
   leaf's `memory.events` and memory pressure.
 
+## Background processes after the work ends
+
+A background process an agent's command leaves running stays in that command's
+leaf, and is stopped when the agent's flow attempt ends, when the agent goes
+dormant, or when its work stream is done or canceled, unless it was started with
+`FICUS_KEEP_RUNNING=1`. See [leftover processes](leftover-processes.md).
+
 ## Starting a dev server twice
 
 Before spawning, the server checks a command that starts a known dev server on

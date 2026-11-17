@@ -1075,7 +1075,7 @@ describe('agents service', () => {
       }
     })
 
-    it.each(['monitors', 'tokens', 'children', 'schedules', 'sandbox'] as const)(
+    it.each(['monitors', 'tokens', 'children', 'schedules', 'processes', 'sandbox'] as const)(
       'serializes a genuine wake behind dormant %s teardown',
       async (blockedStage) => {
         const agentWarmup = await import('../services/sandbox/agent-warmup')
@@ -1101,7 +1101,7 @@ describe('agents service', () => {
           expect(admission).toBeDefined()
           await admission
           expect((await Agent.mustFind(agent.id)).status).toBe('idle')
-          expect(visitedStages).toEqual(['monitors', 'tokens', 'children', 'schedules', 'sandbox'])
+          expect(visitedStages).toEqual(['monitors', 'tokens', 'children', 'schedules', 'processes', 'sandbox'])
         } finally {
           setDormancyEffectHookForTest(undefined)
           ensure.mockRestore()
@@ -1109,6 +1109,19 @@ describe('agents service', () => {
         }
       }
     )
+
+    it('stops what the agent left running in its squad box when it goes dormant', async () => {
+      const leftovers = await import('../services/sandbox/leftover-processes')
+      const stop = spyOn(leftovers, 'stopLeftoversForDormantAgent').mockResolvedValue([])
+      try {
+        const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+        await agent.tryTerminate()
+        expect(stop).toHaveBeenCalledTimes(1)
+        expect(stop).toHaveBeenCalledWith(agent.id, agent.squadId)
+      } finally {
+        stop.mockRestore()
+      }
+    })
 
     it('does not run stale dormancy teardown effects for a later episode', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
@@ -1277,7 +1290,7 @@ describe('agents service', () => {
           completeDormancy(agent.id, episodeId),
         ])
         expect(results.filter(Boolean)).toHaveLength(1)
-        expect(visited).toEqual(['monitors', 'tokens', 'children', 'schedules', 'sandbox'])
+        expect(visited).toEqual(['monitors', 'tokens', 'children', 'schedules', 'processes', 'sandbox'])
       } finally {
         setDormancyEffectHookForTest(undefined)
       }

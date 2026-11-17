@@ -466,6 +466,15 @@ export async function reconcileSettledAgentLifecycle(agentId?: string): Promise<
   }
 }
 
+async function stopFinishedStreamLeftovers(workStreamId: string, squadId: string): Promise<void> {
+  try {
+    const { stopLeftoversForFinishedStream } = await import('../sandbox/leftover-processes')
+    await stopLeftoversForFinishedStream(workStreamId, squadId)
+  } catch (error) {
+    log.warn(`Could not stop leftover processes of finished work stream ${workStreamId}`, error)
+  }
+}
+
 /**
  * Register cleanup event handlers as idempotent fallbacks.
  */
@@ -477,6 +486,14 @@ export function registerCleanupHandlers(): () => void {
     eventEmitter.on('workStream.canceled', async ({ agentIds }) => {
       await cleanupAgentsForTerminalWorkStream(agentIds ?? [])
     }),
+    // What any agent's finished commands left running for the stream. A separate
+    // handler so it never delays or fails crew teardown; it never throws.
+    eventEmitter.on('workStream.done', ({ workStreamId, squadId }) =>
+      stopFinishedStreamLeftovers(workStreamId, squadId)
+    ),
+    eventEmitter.on('workStream.canceled', ({ workStreamId, squadId }) =>
+      stopFinishedStreamLeftovers(workStreamId, squadId)
+    ),
     eventEmitter.on('workStream.agentRemoved', async ({ agentId }) => {
       await cleanupRemovedAgent(agentId)
     }),

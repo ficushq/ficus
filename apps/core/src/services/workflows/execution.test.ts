@@ -169,6 +169,29 @@ describe('lazy flow execution', () => {
     expect(await messages(id)).toHaveLength(4)
     expect((await getFlow(id))!.state.status).toBe('completion-ready')
   })
+  test('an advance that ends an agent attempt stops what that attempt left running, once per ended attempt', async () => {
+    const leftovers = await import('../sandbox/leftover-processes')
+    const stop = spyOn(leftovers, 'stopLeftoversForEndedAttempts').mockResolvedValue([])
+    try {
+      const id = await create()
+      const before = (await getFlow(id))!
+      const builderAttempt = before.state.activeAttemptId!
+      const builder = before.attemptAgents[String(builderAttempt)]
+      expect(builder).toBeDefined()
+      await advance(id, 'completed')
+      expect(stop).toHaveBeenCalledTimes(1)
+      expect(stop).toHaveBeenCalledWith(id, squadId, [{ attemptId: builderAttempt, agentId: builder! }])
+      const review = (await getFlow(id))!
+      const reviewAttempt = review.state.activeAttemptId!
+      await advance(id, 'changes-requested')
+      expect(stop).toHaveBeenCalledTimes(2)
+      expect(stop.mock.calls[1]![2]).toEqual([
+        { attemptId: reviewAttempt, agentId: review.attemptAgents[String(reviewAttempt)]! },
+      ])
+    } finally {
+      stop.mockRestore()
+    }
+  })
   test('fresh-per-attempt creates a new session only when the return activates', async () => {
     const definition = structuredClone(flow)
     definition.participants.builder!.session = 'fresh-per-attempt'

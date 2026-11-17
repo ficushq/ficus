@@ -71,6 +71,7 @@ import {
 } from '../work-streams/dependency-edges'
 import { resolveBranchChangeRequest } from '@ficus/shared'
 import { flowWorkerName } from './worker-name'
+import { endedAgentAttempts, stopLeftoversForEndedAttempts } from '../sandbox/leftover-processes'
 
 const log = createLogger('workflows')
 
@@ -528,6 +529,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   const actor = actorKey(identity)
   const fingerprint = workflowFingerprint({ command, actor })
   const callbacks: Array<() => void> = []
+  // Agent attempts this transition ends; set only by a committed, non-replayed transition.
+  let endedAttempts: Array<{ attemptId: number; agentId: string }> = []
   const result = await db.transaction(async (tx) => {
     await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, streamBefore.squadId)).for('update')
     const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, id)).for('update')
@@ -798,6 +801,11 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       .insert(workStreamFlowTransitions)
       .values({ workStreamId: id, requestId, requestHash: fingerprint, command, actorKey: actor, ...receipt })
     const [dispatched] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
+    endedAttempts = endedAgentAttempts(
+      activeWorkflowAttempts(run.state),
+      activeWorkflowAttempts(dispatched?.state ?? state),
+      run.attemptAgents
+    )
     return {
       ...receipt,
       ...responseAssignments(id, dispatched!, requestId, identity),
@@ -805,6 +813,12 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     }
   })
   callbacks.forEach((callback) => callback())
+  // Attempt-end trigger: stop what the ended attempts' commands left running.
+  // In the background (the box allows a grace period) and never failing the advance.
+  if (endedAttempts.length > 0)
+    void stopLeftoversForEndedAttempts(id, streamBefore.squadId, endedAttempts).catch((error) =>
+      log.warn(`Could not stop leftover processes of ended attempts in ${id}`, error)
+    )
   if (command.action === 'amend') {
     // Open review screens refresh and show the new revision; nothing else moved.
     eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: streamBefore.squadId })

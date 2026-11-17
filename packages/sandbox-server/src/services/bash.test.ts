@@ -1145,3 +1145,68 @@ describe('handleBash memory protection', () => {
     expect(fenced).toHaveBeenCalledTimes(1)
   })
 })
+
+describe.skipIf(process.platform !== 'linux')('handleBash leftover processes', () => {
+  it('attributes a background process to its agent, stream and attempt, stops it by attempt, and tells only that agent', async () => {
+    const { LeftoverProcesses, linuxLeftoverBackend } = await import('./leftover-processes')
+    const leftovers = new LeftoverProcesses(
+      linuxLeftoverBackend(() => null),
+      () => {},
+      2_000
+    )
+    const run = (invocationId: string, command: string, extra: Record<string, unknown>) =>
+      consumeSSE(
+        handleBash(
+          { command, invocationId, cwd: testDir, sourceEnv: false, activateDevbox: false, ...extra } as any,
+          undefined,
+          { leftovers: () => leftovers }
+        )
+      )
+    const started = collectOutput(
+      await run('left-1', 'sleep 300 >/dev/null 2>&1 & echo $!', {
+        owner: 'agent-a',
+        workStreamId: 'stream-1',
+        attemptId: 2,
+      })
+    )
+    const pid = Number(started.stdout.trim())
+    try {
+      expect(started.exitCode).toBe(0)
+      // Core's own command (no owner) leaves nothing attributable.
+      const unowned = collectOutput(await run('left-core', 'sleep 301 >/dev/null 2>&1 & echo $!', {}))
+      const unownedPid = Number(unowned.stdout.trim())
+      try {
+        const [group] = await leftovers.list()
+        expect(group).toMatchObject({ agentId: 'agent-a', workStreamId: 'stream-1', attemptId: 2, pids: [pid] })
+        expect(await leftovers.list({ agentId: 'agent-b' })).toEqual([])
+
+        // Another attempt of the stream ending does not touch it; its own attempt ending does.
+        expect((await leftovers.stop({ workStreamId: 'stream-1', attemptId: 3 }, 'attempt-ended')).stopped).toEqual([])
+        const { stopped } = await leftovers.stop({ workStreamId: 'stream-1', attemptId: 2 }, 'attempt-ended')
+        expect(stopped[0]?.pids).toEqual([pid])
+        expect(await processSessionDriver.readIdentity(pid)).toBeUndefined()
+        expect(await processSessionDriver.readIdentity(unownedPid)).toBeDefined()
+
+        // Only the owning agent hears about it, once, before its next command's output.
+        expect(collectOutput(await run('left-2', 'echo b', { owner: 'agent-b' })).stderr).toBe('')
+        const next = collectOutput(await run('left-3', 'echo a', { owner: 'agent-a' }))
+        expect(next.stdout).toBe('a\n')
+        expect(next.stderr).toContain('[ficus] Stopped 1 process left running by an earlier command of yours')
+        expect(next.stderr).toContain('the flow step it was started in ended')
+        expect(collectOutput(await run('left-4', 'true', { owner: 'agent-a' })).stderr).toBe('')
+      } finally {
+        try {
+          process.kill(unownedPid, 'SIGKILL')
+        } catch {
+          // already gone
+        }
+      }
+    } finally {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        // already gone
+      }
+    }
+  })
+})

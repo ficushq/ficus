@@ -54,6 +54,21 @@ export interface SandboxProcess {
   /** Fresh server-side role/cgroup classification; infrastructure cannot be signalled. */
   protected: boolean
   protectionReason?: 'Runs the sandbox' | 'Docker runtime' | 'Box listener' | 'Session bus'
+  /**
+   * Set when an agent's earlier command started this process and returned while
+   * it kept running (a leftover). It is stopped automatically when that work
+   * ends unless `kept` (started with FICUS_KEEP_RUNNING=1). Absent on older executors.
+   */
+  startedBy?: SandboxProcessStartedBy
+}
+
+export interface SandboxProcessStartedBy {
+  agentId: string
+  workStreamId?: string
+  attemptId?: number
+  /** A single-line excerpt of the command that started it. */
+  command: string
+  kept: boolean
 }
 
 export interface SandboxContainer {

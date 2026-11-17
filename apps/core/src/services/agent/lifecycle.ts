@@ -642,7 +642,7 @@ async function runDormancyCompletionEffects(agentId: string, claim: DormancyComp
   const resourceGeneration = targetMetadata?.dormancyResourceGeneration
   const parentResourceGeneration = targetMetadata?.resourceGeneration
   const runStage = async (
-    stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox',
+    stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'processes' | 'sandbox',
     effect: () => Promise<boolean | void>
   ): Promise<boolean> => {
     await dormancyEffectHook?.(stage)
@@ -697,6 +697,15 @@ async function runDormancyCompletionEffects(agentId: string, claim: DormancyComp
       if (scheduleResult.failed > 0) {
         throw new Error(`Failed to reconcile ${scheduleResult.failed} dormant schedule(s)`)
       }
+    }))
+  )
+    return false
+  if (
+    !(await runStage('processes', async () => {
+      // What the agent's finished commands left running in its squad box.
+      // Best-effort and never throws: a box that is down has nothing running.
+      const { stopLeftoversForDormantAgent } = await import('../sandbox/leftover-processes')
+      await stopLeftoversForDormantAgent(agentId, target.squadId)
     }))
   )
     return false

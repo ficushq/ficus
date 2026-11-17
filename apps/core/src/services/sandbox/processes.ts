@@ -23,7 +23,7 @@ type GetClient = (sandboxId: string) => Promise<SandboxClient | null>
  * each track their own clients, so a box the worker ensured is attached here
  * on demand. Runtimes without a box server (host) have none.
  */
-async function defaultGetClient(sandboxId: string): Promise<SandboxClient | null> {
+export async function defaultGetClient(sandboxId: string): Promise<SandboxClient | null> {
   const { getSandboxManager } = await import('./factory')
   const manager = getSandboxManager() as unknown as {
     getOrAttachClient?: (id: string) => Promise<SandboxClient | null>

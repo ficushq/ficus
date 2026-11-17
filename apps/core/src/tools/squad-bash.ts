@@ -22,7 +22,7 @@ import type { SandboxedToolWithKey } from '../services/sandbox/types'
 import { createDockerSandboxedBashTool } from './docker-sandbox'
 import { createHostBashTool, HOST_BASH_DEFAULT_TIMEOUT_S, HOST_BASH_MAX_TIMEOUT_S } from './host-sandbox'
 import { createK8sSandboxedBashTool, type SandboxToolsManager } from './sandbox-tools'
-import { FOREGROUND_BASH_GUIDANCE } from '../lib/bash-contract'
+import { FOREGROUND_BASH_GUIDANCE, LEFTOVER_PROCESS_GUIDANCE } from '../lib/bash-contract'
 
 export const SQUAD_BASH_TOOL_KEY = 'squad_bash'
 
@@ -32,7 +32,7 @@ function buildSquadBashDescription(workspaceMount: string): string {
     'This is the default for all repository/project commands: inspection, git, dependency and `devbox add` installs, Docker/Compose, tests, builds, servers, diagnostics, deployments, and cleanup. ' +
     'Reserve private `bash` for intentional personal/isolated scratch or sensitive material that must not enter shared state/logs. ' +
     `Both tools see the same shared \`${workspaceMount}\` files; only \`squad_bash\` shares the squad's processes, ports, installed tools, and caches. ` +
-    `It cannot access private directories. Returns stdout and stderr. Optionally provide a timeout in seconds (default: 180s, max: 3600s). ${FOREGROUND_BASH_GUIDANCE}`
+    `It cannot access private directories. Returns stdout and stderr. Optionally provide a timeout in seconds (default: 180s, max: 3600s). ${FOREGROUND_BASH_GUIDANCE} ${LEFTOVER_PROCESS_GUIDANCE}`
   )
 }
 

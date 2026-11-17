@@ -377,6 +377,10 @@ ficus squad sandbox-kill <squadId> <pid> [--signal KILL] # TERM by default
 ficus squad sandbox-stop-container <squadId> <container>
 ```
 
+A process an agent's finished command left running shows who left it (agent,
+stream and attempt) in `sandbox-ps`; such processes are stopped automatically
+when that work ends (see [leftover processes](machines/leftover-processes.md)).
+
 The same commands exist under `ficus agent` for an agent's own sandbox. A squad
 member's work runs in the squad sandbox, so use the squad commands for it. In
 the web app, the squad's Workspace settings and an agent's own-sandbox controls

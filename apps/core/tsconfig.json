@@ -24,6 +24,7 @@
     "../../packages/sandbox-server/src/services/dev-server-guard.ts",
     "../../packages/sandbox-server/src/services/service-cgroup.ts",
     "../../packages/sandbox-server/src/services/workload-cgroup.ts",
+    "../../packages/sandbox-server/src/services/leftover-processes.ts",
     "../../packages/sandbox-server/src/docker.ts",
     "../../packages/sandbox-server/src/paths.ts",
     "package.json"
