@@ -171,6 +171,20 @@ CI results retain their existing event text and identifiers. Unchanged parent
 descriptions are not added to feedback. Existing provider text-size limits still
 apply; this policy is not a new blanket truncation limit.
 
+A submitted review whose state is `changes_requested` keeps its review text and
+then gets one Ficus-authored sentence, labeled as Ficus guidance rather than
+review content. Because this notification is what reaches the agent that owns the
+rework (the active flow attempt, or the `changeEventsTo` step at
+completion-ready), the reminder lives here once instead of in every delivery
+prompt: once the fixes are pushed and ready for re-review, re-request review from
+the reviewer, named by their validated GitHub login
+(`gh api -X POST repos/<owner>/<repo>/pulls/<number>/requested_reviewers -f 'reviewers[]=<login>'`;
+the REST form is used because older gh releases fail `gh pr edit --add-reviewer`
+on GitHub's Projects (classic) deprecation without requesting anyone). Requesting
+reviewers needs the GitHub App's `Pull requests: write` permission and a user
+with write or triage access to the repository. Other review states are shown
+unchanged.
+
 Presentation is stateless and shared by worker delivery, parked-owner notices,
 manager/consultant and legacy fallback notices, and event-created work. It does
 not depend on a recipient having seen an earlier event. The original normalized

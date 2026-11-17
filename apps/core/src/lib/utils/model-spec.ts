@@ -122,9 +122,23 @@ export function resolveAgentModelSpec(
   const { provider, modelId, thinkingLevel } = validateModelSpec(modelSpec, dynamicCatalog)
   const model = dynamicCatalog?.getModel(provider, modelId) ?? getModel(provider as any, modelId as any)
   return {
-    model: pinOpenRouterBackend(model),
+    model: disableAnthropicMessageThreads(pinOpenRouterBackend(model)),
     thinkingLevel,
   }
+}
+
+/**
+ * Keep Anthropic requests self-contained. Pi 1.5.1 turned on message threads by default for
+ * api.anthropic.com: a request then sends only the new messages and the server continues from the
+ * previous reply. Core's precompaction, history replay, session persistence and usage accounting
+ * assume every request carries the full conversation, so Core opts out until that is decided.
+ */
+function disableAnthropicMessageThreads(model: Model<Api>): Model<Api> {
+  if (model.api !== 'anthropic-messages') return model
+  return {
+    ...model,
+    compat: { ...model.compat, supportsMessageThreads: false },
+  } as Model<Api>
 }
 
 /** Pin OpenRouter to the model creator's backend family and require full tool/parameter support. */

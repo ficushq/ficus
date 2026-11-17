@@ -10,6 +10,27 @@ const outputTitles = Object.fromEntries(githubOutputCatalog.map((event) => [even
 function record(value: unknown): Record<string, any> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : undefined
 }
+
+/**
+ * Ficus-authored guidance appended to a changes-requested review notification. That notification is
+ * what reaches whichever agent owns the rework (the active attempt, or the `changeEventsTo` step at
+ * completion-ready), so the reminder lives here once rather than in every delivery prompt. The
+ * reviewer login comes from the normalized, format-validated review author, never from review text.
+ */
+function changesRequestedReReviewGuidance(fact: IntegrationOutputFact): string {
+  const data = fact.data
+  const number = record(data.pullRequest)?.number
+  if (fact.output !== 'pull_request.reviewed' || data.state !== 'changes_requested' || !Number.isSafeInteger(number))
+    return ''
+  const repository =
+    typeof data.repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(data.repository) ? data.repository : ''
+  const known = typeof data.actor === 'string' && /^[a-z0-9-]+(?:\[bot\])?$/i.test(data.actor)
+  const login = known ? (data.actor as string) : '<reviewer-login>'
+  // The REST endpoint, not `gh pr edit --add-reviewer`: older gh releases fail that command on
+  // GitHub's Projects (classic) deprecation and request nobody.
+  return `Ficus guidance (not part of the GitHub review): once your fixes for this review are pushed and ready for re-review, re-request review from ${known ? login : 'the reviewer who requested changes'} so GitHub notifies them: \`gh api -X POST repos/${repository || '<owner>/<repo>'}/pulls/${number}/requested_reviewers -f 'reviewers[]=${login}'\`.`
+}
+
 function digest(value: unknown) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
@@ -65,6 +86,8 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
     return !isGitHubSelfComment(fact, String(record(configuration)?.login ?? ''))
   },
   notificationBody(fact) {
+    const reReview = changesRequestedReReviewGuidance(fact)
+    if (reReview) return `${fact.body}\n\n${reReview}`
     // Feedback and CI already describe the event itself, not the parent resource.
     // Keep their text intact (including edited comments and review-thread links).
     if (

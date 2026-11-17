@@ -213,6 +213,10 @@ export class AgentSession {
       // while follow-ups should continue to run one turn at a time.
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
+      // Pi 1.5.1 changed the default to "idle", which keeps refreshing prompt caches for up to
+      // 30 minutes after a run settles and bills each refresh. "streaming" (the 1.5.0 default)
+      // only warms while a run is active and stops when it settles.
+      cacheWarming: 'streaming',
     })
 
     const provider = parseModelSpec(selected).provider
