@@ -107,3 +107,55 @@ test('sandbox-kill sends an optional listed startTicks identity', async () => {
   })
   log.mockRestore()
 })
+
+test('a process left running by a finished agent command shows who left it, and the column only then', () => {
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  const process = {
+    pid: 42,
+    ppid: 1,
+    cpuPercent: 80,
+    memRssMb: 600,
+    ageSeconds: 7200,
+    state: 'S',
+    command: 'node astro dev',
+    protected: false,
+  }
+  renderSandboxProcesses(
+    {
+      pressure: null,
+      processes: [
+        {
+          ...process,
+          startedBy: {
+            agentId: 'aaaaaaaa-1111-4111-8111-111111111111',
+            workStreamId: 'bbbbbbbb-2222-4222-8222-222222222222',
+            attemptId: 3,
+            command: 'npm run dev &',
+            kept: false,
+          },
+        },
+        { ...process, pid: 43, startedBy: { agentId: 'cccccccc-3333', command: 'x', kept: true } },
+      ],
+      containers: { available: true, containers: [] },
+    },
+    25
+  )
+  expect(outputTable).toHaveBeenLastCalledWith(
+    [
+      expect.objectContaining({ 'LEFT BY': 'agent aaaaaaaa stream bbbbbbbb attempt 3' }),
+      expect.objectContaining({ 'LEFT BY': 'agent cccccccc (kept)' }),
+    ],
+    ['PID', 'START', 'CPU', 'MEM', 'AGE', 'PROTECTION', 'LEFT BY', 'COMMAND']
+  )
+  expect(log.mock.calls.flat().join('\n')).toContain('LEFT BY: started by an agent command that has returned')
+  renderSandboxProcesses({ pressure: null, processes: [process], containers: { available: true, containers: [] } }, 25)
+  expect(outputTable).toHaveBeenLastCalledWith(expect.any(Array), [
+    'PID',
+    'START',
+    'CPU',
+    'MEM',
+    'AGE',
+    'PROTECTION',
+    'COMMAND',
+  ])
+})
