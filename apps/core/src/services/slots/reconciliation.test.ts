@@ -302,7 +302,10 @@ test('a timed-out claim reminds its owner exactly once to clean up heavy work', 
   expect(content).toContain('not released or renewed')
   expect(content).toContain('test:db:down')
   expect(content).toContain('docker')
-  expect(content).toContain('background jobs')
+  expect(content).toContain(
+    'Ficus is stopping the background processes your commands started while you held this claim'
+  )
+  expect(content).toContain('which Ficus does not stop')
   expect(content).toContain(`ficus slot claim shared-box-intensive --squad ${squad.id}`)
   expect(content).toContain('ficus slot release')
   expect(messages[0]!.deliveryMode).toBe('steer')
