@@ -225,7 +225,7 @@ test('warning text names the pool, claim and exact renew and release commands', 
       'Your claim claim-1 on slot pool "production-change" expires at 2026-11-04T19:00:00.000Z.',
       'If you still need it, renew it now: ficus slot renew claim-1',
       'If the protected work is finished, release it now: ficus slot release claim-1',
-      'If it expires, the capacity is freed but nothing you started under it is stopped: you would have to clean up and claim again.',
+      'If it expires, the capacity is freed and the background processes your commands started while holding it are stopped, unless you still hold another claim they were started under.',
     ].join('\n')
   )
 })

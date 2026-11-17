@@ -244,7 +244,8 @@ test('expiry text states that ownership is invalid without claiming external wor
   })
   expect(text).toContain(`expired at ${claim!.expiresAt.toISOString()}`)
   expect(text).toContain('You no longer hold this capacity')
-  expect(text).toContain('Ficus did not stop any work you started under this claim')
+  expect(text).toContain('Ficus is stopping the background processes your commands started while you held this claim')
+  expect(text).toContain('which Ficus does not stop')
 })
 
 test('grant text gives the release and renew commands the CLI accepts', async () => {

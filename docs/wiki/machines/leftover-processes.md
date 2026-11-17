@@ -23,6 +23,10 @@ Every agent `bash` and `squad_bash` command carries its owner to the box:
   working on when the command starts. Core reads it from the execution row for
   each command, because an inline handoff rebinds a running execution to its
   next attempt (`apps/core/src/services/sandbox/bash-ownership.ts`).
+- `slotClaimIds`: the slot claims the agent holds when the command starts
+  (active and not past their expiry), read for each command in the same file.
+  A failed or slow lookup (over 2 seconds) sends none, so a command is at worst
+  not tied to a claim, never tied to a wrong one.
 
 The box server records each owned command when it is admitted
 (`packages/sandbox-server/src/services/leftover-processes.ts`). Once the command
@@ -52,13 +56,54 @@ not exit for idleness while a workload leaf still has processes.
 
 ## When leftovers are stopped
 
-Three separate triggers, each its own call (`apps/core/src/services/sandbox/leftover-processes.ts`):
+Four separate triggers, each its own call (`apps/core/src/services/sandbox/leftover-processes.ts`):
 
 | Trigger                                                 | Where it fires                                                                                              | What is stopped                                      | Boxes asked                                   |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
 | A flow attempt ends (completed, returned or superseded) | `advanceFlow`, after the transition commits (`services/workflows/execution.ts`)                             | Leftovers of that stream and attempt, from any agent | The squad box and the attempt agent's own box |
 | An agent goes dormant                                   | The `processes` stage of dormancy completion, before its own box is stopped (`services/agent/lifecycle.ts`) | Everything that agent left                           | The squad box                                 |
 | A work stream is done or canceled                       | `workStream.done` and `workStream.canceled` handlers (`services/agents/cleanup.ts`)                         | Leftovers of that stream, from every agent           | The squad box                                 |
+| A slot claim is released or expires                     | `releaseSlot` after its transaction commits; the delivery of the claim's expiry notice (`services/slots`)   | What its owner started while holding it (see below)  | The squad box and the owner's own box         |
+
+### Slot claims
+
+A claim ends in one of three ways, and each is covered:
+
+- **Released** (`ficus slot release`): `releaseSlot` starts the stop in the
+  background once the release has committed, so the release answers at once.
+- **Expired**: a claim expires inside whichever slot transaction notices it
+  first (a claim, a release, the 30 second reconciliation sweep), and each
+  queues an expiry notice in the slot notification outbox. Delivering that
+  notice starts the stop (`services/slots/notifications.ts`), so it runs once
+  the expiry has committed, from every path, and again harmlessly if delivery
+  is retried. The expiry notice tells the owner that its processes are being
+  stopped and that containers are not.
+- **Released by dormancy or final cleanup** of the owner: the agent-dormant
+  trigger already stops everything the agent left in the squad box, and
+  dormancy stops its own box, so there is no separate claim stop.
+
+Rules for which commands a claim covers:
+
+- A command is tied to every claim its agent held when it started. It is
+  stopped once its agent holds **none** of those claims. Releasing one of two
+  claims therefore leaves work started under both running while the other is
+  held; the stop request carries the claims still held
+  (`heldSlotClaimIds`), read when the claim ends, and the box skips commands
+  tied to any of them. If those cannot be read, nothing is stopped.
+- A command started **before** a claim was granted is not tied to it and is
+  not stopped when it ends, even if it is still running. Claim before you start
+  the work a pool protects.
+- A command that is **still running** when its claim ends is not a leftover
+  and is left alone, like for every trigger. What it leaves running is stopped
+  by the other triggers (its attempt, the agent's dormancy, its stream).
+- Only processes are stopped. Containers started through the Docker daemon
+  (for example a test database from `docker compose up -d`) do not run in the
+  command's leaf or session, so the owner still stops those, for example with
+  `test:db:down`.
+- The claim is only one more field of a command's ownership, so this works the
+  same on every runtime with a box server (VM, k8s, Docker), with the same
+  attribution limits described above. The host runtime has no box server and
+  no automatic cleanup.
 
 The end of a single agent turn is never a trigger. A command that is still
 running (its tool call has not returned) is never a leftover.
@@ -116,7 +161,7 @@ service. The host runtime has no box server and no automatic cleanup.
 
 ## Not covered
 
-- Processes started under a slot claim are not stopped when the claim is
-  released or expires; the claim is not tied to a command.
+- Containers started through the Docker daemon are not processes of the
+  command, so no trigger stops them.
 - A process that escapes its session on a runtime without workload cgroups is
   not attributed.

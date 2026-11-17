@@ -75,6 +75,15 @@ describe('requestOwnership', () => {
   it('drops malformed stream and attempt fields but keeps the agent', () => {
     expect(requestOwnership({ owner: AGENT, workStreamId: 'a b', attemptId: -1 })).toEqual({ agentId: AGENT })
   })
+
+  it('records the slot claims the agent held, dropping malformed and duplicate ids', () => {
+    expect(requestOwnership({ owner: AGENT, slotClaimIds: ['claim-1', 'claim-2', 'claim-1', 'bad id', 7] })).toEqual({
+      agentId: AGENT,
+      slotClaimIds: ['claim-1', 'claim-2'],
+    })
+    expect(requestOwnership({ owner: AGENT, slotClaimIds: [] })).toEqual({ agentId: AGENT })
+    expect(requestOwnership({ owner: AGENT, slotClaimIds: 'claim-1' })).toEqual({ agentId: AGENT })
+  })
 })
 
 describe('parseLeftoverSelector', () => {
@@ -88,8 +97,23 @@ describe('parseLeftoverSelector', () => {
     expect(() => parseLeftoverSelector({ agentId: 3 })).toThrow(LeftoverSelectorError)
   })
 
+  it('accepts a slot claim with the claims still held, never held claims alone', () => {
+    expect(parseLeftoverSelector({ agentId: AGENT, slotClaimId: 'c1', heldSlotClaimIds: ['c2', 'c2'] })).toEqual({
+      agentId: AGENT,
+      slotClaimId: 'c1',
+      heldSlotClaimIds: ['c2'],
+    })
+    expect(() => parseLeftoverSelector({ agentId: AGENT, heldSlotClaimIds: ['c2'] })).toThrow(LeftoverSelectorError)
+    expect(() => parseLeftoverSelector({ agentId: AGENT, slotClaimId: 'c1', heldSlotClaimIds: 'c2' })).toThrow(
+      LeftoverSelectorError
+    )
+    expect(() => parseLeftoverSelector({ slotClaimId: 'c1' })).toThrow(LeftoverSelectorError)
+  })
+
   it('accepts only the known reasons', () => {
     expect(parseLeftoverStopReason('agent-dormant')).toBe('agent-dormant')
+    expect(parseLeftoverStopReason('claim-released')).toBe('claim-released')
+    expect(parseLeftoverStopReason('claim-expired')).toBe('claim-expired')
     expect(() => parseLeftoverStopReason('whatever')).toThrow(LeftoverSelectorError)
   })
 })
@@ -181,6 +205,63 @@ describe('LeftoverProcesses', () => {
     const agent = await leftovers.stop({ agentId: AGENT }, 'agent-dormant')
     expect(agent.stopped.map((group) => group.invocationId)).toEqual(['a-other'])
     expect(fake.processes.size).toBe(0)
+  })
+
+  it('stops only commands started under an ended slot claim, once no claim they were started under is held', async () => {
+    const fake = fakeBackend()
+    fake.add({ identity: identity(101, 100, 11) }) // under claim A only
+    fake.add({ identity: identity(201, 200, 21) }) // under claims A and B
+    fake.add({ identity: identity(301, 300, 31) }) // before any claim
+    fake.add({ identity: identity(401, 400, 41), environ: `${KEEP_RUNNING_ENV}=1` }) // under A, opted out
+    fake.add({ identity: identity(501, 500, 51) }) // another agent under its own claim A'
+    fake.add({ identity: identity(601, 600, 61) }) // under A, still running
+    const leftovers = new LeftoverProcesses(fake.backend, log, 0)
+    const record = async (id: string, sid: number, ticks: number, agentId: string, slotClaimIds?: string[]) => {
+      leftovers.record(
+        id,
+        { agentId, ...(slotClaimIds ? { slotClaimIds } : {}) },
+        `cmd ${id}`,
+        identity(sid, sid, ticks),
+        false
+      )
+      await leftovers.detach(id)
+    }
+    await record('only-a', 100, 10, AGENT, ['claim-a'])
+    await record('a-and-b', 200, 20, AGENT, ['claim-a', 'claim-b'])
+    await record('no-claim', 300, 30, AGENT)
+    await record('kept', 400, 40, AGENT, ['claim-a'])
+    await record('other-agent', 500, 50, OTHER, ['claim-a'])
+    leftovers.record(
+      'running',
+      { agentId: AGENT, slotClaimIds: ['claim-a'] },
+      'make test',
+      identity(600, 600, 60),
+      false
+    )
+
+    // Claim A is released while B is still held: only what A alone covered stops.
+    const released = await leftovers.stop(
+      { agentId: AGENT, slotClaimId: 'claim-a', heldSlotClaimIds: ['claim-b'] },
+      'claim-released'
+    )
+    expect(released.stopped.map((group) => group.invocationId)).toEqual(['only-a'])
+    expect(released.stopped[0]!.slotClaimIds).toEqual(['claim-a'])
+    expect(released.kept.map((group) => group.invocationId)).toEqual(['kept'])
+    expect([...fake.processes.keys()].sort()).toEqual([201, 301, 401, 501, 601])
+    expect(logs.at(-1)).toContain('slot claims claim-a')
+
+    // Claim B then expires: nothing is held any more, so the shared command stops too.
+    const expired = await leftovers.stop(
+      { agentId: AGENT, slotClaimId: 'claim-b', heldSlotClaimIds: [] },
+      'claim-expired'
+    )
+    expect(expired.stopped.map((group) => group.invocationId)).toEqual(['a-and-b'])
+    expect([...fake.processes.keys()].sort()).toEqual([301, 401, 501, 601])
+    expect(leftovers.takeNotices(AGENT)).toEqual([
+      expect.stringContaining('because the slot claim it was started under was released'),
+      expect.stringContaining('because the slot claim it was started under expired'),
+    ])
+    expect(leftovers.takeNotices(OTHER)).toEqual([])
   })
 
   it('sends SIGTERM first and SIGKILL only to what is still running after the grace period', async () => {

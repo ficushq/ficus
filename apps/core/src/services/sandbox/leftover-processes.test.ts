@@ -7,6 +7,7 @@ import {
   stopLeftoverProcesses,
   stopLeftoversForDormantAgent,
   stopLeftoversForEndedAttempts,
+  stopLeftoversForEndedClaim,
   stopLeftoversForFinishedStream,
   type LeftoverCleanupDeps,
 } from './leftover-processes'
@@ -160,6 +161,81 @@ describe('stopLeftoverProcesses', () => {
       }
     )
     expect(stopped).toHaveLength(1)
+  })
+})
+
+describe('stopLeftoversForEndedClaim (slot claim trigger)', () => {
+  const CLAIM = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const OTHER_CLAIM = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+
+  it('stops what the owner started under a released claim, in the squad box and its own box', async () => {
+    const { deps, calls, notices } = harness({
+      [`squad_${SQUAD}`]: [group(AGENT_A, { command: 'bun run test:db:up &', slotClaimIds: [CLAIM] })],
+      [`agent_${AGENT_A}`]: [],
+    })
+    const stopped = await stopLeftoversForEndedClaim(
+      { claimId: CLAIM, agentId: AGENT_A, squadId: SQUAD, poolKey: 'shared-box-intensive', reason: 'claim-released' },
+      { ...deps, heldClaimIds: async () => [] }
+    )
+    expect(stopped).toHaveLength(1)
+    const selector = { agentId: AGENT_A, slotClaimId: CLAIM, heldSlotClaimIds: [] }
+    expect(calls).toEqual([
+      { sandboxId: `squad_${SQUAD}`, selector, reason: 'claim-released' },
+      { sandboxId: `agent_${AGENT_A}`, selector, reason: 'claim-released' },
+    ])
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.agentId).toBe(AGENT_A)
+    expect(notices[0]!.content).toContain(
+      `because your slot claim ${CLAIM} on pool "shared-box-intensive" was released, and they were started while you held it`
+    )
+    expect(notices[0]!.metadata).toEqual({ source: 'leftover-processes', reason: 'claim-released', claimId: CLAIM })
+  })
+
+  it('on expiry passes the claims the owner still holds, so work another claim covers keeps running', async () => {
+    const { deps, calls, notices } = harness({ [`squad_${SQUAD}`]: [] })
+    // The ended claim itself is never treated as held, even if read before it ended.
+    await stopLeftoversForEndedClaim(
+      { claimId: CLAIM, agentId: AGENT_A, squadId: SQUAD, poolKey: 'tests', reason: 'claim-expired' },
+      { ...deps, heldClaimIds: async () => [CLAIM, OTHER_CLAIM] }
+    )
+    expect(calls).toEqual([
+      {
+        sandboxId: `squad_${SQUAD}`,
+        selector: { agentId: AGENT_A, slotClaimId: CLAIM, heldSlotClaimIds: [OTHER_CLAIM] },
+        reason: 'claim-expired',
+      },
+    ])
+    expect(notices).toEqual([])
+  })
+
+  it('names the expiry in plain words', async () => {
+    const { deps, notices } = harness({ [`squad_${SQUAD}`]: [group(AGENT_A, { slotClaimIds: [CLAIM] })] })
+    await stopLeftoversForEndedClaim(
+      { claimId: CLAIM, agentId: AGENT_A, squadId: SQUAD, poolKey: 'tests', reason: 'claim-expired' },
+      { ...deps, heldClaimIds: async () => [] }
+    )
+    expect(notices[0]!.content).toContain(`your slot claim ${CLAIM} on pool "tests" expired`)
+  })
+
+  it('stops nothing when the claims still held cannot be read, and never throws', async () => {
+    const { deps, calls } = harness({ [`squad_${SQUAD}`]: [group(AGENT_A)] })
+    const claim = {
+      claimId: CLAIM,
+      agentId: AGENT_A,
+      squadId: SQUAD,
+      poolKey: 'tests',
+      reason: 'claim-released' as const,
+    }
+    expect(await stopLeftoversForEndedClaim(claim, { ...deps, heldClaimIds: async () => undefined })).toEqual([])
+    expect(
+      await stopLeftoversForEndedClaim(claim, {
+        ...deps,
+        heldClaimIds: async () => {
+          throw new Error('database unavailable')
+        },
+      })
+    ).toEqual([])
+    expect(calls).toEqual([])
   })
 })
 

@@ -12,7 +12,8 @@ export const FOREGROUND_BASH_GUIDANCE =
  */
 export const LEFTOVER_PROCESS_GUIDANCE =
   'Processes your commands leave running in the background (dev servers, test databases) are stopped automatically ' +
-  'when your flow step ends, when you go dormant, and when the work stream is done or canceled; stop them yourself ' +
+  'when your flow step ends, when you go dormant, when the work stream is done or canceled, and when the last slot ' +
+  'claim you held while starting them is released or expires; stop them yourself ' +
   'as soon as you no longer need them. To keep a service running past that, start it with FICUS_KEEP_RUNNING=1 in ' +
   'its environment (for example `FICUS_KEEP_RUNNING=1 npm run dev &`), or use `ficus deploy` for an app.'
 
