@@ -612,6 +612,23 @@ export function workflowReworkAttempt(run: WorkflowRun): WorkflowAttempt | undef
     )
 }
 
+/**
+ * Name the attempt completion-ready rework must reference and why, so a refused caller can correct
+ * the request: the latest completed attempt of `completion.changeEventsTo.step` when that is set,
+ * otherwise the latest completed agent attempt.
+ */
+export function workflowReworkReference(run: WorkflowRun): string {
+  const target = run.definition.completion.changeEventsTo
+  const step = typeof target === 'object' ? target.step : undefined
+  const expected = workflowReworkAttempt(run)
+  const rule = step
+    ? `the latest completed attempt of step ${step} (completion.changeEventsTo)`
+    : 'the latest completed agent attempt'
+  return expected
+    ? `attempt ${expected.id} (step ${expected.stepId}), ${rule}`
+    : `${rule}, but there is no such attempt`
+}
+
 /** Say which attempt is active, or that none is, so the caller knows exactly what to send instead. */
 function staleAttemptMessage(state: WorkflowRun, attemptId: number | null): string {
   const active = activeWorkflowAttempts(state).map((attempt) => attempt.id)
@@ -680,7 +697,9 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
     if (previous.status !== 'completion-ready') throw new Error('Rework requires a completion-ready flow')
     const last = workflowReworkAttempt(previous)
     if (!last || last.id !== command.attemptId)
-      throw new Error('Rework must reference the latest completed delivery agent attempt')
+      throw new Error(
+        `Rework must reference ${workflowReworkReference(previous)}; this request referenced attempt ${command.attemptId}.`
+      )
     const state = structuredClone(previous)
     // A completed parallel branch has a closed join. Replay its outer fork,
     // rather than detaching a branch and silently skipping its sibling gates.

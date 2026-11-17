@@ -8,6 +8,7 @@ import {
   describeWorkflowAttemptLimitPause,
   workflowAttemptLimitPause,
   workflowReworkAttempt,
+  workflowReworkReference,
   type WorkflowRun,
 } from './workflow-runtime'
 
@@ -589,7 +590,9 @@ describe('completion-ready rework', () => {
         attemptId: 2,
         feedback: 'Old attempt',
       })
-    ).toThrow('latest completed delivery agent')
+    ).toThrow(
+      'Rework must reference attempt 5 (step review), the latest completed agent attempt; this request referenced attempt 2.'
+    )
   })
 
   test('a human approver may move work forward without notes but must explain a send-back', async () => {
@@ -731,7 +734,9 @@ test('completion-ready rework honors the configured code-host engineer and repea
       attemptId: 2,
       feedback: 'Wrong recipient',
     })
-  ).toThrow('delivery agent')
+  ).toThrow(
+    'Rework must reference attempt 1 (step build), the latest completed attempt of step build (completion.changeEventsTo); this request referenced attempt 2.'
+  )
   let state = advanceWorkflowRun(ready, {
     action: 'rework',
     expectedVersion: ready.version,
@@ -752,7 +757,10 @@ test('reviewed-coding defaults rework the implement attempt at completion-ready,
   expect(workflowReworkAttempt(ready)?.id).toBe(1)
   expect(() =>
     advanceWorkflowRun(ready, { action: 'rework', expectedVersion: ready.version, attemptId: 2, feedback: 'CI failed' })
-  ).toThrow('delivery agent')
+  ).toThrow('Rework must reference attempt 1 (step implement), the latest completed attempt of step implement')
+  expect(workflowReworkReference(ready)).toBe(
+    'attempt 1 (step implement), the latest completed attempt of step implement (completion.changeEventsTo)'
+  )
   let state = advanceWorkflowRun(ready, {
     action: 'rework',
     expectedVersion: ready.version,
