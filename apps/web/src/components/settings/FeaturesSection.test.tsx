@@ -68,6 +68,13 @@ describe('a setting whose default is a word', () => {
     expect(html).not.toContain('Reset to default')
   })
 
+  // "auto" alone does not say what an operator would be overriding.
+  test('shows what the automatic value comes to right now', () => {
+    const detail = 'Derived from machine size right now: host-1: 3 (15.6 GiB, 4 CPUs).'
+    expect(render(hostSlots({ detail }))).toContain(detail)
+    expect(render(hostSlots())).not.toContain('Derived from')
+  })
+
   test('a stored number is shown and can be reset', () => {
     const html = render(hostSlots({ value: '2', isDefault: false }))
     expect(html).toContain('value="2"')

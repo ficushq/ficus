@@ -35,11 +35,21 @@ describe('renderSlotPoolsPrompt', () => {
     const section = renderSlotPoolsPrompt([
       { key: 'heavy-work', capacity: 3, claimTimeoutMs: 45 * 60_000, usage: 'Claim before builds.', hostCapacity: 3 },
       { key: 'solo', capacity: 1, claimTimeoutMs: 45 * 60_000, usage: null, hostCapacity: 1 },
+      {
+        key: 'uncapped',
+        capacity: 3,
+        claimTimeoutMs: 45 * 60_000,
+        usage: null,
+        hostCapacity: 3,
+        capacityFollowsHost: true,
+      },
     ])
     expect(section.split('\n').slice(4)).toEqual([
       '- `heavy-work`: capacity 3, claim timeout 45m, host-shared (this machine host allows 3 such claims at once across all squads on it, so you can be queued while this pool has room)',
       '  Claim before builds.',
       '- `solo`: capacity 1, claim timeout 45m, host-shared (this machine host allows 1 such claim at once across all squads on it, so you can be queued while this pool has room)',
+      // A pool with no cap of its own has only the host's number to state.
+      '- `uncapped`: claim timeout 45m, host-shared with no cap of its own (this machine host allows 3 such claims at once across all squads on it)',
     ])
   })
 

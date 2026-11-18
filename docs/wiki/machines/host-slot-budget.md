@@ -50,6 +50,17 @@ A squad with no machine (k8s, Docker and host runtimes, or a squad whose box
 was never placed) has no host budget. Its host-shared pools behave like
 ordinary pools.
 
+### No cap of its own
+
+A host-shared pool's own capacity still limits its squad. A pool can drop that
+cap (`ficus slot update <key> --capacity host`, `register --capacity host`, or
+**No cap of its own** in the settings form): its capacity is then the machine's
+budget, read on every claim, so it follows a resized host or a changed budget
+setting with nothing to update. `ficus slot list` and the API report that
+number as the pool's capacity. Passing a number again (`--capacity 2`) gives the
+pool its own cap back. The number the pool stored before stays as the fallback
+for where no budget applies (budgets turned off, a machine of unknown size).
+
 ## The budget
 
 Each machine's budget is derived from its size
@@ -76,7 +87,8 @@ overrides this for every machine: a number fixes the budget, and 0 turns host
 budgets off, so host-shared pools are limited only by their own capacity. It
 takes effect on the next claim, without a restart. With nothing stored, the
 `FICUS_HOST_SLOT_CAPACITY` environment variable applies in the same way, and
-with neither, the derived budget.
+with neither, the derived budget. Under the control, Settings shows what each
+machine's size derives to right now, whatever is stored.
 
 ## Who gets the next unit
 
@@ -115,7 +127,7 @@ has no slot pool at all, is given one (`ensureDefaultHostPools`,
 `default-host-pool.ts`, on the reconciliation interval):
 
 - key `heavy-work`, host-shared, 45 minute claim timeout,
-- capacity equal to the machine's budget at that moment,
+- no cap of its own, so its capacity is the machine's budget and stays so,
 - usage guidance naming dev servers, builds, full test suites, browser runs,
   Compose stacks and local databases.
 
