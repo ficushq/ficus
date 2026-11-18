@@ -94,6 +94,42 @@ async function cliIndex(variant: PromptVariant, permissions: readonly string[]):
   })
 }
 
+/**
+ * Built-in public-capable types opt in through public-text. Read this ref's shipped default,
+ * not live settings or the working tree's newer profile. A pre-voice ref stays voice-free,
+ * even when its squad assembler falls back to the working tree's implementation.
+ */
+async function defaultPublicVoice(variant: PromptVariant, type: AgentTypeFile) {
+  const profilePath = join(variant.root, 'config/public-voices/default.yaml')
+  const rulesPath = join(variant.root, 'config/agent-types/shared/public-text.md')
+  const voicePath = 'packages/shared/src/public-voice.ts'
+  if (
+    !type.includes?.includes('public-text') ||
+    !existsSync(rulesPath) ||
+    !existsSync(profilePath) ||
+    !existsSync(join(variant.root, voicePath))
+  )
+    return undefined
+
+  // Import the pure shared module directly: no entities, config sync or database loaders.
+  const voice = await importFrom<typeof import('@ficus/shared')>(variant, voicePath)
+  const profile = voice.publicVoiceProfileInputSchema.parse(yaml.load(readFileSync(profilePath, 'utf8')))
+  const resolved = voice.resolvePublicVoice({
+    squad: null,
+    assigned: null,
+    instanceDefault: {
+      ...profile,
+      description: profile.description ?? null,
+      surfaces: profile.surfaces ?? {},
+      disabled: false,
+    },
+  })
+  return {
+    section: voice.renderPublicVoicePrompt(voice.fitPublicVoiceToCap(resolved, voice.PUBLIC_VOICE_MAX_BYTES).resolved),
+    publicTextEnabled: true,
+  }
+}
+
 export interface AssembledPrompt {
   systemPrompt: string
   agentType: AgentTypeFile
@@ -106,6 +142,7 @@ export async function assembleScenarioPrompt(
   const { root } = variant
   const type = readAgentType(root, scenario.agentType)
   const typePrompt = composeStaticPrompt(root, type)
+  const publicVoice = await defaultPublicVoice(variant, type)
   const assembler = await importFrom<typeof import('../../lib/prompts/squad-agent-prompt')>(
     variant,
     src('lib/prompts/squad-agent-prompt.ts')
@@ -166,6 +203,7 @@ export async function assembleScenarioPrompt(
         ...identity,
         typePrompt,
         slotPools,
+        publicVoice,
         workspace,
         cliHelp: await cliIndex(variant, ['*']),
         modelOverrides,
@@ -188,6 +226,7 @@ export async function assembleScenarioPrompt(
       ...identity,
       typePrompt,
       slotPools,
+      publicVoice,
       workspace,
       teammates: `## Squad Manager Agent\n- ${FIXTURE_SQUAD.managerName} (manager) [${FIXTURE_SQUAD.managerAgentId.slice(0, 8)}] — Manager`,
       cliHelp: await cliIndex(variant, rolePermissions(root, 'default-worker')),
