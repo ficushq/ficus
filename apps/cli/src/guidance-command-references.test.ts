@@ -7,8 +7,8 @@ import { createProgram } from './program'
 // Agent guidance teaches `ficus` commands by example. When a command or flag is
 // renamed or removed, the guidance silently keeps teaching it. This test reads
 // every quoted `ficus ...` command in the agent-type prompts, the bundled and
-// external skills and the Core prompt builders, and checks it against the real
-// command tree.
+// external skills, the Core prompt builders, and the notices, tool descriptions
+// and errors Core sends to agents, and checks it against the real command tree.
 
 const repoRoot = join(import.meta.dir, '..', '..', '..')
 
@@ -17,13 +17,24 @@ const GUIDANCE_SOURCES = [
   'config/agent-types',
   'config/skills',
   'external/skills',
-  'apps/core/src/lib/prompts',
-  'apps/core/src/lib/utils/cli-help.ts',
-  'apps/core/src/entities/agent-runners',
-  'apps/core/src/services/agent-types/compose-prompt.ts',
-  'apps/core/src/services/workflows/handoff-prompt.ts',
-  'apps/core/src/services/workflows/completion-prompt.ts',
-  'apps/core/src/services/workflows/capability-instructions.ts',
+  // Core prompt builders, runners, notices, tool descriptions and errors that
+  // quote commands to agents (and operators). Shell code that only runs the
+  // CLI, such as the SSH shims, is not guidance and is left out.
+  'apps/core/src/lib',
+  'apps/core/src/entities',
+  'apps/core/src/routes',
+  'apps/core/src/tools',
+  'apps/core/src/services/agent-types',
+  'apps/core/src/services/agents',
+  'apps/core/src/services/chat',
+  'apps/core/src/services/execution',
+  'apps/core/src/services/fleet-alerts',
+  'apps/core/src/services/integrations',
+  'apps/core/src/services/recovery',
+  'apps/core/src/services/slots',
+  'apps/core/src/services/squad',
+  'apps/core/src/services/work-streams',
+  'apps/core/src/services/workflows',
 ]
 const GUIDANCE_EXTENSIONS = /\.(md|ya?ml|ts)$/
 
