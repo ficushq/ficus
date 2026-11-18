@@ -1,3 +1,4 @@
+import { providerRequestValidationError, REQUEST_VALIDATION_REASON } from './provider-request-validation'
 import { executionFailureClassEnum, executions } from '../../db/schema'
 import { isActiveExecutionStatus } from './status'
 import {
@@ -69,7 +70,8 @@ export function classifySetupFailure(err: unknown): ExecutionFailure {
  * Classify a failure at the model-call boundary (prompt dispatch or settled
  * run). `hasAssistantOutput` distinguishes a lease lost before any output
  * (platform refused mid-turn setup) from one lost after output (ordinary
- * execution failure — the agent already produced work).
+ * execution failure — the agent already produced work). Known provider schema
+ * rejections use a closed validator adapter, never generic HTTP status matching.
  */
 export function classifyTurnFailure(err: unknown, hasAssistantOutput: boolean): ExecutionFailure {
   if (err instanceof AdmissionLeaseLostError) {
@@ -77,6 +79,9 @@ export function classifyTurnFailure(err: unknown, hasAssistantOutput: boolean): 
       failureClass: hasAssistantOutput ? 'execution_failure' : 'platform_pre_tool_refusal',
       failureReason: 'admission_lease_lost',
     }
+  }
+  if (providerRequestValidationError(err)) {
+    return { failureClass: 'provider_model', failureReason: REQUEST_VALIDATION_REASON }
   }
   // The transport sentinel is an exact closed-set match against the two
   // durable marker strings the model-call boundary emits — not prose parsing.

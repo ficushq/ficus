@@ -1,3 +1,7 @@
+import {
+  ProviderRequestValidationError,
+  REQUEST_VALIDATION_REASON,
+} from '../services/execution/provider-request-validation'
 import type { RestartContext } from '@ficus/shared/restart-context'
 import { and, asc, desc, eq, inArray, InferSelectModel, lte, sql, type SQL } from 'drizzle-orm'
 import { db } from '../db'
@@ -1060,6 +1064,11 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     failure?: ExecutionFailure,
     recovery?: { safeStartupRetry?: boolean; explained?: boolean; cause?: unknown }
   ): Promise<boolean> {
+    const requestValidation =
+      failure?.failureClass === 'provider_model' && failure.failureReason === REQUEST_VALIDATION_REASON
+    // Only the typed model boundary can opt into this policy. Do not persist
+    // provider payloads or rejected values, even if a caller retained raw text.
+    if (requestValidation) error = new ProviderRequestValidationError().message
     const attemptIdentity = this.runnerClaimToken ?? this.runStartedAt?.toISOString() ?? 'queued'
     const cause = recovery?.cause
     const terminalized = await this.transitionTo(
@@ -1070,7 +1079,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       const { isUnexplainedExecutionFailure, EXECUTION_RECOVERY_OPERATION } =
         await import('../services/recovery/executions')
       const resumed = await this.resumedRunFailureContext()
-      const counted = !recovery?.explained && isUnexplainedExecutionFailure(error, failure, cause)
+      const counted =
+        requestValidation || (!recovery?.explained && isUnexplainedExecutionFailure(error, failure, cause))
       let record: import('../services/recovery/store').RecoveryRecord | undefined
       if (counted) {
         const { recordRecoveryFailure } = await import('../services/recovery/store')
@@ -1089,8 +1099,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
             operationKey: EXECUTION_RECOVERY_OPERATION,
             attempted: 'continue the task',
             invocationId: `${this.id}:${attemptIdentity}`,
-            error: new Error(error),
-            ...retry,
+            error: requestValidation ? new ProviderRequestValidationError() : new Error(error),
+            ...(!requestValidation ? retry : {}),
           }
         ).catch((accountingError) => {
           log.error('Unable to persist execution recovery outcome', accountingError)

@@ -51,17 +51,26 @@ test('active skills and agent prompts never teach retired credential delivery or
   expect(roleComments).not.toMatch(forbidden)
 })
 
+// The provider skills were folded into deploy-app: the shared contract lives once in
+// its SKILL.md, and each provider note names its own integration in the exec wrapper.
+test('deploy-app teaches explicit script and account selection without persistent credentials', () => {
+  const skill = read('config/skills/deploy-app/SKILL.md')
+  expect(skill).toContain('ficus integration exec <provider> -- npm run deploy')
+  expect(skill).toContain('ficus integration exec <provider> -- bun run deploy')
+  expect(skill).toContain('ficus integration exec <provider> -- pnpm run deploy')
+  expect(skill).toContain('--connection <connection-id>')
+  expect(skill).toContain('--squad <squad-id>')
+  expect(skill).toContain('Environment Variables')
+  expect(skill).toMatch(/Never read, print, log, commit/)
+  expect(skill).toContain('host runtime')
+})
+
 for (const provider of ['cloudflare', 'digitalocean', 'netlify', 'railway', 'supabase', 'vercel']) {
-  test(`${provider} teaches explicit script and account selection without persistent credentials`, () => {
-    const skill = read(`config/skills/deploy-${provider}/SKILL.md`)
-    expect(skill).toContain(`ficus integration exec ${provider} -- npm run deploy`)
-    expect(skill).toContain(`ficus integration exec ${provider} -- bun run deploy`)
-    expect(skill).toContain(`ficus integration exec ${provider} -- pnpm run deploy`)
-    expect(skill).toContain('--connection <connection-id>')
-    expect(skill).toContain('--squad <squad-id>')
-    expect(skill).toContain('Environment Variables')
-    expect(skill).toMatch(/Never read, print, log, commit/)
-    expect(skill).toContain('host runtime')
+  test(`${provider} note names its integration in the script wrapper and defers to deploy-app`, () => {
+    expect(read('config/skills/deploy-app/SKILL.md')).toContain(`providers/${provider}.md`)
+    const note = read(`config/skills/deploy-app/providers/${provider}.md`)
+    expect(note).toContain('Read `deploy-app` first')
+    expect(note).toContain(`ficus integration exec ${provider} -- npm run deploy`)
   })
 }
 
@@ -109,22 +118,27 @@ test('Slack setup and onboarding name owning card fields rather than retired cre
   expect(onboarding).toContain('numeric Bot ID')
 })
 
-test('credential prompts scope wrappers to squad sandboxes and environment help describes custom input', () => {
+// The Assistant and assistant worker share their Credentials section through the
+// instance-operations include, so assert both include it and the include holds the text.
+const instanceCredentialPrompt = () => {
   for (const name of ['system-manager', 'assistant-worker']) {
-    expect(read(`config/agent-types/${name}.yaml`)).toContain('In squad sandboxes, globally provisioned')
+    expect(read(`config/agent-types/${name}.yaml`)).toMatch(/^includes:\n(?: {2}- .+\n)* {2}- instance-operations\n/m)
   }
+  return read('config/agent-types/shared/instance-operations.md')
+}
+
+test('credential prompts scope wrappers to squad sandboxes and environment help describes custom input', () => {
+  expect(instanceCredentialPrompt()).toContain('In squad sandboxes, globally provisioned')
   const command = read('apps/cli/src/commands/squad-env.ts')
   expect(command).not.toContain('.ficus/.env content')
   expect(command.match(/custom env\.user content/g)).toHaveLength(3)
 })
 
 test('instance-wide credential prompts distinguish their own shell from squad wrappers', () => {
-  for (const name of ['system-manager', 'assistant-worker']) {
-    const prompt = read(`config/agent-types/${name}.yaml`)
-    expect(prompt).toContain('Your own shell has no squad context or provider PATH wrappers')
-    expect(prompt).toContain('ficus integration exec <provider> --squad <squad-id> -- <command>')
-    expect(prompt).toContain('Selection never grants access')
-  }
+  const prompt = instanceCredentialPrompt()
+  expect(prompt).toContain('Your own shell has no squad context or provider PATH wrappers')
+  expect(prompt).toContain('ficus integration exec <provider> --squad <squad-id> -- <command>')
+  expect(prompt).toContain('Selection never grants access')
 })
 
 test('secret setup gives user-facing limits, not detector implementation instructions', () => {
@@ -194,7 +208,7 @@ test('active credential wikis have no retired instructions or per-agent feature 
 
 test('detection documentation tracks trusted authority, bounds and retired-token persistence', () => {
   const source = read('apps/core/src/services/security/squad-env-secret-source.ts')
-  expect(source).toContain('const REFRESH_MS = 1000')
+  expect(source).toContain('const FILE_SCAN_MS = 1000')
   expect(read('apps/core/src/services/security/squad-env-detection-repository.ts')).toContain(
     'MAX_SQUAD_ENV_BYTES = 256 * 1024'
   )

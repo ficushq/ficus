@@ -397,6 +397,74 @@ window management and auto-compaction automatically.
 `HOME_DIR` is set in
 [configuration.md](configuration.md#environment-variables-env).
 
+### Responses tool names and replay recovery
+
+Core's `responses-tool-names.ts` adapter wraps both streaming entry points of the
+agent-session runtime and the shared model runtime. Pi converts tool definitions
+into Responses declarations not only from the current `Context.tools`, but also
+from historical system-message `toolsAdded` entries. Depending on provider
+capabilities, those entries become `tool_search_output` or `additional_tools`.
+An invalid historical name can therefore reject every new execution that replays
+that session, even when current top-level declarations are valid.
+
+For Codex, OpenAI Responses (including compatible providers), and Azure Responses,
+Core translates names outside `[a-zA-Z0-9_.-]+` into deterministic, bounded aliases
+before Pi serializes the request. For example, a synthetic MCP-style name such as
+`mcp:example/read tool` needs an alias; `mcp.example-read` does not. All current and
+historical valid names are reserved before aliases are assigned, so aliases cannot
+shadow a valid tool or one another. The same translation covers additions,
+removals, historical tool calls, and tool-result names. Streamed calls are
+translated back before dispatch or persistence, without changing namespaces,
+arguments, result bodies, call IDs, or stored session entries. No tools or results
+are discarded. Other provider APIs pass through unchanged.
+
+When the adapter assigns an alias, it emits a `responses-tool-names` warning with
+only the original tool name and the provider API that first encountered it (for
+example, `openai-codex-responses`). It does not log arguments, prompts, request
+bodies, results, session content, credentials, aliases, or agent/session IDs.
+Names are JSON-quoted, with controls and non-ASCII characters escaped so they
+cannot forge log lines or terminal output. The normal logger's content-safety
+redaction and log-level filtering still apply.
+
+Diagnostics are deduplicated by a SHA-256 fingerprint of the **full original
+name**, across runtime instances, APIs, repeated stream events, and replays in
+one process. Only the first API is reported for a name. To bound memory and log
+volume without eviction-driven replay spam, each process warns for at most 1,024
+names; after that it suppresses diagnostics for new names until restart. Names
+longer than 256 UTF-16 code units are shown as a prefix followed by
+` [truncated]`, bounding each diagnostic's payload to less than 1,700 characters
+after escaping. These limits do not change alias assignment or routing. Valid
+names and non-Responses APIs produce no warnings.
+
+A warning identifies a name seen at the serialization boundary, not where it was
+registered or whether it caused a specific incident. Truncation, redaction,
+log-level filtering, or the process cap can prevent full identification; no
+warning is not proof that all names are valid. Diagnosing the registration source
+and confirming recovery on an affected session remain separate, authorized work.
+
+Safe recovery for a session already rejected by this class of validation error:
+
+1. Stop repeated retries of the unchanged request. Preserve the existing edits,
+   messages, session, and failed-execution evidence; do not reset or compact away
+   the conversation as a repair.
+2. Coordinate with the owner before live recovery. Installing or activating a
+   fixed version requires the normal deployment authorization; this repair does
+   not itself authorize a deployment or session mutation.
+3. Once the fixed runtime is active, resume the **same agent and session** with
+   one ordinary continuation, respecting all existing workflow gates. The adapter
+   translates the old names on read; no session-file migration is needed.
+4. If validation still fails, stop and investigate through authorized diagnostics.
+   Share only the necessary names and item types, not complete prompts, request
+   bodies, session files, or credentials. A similar error alone does not establish
+   which exact historical name caused an incident.
+
+Provider request-validation failures currently classify as `provider_model` and
+are excluded from unexplained-failure recovery accounting. Unless another provider
+policy recognizes the error, failure routing records the execution failure and
+leaves the agent idle; it does not create a bounded-recovery hold after three such
+failures. This name adapter repairs the serialization path, not that separate
+failure-routing policy.
+
 ## Key Files
 
 | File                                                    | Purpose                                            |

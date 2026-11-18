@@ -2351,6 +2351,28 @@ describe('AgentRunner (base class)', () => {
   // ---------------------------------------------------------------------------
 
   describe('onError', () => {
+    for (const boundary of ['prompt', 'settled'] as const) {
+      it(`holds deterministic request validation at the ${boundary} boundary with sanitized typed diagnostics`, async () => {
+        const { REQUEST_VALIDATION_MESSAGE } = await import('../../services/execution/provider-request-validation')
+        const rejection =
+          "Codex error: [ToolSearchOutputFunctionToolNameParam] [input[49].name] [invalid_string] Invalid 'input[49].name': string does not match pattern. PRIVATE_SECRET rate limit exceeded"
+        const fail = spyOn(execution, 'fail')
+        const setModel = spyOn(mockSession.pi, 'setModel')
+        const failed = runner.waitForNextExecutionFailure()
+        if (boundary === 'prompt') mockSession.pi.promptError = new Error(rejection)
+        await runner.run()
+        if (boundary === 'settled') mockSession.pi.simulateErrorEnd(rejection)
+        await failed
+        expect(fail.mock.calls[0]![0]).toBe(REQUEST_VALIDATION_MESSAGE)
+        expect(fail.mock.calls[0]![2]).toEqual({
+          failureClass: 'provider_model',
+          failureReason: 'request_validation_tool_name',
+        })
+        expect(mockSession.pi.promptCalls).toHaveLength(1)
+        expect(setModel).not.toHaveBeenCalled()
+      })
+    }
+
     it('removes session, marks execution failed and agent idle', async () => {
       mockSession.pi.promptError = new Error('Connection failed')
 
