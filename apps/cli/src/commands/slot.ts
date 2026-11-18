@@ -43,6 +43,8 @@ type SlotPoolProjection = {
   enabled?: boolean
   /** True when claims also draw on the machine host's budget; absent on older servers. */
   hostShared?: boolean
+  /** True when the pool has no cap of its own and follows the machine host's budget. */
+  capacityFollowsHost?: boolean
   /** The machine host's budget, shared by every squad on it; absent when the squad has none. */
   host?: { capacity: number; activeCount: number; availableCount: number }
   oldestWaiterAgeMs?: number | null
@@ -122,6 +124,16 @@ export function parseSlotHistoryLimit(value: string): number {
   return limit
 }
 
+/** `--capacity host` drops the pool's own cap; a number sets one. */
+export const SLOT_CAPACITY_HOST = 'host'
+
+/** The capacity part of a register or update body for a `--capacity` value. */
+export function slotCapacityFields(value: string): { capacity: number } | { capacityFollowsHost: true } {
+  return value.trim().toLowerCase() === SLOT_CAPACITY_HOST
+    ? { capacityFollowsHost: true }
+    : { capacity: parseSlotCapacity(value) }
+}
+
 export function parseSlotCapacity(value: string): number {
   const capacity = Number(value)
   if (!Number.isInteger(capacity) || capacity < 1 || capacity > MAX_CAPACITY) {
@@ -187,7 +199,9 @@ export function renderSlotPools(result: SlotPoolProjection | SlotPoolProjection[
  */
 function hostSharedNote(pool: SlotPoolProjection): string {
   return pool.hostShared && pool.host
-    ? `, host-shared (machine host: ${pool.host.activeCount}/${pool.host.capacity} in use across squads)`
+    ? `, host-shared${pool.capacityFollowsHost ? ' with no cap of its own' : ''} (machine host: ${pool.host.activeCount}/${
+        pool.host.capacity
+      } in use across squads)`
     : ''
 }
 
@@ -339,7 +353,7 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
     )
 
   withSquad(slot.command('register <key>').description('Register a slot pool'))
-    .option('--capacity <n>', 'Pool capacity')
+    .option('--capacity <n|host>', "Pool capacity, or 'host' for no cap of its own (follows the machine host budget)")
     .option('--timeout <duration>', 'Claim timeout')
     .option('--usage <text>', 'Usage guidance published to every agent prompt (what it protects, when to claim)')
     .option(
@@ -361,7 +375,7 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
           const result = requireSlotMutationResponse(
             await apiPost<SlotPoolMutationResponse>(path(squadId), {
               key,
-              ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
+              ...(options.capacity ? slotCapacityFields(options.capacity) : {}),
               ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
               ...(usage ? { usage } : {}),
               ...(options.hostShared === undefined ? {} : { hostShared: options.hostShared }),
@@ -372,12 +386,13 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
     )
 
   withSquad(slot.command('update <key>').description('Update a slot pool; omitted settings are unchanged'))
-    .option('--capacity <n>', 'Pool capacity')
+    .option('--capacity <n|host>', "Pool capacity, or 'host' for no cap of its own (follows the machine host budget)")
     .option('--timeout <duration>', 'Claim timeout')
     .option('--usage <text>', 'Replace the usage guidance ("" clears it)')
     .option('--clear-usage', 'Remove the usage guidance')
     .option('--host-shared', "Also draw on the machine host's slot budget, shared with every squad on that machine")
     .option('--no-host-shared', 'Stop drawing on the machine host budget: only the pool capacity limits it')
+    .option('--rename <key>', 'Give the pool a new key; its claims, waiters and history stay with it')
     .action(
       (
         key: string,
@@ -387,6 +402,7 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
           usage?: string
           clearUsage?: boolean
           hostShared?: boolean
+          rename?: string
         }
       ) =>
         run(async () => {
@@ -398,9 +414,12 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
             !options.timeout &&
             options.usage === undefined &&
             !options.clearUsage &&
-            options.hostShared === undefined
+            options.hostShared === undefined &&
+            !options.rename
           ) {
-            throw new Error('Pass --capacity, --timeout, --usage, --clear-usage, --host-shared, or --no-host-shared.')
+            throw new Error(
+              'Pass --capacity, --timeout, --usage, --clear-usage, --host-shared, --no-host-shared, or --rename.'
+            )
           }
           const squadId = resolveSlotSquadId(options.squad)
           const usage = options.clearUsage
@@ -410,7 +429,8 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
               : parseSlotUsage(options.usage)
           const result = requireSlotMutationResponse(
             await apiPatch<SlotPoolMutationResponse>(path(squadId, `/${segment(key)}`), {
-              ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
+              ...(options.rename ? { key: options.rename.trim().toLowerCase() } : {}),
+              ...(options.capacity ? slotCapacityFields(options.capacity) : {}),
               ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
               // Blank guidance clears it, the same as --clear-usage.
               ...(usage === undefined ? {} : { usage: usage || null }),

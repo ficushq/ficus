@@ -294,16 +294,19 @@ whose runtime static dependency graph reaches the DB without prior module
 readiness; it ignores type-only imports and is not a runtime selection heuristic.
 
 In a Ficus agent runtime, that lazy initializer and `test:db:up` verify an
-**existing** caller-owned `shared-box-intensive` claim before any database
+**existing** caller-owned `heavy-work` claim before any database
 probe, stale-project sweep, Compose startup, or schema mutation. Full Core
 and subprocess-lane runners still check capacity up front; other heavy,
 mutation and native harness guidance is unchanged. For DB-backed work, claim
-with `ficus slot claim shared-box-intensive` first and inspect its outcome:
+with `ficus slot claim heavy-work` first and inspect its outcome:
 `queued` is not ownership. A disabled pool is explicitly not enforced; no
 claim or queue entry is created by this check.
 
-The guard reads `ficus --json slot list shared-box-intensive` for the current
-squad using the injected agent identity. The API derives `callerClaim` from the
+The guard reads `ficus --json slot list heavy-work` for the current
+squad using the injected agent identity. A squad that has not renamed its pool
+yet (`ficus slot update shared-box-intensive --rename heavy-work`) is still
+checked under that former key, but only when the lookup of `heavy-work` is
+refused. The API derives `callerClaim` from the
 authenticated actor and excludes expired/released claims; another holder or a
 free slot is not admission. Queued, expired, absent, malformed, or unverifiable
 ownership fails closed with a named capacity diagnostic. It never acquires a
