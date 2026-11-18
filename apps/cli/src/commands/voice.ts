@@ -128,6 +128,7 @@ interface DerivationResponse {
     publicRepositories: string[]
     privateRepositories: string[]
     pagingCapped: boolean
+    unavailableRepositories?: string[]
   }
   bytes: number
   maxBytes: number
@@ -164,6 +165,10 @@ export async function runDerivation(squadId: string, opts: DeriveOptions): Promi
     console.log(`  ${surface}: ${range.oldest} to ${range.newest}`)
   }
   if (result.sampling.pagingCapped) console.log('  Paging stopped at its limit; older items may exist.')
+  if (result.sampling.unavailableRepositories?.length)
+    console.log(
+      `  not found or not visible to the squad's GitHub account: ${result.sampling.unavailableRepositories.join(', ')}`
+    )
   console.log(`  public repositories: ${result.sampling.publicRepositories.join(', ') || 'none'}`)
   console.log(`  private repositories (paraphrased only): ${result.sampling.privateRepositories.join(', ') || 'none'}`)
   console.log('\nObservations:')
@@ -204,6 +209,7 @@ interface ProfileOptions {
   fromDraft?: string
   add?: string[]
   override?: string[]
+  removeSurface?: string[]
 }
 
 function addProfileOptions(command: Command): Command {
@@ -220,14 +226,27 @@ function addProfileOptions(command: Command): Command {
       []
     )
     .option('--override <surface=text>', 'Replace the voice on one surface (repeatable)', collect, [])
+    .option('--remove-surface <name>', 'Remove the entry for one surface (repeatable)', collect, [])
 }
 
 function profileBody(opts: ProfileOptions, existing?: PublicVoiceProfileJson) {
   const draft = opts.fromDraft ? readDraftFile(opts.fromDraft) : null
   const base = readTextOption(opts, 'the voice') ?? draft?.base ?? existing?.base
   if (!base) throw new Error('Give the voice with --text, --file or --from-draft')
-  const explicit = parseSurfaceEntries(opts.add, opts.override)
-  const surfaces = Object.keys(explicit).length ? explicit : (draft?.surfaces ?? existing?.surfaces ?? {})
+  // Explicit entries merge over the draft's or the stored ones; other surfaces keep their entries.
+  const surfaces: PublicVoiceSurfaces = {
+    ...(draft?.surfaces ?? existing?.surfaces ?? {}),
+    ...parseSurfaceEntries(opts.add, opts.override),
+  }
+  for (const name of opts.removeSurface ?? []) {
+    const surface = parseSurfaceName(name)
+    if (
+      opts.add?.some((spec) => spec.split('=')[0]?.trim() === name) ||
+      opts.override?.some((spec) => spec.split('=')[0]?.trim() === name)
+    )
+      throw new Error(`Surface "${name}" is both set and removed`)
+    delete surfaces[surface]
+  }
   const name = opts.name ?? existing?.name
   if (!name) throw new Error('Give the profile a --name')
   return {

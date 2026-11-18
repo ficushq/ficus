@@ -111,6 +111,27 @@ describe('ficus voice', () => {
     expect(apiDelete).toHaveBeenCalledWith('/api/public-voices/team')
   })
 
+  it('update merges surface entries over the stored ones and can remove one', async () => {
+    m(apiGet).mockResolvedValue({
+      id: 'default',
+      name: 'Default',
+      base: 'Base.',
+      surfaces: {
+        commits: { mode: 'add', text: 'c' },
+        channels: { mode: 'add', text: 'short' },
+        reviewReplies: { mode: 'add', text: 'one per thread' },
+      },
+    })
+    await run(['voice', 'update', 'default', '--override', 'channels=One line.', '--remove-surface', 'review-replies'])
+    expect(apiPut).toHaveBeenLastCalledWith('/api/public-voices/default', {
+      name: 'Default',
+      base: 'Base.',
+      surfaces: { commits: { mode: 'add', text: 'c' }, channels: { mode: 'override', text: 'One line.' } },
+    })
+    await run(['voice', 'update', 'default', '--add', 'channels=x', '--remove-surface', 'channels'])
+    expect(lastError()).toContain('both set and removed')
+  })
+
   it('derives through a squad with filters and writes the draft', async () => {
     const result = {
       login: 'octocat',
