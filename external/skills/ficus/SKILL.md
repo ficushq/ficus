@@ -128,9 +128,11 @@ request (`--delivery` makes a pull request part of delivery), and
 `ficus ws watch <id>` subscribes you to updates.
 
 Every new work stream runs a flow. The older lifecycle commands
-(`request-review`, `approve`, `send-back`, `handoff`, `done`, `add-agent`) apply
-only to streams created before flows, and the server refuses them on flow
-streams; use the flow, waits and finish above.
+(`request-review`, `approve`, `send-back`, `handoff`, `done`, `add-agent`) belong
+to streams created before flows; use none of them on a flow stream. The server
+refuses `approve`, `handoff`, `done` and `add-agent` there, and `request-review`
+would open a stray review wait outside the flow that blocks scheduling. Use the
+flow, waits and finish above.
 
 **Statuses.** Stored statuses are `queued | active → done | canceled`. `queued`
 means not admitted yet: the squad's concurrency cap is full, a dependency is
