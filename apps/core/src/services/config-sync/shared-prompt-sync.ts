@@ -4,7 +4,8 @@ import { sharedPrompts } from '../../db'
 import { SharedPrompt } from '../../entities/SharedPrompt'
 import { AGENT_TYPE_SHARED_PROMPTS_DIR } from '../../lib/paths'
 import { assertConfigId, assertNonEmptyString } from '../../lib/validation/config-ids'
-import { ConfigSync } from './ConfigSync'
+import { ConfigSync, type SyncResult } from './ConfigSync'
+import { adoptSplitIncludes, readableTextIncludeStored } from './split-includes'
 
 export interface SharedPromptMarkdown {
   id: string
@@ -52,6 +53,15 @@ export class SharedPromptSync extends ConfigSync<SharedPromptMarkdown> {
   readonly yamlFieldOverridesColumn = sharedPrompts.yamlFieldOverrides
   readonly updatedAtColumn = sharedPrompts.updatedAt
   readonly disabledColumn = sharedPrompts.disabled
+
+  async sync(): Promise<SyncResult> {
+    // The sync that first stores `readable-text` is the upgrade past the split of
+    // `rules`; only then are pre-split include lists migrated (see split-includes).
+    const migrateIncludes = !(await readableTextIncludeStored())
+    const result = await super.sync()
+    if (migrateIncludes && (await readableTextIncludeStored())) await adoptSplitIncludes()
+    return result
+  }
 
   async loadFromDir(): Promise<SharedPromptMarkdown[]> {
     const files = await loadSharedPromptFiles(this.directory)
