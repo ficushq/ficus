@@ -36,6 +36,13 @@ import {
  * Runner for squad worker agents - agents that belong to a squad but are not the squad manager.
  * These agents work in the shared squad workspace and have squad context.
  */
+/** The squad-rules section that already explains advancing, waits and delivery. */
+const FLOW_RULES_SECTION_HEADING = '## Work Streams, Handoffs, and Reviews'
+
+/** How a flow worker advances, waits and delivers, for agent types that do not include squad-rules. */
+const FLOW_CONTRACT_RULES =
+  'Submit outcomes with ficus workstream advance --content using single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer JSON/YAML; no temporary file is needed. The command must contain action, expectedVersion, attemptId, outcome, and evidence as a string. Re-read after a version conflict; retry only if your attempt is still running. A completed attempt changes only through action amend, and only while the human approval gate it feeds is open. Never bypass flow gates with assignee/status changes or untracked agents. While paused or blocked by an open wait, end your turn without scheduling a continuation; an answer is not approval. At completion-ready, final delivery review permits code-host feedback triage and tracked rework as described in deliveryInstructions. Parallel agents share the workspace, so coordinate file ownership. After advancing, workStreamStatus=done means delivery is complete: end your turn. Otherwise continue assignments returned to you in the command response without waiting for an inbox notification. Follow deliveryInstructions from the response or run when completion-ready; if only another agent has work, end your turn.'
+
 export class SquadWorkerRunner extends AgentRunner {
   private squad!: Squad
   private workspacePath!: string
@@ -143,9 +150,15 @@ export class SquadWorkerRunner extends AgentRunner {
       )
 
     if (flow) {
+      // squad-rules teaches how to advance, wait and deliver. Repeat it here only when the
+      // composed prompt lacks that section (a custom type, or a disabled or rewritten
+      // include), so no flow worker reads it twice.
+      const flowRules = typePrompt.includes(FLOW_RULES_SECTION_HEADING)
+        ? 'Submit outcomes with ficus workstream advance as described under Work Streams, Handoffs, and Reviews.'
+        : FLOW_CONTRACT_RULES
       p.section(
         'Workflow contract',
-        `You are participant ${flow.participantId} in work stream ${flow.workStreamId}. Follow your active step and return requests from the inbox; use ficus workstream flow ${flow.workStreamId} to check current state. Submit outcomes with ficus workstream advance --content using single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer JSON/YAML; no temporary file is needed. The command must contain action, expectedVersion, attemptId, outcome, and evidence as a string. Re-read after a version conflict; retry only if your attempt is still running. A completed attempt changes only through action amend, and only while the human approval gate it feeds is open. Never bypass flow gates with assignee/status changes or untracked agents. While paused or blocked by an open wait, end your turn without scheduling a continuation; an answer is not approval. At completion-ready, final delivery review permits code-host feedback triage and tracked rework as described in deliveryInstructions. Parallel agents share the workspace, so coordinate file ownership. After advancing, workStreamStatus=done means delivery is complete: end your turn. Otherwise continue assignments returned to you in the command response without waiting for an inbox notification. Follow deliveryInstructions from the response or run when completion-ready; if only another agent has work, end your turn.`
+        `You are participant ${flow.participantId} in work stream ${flow.workStreamId}. Follow your active step and return requests from the inbox; use ficus workstream flow ${flow.workStreamId} to check current state. ${flowRules}`
       )
 
       if (flow.deliveryInstructions) p.section('Workflow delivery', flow.deliveryInstructions)

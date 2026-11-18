@@ -5,7 +5,9 @@ model: ''
 tier: exhaustive
 includes:
   - entity-references
+  - readable-text
   - rules
+  - recovery-waits
   - subagents
   - new-work-routing
   - squad-rules

@@ -1,7 +1,7 @@
 import * as yaml from 'js-yaml'
 import { eq } from 'drizzle-orm'
 import { join } from 'path'
-import { agentTypes, db } from '../../db'
+import { agentTypes, db, sharedPrompts } from '../../db'
 import { AGENT_TYPES_DIR } from '../../lib/paths'
 import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { AgentType } from '../../entities/AgentType'
@@ -339,7 +339,45 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
     const legacyIds = await this.findLegacyMergedIds()
     const result = await super.sync()
     await this.splitLegacyMergedPrompts(legacyIds)
+    await this.adoptSplitIncludes()
     return result
+  }
+
+  /**
+   * `readable-text` and `recovery-waits` were split out of `rules` (and the
+   * readable-text paragraph out of `squad-rules`). Built-in types get the new
+   * lists from YAML; a custom type, or a built-in type whose include list an
+   * admin overrode, still names only the old ids and would silently lose that
+   * text. Give such a list the split-out includes, in place, so its composed
+   * prompt keeps the same rules. Slot coordination moved to the generated Slot
+   * Pools section, which every squad agent already receives when pools exist.
+   */
+  private async adoptSplitIncludes(): Promise<void> {
+    const rows = await db.select({ id: agentTypes.id, includes: agentTypes.includes }).from(agentTypes)
+    let changed = false
+    for (const row of rows) {
+      const next = expandSplitIncludes(row.includes ?? [])
+      if (!next) continue
+      await db.update(agentTypes).set({ includes: next, updatedAt: new Date() }).where(eq(agentTypes.id, row.id))
+      await this.recomputeFieldOverrides(row.id)
+      this.log.info(`agent type '${row.id}': added includes split out of rules/squad-rules: ${next.join(', ')}`)
+      changed = true
+    }
+    if (changed) AgentType.invalidateCache()
+
+    // An overridden rules or squad-rules keeps the admin's text, which may still
+    // carry the readable-text paragraph: say so once rather than rewrite it.
+    const overridden = await db
+      .select({ id: sharedPrompts.id, content: sharedPrompts.content, overrides: sharedPrompts.yamlFieldOverrides })
+      .from(sharedPrompts)
+    for (const prompt of overridden) {
+      if (prompt.id !== 'rules' && prompt.id !== 'squad-rules') continue
+      if (!((prompt.overrides as string[] | null) ?? []).includes('content')) continue
+      if (!prompt.content.includes(READABLE_TEXT_HEADING)) continue
+      this.log.warn(
+        `shared prompt '${prompt.id}' is overridden and still contains "${READABLE_TEXT_HEADING}", which now has its own 'readable-text' include. Remove that section from the override, or revert it to the template, so agents do not read it twice.`
+      )
+    }
   }
 
   /**
@@ -511,6 +549,25 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
 // ---------------------------------------------------------------------------
 // Prompt composition helpers
 // ---------------------------------------------------------------------------
+
+const READABLE_TEXT_HEADING = '### Readable text fields'
+
+/**
+ * The include list a pre-split type needs to keep the text that moved out of
+ * `rules` and `squad-rules`, or null when it already has it or never had it.
+ * `readable-text` goes before the first of the two old ids, `recovery-waits`
+ * right after `rules` (it was part of `rules`; `squad-rules` never carried it).
+ */
+export function expandSplitIncludes(includes: readonly string[]): string[] | null {
+  if (includes.includes('readable-text')) return null
+  const rulesAt = includes.indexOf('rules')
+  const squadRulesAt = includes.indexOf('squad-rules')
+  if (rulesAt < 0 && squadRulesAt < 0) return null
+  const next = [...includes]
+  if (rulesAt >= 0 && !next.includes('recovery-waits')) next.splice(rulesAt + 1, 0, 'recovery-waits')
+  next.splice(Math.min(...[rulesAt, squadRulesAt].filter((at) => at >= 0)), 0, 'readable-text')
+  return next
+}
 
 /** The legacy merge, kept only for tests and the one-time migration strip. */
 export function composeFromYaml(parsed: AgentTypeYaml, files: Map<string, string>): string {

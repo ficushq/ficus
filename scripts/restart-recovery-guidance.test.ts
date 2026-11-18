@@ -5,12 +5,22 @@ import { resolve } from 'node:path'
 const root = resolve(import.meta.dir, '..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
-test('the canonical recovery doctrine is one paragraph', () => {
-  const section = read('config/agent-types/shared/rules.md')
+test('the canonical recovery doctrine is one paragraph in each include', () => {
+  const interrupted = read('config/agent-types/shared/rules.md')
     .split('### Interrupted commands and bounded recovery')[1]!
-    .split('### Slot Coordination')[0]!
+    .split('### Messaging / Shell Safety')[0]!
     .trim()
-  expect(section.split(/\n\s*\n/)).toHaveLength(1)
+  expect(interrupted.split(/\n\s*\n/)).toHaveLength(1)
+  const waits = read('config/agent-types/shared/recovery-waits.md').split('### Recovery waits')[1]!.trim()
+  expect(waits.split(/\n\s*\n/)).toHaveLength(1)
+})
+
+test('shell-only types get restart-safe retries but not the human recovery-wait protocol; the Assistant gets neither', () => {
+  for (const role of ['subagent', 'artifact-builder-default', 'assistant']) {
+    const config = Bun.YAML.parse(read(`config/agent-types/${role}.yaml`)) as { includes: string[] }
+    expect(config.includes).not.toContain('recovery-waits')
+    expect(config.includes.includes('rules')).toBe(role !== 'assistant')
+  }
 })
 
 test('worker, engineer, reviewer, general and manager each receive restart-safe recovery doctrine', () => {

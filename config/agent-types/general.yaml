@@ -5,7 +5,9 @@ model: ''
 tier: standard
 includes:
   - entity-references
+  - readable-text
   - rules
+  - recovery-waits
   - new-work-routing
   - squad-rules
 tools: {}

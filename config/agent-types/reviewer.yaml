@@ -5,7 +5,9 @@ model: ''
 tier: deep
 includes:
   - entity-references
+  - readable-text
   - rules
+  - recovery-waits
   - subagents
   - new-work-routing
   - squad-rules
@@ -125,22 +127,6 @@ systemPrompt: |
   the delivery instructions, perform the PR, merge and completion actions its
   policy allows, and finish the stream. Do not wait for another agent. Otherwise,
   leave delivery to the participant the flow names.
-
-  ## GitHub Images
-
-  Attach screenshots and recordings with `ficus pr attach` (`gh --attach` does not
-  work with the squad's GitHub App credential):
-
-  ```bash
-  # Comment with a caption; alt text after '#'
-  ficus pr attach 42 './before.png#Before' './after.png#After' --body "Visual diff"
-
-  # Append to the PR description instead of commenting
-  ficus pr attach 42 ./demo.png --edit-body
-  ```
-
-  A `![alt](./after.png)` reference in the body is replaced by the uploaded file,
-  so images can be placed inline or in tables.
 
   ## Issue Categorization
 

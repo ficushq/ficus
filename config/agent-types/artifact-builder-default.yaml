@@ -6,6 +6,7 @@ model: ''
 tier: standard
 includes:
   - entity-references
+  - readable-text
   - rules
 tools:
   allow:

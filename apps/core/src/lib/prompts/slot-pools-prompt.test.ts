@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { renderSlotPoolsPrompt, SLOT_POOLS_PROMPT_TOKEN, slotPoolsPromptFallback } from './slot-pools-prompt'
+import {
+  renderSlotPoolsPrompt,
+  SLOT_COORDINATION_GUIDANCE,
+  SLOT_POOLS_PROMPT_TOKEN,
+  slotPoolsPromptFallback,
+} from './slot-pools-prompt'
+
+const coordination = ['', '### Slot Coordination', '', SLOT_COORDINATION_GUIDANCE]
 
 describe('renderSlotPoolsPrompt', () => {
   test('omits the section entirely when the squad has no active pools', () => {
@@ -21,12 +28,13 @@ describe('renderSlotPoolsPrompt', () => {
       [
         '## Slot Pools',
         '',
-        'Registered capacity pools in this squad. Claim a pool before the work its guidance names (see Slot Coordination) and release it when done. Run `ficus slot list` for live holders and queue.',
+        'Registered capacity pools in this squad. Claim a pool before the work its guidance names and release it when done. Run `ficus slot list` for live holders and queue.',
         '',
         '- `production-change`: capacity 1, claim timeout 1h',
         '- `shared-box-intensive`: capacity 2, claim timeout 45m',
         '  Claim before DB-backed tests or native builds.',
         '  Release after test:db:down.',
+        ...coordination,
       ].join('\n')
     )
   })
@@ -44,7 +52,7 @@ describe('renderSlotPoolsPrompt', () => {
         capacityFollowsHost: true,
       },
     ])
-    expect(section.split('\n').slice(4)).toEqual([
+    expect(section.split('\n').slice(4, -coordination.length)).toEqual([
       '- `heavy-work`: capacity 3, claim timeout 45m, host-shared (this machine host allows 3 such claims at once across all squads on it, so you can be queued while this pool has room)',
       '  Claim before builds.',
       '- `solo`: capacity 1, claim timeout 45m, host-shared (this machine host allows 1 such claim at once across all squads on it, so you can be queued while this pool has room)',
@@ -55,8 +63,18 @@ describe('renderSlotPoolsPrompt', () => {
 
   test('lists configuration only, never live usage, and skips blank guidance', () => {
     const section = renderSlotPoolsPrompt([{ key: 'tests', capacity: 3, claimTimeoutMs: 90_000, usage: '  ' }])
-    // The pool entry is the last line: no holder, queue, or guidance lines follow.
-    expect(section.split('\n').at(-1)).toBe('- `tests`: capacity 3, claim timeout 90s')
+    // The pool entry is the last pool line: no holder, queue, or guidance lines follow it.
+    expect(section.split('\n').slice(0, -coordination.length).at(-1)).toBe('- `tests`: capacity 3, claim timeout 90s')
+  })
+})
+
+describe('slot coordination guidance', () => {
+  test('appears only in the generated section, so squads without pools never read it', () => {
+    expect(renderSlotPoolsPrompt([])).not.toContain('Slot Coordination')
+    const section = renderSlotPoolsPrompt([{ key: 'tests', capacity: 1, claimTimeoutMs: 60_000, usage: null }])
+    expect(section.split(SLOT_COORDINATION_GUIDANCE)).toHaveLength(2)
+    expect(SLOT_COORDINATION_GUIDANCE).toContain('returns `queued` with a waiter id')
+    expect(SLOT_COORDINATION_GUIDANCE).toContain('`ficus slot release <claim-id>`')
   })
 })
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { agentTypes, db } from '../../db'
 import { AgentType } from '../../entities/AgentType'
-import { AgentTypeSync, composeFromYaml, stripLegacyIncludeSuffix } from './agent-type-sync'
+import { AgentTypeSync, composeFromYaml, expandSplitIncludes, stripLegacyIncludeSuffix } from './agent-type-sync'
 import { loadSharedPromptFiles } from './shared-prompt-sync'
 
 const sync = new AgentTypeSync()
@@ -19,7 +19,15 @@ describe('agent type includes', () => {
 
   test('loadFromDir keeps the include list and leaves systemPrompt free of include text', async () => {
     const sysops = (await sync.loadFromDir()).find((t) => t.id === 'sysops')!
-    expect(sysops.includes).toEqual(['entity-references', 'rules', 'subagents', 'new-work-routing', 'squad-rules'])
+    expect(sysops.includes).toEqual([
+      'entity-references',
+      'readable-text',
+      'rules',
+      'recovery-waits',
+      'subagents',
+      'new-work-routing',
+      'squad-rules',
+    ])
     expect(sysops.systemPrompt).toContain('### Incident Response')
     expect(sysops.systemPrompt).not.toContain('### Questions, waits, and pause')
   })
@@ -63,10 +71,20 @@ describe('agent type includes', () => {
   test('sync stores includes on the row and the template', async () => {
     await sync.sync()
     const [row] = await db.select().from(agentTypes).where(eq(agentTypes.id, 'engineer'))
-    expect(row.includes).toEqual(['entity-references', 'rules', 'subagents', 'new-work-routing', 'squad-rules'])
+    expect(row.includes).toEqual([
+      'entity-references',
+      'readable-text',
+      'rules',
+      'recovery-waits',
+      'subagents',
+      'new-work-routing',
+      'squad-rules',
+    ])
     expect((row.yamlTemplate as { includes?: string[] }).includes).toEqual([
       'entity-references',
+      'readable-text',
       'rules',
+      'recovery-waits',
       'subagents',
       'new-work-routing',
       'squad-rules',
@@ -151,5 +169,64 @@ describe('agent type includes', () => {
     expect(after.systemPrompt).toBe(edited)
     expect(after.includes).toEqual([])
     expect([...after.yamlFieldOverrides].sort()).toEqual(['includes', 'systemPrompt'])
+  })
+
+  test('expandSplitIncludes adds the includes split out of rules and squad-rules, once', () => {
+    expect(expandSplitIncludes(['entity-references', 'rules', 'subagents', 'squad-rules'])).toEqual([
+      'entity-references',
+      'readable-text',
+      'rules',
+      'recovery-waits',
+      'subagents',
+      'squad-rules',
+    ])
+    // squad-rules never carried the recovery-wait protocol, only the readable-text paragraph.
+    expect(expandSplitIncludes(['squad-rules'])).toEqual(['readable-text', 'squad-rules'])
+    expect(expandSplitIncludes(['rules'])).toEqual(['readable-text', 'rules', 'recovery-waits'])
+    // Already migrated, or never had the old text: leave the list alone.
+    expect(expandSplitIncludes(['readable-text', 'rules'])).toBeNull()
+    expect(expandSplitIncludes(['entity-references'])).toBeNull()
+    expect(expandSplitIncludes([])).toBeNull()
+  })
+
+  /**
+   * Built-in types take the new include lists from YAML. A type whose list was
+   * overridden, or a custom type, still names only `rules`/`squad-rules` and
+   * would silently lose the text that moved into `readable-text` and
+   * `recovery-waits`; the sync adds them in place and keeps the override.
+   */
+  test('sync gives an overridden or custom pre-split include list the split-out includes', async () => {
+    const customId = `custom-split-${crypto.randomUUID().slice(0, 8)}`
+    await db
+      .update(agentTypes)
+      .set({
+        includes: ['entity-references', 'rules', 'squad-rules'],
+        yamlFieldOverrides: ['includes'],
+      })
+      .where(eq(agentTypes.id, 'engineer'))
+    await db
+      .insert(agentTypes)
+      .values({ id: customId, name: 'Custom split', model: '', systemPrompt: 'You are custom.', includes: ['rules'] })
+    try {
+      await sync.sync()
+      const engineer = await AgentType.mustFind('engineer')
+      expect(engineer.includes).toEqual([
+        'entity-references',
+        'readable-text',
+        'rules',
+        'recovery-waits',
+        'squad-rules',
+      ])
+      expect(engineer.yamlFieldOverrides).toEqual(['includes'])
+      const [custom] = await db.select().from(agentTypes).where(eq(agentTypes.id, customId))
+      expect(custom.includes).toEqual(['readable-text', 'rules', 'recovery-waits'])
+
+      // A second sync changes nothing.
+      await sync.sync()
+      expect((await AgentType.mustFind('engineer')).includes).toEqual(engineer.includes)
+    } finally {
+      await db.delete(agentTypes).where(eq(agentTypes.id, customId))
+      AgentType.invalidateCache()
+    }
   })
 })

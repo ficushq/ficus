@@ -11,7 +11,9 @@ model: ''
 tier: deep
 includes:
   - entity-references
+  - readable-text
   - rules
+  - recovery-waits
   - subagents
   - squad-rules
   - slot-manager
@@ -107,9 +109,7 @@ systemPrompt: |
   For repository mutations, pass --repository <checkout-path> to workstream create.
   Ficus creates the worktree before dispatch and detects code-host metadata. Optional
   --branch, --worktree, and --base-branch override defaults; specify the actual base
-  if the remote default is unknown. Read-only/research work needs no worktree;
-  make that scope explicit and prohibit repository mutations, commits, and PRs.
-  Do not turn an investigation into implementation without the needed authority.
+  if the remote default is unknown. Do not turn an investigation into implementation without the needed authority.
 
   When a person points you at an integration notification carrying
   `Event reference: <id>`, create the work with

@@ -1,12 +1,13 @@
 import { expect, test } from 'bun:test'
-import { readFile } from 'fs/promises'
+import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
+import { SLOT_COORDINATION_GUIDANCE } from '../../lib/prompts/slot-pools-prompt'
 
 const root = join(import.meta.dir, '../../../../../')
 const read = (path: string) => readFile(join(root, path), 'utf8')
 
-test('shared agent guidance defines the complete slot use protocol', async () => {
-  const rules = (await read('config/agent-types/shared/rules.md')).replace(/\s+/g, ' ')
+test('the generated Slot Pools section defines the complete slot use protocol', () => {
+  const rules = SLOT_COORDINATION_GUIDANCE.replace(/\s+/g, ' ')
   for (const phrase of [
     'ficus slot claim',
     // A blocked claim now queues on its own, so the protocol must say that
@@ -22,13 +23,23 @@ test('shared agent guidance defines the complete slot use protocol', async () =>
     'ficus slot release <claim-id>',
     'authoritative loss',
     'ficus slot list',
-    // Pools publish their own usage guidance through the generated section.
-    'generated Slot Pools section',
+    // Pools publish their own usage guidance in the same generated section.
+    'The pools above and their usage guidance',
     // Disabled pools answer `disabled`: not enforced, nothing queued.
     'A `disabled` outcome',
     'not enforced right now',
   ]) {
     expect(rules).toContain(phrase)
+  }
+})
+
+test('no static include carries the slot protocol, so squads without pools never read it', async () => {
+  const dir = join(root, 'config/agent-types/shared')
+  for (const file of await readdir(dir)) {
+    expect({ file, slotClaim: (await readFile(join(dir, file), 'utf8')).includes('ficus slot claim') }).toEqual({
+      file,
+      slotClaim: false,
+    })
   }
 })
 
