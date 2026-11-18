@@ -1551,6 +1551,91 @@ test('blocking questions pin their origin attempt and late answers cannot wake i
   ).rejects.toThrow('superseded')
 })
 
+// Regression: approving makes the reviewer the delivery participant, and its attempt is then
+// completed, not running. A question it asked on that attempt ("should I merge?") was treated as
+// belonging to a superseded attempt: the accepted answer was never delivered, retrying could not
+// help, and a blocking question asked after approving was refused outright.
+test('the delivery participant can ask on the attempt it delivers from, and receives the answers', async () => {
+  const { createAgentQuestion, answerAgentQuestion } = await import('../agents/questions')
+  const { waitForQuestionAnswerDeliveryDrains } = await import('../agents/question-answer-delivery')
+  const { isCurrentQuestionAttempt, isCurrentWaitAttempt, lockFlowInboxDelivery } =
+    await import('../work-streams/wait-scope')
+  const { agentQuestions } = await import('../../db/schema')
+  const id = await create('active')
+  await advance(id, 'completed')
+  const run = (await getFlow(id))!
+  const builder = run.attemptAgents['1']!
+  const reviewer = run.attemptAgents['2']!
+  const agent = await Agent.mustFind(reviewer)
+  const execution = await agent.queueExecution({ message: 'Review the change' })
+  const [handoff] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `flow:${id}:2`))
+  await db.insert(chatMessages).values({
+    agentId: reviewer,
+    role: 'human',
+    content: 'Review the change',
+    pending: false,
+    metadata: {
+      source: 'inbox',
+      inboxMessageIds: [handoff!.id],
+      executionId: execution.id,
+      consumedAt: execution.startedAt.toISOString(),
+    },
+  })
+  // Asked without blocking while the review attempt still runs, then the reviewer approves.
+  const early = await createAgentQuestion(
+    { agentId: reviewer, executionId: execution.id },
+    { questions: [{ id: 'merge', type: 'text', question: 'Should I merge once CI passes?' }] }
+  )
+  await advance(id, 'approved')
+  expect((await getFlow(id))!.state.status).toBe('completion-ready')
+  expect(await isCurrentQuestionAttempt(db, id, 2, reviewer)).toBe(true)
+  // Only the delivery participant's own attempt: the builder's finished attempt is not current,
+  // and nobody else can claim the reviewer's.
+  expect(await isCurrentQuestionAttempt(db, id, 1, builder)).toBe(false)
+  expect(await isCurrentQuestionAttempt(db, id, 2, builder)).toBe(false)
+  // Only for questions: handoffs, wait resolutions and recovery still need a running attempt.
+  expect(await isCurrentWaitAttempt(db, id, 2, reviewer)).toBe(false)
+
+  // Asked after approving, in the same turn, and blocking: nothing runs any more, so the wait
+  // holds the whole stream.
+  const late = await createAgentQuestion(
+    { agentId: reviewer, executionId: execution.id },
+    { questions: [{ id: 'head', type: 'text', question: 'Which head should I merge?' }] },
+    { blocking: true }
+  )
+  expect(late.openedWaitWorkStreamIds).toEqual([id])
+  expect(await listOpenWaits(db, id)).toMatchObject([{ type: 'question', flowAttemptId: null }])
+  await execution.stop()
+
+  const user = await createTestUser({ prefix })
+  for (const question of [early, late]) {
+    await answerAgentQuestion(question.id, 'Yes, merge the approved head', user.id)
+    await waitForQuestionAnswerDeliveryDrains()
+    const replies = await db.select().from(inbox).where(eq(inbox.recipientId, reviewer))
+    const answer = replies.find((message) => (message.metadata as any)?.questionId === question.id)!
+    expect(answer).toBeDefined()
+    expect(await isCurrentFlowMessage(answer)).toBe(true)
+    await db.transaction((tx) => lockFlowInboxDelivery(tx, reviewer, [answer.id]))
+    const [settled] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(settled!.answerDeliveryStatus).not.toBe('failed')
+  }
+  expect(await listOpenWaits(db, id)).toHaveLength(0)
+
+  // A rework replaces the attempt: it stops being current like any superseded attempt.
+  const ready = (await getFlow(id))!
+  await advanceFlow(
+    id,
+    { action: 'rework', expectedVersion: ready.version, attemptId: 2, feedback: 'CI failed on the current head' },
+    randomUUID(),
+    { type: 'agent', agentId: reviewer, squadId }
+  )
+  expect(await isCurrentQuestionAttempt(db, id, 2, reviewer)).toBe(false)
+  expect(await isCurrentQuestionAttempt(db, id, 3, reviewer)).toBe(true)
+})
+
 test('only completed PR workflows with a linked change and event routing suppress idle nudges', async () => {
   const definition = structuredClone(flow)
   definition.completion = { mode: 'pr-merge', followChanges: true }

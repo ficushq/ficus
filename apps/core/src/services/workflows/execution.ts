@@ -10,7 +10,12 @@ import {
   mayAttemptRaiseLimit,
 } from './attempt-limit'
 import { flowMessage, workStreamBriefDigest } from './handoff-prompt'
-import { waitsForAttempt, isCurrentWaitAttempt, flowInboxTargets } from '../work-streams/wait-scope'
+import {
+  waitsForAttempt,
+  isCurrentQuestionAttempt,
+  isCurrentWaitAttempt,
+  flowInboxTargets,
+} from '../work-streams/wait-scope'
 import { checkWorkflowScope } from './access'
 import { createLogger } from '../../lib/infra/logger'
 import { and, eq } from 'drizzle-orm'
@@ -1250,7 +1255,8 @@ export async function isCurrentFlowMessage(message: { id?: string; metadata: unk
   }
   if (metadata?.source === 'agent-question-answer' && message.id && message.recipientId) {
     for (const target of await flowInboxTargets(db, [message.id]))
-      if (!(await isCurrentWaitAttempt(db, target.workStreamId, target.attemptId, message.recipientId))) return false
+      if (!(await isCurrentQuestionAttempt(db, target.workStreamId, target.attemptId, message.recipientId)))
+        return false
   }
   if (metadata?.source === 'workflow-wait-resolution')
     return (
