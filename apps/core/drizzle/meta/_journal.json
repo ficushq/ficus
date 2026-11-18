@@ -1737,6 +1737,13 @@
       "when": 1794282296190,
       "tag": "0247_workflow_template_hold",
       "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1794966925771,
+      "tag": "0248_host_shared_slot_pools",
+      "breakpoints": true
     }
   ]
 }

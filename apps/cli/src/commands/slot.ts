@@ -41,6 +41,10 @@ type SlotPoolProjection = {
   usage?: string | null
   /** False while disabled; absent on servers that predate enable/disable. */
   enabled?: boolean
+  /** True when claims also draw on the machine host's budget; absent on older servers. */
+  hostShared?: boolean
+  /** The machine host's budget, shared by every squad on it; absent when the squad has none. */
+  host?: { capacity: number; activeCount: number; availableCount: number }
   oldestWaiterAgeMs?: number | null
   callerClaim?: { id?: string; expiresAt: string }
   callerWaiter?: { id?: string; queuedAt?: string }
@@ -161,7 +165,7 @@ export function renderSlotPools(result: SlotPoolProjection | SlotPoolProjection[
   const summary = (pool: SlotPoolProjection) =>
     `${pool.key}: ${pool.activeCount}/${pool.capacity} active, ${pool.availableCount} available, ${pool.queuedCount} queued${
       pool.enabled === false ? ' (disabled: not enforced)' : ''
-    }`
+    }${hostSharedNote(pool)}`
   if (Array.isArray(result)) {
     // Each pool carries its own caller recovery state so a held claim or
     // queued wait is actionable straight from the list output.
@@ -174,6 +178,17 @@ export function renderSlotPools(result: SlotPoolProjection | SlotPoolProjection[
   if (result.oldestWaiterAgeMs != null) lines.push(`Oldest wait: ${result.oldestWaiterAgeMs}ms`)
   lines.push(...callerStateLines(result))
   return lines.join('\n')
+}
+
+/**
+ * A host-shared pool is also limited by its machine host's budget, which all
+ * squads share. Nothing is said where no budget applies (the squad has no
+ * machine, or budgets are off): the pool is then limited by its capacity alone.
+ */
+function hostSharedNote(pool: SlotPoolProjection): string {
+  return pool.hostShared && pool.host
+    ? `, host-shared (machine host: ${pool.host.activeCount}/${pool.host.capacity} in use across squads)`
+    : ''
 }
 
 function usageLines(pool: SlotPoolProjection): string[] {
@@ -327,20 +342,33 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
     .option('--capacity <n>', 'Pool capacity')
     .option('--timeout <duration>', 'Claim timeout')
     .option('--usage <text>', 'Usage guidance published to every agent prompt (what it protects, when to claim)')
-    .action((key: string, options: SlotOptions & { capacity?: string; timeout?: string; usage?: string }) =>
-      run(async () => {
-        const squadId = resolveSlotSquadId(options.squad)
-        const usage = options.usage === undefined ? undefined : parseSlotUsage(options.usage)
-        const result = requireSlotMutationResponse(
-          await apiPost<SlotPoolMutationResponse>(path(squadId), {
-            key,
-            ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
-            ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
-            ...(usage ? { usage } : {}),
-          })
-        )
-        output(result, result.message)
-      })
+    .option(
+      '--host-shared',
+      "Also draw on the machine host's slot budget, shared with every squad on that machine (the default)"
+    )
+    .option(
+      '--no-host-shared',
+      'Limit the pool by its own capacity only: for pools that protect something other than box memory or CPU'
+    )
+    .action(
+      (
+        key: string,
+        options: SlotOptions & { capacity?: string; timeout?: string; usage?: string; hostShared?: boolean }
+      ) =>
+        run(async () => {
+          const squadId = resolveSlotSquadId(options.squad)
+          const usage = options.usage === undefined ? undefined : parseSlotUsage(options.usage)
+          const result = requireSlotMutationResponse(
+            await apiPost<SlotPoolMutationResponse>(path(squadId), {
+              key,
+              ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
+              ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
+              ...(usage ? { usage } : {}),
+              ...(options.hostShared === undefined ? {} : { hostShared: options.hostShared }),
+            })
+          )
+          output(result, result.message)
+        })
     )
 
   withSquad(slot.command('update <key>').description('Update a slot pool; omitted settings are unchanged'))
@@ -348,17 +376,31 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
     .option('--timeout <duration>', 'Claim timeout')
     .option('--usage <text>', 'Replace the usage guidance ("" clears it)')
     .option('--clear-usage', 'Remove the usage guidance')
+    .option('--host-shared', "Also draw on the machine host's slot budget, shared with every squad on that machine")
+    .option('--no-host-shared', 'Stop drawing on the machine host budget: only the pool capacity limits it')
     .action(
       (
         key: string,
-        options: SlotOptions & { capacity?: string; timeout?: string; usage?: string; clearUsage?: boolean }
+        options: SlotOptions & {
+          capacity?: string
+          timeout?: string
+          usage?: string
+          clearUsage?: boolean
+          hostShared?: boolean
+        }
       ) =>
         run(async () => {
           if (options.clearUsage && options.usage !== undefined) {
             throw new Error('Pass either --usage or --clear-usage, not both.')
           }
-          if (!options.capacity && !options.timeout && options.usage === undefined && !options.clearUsage) {
-            throw new Error('Pass --capacity, --timeout, --usage, or --clear-usage.')
+          if (
+            !options.capacity &&
+            !options.timeout &&
+            options.usage === undefined &&
+            !options.clearUsage &&
+            options.hostShared === undefined
+          ) {
+            throw new Error('Pass --capacity, --timeout, --usage, --clear-usage, --host-shared, or --no-host-shared.')
           }
           const squadId = resolveSlotSquadId(options.squad)
           const usage = options.clearUsage
@@ -372,6 +414,7 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
               ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
               // Blank guidance clears it, the same as --clear-usage.
               ...(usage === undefined ? {} : { usage: usage || null }),
+              ...(options.hostShared === undefined ? {} : { hostShared: options.hostShared }),
             })
           )
           output(result, result.message)

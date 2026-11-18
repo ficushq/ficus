@@ -712,6 +712,45 @@ describe('slot pool usage guidance and enabled state', () => {
     expect(resized.pool).toMatchObject({ capacity: 4, claimTimeoutMs: 180_000, usage: 'Kept.' })
   })
 
+  test('register and PATCH accept hostShared, and list/get return it', async () => {
+    const squadId = await squad('host-shared')
+    // A new pool is host-shared unless the caller says otherwise.
+    const created = await request('POST', `/api/squads/${squadId}/slots`, writeUser.token, { key: 'tests' })
+    expect(created.status).toBe(201)
+    const body = await created.json()
+    expect(body.pool).toMatchObject({ hostShared: true })
+    expect(body.message).toContain('It is host-shared')
+    expect(body.message).toContain('--no-host-shared')
+    // No machine hosts this squad, so no host budget is reported.
+    const [listed] = await (await request('GET', `/api/squads/${squadId}/slots`, useUser.token)).json()
+    expect(listed).toMatchObject({ key: 'tests', hostShared: true, availableCount: 1 })
+    expect(listed.host).toBeUndefined()
+
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, useUser.token, { hostShared: false })).status
+    ).toBe(403)
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { hostShared: 'yes' })).status
+    ).toBe(400)
+    const off = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { hostShared: false })
+    ).json()
+    expect(off).toMatchObject({ outcome: 'updated', pool: { hostShared: false, capacity: 1 } })
+    expect(off.message).toContain('no longer host-shared')
+    expect(await (await request('GET', `/api/squads/${squadId}/slots/tests`, useUser.token)).json()).toMatchObject({
+      hostShared: false,
+    })
+    // A pool that protects something else opts out when it is registered.
+    const lock = await (
+      await request('POST', `/api/squads/${squadId}/slots`, writeUser.token, { key: 'deploy-lock', hostShared: false })
+    ).json()
+    expect(lock.pool).toMatchObject({ hostShared: false })
+    expect(lock.message).toContain('It is not host-shared')
+    expect(
+      await (await request('GET', `/api/squads/${squadId}/slots/deploy-lock`, useUser.token)).json()
+    ).toMatchObject({ hostShared: false })
+  })
+
   test('PATCH enabled toggles enforcement; claims on a disabled pool answer disabled', async () => {
     const squadId = await squad('enabled-patch')
     await register(squadId)

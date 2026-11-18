@@ -1,0 +1,1 @@
+ALTER TABLE "slot_pools" ADD COLUMN "host_shared" boolean DEFAULT false NOT NULL;

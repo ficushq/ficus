@@ -30,6 +30,10 @@ export interface SlotPool {
   usage: string | null
   enabled: boolean
   disabledAt: string | null
+  /** True when claims also draw on the machine host's budget. Absent on older servers. */
+  hostShared?: boolean
+  /** The machine host's budget, shared by every squad on it. Absent when the squad has none. */
+  host?: { capacity: number; activeCount: number; availableCount: number }
   activeCount: number
   availableCount: number
   queuedCount: number
@@ -42,6 +46,7 @@ export interface RegisterSlotPoolInput {
   capacity: number
   claimTimeoutMs: number
   usage?: string | null
+  hostShared?: boolean
 }
 
 /** Partial update: send only what changes. */
@@ -50,6 +55,7 @@ export interface UpdateSlotPoolInput {
   claimTimeoutMs?: number
   usage?: string | null
   enabled?: boolean
+  hostShared?: boolean
 }
 
 /** Stable administration envelope: read `outcome`/`message`, not the HTTP status. */

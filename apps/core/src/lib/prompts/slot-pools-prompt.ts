@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import { db, slotPools, squads } from '../../db'
 import { formatSlotClaimTimeout } from '../../services/slots/format'
+import { resolveHostBudget } from '../../services/slots/host-budget'
 import { createLogger } from '../infra/logger'
 
 const log = createLogger('slot-pools-prompt')
@@ -13,6 +14,11 @@ export interface SlotPoolPromptEntry {
   capacity: number
   claimTimeoutMs: number
   usage: string | null
+  /**
+   * Set only for a host-shared pool whose squad is on a machine with a slot
+   * budget: how many such claims that machine allows across all squads.
+   */
+  hostCapacity?: number
 }
 
 /**
@@ -32,7 +38,13 @@ export function renderSlotPoolsPrompt(pools: readonly SlotPoolPromptEntry[]): st
   ]
   for (const pool of pools) {
     lines.push(
-      `- \`${pool.key}\`: capacity ${pool.capacity}, claim timeout ${formatSlotClaimTimeout(pool.claimTimeoutMs)}`
+      `- \`${pool.key}\`: capacity ${pool.capacity}, claim timeout ${formatSlotClaimTimeout(pool.claimTimeoutMs)}${
+        pool.hostCapacity === undefined
+          ? ''
+          : `, host-shared (this machine host allows ${pool.hostCapacity} such claim${
+              pool.hostCapacity === 1 ? '' : 's'
+            } at once across all squads on it, so you can be queued while this pool has room)`
+      }`
     )
     const usage = pool.usage?.trim()
     if (usage) {
@@ -56,12 +68,13 @@ export function slotPoolsPromptFallback(typePrompt: string, section: string): st
  * pools are not enforced, so agents must not be told to claim them.
  */
 export async function loadSlotPoolPromptEntries(squadId: string): Promise<SlotPoolPromptEntry[]> {
-  return db
+  const pools = await db
     .select({
       key: slotPools.key,
       capacity: slotPools.capacity,
       claimTimeoutMs: slotPools.claimTimeoutMs,
       usage: slotPools.usage,
+      hostShared: slotPools.hostShared,
     })
     .from(slotPools)
     .innerJoin(squads, eq(squads.id, slotPools.squadId))
@@ -74,6 +87,10 @@ export async function loadSlotPoolPromptEntries(squadId: string): Promise<SlotPo
       )
     )
     .orderBy(asc(slotPools.key))
+  const budget = pools.some((pool) => pool.hostShared) ? await resolveHostBudget(db, squadId) : null
+  return pools.map(({ hostShared, ...pool }) =>
+    hostShared && budget ? { ...pool, hostCapacity: budget.capacity } : pool
+  )
 }
 
 /**

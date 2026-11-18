@@ -179,6 +179,14 @@ leaf, and is stopped when the agent's flow attempt ends, when the agent goes
 dormant, or when its work stream is done or canceled, unless it was started with
 `FICUS_KEEP_RUNNING=1`. See [leftover processes](leftover-processes.md).
 
+## Taking turns at heavy work
+
+Everything above limits the damage once a box uses too much. The
+[host slot budget](host-slot-budget.md) keeps squads from all starting heavy
+work at the same time: slot pools marked host-shared share one budget per
+machine, derived from its size, and a squad with no pool is given a default
+one.
+
 ## Starting a dev server twice
 
 Before spawning, the server checks a command that starts a known dev server on

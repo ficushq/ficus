@@ -180,7 +180,7 @@ Use the "Add rule for event…" dropdown to create rules for events that don't h
 
 ### System
 
-Agent Execution settings, including the instance concurrency override, live here. Maintenance pause safely pauses agent execution and requeues active turns. Read, write, pause, and restart controls follow their respective permissions.
+Agent Execution settings, including the instance concurrency override, live here. **Machine host slot budget** sets how many claims on host-shared slot pools one machine host allows at once across all squads: unset follows each machine's size, a number fixes it, and 0 turns host budgets off ([host slot budget](machines/host-slot-budget.md)). Maintenance pause safely pauses agent execution and requeues active turns. Read, write, pause, and restart controls follow their respective permissions.
 
 Restart button for the API and worker processes. Shows a warning that active agent executions will be interrupted. Displays restart progress with a spinner: "Sending restart signal…" → "Waiting for server to shut down…" → "Waiting for server to come back online…" → auto-clears.
 

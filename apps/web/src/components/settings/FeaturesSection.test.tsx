@@ -41,6 +41,41 @@ function render(
   )
 }
 
+describe('a setting whose default is a word', () => {
+  const hostSlots = (overrides: Partial<SettingMetadata> = {}) =>
+    capSetting({ key: 'HOST_SLOT_CAPACITY', value: 'auto', default: 'auto', ...overrides })
+
+  // The machine host slot budget is derived per machine until a number is stored.
+  test('shows the word as the placeholder of an empty number input, not as a value', () => {
+    const html = renderToStaticMarkup(
+      <NumberSettingFields
+        setting={hostSlots()}
+        label="Machine host slot budget"
+        canWrite
+        min={0}
+        draft="auto"
+        onDraftChange={() => {}}
+        onSave={() => {}}
+        onReset={() => {}}
+        isSaving={false}
+        isResetting={false}
+      />
+    )
+    expect(html).toContain('placeholder="auto"')
+    expect(html).toContain('value=""')
+    expect(html).toContain('min="0"')
+    expect(html).toContain('Default: auto')
+    expect(html).not.toContain('Reset to default')
+  })
+
+  test('a stored number is shown and can be reset', () => {
+    const html = render(hostSlots({ value: '2', isDefault: false }))
+    expect(html).toContain('value="2"')
+    expect(html).toContain('placeholder="auto"')
+    expect(html).toContain('Reset to default')
+  })
+})
+
 describe('concurrency cap settings control', () => {
   // Mutation caught: shipping the backend setting without surfacing an editable
   // control — the operator has no way to reach it, which is the whole request.

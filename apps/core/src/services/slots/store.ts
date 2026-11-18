@@ -14,6 +14,7 @@ import {
   SlotServiceError,
   type SlotAcquirePoolSnapshot,
   type SlotAcquireResult,
+  type SlotHostBudgetView,
   type SlotClaimView,
   type SlotPoolSummary,
   type SlotPoolView,
@@ -27,8 +28,17 @@ import {
 } from './types'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { slotNotificationNotifier } from './notifications'
-import { orderedSlotWaiters } from './queue-order'
+import { rankedSlotWaiters } from './queue-order'
 import { endedSlotClaimCleanup } from './ended-claim-cleanup'
+import {
+  compareHostWaiters,
+  eligibleHostWaiters,
+  hostBudgetOfMachine,
+  loadHostGroup,
+  lockHostBudget,
+  resolveHostBudget,
+  type HostWaiter,
+} from './host-budget'
 
 type SlotPoolRow = typeof slotPools.$inferSelect
 type SlotClaimRow = typeof slotClaims.$inferSelect
@@ -87,6 +97,13 @@ export interface RegisterPoolInput {
   claimTimeoutMs?: number
   /** Optional usage guidance; blank or null stores none. */
   usage?: string | null
+  /**
+   * Also draw on the machine host's shared budget (see host-budget.ts). New
+   * pools do unless told otherwise: most pools protect box memory or CPU, and
+   * one that is wrongly left out is exactly the work that overloads a host.
+   * Pass false for a pool that protects something else, such as a deploy lock.
+   */
+  hostShared?: boolean
   createdBy: string
 }
 
@@ -98,6 +115,8 @@ export interface UpdatePoolInput {
   usage?: string | null
   /** false disables the pool (canceling and notifying its waiters); true re-enables it. */
   enabled?: boolean
+  /** Start or stop drawing on the machine host's shared budget. */
+  hostShared?: boolean
 }
 
 export interface UpdatePoolResult {
@@ -200,7 +219,15 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
       if (existing) throw new SlotServiceError('pool_exists', `Slot pool "${key}" is already registered.`, 409)
       const [pool] = await tx
         .insert(slotPools)
-        .values({ squadId: input.squadId, key, capacity, claimTimeoutMs, usage, createdBy: input.createdBy })
+        .values({
+          squadId: input.squadId,
+          key,
+          capacity,
+          claimTimeoutMs,
+          usage,
+          hostShared: input.hostShared ?? true,
+          createdBy: input.createdBy,
+        })
         .returning()
       return pool!
     })
@@ -230,6 +257,16 @@ async function lockActivePool(tx: DbTx, squadId: string, key: string): Promise<S
   return pool
 }
 
+/** A host-shared pool's machine budget as one operation left it. */
+export interface PromotionHostState {
+  machineId: string
+  capacity: number
+  /** Claims held against the machine's budget, across every squad's pools. */
+  activeCount: number
+  /** Another pool has a waiter that only the machine's budget is holding back. */
+  foreignWaiting: boolean
+}
+
 export interface PromotionResult {
   expired: number
   promoted: number
@@ -238,23 +275,69 @@ export interface PromotionResult {
   queueDepth: number
   maxGrantLatencyMs: number
   oldestWaiterAgeMs: number
+  /** Set for a host-shared pool whose squad is on a machine with a budget. */
+  host?: PromotionHostState
+}
+
+function hostBudgetView(host: { capacity: number; activeCount: number }): SlotHostBudgetView {
+  return {
+    capacity: host.capacity,
+    activeCount: host.activeCount,
+    availableCount: Math.max(0, host.capacity - host.activeCount),
+  }
 }
 
 function acquirePoolSnapshot(pool: SlotPoolRow, promotion: PromotionResult): SlotAcquirePoolSnapshot {
   const activeCount = promotion.activeCount
+  const host = promotion.host ? hostBudgetView(promotion.host) : undefined
+  const poolFree = Math.max(0, pool.capacity - activeCount)
   return {
     key: pool.key,
     capacity: pool.capacity,
     activeCount,
-    availableCount: Math.max(0, pool.capacity - activeCount),
+    availableCount: host ? Math.min(poolFree, host.availableCount) : poolFree,
     queuedCount: promotion.queueDepth,
+    ...(host ? { host } : {}),
   }
+}
+
+/** The promotion state after this operation granted the caller one more claim. */
+function withCallerGrant(promotion: PromotionResult): PromotionResult {
+  return {
+    ...promotion,
+    activeCount: promotion.activeCount + 1,
+    ...(promotion.host ? { host: { ...promotion.host, activeCount: promotion.host.activeCount + 1 } } : {}),
+  }
+}
+
+/**
+ * Whether the machine's budget keeps a new claimant out of a pool that has
+ * room: the machine is full, or a waiter of another squad is already in line
+ * for its next unit. Newcomers never jump that line; they queue and the host
+ * promotion orders everyone.
+ */
+function hostBlocksNewClaim(promotion: PromotionResult): boolean {
+  const host = promotion.host
+  return !!host && (host.activeCount >= host.capacity || host.foreignWaiting)
+}
+
+/** Why a caller with room in its own pool was queued anyway. */
+function queuedMessage(pool: SlotPoolRow, promotion: PromotionResult, fallback: string): string {
+  const host = promotion.host
+  if (!host || promotion.activeCount >= pool.capacity) return fallback
+  if (host.activeCount >= host.capacity) {
+    return `The machine host's shared slot budget is full (${host.activeCount} of ${host.capacity} in use across squads); you are queued for "${pool.key}".`
+  }
+  if (!host.foreignWaiting) return fallback
+  return `Other squads are already queued for the machine host's shared slot budget; you are queued for "${pool.key}".`
 }
 
 interface UpdatePoolTransactionResult {
   updated: SlotPoolRow
   releasedWaiters: number
   promotion: PromotionResult
+  /** The machine whose budget this update just stopped drawing on. */
+  leftHostMachineId?: string
 }
 
 interface UnregisterPoolTransactionResult {
@@ -352,11 +435,45 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
   let canceled = 0
   let maxGrantLatencyMs = 0
 
+  // A host-shared pool also draws on its machine's budget. Every grant against
+  // that budget holds the machine lock until commit, so the count read here
+  // cannot be overtaken by another squad's grant.
+  const budget = pool.hostShared ? await resolveHostBudget(tx, pool.squadId) : null
+  let host: PromotionHostState | undefined
+  let heldBySquad = new Map<string, number>()
+  let foreign: HostWaiter[] = []
+  if (budget) {
+    await lockHostBudget(tx, budget.machineId)
+    const group = await loadHostGroup(tx, budget.machineId, now)
+    foreign = await eligibleHostWaiters(tx, group, now, pool.id)
+    heldBySquad = group.heldBySquad
+    host = {
+      machineId: budget.machineId,
+      capacity: budget.capacity,
+      activeCount: group.activeCount,
+      foreignWaiting: foreign.length > 0,
+    }
+  }
+
   // A disabled pool never grants: disabling cancels its waiters, and this
   // guard keeps any straggler from being promoted while it stays disabled.
-  const waiters = !pool.disabledAt && activeCount < pool.capacity ? await orderedSlotWaiters(tx, pool) : []
-  for (const waiter of waiters) {
+  const waiters = !pool.disabledAt && activeCount < pool.capacity ? await rankedSlotWaiters(tx, [pool.id], now) : []
+  for (const { waiter, rank } of waiters) {
     if (activeCount >= pool.capacity) break
+    if (host) {
+      if (host.activeCount >= host.capacity) break
+      // The machine's next unit goes to the best-placed waiter on the machine.
+      // When that is another squad's, leave the unit free: that pool's own
+      // promotion grants it (see promoteHostGroup).
+      const own: HostWaiter = {
+        waiterId: waiter.id,
+        poolId: pool.id,
+        squadId: pool.squadId,
+        rank,
+        enqueueSequence: waiter.enqueueSequence,
+      }
+      if (foreign.some((other) => compareHostWaiters(other, own, heldBySquad) < 0)) break
+    }
 
     // Deliberately non-locking: lifecycle cleanup already follows agent lock -> pool lock.
     // The squads join fences promotion: an archived squad's pool can never grant
@@ -416,6 +533,10 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
       .onConflictDoNothing({ target: slotNotifications.idempotencyKey })
     activeCount += 1
     promoted += 1
+    if (host) {
+      host.activeCount += 1
+      heldBySquad.set(pool.squadId, (heldBySquad.get(pool.squadId) ?? 0) + 1)
+    }
     maxGrantLatencyMs = Math.max(maxGrantLatencyMs, now.getTime() - waiter.queuedAt.getTime())
   }
 
@@ -431,7 +552,82 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
     queueDepth: queue?.count ?? 0,
     maxGrantLatencyMs,
     oldestWaiterAgeMs: queue?.oldest ? Math.max(0, now.getTime() - new Date(queue.oldest).getTime()) : 0,
+    ...(host ? { host } : {}),
   }
+}
+
+/** Passes over a machine's pools per promotion; a pass that changes nothing ends the loop. */
+const HOST_PROMOTION_PASSES = 4
+
+/** Pools on a machine with a waiter its free budget could serve, best waiter first. */
+async function hostPromotionOrder(machineId: string): Promise<string[]> {
+  const budget = await hostBudgetOfMachine(db, machineId)
+  if (!budget) return []
+  const [clock] = await db.execute<{ now: Date }>(sql`SELECT date_trunc('milliseconds', clock_timestamp()) AS now`)
+  if (!clock) throw new Error('Unable to read slot database clock')
+  const now = new Date(clock.now)
+  const group = await loadHostGroup(db, machineId, now)
+  if (group.activeCount >= budget.capacity) return []
+  const waiters = await eligibleHostWaiters(db, group, now)
+  waiters.sort((a, b) => compareHostWaiters(a, b, group.heldBySquad))
+  return [...new Set(waiters.map((waiter) => waiter.poolId))]
+}
+
+/**
+ * Grant a machine's free budget to the waiters it is holding back, in host
+ * order. A pool's own promotion leaves a unit free when another squad's waiter
+ * is better placed for it, so whoever frees a unit calls this after its
+ * transaction commits, and reconciliation repeats it on its interval.
+ *
+ * Each pool is promoted in its own transaction, which re-reads the machine's
+ * state under the machine lock: this function only chooses which pool goes
+ * first and never grants by itself. Never call it while a pool lock is held.
+ */
+export async function promoteHostGroup(machineId: string): Promise<number> {
+  let total = 0
+  for (let pass = 0; pass < HOST_PROMOTION_PASSES; pass += 1) {
+    let progress = 0
+    for (const poolId of await hostPromotionOrder(machineId)) {
+      const result = await db.transaction(async (tx) => {
+        const [pool] = await tx
+          .select()
+          .from(slotPools)
+          .where(and(eq(slotPools.id, poolId), isNull(slotPools.unregisteredAt), liveSquadExists))
+          .for('update')
+        if (!pool) return null
+        const now = await databaseNow(tx, pool.id)
+        return { squadId: pool.squadId, promotion: await expireAndPromoteLocked(tx, pool, now) }
+      })
+      if (!result) continue
+      const { promotion } = result
+      const changed = promotion.promoted + promotion.expired + promotion.canceled
+      if (changed > 0) {
+        drainSlotOutboxIfGranted(promotion)
+        emitSlotSummary(result.squadId, 'host-promotion', promotion)
+      }
+      progress += changed
+      total += promotion.promoted
+      if (promotion.host && promotion.host.activeCount >= promotion.host.capacity) break
+    }
+    if (progress === 0) break
+  }
+  return total
+}
+
+/** {@link promoteHostGroup}, never failing the committed operation that triggered it. */
+async function promoteHostGroupSafely(machineId: string): Promise<void> {
+  try {
+    await promoteHostGroup(machineId)
+  } catch (error) {
+    log.warn('Host slot promotion failed; reconciliation will retry it', { machineId, error })
+  }
+}
+
+/** Promote other squads' waiters when an operation left a machine unit free for them. */
+async function settleHostGroup(promotion: PromotionResult): Promise<void> {
+  const host = promotion.host
+  if (!host || !host.foreignWaiting || host.activeCount >= host.capacity) return
+  await promoteHostGroupSafely(host.machineId)
 }
 
 function emitSlotSummary(squadId: string, operation: string, promotion: PromotionResult, releasedClaims = 0): void {
@@ -460,6 +656,7 @@ function mergePromotion(left: PromotionResult, right: PromotionResult): Promotio
     queueDepth: right.queueDepth,
     maxGrantLatencyMs: Math.max(left.maxGrantLatencyMs, right.maxGrantLatencyMs),
     oldestWaiterAgeMs: right.oldestWaiterAgeMs,
+    ...(right.host ? { host: right.host } : {}),
   }
 }
 
@@ -505,9 +702,14 @@ export async function updatePoolDetailed(
     input.capacity === undefined &&
     input.claimTimeoutMs === undefined &&
     input.usage === undefined &&
-    input.enabled === undefined
+    input.enabled === undefined &&
+    input.hostShared === undefined
   ) {
-    throw new SlotServiceError('invalid_capacity', 'Capacity, claim timeout, usage, or enabled is required.', 400)
+    throw new SlotServiceError(
+      'invalid_capacity',
+      'Capacity, claim timeout, usage, enabled, or hostShared is required.',
+      400
+    )
   }
   if (input.capacity !== undefined) validateCapacity(input.capacity)
   if (input.claimTimeoutMs !== undefined) validateTimeout(input.claimTimeoutMs)
@@ -522,6 +724,8 @@ export async function updatePoolDetailed(
     // Waiters are released before any capacity change is applied, so a
     // combined disable + capacity increase can never grant them first.
     const releasedWaiters = disabling ? await releaseWaitersForDisabledPool(tx, pool, now) : 0
+    // A pool that stops being host-shared hands its units back to the machine.
+    const leftHost = input.hostShared === false && pool.hostShared ? await resolveHostBudget(tx, squadId) : null
     const [updated] = await tx
       .update(slotPools)
       .set({
@@ -529,6 +733,7 @@ export async function updatePoolDetailed(
         ...(input.claimTimeoutMs === undefined ? {} : { claimTimeoutMs: input.claimTimeoutMs }),
         ...(usage === undefined ? {} : { usage }),
         ...(disabling ? { disabledAt: now } : enabling ? { disabledAt: null } : {}),
+        ...(input.hostShared === undefined ? {} : { hostShared: input.hostShared }),
         updatedAt: now,
       })
       .where(eq(slotPools.id, pool.id))
@@ -538,11 +743,14 @@ export async function updatePoolDetailed(
       updated: updated!,
       releasedWaiters,
       promotion: { ...promotion, canceled: promotion.canceled + releasedWaiters },
+      ...(leftHost ? { leftHostMachineId: leftHost.machineId } : {}),
     }
   })
   if (result.releasedWaiters > 0) drainSlotNotificationsSoon()
   else drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'update', result.promotion)
+  if (result.leftHostMachineId) await promoteHostGroupSafely(result.leftHostMachineId)
+  else await settleHostGroup(result.promotion)
   return { pool: result.updated, releasedWaiters: result.releasedWaiters }
 }
 
@@ -576,6 +784,7 @@ export async function unregisterPool(squadId: string, key: string): Promise<Slot
   })
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'unregister', result.promotion)
+  await settleHostGroup(result.promotion)
   return result.archived
 }
 
@@ -621,6 +830,14 @@ async function projectPool(poolId: string, viewer: SlotViewer): Promise<SlotPool
         .where(and(eq(slotWaiters.poolId, pool.id), eq(slotWaiters.status, 'queued')))
         .orderBy(asc(slotWaiters.enqueueSequence), asc(slotWaiters.id))
       const holders = claims.map((claim) => claimView(claim, viewer))
+      const budget = pool.hostShared ? await resolveHostBudget(tx, pool.squadId) : null
+      const host = budget
+        ? hostBudgetView({
+            capacity: budget.capacity,
+            activeCount: (await loadHostGroup(tx, budget.machineId, now)).activeCount,
+          })
+        : undefined
+      const poolFree = Math.max(0, pool.capacity - claims.length)
       const callerClaimRow = viewer.agentId ? claims.find((claim) => claim.ownerAgentId === viewer.agentId) : undefined
       const callerWaiterRow = viewer.agentId
         ? waiters.find((waiter) => waiter.ownerAgentId === viewer.agentId)
@@ -634,8 +851,10 @@ async function projectPool(poolId: string, viewer: SlotViewer): Promise<SlotPool
         usage: pool.usage,
         enabled: pool.disabledAt === null,
         disabledAt: pool.disabledAt,
+        hostShared: pool.hostShared,
+        ...(host ? { host } : {}),
         activeCount: claims.length,
-        availableCount: Math.max(0, pool.capacity - claims.length),
+        availableCount: host ? Math.min(poolFree, host.availableCount) : poolFree,
         queuedCount: waiters.length,
         holders,
         ...(callerClaimRow ? { callerClaim: claimView(callerClaimRow, viewer) } : {}),
@@ -757,7 +976,7 @@ export async function claimSlot(
       .from(slotWaiters)
       .where(and(eq(slotWaiters.poolId, pool.id), eq(slotWaiters.status, 'queued')))
       .limit(1)
-    if ((activeCount ?? 0) >= pool.capacity || olderWaiter) {
+    if ((activeCount ?? 0) >= pool.capacity || olderWaiter || hostBlocksNewClaim(promotion)) {
       if (!subscribe) return { outcome: 'unavailable' as const, pool, promotion }
       const [waiter] = await tx
         .insert(slotWaiters)
@@ -780,12 +999,13 @@ export async function claimSlot(
       outcome: 'granted' as const,
       pool,
       claim: claim!,
-      promotion: { ...promotion, activeCount: promotion.activeCount + 1 },
+      promotion: withCallerGrant(promotion),
     }
   })
 
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'claim', result.promotion)
+  await settleHostGroup(result.promotion)
   if (result.outcome === 'disabled') return disabledAcquireResult(result.pool, result.promotion)
   const pool = acquirePoolSnapshot(result.pool, result.promotion)
   if (result.outcome === 'granted') {
@@ -799,7 +1019,11 @@ export async function claimSlot(
   if (result.outcome === 'queued') {
     return {
       outcome: 'queued',
-      message: `No capacity is available for "${result.pool.key}"; you are queued.`,
+      message: queuedMessage(
+        result.pool,
+        result.promotion,
+        `No capacity is available for "${result.pool.key}"; you are queued.`
+      ),
       pool,
       waiter: { id: result.waiter.id },
     }
@@ -837,7 +1061,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
       .select({ count: sql<number>`count(*)::int` })
       .from(slotClaims)
       .where(and(eq(slotClaims.poolId, pool.id), eq(slotClaims.status, 'active')))
-    if ((activeCount ?? 0) < pool.capacity) {
+    if ((activeCount ?? 0) < pool.capacity && !hostBlocksNewClaim(promotion)) {
       const [claim] = await tx
         .insert(slotClaims)
         .values({
@@ -851,7 +1075,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
         outcome: 'granted' as const,
         pool,
         claim: claim!,
-        promotion: { ...promotion, activeCount: promotion.activeCount + 1 },
+        promotion: withCallerGrant(promotion),
       }
     }
 
@@ -869,6 +1093,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
 
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'subscribe', result.promotion)
+  await settleHostGroup(result.promotion)
   if (result.outcome === 'disabled') return disabledAcquireResult(result.pool, result.promotion)
   const pool = acquirePoolSnapshot(result.pool, result.promotion)
   if (result.outcome === 'granted') {
@@ -881,7 +1106,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
   }
   return {
     outcome: 'queued',
-    message: `Waiting for slot pool "${result.pool.key}".`,
+    message: queuedMessage(result.pool, result.promotion, `Waiting for slot pool "${result.pool.key}".`),
     pool,
     waiter: { id: result.waiter.id },
   }
@@ -957,6 +1182,7 @@ export async function releaseSlot(
   })
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'release', result.promotion, result.response.outcome === 'released' ? 1 : 0)
+  await settleHostGroup(result.promotion)
   // Release trigger: what the owner started while holding the claim. An
   // expired claim is handled when its expiry notice is delivered.
   if (result.response.outcome === 'released')
@@ -1038,6 +1264,7 @@ export async function renewSlot(
   })
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'renew', result.promotion)
+  await settleHostGroup(result.promotion)
   return result.response
 }
 
@@ -1155,6 +1382,7 @@ export async function unsubscribeSlot(
   })
   drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'unsubscribe', result.promotion)
+  await settleHostGroup(result.promotion)
   return result.response
 }
 
@@ -1188,9 +1416,15 @@ export async function cleanupAgentSlotsInTransaction(
   const poolIds = await discoverAgentSlotPoolIds(tx, agentId)
   await cleanupAfterDiscoveryHook?.()
   const summary: AgentSlotCleanupSummary = { released: 0, canceled: 0, promoted: 0 }
+  // Lock every pool before promoting any: promoting a host-shared pool takes
+  // its machine's lock, which must follow all pool row locks. A machine unit
+  // this frees for another squad is granted by the next reconciliation sweep.
+  const pools: SlotPoolRow[] = []
   for (const poolId of poolIds) {
     const [pool] = await tx.select().from(slotPools).where(eq(slotPools.id, poolId)).for('update')
-    if (!pool) continue
+    if (pool) pools.push(pool)
+  }
+  for (const pool of pools) {
     const now = await databaseNow(tx, pool.id)
     const released = await tx
       .update(slotClaims)
