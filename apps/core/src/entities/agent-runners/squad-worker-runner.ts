@@ -4,16 +4,12 @@ import type { AdmissionScope } from '../../services/maintenance/admission-reserv
 import { getCliCommandIndex } from '../../lib/utils/cli-help'
 import { resolvePermissions } from '../../services/rbac'
 import {
-  interpolateTemplate,
-  prompt,
-  buildMemorySystemPrompt,
   buildActiveSchedulesPrompt,
   buildSlotPoolsPrompt,
-  slotPoolsPromptFallback,
   buildPublicVoicePrompt,
   publicTextIncludeEnabled,
-  publicVoicePromptFallback,
 } from '../../lib/prompts'
+import { assembleSquadWorkerPrompt } from '../../lib/prompts/squad-agent-prompt'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { readSquadMemoryFile } from '../../services/memory/paths'
 import { createWebTools } from '../../tools/web-search'
@@ -30,22 +26,11 @@ import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandb
 import { AgentSession } from '../AgentSession'
 import { createAsyncAskHumanTool, createMemoryTools, createSetAgentPurposeTool, createMonitorTool } from '../../tools'
 import { createSquadBashTool, SQUAD_BASH_TOOL_KEY } from '../../tools/squad-bash'
-import {
-  AGENT_PURPOSE_DISPLAY_SECTION_TITLE,
-  SET_AGENT_PURPOSE_INSTRUCTIONS,
-} from '../../lib/prompts/agent-purpose-prompt'
 
 /**
  * Runner for squad worker agents - agents that belong to a squad but are not the squad manager.
  * These agents work in the shared squad workspace and have squad context.
  */
-/** The squad-rules section that already explains advancing, waits and delivery. */
-const FLOW_RULES_SECTION_HEADING = '## Work Streams, Handoffs, and Reviews'
-
-/** How a flow worker advances, waits and delivers, for agent types that do not include squad-rules. */
-const FLOW_CONTRACT_RULES =
-  'Submit outcomes with ficus workstream advance --content using single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer JSON/YAML; no temporary file is needed. The command must contain action, expectedVersion, attemptId, outcome, and evidence as a string. Re-read after a version conflict; retry only if your attempt is still running. A completed attempt changes only through action amend, and only while the human approval gate it feeds is open. Never bypass flow gates with assignee/status changes or untracked agents. While paused or blocked by an open wait, end your turn without scheduling a continuation; an answer is not approval. At completion-ready, final delivery review permits code-host feedback triage and tracked rework as described in deliveryInstructions. Parallel agents share the workspace, so coordinate file ownership. After advancing, workStreamStatus=done means delivery is complete: end your turn. Otherwise continue assignments returned to you in the command response without waiting for an inbox notification. Follow deliveryInstructions from the response or run when completion-ready; if only another agent has work, end your turn.'
-
 export class SquadWorkerRunner extends AgentRunner {
   private squad!: Squad
   private workspacePath!: string
@@ -91,7 +76,8 @@ export class SquadWorkerRunner extends AgentRunner {
     } catch {
       // Fall through to the unfiltered index.
     }
-    return permissions.length > 0 ? getCliCommandIndex(permissions) : getCliCommandIndex()
+    const options = { omitHostGroups: true }
+    return permissions.length > 0 ? getCliCommandIndex(permissions, options) : getCliCommandIndex(undefined, options)
   }
 
   private async buildSquadWorkerPrompt(): Promise<string> {
@@ -113,80 +99,45 @@ export class SquadWorkerRunner extends AgentRunner {
       publicTextIncludeEnabled(),
     ])
 
-    // Build context for template interpolation
-    const context: Record<string, string> = {
-      'agent.id': this.agent.id,
-      'agent.typeName': this.agentType.name,
-      'agent.typeId': this.agent.agentTypeId,
-      'squad.id': this.squad.id,
-      'squad.name': this.squad.name,
-      'squad.purpose': this.squad.purpose,
-      'squad.defaultAgents': this.squad.defaultAgents.join(', ') || 'none',
-      // Injected directly below via .text() so every worker type gets it even if
-      // its agent type omits squad-rules.md (which carries the {{workspace}}
-      // placeholder); empty here avoids duplication when squad-rules IS included.
-      workspace: '',
-      // Namespaced shared-workspace root (/workspace/<squadId>) for {{workspaceRoot}}
-      // placeholders in agent-type / squad-owned context.
-      workspaceRoot: resolveWorkspaceLayout({ squadId: this.squad.id }).workspaceMount,
+    const typePrompt = await composeAgentTypePrompt(this.agentType)
+    return assembleSquadWorkerPrompt({
+      agent: { id: this.agent.id, typeId: this.agent.agentTypeId, typeName: this.agentType.name },
+      squad: {
+        id: this.squad.id,
+        name: this.squad.name,
+        purpose: this.squad.purpose,
+        defaultAgents: this.squad.defaultAgents,
+        context: this.squad.context ?? null,
+        managerAgentId: this.squad.managerAgentId ?? null,
+        // Namespaced shared-workspace root (/workspace/<squadId>) for {{workspaceRoot}}
+        // placeholders in agent-type / squad-owned context.
+        workspaceRoot: resolveWorkspaceLayout({ squadId: this.squad.id }).workspaceMount,
+      },
+      typePrompt,
+      slotPools,
+      publicVoice: { section: publicVoice, publicTextEnabled },
+      workspace: buildWorkspacePrompt({
+        squadId: this.squad.id,
+        squadName: this.squad.name,
+        sandboxId,
+        hasSquadBash: true,
+        toolNames: workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true),
+        mayShareWithSubagents: true,
+      }),
       teammates: managerSection,
       cliHelp,
       activeSchedules,
-      'squad.context': this.squad.context ?? '',
-      // Generated from the live pool registry, right after the squad context.
-      'squad.slotPools': slotPools,
-      // The squad's resolved public voice, at the end of the public-text include.
-      'squad.publicVoice': publicVoice,
-      'manager.id': this.squad.managerAgentId ?? '',
-    }
-
-    const typePrompt = await composeAgentTypePrompt(this.agentType)
-
-    const p = prompt()
-      .text(typePrompt)
-      .text(slotPoolsPromptFallback(typePrompt, slotPools))
-      .text(publicVoicePromptFallback(typePrompt, publicVoice, publicTextEnabled))
-      .text(
-        buildWorkspacePrompt({
-          squadId: this.squad.id,
-          squadName: this.squad.name,
-          sandboxId,
-          hasSquadBash: true,
-          toolNames: workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true),
-          mayShareWithSubagents: true,
-        })
-      )
-
-    if (flow) {
-      // squad-rules teaches how to advance, wait and deliver. Repeat it here only when the
-      // composed prompt lacks that section (a custom type, or a disabled or rewritten
-      // include), so no flow worker reads it twice.
-      const flowRules = typePrompt.includes(FLOW_RULES_SECTION_HEADING)
-        ? 'Submit outcomes with ficus workstream advance as described under Work Streams, Handoffs, and Reviews.'
-        : FLOW_CONTRACT_RULES
-      p.section(
-        'Workflow contract',
-        `You are participant ${flow.participantId} in work stream ${flow.workStreamId}. Follow your active step and return requests from the inbox; use ficus workstream flow ${flow.workStreamId} to check current state. ${flowRules}`
-      )
-
-      if (flow.deliveryInstructions) p.section('Workflow delivery', flow.deliveryInstructions)
-    }
-
-    // Type-specific context — additive to global squad context
-    const typeContext = this.squad.getTypeContext(this.agent.agentTypeId)
-    if (typeContext) {
-      p.section('Type-Specific Context', typeContext)
-    }
-
-    // Conditionally inject memory system documentation with actual map.md contents
-    if (this.squad.isMemoryEnabled) {
-      const mapContent = readSquadMemoryFile(this.squad.id, 'map.md')
-      p.text(buildMemorySystemPrompt(this.squad.id, mapContent))
-    }
-
-    p.section(AGENT_PURPOSE_DISPLAY_SECTION_TITLE, SET_AGENT_PURPOSE_INSTRUCTIONS)
-
-    return interpolateTemplate(p.build(), context)
+      flow: flow
+        ? {
+            participantId: flow.participantId,
+            workStreamId: flow.workStreamId,
+            deliveryInstructions: flow.deliveryInstructions,
+          }
+        : null,
+      typeContext: this.squad.getTypeContext(this.agent.agentTypeId) ?? '',
+      // Memory documentation, with the actual map.md contents, only when memory is enabled.
+      memory: this.squad.isMemoryEnabled ? { map: readSquadMemoryFile(this.squad.id, 'map.md') } : null,
+    })
   }
 
   // ---------------------------------------------------------------------------

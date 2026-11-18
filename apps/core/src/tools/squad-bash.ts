@@ -26,7 +26,8 @@ import { FOREGROUND_BASH_GUIDANCE, LEFTOVER_PROCESS_GUIDANCE } from '../lib/bash
 
 export const SQUAD_BASH_TOOL_KEY = 'squad_bash'
 
-function buildSquadBashDescription(workspaceMount: string): string {
+/** The squad_bash description on the remote runtimes (k8s, vm); exported for the agent behaviour evals. */
+export function buildSquadBashDescription(workspaceMount: string): string {
   return (
     'Execute a bash command in the SHARED squad sandbox (the warm `squad_<id>` box), not your own light sandbox. ' +
     'This is the default for all repository/project commands: inspection, git, dependency and `devbox add` installs, Docker/Compose, tests, builds, servers, diagnostics, deployments, and cleanup. ' +

@@ -4,6 +4,7 @@ import { join } from 'path'
 import { KNOWN_GRANTABLE_PERMISSIONS } from '@ficus/shared'
 import {
   CLI_COMMAND_PERMISSIONS,
+  HOST_ONLY_GROUPS,
   getCliCommandIndex,
   getCliHostPath,
   parseCommandGroups,
@@ -220,5 +221,30 @@ describe('operator-only groups stay out of every agent index', () => {
     expect(index).not.toContain('secret')
     expect(index).toContain('- integration: Integrations')
     expect(index).not.toContain('Route those requests')
+  })
+})
+
+describe('host-only groups stay out of squad agent indexes', () => {
+  const groups = [
+    { name: 'server', aliases: [], description: 'Manage the Ficus instance installed on this machine' },
+    { name: 'install', aliases: [], description: 'Install or upgrade the Ficus CLI' },
+    { name: 'workstream', aliases: ['ws'], description: 'Manage work streams' },
+  ]
+
+  test('squad agents do not see host-only groups, and no permission note is added for them', () => {
+    const index = renderCliCommandIndex(groups, ['*'], { omitHostGroups: true })
+    expect(listedGroups(index)).toEqual(['workstream'])
+    expect(index).not.toContain('Route those requests')
+  })
+
+  test('without the option (the system manager) they are listed', () => {
+    expect(listedGroups(renderCliCommandIndex(groups, ['*']))).toEqual(['server', 'install', 'workstream'])
+  })
+
+  test('the real worker index omits every host-only group', async () => {
+    resetCliHelpCacheForTests()
+    const index = await getCliCommandIndex(await rolePermissions('default-worker'), { omitHostGroups: true })
+    for (const group of HOST_ONLY_GROUPS) expect(listedGroups(index)).not.toContain(group)
+    expect(listedGroups(index)).toContain('workstream')
   })
 })

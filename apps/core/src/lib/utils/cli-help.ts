@@ -91,15 +91,39 @@ const OMITTED_GROUPS_NOTE =
  * Without `permissions` every group is listed. Operator-only groups are never
  * listed. Returns an error notice when the CLI cannot be read.
  */
-export async function getCliCommandIndex(permissions: readonly string[] = ['*']): Promise<string> {
+export async function getCliCommandIndex(
+  permissions: readonly string[] = ['*'],
+  options: CliIndexOptions = {}
+): Promise<string> {
   const groups = await loadCommandGroups()
   if (!groups) return CLI_ERROR
-  return renderCliCommandIndex(groups, permissions)
+  return renderCliCommandIndex(groups, permissions, options)
 }
 
+export interface CliIndexOptions {
+  /**
+   * Leave out {@link HOST_ONLY_GROUPS}. Set for squad agents: they run in sandboxes, so commands
+   * that act on the machine the CLI runs on (the Ficus server install, its worker, the desktop app)
+   * cannot do anything useful for them.
+   */
+  omitHostGroups?: boolean
+}
+
+/**
+ * Groups that operate the machine the CLI runs on rather than calling the API for squad work:
+ * the local Ficus server and its worker process, instance updates, CLI and desktop installs, and
+ * app-store demo access (which needs a host environment flag).
+ */
+export const HOST_ONLY_GROUPS: readonly string[] = ['server', 'update', 'install', 'desktop', 'worker', 'demo']
+
 /** Renders the index for `groups`; exported for tests. */
-export function renderCliCommandIndex(groups: readonly CommandGroup[], permissions: readonly string[]): string {
-  const listed = groups.filter((group) => mayUse(group.name, permissions))
+export function renderCliCommandIndex(
+  groups: readonly CommandGroup[],
+  permissions: readonly string[],
+  options: CliIndexOptions = {}
+): string {
+  const offered = options.omitHostGroups ? groups.filter((group) => !HOST_ONLY_GROUPS.includes(group.name)) : groups
+  const listed = offered.filter((group) => mayUse(group.name, permissions))
   const lines = listed.map((group) => {
     const aliases = group.aliases.length > 0 ? ` (${group.aliases.join(', ')})` : ''
     return `- ${group.name}${aliases}: ${group.description}`
@@ -109,7 +133,7 @@ export function renderCliCommandIndex(groups: readonly CommandGroup[], permissio
     listed.map((group) => group.name),
     permissions
   )
-  const hidesGroups = listed.length < groups.filter((group) => !isOperatorOnly(group.name)).length
+  const hidesGroups = listed.length < offered.filter((group) => !isOperatorOnly(group.name)).length
   if (withheld.length > 0 || hidesGroups) {
     parts.push(
       withheld.length > 0

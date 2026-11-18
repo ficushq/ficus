@@ -5,15 +5,12 @@ import { Squad } from '../Squad'
 import { isAssistantDelegate } from '../../services/assistant-agents'
 import { getCliCommandIndex } from '../../lib/utils/cli-help'
 import {
-  prompt,
   interpolateTemplate,
   buildActiveSchedulesPrompt,
   buildPlatformUrlsPrompt,
   buildSlotPoolsPrompt,
-  slotPoolsPromptFallback,
   buildPublicVoicePrompt,
   publicTextIncludeEnabled,
-  publicVoicePromptFallback,
 } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
@@ -35,11 +32,7 @@ import {
   createSetAgentPurposeTool,
 } from '../../tools'
 import { createSquadBashTool, SQUAD_BASH_TOOL_KEY } from '../../tools/squad-bash'
-import {
-  AGENT_PURPOSE_DISPLAY_SECTION_TITLE,
-  SET_AGENT_PURPOSE_INSTRUCTIONS,
-} from '../../lib/prompts/agent-purpose-prompt'
-import { buildMemorySystemPrompt, MANAGER_MEMORY_GUIDANCE } from '../../lib/prompts/memory-prompt'
+import { assembleSquadManagerPrompt } from '../../lib/prompts/squad-agent-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { readSquadMemoryFile } from '../../services/memory/paths'
@@ -160,7 +153,7 @@ export class SquadManagerRunner extends AgentRunner {
   private async buildSquadManagerPrompt(): Promise<string> {
     const sandboxId = await this.agent.getSandboxId()
     const [cliHelp, squadContext, slotPools, publicVoice, publicTextEnabled] = await Promise.all([
-      getCliCommandIndex(),
+      getCliCommandIndex(undefined, { omitHostGroups: true }),
       this.buildSquadContext(),
       buildSlotPoolsPrompt(this.squad.id),
       buildPublicVoicePrompt(this.squad),
@@ -168,106 +161,43 @@ export class SquadManagerRunner extends AgentRunner {
     ])
 
     const typePrompt = await composeAgentTypePrompt(this.agentType)
-
-    const p = prompt()
-      .text(typePrompt)
-      .text(slotPoolsPromptFallback(typePrompt, slotPools))
-      .text(publicVoicePromptFallback(typePrompt, publicVoice, publicTextEnabled))
-      .text(
-        buildWorkspacePrompt({
-          agentId: this.agent.id,
-          squadId: this.squad.id,
-          squadName: this.squad.name,
-          sandboxId,
-          hasSquadBash: true,
-          toolNames: workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true),
-          mayShareWithSubagents: true,
-        })
-      )
-
-      .section('Model Overrides', buildModelOverridePrompt())
-      .section('Current Squad State', squadContext)
-
-    // Add manager instructions from squad preset if present
-    p.section(
-      'Declarative workflows',
-      `The effective squad default workflow is: ${JSON.stringify(this.squad.metadata?.workflow ?? null)}. Guided flows follow declared paths; flexible flows allow bounded rework and tracked specialist delegation; adaptive flows support authorized future-step revisions. Preserve required checks unless explicitly authorized to change policy.`
-    )
-    p.section(
-      'Workflow setup',
-      `Current selection guidance: ${JSON.stringify(this.squad.metadata?.workflowSetup ?? null)}. Consult setup-workflows during the first user-led setup conversation or when the user asks to change how this squad works. Use existing preferences; do not repeat completed onboarding or start agents to configure flows. Selection guidance is advice, not an automatic classifier: choose the appropriate explicit source when creating work.`
-    )
-
-    // Type-specific context (manager) — additive to global context
-    const managerTypeContext = this.squad.getTypeContext('manager')
-    if (managerTypeContext) {
-      p.section('Type-Specific Context', managerTypeContext)
-    }
-
-    // Conditionally inject memory system documentation with actual map.md contents
-    if (this.squad.isMemoryEnabled) {
-      const mapContent = readSquadMemoryFile(this.squad.id, 'map.md')
-      p.text(buildMemorySystemPrompt(this.squad.id, mapContent))
-      if (this.agent.agentTypeId === 'manager') p.text(MANAGER_MEMORY_GUIDANCE)
-    }
-
-    // Consultants set a dynamic display purpose like squad workers do — reuse the same shared
-    // guidance/constant so the wording stays in one place. The manager keeps a static identity.
-    if (this.agent.agentTypeId === 'consultant') {
-      p.section(AGENT_PURPOSE_DISPLAY_SECTION_TITLE, SET_AGENT_PURPOSE_INSTRUCTIONS)
-    }
-
-    // Platform URLs (web UI, API, webhook endpoints)
-    if (this.agent.context && 'channelInstance' in this.agent.context && this.agent.context.channelInstance) {
-      p.section(
-        'External channel conversation',
-        [
-          'You are a consultant speaking through an external channel. Incoming requests have passed the channel’s linked-user or trusted-channel access policy. Reply in the originating channel; users are responsible for choosing an appropriate audience.',
-          'Use channel_respond once/early for each inbound inbox message. It replaces the thinking placeholder and marks the message read. Ask clarification questions there, not through ask_human.',
-          'Use channel_send for later progress and final results. Use channel_edit only for Ficus-sent message IDs returned by these tools.',
-          'For work requested here, create a work stream owned by you so its lifecycle updates return to this conversation. Coordinate operational decisions with the squad manager, and relay progress back through channel_send.',
-        ].join('\n')
-      )
-    }
-    p.text(buildPlatformUrlsPrompt())
-
-    // Interpolate all {{...}} placeholders in the system prompt.
-    //
-    // The manager systemPrompt includes the shared `squad-rules.md` (via
-    // manager.yaml), which carries the same placeholders the squad *worker*
-    // runner resolves ({{workspace}}, {{teammates}}, {{activeSchedules}},
-    // {{cliHelp}}) plus the agent/squad identity tokens. The manager supplies
-    // the equivalent of workspace, teammates, and active schedules through its
-    // own richer dedicated sections above (## Workspace, ## Current Squad State
-    // which embeds the active-schedules block), so those placeholders resolve
-    // to empty here to avoid duplication. The CLI index ({{cliHelp}}) is
-    // only emitted via this placeholder for the manager, so it carries the
-    // real value. Identity tokens (agent.*, squad.*) resolve to their values.
-    return interpolateTemplate(p.build(), {
-      'agent.id': this.agent.id,
-      'agent.typeName': this.agentType.name,
-      'agent.typeId': this.agent.agentTypeId,
-      'squad.id': this.squad.id,
-      'squad.name': this.squad.name,
-      'squad.purpose': this.squad.purpose,
-      'squad.defaultAgents': this.squad.defaultAgents.join(', ') || 'none',
-      'squad.context': this.squad.context ?? '',
-      // Generated from the live pool registry, right after the squad context.
-      'squad.slotPools': slotPools,
-      // The squad's resolved public voice, at the end of the public-text include.
-      'squad.publicVoice': publicVoice,
-      // The squad's manager agent id. For the manager this is its own id; for a
-      // consultant (same runner) it's the manager to hand work off to.
-      'manager.id': this.squad.managerAgentId ?? '',
-      // Provided via dedicated sections above; empty avoids duplication.
-      workspace: '',
-      teammates: '',
-      activeSchedules: '',
-      // Namespaced shared-workspace root (/workspace/<squadId>) for {{workspaceRoot}}
-      // placeholders in agent-type / squad-preset instructions.
-      workspaceRoot: resolveWorkspaceLayout({ squadId: this.squad.id }).workspaceMount,
-      // The manager's CLI reference is emitted only through this placeholder.
+    const isConsultant = this.agent.agentTypeId === 'consultant'
+    return assembleSquadManagerPrompt({
+      agent: { id: this.agent.id, typeId: this.agent.agentTypeId, typeName: this.agentType.name },
+      squad: {
+        id: this.squad.id,
+        name: this.squad.name,
+        purpose: this.squad.purpose,
+        defaultAgents: this.squad.defaultAgents,
+        context: this.squad.context ?? null,
+        // For the manager this is its own id; for a consultant (same runner) it's the manager to hand work off to.
+        managerAgentId: this.squad.managerAgentId ?? null,
+        workspaceRoot: resolveWorkspaceLayout({ squadId: this.squad.id }).workspaceMount,
+      },
+      typePrompt,
+      slotPools,
+      publicVoice: { section: publicVoice, publicTextEnabled },
+      workspace: buildWorkspacePrompt({
+        agentId: this.agent.id,
+        squadId: this.squad.id,
+        squadName: this.squad.name,
+        sandboxId,
+        hasSquadBash: true,
+        toolNames: workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true),
+        mayShareWithSubagents: true,
+      }),
       cliHelp,
+      modelOverrides: buildModelOverridePrompt(),
+      squadState: squadContext,
+      workflow: this.squad.metadata?.workflow,
+      workflowSetup: this.squad.metadata?.workflowSetup,
+      typeContext: this.squad.getTypeContext('manager') ?? '',
+      memory: this.squad.isMemoryEnabled ? { map: readSquadMemoryFile(this.squad.id, 'map.md') } : null,
+      isConsultant,
+      externalChannel: Boolean(
+        this.agent.context && 'channelInstance' in this.agent.context && this.agent.context.channelInstance
+      ),
+      platformUrls: buildPlatformUrlsPrompt(),
     })
   }
 

@@ -16,8 +16,9 @@ import { createLogger } from '../infra/logger'
 
 const log = createLogger('public-voice-prompt')
 
-/** Template token for the generated voice section, on the last line of the `public-text` include. */
-export const PUBLIC_VOICE_PROMPT_TOKEN = '{{squad.publicVoice}}'
+import { PUBLIC_VOICE_PROMPT_TOKEN, publicVoicePromptFallback } from './public-voice-render'
+
+export { PUBLIC_VOICE_PROMPT_TOKEN, publicVoicePromptFallback }
 
 /** The squad fields the voice depends on; null means "no squad" (the instance default). */
 export type PublicVoiceSquad = { id: string; publicVoiceId: string | null; publicVoice: SquadPublicVoice | null }
@@ -97,13 +98,4 @@ export async function publicTextIncludeEnabled(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-/**
- * The section to append when a composed type prompt lacks the token (a custom
- * type, or an overridden include list), so the agent still reads the voice
- * exactly once. Nothing when the `public-text` rules are disabled.
- */
-export function publicVoicePromptFallback(typePrompt: string, section: string, publicTextEnabled: boolean): string {
-  return section && publicTextEnabled && !typePrompt.includes(PUBLIC_VOICE_PROMPT_TOKEN) ? section : ''
 }
