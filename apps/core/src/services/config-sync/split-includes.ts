@@ -53,9 +53,21 @@ export async function readableTextIncludeStored(): Promise<boolean> {
  * squad agent already receives when pools exist, so it needs no migration.
  */
 export async function adoptSplitIncludes(): Promise<void> {
-  const rows = await db.select({ id: agentTypes.id, includes: agentTypes.includes }).from(agentTypes)
+  const rows = await db
+    .select({
+      id: agentTypes.id,
+      includes: agentTypes.includes,
+      template: agentTypes.yamlTemplate,
+      overrides: agentTypes.yamlFieldOverrides,
+    })
+    .from(agentTypes)
   let changed = false
   for (const row of rows) {
+    // A built-in row that follows its template takes the new YAML list in the
+    // agent-type sync that runs next; expanding it here would only be overwritten,
+    // and must not be, or the capability split would never reach that type.
+    const followsTemplate = row.template != null && !((row.overrides as string[] | null) ?? []).includes('includes')
+    if (followsTemplate) continue
     const next = expandSplitIncludes(row.includes ?? [])
     if (!next) continue
     await db.update(agentTypes).set({ includes: next, updatedAt: new Date() }).where(eq(agentTypes.id, row.id))

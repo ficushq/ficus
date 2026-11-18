@@ -87,4 +87,40 @@ describe('split include migration', () => {
       AgentType.invalidateCache()
     }
   })
+
+  test('built-in rows that follow their template end on exactly the new YAML list', async () => {
+    const preSplit: Record<string, string[]> = {
+      assistant: ['entity-references', 'rules'],
+      subagent: ['entity-references', 'rules'],
+    }
+    await upgradeSync()
+    try {
+      await db.delete(sharedPrompts).where(eq(sharedPrompts.id, READABLE_TEXT_INCLUDE))
+      for (const [id, includes] of Object.entries(preSplit)) {
+        const [row] = await db.select().from(agentTypes).where(eq(agentTypes.id, id))
+        await db
+          .update(agentTypes)
+          .set({
+            includes,
+            yamlTemplate: { ...(row.yamlTemplate as Record<string, unknown>), includes },
+            yamlFieldOverrides: [],
+          })
+          .where(eq(agentTypes.id, id))
+      }
+
+      // The real upgrade order: shared prompts first, then agent types.
+      await upgradeSync()
+
+      const assistant = await AgentType.mustFind('assistant')
+      expect(assistant.includes).toEqual(['entity-references', 'readable-text'])
+      expect(assistant.yamlFieldOverrides).toEqual([])
+      const subagent = await AgentType.mustFind('subagent')
+      expect(subagent.includes).toEqual(['entity-references', 'readable-text', 'rules'])
+      expect(subagent.yamlFieldOverrides).toEqual([])
+    } finally {
+      await agentTypeSync.revertToTemplate('assistant')
+      await agentTypeSync.revertToTemplate('subagent')
+      AgentType.invalidateCache()
+    }
+  })
 })
