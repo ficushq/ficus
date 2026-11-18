@@ -222,26 +222,28 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
             {preview.error && <p className="text-xs text-status-danger-500">The preview is unavailable right now.</p>}
           </div>
 
-          <DeriveVoiceCard
-            squadId={squadId}
-            linkedLogin={state.linkedGitHubLogin}
-            useDraftLabel="Use as this squad's custom voice"
-            onUseDraft={(draft) => {
-              setPicker(CUSTOM)
-              setCustomBase(draft.base)
-              setSurfaces(draft.surfaces)
-            }}
-            onSaveAsProfile={
-              canManageProfiles
-                ? (draft) => {
-                    const id = window.prompt('New profile id (kebab-case)')
-                    if (!id) return
-                    const name = window.prompt('Profile name', id) ?? id
-                    saveProfile.mutate({ id, name, base: draft.base, surfaces: draft.surfaces })
-                  }
-                : undefined
-            }
-          />
+          <div data-setting-target="derive-voice">
+            <DeriveVoiceCard
+              squadId={squadId}
+              linkedLogin={state.linkedGitHubLogin}
+              useDraftLabel="Use as this squad's custom voice"
+              onUseDraft={(draft) => {
+                setPicker(CUSTOM)
+                setCustomBase(draft.base)
+                setSurfaces(draft.surfaces)
+              }}
+              onSaveAsProfile={
+                canManageProfiles
+                  ? (draft) => {
+                      const id = window.prompt('New profile id (kebab-case)')
+                      if (!id) return
+                      const name = window.prompt('Profile name', id) ?? id
+                      saveProfile.mutate({ id, name, base: draft.base, surfaces: draft.surfaces })
+                    }
+                  : undefined
+              }
+            />
+          </div>
           {saveProfile.isSuccess && (
             <p className="text-xs text-muted">Saved as a new profile. Edit it in Settings → Agent Types → Voices.</p>
           )}

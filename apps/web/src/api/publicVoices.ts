@@ -85,6 +85,7 @@ export interface VoiceDerivationResult {
     publicRepositories: string[]
     privateRepositories: string[]
     pagingCapped: boolean
+    unavailableRepositories?: string[]
   }
   bytes: number
   maxBytes: number

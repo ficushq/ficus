@@ -83,7 +83,7 @@ export function DeriveVoiceCard({
     mutation.error instanceof ApiError ? mutation.error.message : mutation.error ? String(mutation.error) : null
 
   return (
-    <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4" data-setting-target="derive-voice">
+    <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4">
       <div>
         <h4 className="text-sm font-medium text-primary">Derive a voice from GitHub</h4>
         <p className="mt-1 text-xs text-muted">
@@ -216,6 +216,12 @@ export function DeriveVoiceCard({
               </p>
             ))}
             {result.sampling.pagingCapped && <p>Paging stopped at its limit; older items may exist.</p>}
+            {result.sampling.unavailableRepositories?.length ? (
+              <p>
+                Not found or not visible to the squad's GitHub account:{' '}
+                {result.sampling.unavailableRepositories.join(', ')}
+              </p>
+            ) : null}
           </div>
           <div>
             <h5 className="text-xs font-medium text-primary">Observations</h5>
