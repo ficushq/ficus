@@ -23,6 +23,8 @@ const ALLOWED: Record<string, string> = {
     'the OpenAI-compatible provider streamSimple used by agent sessions: recorded by the session hook',
   'services/reply-suggestions/live-eval.ts':
     'dev script for live evals, run by hand and never by CI or the product: not recorded on purpose',
+  'services/agent-evals/run.ts':
+    'agent behaviour evals (bun run agents:eval), a developer script run by hand and never by CI or the product: not recorded on purpose',
 }
 
 const SDK_MODULES = ['@anthropic-ai/claude-agent-sdk', 'openai', '@google-cloud/text-to-speech', '@google-cloud/speech']
@@ -46,6 +48,18 @@ function providerEntryPoints(source: string): string[] {
   }
   for (const match of code.matchAll(/(?:import|require)\(\s*['"]([^'"]+)['"]\s*\)/g))
     if (SDK_MODULES.includes(match[1]!)) found.add(match[1]!)
+  // Dynamic imports of pi-ai: `const { completeSimple } = await import('…')` and `(await import('…')).completeSimple`.
+  for (const match of code.matchAll(
+    /\{([^}]*)\}\s*=\s*(?:await\s+)?(?:import|require)\(\s*['"](@earendil-works\/pi-ai[^'"]*)['"]\s*\)/g
+  )) {
+    const [, bindings, module] = match
+    for (const name of ['completeSimple', 'streamSimple'])
+      if (new RegExp(`(^|[{,\\s])${name}([\\s,:}]|$)`).test(bindings!)) found.add(`${name} from ${module}`)
+  }
+  for (const match of code.matchAll(
+    /(?:import|require)\(\s*['"](@earendil-works\/pi-ai[^'"]*)['"]\s*\)\s*\)?\s*\.\s*(completeSimple|streamSimple)\b/g
+  ))
+    found.add(`${match[2]} from ${match[1]}`)
   if (/\bnew\s+OpenAI\s*\(/.test(code)) found.add('new OpenAI()')
   for (const name of ['completeSimple', 'streamSimple'])
     if (new RegExp(`\\.${name}\\s*\\(`).test(code)) found.add(`.${name}()`)
@@ -113,6 +127,17 @@ describe('direct provider calls record their cost', () => {
     expect(providerEntryPoints(`const { query } = await import('@anthropic-ai/claude-agent-sdk')`)).toEqual([
       '@anthropic-ai/claude-agent-sdk',
     ])
+    // Dynamic imports of pi-ai, destructured (renamed or not) or read as a member.
+    expect(
+      providerEntryPoints(`const { completeSimple, getEnvApiKey } = await import('@earendil-works/pi-ai/compat')`)
+    ).toEqual(['completeSimple from @earendil-works/pi-ai/compat'])
+    expect(providerEntryPoints(`const {\n  streamSimple: stream,\n} = await import('@earendil-works/pi-ai')`)).toEqual([
+      'streamSimple from @earendil-works/pi-ai',
+    ])
+    expect(
+      providerEntryPoints(`const complete = (await import('@earendil-works/pi-ai/compat')).completeSimple`)
+    ).toEqual(['completeSimple from @earendil-works/pi-ai/compat'])
+    expect(providerEntryPoints(`const { getEnvApiKey } = await import('@earendil-works/pi-ai/compat')`)).toEqual([])
     // Types, comments and unrelated pi-ai imports are not calls.
     expect(
       providerEntryPoints(
