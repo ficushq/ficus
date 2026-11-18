@@ -1,4 +1,4 @@
-import { isCurrentWaitAttempt, lockAgentFlowStream } from '../work-streams/wait-scope'
+import { isCurrentQuestionAttempt, lockAgentFlowStream } from '../work-streams/wait-scope'
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import {
   assertHumanAnswerableQuestions,
@@ -396,7 +396,7 @@ export async function createAgentQuestion(
       for (const { id: workStreamId } of waitable) {
         if (
           execution.flowContext?.workStreamId === workStreamId &&
-          !(await isCurrentWaitAttempt(tx, workStreamId, execution.flowContext.attemptId, origin.agentId))
+          !(await isCurrentQuestionAttempt(tx, workStreamId, execution.flowContext.attemptId, origin.agentId))
         )
           throw new Error('The question belongs to a superseded flow attempt')
         const { wait } = await openWait(tx, {
@@ -504,7 +504,7 @@ export async function setQuestionBlocking(
         if (already.has(workStreamId)) continue
         if (
           questionExecution?.flowContext?.workStreamId === workStreamId &&
-          !(await isCurrentWaitAttempt(tx, workStreamId, questionExecution.flowContext.attemptId, row.agentId))
+          !(await isCurrentQuestionAttempt(tx, workStreamId, questionExecution.flowContext.attemptId, row.agentId))
         )
           throw new Error('The question belongs to a superseded flow attempt')
         const [previousWait] = await tx
