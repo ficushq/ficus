@@ -1751,6 +1751,13 @@
       "when": 1794970622411,
       "tag": "0249_slot_pool_capacity_follows_host",
       "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1795014351980,
+      "tag": "0250_public_voices",
+      "breakpoints": true
     }
   ]
 }

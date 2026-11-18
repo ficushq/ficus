@@ -267,3 +267,42 @@ export function renderProfileAlone(profile: PublicVoiceProfile): string {
 export function isEmptyPublicVoiceLayer(layer: SquadPublicVoice | null | undefined): boolean {
   return !layer || (!layer.base?.trim() && Object.keys(layer.surfaces ?? {}).length === 0)
 }
+
+/** API shape of a voice profile (`/api/public-voices`). */
+export interface PublicVoiceProfileJson extends PublicVoiceProfile {
+  hasTemplate: boolean
+  yamlFieldOverrides: string[]
+  /** UTF-8 bytes of the profile rendered by itself. */
+  bytes: number
+  assignedSquadCount?: number
+  createdAt: string | Date
+  updatedAt: string | Date
+}
+
+/** A profile a squad may be assigned, as listed to anyone who can read the squad. */
+export interface PublicVoiceOption {
+  id: string
+  name: string
+  description: string | null
+}
+
+/** `GET /api/squads/:id/voice`. */
+export interface SquadPublicVoiceState {
+  /** The assigned profile id; null means the instance default. */
+  voiceId: string | null
+  /** The squad's own layer. */
+  local: SquadPublicVoice
+  /** The effective profile (assigned, else the instance default), or null with a custom base or no usable profile. */
+  profile: PublicVoiceProfile | null
+  fallback: PublicVoiceFallback | null
+  availableVoices: PublicVoiceOption[]
+  resolved: ResolvedPublicVoice & {
+    rendered: string
+    bytes: number
+    maxBytes: number
+    overCap: boolean
+    dropped: PublicSurface[]
+  }
+  /** The caller's linked GitHub login, used to prefill derivation. */
+  linkedGitHubLogin: string | null
+}

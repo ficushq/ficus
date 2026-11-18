@@ -22,6 +22,7 @@ import {
   SquadRelationshipType,
   SquadWithRelationships,
   Message,
+  type SquadPublicVoice,
 } from '@ficus/shared'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { createLogger } from '../lib/infra/logger'
@@ -188,6 +189,10 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   declare managerAgentId: string | null
   declare context: string | null
   declare typeContext: Record<string, string> | null
+  /** Assigned voice profile; null = the instance default. Written only by setPublicVoice. */
+  declare publicVoiceId: string | null
+  /** The squad's own voice layer. Written only by setPublicVoice. */
+  declare publicVoice: SquadPublicVoice | null
   declare isAnonymous: boolean
   declare globalCollaborationEnabled: boolean
   declare envDetectionBootstrapped: boolean
@@ -240,6 +245,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       managerAgentId: squads.managerAgentId,
       context: squads.context,
       typeContext: squads.typeContext,
+      publicVoiceId: squads.publicVoiceId,
+      publicVoice: squads.publicVoice,
       isAnonymous: squads.isAnonymous,
       globalCollaborationEnabled: squads.globalCollaborationEnabled,
       envDetectionBootstrapped: squads.envDetectionBootstrapped,
@@ -550,6 +557,25 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       }
     }
 
+    return squad
+  }
+
+  /**
+   * Set the squad's voice assignment and own layer (the squad voice routes own
+   * this; generic updates do not carry it). Callers validate and cap-check first.
+   */
+  static async setPublicVoice(
+    id: string,
+    value: { publicVoiceId: string | null; publicVoice: SquadPublicVoice | null }
+  ): Promise<Squad> {
+    const [row] = await db
+      .update(squads)
+      .set({ publicVoiceId: value.publicVoiceId, publicVoice: value.publicVoice, updatedAt: new Date() })
+      .where(eq(squads.id, id))
+      .returning()
+    if (!row) throw new Error(`Squad ${id} not found`)
+    const squad = new Squad(row)
+    eventEmitter.emit('squad.updated', { squadId: squad.id })
     return squad
   }
 
@@ -1127,6 +1153,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       managerAgentId: this.managerAgentId,
       context: this.context,
       typeContext: this.typeContext ?? null,
+      publicVoiceId: this.publicVoiceId ?? null,
+      publicVoice: this.publicVoice ?? null,
       isAnonymous: this.isAnonymous,
       globalCollaborationEnabled: this.globalCollaborationEnabled,
       order: this.order,

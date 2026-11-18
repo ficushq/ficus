@@ -27,6 +27,7 @@ export const AGENT_TYPES_DIR = join(CONFIG_DIR, 'agent-types')
 /** Shared prompt blocks that agent types list under `includes:`. */
 export const AGENT_TYPE_SHARED_PROMPTS_DIR = join(AGENT_TYPES_DIR, 'shared')
 export const MODEL_TIERS_DIR = join(CONFIG_DIR, 'model-tiers')
+export const PUBLIC_VOICES_DIR = join(CONFIG_DIR, 'public-voices')
 export const SQUAD_PRESETS_DIR = join(CONFIG_DIR, 'squad-presets')
 export const WORKFLOWS_DIR = join(CONFIG_DIR, 'workflows')
 export const CHANNELS_DIR = join(CONFIG_DIR, 'channels')

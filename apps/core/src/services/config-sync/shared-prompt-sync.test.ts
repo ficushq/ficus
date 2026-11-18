@@ -38,6 +38,7 @@ describe('SharedPromptSync', () => {
       'frontend-navigation',
       'instance-operations',
       'new-work-routing',
+      'public-text',
       'readable-text',
       'recovery-waits',
       'rules',
