@@ -36,7 +36,7 @@ describe('the shipped Lite tier', () => {
 
   test('tries Haiku, then GPT-6 Luna, then a zai model, all without thinking', () => {
     expect(entries.map(({ provider, modelId }) => `${provider}:${modelId}`).slice(0, 2)).toEqual([
-      'anthropic:claude-haiku-4-5',
+      'anthropic:claude-haiku-5-5',
       'openai-codex:gpt-6-luna',
     ])
     expect(entries[2].provider).toBe('zai')

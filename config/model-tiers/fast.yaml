@@ -1,5 +1,5 @@
 slug: fast
 label: Fast
 description: Fast and economical work
-chain: anthropic:claude-sonnet-5:medium,openai-codex:gpt-6-luna:low,zai:glm-5.3:low
+chain: anthropic:claude-sonnet-5-5:medium,openai-codex:gpt-6-luna:low,zai:glm-5.3:low
 sortOrder: 10
