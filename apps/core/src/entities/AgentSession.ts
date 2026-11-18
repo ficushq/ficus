@@ -1,3 +1,4 @@
+import { protectResponsesToolNames } from '../services/agent/responses-tool-names'
 import { wrapToolWithRecovery } from '../services/recovery/runtime'
 import {
   createAgentSession,
@@ -226,6 +227,7 @@ export class AgentSession {
       credentials,
       allowModelNetwork: false,
     })
+    protectResponsesToolNames(modelRuntime)
     registerOpenAICompatibleAccounts(modelRuntime)
     registerAnthropicWithClaudeCode(modelRuntime)
 
