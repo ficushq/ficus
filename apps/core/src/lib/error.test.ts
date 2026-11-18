@@ -431,6 +431,13 @@ describe('getErrorSystemMessage', () => {
     }
   })
 
+  it('sends authentication failures to Settings, never to a command that takes an API key', () => {
+    const msg = getErrorSystemMessage('invalid api key')!
+    expect(msg).toContain('Settings → AI Providers')
+    expect(msg).not.toContain('ficus provider-auth')
+    expect(msg).not.toContain('<key>')
+  })
+
   it('returns null for unknown errors', () => {
     expect(getErrorSystemMessage('Connection failed')).toBe(null)
     expect(getErrorSystemMessage('Not found')).toBe(null)
