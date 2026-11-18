@@ -139,7 +139,9 @@ means not admitted yet: the squad's concurrency cap is full, a dependency is
 unmet, or a wait is open. The display state is derived: `in progress`,
 `in review` (a human gate), `waiting on answer`, `waiting on <dependency>`,
 `blocked` (a manual wait: read its message, which names the resume condition), or
-`idle` (active with no execution and no wait, the one alarming state). Useful
+`idle` (active with no execution and no wait). `idle` is normal for a few minutes
+between flow steps or while an agent is queued for a slot; it is a concern only
+when it persists. Useful
 JSON fields: `status`, `derivedState`, `openWaits[]` (id, type, message),
 `priority` versus the effective priority in listings, `dependsOn`, and `metadata`
 (`set-meta` takes dot paths).
