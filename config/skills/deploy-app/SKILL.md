@@ -1,6 +1,6 @@
 ---
 name: deploy-app
-description: Local app or deploy a user application from a Ficus squad workspace using Ficus sandbox local apps first, then external providers with explicit human consent.
+description: Run a user app as a private Ficus local app, or deploy it to GitHub Pages, Vercel, Netlify, Cloudflare, Railway, Supabase or DigitalOcean with explicit human consent.
 ---
 
 # Deploying Apps from Ficus
@@ -215,9 +215,17 @@ PORT=4173 timeout 5s bash -c 'bun run start >/tmp/app-port.log 2>&1 & pid=$!; sl
 
 Do not ask people to paste credentials in chat. For Cloudflare, DigitalOcean, Netlify, Railway, Supabase and Vercel, a person connects a named account in **Settings → Integrations**, validates and enables it, then assigns it in the squad’s **Integrations** tab. Imported accounts are unassigned. GitHub Pages uses the assigned GitHub integration account.
 
-Read the matching provider skill. An assigned, healthy account authenticates its provider CLI through the provisioned **PATH wrapper**, including nested child processes. No integration credential is written into environment files or delivered to human terminals. Never read, print, log, commit or persist integration credentials.
+If no healthy account is assigned, walk the human through it:
 
-Project-local CLIs and npm/bun/pnpm scripts can bypass the global wrapper. Wrap the entire command:
+1. Sign in to the provider and choose the account, team or organization that should own the project. Mention what can bill there.
+2. Create a token named `ficus-deploy` with the smallest scope the provider offers for the work (the provider note gives the page and scopes).
+3. Open **Settings → Integrations → <Provider>**, enable the integration, create a named account with the token, then validate and enable it. Saved tokens stay hidden; rotate by replacing the token on that account.
+4. Ask an admin to assign the account in the squad’s **Integrations** tab and choose the default account.
+5. Verify access with the provider CLI's identity command, without inspecting credentials.
+
+An assigned, healthy account authenticates its pinned provider CLI through the provisioned **PATH wrapper**, including nested child processes. Check readiness with the CLI's `--version`; if it is missing, ask a person to check assignment and provisioning rather than installing an unwrapped global CLI. No integration credential is written into environment files or delivered to human terminals. Never read, print, log, commit or persist integration credentials.
+
+Project-local CLIs and npm/bun/pnpm scripts (including npx/bunx) can bypass the global wrapper. Wrap the entire command:
 
 ```bash
 ficus integration exec <provider> -- npm run deploy
@@ -250,7 +258,7 @@ ficus deploy external update <deployment-id> --status ready --url <new-url>
 
 Update the record whenever the URL/status changes, a deployment fails, a rollback happens, or the deployment is destroyed. Archive old or superseded external deployment records once they are no longer useful; archived records move out of the active Apps tab list while preserving history.
 
-## Provider-specific skills
+## Choosing a provider
 
 Use repository files and build behavior to infer provider fit. Treat the matrix above as guidance, not a hard compatibility gate. Prefer GitHub Pages first for static sites because it is usually simpler than Netlify or Cloudflare. If the best target is ambiguous, explain tradeoffs and ask the human.
 
@@ -265,15 +273,15 @@ File-presence hints:
 - `supabase/config.toml`, `supabase/functions`, or `supabase/migrations` indicate Supabase companion work.
 - `wrangler.toml` or `wrangler.json` indicates Cloudflare Pages/Workers.
 
-Read the matching provider skill for concrete CLI steps:
+Each provider has a short note in this skill's `providers/` folder with its account and token setup, CLI, safe command sequence, rollback and cleanup, and quirks. Read the matching note before running provider commands:
 
-- `deploy-vercel` — Vercel for Next.js and SPAs.
-- `deploy-github-pages` — first-choice default for static exports and simple SPAs.
-- `deploy-netlify` — Netlify for static sites/SPAs that need Netlify features or functions.
-- `deploy-cloudflare` — Cloudflare Pages/Workers for static, SPA, and edge apps that need Cloudflare features.
-- `deploy-railway` — Railway for APIs, containers, and managed services.
-- `deploy-supabase` — Supabase for Postgres/auth/storage/functions companion services.
-- `deploy-digitalocean` — DigitalOcean App Platform, containers, APIs, and databases.
+- `providers/github-pages.md`: first choice for static exports and simple SPAs.
+- `providers/vercel.md`: Next.js and SPAs.
+- `providers/netlify.md`: static sites and SPAs that need Netlify features or functions.
+- `providers/cloudflare.md`: Pages and Workers for static, SPA and edge apps.
+- `providers/railway.md`: APIs, containers and managed services.
+- `providers/supabase.md`: Postgres, auth, storage and functions as a companion service.
+- `providers/digitalocean.md`: App Platform, containers, APIs and databases.
 
 ## External provider commands
 

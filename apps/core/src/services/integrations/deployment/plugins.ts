@@ -152,7 +152,8 @@ function createDeploymentPlugin(key: DeploymentProvider): IntegrationPluginV1<Co
           expectedSubstring: deploymentCliVersion(definition.binary),
         },
       ],
-      skills: [`deploy-${key}`],
+      // One deploy skill covers every provider; its providers/ notes hold the differences.
+      skills: ['deploy-app'],
       extensions: [],
       protectedBindings: [],
     },

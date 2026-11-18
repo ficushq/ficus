@@ -56,17 +56,8 @@ describe('local app deployment guidance', () => {
 
 describe('shared-first shell guidance', () => {
   test('deployment and visual-review skills select squad_bash', async () => {
-    const skills = [
-      'deploy-app',
-      'deploy-vercel',
-      'deploy-netlify',
-      'deploy-cloudflare',
-      'deploy-github-pages',
-      'deploy-railway',
-      'deploy-supabase',
-      'deploy-digitalocean',
-      'frontend-visual-review',
-    ]
+    // Provider notes live inside deploy-app (providers/*.md) and defer to its command-runtime section.
+    const skills = ['deploy-app', 'frontend-visual-review']
     for (const skill of skills) expect(await readRepoFile(`config/skills/${skill}/SKILL.md`)).toContain('squad_bash')
     const [deploy, visual] = await Promise.all([
       readRepoFile('config/skills/deploy-app/SKILL.md'),
