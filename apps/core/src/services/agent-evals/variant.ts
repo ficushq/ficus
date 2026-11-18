@@ -18,11 +18,12 @@ export interface PromptVariant {
 }
 
 /**
- * Paths a variant needs; everything else (dependencies, packages/shared) comes from the working
+ * Paths a variant needs; everything else (dependencies, other shared modules) comes from the working
  * tree. The migration journal is read when the database module loads.
  */
 const VARIANT_PATHS = [
   'config',
+  'packages/shared/src/public-voice.ts',
   'apps/core/src',
   'apps/core/package.json',
   'apps/core/drizzle/meta',
@@ -30,7 +31,7 @@ const VARIANT_PATHS = [
   'apps/cli/package.json',
 ]
 /** Bump when VARIANT_PATHS changes so cached extractions are refreshed. */
-const EXTRACTION_VERSION = 2
+const EXTRACTION_VERSION = 3
 
 export function workingTreeVariant(): PromptVariant {
   return { label: 'working tree', root: MONOREPO_ROOT }
@@ -39,7 +40,8 @@ export function workingTreeVariant(): PromptVariant {
 /**
  * Extracts `ref` into a cache directory and links the working tree's installed dependencies into
  * it, so its modules import the same way. Workspace packages such as @ficus/shared therefore
- * resolve to the working tree's copy; the guidance itself (config/, apps/core/src, apps/cli/src)
+ * resolve to the working tree's copy; the voice resolver is extracted and imported directly.
+ * The guidance itself (config/, apps/core/src, apps/cli/src)
  * is the ref's.
  */
 export function gitRefVariant(ref: string, repoRoot = MONOREPO_ROOT): PromptVariant {
