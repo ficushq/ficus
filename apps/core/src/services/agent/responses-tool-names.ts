@@ -10,10 +10,31 @@ import type {
   ToolCall,
 } from '@earendil-works/pi-ai'
 import { lazyStream } from '@earendil-works/pi-ai/api/lazy'
+import { createLogger } from '../../lib/infra/logger'
 
 type RuntimeStream = (model: Model<Api>, context: Context, options?: StreamOptions) => AssistantMessageEventStream
 const RESPONSES_APIS = new Set(['openai-codex-responses', 'openai-responses', 'azure-openai-responses'])
 const VALID_NAME = /^[a-zA-Z0-9_.-]+$/
+const log = createLogger('responses-tool-names')
+const MAX_DIAGNOSTIC_NAMES = 1024
+const MAX_DIAGNOSTIC_NAME_LENGTH = 256
+// Never evict: a replay must not re-enable warnings for previously seen names. Store only
+// fixed-size full-name fingerprints, and suppress new diagnostics once the process cap is reached.
+const warnedNames = new Set<string>()
+
+function warnAliasedToolName(name: string, api: Api, fingerprint: string): void {
+  if (warnedNames.size >= MAX_DIAGNOSTIC_NAMES || warnedNames.has(fingerprint)) return
+  warnedNames.add(fingerprint)
+  const preview =
+    name.length > MAX_DIAGNOSTIC_NAME_LENGTH ? `${name.slice(0, MAX_DIAGNOSTIC_NAME_LENGTH)} [truncated]` : name
+  // JSON escapes ASCII controls/quotes; escape all remaining non-printable or non-ASCII
+  // code units too, including terminal controls, Unicode line separators and bidi controls.
+  const diagnostic = JSON.stringify({ name: preview, api }).replace(
+    /[^\x20-\x7e]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+  )
+  log.warn(`Aliased invalid Responses tool name: ${diagnostic}`)
+}
 
 /**
  * Adapt the entire request, not just Context.tools: Pi synthesizes tool_search_output and
@@ -38,12 +59,14 @@ export function responsesToolNameStream<T extends RuntimeStream>(stream: T): T {
     // valid historical name first, including a name identical to another tool's generated alias.
     for (const name of [...names].sort()) {
       if (VALID_NAME.test(name)) continue
-      const base = `ficus_tool_${createHash('sha256').update(name, 'utf16le').digest('hex').slice(0, 40)}`
+      const fingerprint = createHash('sha256').update(name, 'utf16le').digest('hex')
+      const base = `ficus_tool_${fingerprint.slice(0, 40)}`
       let alias = base
       let suffix = 0
       while (reserved.has(alias)) alias = `${base}_${++suffix}`
       reserved.add(alias)
       aliases.set(name, alias)
+      warnAliasedToolName(name, model.api, fingerprint)
     }
     if (!aliases.size) return stream(model, context, options)
     const encode = (name: string) => aliases.get(name) ?? name

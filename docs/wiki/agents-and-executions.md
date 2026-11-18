@@ -418,6 +418,30 @@ translated back before dispatch or persistence, without changing namespaces,
 arguments, result bodies, call IDs, or stored session entries. No tools or results
 are discarded. Other provider APIs pass through unchanged.
 
+When the adapter assigns an alias, it emits a `responses-tool-names` warning with
+only the original tool name and the provider API that first encountered it (for
+example, `openai-codex-responses`). It does not log arguments, prompts, request
+bodies, results, session content, credentials, aliases, or agent/session IDs.
+Names are JSON-quoted, with controls and non-ASCII characters escaped so they
+cannot forge log lines or terminal output. The normal logger's content-safety
+redaction and log-level filtering still apply.
+
+Diagnostics are deduplicated by a SHA-256 fingerprint of the **full original
+name**, across runtime instances, APIs, repeated stream events, and replays in
+one process. Only the first API is reported for a name. To bound memory and log
+volume without eviction-driven replay spam, each process warns for at most 1,024
+names; after that it suppresses diagnostics for new names until restart. Names
+longer than 256 UTF-16 code units are shown as a prefix followed by
+` [truncated]`, bounding each diagnostic's payload to less than 1,700 characters
+after escaping. These limits do not change alias assignment or routing. Valid
+names and non-Responses APIs produce no warnings.
+
+A warning identifies a name seen at the serialization boundary, not where it was
+registered or whether it caused a specific incident. Truncation, redaction,
+log-level filtering, or the process cap can prevent full identification; no
+warning is not proof that all names are valid. Diagnosing the registration source
+and confirming recovery on an affected session remain separate, authorized work.
+
 Safe recovery for a session already rejected by this class of validation error:
 
 1. Stop repeated retries of the unchanged request. Preserve the existing edits,

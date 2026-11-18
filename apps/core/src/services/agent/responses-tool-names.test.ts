@@ -1,9 +1,9 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ModelRuntime, SessionManager } from '@earendil-works/pi-coding-agent'
-import type { Api, Context, Model, AssistantMessage } from '@earendil-works/pi-ai'
+import type { Api, Context, Model, AssistantMessage, StreamOptions } from '@earendil-works/pi-ai'
 import { AssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream'
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import { stream as codex } from '@earendil-works/pi-ai/api/openai-codex-responses'
@@ -249,5 +249,173 @@ describe('Responses tool names at the runtime boundary', () => {
     const history = context()
     expect(stream(unsupported, history)).toBe(source)
     expect(seen).toBe(history)
+  })
+})
+
+// Exercise the real logger boundary, not an injected diagnostic callback.
+async function captureWarnings(run: (calls: unknown[][]) => void | Promise<void>) {
+  const previousLevel = process.env.LOG_LEVEL
+  process.env.LOG_LEVEL = 'warn'
+  const warnings = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    await run(warnings.mock.calls)
+  } finally {
+    warnings.mockRestore()
+    if (previousLevel === undefined) delete process.env.LOG_LEVEL
+    else process.env.LOG_LEVEL = previousLevel
+  }
+}
+
+function diagnostic(call: unknown[]) {
+  const message = call.find(
+    (part) => typeof part === 'string' && part.startsWith('Aliased invalid Responses tool name: ')
+  )
+  expect(message).toBeDefined()
+  return JSON.parse((message as string).slice('Aliased invalid Responses tool name: '.length))
+}
+
+const diagnosticStream = () =>
+  responsesToolNameStream((_m, c, _options?: StreamOptions) => {
+    const output = assistantMessage()
+    output.content = [
+      {
+        type: 'toolCall',
+        id: 'PRIVATE_EVENT_ID',
+        name: c.tools![0]!.name,
+        arguments: { text: 'PRIVATE_EVENT_ARGUMENT' },
+      },
+    ]
+    const result = new AssistantMessageEventStream()
+    result.push({ type: 'toolcall_start', contentIndex: 0, partial: output })
+    for (let i = 0; i < 50; i++) {
+      result.push({ type: 'toolcall_delta', contentIndex: 0, delta: 'PRIVATE_DELTA', partial: output })
+    }
+    result.push({ type: 'done', reason: 'toolUse', message: output })
+    result.end()
+    return result
+  })
+
+describe('Responses alias diagnostics', () => {
+  test('identifies only the original name and first provider API, once across wrappers and replays', async () => {
+    await captureWarnings(async (calls) => {
+      const name = 'diagnostic:replayed/tool'
+      const input: Context = {
+        tools: [{ ...tool(name), description: 'PRIVATE_DESCRIPTION' }],
+        messages: [
+          { role: 'user', content: 'PRIVATE_PROMPT', timestamp: 1 },
+          { role: 'system', content: 'PRIVATE_SESSION', toolsAdded: [tool(name)], timestamp: 2 },
+          {
+            ...assistantMessage(),
+            content: [{ type: 'toolCall', id: 'PRIVATE_ID', name, arguments: { secret: 'PRIVATE_ARGUMENT' } }],
+          },
+          {
+            role: 'toolResult',
+            toolCallId: 'PRIVATE_ID',
+            toolName: name,
+            content: [{ type: 'text', text: 'PRIVATE_RESULT' }],
+            timestamp: 3,
+            isError: false,
+          },
+        ],
+      }
+      for (const api of ['openai-codex-responses', 'openai-responses', 'azure-openai-responses'] as const) {
+        const stream = diagnosticStream()({ ...model, api }, input, { apiKey: 'PRIVATE_CREDENTIAL' })
+        for await (const event of stream) {
+          if ('partial' in event) expect(event.partial.content[0]).toMatchObject({ name })
+        }
+        await stream.result()
+      }
+      const runtime = await ModelRuntime.create({ refreshOnCreate: false, modelsPath: null })
+      runtime.stream = diagnosticStream()
+      runtime.streamSimple = diagnosticStream()
+      protectResponsesToolNames(runtime)
+      await runtime.complete(model, input)
+      await runtime.completeSimple(model, input)
+      expect(calls).toHaveLength(1)
+      expect(diagnostic(calls[0]!)).toEqual({ name, api: model.api })
+      expect(JSON.stringify(calls)).not.toContain('PRIVATE_')
+      await diagnosticStream()(model, { messages: [], tools: [tool('diagnostic:another/tool')] }).result()
+      expect(calls).toHaveLength(2)
+    })
+  })
+
+  test.each(['openai-codex-responses', 'openai-responses', 'azure-openai-responses'] as const)(
+    'reports the API that assigned the alias: %s',
+    async (api) => {
+      await captureWarnings(async (calls) => {
+        const name = `diagnostic:${api}/tool`
+        await diagnosticStream()({ ...model, api }, { messages: [], tools: [tool(name)] }).result()
+        expect(calls).toHaveLength(1)
+        expect(diagnostic(calls[0]!)).toEqual({ name, api })
+      })
+    }
+  )
+
+  test('valid names and unsupported APIs emit no warnings', async () => {
+    await captureWarnings(async (calls) => {
+      await diagnosticStream()(model, { messages: [], tools: [tool('valid.name_123-ABC')] }).result()
+      await diagnosticStream()(
+        { ...model, api: 'anthropic-messages' },
+        { messages: [], tools: [tool('diagnostic:unsupported/tool')] }
+      ).result()
+      expect(calls).toHaveLength(0)
+    })
+  })
+
+  test('escapes control characters, terminal escapes and Unicode line or direction controls', async () => {
+    await captureWarnings(async (calls) => {
+      const name =
+        'diagnostic:unsafe' +
+        String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i)) +
+        '\x7f\x85\x9b\u2028\u2029\u202e\u2066é\ud800😀"\\'
+      await diagnosticStream()(model, { messages: [], tools: [tool(name)] }).result()
+      expect(calls).toHaveLength(1)
+      expect(diagnostic(calls[0]!)).toEqual({ name, api: model.api })
+      const message = calls[0]!.find((part) => typeof part === 'string' && part.startsWith('Aliased invalid')) as string
+      expect(/[^\x20-\x7e]/.test(message)).toBe(false)
+      expect(message).toContain('\\u001b')
+      expect(message).toContain('\\u2028')
+      expect(message).toContain('\\u202e')
+    })
+  })
+
+  test('bounds oversized names and deduplicates by the full name, not the preview', async () => {
+    await captureWarnings(async (calls) => {
+      const prefix = 'diagnostic:' + '\x1b'.repeat(300_000)
+      const stream = diagnosticStream()
+      for (const suffix of ['a', 'b', 'a']) {
+        await stream(model, { messages: [], tools: [tool(prefix + suffix)] }).result()
+      }
+      expect(calls).toHaveLength(2)
+      for (const call of calls) {
+        const logged = diagnostic(call)
+        expect(logged.name).toBe(prefix.slice(0, 256) + ' [truncated]')
+        const message = call.find((part) => typeof part === 'string' && part.startsWith('Aliased invalid')) as string
+        expect(message.length).toBeLessThan(1700)
+      }
+    })
+  })
+
+  // Last: deliberately saturates process-lifetime state, which must never evict old names.
+  test('caps warning volume without eviction or changing adaptation after saturation', async () => {
+    await captureWarnings(async (calls) => {
+      const stream = responsesToolNameStream((_m, input) => {
+        expect(input.tools!.every((t) => validName.test(t.name))).toBe(true)
+        const result = new AssistantMessageEventStream()
+        result.end(assistantMessage())
+        return result
+      })
+      const names = Array.from({ length: 1100 }, (_, i) => tool(`diagnostic:capacity/${i}`))
+      await stream(model, { messages: [], tools: names }).result()
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls.length).toBeLessThanOrEqual(1024)
+      const count = calls.length
+      await stream(model, { messages: [], tools: names }).result()
+      await stream(model, {
+        messages: [],
+        tools: [tool('diagnostic:replayed/tool'), tool('diagnostic:after-cap/tool')],
+      }).result()
+      expect(calls).toHaveLength(count)
+    })
   })
 })
