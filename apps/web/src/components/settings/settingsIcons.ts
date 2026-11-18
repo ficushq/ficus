@@ -3,6 +3,7 @@ import {
   AgentIcon,
   BellIcon,
   CalendarIcon,
+  ChatBubbleIcon,
   ClipboardIcon,
   CloudIcon,
   CoinIcon,
@@ -40,6 +41,7 @@ import {
 export const SETTINGS_SECTION_ICONS = {
   general: SettingsIcon,
   context: MarkdownIcon,
+  voice: ChatBubbleIcon,
   workspace: FolderIcon,
   access: TerminalIcon,
   account: UserIcon,
