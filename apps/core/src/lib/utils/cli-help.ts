@@ -20,104 +20,124 @@ export function getCliHostPath(): string {
 
 const CLI_ERROR = `[ERROR] The ficus CLI is not installed or not accessible. Inspect and repair your authorized local tooling, then retry within the bounded recovery budget. Do not ask a person to run installation or diagnostic commands. If local recovery exhausts, use the existing typed recovery decision and manager-first routing. You cannot execute any ficus commands until the CLI is available.`
 
+/** One top-level command group listed by `ficus --help`. */
+interface CommandGroup {
+  name: string
+  aliases: string[]
+  description: string
+}
+
 /**
- * Generate CLI help for specific subcommands.
- * Always includes `ficus --help` as the first entry.
+ * Parses the `Commands:` section of `ficus --help` into top-level groups,
+ * joining wrapped description lines and dropping commander's `help` entry.
  */
-async function generateHelpFor(subcommands: string[]): Promise<string> {
-  const cliPath = getCliHostPath()
-  // Rely solely on the built CLI at apps/cli/dist/ficus.js. A shipped artifact
-  // has no `apps/cli/src/`, so the old `bun apps/cli/src/index.ts` source
-  // fallback would silently vanish there; when the dist bundle is missing we
-  // surface the actionable CLI_ERROR instead of spawning a nonexistent file.
-  if (!existsSync(cliPath)) return CLI_ERROR
-  const cliCommand = [cliPath]
-
-  try {
-    const promises = [
-      $`${cliCommand} --help`.text().catch(() => ''),
-      ...subcommands.map((cmd) => $`${cliCommand} ${cmd} --help`.text().catch(() => '')),
-    ]
-    const results = await Promise.all(promises)
-
-    // Agent references never advertise operator-only commands, even for an
-    // assistant acting with a human's broad permissions. Operator CLI help is unchanged.
-    const filtered = results.filter(Boolean).map((section) => filterHelpSection(section, ['*']))
-    if (filtered.length > 0) {
-      return `You have access to the \`ficus\` CLI. Here's the full command reference:\n\n${filtered.join('\n\n---\n\n')}`
+export function parseCommandGroups(rootHelp: string): CommandGroup[] {
+  const groups: CommandGroup[] = []
+  let inCommands = false
+  for (const line of rootHelp.split('\n')) {
+    if (/^\S/.test(line)) {
+      inCommands = line.startsWith('Commands:')
+    } else if (inCommands && /^ {2}\S/.test(line)) {
+      // `  name|alias [options] <arg>    Description`: the term ends at a run of spaces.
+      const [term = '', ...description] = line.trim().split(/\s{2,}/)
+      const [name = '', ...aliases] = term.split(' ')[0]!.split('|')
+      if (name !== 'help') groups.push({ name, aliases, description: description.join(' ') })
+    } else if (inCommands && line.trim() !== '' && groups.length > 0) {
+      const last = groups.at(-1)!
+      last.description = `${last.description} ${line.trim()}`.trim()
     }
-    throw new Error('No help output')
-  } catch {
-    return CLI_ERROR
   }
+  return groups
 }
 
-/** Subcommands relevant to system manager */
-const SYSTEM_MANAGER_SUBCOMMANDS = ['agent', 'squad', 'workflow', 'inbox']
+let rootGroups: CommandGroup[] | null = null
 
-/** Subcommands relevant to task-workflow agents and the system manager */
-const TASK_SUBCOMMANDS = ['task', 'schedule', 'task-type', 'agent-type']
-
-/** Subcommands relevant to squad workers */
-const SQUAD_WORKER_SUBCOMMANDS = ['agent', 'workstream', 'workflow', 'squad', 'inbox']
-
-/** Subcommands relevant to squad managers */
-const SQUAD_MANAGER_SUBCOMMANDS = ['agent', 'workstream', 'workflow', 'squad', 'inbox']
-
-// Separate caches per help profile
-const cache: Record<string, string> = {}
-
-/** Test-only: drop the per-profile help cache. */
+/** Test-only: drop the cached command groups. */
 export function resetCliHelpCacheForTests(): void {
-  for (const k of Object.keys(cache)) delete cache[k]
+  rootGroups = null
 }
 
 /**
- * Cache ONLY successful help. The error sentinel is returned but never stored:
- * a worker that boots one second before apps/cli/dist/ficus.js lands (artifact
- * activation, first build) must not bake "CLI not installed" into every agent
- * prompt for the life of the process.
+ * Reads the top-level command groups from the built CLI. Caches ONLY a
+ * successful read: a worker that boots one second before
+ * apps/cli/dist/ficus.js lands (artifact activation, first build) must not bake
+ * "CLI not installed" into every agent prompt for the life of the process.
  */
-async function cachedHelp(key: string, subcommands: string[]): Promise<string> {
-  if (cache[key]) return cache[key]
-  const help = await generateHelpFor(subcommands)
-  if (help !== CLI_ERROR) cache[key] = help
-  return help
+async function loadCommandGroups(): Promise<CommandGroup[] | null> {
+  if (rootGroups) return rootGroups
+  const cliPath = getCliHostPath()
+  // Rely solely on the built CLI. A shipped artifact has no `apps/cli/src/`,
+  // so when the dist bundle is missing we return the actionable CLI_ERROR.
+  if (!existsSync(cliPath)) return null
+  const help = await $`${[cliPath]} --help`.text().catch(() => '')
+  const groups = parseCommandGroups(help)
+  if (groups.length === 0) return null
+  rootGroups = groups
+  return groups
 }
 
-/** CLI help for system manager */
-export async function getSystemManagerCliHelp(): Promise<string> {
-  return cachedHelp('systemManager', SYSTEM_MANAGER_SUBCOMMANDS)
+const INDEX_INTRO = 'You have access to the `ficus` CLI. Its top-level command groups:'
+const INDEX_DETAILS =
+  "Run `ficus <group> --help` to list the commands in a group, and `ficus <group> <command> --help` for a command's arguments, flags and examples."
+const OMITTED_GROUPS_NOTE =
+  'Groups and commands that need permissions you do not hold are left out. Route those requests to your squad manager.'
+
+/**
+ * A short index of the `ficus` CLI for an agent prompt: one line per top-level
+ * command group the caller may use, then where to find the details. With
+ * `permissions`, groups the caller cannot use are left out, and the commands it
+ * cannot use inside the listed groups are named so it routes them to its
+ * manager instead of discovering the 403 (see {@link CLI_COMMAND_PERMISSIONS}).
+ * Without `permissions` every group is listed. Operator-only groups are never
+ * listed. Returns an error notice when the CLI cannot be read.
+ */
+export async function getCliCommandIndex(permissions: readonly string[] = ['*']): Promise<string> {
+  const groups = await loadCommandGroups()
+  if (!groups) return CLI_ERROR
+  return renderCliCommandIndex(groups, permissions)
 }
 
-/** CLI help for task-workflow runners */
-export async function getTaskWorkflowCliHelp(): Promise<string> {
-  return cachedHelp('task', TASK_SUBCOMMANDS)
-}
-
-/** CLI help for squad workers */
-export async function getSquadWorkerCliHelp(): Promise<string> {
-  return cachedHelp('squadWorker', SQUAD_WORKER_SUBCOMMANDS)
-}
-
-/** CLI help for squad managers */
-export async function getSquadManagerCliHelp(): Promise<string> {
-  return cachedHelp('squadManager', SQUAD_MANAGER_SUBCOMMANDS)
-}
-
-export async function warmupCliHelpCaches(): Promise<void> {
-  await Promise.all([getSystemManagerCliHelp(), getSquadWorkerCliHelp(), getSquadManagerCliHelp()])
-}
-
-export function clearCliHelpCache(): void {
-  for (const key of Object.keys(cache)) {
-    delete cache[key]
+/** Renders the index for `groups`; exported for tests. */
+export function renderCliCommandIndex(groups: readonly CommandGroup[], permissions: readonly string[]): string {
+  const listed = groups.filter((group) => mayUse(group.name, permissions))
+  const lines = listed.map((group) => {
+    const aliases = group.aliases.length > 0 ? ` (${group.aliases.join(', ')})` : ''
+    return `- ${group.name}${aliases}: ${group.description}`
+  })
+  const parts = [INDEX_INTRO, lines.join('\n'), INDEX_DETAILS]
+  const withheld = withheldCommands(
+    listed.map((group) => group.name),
+    permissions
+  )
+  const hidesGroups = listed.length < groups.filter((group) => !isOperatorOnly(group.name)).length
+  if (withheld.length > 0 || hidesGroups) {
+    parts.push(
+      withheld.length > 0
+        ? `${OMITTED_GROUPS_NOTE} Inside the groups above, these commands are not available to you: ${withheld.join('; ')}.`
+        : OMITTED_GROUPS_NOTE
+    )
   }
+  return parts.join('\n\n')
+}
+
+/** `group cmd, cmd` for each listed group with commands the caller cannot use. */
+function withheldCommands(listedGroups: readonly string[], permissions: readonly string[]): string[] {
+  const byGroup = new Map<string, string[]>()
+  for (const key of Object.keys(CLI_COMMAND_PERMISSIONS)) {
+    const [group, command] = key.split(' ')
+    if (!command || !listedGroups.includes(group!) || mayUse(key, permissions)) continue
+    byGroup.set(group!, [...(byGroup.get(group!) ?? []), command])
+  }
+  return listedGroups.filter((group) => byGroup.has(group)).map((group) => `${group} ${byGroup.get(group)!.join(', ')}`)
+}
+
+export async function warmupCliCommandIndex(): Promise<void> {
+  await loadCommandGroups()
 }
 
 /**
- * Permissions the Core API enforces for CLI commands that squad workers see in
- * their reference. Keys are a top-level group (`agent-type`) or `<group>
+ * Permissions the Core API enforces for CLI commands, used to trim the
+ * CLI index an agent sees. Keys are a top-level group (`agent-type`) or `<group>
  * <subcommand>` (`workstream create`); values list the permissions that unlock
  * the command (any one suffices). Each entry mirrors the route guard named in
  * its comment, so a caller holding none of them would only get a 403.
@@ -217,62 +237,14 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'workstream delete': ['workstreams:delete'],
 }
 
-const OMITTED_COMMANDS_NOTE =
-  'Commands that need permissions you do not hold are omitted below. Route those requests to your squad manager.'
-
-/** The command group a help section documents, or '' for the top-level `ficus --help`. */
-function helpSectionGroup(section: string): string {
-  const usage = /^Usage: ficus (\S+)/m.exec(section)?.[1] ?? ''
-  return usage.startsWith('[') ? '' : (usage.split('|')[0] ?? '')
+/** Groups never shown to an agent, whatever permissions it holds. */
+function isOperatorOnly(group: string): boolean {
+  return group === 'secret'
 }
 
 function mayUse(key: string, permissions: readonly string[]): boolean {
-  if (key === 'secret' || key.startsWith('secret ')) return false
+  if (isOperatorOnly(key.split(' ')[0]!)) return false
   const required = CLI_COMMAND_PERMISSIONS[key]
   if (!required) return true
   return required.some((permission) => permissions.some((held) => permissionMatches(held, permission)))
-}
-
-/** Drops `Commands:` entries (and their wrapped description lines) the caller cannot use. */
-function filterHelpSection(section: string, permissions: readonly string[]): string {
-  const group = helpSectionGroup(section)
-  const out: string[] = []
-  let inCommands = false
-  let skipping = false
-  for (const line of section.split('\n')) {
-    if (/^\S/.test(line)) {
-      inCommands = line.startsWith('Commands:')
-      skipping = false
-    } else if (inCommands && /^ {2}\S/.test(line)) {
-      const name = line.trim().split(/\s/)[0]!.split('|')[0]!
-      skipping = !mayUse(group ? `${group} ${name}` : name, permissions)
-    } else if (inCommands && line.trim() === '') {
-      skipping = false
-    }
-    if (!skipping) out.push(line)
-  }
-  return out.join('\n')
-}
-
-/**
- * Narrows generated CLI help to the commands an agent holding `permissions` can
- * use (see {@link CLI_COMMAND_PERMISSIONS}). Help sections for a whole group the
- * caller cannot use are dropped too. When anything is removed, a note tells the
- * reader to route those requests to the manager.
- */
-export function filterCliHelpForPermissions(help: string, permissions: readonly string[]): string {
-  const separator = '\n\n---\n\n'
-  const sections = help.split(separator)
-  const kept = sections
-    .filter((section) => {
-      const group = helpSectionGroup(section)
-      return !group || mayUse(group, permissions)
-    })
-    .map((section) => filterHelpSection(section, permissions))
-  const filtered = kept.join(separator)
-  if (filtered === help) return help
-  const intro = /^You have access to the `ficus` CLI\.[^\n]*\n/.exec(filtered)?.[0]
-  return intro
-    ? `${intro}\n${OMITTED_COMMANDS_NOTE}\n${filtered.slice(intro.length)}`
-    : `${OMITTED_COMMANDS_NOTE}\n\n${filtered}`
 }

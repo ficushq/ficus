@@ -30,13 +30,6 @@ skills:
   - setup-telegram
   - setup-notifications
   - deploy-app
-  - deploy-vercel
-  - deploy-netlify
-  - deploy-cloudflare
-  - deploy-github-pages
-  - deploy-railway
-  - deploy-supabase
-  - deploy-digitalocean
   - remote-hosts
 tools: {}
 systemPrompt: |

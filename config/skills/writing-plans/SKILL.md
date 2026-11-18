@@ -5,91 +5,27 @@ description: Use when you have a spec or requirements for a multi-step task, bef
 
 # Writing Plans
 
-## Overview
+Write the plan for an engineer who knows the language but not this codebase or its
+history. Name the files to change, the tests that prove each step, the commands to
+run them, and the order. Keep steps small enough to commit one at a time, and leave
+out anything the requirements did not ask for.
 
-Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
+## Where the plan goes
 
-Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
-
-**Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
-
-**Save plans to:** a task-scoped shared workspace directory outside the target
+Save plans to a task-scoped shared workspace directory outside the target
 repository and its worktrees by default. Follow user or repository instructions
-when the plan is a required repository deliverable (for example, a committed
+when the plan is a required repository deliverable (for example a committed
 `docs/plans/YYYY-MM-DD-<feature-name>.md`). Apply the shared **Task artifacts and
 repository closeout** guidance and include the chosen path in handoff evidence.
 
-## Bite-Sized Task Granularity
+## What every plan states
 
-**Each step is one action (2-5 minutes):**
-- "Write the failing test" - step
-- "Run it to make sure it fails" - step
-- "Implement the minimal code to make the test pass" - step
-- "Run the tests and make sure they pass" - step
-- "Commit" - step
-
-## Plan Document Header
-
-**Every plan MUST start with this header:**
-
-```markdown
-# [Feature Name] Implementation Plan
-
-**Goal:** [One sentence describing what this builds]
-
-**Architecture:** [2-3 sentences about approach]
-
-**Tech Stack:** [Key technologies/libraries]
-
----
-```
-
-## Task Structure
-
-````markdown
-### Task N: [Component Name]
-
-**Files:**
-- Create: `exact/path/to/file.py`
-- Modify: `exact/path/to/existing.py:123-145`
-- Test: `tests/exact/path/to/test.py`
-
-**Step 1: Write the failing test**
-
-```python
-def test_specific_behavior():
-    result = function(input)
-    assert result == expected
-```
-
-**Step 2: Run test to verify it fails**
-
-Run: `pytest tests/path/test.py::test_name -v`
-Expected: FAIL with "function not defined"
-
-**Step 3: Write minimal implementation**
-
-```python
-def function(input):
-    return expected
-```
-
-**Step 4: Run test to verify it passes**
-
-Run: `pytest tests/path/test.py::test_name -v`
-Expected: PASS
-
-**Step 5: Commit**
-
-```bash
-git add tests/path/test.py src/path/file.py
-git commit -m "feat: add specific feature"
-```
-````
-
-## Remember
-- Exact file paths always
-- Complete code in plan (not "add validation")
-- Exact commands with expected output
-- Reference relevant skills by name
-- DRY, YAGNI, TDD, frequent commits
+- **Goal and approach:** one sentence on what it builds, two or three on how.
+- **Requirements trace:** which original requirement each step serves, so a
+  reviewer can check coverage against the request rather than against the plan.
+- **Per step:** the files, the failing test to write first, the focused test
+  command and its expected result, and the commit.
+- **Open questions:** anything the requirements do not settle. Product questions go
+  to the owner through `ask_human` before the dependent steps start.
+- **Splitting:** when the work spans several deliverables or must land in a fixed
+  order, see `roadmap-phase-loop` for dependent work streams and stacking.

@@ -23,7 +23,7 @@ for (const [key, [binary, variable]] of Object.entries(providers)) {
     expect(plugin.execution?.environment[variable!]!({ credential: 'synthetic-command-token', configuration })).toBe(
       'synthetic-command-token'
     )
-    expect(plugin.sandbox.skills).toEqual([`deploy-${key}`])
+    expect(plugin.sandbox.skills).toEqual(['deploy-app'])
     expect(plugin.sandbox.setupSteps).toHaveLength(1)
     expect(plugin.sandbox.setupSteps[0]!.id).toMatch(/@\d+\.\d+\.\d+$/)
     expect(plugin.sandbox.setupSteps[0]!.script).toMatch(/sha512|sha256/)
@@ -61,19 +61,20 @@ test('channel and nonexecution plugins never declare exec', () => {
   ).toEqual(['github', 'linear', 'notion', ...Object.keys(providers)].sort())
 })
 
-test('attached deploy skills use assigned exec credentials rather than obsolete exposure or manual CLI installation', async () => {
+test('the attached deploy skill and its provider notes use assigned exec credentials rather than obsolete exposure or manual CLI installation', async () => {
   const { readFileSync } = await import('node:fs')
   const { join } = await import('node:path')
+  const skillDir = join(import.meta.dir, '../../../../../../config/skills/deploy-app')
+  const router = readFileSync(join(skillDir, 'SKILL.md'), 'utf8')
+  expect(router).toContain('ficus integration exec <provider> -- npm run deploy')
+  expect(router).toContain('assign')
   for (const key of Object.keys(providers)) {
-    const skill = readFileSync(
-      join(import.meta.dir, '../../../../../../config/skills', `deploy-${key}`, 'SKILL.md'),
-      'utf8'
-    )
-    expect(skill).not.toContain('DEPLOY_')
-    expect(skill).not.toContain('expose-secrets')
-    expect(skill).not.toContain('ficus secret')
-    expect(skill).toContain(`ficus integration exec ${key} -- npm run deploy`)
-    expect(skill).toContain('assign')
+    const note = readFileSync(join(skillDir, 'providers', `${key}.md`), 'utf8')
+    expect(router).toContain(`providers/${key}.md`)
+    expect(note).not.toContain('DEPLOY_')
+    expect(note).not.toContain('expose-secrets')
+    expect(note).not.toContain('ficus secret')
+    expect(note).toContain('Settings → Integrations →')
   }
 })
 

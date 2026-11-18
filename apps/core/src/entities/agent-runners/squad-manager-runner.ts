@@ -3,7 +3,7 @@ import { AgentRunner, type AutomaticBigbrainTools } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { Squad } from '../Squad'
 import { isAssistantDelegate } from '../../services/assistant-agents'
-import { getSquadManagerCliHelp } from '../../lib/utils/cli-help'
+import { getCliCommandIndex } from '../../lib/utils/cli-help'
 import {
   prompt,
   interpolateTemplate,
@@ -160,7 +160,7 @@ export class SquadManagerRunner extends AgentRunner {
   private async buildSquadManagerPrompt(): Promise<string> {
     const sandboxId = await this.agent.getSandboxId()
     const [cliHelp, squadContext, slotPools, publicVoice, publicTextEnabled] = await Promise.all([
-      getSquadManagerCliHelp(),
+      getCliCommandIndex(),
       this.buildSquadContext(),
       buildSlotPoolsPrompt(this.squad.id),
       buildPublicVoicePrompt(this.squad),
@@ -240,7 +240,7 @@ export class SquadManagerRunner extends AgentRunner {
     // the equivalent of workspace, teammates, and active schedules through its
     // own richer dedicated sections above (## Workspace, ## Current Squad State
     // which embeds the active-schedules block), so those placeholders resolve
-    // to empty here to avoid duplication. The CLI reference ({{cliHelp}}) is
+    // to empty here to avoid duplication. The CLI index ({{cliHelp}}) is
     // only emitted via this placeholder for the manager, so it carries the
     // real value. Identity tokens (agent.*, squad.*) resolve to their values.
     return interpolateTemplate(p.build(), {

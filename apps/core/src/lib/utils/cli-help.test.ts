@@ -1,20 +1,17 @@
-import { beforeAll, describe, test, expect } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync } from 'fs'
-import {
-  getCliHostPath,
-  getTaskWorkflowCliHelp,
-  getSquadWorkerCliHelp,
-  getSquadManagerCliHelp,
-  clearCliHelpCache,
-  getSystemManagerCliHelp,
-  warmupCliHelpCaches,
-  resetCliHelpCacheForTests,
-  setCliPathOverrideForTests,
-  filterCliHelpForPermissions,
-  CLI_COMMAND_PERMISSIONS,
-} from './cli-help'
 import { join } from 'path'
 import { KNOWN_GRANTABLE_PERMISSIONS } from '@ficus/shared'
+import {
+  CLI_COMMAND_PERMISSIONS,
+  getCliCommandIndex,
+  getCliHostPath,
+  parseCommandGroups,
+  renderCliCommandIndex,
+  resetCliHelpCacheForTests,
+  setCliPathOverrideForTests,
+  warmupCliCommandIndex,
+} from './cli-help'
 import { MONOREPO_ROOT } from '../paths'
 
 // cli-help now relies SOLELY on the built CLI at apps/cli/dist/ficus.js — the
@@ -30,73 +27,62 @@ beforeAll(() => {
   }
 })
 
-describe('getSystemManagerCliHelp', () => {
-  test('includes agent/squad subcommands', async () => {
-    clearCliHelpCache()
-    const help = await getSystemManagerCliHelp()
-    expect(help).toContain('agent')
-    expect(help).toContain('squad')
-  })
-})
+/** Permissions of a bundled agent role, read from the same file config sync loads. */
+async function rolePermissions(slug: string): Promise<string[]> {
+  const file = await Bun.file(join(MONOREPO_ROOT, 'config/roles/defaults.yaml')).text()
+  const { roles } = Bun.YAML.parse(file) as { roles: Array<{ slug: string; permissions: string[] }> }
+  return roles.find((role) => role.slug === slug)!.permissions
+}
 
-describe('getTaskWorkflowCliHelp', () => {
-  test('includes task subcommands', async () => {
-    clearCliHelpCache()
-    const help = await getTaskWorkflowCliHelp()
-    expect(help).toContain('Usage: ficus')
-    expect(help).toContain('task')
-    expect(help).toContain('schedule')
-  })
+/** Group names listed as `- name` lines in an index. */
+function listedGroups(index: string): string[] {
+  return [...index.matchAll(/^- ([\w-]+)/gm)].map((m) => m[1]!)
+}
 
-  test('caches result on subsequent calls', async () => {
-    clearCliHelpCache()
-    const help1 = await getTaskWorkflowCliHelp()
-    const help2 = await getTaskWorkflowCliHelp()
-    expect(help1).toBe(help2)
-  })
-})
+/** Top-level group names from the real `ficus --help`. */
+async function cliGroups(): Promise<string[]> {
+  const help = await Bun.$`${[getCliHostPath()]} --help`.text()
+  return parseCommandGroups(help).map((group) => group.name)
+}
 
-describe('getSquadWorkerCliHelp', () => {
-  test('includes agent/workstream/squad subcommands', async () => {
-    clearCliHelpCache()
-    const help = await getSquadWorkerCliHelp()
-    expect(help).toContain('agent')
-    expect(help).toContain('workstream')
-    expect(help).toContain('squad')
+describe('getCliCommandIndex', () => {
+  test('lists one line per top-level group, then how to get commands and flags', async () => {
+    resetCliHelpCacheForTests()
+    const index = await getCliCommandIndex()
+    expect(index.startsWith('You have access to the `ficus` CLI.')).toBe(true)
+    expect(listedGroups(index)).toEqual((await cliGroups()).filter((group) => group !== 'secret'))
+    expect(index).toContain('- workstream (ws): Manage work streams')
+    expect(index).toContain('`ficus <group> --help`')
+    expect(index).toContain('`ficus <group> <command> --help`')
+    // The index replaces the per-group help dumps.
+    expect(index).not.toContain('Usage: ficus')
+    expect(index).not.toContain('Commands:')
+    expect(index).not.toMatch(/^- help\b/m)
   })
 
-  test('does not include task/schedule detailed subcommand help', async () => {
-    clearCliHelpCache()
-    const help = await getSquadWorkerCliHelp()
-    // Top-level `ficus --help` lists all commands (including task, schedule, etc.)
-    // but the detailed subcommand help sections should NOT be included
-    expect(help).not.toContain('Usage: ficus task')
-    expect(help).not.toContain('Usage: ficus schedule')
+  test('stays a short index, far below the old 15 to 20 KB help dumps', async () => {
+    resetCliHelpCacheForTests()
+    expect((await getCliCommandIndex()).length).toBeLessThan(4000)
+    expect((await getCliCommandIndex(await rolePermissions('default-worker'))).length).toBeLessThan(4500)
   })
-})
 
-describe('getSquadManagerCliHelp', () => {
-  test('includes agent/workstream/squad subcommands', async () => {
-    clearCliHelpCache()
-    const help = await getSquadManagerCliHelp()
-    expect(help).toContain('agent')
-    expect(help).toContain('workstream')
-    expect(help).toContain('squad')
-  })
-})
-
-describe('the CLI named in agent prompts', () => {
-  test('the help intro names the ficus CLI', async () => {
-    clearCliHelpCache()
-    const help = await getSquadWorkerCliHelp()
-    expect(help.startsWith('You have access to the `ficus` CLI.')).toBe(true)
+  test('caches a successful read', async () => {
+    resetCliHelpCacheForTests()
+    await warmupCliCommandIndex()
+    setCliPathOverrideForTests('/nonexistent/ficus.js')
+    try {
+      expect(await getCliCommandIndex()).not.toContain('[ERROR]')
+    } finally {
+      setCliPathOverrideForTests(null)
+      resetCliHelpCacheForTests()
+    }
   })
 
   test('the CLI-missing error directs bounded local recovery, not human-run commands', async () => {
     resetCliHelpCacheForTests()
     setCliPathOverrideForTests('/nonexistent/ficus.js')
     try {
-      const error = await getSquadManagerCliHelp()
+      const error = await getCliCommandIndex()
       expect(error).toContain('[ERROR] The ficus CLI is not installed')
       expect(error).toContain('bounded recovery budget')
       expect(error).not.toContain('ask them to install')
@@ -108,163 +94,122 @@ describe('the CLI named in agent prompts', () => {
       resetCliHelpCacheForTests()
     }
   })
-})
 
-describe('cache never stores the CLI-missing error sentinel', () => {
   test('a transient CLI-missing error is not cached and a later success is served', async () => {
     resetCliHelpCacheForTests()
     setCliPathOverrideForTests('/nonexistent/ficus.js')
-    const errorHelp = await getSystemManagerCliHelp()
-    expect(errorHelp).toContain('[ERROR]')
-
+    expect(await getCliCommandIndex()).toContain('[ERROR]')
     setCliPathOverrideForTests(null)
-    const realHelp = await getSystemManagerCliHelp()
-    expect(realHelp).not.toContain('[ERROR]')
-    expect(realHelp).toContain('Usage: ficus')
+    const index = await getCliCommandIndex()
+    expect(index).not.toContain('[ERROR]')
+    expect(index).toContain('- workstream')
   })
 })
 
-describe('warmupCliHelpCaches', () => {
-  test('populates worker-facing CLI help caches', async () => {
-    clearCliHelpCache()
+describe('permission filtering', () => {
+  test('a squad worker index drops groups and names commands the worker role cannot use', async () => {
+    resetCliHelpCacheForTests()
+    const index = await getCliCommandIndex(await rolePermissions('default-worker'))
+    const groups = listedGroups(index)
 
-    await warmupCliHelpCaches()
+    for (const removed of ['agent-type', 'channel', 'shared-prompt', 'voice', 'squad-env', 'provider-auth', 'user', 'role'])
+      expect(groups).not.toContain(removed)
+    for (const kept of ['skill', 'schedule', 'slot', 'deploy', 'pr', 'agent-question', 'workstream', 'inbox', 'squad'])
+      expect(groups).toContain(kept)
 
-    const [systemManager, squadWorker, squadManager] = await Promise.all([
-      getSystemManagerCliHelp(),
-      getSquadWorkerCliHelp(),
-      getSquadManagerCliHelp(),
-    ])
-    expect(systemManager).toContain('agent')
-    expect(squadWorker).toContain('workstream')
-    expect(squadManager).toContain('workstream')
-  })
-})
-
-describe('filterCliHelpForPermissions', () => {
-  /** Permissions of a bundled agent role, read from the same file config sync loads. */
-  async function rolePermissions(slug: string): Promise<string[]> {
-    const file = await Bun.file(join(MONOREPO_ROOT, 'config/roles/defaults.yaml')).text()
-    const { roles } = Bun.YAML.parse(file) as { roles: Array<{ slug: string; permissions: string[] }> }
-    return roles.find((role) => role.slug === slug)!.permissions
-  }
-
-  /** Command names listed under `Commands:` in the help section for `group` ('' = `ficus --help`). */
-  function listedCommands(help: string, group: string): string[] {
-    const section = help
-      .split('\n\n---\n\n')
-      .find((s) => (group ? s.includes(`Usage: ficus ${group}`) : /^Usage: ficus \[options\]/m.test(s)))
-    if (!section) return []
-    return [...section.split('Commands:')[1]!.matchAll(/^ {2}(\S+)/gm)].map((m) => m[1]!.split('|')[0]!)
-  }
-
-  test('a squad worker reference drops commands the worker role cannot use', async () => {
-    clearCliHelpCache()
-    const help = filterCliHelpForPermissions(await getSquadWorkerCliHelp(), await rolePermissions('default-worker'))
-
-    expect(listedCommands(help, 'workstream')).not.toContain('create')
-    for (const removed of ['pause', 'cancel', 'add-agent', 'remove-agent', 'delete', 'wait-actor'])
-      expect(listedCommands(help, 'workstream')).not.toContain(removed)
-    for (const removed of ['spawn', 'unspawn', 'create', 'update', 'set-meta', 'ssh', 'grant'])
-      expect(listedCommands(help, 'squad')).not.toContain(removed)
-    for (const removed of ['message', 'steer', 'stop', 'delete', 'scope'])
-      expect(listedCommands(help, 'agent')).not.toContain(removed)
-    expect(listedCommands(help, 'workflow')).not.toContain('create')
-    expect(listedCommands(help, 'inbox')).not.toContain('send-system')
-    for (const removed of [
-      'agent-type',
-      'channel',
-      'shared-prompt',
-      'voice',
-      'squad-env',
-      'provider-auth',
-      'user',
-      'role',
-    ])
-      expect(listedCommands(help, '')).not.toContain(removed)
-
-    // Commands a worker uses on its own streams stay, including those open to bound workers.
-    for (const kept of ['flow', 'advance', 'finish', 'get', 'request-input', 'request-review', 'unblock', 'set-meta'])
-      expect(listedCommands(help, 'workstream')).toContain(kept)
-    expect(listedCommands(help, 'inbox')).toContain('send')
-    expect(listedCommands(help, 'squad')).toContain('workspace')
-    for (const kept of ['skill', 'schedule', 'slot', 'deploy', 'workstream', 'inbox'])
-      expect(listedCommands(help, '')).toContain(kept)
-    expect(help).toContain('Route those requests to your squad manager.')
+    expect(index).toContain('Route those requests to your squad manager.')
+    const withheld = index.slice(index.indexOf('not available to you:'))
+    expect(withheld).toMatch(/workstream create, [^;]*\bpause\b[^;]*\bcancel\b[^;]*\badd-agent\b/)
+    expect(withheld).toMatch(/squad create, [^;]*\bspawn\b/)
+    expect(withheld).toContain('inbox send-system')
+    // Commands a worker uses on its own streams are not withheld.
+    for (const usable of ['advance', 'finish', 'request-input', 'set-meta', 'resolve-input'])
+      expect(withheld).not.toMatch(new RegExp(`workstream [^;]*\\b${usable}\\b`))
   })
 
-  test('the squad manager reference stays complete', async () => {
-    clearCliHelpCache()
-    const help = await getSquadManagerCliHelp()
-    expect(listedCommands(help, 'workstream')).toContain('create')
-    expect(listedCommands(help, 'squad')).toContain('spawn')
-    expect(listedCommands(help, 'workflow')).toContain('create')
-    expect(listedCommands(help, '')).toContain('agent-type')
-    expect(help).not.toContain('Route those requests to your squad manager.')
+  test('the manager role sees every group and no withheld commands', async () => {
+    resetCliHelpCacheForTests()
+    const index = await getCliCommandIndex(await rolePermissions('default-manager'))
+    for (const kept of ['workstream', 'squad', 'workflow', 'agent', 'inbox'])
+      expect(listedGroups(index)).toContain(kept)
+    expect(index).not.toMatch(/workstream create\b/)
   })
 
-  test('a caller holding every permission gets the reference unchanged', async () => {
-    clearCliHelpCache()
-    const help = await getSquadWorkerCliHelp()
-    expect(filterCliHelpForPermissions(help, ['*'])).toBe(help)
+  test('without permissions, or holding every permission, the index is complete and has no omission note', async () => {
+    resetCliHelpCacheForTests()
+    const index = await getCliCommandIndex()
+    expect(await getCliCommandIndex(['*'])).toBe(index)
+    expect(listedGroups(index)).toContain('agent-type')
+    expect(index).not.toContain('Route those requests to your squad manager.')
   })
 
-  test('every mapped command exists in the generated reference and names a known permission', async () => {
-    clearCliHelpCache()
-    const help = await getSquadWorkerCliHelp()
+  test('every mapped command exists in the CLI and names a known permission', async () => {
+    const groups = await cliGroups()
+    const keys = Object.keys(CLI_COMMAND_PERMISSIONS)
+    const subcommandGroups = [...new Set(keys.filter((key) => key.includes(' ')).map((key) => key.split(' ')[0]!))]
+    const commandsByGroup = new Map(
+      await Promise.all(
+        subcommandGroups.map(
+          async (group) =>
+            [
+              group,
+              parseCommandGroups(await Bun.$`${[getCliHostPath()]} ${group} --help`.text()).map((entry) => entry.name),
+            ] as const
+        )
+      )
+    )
     for (const [key, permissions] of Object.entries(CLI_COMMAND_PERMISSIONS)) {
-      const [group, command] = key.includes(' ') ? key.split(' ') : ['', key]
-      expect({ key, listed: listedCommands(help, group!).includes(command!) }).toEqual({ key, listed: true })
+      const [group, command] = key.split(' ')
+      expect({ key, group: groups.includes(group!) }).toEqual({ key, group: true })
+      if (command)
+        expect({ key, listed: commandsByGroup.get(group!)!.includes(command) }).toEqual({ key, listed: true })
       for (const permission of permissions) expect(KNOWN_GRANTABLE_PERMISSIONS.has(permission)).toBe(true)
     }
   })
+})
 
-  test('drops wrapped description lines with their command and keeps the rest', () => {
+describe('parseCommandGroups', () => {
+  test('reads names, aliases and wrapped descriptions, and skips help', () => {
     const help = [
-      'Usage: ficus workstream|ws [options] [command]',
+      'Usage: ficus [options] [command]',
+      '',
+      'Options:',
+      '  -h, --help                display help for command',
       '',
       'Commands:',
-      '  create|new [options] <title>  Create a work stream using the squad',
-      '                                default or an explicit workflow',
-      '  get|info <id>                 Get work stream details',
+      '  workstream|ws [options]   Manage work',
+      '                            streams',
+      '  pr [options] <n> <f...>   Pull request helpers',
+      '  help [command]            display help for command',
       '',
     ].join('\n')
-    expect(filterCliHelpForPermissions(help, ['workstreams:read'])).toBe(
-      [
-        'Commands that need permissions you do not hold are omitted below. Route those requests to your squad manager.',
-        '',
-        'Usage: ficus workstream|ws [options] [command]',
-        '',
-        'Commands:',
-        '  get|info <id>                 Get work stream details',
-        '',
-      ].join('\n')
-    )
+    expect(parseCommandGroups(help)).toEqual([
+      { name: 'workstream', aliases: ['ws'], description: 'Manage work streams' },
+      { name: 'pr', aliases: [], description: 'Pull request helpers' },
+    ])
   })
 })
 
-describe('operator-only help stays out of every agent reference', () => {
-  test('all generated profiles omit secret even before permission filtering', async () => {
-    clearCliHelpCache()
-    for (const generate of [
-      getSystemManagerCliHelp,
-      getTaskWorkflowCliHelp,
-      getSquadWorkerCliHelp,
-      getSquadManagerCliHelp,
-    ]) {
-      const help = await generate()
-      expect(help).not.toMatch(/^ {2}secret\s/m)
-      expect(help).not.toContain('Usage: ficus secret')
-      expect(help).toContain('integration')
+describe('operator-only groups stay out of every agent index', () => {
+  test('the real index omits secret', async () => {
+    resetCliHelpCacheForTests()
+    for (const permissions of [undefined, await rolePermissions('default-worker')]) {
+      const index = await getCliCommandIndex(permissions)
+      expect(listedGroups(index)).not.toContain('secret')
+      expect(listedGroups(index)).toContain('integration')
     }
   })
 
-  test('broad human permissions do not restore operator commands to an agent reference', () => {
-    const help =
-      'Usage: ficus [options] [command]\n\nCommands:\n  secret [options]  Manage secrets\n                    Operator details\n  integration [options]  Integrations\n\n---\n\nUsage: ficus secret [options] [command]\n\nCommands:\n  get <key>  Read a value\n'
-    const filtered = filterCliHelpForPermissions(help, ['*'])
-    expect(filtered).not.toContain('secret')
-    expect(filtered).not.toContain('Operator details')
-    expect(filtered).toContain('integration')
+  test('broad human permissions do not restore operator groups', () => {
+    const index = renderCliCommandIndex(
+      [
+        { name: 'secret', aliases: [], description: 'Manage secrets' },
+        { name: 'integration', aliases: [], description: 'Integrations' },
+      ],
+      ['*']
+    )
+    expect(index).not.toContain('secret')
+    expect(index).toContain('- integration: Integrations')
+    expect(index).not.toContain('Route those requests')
   })
 })

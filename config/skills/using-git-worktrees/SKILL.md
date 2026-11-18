@@ -1,162 +1,45 @@
 ---
 name: using-git-worktrees
-description: Use when starting feature work that needs isolation from current workspace or before executing implementation plans - creates isolated git worktrees with smart directory selection and safety verification
+description: Use when starting repository work that needs an isolated branch, or when a work stream's recorded worktree is missing - finds or creates the right git worktree safely
 ---
 
 # Using Git Worktrees
 
-## Work stream authority and command runtime
+## The work stream decides
 
-When work is assigned through a Ficus work stream, first run `ficus workstream get <id> --json` with `squad_bash`. If `git.worktree` and `git.branch` are present, use that recorded worktree and branch; **do not create a second worktree**. Only use this skill's creation flow when no work stream controls the worktree. Run all git, setup, and verification commands with `squad_bash` from the project/shared worktree, and follow the repository's package-manager policy instead of the generic examples below. If `squad_bash` is unavailable, use another shell only when the Workspace & Sandbox prompt says it can reach the recorded worktree; otherwise delegate the repository operation to an agent with shared-runtime access.
+When work is assigned through a Ficus work stream, first run
+`ficus workstream get <id> --json` with `squad_bash` and read `git.worktree` and
+`git.branch`. If they are present, use that recorded worktree and branch;
+**do not create a second worktree**. If the directory is missing, follow the worktree rules in
+your system prompt (inspect `worktreeCleanup` first; never recreate a path whose
+cleanup is pending or uncertain). Use the creation steps below only when no work
+stream controls the worktree.
 
-## Overview
+Run every git, setup and test command with `squad_bash` from the worktree.
+If `squad_bash` is unavailable, use another shell only when your Workspace & Sandbox
+prompt says it can reach the worktree; otherwise delegate the repository operation
+to an agent with shared-runtime access.
 
-Git worktrees create isolated workspaces sharing the same repository, allowing work on multiple branches simultaneously without switching.
+## Creating a worktree yourself
 
-**Core principle:** Systematic directory selection + safety verification = reliable isolation.
+1. Choose the directory: the location the repository's `AGENTS.md` names, otherwise
+   an existing `.worktrees/` or `worktrees/` folder, otherwise create `.worktrees/`.
+2. For a project-local directory, confirm it is ignored before creating anything
+   (`git check-ignore -q .worktrees`). If it is not, add it to `.gitignore` and
+   commit that first, so worktree contents are never tracked.
+3. Create the branch from the configured base branch, not an assumed `main`:
 
-**Announce at start:** "I'm using the using-git-worktrees skill to set up an isolated workspace."
+   ```bash
+   git worktree add "<dir>/<branch>" -b "<branch>" "<base-branch>"
+   ```
 
-## Directory Selection Process
+4. Run the setup and focused test commands that `AGENTS.md` declares, using the
+   repository's package manager. If the baseline already fails, report it; when the
+   assignment does not settle whether to continue, ask with `ask_human`.
 
-Follow this priority order:
+## After delivery
 
-### 1. Check Existing Directories
-
-```bash
-# Check in priority order
-ls -d .worktrees 2>/dev/null     # Preferred (hidden)
-ls -d worktrees 2>/dev/null      # Alternative
-```
-
-**If found:** Use that directory. If both exist, `.worktrees` wins.
-
-**If neither exists:** use the location the repository's `AGENTS.md` names, otherwise
-create `.worktrees`.
-
-## Safety Verification
-
-### For Project-Local Directories (.worktrees or worktrees)
-
-**MUST verify directory is ignored before creating worktree:**
-
-```bash
-# Check if directory is ignored (respects local, global, and system gitignore)
-git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/dev/null
-```
-
-**If NOT ignored:**
-
-1. Add appropriate line to .gitignore
-2. Commit the change
-3. Proceed with worktree creation
-
-**Why critical:** Prevents accidentally committing worktree contents to repository.
-
-## Creation Steps
-
-### 1. Detect Project Name
-
-```bash
-project=$(basename "$(git rev-parse --show-toplevel)")
-```
-
-### 2. Create Worktree
-
-```bash
-# The directory chosen above (.worktrees or worktrees)
-path="$WORKTREES_DIR/$BRANCH_NAME"
-
-# Create worktree with new branch from the configured base branch
-git worktree add "$path" -b "$BRANCH_NAME" "$BASE_BRANCH"
-cd "$path"
-```
-
-### 3. Run Project Setup
-
-Read the repository's `AGENTS.md` and use its declared package manager and setup commands through `squad_bash`. Do not let this generic skill override repository policy. Where no policy exists, choose setup from the project files (for example Cargo, Python requirements, or Go modules).
-
-### 4. Verify Clean Baseline
-
-Run the repository-declared test command through `squad_bash`. If no project policy exists, use the appropriate language test command.
-
-**If tests fail:** Report the failures. If the assignment does not already settle
-whether to proceed, ask with `ask_human` whether to proceed or investigate.
-
-**If tests pass:** Report ready.
-
-### 5. Report Location
-
-```
-Worktree ready at <full-path>
-Tests passing (<N> tests, 0 failures)
-Ready to implement <feature-name>
-```
-
-## Quick Reference
-
-| Situation                  | Action                     |
-| -------------------------- | -------------------------- |
-| `.worktrees/` folder       | Use it (verify ignored)    |
-| Directory not ignored      | Add to .gitignore + commit |
-| Tests fail during baseline | Report + ask_human         |
-| No package.json/Cargo.toml | Skip dependency install    |
-
-## Common Mistakes
-
-### Skipping ignore verification
-
-- **Problem:** Worktree contents get tracked, pollute git status
-- **Fix:** Always use `git check-ignore` before creating project-local worktree
-
-### Proceeding with failing tests
-
-- **Problem:** Can't distinguish new bugs from pre-existing issues
-- **Fix:** Report failures; get permission through `ask_human` unless the assignment settles it
-
-### Hardcoding setup commands
-
-- **Problem:** Breaks on projects using different tools
-- **Fix:** Auto-detect from project files (package.json, etc.)
-
-## Example Workflow
-
-```
-You: I'm using the using-git-worktrees skill to set up an isolated workspace.
-
-[Check .worktrees/ - exists]
-[Verify ignored - git check-ignore confirms .worktrees/ is ignored]
-[Create worktree: git worktree add .worktrees/auth -b feature/auth]
-[Read AGENTS.md and run the repository setup/test commands through squad_bash]
-
-Worktree ready at <git.worktree>
-Tests passing (47 tests, 0 failures)
-Ready to implement auth feature
-```
-
-## Red Flags
-
-**Never:**
-
-- Create worktree without verifying it's ignored (project-local)
-- Skip baseline test verification
-- Proceed with failing tests without asking
-- Skip the repository's `AGENTS.md` check
-
-**Always:**
-
-- Verify directory is ignored for project-local
-- Auto-detect and run project setup
-- Verify clean test baseline
-
-## Post-delivery lifetime
-
-Platform-provisioned trees default to automatic asynchronous cleanup after delivery
-and associated execution settlement. This is not a manual cleanup assignment.
-Set `ficus workstream update <id> --auto-cleanup-worktree false` before finishing
-when retention is required. Register other-stream use before accessing a shared
-tree; undeclared shell access is outside the cooperative isolation guarantee.
-Do not recreate or reuse a path with pending/uncertain cleanup, or delete its
-operation marker. A cleaned stream requires a newly provisioned stream for more
-work. Branches and delivery provenance are retained. Manually created or
-historical trees without platform ownership are not automatically swept.
+Platform-provisioned worktrees are cleaned up automatically after the stream is
+delivered. To keep one, run `ficus workstream cleanup retain <id>` before finishing.
+Branches and delivery history remain after cleanup; further work needs a newly
+provisioned stream.
