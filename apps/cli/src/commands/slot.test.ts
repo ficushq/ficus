@@ -142,6 +142,15 @@ test('command actions call the exact encoded squad API paths and bodies', async 
       },
     },
     {
+      // Host sharing is the server's default; only an explicit choice is sent.
+      args: ['register', 'deploy/lock', '--no-host-shared'],
+      expected: {
+        method: 'POST',
+        path: '/api/squads/squad%2Fone/slots',
+        body: { key: 'deploy/lock', hostShared: false },
+      },
+    },
+    {
       args: ['update', 'heavy/tests', '--host-shared'],
       expected: { method: 'PATCH', path: '/api/squads/squad%2Fone/slots/heavy%2Ftests', body: { hostShared: true } },
     },
@@ -532,8 +541,9 @@ test('renders compact actionable slot list and detail output', () => {
       'squad'
     )
   ).toBe('heavy-tests: 1/2 active, 0 available, 3 queued, host-shared (machine host: 3/3 in use across squads)')
+  // Where no host budget applies the flag changes nothing, so nothing is said.
   expect(renderSlotPools([{ ...summary, hostShared: true }], 'squad')).toBe(
-    'heavy-tests: 1/2 active, 1 available, 3 queued, host-shared (no machine host budget applies)'
+    'heavy-tests: 1/2 active, 1 available, 3 queued'
   )
   expect(
     renderSlotPools(

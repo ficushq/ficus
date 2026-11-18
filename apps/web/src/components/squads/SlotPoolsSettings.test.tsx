@@ -113,10 +113,13 @@ describe('SlotPoolsSettings rendering', () => {
     )
     expect(html).toContain('Host-shared')
     expect(html).toContain('Machine host 3/3 in use across squads')
-    // An ordinary pool, or a server that predates the field, shows neither.
-    const plain = renderToStaticMarkup(element(seededClient([pool()]), ['slots:use']))
-    expect(plain).not.toContain('Host-shared')
-    expect(plain).not.toContain('Machine host')
+    // A pool with no host budget behind it shows neither: one that is not
+    // host-shared, one on a runtime without machines, or an older server.
+    for (const other of [pool(), pool({ hostShared: true }), pool({ hostShared: false })]) {
+      const plain = renderToStaticMarkup(element(seededClient([other]), ['slots:use']))
+      expect(plain).not.toContain('Host-shared')
+      expect(plain).not.toContain('Machine host')
+    }
   })
 
   test('explains missing read permission instead of listing pools', () => {
@@ -215,7 +218,14 @@ describe('SlotPoolsSettings administration', () => {
       expect(ui.calls[0]).toEqual({
         method: 'POST',
         path: `/api/squads/${SQUAD}/slots`,
-        body: { key: 'heavy-tests', capacity: 2, claimTimeoutMs: 45 * 60_000, usage: 'Claim before DB-backed tests.' },
+        // New pools share the machine host's budget unless the box is unticked.
+        body: {
+          key: 'heavy-tests',
+          capacity: 2,
+          claimTimeoutMs: 45 * 60_000,
+          usage: 'Claim before DB-backed tests.',
+          hostShared: true,
+        },
       })
     } finally {
       await ui.restore()

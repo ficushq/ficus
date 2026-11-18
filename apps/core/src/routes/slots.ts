@@ -123,14 +123,15 @@ function validUuid(raw: string, kind: 'claim' | 'waiter'): string {
 }
 
 const HOST_SHARED_NOTE =
-  "It is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares."
+  "It is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares. For a pool that protects something other than box memory or CPU, turn that off: ficus slot update <key> --no-host-shared."
+const NOT_HOST_SHARED_NOTE = 'It is not host-shared: only its own capacity limits it.'
 
 function registerResponse(pool: SlotPoolRecord): SlotPoolMutationResponse {
   return {
     outcome: 'registered',
     message: `Slot pool "${pool.key}" is registered with capacity ${pool.capacity} and a ${formatSlotClaimTimeout(
       pool.claimTimeoutMs
-    )} claim timeout${pool.usage ? ' and usage guidance' : ''}.${pool.hostShared ? ` ${HOST_SHARED_NOTE}` : ''}`,
+    )} claim timeout${pool.usage ? ' and usage guidance' : ''}. ${pool.hostShared ? HOST_SHARED_NOTE : NOT_HOST_SHARED_NOTE}`,
     pool,
   }
 }

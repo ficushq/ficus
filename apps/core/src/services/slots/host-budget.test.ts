@@ -142,11 +142,12 @@ async function squad(
     await db.insert(machineBoxes).values({ sandboxId: `squad_${id}`, machineId, unixUser: 'ficus', port })
   }
   if (pool) {
+    // registerPool makes a new pool host-shared unless told otherwise.
     await registerPool({
       squadId: id,
       key: POOL,
       capacity: pool.capacity ?? 5,
-      hostShared: pool.hostShared ?? true,
+      ...(pool.hostShared === undefined ? {} : { hostShared: pool.hostShared }),
       createdBy: 'test',
     })
   }

@@ -141,7 +141,7 @@ against that squad.
 ```bash
 ficus slot list [key] [--squad <id>]
 ficus slot history <key> [--limit <1..100>] [--cursor <opaque>] [--squad <id>]
-ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--usage <text>] [--host-shared] [--squad <id>]
+ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--usage <text>] [--no-host-shared] [--squad <id>]
 ficus slot update <key> [--capacity <n>] [--timeout <duration>] [--usage <text> | --clear-usage] [--host-shared | --no-host-shared] [--squad <id>]
 ficus slot disable <key> [--squad <id>]
 ficus slot enable <key> [--squad <id>]
@@ -162,12 +162,15 @@ listing each enabled pool's key, capacity, claim timeout and guidance. Put
 per-pool rules in guidance rather than squad context. Live usage is not in the
 prompt; use `ficus slot list`.
 
-A **host-shared** pool (`--host-shared`) also draws on the slot budget of the
-machine host its squad's box is on, which every host-shared pool of every squad
-on that machine shares. A claim then needs a free unit in both, so squads
-cannot overload one host together, and an agent can be queued while its own
-pool has room. Use it for pools that protect box memory or CPU. A squad with no
-pool at all on such a machine is given a host-shared `heavy-work` pool. See
+A **host-shared** pool also draws on the slot budget of the machine host its
+squad's box is on, which every host-shared pool of every squad on that machine
+shares. A claim then needs a free unit in both, so squads cannot overload one
+host together, and an agent can be queued while its own pool has room. New
+pools are host-shared; register with `--no-host-shared` (or `update
+--no-host-shared`) for a pool that protects something other than box memory or
+CPU, such as a deployment lock. Pools registered before host sharing existed
+stay as they were until `update --host-shared`. A squad with no pool at all on
+such a machine is given a host-shared `heavy-work` pool. See
 [host slot budget](../machines/host-slot-budget.md) for the budget, the order
 across squads and the default pool.
 

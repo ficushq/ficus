@@ -4736,6 +4736,8 @@ export const slotPools = pgTable(
     // Host-shared pools also draw on their machine host's slot budget, which
     // every host-shared pool of every squad on that machine shares
     // (services/slots/host-budget.ts). Inert where the squad has no machine.
+    // New pools are registered host-shared (registerPool); the column default
+    // is false so pools that predate the column keep their behavior.
     hostShared: boolean('host_shared').notNull().default(false),
     unregisteredAt: timestamp('unregistered_at', { withTimezone: true }),
   },

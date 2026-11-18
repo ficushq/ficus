@@ -15,10 +15,8 @@ the first place.
 
 ## Host-shared pools
 
-A pool can be marked **host-shared** (`ficus slot register <key>
---host-shared`, `ficus slot update <key> --host-shared`, or the checkbox in
-Squad Settings → Slot Pools). A claim on a host-shared pool needs two free
-units:
+A pool is **host-shared** unless it is told not to be. A claim on a host-shared
+pool needs two free units:
 
 - one in the pool, as for any pool, and
 - one in the **host budget** of the machine the squad's box is on. Every
@@ -35,10 +33,18 @@ The machine host's shared slot budget is full (3 of 3 in use across squads); you
 exceeds what the host has free. Agent prompts say which pools are host-shared
 and how many such claims the host allows.
 
-Use it for pools that protect box memory or CPU: builds, test suites, dev
-servers, browser runs, Compose stacks. Leave it off for pools that protect
-something else, such as a deployment lock or one squad's infrastructure stack:
-those would only queue unrelated squads behind each other.
+New pools are host-shared by default, because most pools protect box memory or
+CPU (builds, test suites, dev servers, browser runs, Compose stacks) and one
+that is wrongly left out is exactly the work that overloads a host. Turn it off
+for a pool that protects something else, such as a deployment lock or one
+squad's infrastructure stack: `ficus slot register <key> --no-host-shared`,
+`ficus slot update <key> --no-host-shared`, or the checkbox in Squad Settings →
+Slot Pools. Left on, such a lock would take a unit of the machine while it is
+held and would itself wait whenever the machine is busy, for no benefit.
+
+Pools registered before host sharing existed are not host-shared until someone
+turns it on (`ficus slot update <key> --host-shared`), so an upgrade changes no
+existing pool.
 
 A squad with no machine (k8s, Docker and host runtimes, or a squad whose box
 was never placed) has no host budget. Its host-shared pools behave like
@@ -113,7 +119,7 @@ has no slot pool at all, is given one (`ensureDefaultHostPools`,
 - usage guidance naming dev servers, builds, full test suites, browser runs,
   Compose stacks and local databases.
 
-A squad that already has pools is left alone: mark the pool that protects box
-capacity host-shared instead. The manager can edit, disable or unregister the
+A squad that already has pools is left alone: turn host sharing on for the pool
+that protects box capacity instead. The manager can edit, disable or unregister the
 default pool like any other. Once unregistered it is not registered again: its
 row is kept as the record of that decision.

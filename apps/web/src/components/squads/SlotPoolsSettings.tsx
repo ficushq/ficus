@@ -137,7 +137,8 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
   const [capacity, setCapacity] = useState('1')
   const [timeout, setTimeoutValue] = useState('1h')
   const [usage, setUsage] = useState('')
-  const [hostShared, setHostShared] = useState(false)
+  // New pools share the machine host's budget unless the box is unticked.
+  const [hostShared, setHostShared] = useState(true)
   const [touchedKey, setTouchedKey] = useState(false)
 
   const keyError = slotKeyError(key)
@@ -153,7 +154,7 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
         capacity: parseSlotCapacity(capacity)!,
         claimTimeoutMs: parseSlotTimeout(timeout)!,
         usage: normalizeSlotUsage(usage),
-        ...(hostShared ? { hostShared: true } : {}),
+        hostShared,
       }),
     onSuccess: onDone,
   })
@@ -294,8 +295,9 @@ function HostSharedField({ checked, onChange }: { checked: boolean; onChange: (c
       <span>
         <span className="block text-sm font-medium text-primary">Share the machine host's budget</span>
         <span className="block text-xs text-muted">
-          For pools that protect box memory or CPU. A claim then also needs a free unit on the machine host, which every
-          squad on that machine shares, so squads cannot overload the host together.
+          A claim then also needs a free unit on the machine host, which every squad on that machine shares, so squads
+          cannot overload the host together. Untick it for a pool that protects something other than box memory or CPU,
+          such as a deployment lock.
         </span>
       </span>
     </label>
@@ -333,7 +335,7 @@ function SlotPoolRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium font-mono text-primary">{pool.key}</span>
             {!pool.enabled && <Badge color="neutral">Disabled</Badge>}
-            {pool.hostShared && <Badge color="queue">Host-shared</Badge>}
+            {pool.hostShared && pool.host && <Badge color="queue">Host-shared</Badge>}
           </div>
           <p className="text-xs text-muted mt-0.5">
             Capacity {pool.capacity} · Claim timeout {formatSlotTimeout(pool.claimTimeoutMs)}

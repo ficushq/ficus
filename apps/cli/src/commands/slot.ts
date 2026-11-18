@@ -180,12 +180,15 @@ export function renderSlotPools(result: SlotPoolProjection | SlotPoolProjection[
   return lines.join('\n')
 }
 
-/** A host-shared pool is also limited by its machine host's budget, which all squads share. */
+/**
+ * A host-shared pool is also limited by its machine host's budget, which all
+ * squads share. Nothing is said where no budget applies (the squad has no
+ * machine, or budgets are off): the pool is then limited by its capacity alone.
+ */
 function hostSharedNote(pool: SlotPoolProjection): string {
-  if (!pool.hostShared) return ''
-  return pool.host
+  return pool.hostShared && pool.host
     ? `, host-shared (machine host: ${pool.host.activeCount}/${pool.host.capacity} in use across squads)`
-    : ', host-shared (no machine host budget applies)'
+    : ''
 }
 
 function usageLines(pool: SlotPoolProjection): string[] {
@@ -339,7 +342,14 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
     .option('--capacity <n>', 'Pool capacity')
     .option('--timeout <duration>', 'Claim timeout')
     .option('--usage <text>', 'Usage guidance published to every agent prompt (what it protects, when to claim)')
-    .option('--host-shared', "Also draw on the machine host's slot budget, shared with every squad on that machine")
+    .option(
+      '--host-shared',
+      "Also draw on the machine host's slot budget, shared with every squad on that machine (the default)"
+    )
+    .option(
+      '--no-host-shared',
+      'Limit the pool by its own capacity only: for pools that protect something other than box memory or CPU'
+    )
     .action(
       (
         key: string,
@@ -354,7 +364,7 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
               ...(options.capacity ? { capacity: parseSlotCapacity(options.capacity) } : {}),
               ...(options.timeout ? { claimTimeoutMs: parseSlotDuration(options.timeout) } : {}),
               ...(usage ? { usage } : {}),
-              ...(options.hostShared ? { hostShared: true } : {}),
+              ...(options.hostShared === undefined ? {} : { hostShared: options.hostShared }),
             })
           )
           output(result, result.message)

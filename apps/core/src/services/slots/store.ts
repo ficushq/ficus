@@ -97,7 +97,12 @@ export interface RegisterPoolInput {
   claimTimeoutMs?: number
   /** Optional usage guidance; blank or null stores none. */
   usage?: string | null
-  /** Also draw on the machine host's shared budget (see host-budget.ts). */
+  /**
+   * Also draw on the machine host's shared budget (see host-budget.ts). New
+   * pools do unless told otherwise: most pools protect box memory or CPU, and
+   * one that is wrongly left out is exactly the work that overloads a host.
+   * Pass false for a pool that protects something else, such as a deploy lock.
+   */
   hostShared?: boolean
   createdBy: string
 }
@@ -220,7 +225,7 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
           capacity,
           claimTimeoutMs,
           usage,
-          hostShared: input.hostShared ?? false,
+          hostShared: input.hostShared ?? true,
           createdBy: input.createdBy,
         })
         .returning()
