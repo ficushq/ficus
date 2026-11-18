@@ -9,6 +9,7 @@ import { Skill } from '../entities/Skill'
 import { requirePermission } from '../middleware/require-permission'
 import { resolveModelChain } from '../services/model-selection/model-tier-resolution'
 import { composeAgentTypePrompt } from '../services/agent-types/compose-prompt'
+import { buildPublicVoicePrompt, PUBLIC_VOICE_PROMPT_TOKEN } from '../lib/prompts/public-voice-prompt'
 
 type ModelTierRow = typeof modelTiers.$inferSelect
 
@@ -37,7 +38,12 @@ agentTypesRoutes.get('/:id', requirePermission('agent-types:read'), async (c) =>
   const type = await AgentType.find(c.req.param('id'))
   if (!type) return c.json({ error: 'Agent type not found' }, 404)
   const [tier] = type.tier ? await db.select().from(modelTiers).where(eq(modelTiers.slug, type.tier)) : []
-  return c.json({ ...resolvedAgentTypeJson(type, tier), resolvedSystemPrompt: await composeAgentTypePrompt(type) })
+  const composed = await composeAgentTypePrompt(type)
+  // Show what a squad without its own voice gets: the instance default profile.
+  const resolvedSystemPrompt = composed.includes(PUBLIC_VOICE_PROMPT_TOKEN)
+    ? composed.split(PUBLIC_VOICE_PROMPT_TOKEN).join(await buildPublicVoicePrompt(null))
+    : composed
+  return c.json({ ...resolvedAgentTypeJson(type, tier), resolvedSystemPrompt })
 })
 
 // POST /api/agent-types - Create new agent type

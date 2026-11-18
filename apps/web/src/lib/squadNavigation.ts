@@ -17,6 +17,8 @@ export const SQUAD_TABS = [
 export const SQUAD_SETTINGS_SECTIONS = [
   { id: 'general', label: 'General' },
   { id: 'context', label: 'Instructions' },
+  // How agents write public text: commits, pull requests, review replies, issue comments, channels.
+  { id: 'voice', label: 'Voice' },
   // Default workflow, work capacity and merge policies. Old 'workflows' links resolve here.
   { id: 'work', label: 'Work' },
   { id: 'integrations', label: 'Integrations' },

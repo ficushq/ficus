@@ -586,3 +586,19 @@ ficus squad spawn engineer abc123 --workstream ws-sprint-2
 ficus squad unspawn agent-1
 ficus squad unspawn agent-2
 ```
+
+### voice
+
+Show or change how the squad's agents write public text (commits, pull requests, review replies, issue comments, channel messages). Reading needs `squads:read`; every change needs `squads:update`. See [public voice](../public-voice.md).
+
+```bash
+ficus squad voice show <squadId>
+ficus squad voice use <squadId> <voiceId>            # assign a profile; --instance-default clears the assignment
+ficus squad voice set <squadId> --text "<voice>"     # the squad's own voice (clears the assignment); --file reads a file or a derived draft
+ficus squad voice set <squadId> --surface pull-requests --add --text "<note>"   # or --override
+ficus squad voice clear <squadId> [--surface <name> | --all]
+ficus squad voice preview <squadId> [--surface <name>] [--sample <text>] [--voice <voiceId>]
+ficus squad voice derive <squadId> --github <login> [--before <date>] [--after <date>] [--repo <owner/name>] [--exclude-repo <owner/name>] [--surfaces <list>] [--include-tool-authored] [--confirm-other-person] [--out <draft.json>]
+```
+
+Surface names: `commits`, `pull-requests`, `review-replies`, `issue-comments`, `channels`. `derive` prints a draft and saves nothing.

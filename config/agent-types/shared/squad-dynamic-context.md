@@ -23,3 +23,5 @@ Set them via the CLI:
 
 Inspect current values with `ficus squad get {{squad.id}}` (prints both `Context`
 and `Type Context`). Handle simple context configuration directly when requested.
+
+Public voice (how agents write commits, pull requests and comments): `ficus squad voice show {{squad.id}}`; change it with `ficus squad voice use|set|clear {{squad.id}}`.

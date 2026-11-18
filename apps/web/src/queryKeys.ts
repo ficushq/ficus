@@ -36,6 +36,13 @@ export const screenshotQueryKeys = {
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
+/** Public voice profiles and each squad's voice (docs/wiki/public-voice.md). */
+export const publicVoiceQueryKeys = {
+  all: ['public-voices'] as const,
+  list: () => [...publicVoiceQueryKeys.all, 'list'] as const,
+  squad: (squadId: string) => [...publicVoiceQueryKeys.all, 'squad', squadId] as const,
+}
+
 /** Settings → Spend: the inference cost ledger, per range, filters and grouping. */
 export const spendQueryKeys = {
   all: ['spend'] as const,

@@ -126,6 +126,8 @@ CRUD management for agent type definitions. Each agent type defines a model, sys
 - **Delete** — Only available for custom (non-template) agent types that aren't protected.
 - **+ Add New** — Form to create a new agent type with all fields.
 
+**Voices tab** — Named public voice profiles squads are assigned to: size, assigned squads, an editor with five surface rows and a byte meter, revert for the shipped `default`, disable, delete for admin-created profiles, and a Derive card that drafts a profile through a chosen squad's GitHub connection. `agent-types:read` sees it read-only; `agent-types:update` manages it. See [public voice](public-voice.md).
+
 ### Squad Presets
 
 CRUD management for squad preset definitions. Similar pattern to Agent Types.
@@ -252,10 +254,11 @@ Workspace indexing settings (include/exclude patterns, reindex button, scan resu
 ## Squad settings
 
 The squad tab and settings registry is `apps/web/src/lib/squadNavigation.ts`.
-Squad settings use nine pages grouped by purpose:
+Squad settings use ten pages grouped by purpose:
 
 - **General:** avatar, name, description, and discovery by other squads. A **Danger zone** at the bottom holds **Archive squad**; it appears only with `squads:delete`, independent of `squads:update`, and opens the typed confirmation.
 - **Instructions:** shared squad context, instructions for individual agent types, and **Slot Pools**. The Slot Pools card lists each pool's capacity, claim timeout, usage guidance and live usage (in use, queued, oldest wait, holders). `slots:write` can add pools, edit capacity, timeout and guidance inline, enable or disable a pool, and unregister it after a confirmation (a busy pool shows the server's refusal). `slots:use` sees it read-only; without either permission the card says so. Guidance reaches every agent prompt through a generated Slot Pools section, so it does not belong in the squad context.
+- **Voice:** how this squad's agents write public text: Instance default, an assigned profile, or a custom voice; per-surface entries that add to or replace it; a byte meter against the 2,000-byte cap; a preview that rewrites a sample comment; and a draft derived from a GitHub user's writing. Editing needs `squads:update`; others see the resolved voice. See [public voice](public-voice.md).
 - **Work:** default and alternate flows, selection guidance, concurrency limits, auto-parking, and merge policies.
 - **Integrations:** enabled apps, account selection, routing, and Git author overrides.
 - **Notifications:** where this squad's notifications are delivered; credentials remain in global integration cards.

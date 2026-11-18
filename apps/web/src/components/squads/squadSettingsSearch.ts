@@ -14,6 +14,8 @@ export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
   work: 'workflows flow preset workflow default custom parallel Work capacity concurrency Max concurrent work streams blocked wait timeout idle auto park grace pull request direct merge approval Merge Policies',
   integrations:
     'github issues repo project GitHub Routing GitHub integration accounts github owner repo Repository issue labels Labels linear issue tracker Linear Routing linear team Team ID',
+  voice:
+    'public voice tone style writing commit messages pull requests review replies issue comments channel messages profile derive GitHub Public voice Derive a voice from GitHub',
   notifications: 'alerts delivery overrides instance Notification Channels',
   access:
     'public private key authentication SSH Keys ssh fingerprints host key verification Known Hosts remote hosts machines server tunnel',
@@ -76,6 +78,18 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     id: 'type-specific-context',
     label: 'Type-Specific Context',
     keywords: 'per agent type instructions',
+  },
+  {
+    section: 'voice',
+    id: 'public-voice',
+    label: 'Public voice',
+    keywords: 'tone style writing commit pull request review issue comment channel profile',
+  },
+  {
+    section: 'voice',
+    id: 'derive-voice',
+    label: 'Derive a voice from GitHub',
+    keywords: 'github sample writing style draft',
   },
   {
     section: 'context',

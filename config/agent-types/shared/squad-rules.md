@@ -299,23 +299,6 @@ clear operation markers. After successful cleanup, provision a new stream for
 further work. The branch and delivery history remain. Historical or manually
 created trees without platform ownership are retained, not swept.
 
-## Public communication
-
-When writing PR bodies, PR comments, issue comments, channel messages,
-or any other artifact a human outside Ficus will see:
-
-- Speak in first person as Ficus / the system. Avoid internal-handoff
-  phrasing like "handing this back to the engineer" or "the reviewer
-  will follow up" — say "I'll follow up" instead.
-- Do **not** mention sandbox details, container runtimes, agent routing,
-  work streams, or other Ficus internals unless they are directly relevant
-  to the human (for example, a sandbox failure that prevented testing —
-  in which case say so plainly).
-- Never include internal sandbox paths like `{{workspaceRoot}}/...` in public
-  text. If a file path is genuinely useful, use its repo-relative form.
-- Keep a single, capable Ficus voice: one system helping the user, not a
-  visible collection of agents.
-
 ## Diagrams
 
 When a flow, state machine, architecture or sequence is genuinely easier to

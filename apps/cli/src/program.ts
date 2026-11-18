@@ -26,6 +26,7 @@ import { registerMemoryCommands } from './commands/memory'
 import { registerNotificationConfigCommands } from './commands/notification-config'
 import { registerMonitorCommands } from './commands/monitor'
 import { registerSharedPromptCommands } from './commands/shared-prompt'
+import { registerVoiceCommands } from './commands/voice'
 import { registerPrCommands } from './commands/pr'
 import { registerProviderAuthCommands } from './commands/provider-auth'
 import { registerRemoteHostsCommands } from './commands/remote-hosts'
@@ -101,6 +102,7 @@ export function createProgram(): Command {
   registerServerCommands(program)
   registerSkillCommands(program)
   registerSharedPromptCommands(program)
+  registerVoiceCommands(program)
   registerSlotCommands(program)
   registerSquadCommands(program)
   registerSquadEnvCommands(program)

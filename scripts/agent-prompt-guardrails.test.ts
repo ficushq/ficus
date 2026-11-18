@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  PUBLIC_VOICE_MAX_BYTES,
+  publicVoiceProfileInputSchema,
+  renderProfileAlone,
+} from '../packages/shared/src/public-voice'
 
 /**
  * Guardrails that keep the always-loaded agent guidance from growing back.
@@ -52,8 +57,8 @@ const STATIC_PROMPT_BYTE_BUDGETS: Record<string, number> = {
   'security-auditor': 41_000,
   engineer: 40_500,
   general: 36_000,
-  'system-manager': 21_000,
-  'assistant-worker': 20_500,
+  'system-manager': 22_000,
+  'assistant-worker': 21_000,
   'artifact-builder-default': 9_500,
   assistant: 7_500,
   subagent: 6_000,
@@ -108,6 +113,37 @@ describe('no paragraph appears twice in one composed prompt', () => {
       expect(repeatedParagraphs(composeStaticPrompt(type))).toEqual([])
     })
   }
+})
+
+describe('public voice', () => {
+  const defaultProfile = publicVoiceProfileInputSchema.parse(
+    Bun.YAML.parse(readFileSync(join(root, 'config/public-voices/default.yaml'), 'utf8'))
+  )
+  const renderedDefault = renderProfileAlone({
+    ...defaultProfile,
+    description: defaultProfile.description ?? null,
+    surfaces: defaultProfile.surfaces ?? {},
+    disabled: false,
+  })
+
+  test('the shipped default voice renders within the cap', () => {
+    expect(Buffer.byteLength(renderedDefault, 'utf8')).toBeLessThanOrEqual(PUBLIC_VOICE_MAX_BYTES)
+  })
+
+  test('the fixed public-text rules plus the default voice stay small', () => {
+    const publicText = sharedPrompts.get('public-text')!
+    expect(publicText).toContain('{{squad.publicVoice}}')
+    const composed = publicText.replace('{{squad.publicVoice}}', renderedDefault)
+    expect(Buffer.byteLength(composed, 'utf8')).toBeLessThanOrEqual(
+      Buffer.byteLength(publicText, 'utf8') + PUBLIC_VOICE_MAX_BYTES
+    )
+    expect(Buffer.byteLength(composed, 'utf8')).toBeLessThanOrEqual(2_693)
+  })
+
+  test('agents that cannot post publicly do not load the public-text rules', () => {
+    const withPublicText = agentTypes.filter((type) => type.includes?.includes('public-text')).map((type) => type.id)
+    for (const id of ['assistant', 'artifact-builder-default', 'subagent']) expect(withPublicText).not.toContain(id)
+  })
 })
 
 test('CI runs these database-free guardrails', () => {

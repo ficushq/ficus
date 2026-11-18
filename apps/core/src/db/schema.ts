@@ -293,6 +293,23 @@ export const modelTiers = pgTable('model_tiers', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
+// Public voice profiles: named, instance-level voices squads are assigned to.
+// Synced from config/public-voices/*.yaml (PublicVoiceSync); profile 'default'
+// is the instance default. See docs/wiki/public-voice.md.
+export const publicVoices = pgTable('public_voices', {
+  id: varchar('id', { length: 100 }).primaryKey(),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  /** The voice applied to every surface. */
+  base: text('base').notNull(),
+  surfaces: jsonb('surfaces').$type<import('@ficus/shared').PublicVoiceSurfaces>().notNull().default({}),
+  yamlTemplate: jsonb('yaml_template'),
+  yamlFieldOverrides: jsonb('yaml_field_overrides').notNull().default([]),
+  disabled: boolean('disabled').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
 export const agentTypes = pgTable('agent_types', {
   systemOnly: boolean('system_only').notNull().default(false),
   id: varchar('id', { length: 100 }).primaryKey(),
@@ -941,6 +958,13 @@ export const squads = pgTable('squads', {
   managerAgentId: uuid('manager_agent_id').references(() => agents.id, { onDelete: 'set null' }),
   context: text('context'),
   typeContext: jsonb('type_context').$type<Record<string, string>>(),
+  // Public voice: the assigned profile (NULL = the instance default profile) and
+  // the squad's own layer (custom base and per-surface entries). Written only
+  // through the squad voice routes, never generic squad updates.
+  publicVoiceId: varchar('public_voice_id', { length: 100 }).references((): AnyPgColumn => publicVoices.id, {
+    onDelete: 'set null',
+  }),
+  publicVoice: jsonb('public_voice').$type<import('@ficus/shared').SquadPublicVoice>(),
   isAnonymous: boolean('is_anonymous').notNull().default(false),
   globalCollaborationEnabled: boolean('global_collaboration_enabled').notNull().default(false),
   order: integer('order').notNull().default(0),

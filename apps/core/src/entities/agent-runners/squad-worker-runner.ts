@@ -3,7 +3,12 @@ import { AgentRunner, type AutomaticBigbrainTools } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { getCliCommandIndex } from '../../lib/utils/cli-help'
 import { resolvePermissions } from '../../services/rbac'
-import { buildActiveSchedulesPrompt, buildSlotPoolsPrompt } from '../../lib/prompts'
+import {
+  buildActiveSchedulesPrompt,
+  buildSlotPoolsPrompt,
+  buildPublicVoicePrompt,
+  publicTextIncludeEnabled,
+} from '../../lib/prompts'
 import { assembleSquadWorkerPrompt } from '../../lib/prompts/squad-agent-prompt'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { readSquadMemoryFile } from '../../services/memory/paths'
@@ -86,10 +91,12 @@ export class SquadWorkerRunner extends AgentRunner {
       : ''
 
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, activeSchedules, slotPools] = await Promise.all([
+    const [cliHelp, activeSchedules, slotPools, publicVoice, publicTextEnabled] = await Promise.all([
       this.buildWorkerCliHelp(),
       buildActiveSchedulesPrompt(this.squad.id, this.agent.id, 'worker'),
       buildSlotPoolsPrompt(this.squad.id),
+      buildPublicVoicePrompt(this.squad),
+      publicTextIncludeEnabled(),
     ])
 
     const typePrompt = await composeAgentTypePrompt(this.agentType)
@@ -108,6 +115,7 @@ export class SquadWorkerRunner extends AgentRunner {
       },
       typePrompt,
       slotPools,
+      publicVoice: { section: publicVoice, publicTextEnabled },
       workspace: buildWorkspacePrompt({
         squadId: this.squad.id,
         squadName: this.squad.name,

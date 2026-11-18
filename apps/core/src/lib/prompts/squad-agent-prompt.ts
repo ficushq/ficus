@@ -1,5 +1,6 @@
 import { prompt, interpolateTemplate } from './prompt-builder'
 import { slotPoolsPromptFallback } from './slot-pools-render'
+import { publicVoicePromptFallback } from './public-voice-render'
 import { buildMemorySystemPrompt, MANAGER_MEMORY_GUIDANCE } from './memory-prompt'
 import { AGENT_PURPOSE_DISPLAY_SECTION_TITLE, SET_AGENT_PURPOSE_INSTRUCTIONS } from './agent-purpose-prompt'
 
@@ -49,6 +50,19 @@ export interface SquadWorkerPromptParts extends SquadAgentPromptIdentity {
   typeContext: string
   /** Set when squad memory is enabled, with the vault's map.md when it exists; otherwise null. */
   memory: { map: string | undefined } | null
+  /** The squad's public voice; omitted by callers that predate it, which then get no voice. */
+  publicVoice?: PublicVoicePromptPart
+}
+
+/** The squad's resolved public voice section and whether the `public-text` include is enabled. */
+export interface PublicVoicePromptPart {
+  /** The rendered `### Voice` section, or '' when there is no voice. */
+  section: string
+  publicTextEnabled: boolean
+}
+
+function publicVoiceFallback(typePrompt: string, voice: PublicVoicePromptPart | undefined): string {
+  return voice ? publicVoicePromptFallback(typePrompt, voice.section, voice.publicTextEnabled) : ''
 }
 
 function identityValues({ agent, squad }: SquadAgentPromptIdentity): Record<string, string> {
@@ -69,7 +83,11 @@ function identityValues({ agent, squad }: SquadAgentPromptIdentity): Record<stri
 /** The system prompt of a squad worker (any squad agent that is not its manager or a consultant). */
 export function assembleSquadWorkerPrompt(parts: SquadWorkerPromptParts): string {
   const { typePrompt, flow } = parts
-  const p = prompt().text(typePrompt).text(slotPoolsPromptFallback(typePrompt, parts.slotPools)).text(parts.workspace)
+  const p = prompt()
+    .text(typePrompt)
+    .text(slotPoolsPromptFallback(typePrompt, parts.slotPools))
+    .text(publicVoiceFallback(typePrompt, parts.publicVoice))
+    .text(parts.workspace)
 
   if (flow) {
     // squad-rules teaches how to advance, wait and deliver. Repeat it here only when the
@@ -101,6 +119,8 @@ export function assembleSquadWorkerPrompt(parts: SquadWorkerPromptParts): string
     activeSchedules: parts.activeSchedules,
     // Generated from the live pool registry, right after the squad context.
     'squad.slotPools': parts.slotPools,
+    // The squad's resolved public voice, at the end of the public-text include.
+    'squad.publicVoice': parts.publicVoice?.section ?? '',
   })
 }
 
@@ -118,6 +138,8 @@ export interface SquadManagerPromptParts extends SquadAgentPromptIdentity {
   /** Squad-owned context for the manager type, or ''. */
   typeContext: string
   memory: { map: string | undefined } | null
+  /** The squad's public voice; omitted by callers that predate it, which then get no voice. */
+  publicVoice?: PublicVoicePromptPart
   /** Consultants share this runner; they also set a display purpose. */
   isConsultant: boolean
   /** Set for a consultant that speaks through an external channel. */
@@ -131,6 +153,7 @@ export function assembleSquadManagerPrompt(parts: SquadManagerPromptParts): stri
   const p = prompt()
     .text(typePrompt)
     .text(slotPoolsPromptFallback(typePrompt, parts.slotPools))
+    .text(publicVoiceFallback(typePrompt, parts.publicVoice))
     .text(parts.workspace)
     .section('Model Overrides', parts.modelOverrides)
     .section('Current Squad State', parts.squadState)
@@ -175,6 +198,7 @@ export function assembleSquadManagerPrompt(parts: SquadManagerPromptParts): stri
   return interpolateTemplate(p.build(), {
     ...identityValues(parts),
     'squad.slotPools': parts.slotPools,
+    'squad.publicVoice': parts.publicVoice?.section ?? '',
     workspace: '',
     teammates: '',
     activeSchedules: '',

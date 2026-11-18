@@ -133,6 +133,7 @@ export * from './theme-preset'
 export * from './theme-assistant'
 export * from './decisions'
 export * from './inference-usage'
+export * from './public-voice'
 export * from './decision-conditions'
 export * from './screenshot-filing'
 
