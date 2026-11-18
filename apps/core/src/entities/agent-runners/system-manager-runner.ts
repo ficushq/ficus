@@ -29,7 +29,7 @@ import { createWebTools } from '../../tools/web-search'
 import { ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { AgentSession } from '../AgentSession'
 import { createSetAgentPurposeTool } from '../../tools'
-import { prompt, interpolateTemplate, buildPlatformUrlsPrompt } from '../../lib/prompts'
+import { prompt, interpolateTemplate, buildPlatformUrlsPrompt, buildPublicVoicePrompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
 import { buildModelOverridePrompt } from '../../lib/prompts/model-overrides-prompt'
@@ -124,6 +124,8 @@ export class SystemManagerRunner extends AgentRunner {
       {
         CLI_HELP: cliHelp,
         SQUADS_CONTEXT: squadsContext,
+        // No squad: system agents write in the instance default voice.
+        'squad.publicVoice': agentTypeId === 'assistant' ? '' : await buildPublicVoicePrompt(null),
       }
     )
 

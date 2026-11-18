@@ -11,6 +11,9 @@ import {
   buildPlatformUrlsPrompt,
   buildSlotPoolsPrompt,
   slotPoolsPromptFallback,
+  buildPublicVoicePrompt,
+  publicTextIncludeEnabled,
+  publicVoicePromptFallback,
 } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
@@ -87,8 +90,9 @@ export class SquadManagerRunner extends AgentRunner {
       'squad.purpose': squad.purpose,
       'squad.defaultAgents': squad.defaultAgents.join(', ') || 'none',
       'squad.context': squad.context ?? '',
-      // Pools need a database read; this synchronous helper omits them.
+      // Pools and the public voice need a database read; this synchronous helper omits them.
       'squad.slotPools': '',
+      'squad.publicVoice': '',
     })
   }
 
@@ -155,10 +159,12 @@ export class SquadManagerRunner extends AgentRunner {
 
   private async buildSquadManagerPrompt(): Promise<string> {
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, squadContext, slotPools] = await Promise.all([
+    const [cliHelp, squadContext, slotPools, publicVoice, publicTextEnabled] = await Promise.all([
       getSquadManagerCliHelp(),
       this.buildSquadContext(),
       buildSlotPoolsPrompt(this.squad.id),
+      buildPublicVoicePrompt(this.squad),
+      publicTextIncludeEnabled(),
     ])
 
     const typePrompt = await composeAgentTypePrompt(this.agentType)
@@ -166,6 +172,7 @@ export class SquadManagerRunner extends AgentRunner {
     const p = prompt()
       .text(typePrompt)
       .text(slotPoolsPromptFallback(typePrompt, slotPools))
+      .text(publicVoicePromptFallback(typePrompt, publicVoice, publicTextEnabled))
       .text(
         buildWorkspacePrompt({
           agentId: this.agent.id,
@@ -247,6 +254,8 @@ export class SquadManagerRunner extends AgentRunner {
       'squad.context': this.squad.context ?? '',
       // Generated from the live pool registry, right after the squad context.
       'squad.slotPools': slotPools,
+      // The squad's resolved public voice, at the end of the public-text include.
+      'squad.publicVoice': publicVoice,
       // The squad's manager agent id. For the manager this is its own id; for a
       // consultant (same runner) it's the manager to hand work off to.
       'manager.id': this.squad.managerAgentId ?? '',

@@ -10,6 +10,9 @@ import {
   buildActiveSchedulesPrompt,
   buildSlotPoolsPrompt,
   slotPoolsPromptFallback,
+  buildPublicVoicePrompt,
+  publicTextIncludeEnabled,
+  publicVoicePromptFallback,
 } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { readSquadMemoryFile } from '../../services/memory/paths'
@@ -102,10 +105,12 @@ export class SquadWorkerRunner extends AgentRunner {
       : ''
 
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, activeSchedules, slotPools] = await Promise.all([
+    const [cliHelp, activeSchedules, slotPools, publicVoice, publicTextEnabled] = await Promise.all([
       this.buildWorkerCliHelp(),
       buildActiveSchedulesPrompt(this.squad.id, this.agent.id, 'worker'),
       buildSlotPoolsPrompt(this.squad.id),
+      buildPublicVoicePrompt(this.squad),
+      publicTextIncludeEnabled(),
     ])
 
     // Build context for template interpolation
@@ -130,6 +135,8 @@ export class SquadWorkerRunner extends AgentRunner {
       'squad.context': this.squad.context ?? '',
       // Generated from the live pool registry, right after the squad context.
       'squad.slotPools': slotPools,
+      // The squad's resolved public voice, at the end of the public-text include.
+      'squad.publicVoice': publicVoice,
       'manager.id': this.squad.managerAgentId ?? '',
     }
 
@@ -138,6 +145,7 @@ export class SquadWorkerRunner extends AgentRunner {
     const p = prompt()
       .text(typePrompt)
       .text(slotPoolsPromptFallback(typePrompt, slotPools))
+      .text(publicVoicePromptFallback(typePrompt, publicVoice, publicTextEnabled))
       .text(
         buildWorkspacePrompt({
           squadId: this.squad.id,

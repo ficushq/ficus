@@ -14,3 +14,9 @@ export {
   slotPoolsPromptFallback,
   SLOT_POOLS_PROMPT_TOKEN,
 } from './slot-pools-prompt'
+export {
+  buildPublicVoicePrompt,
+  publicTextIncludeEnabled,
+  publicVoicePromptFallback,
+  PUBLIC_VOICE_PROMPT_TOKEN,
+} from './public-voice-prompt'
