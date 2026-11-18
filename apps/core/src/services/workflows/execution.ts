@@ -412,6 +412,12 @@ async function dispatchFlowAttempt(
     // running execution, not permission to adopt a stale/queued/foreign origin.
     // Rebind in the same transaction as the assignment receipt. Question and
     // recovery writers keep their normal exact-attempt stale-origin checks.
+    // An origin with no flow context was started while the caller had no
+    // running attempt, typically a delivery execution woken by a CI or review
+    // event at completion-ready that then requests rework of its own attempt.
+    // Bind it too, or the reworked attempt runs in an execution that names no
+    // attempt at all (slot waits, questions and process ownership miss it).
+    // An origin naming another stream or attempt is still never adopted.
     const running = await tx
       .select()
       .from(executions)
@@ -420,8 +426,9 @@ async function dispatchFlowAttempt(
       .for('update')
     const origin = running.length === 1 ? running[0] : undefined
     const canBind =
-      origin?.flowContext?.workStreamId === stream.id &&
-      origin.flowContext.attemptId === caller.sourceAttemptId &&
+      !!origin &&
+      (origin.flowContext === null ||
+        (origin.flowContext.workStreamId === stream.id && origin.flowContext.attemptId === caller.sourceAttemptId)) &&
       run.attemptAgents[String(caller.sourceAttemptId)] === caller.agentId
     if (canBind)
       await tx

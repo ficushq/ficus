@@ -2356,8 +2356,13 @@ test('inline handoff rebinds only its exact running execution and keeps stale qu
   expect((await listOpenWaits(db, id))[0]?.flowAttemptId).toBe(2)
 })
 
-test('inline handoff does not rebind an unrelated or ambiguous running execution', async () => {
-  for (const ambiguous of [false, true]) {
+test('inline handoff does not rebind an unrelated, stale or ambiguous running execution', async () => {
+  for (const [kind, ambiguous] of [
+    ['unrelated', false],
+    ['stale', false],
+    ['same', true],
+    ['none', true],
+  ] as const) {
     const definition = structuredClone(flow)
     definition.steps[1] = {
       ...(definition.steps[1] as Extract<WorkflowStep, { kind: 'agent' }>),
@@ -2367,7 +2372,14 @@ test('inline handoff does not rebind an unrelated or ambiguous running execution
     const id = await create('active', definition)
     const initial = (await getFlow(id))!
     const agentId = initial.attemptAgents['1']!
-    const context = { workStreamId: ambiguous ? id : randomUUID(), attemptId: 1, stepId: 'build' }
+    const context =
+      kind === 'none'
+        ? null
+        : {
+            workStreamId: kind === 'unrelated' ? randomUUID() : id,
+            attemptId: kind === 'stale' ? 99 : 1,
+            stepId: 'build',
+          }
     const [running] = await db
       .insert(executions)
       .values({ agentId, status: 'running', flowContext: context })
@@ -2388,6 +2400,60 @@ test('inline handoff does not rebind an unrelated or ambiguous running execution
     const [unchanged] = await db.select().from(executions).where(eq(executions.id, running!.id))
     expect(unchanged!.flowContext).toEqual(context)
     expect((await getFlow(id))!.state.attempts[1]!.responseAssignment?.executionId).toBeUndefined()
+  }
+})
+
+// Regression: after a pull request opened, a delivery execution woken at completion-ready has no flow
+// context. When that agent reworked its own attempt inline, the execution kept naming no attempt, so a
+// slot it then queued on was unattributable and the stream read Idle instead of Waiting for slot.
+test('completion-ready rework from a delivery execution binds it, so its slot wait is the stream wait', async () => {
+  const { executionFlowContext } = await import('./usage')
+  const { computeDerivedStates } = await import('../work-streams/derived-state')
+  const { slotPools, slotWaiters } = await import('../../db/schema')
+  const id = await create('active')
+  await advance(id, 'completed')
+  await advance(id, 'approved')
+  const ready = (await getFlow(id))!
+  expect(ready.state.status).toBe('completion-ready')
+  const deliverer = ready.attemptAgents['2']!
+  // An execution created now, for example by a CI notification, records no flow context.
+  expect(await db.transaction((tx) => executionFlowContext(deliverer, tx))).toBeNull()
+  const startedAt = new Date(Date.now() - 60_000)
+  const [delivery] = await db
+    .insert(executions)
+    .values({ agentId: deliverer, status: 'running', startedAt, flowContext: null })
+    .returning()
+  const result = await advanceFlow(
+    id,
+    { action: 'rework', expectedVersion: ready.version, attemptId: 2, feedback: 'CI failed on the current head' },
+    randomUUID(),
+    { type: 'agent', agentId: deliverer, squadId }
+  )
+  expect(result.assignments?.[0]).toMatchObject({ attemptId: 3, stepId: 'review' })
+  expect((await getFlow(id))!.attemptAgents['3']).toBe(deliverer)
+  const [rebound] = await db.select().from(executions).where(eq(executions.id, delivery!.id))
+  expect(rebound!.flowContext).toEqual({ workStreamId: id, attemptId: 3, stepId: 'review' })
+  expect((await getFlow(id))!.state.attempts[2]!.responseAssignment?.executionId).toBe(delivery!.id)
+
+  // The reworked attempt queues on a full pool, then ends its turn to wait for the grant.
+  const [pool] = await db
+    .insert(slotPools)
+    .values({ squadId, key: `${prefix}-heavy-tests`, capacity: 1, createdBy: 'system' })
+    .returning()
+  try {
+    const queuedAt = new Date(startedAt.getTime() + 30_000)
+    await db.insert(slotWaiters).values({ poolId: pool!.id, ownerAgentId: deliverer, queuedAt })
+    await db
+      .update(executions)
+      .set({ status: 'completed', endedAt: new Date(queuedAt.getTime() + 1000) })
+      .where(eq(executions.id, delivery!.id))
+    const stream = await WorkStream.mustFind(id)
+    const derived = (await computeDerivedStates([stream])).get(id)!
+    expect(derived.derivedState).toBe('idle')
+    expect(derived.hasActiveSlotWait).toBe(true)
+  } finally {
+    await db.delete(slotWaiters).where(eq(slotWaiters.poolId, pool!.id))
+    await db.delete(slotPools).where(eq(slotPools.id, pool!.id))
   }
 })
 
