@@ -141,8 +141,8 @@ against that squad.
 ```bash
 ficus slot list [key] [--squad <id>]
 ficus slot history <key> [--limit <1..100>] [--cursor <opaque>] [--squad <id>]
-ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--usage <text>] [--no-host-shared] [--squad <id>]
-ficus slot update <key> [--capacity <n>] [--timeout <duration>] [--usage <text> | --clear-usage] [--host-shared | --no-host-shared] [--squad <id>]
+ficus slot register <key> [--capacity <n|host>] [--timeout <duration>] [--usage <text>] [--no-host-shared] [--squad <id>]
+ficus slot update <key> [--capacity <n|host>] [--rename <key>] [--timeout <duration>] [--usage <text> | --clear-usage] [--host-shared | --no-host-shared] [--squad <id>]
 ficus slot disable <key> [--squad <id>]
 ficus slot enable <key> [--squad <id>]
 ficus slot unregister <key> [--squad <id>]
@@ -170,9 +170,16 @@ pools are host-shared; register with `--no-host-shared` (or `update
 --no-host-shared`) for a pool that protects something other than box memory or
 CPU, such as a deployment lock. Pools registered before host sharing existed
 stay as they were until `update --host-shared`. A squad with no pool at all on
-such a machine is given a host-shared `heavy-work` pool. See
+such a machine is given a host-shared `heavy-work` pool. `--capacity host`
+drops a host-shared pool's own cap, so its capacity is the machine's budget and
+follows it; a number sets a cap again. See
 [host slot budget](../machines/host-slot-budget.md) for the budget, the order
 across squads and the default pool.
+
+`ficus slot update <key> --rename <new-key>` gives a pool a new key. Its
+configuration, live claims, queued waiters and history stay with it, claim and
+waiter ids do not change, and agent prompts list the new key on their next
+turn; the old key answers not found.
 
 `ficus slot disable` stops enforcing a pool without unregistering it: its key,
 capacity, timeout, guidance and history are kept, it disappears from agent

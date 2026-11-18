@@ -4739,6 +4739,11 @@ export const slotPools = pgTable(
     // New pools are registered host-shared (registerPool); the column default
     // is false so pools that predate the column keep their behavior.
     hostShared: boolean('host_shared').notNull().default(false),
+    // A host-shared pool with no cap of its own: its capacity is its machine
+    // host's slot budget, read on every claim, so it follows a resized host or
+    // a changed budget setting. `capacity` is then only the fallback used where
+    // no budget applies (no machine, budgets off, unknown machine size).
+    capacityFollowsHost: boolean('capacity_follows_host').notNull().default(false),
     unregisteredAt: timestamp('unregistered_at', { withTimezone: true }),
   },
   (table) => [

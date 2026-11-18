@@ -1,6 +1,8 @@
 import { userInfo } from 'node:os'
 
-const POOL = 'shared-box-intensive'
+/** The pool that admits heavy box work, and the key it had before it was renamed. */
+const POOL = 'heavy-work'
+const FORMER_POOL = 'shared-box-intensive'
 
 /** Runtime identity, never CI/NODE_ENV/test-mode flags, determines admission.
  * The OS account also catches an accidentally stripped VM-box environment.
@@ -26,9 +28,11 @@ export function requireTestDbCapacity(env = process.env, username = userInfo().u
     refuse('unavailable', 'Runtime squad/agent identity is missing; cannot verify native capacity.')
   }
 
-  let pool: unknown
-  try {
-    const result = Bun.spawnSync(['ficus', '--json', 'slot', 'list', POOL, '--squad', env.FICUS_SQUAD_ID!], {
+  // `undefined` means the CLI answered that it cannot show this pool (a clean
+  // nonzero exit). A stalled or killed CLI throws instead, so the deadline is
+  // spent once, not once per key.
+  const query = (key: string): unknown => {
+    const result = Bun.spawnSync(['ficus', '--json', 'slot', 'list', key, '--squad', env.FICUS_SQUAD_ID!], {
       // Force injected-agent auth, with no saved human backend fallback.
       env: { ...env, FICUS_AGENT_CONTEXT: '1' },
       stdout: 'pipe',
@@ -36,8 +40,21 @@ export function requireTestDbCapacity(env = process.env, username = userInfo().u
       timeout: 10000,
       killSignal: 'SIGKILL',
     })
-    if (result.exitCode !== 0 || result.signalCode) throw new Error('capacity query failed')
-    pool = JSON.parse(result.stdout.toString())
+    if (result.signalCode || result.exitCode === null) throw new Error('capacity query stalled')
+    if (result.exitCode !== 0) return undefined
+    return JSON.parse(result.stdout.toString())
+  }
+  // A squad that has not renamed its pool yet still answers under the former
+  // key. Only a refused lookup falls back: any answer for POOL is authoritative.
+  let pool: unknown
+  let key = POOL
+  try {
+    pool = query(POOL)
+    if (pool === undefined) {
+      key = FORMER_POOL
+      pool = query(FORMER_POOL)
+    }
+    if (pool === undefined) throw new Error('capacity query failed')
   } catch {
     // CLI diagnostics can contain credentials or API URLs; never relay them.
     refuse('unavailable', 'Could not verify native capacity; inspect ficus slot list before retrying.')
@@ -45,7 +62,7 @@ export function requireTestDbCapacity(env = process.env, username = userInfo().u
   const record = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
   const nonempty = (value: unknown): value is string => typeof value === 'string' && value.length > 0
-  if (!record(pool) || pool.key !== POOL || pool.squadId !== env.FICUS_SQUAD_ID || typeof pool.enabled !== 'boolean') {
+  if (!record(pool) || pool.key !== key || pool.squadId !== env.FICUS_SQUAD_ID || typeof pool.enabled !== 'boolean') {
     return refuse('unavailable', 'Native capacity returned an invalid pool projection.')
   }
   if (!pool.enabled) {
@@ -66,5 +83,5 @@ export function requireTestDbCapacity(env = process.env, username = userInfo().u
   if (record(pool.callerWaiter) && nonempty(pool.callerWaiter.id)) {
     refuse('queued', 'YOU DO NOT OWN CAPACITY YET. Wait for the native slot grant.')
   }
-  refuse('unavailable', `No live caller-owned claim. Run ficus slot claim ${POOL}; proceed only when granted.`)
+  refuse('unavailable', `No live caller-owned claim. Run ficus slot claim ${key}; proceed only when granted.`)
 }

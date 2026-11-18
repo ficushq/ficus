@@ -91,7 +91,13 @@ export interface SlotPoolSummary {
   id: string
   squadId: string
   key: string
+  /**
+   * The capacity that applies now: the machine host's budget for a pool that
+   * follows it, otherwise the pool's own cap.
+   */
   capacity: number
+  /** True when the pool has no cap of its own and follows its machine host's budget. */
+  capacityFollowsHost: boolean
   claimTimeoutMs: number
   /** Optional "how to use" guidance published to agent prompts. */
   usage: string | null
@@ -124,6 +130,7 @@ export interface SlotPoolRecord {
   updatedAt: Date
   disabledAt: Date | null
   hostShared: boolean
+  capacityFollowsHost: boolean
   unregisteredAt: Date | null
 }
 

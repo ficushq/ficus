@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import { db, slotPools, squads } from '../../db'
 import { formatSlotClaimTimeout } from '../../services/slots/format'
-import { resolveHostBudget } from '../../services/slots/host-budget'
+import { effectivePoolCapacity, resolveHostBudget } from '../../services/slots/host-budget'
 import { createLogger } from '../infra/logger'
 
 const log = createLogger('slot-pools-prompt')
@@ -19,6 +19,8 @@ export interface SlotPoolPromptEntry {
    * budget: how many such claims that machine allows across all squads.
    */
   hostCapacity?: number
+  /** Set (with hostCapacity) when the pool has no cap of its own: only the host's budget limits it. */
+  capacityFollowsHost?: true
 }
 
 /**
@@ -37,14 +39,17 @@ export function renderSlotPoolsPrompt(pools: readonly SlotPoolPromptEntry[]): st
     '',
   ]
   for (const pool of pools) {
+    const timeout = `claim timeout ${formatSlotClaimTimeout(pool.claimTimeoutMs)}`
+    const hostAllows =
+      pool.hostCapacity === undefined
+        ? ''
+        : `this machine host allows ${pool.hostCapacity} such claim${pool.hostCapacity === 1 ? '' : 's'} at once across all squads on it`
     lines.push(
-      `- \`${pool.key}\`: capacity ${pool.capacity}, claim timeout ${formatSlotClaimTimeout(pool.claimTimeoutMs)}${
-        pool.hostCapacity === undefined
-          ? ''
-          : `, host-shared (this machine host allows ${pool.hostCapacity} such claim${
-              pool.hostCapacity === 1 ? '' : 's'
-            } at once across all squads on it, so you can be queued while this pool has room)`
-      }`
+      pool.hostCapacity === undefined
+        ? `- \`${pool.key}\`: capacity ${pool.capacity}, ${timeout}`
+        : pool.capacityFollowsHost
+          ? `- \`${pool.key}\`: ${timeout}, host-shared with no cap of its own (${hostAllows})`
+          : `- \`${pool.key}\`: capacity ${pool.capacity}, ${timeout}, host-shared (${hostAllows}, so you can be queued while this pool has room)`
     )
     const usage = pool.usage?.trim()
     if (usage) {
@@ -75,6 +80,7 @@ export async function loadSlotPoolPromptEntries(squadId: string): Promise<SlotPo
       claimTimeoutMs: slotPools.claimTimeoutMs,
       usage: slotPools.usage,
       hostShared: slotPools.hostShared,
+      capacityFollowsHost: slotPools.capacityFollowsHost,
     })
     .from(slotPools)
     .innerJoin(squads, eq(squads.id, slotPools.squadId))
@@ -88,9 +94,16 @@ export async function loadSlotPoolPromptEntries(squadId: string): Promise<SlotPo
     )
     .orderBy(asc(slotPools.key))
   const budget = pools.some((pool) => pool.hostShared) ? await resolveHostBudget(db, squadId) : null
-  return pools.map(({ hostShared, ...pool }) =>
-    hostShared && budget ? { ...pool, hostCapacity: budget.capacity } : pool
-  )
+  return pools.map(({ hostShared, capacityFollowsHost, ...pool }) => {
+    if (!hostShared || !budget) return pool
+    const follows = capacityFollowsHost
+    return {
+      ...pool,
+      capacity: effectivePoolCapacity({ ...pool, hostShared, capacityFollowsHost }, budget),
+      hostCapacity: budget.capacity,
+      ...(follows ? { capacityFollowsHost: true as const } : {}),
+    }
+  })
 }
 
 /**

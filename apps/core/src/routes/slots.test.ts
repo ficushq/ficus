@@ -751,6 +751,66 @@ describe('slot pool usage guidance and enabled state', () => {
     ).toMatchObject({ hostShared: false })
   })
 
+  test('PATCH renames a pool and drops or restores its own cap', async () => {
+    const squadId = await squad('rename-follow')
+    await register(squadId)
+    const holder = await agent(squadId)
+    const claim = await (await request('POST', `/api/squads/${squadId}/slots/tests/claims`, holder.token)).json()
+    expect(claim.outcome).toBe('granted')
+
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, useUser.token, { key: 'heavy-work' })).status
+    ).toBe(403)
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { key: 'No Good' })).status
+    ).toBe(400)
+    const renamed = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/tests`, writeUser.token, { key: 'heavy-work' })
+    ).json()
+    expect(renamed).toMatchObject({ outcome: 'updated', pool: { key: 'heavy-work' } })
+    expect(renamed.message).toContain('Slot pool "tests" is now "heavy-work"')
+    expect((await request('GET', `/api/squads/${squadId}/slots/tests`, useUser.token)).status).toBe(404)
+    // The claim taken under the old key is still the holder's, and releases by id.
+    const held = await (await request('GET', `/api/squads/${squadId}/slots/heavy-work`, holder.token)).json()
+    expect(held.callerClaim.id).toBe(claim.claim.id)
+    expect((await (await request('DELETE', `/api/slots/claims/${claim.claim.id}`, holder.token)).json()).outcome).toBe(
+      'released'
+    )
+
+    await request('POST', `/api/squads/${squadId}/slots`, writeUser.token, { key: 'other' })
+    expect(
+      (await request('PATCH', `/api/squads/${squadId}/slots/other`, writeUser.token, { key: 'heavy-work' })).status
+    ).toBe(409)
+
+    const follows = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/heavy-work`, writeUser.token, { capacityFollowsHost: true })
+    ).json()
+    expect(follows.pool).toMatchObject({ capacityFollowsHost: true, capacity: 1 })
+    expect(follows.message).toContain('no cap of its own')
+    // No machine hosts this squad, so the stored capacity still applies.
+    expect(await (await request('GET', `/api/squads/${squadId}/slots/heavy-work`, useUser.token)).json()).toMatchObject(
+      {
+        capacity: 1,
+        capacityFollowsHost: true,
+      }
+    )
+    const capped = await (
+      await request('PATCH', `/api/squads/${squadId}/slots/heavy-work`, writeUser.token, { capacity: 2 })
+    ).json()
+    expect(capped.pool).toMatchObject({ capacityFollowsHost: false, capacity: 2 })
+    expect(capped.message).toContain('now has capacity 2')
+    // A pool outside the host budget has nothing to follow.
+    expect(
+      (
+        await request('POST', `/api/squads/${squadId}/slots`, writeUser.token, {
+          key: 'lock',
+          hostShared: false,
+          capacityFollowsHost: true,
+        })
+      ).status
+    ).toBe(400)
+  })
+
   test('PATCH enabled toggles enforcement; claims on a disabled pool answer disabled', async () => {
     const squadId = await squad('enabled-patch')
     await register(squadId)

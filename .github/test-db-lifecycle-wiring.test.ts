@@ -9,7 +9,7 @@ function capacityFixture(bin: string): void {
   writeFileSync(
     join(bin, 'ficus'),
     `#!/bin/sh
-printf '{"key":"shared-box-intensive","squadId":"%s","enabled":false}\n' "$FICUS_SQUAD_ID"
+printf '{"key":"heavy-work","squadId":"%s","enabled":false}\n' "$FICUS_SQUAD_ID"
 `,
     { mode: 0o755 }
   )

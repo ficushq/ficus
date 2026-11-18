@@ -32,6 +32,7 @@ import { rankedSlotWaiters } from './queue-order'
 import { endedSlotClaimCleanup } from './ended-claim-cleanup'
 import {
   compareHostWaiters,
+  effectivePoolCapacity,
   eligibleHostWaiters,
   hostBudgetOfMachine,
   loadHostGroup,
@@ -104,6 +105,12 @@ export interface RegisterPoolInput {
    * Pass false for a pool that protects something else, such as a deploy lock.
    */
   hostShared?: boolean
+  /**
+   * No cap of its own: the pool's capacity is its machine host's budget.
+   * Needs a host-shared pool. `capacity` is then the fallback where no budget
+   * applies.
+   */
+  capacityFollowsHost?: boolean
   createdBy: string
 }
 
@@ -117,12 +124,21 @@ export interface UpdatePoolInput {
   enabled?: boolean
   /** Start or stop drawing on the machine host's shared budget. */
   hostShared?: boolean
+  /**
+   * true drops the pool's own cap so its capacity follows its machine host's
+   * budget. Setting `capacity` without this gives the pool its own cap again.
+   */
+  capacityFollowsHost?: boolean
+  /** Rename the pool. Claims, waiters and history stay with it. */
+  newKey?: string
 }
 
 export interface UpdatePoolResult {
   pool: SlotPoolRow
   /** Queued waiters canceled (and notified) because this update disabled the pool. */
   releasedWaiters: number
+  /** The key the pool had before this update renamed it. */
+  renamedFrom?: string
 }
 
 function normalizeKey(key: string): string {
@@ -196,6 +212,9 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
   validateCapacity(capacity)
   validateTimeout(claimTimeoutMs)
   const usage = normalizeUsage(input.usage)
+  const hostShared = input.hostShared ?? true
+  const capacityFollowsHost = input.capacityFollowsHost ?? false
+  if (capacityFollowsHost && !hostShared) throw followsHostNeedsHostShared()
 
   try {
     return await db.transaction(async (tx) => {
@@ -225,7 +244,8 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
           capacity,
           claimTimeoutMs,
           usage,
-          hostShared: input.hostShared ?? true,
+          hostShared,
+          capacityFollowsHost,
           createdBy: input.createdBy,
         })
         .returning()
@@ -237,6 +257,10 @@ export async function registerPool(input: RegisterPoolInput): Promise<SlotPoolRo
     }
     throw error
   }
+}
+
+function followsHostNeedsHostShared(): SlotServiceError {
+  return new SlotServiceError('invalid_capacity', "Only a host-shared pool can follow its machine host's budget.", 400)
 }
 
 async function lockActivePool(tx: DbTx, squadId: string, key: string): Promise<SlotPoolRow> {
@@ -275,6 +299,8 @@ export interface PromotionResult {
   queueDepth: number
   maxGrantLatencyMs: number
   oldestWaiterAgeMs: number
+  /** The pool's capacity as it applied to this operation (see effectivePoolCapacity). */
+  capacity: number
   /** Set for a host-shared pool whose squad is on a machine with a budget. */
   host?: PromotionHostState
 }
@@ -290,10 +316,10 @@ function hostBudgetView(host: { capacity: number; activeCount: number }): SlotHo
 function acquirePoolSnapshot(pool: SlotPoolRow, promotion: PromotionResult): SlotAcquirePoolSnapshot {
   const activeCount = promotion.activeCount
   const host = promotion.host ? hostBudgetView(promotion.host) : undefined
-  const poolFree = Math.max(0, pool.capacity - activeCount)
+  const poolFree = Math.max(0, promotion.capacity - activeCount)
   return {
     key: pool.key,
-    capacity: pool.capacity,
+    capacity: promotion.capacity,
     activeCount,
     availableCount: host ? Math.min(poolFree, host.availableCount) : poolFree,
     queuedCount: promotion.queueDepth,
@@ -324,7 +350,7 @@ function hostBlocksNewClaim(promotion: PromotionResult): boolean {
 /** Why a caller with room in its own pool was queued anyway. */
 function queuedMessage(pool: SlotPoolRow, promotion: PromotionResult, fallback: string): string {
   const host = promotion.host
-  if (!host || promotion.activeCount >= pool.capacity) return fallback
+  if (!host || promotion.activeCount >= promotion.capacity) return fallback
   if (host.activeCount >= host.capacity) {
     return `The machine host's shared slot budget is full (${host.activeCount} of ${host.capacity} in use across squads); you are queued for "${pool.key}".`
   }
@@ -338,6 +364,7 @@ interface UpdatePoolTransactionResult {
   promotion: PromotionResult
   /** The machine whose budget this update just stopped drawing on. */
   leftHostMachineId?: string
+  renamedFrom?: string
 }
 
 interface UnregisterPoolTransactionResult {
@@ -444,7 +471,7 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
   let foreign: HostWaiter[] = []
   if (budget) {
     await lockHostBudget(tx, budget.machineId)
-    const group = await loadHostGroup(tx, budget.machineId, now)
+    const group = await loadHostGroup(tx, budget, now)
     foreign = await eligibleHostWaiters(tx, group, now, pool.id)
     heldBySquad = group.heldBySquad
     host = {
@@ -457,9 +484,10 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
 
   // A disabled pool never grants: disabling cancels its waiters, and this
   // guard keeps any straggler from being promoted while it stays disabled.
-  const waiters = !pool.disabledAt && activeCount < pool.capacity ? await rankedSlotWaiters(tx, [pool.id], now) : []
+  const capacity = effectivePoolCapacity(pool, budget)
+  const waiters = !pool.disabledAt && activeCount < capacity ? await rankedSlotWaiters(tx, [pool.id], now) : []
   for (const { waiter, rank } of waiters) {
-    if (activeCount >= pool.capacity) break
+    if (activeCount >= capacity) break
     if (host) {
       if (host.activeCount >= host.capacity) break
       // The machine's next unit goes to the best-placed waiter on the machine.
@@ -552,6 +580,7 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
     queueDepth: queue?.count ?? 0,
     maxGrantLatencyMs,
     oldestWaiterAgeMs: queue?.oldest ? Math.max(0, now.getTime() - new Date(queue.oldest).getTime()) : 0,
+    capacity,
     ...(host ? { host } : {}),
   }
 }
@@ -566,7 +595,7 @@ async function hostPromotionOrder(machineId: string): Promise<string[]> {
   const [clock] = await db.execute<{ now: Date }>(sql`SELECT date_trunc('milliseconds', clock_timestamp()) AS now`)
   if (!clock) throw new Error('Unable to read slot database clock')
   const now = new Date(clock.now)
-  const group = await loadHostGroup(db, machineId, now)
+  const group = await loadHostGroup(db, budget, now)
   if (group.activeCount >= budget.capacity) return []
   const waiters = await eligibleHostWaiters(db, group, now)
   waiters.sort((a, b) => compareHostWaiters(a, b, group.heldBySquad))
@@ -656,6 +685,7 @@ function mergePromotion(left: PromotionResult, right: PromotionResult): Promotio
     queueDepth: right.queueDepth,
     maxGrantLatencyMs: Math.max(left.maxGrantLatencyMs, right.maxGrantLatencyMs),
     oldestWaiterAgeMs: right.oldestWaiterAgeMs,
+    capacity: right.capacity,
     ...(right.host ? { host: right.host } : {}),
   }
 }
@@ -703,55 +733,89 @@ export async function updatePoolDetailed(
     input.claimTimeoutMs === undefined &&
     input.usage === undefined &&
     input.enabled === undefined &&
-    input.hostShared === undefined
+    input.hostShared === undefined &&
+    input.capacityFollowsHost === undefined &&
+    input.newKey === undefined
   ) {
     throw new SlotServiceError(
       'invalid_capacity',
-      'Capacity, claim timeout, usage, enabled, or hostShared is required.',
+      'Capacity, claim timeout, usage, enabled, hostShared, capacityFollowsHost, or a new key is required.',
       400
     )
   }
   if (input.capacity !== undefined) validateCapacity(input.capacity)
   if (input.claimTimeoutMs !== undefined) validateTimeout(input.claimTimeoutMs)
   const usage = input.usage === undefined ? undefined : normalizeUsage(input.usage)
+  const newKey = input.newKey === undefined ? undefined : validateKey(input.newKey)
 
-  const result = await db.transaction(async (tx): Promise<UpdatePoolTransactionResult> => {
-    const pool = await lockActivePool(tx, squadId, key)
-    await afterPoolLockHook?.('update')
-    const now = await databaseNow(tx, pool.id)
-    const disabling = input.enabled === false && pool.disabledAt === null
-    const enabling = input.enabled === true && pool.disabledAt !== null
-    // Waiters are released before any capacity change is applied, so a
-    // combined disable + capacity increase can never grant them first.
-    const releasedWaiters = disabling ? await releaseWaitersForDisabledPool(tx, pool, now) : 0
-    // A pool that stops being host-shared hands its units back to the machine.
-    const leftHost = input.hostShared === false && pool.hostShared ? await resolveHostBudget(tx, squadId) : null
-    const [updated] = await tx
-      .update(slotPools)
-      .set({
-        ...(input.capacity === undefined ? {} : { capacity: input.capacity }),
-        ...(input.claimTimeoutMs === undefined ? {} : { claimTimeoutMs: input.claimTimeoutMs }),
-        ...(usage === undefined ? {} : { usage }),
-        ...(disabling ? { disabledAt: now } : enabling ? { disabledAt: null } : {}),
-        ...(input.hostShared === undefined ? {} : { hostShared: input.hostShared }),
-        updatedAt: now,
-      })
-      .where(eq(slotPools.id, pool.id))
-      .returning()
-    const promotion = await expireAndPromoteLocked(tx, updated!, now)
-    return {
-      updated: updated!,
-      releasedWaiters,
-      promotion: { ...promotion, canceled: promotion.canceled + releasedWaiters },
-      ...(leftHost ? { leftHostMachineId: leftHost.machineId } : {}),
-    }
-  })
+  const result = await db
+    .transaction(async (tx): Promise<UpdatePoolTransactionResult> => {
+      const pool = await lockActivePool(tx, squadId, key)
+      await afterPoolLockHook?.('update')
+      const now = await databaseNow(tx, pool.id)
+      const disabling = input.enabled === false && pool.disabledAt === null
+      const enabling = input.enabled === true && pool.disabledAt !== null
+      // Waiters are released before any capacity change is applied, so a
+      // combined disable + capacity increase can never grant them first.
+      const releasedWaiters = disabling ? await releaseWaitersForDisabledPool(tx, pool, now) : 0
+      // A pool that stops being host-shared hands its units back to the machine.
+      const leftHost = input.hostShared === false && pool.hostShared ? await resolveHostBudget(tx, squadId) : null
+      const hostShared = input.hostShared ?? pool.hostShared
+      // A number alone gives the pool its own cap again, and a pool that is not
+      // host-shared has no budget to follow.
+      const capacityFollowsHost = !hostShared
+        ? false
+        : (input.capacityFollowsHost ?? (input.capacity === undefined ? pool.capacityFollowsHost : false))
+      if (input.capacityFollowsHost && !hostShared) throw followsHostNeedsHostShared()
+      const renaming = newKey !== undefined && newKey !== pool.key
+      if (renaming) {
+        const [taken] = await tx
+          .select({ id: slotPools.id })
+          .from(slotPools)
+          .where(and(eq(slotPools.squadId, squadId), eq(slotPools.key, newKey), isNull(slotPools.unregisteredAt)))
+          .limit(1)
+        if (taken) throw new SlotServiceError('pool_exists', `Slot pool "${newKey}" is already registered.`, 409)
+      }
+      const [updated] = await tx
+        .update(slotPools)
+        .set({
+          ...(renaming ? { key: newKey } : {}),
+          ...(input.capacity === undefined ? {} : { capacity: input.capacity }),
+          ...(input.claimTimeoutMs === undefined ? {} : { claimTimeoutMs: input.claimTimeoutMs }),
+          ...(usage === undefined ? {} : { usage }),
+          ...(disabling ? { disabledAt: now } : enabling ? { disabledAt: null } : {}),
+          hostShared,
+          capacityFollowsHost,
+          updatedAt: now,
+        })
+        .where(eq(slotPools.id, pool.id))
+        .returning()
+      const promotion = await expireAndPromoteLocked(tx, updated!, now)
+      return {
+        updated: updated!,
+        releasedWaiters,
+        promotion: { ...promotion, canceled: promotion.canceled + releasedWaiters },
+        ...(leftHost ? { leftHostMachineId: leftHost.machineId } : {}),
+        ...(renaming ? { renamedFrom: pool.key } : {}),
+      }
+    })
+    .catch((error) => {
+      // Two renames to one key at once: the unique index decides.
+      if (newKey !== undefined && isUniqueViolation(error)) {
+        throw new SlotServiceError('pool_exists', `Slot pool "${newKey}" is already registered.`, 409)
+      }
+      throw error
+    })
   if (result.releasedWaiters > 0) drainSlotNotificationsSoon()
   else drainSlotOutboxIfGranted(result.promotion)
   emitSlotSummary(squadId, 'update', result.promotion)
   if (result.leftHostMachineId) await promoteHostGroupSafely(result.leftHostMachineId)
   else await settleHostGroup(result.promotion)
-  return { pool: result.updated, releasedWaiters: result.releasedWaiters }
+  return {
+    pool: result.updated,
+    releasedWaiters: result.releasedWaiters,
+    ...(result.renamedFrom ? { renamedFrom: result.renamedFrom } : {}),
+  }
 }
 
 export async function unregisterPool(squadId: string, key: string): Promise<SlotPoolRow> {
@@ -834,10 +898,11 @@ async function projectPool(poolId: string, viewer: SlotViewer): Promise<SlotPool
       const host = budget
         ? hostBudgetView({
             capacity: budget.capacity,
-            activeCount: (await loadHostGroup(tx, budget.machineId, now)).activeCount,
+            activeCount: (await loadHostGroup(tx, budget, now)).activeCount,
           })
         : undefined
-      const poolFree = Math.max(0, pool.capacity - claims.length)
+      const capacity = effectivePoolCapacity(pool, budget)
+      const poolFree = Math.max(0, capacity - claims.length)
       const callerClaimRow = viewer.agentId ? claims.find((claim) => claim.ownerAgentId === viewer.agentId) : undefined
       const callerWaiterRow = viewer.agentId
         ? waiters.find((waiter) => waiter.ownerAgentId === viewer.agentId)
@@ -846,7 +911,8 @@ async function projectPool(poolId: string, viewer: SlotViewer): Promise<SlotPool
         id: pool.id,
         squadId: pool.squadId,
         key: pool.key,
-        capacity: pool.capacity,
+        capacity,
+        capacityFollowsHost: pool.capacityFollowsHost,
         claimTimeoutMs: pool.claimTimeoutMs,
         usage: pool.usage,
         enabled: pool.disabledAt === null,
@@ -976,7 +1042,7 @@ export async function claimSlot(
       .from(slotWaiters)
       .where(and(eq(slotWaiters.poolId, pool.id), eq(slotWaiters.status, 'queued')))
       .limit(1)
-    if ((activeCount ?? 0) >= pool.capacity || olderWaiter || hostBlocksNewClaim(promotion)) {
+    if ((activeCount ?? 0) >= promotion.capacity || olderWaiter || hostBlocksNewClaim(promotion)) {
       if (!subscribe) return { outcome: 'unavailable' as const, pool, promotion }
       const [waiter] = await tx
         .insert(slotWaiters)
@@ -1061,7 +1127,7 @@ export async function subscribeSlot(squadId: string, key: string, agentId: strin
       .select({ count: sql<number>`count(*)::int` })
       .from(slotClaims)
       .where(and(eq(slotClaims.poolId, pool.id), eq(slotClaims.status, 'active')))
-    if ((activeCount ?? 0) < pool.capacity && !hostBlocksNewClaim(promotion)) {
+    if ((activeCount ?? 0) < promotion.capacity && !hostBlocksNewClaim(promotion)) {
       const [claim] = await tx
         .insert(slotClaims)
         .values({

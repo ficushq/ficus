@@ -275,6 +275,55 @@ describe('SlotPoolsSettings administration', () => {
     }
   })
 
+  test('dropping the pool cap sends only capacityFollowsHost, and restoring it saves the number on screen', async () => {
+    const drop = await harness([pool({ hostShared: true, capacity: 2 })])
+    try {
+      await drop.click(drop.button('Edit')!)
+      const boxes = [...drop.document.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[]
+      expect(boxes).toHaveLength(2)
+      await drop.click(boxes[1]!)
+      // The capacity field is locked while the pool follows the host.
+      const capacityInput = drop.document.querySelector('form input[inputmode="numeric"]') as HTMLInputElement
+      expect(capacityInput.disabled).toBe(true)
+      await drop.click(drop.button('Save')!)
+      await drop.settle(() => drop.calls.length === 1)
+      expect(drop.calls[0]!.body).toEqual({ capacityFollowsHost: true })
+    } finally {
+      await drop.restore()
+    }
+
+    const restore = await harness([
+      pool({
+        hostShared: true,
+        capacityFollowsHost: true,
+        capacity: 3,
+        host: { capacity: 3, activeCount: 1, availableCount: 2 },
+      }),
+    ])
+    try {
+      expect(restore.document.body.textContent).toContain('Capacity 3 (the machine host budget)')
+      await restore.click(restore.button('Edit')!)
+      const boxes = [...restore.document.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[]
+      expect(boxes[1]!.checked).toBe(true)
+      await restore.click(boxes[1]!)
+      await restore.click(restore.button('Save')!)
+      await restore.settle(() => restore.calls.length === 1)
+      expect(restore.calls[0]!.body).toEqual({ capacityFollowsHost: false, capacity: 3 })
+    } finally {
+      await restore.restore()
+    }
+  })
+
+  test('a pool that is not host-shared cannot drop its cap', async () => {
+    const ui = await harness([pool({ hostShared: false })])
+    try {
+      await ui.click(ui.button('Edit')!)
+      expect(ui.document.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
+    } finally {
+      await ui.restore()
+    }
+  })
+
   test('clearing the guidance sends usage null', async () => {
     const ui = await harness([pool()])
     try {

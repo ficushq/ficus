@@ -1,0 +1,1 @@
+ALTER TABLE "slot_pools" ADD COLUMN "capacity_follows_host" boolean DEFAULT false NOT NULL;
