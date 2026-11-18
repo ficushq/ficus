@@ -373,7 +373,7 @@ describe('SystemManagerRunner.buildManagerPrompt model override guidance', () =>
       spyOn(AgentType, 'find').mockResolvedValue({ id: agentTypeId, systemPrompt: 'TYPE-PROMPT', includes: [] } as any)
     )
     spies.push(spyOn(modelTiers, 'resolveAgentTypeChain').mockResolvedValue('anthropic:claude-sonnet-4-5'))
-    spies.push(spyOn(cliHelp, 'getSystemManagerCliHelp').mockResolvedValue('cli'))
+    spies.push(spyOn(cliHelp, 'getCliCommandIndex').mockResolvedValue('cli'))
     spies.push(spyOn(SystemManagerRunner as any, 'buildSquadsContext').mockResolvedValue('squads'))
     const { systemPrompt } = await SystemManagerRunner.buildManagerPrompt(undefined, agentTypeId)
     expect(systemPrompt).toContain('TYPE-PROMPT')

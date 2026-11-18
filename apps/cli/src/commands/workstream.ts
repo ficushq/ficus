@@ -831,7 +831,9 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
   }
 
   ws.command('request-input <id>')
-    .description('Open structured input, or a human/manager prose wait (server-authorized)')
+    .description(
+      'Open a typed wait for a task input (provide) or an owner decision (decide), given as JSON or YAML; people and managers may open a prose wait with --message'
+    )
     .option('--content <text>', 'Inline structured JSON or YAML request')
     .option('--stdin', 'Read a structured request from stdin')
     .option('-f, --file <path>', 'Structured request file, or context file with --message', collect, [])

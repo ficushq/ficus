@@ -17,7 +17,7 @@ import type { AdmissionScope } from '../../services/maintenance/admission-reserv
 
 import { AgentType } from '../AgentType'
 import { resolveAgentTypeChain } from '../../services/model-selection/model-tier-resolution'
-import { getSystemManagerCliHelp } from '../../lib/utils/cli-help'
+import { getCliCommandIndex } from '../../lib/utils/cli-help'
 import { Squad } from '../Squad'
 
 import { createNavigateTool } from '../../tools/navigate'
@@ -104,7 +104,7 @@ export class SystemManagerRunner extends AgentRunner {
     const [cliHelp, squadsContext] =
       agentTypeId === 'assistant'
         ? ['', 'Use list_squads to discover visible squads.']
-        : await Promise.all([getSystemManagerCliHelp(), SystemManagerRunner.buildSquadsContext(identity)])
+        : await Promise.all([getCliCommandIndex(), SystemManagerRunner.buildSquadsContext(identity)])
 
     const typePrompt = await composeAgentTypePrompt(agentType)
     const systemPrompt = interpolateTemplate(

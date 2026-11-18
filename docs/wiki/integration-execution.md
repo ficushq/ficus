@@ -275,8 +275,9 @@ for authoritative override/revert semantics.
   content is rewritten and stale managed support files are pruned there. VM
   `file-sync.ts` transports skill assets. Existing sessions/copies are not proof
   that a new seed has been consumed; verify after the normal refresh/reconnect.
-- `lib/utils/cli-help.ts` generates cached agent references from the built CLI,
-  omitting operator credential commands even under broad user permissions. Ship
+- `lib/utils/cli-help.ts` builds the agent CLI index (one line per top-level
+  group) from the built CLI's `ficus --help`, omitting the operator `secret`
+  group even under broad user permissions. Ship
   the matching CLI with Core; operator `ficus --help` remains unchanged. CLI
   install bundles also copy `external/skills`; those are a separate upstream
   source, not the managed `config/skills` seed.

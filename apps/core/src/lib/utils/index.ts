@@ -6,14 +6,7 @@ export {
   createZipResponse,
   getMimeType,
 } from './file-download'
-export {
-  getCliHostPath,
-  getSystemManagerCliHelp,
-  getTaskWorkflowCliHelp,
-  getSquadWorkerCliHelp,
-  getSquadManagerCliHelp,
-  clearCliHelpCache,
-} from './cli-help'
+export { getCliHostPath, getCliCommandIndex } from './cli-help'
 export { getHomeDir, ensureHomeDir } from './home'
 export {
   parseModelSpec,
