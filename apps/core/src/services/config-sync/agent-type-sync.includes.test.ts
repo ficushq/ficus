@@ -40,7 +40,9 @@ describe('agent type includes', () => {
       [
         sysops.systemPrompt,
         files.get('entity-references'),
+        files.get('readable-text'),
         files.get('rules'),
+        files.get('recovery-waits'),
         files.get('subagents'),
         files.get('new-work-routing'),
         files.get('squad-rules'),
