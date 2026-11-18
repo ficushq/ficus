@@ -19,10 +19,11 @@ ficus squad list [options]
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-s, --status <status>` | Filter by status (`active`, `paused`, `archived`) |
-| `-a, --include-anonymous` | Include anonymous squads in the listing |
+
+| Option                    | Description                                       |
+| ------------------------- | ------------------------------------------------- |
+| `-s, --status <status>`   | Filter by status (`active`, `paused`, `archived`) |
+| `-a, --include-anonymous` | Include anonymous squads in the listing           |
 
 **Examples:**
 
@@ -48,16 +49,18 @@ ficus squad create|new [options] <name>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `name` | Name of the new squad |
+
+| Argument | Description           |
+| -------- | --------------------- |
+| `name`   | Name of the new squad |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-p, --purpose <purpose>` | Squad purpose/mission statement |
-| `-t, --type <typeId>` | Squad preset ID (e.g., `general`, `research`, `engineering`) |
-| `-a, --default-agent <agentType>` | Default agent type to include (can be repeated) |
+
+| Option                            | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| `-p, --purpose <purpose>`         | Squad purpose/mission statement                              |
+| `-t, --type <typeId>`             | Squad preset ID (e.g., `general`, `research`, `engineering`) |
+| `-a, --default-agent <agentType>` | Default agent type to include (can be repeated)              |
 
 **Examples:**
 
@@ -83,9 +86,10 @@ ficus squad get|info <id>
 ```
 
 **Arguments:**
+
 | Argument | Description |
-|----------|-------------|
-| `id` | Squad ID |
+| -------- | ----------- |
+| `id`     | Squad ID    |
 
 **Examples:**
 
@@ -108,18 +112,20 @@ ficus squad update|edit [options] <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Squad ID to update |
+
+| Argument | Description        |
+| -------- | ------------------ |
+| `id`     | Squad ID to update |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-n, --name <name>` | New name for the squad |
-| `-p, --purpose <purpose>` | New purpose statement |
-| `-s, --status <status>` | New status (`active`, `paused`, `archived`) |
-| `--add-default-agent <agentType>` | Add a default agent type |
-| `--remove-default-agent <agentType>` | Remove a default agent type |
+
+| Option                               | Description                                 |
+| ------------------------------------ | ------------------------------------------- |
+| `-n, --name <name>`                  | New name for the squad                      |
+| `-p, --purpose <purpose>`            | New purpose statement                       |
+| `-s, --status <status>`              | New status (`active`, `paused`, `archived`) |
+| `--add-default-agent <agentType>`    | Add a default agent type                    |
+| `--remove-default-agent <agentType>` | Remove a default agent type                 |
 
 **Examples:**
 
@@ -150,9 +156,10 @@ ficus squad delete|rm|archive [--delete-workspace] <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Squad ID to archive |
+
+| Argument | Description         |
+| -------- | ------------------- |
+| `id`     | Squad ID to archive |
 
 **Examples:**
 
@@ -178,9 +185,10 @@ ficus squad workspace|ws <id>
 ```
 
 **Arguments:**
+
 | Argument | Description |
-|----------|-------------|
-| `id` | Squad ID |
+| -------- | ----------- |
+| `id`     | Squad ID    |
 
 **Examples:**
 
@@ -203,10 +211,11 @@ ficus squad file|cat <id> <path>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Squad ID |
-| `path` | Path to the file within the workspace |
+
+| Argument | Description                           |
+| -------- | ------------------------------------- |
+| `id`     | Squad ID                              |
+| `path`   | Path to the file within the workspace |
 
 **Examples:**
 
@@ -229,17 +238,19 @@ ficus squad download <squadId> <path> [-o <file|dir>] [--archive] [--resume]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `squadId` | Squad ID |
-| `path` | File or directory path within the workspace (workspace-relative, or under the sandbox workspace mount) |
+
+| Argument  | Description                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------ |
+| `squadId` | Squad ID                                                                                               |
+| `path`    | File or directory path within the workspace (workspace-relative, or under the sandbox workspace mount) |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-o, --output <file\|dir>` | Local file to write, or an existing directory to write into. Default: the remote basename in the current directory (`<name>.tar.gz` with `--archive`) |
-| `--archive` | Download a directory as a gzip-compressed tar rooted at the directory name. Required for directories |
-| `--resume` | Continue a partial local file: sends `Range: bytes=<local size>-` and appends. A file that is already complete is reported as such. Cannot be combined with `--archive` |
+
+| Option                     | Description                                                                                                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-o, --output <file\|dir>` | Local file to write, or an existing directory to write into. Default: the remote basename in the current directory (`<name>.tar.gz` with `--archive`)                   |
+| `--archive`                | Download a directory as a gzip-compressed tar rooted at the directory name. Required for directories                                                                    |
+| `--resume`                 | Continue a partial local file: sends `Range: bytes=<local size>-` and appends. A file that is already complete is reported as such. Cannot be combined with `--archive` |
 
 A progress line is drawn on stderr when it is a TTY; nothing is printed to a pipe. `--json` prints `{ "path", "bytes", "status" }` (`bytes` is the local file size afterwards, `status` the HTTP status: `200`, `206` for a resumed transfer, `416` when a resume found nothing left).
 
@@ -271,14 +282,16 @@ ficus squad link [options] <source> <target>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
+
+| Argument | Description     |
+| -------- | --------------- |
 | `source` | Source squad ID |
 | `target` | Target squad ID |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option              | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
 | `-t, --type <type>` | Relationship type: `reports_to`, `collaborates`, `depends_on` |
 
 **Examples:**
@@ -305,8 +318,9 @@ ficus squad unlink <relationshipId>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
+
+| Argument         | Description                      |
+| ---------------- | -------------------------------- |
 | `relationshipId` | ID of the relationship to remove |
 
 **Examples:**
@@ -327,9 +341,10 @@ ficus squad relationships|rels <id>
 ```
 
 **Arguments:**
+
 | Argument | Description |
-|----------|-------------|
-| `id` | Squad ID |
+| -------- | ----------- |
+| `id`     | Squad ID    |
 
 **Examples:**
 
@@ -352,9 +367,10 @@ ficus squad can-communicate|can-comm <squadA> <squadB>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `squadA` | First squad ID |
+
+| Argument | Description     |
+| -------- | --------------- |
+| `squadA` | First squad ID  |
 | `squadB` | Second squad ID |
 
 **Examples:**
@@ -378,9 +394,10 @@ ficus squad agents <id>
 ```
 
 **Arguments:**
+
 | Argument | Description |
-|----------|-------------|
-| `id` | Squad ID |
+| -------- | ----------- |
+| `id`     | Squad ID    |
 
 **Examples:**
 
@@ -412,14 +429,16 @@ ficus squad spawn [options] <agentType> <squadId>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
+
+| Argument    | Description                                                        |
+| ----------- | ------------------------------------------------------------------ |
 | `agentType` | Type of agent to spawn (e.g., `engineer`, `architect`, `reviewer`) |
-| `squadId` | Squad ID to spawn the agent in |
+| `squadId`   | Squad ID to spawn the agent in                                     |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option                            | Description                               |
+| --------------------------------- | ----------------------------------------- |
 | `-w, --workstream <workstreamId>` | Assign the spawned agent to a work stream |
 
 **Examples:**
@@ -443,8 +462,9 @@ ficus squad unspawn <agentId>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
+
+| Argument  | Description           |
+| --------- | --------------------- |
 | `agentId` | Agent ID to terminate |
 
 **Examples:**
@@ -586,3 +606,19 @@ ficus squad spawn engineer abc123 --workstream ws-sprint-2
 ficus squad unspawn agent-1
 ficus squad unspawn agent-2
 ```
+
+### voice
+
+Show or change how the squad's agents write public text (commits, pull requests, review replies, issue comments, channel messages). Reading needs `squads:read`; every change needs `squads:update`. See [public voice](../public-voice.md).
+
+```bash
+ficus squad voice show <squadId>
+ficus squad voice use <squadId> <voiceId>            # assign a profile; --instance-default clears the assignment
+ficus squad voice set <squadId> --text "<voice>"     # the squad's own voice (clears the assignment); --file reads a file or a derived draft
+ficus squad voice set <squadId> --surface pull-requests --add --text "<note>"   # or --override
+ficus squad voice clear <squadId> [--surface <name> | --all]
+ficus squad voice preview <squadId> [--surface <name>] [--sample <text>] [--voice <voiceId>]
+ficus squad voice derive <squadId> --github <login> [--before <date>] [--after <date>] [--repo <owner/name>] [--exclude-repo <owner/name>] [--surfaces <list>] [--include-tool-authored] [--confirm-other-person] [--out <draft.json>]
+```
+
+Surface names: `commits`, `pull-requests`, `review-replies`, `issue-comments`, `channels`. `derive` prints a draft and saves nothing.
