@@ -5,12 +5,12 @@ import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dir, '../../..')
 const squadId = 'fixture-squad'
-const pool = { key: 'shared-box-intensive', squadId, enabled: true }
+const pool = { key: 'heavy-work', squadId, enabled: true }
 const claim = { id: 'fixture-claim', ownerAgentId: 'fixture-agent', expiresAt: '2999-01-01T00:00:00Z' }
 
 // Every external command is a fixture. In particular, a regression must NEVER
 // start Docker or contact the real capacity API, even during the red phase.
-function fixture(response: unknown = pool, cliExit = 0) {
+function fixture(response: unknown = pool, cliExit = 0, formerKeyOnly = false) {
   const dir = mkdtempSync(join(tmpdir(), 'test-db-capacity-'))
   const bin = join(dir, 'bin')
   mkdirSync(bin)
@@ -23,7 +23,10 @@ function fixture(response: unknown = pool, cliExit = 0) {
   }
   writeFileSync(
     join(bin, 'ficus'),
-    `#!/bin/sh\n[ "$FICUS_AGENT_CONTEXT" = 1 ] || exit 6\necho "ficus $*" >> "$CAPACITY_FIXTURE_LOG"\ncat "$CAPACITY_FIXTURE_RESPONSE"\necho 'private-auth-diagnostic' >&2\nexit ${cliExit}\n`,
+    `#!/bin/sh\n[ "$FICUS_AGENT_CONTEXT" = 1 ] || exit 6\necho "ficus $*" >> "$CAPACITY_FIXTURE_LOG"\n${
+      // A squad that has not renamed its pool: the new key is not registered.
+      formerKeyOnly ? '[ "$4" = heavy-work ] && exit 1\n' : ''
+    }cat "$CAPACITY_FIXTURE_RESPONSE"\necho 'private-auth-diagnostic' >&2\nexit ${cliExit}\n`,
     { mode: 0o755 }
   )
   writeFileSync(
@@ -74,7 +77,7 @@ for (const entry of ['root preload', 'Core preload', 'direct startup', 'Core run
       const result = f.run(args, { CI: 'true' }, entry === 'Core preload' ? join(root, 'apps/core') : root)
       expect(result.code).not.toBe(0)
       expect(result.output).toContain('[test-db capacity: unavailable]')
-      expect(result.commands).toBe(`ficus --json slot list shared-box-intensive --squad ${squadId}\n`)
+      expect(result.commands).toBe(`ficus --json slot list heavy-work --squad ${squadId}\n`)
       expect(result.output).not.toContain('private-auth-diagnostic')
     } finally {
       f.clean()
@@ -121,7 +124,7 @@ for (const response of [
       const result = f.run(check)
       expect(result.code).toBe(0)
       expect(result.output).toContain('admitted')
-      expect(result.commands).toBe(`ficus --json slot list shared-box-intensive --squad ${squadId}\n`)
+      expect(result.commands).toBe(`ficus --json slot list heavy-work --squad ${squadId}\n`)
       expect(result.output).not.toContain('private-auth-diagnostic')
       expect(result.output).toContain(`[test-db capacity: ${response.enabled ? 'granted' : 'disabled'}]`)
     } finally {
@@ -215,6 +218,44 @@ test('OS box identity still enforces admission with stripped runtime markers and
   }
 })
 
+test('a squad that still has the former pool key is admitted on a claim there', () => {
+  const former = { ...pool, key: 'shared-box-intensive' }
+  const f = fixture({ ...former, callerClaim: claim }, 0, true)
+  try {
+    const result = f.run(check)
+    expect(result.code).toBe(0)
+    expect(result.output).toContain('[test-db capacity: granted]')
+    expect(result.commands).toBe(
+      `ficus --json slot list heavy-work --squad ${squadId}\nficus --json slot list shared-box-intensive --squad ${squadId}\n`
+    )
+  } finally {
+    f.clean()
+  }
+  // Without a claim there, the refusal names the key that squad actually has.
+  const unclaimed = fixture(former, 0, true)
+  try {
+    const result = unclaimed.run(check)
+    expect(result.code).not.toBe(0)
+    expect(result.output).toContain('Run ficus slot claim shared-box-intensive')
+  } finally {
+    unclaimed.clean()
+  }
+})
+
+test('an answer for the current key is final: the former key is never consulted', () => {
+  // The fixture would answer for either key; a pool projection naming the
+  // former key under the current one is refused rather than accepted.
+  const f = fixture({ ...pool, key: 'shared-box-intensive', callerClaim: claim })
+  try {
+    const result = f.run(check)
+    expect(result.code).not.toBe(0)
+    expect(result.output).toContain('[test-db capacity: unavailable]')
+    expect(result.commands).toBe(`ficus --json slot list heavy-work --squad ${squadId}\n`)
+  } finally {
+    f.clean()
+  }
+})
+
 for (const entry of ['root preload', 'direct startup']) {
   test(`${entry}: a valid claim reaches the existing project-owned DB path`, () => {
     const f = fixture({ ...pool, callerClaim: claim })
@@ -225,7 +266,7 @@ for (const entry of ['root preload', 'direct startup']) {
       // The fixture Docker refuses inventory; reaching it proves admission
       // succeeded without starting a real container or changing DB ownership.
       expect(result.output).toContain('Cannot verify test database inventory')
-      expect(result.commands).toBe(`ficus --json slot list shared-box-intensive --squad ${squadId}\ndocker\n`)
+      expect(result.commands).toBe(`ficus --json slot list heavy-work --squad ${squadId}\ndocker\n`)
     } finally {
       f.clean()
     }
@@ -252,7 +293,7 @@ test('a supplied test DATABASE_URL and CI flag cannot bypass the root preload gu
     })
     expect(result.code).not.toBe(0)
     expect(result.output).toContain('[test-db capacity: unavailable]')
-    expect(result.commands).toBe(`ficus --json slot list shared-box-intensive --squad ${squadId}\n`)
+    expect(result.commands).toBe(`ficus --json slot list heavy-work --squad ${squadId}\n`)
   } finally {
     f.clean()
   }

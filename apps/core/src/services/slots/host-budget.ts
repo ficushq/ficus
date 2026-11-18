@@ -63,6 +63,13 @@ export function deriveHostSlotCapacity(
   const override = resolveHostSlotCapacityOverride(getSettingsStore().getStoredValue(HOST_SLOT_CAPACITY_SETTING_KEY))
   if (override === 'off') return null
   if (override !== 'auto') return override
+  return hostSlotCapacityFromSize(capabilities)
+}
+
+/** The budget a machine's size gives it, ignoring any override. Null when its memory is unknown. */
+export function hostSlotCapacityFromSize(
+  capabilities: { memMb?: number; cpus?: number } | null | undefined
+): number | null {
   const memMb = capabilities?.memMb
   if (typeof memMb !== 'number' || !Number.isFinite(memMb) || memMb <= 0) return null
   const reserveMb = Math.max(HOST_RESERVE_MIN_MB, memMb * HOST_RESERVE_FRACTION)
@@ -127,10 +134,23 @@ export interface HostGroup {
   heldBySquad: Map<string, number>
 }
 
-/** Every registered host-shared pool of a live squad on this machine. */
-export async function loadHostGroup(reader: Reader, machineId: string, now: Date): Promise<HostGroup> {
+/**
+ * A pool's capacity as it applies now: its machine host's budget when the pool
+ * follows it and a budget applies, otherwise its own stored capacity.
+ */
+export function effectivePoolCapacity(
+  pool: { capacity: number; hostShared: boolean; capacityFollowsHost: boolean },
+  budget: HostBudget | null
+): number {
+  return pool.hostShared && pool.capacityFollowsHost && budget ? budget.capacity : pool.capacity
+}
+
+/** Every registered host-shared pool of a live squad on this machine, with its effective capacity. */
+export async function loadHostGroup(reader: Reader, budget: HostBudget, now: Date): Promise<HostGroup> {
+  const machineId = budget.machineId
   const pools = await reader.execute<HostGroupPool & Record<string, unknown>>(sql`
-    SELECT pool.id, pool.squad_id AS "squadId", pool.capacity, (pool.disabled_at IS NOT NULL) AS disabled,
+    SELECT pool.id, pool.squad_id AS "squadId", (pool.disabled_at IS NOT NULL) AS disabled,
+      (CASE WHEN pool.capacity_follows_host THEN ${budget.capacity}::int ELSE pool.capacity END) AS capacity,
       (SELECT count(*)::int FROM slot_claims claim
        WHERE claim.pool_id = pool.id AND claim.status = 'active'
          AND claim.expires_at > ${now.toISOString()}::timestamptz) AS "activeCount"
@@ -200,6 +220,30 @@ export async function eligibleHostWaiters(
     rank,
     enqueueSequence: waiter.enqueueSequence,
   }))
+}
+
+/**
+ * One line for Settings: what each machine's size gives it right now, so an
+ * operator can see the automatic value before overriding it.
+ */
+export async function describeDerivedHostSlotBudgets(reader: Reader): Promise<string> {
+  const rows = await reader.execute<{ name: string; capabilities: { memMb?: number; cpus?: number } | null }>(sql`
+    SELECT machine.name, machine.capabilities FROM machines machine
+    WHERE machine.status <> 'terminated' ORDER BY machine.name
+  `)
+  if (rows.length === 0) return 'No machine hosts are registered, so no host budget applies.'
+  const parts = rows.map((row) => {
+    const derived = hostSlotCapacityFromSize(row.capabilities)
+    if (derived === null) return `${row.name}: unknown size, no budget`
+    const size = [
+      row.capabilities?.memMb ? `${(row.capabilities.memMb / 1024).toFixed(1)} GiB` : undefined,
+      row.capabilities?.cpus ? `${row.capabilities.cpus} CPU${row.capabilities.cpus === 1 ? '' : 's'}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(', ')
+    return `${row.name}: ${derived} (${size})`
+  })
+  return `Derived from machine size right now: ${parts.join('; ')}.`
 }
 
 /** Machines that have a host-shared pool with someone queued on it. */

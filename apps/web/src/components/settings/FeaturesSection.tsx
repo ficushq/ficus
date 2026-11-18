@@ -151,6 +151,7 @@ export function NumberSettingFields({
       <div>
         <p className="font-medium text-primary">{label}</p>
         <p className="text-sm text-muted">{setting.description}</p>
+        {setting.detail && <p className="text-sm text-secondary mt-1">{setting.detail}</p>}
         {!setting.isDefault && setting.updatedAt && (
           <p className="text-xs text-muted mt-1">
             Last changed {new Date(setting.updatedAt).toLocaleDateString()}

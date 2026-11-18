@@ -3,6 +3,9 @@ import { getSettingsStore, isManagedSetting, SettingValidationError } from '../s
 import { requirePermission } from '../middleware/require-permission'
 import { auditActor, type Identity } from '../services/rbac'
 import { parseJsonBody } from './json-body'
+import { db } from '../db'
+import { describeDerivedHostSlotBudgets } from '../services/slots/host-budget'
+import { HOST_SLOT_CAPACITY_SETTING_KEY } from '../services/slots/host-capacity-setting'
 
 const app = new Hono()
 
@@ -13,6 +16,10 @@ const MANAGED_SETTING_ERROR =
 app.get('/', requirePermission('settings:read'), async (c) => {
   const store = getSettingsStore()
   const list = await store.list()
+  // The host slot budget defaults to `auto`: say what that comes to on each
+  // machine today. Best effort, never failing the settings page.
+  const hostSlots = list.find((setting) => setting.key === HOST_SLOT_CAPACITY_SETTING_KEY)
+  if (hostSlots) hostSlots.detail = await describeDerivedHostSlotBudgets(db).catch(() => undefined)
   return c.json(list)
 })
 

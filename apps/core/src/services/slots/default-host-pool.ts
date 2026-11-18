@@ -21,8 +21,8 @@ const SEED_BATCH = 100
  * Slot pools are opt-in, so a squad whose manager never registered one ran its
  * heavy work ungated, and on a shared machine that work lands on every other
  * squad. A squad whose box is on a machine with a known budget, and that has
- * no slot pool row at all, gets `heavy-work`: host-shared, with the machine's
- * budget as its capacity.
+ * no slot pool row at all, gets `heavy-work`: host-shared, with no cap of its
+ * own, so its capacity is the machine's budget and stays so when that changes.
  *
  * A squad that already has pools is left alone: its manager marks the pool
  * that protects box capacity host-shared instead. A default pool the manager
@@ -53,6 +53,9 @@ export async function ensureDefaultHostPools(): Promise<number> {
         claimTimeoutMs: DEFAULT_HOST_POOL_TIMEOUT_MS,
         usage: DEFAULT_HOST_POOL_USAGE,
         hostShared: true,
+        // No cap of its own: it keeps following the machine's budget. The
+        // number above is only the fallback should budgets be turned off.
+        capacityFollowsHost: true,
         createdBy: DEFAULT_HOST_POOL_CREATOR,
       })
     } catch (error) {

@@ -20,6 +20,7 @@ import {
   DEFAULT_HOST_POOL_KEY,
   DEFAULT_HOST_POOL_USAGE,
   deriveHostSlotCapacity,
+  describeDerivedHostSlotBudgets,
 } from './host-budget'
 import { loadSlotPoolPromptEntries } from '../../lib/prompts/slot-pools-prompt'
 import { getSettingsStore } from '../settings'
@@ -36,6 +37,7 @@ import {
   subscribeSlot,
   unregisterPool,
   updatePool,
+  updatePoolDetailed,
 } from './store'
 import { MAX_SLOT_USAGE_LENGTH } from './types'
 
@@ -133,7 +135,7 @@ async function machine(capabilities: { memMb?: number; cpus?: number } = TWO_UNI
 /** A squad whose box is on `machineId` (or on no machine), with a `heavy` pool. */
 async function squad(
   machineId: string | null,
-  pool: { capacity?: number; hostShared?: boolean } | null = {}
+  pool: { capacity?: number; hostShared?: boolean; capacityFollowsHost?: boolean } | null = {}
 ): Promise<string> {
   const id = (await Squad.create({ name: `slot-host-${crypto.randomUUID()}`, purpose: 'test' })).id
   squadIds.push(id)
@@ -148,6 +150,7 @@ async function squad(
       key: POOL,
       capacity: pool.capacity ?? 5,
       ...(pool.hostShared === undefined ? {} : { hostShared: pool.hostShared }),
+      ...(pool.capacityFollowsHost === undefined ? {} : { capacityFollowsHost: pool.capacityFollowsHost }),
       createdBy: 'test',
     })
   }
@@ -406,6 +409,132 @@ describe('host-shared pools', () => {
   })
 })
 
+describe('pools with no cap of their own', () => {
+  test('the capacity is the machine host budget and follows the setting at once', async () => {
+    const host = await machine()
+    const a = await squad(host, { capacity: 1, capacityFollowsHost: true })
+    expect(await getPool(a, POOL, { diagnostics: true })).toMatchObject({
+      capacity: 2,
+      capacityFollowsHost: true,
+      availableCount: 2,
+    })
+    // Its own stored capacity of 1 does not hold the second claim back.
+    await hold(a)
+    await hold(a)
+    const blocked = await wait(a)
+    expect(blocked.pool).toMatchObject({ capacity: 2, activeCount: 2, availableCount: 0 })
+
+    try {
+      await getSettingsStore().set(HOST_SLOT_CAPACITY_SETTING_KEY, '3')
+      expect(await getPool(a, POOL, { diagnostics: true })).toMatchObject({ capacity: 3, availableCount: 1 })
+      await reconcileSlotsOnce()
+      expect(await waiterStatus(blocked.waiterId)).toBe('granted')
+      expect(await loadSlotPoolPromptEntries(a)).toEqual([
+        { key: POOL, capacity: 3, claimTimeoutMs: 3_600_000, usage: null, hostCapacity: 3, capacityFollowsHost: true },
+      ])
+
+      // With budgets off there is nothing to follow: the stored capacity applies.
+      await getSettingsStore().set(HOST_SLOT_CAPACITY_SETTING_KEY, '0')
+      expect(await getPool(a, POOL, { diagnostics: true })).toMatchObject({
+        capacity: 1,
+        capacityFollowsHost: true,
+        availableCount: 0,
+      })
+      expect((await claimSlot(a, POOL, await agent(a), { subscribe: false })).outcome).toBe('unavailable')
+    } finally {
+      await getSettingsStore().delete(HOST_SLOT_CAPACITY_SETTING_KEY)
+    }
+  })
+
+  test('a squad whose pool follows the host still shares the machine fairly with others', async () => {
+    const host = await machine()
+    const a = await squad(host, { capacity: 1, capacityFollowsHost: true })
+    const b = await squad(host)
+    const first = await hold(a)
+    await hold(a)
+    const own = await wait(a)
+    const other = await wait(b)
+    // Squad A could take the freed unit under its host-sized capacity, but it
+    // still holds one and squad B holds none.
+    await release(first)
+    expect(await waiterStatus(other.waiterId)).toBe('granted')
+    expect(await waiterStatus(own.waiterId)).toBe('queued')
+  })
+
+  test('a number gives the pool its own cap again, and only host-shared pools can follow', async () => {
+    const host = await machine()
+    const a = await squad(host, { capacity: 1, capacityFollowsHost: true })
+    expect(await updatePool(a, POOL, { capacity: 1 })).toMatchObject({ capacity: 1, capacityFollowsHost: false })
+    expect(await getPool(a, POOL, { diagnostics: true })).toMatchObject({ capacity: 1, capacityFollowsHost: false })
+    // Both together keep following and store the number as the fallback.
+    expect(await updatePool(a, POOL, { capacity: 4, capacityFollowsHost: true })).toMatchObject({
+      capacity: 4,
+      capacityFollowsHost: true,
+    })
+    expect((await getPool(a, POOL, { diagnostics: true })).capacity).toBe(2)
+    // Leaving the host budget leaves nothing to follow.
+    expect(await updatePool(a, POOL, { hostShared: false })).toMatchObject({
+      hostShared: false,
+      capacityFollowsHost: false,
+      capacity: 4,
+    })
+    await expect(updatePool(a, POOL, { capacityFollowsHost: true })).rejects.toThrow('Only a host-shared pool')
+    await expect(
+      registerPool({ squadId: a, key: 'lock', hostShared: false, capacityFollowsHost: true, createdBy: 'test' })
+    ).rejects.toThrow('Only a host-shared pool')
+  })
+})
+
+describe('renaming a pool', () => {
+  test('claims, waiters and history stay with the pool under its new key', async () => {
+    const host = await machine()
+    const a = await squad(host, { capacity: 1 })
+    const holder = await hold(a)
+    const queued = await wait(a)
+
+    const result = await updatePoolDetailed(a, POOL, { newKey: 'heavy-work' })
+    expect(result).toMatchObject({ renamedFrom: POOL, pool: { key: 'heavy-work' } })
+    await expect(getPool(a, POOL, { diagnostics: true })).rejects.toThrow('was not found')
+    expect(await getPool(a, 'heavy-work', { diagnostics: true })).toMatchObject({
+      key: 'heavy-work',
+      activeCount: 1,
+      queuedCount: 1,
+    })
+
+    // The holder's claim id still releases, and the waiter is granted in the renamed pool.
+    expect((await releaseSlot(a, 'heavy-work', holder.agentId, holder.claimId)).outcome).toBe('released')
+    expect(await waiterStatus(queued.waiterId)).toBe('granted')
+    expect((await claimSlot(a, 'heavy-work', queued.agentId)).outcome).toBe('granted')
+  })
+
+  test('refuses a key another pool of the squad already has, and accepts its own', async () => {
+    const a = await squad(null)
+    await registerPool({ squadId: a, key: 'other', createdBy: 'test' })
+    await expect(updatePoolDetailed(a, POOL, { newKey: 'other' })).rejects.toThrow('already registered')
+    await expect(updatePoolDetailed(a, POOL, { newKey: 'Not A Key' })).rejects.toThrow('Invalid slot pool key')
+    expect((await updatePoolDetailed(a, POOL, { newKey: POOL })).renamedFrom).toBeUndefined()
+    // A key freed by unregistering can be taken.
+    await unregisterPool(a, 'other')
+    expect((await updatePoolDetailed(a, POOL, { newKey: 'other' })).pool.key).toBe('other')
+  })
+})
+
+test('settings can say what each machine size derives to, whatever the override', async () => {
+  const sized = await machine()
+  const unknown = await machine({})
+  const names = await db.select({ id: machines.id, name: machines.name }).from(machines)
+  const nameOf = (id: string) => names.find((row) => row.id === id)!.name
+  try {
+    await getSettingsStore().set(HOST_SLOT_CAPACITY_SETTING_KEY, '7')
+    const line = await describeDerivedHostSlotBudgets(db)
+    expect(line).toStartWith('Derived from machine size right now: ')
+    expect(line).toContain(`${nameOf(sized)}: 2 (9.8 GiB, 4 CPUs)`)
+    expect(line).toContain(`${nameOf(unknown)}: unknown size, no budget`)
+  } finally {
+    await getSettingsStore().delete(HOST_SLOT_CAPACITY_SETTING_KEY)
+  }
+})
+
 describe('default host-shared pool', () => {
   test('a squad with no pools on a machine gets heavy-work once, with the host budget as capacity', async () => {
     const host = await machine()
@@ -418,6 +547,8 @@ describe('default host-shared pool', () => {
     expect(pool).toMatchObject({
       key: DEFAULT_HOST_POOL_KEY,
       capacity: 2,
+      // No cap of its own: it keeps following the machine's budget.
+      capacityFollowsHost: true,
       claimTimeoutMs: 45 * 60_000,
       usage: DEFAULT_HOST_POOL_USAGE,
       hostShared: true,

@@ -352,6 +352,8 @@ export interface SettingMetadata {
   isDefault: boolean
   updatedAt: Date | null
   updatedBy: string | null
+  /** Live context a route adds for one setting, such as the value derived when nothing is stored. */
+  detail?: string
 }
 
 /** True when the key may only be written through `SettingsStore.writeManaged`. */
