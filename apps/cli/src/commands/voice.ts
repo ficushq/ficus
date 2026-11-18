@@ -146,7 +146,8 @@ export async function runDerivation(squadId: string, opts: DeriveOptions): Promi
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 409) {
       throw new Error(
-        `${opts.github} is not your linked GitHub account. The draft describes a writing style only; agents never sign as or claim to be that person. Re-run with --confirm-other-person to continue.`
+        `${opts.github} is not your linked GitHub account. The draft describes a writing style only; agents never sign as or claim to be that person. Re-run with --confirm-other-person to continue.`,
+        { cause: error }
       )
     }
     throw error

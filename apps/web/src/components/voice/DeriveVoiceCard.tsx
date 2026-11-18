@@ -27,7 +27,7 @@ function splitRepos(text: string): string[] | undefined {
 }
 
 /** True when the login is someone else's and needs the style-not-identity confirmation. */
-export function needsOtherPersonConfirmation(login: string, linkedLogin: string | null): boolean {
+function needsOtherPersonConfirmation(login: string, linkedLogin: string | null): boolean {
   return login.trim().toLowerCase() !== (linkedLogin ?? '').toLowerCase()
 }
 

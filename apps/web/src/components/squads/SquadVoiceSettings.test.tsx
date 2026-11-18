@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PublicVoiceProfile, SquadPublicVoiceState } from '@ficus/shared'
 import { queryKeys } from '../../queryKeys'
-import { buildVoicePatch, draftBytes, pickerValueFor, SquadVoiceEditor } from './SquadVoiceSettings'
+import { SquadVoiceEditor } from './SquadVoiceSettings'
+import { buildVoicePatch, draftBytes, pickerValueFor } from './squadVoiceDraft'
 
 const dflt: PublicVoiceProfile = {
   id: 'default',
