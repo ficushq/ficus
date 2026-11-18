@@ -139,6 +139,7 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
   const [usage, setUsage] = useState('')
   // New pools share the machine host's budget unless the box is unticked.
   const [hostShared, setHostShared] = useState(true)
+  const [followsHost, setFollowsHost] = useState(false)
   const [touchedKey, setTouchedKey] = useState(false)
 
   const keyError = slotKeyError(key)
@@ -155,6 +156,7 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
         claimTimeoutMs: parseSlotTimeout(timeout)!,
         usage: normalizeSlotUsage(usage),
         hostShared,
+        ...(hostShared && followsHost ? { capacityFollowsHost: true } : {}),
       }),
     onSuccess: onDone,
   })
@@ -193,7 +195,12 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
           />
         </div>
         <UsageField value={usage} onChange={setUsage} error={usageError} />
-        <HostSharedField checked={hostShared} onChange={setHostShared} />
+        <HostSharedField
+          checked={hostShared}
+          onChange={setHostShared}
+          followsHost={followsHost}
+          onFollowsHost={setFollowsHost}
+        />
       </div>
       <div className="flex items-center justify-end gap-2 mt-4">
         <button
@@ -228,6 +235,8 @@ function PoolNumberFields(props: {
   onTimeout: (value: string) => void
   capacityError: string | null
   timeoutError: string | null
+  /** The pool follows its machine host's budget, so there is no number to edit. */
+  capacityLocked?: boolean
 }) {
   return (
     <>
@@ -238,7 +247,12 @@ function PoolNumberFields(props: {
           inputMode="numeric"
           value={props.capacity}
           onChange={(event) => props.onCapacity(event.target.value)}
-          className={fieldClass(props.capacityError)}
+          disabled={props.capacityLocked}
+          title={props.capacityLocked ? "Follows the machine host's budget" : undefined}
+          className={fieldClass(
+            props.capacityError,
+            props.capacityLocked ? 'opacity-50 cursor-not-allowed' : undefined
+          )}
         />
         {props.capacityError && (
           <span className="block text-xs text-status-danger-500 mt-1">{props.capacityError}</span>
@@ -288,7 +302,42 @@ function UsageField({
   )
 }
 
-function HostSharedField({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+function HostSharedField({
+  checked,
+  onChange,
+  followsHost,
+  onFollowsHost,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  followsHost: boolean
+  onFollowsHost: (follows: boolean) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <HostSharedBox checked={checked} onChange={onChange} />
+      {checked && (
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={followsHost}
+            onChange={(event) => onFollowsHost(event.target.checked)}
+            className="mt-1"
+          />
+          <span>
+            <span className="block text-sm font-medium text-primary">No cap of its own</span>
+            <span className="block text-xs text-muted">
+              The pool's capacity is then the machine host's budget and follows it when that changes. The capacity above
+              applies only where no host budget does.
+            </span>
+          </span>
+        </label>
+      )}
+    </div>
+  )
+}
+
+function HostSharedBox({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
   return (
     <label className="flex items-start gap-3">
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1" />
@@ -338,7 +387,9 @@ function SlotPoolRow({
             {pool.hostShared && pool.host && <Badge color="queue">Host-shared</Badge>}
           </div>
           <p className="text-xs text-muted mt-0.5">
-            Capacity {pool.capacity} · Claim timeout {formatSlotTimeout(pool.claimTimeoutMs)}
+            Capacity {pool.capacity}
+            {pool.capacityFollowsHost && pool.host ? ' (the machine host budget)' : ''} · Claim timeout{' '}
+            {formatSlotTimeout(pool.claimTimeoutMs)}
           </p>
         </div>
         {canWrite && (
@@ -479,6 +530,8 @@ function EditSlotPoolForm({
   const [timeout, setTimeoutValue] = useState(formatSlotTimeout(pool.claimTimeoutMs))
   const [usage, setUsage] = useState(pool.usage ?? '')
   const [hostShared, setHostShared] = useState(pool.hostShared ?? false)
+  const wasFollowing = pool.capacityFollowsHost ?? false
+  const [followsHost, setFollowsHost] = useState(wasFollowing)
 
   const capacityError = slotCapacityError(capacity)
   const timeoutError = slotTimeoutError(timeout)
@@ -494,6 +547,13 @@ function EditSlotPoolForm({
   if (nextTimeout !== null && nextTimeout !== pool.claimTimeoutMs) changes.claimTimeoutMs = nextTimeout
   if (nextUsage !== pool.usage) changes.usage = nextUsage
   if (hostShared !== (pool.hostShared ?? false)) changes.hostShared = hostShared
+  const nextFollows = hostShared && followsHost
+  if (nextFollows !== wasFollowing) changes.capacityFollowsHost = nextFollows
+  // While the pool follows the host its capacity field is locked: the number
+  // shown is the host's budget, not one to save. Giving the pool its own cap
+  // again saves the number on screen as that cap.
+  if (nextFollows) delete changes.capacity
+  else if (wasFollowing && nextCapacity !== null) changes.capacity = nextCapacity
   const dirty = Object.keys(changes).length > 0
 
   const mutation = useMutation({
@@ -517,10 +577,16 @@ function EditSlotPoolForm({
           onTimeout={setTimeoutValue}
           capacityError={capacityError}
           timeoutError={timeoutError}
+          capacityLocked={nextFollows}
         />
       </div>
       <UsageField value={usage} onChange={setUsage} error={usageError} />
-      <HostSharedField checked={hostShared} onChange={setHostShared} />
+      <HostSharedField
+        checked={hostShared}
+        onChange={setHostShared}
+        followsHost={followsHost}
+        onFollowsHost={setFollowsHost}
+      />
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"

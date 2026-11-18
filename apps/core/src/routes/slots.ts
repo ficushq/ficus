@@ -55,19 +55,24 @@ const registerSchema = z.object({
   claimTimeoutMs: z.int().min(MIN_SLOT_CLAIM_TIMEOUT_MS).max(MAX_SLOT_CLAIM_TIMEOUT_MS).optional(),
   usage: usageSchema.optional(),
   hostShared: z.boolean().optional(),
+  capacityFollowsHost: z.boolean().optional(),
 })
-/** Partial update: send only the fields to change. */
+/** Partial update: send only the fields to change. `key` renames the pool. */
 const updateSchema = registerSchema
   .omit({ key: true })
-  .extend({ enabled: z.boolean().optional() })
+  .extend({ enabled: z.boolean().optional(), key: keySchema.optional() })
   .refine(
     (body) =>
       body.capacity !== undefined ||
       body.claimTimeoutMs !== undefined ||
       body.usage !== undefined ||
       body.enabled !== undefined ||
-      body.hostShared !== undefined,
-    { message: 'capacity, claimTimeoutMs, usage, enabled, or hostShared is required' }
+      body.hostShared !== undefined ||
+      body.capacityFollowsHost !== undefined ||
+      body.key !== undefined,
+    {
+      message: 'capacity, claimTimeoutMs, usage, enabled, hostShared, capacityFollowsHost, or key is required',
+    }
   )
 const historyQuerySchema = z.object({
   limit: z.preprocess(
@@ -126,10 +131,17 @@ const HOST_SHARED_NOTE =
   "It is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares. For a pool that protects something other than box memory or CPU, turn that off: ficus slot update <key> --no-host-shared."
 const NOT_HOST_SHARED_NOTE = 'It is not host-shared: only its own capacity limits it.'
 
+/** How a mutation message names the pool's capacity. */
+function capacityPhrase(pool: SlotPoolRecord): string {
+  return pool.capacityFollowsHost
+    ? `no cap of its own (its capacity follows the machine host's budget; ${pool.capacity} where no budget applies)`
+    : `capacity ${pool.capacity}`
+}
+
 function registerResponse(pool: SlotPoolRecord): SlotPoolMutationResponse {
   return {
     outcome: 'registered',
-    message: `Slot pool "${pool.key}" is registered with capacity ${pool.capacity} and a ${formatSlotClaimTimeout(
+    message: `Slot pool "${pool.key}" is registered with ${capacityPhrase(pool)} and a ${formatSlotClaimTimeout(
       pool.claimTimeoutMs
     )} claim timeout${pool.usage ? ' and usage guidance' : ''}. ${pool.hostShared ? HOST_SHARED_NOTE : NOT_HOST_SHARED_NOTE}`,
     pool,
@@ -138,14 +150,25 @@ function registerResponse(pool: SlotPoolRecord): SlotPoolMutationResponse {
 
 function updateResponse(
   pool: SlotPoolRecord,
-  input: { capacity?: number; claimTimeoutMs?: number; usage?: string | null; enabled?: boolean; hostShared?: boolean },
-  releasedWaiters: number
+  input: {
+    capacity?: number
+    claimTimeoutMs?: number
+    usage?: string | null
+    enabled?: boolean
+    hostShared?: boolean
+    capacityFollowsHost?: boolean
+  },
+  releasedWaiters: number,
+  renamedFrom?: string
 ): SlotPoolMutationResponse {
   const changes: string[] = []
-  if (input.capacity !== undefined) changes.push(`capacity ${pool.capacity}`)
+  if (input.capacity !== undefined || input.capacityFollowsHost !== undefined) changes.push(capacityPhrase(pool))
   if (input.claimTimeoutMs !== undefined) changes.push(`a ${formatSlotClaimTimeout(pool.claimTimeoutMs)} claim timeout`)
   if (input.usage !== undefined) changes.push(pool.usage ? 'updated usage guidance' : 'no usage guidance')
-  const sentences = changes.length > 0 ? [`Slot pool "${pool.key}" now has ${changes.join(' and ')}.`] : []
+  const sentences = renamedFrom
+    ? [`Slot pool "${renamedFrom}" is now "${pool.key}". Its claims, waiters and history stay with it.`]
+    : []
+  if (changes.length > 0) sentences.push(`Slot pool "${pool.key}" now has ${changes.join(' and ')}.`)
   if (input.enabled !== undefined) {
     if (pool.disabledAt) {
       sentences.push(
@@ -165,6 +188,7 @@ function updateResponse(
         : `Slot pool "${pool.key}" is no longer host-shared: only its own capacity limits it.`
     )
   }
+  if (sentences.length === 0) sentences.push(`Slot pool "${pool.key}" is unchanged.`)
   return { outcome: 'updated', message: sentences.join(' '), pool }
 }
 
@@ -234,13 +258,13 @@ slotsRouter.post('/:squadId/slots', writeGuard, notArchivedGuard, zValidator('js
 })
 
 slotsRouter.patch('/:squadId/slots/:key', writeGuard, notArchivedGuard, zValidator('json', updateSchema), async (c) => {
-  const input = c.req.valid('json')
-  const { pool, releasedWaiters } = await updatePoolDetailed(
+  const { key: newKey, ...input } = c.req.valid('json')
+  const { pool, releasedWaiters, renamedFrom } = await updatePoolDetailed(
     c.req.param('squadId'),
     validKey(c.req.param('key')),
-    input
+    { ...input, ...(newKey === undefined ? {} : { newKey }) }
   )
-  return c.json(updateResponse(pool, input, releasedWaiters))
+  return c.json(updateResponse(pool, input, releasedWaiters, renamedFrom))
 })
 
 slotsRouter.delete('/:squadId/slots/:key', writeGuard, notArchivedGuard, async (c) => {

@@ -142,6 +142,31 @@ test('command actions call the exact encoded squad API paths and bodies', async 
       },
     },
     {
+      // `host` drops the pool's own cap instead of setting a number.
+      args: ['register', 'heavy/tests', '--capacity', 'host'],
+      expected: {
+        method: 'POST',
+        path: '/api/squads/squad%2Fone/slots',
+        body: { key: 'heavy/tests', capacityFollowsHost: true },
+      },
+    },
+    {
+      args: ['update', 'heavy/tests', '--capacity', 'HOST'],
+      expected: {
+        method: 'PATCH',
+        path: '/api/squads/squad%2Fone/slots/heavy%2Ftests',
+        body: { capacityFollowsHost: true },
+      },
+    },
+    {
+      args: ['update', 'heavy/tests', '--rename', ' Heavy-Work '],
+      expected: {
+        method: 'PATCH',
+        path: '/api/squads/squad%2Fone/slots/heavy%2Ftests',
+        body: { key: 'heavy-work' },
+      },
+    },
+    {
       // Host sharing is the server's default; only an explicit choice is sent.
       args: ['register', 'deploy/lock', '--no-host-shared'],
       expected: {
@@ -541,6 +566,22 @@ test('renders compact actionable slot list and detail output', () => {
       'squad'
     )
   ).toBe('heavy-tests: 1/2 active, 0 available, 3 queued, host-shared (machine host: 3/3 in use across squads)')
+  expect(
+    renderSlotPools(
+      [
+        {
+          ...summary,
+          capacity: 3,
+          hostShared: true,
+          capacityFollowsHost: true,
+          host: { capacity: 3, activeCount: 2, availableCount: 1 },
+        },
+      ],
+      'squad'
+    )
+  ).toBe(
+    'heavy-tests: 1/3 active, 1 available, 3 queued, host-shared with no cap of its own (machine host: 2/3 in use across squads)'
+  )
   // Where no host budget applies the flag changes nothing, so nothing is said.
   expect(renderSlotPools([{ ...summary, hostShared: true }], 'squad')).toBe(
     'heavy-tests: 1/2 active, 1 available, 3 queued'
