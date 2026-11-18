@@ -189,6 +189,10 @@ Any change that asks a decision model, whether a new `DECISION_PURPOSES` entry, 
   - Review with `bun run decisions:eval --inbox`, then `--accept <id>` or `--dismiss <id>`. Accepted cases go to a gitignored `*.decision-cases.local.json`. `--shared` writes the committed `*.decision-cases.json` instead: check those cases hold nothing private first.
 - **CI runs only the offline replay**, never live providers: run evals live yourself, then record and commit the snapshots.
 
+## Agent guidance changes need behaviour evals
+
+A change that removes, moves or rewrites always-loaded agent guidance (agent types and shared includes in `config/agent-types`, the runner sections in `apps/core/src/lib/prompts/squad-agent-prompt.ts`, or text that replaces them, such as tool descriptions or command output) runs `bun run agents:eval` against `origin/main` and puts the comparison table in the pull request. The new text must not regress (each must scenario passes at least as often, and the total does not drop). Add a scenario, with grader fixtures in `evals.test.ts`, when you rely on a new invariant. See [agent behaviour evals](docs/wiki/agent-behaviour-evals.md).
+
 ## Monorepo Structure
 
 - `apps/core` — API server and worker (Hono/Bun)
