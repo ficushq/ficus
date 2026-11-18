@@ -4,7 +4,7 @@ import { AgentSession } from '../entities/AgentSession'
 import { SystemManagerRunner } from '../entities/agent-runners/system-manager-runner'
 import { identityMiddleware } from '../middleware/identity'
 import { authHeaders, cleanupTestRbac, createTestAdmin, type TestUser } from '../test-utils'
-import { aiExtractRouter } from './ai-extract'
+import { AI_EXTRACT_SYSTEM_PROMPT, aiExtractRouter } from './ai-extract'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -28,12 +28,7 @@ afterEach(() => {
 
 describe('POST /api/ai/extract', () => {
   test('records its model calls as ai-extract, attributed to the caller', async () => {
-    spies.push(
-      spyOn(SystemManagerRunner, 'buildManagerPrompt').mockResolvedValue({
-        systemPrompt: 'sp',
-        model: 'anthropic:claude-sonnet-4-5',
-      } as never)
-    )
+    spies.push(spyOn(SystemManagerRunner, 'resolveModel').mockResolvedValue('anthropic:claude-sonnet-4-5'))
     const createSpy = spyOn(AgentSession, 'create').mockResolvedValue({
       pi: {
         subscribe: (listener: (event: unknown) => void) => {
@@ -59,15 +54,19 @@ describe('POST /api/ai/extract', () => {
 
     expect(response.status).toBe(200)
     const options = (
-      createSpy.mock.calls[0] as unknown as [{ usage: { feature: string; attribution: () => unknown } }]
+      createSpy.mock.calls[0] as unknown as [
+        { systemPrompt: string; usage: { feature: string; attribution: () => unknown } },
+      ]
     )[0]
+    // Its own short prompt, not the system manager's full prompt with CLI help.
+    expect(options.systemPrompt).toBe(AI_EXTRACT_SYSTEM_PROMPT)
     expect(options.usage.feature).toBe('ai-extract')
     expect(options.usage.attribution()).toEqual({ userId: admin.id })
   })
 })
 
 test('collection limits stop oversized fields and suggestions before model work', async () => {
-  const prompt = spyOn(SystemManagerRunner, 'buildManagerPrompt').mockRejectedValue(new Error('must not reach model'))
+  const prompt = spyOn(SystemManagerRunner, 'resolveModel').mockRejectedValue(new Error('must not reach model'))
   spies.push(prompt)
   for (const fields of [
     Object.fromEntries(Array.from({ length: 257 }, (_, i) => ['f' + i, null])),

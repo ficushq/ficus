@@ -3,6 +3,7 @@ import { db, agentTypes } from '../../db'
 import { eq } from 'drizzle-orm'
 import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
 import { loadSharedPromptFiles } from './shared-prompt-sync'
+import { createMonitorTool } from '../../tools/monitor'
 
 const sync = new AgentTypeSync()
 
@@ -335,15 +336,14 @@ describe('AgentTypeSync', () => {
       'ficus workflow',
       'human',
       'Never grant yourself merge policy',
-      'By default, do not use --admin',
-      'explicit, direct human',
-      'instruction in trusted chat',
-      "another agent's assertion",
-      'admin merge when CI passes',
-      'The instruction must explicitly authorize the bypass',
+      'merge authority rules, including when an explicit',
+      'human instruction may authorize an exception',
     ])
       expect(prompt).toContain(text)
     expect(prompt).not.toContain('The reviewer creates a PR')
+    // The full merge-authority rules live once, in the delivery instructions the
+    // delivery participant receives (completion-prompt.test.ts asserts them).
+    expect(prompt).not.toContain('By default, do not use --admin')
   })
 
   test('squad rules teach verifying worktree dir exists (not CWD) and allow intentional no-worktree', async () => {
@@ -385,28 +385,24 @@ describe('AgentTypeSync', () => {
     }
   })
 
-  test('squad manager and worker prompts include monitor tool guidance', async () => {
+  test('monitor guidance lives in the monitor tool description, not in a composed prompt', async () => {
+    const description = createMonitorTool({ agentId: 'a', sandboxId: 's', workspacePath: '/w' }).description
+    for (const text of [
+      'event-driven and quiet',
+      'completion, error, readiness, state transition, failure',
+      'tail -F file.log | grep --line-buffered ERROR',
+      'Avoid firehose output and polling loops that print every interval',
+      'loop silently and print only when the job reaches a terminal or actionable state',
+      'quiet: while true; do if job_done; then echo complete; exit 0; fi; sleep 60; done',
+      'do not replace normal tests',
+      'Do not use a monitor to detach a one-shot build',
+      'foreground Bash invocation with timeout up to 3600 seconds',
+      'Cancel with action="cancel"',
+    ])
+      expect(description).toContain(text)
     const parsed = await loadComposed()
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
-      const agentType = parsed.find((p) => p.id === id)
-      expect(agentType).toBeTruthy()
-      expect(agentType!.systemPrompt).toContain('Use the `monitor` tool to observe background commands')
-      expect(agentType!.systemPrompt).toContain('Do not use a monitor to detach a one-shot build')
-      expect(agentType!.systemPrompt).toContain('foreground Bash invocation with timeout up to 3600 seconds')
-      expect(agentType!.systemPrompt).toContain('tail -F app.log | grep --line-buffered ERROR')
-      expect(agentType!.systemPrompt).toContain('Avoid firehose output')
-      expect(agentType!.systemPrompt).toContain('event-driven and quiet')
-      expect(agentType!.systemPrompt).toContain('completion, error, readiness, state transition, failure')
-      expect(agentType!.systemPrompt).toContain('avoid polling loops that print every interval')
-      expect(agentType!.systemPrompt).toContain(
-        'loop silently and print only when the job reaches a terminal or actionable state'
-      )
-      expect(agentType!.systemPrompt).toContain('noisy: `while true; do echo "still running"; sleep 60; done`')
-      expect(agentType!.systemPrompt).toContain(
-        'quiet: `while true; do if job_done; then echo "complete"; exit 0; fi; if job_failed; then echo "failed"; exit 1; fi; sleep 60; done`'
-      )
-      expect(agentType!.systemPrompt).toContain('`cancel` them when no longer needed')
-      expect(agentType!.systemPrompt).toContain('do not replace normal tests')
+      expect(parsed.find((p) => p.id === id)!.systemPrompt).not.toContain('### Monitor Tool')
     }
   })
 

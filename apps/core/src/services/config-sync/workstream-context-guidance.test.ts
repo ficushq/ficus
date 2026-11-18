@@ -113,7 +113,7 @@ test('workflow guidance prefers inline content and stdin rather than mandatory t
     'config/skills/setup-workflows/SKILL.md',
     'config/skills/work-stream-driven-development/SKILL.md',
     'config/skills/roadmap-phase-loop/SKILL.md',
-    'apps/core/src/entities/agent-runners/squad-manager-runner.ts',
+    // The manager runner no longer repeats manager.yaml's creation commands.
     'apps/core/src/entities/agent-runners/squad-worker-runner.ts',
     'apps/docs/src/content/docs/reference/workflow-definition.mdx',
   ]

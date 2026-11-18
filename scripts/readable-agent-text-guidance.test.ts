@@ -35,36 +35,39 @@ function readableSection(text: string): string {
   return normalize(text.split('### Readable text fields\n')[1]?.split(/\n#{1,3} /)[0] ?? '')
 }
 
-for (const name of ['rules', 'squad-rules']) {
-  test(`${name} requires readable prose in every required field category`, () => {
-    const guidance = readableSection(read(`${typeDirectory}/shared/${name}.md`))
-    for (const contract of contracts) expect(guidance).toContain(contract)
-  })
+function composed(type: { includes: string[]; systemPrompt: string }): string {
+  return [type.systemPrompt, ...type.includes.map((id) => read(`${typeDirectory}/shared/${id}.md`))].join('\n\n')
 }
 
-for (const [id, location] of [
-  ['manager', '## Creating Work'],
-  ['assistant', 'Delegate longer work with delegate_task.'],
-] as const) {
-  test(`${id} keeps the readable prose rule at its brief-writing location`, () => {
-    const prompt = types.find((type) => type.id === id)!.systemPrompt
-    expect(prompt).toContain(location)
-    const brief = prompt.slice(prompt.indexOf(location)).split(/\n## /)[0]!
-    const guidance = readableSection(brief)
-    for (const contract of contracts) expect(guidance).toContain(contract)
-  })
-}
+test('the readable-text include requires readable prose in every required field category', () => {
+  const guidance = readableSection(read(`${typeDirectory}/shared/readable-text.md`))
+  for (const contract of contracts) expect(guidance).toContain(contract)
+})
 
-test('every built-in agent type includes the shared rule, including assistant workers', () => {
+test('every built-in agent type includes the readable-text rule exactly once, including assistant workers', () => {
   expect(types.length).toBeGreaterThan(0)
   for (const type of types) {
-    expect({ id: type.id, rules: type.includes.filter((id) => id === 'rules').length }).toEqual({
+    expect({ id: type.id, includes: type.includes.filter((id) => id === 'readable-text').length }).toEqual({
       id: type.id,
-      rules: 1,
+      includes: 1,
     })
   }
   for (const id of ['assistant', 'assistant-worker', 'system-manager', 'subagent', 'artifact-builder-default']) {
     expect(types.some((type) => type.id === id)).toBe(true)
+  }
+})
+
+test('every composed built-in prompt carries the readable prose rule once, in full', () => {
+  for (const type of types) {
+    const prompt = composed(type)
+    expect({ id: type.id, copies: prompt.split('### Readable text fields').length - 1 }).toEqual({
+      id: type.id,
+      copies: 1,
+    })
+    const guidance = readableSection(prompt)
+    for (const contract of contracts) expect(guidance).toContain(contract)
+    // The leading sentence is the rule itself; it must not survive anywhere else as a stray copy.
+    expect(normalize(prompt).split(contracts[0]!).length - 1).toBe(1)
   }
 })
 

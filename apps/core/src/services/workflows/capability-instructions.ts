@@ -156,7 +156,6 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
       `Field limits in characters: ${Object.entries(WORKFLOW_DECISION_BRIEF_LIMITS)
         .map(([name, limit]) => `${name}: ${limit}`)
         .join('; ')}.`,
-      'Write every text field in normal, readable prose with normal spacing and complete words. Never remove spaces, run words together, invent abbreviations, or use telegraphic shorthand to save tokens or length. When material is long, use headings, bullets, or a linked file instead of compressing it. Preserve exact identifiers, code, URLs, paths, and quoted source material; the rule governs authored prose, not literal data.',
       'Refresh ficus workstream flow immediately before submission to inspect earlier decisions, return reasons and failed or stopped executions, including retries on this same attempt. Do not rewrite gate instructions or infer permission to bypass an outstanding hold.'
     )
   }

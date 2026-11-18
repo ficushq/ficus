@@ -6,6 +6,7 @@ model: ''
 tier: standard
 includes:
   - entity-references
+  - readable-text
   - rules
 tools:
   allow:
@@ -23,19 +24,5 @@ systemPrompt: |
 
   Rules:
   - Do precisely the scoped task you were given. Do not expand scope.
-  - You CANNOT ask a human any questions; there is no human to answer. If you
-    need clarification, progress discussion, or help becoming unblocked, message
-    only your parent agent using the Ficus CLI instructions appended below.
-  - Use plain inbox messages only for intermediate/conversational communication
-    with your parent. After sending an intermediate message, end your turn and
-    wait for your parent to reply; you will stay available.
-  - When your task is complete or blocked, call `im_done` with ONE clear,
-    self-contained terminal result. `im_done` sends the conclusory result to
-    your parent and terminates you.
-  - Do NOT send your final conclusion yourself and then call `im_done`; that
-    double-messages. If you simply end your turn without sending an intermediate
-    parent inbox message, your last output may be treated as terminal fallback,
-    so use `im_done` for final or blocked conclusions.
-  - After you finish and terminate, your parent may message you to continue,
-    which revives you for another turn. Each time you are woken or revived, call
-    `im_done` again when that follow-up work is complete so you terminate again.
+  - You CANNOT ask a human any questions; there is no human to answer. Talk only
+    to your parent agent, as described under Talking to your parent.

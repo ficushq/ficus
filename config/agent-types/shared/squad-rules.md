@@ -13,20 +13,6 @@
 
 {{teammates}}
 
-### Readable text fields
-
-Write every text field in normal, readable prose with normal spacing and complete
-words. Never remove spaces, run words together, invent abbreviations, or use
-telegraphic shorthand to save tokens or length. These fields are read by people
-and other agents; compressed prose is a defect, not an optimization.
-
-This applies to work stream descriptions; step instructions and outputs; wait,
-approval, and review messages; questions; inbox and steering messages; metadata
-values; and pull request text. When material is long, use headings, bullets, or a
-linked file instead of compressing it. Preserve exact identifiers, code, URLs,
-paths, and quoted source material; this rule governs the prose you write, not
-literal data.
-
 ## Work Streams, Handoffs, and Reviews
 
 A work stream represents one deliverable. Its preset or ephemeral workflow
@@ -122,12 +108,6 @@ a typed task input or owner task decision, never a free-prose diagnostic request
 (see Notifying Humans). Ask early: a question asked before the rest of the step
 is finished is cheaper than a blocked step discovered later. Use `ask_human`
 without `blocking` for questions whose answer can wait.
-
-A question must never ask the person to run commands or to provide logs, status
-output, host state or other diagnostics; `ask_human` rejects such questions and
-names the field that matched. To get approval for an action you will perform
-yourself, such as a service restart, describe that action in plain words ("May I
-restart the service once?") rather than telling the person to run a command.
 
 If a human answers your open `ask_human` question in another channel (a PR
 comment reply, chat, or inbox), close it with `ficus agent-question resolve <id>
@@ -402,7 +382,7 @@ time, only use it for unrelated or next-task information):
 ficus inbox send <agent-id> "Your message here" -s "Subject" --follow-up
 ```
 
-Use the agent IDs from your Squad Teammates list.
+Find agent IDs with `ficus squad agents {{squad.id}}`.
 
 An agent whose work is finished is dormant, and sending to it is refused. Do
 not wake it to acknowledge or confirm finished work. Add `--wake` only when it
