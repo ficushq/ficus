@@ -137,6 +137,7 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'squad-env': ['env:read', 'env:write'], // routes/squad-env.ts
   'squad-preset': ['squad-presets:read', 'squad-presets:create', 'squad-presets:update', 'squad-presets:delete'], // routes/squad-presets.ts
   user: ['users:read', 'users:create', 'users:update', 'users:delete'], // routes/users.ts
+  voice: ['agent-types:read', 'agent-types:update'], // routes/public-voices.ts
   webhook: ['webhooks:read'], // routes/webhooks.ts
 
   // ficus agent — routes/agents.ts

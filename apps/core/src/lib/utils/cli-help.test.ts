@@ -171,7 +171,7 @@ describe('filterCliHelpForPermissions', () => {
       expect(listedCommands(help, 'agent')).not.toContain(removed)
     expect(listedCommands(help, 'workflow')).not.toContain('create')
     expect(listedCommands(help, 'inbox')).not.toContain('send-system')
-    for (const removed of ['agent-type', 'channel', 'shared-prompt', 'squad-env', 'provider-auth', 'user', 'role'])
+    for (const removed of ['agent-type', 'channel', 'shared-prompt', 'voice', 'squad-env', 'provider-auth', 'user', 'role'])
       expect(listedCommands(help, '')).not.toContain(removed)
 
     // Commands a worker uses on its own streams stay, including those open to bound workers.

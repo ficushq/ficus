@@ -11,6 +11,7 @@ import { describeAttention, performAttentionSubscribe, type SubscriptionResponse
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { registerSandboxProcessCommands } from './sandbox-processes'
 import { describeDownload, downloadSquadFile, type SquadDownloadOptions } from './squad-download'
+import { registerSquadVoiceCommands } from './squad-voice'
 
 interface Squad {
   id: string
@@ -190,6 +191,8 @@ export function registerSquadCommands(program: Command) {
   toolchain.command('apply <squadId>').action(async (squadId: string) => {
     output(await apiPost(`/api/squads/${squadId}/toolchain/apply`, {}))
   })
+
+  registerSquadVoiceCommands(squad)
 
   const source = squad.command('source').description('Manage per-squad memory source ingestion policies')
   const memory = squad.command('memory').description('Manage squad memory operations')
