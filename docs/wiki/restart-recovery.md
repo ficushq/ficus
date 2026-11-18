@@ -138,8 +138,48 @@ wake intent together; normal admission delivers it once, retaining other gates.
 Stop keeps the scope held and removes repeated human requests. Missing eligible managers and a manager’s own recovery route directly to an eligible owner. A shared resolver prefers the requesting user/agent owner, then authorized squad operators/admins. If nobody is eligible, it persists an idempotent system diagnostic and keeps the hold without granting authority. Detail/list views project the same current audience as Action Center if manager availability changes; this does not rewrite the wait audit or grant a cycle.
 Standalone tasks use the same policy and typed agent-recovery actions.
 
+### Deterministic provider request validation
+
+A specific Codex request-schema rejection opens the same native recovery decision
+**on the first actual failure**, without spending fictitious retries. The closed
+classifier requires `ToolSearchOutputFunctionToolNameParam`, `input[index].name`,
+`invalid_string`, and the matching function-name pattern rejection. It prefers
+retained Codex event diagnostics; the exact validator text is the fallback when
+Pi has flattened the event. Generic HTTP 400 errors, unrelated `invalid_string`
+messages, normal user-tool argument validation, transport failures, context
+limits and provider authorization/cooldowns keep their existing policies.
+
+The execution is stored as `provider_model` with reason
+`request_validation_tool_name`. Its error, recovery card and notification contain
+only a fixed diagnostic describing the allowed function-name characters, never
+the rejected value, raw provider payload, prompt, tool arguments or credentials.
+The Pi AI patch also prevents inner Codex HTTP and outer assistant retries of
+this same rejection, including an `input[500]` index that could otherwise match
+the transient HTTP 500 heuristic. It does not change ordinary HTTP 500 or other
+HTTP 400 retry behavior.
+
+The manager gets one Continue/Stop decision (or the existing authorized owner
+fallback). A flow execution binds the wait to its current attempt, presenting it
+as blocked rather than merely idle/running. Standalone executions use the same
+agent-recovery action. A subagent with this specific rejection remains live and
+recoverable, still counts toward delegation limits, and sends its live parent a
+non-final hold notice. Corrected completion delivers its final result once; child
+or parent cancellation still makes it dormant and fences stale recovery wakes.
+Other subagent failures retain their existing final-result behavior. Repeated outcome delivery is idempotent; late distinct
+outcomes update actual counts and versions without repeating the same hold
+notification. Refresh the current record before deciding if a version is stale.
+
+Correct the serializer/request or make a safe re-plan **before Continue**. Continue
+uses the existing authorized bounded cycle, not a session reset, budget expansion,
+provider outage override or permission to replay an unchanged invalid request.
+Another matching rejection immediately holds again; after the manager's one
+cycle it routes to the owner. Stop retains the hold. Other pauses, approvals,
+questions, dependencies and provider gates remain binding. Confirmed successful
+execution settles the recovery normally; do not ask a person for host evidence or
+invent a configuration input to resolve this software problem.
+
 New worker manual inputs accept only versioned `continue`, `decide` or `provide` requests. People and managers retain `request-input --message` for ordinary task waits; this does not clear or bypass a structured recovery decision, or disguise the manager’s own unresolved failures in that same scope.
-`continue` references an existing exhausted runtime record, not a caller-supplied
+`continue` references an existing held runtime record, not a caller-supplied
 attempt count. Product choices use `decide`. `provide` requires either
 `input: {"type":"file","path":"assets/logo.svg"}` (workspace-relative; the response
 is also a workspace-relative path), or a `config-value` with an exact `key` and

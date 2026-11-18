@@ -1,3 +1,4 @@
+import { ProviderRequestValidationError } from '../execution/provider-request-validation'
 import { createLogger } from '../../lib/infra/logger'
 import { recoveryRecipients, reportUnroutableRecovery } from './recipients'
 import { z } from 'zod'
@@ -6,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
+  isLiveAgentStatus,
   RECOVERY_ATTEMPT_BUDGET,
   manualWaitDecisionSchema,
   type ManualWaitDecision,
@@ -200,7 +202,7 @@ export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: stri
       if (!current || current.state.state === 'resolved') return null
       if (current.state.state === 'recovering')
         return Math.max(0, (current.state.nextRetryAt ?? 0) - (await databaseNow(tx)))
-      return ensureExhaustedWait(tx, current)
+      return ensureRecoveryHold(tx, current)
     })
     if (held === null) return 0
     if (typeof held === 'number') return held
@@ -331,9 +333,9 @@ export function recoveryWaitSnapshot(record: RecoveryRecord): StructuredManualWa
   }
 }
 
-async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<RecoveryRecord> {
+async function ensureRecoveryHold(tx: Tx, record: RecoveryRecord): Promise<RecoveryRecord> {
   if (!['waiting-manager', 'waiting-owner', 'stopped'].includes(record.state.state))
-    throw new Error('Recovery budget is not exhausted')
+    throw new Error('Recovery is not awaiting a decision')
   const recipients = await recoveryRecipients(record, tx)
   if (recipients.target === 'owner' && !record.state.ownerEscalated) {
     const [routed] = await tx
@@ -447,8 +449,33 @@ async function publish(record: RecoveryRecord): Promise<void> {
             : `agent-recovery:${record.id}`,
         },
       },
-      `recovery-decision:${record.id}:${record.version}:${recipientId}`
+      `recovery-decision:${record.id}:${record.state.requestValidation ? `${record.state.validationHoldVersion ?? record.version}:${record.state.state}` : record.version}:${recipientId}`
     )
+  }
+  if (record.state.requestValidation) {
+    const [child] = await db.select().from(agents).where(eq(agents.id, record.agentId))
+    const [parent] = child?.parentAgentId
+      ? await db.select().from(agents).where(eq(agents.id, child.parentAgentId))
+      : []
+    if (child && isLiveAgentStatus(child.status) && parent && isLiveAgentStatus(parent.status)) {
+      await InboxMessage.sendOnce(
+        {
+          recipientType: 'agent',
+          recipientId: parent.id,
+          senderType: 'system',
+          subject: 'Subagent held for request correction',
+          content: `Subagent ${child.id} is held by a provider request-validation recovery decision. This is not a final result. Correct the request or safely re-plan through the authorized recovery decision; do not replace or replay the child to bypass the hold or delegation limits.`,
+          deliveryMode: 'steer',
+          metadata: {
+            source: 'subagent-recovery-held',
+            subagentId: child.id,
+            parentAgentId: parent.id,
+            recoveryId: record.id,
+          },
+        },
+        `subagent-validation-hold:${record.id}:${record.state.validationHoldVersion ?? record.version}`
+      )
+    }
   }
   if (record.workStreamId && audience.squadId)
     eventEmitter.emit('workStream.updated', { workStreamId: record.workStreamId, squadId: audience.squadId })
@@ -526,7 +553,7 @@ export async function exhaustContinuationRecovery(
     .set({ state, version, agentId: cycle.assigneeAgentId, flowAttemptId, updatedAt: new Date() })
     .where(eq(recoveryEpisodes.id, record!.id))
     .returning()
-  return ensureExhaustedWait(tx, updated!)
+  return ensureRecoveryHold(tx, updated!)
 }
 
 /** Called only by runtime tool/execution boundaries; not exposed as an agent API. */
@@ -547,16 +574,17 @@ export async function recordRecoveryFailure(
     retryResumedRun?: ResumedRunObligations
   }
 ): Promise<RecoveryRecord> {
-  const restart = restartContextForCommandError(input.error)
-  const outcome = restart ? 'restart' : 'unknown'
+  const requestValidation = input.error instanceof ProviderRequestValidationError
+  const restart = requestValidation ? undefined : restartContextForCommandError(input.error)
+  const outcome = requestValidation ? 'explained' : restart ? 'restart' : 'unknown'
   const error = restart ? null : lastErrorLine(input.error)
   const retryWake =
-    input.retryStartupMessage !== undefined
+    !requestValidation && input.retryStartupMessage !== undefined
       ? {
           subject: 'Retry retained startup request',
           content: `The task could not start before a model prompt was dispatched. The runtime has authorized one bounded startup retry with backoff. Preserve the original scope and all other gates. Retained request:\n\n${input.retryStartupMessage}`,
         }
-      : input.retryResumedRun
+      : !requestValidation && input.retryResumedRun
         ? {
             subject: 'Your resumed run failed: inspect state before continuing',
             content: resumedRunRetryContent({
@@ -595,7 +623,7 @@ export async function recordRecoveryFailure(
           operationKey: scopedOperation(source, input.operationKey),
           state: {
             ...successorRecoveryState(input.attempted, predecessor?.state),
-            startupOnly: input.retryStartupMessage !== undefined,
+            startupOnly: !requestValidation && input.retryStartupMessage !== undefined,
           },
         })
         .returning()
@@ -625,9 +653,15 @@ export async function recordRecoveryFailure(
           }
         : failedRecovery(
             current.state,
-            restart ? { kind: 'restart' } : { kind: 'unknown', error: error! },
+            restart
+              ? { kind: 'restart' }
+              : { kind: requestValidation ? 'request-validation' : 'unknown', error: error! },
             await databaseNow(tx)
           )
+    if (requestValidation) {
+      nextState.startupOnly = false
+      if (current.state.state === 'recovering') nextState.validationHoldVersion = current.version + 1
+    }
     if (!restart && input.retryStartupMessage === undefined && nextState.startupOnly) nextState.startupOnly = false
     await tx.insert(recoveryAttempts).values({
       recoveryId: current.id,
@@ -664,7 +698,7 @@ export async function recordRecoveryFailure(
         afterCommit
       )
     }
-    return nextState.state === 'recovering' ? updated! : ensureExhaustedWait(tx, updated!)
+    return nextState.state === 'recovering' ? updated! : ensureRecoveryHold(tx, updated!)
   })
   afterCommit.forEach((callback) => callback())
   if (['waiting-manager', 'waiting-owner'].includes(record.state.state)) await publish(record)
@@ -681,7 +715,7 @@ export async function openRecoveryWait(recoveryId: string, version: number, agen
     if (record.agentId !== agentId || record.workStreamId !== workStreamId)
       throw new Error('Recovery reference is not authorized for this scope')
     if (record.version !== version) throw new Error('Recovery version changed; refresh before deciding')
-    return ensureExhaustedWait(tx, record)
+    return ensureRecoveryHold(tx, record)
   })
   await publish(record)
   return record
@@ -805,8 +839,9 @@ async function persistRecoveryContinuation(tx: Tx, record: RecoveryRecord, after
     {
       recipientId: record.agentId,
       subject: 'Bounded recovery continued',
-      content:
-        'Continue was authorized for one bounded recovery cycle. Inspect affected state before a safe retry; do not blindly repeat unknown side effects. Other input, provider, dependency, pause and approval gates still apply.',
+      content: record.state.requestValidation
+        ? 'Continue was authorized after a provider request-validation hold. Correct the request or safely re-plan before continuing; do not replay the unchanged invalid request. No session reset or budget expansion was authorized. Other input, provider, dependency, pause and approval gates still apply.'
+        : 'Continue was authorized for one bounded recovery cycle. Inspect affected state before a safe retry; do not blindly repeat unknown side effects. Other input, provider, dependency, pause and approval gates still apply.',
       metadata: {
         source: record.flowAttemptId == null ? 'recovery-decision' : 'workflow-wait-resolution',
         recoveryId: record.id,
@@ -856,6 +891,11 @@ export async function recoveryContinuationIsCurrent(
   }
   const [agent] = await dbx.select().from(agents).where(eq(agents.id, agentId))
   if (!agent || ['waiting-input', 'terminated'].includes(agent.status)) return false
+  if (agent.parentAgentId) {
+    if (!isLiveAgentStatus(agent.status)) return false
+    const [parent] = await dbx.select().from(agents).where(eq(agents.id, agent.parentAgentId))
+    if (!parent || !isLiveAgentStatus(parent.status)) return false
+  }
   if (record.workStreamId) {
     const [stream] = await dbx.select().from(workStreams).where(eq(workStreams.id, record.workStreamId))
     if (!stream || stream.status !== 'active' || stream.pause) return false
