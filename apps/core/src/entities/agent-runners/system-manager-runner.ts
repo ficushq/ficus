@@ -64,7 +64,7 @@ export class SystemManagerRunner extends AgentRunner {
   }
 
   // ---------------------------------------------------------------------------
-  // Prompt builders (static — also used by ai-extract route)
+  // Prompt builders (static)
   // ---------------------------------------------------------------------------
 
   private static async buildSquadsContext(identity?: Identity): Promise<string> {
@@ -90,6 +90,13 @@ export class SystemManagerRunner extends AgentRunner {
     )
 
     return squadLines.join('\n')
+  }
+
+  /** The model chain of a system agent type, also used by the voice form extraction route. */
+  static async resolveModel(agentTypeId = 'system-manager'): Promise<string> {
+    const agentType = await AgentType.find(agentTypeId)
+    if (!agentType) throw new Error(`Agent type '${agentTypeId}' not found`)
+    return resolveAgentTypeChain(agentType)
   }
 
   static async buildManagerPrompt(

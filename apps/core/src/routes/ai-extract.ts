@@ -23,6 +23,13 @@ interface ExtractRequest {
   context?: string
 }
 
+/**
+ * Form extraction needs no agent guidance, CLI help or tools: one short instruction,
+ * with the field schema and transcript in the user message.
+ */
+export const AI_EXTRACT_SYSTEM_PROMPT =
+  'You fill in form fields for the Ficus app from a transcribed voice request. Follow the extraction instructions in the user message exactly and reply with only the JSON object they describe.'
+
 export const aiExtractRouter = new Hono().post('/', requirePermission('ai:extract'), async (c) => {
   const body = await c.req.json<ExtractRequest>()
 
@@ -45,11 +52,11 @@ export const aiExtractRouter = new Hono().post('/', requirePermission('ai:extrac
   }
 
   try {
-    const { systemPrompt, model } = await SystemManagerRunner.buildManagerPrompt()
+    const model = await SystemManagerRunner.resolveModel()
     const attribution = attributionFromIdentity(c.get('identity') as Identity | undefined)
     const { pi: session } = await AgentSession.create({
       model,
-      systemPrompt,
+      systemPrompt: AI_EXTRACT_SYSTEM_PROMPT,
       usage: { feature: 'ai-extract', attribution: () => attribution },
     })
 
