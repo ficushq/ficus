@@ -112,7 +112,16 @@ describe('permission filtering', () => {
     const index = await getCliCommandIndex(await rolePermissions('default-worker'))
     const groups = listedGroups(index)
 
-    for (const removed of ['agent-type', 'channel', 'shared-prompt', 'voice', 'squad-env', 'provider-auth', 'user', 'role'])
+    for (const removed of [
+      'agent-type',
+      'channel',
+      'shared-prompt',
+      'voice',
+      'squad-env',
+      'provider-auth',
+      'user',
+      'role',
+    ])
       expect(groups).not.toContain(removed)
     for (const kept of ['skill', 'schedule', 'slot', 'deploy', 'pr', 'agent-question', 'workstream', 'inbox', 'squad'])
       expect(groups).toContain(kept)
