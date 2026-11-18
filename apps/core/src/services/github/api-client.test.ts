@@ -133,6 +133,25 @@ test('GraphQL reads return data, treat denials and query errors as null, and an 
   await expect(query(new Response('down', { status: 502 })).read).rejects.toBeInstanceOf(GitHubApiUnavailableError)
 })
 
+test('GraphQL partial mode keeps data that arrives with errors, and still throws on rate limits', async () => {
+  const url = 'https://api.github.com/graphql'
+  const read = (response: Response) => {
+    for (const spy of spies.splice(0)) spy.mockRestore()
+    stubGitHub({ [url]: response })
+    return githubApiGraphql('query { a: repository { id } b: repository { id } }', {}, 'squad', 'connection', {
+      allowPartial: true,
+    })
+  }
+  expect(await read(Response.json({ data: { a: { id: 1 }, b: null }, errors: [{ type: 'NOT_FOUND' }] }))).toEqual({
+    a: { id: 1 },
+    b: null,
+  })
+  expect(await read(Response.json({ data: null, errors: [{ type: 'FORBIDDEN' }] }))).toBeNull()
+  await expect(read(Response.json({ data: { a: null }, errors: [{ type: 'RATE_LIMITED' }] }))).rejects.toBeInstanceOf(
+    GitHubApiUnavailableError
+  )
+})
+
 test.each([403, 401, 429, 500])('confirmed-missing mode does not classify HTTP %s as deletion', async (status) => {
   stubGitHub({ 'https://api.github.com/repos/owner/repo/issues/1': new Response('unavailable', { status }) })
   await expect(

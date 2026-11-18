@@ -1,4 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
+import { AgentSession } from '../../entities/AgentSession'
+import { modelTierSync } from '../config-sync'
 import { PUBLIC_VOICE_MAX_BYTES } from '@ficus/shared'
 import type { CollectedActivity, RawActivityItem } from './github-activity'
 import {
@@ -7,6 +9,7 @@ import {
   DERIVATION_SYSTEM_PROMPT,
   derivePublicVoice,
   parseDerivationOutput,
+  runDerivationSession,
   type DerivationSession,
 } from './derive'
 import type { VoiceSample } from './samples'
@@ -123,6 +126,7 @@ describe('derivePublicVoice', () => {
     pagingCapped: false,
     requests: 2,
     droppedByFilter: { date: 0, repository: 0 },
+    unavailableRepositories: [],
   })
 
   test('one session call with the samples, returning a draft and the sampling summary', async () => {
@@ -158,5 +162,43 @@ describe('derivePublicVoice', () => {
         }
       )
     ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+  })
+})
+
+describe('runDerivationSession', () => {
+  test('creates a session with no tools and no pre-compaction, recorded as public-voice-derive', async () => {
+    let listener: ((event: any) => void) | undefined
+    const pi = {
+      subscribe: (fn: (event: any) => void) => {
+        listener = fn
+      },
+      prompt: async () => {
+        listener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '{"ok":' } })
+        listener?.({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'true}' } })
+        listener?.({ type: 'agent_end' })
+      },
+      abort: async () => {},
+    }
+    await modelTierSync.sync()
+    const create = spyOn(AgentSession, 'create').mockResolvedValue({ pi } as any)
+    try {
+      const text = await runDerivationSession({
+        systemPrompt: 'SYSTEM',
+        prompt: 'SAMPLES',
+        attribution: { userId: 'user-1', squadId: 'squad-1' },
+        signal: new AbortController().signal,
+      })
+      expect(text).toBe('{"ok":true}')
+      const options = create.mock.calls[0]![0] as any
+      expect(options.systemPrompt).toBe('SYSTEM')
+      expect(options.tools).toEqual({ core: [], available: [] })
+      expect(options.precompaction).toBe(false)
+      expect(options.storage).toBeUndefined()
+      expect(options.usage.feature).toBe('public-voice-derive')
+      expect(options.usage.attribution()).toEqual({ userId: 'user-1', squadId: 'squad-1' })
+      expect(typeof options.model).toBe('string')
+    } finally {
+      create.mockRestore()
+    }
   })
 })

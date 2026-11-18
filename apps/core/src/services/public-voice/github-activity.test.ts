@@ -161,6 +161,17 @@ describe('collectGitHubActivity', () => {
     expect(result.pagingCapped).toBe(false)
   })
 
+  test('keeps partial data: a missing repository is reported and the other commits are kept', async () => {
+    const partialCommits = { ...commitsData, r1: null }
+    const { graphql } = fakeGraphql([userData({ contributionsCollection: null, issueComments: null }), partialCommits])
+    const result = await collectGitHubActivity(
+      { squadId: 's', login: 'octo', filters: { repositories: ['acme/api', 'acme/typo'] } },
+      { graphql }
+    )
+    expect(result.unavailableRepositories).toEqual(['acme/typo'])
+    expect(result.items.map((i) => i.surface).sort()).toEqual(['commits', 'pull-requests'])
+  })
+
   test('a login the token cannot see, and an unavailable API, map to derivation errors', async () => {
     await expect(
       collectGitHubActivity({ squadId: 's', login: 'ghost', filters: {} }, { graphql: async () => null })

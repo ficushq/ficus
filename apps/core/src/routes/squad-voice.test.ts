@@ -16,6 +16,11 @@ import {
   type TestUser,
 } from '../test-utils'
 import { __derivationsInProgress, squadVoiceRouter } from './squad-voice'
+import { AgentType } from '../entities/AgentType'
+import { agentTypeSync, sharedPromptSync } from '../services/config-sync'
+import { composeAgentTypePrompt } from '../services/agent-types/compose-prompt'
+import { interpolateTemplate } from '../lib/prompts/prompt-builder'
+import { buildPublicVoicePrompt } from '../lib/prompts/public-voice-prompt'
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -165,6 +170,28 @@ describe('squad voice routes', () => {
       expect(busy.status).toBe(429)
     } finally {
       __derivationsInProgress.delete(squadId)
+    }
+  })
+})
+
+describe('one profile shared by two squads', () => {
+  test("both squads' composed engineer prompts carry the profile's voice exactly once", async () => {
+    await sharedPromptSync.sync()
+    await agentTypeSync.sync()
+    AgentType.invalidateCache()
+    const second = await Squad.create({ name: `${prefix}-second`, purpose: 'voice' })
+    squadIds.push(second.id)
+    await PublicVoice.upsert({ id: teamId, name: 'Team', base: 'SHARED-TEAM-VOICE.' })
+    for (const id of [squadId, second.id]) await Squad.setPublicVoice(id, { publicVoiceId: teamId, publicVoice: null })
+
+    const engineerPrompt = await composeAgentTypePrompt((await AgentType.find('engineer'))!)
+    expect(engineerPrompt.split('{{squad.publicVoice}}')).toHaveLength(2)
+    for (const id of [squadId, second.id]) {
+      const squad = (await Squad.find(id))!
+      const prompt = interpolateTemplate(engineerPrompt, { 'squad.publicVoice': await buildPublicVoicePrompt(squad) })
+      expect(prompt.split('SHARED-TEAM-VOICE.')).toHaveLength(2)
+      expect(prompt.split('### Voice')).toHaveLength(2)
+      expect(prompt).toContain('## Public text')
     }
   })
 })

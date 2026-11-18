@@ -33,6 +33,8 @@ export interface SamplingSummary {
   publicRepositories: string[]
   privateRepositories: string[]
   pagingCapped: boolean
+  /** Repositories GitHub returned as missing or not visible to the squad's account. */
+  unavailableRepositories: string[]
   /** The tool-authored filter is a heuristic; dates and repositories are the reliable filters. */
   toolAuthoredIsHeuristic: true
 }
@@ -187,6 +189,7 @@ export function prepareSamples(
     publicRepositories: repos(false),
     privateRepositories: repos(true),
     pagingCapped: collected.pagingCapped,
+    unavailableRepositories: collected.unavailableRepositories ?? [],
     toolAuthoredIsHeuristic: true,
   }
   if (samples.length < MIN_SAMPLES)

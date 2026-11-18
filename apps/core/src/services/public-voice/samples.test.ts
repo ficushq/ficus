@@ -20,7 +20,14 @@ function many(
 }
 
 function collected(items: RawActivityItem[], over: Partial<CollectedActivity> = {}): CollectedActivity {
-  return { items, pagingCapped: false, requests: 2, droppedByFilter: { date: 0, repository: 0 }, ...over }
+  return {
+    items,
+    pagingCapped: false,
+    requests: 2,
+    droppedByFilter: { date: 0, repository: 0 },
+    unavailableRepositories: [],
+    ...over,
+  }
 }
 
 describe('cleanSampleText', () => {
@@ -112,6 +119,7 @@ describe('prepareSamples', () => {
     const { summary } = prepareSamples(collected(items), {})
     expect(summary.publicRepositories).toEqual(['acme/api'])
     expect(summary.privateRepositories).toEqual(['acme/secret'])
+    expect(summary.unavailableRepositories).toEqual([])
   })
 
   test('too few samples is an error with the counts', () => {

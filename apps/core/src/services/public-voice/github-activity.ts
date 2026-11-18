@@ -28,6 +28,8 @@ export interface CollectedActivity {
   requests: number
   /** Items seen but left out by the date and repository filters. */
   droppedByFilter: { date: number; repository: number }
+  /** Repositories asked for commits that GitHub returned as missing or not visible (for example a typo in a filter). */
+  unavailableRepositories: string[]
 }
 
 export class DerivationError extends Error {
@@ -131,6 +133,7 @@ export function buildCommitsQuery(repositories: string[]): string {
 }
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000
+const EMPTY_PAGE = { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] }
 
 /** The one-year contributions window: the latest year inside the filter range. */
 export function contributionsWindow(filters: DerivationFilters, now: Date): { from: string; to: string } {
@@ -176,7 +179,10 @@ export async function collectGitHubActivity(
   input: { squadId: string; login: string; filters: DerivationFilters; now?: Date },
   deps: { graphql?: GraphqlFn } = {}
 ): Promise<CollectedActivity> {
-  const graphql: GraphqlFn = deps.graphql ?? ((query, variables) => githubApiGraphql(query, variables, input.squadId))
+  // Partial data is kept: one unknown or forbidden repository or node must not discard everything else.
+  const graphql: GraphqlFn =
+    deps.graphql ??
+    ((query, variables) => githubApiGraphql(query, variables, input.squadId, undefined, { allowPartial: true }))
   const { filters, login } = input
   const surfaces = new Set<DerivationSurface>(filters.surfaces ?? DERIVATION_SURFACES)
   let requests = 0
@@ -194,12 +200,13 @@ export async function collectGitHubActivity(
   type UserData = {
     user: {
       id: string
-      pullRequests: Connection<PullRequestNode>
-      issueComments: Connection<CommentNode>
+      pullRequests: Connection<PullRequestNode> | null
+      issueComments: Connection<CommentNode> | null
+      // Any field can come back null in a partial response.
       contributionsCollection: {
-        pullRequestReviewContributions: { nodes: ReviewContribution[] }
-        commitContributionsByRepository: Array<{ repository: RepositoryRef }>
-      }
+        pullRequestReviewContributions: { nodes: Array<ReviewContribution | null> } | null
+        commitContributionsByRepository: Array<{ repository: RepositoryRef | null } | null> | null
+      } | null
     } | null
   }
   const window = contributionsWindow(filters, input.now ?? new Date())
@@ -210,6 +217,7 @@ export async function collectGitHubActivity(
   const items: RawActivityItem[] = []
   let pagingCapped = false
   const droppedByFilter = { date: 0, repository: 0 }
+  const unavailableRepositories: string[] = []
   const accept = (createdAt: string, repository: string): boolean => {
     if (!inRange(createdAt, filters)) {
       droppedByFilter.date++
@@ -224,11 +232,12 @@ export async function collectGitHubActivity(
 
   // Pull requests, newest first, paging only as far as the date filters need.
   if (surfaces.has('pull-requests')) {
-    let page = user.pullRequests
+    let page = user.pullRequests ?? EMPTY_PAGE
     let pages = 1
     let kept = 0
     for (;;) {
-      for (const node of page.nodes) {
+      for (const node of page.nodes ?? []) {
+        if (!node) continue
         if (!accept(node.createdAt, node.repository.nameWithOwner)) continue
         items.push({
           surface: 'pull-requests',
@@ -245,7 +254,7 @@ export async function collectGitHubActivity(
         pagingCapped = true
         break
       }
-      const next = await call<{ user: { pullRequests: Connection<PullRequestNode> } | null }>(
+      const next = await call<{ user: { pullRequests: Connection<PullRequestNode> | null } | null }>(
         PULL_REQUESTS_PAGE_QUERY,
         {
           login,
@@ -253,6 +262,7 @@ export async function collectGitHubActivity(
         }
       )
       if (!next?.user) break
+      if (!next.user.pullRequests) break
       page = next.user.pullRequests
       pages++
     }
@@ -260,11 +270,12 @@ export async function collectGitHubActivity(
 
   // Issue and pull request conversation comments, ordered by last update.
   if (surfaces.has('issue-comments')) {
-    let page = user.issueComments
+    let page = user.issueComments ?? EMPTY_PAGE
     let pages = 1
     let kept = 0
     for (;;) {
-      for (const node of page.nodes) {
+      for (const node of page.nodes ?? []) {
+        if (!node) continue
         if (!accept(node.createdAt, node.repository.nameWithOwner)) continue
         items.push({
           surface: 'issue-comments',
@@ -280,11 +291,12 @@ export async function collectGitHubActivity(
         pagingCapped = true
         break
       }
-      const next = await call<{ user: { issueComments: Connection<CommentNode> } | null }>(COMMENTS_PAGE_QUERY, {
+      const next = await call<{ user: { issueComments: Connection<CommentNode> | null } | null }>(COMMENTS_PAGE_QUERY, {
         login,
         commentCursor: page.pageInfo.endCursor,
       })
       if (!next?.user) break
+      if (!next.user.issueComments) break
       page = next.user.issueComments
       pages++
     }
@@ -292,8 +304,8 @@ export async function collectGitHubActivity(
 
   // Review bodies and their inline comments, from the contributions window.
   if (surfaces.has('reviews')) {
-    for (const contribution of user.contributionsCollection.pullRequestReviewContributions.nodes) {
-      const review = contribution.pullRequestReview
+    for (const contribution of user.contributionsCollection?.pullRequestReviewContributions?.nodes ?? []) {
+      const review = contribution?.pullRequestReview
       if (!review || !accept(review.createdAt, review.repository.nameWithOwner)) continue
       const base = {
         surface: 'reviews' as const,
@@ -302,7 +314,7 @@ export async function collectGitHubActivity(
         createdAt: review.createdAt,
       }
       if (review.body) items.push({ ...base, text: review.body })
-      for (const comment of review.comments.nodes) if (comment.body) items.push({ ...base, text: comment.body })
+      for (const comment of review.comments?.nodes ?? []) if (comment?.body) items.push({ ...base, text: comment.body })
     }
   }
 
@@ -310,7 +322,9 @@ export async function collectGitHubActivity(
   if (surfaces.has('commits')) {
     const candidates = filters.repositories?.length
       ? filters.repositories
-      : user.contributionsCollection.commitContributionsByRepository.map((entry) => entry.repository.nameWithOwner)
+      : (user.contributionsCollection?.commitContributionsByRepository ?? []).flatMap((entry) =>
+          entry?.repository ? [entry.repository.nameWithOwner] : []
+        )
     const repositories = [...new Set(candidates)]
       .filter((name) => repositoryAllowed(name, filters))
       .slice(0, MAX_COMMIT_REPOSITORIES)
@@ -329,6 +343,9 @@ export async function collectGitHubActivity(
         since: filters.after ? `${filters.after}T00:00:00Z` : null,
         until: filters.before ? `${filters.before}T00:00:00Z` : null,
       })
+      repositories.forEach((name, index) => {
+        if (!data?.[`r${index}`]) unavailableRepositories.push(name)
+      })
       for (const block of Object.values(data ?? {})) {
         for (const commit of block?.defaultBranchRef?.target?.history?.nodes ?? []) {
           if (!accept(commit.committedDate, block!.nameWithOwner)) continue
@@ -345,5 +362,5 @@ export async function collectGitHubActivity(
     }
   }
 
-  return { items, pagingCapped, requests, droppedByFilter }
+  return { items, pagingCapped, requests, droppedByFilter, unavailableRepositories }
 }
