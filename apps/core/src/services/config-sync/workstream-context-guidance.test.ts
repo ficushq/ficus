@@ -25,7 +25,8 @@ describe('work stream context guidance', () => {
 
   test('a completed attempt changes only through amend, only while the gate it feeds is open', async () => {
     const guidance = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
-    const worker = await readRepoFile('apps/core/src/entities/agent-runners/squad-worker-runner.ts')
+    // The worker prompt assembly moved out of the runner into the pure squad-agent-prompt module.
+    const worker = await readRepoFile('apps/core/src/lib/prompts/squad-agent-prompt.ts')
     expect(guidance).toContain(
       'Work only on your active attempt. The one exception: while the human approval gate that your completed attempt feeds is open, you may change that attempt only through the `amend` action of `ficus workstream advance`.'
     )
@@ -114,7 +115,7 @@ test('workflow guidance prefers inline content and stdin rather than mandatory t
     'config/skills/work-stream-driven-development/SKILL.md',
     'config/skills/roadmap-phase-loop/SKILL.md',
     // The manager runner no longer repeats manager.yaml's creation commands.
-    'apps/core/src/entities/agent-runners/squad-worker-runner.ts',
+    'apps/core/src/lib/prompts/squad-agent-prompt.ts',
     'apps/docs/src/content/docs/reference/workflow-definition.mdx',
   ]
   for (const file of files) {
@@ -176,6 +177,15 @@ describe('role-independent delivery guidance', () => {
         expect(generated).toContain('The flow, not an agent role, assigns delivery')
         expect(generated.includes('metadata.policies.allowAutoMerge')).toBe(mode === 'pr-auto-merge')
         expect(generated.includes('metadata.policies.allowDirectMerge')).toBe(mode === 'direct-merge')
+        // The rework procedure and CI-reading rule moved from squad-rules into the generated
+        // instructions: the composed prompt carries each exactly once, and the static rules
+        // keep only the invariant.
+        expect(base).not.toContain('Rework at completion-ready')
+        expect(base).not.toContain('Each CI notification reports one workflow run')
+        expect(base.replace(/\s+/g, ' ')).toContain('Never edit against a completed attempt')
+        if (mode !== 'review-approval' && mode !== 'deliverable' && mode !== 'direct-merge')
+          expect(composed.split('Each CI notification reports one workflow run')).toHaveLength(2)
+        expect(composed.split('Rework at completion-ready')).toHaveLength(2)
         if (mode === 'pr-auto-merge') {
           expect(composed).toContain('enable native auto-merge now')
           expect(composed).toContain('GitHub required CI and external PR approvals may still be pending')
