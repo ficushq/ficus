@@ -163,7 +163,7 @@ function capturedToolNames(createSpy: any): string[] {
 describe('SquadWorkerRunner artifact tool registration', () => {
   let agentSessionCreateSpy: any
   let getShortTermMemorySpy: any
-  let getSquadWorkerCliHelpSpy: any
+  let getCliCommandIndexSpy: any
   let buildActiveSchedulesPromptSpy: any
   let readSquadMemoryFileSpy: any
   let squadFindSpy: any
@@ -185,7 +185,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     automaticIntegrationTools = []
     agentSessionCreateSpy = spyOn(AgentSession, 'create').mockResolvedValue({} as AgentSession)
     getShortTermMemorySpy = spyOn(tools, 'getShortTermMemory').mockResolvedValue('')
-    getSquadWorkerCliHelpSpy = spyOn(cliHelp, 'getSquadWorkerCliHelp').mockResolvedValue('cli help')
+    getCliCommandIndexSpy = spyOn(cliHelp, 'getCliCommandIndex').mockResolvedValue('cli help')
     buildActiveSchedulesPromptSpy = spyOn(prompts, 'buildActiveSchedulesPrompt').mockResolvedValue('')
     readSquadMemoryFileSpy = spyOn(memoryPaths, 'readSquadMemoryFile').mockReturnValue('')
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
@@ -220,7 +220,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
   afterEach(async () => {
     agentSessionCreateSpy?.mockRestore()
     getShortTermMemorySpy?.mockRestore()
-    getSquadWorkerCliHelpSpy?.mockRestore()
+    getCliCommandIndexSpy?.mockRestore()
     buildActiveSchedulesPromptSpy?.mockRestore()
     readSquadMemoryFileSpy?.mockRestore()
     squadFindSpy?.mockRestore()
@@ -562,7 +562,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
 describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
   let agentSessionCreateSpy: any
   let getShortTermMemorySpy: any
-  let getSquadWorkerCliHelpSpy: any
+  let getCliCommandIndexSpy: any
   let buildActiveSchedulesPromptSpy: any
   let readSquadMemoryFileSpy: any
   let squadFindSpy: any
@@ -579,7 +579,7 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
     automaticIntegrationTools = []
     agentSessionCreateSpy = spyOn(AgentSession, 'create').mockResolvedValue({} as AgentSession)
     getShortTermMemorySpy = spyOn(tools, 'getShortTermMemory').mockResolvedValue('')
-    getSquadWorkerCliHelpSpy = spyOn(cliHelp, 'getSquadWorkerCliHelp').mockResolvedValue('cli help')
+    getCliCommandIndexSpy = spyOn(cliHelp, 'getCliCommandIndex').mockResolvedValue('cli help')
     buildActiveSchedulesPromptSpy = spyOn(prompts, 'buildActiveSchedulesPrompt').mockResolvedValue('')
     readSquadMemoryFileSpy = spyOn(memoryPaths, 'readSquadMemoryFile').mockReturnValue('')
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
@@ -606,7 +606,7 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
   afterEach(() => {
     agentSessionCreateSpy?.mockRestore()
     getShortTermMemorySpy?.mockRestore()
-    getSquadWorkerCliHelpSpy?.mockRestore()
+    getCliCommandIndexSpy?.mockRestore()
     buildActiveSchedulesPromptSpy?.mockRestore()
     readSquadMemoryFileSpy?.mockRestore()
     squadFindSpy?.mockRestore()
@@ -642,7 +642,7 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
 describe('SquadWorkerRunner typeContext injection', () => {
   let agentSessionCreateSpy: any
   let getShortTermMemorySpy: any
-  let getSquadWorkerCliHelpSpy: any
+  let getCliCommandIndexSpy: any
   let buildActiveSchedulesPromptSpy: any
   let readSquadMemoryFileSpy: any
   let squadFindSpy: any
@@ -653,7 +653,7 @@ describe('SquadWorkerRunner typeContext injection', () => {
   beforeEach(() => {
     agentSessionCreateSpy = spyOn(AgentSession, 'create').mockResolvedValue({} as any)
     getShortTermMemorySpy = spyOn(tools, 'getShortTermMemory').mockResolvedValue('')
-    getSquadWorkerCliHelpSpy = spyOn(cliHelp, 'getSquadWorkerCliHelp').mockResolvedValue('cli help')
+    getCliCommandIndexSpy = spyOn(cliHelp, 'getCliCommandIndex').mockResolvedValue('cli help')
     buildActiveSchedulesPromptSpy = spyOn(prompts, 'buildActiveSchedulesPrompt').mockResolvedValue('')
     readSquadMemoryFileSpy = spyOn(memoryPaths, 'readSquadMemoryFile').mockReturnValue('')
     squadWorkerResolveSkillPathsSpy = spyOn(SquadWorkerRunner.prototype as any, 'resolveSkillPaths').mockResolvedValue(
@@ -666,7 +666,7 @@ describe('SquadWorkerRunner typeContext injection', () => {
     spies = [
       agentSessionCreateSpy,
       getShortTermMemorySpy,
-      getSquadWorkerCliHelpSpy,
+      getCliCommandIndexSpy,
       buildActiveSchedulesPromptSpy,
       readSquadMemoryFileSpy,
       squadWorkerResolveSkillPathsSpy,
@@ -680,7 +680,7 @@ describe('SquadWorkerRunner typeContext injection', () => {
     squadFindSpy?.mockRestore()
   })
 
-  it('narrows the CLI reference to the commands the agent permissions allow', async () => {
+  it('narrows the CLI index to the groups and commands the agent permissions allow', async () => {
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
       id: TEST_SQUAD_ID,
       name: 'Custom squad',
@@ -693,16 +693,7 @@ describe('SquadWorkerRunner typeContext injection', () => {
       getActiveAgents: async () => [],
       getTypeContext: () => null,
     } as any)
-    getSquadWorkerCliHelpSpy.mockResolvedValue(
-      [
-        'Usage: ficus workstream|ws [options] [command]',
-        '',
-        'Commands:',
-        '  create|new [options] <title>  Create a work stream',
-        '  get|info <id>                 Get work stream details',
-        '',
-      ].join('\n')
-    )
+    getCliCommandIndexSpy.mockResolvedValue('CLI-INDEX-FOR-WORKSTREAMS-READ')
     const permissions = spyOn(rbac, 'resolvePermissions').mockResolvedValue(['workstreams:read'])
     const flowContext = spyOn(workflowExecution, 'flowWorkerContext').mockResolvedValue(null)
     spies.push(permissions, flowContext)
@@ -720,9 +711,8 @@ describe('SquadWorkerRunner typeContext injection', () => {
       { type: 'agent', agentId: agent.id, squadId: TEST_SQUAD_ID },
       TEST_SQUAD_ID
     )
-    expect(systemPrompt).toContain('get|info <id>')
-    expect(systemPrompt).not.toContain('create|new')
-    expect(systemPrompt).toContain('Route those requests to your squad manager.')
+    expect(getCliCommandIndexSpy).toHaveBeenCalledWith(['workstreams:read'])
+    expect(systemPrompt).toContain('CLI-INDEX-FOR-WORKSTREAMS-READ')
   })
 
   it('gives generalist flow workers delivery guidance only when ready, without legacy squad routing', async () => {

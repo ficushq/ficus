@@ -28,6 +28,7 @@ export function registerIntegrationCommands(
   registerBigbrainVaultCommands(integration, dependencies.bigbrain)
   integration
     .command('connect <provider>')
+    .description('Connect a provider account through its browser or device sign-in')
     .option('--connection <uuid>', 'Reconnect an existing account')
     .action(
       run(async (provider, options) => {
@@ -149,6 +150,7 @@ export function registerIntegrationCommands(
     )
   integration
     .command('credential <connection>')
+    .description("Replace a connection's credential, read from stdin")
     .requiredOption('--credential-stdin')
     .option('--confirm-assigned', 'Confirm disabling this connection for assigned squads')
     .action(
@@ -164,12 +166,16 @@ export function registerIntegrationCommands(
   for (const action of ['validate', 'enable'] as const) {
     integration
       .command(`${action} <connection>`)
+      .description(
+        action === 'validate' ? "Re-check a connection's credential with the provider" : 'Enable a disabled connection'
+      )
       .action(
         run(async (connection) => output(await apiPost(`/api/integrations/connections/${connection}/${action}`, {})))
       )
   }
   integration
     .command('disable <connection>')
+    .description('Disable a connection without removing it')
     .option('--confirm-assigned', 'Confirm impact to assigned squads')
     .action(
       run(async (connection, options) =>
@@ -182,6 +188,7 @@ export function registerIntegrationCommands(
     )
   integration
     .command('remove <connection>')
+    .description('Remove a connection')
     .alias('rm')
     .option('--confirm-assigned', 'Confirm unassigning every squad using this connection')
     .action(
@@ -194,6 +201,7 @@ export function registerIntegrationCommands(
     )
   integration
     .command('assign <provider>')
+    .description('Attach a connection to a squad, as its default account unless --additional')
     .requiredOption('--squad <uuid>')
     .requiredOption('--connection <uuid>')
     .option('--additional', 'Attach this account without changing the default')
@@ -209,6 +217,7 @@ export function registerIntegrationCommands(
     )
   integration
     .command('unassign <provider>')
+    .description("Detach the provider's accounts from a squad, or one account with --connection")
     .requiredOption('--squad <uuid>')
     .option('--connection <uuid>', 'Detach a specific attached account')
     .action(

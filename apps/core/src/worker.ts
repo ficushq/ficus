@@ -1128,10 +1128,10 @@ async function startup(): Promise<void> {
 
   void (async () => {
     try {
-      const { warmupCliHelpCaches } = await import('./lib/utils/cli-help')
-      await warmupCliHelpCaches()
+      const { warmupCliCommandIndex } = await import('./lib/utils/cli-help')
+      await warmupCliCommandIndex()
     } catch (err) {
-      log.warn('CLI help warmup failed:', err)
+      log.warn('CLI index warmup failed:', err)
     }
   })()
 

@@ -1,7 +1,7 @@
 import type { SessionUsage, MessageMetadata } from '@ficus/shared'
 import { AgentRunner, type AutomaticBigbrainTools } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
-import { filterCliHelpForPermissions, getSquadWorkerCliHelp } from '../../lib/utils/cli-help'
+import { getCliCommandIndex } from '../../lib/utils/cli-help'
 import { resolvePermissions } from '../../services/rbac'
 import {
   interpolateTemplate,
@@ -73,22 +73,22 @@ export class SquadWorkerRunner extends AgentRunner {
   // ---------------------------------------------------------------------------
 
   /**
-   * The worker CLI reference without commands this agent's resolved permissions
+   * The CLI index without groups and commands this agent's resolved permissions
    * cannot use (for example `workstream create`), so workers route that work to
-   * the manager instead of discovering the 403. Falls back to the full reference
+   * the manager instead of discovering the 403. Falls back to the full index
    * when permissions cannot be resolved; the server enforces every call anyway.
    */
   private async buildWorkerCliHelp(): Promise<string> {
-    const help = await getSquadWorkerCliHelp()
+    let permissions: string[] = []
     try {
-      const permissions = await resolvePermissions(
+      permissions = await resolvePermissions(
         { type: 'agent', agentId: this.agent.id, squadId: this.squad.id },
         this.squad.id
       )
-      return permissions.length > 0 ? filterCliHelpForPermissions(help, permissions) : help
     } catch {
-      return help
+      // Fall through to the unfiltered index.
     }
+    return permissions.length > 0 ? getCliCommandIndex(permissions) : getCliCommandIndex()
   }
 
   private async buildSquadWorkerPrompt(): Promise<string> {
