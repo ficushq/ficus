@@ -14,9 +14,9 @@ only need to change the channel instance's routing (`ficus channel update <id>
 --default-squad` or `--channel-squad-map`).
 
 The human performs the Slack portal steps and enters the credentials. Never ask for
-tokens in chat, and never read, print, log or commit them. Channel plugins have no
-command execution, so no channel token belongs in a sandbox or `integration exec`
-command. Use the exact webhook URL shown in **Settings → Integrations → Slack**,
+tokens in chat. Never read, print, log or commit them, even if volunteered. Channel
+plugins have no command execution, so no channel token belongs in a sandbox or
+`integration exec` command. Use the exact webhook URL shown in **Settings → Integrations → Slack**,
 including any public base path; never infer an API hostname from `APP_URL`. Saved
 changes reconcile without a manual restart.
 

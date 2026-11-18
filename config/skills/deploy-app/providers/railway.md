@@ -13,6 +13,7 @@ Read `deploy-app` first; this note holds only what differs for Railway.
 - **CLI:** `railway`. Check access with `railway list`. If authentication fails,
   have the human validate or reconnect the account; do not restart the sandbox to
   pick up a token.
+  Wrap project scripts: `ficus integration exec railway -- npm run deploy`.
 - **Upload:** `railway up` uploads the current directory. Run it from the app's own
   directory, and add a `.railwayignore` before the first upload as a fallback.
 - **Names:** keep project and service names short, lowercase, with hyphens; Railway

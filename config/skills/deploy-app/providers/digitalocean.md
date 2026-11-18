@@ -9,6 +9,7 @@ Read `deploy-app` first; this note holds only what differs for DigitalOcean.
   for validation and write for app creation and updates, and nothing broader.
   Settings card: **Settings → Integrations → DigitalOcean**.
 - **CLI:** `doctl`. Check access with `doctl account get`.
+  Wrap project scripts: `ficus integration exec digitalocean -- npm run deploy`.
 - **Upload:** `.dockerignore` or the provider's ignore settings as a fallback;
   validate the App Platform spec from the app directory.
 
