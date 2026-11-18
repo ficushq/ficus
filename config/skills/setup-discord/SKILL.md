@@ -15,9 +15,10 @@ to change the channel instance's routing (`ficus channel update <id> --default-s
 or `--channel-squad-map`).
 
 The human performs the Developer Portal steps and enters the credential. Never ask
-for the token in chat, and never read, print, log or commit it. Channel plugins
-have no command execution, so no channel token belongs in a sandbox or
-`integration exec` command. Saved changes reconcile without a manual restart.
+for the token in chat. Never read, print, log or commit it, even if volunteered.
+Channel plugins have no command execution, so no channel token belongs in a
+sandbox or `integration exec` command. Saved changes reconcile without a manual
+restart.
 
 ## 1. Create the application and bot
 

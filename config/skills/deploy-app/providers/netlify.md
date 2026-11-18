@@ -9,6 +9,7 @@ Read `deploy-app` first; this note holds only what differs for Netlify.
   (https://app.netlify.com/user/applications#personal-access-tokens). Settings card:
   **Settings → Integrations → Netlify**.
 - **CLI:** `netlify`. Check access with `netlify sites:list`.
+  Wrap project scripts: `ficus integration exec netlify -- npm run deploy`.
 - **Upload:** deploy the explicit build output with `--dir`; `.netlifyignore` as a
   fallback.
 
