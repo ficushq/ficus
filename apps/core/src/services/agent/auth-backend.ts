@@ -14,6 +14,7 @@
  */
 
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import { protectResponsesToolNames } from './responses-tool-names'
 import { isAccountUsable } from './account-usable'
 import { compatibleRuntimeProvider } from './openai-compatible-runtime'
 import { registerAnthropicWithClaudeCode } from './claude-code/anthropic'
@@ -259,6 +260,7 @@ export function getModelRuntime(): Promise<ModelRuntime> {
         credentials: new SecretStoreCredentialStore(),
         allowModelNetwork: false,
       })
+      protectResponsesToolNames(runtime)
       registerOpenAICompatibleAccounts(runtime)
       registerAnthropicWithClaudeCode(runtime)
       modelRuntimeInstance = runtime
