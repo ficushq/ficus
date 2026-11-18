@@ -122,7 +122,7 @@ test('Slack setup and onboarding name owning card fields rather than retired cre
 // instance-operations include, so assert both include it and the include holds the text.
 const instanceCredentialPrompt = () => {
   for (const name of ['system-manager', 'assistant-worker']) {
-    expect(read(`config/agent-types/${name}.yaml`)).toMatch(/^includes:\n(?:  - .+\n)*  - instance-operations\n/m)
+    expect(read(`config/agent-types/${name}.yaml`)).toMatch(/^includes:\n(?: {2}- .+\n)* {2}- instance-operations\n/m)
   }
   return read('config/agent-types/shared/instance-operations.md')
 }
