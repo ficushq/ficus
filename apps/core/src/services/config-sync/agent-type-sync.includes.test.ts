@@ -27,6 +27,7 @@ describe('agent type includes', () => {
       'subagents',
       'new-work-routing',
       'squad-rules',
+      'public-text',
     ])
     expect(sysops.systemPrompt).toContain('### Incident Response')
     expect(sysops.systemPrompt).not.toContain('### Questions, waits, and pause')
@@ -46,6 +47,7 @@ describe('agent type includes', () => {
         files.get('subagents'),
         files.get('new-work-routing'),
         files.get('squad-rules'),
+        files.get('public-text'),
       ].join('\n\n')
     )
   })
@@ -81,6 +83,7 @@ describe('agent type includes', () => {
       'subagents',
       'new-work-routing',
       'squad-rules',
+      'public-text',
     ])
     expect((row.yamlTemplate as { includes?: string[] }).includes).toEqual([
       'entity-references',
@@ -90,6 +93,7 @@ describe('agent type includes', () => {
       'subagents',
       'new-work-routing',
       'squad-rules',
+      'public-text',
     ])
     expect(row.systemPrompt).not.toContain('## Run Identity')
   })

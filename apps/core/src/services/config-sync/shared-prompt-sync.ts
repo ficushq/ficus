@@ -6,6 +6,7 @@ import { AGENT_TYPE_SHARED_PROMPTS_DIR } from '../../lib/paths'
 import { assertConfigId, assertNonEmptyString } from '../../lib/validation/config-ids'
 import { ConfigSync, type SyncResult } from './ConfigSync'
 import { adoptSplitIncludes, readableTextIncludeStored } from './split-includes'
+import { adoptPublicTextInclude, publicTextIncludeStored } from './public-text-include'
 
 export interface SharedPromptMarkdown {
   id: string
@@ -58,8 +59,12 @@ export class SharedPromptSync extends ConfigSync<SharedPromptMarkdown> {
     // The sync that first stores `readable-text` is the upgrade past the split of
     // `rules`; only then are pre-split include lists migrated (see split-includes).
     const migrateIncludes = !(await readableTextIncludeStored())
+    // Likewise the sync that first stores `public-text` (the fixed public-text
+    // rules moved out of `squad-rules`) adopts it into custom include lists.
+    const adoptPublicText = !(await publicTextIncludeStored())
     const result = await super.sync()
     if (migrateIncludes && (await readableTextIncludeStored())) await adoptSplitIncludes()
+    if (adoptPublicText && (await publicTextIncludeStored())) await adoptPublicTextInclude()
     return result
   }
 
