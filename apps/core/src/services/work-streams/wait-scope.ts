@@ -17,6 +17,7 @@ import {
   type DbTx,
 } from '../../db'
 import type { DbHandle, OpenWaitInput, WorkStreamWaitRow } from './waits'
+import { completionDeliveryOwner } from '../integrations/outputs/routing-audience'
 
 export async function resolveWaitAttempt(store: DbHandle, input: OpenWaitInput): Promise<number | null> {
   if (input.scope === 'stream') {
@@ -45,6 +46,17 @@ export async function resolveWaitAttempt(store: DbHandle, input: OpenWaitInput):
       throw new Error('An agent can only block its own active attempt; use stream scope for shared blockers')
     return attempt.id
   }
+  // Completion-ready: nothing runs, and the delivery participant holds the stream. Its blocking
+  // question holds the whole stream, so the agent sees it whichever attempt a later rework gives it.
+  const delivery = run?.activated ? completionDeliveryOwner(run) : undefined
+  if (
+    delivery &&
+    input.type === 'question' &&
+    input.scope !== 'attempt' &&
+    (input.flowAttemptId == null || input.flowAttemptId === delivery.attemptId) &&
+    (input.createdByAgentId ? input.createdByAgentId === delivery.agentId : input.flowAttemptId != null)
+  )
+    return null
   if (
     input.scope === 'attempt' ||
     input.flowAttemptId != null ||
@@ -114,6 +126,27 @@ export async function isCurrentWaitAttempt(store: DbHandle, workStreamId: string
   )
 }
 
+/**
+ * Whether a question asked from this attempt, and its answer, still belong to the agent.
+ *
+ * Beyond a running attempt, that holds for the attempt the delivery participant delivers from. Once
+ * the flow is completion-ready that attempt is completed, not running, but its agent still owns
+ * the stream (merging, finishing), and asking a person about delivery is part of that. Treating it
+ * as superseded dropped the accepted answer and made every retry fail the same way. A rework or a
+ * new flow version replaces the attempt and ends this, like any superseded attempt.
+ */
+export async function isCurrentQuestionAttempt(
+  store: DbHandle,
+  workStreamId: string,
+  attemptId: number,
+  agentId?: string
+) {
+  if (await isCurrentWaitAttempt(store, workStreamId, attemptId, agentId)) return true
+  const [run] = await store.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
+  const delivery = run?.activated ? completionDeliveryOwner(run) : undefined
+  return delivery?.attemptId === attemptId && (!agentId || delivery.agentId === agentId)
+}
+
 /** The last runnable branch must have been blocked for the full grace period. */
 export function admissionBlockedSince(waits: WorkStreamWaitRow[]): number | null {
   if (waits.length === 0) return null
@@ -157,9 +190,12 @@ export async function notifyFlowWaitResolution(
   return true
 }
 
+export const FLOW_WAIT_SUPERSEDED_MESSAGE =
+  'The flow attempt was superseded. The response is retained in history without waking an agent.'
+
 export class FlowWaitSupersededError extends Error {
   constructor() {
-    super('The flow attempt was superseded. The response is retained in history without waking an agent.')
+    super(FLOW_WAIT_SUPERSEDED_MESSAGE)
   }
 }
 
@@ -167,7 +203,14 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
   messageIds = messageIds.filter((id) => z.uuid().safeParse(id).success)
   if (!messageIds.length) return []
   const rows = await store.select({ metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, messageIds))
-  const targets: Array<{ workStreamId: string; attemptId: number; assignment: boolean; readmission?: boolean }> = []
+  const targets: Array<{
+    workStreamId: string
+    attemptId: number
+    assignment: boolean
+    readmission?: boolean
+    /** An answer to a question asked from this attempt (see isCurrentQuestionAttempt). */
+    answer?: boolean
+  }> = []
   for (const row of rows) {
     const metadata = row.metadata as {
       source?: string
@@ -194,7 +237,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
         .from(agentQuestions)
         .innerJoin(executions, eq(executions.id, agentQuestions.executionId))
         .where(eq(agentQuestions.id, metadata.questionId))
-      if (origin?.flowContext) targets.push({ ...origin.flowContext, assignment: false })
+      if (origin?.flowContext) targets.push({ ...origin.flowContext, assignment: false, answer: true })
       else {
         const waits = await store
           .select()
@@ -202,7 +245,12 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
           .where(and(eq(workStreamWaits.type, 'question'), eq(workStreamWaits.referenceId, metadata.questionId)))
         for (const wait of waits)
           if (wait.flowAttemptId != null)
-            targets.push({ workStreamId: wait.workStreamId, attemptId: wait.flowAttemptId, assignment: false })
+            targets.push({
+              workStreamId: wait.workStreamId,
+              attemptId: wait.flowAttemptId,
+              assignment: false,
+              answer: true,
+            })
       }
     }
   }
@@ -307,8 +355,8 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
     }
   }
   for (const target of targets) {
-    if (!(await isCurrentWaitAttempt(store, target.workStreamId, target.attemptId, agentId)))
-      throw new FlowWaitSupersededError()
+    const current = target.answer ? isCurrentQuestionAttempt : isCurrentWaitAttempt
+    if (!(await current(store, target.workStreamId, target.attemptId, agentId))) throw new FlowWaitSupersededError()
     if (target.assignment && (await waitsForAttempt(store, target.workStreamId, target.attemptId)).length)
       throw new Error('The flow attempt is waiting for input')
     if (target.readmission) {

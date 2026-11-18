@@ -3,6 +3,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, inbox } from '../../db/schema'
 import { InboxMessage } from '../../entities/InboxMessage'
+import { FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
 
 interface DeliveryFailureAlert {
   id: string
@@ -19,6 +20,21 @@ function alertKey(questionId: string, generation: number): string {
   return `agent-question-delivery-failure:v1:${questionId}:${generation}`
 }
 
+/**
+ * What the operator is told. The alert used to say only "retry after resolving the target agent
+ * state", which named no cause, and for a replaced flow attempt named a remedy that cannot work:
+ * a retry re-checks the same attempt.
+ */
+export function questionDeliveryFailureAlertContent(question: Pick<DeliveryFailureAlert, 'agentId' | 'lastError'>) {
+  if (question.lastError === FLOW_WAIT_SUPERSEDED_MESSAGE) {
+    return `An accepted answer was not delivered to agent ${question.agentId}: the workflow attempt the question was asked from was replaced before the answer arrived. Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message.`
+  }
+  const reason = question.lastError?.split('\n')[0]?.trim().slice(0, 300)
+  return `An accepted answer could not be delivered to agent ${question.agentId}${
+    reason ? `: ${reason.replace(/[.\s]+$/, '')}` : ''
+  }. Retry from the Action Center after resolving the target agent state.`
+}
+
 export async function sendQuestionDeliveryFailureAlert(question: DeliveryFailureAlert): Promise<void> {
   await InboxMessage.sendOnce(
     {
@@ -27,7 +43,7 @@ export async function sendQuestionDeliveryFailureAlert(question: DeliveryFailure
       senderType: 'system',
       wakeEligible: false,
       subject: 'Agent question answer delivery failed',
-      content: `An accepted answer could not be delivered to agent ${question.agentId}. Retry from the Action Center after resolving the target agent state.`,
+      content: questionDeliveryFailureAlertContent(question),
       metadata: {
         source: 'agent-question-delivery-failure',
         questionId: question.id,

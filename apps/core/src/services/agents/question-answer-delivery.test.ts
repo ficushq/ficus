@@ -24,7 +24,11 @@ import {
   waitForQuestionAnswerDeliveryDrains,
 } from './question-answer-delivery'
 import { retryAgentQuestionAnswerDelivery } from './questions'
-import { reconcileQuestionDeliveryFailureAlertsOnce } from './question-delivery-failure-alert'
+import {
+  questionDeliveryFailureAlertContent,
+  reconcileQuestionDeliveryFailureAlertsOnce,
+} from './question-delivery-failure-alert'
+import { FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
 import { prepareInboxDelivery } from '../inbox/inboxDelivery'
 import type { MessageMetadata, QuestionData } from '@ficus/shared'
 
@@ -252,6 +256,23 @@ describe('question answer delivery outbox', () => {
       return metadata?.source === 'agent-question-delivery-failure' && ids.includes(metadata.questionId ?? '')
     })
     expect(alerts.map((message) => (message.metadata as { questionId: string }).questionId).sort()).toEqual(ids)
+  })
+
+  it('tells the operator why delivery failed, and that a retry cannot deliver to a replaced attempt', () => {
+    const agentId = 'agent-1'
+    const replaced = questionDeliveryFailureAlertContent({ agentId, lastError: FLOW_WAIT_SUPERSEDED_MESSAGE })
+    expect(replaced).toContain('was replaced before the answer arrived')
+    expect(replaced).toContain('Retrying will not deliver it')
+    expect(replaced).not.toContain('Retry from the Action Center')
+
+    expect(
+      questionDeliveryFailureAlertContent({ agentId, lastError: 'Agent agent-1 is terminating.\n  at stack' })
+    ).toBe(
+      'An accepted answer could not be delivered to agent agent-1: Agent agent-1 is terminating. Retry from the Action Center after resolving the target agent state.'
+    )
+    expect(questionDeliveryFailureAlertContent({ agentId, lastError: null })).toBe(
+      'An accepted answer could not be delivered to agent agent-1. Retry from the Action Center after resolving the target agent state.'
+    )
   })
 
   it('retries a failed alert write because no durable idempotency record exists', async () => {
