@@ -1598,13 +1598,20 @@ test('late validation outcomes update real counts and versions without repeating
   expect(notices).toHaveLength(1)
 })
 
-async function heldSubagent() {
+async function failedSubagent(error = toolNameRejection) {
   const { spyOn } = await import('bun:test')
   const { SubagentRunner } = await import('../../entities/agent-runners/subagent-runner')
   const { classifyTurnFailure } = await import('../execution/failure-classification')
   const child = await Agent.create({ agentTypeId: prefix, squadId: squad.id, parentAgentId: worker.id, persist: false })
   const run = await child.queueExecution({ message: 'Narrow delegated task' })
   const runner = new SubagentRunner(run, child, await child.mustGetAgentType())
+  let finalResult: Promise<void> | undefined
+  const target = runner as unknown as { deliverResultAndSelfTerminate: (...args: any[]) => Promise<void> }
+  const deliver = target.deliverResultAndSelfTerminate.bind(runner)
+  const delivered = spyOn(target, 'deliverResultAndSelfTerminate').mockImplementation((...args) => {
+    finalResult = deliver(...args)
+    return finalResult
+  })
   let settle!: () => void
   const settled = new Promise<void>((resolve) => {
     settle = resolve
@@ -1618,9 +1625,11 @@ async function heldSubagent() {
     }
   })
   ;(runner as any).buffer = { push() {}, close() {}, fail() {} }
-  ;(runner as any).onError(toolNameRejection, classifyTurnFailure(toolNameRejection, false))
+  ;(runner as any).onError(error, classifyTurnFailure(error, false))
   await settled
+  await finalResult
   failed.mockRestore()
+  delivered.mockRestore()
   return { child, run, runner }
 }
 
@@ -1628,11 +1637,15 @@ test('a validation-held subagent remains recoverable, notifies its parent withou
   const { recoveryEpisodes } = await import('../../db')
   const { SubagentRunner } = await import('../../entities/agent-runners/subagent-runner')
   const { Subagent } = await import('../../entities/Subagent')
-  const { child, run } = await heldSubagent()
+  const { child, run } = await failedSubagent()
   expect((await Agent.mustFind(child.id)).status).toBe('idle')
   expect((await Agent.mustFind(child.id)).metadata?.completionDelivered).not.toBe(true)
   const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))
   expect(record!.state.state).toBe('waiting-manager')
+  await expect(
+    Subagent.dispatch({ parentAgentId: worker.id, subagents: [{ instructions: 'Replace held child' }] })
+  ).rejects.toThrow('pending request-validation recovery')
+  expect(await Subagent.listChildren(worker.id)).toHaveLength(1)
   await expect(
     Subagent.dispatch({
       parentAgentId: worker.id,
@@ -1675,10 +1688,16 @@ test('a validation-held subagent remains recoverable, notifies its parent withou
 test('a parent can cancel a validation-held child and an old continuation cannot revive it', async () => {
   const { recoveryEpisodes } = await import('../../db')
   const { Subagent } = await import('../../entities/Subagent')
-  const { child } = await heldSubagent()
+  const { child } = await failedSubagent()
   expect((await Agent.mustFind(child.id)).status).toBe('idle')
   await Subagent.stop({ parentAgentId: worker.id, subagentId: child.id, reason: 'Task canceled' })
   expect((await Agent.mustFind(child.id)).status).toBe('dormant')
+  await expect(
+    Subagent.revive({ parentAgentId: worker.id, subagentId: child.id, instructions: 'Bypass stopped hold' })
+  ).rejects.toThrow('pending request-validation recovery')
+  await expect(
+    Subagent.dispatch({ parentAgentId: worker.id, subagents: [{ instructions: 'Replace canceled child' }] })
+  ).rejects.toThrow('pending request-validation recovery')
   const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))
   const api = await store()
   const continued = await api.decideRecovery(
@@ -1701,7 +1720,7 @@ test('a parent can cancel a validation-held child and an old continuation cannot
 test('parent task cancellation cascades to a validation-held child and fences recovery delivery', async () => {
   const { recoveryEpisodes } = await import('../../db')
   const { requestAgentLifecycle } = await import('../agent/lifecycle')
-  const { child } = await heldSubagent()
+  const { child } = await failedSubagent()
   await requestAgentLifecycle(worker, { target: 'dormant', reason: 'Parent task canceled', stopActive: true })
   expect((await Agent.mustFind(child.id)).status).toBe('dormant')
   const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))
@@ -1717,4 +1736,15 @@ test('parent task cancellation cascades to a validation-held child and fences re
     .where(eq(inbox.idempotencyKey, `recovery-continued:${continued.id}:${continued.version}`))
   expect(await api.recoveryContinuationIsCurrent(db, wake!.id, child.id)).toBe(false)
   expect(await child.getActiveExecution()).toBeNull()
+})
+
+test('unrelated subagent provider failures still deliver a final failure and become dormant rather than opening validation holds', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { child } = await failedSubagent('Unrelated model error')
+  expect((await Agent.mustFind(child.id)).status).toBe('dormant')
+  const final = await db.select().from(inbox).where(eq(inbox.senderId, child.id))
+  expect(final).toHaveLength(1)
+  expect(final[0]!.metadata?.resultStatus).toBe('failed')
+  expect(final[0]!.content).toContain('Unrelated model error')
+  expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))).toHaveLength(0)
 })

@@ -891,7 +891,7 @@ export async function recoveryContinuationIsCurrent(
   }
   const [agent] = await dbx.select().from(agents).where(eq(agents.id, agentId))
   if (!agent || ['waiting-input', 'terminated'].includes(agent.status)) return false
-  if (agent.parentAgentId) {
+  if (record.state.requestValidation && agent.parentAgentId) {
     if (!isLiveAgentStatus(agent.status)) return false
     const [parent] = await dbx.select().from(agents).where(eq(agents.id, agent.parentAgentId))
     if (!parent || !isLiveAgentStatus(parent.status)) return false

@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { LIVE_AGENT_STATUSES, isLiveAgentStatus, type AgentStatus } from '@ficus/shared'
-import { agents, db, withDedicatedDbTransaction } from '../db'
+import { agents, db, recoveryEpisodes, withDedicatedDbTransaction } from '../db'
+import type { DbHandle } from '../services/work-streams/waits'
 import { Agent, AgentTargetUnavailableError } from './Agent'
 import { InboxMessage } from './InboxMessage'
 import { createLogger } from '../lib/infra/logger'
@@ -49,6 +50,29 @@ export function setCascadeDormantChildBeforeRequestHookForTest(
   hook: ((parentAgentId: string, childId: string) => Promise<void>) | undefined
 ): void {
   cascadeDormantChildBeforeRequestHook = hook
+}
+
+/** A replacement or explicit wake is not authority to clear a child's software
+ * recovery. Dispatch calls this while holding the existing parent admission lock.
+ * Keep this exception closed to the known request-validation hold. */
+async function assertNoChildValidationHold(dbx: DbHandle, parentAgentId: string, childId?: string): Promise<void> {
+  const [held] = await dbx
+    .select({ id: recoveryEpisodes.id })
+    .from(recoveryEpisodes)
+    .innerJoin(agents, eq(agents.id, recoveryEpisodes.agentId))
+    .where(
+      and(
+        eq(agents.parentAgentId, parentAgentId),
+        childId ? eq(agents.id, childId) : undefined,
+        sql`${recoveryEpisodes.state}->>'requestValidation' = 'true'`,
+        sql`${recoveryEpisodes.state}->>'state' IN ('waiting-manager', 'waiting-owner', 'stopped')`
+      )
+    )
+    .limit(1)
+  if (held)
+    throw new Error(
+      'A child has a pending request-validation recovery; use its authorized recovery decision before replacing or reviving it'
+    )
 }
 
 export class Subagent {
@@ -116,6 +140,7 @@ export class Subagent {
         if (subagents.length > free) {
           throw new Error(`Subagent cap exceeded: ${free} slots free, requested ${subagents.length}`)
         }
+        await assertNoChildValidationHold(tx, parentAgentId)
         const parent = new Agent(parentRow)
         const inheritedParentChain = subagents.some((spec) => spec.inheritModel)
           ? await parent.getEffectiveModelSpec()
@@ -219,6 +244,7 @@ export class Subagent {
     if (child.parentAgentId !== input.parentAgentId) throw new Error('Subagent does not belong to parent')
     if (child.status === 'terminated') throw new Error('Subagent is terminated and cannot be revived')
     if (child.status !== 'dormant') throw new Error('Subagent is already live')
+    await assertNoChildValidationHold(db, input.parentAgentId, child.id)
     if (!(await child.wake())) {
       throw new AgentTargetUnavailableError(
         child.id,

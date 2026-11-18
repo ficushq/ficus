@@ -165,8 +165,10 @@ agent-recovery action. A subagent with this specific rejection remains live and
 recoverable, still counts toward delegation limits, and sends its live parent a
 non-final hold notice. Corrected completion delivers its final result once; child
 or parent cancellation still makes it dormant and fences stale recovery wakes.
-Other subagent failures retain their existing final-result behavior. Repeated outcome delivery is idempotent; late distinct
-outcomes update actual counts and versions without repeating the same hold
+Pending validation recovery also refuses replacement dispatches by the parent and
+explicit revival of a canceled child; neither action substitutes for an authorized
+recovery decision. Other subagent failures retain their existing final-result
+behavior. Repeated outcome delivery is idempotent; late distinct outcomes update actual counts and versions without repeating the same hold
 notification. Refresh the current record before deciding if a version is stale.
 
 Correct the serializer/request or make a safe re-plan **before Continue**. Continue
