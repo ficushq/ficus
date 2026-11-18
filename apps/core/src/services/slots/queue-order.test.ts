@@ -3,7 +3,7 @@ import { type WorkStreamPriority } from '@ficus/shared'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters, squads, workStreams } from '../../db'
 import { Squad } from '../../entities/Squad'
-import { orderedSlotWaiters } from './queue-order'
+import { orderedSlotWaiters, SLOT_WAIT_AGING_INTERVAL_MS } from './queue-order'
 import {
   claimSlot,
   getPool,
@@ -65,9 +65,7 @@ async function enqueue(priority?: WorkStreamPriority, viaClaim = false) {
 }
 
 async function queue() {
-  return db.transaction(async (tx) =>
-    (await orderedSlotWaiters(tx, { id: poolId, squadId })).map((waiter) => waiter.id)
-  )
+  return db.transaction(async (tx) => (await orderedSlotWaiters(tx, { id: poolId })).map((waiter) => waiter.id))
 }
 
 async function releaseHolder() {
@@ -127,6 +125,37 @@ test('agents without active work use normal priority and keep FIFO ties; oldest 
   expect((await getPool(squadId, 'tests', { diagnostics: true })).oldestWaiterAgeMs).toBeGreaterThanOrEqual(600_000)
   await releaseHolder()
   expect(await queue()).toEqual([standalone, normal, low].map((w) => w.waiterId))
+})
+
+test('a waiter gains one priority level per aging interval, up to critical, and keeps its place in line', async () => {
+  const low = await enqueue('low')
+  const normal = await enqueue('normal')
+  const high = await enqueue('high')
+  const critical = await enqueue('critical')
+  const waited = (waiterId: string, minutes: number) =>
+    db
+      .update(slotWaiters)
+      .set({ queuedAt: sql`clock_timestamp() - make_interval(mins => ${minutes})` })
+      .where(eq(slotWaiters.id, waiterId))
+  const order = [critical, high, normal, low].map((w) => w.waiterId)
+  expect(await queue()).toEqual(order)
+
+  // Short of one interval nothing moves.
+  await waited(low.waiterId, SLOT_WAIT_AGING_INTERVAL_MS / 60_000 - 1)
+  expect(await queue()).toEqual(order)
+  // One interval: low competes as normal, ahead of the normal waiter that queued after it.
+  await waited(low.waiterId, SLOT_WAIT_AGING_INTERVAL_MS / 60_000 + 1)
+  expect(await queue()).toEqual([critical, high, low, normal].map((w) => w.waiterId))
+  // Three intervals: it has reached critical and is first among critical waiters.
+  await waited(low.waiterId, (3 * SLOT_WAIT_AGING_INTERVAL_MS) / 60_000 + 1)
+  expect(await queue()).toEqual([low, critical, high, normal].map((w) => w.waiterId))
+  // Aging stops at critical: a day in the queue ranks no higher.
+  await waited(low.waiterId, 24 * 60)
+  await waited(critical.waiterId, 24 * 60 + 1)
+  expect(await queue()).toEqual([low, critical, high, normal].map((w) => w.waiterId))
+
+  await releaseHolder()
+  expect((await db.select().from(slotWaiters).where(eq(slotWaiters.id, low.waiterId)))[0]!.status).toBe('granted')
 })
 
 for (const invalid of ['removed-member', 'other-squad', 'done', 'canceled', 'owner-only'] as const) {

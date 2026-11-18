@@ -31,6 +31,18 @@ describe('renderSlotPoolsPrompt', () => {
     )
   })
 
+  test('says when a pool is host-shared and how many claims the machine host allows', () => {
+    const section = renderSlotPoolsPrompt([
+      { key: 'heavy-work', capacity: 3, claimTimeoutMs: 45 * 60_000, usage: 'Claim before builds.', hostCapacity: 3 },
+      { key: 'solo', capacity: 1, claimTimeoutMs: 45 * 60_000, usage: null, hostCapacity: 1 },
+    ])
+    expect(section.split('\n').slice(4)).toEqual([
+      '- `heavy-work`: capacity 3, claim timeout 45m, host-shared (this machine host allows 3 such claims at once across all squads on it, so you can be queued while this pool has room)',
+      '  Claim before builds.',
+      '- `solo`: capacity 1, claim timeout 45m, host-shared (this machine host allows 1 such claim at once across all squads on it, so you can be queued while this pool has room)',
+    ])
+  })
+
   test('lists configuration only, never live usage, and skips blank guidance', () => {
     const section = renderSlotPoolsPrompt([{ key: 'tests', capacity: 3, claimTimeoutMs: 90_000, usage: '  ' }])
     // The pool entry is the last line: no holder, queue, or guidance lines follow.

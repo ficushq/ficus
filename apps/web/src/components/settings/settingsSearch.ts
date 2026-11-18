@@ -129,6 +129,12 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     label: 'Max Concurrent Agents',
     keywords: 'execution concurrency limit maximum simultaneous agents',
   },
+  {
+    section: 'system',
+    id: 'host-slot-capacity',
+    label: 'Machine Host Slot Budget',
+    keywords: 'slot pool host-shared heavy work capacity machine memory budget squads',
+  },
 
   {
     section: 'appearance',

@@ -19,12 +19,26 @@ export function AgentExecutionSection() {
       </p>
     )
   const setting = settings?.find((item) => item.key === 'MAX_CONCURRENT_AGENTS')
-  if (!setting) return null
+  // Absent on a server that predates host-shared slot pools.
+  const hostSlots = settings?.find((item) => item.key === 'HOST_SLOT_CAPACITY')
+  if (!setting && !hostSlots) return null
   return (
-    <div data-setting-target="execution" className="ficus-section py-5">
-      <div data-setting-target="max-concurrent-agents">
-        <NumberSetting setting={setting} label="Maximum active agents" canWrite={can('settings:write')} />
-      </div>
+    <div data-setting-target="execution" className="ficus-section py-5 space-y-6">
+      {setting && (
+        <div data-setting-target="max-concurrent-agents">
+          <NumberSetting setting={setting} label="Maximum active agents" canWrite={can('settings:write')} />
+        </div>
+      )}
+      {hostSlots && (
+        <div data-setting-target="host-slot-capacity">
+          <NumberSetting
+            setting={hostSlots}
+            label="Machine host slot budget"
+            canWrite={can('settings:write')}
+            min={0}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -42,10 +56,13 @@ export function NumberSetting({
   setting,
   label,
   canWrite,
+  min,
 }: {
   setting: SettingMetadata
   label: string
   canWrite: boolean
+  /** Lowest value the input offers; the server still owns the accepted range. */
+  min?: number
 }) {
   const queryClient = useQueryClient()
   const { setSetting, deleteSetting } = useSettingsApi()
@@ -73,6 +90,7 @@ export function NumberSetting({
       setting={setting}
       label={label}
       canWrite={canWrite}
+      min={min}
       draft={draft}
       onDraftChange={setDraft}
       onSave={() => save.mutate(draft.trim())}
@@ -108,10 +126,12 @@ export function NumberSettingFields({
   isSaving,
   isResetting,
   errorMessage,
+  min = 1,
 }: {
   setting: SettingMetadata
   label: string
   canWrite: boolean
+  min?: number
   draft: string
   onDraftChange: (value: string) => void
   onSave: () => void
@@ -122,6 +142,9 @@ export function NumberSettingFields({
 }) {
   const disabled = !canWrite || isSaving || isResetting
   const isDirty = draft.trim() !== setting.value
+  // A setting whose default is a word (HOST_SLOT_CAPACITY's `auto`) has no
+  // number to show until one is stored: show the word as the placeholder.
+  const wordDefault = Number.isNaN(Number(setting.default)) ? setting.default : undefined
 
   return (
     <div className="space-y-3">
@@ -139,9 +162,10 @@ export function NumberSettingFields({
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="number"
-          min={1}
+          min={min}
           step={1}
-          value={draft}
+          value={Number.isNaN(Number(draft)) ? '' : draft}
+          placeholder={wordDefault}
           aria-label={label}
           aria-disabled={disabled}
           disabled={disabled}

@@ -137,6 +137,7 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
   const [capacity, setCapacity] = useState('1')
   const [timeout, setTimeoutValue] = useState('1h')
   const [usage, setUsage] = useState('')
+  const [hostShared, setHostShared] = useState(false)
   const [touchedKey, setTouchedKey] = useState(false)
 
   const keyError = slotKeyError(key)
@@ -152,6 +153,7 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
         capacity: parseSlotCapacity(capacity)!,
         claimTimeoutMs: parseSlotTimeout(timeout)!,
         usage: normalizeSlotUsage(usage),
+        ...(hostShared ? { hostShared: true } : {}),
       }),
     onSuccess: onDone,
   })
@@ -190,6 +192,7 @@ function AddSlotPoolForm({ squadId, onDone, onCancel }: { squadId: string; onDon
           />
         </div>
         <UsageField value={usage} onChange={setUsage} error={usageError} />
+        <HostSharedField checked={hostShared} onChange={setHostShared} />
       </div>
       <div className="flex items-center justify-end gap-2 mt-4">
         <button
@@ -284,6 +287,21 @@ function UsageField({
   )
 }
 
+function HostSharedField({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-start gap-3">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1" />
+      <span>
+        <span className="block text-sm font-medium text-primary">Share the machine host's budget</span>
+        <span className="block text-xs text-muted">
+          For pools that protect box memory or CPU. A claim then also needs a free unit on the machine host, which every
+          squad on that machine shares, so squads cannot overload the host together.
+        </span>
+      </span>
+    </label>
+  )
+}
+
 function SlotPoolRow({
   squadId,
   pool,
@@ -315,6 +333,7 @@ function SlotPoolRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium font-mono text-primary">{pool.key}</span>
             {!pool.enabled && <Badge color="neutral">Disabled</Badge>}
+            {pool.hostShared && <Badge color="queue">Host-shared</Badge>}
           </div>
           <p className="text-xs text-muted mt-0.5">
             Capacity {pool.capacity} · Claim timeout {formatSlotTimeout(pool.claimTimeoutMs)}
@@ -368,6 +387,11 @@ function SlotPoolRow({
         <span>
           {pool.activeCount}/{pool.capacity} in use
         </span>
+        {pool.host && (
+          <span>
+            Machine host {pool.host.activeCount}/{pool.host.capacity} in use across squads
+          </span>
+        )}
         <span>{pool.queuedCount} queued</span>
         {pool.oldestWaiterAgeMs !== null && <span>Oldest wait {formatSlotAge(pool.oldestWaiterAgeMs)}</span>}
         {!pool.enabled && <span>Not enforced: claims are not queued and agents are not told to claim it.</span>}
@@ -452,6 +476,7 @@ function EditSlotPoolForm({
   const [capacity, setCapacity] = useState(String(pool.capacity))
   const [timeout, setTimeoutValue] = useState(formatSlotTimeout(pool.claimTimeoutMs))
   const [usage, setUsage] = useState(pool.usage ?? '')
+  const [hostShared, setHostShared] = useState(pool.hostShared ?? false)
 
   const capacityError = slotCapacityError(capacity)
   const timeoutError = slotTimeoutError(timeout)
@@ -466,6 +491,7 @@ function EditSlotPoolForm({
   if (nextCapacity !== null && nextCapacity !== pool.capacity) changes.capacity = nextCapacity
   if (nextTimeout !== null && nextTimeout !== pool.claimTimeoutMs) changes.claimTimeoutMs = nextTimeout
   if (nextUsage !== pool.usage) changes.usage = nextUsage
+  if (hostShared !== (pool.hostShared ?? false)) changes.hostShared = hostShared
   const dirty = Object.keys(changes).length > 0
 
   const mutation = useMutation({
@@ -492,6 +518,7 @@ function EditSlotPoolForm({
         />
       </div>
       <UsageField value={usage} onChange={setUsage} error={usageError} />
+      <HostSharedField checked={hostShared} onChange={setHostShared} />
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"

@@ -14,6 +14,7 @@ The detailed runtime documentation is organized by topic below.
 - [VM runtime health and recovery](runtime-recovery.md)
 - [Machine host memory model](memory-model.md): caps, floors, swap, systemd-oomd and the dev-server guard
 - [Leftover processes](leftover-processes.md): attribution and automatic stop of what agent commands leave running
+- [Host slot budget](host-slot-budget.md): host-shared slot pools, the per-machine budget, order across squads and the default pool
 
 ## Section navigation
 

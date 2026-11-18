@@ -76,6 +76,17 @@ export interface SlotHistoryPage {
   nextCursor: string | null
 }
 
+/**
+ * The machine host's slot budget behind a host-shared pool: one budget for
+ * every host-shared pool of every squad on that machine.
+ */
+export interface SlotHostBudgetView {
+  capacity: number
+  /** Claims held against the budget across all squads. */
+  activeCount: number
+  availableCount: number
+}
+
 export interface SlotPoolSummary {
   id: string
   squadId: string
@@ -87,7 +98,12 @@ export interface SlotPoolSummary {
   /** False while the pool is disabled: not enforced, no queueing, omitted from prompts. */
   enabled: boolean
   disabledAt: Date | null
+  /** True when claims also draw on the machine host's shared budget. */
+  hostShared: boolean
+  /** Present for a host-shared pool whose squad is on a machine with a budget. */
+  host?: SlotHostBudgetView
   activeCount: number
+  /** Units a new claim could take now: for a host-shared pool, never more than the host has free. */
   availableCount: number
   queuedCount: number
   holders: SlotClaimView[]
@@ -107,6 +123,7 @@ export interface SlotPoolRecord {
   createdAt: Date
   updatedAt: Date
   disabledAt: Date | null
+  hostShared: boolean
   unregisteredAt: Date | null
 }
 
@@ -166,6 +183,8 @@ export interface SlotAcquirePoolSnapshot {
   activeCount: number
   availableCount: number
   queuedCount: number
+  /** Present only for a host-shared pool whose squad is on a machine with a budget. */
+  host?: SlotHostBudgetView
 }
 
 export interface SlotAcquireClaim {

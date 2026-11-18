@@ -141,8 +141,8 @@ against that squad.
 ```bash
 ficus slot list [key] [--squad <id>]
 ficus slot history <key> [--limit <1..100>] [--cursor <opaque>] [--squad <id>]
-ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--usage <text>] [--squad <id>]
-ficus slot update <key> [--capacity <n>] [--timeout <duration>] [--usage <text> | --clear-usage] [--squad <id>]
+ficus slot register <key> [--capacity <n>] [--timeout <duration>] [--usage <text>] [--host-shared] [--squad <id>]
+ficus slot update <key> [--capacity <n>] [--timeout <duration>] [--usage <text> | --clear-usage] [--host-shared | --no-host-shared] [--squad <id>]
 ficus slot disable <key> [--squad <id>]
 ficus slot enable <key> [--squad <id>]
 ficus slot unregister <key> [--squad <id>]
@@ -161,6 +161,15 @@ squad receives a generated **Slot Pools** section, built at prompt assembly,
 listing each enabled pool's key, capacity, claim timeout and guidance. Put
 per-pool rules in guidance rather than squad context. Live usage is not in the
 prompt; use `ficus slot list`.
+
+A **host-shared** pool (`--host-shared`) also draws on the slot budget of the
+machine host its squad's box is on, which every host-shared pool of every squad
+on that machine shares. A claim then needs a free unit in both, so squads
+cannot overload one host together, and an agent can be queued while its own
+pool has room. Use it for pools that protect box memory or CPU. A squad with no
+pool at all on such a machine is given a host-shared `heavy-work` pool. See
+[host slot budget](../machines/host-slot-budget.md) for the budget, the order
+across squads and the default pool.
 
 `ficus slot disable` stops enforcing a pool without unregistering it: its key,
 capacity, timeout, guidance and history are kept, it disappears from agent
@@ -194,6 +203,12 @@ being only a stream's owner or creator does not. Agents without active work
 streams use normal priority. Membership and priority changes affect the next
 grant without preempting existing holders or resetting FIFO position. This uses
 stored work-stream priorities, not dependency-based boosts or execution timing.
+
+A waiter gains one priority level for each 30 minutes it has been queued, up to
+critical, so low-priority work cannot wait forever behind a pool that
+higher-priority work keeps busy. For a host-shared pool the machine's next unit
+goes to the best-placed waiter of any squad on it: priority first, then the
+squad holding fewer of the machine's units, then first come.
 
 A live queued subscription suppresses automatic work-stream continuation nudges
 and idle escalation until no queued waits remain. It does not block human

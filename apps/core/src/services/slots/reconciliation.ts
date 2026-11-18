@@ -5,7 +5,14 @@ import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters } fro
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { queueSlotExpiryWarnings, slotNotificationNotifier } from './notifications'
-import { expireAndPromoteLocked, settleInactiveClaimNotifications, type PromotionResult } from './store'
+import {
+  expireAndPromoteLocked,
+  promoteHostGroup,
+  settleInactiveClaimNotifications,
+  type PromotionResult,
+} from './store'
+import { machinesWithQueuedHostWaiters } from './host-budget'
+import { ensureDefaultHostPools } from './default-host-pool'
 
 const log = createLogger('slot-reconciliation')
 export const SLOT_RECONCILIATION_INTERVAL_MS = 30_000
@@ -175,6 +182,16 @@ export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promis
     summary.maxGrantLatencyMs = Math.max(summary.maxGrantLatencyMs, result.promotion.maxGrantLatencyMs)
   }
 
+  // A machine unit freed where no pool operation could hand it on (dormancy
+  // cleanup, squad archival, a failed post-commit promotion) is granted here.
+  for (const machineId of await machinesWithQueuedHostWaiters(db)) {
+    try {
+      summary.promotedClaims += await promoteHostGroup(machineId)
+    } catch (error) {
+      log.warn('Host slot promotion failed', { machineId, error })
+    }
+  }
+
   const [inventory] = await db.execute<{
     activeCount: number
     queueDepth: number
@@ -235,6 +252,7 @@ export function startSlotReconciliation(): void {
     runImmediately: false,
     task: async () => {
       await reconcileSlotsOnce()
+      await ensureDefaultHostPools()
     },
   })
   runner.start()

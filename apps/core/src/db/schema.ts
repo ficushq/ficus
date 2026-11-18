@@ -4733,6 +4733,10 @@ export const slotPools = pgTable(
     // Disabled pools keep their configuration and history but are not
     // enforced: no admission, no waiters, omitted from agent prompts.
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    // Host-shared pools also draw on their machine host's slot budget, which
+    // every host-shared pool of every squad on that machine shares
+    // (services/slots/host-budget.ts). Inert where the squad has no machine.
+    hostShared: boolean('host_shared').notNull().default(false),
     unregisteredAt: timestamp('unregistered_at', { withTimezone: true }),
   },
   (table) => [

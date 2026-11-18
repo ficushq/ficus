@@ -54,6 +54,7 @@ const registerSchema = z.object({
   capacity: z.int().min(1).max(MAX_SLOT_CAPACITY).optional(),
   claimTimeoutMs: z.int().min(MIN_SLOT_CLAIM_TIMEOUT_MS).max(MAX_SLOT_CLAIM_TIMEOUT_MS).optional(),
   usage: usageSchema.optional(),
+  hostShared: z.boolean().optional(),
 })
 /** Partial update: send only the fields to change. */
 const updateSchema = registerSchema
@@ -64,8 +65,9 @@ const updateSchema = registerSchema
       body.capacity !== undefined ||
       body.claimTimeoutMs !== undefined ||
       body.usage !== undefined ||
-      body.enabled !== undefined,
-    { message: 'capacity, claimTimeoutMs, usage, or enabled is required' }
+      body.enabled !== undefined ||
+      body.hostShared !== undefined,
+    { message: 'capacity, claimTimeoutMs, usage, enabled, or hostShared is required' }
   )
 const historyQuerySchema = z.object({
   limit: z.preprocess(
@@ -120,19 +122,22 @@ function validUuid(raw: string, kind: 'claim' | 'waiter'): string {
   return parsed.data
 }
 
+const HOST_SHARED_NOTE =
+  "It is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares."
+
 function registerResponse(pool: SlotPoolRecord): SlotPoolMutationResponse {
   return {
     outcome: 'registered',
     message: `Slot pool "${pool.key}" is registered with capacity ${pool.capacity} and a ${formatSlotClaimTimeout(
       pool.claimTimeoutMs
-    )} claim timeout${pool.usage ? ' and usage guidance' : ''}.`,
+    )} claim timeout${pool.usage ? ' and usage guidance' : ''}.${pool.hostShared ? ` ${HOST_SHARED_NOTE}` : ''}`,
     pool,
   }
 }
 
 function updateResponse(
   pool: SlotPoolRecord,
-  input: { capacity?: number; claimTimeoutMs?: number; usage?: string | null; enabled?: boolean },
+  input: { capacity?: number; claimTimeoutMs?: number; usage?: string | null; enabled?: boolean; hostShared?: boolean },
   releasedWaiters: number
 ): SlotPoolMutationResponse {
   const changes: string[] = []
@@ -151,6 +156,13 @@ function updateResponse(
     } else {
       sentences.push(`Slot pool "${pool.key}" is enabled.`)
     }
+  }
+  if (input.hostShared !== undefined) {
+    sentences.push(
+      pool.hostShared
+        ? `Slot pool "${pool.key}" is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares.`
+        : `Slot pool "${pool.key}" is no longer host-shared: only its own capacity limits it.`
+    )
   }
   return { outcome: 'updated', message: sentences.join(' '), pool }
 }

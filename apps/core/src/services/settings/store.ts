@@ -12,6 +12,12 @@ import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/Perio
 import { listen, notify } from '../../lib/infra/local-events'
 import { DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS } from '../updates/types'
 import {
+  HOST_SLOT_CAPACITY_SETTING_KEY,
+  MAX_HOST_SLOT_CAPACITY,
+  envHostSlotCapacityDefault,
+  hostSlotCapacityError,
+} from '../slots/host-capacity-setting'
+import {
   MAX_CONCURRENT_AGENTS_SETTING_KEY,
   MAX_MAX_CONCURRENT_AGENTS,
   MIN_MAX_CONCURRENT_AGENTS,
@@ -284,6 +290,22 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     // the broadcast the worker keeps admitting at the OLD cap for up to 60s
     // after the operator saves — which is the whole promise of "takes effect
     // without a restart".
+    crossProcess: true,
+  },
+  [HOST_SLOT_CAPACITY_SETTING_KEY]: {
+    type: 'number',
+    // Env-aware, like MAX_CONCURRENT_AGENTS: reports what applies with nothing
+    // stored. `auto` means each machine's budget is derived from its size.
+    default: envHostSlotCapacityDefault(),
+    description:
+      `How many claims on host-shared slot pools one machine host allows at once, across every squad on it ` +
+      `(0-${MAX_HOST_SLOT_CAPACITY}). Unset, each machine's budget follows its size: one per 4 GiB of usable memory, ` +
+      `at most one per CPU and at least one. 0 turns host budgets off, so host-shared pools are limited only by ` +
+      `their own capacity. Takes effect without a restart. A value stored here overrides the ` +
+      `FICUS_HOST_SLOT_CAPACITY environment variable; clear it to fall back to that variable.`,
+    validate: (value) => hostSlotCapacityError(value),
+    // Written by ficus-api, which also admits claims; ficus-worker reads it for
+    // reconciliation and the default pool's capacity.
     crossProcess: true,
   },
   DECISION_ROUTING: {

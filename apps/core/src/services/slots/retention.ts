@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
+import { DEFAULT_HOST_POOL_CREATOR } from './host-budget'
 
 const log = createLogger('slot-retention')
 
@@ -25,6 +26,10 @@ const log = createLogger('slot-retention')
  * once no waiter or notification still points at it, and a pool only once no
  * child row remains, so the prune never violates a RESTRICT constraint
  * mid-pass. Active, queued, pending, and delivering state is never touched.
+ *
+ * An unregistered default host-shared pool is kept: its row is what records
+ * that the squad's manager removed it, so it is never registered again
+ * (default-host-pool.ts).
  */
 export const SLOT_TERMINAL_RETENTION_DAYS = 30
 export const SLOT_PRUNE_INTERVAL_MS = 60 * 60_000
@@ -121,6 +126,7 @@ export async function pruneTerminalSlotState(
   const pools = await pruneBatches(
     sql`SELECT pool.id FROM slot_pools pool
       WHERE pool.unregistered_at IS NOT NULL AND pool.unregistered_at < ${floor}::timestamptz
+        AND pool.created_by <> ${DEFAULT_HOST_POOL_CREATOR}
         AND NOT EXISTS (SELECT 1 FROM slot_claims claim WHERE claim.pool_id = pool.id)
         AND NOT EXISTS (SELECT 1 FROM slot_waiters waiter WHERE waiter.pool_id = pool.id)
         AND NOT EXISTS (SELECT 1 FROM slot_notifications notice WHERE notice.pool_id = pool.id)
