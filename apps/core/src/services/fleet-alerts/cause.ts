@@ -23,7 +23,7 @@ export function sanitizeProviderRecord(
 ): SanitizedProviderCause {
   const remediation =
     (record.kind === 'expired-oauth' || record.kind === 'invalid-credential') && SAFE_PROVIDER_ID.test(record.provider)
-      ? `Run \`ficus pa login ${record.provider}\` to authenticate again.`
+      ? `Re-authorize ${record.provider} in Settings → AI Providers to authenticate again.`
       : undefined
   return { kind: record.kind, summary: SUMMARIES[record.kind], ...(remediation ? { remediation } : {}) }
 }

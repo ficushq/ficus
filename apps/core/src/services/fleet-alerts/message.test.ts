@@ -25,7 +25,7 @@ function claim(overrides: Partial<FleetIncidentNotificationClaim>): FleetInciden
     causeSummary:
       '1 pending work item remains; oldest is 4070m old. No execution run has started in the last 45m of pending demand, and no open provider or sandbox incident explains the delay.',
     remediation:
-      'Check machine + sandbox health first (`ficus machines list`), then worker pickup (`ficus worker status`).',
+      'Check machine + sandbox health first (the box/tunnel logs), then worker pickup (`ficus worker status`).',
     details: {},
     ...overrides,
   }
@@ -63,7 +63,7 @@ describe('fleet incident messages', () => {
       'Work in squad Ficus Core has been stalled for 45m.\n\n' +
         'Cause: No agent run has started, and no provider or sandbox problem explains it.\n' +
         'Waiting: 1 work item, the oldest for 2d 19h\n' +
-        'Fix: Check machine + sandbox health first (`ficus machines list`), then worker pickup (`ficus worker status`).'
+        'Fix: Check machine + sandbox health first (the box/tunnel logs), then worker pickup (`ficus worker status`).'
     )
     expect(message.content).not.toContain(SQUAD_ID)
     expect(message.content).not.toContain('4070m')
@@ -132,7 +132,7 @@ describe('fleet incident messages', () => {
       scopeKey: 'provider:openai-codex:account:*',
       causeCode: 'expired-oauth',
       causeSummary: 'Provider OAuth credentials expired or were revoked.',
-      remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
+      remediation: 'Re-authorize openai-codex in Settings → AI Providers to authenticate again.',
     }
     const alert = renderFleetIncidentMessage(claim(base), {}, NOW)
     expect(alert.subject).toBe('OpenAI Codex: sign-in expired')
@@ -140,7 +140,7 @@ describe('fleet incident messages', () => {
       'Agents that use OpenAI Codex can’t run until this clears.\n\n' +
         'Cause: OpenAI Codex sign-in expired or was revoked.\n' +
         'Started: 45m ago\n' +
-        'Fix: Run `ficus pa login openai-codex` to authenticate again.'
+        'Fix: Re-authorize openai-codex in Settings → AI Providers to authenticate again.'
     )
     expect(alert.push.subtitle).toBeUndefined()
     const recovery = renderFleetIncidentMessage(
