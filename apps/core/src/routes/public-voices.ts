@@ -1,0 +1,130 @@
+import { Hono } from 'hono'
+import {
+  DEFAULT_PUBLIC_VOICE_ID,
+  PUBLIC_VOICE_MAX_BYTES,
+  publicVoiceBytes,
+  publicVoiceProfileInputSchema,
+  publicVoiceProfileUpdateSchema,
+  renderProfileAlone,
+  type PublicVoiceProfile,
+} from '@ficus/shared'
+import { publicErrorMessage } from '../db/errors'
+import { PublicVoice } from '../entities/PublicVoice'
+import { zValidator } from '../lib/zod-validator'
+import { requirePermission } from '../middleware'
+import { publicVoiceSync } from '../services/config-sync'
+import { describeProfiles, overCapSquadCount } from '../services/public-voice/profiles'
+
+/**
+ * Voice profiles: named, instance-level public voices that squads are
+ * assigned to. Read with `agent-types:read`, managed with `agent-types:update`
+ * (the permission that already covers instance-wide prompt text). Assigning a
+ * profile to a squad is a squad route under `squads:update`.
+ */
+export const publicVoicesRoutes = new Hono()
+
+function tooLong(profile: PublicVoiceProfile) {
+  const bytes = publicVoiceBytes(renderProfileAlone(profile))
+  return bytes > PUBLIC_VOICE_MAX_BYTES ? { error: 'public_voice_too_long', bytes, maxBytes: PUBLIC_VOICE_MAX_BYTES } : null
+}
+
+async function describeOne(id: string) {
+  const profile = await PublicVoice.find(id)
+  return profile ? (await describeProfiles([profile]))[0]! : null
+}
+
+publicVoicesRoutes.get('/', requirePermission('agent-types:read'), async (c) => {
+  return c.json(await describeProfiles(await PublicVoice.list({ includeDisabled: true })))
+})
+
+publicVoicesRoutes.get('/:id', requirePermission('agent-types:read'), async (c) => {
+  const profile = await describeOne(c.req.param('id'))
+  return profile ? c.json(profile) : c.json({ error: 'Voice profile not found' }, 404)
+})
+
+publicVoicesRoutes.get('/:id/template-diff', requirePermission('agent-types:read'), async (c) => {
+  try {
+    return c.json(await publicVoiceSync.getTemplateDiff(c.req.param('id')))
+  } catch (error) {
+    return c.json({ error: publicErrorMessage(error) }, 404)
+  }
+})
+
+publicVoicesRoutes.post(
+  '/',
+  requirePermission('agent-types:update'),
+  zValidator('json', publicVoiceProfileInputSchema),
+  async (c) => {
+    const input = c.req.valid('json')
+    if (await PublicVoice.find(input.id)) return c.json({ error: `Voice profile "${input.id}" already exists` }, 409)
+    const candidate = { ...input, description: input.description ?? null, surfaces: input.surfaces ?? {}, disabled: false }
+    const over = tooLong(candidate)
+    if (over) return c.json(over, 400)
+    await PublicVoice.upsert(input)
+    return c.json(await describeOne(input.id), 201)
+  }
+)
+
+publicVoicesRoutes.put(
+  '/:id',
+  requirePermission('agent-types:update'),
+  zValidator('json', publicVoiceProfileUpdateSchema),
+  async (c) => {
+    const id = c.req.param('id')
+    const existing = await PublicVoice.find(id)
+    if (!existing) return c.json({ error: 'Voice profile not found' }, 404)
+    const input = c.req.valid('json')
+    const candidate = {
+      id,
+      name: input.name,
+      description: Object.hasOwn(input, 'description') ? (input.description ?? null) : existing.description,
+      base: input.base,
+      surfaces: input.surfaces ?? {},
+      disabled: existing.disabled,
+    }
+    const over = tooLong(candidate)
+    if (over) return c.json(over, 400)
+    await PublicVoice.upsert({ ...candidate })
+    await publicVoiceSync.recomputeFieldOverrides(id)
+    PublicVoice.invalidateCache()
+    return c.json({ ...(await describeOne(id))!, overCapSquadCount: await overCapSquadCount(candidate) })
+  }
+)
+
+publicVoicesRoutes.delete('/:id', requirePermission('agent-types:update'), async (c) => {
+  const id = c.req.param('id')
+  if (id === DEFAULT_PUBLIC_VOICE_ID) return c.json({ error: 'default_profile_cannot_be_deleted' }, 409)
+  const profile = await describeOne(id)
+  if (!profile) return c.json({ error: 'Voice profile not found' }, 404)
+  if (profile.hasTemplate)
+    return c.json({ error: 'Cannot delete a profile shipped in config/public-voices; disable it instead' }, 400)
+  await PublicVoice.delete(id)
+  // Assigned squads fall back to the instance default through the foreign key.
+  return c.json({ ok: true, unassignedSquads: profile.assignedSquadCount ?? 0 })
+})
+
+publicVoicesRoutes.post('/:id/disable', requirePermission('agent-types:update'), async (c) => {
+  const id = c.req.param('id')
+  if (!(await PublicVoice.find(id))) return c.json({ error: 'Voice profile not found' }, 404)
+  await publicVoiceSync.setDisabled(id, true)
+  PublicVoice.invalidateCache()
+  return c.json({ ok: true })
+})
+
+publicVoicesRoutes.post('/:id/enable', requirePermission('agent-types:update'), async (c) => {
+  const id = c.req.param('id')
+  if (!(await PublicVoice.find(id))) return c.json({ error: 'Voice profile not found' }, 404)
+  await publicVoiceSync.setDisabled(id, false)
+  PublicVoice.invalidateCache()
+  return c.json({ ok: true })
+})
+
+publicVoicesRoutes.post('/:id/revert-to-template', requirePermission('agent-types:update'), async (c) => {
+  try {
+    await publicVoiceSync.revertToTemplate(c.req.param('id'))
+    PublicVoice.invalidateCache()
+    return c.json({ ok: true })
+  } catch (error) {
+    return c.json({ error: publicErrorMessage(error) }, 400)
+  }
+})
