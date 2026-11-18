@@ -391,7 +391,7 @@ describe('SystemManagerRunner.buildManagerPrompt model override guidance', () =>
       } as any)
     )
     spies.push(spyOn(modelTiers, 'resolveAgentTypeChain').mockResolvedValue('anthropic:claude-sonnet-4-5'))
-    spies.push(spyOn(cliHelp, 'getSystemManagerCliHelp').mockResolvedValue('cli'))
+    spies.push(spyOn(cliHelp, 'getCliCommandIndex').mockResolvedValue('cli'))
     spies.push(spyOn(SystemManagerRunner as any, 'buildSquadsContext').mockResolvedValue('squads'))
     const voiceSpy = spyOn(prompts, 'buildPublicVoicePrompt').mockResolvedValue('### Voice\n\nDEFAULT-VOICE')
     spies.push(voiceSpy)
