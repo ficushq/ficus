@@ -13,11 +13,12 @@ const managerConfig = Bun.YAML.parse(read('config/agent-types/manager.yaml')) as
 }
 const manager = normalize(managerConfig.systemPrompt)
 
-// These are instruction contracts, not scheduler tests. Keep the detailed phase
-// procedure in the roadmap skill and check the two entry points stay aligned.
+// These are instruction contracts, not scheduler tests. The roadmap skill is the one
+// owner of the dependency and stacking procedure; the manager prompt summarises it and
+// the work-stream skill only points to it.
 describe('dependency planning guidance', () => {
   test('same-repository phases of one design prefer ready rather than serial human merges', () => {
-    for (const guidance of [roadmap, development, manager]) {
+    for (const guidance of [roadmap, manager]) {
       expect(guidance).toMatch(/prefer[^.]*:ready/i)
       expect(guidance).toMatch(/same.repository[^.]*phases of one design/i)
       expect(guidance).toMatch(/human[^.]*merge[^.]*delivery, not[^.]*implementation/i)
@@ -37,8 +38,14 @@ describe('dependency planning guidance', () => {
     expect(roadmap).not.toContain('based on the latest delivered initiative branch')
   })
 
+  test('the work-stream skill points to the roadmap skill instead of restating the procedure', () => {
+    expect(development).toContain('follow `roadmap-phase-loop`')
+    expect(development).not.toContain('--depends-on')
+    expect(development).not.toContain(':ready')
+  })
+
   test('done remains available for real gates, unavailable runtime state and non-PR delivery', () => {
-    for (const guidance of [roadmap, development, manager]) {
+    for (const guidance of [roadmap, manager]) {
       expect(guidance).toContain(':done')
       expect(guidance).toMatch(/explicit[^.]*wait.before.next.phase/i)
       expect(guidance).toMatch(/merged\/deployed[^.]*unavailable on an open branch/i)
