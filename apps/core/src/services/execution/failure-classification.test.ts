@@ -280,3 +280,37 @@ describe('executionOutcomeOf', () => {
     expect(rows.map(executionOutcomeOf).map((o) => o.kind)).toEqual(['running', 'platform_pre_tool_refusal'])
   })
 })
+
+describe('deterministic provider request validation', () => {
+  const rejection =
+    "Codex error: [ToolSearchOutputFunctionToolNameParam] [input[49].name] [invalid_string] Invalid 'input[49].name': string does not match pattern. Expected a string that matches the pattern '^[a-zA-Z0-9_.-]+\\Z'."
+
+  test('classifies the incident as request validation, not an outage or generic model failure', () => {
+    expect(classifyTurnFailure(new Error(rejection), false)).toEqual({
+      failureClass: 'provider_model',
+      failureReason: 'request_validation_tool_name',
+    })
+    expect(classifyTurnFailure(rejection, true).failureReason).toBe('request_validation_tool_name')
+  })
+
+  test('generic bad requests, tool arguments and other provider policies are not request validation', () => {
+    for (const text of [
+      'HTTP 400 Bad Request',
+      'invalid_string: string does not match pattern',
+      'Tool argument validation failed: input[49].name invalid_string',
+      rejection.replace('ToolSearchOutputFunctionToolNameParam', 'OtherParam'),
+      rejection.replace('[input[49].name]', '[input[49].arguments]'),
+      '401 Unauthorized',
+      '429 Too Many Requests',
+      'maximum context length exceeded',
+      'Provider transport failure: Connection reset (ECONNRESET)',
+    ])
+      expect(classifyTurnFailure(new Error(text), false).failureReason).not.toBe('request_validation_tool_name')
+  })
+})
+
+test('retains the typed validation when Codex HTTP returns only the validator message', () => {
+  const message =
+    "[ToolSearchOutputFunctionToolNameParam] [input[500].name] [invalid_string] Invalid 'input[500].name': string does not match pattern."
+  expect(classifyTurnFailure(message, false).failureReason).toBe('request_validation_tool_name')
+})

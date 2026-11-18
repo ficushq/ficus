@@ -79,6 +79,13 @@ describe('Pi SDK non-retryable hard-limit patch', () => {
       expect(isRetryable('Usage limit reached; your limit will reset at 2026-06-27T23:58:24Z')).toBe(false)
     })
 
+    it('does not confuse the validation input index or suffix with a transient provider error', () => {
+      for (const index of [49, 429, 500, 503]) {
+        const error = `Codex error: [ToolSearchOutputFunctionToolNameParam] [input[${index}].name] [invalid_string] Invalid 'input[${index}].name': string does not match pattern. server error`
+        expect(isRetryable(error)).toBe(false)
+      }
+    })
+
     it('still lets a plain transient 429 stay retryable (no hard-limit phrasing)', () => {
       // A bare 429 / "too many requests" must NOT be suppressed — only hard plan
       // limits are, so transient blips still get the SDK's backoff/retries.
@@ -133,3 +140,70 @@ describe('Pi SDK non-retryable hard-limit patch', () => {
     })
   })
 })
+
+// Exercise the real Codex HTTP retry loop with an injected, local-only fetch.
+// Count requests at the injected fetch boundary; no live provider is contacted.
+it('does not replay the specific Codex HTTP tool-name rejection inside the SDK', async () => {
+  const { stream } = await import(pathToFileURL(piAiDist('api/openai-codex-responses.js')).href)
+  const { OPENAI_CODEX_MODELS } = await import(pathToFileURL(piAiDist('providers/openai-codex.models.js')).href)
+  const model = OPENAI_CODEX_MODELS['gpt-5.6-sol']
+  expect(model).toBeDefined()
+  const apiKey = `h.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'fixture' } })).toString('base64url')}.s`
+  const controller = new AbortController()
+  let calls = 0
+  const result = await stream(
+    model,
+    { messages: [] },
+    {
+      apiKey,
+      transport: 'sse',
+      signal: controller.signal,
+      maxRetries: 1,
+      fetch: async () => {
+        calls++
+        if (calls > 1) controller.abort()
+        return new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "[ToolSearchOutputFunctionToolNameParam] [input[49].name] [invalid_string] Invalid 'input[49].name': string does not match pattern.",
+            },
+          }),
+          { status: 400 }
+        )
+      },
+    }
+  ).result()
+  expect(calls).toBe(1)
+  expect(result.stopReason).toBe('error')
+  expect(result.errorMessage).toContain('ToolSearchOutputFunctionToolNameParam')
+})
+
+for (const [status, message] of [
+  [400, 'Unrelated bad request'],
+  [500, 'Internal Server Error'],
+] as const) {
+  it(`preserves the existing SDK retry behavior for unrelated HTTP ${status}`, async () => {
+    const { stream } = await import(pathToFileURL(piAiDist('api/openai-codex-responses.js')).href)
+    const { OPENAI_CODEX_MODELS } = await import(pathToFileURL(piAiDist('providers/openai-codex.models.js')).href)
+    const apiKey = `h.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'fixture' } })).toString('base64url')}.s`
+    const controller = new AbortController()
+    let calls = 0
+    await stream(
+      OPENAI_CODEX_MODELS['gpt-5.6-sol'],
+      { messages: [] },
+      {
+        apiKey,
+        transport: 'sse',
+        signal: controller.signal,
+        maxRetries: 1,
+        fetch: async () => {
+          calls++
+          if (calls > 1) controller.abort()
+          return new Response(JSON.stringify({ error: { message } }), { status })
+        },
+      }
+    ).result()
+    expect(calls).toBe(2)
+  })
+}
