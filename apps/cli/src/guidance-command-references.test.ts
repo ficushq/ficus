@@ -148,6 +148,8 @@ function checkCommandReference(program: Command, reference: CommandReference): s
   }
   if (command === program) return null
 
+  // Only the command's own options are checked. That covers --json, --quiet and --backend
+  // because configureGlobalOptionScope copies those global options onto every command.
   const known = optionNames(command)
   for (const word of words.slice(index)) {
     if (/^--?[A-Za-z]/.test(word)) {

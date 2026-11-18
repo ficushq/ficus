@@ -178,8 +178,7 @@ export class SquadManagerRunner extends AgentRunner {
         })
       )
 
-      // Consultants forward work to the manager; they do not spawn agents or edit agent types.
-      .sectionIf(this.agent.agentTypeId !== 'consultant', 'Model Overrides', buildModelOverridePrompt())
+      .section('Model Overrides', buildModelOverridePrompt())
       .section('Current Squad State', squadContext)
 
     // Add manager instructions from squad preset if present
