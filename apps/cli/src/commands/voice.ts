@@ -129,6 +129,7 @@ interface DerivationResponse {
     privateRepositories: string[]
     pagingCapped: boolean
     unavailableRepositories?: string[]
+    commitRepositoriesNotSampled?: string[]
   }
   bytes: number
   maxBytes: number
@@ -168,6 +169,10 @@ export async function runDerivation(squadId: string, opts: DeriveOptions): Promi
   if (result.sampling.unavailableRepositories?.length)
     console.log(
       `  not found or not visible to the squad's GitHub account: ${result.sampling.unavailableRepositories.join(', ')}`
+    )
+  if (result.sampling.commitRepositoriesNotSampled?.length)
+    console.log(
+      `  commits are read from eight repositories at most; not read: ${result.sampling.commitRepositoriesNotSampled.join(', ')}`
     )
   console.log(`  public repositories: ${result.sampling.publicRepositories.join(', ') || 'none'}`)
   console.log(`  private repositories (paraphrased only): ${result.sampling.privateRepositories.join(', ') || 'none'}`)

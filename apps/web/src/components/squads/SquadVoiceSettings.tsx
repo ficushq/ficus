@@ -10,26 +10,20 @@ import {
   type PublicVoiceSurfaces,
   type SquadPublicVoiceState,
 } from '@ficus/shared'
-import {
-  createPublicVoice,
-  getSquadVoice,
-  patchSquadVoice,
-  previewSquadVoice,
-  publicVoiceQueryKeys,
-} from '../../api/publicVoices'
+import { createPublicVoice, patchSquadVoice, previewSquadVoice, publicVoiceQueryKeys } from '../../api/publicVoices'
 import { ApiError } from '../../api/client'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 import { VoiceSurfaceRows } from '../voice/VoiceSurfaceRows'
 import { DeriveVoiceCard } from '../voice/DeriveVoiceCard'
+import { NewProfileDialog } from '../voice/NewProfileDialog'
+import { VoicePicker } from '../voice/VoicePicker'
+import { queries } from '../../queryOptions'
 import { buildVoicePatch, CUSTOM, draftBytes, INSTANCE, pickerValueFor } from './squadVoiceDraft'
 
 /** Squad settings → Voice: how this squad's agents sound in public text. See docs/wiki/public-voice.md. */
 export function SquadVoiceSettings({ squadId }: { squadId: string }) {
-  const { data: state, error } = useQuery({
-    queryKey: publicVoiceQueryKeys.squad(squadId),
-    queryFn: () => getSquadVoice(squadId),
-  })
+  const { data: state, error } = useQuery(queries.publicVoices.squad(squadId))
   if (error) return <p className="text-sm text-status-danger-500">Could not load the voice: {String(error)}</p>
   if (!state) return <p className="text-sm text-muted">Loading voice…</p>
   return <SquadVoiceEditor squadId={squadId} state={state} />
@@ -52,6 +46,10 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
 
   const [previewSurface, setPreviewSurface] = useState<PublicSurface>('pullRequests')
   const [sample, setSample] = useState('')
+  const [pendingProfileDraft, setPendingProfileDraft] = useState<{
+    base: string
+    surfaces: PublicVoiceSurfaces
+  } | null>(null)
 
   const save = useMutation({
     mutationFn: () => patchSquadVoice(squadId, buildVoicePatch(picker, customBase, surfaces)),
@@ -63,7 +61,8 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
         surface: previewSurface,
         ...(sample.trim() ? { sample } : {}),
         draft: { base: picker === CUSTOM ? customBase.trim() || null : null, surfaces },
-        ...(picker !== CUSTOM ? { voiceId: picker === INSTANCE ? DEFAULT_PUBLIC_VOICE_ID : picker } : {}),
+        // null previews the instance default, which works even while the `default` profile is disabled.
+        ...(picker !== CUSTOM ? { voiceId: picker === INSTANCE ? null : picker } : {}),
       }),
   })
   const saveProfile = useMutation({
@@ -118,25 +117,20 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
       ) : (
         <>
           <div className="space-y-2">
-            <label className="text-xs text-muted" htmlFor="squad-voice-picker">
-              Voice
-            </label>
-            <select
-              id="squad-voice-picker"
-              className="ficus-field block w-full rounded-md border border-th-border bg-surface px-2 py-1.5 text-sm text-primary"
+            <span className="block text-xs text-muted">Voice</span>
+            <VoicePicker
+              label="Voice"
               value={picker}
-              onChange={(e) => setPicker(e.target.value)}
-            >
-              <option value={INSTANCE}>Instance default</option>
-              {state.availableVoices
-                .filter((v) => v.id !== DEFAULT_PUBLIC_VOICE_ID)
-                .map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              <option value={CUSTOM}>Custom for this squad</option>
-            </select>
+              onChange={setPicker}
+              className="w-full"
+              options={[
+                { value: INSTANCE, label: 'Instance default' },
+                ...state.availableVoices
+                  .filter((v) => v.id !== DEFAULT_PUBLIC_VOICE_ID)
+                  .map((v) => ({ value: v.id, label: v.name, description: v.description ?? undefined })),
+                { value: CUSTOM, label: 'Custom for this squad' },
+              ]}
+            />
             {picker === CUSTOM ? (
               <textarea
                 aria-label="Custom voice"
@@ -188,18 +182,12 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
           <div className="space-y-2 rounded-xl border border-panel-border bg-surface p-4">
             <h4 className="text-sm font-medium text-primary">Preview</h4>
             <p className="text-xs text-muted">Rewrites a sample comment in the voice above, including unsaved edits.</p>
-            <select
-              aria-label="Preview surface"
-              className="ficus-field rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+            <VoicePicker
+              label="Preview surface"
               value={previewSurface}
-              onChange={(e) => setPreviewSurface(e.target.value as PublicSurface)}
-            >
-              {PUBLIC_SURFACES.map((s) => (
-                <option key={s} value={s}>
-                  {PUBLIC_SURFACE_LABELS[s]}
-                </option>
-              ))}
-            </select>
+              onChange={setPreviewSurface}
+              options={PUBLIC_SURFACES.map((s) => ({ value: s, label: PUBLIC_SURFACE_LABELS[s] }))}
+            />
             <textarea
               aria-label="Sample text"
               value={sample}
@@ -232,22 +220,25 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
                 setCustomBase(draft.base)
                 setSurfaces(draft.surfaces)
               }}
-              onSaveAsProfile={
-                canManageProfiles
-                  ? (draft) => {
-                      const id = window.prompt('New profile id (kebab-case)')
-                      if (!id) return
-                      const name = window.prompt('Profile name', id) ?? id
-                      saveProfile.mutate({ id, name, base: draft.base, surfaces: draft.surfaces })
-                    }
-                  : undefined
-              }
+              onSaveAsProfile={canManageProfiles ? (draft) => setPendingProfileDraft(draft) : undefined}
             />
           </div>
           {saveProfile.isSuccess && (
             <p className="text-xs text-muted">Saved as a new profile. Edit it in Settings → Agent Types → Voices.</p>
           )}
-          {saveProfile.error && <p className="text-xs text-status-danger-500">{String(saveProfile.error)}</p>}
+          <NewProfileDialog
+            isOpen={pendingProfileDraft !== null}
+            onClose={() => setPendingProfileDraft(null)}
+            pending={saveProfile.isPending}
+            error={saveProfile.error ? String(saveProfile.error) : null}
+            onSubmit={({ id, name }) =>
+              pendingProfileDraft &&
+              saveProfile.mutate(
+                { id, name, base: pendingProfileDraft.base, surfaces: pendingProfileDraft.surfaces },
+                { onSuccess: () => setPendingProfileDraft(null) }
+              )
+            }
+          />
         </>
       )}
     </div>

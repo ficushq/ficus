@@ -12,7 +12,6 @@ import {
 import {
   createPublicVoice,
   deletePublicVoice,
-  getPublicVoices,
   publicVoiceQueryKeys,
   revertPublicVoice,
   setPublicVoiceDisabled,
@@ -23,6 +22,9 @@ import { queries } from '../../queryOptions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { VoiceSurfaceRows } from '../voice/VoiceSurfaceRows'
 import { DeriveVoiceCard } from '../voice/DeriveVoiceCard'
+import { NewProfileDialog } from '../voice/NewProfileDialog'
+import { VoicePicker } from '../voice/VoicePicker'
+import { ConfirmButton } from '../ConfirmButton'
 
 interface ProfileDraft {
   name: string
@@ -107,12 +109,13 @@ export function VoiceProfileList({
               </button>
             )}
             {canWrite && profile.id !== DEFAULT_PUBLIC_VOICE_ID && !profile.hasTemplate && (
-              <button
-                className="ficus-button ficus-button-ghost px-2 py-1 text-sm text-status-danger-500"
-                onClick={() => onDelete(profile)}
-              >
-                Delete
-              </button>
+              <ConfirmButton
+                label="Delete"
+                confirmLabel={`Delete? ${profile.assignedSquadCount ?? 0} squad(s) return to the default`}
+                ariaLabel={`Delete ${profile.name}`}
+                className="px-2 py-1 text-sm"
+                onConfirm={() => onDelete(profile)}
+              />
             )}
           </div>
         </article>
@@ -250,10 +253,7 @@ export function VoicesTab() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
   const canWrite = can('agent-types:update')
-  const { data: profiles = [], isLoading } = useQuery({
-    queryKey: publicVoiceQueryKeys.list(),
-    queryFn: getPublicVoices,
-  })
+  const { data: profiles = [], isLoading } = useQuery(queries.publicVoices.list())
   const { data: squads = [] } = useQuery({ ...queries.squads.list(), enabled: canWrite })
   const [editing, setEditing] = useState<{
     id: string
@@ -272,16 +272,9 @@ export function VoicesTab() {
     onSuccess: invalidate,
   })
 
-  const startNew = (initial?: Partial<ProfileDraft>) => {
-    const id = window.prompt('Profile id (kebab-case, for example platform-team)')?.trim()
-    if (!id) return
-    setEditing({
-      id,
-      isNew: true,
-      hasTemplate: false,
-      initial: { name: id, description: '', base: '', surfaces: {}, ...initial },
-    })
-  }
+  // The id and name come from a dialog; the editor then opens with any derived draft prefilled.
+  const [newProfileSeed, setNewProfileSeed] = useState<Partial<ProfileDraft> | null>(null)
+  const startNew = (initial: Partial<ProfileDraft> = {}) => setNewProfileSeed(initial)
 
   if (isLoading) return <p className="text-sm text-muted">Loading voice profiles…</p>
   return (
@@ -309,38 +302,38 @@ export function VoicesTab() {
           setEditing({ id: profile.id, initial: draftOf(profile), isNew: false, hasTemplate: profile.hasTemplate })
         }
         onToggle={(profile) => toggle.mutate(profile)}
-        onDelete={(profile) => {
-          if (
-            window.confirm(
-              `Delete ${profile.name}? Its ${profile.assignedSquadCount ?? 0} squad(s) return to the instance default.`
-            )
-          )
-            remove.mutate(profile)
-        }}
+        onDelete={(profile) => remove.mutate(profile)}
       />
       {remove.error && <p className="text-xs text-status-danger-500">{errorText(remove.error)}</p>}
+      <NewProfileDialog
+        isOpen={newProfileSeed !== null}
+        onClose={() => setNewProfileSeed(null)}
+        onSubmit={({ id, name }) => {
+          setEditing({
+            id,
+            isNew: true,
+            hasTemplate: false,
+            initial: { description: '', base: '', surfaces: {}, ...newProfileSeed, name },
+          })
+          setNewProfileSeed(null)
+        }}
+      />
       {canWrite && (
         <>
           <button className="ficus-button ficus-button-primary rounded px-3 py-2" onClick={() => startNew()}>
             Add profile
           </button>
           <div className="space-y-2">
-            <label className="text-xs text-muted" htmlFor="voice-derive-squad">
-              Derive through the GitHub connection of
-            </label>
-            <select
-              id="voice-derive-squad"
-              className="ficus-field block rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+            <span className="block text-xs text-muted">Derive through the GitHub connection of</span>
+            <VoicePicker
+              label="Squad whose GitHub connection to use"
               value={deriveSquadId}
-              onChange={(e) => setDeriveSquadId(e.target.value)}
-            >
-              <option value="">Choose a squad</option>
-              {squads.map((squad) => (
-                <option key={squad.id} value={squad.id}>
-                  {squad.name}
-                </option>
-              ))}
-            </select>
+              onChange={setDeriveSquadId}
+              options={[
+                { value: '', label: 'Choose a squad' },
+                ...squads.map((squad) => ({ value: squad.id, label: squad.name })),
+              ]}
+            />
             {deriveSquadId && (
               <DeriveVoiceCard
                 key={deriveSquadId}

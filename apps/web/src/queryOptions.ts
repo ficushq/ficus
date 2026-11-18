@@ -17,7 +17,8 @@ import { client } from './api/clientInstance'
 import { assistantApi } from './api/assistant'
 import { assistantQueryKeys } from './queryKeys'
 import { getModelCatalog } from './api/modelCatalog'
-import { modelCatalogQueryKeys } from './queryKeys'
+import { modelCatalogQueryKeys, publicVoiceQueryKeys } from './queryKeys'
+import { getPublicVoices, getSquadVoice } from './api/publicVoices'
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { queryKeys, onboardingQueryKeys, integrationQueryKeys, themePresetQueryKeys } from './queryKeys'
 import {
@@ -337,6 +338,12 @@ export const queries = {
 
   modelTiers: {
     list: () => queryOptions({ queryKey: modelTierQueryKeys.list(), queryFn: getModelTiers }),
+  },
+
+  publicVoices: {
+    list: () => queryOptions({ queryKey: publicVoiceQueryKeys.list(), queryFn: getPublicVoices }),
+    squad: (squadId: string) =>
+      queryOptions({ queryKey: publicVoiceQueryKeys.squad(squadId), queryFn: () => getSquadVoice(squadId) }),
   },
 
   decisions: {

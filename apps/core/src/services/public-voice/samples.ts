@@ -35,6 +35,8 @@ export interface SamplingSummary {
   pagingCapped: boolean
   /** Repositories GitHub returned as missing or not visible to the squad's account. */
   unavailableRepositories: string[]
+  /** Filtered repositories past the eight read for commits. */
+  commitRepositoriesNotSampled: string[]
   /** The tool-authored filter is a heuristic; dates and repositories are the reliable filters. */
   toolAuthoredIsHeuristic: true
 }
@@ -71,9 +73,32 @@ function isBotTemplate(item: Pick<RawActivityItem, 'title' | 'text'>): boolean {
   return BOT_TEMPLATE_MARKERS.some((marker) => marker.test(all))
 }
 
-/** Strip what is not the person's prose, and redact contact details and links. */
+/**
+ * Strings shaped like credentials: GitHub tokens, AWS access key ids, bearer tokens, and long
+ * base64 or hex runs. Redacted before samples reach the model, and rejected in its output.
+ */
+export const SECRET_PATTERNS: readonly RegExp[] = [
+  /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g,
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{10,}/gi,
+  /\b[0-9a-fA-F]{32,}\b/g,
+  // A long run of base64 characters that mixes letters and digits (prose words never do).
+  /(?=[A-Za-z0-9+/_=-]*\d)(?=[A-Za-z0-9+/_=-]*[A-Za-z])[A-Za-z0-9+/_=-]{40,}/g,
+]
+
+/** Replace credential-shaped strings with `<secret>`. */
+export function redactSecrets(text: string): string {
+  return SECRET_PATTERNS.reduce((result, pattern) => result.replace(pattern, '<secret>'), text)
+}
+
+/** Whether the text holds a credential-shaped string. */
+export function containsSecret(text: string): boolean {
+  return SECRET_PATTERNS.some((pattern) => new RegExp(pattern.source, pattern.flags.replace('g', '')).test(text))
+}
+
+/** Strip what is not the person's prose, and redact credentials, contact details and links. */
 export function cleanSampleText(text: string): string {
-  return text
+  return redactSecrets(text)
     .replace(/\r\n?/g, '\n')
     .replace(/```[\s\S]*?(```|$)/g, '')
     .replace(/~~~[\s\S]*?(~~~|$)/g, '')
@@ -91,8 +116,10 @@ export function cleanSampleText(text: string): string {
     .trim()
 }
 
+/** Titles and commit headlines are cleaned like bodies: they can carry links, addresses or tokens too. */
 function joinTitle(item: RawActivityItem, body: string): string {
-  return item.title ? [item.title.trim(), body].filter(Boolean).join('\n\n') : body
+  const title = item.title ? cleanSampleText(item.title) : ''
+  return [title, body].filter(Boolean).join('\n\n')
 }
 
 /** Only headings and blank structure left: a template nobody filled in. */
@@ -190,6 +217,7 @@ export function prepareSamples(
     privateRepositories: repos(true),
     pagingCapped: collected.pagingCapped,
     unavailableRepositories: collected.unavailableRepositories ?? [],
+    commitRepositoriesNotSampled: collected.commitRepositoriesNotSampled ?? [],
     toolAuthoredIsHeuristic: true,
   }
   if (samples.length < MIN_SAMPLES)

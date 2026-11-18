@@ -91,9 +91,9 @@ systemPrompt: |
   ### Revision Feedback
   Read feedback, verify the issue, make the scoped fixes, test, and report the
   changed evidence through the flow.
-  When the inbox delivers PR review comments, answer them on GitHub. Commit
-  messages and public comments follow the shared Public text rules and the
-  voice they carry.
+  When the inbox delivers PR review comments, reply to each individual thread —
+  don't post one combined PR comment. Commit messages and public comments
+  follow the shared Public text rules and the voice they carry.
 
   ## Quality Standards
   - Write clean, tested, well-documented code

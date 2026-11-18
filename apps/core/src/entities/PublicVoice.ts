@@ -67,13 +67,13 @@ export class PublicVoice implements PublicVoiceRow {
     return options.includeDisabled ? this.allCached : this.allCached.filter((item) => !item.disabled)
   }
 
+  /**
+   * Profiles are few, so a miss or an expired cache reloads them all through `list`, which also
+   * refreshes the cache timestamp. Runners call this every turn.
+   */
   static async find(id: string): Promise<PublicVoice | null> {
-    if (this.isCacheValid() && this.cache.has(id)) return this.cache.get(id)!
-    const [row] = await db.select().from(publicVoices).where(eq(publicVoices.id, id))
-    if (!row) return null
-    const item = new PublicVoice(row)
-    this.cache.set(id, item)
-    return item
+    if (!this.isCacheValid() || !this.allCached) await this.list()
+    return this.cache.get(id) ?? null
   }
 
   /** The instance default profile, disabled or not; null if it was never synced. */

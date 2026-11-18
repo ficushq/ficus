@@ -1,6 +1,13 @@
 import * as yaml from 'js-yaml'
-import { publicVoiceProfileInputSchema, type PublicVoiceSurfaces } from '@ficus/shared'
-import { publicVoices } from '../../db'
+import { eq } from 'drizzle-orm'
+import {
+  PUBLIC_VOICE_MAX_BYTES,
+  publicVoiceBytes,
+  publicVoiceProfileInputSchema,
+  renderProfileAlone,
+  type PublicVoiceSurfaces,
+} from '@ficus/shared'
+import { db, publicVoices } from '../../db'
 import { PublicVoice } from '../../entities/PublicVoice'
 import { PUBLIC_VOICES_DIR } from '../../lib/paths'
 import { ConfigSync } from './ConfigSync'
@@ -36,6 +43,18 @@ export class PublicVoiceSync extends ConfigSync<PublicVoiceYaml> {
       )
     }
     const value = result.data
+    // A shipped profile must fit the cap by itself, like one saved through the API; revert
+    // restores this template, so it stays within the cap too.
+    const bytes = publicVoiceBytes(
+      renderProfileAlone({
+        ...value,
+        description: value.description ?? null,
+        surfaces: value.surfaces ?? {},
+        disabled: false,
+      })
+    )
+    if (bytes > PUBLIC_VOICE_MAX_BYTES)
+      throw new Error(`PublicVoice ${filename}: renders to ${bytes} bytes, over the ${PUBLIC_VOICE_MAX_BYTES}-byte cap`)
     return {
       id: value.id,
       name: value.name,
@@ -71,6 +90,16 @@ export class PublicVoiceSync extends ConfigSync<PublicVoiceYaml> {
 
   toYaml(row: Record<string, unknown>): string {
     return yaml.dump(this.toComparable(row), { lineWidth: 120, noRefs: true })
+  }
+
+  override async revertToTemplate(id: string): Promise<void> {
+    const [row] = await db
+      .select({ template: publicVoices.yamlTemplate })
+      .from(publicVoices)
+      .where(eq(publicVoices.id, id))
+    // Validate older stored snapshots too, before the generic revert writes anything.
+    if (row?.template) this.parse(yaml.dump(row.template), `${id} stored template`)
+    await super.revertToTemplate(id)
   }
 
   async afterSync(): Promise<void> {

@@ -12,7 +12,7 @@ import {
 import { db, modelTiers } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { collectGitHubActivity, DerivationError, type CollectedActivity } from './github-activity'
-import { prepareSamples, type SamplingSummary, type VoiceSample } from './samples'
+import { containsSecret, prepareSamples, type SamplingSummary, type VoiceSample } from './samples'
 
 const log = createLogger('public-voice-derive')
 
@@ -109,15 +109,56 @@ export function parseDerivationOutput(raw: string): DerivationOutput {
 const UNSAFE_TEXT = [
   /ficus:/i,
   /(^|[\s(`'"])\/(home|workspace|tmp|var|root|Users)\//,
-  /(^|\s)@[A-Za-z0-9][A-Za-z0-9-]*/,
+  // A mention, including one after a bracket or a quote ("(@octocat", "\"@octocat").
+  /(^|[^A-Za-z0-9_.@-])@[A-Za-z0-9][A-Za-z0-9-]*/,
   /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/,
   /https?:\/\//i,
-  /<(url|email)>/i,
+  /\bwww\./i,
+  // A bare domain such as example.com or docs.acme.io.
+  /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|app|ai|co|gg|sh|me|xyz|so|cloud|tech|info|biz|us|uk|de)\b/i,
+  /<(url|email|secret)>/i,
 ]
 
 /** Whether a generated string is safe to keep in a draft. */
 export function isSafeVoiceText(text: string): boolean {
-  return !UNSAFE_TEXT.some((pattern) => pattern.test(text))
+  return !UNSAFE_TEXT.some((pattern) => pattern.test(text)) && !containsSecret(text)
+}
+
+/** A run long enough that matching it means the text was copied, not paraphrased. */
+export const PRIVATE_RUN_CHARS = 30
+export const PRIVATE_RUN_WORDS = 6
+
+function normalizeForOverlap(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+function wordsOf(text: string): string[] {
+  return text
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+}
+
+/**
+ * Whether `text` shares a run of 30 characters or six consecutive words with a sample from a
+ * private repository. Private text may only inform paraphrased observations, never be copied.
+ */
+export function copiesPrivateText(text: string, samples: VoiceSample[]): boolean {
+  const privateText = samples
+    .filter((sample) => sample.isPrivate)
+    .map((sample) => normalizeForOverlap(sample.text))
+    .join('\n')
+  if (!privateText) return false
+  const candidate = normalizeForOverlap(text)
+  for (let i = 0; i + PRIVATE_RUN_CHARS <= candidate.length; i++) {
+    if (privateText.includes(candidate.slice(i, i + PRIVATE_RUN_CHARS))) return true
+  }
+  const privateWords = ` ${wordsOf(privateText).join(' ')} `
+  const words = wordsOf(candidate)
+  for (let i = 0; i + PRIVATE_RUN_WORDS <= words.length; i++) {
+    if (privateWords.includes(` ${words.slice(i, i + PRIVATE_RUN_WORDS).join(' ')} `)) return true
+  }
+  return false
 }
 
 /** Keep exemplars that are verbatim substrings of a public sample, with that sample's repository. */
@@ -146,13 +187,16 @@ export function assembleDraft(
   output: DerivationOutput,
   samples: VoiceSample[]
 ): { draft: PublicVoiceDraftResult['draft']; observations: string[]; exemplars: VoiceExemplar[]; bytes: number } {
+  const keep = (text: string) => isSafeVoiceText(text) && !copiesPrivateText(text, samples)
   if (!isSafeVoiceText(output.base)) throw new DerivationError('derivation_invalid_output', { reason: 'unsafe_base' })
-  let observations = output.observations.filter(isSafeVoiceText)
+  if (copiesPrivateText(output.base, samples))
+    throw new DerivationError('derivation_invalid_output', { reason: 'private_text_in_base' })
+  let observations = output.observations.filter(keep)
   let exemplars = verifyExemplars(output.exemplars, samples)
   const surfaces: PublicVoiceSurfaces = {}
   for (const surface of PUBLIC_SURFACES) {
     const note = output.surfaces?.[surface]
-    if (note && isSafeVoiceText(note)) surfaces[surface] = { mode: 'add', text: note }
+    if (note && keep(note)) surfaces[surface] = { mode: 'add', text: note }
   }
   const render = () => {
     const base = renderBase(output.base, observations, exemplars)
@@ -188,10 +232,13 @@ async function standardTierChain(): Promise<string> {
 }
 
 /** One prompt to a session with no tools, recorded as `public-voice-derive` in the ledger. */
-export const runDerivationSession: DerivationSession = async ({ systemPrompt, prompt, attribution, signal }) => {
+export async function runDerivationSession(
+  { systemPrompt, prompt, attribution, signal }: Parameters<DerivationSession>[0],
+  deps: { resolveModel?: () => Promise<string> } = {}
+): Promise<string> {
   const { AgentSession } = await import('../../entities/AgentSession')
   const { pi: session } = await AgentSession.create({
-    model: await standardTierChain(),
+    model: await (deps.resolveModel ?? standardTierChain)(),
     systemPrompt,
     tools: { core: [], available: [] },
     precompaction: false,
@@ -200,6 +247,11 @@ export const runDerivationSession: DerivationSession = async ({ systemPrompt, pr
       attribution: () => ({ userId: attribution.userId ?? null, squadId: attribution.squadId ?? null }),
     },
   })
+  // The deadline may have passed while the session was being created.
+  if (signal.aborted) {
+    void session.abort?.()
+    throw new DerivationError('derivation_model_unavailable', { reason: 'timeout' })
+  }
   const chunks: string[] = []
   return new Promise<string>((resolve, reject) => {
     const onAbort = () => {
@@ -266,6 +318,8 @@ export async function derivePublicVoice(
     clearTimeout(timer)
   }
 
+  // A provider error can end the turn with no text: that is the model being unavailable, not bad output.
+  if (!raw.trim()) throw new DerivationError('derivation_model_unavailable', { reason: 'empty_output' })
   const assembled = assembleDraft(parseDerivationOutput(raw), samples)
   return {
     login: input.login,

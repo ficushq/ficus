@@ -62,3 +62,32 @@ describe('VoiceProfileList', () => {
     expect(html).not.toContain('Delete')
   })
 })
+
+test('deleting an unshipped profile requires a second click and uses the danger variant', async () => {
+  const { acquireDomHarness } = await import('../../test/domHarness')
+  const dom = await acquireDomHarness({ url: 'http://localhost' })
+  try {
+    const { root, container } = dom.createRoot()
+    const removed: string[] = []
+    await dom.act(async () =>
+      root.render(
+        <VoiceProfileList
+          profiles={[profile({})]}
+          canWrite
+          onEdit={noop}
+          onToggle={noop}
+          onDelete={(p) => removed.push(p.id)}
+        />
+      )
+    )
+    const remove = container.querySelector<HTMLButtonElement>('[aria-label="Delete Team"]')!
+    expect(remove.className).toContain('ficus-button-danger')
+    await dom.act(async () => remove.click())
+    expect(removed).toEqual([])
+    expect(remove.textContent).toContain('2 squad(s) return to the default')
+    await dom.act(async () => remove.click())
+    expect(removed).toEqual(['team'])
+  } finally {
+    await dom.cleanup()
+  }
+})

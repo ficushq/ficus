@@ -30,6 +30,8 @@ export interface CollectedActivity {
   droppedByFilter: { date: number; repository: number }
   /** Repositories asked for commits that GitHub returned as missing or not visible (for example a typo in a filter). */
   unavailableRepositories: string[]
+  /** Repositories in the filter beyond the commit-sampling limit, whose commits were not read. */
+  commitRepositoriesNotSampled: string[]
 }
 
 export class DerivationError extends Error {
@@ -218,6 +220,7 @@ export async function collectGitHubActivity(
   let pagingCapped = false
   const droppedByFilter = { date: 0, repository: 0 }
   const unavailableRepositories: string[] = []
+  const commitRepositoriesNotSampled: string[] = []
   const accept = (createdAt: string, repository: string): boolean => {
     if (!inRange(createdAt, filters)) {
       droppedByFilter.date++
@@ -325,9 +328,10 @@ export async function collectGitHubActivity(
       : (user.contributionsCollection?.commitContributionsByRepository ?? []).flatMap((entry) =>
           entry?.repository ? [entry.repository.nameWithOwner] : []
         )
-    const repositories = [...new Set(candidates)]
-      .filter((name) => repositoryAllowed(name, filters))
-      .slice(0, MAX_COMMIT_REPOSITORIES)
+    const allowed = [...new Set(candidates)].filter((name) => repositoryAllowed(name, filters))
+    const repositories = allowed.slice(0, MAX_COMMIT_REPOSITORIES)
+    // Only a repository filter is reported: unfiltered sampling asks GitHub for at most eight anyway.
+    if (filters.repositories?.length) commitRepositoriesNotSampled.push(...allowed.slice(MAX_COMMIT_REPOSITORIES))
     if (repositories.length > 0) {
       type CommitBlock = {
         nameWithOwner: string
@@ -362,5 +366,5 @@ export async function collectGitHubActivity(
     }
   }
 
-  return { items, pagingCapped, requests, droppedByFilter, unavailableRepositories }
+  return { items, pagingCapped, requests, droppedByFilter, unavailableRepositories, commitRepositoriesNotSampled }
 }

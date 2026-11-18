@@ -11,12 +11,7 @@ import { apiFetch } from './client'
 
 /** Voice profiles and squad voice settings. See docs/wiki/public-voice.md. */
 
-export const publicVoiceQueryKeys = {
-  all: ['public-voices'] as const,
-  list: () => [...publicVoiceQueryKeys.all, 'list'] as const,
-  templateDiff: (id: string) => [...publicVoiceQueryKeys.all, 'template-diff', id] as const,
-  squad: (squadId: string) => [...publicVoiceQueryKeys.all, 'squad', squadId] as const,
-}
+export { publicVoiceQueryKeys } from '../queryKeys'
 
 export interface PublicVoiceProfileInput {
   name: string
@@ -62,7 +57,7 @@ export function patchSquadVoice(squadId: string, patch: SquadPublicVoicePatch): 
 
 export function previewSquadVoice(
   squadId: string,
-  body: { surface: PublicSurface; sample?: string; draft?: SquadPublicVoice; voiceId?: string }
+  body: { surface: PublicSurface; sample?: string; draft?: SquadPublicVoice; voiceId?: string | null }
 ): Promise<{ text: string; model: string }> {
   return apiFetch(`/squads/${squadId}/voice/preview`, { method: 'POST', body: JSON.stringify(body) })
 }
@@ -86,6 +81,7 @@ export interface VoiceDerivationResult {
     privateRepositories: string[]
     pagingCapped: boolean
     unavailableRepositories?: string[]
+    commitRepositoriesNotSampled?: string[]
   }
   bytes: number
   maxBytes: number

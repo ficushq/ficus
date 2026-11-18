@@ -66,7 +66,14 @@ export interface PublicVoiceProfile {
   disabled: boolean
 }
 
-const voiceText = z.string().trim().min(1).max(PUBLIC_VOICE_MAX_BYTES)
+// Counted in UTF-8 bytes, like the cap on the rendered section.
+const voiceText = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((text) => publicVoiceBytes(text) <= PUBLIC_VOICE_MAX_BYTES, {
+    message: `At most ${PUBLIC_VOICE_MAX_BYTES} bytes`,
+  })
 export const publicVoiceSurfaceEntrySchema = z.object({ mode: z.enum(['override', 'add']), text: voiceText })
 
 export const publicVoiceSurfacesSchema = z
@@ -141,6 +148,10 @@ export const derivationFiltersSchema = z
     excludeToolAuthored: z.boolean().optional(),
   })
   .strict()
+  .refine((filters) => !filters.before || !filters.after || filters.after < filters.before, {
+    message: 'after must be earlier than before',
+    path: ['after'],
+  })
 export type DerivationFilters = z.infer<typeof derivationFiltersSchema>
 
 export type PublicVoiceBaseSource = 'squad' | 'profile' | 'instance' | 'none'

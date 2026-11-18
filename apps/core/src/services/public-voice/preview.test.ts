@@ -49,6 +49,16 @@ describe('previewPublicVoice', () => {
     expect(calls[0]!.prompt).toContain('Fixed it.')
   })
 
+  test('null previews the instance default even when the squad is assigned a profile', async () => {
+    const { calls, complete } = capture()
+    await previewPublicVoice(
+      { squad: { ...squad, publicVoiceId: 'team' }, surface: 'commits', voiceId: null },
+      { complete, loaders }
+    )
+    expect(calls[0]!.prompt).toContain('Default voice.')
+    expect(calls[0]!.prompt).not.toContain('Team voice.')
+  })
+
   test('previews an unsaved custom voice', async () => {
     const { calls, complete } = capture()
     await previewPublicVoice(

@@ -16,6 +16,11 @@ import {
   type TestUser,
 } from '../test-utils'
 import { __derivationsInProgress, squadVoiceRouter } from './squad-voice'
+import { Agent } from '../entities/Agent'
+import { RoleSync } from '../services/config-sync/role-sync'
+import { agents } from '../db'
+import { eq } from 'drizzle-orm'
+import { createTestAgentToken } from '../test-utils'
 import { AgentType } from '../entities/AgentType'
 import { agentTypeSync, sharedPromptSync } from '../services/config-sync'
 import { composeAgentTypePrompt } from '../services/agent-types/compose-prompt'
@@ -125,6 +130,13 @@ describe('squad voice routes', () => {
     expect(Object.keys(body.local.surfaces)).toEqual(['channels'])
   })
 
+  test('choosing the instance default replaces a custom base', async () => {
+    await request(admin, 'PATCH', '', { base: 'Ours.' })
+    const body = await (await request(admin, 'PATCH', '', { voiceId: null })).json()
+    expect(body.local.base).toBeNull()
+    expect(body.resolved.baseSource).toBe('instance')
+  })
+
   test('a disabled assigned profile falls back to the instance default', async () => {
     await request(admin, 'PATCH', '', { voiceId: teamId })
     await PublicVoice.setDisabled(teamId, true)
@@ -192,6 +204,28 @@ describe('one profile shared by two squads', () => {
       expect(prompt.split('SHARED-TEAM-VOICE.')).toHaveLength(2)
       expect(prompt.split('### Voice')).toHaveLength(2)
       expect(prompt).toContain('## Public text')
+    }
+  })
+})
+
+describe('derivation needs a person', () => {
+  test('a manager agent holding squads:update and integrations:use is refused', async () => {
+    await new RoleSync().sync()
+    const agent = await Agent.create({ agentTypeId: 'manager', squadId })
+    try {
+      const { token } = await createTestAgentToken({ agentId: agent.id, squadId })
+      const headers = { ...authHeaders(token), 'content-type': 'application/json' }
+      // The agent can read and change the voice, so the refusal below is about who is calling.
+      expect((await app.request(`/api/squads/${squadId}/voice`, { headers })).status).toBe(200)
+      const res = await app.request(`/api/squads/${squadId}/voice/derive`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ login: 'octocat', confirmOtherPerson: true }),
+      })
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: 'derivation_requires_person' })
+    } finally {
+      await db.delete(agents).where(eq(agents.id, agent.id))
     }
   })
 })

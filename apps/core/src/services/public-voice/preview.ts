@@ -39,8 +39,8 @@ export interface PreviewPublicVoiceInput {
   sample?: string
   /** Unsaved squad layer to preview instead of the stored one. */
   draft?: SquadPublicVoice
-  /** A profile to preview instead of the stored assignment. */
-  voiceId?: string
+  /** A profile to preview instead of the stored assignment; null previews the instance default. */
+  voiceId?: string | null
   userId?: string | null
 }
 
@@ -59,7 +59,7 @@ export async function previewPublicVoice(
 ): Promise<PreviewPublicVoiceResult> {
   const complete = deps.complete ?? ((request) => completeWithTier(request))
   const draft = input.draft
-  const voiceId = input.voiceId ?? (draft?.base ? null : input.squad.publicVoiceId)
+  const voiceId = input.voiceId !== undefined ? input.voiceId : draft?.base ? null : input.squad.publicVoiceId
   const { resolved } = await resolveSquadPublicVoice(
     {
       id: input.squad.id,

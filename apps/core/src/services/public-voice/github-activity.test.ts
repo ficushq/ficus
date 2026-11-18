@@ -172,6 +172,18 @@ describe('collectGitHubActivity', () => {
     expect(result.items.map((i) => i.surface).sort()).toEqual(['commits', 'pull-requests'])
   })
 
+  test('a repository filter longer than the commit limit reports the repositories not read for commits', async () => {
+    const repos = Array.from({ length: 10 }, (_, i) => `acme/r${i}`)
+    const { calls, graphql } = fakeGraphql([userData(), {}])
+    const result = await collectGitHubActivity(
+      { squadId: 's', login: 'octo', filters: { repositories: repos, surfaces: ['commits'] } },
+      { graphql }
+    )
+    expect(calls[1]!.query).toContain('r7: repository(owner: "acme", name: "r7")')
+    expect(calls[1]!.query).not.toContain('"r8"')
+    expect(result.commitRepositoriesNotSampled).toEqual(['acme/r8', 'acme/r9'])
+  })
+
   test('a login the token cannot see, and an unavailable API, map to derivation errors', async () => {
     await expect(
       collectGitHubActivity({ squadId: 's', login: 'ghost', filters: {} }, { graphql: async () => null })

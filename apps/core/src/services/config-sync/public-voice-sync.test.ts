@@ -38,6 +38,16 @@ describe('PublicVoiceSync.parse', () => {
     ).toThrow()
     expect(() => sync.parse('id: team\nname: Team\n', 'x.yaml')).toThrow()
   })
+
+  test('rejects a profile that renders over the cap even when each field fits', () => {
+    const long = 'x'.repeat(1500)
+    expect(() =>
+      sync.parse(
+        `id: big\nname: Big\nbase: ${long}\nsurfaces:\n  commits:\n    mode: add\n    text: ${long}\n`,
+        'big.yaml'
+      )
+    ).toThrow('over the 2000-byte cap')
+  })
 })
 
 describe('PublicVoiceSync', () => {
@@ -85,6 +95,34 @@ describe('PublicVoiceSync', () => {
     await sync.recomputeFieldOverrides('default')
     PublicVoice.invalidateCache()
     expect((await PublicVoice.findDefault())!.toJson().yamlFieldOverrides).toEqual([])
+  })
+
+  test('revert rejects an oversized stored template without changing the voice', async () => {
+    const id = `${PREFIX}-team`
+    await PublicVoice.upsert({ id, name: 'Team', base: 'Safe voice.' })
+    await db
+      .update(publicVoices)
+      .set({
+        yamlTemplate: {
+          id,
+          name: 'Team',
+          base: 'x'.repeat(1500),
+          surfaces: { commits: { mode: 'add', text: 'y'.repeat(1500) } },
+        },
+      })
+      .where(eq(publicVoices.id, id))
+    await expect(sync.revertToTemplate(id)).rejects.toThrow('over the 2000-byte cap')
+    PublicVoice.invalidateCache()
+    expect((await PublicVoice.find(id))!.base).toBe('Safe voice.')
+  })
+
+  test('find-only callers keep a warm cache, including missing profile lookups', async () => {
+    PublicVoice.invalidateCache()
+    const profile = await PublicVoice.find('default')
+    // No mutation or invalidation: another find must reuse the same entity instance.
+    expect(await PublicVoice.find('default')).toBe(profile)
+    expect(await PublicVoice.find(`${PREFIX}-missing`)).toBeNull()
+    expect(await PublicVoice.find('default')).toBe(profile)
   })
 
   test('squad assignment persists, serializes, and is cleared when the profile is deleted', async () => {

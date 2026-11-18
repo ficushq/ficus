@@ -26,6 +26,7 @@ function collected(items: RawActivityItem[], over: Partial<CollectedActivity> = 
     requests: 2,
     droppedByFilter: { date: 0, repository: 0 },
     unavailableRepositories: [],
+    commitRepositoriesNotSampled: [],
     ...over,
   }
 }
@@ -50,6 +51,33 @@ describe('cleanSampleText', () => {
     expect(cleanSampleText('Mail me at a.b@example.com   or see https://example.com/x?y=1 \n\n\n\nThanks')).toBe(
       'Mail me at <email> or see <url>\n\nThanks'
     )
+  })
+})
+
+describe('secrets and titles', () => {
+  test('redacts credential-shaped strings', () => {
+    const text = [
+      'token ghp_abcdefghijklmnopqrstuvwxyz0123',
+      'pat github_pat_11ABCDEFG0123456789_abcdefghijk',
+      'key AKIAABCDEFGHIJKLMNOP',
+      'auth Bearer eyJhbGciOiJIUzI1NiJ9.payload',
+      'hash 0123456789abcdef0123456789abcdef',
+      'blob dGhpcyBpcyBhIHNlY3JldCB2YWx1ZSB0aGF0IGlzIGxvbmc9PQ',
+    ].join('\n')
+    const cleaned = cleanSampleText(text)
+    expect(cleaned).not.toMatch(/ghp_|github_pat_|AKIA|eyJ|0123456789abcdef|dGhpcyBp/)
+    expect(cleaned.match(/<secret>/g)).toHaveLength(6)
+    expect(cleanSampleText('An ordinary sentence about a refactor.')).toBe('An ordinary sentence about a refactor.')
+  })
+
+  test('cleans titles and commit headlines like bodies', () => {
+    const items = [
+      ...many('issue-comments', 15),
+      item({ surface: 'pull-requests', title: 'Fix login for a@b.io, see https://x.dev/1', text: prose(1) }),
+    ]
+    const { samples } = prepareSamples(collected(items), {})
+    const pr = samples.find((s) => s.surface === 'pull-requests')!
+    expect(pr.text.startsWith('Fix login for <email>, see <url>')).toBe(true)
   })
 })
 

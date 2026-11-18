@@ -162,6 +162,11 @@ describe('schemas', () => {
     ).toBe(true)
   })
 
+  test('text limits count UTF-8 bytes, not characters', () => {
+    expect(publicVoiceProfileInputSchema.safeParse({ id: 'a', name: 'A', base: 'é'.repeat(1001) }).success).toBe(false)
+    expect(publicVoiceProfileInputSchema.safeParse({ id: 'a', name: 'A', base: 'é'.repeat(1000) }).success).toBe(true)
+  })
+
   test('profile input requires a kebab-case id', () => {
     expect(publicVoiceProfileInputSchema.safeParse({ id: 'Team Voice', name: 'Team', base: 'x' }).success).toBe(false)
     expect(publicVoiceProfileInputSchema.safeParse({ id: 'team-voice', name: 'Team', base: 'x' }).success).toBe(true)
@@ -172,5 +177,7 @@ describe('schemas', () => {
     expect(derivationFiltersSchema.safeParse({ before: 'yesterday' }).success).toBe(false)
     expect(derivationFiltersSchema.safeParse({ excludeRepositories: ['not a repo'] }).success).toBe(false)
     expect(derivationFiltersSchema.safeParse({ surfaces: ['tweets'] }).success).toBe(false)
+    expect(derivationFiltersSchema.safeParse({ after: '2026-03-01', before: '2026-01-01' }).success).toBe(false)
+    expect(derivationFiltersSchema.safeParse({ after: '2026-01-01', before: '2026-03-01' }).success).toBe(true)
   })
 })

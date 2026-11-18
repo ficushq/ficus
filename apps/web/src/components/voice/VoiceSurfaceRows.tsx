@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { VoicePicker } from './VoicePicker'
 import { PUBLIC_SURFACES, PUBLIC_SURFACE_LABELS, type PublicSurface, type PublicVoiceSurfaces } from '@ficus/shared'
 
 type RowMode = 'inherit' | 'add' | 'override'
@@ -46,23 +47,17 @@ export function VoiceSurfaceRows({
         return (
           <div key={surface} className="rounded-lg border border-th-border p-3" data-surface={surface}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-medium text-primary" htmlFor={`voice-surface-${surface}`}>
-                {PUBLIC_SURFACE_LABELS[surface]}
-              </label>
-              <select
-                id={`voice-surface-${surface}`}
-                aria-label={`${PUBLIC_SURFACE_LABELS[surface]} mode`}
-                className="ficus-field rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+              <span className="text-sm font-medium text-primary">{PUBLIC_SURFACE_LABELS[surface]}</span>
+              <VoicePicker
+                label={`${PUBLIC_SURFACE_LABELS[surface]} mode`}
                 value={mode}
                 disabled={disabled}
-                onChange={(e) => setRow(surface, e.target.value as RowMode, entry?.text ?? inheritedEntry?.text ?? '')}
-              >
-                {(['inherit', 'add', 'override'] as const).map((option) => (
-                  <option key={option} value={option}>
-                    {option === 'inherit' ? inheritLabel : MODE_LABELS[option]}
-                  </option>
-                ))}
-              </select>
+                options={(['inherit', 'add', 'override'] as const).map((option) => ({
+                  value: option,
+                  label: option === 'inherit' ? inheritLabel : MODE_LABELS[option],
+                }))}
+                onChange={(next) => setRow(surface, next, entry?.text ?? inheritedEntry?.text ?? '')}
+              />
             </div>
             {entry ? (
               <textarea

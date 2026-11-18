@@ -60,8 +60,7 @@ describe('SquadVoiceEditor', () => {
   test('editors get the picker, inherited surface rows greyed, the meter and the derive card', () => {
     const html = render('sq-edit', ['squads:read', 'squads:update'])
     expect(html).toContain('Instance default')
-    expect(html).toContain('Platform team')
-    expect(html).toContain('Custom for this squad')
+    expect(html).toContain('role="combobox" aria-label="Voice"')
     expect(html).toContain('data-inherited="true"')
     expect(html).toContain('Shorter, no headings.')
     expect(html).toMatch(/\d+ \/ 2,000 bytes/)
@@ -76,7 +75,7 @@ describe('SquadVoiceEditor', () => {
       ['squads:update'],
       state({ local: { base: null, surfaces: { commits: { mode: 'override', text: 'Subject only.' } } } })
     )
-    expect(html).toMatch(/<option value="override" selected="">Replace the voice<\/option>/)
+    expect(html).toMatch(/aria-label="Commits mode"[^>]*><span[^>]*>Replace the voice<\/span>/)
     expect(html).toContain('Subject only.')
   })
 
@@ -127,4 +126,58 @@ describe('voice editing helpers', () => {
     expect(patch.surfaces?.commits).toEqual({ mode: 'add', text: 'x' })
     expect(buildVoicePatch('__instance__', '', {}).voiceId).toBeNull()
   })
+})
+
+// The picker options are in a portal only while open, unlike the previous native select.
+test('a person can pick a profile, override a surface, and preview the instance default', async () => {
+  const { acquireDomHarness } = await import('../../test/domHarness')
+  const dom = await acquireDomHarness({ url: 'http://localhost' })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const squadId = 'sq-picker'
+  queryClient.setQueryData(queryKeys.auth.permissions(squadId), {
+    permissions: ['squads:read', 'squads:update'],
+    identity: { type: 'user', userId: 'user-1' },
+  })
+  const requests: Array<{ url: string; body: any }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: any, init: any) => {
+    requests.push({ url: String(input), body: JSON.parse(init?.body ?? '{}') })
+    return new Response(JSON.stringify({ text: 'Previewed.' }), { status: 200 })
+  }) as typeof fetch
+  try {
+    const { root, container } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SquadVoiceEditor squadId={squadId} state={state()} />
+        </QueryClientProvider>
+      )
+    )
+    const choose = async (label: string, text: string) => {
+      await dom.act(async () => container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click())
+      const option = [...dom.window.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((el) =>
+        el.textContent?.includes(text)
+      )!
+      expect(option).toBeDefined()
+      await dom.act(async () => option.click())
+    }
+    await choose('Voice', 'Platform team')
+    expect(container.querySelector('[aria-label="Voice"]')!.textContent).toContain('Platform team')
+    await choose('Commits mode', 'Replace the voice')
+    expect(container.querySelector('[aria-label="Commits text"]')).not.toBeNull()
+    await choose('Voice', 'Instance default')
+    const preview = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (el) => el.textContent === 'Preview'
+    )!
+    await dom.act(async () => {
+      preview.click()
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    expect(requests.at(-1)?.url).toContain('/voice/preview')
+    expect(requests.at(-1)?.body.voiceId).toBeNull()
+  } finally {
+    globalThis.fetch = originalFetch
+    await dom.cleanup()
+    queryClient.clear()
+  }
 })

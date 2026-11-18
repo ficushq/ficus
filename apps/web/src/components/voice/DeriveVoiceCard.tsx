@@ -222,6 +222,12 @@ export function DeriveVoiceCard({
                 {result.sampling.unavailableRepositories.join(', ')}
               </p>
             ) : null}
+            {result.sampling.commitRepositoriesNotSampled?.length ? (
+              <p>
+                Commits are read from eight repositories at most; not read:{' '}
+                {result.sampling.commitRepositoriesNotSampled.join(', ')}
+              </p>
+            ) : null}
           </div>
           <div>
             <h5 className="text-xs font-medium text-primary">Observations</h5>

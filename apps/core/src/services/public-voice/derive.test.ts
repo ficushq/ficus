@@ -1,6 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { AgentSession } from '../../entities/AgentSession'
-import { modelTierSync } from '../config-sync'
 import { PUBLIC_VOICE_MAX_BYTES } from '@ficus/shared'
 import type { CollectedActivity, RawActivityItem } from './github-activity'
 import {
@@ -8,6 +7,7 @@ import {
   buildDerivationPrompt,
   DERIVATION_SYSTEM_PROMPT,
   derivePublicVoice,
+  isSafeVoiceText,
   parseDerivationOutput,
   runDerivationSession,
   type DerivationSession,
@@ -89,6 +89,62 @@ describe('assembleDraft', () => {
     expect(draft.surfaces.channels).toBeUndefined()
   })
 
+  test('drops observations and surface notes that copy private text, and refuses a base that does', () => {
+    const privateSamples = [
+      ...samples,
+      sample(3, 'We are moving the billing service to the new cluster before the March launch.', true),
+    ]
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({
+          observations: [
+            'Writes things like: moving the billing service to the new cluster before the launch.',
+            'Keeps it short.',
+          ],
+          surfaces: { channels: 'We are moving the billing service soon.', commits: 'Imperative subjects.' },
+        })
+      )
+    )
+    const { observations, draft } = assembleDraft(parsed, privateSamples)
+    expect(observations).toEqual(['Keeps it short.'])
+    expect(draft.surfaces.channels).toBeUndefined()
+    expect(draft.surfaces.commits).toBeDefined()
+
+    const leakyBase = parseDerivationOutput(
+      JSON.stringify(output({ base: 'Copy this: billing service to the new cluster before the March launch.' }))
+    )
+    expect(() => assembleDraft(leakyBase, privateSamples)).toThrow('derivation_invalid_output')
+  })
+
+  test('public samples can be quoted; only private text is checked for copying', () => {
+    const parsed = parseDerivationOutput(
+      JSON.stringify(output({ observations: ['Says "Fixed in the next release, thanks for the report."'] }))
+    )
+    expect(assembleDraft(parsed, samples).observations).toHaveLength(1)
+  })
+
+  test('rejects secrets, mentions after brackets or quotes, and www or bare-domain links in output', () => {
+    for (const text of [
+      'Pastes tokens like ghp_abcdefghijklmnopqrstuvwxyz0123.',
+      'Uses AKIAABCDEFGHIJKLMNOP in examples.',
+      'Copies github_pat_11ABCDEFG0123456789_abcdefghijk.',
+      'Pastes 0123456789abcdef0123456789abcdef.',
+      'Pastes dGhpcyBpcyBhIHNlY3JldCB2YWx1ZSB0aGF0IGlzIGxvbmc9PQ.',
+      'Sends Bearer abcdefghijklmnop headers.',
+      'Thanks reviewers (@octocat) often.',
+      'Quotes "@octocat" by name.',
+      'Links to www.example.org.',
+      'Links to docs.example.com for details.',
+    ])
+      expect({ text, safe: isSafeVoiceText(text) }).toEqual({ text, safe: false })
+    for (const text of [
+      'Uses @-mentions sparingly.',
+      'Writes complete sentences, e.g. full stops.',
+      'Mentions Node.js often.',
+    ])
+      expect({ text, safe: isSafeVoiceText(text) }).toEqual({ text, safe: true })
+  })
+
   test('trims to the cap by dropping exemplars, then observations', () => {
     const long = 'x'.repeat(150)
     const parsed = parseDerivationOutput(
@@ -127,6 +183,7 @@ describe('derivePublicVoice', () => {
     requests: 2,
     droppedByFilter: { date: 0, repository: 0 },
     unavailableRepositories: [],
+    commitRepositoriesNotSampled: [],
   })
 
   test('one session call with the samples, returning a draft and the sampling summary', async () => {
@@ -148,6 +205,15 @@ describe('derivePublicVoice', () => {
     expect(result.sampling.filters).toEqual({ before: '2026-03-01' })
     expect(result.sampling.dateRange['issue-comments']).toEqual({ oldest: '2026-01-02', newest: '2026-01-02' })
     expect(result.maxBytes).toBe(PUBLIC_VOICE_MAX_BYTES)
+  })
+
+  test('a turn that ends with no text is model_unavailable, not invalid output', async () => {
+    await expect(
+      derivePublicVoice(
+        { squadId: 's', userId: null, login: 'octo', filters: {} },
+        { collect, session: async () => '  ' }
+      )
+    ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
   })
 
   test('a failed or slow model call is model_unavailable', async () => {
@@ -179,15 +245,18 @@ describe('runDerivationSession', () => {
       },
       abort: async () => {},
     }
-    await modelTierSync.sync()
     const create = spyOn(AgentSession, 'create').mockResolvedValue({ pi } as any)
     try {
-      const text = await runDerivationSession({
-        systemPrompt: 'SYSTEM',
-        prompt: 'SAMPLES',
-        attribution: { userId: 'user-1', squadId: 'squad-1' },
-        signal: new AbortController().signal,
-      })
+      // The model chain is injected, so the test reads no model tiers from the shared database.
+      const text = await runDerivationSession(
+        {
+          systemPrompt: 'SYSTEM',
+          prompt: 'SAMPLES',
+          attribution: { userId: 'user-1', squadId: 'squad-1' },
+          signal: new AbortController().signal,
+        },
+        { resolveModel: async () => 'anthropic:test-model' }
+      )
       expect(text).toBe('{"ok":true}')
       const options = create.mock.calls[0]![0] as any
       expect(options.systemPrompt).toBe('SYSTEM')
@@ -196,7 +265,35 @@ describe('runDerivationSession', () => {
       expect(options.storage).toBeUndefined()
       expect(options.usage.feature).toBe('public-voice-derive')
       expect(options.usage.attribution()).toEqual({ userId: 'user-1', squadId: 'squad-1' })
-      expect(typeof options.model).toBe('string')
+      expect(options.model).toBe('anthropic:test-model')
+    } finally {
+      create.mockRestore()
+    }
+  })
+
+  test('a deadline that passes while the session is created rejects and aborts the session', async () => {
+    const controller = new AbortController()
+    let aborted = false
+    const create = spyOn(AgentSession, 'create').mockImplementation((async () => {
+      controller.abort()
+      return {
+        pi: {
+          subscribe: () => {},
+          prompt: () => new Promise(() => {}),
+          abort: async () => {
+            aborted = true
+          },
+        },
+      }
+    }) as any)
+    try {
+      await expect(
+        runDerivationSession(
+          { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: controller.signal },
+          { resolveModel: async () => 'anthropic:test-model' }
+        )
+      ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+      expect(aborted).toBe(true)
     } finally {
       create.mockRestore()
     }

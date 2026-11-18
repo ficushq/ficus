@@ -32,7 +32,8 @@ const previewSchema = z
     surface: z.enum(PUBLIC_SURFACES),
     sample: z.string().max(4000).optional(),
     draft: publicVoiceLayerSchema.optional(),
-    voiceId: publicVoiceIdSchema.optional(),
+    // null previews the instance default, which works even while the `default` profile is disabled.
+    voiceId: publicVoiceIdSchema.nullable().optional(),
   })
   .strict()
 
@@ -125,6 +126,9 @@ export const squadVoiceRouter = new Hono()
     async (c) => {
       const squadId = resolvedSquadId(c)
       const identity = c.get('identity') as Identity | undefined
+      // A person reviews a derived draft before anything is saved, and the own-login check needs a
+      // person's linked GitHub account; an agent could set confirmOtherPerson itself.
+      if (identity?.type !== 'user') return c.json({ error: 'derivation_requires_person' }, 403)
       const body = c.req.valid('json')
       const linked = await linkedGitHubLogin(identity)
       if (!body.confirmOtherPerson && linked?.toLowerCase() !== body.login.toLowerCase()) {

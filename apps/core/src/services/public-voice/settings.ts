@@ -25,15 +25,17 @@ export interface SquadVoiceSetting {
 
 /**
  * Apply a PATCH to a squad's voice setting. The base comes from exactly one
- * place: a non-null custom base clears the assignment, a non-null assignment
- * clears the custom base. A null surface entry deletes the squad's entry. An
- * empty layer is stored as null.
+ * place: a non-null custom base clears the assignment, and an assignment or an
+ * explicit `voiceId: null` (the instance default) clears the custom base. A null surface entry
+ * deletes the squad's entry. An empty layer is stored as null.
  */
 export function mergePublicVoicePatch(current: SquadVoiceSetting, patch: SquadPublicVoicePatch): SquadVoiceSetting {
   let voiceId = patch.voiceId !== undefined ? patch.voiceId : current.voiceId
   let base = patch.base !== undefined ? patch.base : (current.local?.base ?? null)
   if (patch.base) voiceId = null
-  if (patch.voiceId) base = null
+  // Assigning a profile, or choosing the instance default (an explicit null), replaces a custom base
+  // unless the same request sets one.
+  if (patch.voiceId || (patch.voiceId === null && patch.base === undefined)) base = null
 
   const surfaces: PublicVoiceSurfaces = { ...(current.local?.surfaces ?? {}) }
   for (const [surface, entry] of Object.entries(patch.surfaces ?? {}) as Array<
