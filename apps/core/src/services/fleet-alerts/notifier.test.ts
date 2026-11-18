@@ -66,7 +66,7 @@ describe('fleet incident notifier', () => {
         lastObservedAt: NOW,
         causeCode: 'expired-oauth',
         causeSummary: 'OAuth refresh credential expired or was revoked.',
-        remediation: 'Run `ficus pa login openai-codex` to authenticate again.',
+        remediation: 'Re-authorize openai-codex in Settings → AI Providers to authenticate again.',
         details: input.details ?? {},
         updatedAt: NOW,
       })
