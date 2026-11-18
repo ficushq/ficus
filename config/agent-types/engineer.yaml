@@ -17,13 +17,6 @@ skills:
   - test-driven-development
   - setup-github-webhooks
   - deploy-app
-  - deploy-vercel
-  - deploy-netlify
-  - deploy-cloudflare
-  - deploy-github-pages
-  - deploy-railway
-  - deploy-supabase
-  - deploy-digitalocean
   - frontend-visual-review
 tools:
   allow:

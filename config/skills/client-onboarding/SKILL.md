@@ -5,209 +5,66 @@ description: 'End-to-end guide for onboarding a new client — configure secrets
 
 # Client Onboarding
 
-## Overview
+Set up a new Ficus instance in the order below. Each phase names the skill that
+holds the detailed steps; read it when you reach that phase. Ask the human the
+listed questions before acting on each phase.
 
-This skill guides you through setting up a new Ficus instance for a client. It
-covers secrets, squads, integrations, and verification. Each section references
-a dedicated skill with detailed instructions — read the relevant skill when you
-reach that step.
+Never ask for credentials in chat, even if volunteered. Every credential is entered
+by the human in its owning settings form (see the table at the end); saved values
+stay hidden and are rotated by replacement.
 
-## Prerequisites
+## Phases
 
-Before starting, confirm with the human:
+1. **Credentials** (`setup-secrets`). At least one agent-model provider in
+   Settings → AI Providers; a GitHub account connection assigned to the squad if
+   agents need repositories; OpenAI API services for memory embeddings and voice.
+   Ask: which AI providers, API key or account login, private repositories, voice
+   and memory search, read-aloud speech.
+2. **Squads** (`setup-squad`). Create each squad and note its id for routing:
 
-1. **Ficus is deployed and running** — API, worker, and web are healthy
-2. **Platform URLs are available** — your system prompt includes the Web UI and API URLs (auto-configured in K8s)
-3. **Database is connected** — `DATABASE_URL` and `FICUS_ENCRYPTION_KEY` are set
-4. The human has access to the platforms they want to integrate (GitHub, Linear,
-   Discord, Slack, Telegram)
+   ```bash
+   ficus squad create "Engineering" -p "Software development and code maintenance" --preset engineering
+   ficus squad create "Operations" -p "General operations and support"
+   ```
 
-Quick health check:
+   `engineering` is the only built-in preset; omit `--preset` for an empty squad.
 
-```bash
-# Verify API is healthy (check from the system manager's perspective)
-ficus squad list      # Should return empty or existing squads
-```
+3. **GitHub** (`setup-github-webhooks`). Ask which repositories to watch and
+   whether issues route by label or all to one squad. Verify with
+   `ficus webhook status github`.
+4. **Linear, optional** (`setup-linear-integration`). Ask which Linear teams route
+   to which squads. Verify with `ficus webhook status linear`.
+5. **Chat channels, optional** (`setup-discord`, `setup-slack`, `setup-telegram`).
+   Ask which platforms to connect. For Slack the human enters the **Bot token** and
+   **Signing secret** in Settings → Integrations → Slack.
+6. **Notifications** (`setup-notifications`). With a channel bot connected,
+   `/ficus notify <squad-name>` from the target channel is the quickest route.
 
-## Phase 1: Secrets & Credentials
-
-**Skill:** `setup-secrets`
-
-Configure the essential secrets first, since everything else depends on them.
-
-**Credential handling rules:**
-
-- Direct the human to the matching **Settings → Integrations** card or **AI
-  Providers** form. Never ask for credentials in chat, even if volunteered.
-- Generate webhook signing secrets only through the owning webhook panel; the
-  human copies the new value to the provider before saving. Saved values stay
-  hidden and rotation uses replacement, not read-back.
-- Never read, print, log or commit tokens. Assigned provider CLIs use per-command
-  wrappers. For project-local scripts use `ficus integration exec <provider> -- npm run deploy`
-  (bun/pnpm equivalent); outside squad context add `--squad <squad-id>`.
-- Custom app secrets use squad **Environment Variables** (visible to agents and
-  terminals) or human-directed squad/agent workspace files, not integration tokens.
-
-**Minimum required:**
-
-1. Bootstrap and personal authentication — server setup and Account settings
-2. AI provider credentials (at least one) — for agent execution
-3. GitHub account connection in Settings → Integrations — assign it to the squad for repository access
-4. OpenAI API services connection — for memory embeddings and voice (recommended)
-
-**Ask the human:**
-
-- Which AI provider(s) do they want to use? (Anthropic, OpenAI, Google)
-- Do they have API keys ready, or do they want to use OAuth?
-- Do agents need to access private GitHub repos?
-- Do they want voice input and memory search? (requires OpenAI key)
-- Do they want text-to-speech? (requires Google Cloud credentials)
-
-## Phase 2: Create Squads
-
-**Skill:** `setup-squad`
-
-Create the squad(s) the client needs. See the `setup-squad` skill for full
-details on creating squads, setting context, and configuring integrations.
-
-```bash
-# Create an engineering squad from the built-in preset
-ficus squad create "Engineering" -p "Software development and code maintenance" --preset engineering
-
-# Create a squad without preset defaults
-ficus squad create "Operations" -p "General operations and support"
-```
-
-Note the squad UUIDs — you'll need them for channel routing and webhook routing.
+## Verification
 
 ```bash
 ficus squad list
+ficus provider-auth list
+ficus channel list
 ```
 
-## Phase 3: GitHub Integration
+Then ask the human to log into the web UI, chat with the system manager, run
+`/ficus help` in each connected chat platform (or `/help` to the Telegram bot), and
+assign a test GitHub or Linear issue to confirm the squad manager receives it.
 
-**Skill:** `setup-github-webhooks`
+## Where each setting lives
 
-**Ask the human:**
-
-- Which GitHub repositories should Ficus watch?
-- Should issues be routed by labels, or should all issues go to one squad?
-
-Steps:
-
-1. Configure direct webhook delivery in **Settings → Integrations → GitHub → Webhook delivery** (optional when managed relay or polling is sufficient)
-2. Create the webhook on each repo via `gh` CLI
-3. Configure squad metadata for routing (`ficus squad set-meta ... github`)
-4. Verify with `ficus webhook status github`
-
-## Phase 4: Linear Integration (Optional)
-
-**Skill:** `setup-linear-integration`
-
-**Ask the human:**
-
-- Do they use Linear for project management?
-- Which Linear team(s) should route to which squad(s)?
-
-Steps:
-
-1. Configure the webhook signing secret in Settings → Integrations → Linear → Webhook delivery
-2. Walk the human through creating the webhook in Linear's UI
-3. Configure squad metadata for team routing
-4. Verify with `ficus webhook status linear`
-
-## Phase 5: Channel Integrations (Optional)
-
-**Ask the human:** Which chat platforms do they want to connect?
-
-### Discord
-
-**Skill:** `setup-discord`
-
-1. Walk the human through creating the Discord application and bot
-2. Enter only the Bot token in Settings → Integrations → Discord; Ficus discovers application identity
-3. Use gateway delivery by default; HTTP interactions endpoint setup is optional
-4. Invite the bot to the server
-5. Register slash commands: `ficus discord register`
-6. Create the channel instance and route it to squads
-7. Verify with `/ficus help` in Discord
-
-### Slack
-
-**Skill:** `setup-slack`
-
-1. Walk the human through creating the Slack app (manifest is fastest)
-2. Have the human enter **Bot token** and **Signing secret** in Settings → Integrations → Slack, then save, validate and enable the connection
-3. Create the channel instance and route it to squads
-4. Verify with `/ficus help` in Slack
-
-### Telegram
-
-**Skill:** `setup-telegram`
-
-1. Walk the human through creating the bot via @BotFather
-2. Configure the Telegram integration; Core registers the webhook
-3. Create the channel instance and route it to squads
-4. Verify by messaging the bot
-
-## Phase 6: Notifications
-
-**Skill:** `setup-notifications`
-
-Configure where each squad sends notifications (blocked, review, done events).
-
-**Easiest method:** If channel bots are set up, use `/ficus notify <squad-name>`
-from the target channel.
-
-**CLI method:** Set notification metadata on each squad with the channel instance
-ID and platform channel ID.
-
-`APP_URL` is automatically configured by the infrastructure in K8s deployments,
-so notification links work out of the box.
-
-## Phase 7: Verification Checklist
-
-Run through each integration to confirm everything works:
-
-```bash
-# Core
-ficus squad list                        # Squads exist
-ficus provider-auth list                # AI providers configured
-
-# Webhooks
-ficus webhook status github             # If configured
-ficus webhook status linear             # If configured
-
-# Channels
-ficus channel list                      # Channel instances exist
-```
-
-**Manual tests (ask the human to perform):**
-
-- [ ] Log into the web UI with the configured password
-- [ ] Open a chat with the system manager and send a message
-- [ ] (Discord) Run `/ficus help` in the Discord server
-- [ ] (Slack) Run `/ficus help` in the Slack workspace
-- [ ] (Telegram) Send `/help` to the bot
-- [ ] (GitHub) Assign a test issue → verify the squad manager receives it
-- [ ] (Linear) Assign a test issue → verify the squad manager receives it
-
-## Quick Reference: Settings and Connections
-
-| Capability | Owning settings and input | When needed |
-| --- | --- | --- |
-| Bootstrap and personal authentication | Server setup and Account settings | Required |
-| Agent-model access | Settings → AI Providers; account login or API key | At least one provider |
-| GitHub repository access | Settings → Integrations → GitHub; connect an account, then assign it to the squad | If using GitHub |
-| Direct GitHub/Linear webhooks | The provider's Webhook delivery panel; generate/replace signing material there | If direct delivery is configured |
-| Discord bot | Settings → Integrations → Discord; **Bot token** only, application identity discovered | If using Discord |
-| Slack bot | Settings → Integrations → Slack; **Bot token** and **Signing secret** | If using Slack |
-| Telegram bot | Settings → Integrations → Telegram; **Bot token**, with signing secret generated and webhook registered by Core | If using Telegram |
-| Telegram routing | Discovered **numeric Bot ID** in the Telegram card, used in the channel instance; this is nonsecret identity, not a credential input | If using Telegram |
-| Embeddings and voice | Settings → Integrations → OpenAI API services; **API key**, separate from agent-model accounts | Recommended |
-| Read-aloud speech | Settings → Integrations → Google Cloud; service-account JSON or server ADC | Optional |
-| Push notifications | Apple Push and Web Push integration cards | If using push |
-| Public application URLs | Server deployment configuration | Required for public links/delivery |
-
-Use connection status and provider validation to diagnose setup. These are owning
-forms and connections, not credential names to export or copy into squad files.
+| Capability                            | Owning settings and input                                                                                                            | When needed                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| Bootstrap and personal authentication | Server setup and Account settings                                                                                                    | Required                           |
+| Agent-model access                    | Settings → AI Providers; account login or API key                                                                                    | At least one provider              |
+| GitHub repository access              | Settings → Integrations → GitHub; connect an account, then assign it to the squad                                                    | If using GitHub                    |
+| Direct GitHub/Linear webhooks         | The provider's Webhook delivery panel; generate/replace signing material there                                                       | If direct delivery is configured   |
+| Discord bot                           | Settings → Integrations → Discord; **Bot token** only, application identity discovered                                               | If using Discord                   |
+| Slack bot                             | Settings → Integrations → Slack; **Bot token** and **Signing secret**                                                                | If using Slack                     |
+| Telegram bot                          | Settings → Integrations → Telegram; **Bot token**, with signing secret generated and webhook registered by Core                      | If using Telegram                  |
+| Telegram routing                      | Discovered **numeric Bot ID** in the Telegram card, used in the channel instance; this is nonsecret identity, not a credential input | If using Telegram                  |
+| Embeddings and voice                  | Settings → Integrations → OpenAI API services; **API key**, separate from agent-model accounts                                       | Recommended                        |
+| Read-aloud speech                     | Settings → Integrations → Google Cloud; service-account JSON or server ADC                                                           | Optional                           |
+| Push notifications                    | Apple Push and Web Push integration cards                                                                                            | If using push                      |
+| Public application URLs               | Server deployment configuration                                                                                                      | Required for public links/delivery |

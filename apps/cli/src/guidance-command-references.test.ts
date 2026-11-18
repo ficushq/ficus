@@ -177,12 +177,7 @@ function checkCommandReference(program: Command, reference: CommandReference): s
  * Known stale references that another change is already rewriting, keyed by
  * file and problem. Each entry must still occur, so it is removed with the fix.
  */
-const KNOWN_STALE = new Map([
-  [
-    'external/skills/ficus/SKILL.md: `ficus workstream create` has no option `--agents`',
-    'The work stream section of the external ficus skill still teaches legacy creation; it is being rewritten for the flow lifecycle (flow, advance, finish).',
-  ],
-])
+const KNOWN_STALE = new Map<string, string>()
 
 const reference = (text: string, code = true): CommandReference => ({ file: 'example.md', line: 1, text, code })
 
