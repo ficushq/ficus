@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import * as yaml from 'js-yaml'
 import { join } from 'node:path'
 import { MONOREPO_ROOT } from '../../lib/paths'
+import { validateModelSpecList } from '../../lib/utils/model-spec'
 const mapping: Record<string, string[]> = {
   fast: [],
   standard: ['subagent', 'artifact-builder-default', 'general', 'engineer', 'system-manager', 'manager', 'sysops'],
@@ -28,6 +29,14 @@ describe('shipped model tier chain proof', () => {
       }
       expect(value.chain).toBeTruthy()
       expect(value.chain!.split(',')).toHaveLength(3)
+    }
+  })
+  test('every shipped tier chain resolves against the bundled model catalog', () => {
+    for (const tier of [...Object.keys(mapping), 'lite']) {
+      const value = yaml.load(readFileSync(join(MONOREPO_ROOT, 'config/model-tiers', `${tier}.yaml`), 'utf8')) as {
+        chain: string
+      }
+      expect(() => validateModelSpecList(value.chain)).not.toThrow()
     }
   })
 })

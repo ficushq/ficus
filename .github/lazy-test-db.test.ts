@@ -117,7 +117,9 @@ for (const path of ['apps/core/src/db/integrations-migration.test.ts', 'apps/cor
     const f = fixture()
     try {
       const result = f.run(['test', path])
-      expect(result.commands).toBe('ficus\n')
+      // The fixture CLI refuses every lookup: the current pool key, then the
+      // former one, and nothing else (no Docker, no database).
+      expect(result.commands).toBe('ficus\nficus\n')
       expect(result.code).not.toBe(0)
       expect(result.output).toContain('[test-db capacity: unavailable]')
       expect(result.output).not.toContain('Skipping')
@@ -138,7 +140,7 @@ async function externalFixture(f: ReturnType<typeof fixture>, slowPush = false):
   writeFileSync(join(f.dir, 'schema'), rows)
   writeFileSync(
     join(f.dir, 'bin', 'ficus'),
-    '#!/bin/sh\necho ficus >> "$LAZY_DB_LOG"\necho \'{"key":"shared-box-intensive","squadId":"fixture","enabled":false}\'\n',
+    '#!/bin/sh\necho ficus >> "$LAZY_DB_LOG"\necho \'{"key":"heavy-work","squadId":"fixture","enabled":false}\'\n',
     { mode: 0o755 }
   )
   for (const command of ['psql', 'bunx', 'pg_isready']) {
@@ -181,7 +183,7 @@ test('mixed tests defer startup until DB use, and partial startup failure cleans
       join(f.dir, 'bin', 'ficus'),
       `#!/bin/sh
 echo ficus >> "$LAZY_DB_LOG"
-echo '{"key":"shared-box-intensive","squadId":"fixture","enabled":false}'
+echo '{"key":"heavy-work","squadId":"fixture","enabled":false}'
 `,
       { mode: 0o755 }
     )
@@ -241,7 +243,8 @@ test('dynamic DB-dependent command suites request readiness before entering test
   const f = fixture()
   try {
     const result = f.run(['test', 'apps/core/src/services/integrations/execution-wrappers.test.ts'])
-    expect(result.commands).toBe('ficus\n')
+    // The current pool key, then the former one; nothing else.
+    expect(result.commands).toBe('ficus\nficus\n')
     expect(result.code).not.toBe(0)
     expect(result.output).toContain('[test-db capacity: unavailable]')
     // Cold schema work must finish at module readiness, not consume a later

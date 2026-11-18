@@ -9,6 +9,8 @@ export interface SettingMetadata {
   isDefault: boolean
   updatedAt: string | null
   updatedBy: string | null
+  /** Live context for this setting, such as the value derived when nothing is stored. */
+  detail?: string
 }
 
 export async function listSettings(): Promise<SettingMetadata[]> {
