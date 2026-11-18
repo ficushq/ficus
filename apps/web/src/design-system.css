@@ -412,11 +412,14 @@
     );
   }
 
+  /* Write only the standard backdrop-filter: the production minifier (Lightning CSS) adds the
+     -webkit- prefix itself. Given the standard property followed by the prefixed one, it keeps only
+     the prefixed property, which Chromium ignores, so glass surfaces lose their blur there.
+     glassBackdropFilter.test.ts guards this. */
   @supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
     .ficus-glass {
       background: rgb(var(--color-glass));
       backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
     }
   }
 
@@ -424,7 +427,6 @@
     .ficus-glass {
       background: rgb(var(--color-bg-surface));
       backdrop-filter: none;
-      -webkit-backdrop-filter: none;
     }
   }
 
@@ -536,8 +538,8 @@
     /* The shared glass component is emitted later by Tailwind; keep this override more specific. */
     .ficus-assistant-panel.ficus-glass {
       background: color-mix(in srgb, rgb(var(--color-bg-surface)) 80%, transparent);
+      /* Standard property only; the minifier adds the -webkit- prefix (see .ficus-glass). */
       backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
     }
   }
 
@@ -545,7 +547,6 @@
     .ficus-assistant-panel.ficus-glass {
       background: rgb(var(--color-bg-surface));
       backdrop-filter: none;
-      -webkit-backdrop-filter: none;
     }
   }
 
