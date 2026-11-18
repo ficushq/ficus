@@ -63,8 +63,9 @@ can perform several steps. Separate participant IDs give independent sessions
 even when they use the same agent type/model.
 
 Choose delivery separately from the participant sequence. `completion.mode` keeps
-`pr-merge`, `pr-auto-merge`, and `direct-merge`; it also supports `deliverable`
-and `review-approval`. Solo Coding, Reviewed Coding, Planned Coding, and Engineering with design approval
+`pr-merge`, `pr-auto-merge`, and `direct-merge`; it also supports `deliverable`,
+`review-approval`, and `pr-review` (review an existing pull request and stay on
+it until it merges or closes). Solo Coding, Reviewed Coding, Planned Coding, and Engineering with design approval
 default to `pr-merge`; their
 sources can use a `set-completion` customization without duplicating the steps.
 Preserve the full squad workflow source, including `set-completion` customizations;
@@ -126,7 +127,6 @@ For each new request, consult the recorded guidance and select the suitable
 source with `ficus workstream create --workflow <id>` or `--flow-content '<JSON source>'`;
 use `--flow-stdin` and a quoted heredoc for longer JSON/YAML. Schedule create/update
 uses the same `--workflow`, `--flow-content`, and `--flow-stdin` selection.
-Do not also supply legacy `--agents`, assignee, model, or completion options.
 The runtime creates only participants needed by active steps; queued
 streams, future steps, and branch starts waiting for concurrency create none. Reuse the within-stream session on
 returns unless the chosen policy calls for a fresh attempt.
@@ -290,7 +290,9 @@ FICUS_FLOW
 ```
 
 To add the gate to a preset instead, use a `put-step` customization for the approval step and a
-`set-outcome` that points the design step's outcome at it, in one batch. A question answer or an
+`set-outcome` customization (`id`, `outcome`, `transition`) that points the design step's outcome at
+it, in one batch. `update-step` and `remove-outcome` are listed with the other customizations in
+`reference.md`. A question answer or an
 unblock never approves the gate; only its outcome does.
 
 ## Integration events

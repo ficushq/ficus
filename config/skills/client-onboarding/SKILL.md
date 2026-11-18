@@ -71,14 +71,14 @@ Create the squad(s) the client needs. See the `setup-squad` skill for full
 details on creating squads, setting context, and configuring integrations.
 
 ```bash
-# Create an engineering squad
-ficus squad create "Engineering" -p "Software development and code maintenance" -t engineering
+# Create an engineering squad from the built-in preset
+ficus squad create "Engineering" -p "Software development and code maintenance" --preset engineering
 
-# Create a general-purpose squad
-ficus squad create "Operations" -p "General operations and support" -t general
+# Create a squad without preset defaults
+ficus squad create "Operations" -p "General operations and support"
 ```
 
-Note the squad UUIDs — you'll need them for channel linking and webhook routing.
+Note the squad UUIDs — you'll need them for channel routing and webhook routing.
 
 ```bash
 ficus squad list
@@ -129,7 +129,7 @@ Steps:
 3. Use gateway delivery by default; HTTP interactions endpoint setup is optional
 4. Invite the bot to the server
 5. Register slash commands: `ficus discord register`
-6. Create the channel instance and link to squads
+6. Create the channel instance and route it to squads
 7. Verify with `/ficus help` in Discord
 
 ### Slack
@@ -138,7 +138,7 @@ Steps:
 
 1. Walk the human through creating the Slack app (manifest is fastest)
 2. Have the human enter **Bot token** and **Signing secret** in Settings → Integrations → Slack, then save, validate and enable the connection
-3. Create the channel instance and link to squads
+3. Create the channel instance and route it to squads
 4. Verify with `/ficus help` in Slack
 
 ### Telegram
@@ -147,7 +147,7 @@ Steps:
 
 1. Walk the human through creating the bot via @BotFather
 2. Configure the Telegram integration; Core registers the webhook
-3. Create the channel instance and link to squads
+3. Create the channel instance and route it to squads
 4. Verify by messaging the bot
 
 ## Phase 6: Notifications

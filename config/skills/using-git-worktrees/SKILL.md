@@ -31,6 +31,9 @@ ls -d worktrees 2>/dev/null      # Alternative
 
 **If found:** Use that directory. If both exist, `.worktrees` wins.
 
+**If neither exists:** use the location the repository's `AGENTS.md` names, otherwise
+create `.worktrees`.
+
 ## Safety Verification
 
 ### For Project-Local Directories (.worktrees or worktrees)
@@ -43,8 +46,6 @@ git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/d
 ```
 
 **If NOT ignored:**
-
-Per Jesse's rule "Fix broken things immediately":
 
 1. Add appropriate line to .gitignore
 2. Commit the change
@@ -63,11 +64,11 @@ project=$(basename "$(git rev-parse --show-toplevel)")
 ### 2. Create Worktree
 
 ```bash
-# Determine full path
-path="$LOCATION/$BRANCH_NAME"
+# The directory chosen above (.worktrees or worktrees)
+path="$WORKTREES_DIR/$BRANCH_NAME"
 
-# Create worktree with new branch
-git worktree add "$path" -b "$BRANCH_NAME"
+# Create worktree with new branch from the configured base branch
+git worktree add "$path" -b "$BRANCH_NAME" "$BASE_BRANCH"
 cd "$path"
 ```
 
@@ -79,7 +80,8 @@ Read the repository's `AGENTS.md` and use its declared package manager and setup
 
 Run the repository-declared test command through `squad_bash`. If no project policy exists, use the appropriate language test command.
 
-**If tests fail:** Report failures, ask whether to proceed or investigate.
+**If tests fail:** Report the failures. If the assignment does not already settle
+whether to proceed, ask with `ask_human` whether to proceed or investigate.
 
 **If tests pass:** Report ready.
 
@@ -97,7 +99,7 @@ Ready to implement <feature-name>
 | -------------------------- | -------------------------- |
 | `.worktrees/` folder       | Use it (verify ignored)    |
 | Directory not ignored      | Add to .gitignore + commit |
-| Tests fail during baseline | Report failures + ask      |
+| Tests fail during baseline | Report + ask_human         |
 | No package.json/Cargo.toml | Skip dependency install    |
 
 ## Common Mistakes
@@ -110,7 +112,7 @@ Ready to implement <feature-name>
 ### Proceeding with failing tests
 
 - **Problem:** Can't distinguish new bugs from pre-existing issues
-- **Fix:** Report failures, get explicit permission to proceed
+- **Fix:** Report failures; get permission through `ask_human` unless the assignment settles it
 
 ### Hardcoding setup commands
 
@@ -139,8 +141,7 @@ Ready to implement auth feature
 - Create worktree without verifying it's ignored (project-local)
 - Skip baseline test verification
 - Proceed with failing tests without asking
-- Assume directory location when ambiguous
-- Skip CLAUDE.md check
+- Skip the repository's `AGENTS.md` check
 
 **Always:**
 

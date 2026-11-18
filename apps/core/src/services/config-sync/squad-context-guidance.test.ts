@@ -59,4 +59,21 @@ describe('squad context configuration guidance', () => {
       expect(composed).toContain('role-specific instructions')
     }
   })
+
+  test('every built-in agent type interpolates the squad context at most once', async () => {
+    // The manager used to carry {{squad.context}} in manager.yaml, in the
+    // squad-rules include, and in prose in squad-dynamic-context (the
+    // interpolator expands it there too), so a squad's whole context repeated.
+    const [parsed, files] = await Promise.all([new AgentTypeSync().loadFromDir(), loadSharedPromptFiles()])
+    expect(parsed.length).toBeGreaterThan(0)
+    for (const agentType of parsed) {
+      const composed = composeFromYaml(agentType, files)
+      expect(composed.split('{{squad.context}}').length - 1, agentType.id).toBeLessThanOrEqual(1)
+    }
+    const manager = composeFromYaml(
+      parsed.find((item) => item.id === 'manager')!,
+      files
+    )
+    expect(manager.split('{{squad.context}}').length - 1).toBe(1)
+  })
 })

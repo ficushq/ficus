@@ -206,13 +206,14 @@ Exhausting a step's attempt budget pauses the flow until a reviewer, the owner o
 
 Reaching the end of the graph makes a satisfied flow `completion-ready`. `ficus workstream finish` separately checks delivery conditions.
 
-| `completion.mode` | Delivery condition                                                                                                                                                                                                                                                                    |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deliverable`     | Required work and returns are satisfied and blocking waits resolved; no intrinsic PR or additional reviewer.                                                                                                                                                                          |
-| `review-approval` | A human explicitly approves final delivery through flow finish.                                                                                                                                                                                                                       |
-| `pr-merge`        | The change request has been merged; Ficus independently verifies it. This policy does not authorize the agent to merge it.                                                                                                                                                            |
-| `pr-auto-merge`   | The current squad must explicitly allow automatic merge. The agent can enable it, but delivery still requires a verified merge. If GitHub refuses only because the pull request is already mergeable, the agent may perform the equivalent head-constrained normal merge (see below). |
-| `direct-merge`    | The squad must explicitly allow direct merge; Ficus verifies the recorded commit is contained in the remote base branch.                                                                                                                                                              |
+| `completion.mode` | Delivery condition                                                                                                                                                                                                                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deliverable`     | Required work and returns are satisfied and blocking waits resolved; no intrinsic PR or additional reviewer.                                                                                                                                                                                          |
+| `review-approval` | A human explicitly approves final delivery through flow finish.                                                                                                                                                                                                                                       |
+| `pr-review`       | A reviewer reviews an existing pull request (bound in `codeHost.changeRequest`) and stays on the stream for follow-up commits and re-review requests; finish succeeds once Ficus verifies the pull request has merged or closed. This policy grants no authority to modify or merge the pull request. |
+| `pr-merge`        | The change request has been merged; Ficus independently verifies it. This policy does not authorize the agent to merge it.                                                                                                                                                                            |
+| `pr-auto-merge`   | The current squad must explicitly allow automatic merge. The agent can enable it, but delivery still requires a verified merge. If GitHub refuses only because the pull request is already mergeable, the agent may perform the equivalent head-constrained normal merge (see below).                 |
+| `direct-merge`    | The squad must explicitly allow direct merge; Ficus verifies the recorded commit is contained in the remote base branch.                                                                                                                                                                              |
 
 **Already-mergeable auto-merge refusal.** GitHub refuses to enable native auto-merge on a pull request that is already mergeable (merge state `CLEAN`), which happens whenever the required approval arrives after CI has finished. Under `pr-auto-merge`, that refusal alone lets the delivering agent perform a normal merge as the equivalent of native auto-merge, after verifying live, immediately before merging, that the squad's `allowAutoMerge` policy is explicitly true; the base and exact head match the validated and reviewed deliverable; when the repository requires approval, a reviewer with write access approved that exact head (approvals retained from earlier heads do not count); every applicable check on that head passed (skipped checks are not passes); and every declared internal workflow gate is complete. The merge is constrained to that head (for GitHub, `gh pr merge --match-head-commit`), uses the merge method auto-merge would have used, and never uses administrator powers or bypasses reviews, checks or branch protections. Ficus itself merges nothing. Any other refusal leaves the pull request open for a human merge.
 
@@ -335,19 +336,22 @@ For a one-off flow, use `kind: inline` and `definition` containing the complete 
 
 Preset sources accept up to 512 ordered customizations. The whole resulting definition is validated after applying them:
 
-| `op`                 | Other fields                                   |
-| -------------------- | ---------------------------------------------- |
-| `set-name`           | `name`                                         |
-| `set-entry`          | `entry`                                        |
-| `put-participant`    | `id`, complete `participant`                   |
-| `remove-participant` | `id`                                           |
-| `put-step`           | Complete `step`; inserts or replaces by its ID |
-| `remove-step`        | `id`                                           |
-| `set-step-order`     | `ids` containing every step exactly once       |
-| `set-routing`        | Complete `routing`                             |
-| `set-limits`         | Complete `limits`                              |
-| `set-completion`     | Complete `completion`                          |
-| `set-subscriptions`  | Complete `subscriptions` array                 |
+| `op`                 | Other fields                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `set-name`           | `name`                                                                                       |
+| `set-entry`          | `entry`                                                                                      |
+| `put-participant`    | `id`, complete `participant`                                                                 |
+| `remove-participant` | `id`                                                                                         |
+| `put-step`           | Complete `step`; inserts or replaces by its ID                                               |
+| `remove-step`        | `id`                                                                                         |
+| `update-step`        | `id`, `changes`: the step fields to change (not `id` or `kind`); unmentioned fields are kept |
+| `set-outcome`        | `id` (step), `outcome`, `transition`; adds or replaces that outcome                          |
+| `remove-outcome`     | `id` (step), `outcome`                                                                       |
+| `set-step-order`     | `ids` containing every step exactly once                                                     |
+| `set-routing`        | Complete `routing`                                                                           |
+| `set-limits`         | Complete `limits`                                                                            |
+| `set-completion`     | Complete `completion`                                                                        |
+| `set-subscriptions`  | Complete `subscriptions` array                                                               |
 
 Removing an entry does not automatically repair references. A disabled preset cannot be resolved for new work. Existing stream snapshots are preserved.
 

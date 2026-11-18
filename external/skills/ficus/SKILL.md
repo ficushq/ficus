@@ -221,7 +221,7 @@ You have an inbox too — check it when supervising:
 ficus inbox list                     # your unread messages (agents report here)
 ficus inbox read <messageIds...>     # mark read; read-all to clear
 ficus inbox count                    # quick unread check
-ficus inbox download <attachmentId> -o <path>
+ficus inbox download <attachmentId> --out <path>
 ficus action list                    # pending actions requiring human/operator attention
 ```
 

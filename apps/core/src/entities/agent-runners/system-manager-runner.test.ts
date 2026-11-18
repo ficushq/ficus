@@ -3,6 +3,9 @@ import * as permissions from '../../services/rbac/permissions'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { SystemManagerRunner } from './system-manager-runner'
 import { AgentSession } from '../AgentSession'
+import { AgentType } from '../AgentType'
+import * as modelTiers from '../../services/model-selection/model-tier-resolution'
+import * as cliHelp from '../../lib/utils/cli-help'
 import * as tools from '../../tools'
 import { assistantEditorInstructionsByKind } from '@ficus/shared'
 
@@ -351,5 +354,30 @@ describe('SystemManagerRunner Assistant routing', () => {
     const batch = [message('m-1', 'first')]
     expect(await runner.prepare(batch)).toBe(batch)
     expect(runner.asked).toEqual([])
+  })
+})
+
+describe('SystemManagerRunner.buildManagerPrompt model override guidance', () => {
+  let spies: Array<{ mockRestore: () => void }> = []
+  afterEach(() => {
+    spies.forEach((spy) => spy.mockRestore())
+    spies = []
+  })
+
+  it.each([
+    ['system-manager', true],
+    ['assistant', false],
+  ])('reaches the %s: %p', async (agentTypeId, expected) => {
+    // The Assistant has no CLI, so the --model commands the section names are unusable there.
+    spies.push(
+      spyOn(AgentType, 'find').mockResolvedValue({ id: agentTypeId, systemPrompt: 'TYPE-PROMPT', includes: [] } as any)
+    )
+    spies.push(spyOn(modelTiers, 'resolveAgentTypeChain').mockResolvedValue('anthropic:claude-sonnet-4-5'))
+    spies.push(spyOn(cliHelp, 'getSystemManagerCliHelp').mockResolvedValue('cli'))
+    spies.push(spyOn(SystemManagerRunner as any, 'buildSquadsContext').mockResolvedValue('squads'))
+    const { systemPrompt } = await SystemManagerRunner.buildManagerPrompt(undefined, agentTypeId)
+    expect(systemPrompt).toContain('TYPE-PROMPT')
+    expect(systemPrompt.includes('## Model Overrides')).toBe(expected)
+    expect(systemPrompt).not.toContain('--agent-model')
   })
 })

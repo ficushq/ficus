@@ -80,8 +80,10 @@ destructive one. Never delete files or agents just because they are large.
   Settings → Storage can preview and apply it by hand there, backed by
   `GET /api/squads/:id/idle-consultants` and `POST /api/squads/:id/idle-consultants/dormant`
   (both `agents:terminate` in the squad; the server recomputes the idle set).
-  There is no CLI command for it: ask a human rather than making a consultant
-  dormant yourself, because a person may still be talking to it.
+  `ficus squad idle-consultants <squad-id> [--days <n>]` previews the same set
+  and changes nothing. Its `--make-dormant` option applies it, but ask a human
+  through `ask_human` before making a consultant dormant yourself, because a
+  person may still be talking to it.
 - **Dormant agents** are removed automatically after the retention period shown
   at the end of the output.
 

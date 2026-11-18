@@ -15,7 +15,7 @@ handles incoming messages.
 
 This is primarily a **System Manager** skill — either agent can walk
 the human through setup. All steps are instance-level. Squad managers do not
-need this — squad linking is configured in the channel instance (Step 3).
+need this — squad routing is configured in the channel instance (Step 3).
 
 **Before starting, check what's already configured:**
 
@@ -24,8 +24,8 @@ need this — squad linking is configured in the channel instance (Step 3).
 ficus channel list
 ```
 
-If Slack is already set up, you only need to update the channel instance
-to link additional squads.
+If Slack is already set up, you only need to update the channel instance's
+squad routing (`ficus channel update <id> --default-squad` or `--channel-squad-map`).
 
 ## Credential handling
 
@@ -41,7 +41,7 @@ an API hostname from `APP_URL`. Saved changes reconcile without a manual restart
 
 - The webhook URL shown in the owning integration card
 - The human must perform steps in the Slack API portal
-- At least one squad must exist to link the channel to
+- At least one squad must exist to route the channel to
 
 Use the exact webhook URL from the integration card, not a derived hostname.
 
@@ -163,14 +163,16 @@ ficus channel create \
   --name "Client Slack Workspace" \
   --provider slack \
   --config '{"teamId": "T0123ABCD"}' \
-  --default-squad "<squad-uuid>" \
-  --linked-squads "<squad-uuid>"
+  --default-squad "<squad-uuid>"
 ```
 
-To link additional squads later:
+Messages go to the default squad. To route specific Slack channels to other
+squads, set a channel-to-squad map (it replaces the whole map; unmapped
+channels keep using the default squad):
 
 ```bash
-ficus channel link-squad client-slack <squad-uuid>
+ficus channel update client-slack \
+  --channel-squad-map '{"<slack-channel-id>": "<squad-uuid>"}'
 ```
 
 ## Step 4: Verify

@@ -48,8 +48,7 @@ ficus channel create \
   --name "Client Telegram Bot" \
   --provider telegram \
   --config '{"botId": "123456789"}' \
-  --default-squad "<squad-uuid>" \
-  --linked-squads "<squad-uuid>"
+  --default-squad "<squad-uuid>"
 ```
 
 ## Step 5: Verify
