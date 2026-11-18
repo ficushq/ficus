@@ -129,6 +129,7 @@ describe('assembleDraft', () => {
       'Uses AKIAABCDEFGHIJKLMNOP in examples.',
       'Copies github_pat_11ABCDEFG0123456789_abcdefghijk.',
       'Pastes 0123456789abcdef0123456789abcdef.',
+      'YWJj'.repeat(12),
       'Pastes dGhpcyBpcyBhIHNlY3JldCB2YWx1ZSB0aGF0IGlzIGxvbmc9PQ.',
       'Sends Bearer abcdefghijklmnop headers.',
       'Thanks reviewers (@octocat) often.',
@@ -146,9 +147,11 @@ describe('assembleDraft', () => {
   })
 
   test('trims to the cap by dropping exemplars, then observations', () => {
-    const long = 'x'.repeat(150)
+    const long = 'Short sentences. '.repeat(9)
     const parsed = parseDerivationOutput(
-      JSON.stringify(output({ observations: Array.from({ length: 12 }, () => long), base: 'y'.repeat(800) }))
+      JSON.stringify(
+        output({ observations: Array.from({ length: 12 }, () => long), base: 'Lead with the result. '.repeat(38) })
+      )
     )
     const { bytes, exemplars, observations } = assembleDraft(parsed, samples)
     expect(bytes).toBeLessThanOrEqual(PUBLIC_VOICE_MAX_BYTES)

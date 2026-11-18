@@ -82,8 +82,8 @@ export const SECRET_PATTERNS: readonly RegExp[] = [
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{10,}/gi,
   /\b[0-9a-fA-F]{32,}\b/g,
-  // A long run of base64 characters that mixes letters and digits (prose words never do).
-  /(?=[A-Za-z0-9+/_=-]*\d)(?=[A-Za-z0-9+/_=-]*[A-Za-z])[A-Za-z0-9+/_=-]{40,}/g,
+  // Long base64/base64url runs, including valid encodings without digits.
+  /[A-Za-z0-9+/_=-]{40,}/g,
 ]
 
 /** Replace credential-shaped strings with `<secret>`. */

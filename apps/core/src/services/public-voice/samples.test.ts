@@ -68,6 +68,8 @@ describe('secrets and titles', () => {
     expect(cleaned).not.toMatch(/ghp_|github_pat_|AKIA|eyJ|0123456789abcdef|dGhpcyBp/)
     expect(cleaned.match(/<secret>/g)).toHaveLength(6)
     expect(cleanSampleText('An ordinary sentence about a refactor.')).toBe('An ordinary sentence about a refactor.')
+    // Valid base64 does not necessarily contain a digit.
+    expect(cleanSampleText('YWJj'.repeat(12))).toBe('<secret>')
   })
 
   test('cleans titles and commit headlines like bodies', () => {
