@@ -79,7 +79,7 @@ ficus ws create "<title>" -q <squadId> -d "<self-contained requirements>" \
 ```
 
 - Omit the workflow selector to use the squad's default flow. Validate an inline
-  source first with `ficus workflow resolve -q <squadId> --content '<JSON source>'`.
+  source first with `ficus workflow resolve --squad <squadId> --content '<JSON source>'`.
 - `--repository` provisions an isolated worktree and branch for the stream and
   detects the code host. Read-only work needs none.
 - The description is the source of truth for scope. Workers do not see the
