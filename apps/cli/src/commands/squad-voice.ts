@@ -26,9 +26,13 @@ const SOURCE_LABEL: Record<SquadPublicVoiceState['resolved']['baseSource'], stri
 function printState(state: SquadPublicVoiceState): void {
   const { resolved } = state
   console.log(`Voice: ${SOURCE_LABEL[resolved.baseSource]}${resolved.profileId ? ` (${resolved.profileId})` : ''}`)
-  if (state.fallback === 'assigned_disabled') console.log(`  The assigned profile ${state.voiceId} is disabled; using the instance default.`)
-  if (state.fallback === 'assigned_missing') console.log(`  The assigned profile ${state.voiceId} no longer exists; using the instance default.`)
-  console.log(`Size: ${resolved.bytes} / ${resolved.maxBytes} bytes${resolved.overCap ? ` (over the cap; dropped: ${resolved.dropped.join(', ')})` : ''}`)
+  if (state.fallback === 'assigned_disabled')
+    console.log(`  The assigned profile ${state.voiceId} is disabled; using the instance default.`)
+  if (state.fallback === 'assigned_missing')
+    console.log(`  The assigned profile ${state.voiceId} no longer exists; using the instance default.`)
+  console.log(
+    `Size: ${resolved.bytes} / ${resolved.maxBytes} bytes${resolved.overCap ? ` (over the cap; dropped: ${resolved.dropped.join(', ')})` : ''}`
+  )
   console.log(`\n${resolved.base || '(no base voice)'}`)
   for (const surface of PUBLIC_SURFACES) {
     const entry = resolved.entries[surface]
@@ -78,13 +82,15 @@ export function registerSquadVoiceCommands(squad: Command) {
     .command('voice')
     .description("Show or change a squad's public voice: a profile, or its own voice, plus per-surface entries")
 
-  const run = (fn: (...args: any[]) => Promise<void>) => async (...args: any[]) => {
-    try {
-      await fn(...args)
-    } catch (error) {
-      outputError(error as Error)
+  const run =
+    (fn: (...args: any[]) => Promise<void>) =>
+    async (...args: any[]) => {
+      try {
+        await fn(...args)
+      } catch (error) {
+        outputError(error as Error)
+      }
     }
-  }
   const show = (state: SquadPublicVoiceState) => (isJsonMode() ? output(state) : printState(state))
 
   voice
@@ -154,6 +160,8 @@ export function registerSquadVoiceCommands(squad: Command) {
   addDeriveOptions(
     voice
       .command('derive <squadId>')
-      .description("Draft a voice from a GitHub user's writing through this squad's GitHub connection. Nothing is saved.")
+      .description(
+        "Draft a voice from a GitHub user's writing through this squad's GitHub connection. Nothing is saved."
+      )
   ).action(run(async (squadId: string, opts: Parameters<typeof runDerivation>[1]) => runDerivation(squadId, opts)))
 }

@@ -50,7 +50,11 @@ export function mergePublicVoicePatch(current: SquadVoiceSetting, patch: SquadPu
 
 /** UTF-8 bytes the squad's voice would render to with this setting, before any fitting. */
 export async function renderedBytesFor(squadId: string, setting: SquadVoiceSetting): Promise<number> {
-  const { resolved } = await resolveSquadPublicVoice({ id: squadId, publicVoiceId: setting.voiceId, publicVoice: setting.local })
+  const { resolved } = await resolveSquadPublicVoice({
+    id: squadId,
+    publicVoiceId: setting.voiceId,
+    publicVoice: setting.local,
+  })
   return publicVoiceBytes(renderPublicVoicePrompt(resolved))
 }
 

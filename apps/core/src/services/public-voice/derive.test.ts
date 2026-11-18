@@ -20,7 +20,10 @@ const sample = (id: number, text: string, isPrivate = false): VoiceSample => ({
   createdAt: '2026-01-01T00:00:00Z',
 })
 
-const samples = [sample(1, 'Fixed in the next release, thanks for the report.'), sample(2, 'Private roadmap detail here.', true)]
+const samples = [
+  sample(1, 'Fixed in the next release, thanks for the report.'),
+  sample(2, 'Private roadmap detail here.', true),
+]
 
 const output = (over: Record<string, unknown> = {}) => ({
   observations: ['Short sentences.', 'Opens with the answer.'],
@@ -68,7 +71,12 @@ describe('assembleDraft', () => {
     const parsed = parseDerivationOutput(
       JSON.stringify(
         output({
-          observations: ['Links work as ficus:ws:1.', 'Mentions @octocat often.', 'Keeps it short.', 'See /home/user/x.'],
+          observations: [
+            'Links work as ficus:ws:1.',
+            'Mentions @octocat often.',
+            'Keeps it short.',
+            'See /home/user/x.',
+          ],
           surfaces: { channels: 'Posts https://example.com links.' },
         })
       )

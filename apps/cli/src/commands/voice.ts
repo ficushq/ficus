@@ -81,9 +81,13 @@ export function buildDerivationFilters(opts: DeriveOptions): DerivationFilters {
   if (opts.repo?.length) filters.repositories = opts.repo
   if (opts.excludeRepo?.length) filters.excludeRepositories = opts.excludeRepo
   if (opts.surfaces) {
-    const names = opts.surfaces.split(',').map((s) => s.trim()).filter(Boolean)
+    const names = opts.surfaces
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
     const unknown = names.filter((n) => !(DERIVATION_SURFACES as readonly string[]).includes(n))
-    if (unknown.length) throw new Error(`Unknown sampling surface(s): ${unknown.join(', ')}. Use: ${DERIVATION_SURFACES.join(', ')}`)
+    if (unknown.length)
+      throw new Error(`Unknown sampling surface(s): ${unknown.join(', ')}. Use: ${DERIVATION_SURFACES.join(', ')}`)
     filters.surfaces = names as DerivationFilters['surfaces']
   }
   if (opts.includeToolAuthored) filters.excludeToolAuthored = false
@@ -93,7 +97,10 @@ export function buildDerivationFilters(opts: DeriveOptions): DerivationFilters {
 export function addDeriveOptions(command: Command): Command {
   return command
     .requiredOption('--github <login>', 'GitHub login whose writing to sample')
-    .option('--before <date>', 'Only items created before this date (YYYY-MM-DD), for example when Ficus started posting from the account')
+    .option(
+      '--before <date>',
+      'Only items created before this date (YYYY-MM-DD), for example when Ficus started posting from the account'
+    )
     .option('--after <date>', 'Only items created on or after this date (YYYY-MM-DD)')
     .option('--repo <owner/name>', 'Only this repository (repeatable)', collect, [])
     .option('--exclude-repo <owner/name>', 'Leave out this repository (repeatable)', collect, [])
@@ -179,7 +186,8 @@ function printProfile(profile: PublicVoiceProfileJson): void {
   console.log(`${profile.name} (${profile.id})${profile.disabled ? ' [disabled]' : ''}`)
   if (profile.description) console.log(profile.description)
   console.log(`${profile.bytes} bytes; assigned squads: ${profile.assignedSquadCount ?? 0}`)
-  if (profile.yamlFieldOverrides.length) console.log(`Edited from the shipped template: ${profile.yamlFieldOverrides.join(', ')}`)
+  if (profile.yamlFieldOverrides.length)
+    console.log(`Edited from the shipped template: ${profile.yamlFieldOverrides.join(', ')}`)
   console.log(`\n${profile.base}`)
   for (const surface of PUBLIC_SURFACES) {
     const entry = profile.surfaces[surface]
@@ -204,7 +212,12 @@ function addProfileOptions(command: Command): Command {
     .option('--text <voice>', 'The voice applied to every surface')
     .option('--file <path>', 'Read the voice from a file')
     .option('--from-draft <path>', 'Use the base and surface notes of a draft written by derive --out')
-    .option('--add <surface=text>', `Add to the voice on one surface (repeatable; surfaces: ${SURFACE_NAMES})`, collect, [])
+    .option(
+      '--add <surface=text>',
+      `Add to the voice on one surface (repeatable; surfaces: ${SURFACE_NAMES})`,
+      collect,
+      []
+    )
     .option('--override <surface=text>', 'Replace the voice on one surface (repeatable)', collect, [])
 }
 
@@ -229,13 +242,15 @@ export function registerVoiceCommands(program: Command) {
     .command('voice')
     .description('Manage instance-level public voice profiles that squads are assigned to')
 
-  const run = (fn: (...args: any[]) => Promise<void>) => async (...args: any[]) => {
-    try {
-      await fn(...args)
-    } catch (error) {
-      outputError(error as Error)
+  const run =
+    (fn: (...args: any[]) => Promise<void>) =>
+    async (...args: any[]) => {
+      try {
+        await fn(...args)
+      } catch (error) {
+        outputError(error as Error)
+      }
     }
-  }
 
   voice
     .command('list')
@@ -274,7 +289,9 @@ export function registerVoiceCommands(program: Command) {
     })
   )
 
-  addProfileOptions(voice.command('update <id>').description('Update a voice profile; unspecified fields keep their value')).action(
+  addProfileOptions(
+    voice.command('update <id>').description('Update a voice profile; unspecified fields keep their value')
+  ).action(
     run(async (id: string, opts: ProfileOptions) => {
       const existing = await apiGet<PublicVoiceProfileJson>(`/api/public-voices/${id}`)
       output(await apiPut(`/api/public-voices/${id}`, profileBody(opts, existing)))

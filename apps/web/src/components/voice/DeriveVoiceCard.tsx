@@ -79,7 +79,8 @@ export function DeriveVoiceCard({
   }
 
   const result: VoiceDerivationResult | undefined = mutation.data
-  const error = mutation.error instanceof ApiError ? mutation.error.message : mutation.error ? String(mutation.error) : null
+  const error =
+    mutation.error instanceof ApiError ? mutation.error.message : mutation.error ? String(mutation.error) : null
 
   return (
     <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4" data-setting-target="derive-voice">
@@ -156,7 +157,11 @@ export function DeriveVoiceCard({
           </label>
         ))}
         <label className="flex items-center gap-1">
-          <input type="checkbox" checked={includeToolAuthored} onChange={(e) => setIncludeToolAuthored(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={includeToolAuthored}
+            onChange={(e) => setIncludeToolAuthored(e.target.checked)}
+          />
           Keep items that look written by an assistant or a bot
         </label>
       </div>
@@ -184,7 +189,10 @@ export function DeriveVoiceCard({
             >
               Continue
             </button>
-            <button className="ficus-button ficus-button-ghost rounded-md px-3 py-1 text-sm" onClick={() => setConfirming(false)}>
+            <button
+              className="ficus-button ficus-button-ghost rounded-md px-3 py-1 text-sm"
+              onClick={() => setConfirming(false)}
+            >
               Cancel
             </button>
           </div>

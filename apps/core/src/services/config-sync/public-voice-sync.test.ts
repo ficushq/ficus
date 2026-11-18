@@ -18,7 +18,10 @@ afterAll(async () => {
 
 describe('PublicVoiceSync.parse', () => {
   test('accepts a profile with surfaces', () => {
-    const parsed = sync.parse('id: team\nname: Team\nbase: Team voice.\nsurfaces:\n  commits:\n    mode: add\n    text: Short.\n', 'team.yaml')
+    const parsed = sync.parse(
+      'id: team\nname: Team\nbase: Team voice.\nsurfaces:\n  commits:\n    mode: add\n    text: Short.\n',
+      'team.yaml'
+    )
     expect(parsed).toEqual({
       id: 'team',
       name: 'Team',
@@ -30,7 +33,9 @@ describe('PublicVoiceSync.parse', () => {
 
   test('rejects a bad id, an unknown surface, or a missing base', () => {
     expect(() => sync.parse('id: Team Voice\nname: Team\nbase: x\n', 'x.yaml')).toThrow()
-    expect(() => sync.parse('id: team\nname: Team\nbase: x\nsurfaces:\n  tweets:\n    mode: add\n    text: y\n', 'x.yaml')).toThrow()
+    expect(() =>
+      sync.parse('id: team\nname: Team\nbase: x\nsurfaces:\n  tweets:\n    mode: add\n    text: y\n', 'x.yaml')
+    ).toThrow()
     expect(() => sync.parse('id: team\nname: Team\n', 'x.yaml')).toThrow()
   })
 })
@@ -41,7 +46,13 @@ describe('PublicVoiceSync', () => {
     const profile = (await PublicVoice.findDefault())!
     expect(profile).toBeTruthy()
     expect(profile.base).toContain('Lead with the result or the action')
-    expect(Object.keys(profile.surfaces).sort()).toEqual(['channels', 'commits', 'issueComments', 'pullRequests', 'reviewReplies'])
+    expect(Object.keys(profile.surfaces).sort()).toEqual([
+      'channels',
+      'commits',
+      'issueComments',
+      'pullRequests',
+      'reviewReplies',
+    ])
     const json = profile.toJson()
     expect(json.hasTemplate).toBe(true)
     expect(json.yamlFieldOverrides).toEqual([])

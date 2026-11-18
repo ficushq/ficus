@@ -9,7 +9,11 @@ function item(over: Partial<RawActivityItem> & Pick<RawActivityItem, 'surface'>)
   return { text: prose(1), repository: 'acme/api', isPrivate: false, createdAt: '2026-01-10T10:00:00Z', ...over }
 }
 
-function many(surface: RawActivityItem['surface'], count: number, over: Partial<RawActivityItem> = {}): RawActivityItem[] {
+function many(
+  surface: RawActivityItem['surface'],
+  count: number,
+  over: Partial<RawActivityItem> = {}
+): RawActivityItem[] {
   return Array.from({ length: count }, (_, i) =>
     item({ surface, text: prose(i), createdAt: `2026-01-${String((i % 28) + 1).padStart(2, '0')}T10:00:00Z`, ...over })
   )
@@ -56,7 +60,11 @@ describe('prepareSamples', () => {
   test('drops tool-authored and bot items with counts, and keeps metadata', () => {
     const items = [
       ...many('issue-comments', 16),
-      item({ surface: 'commits', title: 'fix: retry', text: 'Body.\n\nCo-authored-by: Claude <noreply@anthropic.com>' }),
+      item({
+        surface: 'commits',
+        title: 'fix: retry',
+        text: 'Body.\n\nCo-authored-by: Claude <noreply@anthropic.com>',
+      }),
       item({ surface: 'issue-comments', text: 'Bumps lodash from 4.17.20 to 4.17.21.' }),
       item({ surface: 'pull-requests', title: 'Add retry', text: '## Summary\n\n## Test plan\n', isPrivate: true }),
     ]
@@ -72,7 +80,10 @@ describe('prepareSamples', () => {
   })
 
   test('keeps tool-authored items when the filter is off', () => {
-    const items = [...many('issue-comments', 15), item({ surface: 'issue-comments', text: `${prose(99)}\n\n🤖 Generated with X` })]
+    const items = [
+      ...many('issue-comments', 15),
+      item({ surface: 'issue-comments', text: `${prose(99)}\n\n🤖 Generated with X` }),
+    ]
     expect(prepareSamples(collected(items), { excludeToolAuthored: false }).summary.counts.kept).toBe(16)
   })
 
@@ -94,7 +105,10 @@ describe('prepareSamples', () => {
   })
 
   test('reports public and private repositories separately', () => {
-    const items = [...many('issue-comments', 10), ...many('reviews', 10, { repository: 'acme/secret', isPrivate: true })]
+    const items = [
+      ...many('issue-comments', 10),
+      ...many('reviews', 10, { repository: 'acme/secret', isPrivate: true }),
+    ]
     const { summary } = prepareSamples(collected(items), {})
     expect(summary.publicRepositories).toEqual(['acme/api'])
     expect(summary.privateRepositories).toEqual(['acme/secret'])

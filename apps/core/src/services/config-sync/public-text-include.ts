@@ -57,7 +57,9 @@ export async function adoptPublicTextInclude(): Promise<void> {
     const next = expandPublicTextInclude(row.includes ?? [])
     if (!next) continue
     await db.update(agentTypes).set({ includes: next, updatedAt: new Date() }).where(eq(agentTypes.id, row.id))
-    log.info(`agent type '${row.id}': added the '${PUBLIC_TEXT_SHARED_PROMPT_ID}' include after '${SQUAD_RULES_INCLUDE}'`)
+    log.info(
+      `agent type '${row.id}': added the '${PUBLIC_TEXT_SHARED_PROMPT_ID}' include after '${SQUAD_RULES_INCLUDE}'`
+    )
     changed = true
   }
   if (changed) AgentType.invalidateCache()

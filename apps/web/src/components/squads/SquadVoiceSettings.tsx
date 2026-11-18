@@ -48,24 +48,39 @@ export function draftBytes(
   surfaces: PublicVoiceSurfaces
 ): number | null {
   const squad = { base: picker === CUSTOM ? customBase.trim() || null : null, surfaces }
-  if (picker === CUSTOM) return publicVoiceBytes(renderPublicVoicePrompt(resolvePublicVoice({ squad, assigned: null, instanceDefault: null })))
+  if (picker === CUSTOM)
+    return publicVoiceBytes(
+      renderPublicVoicePrompt(resolvePublicVoice({ squad, assigned: null, instanceDefault: null }))
+    )
   const storedPicker = state.local.base ? CUSTOM : (state.voiceId ?? INSTANCE)
   const pickedProfileId = picker === INSTANCE ? DEFAULT_PUBLIC_VOICE_ID : picker
-  const profile = state.profile && (picker === storedPicker || state.profile.id === pickedProfileId) ? state.profile : null
+  const profile =
+    state.profile && (picker === storedPicker || state.profile.id === pickedProfileId) ? state.profile : null
   if (!profile) return null
-  return publicVoiceBytes(renderPublicVoicePrompt(resolvePublicVoice({ squad, assigned: profile, instanceDefault: null })))
+  return publicVoiceBytes(
+    renderPublicVoicePrompt(resolvePublicVoice({ squad, assigned: profile, instanceDefault: null }))
+  )
 }
 
 /** The PATCH that turns the stored state into the edited one. */
-export function buildVoicePatch(picker: string, customBase: string, surfaces: PublicVoiceSurfaces): SquadPublicVoicePatch {
-  const allSurfaces = Object.fromEntries(PUBLIC_SURFACES.map((s) => [s, surfaces[s] ?? null])) as SquadPublicVoicePatch['surfaces']
+export function buildVoicePatch(
+  picker: string,
+  customBase: string,
+  surfaces: PublicVoiceSurfaces
+): SquadPublicVoicePatch {
+  const allSurfaces = Object.fromEntries(
+    PUBLIC_SURFACES.map((s) => [s, surfaces[s] ?? null])
+  ) as SquadPublicVoicePatch['surfaces']
   if (picker === CUSTOM) return { base: customBase.trim(), surfaces: allSurfaces }
   return { voiceId: picker === INSTANCE ? null : picker, base: null, surfaces: allSurfaces }
 }
 
 /** Squad settings → Voice: how this squad's agents sound in public text. See docs/wiki/public-voice.md. */
 export function SquadVoiceSettings({ squadId }: { squadId: string }) {
-  const { data: state, error } = useQuery({ queryKey: publicVoiceQueryKeys.squad(squadId), queryFn: () => getSquadVoice(squadId) })
+  const { data: state, error } = useQuery({
+    queryKey: publicVoiceQueryKeys.squad(squadId),
+    queryFn: () => getSquadVoice(squadId),
+  })
   if (error) return <p className="text-sm text-status-danger-500">Could not load the voice: {String(error)}</p>
   if (!state) return <p className="text-sm text-muted">Loading voice…</p>
   return <SquadVoiceEditor squadId={squadId} state={state} />
@@ -103,14 +118,19 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
       }),
   })
   const saveProfile = useMutation({
-    mutationFn: (input: { id: string; name: string; base: string; surfaces: PublicVoiceSurfaces }) => createPublicVoice(input),
+    mutationFn: (input: { id: string; name: string; base: string; surfaces: PublicVoiceSurfaces }) =>
+      createPublicVoice(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: publicVoiceQueryKeys.all }),
   })
 
   const bytes = draftBytes(state, picker, customBase, surfaces)
   const overCap = bytes !== null && bytes > PUBLIC_VOICE_MAX_BYTES
   const pickedProfile =
-    picker === CUSTOM ? null : (picker === INSTANCE ? DEFAULT_PUBLIC_VOICE_ID : picker) === state.profile?.id ? state.profile : null
+    picker === CUSTOM
+      ? null
+      : (picker === INSTANCE ? DEFAULT_PUBLIC_VOICE_ID : picker) === state.profile?.id
+        ? state.profile
+        : null
   const saveError = save.error instanceof ApiError ? save.error.message : save.error ? String(save.error) : null
 
   return (
@@ -128,8 +148,8 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
 
       {state.fallback && (
         <p className="text-xs text-status-attention-600">
-          The assigned profile {state.voiceId} is {state.fallback === 'assigned_disabled' ? 'disabled' : 'missing'}; this
-          squad uses the instance default until you pick another.
+          The assigned profile {state.voiceId} is {state.fallback === 'assigned_disabled' ? 'disabled' : 'missing'};
+          this squad uses the instance default until you pick another.
         </p>
       )}
       {state.resolved.overCap && (
@@ -177,7 +197,9 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
                 className="ficus-field h-40 w-full rounded-md border border-th-border bg-surface p-2 text-sm text-primary"
               />
             ) : pickedProfile ? (
-              <p className="whitespace-pre-wrap rounded-md bg-surface-secondary p-2 text-xs text-secondary">{pickedProfile.base}</p>
+              <p className="whitespace-pre-wrap rounded-md bg-surface-secondary p-2 text-xs text-secondary">
+                {pickedProfile.base}
+              </p>
             ) : (
               <p className="text-xs text-muted">
                 {state.availableVoices.find((v) => v.id === picker)?.description ?? 'Save to apply this profile.'}
@@ -196,7 +218,10 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className={clsx('text-xs', overCap ? 'text-status-danger-500' : 'text-muted')} data-voice-meter="true">
+            <span
+              className={clsx('text-xs', overCap ? 'text-status-danger-500' : 'text-muted')}
+              data-voice-meter="true"
+            >
               {bytes === null
                 ? `Size is checked against the ${PUBLIC_VOICE_MAX_BYTES.toLocaleString()}-byte cap when you save`
                 : `${bytes.toLocaleString()} / ${PUBLIC_VOICE_MAX_BYTES.toLocaleString()} bytes`}
@@ -241,7 +266,9 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
               {preview.isPending ? 'Rewriting…' : 'Preview'}
             </button>
             {preview.data && (
-              <pre className="whitespace-pre-wrap rounded-md bg-surface-secondary p-2 text-sm text-primary">{preview.data.text}</pre>
+              <pre className="whitespace-pre-wrap rounded-md bg-surface-secondary p-2 text-sm text-primary">
+                {preview.data.text}
+              </pre>
             )}
             {preview.error && <p className="text-xs text-status-danger-500">The preview is unavailable right now.</p>}
           </div>
@@ -266,7 +293,9 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
                 : undefined
             }
           />
-          {saveProfile.isSuccess && <p className="text-xs text-muted">Saved as a new profile. Edit it in Settings → Agent Types → Voices.</p>}
+          {saveProfile.isSuccess && (
+            <p className="text-xs text-muted">Saved as a new profile. Edit it in Settings → Agent Types → Voices.</p>
+          )}
           {saveProfile.error && <p className="text-xs text-status-danger-500">{String(saveProfile.error)}</p>}
         </>
       )}

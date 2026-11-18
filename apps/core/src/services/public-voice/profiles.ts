@@ -36,7 +36,11 @@ export async function overCapSquadCount(profile: PublicVoiceProfile): Promise<nu
   for (const row of rows) {
     const layer = row.publicVoice as SquadPublicVoice | null
     if (!layer || layer.base?.trim()) continue
-    const resolved = resolvePublicVoice({ squad: layer, assigned: { ...profile, disabled: false }, instanceDefault: null })
+    const resolved = resolvePublicVoice({
+      squad: layer,
+      assigned: { ...profile, disabled: false },
+      instanceDefault: null,
+    })
     if (publicVoiceBytes(renderPublicVoicePrompt(resolved)) > PUBLIC_VOICE_MAX_BYTES) over++
   }
   return over

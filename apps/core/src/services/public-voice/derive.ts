@@ -25,10 +25,12 @@ export const DERIVATION_DEADLINE_MS = 90_000
 const derivationOutputSchema = z.object({
   observations: z.array(z.string().trim().min(1).max(160)).min(1).max(12),
   surfaces: z
-    .object(Object.fromEntries(PUBLIC_SURFACES.map((s) => [s, z.string().trim().max(200).optional()])) as Record<
-      PublicSurface,
-      z.ZodOptional<z.ZodString>
-    >)
+    .object(
+      Object.fromEntries(PUBLIC_SURFACES.map((s) => [s, z.string().trim().max(200).optional()])) as Record<
+        PublicSurface,
+        z.ZodOptional<z.ZodString>
+      >
+    )
     .partial()
     .optional(),
   exemplars: z
@@ -162,7 +164,8 @@ export function assembleDraft(
     else observations = observations.slice(0, -1)
     current = render()
   }
-  if (current.bytes > PUBLIC_VOICE_MAX_BYTES) throw new DerivationError('derivation_invalid_output', { reason: 'too_long' })
+  if (current.bytes > PUBLIC_VOICE_MAX_BYTES)
+    throw new DerivationError('derivation_invalid_output', { reason: 'too_long' })
   return { draft: { base: current.base, surfaces }, observations, exemplars, bytes: current.bytes }
 }
 

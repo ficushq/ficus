@@ -106,7 +106,9 @@ describe('squad voice routes', () => {
 
   test('surface entries merge, shadow the profile, and delete with null', async () => {
     await request(admin, 'PATCH', '', { voiceId: teamId })
-    let body = await (await request(admin, 'PATCH', '', { surfaces: { commits: { mode: 'override', text: 'Subject.' } } })).json()
+    let body = await (
+      await request(admin, 'PATCH', '', { surfaces: { commits: { mode: 'override', text: 'Subject.' } } })
+    ).json()
     expect(body.voiceId).toBe(teamId)
     expect(body.resolved.entrySources.commits).toBe('squad')
     expect(body.resolved.perSurface.commits).toBe('Subject.')
@@ -145,14 +147,17 @@ describe('squad voice routes', () => {
 
   test('derive needs integrations:use, confirmation for another login, and one run per squad', async () => {
     expect(
-      (await request(updaterWithoutIntegrations, 'POST', '/derive', { login: 'octocat', confirmOtherPerson: true })).status
+      (await request(updaterWithoutIntegrations, 'POST', '/derive', { login: 'octocat', confirmOtherPerson: true }))
+        .status
     ).toBe(403)
 
     const unconfirmed = await request(admin, 'POST', '/derive', { login: 'octocat' })
     expect(unconfirmed.status).toBe(409)
     expect(await unconfirmed.json()).toMatchObject({ error: 'confirmation_required', linkedLogin: null })
 
-    expect((await request(admin, 'POST', '/derive', { login: 'octocat', filters: { before: 'yesterday' } })).status).toBe(400)
+    expect(
+      (await request(admin, 'POST', '/derive', { login: 'octocat', filters: { before: 'yesterday' } })).status
+    ).toBe(400)
 
     __derivationsInProgress.add(squadId)
     try {

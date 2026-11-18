@@ -51,8 +51,7 @@ export async function resolveSquadPublicVoice(
   const resolved = resolvePublicVoice({ squad: squad?.publicVoice ?? null, assigned, instanceDefault })
   const fallback: PublicVoiceFallback | null =
     squad?.publicVoiceId && !assigned ? 'assigned_missing' : assigned?.disabled ? 'assigned_disabled' : null
-  const profile =
-    resolved.profileId === null ? null : resolved.profileId === assigned?.id ? assigned : instanceDefault
+  const profile = resolved.profileId === null ? null : resolved.profileId === assigned?.id ? assigned : instanceDefault
   return { resolved, fallback, profile }
 }
 

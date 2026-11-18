@@ -26,7 +26,13 @@ describe('VoiceProfileList', () => {
     const html = renderToStaticMarkup(
       <VoiceProfileList
         profiles={[
-          profile({ id: 'default', name: 'Default', hasTemplate: true, yamlFieldOverrides: ['base'], assignedSquadCount: 0 }),
+          profile({
+            id: 'default',
+            name: 'Default',
+            hasTemplate: true,
+            yamlFieldOverrides: ['base'],
+            assignedSquadCount: 0,
+          }),
           profile({}),
         ]}
         canWrite
@@ -39,7 +45,10 @@ describe('VoiceProfileList', () => {
     expect(html).toContain('Modified from template')
     expect(html).toContain('30 / 2,000 bytes')
     expect(html).toContain('2 assigned squads')
-    const defaultCard = html.slice(html.indexOf('data-voice-profile="default"'), html.indexOf('data-voice-profile="team"'))
+    const defaultCard = html.slice(
+      html.indexOf('data-voice-profile="default"'),
+      html.indexOf('data-voice-profile="team"')
+    )
     expect(defaultCard).not.toContain('Delete')
     expect(html.slice(html.indexOf('data-voice-profile="team"'))).toContain('Delete')
   })

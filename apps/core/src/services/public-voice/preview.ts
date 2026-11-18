@@ -1,9 +1,9 @@
+import { PUBLIC_SURFACE_LABELS, type PublicSurface, type SquadPublicVoice } from '@ficus/shared'
 import {
-  PUBLIC_SURFACE_LABELS,
-  type PublicSurface,
-  type SquadPublicVoice,
-} from '@ficus/shared'
-import { resolveSquadPublicVoice, type PublicVoiceLoaders, type PublicVoiceSquad } from '../../lib/prompts/public-voice-prompt'
+  resolveSquadPublicVoice,
+  type PublicVoiceLoaders,
+  type PublicVoiceSquad,
+} from '../../lib/prompts/public-voice-prompt'
 import { completeWithTier } from '../model-tiers/light-completion-runtime'
 import type { LightCompletionRequest, LightCompletionResult } from '../model-tiers/light-completion'
 
@@ -71,7 +71,11 @@ export async function previewPublicVoice(
   const result = await complete({
     tier: 'lite',
     system: PREVIEW_SYSTEM,
-    prompt: buildPreviewPrompt(input.surface, resolved.perSurface[input.surface], input.sample?.trim() || DEFAULT_PREVIEW_SAMPLE),
+    prompt: buildPreviewPrompt(
+      input.surface,
+      resolved.perSurface[input.surface],
+      input.sample?.trim() || DEFAULT_PREVIEW_SAMPLE
+    ),
     maxTokens: 400,
     timeoutMs: 15_000,
     totalTimeoutMs: 25_000,

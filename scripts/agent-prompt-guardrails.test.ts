@@ -134,7 +134,9 @@ describe('public voice', () => {
     const publicText = sharedPrompts.get('public-text')!
     expect(publicText).toContain('{{squad.publicVoice}}')
     const composed = publicText.replace('{{squad.publicVoice}}', renderedDefault)
-    expect(Buffer.byteLength(composed, 'utf8')).toBeLessThanOrEqual(Buffer.byteLength(publicText, 'utf8') + PUBLIC_VOICE_MAX_BYTES)
+    expect(Buffer.byteLength(composed, 'utf8')).toBeLessThanOrEqual(
+      Buffer.byteLength(publicText, 'utf8') + PUBLIC_VOICE_MAX_BYTES
+    )
     expect(Buffer.byteLength(composed, 'utf8')).toBeLessThanOrEqual(2_693)
   })
 

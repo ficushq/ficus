@@ -13,7 +13,12 @@ import {
   type PublicVoiceSurfaces,
 } from './public-voice'
 
-const profile = (id: string, base: string, surfaces: PublicVoiceSurfaces = {}, disabled = false): PublicVoiceProfile => ({
+const profile = (
+  id: string,
+  base: string,
+  surfaces: PublicVoiceSurfaces = {},
+  disabled = false
+): PublicVoiceProfile => ({
   id,
   name: id,
   description: null,
@@ -89,7 +94,7 @@ describe('renderPublicVoicePrompt', () => {
       instanceDefault: dflt,
     })
     expect(renderPublicVoicePrompt(r)).toBe(
-      '### Voice\n\nInstance voice.\n\n- Commits (instead of the voice above): Subject.\n- Channel messages: No headings.',
+      '### Voice\n\nInstance voice.\n\n- Commits (instead of the voice above): Subject.\n- Channel messages: No headings.'
     )
   })
 
@@ -107,7 +112,9 @@ describe('renderPublicVoicePrompt', () => {
   })
 
   test('renderProfileAlone renders a profile by itself, even when disabled', () => {
-    expect(renderProfileAlone({ ...dflt, disabled: true })).toBe('### Voice\n\nInstance voice.\n\n- Channel messages: No headings.')
+    expect(renderProfileAlone({ ...dflt, disabled: true })).toBe(
+      '### Voice\n\nInstance voice.\n\n- Channel messages: No headings.'
+    )
   })
 })
 
@@ -122,7 +129,10 @@ describe('cap', () => {
       commits: { mode: 'add', text: 'y'.repeat(80) },
       channels: { mode: 'add', text: 'z'.repeat(80) },
     })
-    const fitted = fitPublicVoiceToCap(resolvePublicVoice({ squad: null, assigned: big, instanceDefault: null }), PUBLIC_VOICE_MAX_BYTES)
+    const fitted = fitPublicVoiceToCap(
+      resolvePublicVoice({ squad: null, assigned: big, instanceDefault: null }),
+      PUBLIC_VOICE_MAX_BYTES
+    )
     expect(fitted.dropped).toEqual(['channels'])
     expect(fitted.resolved.entries.commits).toBeDefined()
     expect(fitted.resolved.perSurface.channels).toBe(fitted.resolved.base)
@@ -130,17 +140,26 @@ describe('cap', () => {
   })
 
   test('fit leaves a voice under the cap alone', () => {
-    const fitted = fitPublicVoiceToCap(resolvePublicVoice({ squad: null, assigned: null, instanceDefault: dflt }), PUBLIC_VOICE_MAX_BYTES)
+    const fitted = fitPublicVoiceToCap(
+      resolvePublicVoice({ squad: null, assigned: null, instanceDefault: dflt }),
+      PUBLIC_VOICE_MAX_BYTES
+    )
     expect(fitted.dropped).toEqual([])
   })
 })
 
 describe('schemas', () => {
   test('patch rejects an unknown surface, an empty text, and a base together with a voiceId', () => {
-    expect(squadPublicVoicePatchSchema.safeParse({ surfaces: { tweets: { mode: 'add', text: 'x' } } }).success).toBe(false)
-    expect(squadPublicVoicePatchSchema.safeParse({ surfaces: { commits: { mode: 'add', text: '  ' } } }).success).toBe(false)
+    expect(squadPublicVoicePatchSchema.safeParse({ surfaces: { tweets: { mode: 'add', text: 'x' } } }).success).toBe(
+      false
+    )
+    expect(squadPublicVoicePatchSchema.safeParse({ surfaces: { commits: { mode: 'add', text: '  ' } } }).success).toBe(
+      false
+    )
     expect(squadPublicVoicePatchSchema.safeParse({ base: 'x', voiceId: 'team' }).success).toBe(false)
-    expect(squadPublicVoicePatchSchema.safeParse({ base: null, voiceId: 'team', surfaces: { commits: null } }).success).toBe(true)
+    expect(
+      squadPublicVoicePatchSchema.safeParse({ base: null, voiceId: 'team', surfaces: { commits: null } }).success
+    ).toBe(true)
   })
 
   test('profile input requires a kebab-case id', () => {

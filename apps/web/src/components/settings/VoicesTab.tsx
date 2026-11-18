@@ -37,7 +37,14 @@ function draftOf(profile: Pick<PublicVoiceProfileJson, 'name' | 'description' | 
 
 function draftBytes(id: string, draft: ProfileDraft): number {
   return publicVoiceBytes(
-    renderProfileAlone({ id, name: draft.name, description: null, base: draft.base, surfaces: draft.surfaces, disabled: false })
+    renderProfileAlone({
+      id,
+      name: draft.name,
+      description: null,
+      base: draft.base,
+      surfaces: draft.surfaces,
+      disabled: false,
+    })
   )
 }
 
@@ -70,7 +77,9 @@ export function VoiceProfileList({
             <div className="flex flex-wrap items-center gap-2 font-semibold text-primary">
               <span>{profile.name}</span>
               {profile.id === DEFAULT_PUBLIC_VOICE_ID && (
-                <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[11px] text-muted">Instance default</span>
+                <span className="rounded-full bg-surface-secondary px-2 py-0.5 text-[11px] text-muted">
+                  Instance default
+                </span>
               )}
               {profile.yamlFieldOverrides.length > 0 && (
                 <span className="rounded-full bg-status-attention-500/10 px-2 py-0.5 text-[11px] text-status-attention-600 dark:text-status-attention-400">
@@ -98,7 +107,10 @@ export function VoiceProfileList({
               </button>
             )}
             {canWrite && profile.id !== DEFAULT_PUBLIC_VOICE_ID && !profile.hasTemplate && (
-              <button className="ficus-button ficus-button-ghost px-2 py-1 text-sm text-status-danger-500" onClick={() => onDelete(profile)}>
+              <button
+                className="ficus-button ficus-button-ghost px-2 py-1 text-sm text-status-danger-500"
+                onClick={() => onDelete(profile)}
+              >
                 Delete
               </button>
             )}
@@ -132,7 +144,12 @@ function ProfileEditor({
   const invalidate = () => queryClient.invalidateQueries({ queryKey: publicVoiceQueryKeys.all })
   const save = useMutation({
     mutationFn: async () => {
-      const body = { name: draft.name.trim(), description: draft.description.trim() || null, base: draft.base, surfaces: draft.surfaces }
+      const body = {
+        name: draft.name.trim(),
+        description: draft.description.trim() || null,
+        base: draft.base,
+        surfaces: draft.surfaces,
+      }
       if (isNew) {
         await createPublicVoice({ id, ...body })
         return 0
@@ -200,7 +217,10 @@ function ProfileEditor({
         {canWrite && (
           <div className="flex gap-2">
             {hasTemplate && (
-              <button className="ficus-button ficus-button-ghost rounded-md px-3 py-1 text-sm" onClick={() => revert.mutate()}>
+              <button
+                className="ficus-button ficus-button-ghost rounded-md px-3 py-1 text-sm"
+                onClick={() => revert.mutate()}
+              >
                 Revert to template
               </button>
             )}
@@ -215,7 +235,9 @@ function ProfileEditor({
         )}
       </div>
       {notice && <p className="text-xs text-muted">{notice}</p>}
-      {(save.error || revert.error) && <p className="text-xs text-status-danger-500">{errorText(save.error ?? revert.error)}</p>}
+      {(save.error || revert.error) && (
+        <p className="text-xs text-status-danger-500">{errorText(save.error ?? revert.error)}</p>
+      )}
     </div>
   )
 }
@@ -228,21 +250,37 @@ export function VoicesTab() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
   const canWrite = can('agent-types:update')
-  const { data: profiles = [], isLoading } = useQuery({ queryKey: publicVoiceQueryKeys.list(), queryFn: getPublicVoices })
+  const { data: profiles = [], isLoading } = useQuery({
+    queryKey: publicVoiceQueryKeys.list(),
+    queryFn: getPublicVoices,
+  })
   const { data: squads = [] } = useQuery({ ...queries.squads.list(), enabled: canWrite })
-  const [editing, setEditing] = useState<{ id: string; initial: ProfileDraft; isNew: boolean; hasTemplate: boolean } | null>(null)
+  const [editing, setEditing] = useState<{
+    id: string
+    initial: ProfileDraft
+    isNew: boolean
+    hasTemplate: boolean
+  } | null>(null)
   const [deriveSquadId, setDeriveSquadId] = useState('')
   const invalidate = () => queryClient.invalidateQueries({ queryKey: publicVoiceQueryKeys.all })
   const toggle = useMutation({
     mutationFn: (profile: PublicVoiceProfileJson) => setPublicVoiceDisabled(profile.id, !profile.disabled),
     onSuccess: invalidate,
   })
-  const remove = useMutation({ mutationFn: (profile: PublicVoiceProfileJson) => deletePublicVoice(profile.id), onSuccess: invalidate })
+  const remove = useMutation({
+    mutationFn: (profile: PublicVoiceProfileJson) => deletePublicVoice(profile.id),
+    onSuccess: invalidate,
+  })
 
   const startNew = (initial?: Partial<ProfileDraft>) => {
     const id = window.prompt('Profile id (kebab-case, for example platform-team)')?.trim()
     if (!id) return
-    setEditing({ id, isNew: true, hasTemplate: false, initial: { name: id, description: '', base: '', surfaces: {}, ...initial } })
+    setEditing({
+      id,
+      isNew: true,
+      hasTemplate: false,
+      initial: { name: id, description: '', base: '', surfaces: {}, ...initial },
+    })
   }
 
   if (isLoading) return <p className="text-sm text-muted">Loading voice profiles…</p>
@@ -250,8 +288,8 @@ export function VoicesTab() {
     <div className="space-y-6">
       <p className="text-sm text-muted">
         Voice profiles set how agents write public text: commits, pull requests, review replies, issue comments and
-        channel messages. Squads use the instance default until they are assigned a profile in their Voice settings.
-        The fixed public-text rules always apply on top.
+        channel messages. Squads use the instance default until they are assigned a profile in their Voice settings. The
+        fixed public-text rules always apply on top.
       </p>
       {editing && (
         <ProfileEditor
@@ -272,7 +310,11 @@ export function VoicesTab() {
         }
         onToggle={(profile) => toggle.mutate(profile)}
         onDelete={(profile) => {
-          if (window.confirm(`Delete ${profile.name}? Its ${profile.assignedSquadCount ?? 0} squad(s) return to the instance default.`))
+          if (
+            window.confirm(
+              `Delete ${profile.name}? Its ${profile.assignedSquadCount ?? 0} squad(s) return to the instance default.`
+            )
+          )
             remove.mutate(profile)
         }}
       />

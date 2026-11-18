@@ -70,23 +70,28 @@ export const squadVoiceRouter = new Hono()
     if (!squad) return c.json({ error: 'Squad not found' }, 404)
     return c.json(await describeSquadVoice(squad, c.get('identity') as Identity | undefined))
   })
-  .patch('/:id/voice', requireSquadPermission('squads:update'), zValidator('json', squadPublicVoicePatchSchema), async (c) => {
-    const squad = await Squad.find(resolvedSquadId(c))
-    if (!squad) return c.json({ error: 'Squad not found' }, 404)
-    if (squad.isArchived) return c.json({ error: 'Squad is archived' }, 410)
-    const patch = c.req.valid('json')
-    if (patch.voiceId) {
-      const profile = await PublicVoice.find(patch.voiceId)
-      if (!profile || profile.disabled) return c.json({ error: 'unknown_voice' }, 400)
+  .patch(
+    '/:id/voice',
+    requireSquadPermission('squads:update'),
+    zValidator('json', squadPublicVoicePatchSchema),
+    async (c) => {
+      const squad = await Squad.find(resolvedSquadId(c))
+      if (!squad) return c.json({ error: 'Squad not found' }, 404)
+      if (squad.isArchived) return c.json({ error: 'Squad is archived' }, 410)
+      const patch = c.req.valid('json')
+      if (patch.voiceId) {
+        const profile = await PublicVoice.find(patch.voiceId)
+        if (!profile || profile.disabled) return c.json({ error: 'unknown_voice' }, 400)
+      }
+      const next = mergePublicVoicePatch({ voiceId: squad.publicVoiceId, local: squad.publicVoice }, patch)
+      const bytes = await renderedBytesFor(squad.id, next)
+      if (bytes > PUBLIC_VOICE_MAX_BYTES) {
+        return c.json({ error: 'public_voice_too_long', bytes, maxBytes: PUBLIC_VOICE_MAX_BYTES }, 400)
+      }
+      const updated = await Squad.setPublicVoice(squad.id, { publicVoiceId: next.voiceId, publicVoice: next.local })
+      return c.json(await describeSquadVoice(updated, c.get('identity') as Identity | undefined))
     }
-    const next = mergePublicVoicePatch({ voiceId: squad.publicVoiceId, local: squad.publicVoice }, patch)
-    const bytes = await renderedBytesFor(squad.id, next)
-    if (bytes > PUBLIC_VOICE_MAX_BYTES) {
-      return c.json({ error: 'public_voice_too_long', bytes, maxBytes: PUBLIC_VOICE_MAX_BYTES }, 400)
-    }
-    const updated = await Squad.setPublicVoice(squad.id, { publicVoiceId: next.voiceId, publicVoice: next.local })
-    return c.json(await describeSquadVoice(updated, c.get('identity') as Identity | undefined))
-  })
+  )
   .delete('/:id/voice', requireSquadPermission('squads:update'), async (c) => {
     const squad = await Squad.find(resolvedSquadId(c))
     if (!squad) return c.json({ error: 'Squad not found' }, 404)
@@ -144,7 +149,8 @@ export const squadVoiceRouter = new Hono()
         })
         return c.json(result)
       } catch (error) {
-        if (error instanceof DerivationError) return c.json({ error: error.code, ...error.details }, derivationStatus[error.code])
+        if (error instanceof DerivationError)
+          return c.json({ error: error.code, ...error.details }, derivationStatus[error.code])
         log.error('Voice derivation failed', { squadId, error: String(error) })
         return c.json({ error: 'derivation_failed' }, 500)
       } finally {

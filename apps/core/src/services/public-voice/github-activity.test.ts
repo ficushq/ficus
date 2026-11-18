@@ -15,8 +15,18 @@ const page = <T>(nodes: T[], hasNextPage = false, endCursor: string | null = nul
   pageInfo: { hasNextPage, endCursor },
   nodes,
 })
-const pr = (createdAt: string, repository = repo()) => ({ createdAt, title: 'Title', body: 'Body text here.', repository })
-const comment = (createdAt: string, repository = repo()) => ({ createdAt, updatedAt: createdAt, body: 'A comment.', repository })
+const pr = (createdAt: string, repository = repo()) => ({
+  createdAt,
+  title: 'Title',
+  body: 'Body text here.',
+  repository,
+})
+const comment = (createdAt: string, repository = repo()) => ({
+  createdAt,
+  updatedAt: createdAt,
+  body: 'A comment.',
+  repository,
+})
 
 function userData(over: Record<string, unknown> = {}) {
   return {
@@ -59,7 +69,9 @@ const commitsData = {
     nameWithOwner: 'acme/api',
     isPrivate: false,
     defaultBranchRef: {
-      target: { history: { nodes: [{ committedDate: '2026-05-04T00:00:00Z', messageHeadline: 'fix: x', messageBody: 'Why.' }] } },
+      target: {
+        history: { nodes: [{ committedDate: '2026-05-04T00:00:00Z', messageHeadline: 'fix: x', messageBody: 'Why.' }] },
+      },
     },
   },
 }
@@ -68,26 +80,49 @@ describe('collectGitHubActivity', () => {
   test('one user request and one commits request when nothing needs paging', async () => {
     const { calls, graphql } = fakeGraphql([userData(), commitsData])
     const result = await collectGitHubActivity(
-      { squadId: 's', login: 'octo', filters: { excludeRepositories: ['acme/skip'] }, now: new Date('2026-06-01T00:00:00Z') },
+      {
+        squadId: 's',
+        login: 'octo',
+        filters: { excludeRepositories: ['acme/skip'] },
+        now: new Date('2026-06-01T00:00:00Z'),
+      },
       { graphql }
     )
     expect(calls).toHaveLength(2)
     expect(calls[0]!.query).toBe(USER_ACTIVITY_QUERY)
-    expect(calls[0]!.variables).toMatchObject({ login: 'octo', from: '2025-06-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' })
+    expect(calls[0]!.variables).toMatchObject({
+      login: 'octo',
+      from: '2025-06-01T00:00:00.000Z',
+      to: '2026-06-01T00:00:00.000Z',
+    })
     expect(calls[1]!.query).toContain('r0: repository(owner: "acme", name: "api")')
     expect(calls[1]!.query).not.toContain('acme/skip')
     expect(calls[1]!.variables).toEqual({ userId: 'U_1', since: null, until: null })
-    expect(result.items.map((i) => i.surface).sort()).toEqual(['commits', 'issue-comments', 'pull-requests', 'reviews', 'reviews'])
+    expect(result.items.map((i) => i.surface).sort()).toEqual([
+      'commits',
+      'issue-comments',
+      'pull-requests',
+      'reviews',
+      'reviews',
+    ])
     expect(result.requests).toBe(2)
   })
 
   test('date and repository filters drop items and are counted', async () => {
     const data = userData({
-      pullRequests: page([pr('2026-05-01T00:00:00Z'), pr('2025-01-01T00:00:00Z'), pr('2026-04-01T00:00:00Z', repo('other/x'))]),
+      pullRequests: page([
+        pr('2026-05-01T00:00:00Z'),
+        pr('2025-01-01T00:00:00Z'),
+        pr('2026-04-01T00:00:00Z', repo('other/x')),
+      ]),
     })
     const { graphql } = fakeGraphql([data, commitsData])
     const result = await collectGitHubActivity(
-      { squadId: 's', login: 'octo', filters: { after: '2026-01-01', repositories: ['acme/api'], surfaces: ['pull-requests'] } },
+      {
+        squadId: 's',
+        login: 'octo',
+        filters: { after: '2026-01-01', repositories: ['acme/api'], surfaces: ['pull-requests'] },
+      },
       { graphql }
     )
     expect(result.items).toHaveLength(1)

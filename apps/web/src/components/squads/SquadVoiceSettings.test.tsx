@@ -90,7 +90,11 @@ describe('SquadVoiceEditor', () => {
     const html = render(
       'sq-warn',
       ['squads:update'],
-      state({ voiceId: 'platform', fallback: 'assigned_disabled', resolved: { ...state().resolved, overCap: true, dropped: ['channels'] } })
+      state({
+        voiceId: 'platform',
+        fallback: 'assigned_disabled',
+        resolved: { ...state().resolved, overCap: true, dropped: ['channels'] },
+      })
     )
     expect(html).toContain('is disabled')
     expect(html).toContain('Channel messages')

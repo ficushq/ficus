@@ -25,7 +25,9 @@ export const publicVoicesRoutes = new Hono()
 
 function tooLong(profile: PublicVoiceProfile) {
   const bytes = publicVoiceBytes(renderProfileAlone(profile))
-  return bytes > PUBLIC_VOICE_MAX_BYTES ? { error: 'public_voice_too_long', bytes, maxBytes: PUBLIC_VOICE_MAX_BYTES } : null
+  return bytes > PUBLIC_VOICE_MAX_BYTES
+    ? { error: 'public_voice_too_long', bytes, maxBytes: PUBLIC_VOICE_MAX_BYTES }
+    : null
 }
 
 async function describeOne(id: string) {
@@ -57,7 +59,12 @@ publicVoicesRoutes.post(
   async (c) => {
     const input = c.req.valid('json')
     if (await PublicVoice.find(input.id)) return c.json({ error: `Voice profile "${input.id}" already exists` }, 409)
-    const candidate = { ...input, description: input.description ?? null, surfaces: input.surfaces ?? {}, disabled: false }
+    const candidate = {
+      ...input,
+      description: input.description ?? null,
+      surfaces: input.surfaces ?? {},
+      disabled: false,
+    }
     const over = tooLong(candidate)
     if (over) return c.json(over, 400)
     await PublicVoice.upsert(input)

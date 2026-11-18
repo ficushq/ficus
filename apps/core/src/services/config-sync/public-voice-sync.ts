@@ -31,10 +31,18 @@ export class PublicVoiceSync extends ConfigSync<PublicVoiceYaml> {
   parse(content: string, filename: string): PublicVoiceYaml {
     const result = publicVoiceProfileInputSchema.safeParse(yaml.load(content))
     if (!result.success) {
-      throw new Error(`PublicVoice ${filename}: ${result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`)
+      throw new Error(
+        `PublicVoice ${filename}: ${result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`
+      )
     }
     const value = result.data
-    return { id: value.id, name: value.name, description: value.description ?? null, base: value.base, surfaces: value.surfaces ?? {} }
+    return {
+      id: value.id,
+      name: value.name,
+      description: value.description ?? null,
+      base: value.base,
+      surfaces: value.surfaces ?? {},
+    }
   }
 
   getId(value: PublicVoiceYaml): string {
@@ -42,7 +50,13 @@ export class PublicVoiceSync extends ConfigSync<PublicVoiceYaml> {
   }
 
   toRecord(value: PublicVoiceYaml): Record<string, unknown> {
-    return { id: value.id, name: value.name, description: value.description ?? null, base: value.base, surfaces: value.surfaces }
+    return {
+      id: value.id,
+      name: value.name,
+      description: value.description ?? null,
+      base: value.base,
+      surfaces: value.surfaces,
+    }
   }
 
   toComparable(row: Record<string, unknown>): Record<string, unknown> {

@@ -44,7 +44,19 @@ describe('ficus voice', () => {
   })
 
   it('creates a profile with surface entries', async () => {
-    await run(['voice', 'create', 'team', '--name', 'Team', '--text', 'Team voice.', '--add', 'channels=Short.', '--override', 'pull-requests=Long form.'])
+    await run([
+      'voice',
+      'create',
+      'team',
+      '--name',
+      'Team',
+      '--text',
+      'Team voice.',
+      '--add',
+      'channels=Short.',
+      '--override',
+      'pull-requests=Long form.',
+    ])
     expect(apiPost).toHaveBeenCalledWith('/api/public-voices', {
       id: 'team',
       name: 'Team',
@@ -55,7 +67,10 @@ describe('ficus voice', () => {
 
   it('creates a profile from a derived draft file', async () => {
     const path = join(dir, 'draft.json')
-    writeFileSync(path, JSON.stringify({ draft: { base: 'Derived.', surfaces: { commits: { mode: 'add', text: 'Imperative.' } } } }))
+    writeFileSync(
+      path,
+      JSON.stringify({ draft: { base: 'Derived.', surfaces: { commits: { mode: 'add', text: 'Imperative.' } } } })
+    )
     await run(['voice', 'create', 'mine', '--name', 'Mine', '--from-draft', path])
     expect(apiPost).toHaveBeenCalledWith('/api/public-voices', {
       id: 'mine',
@@ -74,7 +89,12 @@ describe('ficus voice', () => {
   })
 
   it('updates keeping unspecified fields, and manages the lifecycle', async () => {
-    m(apiGet).mockResolvedValue({ id: 'team', name: 'Team', base: 'Old.', surfaces: { commits: { mode: 'add', text: 'c' } } })
+    m(apiGet).mockResolvedValue({
+      id: 'team',
+      name: 'Team',
+      base: 'Old.',
+      surfaces: { commits: { mode: 'add', text: 'c' } },
+    })
     await run(['voice', 'update', 'team', '--text', 'New.'])
     expect(apiPut).toHaveBeenCalledWith('/api/public-voices/team', {
       name: 'Team',
@@ -99,7 +119,13 @@ describe('ficus voice', () => {
       exemplars: [],
       sampling: {
         filters: {},
-        counts: { collected: 1, kept: 1, droppedByFilter: { date: 0, repository: 0 }, droppedAsToolAuthored: 0, droppedAsTemplate: 0 },
+        counts: {
+          collected: 1,
+          kept: 1,
+          droppedByFilter: { date: 0, repository: 0 },
+          droppedAsToolAuthored: 0,
+          droppedAsTemplate: 0,
+        },
         dateRange: {},
         publicRepositories: [],
         privateRepositories: [],
@@ -113,7 +139,20 @@ describe('ficus voice', () => {
     const log = console.log
     console.log = () => {}
     try {
-      await run(['voice', 'derive', '--squad', 's1', '--github', 'octocat', '--before', '2026-03-01', '--repo', 'acme/api', '--out', out])
+      await run([
+        'voice',
+        'derive',
+        '--squad',
+        's1',
+        '--github',
+        'octocat',
+        '--before',
+        '2026-03-01',
+        '--repo',
+        'acme/api',
+        '--out',
+        out,
+      ])
     } finally {
       console.log = log
     }
@@ -138,7 +177,19 @@ describe('ficus squad voice', () => {
     profile: null,
     fallback: null,
     availableVoices: [],
-    resolved: { base: 'B.', baseSource: 'instance', profileId: 'default', entries: {}, entrySources: {}, perSurface: {}, rendered: '', bytes: 10, maxBytes: 2000, overCap: false, dropped: [] },
+    resolved: {
+      base: 'B.',
+      baseSource: 'instance',
+      profileId: 'default',
+      entries: {},
+      entrySources: {},
+      perSurface: {},
+      rendered: '',
+      bytes: 10,
+      maxBytes: 2000,
+      overCap: false,
+      dropped: [],
+    },
     linkedGitHubLogin: null,
   }
   const quiet = async (args: string[]) => {
@@ -193,7 +244,17 @@ describe('ficus squad voice', () => {
     expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/preview', { surface: 'channels', voiceId: 'team' })
 
     m(apiPost).mockRejectedValue(new ApiRequestError('confirmation_required', 409))
-    await quiet(['squad', 'voice', 'derive', 's1', '--github', 'octocat', '--include-tool-authored', '--surfaces', 'commits,reviews'])
+    await quiet([
+      'squad',
+      'voice',
+      'derive',
+      's1',
+      '--github',
+      'octocat',
+      '--include-tool-authored',
+      '--surfaces',
+      'commits,reviews',
+    ])
     expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/derive', {
       login: 'octocat',
       filters: { surfaces: ['commits', 'reviews'], excludeToolAuthored: false },

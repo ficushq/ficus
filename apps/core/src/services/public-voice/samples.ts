@@ -71,24 +71,22 @@ function isBotTemplate(item: Pick<RawActivityItem, 'title' | 'text'>): boolean {
 
 /** Strip what is not the person's prose, and redact contact details and links. */
 export function cleanSampleText(text: string): string {
-  return (
-    text
-      .replace(/\r\n?/g, '\n')
-      .replace(/```[\s\S]*?(```|$)/g, '')
-      .replace(/~~~[\s\S]*?(~~~|$)/g, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .split('\n')
-      .filter((line) => !/^\s*>/.test(line))
-      .filter((line) => !/^\s*[-*]\s+\[[ xX]\]/.test(line))
-      .filter((line) => !/^\s*co-authored-by:/i.test(line) && !/^\s*signed-off-by:/i.test(line))
-      .join('\n')
-      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<email>')
-      .replace(/\bhttps?:\/\/[^\s)>\]]+/g, '<url>')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/ *\n */g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-  )
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/```[\s\S]*?(```|$)/g, '')
+    .replace(/~~~[\s\S]*?(~~~|$)/g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n')
+    .filter((line) => !/^\s*>/.test(line))
+    .filter((line) => !/^\s*[-*]\s+\[[ xX]\]/.test(line))
+    .filter((line) => !/^\s*co-authored-by:/i.test(line) && !/^\s*signed-off-by:/i.test(line))
+    .join('\n')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<email>')
+    .replace(/\bhttps?:\/\/[^\s)>\]]+/g, '<url>')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function joinTitle(item: RawActivityItem, body: string): string {
@@ -191,6 +189,7 @@ export function prepareSamples(
     pagingCapped: collected.pagingCapped,
     toolAuthoredIsHeuristic: true,
   }
-  if (samples.length < MIN_SAMPLES) throw new DerivationError('derivation_too_few_samples', { counts, minimum: MIN_SAMPLES })
+  if (samples.length < MIN_SAMPLES)
+    throw new DerivationError('derivation_too_few_samples', { counts, minimum: MIN_SAMPLES })
   return { samples, summary }
 }

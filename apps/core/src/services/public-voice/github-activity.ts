@@ -185,7 +185,8 @@ export async function collectGitHubActivity(
     try {
       return await graphql<T>(query, variables)
     } catch (error) {
-      if (error instanceof GitHubApiUnavailableError) throw new DerivationError('derivation_github_unavailable', { reason: error.reason })
+      if (error instanceof GitHubApiUnavailableError)
+        throw new DerivationError('derivation_github_unavailable', { reason: error.reason })
       throw error
     }
   }
@@ -244,10 +245,13 @@ export async function collectGitHubActivity(
         pagingCapped = true
         break
       }
-      const next = await call<{ user: { pullRequests: Connection<PullRequestNode> } | null }>(PULL_REQUESTS_PAGE_QUERY, {
-        login,
-        prCursor: page.pageInfo.endCursor,
-      })
+      const next = await call<{ user: { pullRequests: Connection<PullRequestNode> } | null }>(
+        PULL_REQUESTS_PAGE_QUERY,
+        {
+          login,
+          prCursor: page.pageInfo.endCursor,
+        }
+      )
       if (!next?.user) break
       page = next.user.pullRequests
       pages++
@@ -291,7 +295,12 @@ export async function collectGitHubActivity(
     for (const contribution of user.contributionsCollection.pullRequestReviewContributions.nodes) {
       const review = contribution.pullRequestReview
       if (!review || !accept(review.createdAt, review.repository.nameWithOwner)) continue
-      const base = { surface: 'reviews' as const, repository: review.repository.nameWithOwner, isPrivate: review.repository.isPrivate, createdAt: review.createdAt }
+      const base = {
+        surface: 'reviews' as const,
+        repository: review.repository.nameWithOwner,
+        isPrivate: review.repository.isPrivate,
+        createdAt: review.createdAt,
+      }
       if (review.body) items.push({ ...base, text: review.body })
       for (const comment of review.comments.nodes) if (comment.body) items.push({ ...base, text: comment.body })
     }
@@ -302,13 +311,17 @@ export async function collectGitHubActivity(
     const candidates = filters.repositories?.length
       ? filters.repositories
       : user.contributionsCollection.commitContributionsByRepository.map((entry) => entry.repository.nameWithOwner)
-    const repositories = [...new Set(candidates)].filter((name) => repositoryAllowed(name, filters)).slice(0, MAX_COMMIT_REPOSITORIES)
+    const repositories = [...new Set(candidates)]
+      .filter((name) => repositoryAllowed(name, filters))
+      .slice(0, MAX_COMMIT_REPOSITORIES)
     if (repositories.length > 0) {
       type CommitBlock = {
         nameWithOwner: string
         isPrivate: boolean
         defaultBranchRef: {
-          target: { history?: { nodes: Array<{ committedDate: string; messageHeadline: string; messageBody: string }> } } | null
+          target: {
+            history?: { nodes: Array<{ committedDate: string; messageHeadline: string; messageBody: string }> }
+          } | null
         } | null
       } | null
       const data = await call<Record<string, CommitBlock>>(buildCommitsQuery(repositories), {

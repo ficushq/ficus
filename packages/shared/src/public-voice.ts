@@ -200,14 +200,25 @@ export function resolvePublicVoice({ squad, assigned, instanceDefault }: Resolve
     }
   }
 
-  return { base, baseSource, profileId: profile?.id ?? null, entries, entrySources, perSurface: perSurfaceVoice(base, entries) }
+  return {
+    base,
+    baseSource,
+    profileId: profile?.id ?? null,
+    entries,
+    entrySources,
+    perSurface: perSurfaceVoice(base, entries),
+  }
 }
 
 function perSurfaceVoice(base: string, entries: PublicVoiceSurfaces): Record<PublicSurface, string> {
   const result = {} as Record<PublicSurface, string>
   for (const surface of PUBLIC_SURFACES) {
     const entry = entries[surface]
-    result[surface] = !entry ? base : entry.mode === 'override' ? entry.text : [base, entry.text].filter(Boolean).join('\n\n')
+    result[surface] = !entry
+      ? base
+      : entry.mode === 'override'
+        ? entry.text
+        : [base, entry.text].filter(Boolean).join('\n\n')
   }
   return result
 }
@@ -241,7 +252,7 @@ export function publicVoiceBytes(text: string): number {
  */
 export function fitPublicVoiceToCap(
   resolved: ResolvedPublicVoice,
-  maxBytes: number = PUBLIC_VOICE_MAX_BYTES,
+  maxBytes: number = PUBLIC_VOICE_MAX_BYTES
 ): { resolved: ResolvedPublicVoice; dropped: PublicSurface[] } {
   let current = resolved
   const dropped: PublicSurface[] = []
@@ -260,7 +271,9 @@ export function fitPublicVoiceToCap(
 
 /** Render a profile by itself, ignoring `disabled` (the profile-alone cap check and the list's byte count). */
 export function renderProfileAlone(profile: PublicVoiceProfile): string {
-  return renderPublicVoicePrompt(resolvePublicVoice({ squad: null, assigned: { ...profile, disabled: false }, instanceDefault: null }))
+  return renderPublicVoicePrompt(
+    resolvePublicVoice({ squad: null, assigned: { ...profile, disabled: false }, instanceDefault: null })
+  )
 }
 
 /** True when the layer carries nothing. */

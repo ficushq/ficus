@@ -1347,7 +1347,8 @@ export function AgentTypesSection() {
       <div>
         <h3 className="text-lg font-semibold text-primary">Agent Types</h3>
         <p className="mt-1 text-sm text-muted">
-          Define agent roles, choose the models they use, edit the shared prompt blocks they include, and manage the public voices squads use.
+          Define agent roles, choose the models they use, edit the shared prompt blocks they include, and manage the
+          public voices squads use.
         </p>
         <SegmentedControl
           size="compact"
