@@ -10,15 +10,16 @@
     background: rgb(var(--color-bg-surface));
     background: color-mix(in srgb, rgb(var(--color-bg-surface)) 88%, transparent);
 
+    /* Standard property only: the production minifier (Lightning CSS) adds the -webkit- prefix, and
+       keeps only the prefixed one (ignored by Chromium) when both are written in this order.
+       glassBackdropFilter.test.ts guards this. */
     backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
   }
 
   .squad-chat-toolbar {
     background: rgb(var(--color-bg-surface-secondary));
     background: color-mix(in srgb, rgb(var(--color-bg-surface-secondary)) 72%, transparent);
     backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
   }
 
   .squad-chat-agent {
