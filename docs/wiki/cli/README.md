@@ -84,25 +84,25 @@ Array and paginated list envelopes remain unchanged.
 
 Other current command groups include:
 
-| Command                                  | Description                                                                              |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `ficus auth`                             | Log in, switch backends, inspect identity, and log out                                   |
-| `ficus search <query>`                   | Search squads, work streams, consultant chats, and saved Assistant conversations         |
-| `ficus integration`                      | Connect, inspect, and assign external integrations                                       |
-| `ficus workflow`                         | Manage presets, preview flows, and advance or finish flow runs                           |
-| `ficus agent-question` (`aq`)            | Manage asynchronous agent questions                                                      |
-| `ficus deploy`                           | Manage local app runs and external deployment records                                    |
-| `ficus skill` (`skills`)                 | Manage bundled and dynamic agent skills                                                  |
-| `ficus shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                                            |
+| Command                                  | Description                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------- |
+| `ficus auth`                             | Log in, switch backends, inspect identity, and log out                           |
+| `ficus search <query>`                   | Search squads, work streams, consultant chats, and saved Assistant conversations |
+| `ficus integration`                      | Connect, inspect, and assign external integrations                               |
+| `ficus workflow`                         | Manage presets, preview flows, and advance or finish flow runs                   |
+| `ficus agent-question` (`aq`)            | Manage asynchronous agent questions                                              |
+| `ficus deploy`                           | Manage local app runs and external deployment records                            |
+| `ficus skill` (`skills`)                 | Manage bundled and dynamic agent skills                                          |
+| `ficus shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                                    |
 | `ficus voice`                            | Manage public voice profiles squads are assigned to ([public voice](../public-voice.md)) |
-| `ficus remote-hosts`                     | Manage team-owned SSH hosts                                                              |
-| `ficus amtp` / `ficus remote`            | Manage federation and agent federation identity                                          |
-| `ficus machines`                         | Manage VM sandbox machines                                                               |
-| `ficus monitor`                          | Read or cancel agent-owned monitors                                                      |
-| `ficus user` / `ficus role`              | Read users, role assignments, effective permissions, and role definitions                |
-| `ficus server`                           | Manage the instance installed on this machine                                            |
-| `ficus install` / `ficus update`         | Install the CLI or update an instance                                                    |
-| `ficus admin`                            | Operator maintenance actions                                                             |
+| `ficus remote-hosts`                     | Manage team-owned SSH hosts                                                      |
+| `ficus amtp` / `ficus remote`            | Manage federation and agent federation identity                                  |
+| `ficus machines`                         | Manage VM sandbox machines                                                       |
+| `ficus monitor`                          | Read or cancel agent-owned monitors                                              |
+| `ficus user` / `ficus role`              | Read users, role assignments, effective permissions, and role definitions        |
+| `ficus server`                           | Manage the instance installed on this machine                                    |
+| `ficus install` / `ficus update`         | Install the CLI or update an instance                                            |
+| `ficus admin`                            | Operator maintenance actions                                                     |
 
 Run `ficus --help` and `ficus <command> --help` for the complete current options.
 
