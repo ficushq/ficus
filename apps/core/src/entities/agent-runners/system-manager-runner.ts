@@ -110,7 +110,8 @@ export class SystemManagerRunner extends AgentRunner {
     const systemPrompt = interpolateTemplate(
       prompt()
         .text(typePrompt)
-        .section('Model Overrides for Spawned Agents', buildModelOverridePrompt())
+        // The Assistant has no CLI, so it cannot use the --model flags this section names.
+        .sectionIf(agentTypeId !== 'assistant', 'Model Overrides', buildModelOverridePrompt())
         .text(buildPlatformUrlsPrompt())
         .build(),
       {

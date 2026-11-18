@@ -571,6 +571,26 @@ describe('SquadManagerRunner placeholder interpolation', () => {
     })
   }
 
+  it.each([
+    ['manager', true],
+    // Consultants hold manager permissions, so a person can ask one to spawn an agent with a model.
+    ['consultant', true],
+  ])('model override guidance reaches the %s: %p', async (agentTypeId, expected) => {
+    squadFindSpy = spyOn(Squad, 'find').mockResolvedValue(makeMockSquad())
+    const agent = { ...makeMockAgent(), agentTypeId }
+    const runner = new TestableSquadManagerRunner(
+      { id: 'e1', agentId: agent.id, message: 'go', imageIds: null } as any,
+      agent,
+      makeAgentType({ id: agentTypeId })
+    )
+    await runner.exposeCreateSession()
+    const systemPrompt: string = sessionSpy.mock.calls[0][0].systemPrompt
+    expect(systemPrompt.includes('## Model Overrides')).toBe(expected)
+    // The section never names work stream creation flags that do not exist.
+    expect(systemPrompt).not.toContain('--agent-model')
+    expect(systemPrompt).not.toContain('--assign-id')
+  })
+
   it('leaves no raw {{...}} placeholders when using the real squad-rules include', async () => {
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue(makeMockSquad())
 

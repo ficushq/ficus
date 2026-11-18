@@ -118,7 +118,7 @@ ficus deploy local archive <deployment-id>
 | Page loads but is blank/white.                    | Check `browser_console` for JS errors and bundler messages first. Then verify the dev server actually serves index.html at `/` (some frameworks need a base path).               |
 | App-owned login redirect after the preview opens. | The app's login is separate from Ficus preview access. Use its supported login flow with authorized synthetic test accounts; do not bypass either authentication layer.          |
 | Old screenshot is reused.                         | Browser session is per-run. Call `browser_open` with the same deployment ID to navigate again, or scroll to top with `browser_scroll`.                                           |
-| Squad has hit the local-deployment limit.         | `ficus deploy local list --include-archived` then archive stale ones with `ficus deploy local archive <id>`.                                                                     |
+| Squad has hit the local-deployment limit.         | `ficus deploy local list <squadId> --include-archived` then archive stale ones with `ficus deploy local archive <id>`.                                                           |
 
 ## See also
 

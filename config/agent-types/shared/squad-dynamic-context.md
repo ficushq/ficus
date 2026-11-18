@@ -2,8 +2,7 @@
 
 The squad has two **top-level** context fields:
 
-- `context` — a string injected into EVERY agent's system prompt in this squad
-  (via the `{{squad.context}}` token).
+- `context` — a string injected into EVERY agent's system prompt in this squad.
 - `typeContext` — a map of agent-type ID → string, injected only into that
   agent type's prompt, additive to `context`.
 

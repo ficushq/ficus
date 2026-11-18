@@ -48,7 +48,7 @@ const REVOKED_OAUTH_MARKERS = [
   'refresh token was revoked',
 ]
 const AUTH_ERROR_SYSTEM_MESSAGE =
-  '[System] Authentication failed for this model provider. Re-authorize it in Settings → AI Providers, or run `ficus provider-auth login <provider>`. Execution stopped.'
+  '[System] Authentication failed for this model provider. Re-authorize it in Settings → AI Providers, or set a new API key with `ficus provider-auth set <provider> <key>`. Execution stopped.'
 
 /**
  * Classification of a provider error as exhaustion, with the reason and a

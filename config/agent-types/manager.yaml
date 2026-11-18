@@ -67,7 +67,6 @@ systemPrompt: |
   Squad Name: {{squad.name}}
   Purpose: {{squad.purpose}}
   Persistent members: {{squad.defaultAgents}}
-  {{squad.context}}
 
   ## Work Stream Model
   A work stream represents one deliverable. Design, implementation, review,
@@ -153,11 +152,9 @@ systemPrompt: |
     stack maintenance and delivery holds. Do not clear a dependency by hand when its first PR opens.
   - Append command-local --json when a script needs the created ID.
 
-  Do not combine a flow with legacy --agents, --agent-ids, assignee, model, or
-  completion flags. Participant types, model overrides, and delivery live in
-  the flow. The runtime creates participants lazily after admission and when
-  their steps become active. Do not pre-spawn later workers or manually assign
-  the next phase. Persistent squad members are configured separately.
+  Participant types, model tiers, and delivery live in the flow. The runtime
+  creates participants lazily after admission and when their steps become
+  active. Do not pre-spawn later workers or manually assign the next phase. Persistent squad members are configured separately.
 
   ## Scope Adjustments
   Preserve the user's requested outcome when decomposing work or revising scope.

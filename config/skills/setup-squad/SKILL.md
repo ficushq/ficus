@@ -25,18 +25,19 @@ ficus squad list
 
 ## Step 1: Create the Squad
 
-First, check which squad presets are available:
+First, check which squad presets are available. The only built-in preset is
+`engineering`; an instance may have added others:
 
 ```bash
 ficus squad-preset list
 ```
 
-Then create the squad:
+Then create the squad. Omit `--preset` for a squad without preset defaults:
 
 ```bash
 ficus squad create "<Squad Name>" \
   -p "<Purpose description>" \
-  -t <squad-preset>
+  --preset <preset-id>
 ```
 
 Example:
@@ -44,7 +45,7 @@ Example:
 ```bash
 ficus squad create "Backend Team" \
   -p "Backend API development and maintenance" \
-  -t engineering
+  --preset engineering
 ```
 
 Note the squad UUID from the output — you'll need it for subsequent steps.
@@ -282,37 +283,25 @@ ficus squad set-meta <squad-id> notifications.telegram.channelId "<telegram-chat
 
 For more details, see the `setup-notifications` skill.
 
-## Step 6: Link to Channels (Optional)
+## Step 6: Route Channels to the Squad (Optional)
 
-If channel instances exist (Discord, Slack, Telegram), link the squad so
-users can interact with it via slash commands:
+If channel instances exist (Discord, Slack, Telegram), route messages to the
+squad so users can interact with it via slash commands. Each channel instance
+sends messages to its default squad, unless its channel-to-squad map routes a
+specific channel elsewhere:
 
 ```bash
-# Check existing channel instances
+# Check existing channel instances and their routing
 ficus channel list
+ficus channel get <channel-instance-id>
 
-# Link this squad to a channel instance
-ficus channel link-squad <channel-id> <squad-id>
+# Make this squad the instance's default
+ficus channel update <channel-instance-id> --default-squad <squad-id>
 
-# Or link all squads (wildcard)
-ficus channel link-squad <channel-id> "*"
-
-# Remove a squad from a channel
-ficus channel unlink-squad <channel-id> <squad-id>
-```
-
-You can also set linked squads during channel creation or update:
-
-```bash
-# During create
-ficus channel create --id my-discord --name "My Server" --provider discord \
-  --config '{"guildId": "..."}' --linked-squads "<squad-id-1>,<squad-id-2>"
-
-# During update (replaces all linked squads)
-ficus channel update <channel-id> --linked-squads "<squad-id-1>,<squad-id-2>"
-
-# Link all squads via wildcard
-ficus channel update <channel-id> --linked-squads "*"
+# Or route specific provider channels to this squad
+# (replaces the whole map; unmapped channels use the default squad)
+ficus channel update <channel-instance-id> \
+  --channel-squad-map '{"<provider-channel-id>": "<squad-id>"}'
 ```
 
 ## Step 7: Verify

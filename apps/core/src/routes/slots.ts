@@ -128,7 +128,7 @@ function validUuid(raw: string, kind: 'claim' | 'waiter'): string {
 }
 
 const HOST_SHARED_NOTE =
-  "It is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares. For a pool that protects something other than box memory or CPU, turn that off: ficus slot update <key> --no-host-shared."
+  "It is host-shared: its claims also draw on the machine host's slot budget, which every squad on that machine shares. For a pool that protects something other than box memory or CPU, turn that off with `ficus slot update <key> --no-host-shared`."
 const NOT_HOST_SHARED_NOTE = 'It is not host-shared: only its own capacity limits it.'
 
 /** How a mutation message names the pool's capacity. */
