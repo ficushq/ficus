@@ -711,7 +711,7 @@ describe('SquadWorkerRunner typeContext injection', () => {
       { type: 'agent', agentId: agent.id, squadId: TEST_SQUAD_ID },
       TEST_SQUAD_ID
     )
-    expect(getCliCommandIndexSpy).toHaveBeenCalledWith(['workstreams:read'])
+    expect(getCliCommandIndexSpy).toHaveBeenCalledWith(['workstreams:read'], { omitHostGroups: true })
     expect(systemPrompt).toContain('CLI-INDEX-FOR-WORKSTREAMS-READ')
   })
 
