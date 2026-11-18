@@ -7,12 +7,12 @@ description: Operate a Ficus instance as a manager/operator — CLI auth, the wo
 
 ## What Ficus is
 
-A Ficus instance runs **squads** of AI agents (typical crew: architect,
-engineer, reviewer, coordinated by a squad **manager** agent). Work is
-organized into **work streams** — durable units with a lifecycle, a
-priority, an assignee, a dedicated agent crew, and a git branch. You direct
-at the work-stream level and communicate through the manager; the manager
-orchestrates the agents.
+A Ficus instance runs **squads** of AI agents coordinated by a squad
+**manager** agent. Work is organized into **work streams**: one deliverable
+each, with a priority, an optional git branch, and a **flow** that decides
+which agents do which steps. You direct at the work-stream level and
+communicate through the manager; the manager shapes the work and the flow
+runs it.
 
 Everything below uses the `ficus` CLI. Global flags: `--json` for
 machine-readable output (parse this, not the human tables; add
@@ -57,124 +57,100 @@ ficus auth logout [label]                  # removes the backend AND revokes the
 
 ## Work streams — the core surface
 
+A work stream is one deliverable. Its **flow** (a saved workflow preset, or an
+inline definition) owns the steps, which participant does each one, review and
+approval gates, rework paths, limits and the delivery policy. Agents are created
+only when their step starts. Nobody routes work by reassigning the stream or
+editing its status: agents submit step outcomes, and the runtime starts the next
+step.
+
 ```bash
-ficus ws list -q <squadId> [--json]  # outside a squad box, the squad flag is required
-ficus ws get <id> [--json]           # shows the crew and each agent's live status
-ficus ws create "<title>" -q <squadId> -d "<description>" \
-    --agents architect,engineer,reviewer --assign-index 1 \
-    --branch <branch> --base-branch main \
-    [--priority <p>] [--depends-on <id>[:ready]] -m "<kickoff message>"
-ficus ws request-review <id> -m "<what to review>" [--no-complete]
-                                     # open the review wait; approval completes the
-                                     # stream by default. --no-complete = mid-work
-                                     # checkpoint gate: approval resolves the gate
-                                     # only and work continues
-ficus ws approve <id> [-m "<note>"]  # close the open review wait; completes the
-                                     # stream unless the wait was --no-complete.
-                                     # The note is recorded on the wait and
-                                     # DELIVERED (durable home for follow-ups)
-ficus ws send-back <id> -m "<fb>"    # close the review wait with feedback (a
-                                     # review round); never completes anything —
-                                     # always safe
-ficus ws request-input <id> -m "<why>" # open a manual wait: the stream needs an
-                                     # answer/action from the owner or operator
-ficus ws unblock <id> -m "<answer>"  # resolve the manual wait; the note is
-                                     # delivered to the assignee as its next
-                                     # instruction
-ficus ws handoff <id> --to <agentId> -m "<context>" [-f <file>]...
-                                     # reassignment ONLY (bound-agent phase
-                                     # transitions). It never opens a review
-                                     # wait — that's request-review
-ficus ws park <id>                   # intentional preemption ONLY: release the
-                                     # slot for higher-priority work. Never park
-                                     # a waiting stream — open waits already
-                                     # exclude it from scheduling
-ficus ws done <id>                   # complete directly — REJECTED while any
-                                     # wait is open (except via approve on the
-                                     # final review wait)
-ficus ws reopen <id>                 # take a done/canceled stream back through
-                                     # admission (queued/active)
-ficus ws cancel <id>                 # cancel + stop assigned executions
-ficus ws add-agent <id> <types...>   # spawn+bind extra agents; remove-agent to unbind
-ficus ws watch <id>                  # subscribe to lifecycle updates
+ficus ws list -q <squadId> [--json]   # outside a squad box, the squad flag is required
+ficus ws get <id> [--json]            # description, metadata, open waits, derived state
+ficus ws flow <id>                    # flow version, attempts, active outcomes, returns,
+                                      # deliveryParticipant and delivery instructions
+ficus workflow list                   # presets; ficus workflow get <presetId> for one
+
+ficus ws create "<title>" -q <squadId> -d "<self-contained requirements>" \
+    --owner <managerAgentId> \
+    [--workflow <presetId> | --flow-content '<JSON source>' | --flow-stdin] \
+    [--repository <checkoutPath> --branch <branch> --base-branch main] \
+    [--priority <p>] [--depends-on <id>[:ready]]
 ```
 
-Stored statuses are just `queued | active → done | canceled`. `queued` means
-not admitted under the squad's concurrency cap (or parked back into the
-queue) — visible, ordered, and auto-admitted when a slot frees, its
-dependencies are satisfied (done, or for a `--depends-on <id>:ready` edge the
-dependency's pull request is ready), AND it has no open wait. Everything richer is a typed
-OPEN WAIT record (`dependency | question | review | manual`) plus a DERIVED
-display: `in progress` (live execution), `in review`, `waiting on answer`,
-`waiting on <dep>`, `blocked`, or `idle` (active with no execution and no
-wait — the one alarming state).
+- Omit the workflow selector to use the squad's default flow. Validate an inline
+  source first with `ficus workflow resolve -q <squadId> --content '<JSON source>'`.
+- `--repository` provisions an isolated worktree and branch for the stream and
+  detects the code host. Read-only work needs none.
+- The description is the source of truth for scope. Workers do not see the
+  conversation that produced it.
 
-When more than one wait of a type is open, the sugar verbs require
-`--wait <waitId>` — `ficus ws get <id>` prints each open wait's id (checkpoint
-review waits are marked). JSON fields worth knowing: `status` +
-`derivedState`, `openWaits[]` (id, type, message, completesOnApproval,
-openedAt — why it's waiting; often a precise statement of the resume
-condition), `reviewRounds` (closed review waits) on detail,
-`priority` (stored) vs the computed effective priority shown in listings,
-`handoffMessage` (the assignee's latest substantive report), `dependsOn`,
-`assigneeAgentId`, `metadata` (free-form; `set-meta` supports dot paths).
+**How a flow moves.** The agent on the active step submits its outcome with
+`ficus ws advance <id>` (a versioned command: `expectedVersion`, `attemptId`,
+`action`, `outcome`, `evidence`), and the runtime routes the next step, returns
+for rework, and waits at joins. When the graph is finished the flow is
+`completion-ready`, and the delivery participant runs
+`ficus ws finish <id> --version <v>`. Finish checks the delivery policy
+(`completion.mode`) independently:
 
-**Priority & concurrency.** Streams carry a priority (`critical | high |
-normal | low`, default `normal`; set at creation or `ws update --priority`).
-Effective priority is computed with **blocker boosting**: a stream inherits
-the max priority of every open stream that depends on it, so a low-priority
-flake fix blocking a high-priority feature schedules as high (`ws list`
-annotates when stored and effective differ). `dependsOn` writes reject
-cycles. The squad-level cap (`ficus squad update --max-concurrent-streams
-N|unlimited`) bounds how many streams may hold a slot (= have runnable
-sandboxes) at once; creation under a full cap lands in `queued` with the
-crew bound but boxes stopped — only sandboxes consume resources, agent rows
-are free. Admission order is effective priority, then age. There is NO
-preemption — a critical arrival goes to the queue head and the manager
-decides whether to `park` something to make room. Parking is never lossy:
-files stay in place and the stream re-enters the queue at its effective
-priority. AUTO-PARK: an active stream with an open wait older than the squad
-grace (`ficus squad update --blocked-grace-minutes N`, default 30, 0 =
-immediate) is parked automatically — no exemptions, review waits included. A
-parked-with-wait display (`in review — parked`, `waiting on <dep>`) is the
-system working, not a stall: do NOT "fix" it; resolve the wait.
+| Mode              | Finish succeeds when                                             |
+| ----------------- | ---------------------------------------------------------------- |
+| `deliverable`     | Required work is done and blocking waits are resolved            |
+| `review-approval` | A human approved final delivery                                  |
+| `pr-review`       | The reviewed pull request has merged or closed                   |
+| `pr-merge`        | The pull request is verified merged; a human merges it           |
+| `pr-auto-merge`   | The squad allows auto-merge, and the merge is verified           |
+| `direct-merge`    | The squad allows it, and the commit is in the remote base branch |
 
-**Reading blocked correctly:** a `blocked` display means _waiting on
-something named in the open manual wait's message_ — operator input, a
-resource grant, or a deliberate hold. It does NOT mean stalled or broken.
-Read the wait message; it usually tells you exactly whether you're the
-unblocker.
+A passing review or green CI is not a merge. A stream that waits on another
+stream's pull request shows a delivery hold until that dependency merges.
 
-**Every wait resolves through its typed verb** — `unblock` for manual
-waits, `approve`/`send-back` for review waits (there is no generic
-`respond`). A good resolution note states: what changed, what the stream
-should do now, and any new constraints — the resumed agent reads it as its
-next instruction, and notes ride the wait record, so they are never lost.
-Blocking questions (`ask_human` with `blocking: true`) open a question wait
-that the answer (`ficus aq answer`) clears automatically. This is THE path for
-"an agent needs a human decision to continue": the worker asks, the stream
-shows `waiting on answer`, you answer once, and the worker resumes with your
-answer as its next instruction. A manual wait whose message is a question, or
-an inbox message asking you to decide something, is the wrong shape — answer
-it, then tell the manager the worker should have asked a blocking `ask_human`.
-Managers never block on a question: they ask asynchronously and keep
-coordinating.
+**Waits are typed, and each has its own resolver.**
 
-**PR streams: the completing review wait is a MERGE gate, not an LGTM.**
-Approving a review wait with `completesOnApproval` (the default) completes
-the stream in the same transaction — so for a stream whose deliverable is a
-PR, the final review wait must represent "the PR is merged", and whoever
-resolves it must check the wait's stated condition is actually met before
-approving. The working convention: the bound reviewer creates the PR, gets
-it reviewed on GitHub, and opens the completing review wait only at (or
-explicitly gated on) the merge; GitHub webhook events tell the reviewer the
-PR merged, and the reviewer resolves the wait — closing the stream —
-themselves. Pre-merge quality gates are `request-review --no-complete`
-checkpoints. As an operator: reply to PR feedback on GitHub; touch the
-stream's completing wait only when its condition holds (send-back is always
-safe). Approving an "awaiting CI/merge" wait early completes the stream
-under the reviewer and forces a reopen — the exact churn this rule exists
-to prevent.
+| Wait           | What it means                                                   | How it resolves                                                                                        |
+| -------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| question       | An agent called `ask_human`                                     | `ficus aq answer <questionId> "<answer>"`; the answer is input, not approval                           |
+| human approval | A flow gate for a person                                        | The decision controls in the web app; the chosen outcome routes the flow, and a send-back needs a note |
+| typed input    | A requested file, configuration value or owner decision         | `ficus ws resolve-input <id> <waitId>` with the matching action and `expectedVersion`                  |
+| dependency     | Waiting on another stream (`done`, or `ready` for stacked code) | The system clears it                                                                                   |
+| manual         | A prose hold opened by a person or manager                      | `ficus ws unblock <id> -m "<what changed and what to do now>"`                                         |
+
+A resolution note is the resumed agent's next instruction, so state what changed,
+what to do now, and any new constraint.
+
+**Other controls.** `ficus ws pause <id>` stops work until `ficus ws resume <id>`.
+`ficus ws park <id>` releases the stream's slot for higher-priority work and is
+never needed for a waiting stream. `ficus ws cancel <id>` stops it, and
+`ficus ws reopen <id>` starts a new pass at the flow entry. A flow that reaches
+its attempt limit pauses until someone runs `ficus ws raise-limit <id>`.
+`ficus ws track <id> --url <issue-or-pr-url>` follows another issue or pull
+request (`--delivery` makes a pull request part of delivery), and
+`ficus ws watch <id>` subscribes you to updates.
+
+Every new work stream runs a flow. The older lifecycle commands
+(`request-review`, `approve`, `send-back`, `handoff`, `done`, `add-agent`) apply
+only to streams created before flows, and the server refuses them on flow
+streams; use the flow, waits and finish above.
+
+**Statuses.** Stored statuses are `queued | active → done | canceled`. `queued`
+means not admitted yet: the squad's concurrency cap is full, a dependency is
+unmet, or a wait is open. The display state is derived: `in progress`,
+`in review` (a human gate), `waiting on answer`, `waiting on <dependency>`,
+`blocked` (a manual wait: read its message, which names the resume condition), or
+`idle` (active with no execution and no wait, the one alarming state). Useful
+JSON fields: `status`, `derivedState`, `openWaits[]` (id, type, message),
+`priority` versus the effective priority in listings, `dependsOn`, and `metadata`
+(`set-meta` takes dot paths).
+
+**Priority and concurrency.** Priority is `critical | high | normal | low`
+(default `normal`; `ws update --priority`). A stream inherits the highest
+priority of any open stream that depends on it. The squad cap
+(`ficus squad update --max-concurrent-streams N|unlimited`) bounds how many
+streams hold a slot; admission is by effective priority, then age, with no
+preemption. An active stream whose wait is older than the squad grace
+(`ficus squad update --blocked-grace-minutes N`, default 30) is parked
+automatically. Parking is never lossy, and `in review — parked` or
+`waiting on <dependency>` is the system working, not a stall: resolve the wait.
 
 ## The squad manager — direct, don't micromanage
 
@@ -191,10 +167,9 @@ to prevent.
   BINDING requirements (exact behaviors, failure semantics, test
   expectations) — managers open well-scoped streams from precise specs and
   flounder on vague ones.
-- Handoffs carry the phase chain: workers hand off to the next bound agent
-  with `ficus ws handoff <id> --to <agentId> -m "<context>"` (and `-f` file
-  attachments reviewable in the UI). Opening a verdict review wait is a
-  separate act (`request-review`) — never a handoff side effect.
+- Agents move work through the flow themselves (`ficus ws advance`), and the
+  runtime starts the next step. Do not hand work between agents by message or
+  reassignment; if the process is wrong, have the manager revise the flow.
 
 ### Message delivery: steer vs follow-up
 
@@ -300,8 +275,8 @@ a separate item.
 
 1. **Precise wait messages are gold.** When asking a squad to do risky
    work, require them to block with wait messages that name the exact resume
-   condition — and write your own `unblock`/`approve` and `aq answer`
-   messages the same way.
+   condition, and write your own `unblock`, `aq answer` and gate decision
+   notes the same way.
 2. **Don't infer stalls from timestamps** (see manager section). Real
    incidents have come from misreading deliberate sequencing as death.
 3. **Infrastructure-shaped failures deserve an infrastructure check first.**
