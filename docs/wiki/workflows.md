@@ -518,6 +518,16 @@ including after delivery while no removal is in flight. No-worktree streams are 
 Historical rows default false; explicit later opt-in does not invent ownership
 or missing delivery proof.
 
+**Agent guidance.** The always-loaded `squad-rules` Git Worktrees section keeps
+only what must hold before an agent looks anything up: confirm the assigned tree,
+request the typed `git.worktree` input instead of working on the base branch,
+never recreate or reuse a path the platform is removing or has removed, and
+`ficus workstream cleanup retain` keeps a tree. Ownership diagnosis (`owned`
+versus `current`, a null cleanup job, retain-first manual removal checks, uncertain
+removals) is owned by `ficus workstream cleanup --help` and the guidance lines
+printed by `cleanup inspect` and `cleanup retain`. `scripts/worktree-guidance.test.ts`
+checks the composed prompts.
+
 Successful committed delivery creates a durable cleanup intent. A separate
 startup/periodic worker attempts prompt asynchronous cleanup after associated
 executions settle, with bounded retries. This does not delay or undo delivered
