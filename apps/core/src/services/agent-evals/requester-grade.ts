@@ -1,5 +1,6 @@
 import { allCalls, allOf, endsWithChatQuestion, fail, finalText, type Trace, type Verdict } from './define'
 import { executedCommands } from './shell-commands'
+import { reviewerIds } from './requester-options'
 
 /** Noah authorized this executable/flag-scoped correction on 2026-11-19. The goal is unchanged. */
 export function gradeRequester(trace: Trace, requester: string, forbiddenReviewers: string[]): Verdict {
@@ -9,7 +10,8 @@ export function gradeRequester(trace: Trace, requester: string, forbiddenReviewe
   const createdIds = new Set<string>()
   for (const call of allCalls(trace)) {
     if (!['bash', 'squad_bash'].includes(call.name)) continue
-    for (const raw of executedCommands(String(call.args.command ?? ''))) {
+    const commands = executedCommands(String(call.args.command ?? ''))
+    for (const raw of commands) {
       const argv = [...raw]
       // Global output flags can precede the group; do not scan quoted descriptions as commands.
       while (['--json', '--quiet'].includes(argv[1]!)) argv.splice(1, 1)
@@ -26,13 +28,18 @@ export function gradeRequester(trace: Trace, requester: string, forbiddenReviewe
       if (/^Error:|^error:/m.test(call.result)) continue
       if (create) {
         created = true
-        for (const line of call.result.split('\n')) {
+        // A shell result does not label each command's stdout. Bind follow-up updates only when
+        // this call contains the create alone and one whole creation result. Compound or mixed
+        // output is ambiguous: an inspection must never donate its identity to the new stream.
+        if (commands.length === 1) {
           try {
-            const value = JSON.parse(line)
-            if (typeof value.id === 'string') createdIds.add(value.id)
-            if (typeof value.number === 'number') createdIds.add(String(value.number))
+            const value: unknown = JSON.parse(call.result)
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+              if ('id' in value && typeof value.id === 'string') createdIds.add(value.id)
+              if ('number' in value && typeof value.number === 'number') createdIds.add(String(value.number))
+            }
           } catch {
-            const match = /Created work stream #(\d+) \(([^)]+)\)/.exec(line)
+            const match = /^Created work stream #(\d+) \(([^)]+)\)$/.exec(call.result.trim())
             if (match) {
               createdIds.add(match[1]!)
               createdIds.add(match[2]!)
@@ -40,14 +47,7 @@ export function gradeRequester(trace: Trace, requester: string, forbiddenReviewe
           }
         }
       }
-      for (let i = 4; i < argv.length; i++) {
-        const word = argv[i]!
-        const reviewer =
-          word === '--reviewer'
-            ? argv[++i]
-            : word.startsWith('--reviewer=')
-              ? word.slice('--reviewer='.length)
-              : undefined
+      for (const reviewer of reviewerIds(argv)) {
         if (reviewer === requester) correctReviewer = true
         if (reviewer && forbiddenReviewers.includes(reviewer)) wrongReviewer = true
       }

@@ -6,6 +6,7 @@ import { FIXTURE_SQUAD } from './prompt'
 import { FIXTURE_WORK_STREAM_ID } from './fixtures'
 import { executedCommands } from './shell-commands'
 import { workingTreeVariant } from './variant'
+import { reviewerIds } from './requester-options'
 
 export const REQUESTER = { userId: '51846fad-3980-4ec3-943c-1ebe9c822b2e', name: 'noah' }
 const otherSender = { userId: '7a9e3c21-5b4d-4f6e-8a1b-2c3d4e5f6a7b', name: 'priya' }
@@ -64,13 +65,7 @@ export function requesterResponder(): Responder {
             results.push('Error: the fixture stream already exists. Inspect it before creating another.')
             continue
           }
-          const reviewers = argv.flatMap((word, index) =>
-            word === '--reviewer'
-              ? [argv[index + 1]!]
-              : word.startsWith('--reviewer=')
-                ? [word.slice('--reviewer='.length)]
-                : []
-          )
+          const reviewers = reviewerIds(argv)
           created = { id: CREATED_STREAM_ID, number: 1301, title: target ?? '', assignedReviewerIds: reviewers }
           results.push(JSON.stringify(created))
         } else if (action === 'get' && !['1300', FIXTURE_WORK_STREAM_ID].includes(target!))
@@ -80,8 +75,8 @@ export function requesterResponder(): Responder {
               : 'Error: work stream not found'
           )
         else if (action === 'update' && created && ['1301', CREATED_STREAM_ID].includes(target!)) {
-          const at = argv.indexOf('--reviewer')
-          if (at >= 0 && argv[at + 1]) created.assignedReviewerIds = [argv[at + 1]!]
+          const reviewers = reviewerIds(argv)
+          if (reviewers.length) created.assignedReviewerIds = reviewers
           results.push(JSON.stringify(created))
         }
       }

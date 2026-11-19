@@ -47,6 +47,9 @@ README for the external superseded-cohort archive and original provenance.
 - **Requester identity:** the requester is identified from the matching message, not another sender,
   the agent identity, or a CLI credential. The requester must actually be assigned as reviewer.
   Merely mentioning the ID in a description, owner field or quoted command is insufficient.
+  Both reviewer option forms and repeated options use the CLI's list-replacement semantics. A
+  follow-up update needs an unambiguous standalone creation result; combined inspection/create
+  output cannot establish which returned identity belongs to the new stream.
 - **Discovery/help:** only declared repository paths and commands are scripted. Unknown paths and
   revisions do not return artifacts. Unsupported shell requests are explicitly diagnosed rather
   than silently presented as empty success. Help does not mutate fixture state or reveal commands
@@ -89,9 +92,19 @@ failure after success, in-flight draining, successful completion and checkpoint-
 This fix does not retroactively recover the lost invocation and has not been re-run live.
 
 Final offline checks: `bun run test src/services/agent-evals` from `apps/core` completed all
-116 tests across 10 files with zero failures. The static prompt guard completed 33 tests with zero
+123 tests across 11 files with zero failures. The static prompt guard completed 33 tests with zero
 failures. Focused ESLint and `git diff --check` passed. Full Core tests/typechecking were not run
 locally; they remain CI checks. The focused test database was shut down after each use.
+
+Independent review identified two requester-contract defects: the equals-form update did not
+change fixture state, and compound-call output could bind an unrelated inspected stream as the
+created stream. The repair uses one reviewer-option collector for create/update/grading and conservatively
+binds follow-up identity only from a standalone create's whole result (including formatted JSON).
+`requester-contract.test.ts` feeds actual create/update/get responses into the grader, compares
+repeated options with the real CLI parser, and rejects unrelated or ambiguous creation output.
+The collector reads real CLI option arity, so a flag-looking description value cannot assign a reviewer.
+Original recording bytes, verdicts, scenario goals and thresholds remain unchanged. No further live
+calls were made; live validation remains separately blocked.
 
 ## Static prompt sizes
 
