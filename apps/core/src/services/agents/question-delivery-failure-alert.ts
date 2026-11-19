@@ -1,9 +1,9 @@
-import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
+import { SYSTEM_RECIPIENT_ID, type AgentQuestionAnswerRefusal } from '@ficus/shared'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, inbox } from '../../db/schema'
 import { InboxMessage } from '../../entities/InboxMessage'
-import { FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
+import { answerDeliveryRefusal } from '../work-streams/wait-scope'
 
 interface DeliveryFailureAlert {
   id: string
@@ -20,14 +20,26 @@ function alertKey(questionId: string, generation: number): string {
   return `agent-question-delivery-failure:v1:${questionId}:${generation}`
 }
 
+/** Why a refused answer went undelivered, as the first sentence of the alert. */
+const REFUSAL_SENTENCES: Record<AgentQuestionAnswerRefusal, (agentId: string) => string> = {
+  'attempt-replaced': (agentId) =>
+    `An accepted answer was not delivered to agent ${agentId}: the workflow attempt the question was asked from was replaced before the answer arrived.`,
+  'stream-done': (agentId) =>
+    `An accepted answer to agent ${agentId}'s question went nowhere: the work stream had already finished when the answer arrived, so it was not delivered to the agent.`,
+  'stream-canceled': (agentId) =>
+    `An accepted answer to agent ${agentId}'s question went nowhere: the work stream had already been canceled when the answer arrived, so it was not delivered to the agent.`,
+}
+
 /**
  * What the operator is told. The alert used to say only "retry after resolving the target agent
- * state", which named no cause, and for a replaced flow attempt named a remedy that cannot work:
- * a retry re-checks the same attempt.
+ * state", which named no cause, and for a refused answer named a remedy that cannot work: a retry
+ * re-checks the same attempt. After a stream finishes or is canceled this alert is the only notice
+ * that the answer went nowhere, so it says so instead of blaming a replaced attempt.
  */
 export function questionDeliveryFailureAlertContent(question: Pick<DeliveryFailureAlert, 'agentId' | 'lastError'>) {
-  if (question.lastError === FLOW_WAIT_SUPERSEDED_MESSAGE) {
-    return `An accepted answer was not delivered to agent ${question.agentId}: the workflow attempt the question was asked from was replaced before the answer arrived. Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message.`
+  const refusal = answerDeliveryRefusal(question.lastError)
+  if (refusal) {
+    return `${REFUSAL_SENTENCES[refusal](question.agentId)} Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message.`
   }
   const reason = question.lastError?.split('\n')[0]?.trim().slice(0, 300)
   return `An accepted answer could not be delivered to agent ${question.agentId}${

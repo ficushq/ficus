@@ -2,7 +2,7 @@ import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { listActiveSlotWaits } from '../slots/active-waits'
 import { z } from 'zod'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { activeWorkflowAttempts } from '@ficus/shared'
+import { activeWorkflowAttempts, type AgentQuestionAnswerRefusal } from '@ficus/shared'
 import {
   db,
   inbox,
@@ -205,9 +205,50 @@ export const FLOW_WAIT_SUPERSEDED_MESSAGE =
   'The flow attempt was superseded. The response is retained in history without waking an agent.'
 
 export class FlowWaitSupersededError extends Error {
-  constructor() {
-    super(FLOW_WAIT_SUPERSEDED_MESSAGE)
+  constructor(message: string = FLOW_WAIT_SUPERSEDED_MESSAGE) {
+    super(message)
   }
+}
+
+/**
+ * Recorded as the answer's delivery error when its work stream had already finished or been
+ * canceled, so the failure alert and the Action Center can say the answer went nowhere instead of
+ * blaming a replaced attempt. Keyed by the stream status seen under the stream lock at refusal.
+ */
+export const FLOW_WAIT_STREAM_ENDED_MESSAGES = {
+  done: 'The work stream had already finished. The response is retained in history without waking an agent.',
+  canceled: 'The work stream had already been canceled. The response is retained in history without waking an agent.',
+} as const
+
+export type EndedWorkStreamStatus = keyof typeof FLOW_WAIT_STREAM_ENDED_MESSAGES
+
+/** A superseded delivery whose cause is the stream ending, not a replaced attempt. */
+export class FlowWaitStreamEndedError extends FlowWaitSupersededError {
+  constructor(readonly streamStatus: EndedWorkStreamStatus) {
+    super(FLOW_WAIT_STREAM_ENDED_MESSAGES[streamStatus])
+  }
+}
+
+/** Why an answer refused as superseded went undelivered, read back from its recorded error. */
+export function answerDeliveryRefusal(lastError: string | null | undefined): AgentQuestionAnswerRefusal | null {
+  if (lastError === FLOW_WAIT_SUPERSEDED_MESSAGE) return 'attempt-replaced'
+  if (lastError === FLOW_WAIT_STREAM_ENDED_MESSAGES.done) return 'stream-done'
+  if (lastError === FLOW_WAIT_STREAM_ENDED_MESSAGES.canceled) return 'stream-canceled'
+  return null
+}
+
+/**
+ * The error for an answer whose attempt is no longer current. The stream row is already locked by
+ * lockFlowInboxDelivery, so the status read here is the one that made the attempt stale.
+ */
+async function supersededAnswerError(store: DbHandle, workStreamId: string): Promise<FlowWaitSupersededError> {
+  const [stream] = await store
+    .select({ status: workStreams.status })
+    .from(workStreams)
+    .where(eq(workStreams.id, workStreamId))
+  return stream?.status === 'done' || stream?.status === 'canceled'
+    ? new FlowWaitStreamEndedError(stream.status)
+    : new FlowWaitSupersededError()
 }
 
 export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
@@ -367,7 +408,8 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
   }
   for (const target of targets) {
     const current = target.answer ? isCurrentQuestionAttempt : isCurrentWaitAttempt
-    if (!(await current(store, target.workStreamId, target.attemptId, agentId))) throw new FlowWaitSupersededError()
+    if (!(await current(store, target.workStreamId, target.attemptId, agentId)))
+      throw target.answer ? await supersededAnswerError(store, target.workStreamId) : new FlowWaitSupersededError()
     if (target.assignment && (await waitsForAttempt(store, target.workStreamId, target.attemptId)).length)
       throw new Error('The flow attempt is waiting for input')
     if (target.readmission) {

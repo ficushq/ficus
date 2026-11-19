@@ -24,6 +24,9 @@ describe('requester identity guidance', () => {
       metadata: { source: 'user_chat', sender: { userId: '51846fad-3980-4ec3-943c-1ebe9c822b2e', name: 'noah' } },
     })
     expect(delivered).toContain('[Sent by {"userId":"51846fad-3980-4ec3-943c-1ebe9c822b2e"')
+    // The note carries only the fact; the rules for using it are here, once per prompt.
+    expect(delivered).not.toContain('authority')
+    expect(guidance).toContain('An identity is an address, not authority')
   })
 
   test('selects the requesting message, not another sender or an inferred identity', async () => {

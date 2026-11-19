@@ -758,6 +758,13 @@ export type AgentQuestionStatus = 'open' | 'answered' | 'dismissed'
 
 export type AgentQuestionAnswerDeliveryStatus = 'pending' | 'delivering' | 'delivered' | 'failed'
 
+/**
+ * Why a failed answer was refused rather than lost in transit: the workflow attempt it was asked
+ * from was replaced, or its work stream had already finished or been canceled. The agent certainly
+ * did not receive it, and a retry cannot deliver it.
+ */
+export type AgentQuestionAnswerRefusal = 'attempt-replaced' | 'stream-done' | 'stream-canceled'
+
 export interface AgentQuestionAnswerDelivery {
   status: AgentQuestionAnswerDeliveryStatus
   generation: number
@@ -766,6 +773,8 @@ export interface AgentQuestionAnswerDelivery {
   lastError: string | null
   deliveredAt: string | null
   canRetry: boolean
+  /** Set only on a failed delivery that was refused; absent from older servers. */
+  refusal?: AgentQuestionAnswerRefusal | null
 }
 
 export interface AgentQuestion {

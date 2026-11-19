@@ -25,6 +25,7 @@ import type {
   PendingAction,
   SquadQuestionActionData,
   AgentQuestionActionData,
+  AgentQuestionAnswerRefusal,
   AgentErrorActionData,
   AssistantTaskActionData,
   WorkStreamActionData,
@@ -342,7 +343,11 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
       return (
         <p className="text-xs text-muted truncate">
           {data.squadName ? `${data.squadName} · ` : ''}
-          {data.answerDelivery?.status === 'failed' ? 'Answer delivery unconfirmed' : 'Needs your answer'}
+          {data.answerDelivery?.status !== 'failed'
+            ? 'Needs your answer'
+            : data.answerDelivery.refusal
+              ? 'Answer not delivered'
+              : 'Answer delivery unconfirmed'}
         </p>
       )
     }
@@ -620,6 +625,16 @@ function SquadQuestionActionContent({
   )
 }
 
+/** Matches the operator's delivery-failure alert: a refused answer certainly did not reach the agent. */
+const ANSWER_REFUSAL_TEXT: Record<AgentQuestionAnswerRefusal, string> = {
+  'attempt-replaced':
+    'Your answer was saved but not delivered: the step the agent asked from was replaced before it arrived, so retrying will not deliver it.',
+  'stream-done':
+    'Your answer was saved but went nowhere: the work stream had already finished when it arrived, so it was not delivered to the agent.',
+  'stream-canceled':
+    'Your answer was saved but went nowhere: the work stream had already been canceled when it arrived, so it was not delivered to the agent.',
+}
+
 function AgentQuestionActionContent({
   action,
   onComplete,
@@ -644,8 +659,9 @@ function AgentQuestionActionContent({
     return (
       <div className="space-y-3">
         <p className="text-xs text-secondary">
-          Your answer was saved, but confirmation that the agent accepted it was not recorded. The agent may already
-          have received it. Check the agent conversation before retrying; dismissing only hides this notice for you.
+          {data.answerDelivery.refusal
+            ? `${ANSWER_REFUSAL_TEXT[data.answerDelivery.refusal]} The answer is kept in the question's history; if it still applies, send it to the agent as a message. Dismissing only hides this notice for you.`
+            : 'Your answer was saved, but confirmation that the agent accepted it was not recorded. The agent may already have received it. Check the agent conversation before retrying; dismissing only hides this notice for you.'}
         </p>
         {retryMutation.isError && (
           <p role="alert" className="text-xs text-status-danger-600">
