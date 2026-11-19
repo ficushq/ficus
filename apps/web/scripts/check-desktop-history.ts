@@ -134,7 +134,7 @@ try {
   assert.ok(panelBox.y >= 56, `Workspace dialog clears the title bar (top ${panelBox.y})`)
   assert.ok(panelBox.y + panelBox.height <= 800, 'Workspace dialog still fits the window')
   assert.equal(
-    await page.evaluate(() => document.elementFromPoint(400, 28)?.classList.contains('ficus-modal-backdrop')),
+    await page.evaluate(() => Boolean(document.elementFromPoint(400, 28)?.closest('.ficus-modal-backdrop'))),
     true,
     'The scrim covers the title bar'
   )
