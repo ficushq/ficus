@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { Command } from 'commander'
 import { cliHelpFor } from './tools'
 
@@ -73,8 +74,40 @@ test('help cannot reveal a forbidden command or its after-help guidance through 
 })
 
 test('real permitted CLI help retains command and option documentation', async () => {
-  const { createProgram } = await import('../../../../cli/src/program')
+  const { createProgram } = (await import(join(import.meta.dir, '../../../../cli/src/program.ts'))) as {
+    createProgram: () => Command
+  }
   const program = createProgram()
   expect(cliHelpFor(program, 'ficus workstream request-input --help', ['workstreams:respond'])).toContain('--stdin')
   expect(cliHelpFor(program, 'ficus slot claim --help', ['workstreams:respond'])).toContain('Usage: ficus slot claim')
+})
+
+test('permission-filtered rendering leaves the command tree untouched and restores custom help configuration', () => {
+  const program = new Command('ficus')
+  const group = program.command('workstream')
+  group.command('create')
+  group.command('flow')
+  group.command('hidden-local')
+  const baseline = group.createHelp()
+  group.configureHelp({
+    visibleCommands: (command) => baseline.visibleCommands(command).filter((child) => child.name() !== 'hidden-local'),
+  })
+  const children = group.commands
+  const configuration = group.configureHelp()
+  group.on('beforeHelp', () => {
+    expect(group.commands === children).toBe(true)
+  })
+  const help = cliHelpFor(program, 'ficus workstream --help', ['workstreams:respond'])!
+  expect(help).toContain('flow')
+  expect(help).not.toContain('create')
+  expect(help).not.toContain('hidden-local')
+  expect(group.commands).toBe(children)
+  expect(group.configureHelp()).toBe(configuration)
+  expect(group.helpInformation()).toContain('create')
+  group.on('afterHelp', () => {
+    throw new Error('hook failed')
+  })
+  expect(() => cliHelpFor(program, 'ficus workstream --help', ['workstreams:respond'])).toThrow('hook failed')
+  expect(group.configureHelp()).toBe(configuration)
+  expect(group.commands).toBe(children)
 })

@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { Command } from 'commander'
+import type { Command, Help } from 'commander'
 import { permissionMatches } from '@ficus/shared'
 import { CLI_COMMAND_PERMISSIONS } from '../../lib/utils/cli-help'
 import { executedCommands } from './shell-commands'
@@ -41,8 +41,8 @@ const src = (path: string) => join('apps/core/src', path)
 
 /**
  * Capture the real Commander help, including before/after hooks, without parsing argv or exiting.
- * Only executable help requests count. Filter the tree with the same permission map as the index;
- * restore both the command tree and output callbacks even when a help listener throws.
+ * Only executable help requests count. Filter visible commands with the index permission map.
+ * Restore help configuration and output callbacks even when a listener throws; the tree stays untouched.
  */
 export function cliHelpFor(
   program: Command,
@@ -94,15 +94,16 @@ export function cliHelpFor(
     }
     if (!valid) continue
     const originalOutput = { ...current.configureOutput() }
-    const restored: { command: Command; children: Command[] }[] = []
-    const filterChildren = (command: Command, parent: string[]) => {
-      restored.push({ command, children: command.commands })
-      command.commands = command.commands.filter((child) => mayUse([...parent, child.name()]))
-      for (const child of command.commands) filterChildren(child, [...parent, child.name()])
-    }
+    const originalHelp = current.configureHelp()
+    const originalVisibleCommands = current.createHelp().visibleCommands
     let output = ''
     try {
-      filterChildren(current, path)
+      current.configureHelp({
+        ...originalHelp,
+        visibleCommands(this: Help, command: Command) {
+          return originalVisibleCommands.call(this, command).filter((child) => mayUse([...path, child.name()]))
+        },
+      })
       current.configureOutput({
         writeOut: (text) => {
           output += text
@@ -115,7 +116,7 @@ export function cliHelpFor(
       outputs.push(output)
     } finally {
       current.configureOutput(originalOutput)
-      for (const { command, children } of restored) command.commands = children
+      current.configureHelp(originalHelp)
     }
   }
   return outputs.length ? outputs.join('\n') : undefined

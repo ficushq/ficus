@@ -1,8 +1,14 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
+import type { Command } from 'commander'
 import type { Trace, TraceCall } from './define'
 import { requesterResponder, REQUESTER } from './requester-fixture'
 import { gradeRequester } from './requester-grade'
 import { variantContext, workingTreeVariant } from './variant'
+
+const { createProgram } = (await import(join(import.meta.dir, '../../../../cli/src/program.ts'))) as {
+  createProgram: () => Command
+}
 
 const context = variantContext(workingTreeVariant())
 const otherReviewer = '7a9e3c21-5b4d-4f6e-8a1b-2c3d4e5f6a7b'
@@ -29,7 +35,6 @@ for (const option of [`--reviewer=${REQUESTER.userId}`, `--reviewer ${REQUESTER.
 }
 
 test('repeated reviewer flags replace the prior list using the real CLI collection semantics', async () => {
-  const { createProgram } = await import('../../../../cli/src/program')
   const respond = requesterResponder()
   const invoke = async (command: string) =>
     JSON.parse((await respond({ name: 'squad_bash', args: { command }, command }, context))!)
@@ -96,7 +101,6 @@ test('reviewer-looking description values are not actual reviewer options', asyn
 
 for (const equalsForm of [false, true]) {
   test(`create accepts reviewer options before its title (${equalsForm ? 'equals' : 'separated'} form)`, async () => {
-    const { createProgram } = await import('../../../../cli/src/program')
     const options = equalsForm ? [`--reviewer=${REQUESTER.userId}`] : ['--reviewer', REQUESTER.userId]
     const command = createProgram()
       .commands.find((command) => command.name() === 'workstream')!
@@ -115,7 +119,6 @@ for (const equalsForm of [false, true]) {
   })
 
   test(`update accepts reviewer options before its target (${equalsForm ? 'equals' : 'separated'} form)`, async () => {
-    const { createProgram } = await import('../../../../cli/src/program')
     const respond = requesterResponder()
     const calls: TraceCall[] = []
     const invoke = async (source: string) => {

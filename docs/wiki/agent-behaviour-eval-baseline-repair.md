@@ -22,7 +22,7 @@ The following indices are zero-based indices into each recording's `runs` array.
 | `readable-handoff`, Opus old 2/3, new 0/3         | Fixture contradiction, not demonstrated prose regression.                                    | `2026-11-19-17-11-34.json`, runs 72–77. The notes claim assembler commit `4f1c2ab9`; discovery instead describes a slot retry commit and exposes no assembler artifacts.                                                                                                                                                                                                           | Declare one assembler repository for the handoff: matching title, head, source, test and both callers. Verify missing files and mismatched revisions remain negative cases. A fresh live cohort is required before claiming restored prose signal.                                                                                                                                                                                |
 | `ci-failure-rework`, fast old 0/3, new 0/3        | Fixture contamination.                                                                       | `2026-11-19-17-06-49.json`, runs 42–47. All six receive the unrelated slot commit; `find . -name squad-agent-prompt*` produces no assembler paths. Some compound calls return only unrelated discovery instead of the search result.                                                                                                                                               | Declare an assembler repository whose source actually drops the memory section when the map is absent. Read-only discovery can now establish that the failing test belongs to the current head. The tracked rework goal and grader are unchanged. No behavioral failure can be isolated from this cohort.                                                                                                                         |
 | `requester-identity`, both tiers old 0/3, new 0/3 | Fixture defects plus grader misclassification; no established identity-selection regression. | `2026-11-19-17-11-34.json`, runs 36–47. All twelve read message metadata containing the correct sender. Eight receive a false creation response to a help request; workflow/repository discovery is incomplete. The old fast repeat 2 grader treats the manager's `--owner` ID as a reviewer; new Opus repeat 1 counts the agent-message lookup ID from the same compound command. | Supply the actual reviewed-coding preset and scoped repository/squad discovery; separate help from creation, and retain consistent created-stream state. The authorized grader inspects executable reviewer assignments, ignores help/quoted prose, distinguishes owner from reviewer, and accepts a subsequent reviewer update only for the identified created stream. None of these historical runs is promoted to a live pass. |
-| CLI after-help carrier                            | Help-rendering defect.                                                                       | `tools.ts` used `helpInformation()`, which omits `addHelpText('after', ...)`; the independently reported `POINT_OF_USE_GUIDANCE` regression reproduces offline.                                                                                                                                                                                                                    | Capture real Commander `outputHelp()` output, restore output callbacks and filtered command arrays in `finally`, and retain permission filtering, aliases, options and compound-call help. No unfinished guidance is imported.                                                                                                                                                                                                    |
+| CLI after-help carrier                            | Help-rendering defect.                                                                       | `tools.ts` used `helpInformation()`, which omits `addHelpText('after', ...)`; the independently reported `POINT_OF_USE_GUIDANCE` regression reproduces offline.                                                                                                                                                                                                                    | Capture real Commander `outputHelp()` output, restore output callbacks and help visibility configuration in `finally`, without changing command arrays, and retain permission filtering, aliases, options and compound-call help. No unfinished guidance is imported.                                                                                                                                                             |
 
 The original three recordings have these SHA-256 hashes, pinned by `baseline-provenance.test.ts`:
 
@@ -92,7 +92,7 @@ failure after success, in-flight draining, successful completion and checkpoint-
 This fix does not retroactively recover the lost invocation and has not been re-run live.
 
 Final offline checks: `bun run test src/services/agent-evals` from `apps/core` completed all
-129 tests across 11 files with zero failures. The static prompt guard completed 33 tests with zero
+132 tests across 12 files with zero failures. The static prompt guard completed 33 tests with zero
 failures. Focused ESLint and `git diff --check` passed. Full Core tests/typechecking were not run
 locally; they remain CI checks. The focused test database was shut down after each use.
 
@@ -114,6 +114,15 @@ verify later reads. Invalid/incomplete inputs are rejected, option state cannot 
 reviewers removes the fixture assignment and its grading credit. The previous quoted-value,
 repeated-option and unrelated-stream regressions remain covered. This is a CLI-fidelity repair,
 not a scenario-goal or threshold change; no paid calls were made.
+
+PR typechecking found that literal CLI imports from the new Core tests expanded Core's composite
+project into CLI sources, and that filtering help assigned to Commander's readonly command tree.
+The tests now use the existing computed-path import/local-type pattern. An AST boundary regression
+rejects static CLI dependencies in eval sources. Permission filtering now overrides only the help
+renderer’s `visibleCommands` method, preserving custom visibility and restoring configuration on
+success or failure without changing the command tree. A real rendering regression checks that
+help hooks observe the original tree and that custom help configuration survives exceptions.
+Full Core typechecking remains a CI check, not a locally claimed pass.
 
 ## Static prompt sizes
 
