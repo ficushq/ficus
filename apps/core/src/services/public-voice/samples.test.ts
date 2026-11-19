@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { CollectedActivity, RawActivityItem } from './github-activity'
 import { DerivationError } from './github-activity'
-import { cleanSampleText, isToolAuthored, MAX_SAMPLES, MIN_SAMPLES, prepareSamples } from './samples'
+import { cleanSampleText, isToolAuthored, MAX_SAMPLES, MIN_SAMPLES, prepareSamples, summarizeSamples } from './samples'
 
 const prose = (n: number) => `I looked into this and the cause is the retry loop number ${n}; the fix is to cap it.`
 
@@ -162,4 +162,12 @@ describe('prepareSamples', () => {
       expect((error as DerivationError).details.counts).toMatchObject({ kept: MIN_SAMPLES - 1 })
     }
   })
+})
+
+test('partial snapshots reconcile every sample and budget exclusion without requiring minimum', () => {
+  const snapshot = summarizeSamples(collected(many('issue-comments', 45)), {})
+  expect(snapshot.summary.breakdown!.totals).toMatchObject({ seen: 45, kept: 40, dropped: { surface_limit: 5 } })
+  expect(summarizeSamples(collected([]), {}).samples).toEqual([])
+  const totals = snapshot.summary.breakdown!.totals
+  expect(totals.seen).toBe(totals.kept + Object.values(totals.dropped).reduce((a,b) => a+b, 0))
 })

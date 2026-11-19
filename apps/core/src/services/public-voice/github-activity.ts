@@ -1,4 +1,5 @@
-import { DERIVATION_SURFACES, type DerivationFilters, type DerivationSurface } from '@ficus/shared'
+import { progressRepositorySchema, type PublishDerivationProgress, DERIVATION_SURFACES, type DerivationFilters, type DerivationSurface } from '@ficus/shared'
+import { summarizeSamples } from './samples'
 import { GitHubApiUnavailableError, githubApiGraphql } from '../github/api-client'
 
 /**
@@ -28,6 +29,7 @@ export interface CollectedActivity {
   requests: number
   /** Items seen but left out by the date and repository filters. */
   droppedByFilter: { date: number; repository: number }
+  filteredBySurface?: Partial<Record<DerivationSurface, { date: number; repository: number }>>
   /** Repositories asked for commits that GitHub returned as missing or not visible (for example a typo in a filter). */
   unavailableRepositories: string[]
   /** Repositories in the filter beyond the commit-sampling limit, whose commits were not read. */
@@ -41,7 +43,8 @@ export class DerivationError extends Error {
       | 'derivation_login_not_visible'
       | 'derivation_too_few_samples'
       | 'derivation_invalid_output'
-      | 'derivation_model_unavailable',
+      | 'derivation_model_unavailable'
+      | 'derivation_timed_out',
     readonly details: Record<string, unknown> = {}
   ) {
     super(code)
@@ -178,21 +181,25 @@ function shouldPageOn<T>(
 }
 
 export async function collectGitHubActivity(
-  input: { squadId: string; login: string; filters: DerivationFilters; now?: Date },
+  input: { squadId: string; login: string; filters: DerivationFilters; now?: Date; signal?: AbortSignal; onProgress?: PublishDerivationProgress },
   deps: { graphql?: GraphqlFn } = {}
 ): Promise<CollectedActivity> {
   // Partial data is kept: one unknown or forbidden repository or node must not discard everything else.
   const graphql: GraphqlFn =
     deps.graphql ??
-    ((query, variables) => githubApiGraphql(query, variables, input.squadId, undefined, { allowPartial: true }))
+    ((query, variables) => githubApiGraphql(query, variables, input.squadId, undefined, { allowPartial: true, signal: input.signal }))
   const { filters, login } = input
   const surfaces = new Set<DerivationSurface>(filters.surfaces ?? DERIVATION_SURFACES)
   let requests = 0
   const call = async <T>(query: string, variables: Record<string, unknown>): Promise<T | null> => {
+    input.signal?.throwIfAborted()
     requests++
     try {
-      return await graphql<T>(query, variables)
+      const result = await graphql<T>(query, variables)
+      input.signal?.throwIfAborted()
+      return result
     } catch (error) {
+      input.signal?.throwIfAborted()
       if (error instanceof GitHubApiUnavailableError)
         throw new DerivationError('derivation_github_unavailable', { reason: error.reason })
       throw error
@@ -221,13 +228,31 @@ export async function collectGitHubActivity(
   const droppedByFilter = { date: 0, repository: 0 }
   const unavailableRepositories: string[] = []
   const commitRepositoriesNotSampled: string[] = []
-  const accept = (createdAt: string, repository: string): boolean => {
+  const filteredBySurface: NonNullable<CollectedActivity['filteredBySurface']> = {}
+  const reported = new Set<string>()
+  const repositoriesProgress = async (names: string[], activity: 'activity_read' | 'reading_commits' | 'commits_read' | 'unavailable' | 'commit_limit') => {
+    input.signal?.throwIfAborted()
+    const safe = [...new Set(names)].filter(name => progressRepositorySchema.safeParse(name).success && !reported.has(`${activity}:${name}`))
+    for (const name of safe) reported.add(`${activity}:${name}`)
+    for (let i = 0; i < safe.length; i += 20) await input.onProgress?.({ type: 'repositories', repositories: safe.slice(i, i+20).map(name => ({ name, activity })) })
+  }
+  const snapshot = () => ({ items, pagingCapped, requests, droppedByFilter, filteredBySurface, unavailableRepositories, commitRepositoriesNotSampled })
+  const report = async () => {
+    input.signal?.throwIfAborted()
+    if (!input.onProgress) return
+    await repositoriesProgress(items.map(item => item.repository), 'activity_read')
+    await input.onProgress({ type: 'counts', provisional: true, ...summarizeSamples(snapshot(), filters).summary.breakdown! })
+  }
+  const accept = (surface: DerivationSurface, createdAt: string, repository: string): boolean => {
+    const tally = filteredBySurface[surface] ??= { date: 0, repository: 0 }
     if (!inRange(createdAt, filters)) {
       droppedByFilter.date++
+      tally.date++
       return false
     }
     if (!repositoryAllowed(repository, filters)) {
       droppedByFilter.repository++
+      tally.repository++
       return false
     }
     return true
@@ -241,7 +266,7 @@ export async function collectGitHubActivity(
     for (;;) {
       for (const node of page.nodes ?? []) {
         if (!node) continue
-        if (!accept(node.createdAt, node.repository.nameWithOwner)) continue
+        if (!accept('pull-requests', node.createdAt, node.repository.nameWithOwner)) continue
         items.push({
           surface: 'pull-requests',
           title: node.title,
@@ -252,6 +277,7 @@ export async function collectGitHubActivity(
         })
         kept++
       }
+      await report()
       if (!shouldPageOn(page, kept, WANTED['pull-requests'], filters, (n) => n.createdAt)) break
       if (pages >= MAX_PAGES) {
         pagingCapped = true
@@ -279,7 +305,7 @@ export async function collectGitHubActivity(
     for (;;) {
       for (const node of page.nodes ?? []) {
         if (!node) continue
-        if (!accept(node.createdAt, node.repository.nameWithOwner)) continue
+        if (!accept('issue-comments', node.createdAt, node.repository.nameWithOwner)) continue
         items.push({
           surface: 'issue-comments',
           text: node.body ?? '',
@@ -289,6 +315,7 @@ export async function collectGitHubActivity(
         })
         kept++
       }
+      await report()
       if (!shouldPageOn(page, kept, WANTED['issue-comments'], filters, (n) => n.updatedAt)) break
       if (pages >= MAX_PAGES) {
         pagingCapped = true
@@ -309,17 +336,20 @@ export async function collectGitHubActivity(
   if (surfaces.has('reviews')) {
     for (const contribution of user.contributionsCollection?.pullRequestReviewContributions?.nodes ?? []) {
       const review = contribution?.pullRequestReview
-      if (!review || !accept(review.createdAt, review.repository.nameWithOwner)) continue
+      if (!review) continue
       const base = {
         surface: 'reviews' as const,
         repository: review.repository.nameWithOwner,
         isPrivate: review.repository.isPrivate,
         createdAt: review.createdAt,
       }
-      if (review.body) items.push({ ...base, text: review.body })
-      for (const comment of review.comments?.nodes ?? []) if (comment?.body) items.push({ ...base, text: comment.body })
+      for (const text of [review.body, ...(review.comments?.nodes ?? []).map(comment => comment?.body)]) {
+        if (text && accept('reviews', review.createdAt, review.repository.nameWithOwner)) items.push({ ...base, text })
+      }
     }
   }
+
+  await report()
 
   // Commit messages on the default branch of the repositories the user committed to.
   if (surfaces.has('commits')) {
@@ -332,6 +362,8 @@ export async function collectGitHubActivity(
     const repositories = allowed.slice(0, MAX_COMMIT_REPOSITORIES)
     // Only a repository filter is reported: unfiltered sampling asks GitHub for at most eight anyway.
     if (filters.repositories?.length) commitRepositoriesNotSampled.push(...allowed.slice(MAX_COMMIT_REPOSITORIES))
+    await repositoriesProgress(commitRepositoriesNotSampled, 'commit_limit')
+    await repositoriesProgress(repositories, 'reading_commits')
     if (repositories.length > 0) {
       type CommitBlock = {
         nameWithOwner: string
@@ -347,12 +379,13 @@ export async function collectGitHubActivity(
         since: filters.after ? `${filters.after}T00:00:00Z` : null,
         until: filters.before ? `${filters.before}T00:00:00Z` : null,
       })
+      await repositoriesProgress(repositories.filter((_, i) => data?.[`r${i}`]), 'commits_read')
       repositories.forEach((name, index) => {
         if (!data?.[`r${index}`]) unavailableRepositories.push(name)
       })
       for (const block of Object.values(data ?? {})) {
         for (const commit of block?.defaultBranchRef?.target?.history?.nodes ?? []) {
-          if (!accept(commit.committedDate, block!.nameWithOwner)) continue
+          if (!accept('commits', commit.committedDate, block!.nameWithOwner)) continue
           items.push({
             surface: 'commits',
             title: commit.messageHeadline,
@@ -366,5 +399,7 @@ export async function collectGitHubActivity(
     }
   }
 
-  return { items, pagingCapped, requests, droppedByFilter, unavailableRepositories, commitRepositoriesNotSampled }
+  await repositoriesProgress(unavailableRepositories, 'unavailable')
+  await report()
+  return snapshot()
 }

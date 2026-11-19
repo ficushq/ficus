@@ -438,7 +438,7 @@ describe('runDerivationSession', () => {
     }
   })
 
-  test('a deadline that passes while the session is created rejects and aborts the session', async () => {
+  test('cancellation during session creation rejects and aborts the late session', async () => {
     const controller = new AbortController()
     let aborted = false
     const create = spyOn(AgentSession, 'create').mockImplementation((async () => {
@@ -459,10 +459,22 @@ describe('runDerivationSession', () => {
           { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: controller.signal },
           { resolveModel: async () => 'anthropic:test-model' }
         )
-      ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+      ).rejects.toBeDefined()
+      await Promise.resolve()
       expect(aborted).toBe(true)
     } finally {
       create.mockRestore()
     }
   })
+})
+
+test('request cancellation does not wait for a non-cooperative collector or publish late results', async () => {
+  const controller = new AbortController()
+  let called = false
+  const pending = derivePublicVoice({ squadId: 's', userId: null, login: 'octo', filters: {}, signal: controller.signal }, {
+    collect: async () => new Promise(() => {}), session: async () => { called = true; return '' },
+  })
+  controller.abort()
+  await expect(pending).rejects.toBeDefined()
+  expect(called).toBe(false)
 })

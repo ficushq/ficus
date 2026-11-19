@@ -236,7 +236,7 @@ describe('squad voice routes', () => {
       (await request(admin, 'POST', '/derive', { login: 'octocat', filters: { before: 'yesterday' } })).status
     ).toBe(400)
 
-    __derivationsInProgress.add(squadId)
+    __derivationsInProgress.set(squadId, Symbol('fixture'))
     try {
       const busy = await request(admin, 'POST', '/derive', { login: 'octocat' })
       expect(busy.status).toBe(429)

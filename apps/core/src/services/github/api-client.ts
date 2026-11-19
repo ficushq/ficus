@@ -72,16 +72,18 @@ export async function githubApiGraphql<T>(
   variables: Record<string, unknown>,
   squadId: string,
   connectionId?: string,
-  options: { allowPartial?: boolean } = {}
+  options: { allowPartial?: boolean; signal?: AbortSignal } = {}
 ): Promise<T | null> {
+  options.signal?.throwIfAborted()
   const token = (await resolveGitHubConnection(squadId, connectionId))?.credential.accessToken
+  options.signal?.throwIfAborted()
   if (!token) throw new GitHubApiUnavailableError('no_token')
   let res: Response
   try {
     res = await fetch(`${GITHUB_API_BASE}/graphql`, {
       method: 'POST',
       redirect: 'error',
-      signal: AbortSignal.timeout(15_000),
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       headers: {
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,
@@ -90,6 +92,7 @@ export async function githubApiGraphql<T>(
       body: JSON.stringify({ query, variables }),
     })
   } catch {
+    options.signal?.throwIfAborted()
     throw new GitHubApiUnavailableError('network')
   }
   if (res.status === 404 || (res.status === 403 && !isRateLimited(res))) return null
@@ -98,8 +101,10 @@ export async function githubApiGraphql<T>(
   try {
     body = (await res.json()) as typeof body
   } catch {
+    options.signal?.throwIfAborted()
     throw new GitHubApiUnavailableError('invalid_body')
   }
+  options.signal?.throwIfAborted()
   if (body.errors?.some((error) => error?.type === 'RATE_LIMITED')) throw new GitHubApiUnavailableError('rate_limited')
   if (!body.data) return null
   if (body.errors?.length && !options.allowPartial) return null

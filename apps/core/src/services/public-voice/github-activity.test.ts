@@ -216,3 +216,16 @@ describe('query helpers', () => {
     })
   })
 })
+
+test('partial pages publish safe counts before the next page and abort fences later calls', async () => {
+  const controller = new AbortController()
+  const events: unknown[] = []
+  const { graphql, calls } = fakeGraphql([userData({ pullRequests: page([pr('2026-01-01T00:00:00Z')], true, 'next') })])
+  await expect(collectGitHubActivity({ squadId: 's', login: 'octo', filters: {}, signal: controller.signal,
+    onProgress: async event => { events.push(event); if (event.type === 'counts') controller.abort() },
+  }, { graphql })).rejects.toBeDefined()
+  expect(calls).toHaveLength(1)
+  expect(events).toContainEqual({ type: 'repositories', repositories: [{ name: 'acme/api', activity: 'activity_read' }] })
+  expect(JSON.stringify(events)).not.toContain('Body text here')
+  expect(events.some(e => (e as { type: string }).type === 'counts')).toBe(true)
+})

@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
 import {
   PUBLIC_SURFACES,
   safeDerivationReason,
+  safeDerivationFailure,
   PUBLIC_VOICE_MAX_BYTES,
   derivationFiltersSchema,
   publicVoiceIdSchema,
@@ -18,6 +20,9 @@ import { resolvedSquadId } from '../middleware/require-permission'
 import type { Identity } from '../services/rbac'
 import { derivePublicVoice } from '../services/public-voice/derive'
 import { DerivationError } from '../services/public-voice/github-activity'
+import { acquireDerivation, abortable, derivationOwners } from '../services/public-voice/operation'
+import { createProgressWriter } from '../services/public-voice/progress-stream'
+import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
 import { previewPublicVoice } from '../services/public-voice/preview'
 import { describeSquadVoice, mergePublicVoicePatch, renderedBytesFor } from '../services/public-voice/settings'
 
@@ -41,7 +46,7 @@ const deriveSchema = z
   .strict()
 
 /** One derivation at a time per squad. */
-const derivationsInProgress = new Set<string>()
+const derivationsInProgress = derivationOwners
 
 function userIdOf(identity: Identity | undefined): string | null {
   return identity?.type === 'user' ? (identity.userId ?? null) : null
@@ -117,30 +122,52 @@ export const squadVoiceRouter = new Hono()
       if (identity?.type !== 'user') return c.json({ error: 'derivation_requires_person' }, 403)
       const body = c.req.valid('json')
       if (derivationsInProgress.has(squadId)) return c.json({ error: 'derivation_in_progress' }, 429)
-      derivationsInProgress.add(squadId)
-      try {
-        const result = await derivePublicVoice({
-          squadId,
-          userId: userIdOf(identity),
-          login: body.login,
-          filters: body.filters ?? {},
+      const operation = acquireDerivation(squadId, c.req.raw.signal)
+      const args = { squadId, userId: userIdOf(identity), login: body.login, filters: body.filters ?? {}, signal: operation.signal }
+      const failure = (error: unknown) => {
+        const safe = error instanceof DerivationError ? safeDerivationFailure(error.code, error.details) : safeDerivationFailure('derivation_failed')
+        log.warn('Voice derivation failed', { squadId, code: safe.code, reason: safeDerivationReason(safe.code, safe.reason) })
+        return safe
+      }
+      if (c.req.header('Accept')?.split(',').some(value => value.trim().split(';')[0] === 'text/event-stream')) {
+        c.header('Cache-Control', 'no-store, no-transform')
+        c.header('X-Accel-Buffering', 'no')
+        c.header('Vary', 'Accept')
+        return streamSSE(c, async stream => {
+          c.header('Cache-Control', 'no-store, no-transform')
+          stream.onAbort(() => operation.cancel())
+          const writer = createProgressWriter(async frame => {
+            if (stream.aborted) throw new Error('Derivation disconnected')
+            await stream.write(frame)
+            if (stream.aborted) throw new Error('Derivation disconnected')
+          }, () => { operation.cancel(); stream.abort() }, operation.signal)
+          try {
+            await withDeviceStreamRevocation(c.get('authContext') ?? {}, stream, async revoked => {
+              const onRevoke = () => operation.cancel()
+              revoked.addEventListener('abort', onRevoke, { once: true })
+              if (revoked.aborted) onRevoke()
+              try {
+                await writer.publish({ type: 'started' })
+                const result = await abortable(derivePublicVoice({ ...args, onProgress: writer.publish }), operation.signal)
+                // Release ownership before waiting for a terminal write, fencing any late cleanup.
+                if (operation.complete()) await writer.publish({ type: 'complete', result })
+              } catch (error) {
+                if (!operation.signal.aborted && operation.complete()) await writer.publish({ type: 'error', error: failure(error) })
+              } finally { revoked.removeEventListener('abort', onRevoke) }
+            })
+          } finally { writer.dispose(); operation.dispose() }
         })
+      }
+      c.header('Vary', 'Accept')
+      try {
+        const result = await abortable(derivePublicVoice(args), operation.signal)
+        operation.signal.throwIfAborted()
+        operation.complete()
         return c.json(result)
       } catch (error) {
-        if (error instanceof DerivationError) {
-          log.warn('Voice derivation failed', {
-            squadId,
-            code: error.code,
-            reason: safeDerivationReason(error.code, error.details.reason),
-          })
-          // Application failures must not be rewritten as gateway outages by a proxy.
-          return c.json({ error: error.code, ...error.details }, 422)
-        }
-        log.error('Voice derivation failed', { squadId, error: String(error) })
-        return c.json({ error: 'derivation_failed' }, 500)
-      } finally {
-        derivationsInProgress.delete(squadId)
-      }
+        const safe = failure(error)
+        return c.json({ error: safe.code, ...('reason' in safe ? { reason: safe.reason } : {}), ...(safe.counts ? { counts: safe.counts } : {}), ...(safe.minimum !== undefined ? { minimum: safe.minimum } : {}) }, safe.code === 'derivation_failed' ? 500 : 422)
+      } finally { operation.dispose() }
     }
   )
 
