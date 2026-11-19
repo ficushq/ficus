@@ -188,9 +188,18 @@ export function assembleDraft(
   samples: VoiceSample[]
 ): { draft: PublicVoiceDraftResult['draft']; observations: string[]; exemplars: VoiceExemplar[]; bytes: number } {
   const keep = (text: string) => isSafeVoiceText(text) && !copiesPrivateText(text, samples)
-  if (!isSafeVoiceText(output.base)) throw new DerivationError('derivation_invalid_output', { reason: 'unsafe_base' })
-  if (copiesPrivateText(output.base, samples))
-    throw new DerivationError('derivation_invalid_output', { reason: 'private_text_in_base' })
+  let base = output.base
+  if (!keep(base)) {
+    const reason = isSafeVoiceText(base) ? 'private_text_in_base' : 'unsafe_base'
+    // Keep whole sentences/lines only: never redact a token inside a private quote or
+    // credential. Revalidate the joined result because new adjacency can create overlap.
+    base = base
+      .split(/(?<=[.!?])\s+|\n+/)
+      .filter(keep)
+      .join(' ')
+      .trim()
+    if (!base || !keep(base)) throw new DerivationError('derivation_invalid_output', { reason })
+  }
   let observations = output.observations.filter(keep)
   let exemplars = verifyExemplars(output.exemplars, samples)
   const surfaces: PublicVoiceSurfaces = {}
@@ -199,8 +208,8 @@ export function assembleDraft(
     if (note && keep(note)) surfaces[surface] = { mode: 'add', text: note }
   }
   const render = () => {
-    const base = renderBase(output.base, observations, exemplars)
-    return { base, bytes: publicVoiceBytes(renderPublicVoicePrompt({ base, entries: surfaces })) }
+    const rendered = renderBase(base, observations, exemplars)
+    return { base: rendered, bytes: publicVoiceBytes(renderPublicVoicePrompt({ base: rendered, entries: surfaces })) }
   }
   let current = render()
   while (current.bytes > PUBLIC_VOICE_MAX_BYTES && (exemplars.length || observations.length)) {

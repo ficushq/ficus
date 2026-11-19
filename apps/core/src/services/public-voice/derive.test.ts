@@ -5,6 +5,7 @@ import type { CollectedActivity, RawActivityItem } from './github-activity'
 import {
   assembleDraft,
   buildDerivationPrompt,
+  copiesPrivateText,
   DERIVATION_SYSTEM_PROMPT,
   derivePublicVoice,
   isSafeVoiceText,
@@ -114,6 +115,80 @@ describe('assembleDraft', () => {
       JSON.stringify(output({ base: 'Copy this: billing service to the new cluster before the March launch.' }))
     )
     expect(() => assembleDraft(leakyBase, privateSamples)).toThrow('derivation_invalid_output')
+  })
+
+  test.each([
+    'Describes @mentions as a habit.',
+    'Uses examples from example.com.',
+    'Wait until all the checks pass.',
+    'Contact person@example.com.',
+    'Open /home/user/private.',
+    'See ficus:ws:123.',
+    'Use Bearer abcdefghijklmnop.',
+  ])('salvages the safe base sentence while dropping %s', (unsafe) => {
+    const privateSamples = [sample(1, 'Wait until all the checks pass.', true)]
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({ base: `Lead with the result. ${unsafe}`, observations: ['Use @mentions.'], exemplars: [] })
+      )
+    )
+    const result = assembleDraft(parsed, privateSamples)
+    expect(result.draft.base).toBe('Lead with the result.')
+    expect(isSafeVoiceText(result.draft.base)).toBe(true)
+  })
+
+  test('revalidates newly adjacent sentences after dropping unsafe content', () => {
+    const privateSamples = [sample(1, 'Keep it short. Lead with facts.', true)]
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({
+          base: 'Keep it short. Use @mentions. Lead with facts.',
+        })
+      )
+    )
+    expect(() => assembleDraft(parsed, privateSamples)).toThrow('derivation_invalid_output')
+  })
+
+  test('measures a fixed synthetic validation cohort before and after sentence salvage', () => {
+    const privateSamples = [sample(1, 'Wait until all the checks pass.', true)]
+    const raw = (base: string) => JSON.stringify(output({ base, observations: ['Use @mentions.'], exemplars: [] }))
+    // Deliberately enriched for failures, not a model-backed or production reliability estimate.
+    // The legacy predicate is the base rejection at 8f3e9d7a; parsing and all other checks are unchanged.
+    const cohort = [
+      raw('Lead with the result.'),
+      raw('Write complete sentences. Use calm language.'),
+      ...[
+        'Describes @mentions as a habit.',
+        'Uses examples from example.com.',
+        'Wait until all the checks pass.',
+        'Contact person@example.com.',
+        'Open /home/user/private.',
+        'See ficus:ws:123.',
+        'Use Bearer abcdefghijklmnop.',
+      ].map((unsafe) => raw(`Lead with the result. ${unsafe}`)),
+      raw('Use @mentions.'),
+      raw('Wait until all the checks pass.'),
+      'not JSON',
+      JSON.stringify({ base: 'No required observations.' }),
+      raw('Write complete sentences. '.repeat(100)),
+    ]
+    const failures = (legacy: boolean) =>
+      cohort.filter((text) => {
+        try {
+          const parsed = parseDerivationOutput(text)
+          if (legacy && (!isSafeVoiceText(parsed.base) || copiesPrivateText(parsed.base, privateSamples))) return true
+          const result = assembleDraft(parsed, privateSamples)
+          expect(isSafeVoiceText(result.draft.base)).toBe(true)
+          expect(copiesPrivateText(result.draft.base, privateSamples)).toBe(false)
+          expect(result.bytes).toBeLessThanOrEqual(PUBLIC_VOICE_MAX_BYTES)
+          return false
+        } catch {
+          return true
+        }
+      }).length
+    expect(cohort).toHaveLength(14)
+    expect(failures(true)).toBe(12)
+    expect(failures(false)).toBe(5)
   })
 
   test('public samples can be quoted; only private text is checked for copying', () => {

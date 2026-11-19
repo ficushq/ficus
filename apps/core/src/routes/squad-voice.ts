@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import {
   PUBLIC_SURFACES,
+  safeDerivationReason,
   PUBLIC_VOICE_MAX_BYTES,
   derivationFiltersSchema,
   publicVoiceIdSchema,
@@ -18,12 +19,7 @@ import type { Identity } from '../services/rbac'
 import { derivePublicVoice } from '../services/public-voice/derive'
 import { DerivationError } from '../services/public-voice/github-activity'
 import { previewPublicVoice } from '../services/public-voice/preview'
-import {
-  describeSquadVoice,
-  linkedGitHubLogin,
-  mergePublicVoicePatch,
-  renderedBytesFor,
-} from '../services/public-voice/settings'
+import { describeSquadVoice, mergePublicVoicePatch, renderedBytesFor } from '../services/public-voice/settings'
 
 const log = createLogger('squad-voice')
 
@@ -40,7 +36,6 @@ const previewSchema = z
 const deriveSchema = z
   .object({
     login: z.string().regex(/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i, 'Not a GitHub login'),
-    confirmOtherPerson: z.boolean().optional(),
     filters: derivationFiltersSchema.optional(),
   })
   .strict()
@@ -50,14 +45,6 @@ const derivationsInProgress = new Set<string>()
 
 function userIdOf(identity: Identity | undefined): string | null {
   return identity?.type === 'user' ? (identity.userId ?? null) : null
-}
-
-const derivationStatus: Record<DerivationError['code'], 422 | 502> = {
-  derivation_github_unavailable: 502,
-  derivation_login_not_visible: 422,
-  derivation_too_few_samples: 422,
-  derivation_invalid_output: 502,
-  derivation_model_unavailable: 502,
 }
 
 /**
@@ -126,22 +113,9 @@ export const squadVoiceRouter = new Hono()
     async (c) => {
       const squadId = resolvedSquadId(c)
       const identity = c.get('identity') as Identity | undefined
-      // A person reviews a derived draft before anything is saved, and the own-login check needs a
-      // person's linked GitHub account; an agent could set confirmOtherPerson itself.
+      // Derivation is a person-reviewed draft, never an agent-initiated settings change.
       if (identity?.type !== 'user') return c.json({ error: 'derivation_requires_person' }, 403)
       const body = c.req.valid('json')
-      const linked = await linkedGitHubLogin(identity)
-      if (!body.confirmOtherPerson && linked?.toLowerCase() !== body.login.toLowerCase()) {
-        return c.json(
-          {
-            error: 'confirmation_required',
-            linkedLogin: linked,
-            message:
-              'This login is not your linked GitHub account. The result describes a writing style only; agents never sign as or claim to be that person. Confirm to continue.',
-          },
-          409
-        )
-      }
       if (derivationsInProgress.has(squadId)) return c.json({ error: 'derivation_in_progress' }, 429)
       derivationsInProgress.add(squadId)
       try {
@@ -153,8 +127,14 @@ export const squadVoiceRouter = new Hono()
         })
         return c.json(result)
       } catch (error) {
-        if (error instanceof DerivationError)
-          return c.json({ error: error.code, ...error.details }, derivationStatus[error.code])
+        if (error instanceof DerivationError) {
+          log.warn('Voice derivation failed', {
+            code: error.code,
+            reason: safeDerivationReason(error.code, error.details.reason),
+          })
+          // Application failures must not be rewritten as gateway outages by a proxy.
+          return c.json({ error: error.code, ...error.details }, 422)
+        }
         log.error('Voice derivation failed', { squadId, error: String(error) })
         return c.json({ error: 'derivation_failed' }, 500)
       } finally {

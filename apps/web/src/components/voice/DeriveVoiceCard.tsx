@@ -26,11 +26,6 @@ function splitRepos(text: string): string[] | undefined {
   return repos.length ? repos : undefined
 }
 
-/** True when the login is someone else's and needs the style-not-identity confirmation. */
-function needsOtherPersonConfirmation(login: string, linkedLogin: string | null): boolean {
-  return login.trim().toLowerCase() !== (linkedLogin ?? '').toLowerCase()
-}
-
 /**
  * Draft a voice from a GitHub user's writing through a squad's GitHub
  * connection. The result is a draft: the caller decides where it goes, and a
@@ -57,7 +52,6 @@ export function DeriveVoiceCard({
   const [excludeRepos, setExcludeRepos] = useState('')
   const [surfaces, setSurfaces] = useState<DerivationSurface[]>([...DERIVATION_SURFACES])
   const [includeToolAuthored, setIncludeToolAuthored] = useState(false)
-  const [confirming, setConfirming] = useState(false)
 
   const filters = (): DerivationFilters => ({
     ...(before ? { before } : {}),
@@ -69,14 +63,8 @@ export function DeriveVoiceCard({
   })
 
   const mutation = useMutation({
-    mutationFn: (confirmOtherPerson: boolean) =>
-      deriveSquadVoice(squadId, { login: login.trim(), confirmOtherPerson, filters: filters() }),
+    mutationFn: () => deriveSquadVoice(squadId, { login: login.trim(), filters: filters() }),
   })
-
-  const start = () => {
-    if (needsOtherPersonConfirmation(login, linkedLogin)) setConfirming(true)
-    else mutation.mutate(false)
-  }
 
   const result: VoiceDerivationResult | undefined = mutation.data
   const error =
@@ -168,36 +156,10 @@ export function DeriveVoiceCard({
       <button
         className="ficus-button ficus-button-primary rounded-md px-3 py-1.5 text-sm"
         disabled={!login.trim() || surfaces.length === 0 || mutation.isPending}
-        onClick={start}
+        onClick={() => mutation.mutate()}
       >
         {mutation.isPending ? 'Deriving… (up to a minute)' : 'Derive'}
       </button>
-
-      {confirming && (
-        <div role="alertdialog" className="rounded-lg border border-status-attention-500/40 p-3 text-sm text-primary">
-          <p>
-            <strong>{login}</strong> is not your linked GitHub account. The result describes a writing style only.
-            Agents will not sign as or impersonate that person, and posts still come from Ficus.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
-              className="ficus-button ficus-button-primary rounded-md px-3 py-1 text-sm"
-              onClick={() => {
-                setConfirming(false)
-                mutation.mutate(true)
-              }}
-            >
-              Continue
-            </button>
-            <button
-              className="ficus-button ficus-button-ghost rounded-md px-3 py-1 text-sm"
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {error && <p className="text-xs text-status-danger-500">{error}</p>}
 
