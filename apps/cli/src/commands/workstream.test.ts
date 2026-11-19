@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
+import { manualInputRequestSchema, manualWaitDecisionSchema } from '@ficus/shared'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../client'
 import { isJsonMode, output, outputError, outputTable, setOutputOptions } from '../output'
 import {
@@ -51,6 +52,51 @@ describe('workstream CLI commands', () => {
     registerWorkstreamCommands(program)
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
+
+  it('discovers typed input routing, payloads and resolution at the command that needs them', () => {
+    const program = new Command()
+    registerWorkstreamCommands(program)
+    const ws = program.commands.find((command) => command.name() === 'workstream')!
+    const help = (name: string) => {
+      const command = ws.commands.find((command) => command.name() === name)!
+      let text = ''
+      command.configureOutput({
+        writeOut: (chunk) => {
+          text += chunk
+        },
+      })
+      command.outputHelp()
+      return text
+    }
+    const request = help('request-input')
+    const examples = (text: string) => [...text.matchAll(/--content '([^']+)'/g)].map((match) => JSON.parse(match[1]!))
+    const requests = examples(request)
+    expect(requests).toHaveLength(2)
+    for (const request of requests) expect(manualInputRequestSchema.safeParse(request).success).toBe(true)
+    expect(request).toContain('Human questions use ask_human')
+    expect(request).toContain('"kind":"provide"')
+    expect(request).toContain('"kind":"decide"')
+    expect(request).toContain('"actor":"owner"')
+    expect(request).toContain('"scope":"stream"')
+    expect(request).toContain('protected credential/integration surface')
+    expect(request).toContain('dependsOn')
+    expect(request).toContain('Continue / Stop')
+    expect(request).toContain('End your turn')
+    expect(request).toContain('Scope defaults to the current flow attempt')
+    expect(request).toContain('not review approvals')
+    expect(request).toContain('declared human-approval step')
+    expect(request).toContain('decision\nstep for a model routing judgment')
+    const resolve = help('resolve-input')
+    const decisions = examples(resolve)
+    expect(decisions).toHaveLength(2)
+    for (const decision of decisions) expect(manualWaitDecisionSchema.safeParse(decision).success).toBe(true)
+    expect(resolve).toContain('expectedVersion')
+    expect(resolve).toContain('"action":"provide"')
+    expect(resolve).toContain('"action":"choose"')
+    expect(resolve).toContain('remaining waits')
+    expect(resolve).toContain('not approval')
+    expect(help('wait-actor')).toContain('Only human waits appear as user actions')
+  })
 
   it('parses --depends-on <id>:ready, keeps bare IDs and <id>:done as plain IDs, and rejects unknown conditions', () => {
     expect(parseDependsOnOptions(['12', '13:done', '14:ready', '9b3823c9-192c-4b18-bc22-49dbd564c96a:ready'])).toEqual([

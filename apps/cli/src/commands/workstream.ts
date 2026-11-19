@@ -841,6 +841,31 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--actor <actor>', 'Prose wait actor: human or owner')
     .option('--scope <scope>', 'Prose wait scope: stream or attempt')
     .option('--attempt <id>', 'Prose wait flow attempt', parseInt)
+    .addHelpText(
+      'after',
+      `
+Routing:
+  Human questions use ask_human, not a prose wait or an inbox message.
+  Another stream's deliverable uses dependsOn. Provider events keep their native gates.
+  Exhausted recovery uses the runtime-issued Continue / Stop record and its version;
+  a task input cannot replace it. Never ask for logs, diagnostics or human-run commands.
+  Credentials use the protected credential/integration surface, never plaintext inputs.
+
+Workers use exactly one structured source: --content, --stdin or --file.
+Task input (a named file or configuration value):
+  ficus workstream request-input <id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.baseBranch","declaredIn":"ficus:work-stream"},"use":"Choose the implementation base"}'
+  For a file, input is {"type":"file","path":"docs/requirements.md"}.
+Owner task decision (at least two named options):
+  ficus workstream request-input <id> --content '{"schemaVersion":1,"kind":"decide","purpose":"task-decision","actor":"owner","subject":"Choose the implementation base","options":[{"id":"main","label":"Use main"},{"id":"stack","label":"Use the dependency branch"}]}'
+
+actor defaults to human. Use owner when the stream owner must act, not a user.
+Only human waits appear as user actions; either actor blocks the affected work.
+Scope defaults to the current flow attempt; use "scope":"stream" only for a shared
+blocker. End your turn while waiting; do not schedule a continuation. Answers are
+not review approvals: use a declared human-approval step for approval, or a decision
+step for a model routing judgment. See resolve-input --help when the input arrives.
+`
+    )
     .action(async (id, options) => {
       try {
         const prose = options.message !== undefined
@@ -872,6 +897,21 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       .description(
         'Resolve a typed input: continue, stop, choose, provide, or manager-only forward; requires expectedVersion'
       )
+      .addHelpText(
+        'after',
+        `
+Inspect the exact wait in workstream get/flow before resolving it. Use the wait's
+current version as expectedVersion and the action matching its request kind:
+  ficus workstream resolve-input <id> <waitId> --content '{"action":"provide","expectedVersion":0,"value":"main"}'
+  ficus workstream resolve-input <id> <waitId> --content '{"action":"choose","expectedVersion":0,"optionId":"main"}'
+Recovery continue/stop uses the runtime-issued record; forward is manager-only.
+Resolve only when the named condition is satisfied. An answer is not approval.
+Check remaining waits and pause state before continuing the saved attempt;
+input resolution does not resume a paused stream. Other manual waits retain
+workstream unblock --wait <waitId>; human questions use agent-question resolve
+only when a human actually answered elsewhere, never an inferred answer.
+`
+      )
   ).action(async (id, waitId, options) => {
     try {
       const decision = validateStructuredInput(manualWaitDecisionSchema, await readStructuredInput(options))
@@ -892,6 +932,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     )
     .option('--wait <waitId>', 'Manual wait id to relabel (required when several manual waits are open)')
     .option('-m, --message <note>', 'Why the actor changed (recorded in the wait audit trail)')
+    .addHelpText(
+      'after',
+      '\nOnly human waits appear as user actions; either actor blocks the affected work. Relabeling does not resolve the wait. Inspect and target the intended wait id.\n'
+    )
     .action(async (id, actor, options) => {
       try {
         if (!(EDITABLE_WAIT_ACTORS as readonly string[]).includes(actor)) {

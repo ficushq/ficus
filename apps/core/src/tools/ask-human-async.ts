@@ -110,7 +110,7 @@ export interface AsyncAskHumanOptions {
 
 const COMMON_DESCRIPTION =
   'Ask one or more structured questions of the humans responsible for this agent (your owner and ' +
-  'the watchers of your squad). The tool returns immediately; the answer arrives later in your inbox. '
+  'the watchers of your squad). The tool returns immediately; the answer arrives later in your inbox. Use this tool for human decisions, not a manual wait or inbox message. '
 const DESCRIPTION_TAIL =
   'An answer does not approve a workflow approval gate. ' +
   'Humans usually answer from the Feed or a notification, away from your conversation, so make each question ' +
@@ -119,7 +119,7 @@ const DESCRIPTION_TAIL =
   'such questions are rejected. To get approval for an action you will perform yourself, describe that action ' +
   'in plain words (for example "May I restart the service once?"). ' +
   "For simple questions use type 'text', optionally with options as suggested answers; for choices " +
-  "use 'select' or 'multi-select' (with options)."
+  "use 'select' or 'multi-select' with options, the trade-off and your recommendation, and name the evidence."
 
 const BLOCKING_DESCRIPTION =
   COMMON_DESCRIPTION +
@@ -211,14 +211,16 @@ export function createAsyncAskHumanTool(
           : openedWaitWorkStreamIds.length === 1
             ? ` Opened a wait on 1 work stream: ${openedWaitWorkStreamIds[0]}.`
             : ` Opened waits on ${openedWaitWorkStreamIds.length} work streams: ${openedWaitWorkStreamIds.join(', ')}.`
+      const questionGuidance =
+        ' Do not repeat the question in chat or infer an answer. A human answer is not review approval.'
       return {
         content: [
           {
             type: 'text' as const,
             text:
               record.audienceResolution === 'unroutable'
-                ? `Question recorded (${record.id.slice(0, 8)}), but no direct Action Center recipient was found; the question is still visible and answerable by everyone who can read this agent.${blockingNote}`
-                : `Question recorded (${record.id.slice(0, 8)}): ${summary}. The answer will arrive as an inbox message.${blockingNote}${blocking && openedWaitWorkStreamIds.length > 0 ? ' End your turn while the affected work waits; do not poll.' : ' You can continue other work in the meantime.'}${cannotBlockNote}`,
+                ? `Question recorded (${record.id.slice(0, 8)}), but no direct Action Center recipient was found; the question is still visible and answerable by everyone who can read this agent.${blockingNote}${questionGuidance}`
+                : `Question recorded (${record.id.slice(0, 8)}): ${summary}. The answer will arrive as an inbox message.${blockingNote}${blocking && openedWaitWorkStreamIds.length > 0 ? ' End your turn while the affected work waits; do not poll.' : ' You can continue other work in the meantime.'}${cannotBlockNote}${questionGuidance}`,
           },
         ],
         details: {

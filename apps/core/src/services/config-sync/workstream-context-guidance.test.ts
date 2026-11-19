@@ -17,10 +17,19 @@ describe('work stream context guidance', () => {
     expect(guidance).toContain('expectedVersion')
     expect(guidance).toContain('attemptId')
     expect(guidance).toContain('Never advance by changing the assignee, calling legacy handoff, or editing status')
-    expect(guidance).toContain('default to the current flow attempt')
-    expect(guidance).toContain('Sibling branches can continue')
-    expect(guidance).toContain('Input answers are not review approvals')
-    expect(guidance).toContain('declared human-approval step')
+    // Scope and approval-step procedures moved to request-input help. The
+    // composed prompt keeps the stop rule and points to that carrier.
+    for (const role of ['engineer', 'manager', 'reviewer']) {
+      const config = Bun.YAML.parse(await readRepoFile(`config/agent-types/${role}.yaml`)) as {
+        includes: string[]
+        systemPrompt: string
+      }
+      const parts = await Promise.all(config.includes.map((id) => readRepoFile(`config/agent-types/shared/${id}.md`)))
+      const composed = [config.systemPrompt, ...parts].join('\n\n')
+      expect(composed).toContain('request-input --help')
+      expect(composed).toContain('End your turn while blocked or paused')
+      expect(composed).toContain('and an input answer do not resume it or approve a review gate')
+    }
   })
 
   test('a completed attempt changes only through amend, only while the gate it feeds is open', async () => {
@@ -169,7 +178,7 @@ describe('role-independent delivery guidance', () => {
       const base = [config.systemPrompt, ...parts].join('\n\n')
       expect(base).toContain('no role may grant itself that authority')
       expect(base).toContain('A PR link, passing CI, or review approval is')
-      expect(base.split('A later timestamp alone does not reconcile conflicting owner requirements')).toHaveLength(2)
+      expect(base.split('When owner instructions conflict, newer text does')).toHaveLength(2)
       const { flowCompletionInstructions } = await import('../workflows/completion-prompt')
       for (const mode of ['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
         const generated = flowCompletionInstructions(mode)
