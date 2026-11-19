@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { Trace, TraceCall } from './define'
 import { assembleScenarioPrompt } from './prompt'
 import { readableProseProblems } from './readable-prose'
-import { compareRuns, runScenario, type AgentTurn, type RecordedRun } from './run'
+import { compareRuns, resolveText, runScenario, type AgentTurn, type RecordedRun } from './run'
 import { SCENARIOS, extractEvidence, findScenario, unknownOptions } from './scenarios'
 import { buildEvalToolset, cliHelpFor } from './tools'
 import { variantContext, workingTreeVariant } from './variant'
@@ -466,7 +466,10 @@ describe('scenario premises hold in the assembled prompt', () => {
     expect(contents).toContain('seperate')
     expect(contents).toContain('this link is broken')
     // The current turn asks for the result, not the desired no-offer behaviour or extra work.
-    expect(scenario.messages).toEqual(['Please summarize the change you completed.'])
+    expect(scenario.messages).toHaveLength(1)
+    expect(await resolveText(scenario.messages[0]!, variantContext(variant))).toStartWith(
+      'Please summarize the change you completed.\n\n[Sent by '
+    )
     expect(scenario.maxSteps).toBeUndefined()
   })
 
@@ -695,7 +698,33 @@ describe('runScenario', () => {
       expect(run.trace.ended).toBe(true)
       expect(run.verdict).toMatchObject({ pass: true })
       expect(run.usage).toEqual({ input: 20, output: 4, cacheRead: 6, cacheWrite: 8, estimatedCostUsd: 0.02 })
-      expect(run.harnessRevision).toBe('2026-11-19-restart-carrier-v3')
+      expect(run.harnessRevision).toBe('2026-11-19-chat-sender-v4')
+    },
+    TOOLSET_TIMEOUT_MS
+  )
+
+  test(
+    'delivers human chat in history and opening as the runtime renders it, with the sender note',
+    async () => {
+      let users: string[] = []
+      const turn: AgentTurn = async ({ messages }) => {
+        users = messages.filter((message) => message.role === 'user').map((message) => String(message.content))
+        return { text: 'Done.', calls: [], message: { role: 'assistant', content: [], timestamp: 0 } as never }
+      }
+      const scenario = findScenario('offer-followup')!
+      await runScenario({
+        scenario,
+        variant: workingTreeVariant(),
+        model: { spec: 'fake:model', tier: 'standard' },
+        turn,
+        repeat: 1,
+      })
+      const sender = { userId: '51846fad-3980-4ec3-943c-1ebe9c822b2e', name: 'noah' }
+      const note = `\n\n[Sent by ${JSON.stringify(sender)} (server-stamped)]`
+      expect(users).toHaveLength(2)
+      expect(users[0]).toStartWith('Please fix the misspelling "recieve"')
+      expect(users[0]).toEndWith(note)
+      expect(users[1]).toBe(`Please summarize the change you completed.${note}`)
     },
     TOOLSET_TIMEOUT_MS
   )
