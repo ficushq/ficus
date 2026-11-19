@@ -305,8 +305,13 @@ describe('AgentTypeSync', () => {
   test('all worker types keep expertise and shared flow guidance in the composed prompt', async () => {
     const parsed = await loadComposed()
     const expectations: Record<string, string[]> = {
-      architect: ['### Creating Plans', '### Task Structure', '## Design Judgment', 'Testing strategy'],
-      engineer: ['### Implementation', '### Self-Review Checklist', '### Revision Feedback', '### Report Format'],
+      architect: ['### Creating Plans', '## Design Judgment', 'testing strategy', 'Scale detail to the work'],
+      engineer: [
+        '### Implementation',
+        'review your own diff against the original requirements',
+        '### Revision Feedback',
+        'reply to each individual thread',
+      ],
       reviewer: [
         '### Pass 1: Spec Compliance',
         '### Pass 2: Code Quality',
@@ -315,7 +320,12 @@ describe('AgentTypeSync', () => {
       ],
       general: ['Verify claims', 'non-code work'],
       'security-auditor': ['Threat Modeling', 'Authentication and Authorization', 'Findings'],
-      sysops: ['### Incident Response', '### High-Risk Operations Checklist', 'Rollback instructions'],
+      sysops: [
+        '### Incident Response',
+        '## Changing live systems',
+        'Rollback instructions',
+        '## Shared command runtime',
+      ],
     }
     for (const [id, expertise] of Object.entries(expectations)) {
       const type = parsed.find((row) => row.id === id)!
