@@ -160,3 +160,39 @@ test('keyboard resize reveals the focused field by scrolling dialog content, wit
     else Reflect.deleteProperty(ownedWindow, 'visualViewport')
   }
 })
+
+test('each modal layer has a non-focusable drag band that does not dismiss or expose the background', async () => {
+  const dom = await acquireDomHarness({})
+  try {
+    const { root } = dom.createRoot()
+    let outerCloses = 0
+    let innerCloses = 0
+    await dom.act(async () =>
+      root.render(
+        <Modal isOpen title="Outer" onClose={() => outerCloses++} closeOnEscape>
+          <Modal isOpen title="Inner" onClose={() => innerCloses++} closeOnEscape>
+            <input aria-label="Message" />
+          </Modal>
+        </Modal>
+      )
+    )
+    const overlays = document.querySelectorAll<HTMLElement>('.ficus-modal-backdrop')
+    expect(overlays).toHaveLength(2)
+    for (const overlay of overlays) {
+      const band = overlay.querySelector<HTMLElement>(':scope > .ficus-modal-drag-region')!
+      expect(band).not.toBeNull()
+      expect(band.getAttribute('aria-hidden')).toBe('true')
+      expect(band.tabIndex).toBe(-1)
+      expect(band.children).toHaveLength(0)
+      await dom.act(async () => band.click())
+    }
+    expect(outerCloses).toBe(0)
+    expect(innerCloses).toBe(0)
+    const inner = document.querySelector<HTMLElement>('[aria-label="Inner"]')!
+    await dom.act(async () => inner.click())
+    expect(innerCloses).toBe(1)
+    expect(outerCloses).toBe(0)
+  } finally {
+    await dom.cleanup()
+  }
+})
