@@ -1,6 +1,7 @@
 import { sandboxControlRequest } from './sandboxControl'
 import type {
   Agent,
+  AgentSummary,
   ManualWaitDecision,
   DeliveryMode,
   Execution,
@@ -68,6 +69,11 @@ export function buildListAgentsPath(filters?: ListAgentsFilters): string {
 
 export async function listAgents(filters?: ListAgentsFilters): Promise<Agent[]> {
   return apiFetch<Agent[]>(buildListAgentsPath(filters))
+}
+
+/** Every visible top-level agent as a summary row; `live` drops dormant and terminated ones. */
+export async function listAgentSummaries(filters?: { live?: boolean }): Promise<AgentSummary[]> {
+  return apiFetch<AgentSummary[]>(`/agents?view=summary${filters?.live ? '&live=true' : ''}`)
 }
 
 export async function getAgent(id: string): Promise<Agent> {

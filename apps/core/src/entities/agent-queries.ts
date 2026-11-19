@@ -512,6 +512,37 @@ export async function listAgentRows(
   return agentListQuery(filters, order)
 }
 
+/** What a list needs to place an agent: no conversation, usage or metadata columns. */
+export interface AgentSummaryRow {
+  id: string
+  agentTypeId: string
+  squadId: string | null
+  ownerUserId: string | null
+  parentAgentId: string | null
+  status: AgentStatus
+}
+
+/**
+ * The same agents as {@link listAgentRows}, as summary rows. The full row carries metadata,
+ * context and session usage (about 2 KB an agent), and an instance keeps every terminated
+ * agent, so the unfiltered list reached megabytes and was refetched on every status tick.
+ */
+export async function listAgentSummaryRows(filters?: ListAgentsFilters): Promise<AgentSummaryRow[]> {
+  const conditions = buildAgentListConditions(filters)
+  return db
+    .select({
+      id: agents.id,
+      agentTypeId: agents.agentTypeId,
+      squadId: agents.squadId,
+      ownerUserId: agents.ownerUserId,
+      parentAgentId: agents.parentAgentId,
+      status: agents.status,
+    })
+    .from(agents)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(asc(agents.createdAt), asc(agents.id))
+}
+
 /** Keep query construction available for EXPLAIN under custom and generic prepared plans. */
 export function agentListQuery(
   filters?: ListAgentsFilters,

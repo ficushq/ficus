@@ -390,6 +390,9 @@ export interface AgentMetadata {
   [key: string]: unknown
 }
 
+/** `GET /api/agents?view=summary`: enough to place an agent in a list, and nothing heavy. */
+export type AgentSummary = Pick<Agent, 'id' | 'agentTypeId' | 'squadId' | 'parentAgentId' | 'status'>
+
 export interface Agent {
   id: string
   agentTypeId: string

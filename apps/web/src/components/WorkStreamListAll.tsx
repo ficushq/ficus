@@ -9,7 +9,9 @@ export function WorkStreamListAll({ filterContainer }: { filterContainer?: HTMLE
   const [squadFilters] = useURLStringArrayState('squad')
   const { data: activeWorkStreams = [], isLoading: wsLoading } = useQuery(queries.squads.attentionWorkStreams())
   const { data: squads = [], isLoading: squadsLoading } = useQuery(queries.squads.list())
-  const { data: allAgents = [] } = useQuery(queries.agents.list())
+  // A row needs its assignee's type and status, for finished streams too: summary rows of every
+  // agent, not every agent's full record.
+  const { data: allAgents = [] } = useQuery(queries.agents.summaries())
 
   const selectedDoneStatuses = WS_DONE_STATUSES.filter((status) => statusFilters.includes(status))
   const recentOnly = statusFilters.length === 0

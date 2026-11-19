@@ -46,11 +46,23 @@ describe('squads work stream api', () => {
     ])
   })
 
-  test('listAttentionWorkStreams asks the server to respect attention', async () => {
+  test('listAttentionWorkStreams asks the server to respect attention, without descriptions', async () => {
     const { listAttentionWorkStreams } = await import('./squads')
     await listAttentionWorkStreams(apiFetchMock)
 
-    expect(apiFetchCalls.at(-1)).toEqual(['/workstreams?statuses=queued%2Cactive&respectAttention=true', undefined])
+    // The feed's rows show no description, and descriptions were most of the list's bytes.
+    expect(apiFetchCalls.at(-1)).toEqual([
+      '/workstreams?statuses=queued%2Cactive&respectAttention=true&omitDescription=true',
+      undefined,
+    ])
+  })
+
+  test('listDoneWorkStreams asks for descriptions unless the list shows none', async () => {
+    const { listDoneWorkStreams } = await import('./squads')
+    await listDoneWorkStreams({ statuses: ['done'], limit: 5 }, apiFetchMock)
+    expect(apiFetchCalls.at(-1)![0]).toBe('/workstreams?statuses=done&limit=5')
+    await listDoneWorkStreams({ statuses: ['done'], limit: 5, omitDescription: true }, apiFetchMock)
+    expect(apiFetchCalls.at(-1)![0]).toBe('/workstreams?statuses=done&limit=5&omitDescription=true')
   })
 
   test('subscribeSquad sends levels only when they were chosen', async () => {

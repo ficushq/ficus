@@ -29,7 +29,7 @@ import {
   SkeletonRows,
 } from './loading/Skeleton'
 import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
-import type { WorkStream, WorkStreamStatus, Squad, Agent } from '@ficus/shared'
+import type { WorkStream, WorkStreamStatus, Squad, Agent, AgentSummary } from '@ficus/shared'
 import { FEED_DISCLOSURE_CHEVRON_CLASS, FEED_DISCLOSURE_HEADER_CLASS, FEED_ROW_INSET_CLASS } from './feedSectionLayout'
 
 // --- Status constants ---
@@ -209,7 +209,9 @@ function compareSquadsByCustomOrder(a: Squad, b: Squad) {
   return a.name.localeCompare(b.name)
 }
 
-function SquadManagerChatMenu({ squads, agentMap }: { squads: Squad[]; agentMap: Map<string, Agent> }) {
+const NO_LOADED_AGENTS = new Map<string, Agent>()
+
+function SquadManagerChatMenu({ squads, agentMap }: { squads: Squad[]; agentMap: Map<string, AgentSummary> }) {
   const { slugFor } = useSquadSlugs()
   const sortedSquads = useMemo(() => [...squads].sort(compareSquadsByCustomOrder), [squads])
   const [hiddenSquadIds, setHiddenSquadIds] = useState(() => new Set(readHiddenManagerChatSquadIds()))
@@ -441,7 +443,7 @@ function WorkStreamRow({
 }: {
   workStream: WorkStream
   squadMap: Map<string, Squad>
-  agentMap: Map<string, Agent>
+  agentMap: Map<string, AgentSummary>
   agentTypeNameMap: Map<string, string>
   showSquadBadge: boolean
   feedLayout?: boolean
@@ -700,7 +702,7 @@ interface WorkStreamListProps {
   /** Map of squad ID to Squad for displaying squad badges */
   squadMap: Map<string, Squad>
   /** Map of agent ID to Agent for the detail modal */
-  agentMap: Map<string, Agent>
+  agentMap: Map<string, AgentSummary>
   /** Whether to show squad filter and squad badges (default: true) */
   showSquadFilter?: boolean
   /** All squads for the squad filter (required if showSquadFilter is true) */
@@ -1075,7 +1077,9 @@ export function WorkStreamList({
         <WorkStreamDetailModal
           workStream={selectedWorkStream}
           squadMap={squadMap}
-          agentMap={agentMap}
+          // The rows have summary rows only. The detail view names agents, so it loads the
+          // full record of each agent this one stream involves.
+          agentMap={NO_LOADED_AGENTS}
           workStreamMap={
             new Map(
               [

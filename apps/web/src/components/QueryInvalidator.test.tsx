@@ -372,6 +372,95 @@ describe('QueryInvalidator', () => {
     expect(countFor(queryKeys.squads.agents('squad-1'))).toBe(2)
   })
 
+  test('status ticks refetch the agent summaries and the Action Center once per window, not once per tick', async () => {
+    // One open tab on a busy instance: a tick every two to three seconds, and each one
+    // refetched every agent on the instance plus the Action Center list.
+    await dom.act(async () => {
+      root.render(
+        <QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe, statusTickWindowMs: 600 }} />
+      )
+    })
+    const countFor = (queryKey: readonly unknown[]) =>
+      fakeQueryClient.invalidateQueries.mock.calls.filter(
+        ([options]) => JSON.stringify(options.queryKey) === JSON.stringify(queryKey)
+      ).length
+    const tick = (event = 'agent.updated') =>
+      captured.get('agents')!({ event, data: { agentId: 'agent-1', squadId: 'squad-1' } })
+
+    // The first tick lands at once.
+    await dom.act(async () => tick())
+    expect(countFor(queryKeys.agents.summariesPrefix())).toBe(1)
+    expect(countFor(queryKeys.actions.all)).toBe(1)
+
+    // Later ticks inside the window, each past the coalescer's own 150ms, add nothing yet. An
+    // execution starting or ending counts as a tick.
+    for (const event of ['agent.updated', 'execution.started', 'agent.updated']) {
+      await dom.act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 170))
+        tick(event)
+      })
+    }
+    expect(countFor(queryKeys.agents.summariesPrefix())).toBe(1)
+    expect(countFor(queryKeys.actions.all)).toBe(1)
+    // The agent's own queries are not held back.
+    expect(countFor(queryKeys.agents.detail('agent-1'))).toBe(4)
+
+    // The last tick still lands, on the trailing edge.
+    await dom.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+    })
+    expect(countFor(queryKeys.agents.summariesPrefix())).toBe(2)
+    expect(countFor(queryKeys.actions.all)).toBe(2)
+  })
+
+  test('an agent waiting on a person, appearing or ending is never held back by the tick window', async () => {
+    await dom.act(async () => {
+      root.render(
+        <QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe, statusTickWindowMs: 60_000 }} />
+      )
+    })
+    const countFor = (queryKey: readonly unknown[]) =>
+      fakeQueryClient.invalidateQueries.mock.calls.filter(
+        ([options]) => JSON.stringify(options.queryKey) === JSON.stringify(queryKey)
+      ).length
+    const send = (event: string) => captured.get('agents')!({ event, data: { agentId: 'agent-1', squadId: 'squad-1' } })
+
+    await dom.act(async () => send('agent.updated'))
+    let expected = 1
+    for (const event of ['agent.waiting-input', 'agent.created', 'agent.terminated', 'agent.deleted']) {
+      await dom.act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 170))
+        send(event)
+      })
+      expected += 1
+      expect(countFor(queryKeys.agents.summariesPrefix())).toBe(event === 'agent.waiting-input' ? 2 : expected)
+    }
+    // Questions keep their own immediate path.
+    await dom.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 170))
+      send('agent-question.created')
+    })
+    expect(countFor(queryKeys.actions.all)).toBeGreaterThanOrEqual(5)
+  })
+
+  test('a local deployment update refreshes that squad deployments and box status, not every squad query', async () => {
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)
+    })
+    await dom.act(async () => {
+      captured.get('squads')!({ event: 'sandboxLocalDeployment.updated', data: { squadId: 'squad-1' } })
+    })
+    const invalidated = fakeQueryClient.invalidateQueries.mock.calls.map(([options]) =>
+      JSON.stringify(options.queryKey)
+    )
+    expect(invalidated).toContain(JSON.stringify(queryKeys.squads.localDeployments('squad-1')))
+    expect(invalidated).toContain(JSON.stringify(queryKeys.sandbox.status('squad-1')))
+    // It used to fall through to the broad squad invalidation: every squad, work-stream list
+    // and squad page query on the instance, for each deployment report.
+    expect(invalidated).not.toContain(JSON.stringify(queryKeys.squads.all))
+    expect(invalidated).not.toContain(JSON.stringify(queryKeys.activity.presence()))
+  })
+
   test('agent.new-message refreshes only the squad roster, not the agent query family', async () => {
     await dom.act(async () => {
       root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe }} />)

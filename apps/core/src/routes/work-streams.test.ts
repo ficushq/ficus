@@ -287,6 +287,48 @@ describe('work-streams routes', () => {
     expect((await paginated.json()).error).toBe('respectAttention is not supported with pagination')
   })
 
+  // A feed row shows no description, and descriptions were most of the list's bytes.
+  it('omitDescription returns the same rows with a null description, on plain and paged lists', async () => {
+    const [stream] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquadId, title: 'Described', description: 'A long brief. '.repeat(50) })
+      .returning()
+    const [finished] = await db
+      .insert(workStreams)
+      .values({
+        squadId: testSquadId,
+        title: 'Finished',
+        description: 'Also long. '.repeat(50),
+        status: 'done',
+      })
+      .returning()
+    type Row = { id: string; title: string; description: string | null }
+    const find = (rows: Row[], id: string) => rows.find((row) => row.id === id)!
+
+    const full = (await (await apiFetch('/api/workstreams?respectAttention=true')).json()) as Row[]
+    expect(find(full, stream!.id).description).toContain('A long brief.')
+    const slim = (await (await apiFetch('/api/workstreams?respectAttention=true&omitDescription=true')).json()) as Row[]
+    expect(slim.map((row) => row.id).sort()).toEqual(full.map((row) => row.id).sort())
+    expect(find(slim, stream!.id)).toMatchObject({ title: 'Described', description: null })
+    const bySquad = (await (
+      await apiFetch(`/api/workstreams?squadId=${testSquadId}&omitDescription=true`)
+    ).json()) as Row[]
+    expect(find(bySquad, stream!.id).description).toBeNull()
+
+    const paged = (await (
+      await apiFetch(`/api/workstreams?statuses=done&limit=50&squadId=${testSquadId}&omitDescription=true`)
+    ).json()) as { items: Row[] }
+    expect(find(paged.items, finished!.id)).toMatchObject({ title: 'Finished', description: null })
+    const pagedFull = (await (
+      await apiFetch(`/api/workstreams?statuses=done&limit=50&squadId=${testSquadId}`)
+    ).json()) as { items: Row[] }
+    expect(find(pagedFull.items, finished!.id).description).toContain('Also long.')
+
+    // The detail endpoint always has it.
+    const detail = (await (await apiFetch(`/api/workstreams/${stream!.id}`)).json()) as Row
+    expect(detail.description).toContain('A long brief.')
+  })
+
   /** Helper: POST JSON to a URL */
   function postJson(url: string, body: unknown): Promise<Response> {
     return apiFetch(url, {

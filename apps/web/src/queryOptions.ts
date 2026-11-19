@@ -34,6 +34,7 @@ import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 // API functions
 import {
   listAgents,
+  listAgentSummaries,
   getAgentSlotWaits,
   getAgentSlotHolds,
   getAgent,
@@ -262,6 +263,12 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.agents.list(filters),
         queryFn: () => listAgents(filters),
+      }),
+    /** Every agent as id, type, squad, parent and status: for lists that only place an agent. */
+    summaries: (filters?: { live?: boolean }) =>
+      queryOptions({
+        queryKey: queryKeys.agents.summaries(filters),
+        queryFn: () => listAgentSummaries(filters),
       }),
     detail: (id: string) =>
       queryOptions({
@@ -1267,7 +1274,14 @@ export const feedQueries = {
     infiniteQueryOptions({
       queryKey: feedQueryKeys.updates(userId, visitId, squadIds),
       queryFn: ({ pageParam }) =>
-        listDoneWorkStreams({ feedUpdates: true, squadIds, statuses: ['done'], limit: 20, cursor: pageParam }),
+        listDoneWorkStreams({
+          feedUpdates: true,
+          squadIds,
+          statuses: ['done'],
+          limit: 20,
+          cursor: pageParam,
+          omitDescription: true,
+        }),
       initialPageParam: undefined as string | null | undefined,
       getNextPageParam: (page) => (page.hasMore ? page.nextCursor : undefined),
       staleTime: 0,
@@ -1279,7 +1293,8 @@ export const feedQueries = {
   recent: (after: string, squadIds: readonly string[]) =>
     queryOptions({
       queryKey: feedQueryKeys.recent(after, squadIds),
-      queryFn: () => listDoneWorkStreams({ completedAfter: after, squadIds, statuses: ['done'], limit: 5 }),
+      queryFn: () =>
+        listDoneWorkStreams({ completedAfter: after, squadIds, statuses: ['done'], limit: 5, omitDescription: true }),
       staleTime: 30_000,
     }),
 }
