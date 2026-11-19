@@ -214,25 +214,63 @@ describe('AgentSlotWaitStatus', () => {
     await eventually(() => expect(text()).not.toContain('Holding'))
   })
 
-  test('a lease that expired after mount but before its data arrived is not shown as live', async () => {
+  test.each([
+    ['a lease that expired after mount but before its data arrived is not shown as live', 120_000, false],
+    ['a lease arriving exactly at its expiry is not shown as live', 60_000, false],
+    ['a lease arriving before its expiry is shown as live', 30_000, true],
+  ] as const)('%s', async (_name, arrivalDelay, isLive) => {
     let now = 1_800_000_000_000
     const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    const realTimeout = globalThis.setTimeout
+    const realClear = globalThis.clearTimeout
+    const immediate = new Map<Parameters<typeof clearTimeout>[0], () => void>()
+    // Query notifications can commit the data and only then schedule the
+    // component's immediate expiry deadline. Own the zero-delay queue instead
+    // of racing those two stages with an unrelated setTimeout(0).
+    globalThis.setTimeout = ((callback: (...args: unknown[]) => void, delay: number, ...args: unknown[]) => {
+      if (delay !== 0) return realTimeout(callback, delay, ...args)
+      // Reserve a valid harness-owned handle without running the callback.
+      const id = realTimeout(() => {}, 2_147_483_647)
+      immediate.set(id, () => callback(...args))
+      return id
+    }) as typeof setTimeout
+    globalThis.clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => {
+      immediate.delete(id)
+      return realClear(id)
+    }) as typeof clearTimeout
     try {
+      const lease = held('build')
+      expect(Date.parse(lease.expiresAt)).toBeGreaterThan(now)
       let resolve!: (response: Response) => void
       pendingHoldResponse = new Promise((r) => {
         resolve = r
       })
       await render()
-      await eventually(() => expect(holdRequests).toHaveLength(1))
-      now += 120_000
-      const expiredInFlight = { poolKey: 'build', expiresAt: new Date(now - 60_000).toISOString() }
-      await dom.act(async () => resolve(new Response(JSON.stringify([expiredInFlight]))))
-      await eventually(() => expect(text()).toContain('Waiting for slot:'))
-      // Let the immediate expiry deadline run, then the lease must be gone.
-      await dom.act(() => new Promise((done) => setTimeout(done, 0)))
+      expect(holdRequests).toHaveLength(1)
+      now += arrivalDelay
+      await dom.act(async () => resolve(new Response(JSON.stringify([lease]))))
+      // Cache success is the fetch boundary, not proof React has committed it.
+      await eventually(() =>
+        expect(client.getQueryState(agentSlotHoldQueryKeys.agent('squad-a', 'agent-a'))?.status).toBe('success')
+      )
+      let flushed = 0
+      for (const [id, callback] of immediate) {
+        if (++flushed > 100) throw new Error('Immediate timers did not settle')
+        immediate.delete(id)
+        realClear(id)
+        // act commits each notification and its effects before draining any
+        // newly scheduled immediate deadline. No lease time elapses here.
+        await dom.act(async () => callback())
+      }
       expect(text()).toContain('Waiting for slot:')
-      expect(text()).not.toContain('Holding')
+      if (isLive) expect(text()).toContain('Holding slot: build')
+      else expect(text()).not.toContain('Holding')
+      expect(holdRequests).toHaveLength(1)
     } finally {
+      for (const id of immediate.keys()) realClear(id)
+      immediate.clear()
+      globalThis.setTimeout = realTimeout
+      globalThis.clearTimeout = realClear
       clock.mockRestore()
     }
   })

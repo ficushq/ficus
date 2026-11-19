@@ -17,6 +17,8 @@ export interface PromptVariant {
   commit?: string
 }
 
+const RESTART_CONTEXT_PATH = 'packages/shared/src/restart-context.ts'
+
 /**
  * Paths a variant needs; everything else (dependencies, other shared modules) comes from the working
  * tree. The migration journal is read when the database module loads.
@@ -24,6 +26,7 @@ export interface PromptVariant {
 const VARIANT_PATHS = [
   'config',
   'packages/shared/src/public-voice.ts',
+  RESTART_CONTEXT_PATH,
   'apps/core/src',
   'apps/core/package.json',
   'apps/core/drizzle/meta',
@@ -37,7 +40,7 @@ const VARIANT_PATHS = [
   'packages/sandbox-server/src',
 ]
 /** Bump when VARIANT_PATHS changes so cached extractions are refreshed. */
-const EXTRACTION_VERSION = 5
+const EXTRACTION_VERSION = 6
 
 export function workingTreeVariant(): PromptVariant {
   return { label: 'working tree', root: MONOREPO_ROOT }
@@ -46,7 +49,8 @@ export function workingTreeVariant(): PromptVariant {
 /**
  * Extracts `ref` into a cache directory and links the working tree's installed dependencies into
  * it, so its modules import the same way. Workspace packages such as @ficus/shared therefore
- * resolve to the working tree's copy; the voice resolver is extracted and imported directly.
+ * resolve to the working tree's copy; the voice resolver and restart carrier are extracted and
+ * imported directly. Both are self-contained apart from installed dependencies.
  * The guidance itself (config/, apps/core/src, apps/cli/src)
  * is the ref's.
  */
@@ -87,10 +91,17 @@ export function resolveVariant(spec: string): PromptVariant {
 
 /**
  * Imports a module by repository-relative path from the variant, or from the working tree when the
- * variant predates it (for example a ref from before the module was added).
+ * variant predates it (for example a ref from before the module was added). The restart carrier
+ * must exist in the variant: silently borrowing another ref's notice invalidates the comparison.
  */
 export async function importFromVariant<T>(variant: PromptVariant, relativePath: string): Promise<T> {
   const own = join(variant.root, relativePath)
+  if (!existsSync(own) && relativePath === RESTART_CONTEXT_PATH) {
+    throw new Error(
+      `Missing ${relativePath} in variant ${variant.label}; restart scenarios require that ref's own carrier. ` +
+        'Pre-carrier refs need an explicit compatibility policy before comparison.'
+    )
+  }
   return (await import(existsSync(own) ? own : join(workingTreeVariant().root, relativePath))) as T
 }
 
