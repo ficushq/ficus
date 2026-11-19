@@ -26,7 +26,6 @@ import {
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 import { SharedPromptPicker } from './SharedPromptPicker'
 import { SharedPromptsTab } from './SharedPromptsTab'
-import { VoicesTab } from './VoicesTab'
 import { TemplateDiffDialog } from './TemplateDiffDialog'
 import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -1330,13 +1329,12 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
   )
 }
 
-type AgentTypesView = 'types' | 'tiers' | 'includes' | 'voices'
+type AgentTypesView = 'types' | 'tiers' | 'includes'
 
 const AGENT_TYPES_VIEW_OPTIONS: readonly SegmentedControlOption<AgentTypesView>[] = [
   { value: 'types', label: 'Types' },
   { value: 'tiers', label: 'Model tiers' },
   { value: 'includes', label: 'Shared prompts' },
-  { value: 'voices', label: 'Voices' },
 ]
 
 export function AgentTypesSection() {
@@ -1345,14 +1343,13 @@ export function AgentTypesSection() {
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-lg font-semibold text-primary">Agent Types</h3>
+        <h3 className="text-lg font-semibold text-primary">Agents</h3>
         <p className="mt-1 text-sm text-muted">
-          Define agent roles, choose the models they use, edit the shared prompt blocks they include, and manage the
-          public voices squads use.
+          Define agent roles, choose the models they use, and edit the shared prompt blocks they include.
         </p>
         <SegmentedControl
           size="compact"
-          ariaLabel="Agent types view"
+          ariaLabel="Agents view"
           options={AGENT_TYPES_VIEW_OPTIONS}
           value={tab}
           onChange={(next) => {
@@ -1372,7 +1369,6 @@ export function AgentTypesSection() {
         />
       )}
       {tab === 'includes' && <SharedPromptsTab />}
-      {tab === 'voices' && <VoicesTab />}
     </div>
   )
 }

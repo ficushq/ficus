@@ -224,7 +224,7 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
             />
           </div>
           {saveProfile.isSuccess && (
-            <p className="text-xs text-muted">Saved as a new profile. Edit it in Settings → Agent Types → Voices.</p>
+            <p className="text-xs text-muted">Saved as a new profile. Edit it in Settings → Voices.</p>
           )}
           <NewProfileDialog
             isOpen={pendingProfileDraft !== null}

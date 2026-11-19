@@ -246,7 +246,7 @@ function ProfileEditor({
 }
 
 /**
- * Settings → Agent Types → Voices: named voice profiles squads are assigned
+ * Settings → Voices: named voice profiles squads are assigned
  * to. `agent-types:read` sees them; `agent-types:update` manages them.
  */
 export function VoicesTab() {

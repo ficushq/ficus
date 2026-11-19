@@ -125,7 +125,7 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
         a vault below, or the BigBrain card in a squad&apos;s Settings → Integrations. Their agent type must also allow
         BigBrain agent tools and the <span className="font-mono">bigbrain_shared_*</span> tool names (
         <Link to="/settings?section=agent-types" className="text-accent-light hover:underline">
-          Agent types
+          Agents
         </Link>
         ).
       </p>
