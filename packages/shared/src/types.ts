@@ -207,6 +207,9 @@ export interface MessageMetadata {
   }
   /** Stable key used to deduplicate a persisted system row against its live system_message event. */
   systemMessageKey?: string
+  /** Inbox delivery intent shown in history: starts with the batch's requested mode and follows
+   * explicit queue edits. Unlike deliveryMode, automatic runtime steering does not change it.
+   * The already-delivered inbox source rows retain their original sender-requested modes. */
   inboxDeliveryMode?: DeliveryMode
   inboxMessageIds?: string[]
   inboxMessageSummaries?: Array<{

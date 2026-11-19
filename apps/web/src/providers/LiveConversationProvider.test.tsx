@@ -264,6 +264,48 @@ describe('LiveConversationProvider', () => {
     expect(mockClient.getMessagesCount()).toBe(1)
   })
 
+  for (const selectedMode of ['steer', 'follow-up'] as const) {
+    test(`retains selected inbox ${selectedMode} metadata through queue and consumption updates`, async () => {
+      const originalMode = selectedMode === 'steer' ? 'follow-up' : 'steer'
+      let durable: Message = {
+        ...inbound,
+        pending: true,
+        metadata: {
+          source: 'inbox',
+          deliveryMode: originalMode,
+          inboxDeliveryMode: originalMode,
+        },
+      }
+      const mockClient = makeClient(async () => durable)
+      const { socket, getItems } = await mountConversation(mockClient)
+      await act(async () => socket.serverMessage(createdFrame()))
+      await flushEffects()
+
+      for (const pending of [true, false]) {
+        durable = {
+          ...durable,
+          pending,
+          metadata: {
+            ...durable.metadata,
+            deliveryMode: selectedMode,
+            inboxDeliveryMode: selectedMode,
+          },
+        }
+        await act(async () => socket.serverMessage({ ...createdFrame(), event: 'message.updated' }))
+        await flushEffects()
+        const item = getItems().find((item) => item.id === inbound.id)
+        expect(item?.kind).toBe(pending ? 'pending' : 'persisted')
+        const metadata =
+          item?.kind === 'pending' ? item.metadata : item?.kind === 'persisted' ? item.message.metadata : undefined
+        expect(metadata).toMatchObject({
+          source: 'inbox',
+          deliveryMode: selectedMode,
+          inboxDeliveryMode: selectedMode,
+        })
+      }
+    })
+  }
+
   test('a durable row is inserted above a stream that began before its socket event', async () => {
     const mockClient = makeClient(async () => inbound)
     const { socket, getItems } = await mountConversation(mockClient)

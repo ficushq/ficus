@@ -45,7 +45,15 @@ async function commitChange(tx: Tx, row: Row, operation: PendingMessageOperation
   } else {
     await tx
       .update(messages)
-      .set({ metadata: { ...(row.metadata ?? {}), deliveryMode: operation } })
+      .set({
+        metadata: {
+          ...(row.metadata ?? {}),
+          deliveryMode: operation,
+          // An explicit queue edit also changes the inbox delivery's history label.
+          // Automatic steer delivery (for example to an idle agent) does not.
+          ...(row.metadata?.source === 'inbox' ? { inboxDeliveryMode: operation } : {}),
+        },
+      })
       .where(eq(messages.id, row.id))
   }
 }
