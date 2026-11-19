@@ -171,7 +171,11 @@ test('real selected connection is revalidated and never replaced by a squad defa
   await assignRole({ userId: person.id, roleId: role.id, scope: 'system' })
   const realDerive = derivation.derivePublicVoice
   const attribution: unknown[] = []
-  const authorization: Array<string | null> = []
+  // The spy is process-wide: other work in the shared test process can call fetch too. Record every call,
+  // answer only GitHub API requests, and pass everything else through to the real fetch untouched.
+  const githubCalls: Array<{ url: string; method: string; authorization: string | null }> = []
+  const otherCalls: Array<{ url: string; authorization: string | null }> = []
+  const originalFetch = globalThis.fetch
   spies.push(
     spyOn(derivation, 'derivePublicVoice').mockImplementation((input) =>
       realDerive(input, {
@@ -183,29 +187,35 @@ test('real selected connection is revalidated and never replaced by a squad defa
       })
     )
   )
-  spies.push(
-    spyOn(globalThis, 'fetch').mockImplementation((async (_, init) => {
-      authorization.push(new Headers(init?.headers).get('authorization'))
-      return Response.json({
-        data: {
-          user: {
-            id: 'user-node',
-            pullRequests: {
-              pageInfo: { hasNextPage: false, endCursor: null },
-              nodes: Array.from({ length: 20 }, (_, i) => ({
-                title: `Synthetic improvement ${i}`,
-                body: `This synthetic candidate ${i} explains the fix in complete sentences.`,
-                repository: { nameWithOwner: 'example/library', isPrivate: true },
-                createdAt: '2026-01-01T00:00:00Z',
-              })),
-            },
-            issueComments: null,
-            contributionsCollection: null,
+  const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input)
+    const authorization = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
+      'authorization'
+    )
+    if (new URL(url).host !== 'api.github.com') {
+      otherCalls.push({ url, authorization })
+      return originalFetch(input, init)
+    }
+    githubCalls.push({ url, method: init?.method ?? 'GET', authorization })
+    return Response.json({
+      data: {
+        user: {
+          id: 'user-node',
+          pullRequests: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: Array.from({ length: 20 }, (_, i) => ({
+              title: `Synthetic improvement ${i}`,
+              body: `This synthetic candidate ${i} explains the fix in complete sentences.`,
+              repository: { nameWithOwner: 'example/library', isPrivate: true },
+              createdAt: '2026-01-01T00:00:00Z',
+            })),
           },
+          issueComments: null,
+          contributionsCollection: null,
         },
-      })
-    }) as typeof fetch)
-  )
+      },
+    })
+  }) as typeof fetch)
   try {
     const before = await db.select().from(squads).where(eq(squads.id, squadId))
     for (const accept of ['application/json', 'text/event-stream']) {
@@ -226,7 +236,13 @@ test('real selected connection is revalidated and never replaced by a squad defa
         expect(JSON.stringify(events)).not.toContain('This synthetic candidate')
       }
     }
-    expect(authorization).toEqual([`Bearer test-access-${selected.id}`, `Bearer test-access-${selected.id}`])
+    const expectedGitHubCall = {
+      url: 'https://api.github.com/graphql',
+      method: 'POST',
+      authorization: `Bearer test-access-${selected.id}`,
+    }
+    // One GraphQL read per derivation (JSON, then SSE), each with the selected account's token only.
+    expect(githubCalls).toEqual([expectedGitHubCall, expectedGitHubCall])
     expect(attribution).toEqual([
       { userId: person.id, squadId: null },
       { userId: person.id, squadId: null },
@@ -256,8 +272,20 @@ test('real selected connection is revalidated and never replaced by a squad defa
     )
     expect((await request(admin, selected.id)).status).toBe(422)
     expect((await request(admin, crypto.randomUUID())).status).toBe(422)
-    expect(authorization.length).toBe(2)
+    // Unavailable or unknown accounts never reach GitHub, and any GitHub request without the selected
+    // token (including an unauthenticated one) would appear here and fail.
+    expect(githubCalls).toEqual([expectedGitHubCall, expectedGitHubCall])
   } finally {
+    fetchSpy.mockRestore()
+    // Attribution for other work that called fetch while the spy was installed (origin and path only).
+    if (otherCalls.length)
+      console.warn(
+        'public-voice-derive: passed through unrelated fetch calls',
+        otherCalls.map((call) => {
+          const { origin, pathname } = new URL(call.url)
+          return { target: `${origin}${pathname}`, authorized: call.authorization !== null }
+        })
+      )
     await selected.dispose()
     await defaultAccount.dispose()
     await db.delete(squads).where(eq(squads.id, squadId))
