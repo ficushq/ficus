@@ -1344,7 +1344,7 @@ export const worktreeCleanupJobs = pgTable(
       .primaryKey()
       .references(() => workStreams.id, { onDelete: 'cascade' }),
     status: text('status')
-      .$type<'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'>()
+      .$type<'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error' | 'retained'>()
       .notNull()
       .default('pending'),
     // Invalidates snapshots from an earlier delivery or retention decision.

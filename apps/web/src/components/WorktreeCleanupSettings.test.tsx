@@ -46,50 +46,52 @@ for (const permission of [false, true]) {
   })
 }
 
-test('cleanup toggle sends false explicitly and explains removal already in flight', async () => {
-  expect(client.workStreams.setAutoCleanupWorktree).toBeDefined()
-  const dom = await acquireDomHarness({ url: 'http://localhost/cleanup' })
-  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  const stream = {
-    id: 'stream',
-    squadId: 'squad',
-    autoCleanupWorktree: true,
-    worktree: '/workspace/feature',
-  } as WorkStream
-  cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: ['workstreams:update'] })
-  const save = spyOn(client.workStreams, 'setAutoCleanupWorktree').mockResolvedValue({
-    ...stream,
-    autoCleanupWorktree: false,
-  })
-  const root = dom.createRoot()
-  const render = (value: WorkStream) =>
-    dom.act(async () =>
-      root.root.render(
-        <QueryClientProvider client={cache}>
-          <WorktreeCleanupSettings stream={value} />
-        </QueryClientProvider>
-      )
-    )
-  try {
-    await render(stream)
-    await dom.act(async () => (dom.window.document.querySelector('input') as HTMLInputElement).click())
-    expect(save).toHaveBeenCalledWith('stream', false)
-    await render({
+for (const status of ['removing', 'error'] as const) {
+  test(`cleanup toggle sends false explicitly and explains ${status} removal`, async () => {
+    expect(client.workStreams.setAutoCleanupWorktree).toBeDefined()
+    const dom = await acquireDomHarness({ url: 'http://localhost/cleanup' })
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const stream = {
+      id: 'stream',
+      squadId: 'squad',
+      autoCleanupWorktree: true,
+      worktree: '/workspace/feature',
+    } as WorkStream
+    cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: ['workstreams:update'] })
+    const save = spyOn(client.workStreams, 'setAutoCleanupWorktree').mockResolvedValue({
       ...stream,
-      worktreeCleanup: {
-        status: 'removing',
-        reason: 'Awaiting terminal receipt',
-        operationId: 'operation',
-      } as WorkStream['worktreeCleanup'],
+      autoCleanupWorktree: false,
     })
-    expect((dom.window.document.querySelector('input') as HTMLInputElement).disabled).toBe(true)
-    expect(dom.window.document.body.textContent).toContain('Do not reuse')
-  } finally {
-    save.mockRestore()
-    await dom.cleanup()
-    cache.clear()
-  }
-})
+    const root = dom.createRoot()
+    const render = (value: WorkStream) =>
+      dom.act(async () =>
+        root.root.render(
+          <QueryClientProvider client={cache}>
+            <WorktreeCleanupSettings stream={value} />
+          </QueryClientProvider>
+        )
+      )
+    try {
+      await render(stream)
+      await dom.act(async () => (dom.window.document.querySelector('input') as HTMLInputElement).click())
+      expect(save).toHaveBeenCalledWith('stream', false)
+      await render({
+        ...stream,
+        worktreeCleanup: {
+          status,
+          reason: 'Awaiting terminal receipt',
+          operationId: 'operation',
+        } as WorkStream['worktreeCleanup'],
+      })
+      expect((dom.window.document.querySelector('input') as HTMLInputElement).disabled).toBe(true)
+      expect(dom.window.document.body.textContent).toContain('Do not reuse')
+    } finally {
+      save.mockRestore()
+      await dom.cleanup()
+      cache.clear()
+    }
+  })
+}
 
 test('failed retention updates keep the effective setting and restore editing after pending state', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/cleanup' })
@@ -125,6 +127,35 @@ test('failed retention updates keep the effective setting and restore editing af
     expect(dom.window.document.querySelector('[role="alert"]')?.textContent).toContain('Retention update rejected')
   } finally {
     save.mockRestore()
+    await dom.cleanup()
+    cache.clear()
+  }
+})
+
+test('settled recovery retention cannot misleadingly re-enable the sealed operation', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/cleanup' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const stream = {
+    id: 'stream',
+    squadId: 'squad',
+    autoCleanupWorktree: true,
+    worktreeCleanup: { status: 'retained', operationId: 'operation' },
+  } as WorkStream
+  cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: ['workstreams:update'] })
+  const root = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={cache}>
+          <WorktreeCleanupSettings stream={stream} />
+        </QueryClientProvider>
+      )
+    )
+    const checkbox = dom.window.document.querySelector('input') as HTMLInputElement
+    expect(checkbox.checked).toBe(false)
+    expect(checkbox.disabled).toBe(true)
+    expect(dom.window.document.body.textContent).toContain('Automatic removal will not restart')
+  } finally {
     await dom.cleanup()
     cache.clear()
   }

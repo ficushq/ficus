@@ -1430,7 +1430,7 @@ export interface WorktreeCleanupInspection {
 }
 
 export interface WorktreeCleanupSummary {
-  status: 'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'
+  status: 'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error' | 'retained'
   reason: string | null
   attempts: number
   nextAttemptAt: string

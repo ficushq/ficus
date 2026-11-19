@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, test, spyOn } from 'bun:test'
-import { mkdtemp, mkdir, realpath, rm, writeFile, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile, symlink, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
@@ -266,7 +266,7 @@ test('lost remote response remains fenced and restart recovers the immutable rec
   expect(await job()).toMatchObject({ status: 'succeeded', operationId: uncertain.operationId })
 })
 
-test('restart redelivers the exact persisted operation after a crash before dispatch', async () => {
+test('restart seals a persisted claim after a crash before dispatch without deleting the tree', async () => {
   const input = await claimWorktreeCleanup(streamId, {
     generation: (await job()).generation,
     ownership,
@@ -275,7 +275,8 @@ test('restart redelivers the exact persisted operation after a crash before disp
   })
   expect(input).not.toBeNull()
   await processJob()
-  expect(await job()).toMatchObject({ status: 'succeeded', operationId: input!.operationId })
+  expect(await job()).toMatchObject({ status: 'retained', operationId: input!.operationId })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
 })
 
 test('an interrupted active operation without terminal proof is never taken over', async () => {
@@ -327,7 +328,7 @@ test('explicit opt-in after delivery revives a skipped intent without sweeping o
   expect((await job()).status).toBe('pending')
 })
 
-test('terminal partial failures keep their operation fence and use capped backoff on recovery', async () => {
+test('terminal partial failures converge to blocked without releasing their operation fence', async () => {
   const { createHash } = await import('node:crypto')
   const input = (await claimWorktreeCleanup(streamId, {
     generation: (await job()).generation,
@@ -351,10 +352,18 @@ test('terminal partial failures keep their operation fence and use capped backof
       digest: createHash('sha256').update(serialized).digest('hex'),
     })
   )
-  await processJob()
-  await processJob()
-  expect(await job()).toMatchObject({ status: 'error', operationId: input.operationId, attempts: 3 })
-  expect((await job()).nextAttemptAt.getTime() - Date.now()).toBeGreaterThan(59_000)
+  await rename(ownership.worktree, ownership.worktree + '-original')
+  await mkdir(ownership.worktree)
+  await writeFile(join(ownership.worktree, 'residual'), 'keep')
+  for (let i = 0; i < 6; i++) await processJob()
+  expect(await job()).toMatchObject({
+    status: 'error',
+    operationId: input.operationId,
+    attempts: 5,
+    reason: expect.stringContaining('Automatic reconciliation stopped:'),
+  })
+  expect(await Bun.file(join(ownership.worktree, 'residual')).text()).toBe('keep')
+  expect((await job()).nextAttemptAt.getTime() - Date.now()).toBeGreaterThan(239_000)
   expect(reconciler.cleanupRetryDelay(100)).toBe(3_600_000)
   await expect((await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })).rejects.toThrow(
     /cleanup|removal/i
@@ -486,6 +495,7 @@ test('new delivery intent never resets removing, uncertain, or succeeded resourc
     { status: 'removing' as const, operationId: crypto.randomUUID() },
     { status: 'error' as const, operationId: crypto.randomUUID() },
     { status: 'succeeded' as const, operationId: crypto.randomUUID() },
+    { status: 'retained' as const, operationId: crypto.randomUUID() },
   ]) {
     await db.update(worktreeCleanupJobs).set(state).where(eq(worktreeCleanupJobs.workStreamId, streamId))
     const before = await job()
@@ -612,4 +622,136 @@ test('periodic reconciliation retries a due dependency deferral after settlement
     managerSpy.mockRestore()
     verifySpy.mockRestore()
   }
+})
+
+test('unverified operation recovery is bounded and explicit reconciliation never dispatches deletion', async () => {
+  const input = (await claimWorktreeCleanup(streamId, {
+    generation: (await job()).generation,
+    ownership,
+    head,
+    metadata,
+  }))!
+  await mkdir(join(ownership.commonDirectory, 'tau-worktree-cleanup', input.operationId), { recursive: true })
+  let calls = 0
+  const observe = {
+    execForSquad: async () => async (args: string[]) => {
+      calls++
+      expect(args[5]).toBe('reconcile')
+      return exec(args)
+    },
+  }
+  for (let i = 0; i < 8; i++) await processJob(observe)
+  expect(await job()).toMatchObject({
+    status: 'error',
+    operationId: input.operationId,
+    attempts: 5,
+    reason: expect.stringContaining('Automatic reconciliation stopped:'),
+  })
+  expect(calls).toBe(4)
+  await expect((await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })).rejects.toThrow(
+    /cleanup|removal/i
+  )
+  await reconciler.reconcileWorktreeCleanupOperation(streamId, { ...deps(), ...observe })
+  expect(calls).toBe(5)
+  expect(await job()).toMatchObject({ status: 'error', operationId: input.operationId })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+})
+
+test('explicit reconciliation of an unclaimed job never starts cleanup', async () => {
+  await reconciler.reconcileWorktreeCleanupOperation(streamId, {
+    ...deps(),
+    execForSquad: async () => {
+      throw Error('must not contact runtime')
+    },
+  })
+  expect(await job()).toMatchObject({ status: 'pending', operationId: null, attempts: 0 })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+})
+
+test('settled stale claims preserve immutable operation markers and can be retained through the lifecycle API', async () => {
+  const input = await claimWorktreeCleanup(streamId, {
+    generation: (await job()).generation,
+    ownership,
+    head,
+    metadata,
+  })
+  await processJob()
+  expect(await job()).toMatchObject({ status: 'retained', operationId: input!.operationId, removalInput: input })
+  await (await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })
+  await processJob()
+  expect(await job()).toMatchObject({ status: 'retained', operationId: input!.operationId })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+})
+
+test('a fresh dispatcher that receives concurrent cancellation proof cannot clear markers and re-arm deletion', async () => {
+  const { reconcileWorktreeRemoval } = await import('./worktree-cleanup-runtime')
+  await processJob({
+    execForSquad: async () => async (args: string[]) => {
+      if (args[5] === 'remove') {
+        // Another recovery wins the runtime marker, but crashes before its DB
+        // settlement. The original dispatch receives the cancellation receipt.
+        await reconcileWorktreeRemoval(exec, (await job()).removalInput!)
+      }
+      return exec(args)
+    },
+  })
+  expect(await job()).toMatchObject({ status: 'removing', attempts: 1 })
+  expect((await job()).operationId).not.toBeNull()
+  await processJob()
+  expect(await job()).toMatchObject({ status: 'retained' })
+  expect(await Bun.file(join(ownership.worktree, 'README')).text()).toBe('delivered\n')
+})
+
+for (const attempts of [314, 716]) {
+  test(`historical ${attempts} observations get one non-destructive check, then stop without resetting identity`, async () => {
+    const input = await claimWorktreeCleanup(streamId, {
+      generation: (await job()).generation,
+      ownership,
+      head,
+      metadata,
+    })
+    await db
+      .update(worktreeCleanupJobs)
+      .set({ attempts, status: 'error' })
+      .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+    let calls = 0
+    const unavailable = {
+      execForSquad: async () => {
+        calls++
+        throw Error('private remote error')
+      },
+    }
+    await processJob(unavailable)
+    const stopped = await job()
+    expect(stopped).toMatchObject({
+      status: 'error',
+      attempts: attempts + 1,
+      operationId: input!.operationId,
+    })
+    expect(stopped.reason).toStartWith('Automatic reconciliation stopped:')
+    expect(stopped.reason).not.toContain('private')
+    await processJob(unavailable)
+    expect(await job()).toEqual(stopped)
+    expect(calls).toBe(1)
+  })
+}
+
+test('a removing row with missing operation identity stops without dispatch or releasing its fence', async () => {
+  await db.update(worktreeCleanupJobs).set({ status: 'removing' }).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  let calls = 0
+  await processJob({
+    execForSquad: async () => {
+      calls++
+      throw Error('must not contact runtime')
+    },
+  })
+  const stopped = await job()
+  expect(stopped.status).toBe('removing')
+  expect(stopped.reason).toStartWith('Automatic reconciliation stopped:')
+  expect(calls).toBe(0)
+  await processJob()
+  expect(await job()).toEqual(stopped)
+  await expect((await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })).rejects.toThrow(
+    /cleanup|removal/i
+  )
 })
