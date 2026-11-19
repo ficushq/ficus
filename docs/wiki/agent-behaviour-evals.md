@@ -146,7 +146,22 @@ voice-free historical baselines. These prompt tests need no database or live mod
 
 The new-work-request grader distinguishes `find ... astro.config*` (read-only discovery followed
 by routing to the manager) from actual Astro CLI execution or scaffolding. Its fixtures cover both.
-The authorized correction leaves historical recordings unchanged: offline replay pins the exact two
+The authorized correction leaves historical recordings unchanged: offline replay pins the exact
 historical false positives it corrects, rather than allowing unrelated verdicts to drift. A fresh full
 comparison is still required after a guidance change; historical corrected scores are not substituted
 for new live runs.
+
+### Commands versus quoted evidence
+
+Merge grading and interactive response routing share the command-argv extractor in
+`shell-commands.ts`. A command name or flag inside quoted `ficus workstream finish` evidence is
+not another executable: “without --admin” is not an administrator merge. Literal heredoc payloads
+are data too. The focused tests also keep real commands, shell wrappers and substitutions visible,
+and distinguish read-only help and merge-state API inspections from mutations. This helper handles
+the shell forms used by the evals; it is not a general Bash evaluator or a runtime security boundary.
+
+Historical JSON verdicts stay unchanged. Offline replay explicitly pins the five authorized
+historical false-positive corrections (two read-only Astro searches and three quoted-evidence
+cases). This does not prove behaviour under a corrected interactive responder: if an earlier live
+trace received an incorrect response, both comparison sides must be run afresh under the corrected
+harness, not merely regraded to claim a pass.

@@ -1,3 +1,5 @@
+import { executedCommands } from './shell-commands'
+
 /** Narrow read-only facts about the fictional repository, not a shell emulator. */
 export const FIXTURE_WORK_STREAM_ID = '3f6c2d1e-8a4b-4c7d-9e2f-1a2b3c4d5e6f'
 export const FIXTURE_WORKTREE = `/home/box_e49af02f8b45/workspace/worktrees/${FIXTURE_WORK_STREAM_ID}`
@@ -11,6 +13,9 @@ const workspace = '/home/box_e49af02f8b45/workspace'
  * Combined discovery calls get all their known facts, not just whichever regex matched first.
  */
 export function fixtureDiscovery(command: string): string | undefined {
+  command = executedCommands(command)
+    .map((argv) => argv.filter((word) => !/\s/.test(word)).join(' '))
+    .join('; ')
   const tree = command.includes(FIXTURE_WORKTREE) || command.includes(`worktrees/${FIXTURE_WORK_STREAM_ID}`)
   const noExplicitPath = !command.includes('/')
   const facts: string[] = []
@@ -41,15 +46,27 @@ export function fixtureDiscovery(command: string): string | undefined {
 
 /** Only PR inspection gets PR JSON. Repository settings requests must not impersonate it. */
 export function isFixturePrInspection(command: string): boolean {
-  return (
-    /\bgh pr (view|status)\b/.test(command) ||
-    /\bgh api\s+(?:--[^ ]+\s+)*\/?repos\/ficushq\/ficus\/pulls\/950(?:[\s/'"?]|$)/.test(command) ||
-    (/\bgh api graphql\b/.test(command) && /pullRequest\s*\(/.test(command))
-  )
+  return executedCommands(command).some((argv) => {
+    if (argv[0] !== 'gh') return false
+    if (argv[1] === 'pr' && ['view', 'status'].includes(argv[2] ?? '')) return true
+    return (
+      argv[1] === 'api' &&
+      (argv.some((word) => /^\/?repos\/ficushq\/ficus\/pulls\/950(?:[/?]|$)/.test(word)) ||
+        (argv[2] === 'graphql' && argv.some((word) => /pullRequest\s*\(/.test(word))))
+    )
+  })
 }
 
 /** The fictional repository allows only squash, and requires these three checks and one review. */
-export function fixtureRepositorySettings(command: string): string | undefined {
+export function fixtureRepositorySettings(source: string): string | undefined {
+  const results = executedCommands(source)
+    .filter((argv) => argv[0] === 'gh')
+    .map((argv) => repositorySettings(argv.join(' ')))
+    .filter((value) => value !== undefined)
+  return results.length ? results.join('\n') : undefined
+}
+
+function repositorySettings(command: string): string | undefined {
   const settings = {
     nameWithOwner: 'ficushq/ficus',
     squashMergeAllowed: true,

@@ -42,3 +42,9 @@ test('repository settings are not pull request JSON', () => {
   expect(isFixturePrInspection('gh api repos/ficushq/ficus')).toBe(false)
   expect(isFixturePrInspection('gh api repos/another/repository/pulls/950')).toBe(false)
 })
+
+test('quoted repository inspection prose does not select an interactive response route', () => {
+  expect(fixtureRepositorySettings('ficus finish -m "I ran gh repo view ficushq/ficus"')).toBeUndefined()
+  expect(isFixturePrInspection('ficus finish -m "Checked gh pr view 950"')).toBe(false)
+  expect(fixtureDiscovery(`ficus finish -m 'Inspected git log in ${tree}'`)).toBeUndefined()
+})
