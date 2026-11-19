@@ -109,6 +109,7 @@ vary between correct runs. They still count towards the totals.
 ANTHROPIC_API_KEY=… bun run agents:eval                  # every scenario, origin/main against the working tree
 bun run agents:eval slot-queued paused-wait --repeat 5   # some scenarios, more repeats
 bun run agents:eval --old 6c623021 --new origin/my-branch
+bun run agents:eval readable-handoff --tier fast         # an explicit tier instead of the default
 bun run agents:eval --list
 bun run agents:eval --prompt automerge-clean             # print the assembled prompt (offline)
 ```
@@ -127,12 +128,15 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
   the same harness for a fair comparison, and record the harness revision. Pre-voice refs remain
   voice-free. If an experiment deliberately normalizes voices across refs, label that normalization
   in its report; it is not the default behavior. Live database profile overrides are never loaded.
-- **Models:** each scenario runs on its agent type's default tier and on the cheaper `fast` tier.
-  Noah asked for both. `fast` is the cheapest tier built for agent turns with tools and the tier
-  the Assistant ships with; `lite` is for one-shot calls. A tier's model is the first entry in
-  its chain (`config/model-tiers/*.yaml`) whose provider has a key in the environment. Keys come
-  from the environment only. No database, stored account or provider setting is read. `--tier`
-  overrides the tiers.
+- **Models:** each scenario runs only on its agent type's own configured tier: `standard` for the
+  engineer and manager, `deep` (high effort) for the reviewer. The comparison measures the model
+  each role really uses, and the no-regression rule applies to these tiers. The `fast` tier is not
+  run by default because it serves light tasks, not full agent turns (Noah, 2026-11-19). A tier's
+  model is the first entry in its chain (`config/model-tiers/*.yaml`) whose provider has a key in
+  the environment. Keys come from the environment only. No database, stored account or provider
+  setting is read. `--tier deep,fast` replaces the default tier for every selected scenario, for
+  example to run `fast` deliberately; a bare, empty, repeated or unknown tier is an error.
+  Recordings made before this change also contain `fast` runs; they stay as recorded.
 - `--repeat` defaults to 3. Old and new runs interleave so provider drift affects both.
 - `--record` writes every run, with its trace and verdict, to `agent-evals/recordings/`.
   `--markdown <file>` writes the comparison table for a pull request description. Recordings are
