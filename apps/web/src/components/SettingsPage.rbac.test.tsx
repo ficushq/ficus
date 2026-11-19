@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
 import {
+  publicVoiceQueryKeys,
   channelLinkQueryKeys,
   githubIdentityQueryKeys,
   integrationQueryKeys,
@@ -143,6 +144,7 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
       })
     }
   }
+  queryClient.setQueryData(publicVoiceQueryKeys.list(), [])
   queryClient.setQueryData(queryKeys.auth.me(), {
     id: 'u1',
     email: 'admin@example.com',
@@ -172,6 +174,104 @@ async function renderSettings(
 }
 
 describe('SettingsPage RBAC tabs', () => {
+  test('Agents keeps its existing URL and tabs, with Voices immediately after it in navigation', async () => {
+    const html = await renderSettings('/settings?section=agent-types', ['agent-types:read', 'skills:read'])
+    expect(html).toMatch(/<h3[^>]*>Agents<\/h3>/)
+    expect(html).toContain('Model tiers')
+    expect(html).toContain('Shared prompts')
+    expect(html).not.toContain('public voices squads use')
+    expect(html).not.toContain('Loading voice profiles')
+    expect(html).not.toContain('Voice profiles set how agents write')
+    expect(html).not.toMatch(/role="radio"[^>]*>Voices/)
+    expect(html).toMatch(/aria-current="page"[^>]*>[\s\S]*?Agents/)
+    const work = html.slice(html.indexOf('>Work<'))
+    expect(work.indexOf('>Agents<')).toBeGreaterThan(-1)
+    expect(work.indexOf('>Voices<')).toBeGreaterThan(work.indexOf('>Agents<'))
+    expect(work.indexOf('>Skills<')).toBeGreaterThan(work.indexOf('>Voices<'))
+  })
+
+  test('Voices opens its own page with the existing read and update permissions', async () => {
+    for (const canWrite of [false, true]) {
+      const html = await renderSettings('/settings?section=voices', [
+        'agent-types:read',
+        ...(canWrite ? ['agent-types:update'] : []),
+      ])
+      expect(html).toMatch(/<h3[^>]*>Voices<\/h3>/)
+      expect(html).toContain('Voice profiles set how agents write public text')
+      expect(html).not.toContain('Model tiers')
+      expect(html.includes('Add profile')).toBe(canWrite)
+      expect(html).toMatch(/aria-current="page"[^>]*>[\s\S]*?Voices/)
+    }
+    const denied = await renderSettings('/settings?section=voices', ['agent-types:update'])
+    expect(denied).not.toContain('Voice profiles set how agents write')
+    expect(denied).not.toContain('>Voices<')
+  })
+
+  test('sidebar navigation switches between Agents and Voices and opens the voice editor', async () => {
+    const { SettingsPage } = await import('./SettingsPage')
+    const client = new QueryClient({
+      defaultOptions: { queries: { enabled: false, retry: false, staleTime: Infinity } },
+    })
+    seedSettingsQueries(client, ['agent-types:read', 'agent-types:update'])
+    client.setQueryData(publicVoiceQueryKeys.list(), [
+      {
+        id: 'team',
+        name: 'Team',
+        description: null,
+        base: 'Team voice.',
+        surfaces: {},
+        disabled: false,
+        hasTemplate: false,
+        yamlFieldOverrides: [],
+        bytes: 30,
+        assignedSquadCount: 2,
+        createdAt: '2026-11-18T00:00:00Z',
+        updatedAt: '2026-11-18T00:00:00Z',
+      },
+    ])
+    const dom = await acquireDomHarness({
+      url: 'http://localhost/settings',
+      beforeUnmount: async () => {
+        await client.cancelQueries()
+        client.clear()
+      },
+    })
+    try {
+      const { root, container } = dom.createRoot()
+      await dom.act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <MemoryRouter initialEntries={['/settings?section=agent-types']}>
+              <SettingsPage dependencies={dependencies} />
+            </MemoryRouter>
+          </QueryClientProvider>
+        )
+      )
+      const sidebar = container.querySelector('aside')!
+      const navButton = (label: string) => [...sidebar.querySelectorAll('button')].find((b) => b.textContent === label)!
+      const activeLabel = () => sidebar.querySelector('[aria-current="page"]')?.textContent
+      const tabs = () =>
+        [...container.querySelectorAll('[aria-label="Agents view"] [role="radio"]')].map((b) => b.textContent)
+      expect(activeLabel()).toBe('Agents')
+      expect(tabs()).toEqual(['Types', 'Model tiers', 'Shared prompts'])
+      await dom.act(async () => navButton('Voices').click())
+      expect(activeLabel()).toBe('Voices')
+      expect(tabs()).toEqual([])
+      expect(container.querySelector('[data-voice-profile="team"]')?.textContent).toContain('2 assigned squads')
+      const edit = [...container.querySelectorAll<HTMLButtonElement>('[data-voice-profile="team"] button')].find(
+        (b) => b.textContent === 'Edit'
+      )!
+      await dom.act(async () => edit.click())
+      expect(container.querySelector('textarea')?.value).toBe('Team voice.')
+      await dom.act(async () => navButton('Agents').click())
+      expect(activeLabel()).toBe('Agents')
+      expect(tabs()).toEqual(['Types', 'Model tiers', 'Shared prompts'])
+      expect(container.querySelector('[data-voice-profile]')).toBeNull()
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
   test('personal Mobile shows administrators the Ficus account status without connection controls', async () => {
     const html = await renderSettings('/settings?section=mobile', ['settings:read'], { human: true })
     expect(html).toContain('Pair a mobile device')

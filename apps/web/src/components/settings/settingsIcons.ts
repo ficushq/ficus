@@ -56,6 +56,7 @@ export const SETTINGS_SECTION_ICONS = {
   workflows: WorkflowIcon,
   work: WorkflowIcon,
   'agent-types': AgentIcon,
+  voices: ChatBubbleIcon,
   skills: PuzzleIcon,
   integrations: LinkIcon,
   users: ParticipantsIcon,

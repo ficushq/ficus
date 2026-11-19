@@ -27,6 +27,8 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
     'decision models classifier yes no jev typesafe clef cloudflare openai decisions firewall prompt injection shell fetches gh curl wget spend cost price',
   git: 'commit author name email github defaults override',
   skills: 'markdown import instructions tools extensions',
+  voices:
+    'public text writing profiles tone style commits pull requests review replies issue comments channel messages',
   'agent-types':
     'model tiers lite provider chain reasoning effort system prompt skills tools allow deny extensions agent templates reply suggestions quick replies chips',
   'squad-presets': 'templates manager instructions default agents schedules purpose context',

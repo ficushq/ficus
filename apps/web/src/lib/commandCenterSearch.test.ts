@@ -48,8 +48,8 @@ test('search surfaces consultant conversations and completed work, without indiv
   expect(results.every((r) => r.destination)).toBe(true)
 })
 test('squad scope excludes unrelated work and global pages while exact page names rank first globally', () => {
-  expect(commandCenterSearch('Agent Types', data)[0].label).toBe('Agent Types')
-  expect(commandCenterSearch('Agent Types', { ...data, squadId: 'tau' })).toEqual([])
+  expect(commandCenterSearch('Agents', data)[0].label).toBe('Agents')
+  expect(commandCenterSearch('Agents', { ...data, squadId: 'tau' })).toEqual([])
   expect(commandCenterSearch('OAuth', { ...data, squadId: 'another' })).toEqual([])
 })
 test('landing shows bounded recent consultant conversations and actionable work', () => {
@@ -161,4 +161,11 @@ test('recently completed work filters by squad and immutable completion date, ne
     'week',
     'month',
   ])
+})
+
+test('Voices searches navigate to the standalone settings page only when allowed', () => {
+  const allowed = { ...data, allowedSettings: new Set(['voices']) }
+  expect(commandCenterSearch('Voices', allowed)[0]?.path).toBe('/settings?section=voices')
+  expect(commandCenterSearch('public text', allowed)[0]?.label).toBe('Voices')
+  expect(commandCenterSearch('Voices', data)).toEqual([])
 })

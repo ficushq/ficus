@@ -250,7 +250,7 @@ Use the shared `ficus-field` role for text inputs, search inputs, selects, and t
 
 Buttons and inset controls use 8px; catalog cards (`ficus-panel` or equivalent) and modals (`ficus-overlay`) use 12px. Reserve pills for compact badges, chips, and avatars. Search fields are ordinary fields, not pills.
 
-Configuration catalogs—Workflows, Agent Types, Squad Presets, and Skills—use a shared search field, individually bordered surface cards separated by a consistent gap, and explicit Edit/View actions opening a modal. This is an intentional exception to flat settings sections: each card represents an independently managed resource. Long forms use wide dialogs; the workflow co-editor uses the viewport with an interactive canvas and side conversation.
+Configuration catalogs—Workflows, Agents, Squad Presets, and Skills—use a shared search field, individually bordered surface cards separated by a consistent gap, and explicit Edit/View actions opening a modal. This is an intentional exception to flat settings sections: each card represents an independently managed resource. Long forms use wide dialogs; the workflow co-editor uses the viewport with an interactive canvas and side conversation.
 
 ### Storage inspection
 

@@ -4,7 +4,7 @@ The Settings page (`/settings`) is the central place to configure user preferenc
 
 ## Layout
 
-Settings has searchable, permission-aware navigation split between Personal and Administration. Administration is grouped into Work, Access, Configuration, Infrastructure, and Operations. Account is the default personal page, followed by Appearance, App, Notifications, Paired Devices, Sessions, and Help & feedback. AI Providers and Integrations use searchable card directories. Workflows, Agent Types, Skills, and Integrations are under Work; AI Providers is under Infrastructure. Enabled integrations appear before disabled ones.
+Settings has searchable, permission-aware navigation split between Personal and Administration. Administration is grouped into Work, Access, Configuration, Infrastructure, and Operations. Account is the default personal page, followed by Appearance, App, Notifications, Paired Devices, Sessions, and Help & feedback. AI Providers and Integrations use searchable card directories. Workflows, Agents, Voices, Skills, and Integrations are under Work; AI Providers is under Infrastructure. Enabled integrations appear before disabled ones.
 
 Assistant & Memory is under Infrastructure. Agent Execution is inside Operations → System. The former Features page is retired: its links resolve to Assistant & Memory, or System when targeting the concurrency limit. Old Agent Execution links also resolve to System. The Channels link resolves to Integrations, where Discord, Slack, and Telegram now have their own cards.
 
@@ -103,7 +103,9 @@ The page requires `workflows:read`. Create/duplicate, edit/enable/disable, and d
 
 Squad settings select a default and alternative presets and record guidance on when to use them. **Manage workflows** links to the catalog when the user has global read access. **Solo** is selected for new squads in the create modal and onboarding. Squad settings require a default when saving; older squads with no saved default are prompted to choose one, with Solo preselected. Previously saved inline flows are preserved and previewable.
 
-### Agent Types
+### Agents
+
+The Agents page keeps the Types, Model tiers, and Shared prompts views. Its existing `/settings?section=agent-types` URL remains valid.
 
 CRUD management for agent type definitions. Each agent type defines a model, system prompt, skills, extensions, and tool allow/deny lists.
 
@@ -126,11 +128,13 @@ CRUD management for agent type definitions. Each agent type defines a model, sys
 - **Delete** — Only available for custom (non-template) agent types that aren't protected.
 - **+ Add New** — Form to create a new agent type with all fields.
 
-**Voices tab** — Named public voice profiles squads are assigned to: size, assigned squads, an editor with five surface rows and a byte meter, revert for the shipped `default`, disable, delete for admin-created profiles, and a Derive card that drafts a profile through a chosen squad's GitHub connection. `agent-types:read` sees it read-only; `agent-types:update` manages it. See [public voice](public-voice.md).
+### Voices
+
+Voices is a standalone page immediately below Agents in Work, at `/settings?section=voices`. It manages the named public voice profiles assigned to squads: size, assigned squads, an editor with five surface rows and a byte meter, revert for the shipped `default`, disable, delete for admin-created profiles, and a Derive card that drafts a profile through a chosen squad's GitHub connection. `agent-types:read` sees it read-only; `agent-types:update` manages it. See [public voice](public-voice.md).
 
 ### Squad Presets
 
-CRUD management for squad preset definitions. Similar pattern to Agent Types.
+CRUD management for squad preset definitions. Similar pattern to Agents.
 
 **Fields:**
 
@@ -139,7 +143,7 @@ CRUD management for squad preset definitions. Similar pattern to Agent Types.
 - Manager Instructions (textarea)
 - Schedule Templates (JSON array)
 
-**Actions:** Same as Agent Types — Compare to Template, Export YAML, Enable/Disable, Delete (non-template only), + Add New.
+**Actions:** Same as Agents — Compare to Template, Export YAML, Enable/Disable, Delete (non-template only), + Add New.
 
 ### Channel integrations
 
@@ -202,7 +206,7 @@ AI Providers shows a subscription account's plan under its status and links here
 
 ### Template Diff Dialog
 
-Available on Agent Types, Squad Presets, Channels, and Notification Rules. Opens a modal showing a line-level diff between the current admin-edited config and the original YAML template.
+Available on Agents, Squad Presets, Channels, and Notification Rules. Opens a modal showing a line-level diff between the current admin-edited config and the original YAML template.
 
 - Red lines = template (removed/changed from)
 - Green lines = current (added/changed to)
@@ -237,7 +241,8 @@ Workspace indexing settings (include/exclude patterns, reindex button, scan resu
 | Assistant & Memory                     | `apps/web/src/components/settings/AssistantMemorySection.tsx`     |
 | Settings navigation registry           | `apps/web/src/components/settings/settingsSections.ts`            |
 | Integrations section                   | `apps/web/src/components/settings/IntegrationsSection.tsx`        |
-| Agent Types section                    | `apps/web/src/components/settings/AgentTypesSection.tsx`          |
+| Agents section                         | `apps/web/src/components/settings/AgentTypesSection.tsx`          |
+| Voices section                         | `apps/web/src/components/settings/VoicesSection.tsx`              |
 | Squad Presets section                  | `apps/web/src/components/settings/SquadPresetsSection.tsx`        |
 | Channels section                       | `apps/web/src/components/settings/ChannelsSection.tsx`            |
 | Notification Rules section             | `apps/web/src/components/settings/NotificationsConfigSection.tsx` |

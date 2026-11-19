@@ -113,13 +113,24 @@ export async function apiDelete<T = void>(path: string, body?: unknown): Promise
   return response.json()
 }
 
+/**
+ * Stream the CLI's line-oriented SSE contract: each complete `data: ` line
+ * invokes the callback with the current event name (defaulting to `message`).
+ * LF and CRLF delimit lines; blank lines reset the event name. Unsupported
+ * fields and unterminated trailing lines are ignored. Data is not JSON-decoded
+ * or joined across lines, and completion/error events remain caller-owned.
+ * An optional signal aborts the request and rejects with the signal's reason.
+ */
 export async function apiPostSSE(
   path: string,
   body: unknown,
-  onEvent: (event: string, data: string) => void
+  onEvent: (event: string, data: string) => void,
+  { signal }: { signal?: AbortSignal } = {}
 ): Promise<void> {
+  signal?.throwIfAborted()
   const response = await fetch(`${config.apiUrl}${path}`, {
     method: 'POST',
+    signal,
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
@@ -135,22 +146,45 @@ export async function apiPostSSE(
 
   const decoder = new TextDecoder()
   let buffer = ''
+  let currentEvent = 'message'
+  let finished = false
+  let cancellation: Promise<void> | undefined
+  // Cancellation failures must not replace a callback, read, or abort error.
+  const cancel = (reason?: unknown) => (cancellation ??= reader.cancel(reason).catch(() => {}))
+  const onAbort = () => {
+    void cancel(signal?.reason)
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  try {
+    while (true) {
+      signal?.throwIfAborted()
+      const { done, value } = await reader.read()
+      signal?.throwIfAborted()
+      if (done) {
+        finished = true
+        break
+      }
 
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
 
-    let currentEvent = 'message'
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7)
-      } else if (line.startsWith('data: ')) {
-        onEvent(currentEvent, line.slice(6))
+      for (const rawLine of lines) {
+        signal?.throwIfAborted()
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+        if (line === '') {
+          currentEvent = 'message'
+        } else if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7)
+        } else if (line.startsWith('data: ')) {
+          onEvent(currentEvent, line.slice(6))
+        }
       }
     }
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+    if (!finished) await cancel(signal?.reason)
+    reader.releaseLock()
   }
 }

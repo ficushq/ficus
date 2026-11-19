@@ -1,3 +1,4 @@
+import { bashOutcomeUnknownForError } from '../sandbox/client/http-client'
 import { recoveryInvocationKey, recoveryOperationKey } from './operation'
 import { ToolFeedbackError } from '../../tools/tool-feedback'
 import { createHash } from 'node:crypto'
@@ -10,6 +11,7 @@ import {
   settleRecoveryOnModelTool,
   recoveryRetryDelay,
   RecoveryHeldError,
+  recoveryHoldGuidance,
   type RecoveryOrigin,
 } from './store'
 import { commandCanceledForRestartError, restartContextForCommandError } from '../sandbox/command-drain'
@@ -110,9 +112,9 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
             const record = await recordRecoveryFailure(source, {
               operationKey: operation,
               attempted: attemptedAction(tool.name),
-              invocationId: createHash('sha256')
-                .update(`${source.executionId}:${toolCallId}:${ordinal++}`)
-                .digest('hex'),
+              invocationId:
+                bashOutcomeUnknownForError(error)?.invocationId ??
+                createHash('sha256').update(`${source.executionId}:${toolCallId}:${ordinal++}`).digest('hex'),
               error,
             }).catch((accountingError) => {
               log.error('Unable to persist recovery outcome', accountingError)
@@ -169,10 +171,11 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
                 )
               }
             }
-            const guidance =
-              !record || record.state.state === 'recovering'
+            const guidance = !record
+              ? 'Recovery accounting is unavailable. No recovery reference is available in this result; a durable record may already exist. Do not repeat the operation until its affected state and native recovery state can be reconciled.'
+              : record.state.state === 'recovering'
                 ? 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
-                : 'The unexplained-failure budget is exhausted. A generated Continue/Stop recovery decision is pending; do not request technical evidence from a person.'
+                : `The unexplained-failure budget is exhausted. ${recoveryHoldGuidance(record)}`
             let message = error instanceof Error ? error.message : String(error)
             if (restart && !message.startsWith('This command was cancelled by a Ficus restart at '))
               message = `${commandCanceledForRestartError(restart).message} ${message}`

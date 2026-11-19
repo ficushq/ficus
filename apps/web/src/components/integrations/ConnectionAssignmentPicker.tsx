@@ -360,7 +360,7 @@ function ManagedVaultAssignment({
         Agents also need an agent type that allows BigBrain agent tools and the{' '}
         <span className="font-mono">bigbrain_shared_*</span> tool names (
         <Link to="/settings?section=agent-types" className="text-accent-light hover:underline">
-          Agent types
+          Agents
         </Link>
         ).
       </p>

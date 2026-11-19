@@ -553,7 +553,7 @@ export function createHttpEditOperations(
 
 /**
  * What an agent is told when a command's stream ends without an exit code. The agent acts on this
- * text, so it states what happened and what to do next: inspect the current state and re-run. It
+ * text, so it states what happened and what to do next: inspect state before a safe retry. It
  * must never read as a missing receipt or proof someone could supply. None exists: Core has
  * already asked the box to stop the command, and the only answer is whether that was confirmed.
  */
@@ -565,8 +565,8 @@ export function lostCommandOutcomeError(outcome: BashOutcomeUnknownError, cleanu
       'anything that would conflict with it. There is no further record or receipt to request; decide from ' +
       'the current state of the box.'
     : `${lost} Ficus stopped it and confirmed none of its processes are still running. Any output shown may be ` +
-      'partial and its changes may be partly applied: check the state it affects, then re-run it if needed. ' +
-      'There is nothing else to verify or request.'
+      'partial and its changes may be partly applied: check the state it affects, then re-run only what is safe to repeat. ' +
+      'Process termination does not prove that an external change did not happen; reconcile that outcome before repeating it.'
   return new Error(message, { cause: outcome })
 }
 

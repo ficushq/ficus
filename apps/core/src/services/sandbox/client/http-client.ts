@@ -172,6 +172,17 @@ export class BashOutcomeUnknownError extends Error {
   }
 }
 
+/** Find trusted command-loss provenance through tool/outage wrappers, never error prose. */
+export function bashOutcomeUnknownForError(error: unknown): BashOutcomeUnknownError | undefined {
+  const seen = new Set<Error>()
+  while (error instanceof Error && !seen.has(error)) {
+    if (error instanceof BashOutcomeUnknownError) return error
+    seen.add(error)
+    error = error.cause
+  }
+  return undefined
+}
+
 // ---------------------------------------------------------------------------
 // Request/Response types
 // ---------------------------------------------------------------------------
