@@ -134,6 +134,12 @@ export async function isCurrentWaitAttempt(store: DbHandle, workStreamId: string
  * the stream (merging, finishing), and asking a person about delivery is part of that. Treating it
  * as superseded dropped the accepted answer and made every retry fail the same way. A rework or a
  * new flow version replaces the attempt and ends this, like any superseded attempt.
+ *
+ * Finishing or canceling the stream ends it too. The flow run keeps its completion-ready state
+ * after the stream is done, so the stream status, not the flow state, decides whether delivery is
+ * still owed. Otherwise an answer to a finished stream stays current forever: delivery would wake
+ * the agent for work that no longer exists, and the stall detector counts the unread answer as
+ * executable demand.
  */
 export async function isCurrentQuestionAttempt(
   store: DbHandle,
@@ -142,6 +148,11 @@ export async function isCurrentQuestionAttempt(
   agentId?: string
 ) {
   if (await isCurrentWaitAttempt(store, workStreamId, attemptId, agentId)) return true
+  const [stream] = await store
+    .select({ status: workStreams.status })
+    .from(workStreams)
+    .where(eq(workStreams.id, workStreamId))
+  if (!stream || stream.status === 'done' || stream.status === 'canceled') return false
   const [run] = await store.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
   const delivery = run?.activated ? completionDeliveryOwner(run) : undefined
   return delivery?.attemptId === attemptId && (!agentId || delivery.agentId === agentId)

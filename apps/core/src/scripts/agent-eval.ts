@@ -3,12 +3,13 @@
  * agent guidance and compare them with the no-regression rule.
  *
  *   bun run agents:eval [scenario…] [--old <ref>] [--new <ref|working>] [--repeat N]
- *                       [--tier standard,fast] [--record] [--markdown file] [--concurrency N]
+ *                       [--tier deep,fast] [--record] [--markdown file] [--concurrency N]
  *   bun run agents:eval --list
  *   bun run agents:eval --prompt <scenario> [--new <ref|working>]   print the assembled system prompt
  *
  * Defaults: --old origin/main, --new working (the working tree), --repeat 3, and for each scenario
- * its agent type's default tier plus the cheaper `fast` tier. Model keys come from the environment
+ * only its agent type's own configured tier (standard or deep); --tier replaces that tier for every
+ * scenario, for example to run `fast` deliberately. Model keys come from the environment
  * only (for example ANTHROPIC_API_KEY); no database, stored account or provider settings are read.
  * Exits 1 when the new text regresses. See docs/wiki/agent-behaviour-evals.md.
  */
@@ -41,7 +42,7 @@ const { HARNESS_REVISION } = await import('../services/agent-evals/define')
 const { SCENARIOS, findScenario } = await import('../services/agent-evals/scenarios')
 const { resolveVariant } = await import('../services/agent-evals/variant')
 const { assembleScenarioPrompt } = await import('../services/agent-evals/prompt')
-const { compareRuns, piTurn, renderComparison, runScenario, tiersFor, usableModel } =
+const { compareRuns, parseTierOption, piTurn, renderComparison, runScenario, selectScenarioTiers, usableModel } =
   await import('../services/agent-evals/run')
 type RecordedRun = import('../services/agent-evals/run').RecordedRun
 
@@ -64,21 +65,19 @@ async function main(): Promise<number> {
   const scenarios = names.length
     ? names.map((name) => findScenario(name) ?? fail(`Unknown scenario ${name}; see --list`))
     : SCENARIOS
+  const selection = selectScenarioTiers(newVariant.root, scenarios, parseTierOption(newVariant.root, flags.get('tier')))
   const oldVariant = resolveVariant(flag('old') ?? 'origin/main')
   const repeat = Number(flag('repeat') ?? 3)
   const turn = await piTurn()
 
   // One job per scenario, tier, repeat and variant; old and new interleave so drift affects both.
   const jobs: (() => Promise<RecordedRun>)[] = []
-  for (const scenario of scenarios) {
-    const tiers = flag('tier')?.split(',') ?? tiersFor(newVariant.root, scenario.agentType)
-    for (const tier of tiers) {
-      const model = await usableModel(newVariant.root, tier)
-      if (!model) throw new Error(`No API key in the environment for any model in the ${tier} tier`)
-      for (let index = 1; index <= repeat; index++)
-        for (const variant of [oldVariant, newVariant])
-          jobs.push(() => runScenario({ scenario, variant, model, turn, repeat: index }))
-    }
+  for (const { scenario, tier } of selection) {
+    const model = await usableModel(newVariant.root, tier)
+    if (!model) throw new Error(`No API key in the environment for any model in the ${tier} tier`)
+    for (let index = 1; index <= repeat; index++)
+      for (const variant of [oldVariant, newVariant])
+        jobs.push(() => runScenario({ scenario, variant, model, turn, repeat: index }))
   }
 
   console.error(`Running ${jobs.length} agent turns (old: ${oldVariant.label}, new: ${newVariant.label})`)

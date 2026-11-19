@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'js-yaml'
 import type { Message, Tool } from '@earendil-works/pi-ai'
@@ -19,9 +19,6 @@ import { variantContext, type PromptVariant } from './variant'
 
 /** Longest tool result kept in a recording; the agent itself receives the full text. */
 const RECORDED_RESULT_LIMIT = 2_000
-
-/** The cheaper tier compared with each type's default (see docs/wiki/agent-behaviour-evals.md). */
-export const CHEAPER_TIER = 'fast'
 
 export interface ModelChoice {
   /** `provider:model[:level]` from config/model-tiers. */
@@ -61,10 +58,43 @@ export function tierChain(root: string, tier: string): string[] {
   return file.chain.split(',').map((spec) => spec.trim())
 }
 
-/** The type's default tier and the cheaper one, as Noah asked; one entry when they coincide. */
-export function tiersFor(root: string, agentType: string): string[] {
-  const own = readAgentType(root, agentType).tier || 'standard'
-  return own === CHEAPER_TIER ? [own] : [own, CHEAPER_TIER]
+/**
+ * The tier a scenario runs on by default: its agent type's own configured tier (standard for the
+ * engineer and manager, deep for the reviewer). No `fast` cohort is added: that tier serves light
+ * tasks, not full agent turns. See docs/wiki/agent-behaviour-evals.md.
+ */
+export function defaultTierFor(root: string, agentType: string): string {
+  return readAgentType(root, agentType).tier || 'standard'
+}
+
+/**
+ * Parses `--tier`: a comma-separated list of tiers in config/model-tiers that replaces every
+ * scenario's default tier. Undefined when the option is absent; a bare, empty, repeated or unknown
+ * tier is an error rather than a silent fallback to the defaults.
+ */
+export function parseTierOption(root: string, value: string | true | undefined): string[] | undefined {
+  if (value === undefined) return undefined
+  const usage = '--tier needs a comma-separated list of tiers, for example --tier standard,fast'
+  if (value === true) throw new Error(usage)
+  const tiers = value.split(',').map((tier) => tier.trim())
+  if (tiers.some((tier) => !tier)) throw new Error(usage)
+  const repeated = tiers.find((tier, index) => tiers.indexOf(tier) !== index)
+  if (repeated) throw new Error(`--tier lists ${repeated} more than once`)
+  for (const tier of tiers)
+    if (!/^[a-z0-9-]+$/.test(tier) || !existsSync(join(root, 'config/model-tiers', `${tier}.yaml`)))
+      throw new Error(`Unknown tier ${tier}; tiers are the files in config/model-tiers`)
+  return tiers
+}
+
+/** One entry per scenario and tier: the explicit `--tier` list, or each scenario's own default tier. */
+export function selectScenarioTiers<S extends Pick<AgentScenario, 'agentType'>>(
+  root: string,
+  scenarios: readonly S[],
+  tierOverride?: readonly string[]
+): { scenario: S; tier: string }[] {
+  return scenarios.flatMap((scenario) =>
+    (tierOverride ?? [defaultTierFor(root, scenario.agentType)]).map((tier) => ({ scenario, tier }))
+  )
 }
 
 export async function runScenario(input: {

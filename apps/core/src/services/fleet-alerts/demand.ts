@@ -211,6 +211,18 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         AND NOT EXISTS (SELECT 1 FROM progressing_executions WHERE agent_id = agent.id)
         -- Observer delivery is informational and never starts an execution.
         AND message.metadata->>'source' IS DISTINCT FROM 'work-stream-observer'
+        -- Only the answer-delivery protocol delivers an answer row; ordinary inbox
+        -- delivery skips it. The row is executable only while that protocol still
+        -- owes delivery. A terminal failure (a superseded attempt or exhausted
+        -- retries) is never picked up again; its own failure alert and the Action
+        -- Center retry cover it, so it is not a stalled worker.
+        AND (message.metadata->>'source' IS DISTINCT FROM 'agent-question-answer' OR EXISTS (
+          SELECT 1 FROM agent_questions AS question
+          WHERE question.id = (CASE WHEN message.metadata->>'questionId' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                                    THEN (message.metadata->>'questionId')::uuid END)
+            AND question.agent_id = agent.id
+            AND question.status = 'answered'
+            AND question.answer_delivery_status IN ('pending', 'delivering')))
     ), demand AS (
       SELECT agent.squad_id, execution.started_at AS demanded_at, agent.id AS agent_id,
         GREATEST(execution.started_at, (SELECT ready_at FROM slot_ready_agents WHERE id = agent.id),
