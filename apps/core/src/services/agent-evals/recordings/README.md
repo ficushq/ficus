@@ -22,3 +22,10 @@ harness versions into one pass/fail claim.
   new-work-request is graded 3/3 to 2/3, though the failed trace only searches for
   astro.config and routes the request (the unchanged grader's bare astro regex marks the
   search as starting a migration). Delivery scenarios pass; that is not a full pass.
+
+- `2026-11-19-16-09-54.json`, `2026-11-19-16-13-02.json` and `2026-11-19-16-16-41.json`:
+  harness/new ref `fb7b125a`, old ref `8f3e9d7a`, both sides rerun across all scenarios.
+  The authorized owner-decision rule and Astro grader repairs pass their scenarios, but
+  the full comparison still fails on Opus automerge-clean and automerge-blocked and Sonnet
+  slot-queued. Repository-settings requests, worktree discovery and rework transitions have
+  incomplete stub responses; these traces remain failed evidence, not a passing result.
