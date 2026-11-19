@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { IntegrationPluginV1 } from '../plugin'
 import { linearOutputAdapter } from './outputs'
+import { LINEAR_CLI_PACKAGES, LINEAR_CLI_RELEASE, LINEAR_GRAPHQL_ENDPOINT, linearCliSetupStep } from './cli'
 
 const configurationSchema = z.strictObject({ version: z.literal(1) })
 export async function linearQuery<T>(
@@ -9,7 +10,7 @@ export async function linearQuery<T>(
   variables?: Record<string, unknown>,
   signal?: AbortSignal
 ): Promise<T> {
-  const response = await fetch('https://api.linear.app/graphql', {
+  const response = await fetch(LINEAR_GRAPHQL_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: credential },
     body: JSON.stringify({ query, variables }),
@@ -28,11 +29,12 @@ export const linearPlugin: IntegrationPluginV1<{ version: 1 }, string> = {
   adapterVersion: 1,
   presentation: {
     label: 'Linear',
-    description: 'Connect issue tracking, route assignments to squads, and search Linear issues.',
+    description:
+      'Connect issue tracking, route assignments to squads, search Linear issues, and let agents read, create, update and comment on issues with the Linear CLI.',
     icon: 'linear',
     connectionMode: 'credential',
     assignable: true,
-    requiredCapabilities: ['issues:read'],
+    requiredCapabilities: ['issues:read', 'issues:write', 'comments:write'],
   },
   connection: {
     parseConfiguration: (value) => configurationSchema.parse(value),
@@ -48,6 +50,8 @@ export const linearPlugin: IntegrationPluginV1<{ version: 1 }, string> = {
       outputs: linearOutputAdapter,
       async validate({ credential, signal }) {
         try {
+          // Linear does not report a personal key's permissions, so validation
+          // records only the read access it proves. Writes fail at use time.
           const data = await linearQuery<{ viewer: { id: string } }>(credential, '{ viewer { id } }', undefined, signal)
           return data.viewer?.id ? { ok: true, grantedScopes: ['issues:read'] } : { ok: false, code: 'invalid_auth' }
         } catch (error) {
@@ -58,16 +62,26 @@ export const linearPlugin: IntegrationPluginV1<{ version: 1 }, string> = {
     },
   },
   execution: {
-    // Linear has no Ficus-provisioned CLI. Scripts can use unrestricted exec.
-    binaries: [],
-    environment: { LINEAR_API_KEY: ({ credential }) => credential },
+    binaries: ['linear'],
+    environment: {
+      // The CLI sends this value verbatim as the Authorization header, so a
+      // personal API key works as is and a later OAuth connection can supply
+      // `Bearer <token>` through the same variable.
+      LINEAR_API_KEY: ({ credential }) => credential,
+      // A repository .env could otherwise supply another key or redirect the
+      // endpoint, and with it the injected key, to another host.
+      LINEAR_IGNORE_ENV_FILE: () => '1',
+      LINEAR_GRAPHQL_ENDPOINT: () => LINEAR_GRAPHQL_ENDPOINT,
+    },
   },
   sandbox: {
-    packages: [],
-    setupSteps: [],
-    initHooks: [],
-    readiness: [],
-    skills: [],
+    packages: [...LINEAR_CLI_PACKAGES],
+    setupSteps: [linearCliSetupStep()],
+    initHooks: ['export PATH="$DEVBOX_PROJECT_ROOT/npm/bin:$PATH"'],
+    readiness: [
+      { id: 'linear-cli', command: 'linear --version', expectedSubstring: `linear ${LINEAR_CLI_RELEASE.version}` },
+    ],
+    skills: ['linear'],
     extensions: [],
     protectedBindings: [],
   },
