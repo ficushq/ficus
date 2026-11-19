@@ -201,6 +201,53 @@ describe('LocalUpdateManager', () => {
     }
   })
 
+  // The offline updater plans from this record (built-commit.ts): an in-app run that pulls and
+  // then fails must leave it on the commit the builds still match.
+  it('records the commit an update built, and leaves it alone when the builds fail', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-update-built-'))
+    const before = 'a'.repeat(40)
+    const after = 'b'.repeat(40)
+    const record = () => JSON.parse(readFileSync(join(dir, 'built-commit.json'), 'utf8')).sha as string
+    const gitResponses = {
+      'status --porcelain': '',
+      'rev-parse HEAD': before,
+      'rev-parse origin/main': after,
+      [`diff --name-only ${before} ${after}`]: 'apps/web/x.ts',
+    }
+    try {
+      const statusPath = join(dir, 'status.json')
+      const failing = manager({
+        repoRoot: dir,
+        statusPath,
+        gitResponses,
+        commandRunner: {
+          runAll: async () => {
+            throw new Error('build failed')
+          },
+        },
+      })
+      await expect(failing.updater.apply({ manual: true })).rejects.toThrow('build failed')
+      expect(record()).toBe(before)
+
+      const working = manager({ repoRoot: dir, statusPath, gitResponses })
+      expect((await working.updater.apply({ manual: true })).status).toBe('succeeded')
+      expect(record()).toBe(after)
+
+      // A check only reads the remote: it builds nothing and records nothing.
+      const checking = manager({
+        repoRoot: dir,
+        statusPath,
+        gitResponses: { 'rev-parse HEAD': before },
+        ghResponses: { 'api repos/acme/ficus/commits/main --jq .sha': 'c'.repeat(40) },
+        settings: { githubOwner: 'acme', githubRepo: 'ficus' },
+      })
+      await checking.updater.check()
+      expect(record()).toBe(after)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('marks an interrupted reload:core run succeeded after API restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ficus-update-status-'))
     try {

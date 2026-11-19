@@ -9,11 +9,13 @@
  * with "Cannot find module …", leaving the checkout moved, unbuilt, and the old
  * processes running.
  *
- * So this file imports only Bun/Node built-ins and the import-free
- * `dependency-install.ts`, and:
+ * So this file imports only Bun/Node built-ins, the import-free
+ * `dependency-install.ts` and `built-commit.ts` (Node built-ins only), and:
  *   1. runs the updater's install command when the diff changed the dependencies
  *      (the same rule the update plan uses) or a workspace package of this checkout
- *      is not installed;
+ *      is not installed. The diff starts at the last commit this checkout was built
+ *      at (built-commit.ts), so an install an earlier failed run never finished is
+ *      not skipped;
  *   2. then runs `update-offline.ts` in a fresh process with the original args,
  *      telling it the install is done so the plan does not run it twice.
  */
@@ -25,6 +27,7 @@ import {
   DEPENDENCY_INSTALL_COMMAND,
   touchesDependencies,
 } from '../services/updates/dependency-install'
+import { readBuiltCommit, seedBuiltCommit, updateStateDir } from '../services/updates/built-commit'
 
 const SHA = /^[0-9a-f]{40}$/
 export const USAGE = 'usage: bun run update:offline -- --from <40-hex sha before the pull>'
@@ -113,7 +116,15 @@ export async function bootstrapOfflineUpdate(options: BootstrapOptions): Promise
     return 2
   }
 
-  const diff = await run(['git', 'diff', '--name-only', `${fromSha}..HEAD`], { cwd: root, inherit: false })
+  // Plan from the last commit this checkout was built at, not only from this pull:
+  // after a run that failed, the pull is already done and its own diff is empty.
+  const stateDir = updateStateDir(root)
+  seedBuiltCommit(stateDir, fromSha)
+  const base = readBuiltCommit(stateDir) ?? fromSha
+  let diff = await run(['git', 'diff', '--name-only', `${base}..HEAD`], { cwd: root, inherit: false })
+  // A recorded commit this repository no longer has (a re-clone, a pruned history).
+  if (diff.code !== 0 && base !== fromSha)
+    diff = await run(['git', 'diff', '--name-only', `${fromSha}..HEAD`], { cwd: root, inherit: false })
   const changed =
     diff.code === 0
       ? diff.stdout
