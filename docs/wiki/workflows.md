@@ -626,7 +626,7 @@ its next retry without manual action.
 `worktreeCleanup` exposes status, actionable reason, retry timing and operation
 ID, without private removal inputs. Exceptional blockers are deduplicated owner
 notifications, not approval requests for every cleanup. A durable operation
-marker and terminal receipt make retries safe after restarts or lost responses.
+marker and terminal receipt make non-destructive reconciliation safe after restarts or lost responses.
 Unknown/partial removal keeps the same-worktree reuse fence: a missing directory
 alone is **not** proof that a late command cannot arrive. Never reset that fence
 or delete its marker to force reuse. Reopening after successful removal is
@@ -659,7 +659,7 @@ For a historical duplicate-folder mismatch:
    PATCH with `autoCleanupWorktree: false`. The lifecycle transaction invalidates
    stale cleanup claims, including after delivery. If removal already started, it
    returns a conflict instead; never clear that operation's markers manually.
-3. Verify the response and inspect again. `retained` means automation is disabled,
+3. Verify the response and inspect again. `retained` means automatic removal is stopped,
    not that the folders are disposable. Keep automation disabled during manual work.
 4. An authorized operator may remove only exact unused paths after fresh checks for
    live users, registered sharing, uncommitted changes, and unpushed
@@ -669,3 +669,68 @@ No ownership or delivery records need to be rewritten to stop automatic cleanup.
 Retention itself deletes nothing. It cannot undo successful reclamation or make
 an uncertain removal safe. Do not re-enable automatic cleanup for a divergent or
 manually removed tree: its original identity and delivered-head checks still apply.
+
+### Reconciling fenced removal operations
+
+Only a fresh transactional claim dispatches `git worktree remove`. Recovery of a
+persisted operation never redelivers deletion. The original ownership, operation
+ID, input digest and terminal receipt are not rewritten by reconciliation.
+
+Automatic recovery uses capped backoff and stops at five total claim/recovery
+observations with status `error` and the durable reason prefix `Automatic reconciliation stopped:`. The historical `attempts` counter also includes
+preflight deferrals, failed runtime calls and receipt replays: it is **not** a
+count of destructive commands. An older operation already above the limit gets
+one non-destructive observation before blocking. This error state stops automatic retries,
+not the ownership, execution, dependent or attachment fences. Its retry timestamp
+is historical scheduling information, not a scheduled retry. An incomplete legacy
+`removing` row without an operation ID remains `removing` with the same stop
+prefix; missing identity must not release its fence. Owners receive a
+deduplicated notification with the reason and supported commands.
+
+An authorized operator can perform another observation with
+`ficus workstream cleanup reconcile <id>` (POST
+`/api/workstreams/:id/worktree-cleanup/reconcile`, requiring squad
+`workstreams:update`). This does not start an unclaimed job or reset a retry
+budget. It may write durable cancellation or reconciliation proof; it is not a
+read-only inspection and never dispatches deletion.
+
+| Runtime evidence                                                                                                                     | Reconciliation result                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No operation marker exists                                                                                                           | Atomically acquire the **same** exclusive marker and seal a terminal cancellation receipt. A delayed removal request can only replay that receipt. Retain the directory; do not delete it. The cancellation uses the legacy `failed` receipt status so even an older dispatcher keeps its fence; separate reconciliation proof records retention. |
+| A success or retention receipt exists with the exact operation ID and input digest                                                   | Recover that terminal outcome.                                                                                                                                                                                                                                                                                                                    |
+| A failed terminal receipt exists; the original directory identity and linked Git registration are intact                             | Write a separate immutable `reconciliation.json` proving retention. Do not modify the failed receipt or delete dirty, unpublished or attached work.                                                                                                                                                                                               |
+| A failed terminal receipt exists; both the owned directory and private Git directory are absent and no worktree registration remains | Record separate terminal removal proof. Do not infer success from directory absence alone.                                                                                                                                                                                                                                                        |
+| An exclusive marker exists without a terminal receipt                                                                                | Remain uncertain, whether the directory is present, missing or replaced. The runner may still be running; age and a missing process reply do not prove it stopped. Never take over that marker.                                                                                                                                                   |
+| Runtime unavailable, mismatched identity/bindings, residual directories, or replacement directory                                    | Keep the fence; after the automatic limit, remain fenced with automatic reconciliation stopped.                                                                                                                                                                                                                                                   |
+
+`retained` is a settled recovery status, distinct from `deferred`. It stops
+future automatic removal while preserving the operation ID and original removal
+input. Re-enabling the stream's automatic-cleanup preference cannot re-arm that
+settled operation. A retained resource may be inspected and explicitly opted out
+with `cleanup retain`; its folders are not thereby disposable. Source branches,
+archive refs and delivery history remain untouched by recovery.
+
+Safe operator sequence:
+
+1. Use `cleanup inspect` to read original ownership, current bindings and the
+   operation ID. Do not change bindings to match a different checkout.
+2. If there is an unverified operation, obtain authorization for reconciliation
+   of that exact resource, then use `cleanup reconcile` and inspect the result.
+   Repeated commands are safe but cannot manufacture missing proof.
+3. For stopped-error or `in-flight` results, exclude the resource from all manual
+   cleanup, retention overrides and path reuse. Preserve markers, receipts,
+   branches, security archives and recovery bundles. Escalate the missing proof;
+   do not clear database fields, force removal, or expire the operation by age.
+4. For settled retention, disable the automatic-cleanup preference and use the
+   fresh live-use, dependency, attachment, dirty/unpushed-work and exact-path
+   checks above before any separately authorized manual cleanup.
+
+Compatibility symlinks for renamed repositories still fail closed. The existing
+ownership receipt records the worktree inode, but not an inode for the primary
+repository or common Git directory. Resolving an old repository path through a
+new symlink is not independent proof that the same original repository was
+renamed. Recovery does not rewrite the receipt or trust a different tree merely
+because its path or copied operation records look familiar. A missing legacy
+terminal receipt, partial deletion, or an unproven repository rename remains a
+blocker requiring separately authorized investigation. Merging this source change
+does not deploy it or authorize reconciliation/deletion of any existing resource.

@@ -5,6 +5,7 @@ import {
   unobserveWorkStream,
   ObservationError,
 } from '../services/work-streams/observers'
+import { reconcileWorktreeCleanupOperation } from '../services/work-streams/worktree-cleanup-reconciler'
 import { inspectWorktreeCleanup } from '../services/work-streams/worktree-cleanup-inspection'
 import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-cleanup-store'
 import { HTTPException } from 'hono/http-exception'
@@ -1024,6 +1025,16 @@ export const workStreamsRouter = new Hono()
       throw error
     }
   })
+  .post(
+    '/:id/worktree-cleanup/reconcile',
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      const id = await routeWorkStreamId(c)
+      await reconcileWorktreeCleanupOperation(id)
+      const inspection = await inspectWorktreeCleanup(id)
+      return inspection ? c.json(inspection) : c.json({ error: 'Work stream not found' }, 404)
+    }
+  )
   .get(
     '/:id/worktree-cleanup',
     requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),

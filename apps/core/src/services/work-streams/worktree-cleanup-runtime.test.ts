@@ -831,3 +831,181 @@ test('archives under a stable hashed scope when the worktree name is not a valid
   expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
   expect(await archiveRefs()).toEqual([`${ref} ${abandoned}`])
 })
+
+const recoveryInput = () => ({ ownership, head, operationId: crypto.randomUUID() })
+async function failedReceipt(input: ReturnType<typeof recoveryInput>) {
+  const serialized = JSON.stringify({
+    head: input.head,
+    operationId: input.operationId,
+    ownership: Object.fromEntries(Object.entries(input.ownership).sort(([a], [b]) => a.localeCompare(b))),
+  })
+  const active = join(ownership.commonDirectory, 'tau-worktree-cleanup', input.operationId)
+  await mkdir(active, { recursive: true })
+  const receipt = JSON.stringify({
+    status: 'failed',
+    reason: 'Synthetic terminal failure',
+    operationId: input.operationId,
+    digest: createHash('sha256').update(serialized).digest('hex'),
+  })
+  await writeFile(join(active, 'receipt.json'), receipt)
+  return { active, receipt }
+}
+
+test('reconciliation seals an undispatched claim without removal, including a delayed remove request', async () => {
+  const input = recoveryInput()
+  const result = await runtime.reconcileWorktreeRemoval(exec, input)
+  expect(result.status).toBe('retained')
+  expect(await runtime.removeOwnedWorktree(exec, input)).toMatchObject({ status: 'failed', reconciled: true })
+  expect(await runtime.reconcileWorktreeRemoval(exec, input)).toEqual(result)
+  expect(await readFile(join(ownership.worktree, 'README'), 'utf8')).toBe('recoverable\n')
+})
+
+for (const state of ['present', 'missing', 'replaced'] as const) {
+  test(`an active operation without receipt stays uncertain when its tree is ${state}`, async () => {
+    const input = recoveryInput()
+    await mkdir(join(ownership.commonDirectory, 'tau-worktree-cleanup', input.operationId), { recursive: true })
+    if (state !== 'present') await rename(ownership.worktree, ownership.worktree + '-original')
+    if (state === 'replaced') await mkdir(ownership.worktree)
+    const result = await runtime.reconcileWorktreeRemoval(exec, input)
+    expect(result.status).toBe('uncertain')
+    expect(result.reason).toContain(`Observed owned directory: ${state}.`)
+    expect(result).toMatchObject({ status: 'uncertain', tree: state })
+    await expect(runtime.readWorktreeRemovalReceipt(exec, input)).rejects.toThrow()
+    expect(await runtime.reconcileWorktreeRemoval(exec, input)).toEqual(result)
+  })
+}
+
+test('a terminal failed removal with the original registered tree converges to retention without changing its receipt', async () => {
+  const input = recoveryInput()
+  const { active, receipt } = await failedReceipt(input)
+  // Retention must preserve dirty and unpublished work, not try removing it again.
+  await writeFile(join(ownership.worktree, 'README'), 'dirty evidence')
+  const result = await runtime.reconcileWorktreeRemoval(exec, input)
+  expect(result.status).toBe('retained')
+  expect(await readFile(join(active, 'receipt.json'), 'utf8')).toBe(receipt)
+  expect(await runtime.readWorktreeRemovalReceipt(exec, input)).toMatchObject({ status: 'failed' })
+  expect(await runtime.reconcileWorktreeRemoval(exec, input)).toEqual(result)
+  expect(await runtime.removeOwnedWorktree(exec, input)).toMatchObject({ status: 'failed' })
+  expect(await readFile(join(ownership.worktree, 'README'), 'utf8')).toBe('dirty evidence')
+})
+
+for (const state of ['missing', 'partial', 'replaced'] as const) {
+  test(`terminal failed removal reconciles only proven absence, not a ${state} residual or replacement`, async () => {
+    const input = recoveryInput()
+    const { active, receipt } = await failedReceipt(input)
+    if (state === 'missing') await exec(['git', '-C', repo, 'worktree', 'remove', '--', ownership.worktree])
+    else await rename(ownership.worktree, ownership.worktree + '-original')
+    if (state === 'replaced') await mkdir(ownership.worktree)
+    const result = await runtime.reconcileWorktreeRemoval(exec, input)
+    expect(result.status).toBe(state === 'missing' ? 'succeeded' : 'uncertain')
+    expect(await readFile(join(active, 'receipt.json'), 'utf8')).toBe(receipt)
+  })
+}
+
+test('reconciliation refuses repository compatibility symlinks without rewriting original ownership', async () => {
+  const input = recoveryInput()
+  await failedReceipt(input)
+  await rename(repo, repo + '-renamed')
+  await symlink(repo + '-renamed', repo)
+  await expect(runtime.reconcileWorktreeRemoval(exec, input)).rejects.toThrow(/Canonical path changed/)
+  expect(await readFile(join(ownership.worktree, 'README'), 'utf8')).toBe('recoverable\n')
+})
+
+for (const phase of ['before-removal', 'after-removal'] as const) {
+  test(`a runner crash ${phase} never manufactures a terminal receipt`, async () => {
+    const input = recoveryInput()
+    const crash = (args: string[]) => {
+      const modified = [...args]
+      modified[2] = modified[2]!.replace(
+        phase === 'before-removal'
+          ? 'let removalStarted = false;'
+          : 'const result = { ...outcome, operationId, digest };',
+        'process.exit(88);'
+      )
+      return exec(modified)
+    }
+    await expect(runtime.removeOwnedWorktree(crash, input)).rejects.toThrow()
+    expect(await runtime.reconcileWorktreeRemoval(exec, input)).toMatchObject({
+      status: 'uncertain',
+      tree: phase === 'before-removal' ? 'present' : 'missing',
+    })
+    await expect(runtime.readWorktreeRemovalReceipt(exec, input)).rejects.toThrow()
+  })
+}
+
+test('reconciliation leaves a genuinely running operation alone until it publishes terminal proof', async () => {
+  const input = recoveryInput()
+  const barrier = join(root, 'runner-barrier')
+  await exec(['mkfifo', barrier])
+  let child: ReturnType<typeof Bun.spawn> | undefined
+  let signalReady!: () => void
+  let failReady!: (error: unknown) => void
+  const ready = new Promise<void>((resolve, reject) => {
+    signalReady = resolve
+    failReady = reject
+  })
+  const running = runtime.removeOwnedWorktree(async (args) => {
+    const modified = [...args]
+    modified[2] = modified[2]!.replace(
+      'let removalStarted = false;',
+      `console.log('RUNNER_READY'); fs.readFileSync(${JSON.stringify(barrier)}); let removalStarted = false;`
+    )
+    child = Bun.spawn(modified, { stdout: 'pipe', stderr: 'pipe' })
+    const reader = (child.stdout as ReadableStream<Uint8Array>).getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain('RUNNER_READY')
+    signalReady()
+    let result = ''
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      result += new TextDecoder().decode(chunk.value)
+    }
+    reader.releaseLock()
+    if ((await child.exited) !== 0) throw Error('Synthetic runner failed')
+    return result
+  }, input)
+  void running.catch(failReady)
+  try {
+    await ready
+    expect(await runtime.reconcileWorktreeRemoval(exec, input)).toMatchObject({ status: 'uncertain' })
+    await writeFile(barrier, 'continue')
+    expect(await running).toMatchObject({ status: 'succeeded' })
+    expect(await runtime.reconcileWorktreeRemoval(exec, input)).toMatchObject({ status: 'succeeded' })
+  } finally {
+    if (child && child.exitCode === null) child.kill()
+    if (child) await child.exited
+    await running.catch(() => {})
+  }
+})
+
+test('a lost cancellation reply converges without deleting unpublished work or changing the operation', async () => {
+  const input = recoveryInput()
+  await writeFile(join(ownership.worktree, 'unpublished'), 'keep')
+  await exec(['git', '-C', ownership.worktree, 'add', '.'])
+  await exec([
+    'git',
+    '-C',
+    ownership.worktree,
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    'commit',
+    '-m',
+    'unpublished',
+  ])
+  const unpublished = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
+  await expect(
+    runtime.reconcileWorktreeRemoval(async (args) => {
+      await exec(args)
+      throw Error('lost cancellation reply')
+    }, input)
+  ).rejects.toThrow('lost cancellation reply')
+  expect(await runtime.reconcileWorktreeRemoval(exec, input)).toMatchObject({
+    status: 'retained',
+    operationId: input.operationId,
+  })
+  expect(await runtime.removeOwnedWorktree(exec, input)).toMatchObject({ status: 'failed', reconciled: true })
+  expect((await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()).toBe(unpublished)
+})

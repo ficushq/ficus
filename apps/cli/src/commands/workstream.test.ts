@@ -182,6 +182,18 @@ describe('workstream CLI commands', () => {
     expect(outputError).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'Removal pending terminal proof' }))
   })
 
+  it('requests only non-destructive cleanup reconciliation and reports the returned state', async () => {
+    const inspection = {
+      workStreamId: 'stream-1',
+      recovery: 'in-flight',
+      cleanup: { status: 'error', reason: 'Automatic reconciliation stopped: unverified' },
+    }
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValueOnce(inspection)
+    await run(['workstream', 'cleanup', 'reconcile', '228'])
+    expect(apiPost).toHaveBeenLastCalledWith('/api/workstreams/228/worktree-cleanup/reconcile')
+    expect(output).toHaveBeenLastCalledWith(inspection)
+  })
+
   it('preserves cleanup opt-out and opt-in in create and update requests', async () => {
     for (const value of ['false', 'true']) {
       await run(['workstream', 'create', 'Cleanup test', '--squad', 'squad-1', '--auto-cleanup-worktree', value])

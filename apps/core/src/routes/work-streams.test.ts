@@ -398,6 +398,22 @@ describe('work-streams routes', () => {
     }
   })
 
+  it('reconciliation requires squad mutation access and never starts an unclaimed cleanup', async () => {
+    const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: 'Cleanup recovery' })
+    await db.insert(worktreeCleanupJobs).values({ workStreamId: stream.id })
+    const stranger = await createTestUser({ prefix: testPrefix })
+    const forbidden = await app.fetch(
+      new Request(`http://localhost/api/workstreams/${stream.id}/worktree-cleanup/reconcile`, {
+        method: 'POST',
+        headers: authHeaders(stranger.token),
+      })
+    )
+    expect(forbidden.status).toBe(403)
+    const response = await post(`/api/workstreams/${stream.id}/worktree-cleanup/reconcile`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ cleanup: { status: 'pending', operationId: null, attempts: 0 } })
+  })
+
   it('cleanup API preserves false, rejects non-booleans, and exposes only public status', async () => {
     const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: 'Cleanup retention' })
     const disabled = await patchJson(`/api/workstreams/${stream.id}`, { autoCleanupWorktree: false })

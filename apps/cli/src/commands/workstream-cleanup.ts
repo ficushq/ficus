@@ -1,10 +1,12 @@
 import type { Command } from 'commander'
 import type { WorktreeCleanupInspection } from '@ficus/shared'
-import { apiGet, apiPatch } from '../client'
+import { apiGet, apiPatch, apiPost } from '../client'
 import { isJsonMode, output, outputError } from '../output'
 
 export function registerWorkstreamCleanupCommands(ws: Command): void {
-  const cleanup = ws.command('cleanup').description('Inspect original worktree ownership and stop automatic cleanup')
+  const cleanup = ws
+    .command('cleanup')
+    .description('Inspect ownership, reconcile fenced operations and stop automatic cleanup')
   cleanup
     .command('inspect <id>')
     .description('Read original ownership, current bindings and recovery state')
@@ -34,9 +36,22 @@ export function registerWorkstreamCleanupCommands(ws: Command): void {
           result.recovery === 'retain'
             ? `Run ficus workstream cleanup retain ${result.workStreamId} to stop automatic cleanup without deleting files or rewriting ownership.`
             : result.recovery === 'retained'
-              ? 'Automatic cleanup is disabled. Before manual removal, verify exact paths, live users, Git state and recoverable commits. Keep active worktrees and branches.'
-              : 'Do not remove or reuse this path. Retention cannot clear an in-flight operation or undo a completed removal.'
+              ? 'Automatic removal is stopped. Before manual removal, disable automatic cleanup and verify exact paths, live users, Git state and recoverable commits. Keep active worktrees and branches.'
+              : 'Do not remove or reuse this path. For an in-flight operation, cleanup reconcile can collect non-destructive proof; it never clears uncertainty by age. Retention cannot clear an unverified removal or undo a completed removal.'
         )
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+  cleanup
+    .command('reconcile <id>')
+    .description('Reconcile an existing removal without dispatching deletion; uncertainty stays fenced')
+    .action(async (id: string) => {
+      try {
+        const result = await apiPost<WorktreeCleanupInspection>(
+          `/api/workstreams/${encodeURIComponent(id)}/worktree-cleanup/reconcile`
+        )
+        output(result)
       } catch (error) {
         outputError(error as Error)
       }

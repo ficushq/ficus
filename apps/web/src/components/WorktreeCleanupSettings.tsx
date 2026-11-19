@@ -18,14 +18,15 @@ export function WorktreeCleanupSettings({ stream }: { stream: WorkStream }) {
   const cleanup = stream.worktreeCleanup
   const fenced = cleanup?.status === 'removing' || (cleanup?.status === 'error' && !!cleanup.operationId)
   const reclaimed = cleanup?.status === 'succeeded'
+  const retained = cleanup?.status === 'retained'
   return (
     <section className="space-y-2 border-t border-panel-border pt-4" aria-label="Worktree cleanup">
       <label className="flex items-center gap-2 text-sm font-medium text-primary">
         <input
           type="checkbox"
           className="accent-accent disabled:cursor-default"
-          checked={stream.autoCleanupWorktree ?? false}
-          disabled={isLoading || !can('workstreams:update') || action.isPending || fenced || reclaimed}
+          checked={!retained && (stream.autoCleanupWorktree ?? false)}
+          disabled={isLoading || !can('workstreams:update') || action.isPending || fenced || reclaimed || retained}
           onChange={(event) => action.mutate(event.currentTarget.checked)}
         />
         Automatically clean up the worktree
@@ -42,6 +43,11 @@ export function WorktreeCleanupSettings({ stream }: { stream: WorkStream }) {
       )}
       {fenced && (
         <p className="text-xs text-secondary">Do not reuse or modify this path while removal awaits terminal proof.</p>
+      )}
+      {retained && (
+        <p className="text-xs text-secondary">
+          Recovery retained this worktree without clearing its operation identity. Automatic removal will not restart.
+        </p>
       )}
       {reclaimed && (
         <p className="text-xs text-secondary">
