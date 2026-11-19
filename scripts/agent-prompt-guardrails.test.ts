@@ -49,7 +49,7 @@ function composeStaticPrompt(type: AgentTypeFile): string {
  * budget when guidance is removed.
  */
 const STATIC_PROMPT_BYTE_BUDGETS: Record<string, number> = {
-  manager: 60_000,
+  manager: 58_500,
   consultant: 42_500,
   reviewer: 35_000,
   sysops: 33_000,
