@@ -213,8 +213,8 @@ export function createAsyncAskHumanTool(
             : ` Opened waits on ${openedWaitWorkStreamIds.length} work streams: ${openedWaitWorkStreamIds.join(', ')}.`
       const questionGuidance =
         ' In chat, note only the Action Center question id; do not repeat the question in chat. ' +
-        'If the human answers in another channel, use ficus agent-question resolve --help to record it, ' +
-        'only after a human actually answers elsewhere; never infer an answer or use it as review approval.'
+        'Record an answer received elsewhere only after a human actually answers; ' +
+        'never infer an answer or use it as review approval.'
       return {
         content: [
           {

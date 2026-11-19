@@ -314,6 +314,23 @@ test('question guidance arrives with the tool and the recorded question', async 
   const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
   expect(text).toContain('Action Center')
   expect(text).toContain('do not repeat the question in chat')
-  expect(text).toContain('agent-question resolve')
-  expect(text).toContain('only after a human actually answers elsewhere')
+  expect(text).toContain('only after a human actually answers')
+})
+
+test('question replies do not assume the caller has a shell', async () => {
+  const tool = createAsyncAskHumanTool(
+    { agentId: 'tool-only-1', executionId: 'execution-1', flushPersistence: async () => {} },
+    { createQuestion: async () => ({ ...record, openedWaitWorkStreamIds: [] }) },
+    { allowBlocking: false }
+  )
+  const result = await tool.execute(
+    'call-1',
+    { questions: [{ id: 'q', question: 'Which option?' }] },
+    undefined,
+    undefined,
+    {} as any
+  )
+  const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+  expect(text).toContain('do not repeat the question in chat')
+  expect(text).not.toContain('ficus agent-question')
 })
