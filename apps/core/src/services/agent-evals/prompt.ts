@@ -74,7 +74,7 @@ const importFrom = importFromVariant
 const src = (path: string) => join('apps/core/src', path)
 
 /** Permissions of a built-in agent role (config/roles/defaults.yaml), for the CLI index. */
-function rolePermissions(root: string, slug: string): string[] {
+export function rolePermissions(root: string, slug: string): string[] {
   const roles = yaml.load(readFileSync(join(root, 'config/roles/defaults.yaml'), 'utf8')) as {
     roles: { slug: string; permissions?: string[] }[]
   }

@@ -1,4 +1,8 @@
 import { join } from 'node:path'
+import type { Command, Help } from 'commander'
+import { permissionMatches } from '@ficus/shared'
+import { CLI_COMMAND_PERMISSIONS } from '../../lib/utils/cli-help'
+import { executedCommands } from './shell-commands'
 import type { Tool } from '@earendil-works/pi-ai'
 import {
   createBashToolDefinition,
@@ -9,7 +13,7 @@ import {
 import type { Responder } from './define'
 import type { PromptVariant } from './variant'
 import { importFromVariant, variantContext } from './variant'
-import { FIXTURE_SQUAD } from './prompt'
+import { FIXTURE_SQUAD, rolePermissions } from './prompt'
 
 /*
  * The tools an eval agent sees: the real names, descriptions and parameter schemas of the
@@ -35,36 +39,87 @@ const importFrom = importFromVariant
 
 const src = (path: string) => join('apps/core/src', path)
 
-/** Splits a shell word list well enough for `ficus ... --help` lines (quotes, no expansions). */
-function shellWords(text: string): string[] {
-  return [...text.matchAll(/'([^']*)'|"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? match[3] ?? '')
-}
-
-interface CommandLike {
-  name(): string
-  aliases(): string[]
-  commands: CommandLike[]
-  helpInformation(): string
-}
-
 /**
- * The variant CLI's real help for `ficus <group> [<command>] --help`, found by walking the command
- * tree (no parsing, so no process exit). Undefined when the line is not a help request.
+ * Capture the real Commander help, including before/after hooks, without parsing argv or exiting.
+ * Only executable help requests count. Filter visible commands with the index permission map.
+ * Restore help configuration and output callbacks even when a listener throws; the tree stays untouched.
  */
-export function cliHelpFor(program: CommandLike, command: string): string | undefined {
-  const segment = command
-    .split(/&&|\|\||;|\|/)
-    .find((part) => /\bficus\b/.test(part) && /(--help|-h\b|\bhelp\b)/.test(part))
-  if (!segment) return undefined
-  const words = shellWords(segment.slice(segment.search(/\bficus\b/) + 'ficus'.length))
-  let current = program
-  for (const word of words) {
-    if (word.startsWith('-') || word === 'help') continue
-    const next = current.commands.find((child) => child.name() === word || child.aliases().includes(word))
-    if (!next) break
-    current = next
+export function cliHelpFor(
+  program: Command,
+  source: string,
+  permissions: readonly string[] = ['*'],
+  requiredPermissions: Readonly<Record<string, readonly string[]>> = CLI_COMMAND_PERMISSIONS
+): string | undefined {
+  const mayUse = (path: string[]) => {
+    if (path[0] === 'secret') return false
+    const required = requiredPermissions[path.join(' ')]
+    return !required || required.some((needed) => permissions.some((held) => permissionMatches(held, needed)))
   }
-  return current.helpInformation()
+  const outputs: string[] = []
+  for (const argv of executedCommands(source)) {
+    if (argv[0] !== 'ficus') continue
+    const words = argv.slice(1).filter((word) => !/^\d?>/.test(word))
+    if (!words.includes('--help') && !words.includes('-h') && words[0] !== 'help') continue
+    let current = program
+    const path: string[] = []
+    let valid = true
+    for (let index = 0; index < words.length; index++) {
+      const word = words[index]!
+      if (word.startsWith('-')) {
+        const option = [...current.options, ...program.options].find(
+          (option) => option.long === word || option.short === word
+        )
+        if (
+          (option?.required || option?.optional) &&
+          !word.includes('=') &&
+          words[index + 1] &&
+          !words[index + 1]!.startsWith('-')
+        )
+          index++
+        continue
+      }
+      if (word === 'help') continue
+      const next = current.commands.find((child) => child.name() === word || child.aliases().includes(word))
+      if (!next) {
+        if (current.registeredArguments.length > 0) continue
+        valid = false
+        break
+      }
+      path.push(next.name())
+      if (!mayUse(path)) {
+        valid = false
+        break
+      }
+      current = next
+    }
+    if (!valid) continue
+    const originalOutput = { ...current.configureOutput() }
+    const originalHelp = current.configureHelp()
+    const originalVisibleCommands = current.createHelp().visibleCommands
+    let output = ''
+    try {
+      current.configureHelp({
+        ...originalHelp,
+        visibleCommands(this: Help, command: Command) {
+          return originalVisibleCommands.call(this, command).filter((child) => mayUse([...path, child.name()]))
+        },
+      })
+      current.configureOutput({
+        writeOut: (text) => {
+          output += text
+        },
+        writeErr: (text) => {
+          output += text
+        },
+      })
+      current.outputHelp()
+      outputs.push(output)
+    } finally {
+      current.configureOutput(originalOutput)
+      current.configureHelp(originalHelp)
+    }
+  }
+  return outputs.length ? outputs.join('\n') : undefined
 }
 
 /** Neutral results for calls the scenario does not script. */
@@ -87,8 +142,8 @@ function defaultResult(name: string, args: Record<string, unknown>): string {
 
 function defaultShellResult(command: string): string {
   if (/\bficus inbox read\b/.test(command)) return 'Marked 1 message(s) as read'
-  if (/\bgit status\b/.test(command)) return ''
-  return '(no output)'
+  if (/^git status(?: --short)?$/.test(command.trim())) return ''
+  return 'Unsupported eval command: no fixture response is declared. This is not a successful command result.'
 }
 
 export async function buildEvalToolset(
@@ -106,9 +161,11 @@ export async function buildEvalToolset(
     variant,
     src('tools/squad-bash.ts')
   )
-  const { createProgram } = await importFrom<{ createProgram: () => CommandLike }>(variant, 'apps/cli/src/program.ts')
+  const { createProgram } = await importFrom<{ createProgram: () => Command }>(variant, 'apps/cli/src/program.ts')
   const program = createProgram()
   const context = variantContext(variant)
+  const permissions = options.managerRunner ? ['*'] : rolePermissions(variant.root, 'default-worker')
+  const helpModule = await importFrom<typeof import('../../lib/utils/cli-help')>(variant, src('lib/utils/cli-help.ts'))
 
   let questions = 0
   const askHumanTool = askHuman.createAsyncAskHumanTool(
@@ -153,12 +210,17 @@ export async function buildEvalToolset(
     async execute(name, args) {
       const command = name === 'bash' || name === 'squad_bash' ? String(args.command ?? '') : undefined
       const scripted = await options.respond?.({ name, args, ...(command !== undefined ? { command } : {}) }, context)
-      if (scripted !== undefined) return scripted
+      const help =
+        command === undefined
+          ? undefined
+          : cliHelpFor(program, command, permissions, helpModule.CLI_COMMAND_PERMISSIONS)
+      if (scripted !== undefined || help !== undefined)
+        return [scripted, help].filter((value) => value !== undefined).join('\n')
       if (name === 'ask_human') {
         const result = await askHumanTool.execute!('eval-call', args)
         return result.content.map((part) => part.text ?? '').join('')
       }
-      if (command !== undefined) return cliHelpFor(program, command) ?? defaultShellResult(command)
+      if (command !== undefined) return defaultShellResult(command)
       return defaultResult(name, args)
     },
   }

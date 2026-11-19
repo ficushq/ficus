@@ -8,6 +8,15 @@ results.
 
 Code: `apps/core/src/services/agent-evals/`. Command: `bun run agents:eval`.
 
+This is development tooling, not product inference. Offline tests make no provider calls; explicit
+live evals use environment-only provider credentials and do not write product inference-ledger or
+Spend entries. New recordings retain SDK token usage and estimated USD cost per run separately.
+The running product's model calls must still use its metered inference paths.
+
+For the corrected baseline premises, original trace classification and remaining live-validation
+requirements, see [baseline repair](./agent-behaviour-eval-baseline-repair.md). New runs declare
+harness revision `2026-11-19-baseline-fixtures-v2`; historical verdicts are not rewritten.
+
 ## What a scenario is
 
 A scenario (`scenarios.ts`) gives an agent of one built-in type:
@@ -126,7 +135,12 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
   overrides the tiers.
 - `--repeat` defaults to 3. Old and new runs interleave so provider drift affects both.
 - `--record` writes every run, with its trace and verdict, to `agent-evals/recordings/`.
-  `--markdown <file>` writes the comparison table for a pull request description.
+  `--markdown <file>` writes the comparison table for a pull request description. Recordings are
+  atomically checkpointed before work and after every completed or failed job. Their `status` is
+  `running`, `partial`, or `complete`, with `plannedRuns` and `failedJobs`. A provider failure stops
+  scheduling new work, drains in-flight calls, retains completed traces/known usage, exits with a
+  failure, and writes no accepted comparison table. A partial cohort is not acceptance evidence;
+  archive it outside git rather than selecting favorable completed runs.
 
 ## Pass rule
 
