@@ -871,7 +871,12 @@ async function startup(): Promise<void> {
   const { getSettingsStore } = await import('./services/settings')
   const settingsStore = getSettingsStore()
   await settingsStore.initialize()
-  settingsStore.startPeriodicRefresh()
+  settingsStore.startPeriodicRefresh(undefined, async () => {
+    // Backstop for operator provider-health resets whose change notification
+    // was missed (see the listener registered after hydration below).
+    const { applyProviderHealthResetRequests } = await import('./services/provider-health/reset-requests')
+    applyProviderHealthResetRequests()
+  })
   // Execution pickup runs in THIS process, but settings are written by the api
   // process — without this the worker would not see a new MAX_CONCURRENT_AGENTS
   // cap until the next periodic refresh (5 min — see
@@ -938,6 +943,16 @@ async function startup(): Promise<void> {
   const { providerHealth } = await import('./services/provider-health/registry')
   providerHealth.enablePersistence()
   await providerHealth.hydrateFromPersistence()
+  // An operator's reset is handled by the api, which only holds a replica of
+  // this state: it arrives here as a stored request. Apply what was requested
+  // while this process was down, then each new request as its setting changes.
+  // The periodic settings refresh above covers a missed change notification.
+  const { applyProviderHealthResetRequests, PROVIDER_HEALTH_RESET_REQUESTS_KEY } =
+    await import('./services/provider-health/reset-requests')
+  applyProviderHealthResetRequests()
+  settingsStore.onChange((key) => {
+    if (key === PROVIDER_HEALTH_RESET_REQUESTS_KEY) applyProviderHealthResetRequests()
+  })
 
   // Ensure env-var/runtime-only auth is visible to synchronous model-selection
   // paths before queued execution pickup or periodic drains can start sessions.

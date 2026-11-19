@@ -72,6 +72,7 @@ import {
   setProviderEnabled,
 } from '../services/model-selection'
 import { providerHealth } from '../services/provider-health/registry'
+import { requestProviderHealthReset, type ProviderHealthResetTarget } from '../services/provider-health/reset-requests'
 import { createLogger } from '../lib/infra/logger'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { requirePermission } from '../middleware/require-permission'
@@ -452,7 +453,9 @@ app.get('/claude-code/status', requirePermission('provider-auth:read'), async (c
   const status = await getClaudeCodeStatus({ refresh })
   if (refresh) {
     // A sign-in failure parks the Claude Code account; checking again after signing in clears it.
-    if (status.loggedIn && claudeCodeAccount()) providerHealth.markAccountAvailable('anthropic', CLAUDE_CODE_ACCOUNT_ID)
+    if (status.loggedIn && claudeCodeAccount()) {
+      await requestProviderHealthReset([{ provider: 'anthropic', accountId: CLAUDE_CODE_ACCOUNT_ID }])
+    }
     await refreshModelRuntime()
   }
   return c.json(claudeCodeStatusJson(status))
@@ -690,11 +693,16 @@ function isCredentialHealth(provider: string, accountId?: string): boolean {
  * own. Nothing is asserted about the upstream state — the next failure re-marks
  * exhaustion immediately.
  *
+ * This process holds a read-only replica of provider health, so the reset is
+ * stored as a request for the worker (see provider-health/reset-requests.ts).
+ * Clearing only the replica would be undone at its next hydration and would
+ * never reach routing.
+ *
  * Credential-kind records are left alone and reported back in
  * `skippedCredentialHealth` rather than failing the whole call, so one account
  * that needs re-authorizing does not block clearing the others.
  */
-app.post('/:provider/health/reset', requirePermission('provider-auth:write'), (c) => {
+app.post('/:provider/health/reset', requirePermission('provider-auth:write'), async (c) => {
   const provider = c.req.param('provider')
   const accounts = listAccounts(readAccountStore(), provider)
   // Env-var providers hold no account rows, yet failures still record
@@ -703,12 +711,13 @@ app.post('/:provider/health/reset', requirePermission('provider-auth:write'), (c
   if (!known) return c.json({ error: 'Provider not found' }, 404)
 
   const skippedProvider = isCredentialHealth(provider)
-  if (!skippedProvider) providerHealth.markAvailable(provider)
+  const targets: ProviderHealthResetTarget[] = skippedProvider ? [] : [{ provider }]
   const skippedAccounts: string[] = []
   for (const account of accounts) {
     if (isCredentialHealth(provider, account.id)) skippedAccounts.push(account.id)
-    else providerHealth.markAccountAvailable(provider, account.id)
+    else targets.push({ provider, accountId: account.id })
   }
+  await requestProviderHealthReset(targets)
   return c.json({
     ...providerSummary(provider, accounts),
     skippedCredentialHealth: { provider: skippedProvider, accounts: skippedAccounts },
@@ -716,7 +725,7 @@ app.post('/:provider/health/reset', requirePermission('provider-auth:write'), (c
 })
 
 /** Clear one account's exhaustion record early (see the provider route above). */
-app.post('/:provider/accounts/:accountId/health/reset', requirePermission('provider-auth:write'), (c) => {
+app.post('/:provider/accounts/:accountId/health/reset', requirePermission('provider-auth:write'), async (c) => {
   const provider = c.req.param('provider')
   const accountId = c.req.param('accountId')
   const accounts = listAccounts(readAccountStore(), provider)
@@ -726,7 +735,7 @@ app.post('/:provider/accounts/:accountId/health/reset', requirePermission('provi
   // update), so its credential health may be reset directly, after a fresh status check.
   if (account.kind === 'claude-code') invalidateClaudeCodeStatus()
   else if (isCredentialHealth(provider, accountId)) return c.json(CREDENTIAL_HEALTH_ERROR, 409)
-  providerHealth.markAccountAvailable(provider, accountId)
+  await requestProviderHealthReset([{ provider, accountId }])
   return c.json(providerSummary(provider, accounts))
 })
 
