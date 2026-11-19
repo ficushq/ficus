@@ -16,7 +16,16 @@ import {
   jsonBodyErrorMiddleware,
 } from '../middleware/json-body-errors'
 import { authHeaders, cleanupTestRbac, createTestAdmin, createTestUser, type TestUser } from '../test-utils'
-import { providerHealth, resetProviderHealthForTests } from '../services/provider-health/registry'
+import {
+  createProviderHealthRegistry,
+  providerHealth,
+  resetProviderHealthForTests,
+} from '../services/provider-health/registry'
+import {
+  applyProviderHealthResetRequests,
+  parseProviderHealthResetRequests,
+  PROVIDER_HEALTH_RESET_REQUESTS_KEY,
+} from '../services/provider-health/reset-requests'
 import {
   restoreProviderHealthTestState,
   snapshotProviderHealthTestState,
@@ -869,6 +878,27 @@ describe('provider-auth routes', () => {
       const res = await app.request(`/anthropic/accounts/${CLAUDE_CODE_ACCOUNT_ID}/health/reset`, jsonReq('POST'))
       expect(res.status).toBe(200)
       expect(providerHealth.isAccountHealthy('anthropic', CLAUDE_CODE_ACCOUNT_ID)).toBe(true)
+    })
+
+    test('a reset is stored for the worker, which owns provider health, instead of only changing this replica', async () => {
+      await setClaudeCodeAccountEnabled(true, 'admin')
+      const limited = { reason: 'plan-credit', retryAt: Date.now() + 5 * 24 * 60 * 60_000 } as const
+      // The worker saw the weekly limit; this process mirrors its record.
+      const worker = createProviderHealthRegistry()
+      worker.markAccountExhausted('anthropic', CLAUDE_CODE_ACCOUNT_ID, limited)
+      providerHealth.markAccountExhausted('anthropic', CLAUDE_CODE_ACCOUNT_ID, limited)
+
+      const res = await app.request(`/anthropic/accounts/${CLAUDE_CODE_ACCOUNT_ID}/health/reset`, jsonReq('POST'))
+      expect(res.status).toBe(200)
+
+      const stored = parseProviderHealthResetRequests(
+        getSettingsStore().getStoredValue(PROVIDER_HEALTH_RESET_REQUESTS_KEY)
+      )
+      expect(stored).toEqual([
+        { provider: 'anthropic', accountId: CLAUDE_CODE_ACCOUNT_ID, requestedAt: expect.any(Number) },
+      ])
+      expect(applyProviderHealthResetRequests({ registry: worker })).toBe(1)
+      expect(worker.isAccountHealthy('anthropic', CLAUDE_CODE_ACCOUNT_ID)).toBe(true)
     })
 
     test('provider reset clears transient records and reports the credential ones it skipped', async () => {
