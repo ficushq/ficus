@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../../test/domHarness'
 import { onboardingQueryKeys, queryKeys } from '../../queryKeys'
+import { queries } from '../../queryOptions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { VoicesTab } from '../settings/VoicesTab'
 import { SettingsPage } from '../SettingsPage'
@@ -51,6 +52,23 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
       permissions: ['agent-types:update', 'integrations:use', ...(fullPage ? ['settings:read'] : [])],
       identity: { type: 'user', userId: 'person' },
     })
+    // A cached response from an earlier authorized view must not make protected profile data visible.
+    client.setQueryData(queries.publicVoices.list().queryKey, [
+      {
+        id: 'private-profile',
+        name: 'Reader-only profile',
+        description: null,
+        base: 'Reader-only profile instructions.',
+        surfaces: {},
+        disabled: false,
+        hasTemplate: false,
+        yamlFieldOverrides: [],
+        bytes: 40,
+        assignedSquadCount: 0,
+        createdAt: '2026-11-19',
+        updatedAt: '2026-11-19',
+      },
+    ])
     let permissions!: ReturnType<typeof usePermissions>
     function Probe() {
       permissions = usePermissions()
@@ -109,6 +127,8 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
         })
       expect(permissions.can('integrations:read:github')).toBe(false)
       expect(permissions.can('agent-types:read')).toBe(false)
+      expect(container.textContent).not.toContain('Reader-only profile')
+      expect(container.textContent).not.toContain('Reader-only profile instructions.')
       expect(permissions.can('agent-types:update')).toBe(true)
       expect(permissions.can('integrations:use')).toBe(true)
       expect(container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')?.value).toBe('octo')
