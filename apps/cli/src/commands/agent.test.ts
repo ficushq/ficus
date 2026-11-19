@@ -164,3 +164,16 @@ describe('typed standalone recovery', () => {
     expect(outputError).toHaveBeenCalled()
   })
 })
+
+describe('ficus agent messages help', () => {
+  it('says where a human message names its sender', () => {
+    const program = new Command()
+    registerAgentCommands(program)
+    const messages = program.commands
+      .find((command) => command.name() === 'agent')!
+      .commands.find((command) => command.name() === 'messages')!
+    const help = messages.helpInformation().replace(/\s+/g, ' ')
+    expect(help).toContain('metadata.sender')
+    expect(help).toContain('userId is the stable address, name is for display only')
+  })
+})
