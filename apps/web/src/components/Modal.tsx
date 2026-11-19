@@ -162,6 +162,7 @@ export function Modal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
+      <div className="ficus-modal-drag-region" aria-hidden="true" />
       <div
         data-modal-size={size}
         style={MODAL_SIZE_STYLE[size]}
