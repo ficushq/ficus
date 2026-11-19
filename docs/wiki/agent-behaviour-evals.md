@@ -33,6 +33,13 @@ The agent runs until it ends its turn or reaches the step limit (10 by default).
 grader then reads what the agent did, meaning its tool calls and its text, never its reasoning.
 Each grader has pass and fail fixtures in `evals.test.ts`.
 
+Scripted results must preserve the scenario premise when an agent verifies state: running assignments
+remain running, while completion-ready attempts are completed. A stateful fixture uses
+`createResponder` to allocate fresh state per run (including concurrent variants and repeats). For
+example, offer-followup verification reads reflect successful edits rather than returning stale text.
+Fixture corrections require both comparison sides to be rerun with that same corrected harness;
+preserve earlier recordings but label their limitations instead of mixing them into the new cohort.
+
 ## The scenario set
 
 Noah agreed the first set on 2026-11-18 for work stream 1250. Scenarios marked must protect an

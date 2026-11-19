@@ -124,10 +124,17 @@ function flowState(status: string, extra: Record<string, unknown> = {}): string 
   return JSON.stringify(
     {
       workStream: { id: WS_ID, number: WS_NUMBER, status: 'active', pause: null },
-      version: 7,
+      version: status === 'running' ? 0 : 7,
       state: {
         status,
-        attempts: [{ id: 1, step: 'implement', status: 'completed', participant: 'engineer' }],
+        attempts: [
+          {
+            id: 1,
+            step: 'implement',
+            status: status === 'completion-ready' ? 'completed' : 'running',
+            participant: 'engineer',
+          },
+        ],
       },
       ...extra,
     },
@@ -252,18 +259,33 @@ export const SCENARIOS: AgentScenario[] = [
     agentType: 'engineer',
     must: true,
     messages: [chat('Please fix the misspelling "recieve" in docs/wiki/permissions.md. Thanks!')],
-    respond: respondWith((call) => {
-      if (call.name === 'read' || /\b(cat|sed|grep|rg)\b.*permissions\.md/.test(call.command ?? ''))
-        return [
-          '10: # Permissions',
-          '11: ',
-          '12: Agents recieve permissions from their agent type and any extra scopes.',
-          '13: ',
-          '30: Squad roles are kept seperate from system roles; see [roles](./role.md) (this link is broken: the file is roles.md).',
-          '44: An agent can never grant a permission it does not hold itself, and squad-wide grants are audited seperately.',
-        ].join('\n')
-      return undefined
-    }),
+    createResponder: () => {
+      // Keep successful edits visible to verification reads. A stateless responder sent the agent
+      // into edit/read loops and measured the step limit instead of its follow-up behaviour.
+      let contents = [
+        '10: # Permissions',
+        '11: ',
+        '12: Agents recieve permissions from their agent type and any extra scopes.',
+        '13: ',
+        '30: Squad roles are kept seperate from system roles; see [roles](./role.md) (this link is broken: the file is roles.md).',
+        '44: An agent can never grant a permission it does not hold itself, and squad-wide grants are audited seperately.',
+      ].join('\n')
+      return respondWith((call) => {
+        if (call.name === 'edit' && String(call.args.path).endsWith('permissions.md')) {
+          for (const edit of (call.args.edits ?? []) as { oldText: string; newText: string }[]) {
+            if (!contents.includes(edit.oldText)) return 'Error: oldText not found; no edit applied.'
+            contents = contents.replace(edit.oldText, edit.newText)
+          }
+          return 'Successfully replaced text in permissions.md.'
+        }
+        if (call.name === 'write' && String(call.args.path).endsWith('permissions.md')) {
+          contents = String(call.args.content ?? '')
+          return 'Successfully wrote permissions.md.'
+        }
+        if (call.name === 'read' || /\b(cat|sed|grep|rg)\b.*permissions\.md/.test(call.command ?? '')) return contents
+        return undefined
+      })
+    },
     grade: (trace) =>
       allOf(
         'Ended the turn without a chat offer or question.',

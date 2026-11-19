@@ -7,7 +7,7 @@ import { readableProseProblems } from './readable-prose'
 import { compareRuns, runScenario, type AgentTurn, type RecordedRun } from './run'
 import { SCENARIOS, extractEvidence, findScenario, unknownOptions } from './scenarios'
 import { buildEvalToolset, cliHelpFor } from './tools'
-import { workingTreeVariant } from './variant'
+import { variantContext, workingTreeVariant } from './variant'
 
 /*
  * Offline checks for the agent behaviour evals: no model, key or network. The graders must tell a
@@ -332,6 +332,43 @@ describe('scenario premises hold in the assembled prompt', () => {
     }
   })
 
+  test('a running assignment remains active when the agent checks the flow', async () => {
+    const respond = findScenario('ask-human-decision')!.respond!
+    const result = JSON.parse(
+      (await respond({ name: 'squad_bash', args: {}, command: 'ficus workstream flow 1300' }, variantContext(variant)))!
+    )
+    expect(result.version).toBe(0)
+    expect(result.state.status).toBe('running')
+    expect(result.state.attempts[0].status).toBe('running')
+
+    const completed = JSON.parse(
+      (await findScenario('automerge-clean')!.respond!(
+        { name: 'squad_bash', args: {}, command: 'ficus workstream flow 1300' },
+        variantContext(variant)
+      ))!
+    )
+    expect(completed.state.status).toBe('completion-ready')
+    expect(completed.state.attempts[0].status).toBe('completed')
+  })
+
+  test('offer-followup verification reads reflect edits, without leaking to another run', async () => {
+    const first = findScenario('offer-followup')!.createResponder!()
+    const second = findScenario('offer-followup')!.createResponder!()
+    const context = variantContext(variant)
+    const path = '/docs/wiki/permissions.md'
+    const read = { name: 'read', args: { path } }
+    expect(await first(read, context)).toContain('recieve')
+    await first({ name: 'edit', args: { path, edits: [{ oldText: 'recieve', newText: 'receive' }] } }, context)
+    expect(await first(read, context)).toContain('Agents receive permissions')
+    expect(await first(read, context)).not.toContain('recieve')
+    expect(await second(read, context)).toContain('recieve')
+    expect(
+      await first({ name: 'edit', args: { path, edits: [{ oldText: 'missing', newText: 'text' }] } }, context)
+    ).toContain('Error: oldText not found')
+    await first({ name: 'write', args: { path, content: 'Replacement contents' } }, context)
+    expect(await first(read, context)).toBe('Replacement contents')
+  })
+
   test('slot-queued shows the heavy-work pool', async () => {
     const { systemPrompt } = await assembleScenarioPrompt(variant, findScenario('slot-queued')!)
     expect(systemPrompt).toContain('## Slot Pools')
@@ -398,6 +435,38 @@ describe('eval tools', () => {
 })
 
 describe('runScenario', () => {
+  test(
+    'creates a fresh responder for each run',
+    async () => {
+      let created = 0
+      const scenario = {
+        ...findScenario('offer-followup')!,
+        createResponder: () => {
+          const id = ++created
+          return () => `run ${id}`
+        },
+      }
+      for (const repeat of [1, 2]) {
+        let step = 0
+        const turn: AgentTurn = async () => ({
+          text: '',
+          calls: step++ === 0 ? [{ id: 'c1', name: 'read', args: { path: '/permissions.md' } }] : [],
+          message: { role: 'assistant', content: [], timestamp: 0 } as never,
+        })
+        const run = await runScenario({
+          scenario,
+          variant: workingTreeVariant(),
+          model: { spec: 'fake:model', tier: 'standard' },
+          turn,
+          repeat,
+        })
+        expect(run.trace.steps[0]!.calls[0]!.result).toBe(`run ${repeat}`)
+      }
+      expect(created).toBe(2)
+    },
+    TOOLSET_TIMEOUT_MS
+  )
+
   test(
     'feeds scripted tool results back and stops when the agent ends its turn',
     async () => {

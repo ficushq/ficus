@@ -73,7 +73,10 @@ export async function runScenario(input: {
   const { scenario, variant, model, turn } = input
   const { systemPrompt, agentType } = await assembleScenarioPrompt(variant, scenario)
   const managerRunner = agentType.id === 'manager' || agentType.id === 'consultant'
-  const toolset = await buildEvalToolset(variant, { managerRunner, respond: scenario.respond })
+  const toolset = await buildEvalToolset(variant, {
+    managerRunner,
+    respond: scenario.createResponder?.() ?? scenario.respond,
+  })
   const context = variantContext(variant)
   const messages = await historyMessages(scenario, context, model)
   const opening = await Promise.all(scenario.messages.map((text) => resolveText(text, context)))
