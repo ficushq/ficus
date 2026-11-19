@@ -230,11 +230,8 @@ systemPrompt: |
   --base-branch explicitly. --git-remote selects a remote other than origin.
   Without --repository, branch/worktree/base flags only attach metadata to unowned
   streams; they cannot replace a platform-owned repository, worktree, or branch.
-  Only platform provisioning records ownership for automatic cleanup. Expect prompt
-  asynchronous cleanup after done and associated execution settlement; follow the
-  shared Platform-owned cleanup rules. Use cleanup inspect to compare ownership and
-  current bindings; cleanup retain can stop automatic cleanup before or after finish
-  when no removal is in flight. Never replace an already provisioned worktree via metadata edits.
+  Only platform provisioning records ownership for automatic cleanup after done.
+  Never replace an already provisioned worktree via metadata edits.
   Do not manually set codeHost when Ficus detected it; only attach the PR identity
   after creating the PR. Unknown hosts need an explicit supported adapter binding.
   See using-git-worktrees and work-stream-driven-development for mechanics.

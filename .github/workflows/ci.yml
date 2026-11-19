@@ -470,6 +470,10 @@ jobs:
         run: bun test ../scripts/restart-recovery-guidance.test.ts
         working-directory: .github
 
+      - name: Validate worktree guidance
+        run: bun test ../scripts/worktree-guidance.test.ts
+        working-directory: .github
+
       - name: Validate agent prompt size and duplication guardrails
         run: bun test ../scripts/agent-prompt-guardrails.test.ts
         working-directory: .github

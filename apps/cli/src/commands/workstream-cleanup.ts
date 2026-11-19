@@ -3,10 +3,38 @@ import type { WorktreeCleanupInspection } from '@ficus/shared'
 import { apiGet, apiPatch, apiPost } from '../client'
 import { isJsonMode, output, outputError } from '../output'
 
+/** Point-of-use guidance for worktree cleanup diagnosis; the static agent prompt keeps only the retain command. */
+export const CLEANUP_HELP = `
+New streams default to automatic cleanup (create/update --auto-cleanup-worktree).
+After delivered done, the platform removes a worktree it provisioned once the
+stream's executions settle and no dependent or bound stream still uses it. Do not
+reuse, recreate or remove a cleanup-owned path, even when it appears missing.
+
+retain works before or after delivery while no removal is in flight; it stops
+automatic cleanup without deleting files or rewriting ownership.
+
+Duplicate folders or binding mismatches:
+  1. Run inspect --json and compare owned (the original server-observed creation
+     receipt) with current (metadata.git). A null cleanup means no cleanup job
+     exists, not that no worktree is owned.
+  2. Do not fix a mismatch by rewriting bindings, ownership or database rows.
+     Retain first.
+  3. After retention, an authorized operator may remove only trees confirmed
+     unused by fresh live-use, uncommitted-change and unpushed-commit checks.
+     Keep open-PR trees and recoverable branches; disabling cleanup does not
+     prove a folder is disposable.
+
+An uncertain removal blocks reuse; reconcile collects non-destructive proof and
+never clears operation markers by age. After a completed removal, provision a new
+stream for further work; the branch and delivery history remain. Historical or
+manually created trees without platform ownership are retained, not swept.
+`
+
 export function registerWorkstreamCleanupCommands(ws: Command): void {
   const cleanup = ws
     .command('cleanup')
     .description('Inspect ownership, reconcile fenced operations and stop automatic cleanup')
+    .addHelpText('after', CLEANUP_HELP)
   cleanup
     .command('inspect <id>')
     .description('Read original ownership, current bindings and recovery state')
