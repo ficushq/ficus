@@ -19,7 +19,7 @@ import {
 import { listActionableAgentQuestions } from '../agents/questions'
 import { reconcileQuestionAnswerDeliveriesOnce } from '../agents/question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from '../agents/question-delivery-failure-alert'
-import { FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
+import { FLOW_WAIT_STREAM_ENDED_MESSAGES, FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
 import { isCurrentFlowMessage } from '../workflows/execution'
 import { getSquadDemandSnapshots } from './demand'
 import { reconcileDeadFleet } from './dead-fleet'
@@ -233,52 +233,95 @@ describe('question answers as squad demand', () => {
     expect(kept!.deliveredAt).toBeNull()
   })
 
-  test('an answer saved before the stream finishes is settled as superseded, not delivered or lost', async () => {
-    const result = await reconcileQuestionAnswerDeliveriesOnce({
-      now: NOW,
-      questionId,
-      testHooks: {
-        afterInboxPersisted: async () => {
-          await db
-            .update(inbox)
-            .set({ createdAt: START })
-            .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${questionId}`))
-          // While delivery is still owed to the current delivery participant, it is demand.
-          expect((await observe()).snapshot.count).toBe(1)
-          await finishStream()
-          // The stream is done: the answer no longer belongs to any current attempt.
-          expect((await observe()).snapshot.count).toBe(0)
+  async function replaceAttempt() {
+    // A rework: the delivery participant's completed attempt is replaced by a new running one,
+    // while the stream itself stays active.
+    const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const state = structuredClone(run!.state)
+    state.status = 'running'
+    state.attempts.push({ ...state.attempts[0]!, id: 2, status: 'running', outcome: undefined })
+    await db.update(workStreamFlowRuns).set({ state }).where(eq(workStreamFlowRuns.workStreamId, streamId))
+  }
+
+  test.each([
+    {
+      ending: 'finishes',
+      end: finishStream,
+      streamEnds: true,
+      lastError: FLOW_WAIT_STREAM_ENDED_MESSAGES.done,
+      refusal: 'stream-done',
+      alertSays: 'the work stream had already finished when the answer arrived, so it was not delivered to the agent',
+    },
+    {
+      ending: 'is canceled',
+      end: () => db.update(workStreams).set({ status: 'canceled' }).where(eq(workStreams.id, streamId)),
+      streamEnds: true,
+      lastError: FLOW_WAIT_STREAM_ENDED_MESSAGES.canceled,
+      refusal: 'stream-canceled',
+      alertSays:
+        'the work stream had already been canceled when the answer arrived, so it was not delivered to the agent',
+    },
+    {
+      ending: 'replaces the attempt',
+      end: replaceAttempt,
+      streamEnds: false,
+      lastError: FLOW_WAIT_SUPERSEDED_MESSAGE,
+      refusal: 'attempt-replaced',
+      alertSays: 'the workflow attempt the question was asked from was replaced before the answer arrived',
+    },
+  ] as const)(
+    'an answer saved before the stream $ending is refused with that cause, not delivered or lost',
+    async ({ end, streamEnds, lastError, refusal, alertSays }) => {
+      const result = await reconcileQuestionAnswerDeliveriesOnce({
+        now: NOW,
+        questionId,
+        testHooks: {
+          afterInboxPersisted: async () => {
+            await db
+              .update(inbox)
+              .set({ createdAt: START })
+              .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${questionId}`))
+            // While delivery is still owed to the current delivery participant, it is demand.
+            expect((await observe()).snapshot.count).toBe(1)
+            await end()
+            // The answer no longer belongs to any current attempt. A replacement attempt is new
+            // demand of its own, so the count clears only when the stream ends.
+            if (streamEnds) expect((await observe()).snapshot.count).toBe(0)
+          },
         },
-      },
-    })
-    expect(result.failed).toBe(1)
-    const [question] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
-    expect(question!.answerDeliveryStatus).toBe('failed')
-    expect(question!.answerDeliveryLastError).toBe(FLOW_WAIT_SUPERSEDED_MESSAGE)
-    // No execution was queued for the finished work.
-    expect(
-      await db
+      })
+      expect(result.failed).toBe(1)
+      const [question] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+      expect(question!.answerDeliveryStatus).toBe('failed')
+      // The cause is recorded where delivery is refused, under the stream lock.
+      expect(question!.answerDeliveryLastError).toBe(lastError)
+      // No execution was queued for the agent.
+      expect(
+        await db
+          .select()
+          .from(executions)
+          .where(and(eq(executions.agentId, agentId), eq(executions.status, 'queued')))
+      ).toEqual([])
+      // Not silently lost: the answer stays in the Action Center with its cause and no retry, which
+      // could only fail the same way, and an operator alert says why it went undelivered.
+      const actionable = (await listActionableAgentQuestions()).find((row) => row.id === questionId)
+      expect(actionable?.answerDelivery).toMatchObject({ status: 'failed', refusal, canRetry: false })
+      expect(await ensureQuestionDeliveryFailureAlert(questionId)).toBe(true)
+      const [alert] = await db
         .select()
-        .from(executions)
-        .where(and(eq(executions.agentId, agentId), eq(executions.status, 'queued')))
-    ).toEqual([])
-    // Not silently lost: the answer stays actionable in the Action Center and an operator alert
-    // explains that the attempt was replaced and how to pass the answer on.
-    expect((await listActionableAgentQuestions()).map((row) => row.id)).toContain(questionId)
-    expect(await ensureQuestionDeliveryFailureAlert(questionId)).toBe(true)
-    const [alert] = await db
-      .select()
-      .from(inbox)
-      .where(like(inbox.idempotencyKey, `agent-question-delivery-failure:v1:${questionId}:%`))
-    expect(alert).toMatchObject({ recipientId: SYSTEM_RECIPIENT_ID })
-    expect(alert!.content).toContain('was replaced before the answer arrived')
-    // The incident raised while delivery was owed resolved once the stream finished; this is how
-    // an existing alert for such an answer clears after deployment.
-    const observed = await observe()
-    expect(observed.snapshot.count).toBe(0)
-    expect(observed.incidents).toHaveLength(1)
-    expect(observed.incidents[0]!.resolvedAt).toEqual(NOW)
-  })
+        .from(inbox)
+        .where(like(inbox.idempotencyKey, `agent-question-delivery-failure:v1:${questionId}:%`))
+      expect(alert).toMatchObject({ recipientId: SYSTEM_RECIPIENT_ID })
+      expect(alert!.content).toContain(alertSays)
+      if (!streamEnds) return
+      // The incident raised while delivery was owed resolved once the stream ended; this is how an
+      // existing alert for such an answer clears after deployment.
+      const observed = await observe()
+      expect(observed.snapshot.count).toBe(0)
+      expect(observed.incidents).toHaveLength(1)
+      expect(observed.incidents[0]!.resolvedAt).toEqual(NOW)
+    }
+  )
 
   test('a terminal delivery failure for a still-current attempt is surfaced by its own alert, not as a stall', async () => {
     const answer = await persistedAnswer()

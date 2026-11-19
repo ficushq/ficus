@@ -28,7 +28,7 @@ import {
   questionDeliveryFailureAlertContent,
   reconcileQuestionDeliveryFailureAlertsOnce,
 } from './question-delivery-failure-alert'
-import { FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
+import { FLOW_WAIT_STREAM_ENDED_MESSAGES, FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
 import { prepareInboxDelivery } from '../inbox/inboxDelivery'
 import type { MessageMetadata, QuestionData } from '@ficus/shared'
 
@@ -258,12 +258,29 @@ describe('question answer delivery outbox', () => {
     expect(alerts.map((message) => (message.metadata as { questionId: string }).questionId).sort()).toEqual(ids)
   })
 
-  it('tells the operator why delivery failed, and that a retry cannot deliver to a replaced attempt', () => {
+  it('tells the operator why delivery failed, and that a retry cannot deliver a refused answer', () => {
     const agentId = 'agent-1'
     const replaced = questionDeliveryFailureAlertContent({ agentId, lastError: FLOW_WAIT_SUPERSEDED_MESSAGE })
-    expect(replaced).toContain('was replaced before the answer arrived')
-    expect(replaced).toContain('Retrying will not deliver it')
-    expect(replaced).not.toContain('Retry from the Action Center')
+    expect(replaced).toBe(
+      "An accepted answer was not delivered to agent agent-1: the workflow attempt the question was asked from was replaced before the answer arrived. Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message."
+    )
+
+    // After the stream ends this alert is the only notice, so it says plainly the answer went nowhere.
+    const finished = questionDeliveryFailureAlertContent({ agentId, lastError: FLOW_WAIT_STREAM_ENDED_MESSAGES.done })
+    expect(finished).toBe(
+      "An accepted answer to agent agent-1's question went nowhere: the work stream had already finished when the answer arrived, so it was not delivered to the agent. Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message."
+    )
+    const canceled = questionDeliveryFailureAlertContent({
+      agentId,
+      lastError: FLOW_WAIT_STREAM_ENDED_MESSAGES.canceled,
+    })
+    expect(canceled).toContain('the work stream had already been canceled when the answer arrived')
+    expect(canceled).toContain('so it was not delivered to the agent')
+    for (const content of [finished, canceled]) {
+      expect(content).not.toContain('replaced')
+      expect(content).not.toContain('Retry from the Action Center')
+    }
+    expect(replaced).not.toContain('work stream had already')
 
     expect(
       questionDeliveryFailureAlertContent({ agentId, lastError: 'Agent agent-1 is terminating.\n  at stack' })

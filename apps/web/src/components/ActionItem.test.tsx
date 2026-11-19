@@ -7,6 +7,7 @@ import {
   createBlankWorkflow,
   createWorkflowRun,
   WORK_STREAM_STATUS_ROLE,
+  type AgentQuestionActionData,
   type PendingAction,
   type WorkStreamActionData,
   type WorkStreamDeliveryActionData,
@@ -367,6 +368,43 @@ describe('ActionItem failed delivery acknowledgement', () => {
       expect(queryClient.getQueryData(queryKeys.actions.pending())).toEqual([])
     } finally {
       globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+})
+
+describe('ActionItem refused answer delivery', () => {
+  test.each([
+    ['stream-done', 'the work stream had already finished when it arrived'],
+    ['stream-canceled', 'the work stream had already been canceled when it arrived'],
+    ['attempt-replaced', 'was replaced before it arrived'],
+  ] as const)('says a %s answer was not delivered and offers no retry', async (refusal, cause) => {
+    const base = failedDeliveryAction()
+    const data = base.data as AgentQuestionActionData
+    const item = {
+      ...base,
+      data: { ...data, answerDelivery: { ...data.answerDelivery!, canRetry: false, refusal } },
+    } satisfies PendingAction
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={item} defaultExpanded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const text = document.body.textContent ?? ''
+      expect(text).toContain('Answer not delivered')
+      expect(text).toContain(cause)
+      expect(text).not.toContain('confirmation')
+      expect(text).not.toContain('may already have received it')
+      expect(text).not.toContain('Retry delivery')
+      expect(text).toContain('Dismiss notice')
+    } finally {
       await dom.cleanup()
     }
   })
