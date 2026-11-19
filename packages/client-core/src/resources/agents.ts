@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentSummary,
   ManualWaitDecision,
   AssistantRoutingSend,
   DeliveryMode,
@@ -178,6 +179,9 @@ export function agentsResource(t: Transport) {
       const q = p.toString()
       return t.request(`/agents${q ? `?${q}` : ''}`)
     },
+    /** Every visible top-level agent as a summary row; `live` drops dormant and terminated ones. */
+    listAgentSummaries: (filters?: { live?: boolean }): Promise<AgentSummary[]> =>
+      t.request(`/agents?view=summary${filters?.live ? '&live=true' : ''}`),
     getAgent: (id: string): Promise<Agent> => t.request(`/agents/${id}`),
     getActiveExecution: (agentId: string): Promise<ActiveExecution> => t.request(`/agents/${agentId}/active`),
     getExecution: (agentId: string, executionId: string, signal?: AbortSignal) =>

@@ -574,6 +574,11 @@ export const workStreamsRouter = new Hono()
     const countOnly = c.req.query('countOnly') === 'true'
     const feedUpdates = c.req.query('feedUpdates') === 'true'
     const respectAttention = c.req.query('respectAttention') === 'true'
+    // Rows of a list that never shows descriptions: on a busy instance they were 86% of the
+    // active list's bytes, refetched on every invalidation. The detail endpoint still has them.
+    const omitDescription = c.req.query('omitDescription') === 'true'
+    const rows = <T extends { description: string | null }>(items: T[]): T[] =>
+      omitDescription ? items.map((item) => ({ ...item, description: null })) : items
     const cursor = c.req.query('cursor')
     const completionRange = z
       .object({
@@ -676,7 +681,7 @@ export const workStreamsRouter = new Hono()
           completedAfter,
           completedBefore,
         })
-        const items = await serializeTerminalWorkStreams(page.items)
+        const items = rows(await serializeTerminalWorkStreams(page.items))
         return c.json({
           items,
           hasMore: page.hasMore,
@@ -821,7 +826,7 @@ export const workStreamsRouter = new Hono()
             : priorTerminalCursor
         const hasMore = nonTerminalPending || terminalPending
         return c.json({
-          items: [...nonTerminalItems, ...terminalItems],
+          items: rows([...nonTerminalItems, ...terminalItems]),
           hasMore,
           nextCursor: hasMore
             ? encodeMixedCursor(
@@ -843,7 +848,7 @@ export const workStreamsRouter = new Hono()
         const accessibleSet = new Set(accessibleSquadIds)
         streams = streams.filter((stream) => accessibleSet.has(stream.squadId))
       }
-      return c.json(completeVolatilePage(await serializeCanonicalWorkStreams(streams)))
+      return c.json(completeVolatilePage(rows(await serializeCanonicalWorkStreams(streams))))
     }
 
     if (squadId) {
@@ -853,7 +858,7 @@ export const workStreamsRouter = new Hono()
         statuses,
       })
       const attended = respectAttention ? await filterToAttendedStreams(identity, streams) : streams
-      return c.json(await serializeCanonicalWorkStreams(attended))
+      return c.json(rows(await serializeCanonicalWorkStreams(attended)))
     }
 
     // No squadId — filtered-list
@@ -865,7 +870,7 @@ export const workStreamsRouter = new Hono()
     const requestedStreams = requestedSet ? streams.filter((stream) => requestedSet.has(stream.squadId)) : streams
     const filtered = await filterToAccessibleSquads(identity, requestedStreams, (s) => s.squadId ?? null)
     const attended = respectAttention ? await filterToAttendedStreams(identity, filtered) : filtered
-    return c.json(await serializeCanonicalWorkStreams(attended))
+    return c.json(rows(await serializeCanonicalWorkStreams(attended)))
   })
   .post('/:id/feed-seen', zValidator('json', z.object({ completedAt: z.iso.datetime() })), async (c) => {
     const identity: Identity = c.get('identity')

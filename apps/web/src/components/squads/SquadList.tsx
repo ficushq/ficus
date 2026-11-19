@@ -26,7 +26,7 @@ import { reorderSquads } from '../../api/squads'
 import { Badge, type BadgeColor } from '../Badge'
 import { SquadAvatar } from './SquadAvatar'
 import { SquadIcon, DragHandleIcon } from '../icons'
-import { isLiveAgentStatus, type Squad, type Agent, type WorkStream } from '@ficus/shared'
+import { isLiveAgentStatus, type Squad, type Agent, type AgentSummary, type WorkStream } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 
@@ -48,7 +48,8 @@ export function SquadList() {
   const queryClient = useQueryClient()
   const isTouchDevice = useIsTouchDevice()
   const { data: squads = [], isLoading } = useQuery(queries.squads.list('active'))
-  const { data: allAgents = [] } = useQuery(queries.agents.list())
+  // Head counts only: summary rows of the agents that can still act, not every agent's full record.
+  const { data: allAgents = [] } = useQuery(queries.agents.summaries({ live: true }))
   const { data: allWorkStreams = [] } = useQuery(queries.squads.activeWorkStreams())
 
   // Filter out anonymous squads
@@ -70,7 +71,7 @@ export function SquadList() {
 
   // Group only live agents for active headcount; dormant agents stay rostered but are not running.
   const agentsBySquad = useMemo(() => {
-    const map = new Map<string, Agent[]>()
+    const map = new Map<string, AgentSummary[]>()
     for (const agent of allAgents) {
       if (agent.squadId && isLiveAgentStatus(agent.status)) {
         const list = map.get(agent.squadId) || []
@@ -216,7 +217,7 @@ function SquadCardContent({
   workStreams,
 }: {
   squad: Squad
-  agents: Agent[]
+  agents: AgentSummary[]
   workStreams: WorkStream[]
 }) {
   const activeWorkStreams = workStreams.filter((ws) => ws.status !== 'done' && ws.status !== 'canceled').length
@@ -264,7 +265,7 @@ function SortableSquadCard({
   workStreams,
 }: {
   squad: Squad
-  agents: Agent[]
+  agents: AgentSummary[]
   workStreams: WorkStream[]
 }) {
   const { slugFor } = useSquadSlugs()
@@ -300,7 +301,15 @@ function SortableSquadCard({
   )
 }
 
-function SquadCard({ squad, agents, workStreams }: { squad: Squad; agents: Agent[]; workStreams: WorkStream[] }) {
+function SquadCard({
+  squad,
+  agents,
+  workStreams,
+}: {
+  squad: Squad
+  agents: AgentSummary[]
+  workStreams: WorkStream[]
+}) {
   const { slugFor } = useSquadSlugs()
   return (
     <Link to={`/squads/${slugFor(squad.id)}`} className="ficus-panel ficus-interactive-card flex flex-col p-5">

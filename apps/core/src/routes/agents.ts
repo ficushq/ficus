@@ -27,6 +27,7 @@ import { Execution } from '../entities/Execution'
 import { isSessionActive, isSessionCompacting, removeSession } from '../services/execution'
 import { getProxyWorkerSSE } from '../services/streaming/sse-proxy'
 import { Agent, AgentTargetUnavailableError, ListMessagesOptions } from '../entities/Agent'
+import { listAgentSummaryRows } from '../entities/agent-queries'
 import { and, eq } from 'drizzle-orm'
 import { db, agentExtraScopes, sandboxProvisionRecoveries, recoveryEpisodes } from '../db'
 import { AmbiguousPrefixError } from '../db/prefix-match'
@@ -145,7 +146,10 @@ async function failActiveSessionForStoppedSandbox(agent: Agent, sandboxId: strin
  *   see another user's private agents.
  * - Squad agents are visible if their squad is accessible to the caller.
  */
-async function filterVisibleAgents(identity: Identity, agentList: Agent[]): Promise<Agent[]> {
+async function filterVisibleAgents<T extends { ownerUserId: string | null; squadId: string | null }>(
+  identity: Identity,
+  agentList: T[]
+): Promise<T[]> {
   const accessible = await getAccessibleSquadIds(identity)
   const callerUserId =
     identity.type === 'user' ? identity.userId : identity.type === 'agent' ? identity.userId : undefined
@@ -214,6 +218,10 @@ export const agentsRouter = new Hono()
     const orphaned = c.req.query('orphaned')
     const parentAgentId = c.req.query('parentAgentId')
     const olderThan = c.req.query('olderThan')
+    const view = c.req.query('view')
+    if (view !== undefined && view !== 'summary') return c.json({ error: 'view must be "summary"' }, 400)
+    // live=true keeps only agents that can still act (not dormant, not terminated).
+    const live = c.req.query('live') === 'true' ? { live: true } : {}
 
     // If orphaned=true, use the orphaned agents list
     if (orphaned === 'true') {
@@ -227,17 +235,24 @@ export const agentsRouter = new Hono()
       return c.json(filtered.map((agent) => agent.toJson()))
     }
 
-    const result = await Agent.list(
-      {
-        agentTypeId,
-        status,
-        scopeType,
-        scopeId,
-        taskId,
-        ...(parentAgentId ? { parentAgentId } : { topLevelOnly: true }),
-      },
-      'latestMessage'
-    )
+    const filters = {
+      agentTypeId,
+      status,
+      scopeType,
+      scopeId,
+      taskId,
+      ...live,
+      ...(parentAgentId ? { parentAgentId } : { topLevelOnly: true }),
+    }
+    // view=summary: the same agents as id, type, squad, parent and status only. Lists that
+    // just place an agent (a stream's assignee, a squad's head count) must not pull every
+    // agent's metadata, context and usage, including those of terminated agents.
+    if (view === 'summary') {
+      const visible = await filterVisibleAgents(identity, await listAgentSummaryRows(filters))
+      c.set('authzChecked', true)
+      return c.json(visible.map(({ ownerUserId: _ownerUserId, ...summary }) => summary))
+    }
+    const result = await Agent.list(filters, 'latestMessage')
     const filtered = await filterVisibleAgents(identity, result)
     c.set('authzChecked', true)
     return c.json(filtered.map((agent) => agent.toJson()))

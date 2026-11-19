@@ -33,7 +33,8 @@ describe('squad cards', () => {
   function renderCards(squadAgents: ReturnType<typeof agent>[]) {
     const client = new QueryClient()
     client.setQueryData(queries.squads.list('active').queryKey, [squad] as never)
-    client.setQueryData(queries.agents.list().queryKey, squadAgents as never)
+    // The cards count agents from summary rows of the live ones, not the full agent list.
+    client.setQueryData(queries.agents.summaries({ live: true }).queryKey, squadAgents as never)
     client.setQueryData(queries.squads.activeWorkStreams().queryKey, [] as never)
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
