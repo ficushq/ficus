@@ -35,7 +35,7 @@ export function mergePublicVoicePatch(current: SquadVoiceSetting, patch: SquadPu
   if (patch.base) voiceId = null
   // Assigning a profile, or choosing the instance default (an explicit null), replaces a custom base
   // unless the same request sets one.
-  if (patch.voiceId || (patch.voiceId === null && patch.base === undefined)) base = null
+  if (!patch.preserveCustomBase && (patch.voiceId || (patch.voiceId === null && patch.base === undefined))) base = null
 
   const surfaces: PublicVoiceSurfaces = { ...(current.local?.surfaces ?? {}) }
   for (const [surface, entry] of Object.entries(patch.surfaces ?? {}) as Array<

@@ -212,7 +212,7 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
 
           <div data-setting-target="derive-voice">
             <DeriveVoiceCard
-              squadId={squadId}
+              target={{ kind: 'squad', squadId }}
               linkedLogin={state.linkedGitHubLogin}
               useDraftLabel="Use as this squad's custom voice"
               onUseDraft={(draft) => {

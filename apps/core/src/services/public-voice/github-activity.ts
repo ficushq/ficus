@@ -6,7 +6,7 @@ import {
   type DerivationSurface,
 } from '@ficus/shared'
 import { summarizeSamples } from './samples'
-import { GitHubApiUnavailableError, githubApiGraphql } from '../github/api-client'
+import { GitHubApiUnavailableError, githubApiGraphql, type GitHubActivitySource } from '../github/api-client'
 
 /**
  * Collects a GitHub user's own writing (pull requests, issue and review
@@ -187,8 +187,7 @@ function shouldPageOn<T>(
 }
 
 export async function collectGitHubActivity(
-  input: {
-    squadId: string
+  input: GitHubActivitySource & {
     login: string
     filters: DerivationFilters
     now?: Date
@@ -201,7 +200,10 @@ export async function collectGitHubActivity(
   const graphql: GraphqlFn =
     deps.graphql ??
     ((query, variables) =>
-      githubApiGraphql(query, variables, input.squadId, undefined, { allowPartial: true, signal: input.signal }))
+      githubApiGraphql(query, variables, input.source ?? { kind: 'squad', squadId: input.squadId! }, undefined, {
+        allowPartial: true,
+        signal: input.signal,
+      }))
   const { filters, login } = input
   const surfaces = new Set<DerivationSurface>(filters.surfaces ?? DERIVATION_SURFACES)
   let requests = 0

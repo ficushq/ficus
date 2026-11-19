@@ -44,5 +44,6 @@ test('voice profiles have their own permission-filtered destination', () => {
   expect(assistantSearch('Voices', [], [], new Set())).toEqual([])
   expect(isSectionAllowed('voices', () => false, false)).toBe(false)
   expect(isSectionAllowed('voices', (permission) => permission === 'agent-types:read', false)).toBe(true)
+  expect(isSectionAllowed('voices', (permission) => permission === 'agent-types:update', false)).toBe(true)
   expect(isSectionAllowed('voices', () => true, true)).toBe(false)
 })

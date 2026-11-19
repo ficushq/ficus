@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DerivationEvent, DerivationFilters, VoiceDerivationResult } from '@ficus/shared'
-import { deriveSquadVoice } from '../../api/publicVoices'
+import { deriveVoice, type VoiceDerivationTarget } from '../../api/publicVoices'
 import { useStableRef } from '../../hooks/useStableRef'
 
 /** A generation owns callbacks, result and cancellation; stale requests can never revive a draft. */
-export function useVoiceDerivation(squadId: string, body: () => { login: string; filters: DerivationFilters }) {
+export function useVoiceDerivation(
+  target: VoiceDerivationTarget,
+  body: () => { login: string; filters: DerivationFilters }
+) {
+  const targetKey = target.kind === 'squad' ? `squad:${target.squadId}` : `connection:${target.connectionId}`
   const bodyRef = useStableRef(body)
   const generation = useRef(0)
   const controller = useRef<AbortController | null>(null)
@@ -20,9 +24,9 @@ export function useVoiceDerivation(squadId: string, body: () => { login: string;
   const lastAnnouncement = useRef(0)
   const [elapsed, setElapsed] = useState(0)
   // Adjust state during render so the old squad's draft is never committed to the new view.
-  const [scope, setScope] = useState(squadId)
-  if (scope !== squadId) {
-    setScope(squadId)
+  const [scope, setScope] = useState(targetKey)
+  if (scope !== targetKey) {
+    setScope(targetKey)
     setData(undefined)
     setError(undefined)
     setPending(false)
@@ -38,7 +42,7 @@ export function useVoiceDerivation(squadId: string, body: () => { login: string;
       controller.current = null
     }
     return invalidate
-  }, [squadId])
+  }, [targetKey])
   useEffect(() => {
     if (!isPending) return
     const start = Date.now()
@@ -75,7 +79,7 @@ export function useVoiceDerivation(squadId: string, body: () => { login: string;
         omitted: previous.omitted || previous.history.length + lines.length > 100,
       }))
     try {
-      const result = await deriveSquadVoice(squadId, bodyRef.current(), {
+      const result = await deriveVoice(target, bodyRef.current(), {
         signal: abort.signal,
         onLegacyResponse: () => {
           if (current === generation.current) setNotice('This server does not report live progress.')
