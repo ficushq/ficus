@@ -293,12 +293,12 @@ describe('AgentTypeSync', () => {
       expect(p).toContain('git.branch')
       // If metadata exists but the worktree wasn't set up, create it.
       expect(p).toContain('git worktree add')
-      // Only request input / escalate when metadata is entirely missing.
-      expect(p).toContain('entirely')
-      expect(p).toContain('missing')
-      expect(p).toContain('request-input')
-      expect(p).toContain('request-input')
-      expect(p).toContain('on `main`')
+      // Only request input / escalate when the stream has no worktree or branch at all,
+      // and never fall back to implementing on the base branch.
+      expect(p).toContain('stream has no worktree or branch')
+      expect(p).toContain('do not implement on the base branch')
+      expect(p).toContain('"key":"git.worktree"')
+      expect(p).toContain('ficus workstream request-input')
     }
   })
 
@@ -360,12 +360,13 @@ describe('AgentTypeSync', () => {
       expect(agentType).toBeTruthy()
       const p = agentType!.systemPrompt
       // Verify the worktree directory exists + is on the correct branch, then cd into it.
-      expect(p).toContain('git -C <git.worktree> branch --show-current')
-      expect(p).toContain('cd <git.worktree>')
+      expect(p).toContain('git -C <worktree> branch --show-current')
+      expect(p).toContain('keep all work inside that directory')
       // No CWD-is-the-worktree check.
       expect(p).not.toContain('Confirm your current working directory')
-      // Allow the intentional no-worktree case.
-      expect(p).toContain('intentionally not used')
+      // Allow the intentional no-worktree case, without permitting repository mutations.
+      expect(p).toContain('the manager\nmay say a stream intentionally has none')
+      expect(p).toContain('repository mutations still require a\nworktree-backed stream')
     }
   })
 
