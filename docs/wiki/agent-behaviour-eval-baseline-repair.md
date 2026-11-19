@@ -5,6 +5,10 @@ guidance comparison. The scenario goals, must flags, step limits and no-regressi
 unchanged. Noah approved the executable/reviewer-flag-scoped requester grader correction on
 2026-11-19. No other grader changes are included.
 
+On 2026-11-19, Noah explicitly authorized reduced **offline-only delivery**, while keeping dependent
+live guidance comparisons blocked. Review and delivery of these harness fixes therefore do not
+claim a passing live baseline or waive the controlled rerun described below.
+
 ## Original evidence and classification
 
 Source review: [PR 952 review at 507b01f6](https://github.com/ficushq/ficus/pull/952#pullrequestreview-5979999689).
