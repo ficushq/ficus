@@ -134,6 +134,11 @@ Resetting asserts nothing about the upstream state — it only removes Ficus's r
 is in fact still exhausted, the very next request re-marks it with a fresh cooldown, so the worst
 case is one wasted call.
 
+The worker owns provider health; the API only mirrors it. A reset is therefore stored as a request
+(the `PROVIDER_HEALTH_RESET_REQUESTS` setting) that the worker applies and persists, normally within
+a second and at the latest at its next settings refresh or start. A request clears only a record
+that began before the reset was made, so a failure seen afterwards stays recorded.
+
 ### Observed recovery and health probes
 
 Cooldown expiry makes a route eligible for another request; it does not establish recovery or

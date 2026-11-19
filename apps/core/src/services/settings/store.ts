@@ -272,6 +272,12 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     description: 'Versioned provider health state shared from the worker to API read replicas',
     crossProcess: true,
   },
+  PROVIDER_HEALTH_RESET_REQUESTS: {
+    type: 'string',
+    default: '',
+    description: 'Operator provider health resets for the worker to apply (internal, JSON)',
+    crossProcess: true,
+  },
   [MAX_CONCURRENT_AGENTS_SETTING_KEY]: {
     type: 'number',
     // Env-aware so `list()` reports the cap that ACTUALLY applies with nothing

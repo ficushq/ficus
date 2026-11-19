@@ -11,8 +11,10 @@
  * revisions atomically under `PROVIDER_HEALTH_STATE`; a serialized, coalescing,
  * retrying drain keeps failure recording non-blocking and prevents stale writes
  * from overtaking newer snapshots. API processes hydrate that setting as
- * read-only replicas. The old `PROVIDER_HEALTH` array is read only for legacy
- * migration compatibility.
+ * read-only replicas: anything they change locally is replaced at the next
+ * hydration, so an operator reset handled by the API travels to the worker as a
+ * stored request (see reset-requests.ts). The old `PROVIDER_HEALTH` array is
+ * read only for legacy migration compatibility.
  *
  * Observations come from settled request errors, proactive response-header
  * signals, and affirmative results from registered three-state probes.
@@ -392,6 +394,19 @@ export class ProviderHealthRegistry {
   /** Mark a provider account available again (records an exact recovery tombstone). */
   markAccountAvailable(provider: string, accountId: string): void {
     this.recordSuccess(this.captureAttempt(provider, accountId))
+  }
+
+  /**
+   * Apply an operator reset requested at `requestedAt`: clear the applicable
+   * episode only when it began at or before the request. A failure observed
+   * after the request stays recorded, which makes re-applying a stored request
+   * harmless. Returns whether an episode was cleared.
+   */
+  applyReset(provider: string, accountId: string | undefined, requestedAt: number): boolean {
+    const attempt = this.captureAttempt(provider, accountId)
+    const applicable = this.records.get(attempt.applicableKey)
+    if (!applicable || applicable.since > requestedAt) return false
+    return this.recordSuccess(attempt)
   }
 
   /** Clear all entries (test/utility helper). */
