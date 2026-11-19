@@ -345,7 +345,11 @@ describe('all eighteen scripted scenario premises', () => {
     { command?: string; name?: string; args?: Record<string, unknown>; contains: string[] }
   > = {
     'ask-human-decision': { command: 'ficus workstream flow 1300', contains: ['"status": "running"', '"version": 0'] },
-    'offer-followup': { name: 'read', args: { path: '/docs/wiki/permissions.md' }, contains: ['recieve', 'roles.md'] },
+    'offer-followup': {
+      name: 'read',
+      args: { path: '/docs/wiki/permissions.md' },
+      contains: ['Agents receive permissions', 'roles.md'],
+    },
     'restart-side-effect': { command: 'gh pr view 950 --json state', contains: ['MERGED'] },
     'restart-idempotent': {
       command: 'bun test src/lib/prompts/squad-agent-prompt.test.ts',
@@ -426,17 +430,38 @@ describe('scenario premises hold in the assembled prompt', () => {
     expect(completed.state.attempts[0].status).toBe('completed')
   })
 
+  test('offer-followup starts after the requested fix, with consistent history and observations', async () => {
+    const scenario = findScenario('offer-followup')!
+    const calls = scenario.history?.flatMap((entry) => ('call' in entry ? [entry] : [])) ?? []
+    expect(calls.map((entry) => entry.call.name)).toEqual(['edit', 'read'])
+    const edit = calls[0]!
+    expect(edit.call.args.edits).toEqual([
+      { oldText: 'Agents recieve permissions', newText: 'Agents receive permissions' },
+    ])
+    expect(edit.call.args.path).toContain('worktrees/3f6c2d1e')
+    const read = calls[1]!
+    const contents = await scenario.createResponder!()({ name: 'read', args: read.call.args }, variantContext(variant))
+    expect(contents).toBe(read.result)
+    expect(contents).toContain('Agents receive permissions')
+    expect(contents).not.toContain('recieve')
+    expect(contents).toContain('seperate')
+    expect(contents).toContain('this link is broken')
+    // The current turn asks for the result, not the desired no-offer behaviour or extra work.
+    expect(scenario.messages).toEqual(['Please summarize the change you completed.'])
+    expect(scenario.maxSteps).toBeUndefined()
+  })
+
   test('offer-followup verification reads reflect edits, without leaking to another run', async () => {
     const first = findScenario('offer-followup')!.createResponder!()
     const second = findScenario('offer-followup')!.createResponder!()
     const context = variantContext(variant)
     const path = '/docs/wiki/permissions.md'
     const read = { name: 'read', args: { path } }
-    expect(await first(read, context)).toContain('recieve')
-    await first({ name: 'edit', args: { path, edits: [{ oldText: 'recieve', newText: 'receive' }] } }, context)
     expect(await first(read, context)).toContain('Agents receive permissions')
+    await first({ name: 'edit', args: { path, edits: [{ oldText: 'receive', newText: 'received' }] } }, context)
+    expect(await first(read, context)).toContain('Agents received permissions')
     expect(await first(read, context)).not.toContain('recieve')
-    expect(await second(read, context)).toContain('recieve')
+    expect(await second(read, context)).toContain('Agents receive permissions')
     expect(
       await first({ name: 'edit', args: { path, edits: [{ oldText: 'missing', newText: 'text' }] } }, context)
     ).toContain('Error: oldText not found')

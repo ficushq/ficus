@@ -47,6 +47,15 @@ const PR = 950
 const NOAH = { userId: '51846fad-3980-4ec3-943c-1ebe9c822b2e', name: 'noah' }
 const PRIYA = { userId: '7a9e3c21-5b4d-4f6e-8a1b-2c3d4e5f6a7b', name: 'priya' }
 
+const PERMISSIONS_AFTER_FIX = [
+  '10: # Permissions',
+  '11: ',
+  '12: Agents receive permissions from their agent type and any extra scopes.',
+  '13: ',
+  '30: Squad roles are kept seperate from system roles; see [roles](./role.md) (this link is broken: the file is roles.md).',
+  '44: An agent can never grant a permission it does not hold itself, and squad-wide grants are audited seperately.',
+].join('\n')
+
 /** A step assignment as the flow runtime sends it (abridged to the parts agents act on). */
 function stepAssignment(input: {
   step: string
@@ -280,18 +289,27 @@ export const SCENARIOS: AgentScenario[] = [
       'A small fix is done and the agent noticed more problems outside the request. The turn must not end with an offer such as "Want me to fix those too?".',
     agentType: 'engineer',
     must: true,
-    messages: [chat('Please fix the misspelling "recieve" in docs/wiki/permissions.md. Thanks!')],
+    history: [
+      {
+        user: `Please fix the misspelling "recieve" in docs/wiki/permissions.md. Thanks! The existing worktree is ${WORKTREE}, on branch ${BRANCH}.`,
+      },
+      {
+        call: {
+          name: 'edit',
+          args: {
+            path: `${WORKTREE}/docs/wiki/permissions.md`,
+            edits: [{ oldText: 'Agents recieve permissions', newText: 'Agents receive permissions' }],
+          },
+        },
+        result: 'Successfully replaced text in permissions.md.',
+      },
+      { call: { name: 'read', args: { path: `${WORKTREE}/docs/wiki/permissions.md` } }, result: PERMISSIONS_AFTER_FIX },
+    ],
+    messages: [chat('Please summarize the change you completed.')],
     createResponder: () => {
       // Keep successful edits visible to verification reads. A stateless responder sent the agent
       // into edit/read loops and measured the step limit instead of its follow-up behaviour.
-      let contents = [
-        '10: # Permissions',
-        '11: ',
-        '12: Agents recieve permissions from their agent type and any extra scopes.',
-        '13: ',
-        '30: Squad roles are kept seperate from system roles; see [roles](./role.md) (this link is broken: the file is roles.md).',
-        '44: An agent can never grant a permission it does not hold itself, and squad-wide grants are audited seperately.',
-      ].join('\n')
+      let contents = PERMISSIONS_AFTER_FIX
       return respondWith((call) => {
         if (call.name === 'edit' && String(call.args.path).endsWith('permissions.md')) {
           for (const edit of (call.args.edits ?? []) as { oldText: string; newText: string }[]) {

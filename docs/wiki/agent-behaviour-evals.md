@@ -43,6 +43,12 @@ Repository API requests cannot accidentally receive PR JSON. Successful merge/re
 later inspections, with fresh state per run. `evals.test.ts` probes all 18 scenario premises and
 `fixtures.test.ts` checks known and unknown discovery/settings calls before live comparisons.
 
+The approved offer-followup goal starts after a small fix is done. Its earlier user/edit/read history
+now establishes that completion in the known worktree, including observations of unrelated issues.
+The current turn only asks for the result; it does not tell the model to avoid offers or authorize
+those unrelated fixes. This avoids measuring repository discovery and editing against the step
+limit instead of the intended post-completion decision. The grader and step limit are unchanged.
+
 Fixture corrections require both comparison sides to be rerun with that same corrected harness;
 preserve earlier recordings but label their limitations instead of mixing them into the new cohort.
 
