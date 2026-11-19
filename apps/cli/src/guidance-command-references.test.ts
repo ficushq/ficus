@@ -248,6 +248,65 @@ describe('ficus commands quoted in agent guidance', () => {
   })
 })
 
+// Work stream verbs that predate flows, as the CLI help marks them. A flow refuses them, so the
+// external skills, which people install into their own agents, may quote them only in a section
+// for streams without a flow.
+function legacyWorkstreamVerbs(program: Command): Set<string> {
+  const workstream = findSubcommand(program, 'workstream')!
+  return new Set(
+    workstream.commands
+      .filter((command) => command.description().startsWith('Legacy, streams without a flow:'))
+      .flatMap((command) => [command.name(), ...command.aliases()])
+  )
+}
+
+/** The Markdown heading a line falls under, skipping `#` comment lines inside fenced code. */
+function headingAt(source: string, line: number): string {
+  let heading = ''
+  let fenced = false
+  for (const text of source.split('\n').slice(0, line)) {
+    if (/^\s*```/.test(text)) fenced = !fenced
+    else if (!fenced && /^#{1,6} /.test(text)) heading = text
+  }
+  return heading
+}
+
+describe('external skills teach the flow lifecycle', () => {
+  const skills = listFiles('external/skills').filter((file) => file.endsWith('.md'))
+  const references = skills.flatMap((file) => {
+    const source = readFileSync(file, 'utf8')
+    return extractCommandReferences(file, source).map((reference) => ({
+      ...reference,
+      heading: headingAt(source, reference.line),
+    }))
+  })
+
+  test('quote legacy work stream verbs only under a heading for streams without a flow', () => {
+    const verbs = legacyWorkstreamVerbs(createProgram())
+    expect([...verbs]).toEqual(expect.arrayContaining(['approve', 'send-back', 'reject']))
+    const legacy = references.filter((reference) => {
+      const [group, verb] = shellWords(reference.text)
+      return (group === 'ws' || group === 'workstream') && verbs.has(verb!)
+    })
+    expect(legacy.length).toBeGreaterThan(0)
+    expect(
+      legacy
+        .filter(({ heading }) => !/without a flow/i.test(heading))
+        .map(({ file, line, text }) => `${file}:${line}: ficus ${text}`)
+    ).toEqual([])
+  })
+
+  test('the reviewer skill resolves flow streams with the flow commands', () => {
+    const quoted = new Set(
+      references
+        .filter(({ file }) => file === 'external/skills/ficus-reviewer/SKILL.md')
+        .map(({ text }) => shellWords(text).slice(0, 2).join(' '))
+    )
+    for (const command of ['ws flow', 'ws advance', 'ws finish', 'ws resolve-input', 'ws unblock'])
+      expect({ command, quoted: quoted.has(command) }).toEqual({ command, quoted: true })
+  })
+})
+
 describe('fleet alert remediation is available to squad agents', () => {
   const program = createProgram()
   const references = listFiles('apps/core/src/services/fleet-alerts').flatMap((file) =>
