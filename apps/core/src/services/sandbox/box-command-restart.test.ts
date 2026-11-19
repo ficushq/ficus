@@ -206,7 +206,7 @@ test('box-only graceful restart preserves genuine tool recovery and leaves anoth
     const outcome = await running
     expect(outcome).toBeInstanceOf(Error)
     expect((outcome as Error).message).toStartWith(
-      'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; nothing is wrong with your work or the box. Re-run it when your sandbox is back.'
+      'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; partial effects are possible.'
     )
     expect(restartContextForCommandError(outcome)).toEqual(restart)
     const invocationId = createHash('sha256').update(execution!.id).update('\0').update('long-command').digest('hex')

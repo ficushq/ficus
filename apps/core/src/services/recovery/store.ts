@@ -469,7 +469,7 @@ async function publish(record: RecoveryRecord): Promise<void> {
         subject: 'Continue or stop recovery',
         content: owner
           ? summary
-          : `${summary}\n\nRecovery ${record.id} belongs to agent ${record.agentId}. Use ${record.workStreamId ? `ficus workstream resolve-input ${record.workStreamId} ${record.waitId}` : `ficus agent recovery ${record.agentId} ${record.id}`} with a typed decision and expectedVersion ${record.version}. You may grant one extra cycle, stop, or forward to the owner.`,
+          : `${summary}\n\nRecovery ${record.id} belongs to agent ${record.agentId}. Use ${record.workStreamId ? `ficus workstream resolve-input ${record.workStreamId} ${record.waitId}` : `ficus agent recovery ${record.agentId} ${record.id}`} with a typed decision and expectedVersion ${record.version}. Inspect only authorized environments, then repair or re-plan. You may grant one extra cycle per normalized recovery scope across successor attempts, stop, or forward the generated summary to the owner without adding forensic prose. If that cycle exhausts, the runtime forwards to the owner automatically. Stop retains the hold; Continue never bypasses approval, permission, pause, dependency, credential/provider or other input gates, and never authorizes repeating unknown side effects. Counts and routing are runtime-owned; do not invent a recipient, reset a budget or request technical evidence from a person.`,
         metadata: {
           source: 'recovery-decision-required',
           recoveryId: record.id,

@@ -120,9 +120,15 @@ test('actual bash tool and recovery wrapper preserve a drained restart without c
     const outcome = await running
     expect(outcome).toBeInstanceOf(Error)
     expect((outcome as Error).message).toStartWith(
-      'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; nothing is wrong with your work or the box. Re-run it when your sandbox is back.'
+      'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; partial effects are possible.'
     )
     expect(restartContextForCommandError(outcome)).toEqual(restart)
+    expect((outcome as Error).message.match(/restart id:/g)).toHaveLength(1)
+    expect((outcome as Error).message).not.toContain('before an explicit safe retry')
+    expect((outcome as Error).message).not.toMatch(/Re-run|not an incident/)
+    const resumedTurn = `${(outcome as Error).message}\n${restartResumeNotice(restart)}`
+    expect(resumedTurn.match(/safe, idempotent work/g)).toHaveLength(1)
+    expect(resumedTurn).toContain('Never repeat an unknown external side effect')
     const invocationId = createHash('sha256').update(execution!.id).update('\0').update('long-command').digest('hex')
     const key = createHash('sha256').update(invocationId).digest('hex')
     expect(JSON.parse(await readFile(join(dir, 'registry/generations', `${key}.json`), 'utf8'))).toMatchObject({

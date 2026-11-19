@@ -174,13 +174,15 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
             const guidance = !record
               ? 'Recovery accounting is unavailable. No recovery reference is available in this result; a durable record may already exist. Do not repeat the operation until its affected state and native recovery state can be reconciled.'
               : record.state.state === 'recovering'
-                ? 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
+                ? restart
+                  ? '' // The resumed prompt owns the restart brief; the command result retains the facts.
+                  : 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
                 : `The unexplained-failure budget is exhausted. ${recoveryHoldGuidance(record)}`
             let message = error instanceof Error ? error.message : String(error)
-            if (restart && !message.startsWith('This command was cancelled by a Ficus restart at '))
+            if (restart && !message.includes(`[reason: core_restart; restart id: ${restart.restartId}]`))
               message = `${commandCanceledForRestartError(restart).message} ${message}`
             throw Object.assign(
-              new Error(`${message}\n\n${guidance}`, { cause: error }),
+              new Error([message, guidance].filter(Boolean).join('\n\n'), { cause: error }),
               restart ? { reason: 'core_restart', restart } : {}
             )
           }

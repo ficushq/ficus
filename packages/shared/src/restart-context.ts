@@ -24,7 +24,7 @@ export function isRestartContext(value: unknown): value is RestartContext {
  * tell those failures came from the restart, not from its own work.
  */
 export function restartResumeNotice(restart: RestartContext): string {
-  return `Ficus restarted at ${restart.restartedAt}; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: ${restart.restartId}]`
+  return `Ficus restarted at ${restart.restartedAt}; any command running then was cancelled by the restart and may have partial effects. This is an interruption, not an incident, and a free retry: once the sandbox is back, check partial output and affected state, then re-run only safe, idempotent work. Never repeat an unknown external side effect; other gates still apply. [restart id: ${restart.restartId}]`
 }
 
 // The CHAT copies, for people reading the conversation. `[System]` renders
@@ -39,7 +39,7 @@ export function restartPauseChatNotice(): string {
 
 /** Posted when the run picks up again; the agent gets restartResumeNotice in its prompt. */
 export function restartResumeChatNotice(): string {
-  return '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
+  return '[System] Resumed after a restart.'
 }
 
 /** Posted when the resumed run itself fails. */
