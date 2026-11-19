@@ -142,7 +142,8 @@ the new text as with the old, and the total number of passing runs does not drop
 - that each scenario's premise holds in the assembled prompt. For example, the Slot Pools section
   is present for slot-queued, and no prompt shows `inbox list --all` for cli-discovery;
 - that the comparison applies the rule;
-- that each committed recording still grades as it did when recorded.
+- that each retained final recording still grades as recorded and the five minimal historical
+  correction traces retain their original verdicts and explicitly pinned corrections.
 
 `prompt.test.ts` additionally checks default voice composition across built-in types, capability
 filtering, deterministic per-variant profiles, runtime size limits, git-ref extraction and
@@ -171,3 +172,13 @@ historical false-positive corrections (two read-only Astro searches and three qu
 cases). This does not prove behaviour under a corrected interactive responder: if an earlier live
 trace received an incorrect response, both comparison sides must be run afresh under the corrected
 harness, not merely regraded to claim a pass.
+
+## Committed evidence size
+
+The `recordings/` directory has a recursively enforced **1 MiB** budget, including documentation
+and nested artifacts. Keep the current accepted cohort and minimal reusable regression traces in
+git, not every live experiment. Archive superseded full cohorts in the shared task workspace,
+verify byte identity and record filenames and hashes before removing their repository copies.
+Update the cohort-membership test and README references when replacing a cohort. The delivery
+comparison retains five complete historical correction runs with source hashes, so removing bulk
+cohorts does not remove the grader-correction regression coverage.
