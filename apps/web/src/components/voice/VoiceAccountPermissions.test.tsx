@@ -83,7 +83,7 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
         method: init?.method ?? 'GET',
         ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
       })
-      if (path === '/api/public-voices/github-accounts')
+      if (path === '/api/public-voices/derive/github-accounts')
         return Response.json([{ id: selectedId, login: 'octo', displayName: 'My account' }])
       if (path === '/api/public-voices/derive') return Response.json(result)
       if (path === '/api/public-voices' && init?.method === 'POST')
@@ -138,7 +138,7 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
         await new Promise((resolve) => setTimeout(resolve, 15))
       })
       expect(container.textContent).toContain(result.draft.base)
-      expect(requests).toContainEqual({ path: '/api/public-voices/github-accounts', method: 'GET' })
+      expect(requests).toContainEqual({ path: '/api/public-voices/derive/github-accounts', method: 'GET' })
       expect(requests).toContainEqual({
         path: '/api/public-voices/derive',
         method: 'POST',

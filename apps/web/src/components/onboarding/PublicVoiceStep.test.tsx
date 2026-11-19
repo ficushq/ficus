@@ -59,7 +59,9 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
       }
       calls.push(request)
       if (request.method === 'GET')
-        return Response.json(request.url.endsWith('/github-accounts') ? [{ id: 'account', login: 'octo' }] : squads)
+        return Response.json(
+          request.url.endsWith('/derive/github-accounts') ? [{ id: 'account', login: 'octo' }] : squads
+        )
       if (request.url.endsWith('/derive')) return Response.json(result)
       if (request.url.endsWith('/public-voices'))
         return scenario === 'collision'

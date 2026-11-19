@@ -81,6 +81,29 @@ describe('voice profile routes', () => {
     expect(await res.json()).toMatchObject({ error: 'public_voice_too_long', maxBytes: 2000 })
   })
 
+  for (const caller of ['reader', 'admin'] as const) {
+    test(`${caller} can still read profiles whose valid ids resemble derivation endpoints`, async () => {
+      for (const id of ['github-accounts', 'derive']) {
+        // Do not overwrite an unrelated fixture if an id is unexpectedly already present.
+        const created = await request(admin, 'POST', '/', {
+          id,
+          name: `Profile ${id}`,
+          base: 'Synthetic profile instructions.',
+        })
+        expect(created.status).toBe(201)
+        try {
+          const res = await request(caller === 'reader' ? reader : admin, 'GET', `/${id}`)
+          expect(res.status).toBe(200)
+          const body = await res.json()
+          expect(Array.isArray(body)).toBe(false)
+          expect(body).toMatchObject({ id, name: `Profile ${id}`, base: 'Synthetic profile instructions.' })
+        } finally {
+          await PublicVoice.delete(id)
+        }
+      }
+    })
+  }
+
   test('concurrent creation never overwrites an existing name or draft', async () => {
     const id = `${prefix}-collision`
     const responses = await Promise.all([

@@ -146,7 +146,7 @@ test('agent, automation and bootstrap identities cannot derive even with full in
       })
       expect(res.status).toBe(403)
       expect(await res.json()).toEqual({ error: 'derivation_requires_person' })
-      const listing = await scoped.request('/api/public-voices/github-accounts')
+      const listing = await scoped.request('/api/public-voices/derive/github-accounts')
       expect(listing.status).toBe(403)
       expect(await listing.json()).toEqual({ error: 'derivation_requires_person' })
     }
@@ -329,13 +329,13 @@ test('account selection needs only the two derive grants, not administrative int
     (await poolApp.request('/api/integrations/connections?provider=github', { headers: authHeaders(user.token) }))
       .status
   ).toBe(403)
-  for (const path of ['/api/public-voices', '/api/public-voices/default']) {
+  for (const path of ['/api/public-voices', '/api/public-voices/default', '/api/public-voices/github-accounts']) {
     expect((await app.request(path, { headers: authHeaders(user.token) })).status).toBe(403)
   }
   const { createTestGitHubConnection } = await import('../test-utils/github-connection')
   const fixture = await createTestGitHubConnection({ login: 'selected-account' })
   try {
-    const res = await app.request('/api/public-voices/github-accounts', { headers: authHeaders(user.token) })
+    const res = await app.request('/api/public-voices/derive/github-accounts', { headers: authHeaders(user.token) })
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     const accounts = await res.json()
@@ -359,11 +359,11 @@ test('account selection needs only the two derive grants, not administrative int
 })
 
 test('the safe account list denies each missing grant and all non-person callers', async () => {
-  expect((await app.request('/api/public-voices/github-accounts')).status).toBe(401)
+  expect((await app.request('/api/public-voices/derive/github-accounts')).status).toBe(401)
   for (const user of restricted) {
-    expect((await app.request('/api/public-voices/github-accounts', { headers: authHeaders(user.token) })).status).toBe(
-      403
-    )
+    expect(
+      (await app.request('/api/public-voices/derive/github-accounts', { headers: authHeaders(user.token) })).status
+    ).toBe(403)
   }
   for (const identity of [
     { type: 'system', systemTokenId: crypto.randomUUID(), name: 'Service', scopes: ['*'] },
@@ -376,7 +376,7 @@ test('the safe account list denies each missing grant and all non-person callers
         await next()
       })
       .route('/api/public-voices', publicVoicesRoutes)
-    expect((await deniedApp.request('/api/public-voices/github-accounts')).status).toBe(403)
+    expect((await deniedApp.request('/api/public-voices/derive/github-accounts')).status).toBe(403)
   }
 })
 
@@ -385,7 +385,7 @@ test('the safe list exposes only identity fields from usable current-authority a
   const { db, integrationConnections } = await import('../db')
   const { eq } = await import('drizzle-orm')
   const fixture = await createTestGitHubConnection({ login: 'account-login' })
-  const list = () => app.request('/api/public-voices/github-accounts', { headers: authHeaders(admin.token) })
+  const list = () => app.request('/api/public-voices/derive/github-accounts', { headers: authHeaders(admin.token) })
   spies.push(
     spyOn(globalThis, 'fetch').mockImplementation(() => {
       throw new Error('Account listing must never probe a provider')

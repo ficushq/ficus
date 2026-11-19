@@ -70,8 +70,9 @@ publicVoicesRoutes.post(
 )
 
 // Selection is part of deriving, not integration administration. Keep the pool's read gate unchanged.
+// Use a multi-segment path so every existing profile id remains available to GET /:id.
 publicVoicesRoutes.get(
-  '/github-accounts',
+  '/derive/github-accounts',
   requirePermission('agent-types:update'),
   requirePermission('integrations:use'),
   async (c) => {

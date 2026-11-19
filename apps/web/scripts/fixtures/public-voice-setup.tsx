@@ -100,7 +100,7 @@ client.setQueryData(onboardingQueryKeys.status(), status)
 window.fetch = (async (input, init) => {
   const path = new URL(String(input), location.origin).pathname
   const method = init?.method ?? 'GET'
-  if (path === '/api/public-voices/github-accounts') return Response.json(accounts)
+  if (path === '/api/public-voices/derive/github-accounts') return Response.json(accounts)
   if (path === '/api/public-voices/derive' && method === 'POST') return Response.json(result)
   if (path === '/api/public-voices') {
     if (method === 'GET') return Response.json(profiles)

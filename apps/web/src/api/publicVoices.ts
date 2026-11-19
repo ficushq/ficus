@@ -25,7 +25,7 @@ export interface PublicVoiceProfileInput {
 
 /** Usable identities only, authorized by the same person and grants as deriving. */
 export function getPublicVoiceGitHubAccounts(): Promise<PublicVoiceGitHubAccount[]> {
-  return apiFetch('/public-voices/github-accounts')
+  return apiFetch('/public-voices/derive/github-accounts')
 }
 
 export function getPublicVoices(): Promise<PublicVoiceProfileJson[]> {
