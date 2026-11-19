@@ -1976,3 +1976,73 @@ test('a lost foreground outcome never invents a recovery decision when accountin
     transaction.mockRestore()
   }
 })
+
+test('mapped outage reasons survive nested transport provenance in the generated recovery decision', async () => {
+  const api = await store()
+  const { BashOutcomeUnknownError } = await import('../sandbox/client/http-client')
+  const { SandboxOutageError } = await import('../sandbox/outage')
+  let record
+  for (let n = 0; n < 3; n++) {
+    const loss = new BashOutcomeUnknownError(`outage-${n}`, 'connection_reset', new Error('PRIVATE_ENDPOINT'))
+    const outage = new SandboxOutageError(
+      'fixture',
+      'Sandbox unavailable (reason: OutOfMemory at /home/private/error.log)',
+      {
+        status: 'failed',
+        reason: 'OutOfMemory',
+        cause: loss,
+      }
+    )
+    const wrapped = new Error('Tool wrapper', { cause: outage })
+    expect(api.lastErrorLine(outage)).toContain('OutOfMemory')
+    expect(api.lastErrorLine(wrapped)).toContain('OutOfMemory')
+    expect(api.lastErrorLine(wrapped)).not.toContain('/home/private')
+    expect(api.lastErrorLine(wrapped)).not.toContain('PRIVATE_ENDPOINT')
+    record = await api.recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      {
+        operationKey: 'outage-summary',
+        attempted: 'run the requested command',
+        invocationId: loss.invocationId,
+        error: wrapped,
+      }
+    )
+  }
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record!.waitId!))
+  expect(wait!.structured!.summary.lastError).toBe('Sandbox unavailable (reason: OutOfMemory at [internal path])')
+  expect(wait!.structured!.summary.attemptCount).toBe(3)
+})
+
+test.each(['flow', 'standalone'] as const)(
+  'held %s guidance tells the worker to yield to the authorized decision maker',
+  async (mode) => {
+    const api = await store()
+    if (mode === 'standalone') {
+      await db.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
+      await db.update(agents).set({ ownerUserId: ownerId }).where(eq(agents.id, worker.id))
+    }
+    let record
+    for (let n = 0; n < 3; n++)
+      record = await api.recordRecoveryFailure(
+        { agentId: worker.id, executionId: execution.id },
+        {
+          operationKey: 'yield-guidance',
+          attempted: 'run the requested command',
+          invocationId: `yield-${n}`,
+          error: new Error('Lost outcome'),
+        }
+      )
+    const guidance = api.recoveryHoldGuidance(record!)
+    expect(guidance).toContain(`Recovery ${record!.id} (expectedVersion ${record!.version})`)
+    expect(guidance).toContain('The squad manager or an eligible owner decides Continue or Stop')
+    expect(guidance).toContain('End your turn and wait for that authorized decision')
+    expect(guidance).not.toContain('Use ficus')
+    expect(guidance).not.toContain('resolve-input')
+    expect(guidance).not.toContain('agent recovery')
+    if (mode === 'flow') expect(guidance).toContain(record!.waitId!)
+    else expect(guidance).toContain(record!.agentId)
+    await expect(
+      api.recoveryRetryDelay({ agentId: worker.id, executionId: execution.id }, 'yield-guidance')
+    ).rejects.toThrow('End your turn')
+  }
+)

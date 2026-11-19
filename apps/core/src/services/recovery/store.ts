@@ -1,3 +1,4 @@
+import { SandboxOutageError } from '../sandbox/outage'
 import { bashOutcomeUnknownForError } from '../sandbox/client/http-client'
 import { ProviderRequestValidationError } from '../execution/provider-request-validation'
 import { createLogger } from '../../lib/infra/logger'
@@ -50,7 +51,20 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 /** Never stores raw output, command arguments, a stack or an unredacted error. */
 export function lastErrorLine(error: unknown): string {
   const outcome = bashOutcomeUnknownForError(error)
-  if (outcome) return `Bash transport ${outcome.failureClass.replaceAll('_', ' ')}; command outcome is unknown.`
+  // The outage mapper knows why the box went away. Keep that explanation even
+  // when SDK/recovery wrappers retain a transport loss further down the chain.
+  const seen = new Set<Error>()
+  let current = error
+  while (current instanceof Error && !seen.has(current)) {
+    if (current instanceof SandboxOutageError) {
+      error = current
+      break
+    }
+    seen.add(current)
+    current = current.cause
+  }
+  if (outcome && !(error instanceof SandboxOutageError))
+    return `Bash transport ${outcome.failureClass.replaceAll('_', ' ')}; command outcome is unknown.`
   const text = error instanceof Error ? error.message : String(error)
   const safe = getContentSafetyRegistry().redact(stripVTControlCharacters(text))
   const line = safe
@@ -181,10 +195,10 @@ export function recoveryHoldGuidance(record: RecoveryRecord): string {
   const reference = `Recovery ${record.id} (expectedVersion ${record.version})`
   const resolution = record.workStreamId
     ? record.waitId
-      ? `Use ficus workstream resolve-input ${record.workStreamId} ${record.waitId} with a typed decision and expectedVersion ${record.version}.`
+      ? `Flow wait ${record.waitId} belongs to work stream ${record.workStreamId}.`
       : 'No current flow wait could be bound; the runtime retains the hold and reports a diagnostic.'
-    : `Use ficus agent recovery ${record.agentId} ${record.id} with a typed decision and expectedVersion ${record.version}.`
-  return `Recovery is ${record.state.state === 'stopped' ? 'stopped' : 'held'}; an authorized decision is required before retrying this operation. ${reference}. ${recoverySummary(record.state).text} ${resolution} Do not invent a recovery reference or request technical evidence from a person. Continue grants only a bounded cycle, not permission to repeat unknown external side effects or bypass other gates.`
+    : `This standalone recovery belongs to agent ${record.agentId}.`
+  return `Recovery is ${record.state.state === 'stopped' ? 'stopped' : 'held'}; an authorized decision is required before retrying this operation. ${reference}. ${recoverySummary(record.state).text} ${resolution} The squad manager or an eligible owner decides Continue or Stop using this record id and version. End your turn and wait for that authorized decision; do not resolve your own recovery. Do not invent a recovery reference or request technical evidence from a person. Continue grants only a bounded cycle, not permission to repeat unknown external side effects or bypass other gates.`
 }
 
 export class RecoveryHeldError extends Error {

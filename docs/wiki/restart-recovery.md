@@ -296,13 +296,19 @@ not silently replay the command.
 The SDK Bash tool preserves this typed error through its cause chain. The recovery
 wrapper uses that **executor invocation id**, not a replacement tool-call hash, for
 its durable outcome. Its generated last-error summary uses only the transport
-classification, not raw endpoint, credential, output or cleanup-error text. Other
-tool failures retain their existing invocation keys and classification policies.
+classification, not raw endpoint, credential, output or cleanup-error text. A mapped
+`SandboxOutageError` takes precedence over nested transport provenance: its outage
+reason passes through the existing redaction and one-line length limit rather than
+being replaced by a generic transport summary. Other tool failures retain their
+existing invocation keys and classification policies.
 
 On the third unexplained loss of the **same normalized command target**, the tool
 error includes the server-issued recovery id, current `expectedVersion`, generated
-attempted-action/count/error summary, and the matching flow wait id and resolution
-command. Standalone errors instead name the native agent-recovery command. An
+attempted-action/count/error summary, and the matching flow wait id. Standalone
+errors identify the owning agent. The worker is told that the squad manager or an
+eligible owner decides Continue or Stop using this record and version, and to end
+its turn until that authorized decision. It is not directed to run a recovery
+resolution command or clear its own hold. An
 already-held retry returns the same kind of actionable reference without executing
 another command. These are references for an authorized manager/owner, not authority
 for the worker to Continue itself. Decisions remain versioned: refresh the native
