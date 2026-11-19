@@ -30,3 +30,12 @@ test('count messages never interpolate malformed values or arbitrary payload fie
   expect(formatDerivationError('forbidden', { reason: 'private' })).toBeUndefined()
   expect(safeDerivationReason('toString', 'private')).toBe('unknown')
 })
+
+test('connection-specific errors are readable without changing legacy squad wording', () => {
+  expect(formatDerivationError('github_connection_unavailable')).toContain('This GitHub account is unavailable')
+  for (const code of ['derivation_github_unavailable', 'derivation_login_not_visible']) {
+    expect(formatDerivationError(code, undefined, { target: 'connection' })).toContain('this GitHub account')
+    expect(formatDerivationError(code, undefined, { target: 'connection' })).not.toContain('squad')
+    expect(formatDerivationError(code)).toContain('squad')
+  }
+})

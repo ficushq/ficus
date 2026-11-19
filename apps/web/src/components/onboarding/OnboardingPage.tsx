@@ -1,3 +1,5 @@
+import { PublicVoiceStep } from './PublicVoiceStep'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 import { squadSlugMap, type Squad } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { useState, type ComponentType } from 'react'
@@ -77,6 +79,7 @@ const CORE_ITEM_IDS: readonly OnboardingItemId[] = ['ai_provider', 'github', 'fi
 export function OnboardingPage() {
   const { status, isAdmin, isPermissionsLoading } = useOnboarding()
   const queryClient = useQueryClient()
+  const [githubRequest, setGithubRequest] = useState(0)
   const [createdSquad, setCreatedSquad] = useState<Squad | null>(null)
 
   const skipMutation = useMutation({
@@ -132,6 +135,7 @@ export function OnboardingPage() {
         return (
           <div className="space-y-6">
             <SetupSteps
+              githubRequest={githubRequest}
               core={ONBOARDING_ITEM_META}
               onSquadCreated={setCreatedSquad}
               itemsById={itemsById}
@@ -151,7 +155,11 @@ export function OnboardingPage() {
               <p className="mt-1 text-xs text-muted">
                 Make Ficus your own. You can also set these up later in Settings.
               </p>
-              <OptionalSetup />
+              <OptionalSetup
+                createdSquad={createdSquad}
+                githubDone={itemsById.get('github')?.state === 'done'}
+                onConnectGitHub={() => setGithubRequest((n) => n + 1)}
+              />
               <p className="mt-4 text-sm text-muted">
                 Taking Ficus with you? Paid Cloud access includes mobile Pro features. For self-hosted servers,{' '}
                 <Link
@@ -191,6 +199,7 @@ function OpenFicusLink({ createdSquad }: { createdSquad: Squad | null }) {
 }
 
 function SetupSteps({
+  githubRequest,
   core,
   onSquadCreated,
   itemsById,
@@ -198,6 +207,7 @@ function SetupSteps({
   onUnskip,
   pending,
 }: {
+  githubRequest: number
   onSquadCreated: (squad: Squad) => void
   core: readonly OnboardingItemMeta[]
   itemsById: Map<OnboardingItemId, OnboardingItem>
@@ -214,6 +224,10 @@ function SetupSteps({
     setOpen(id)
     if (id) setVisited((current) => new Set([...current, id]))
   }
+  useAdjustOnChange([githubRequest], () => {
+    setOpen('github')
+    setVisited((current) => new Set([...current, 'github']))
+  })
   return (
     <div className="divide-y divide-th-border">
       {core.map((meta, index) => {
@@ -271,6 +285,7 @@ function SetupSteps({
 }
 
 const OPTIONAL_SETUP = [
+  { id: 'public_voice', title: 'Public voice from GitHub', Content: PublicVoiceStep },
   { id: 'decision_models', title: 'Decision models', Content: DecisionModelsStep },
   { id: 'voice_memory', title: 'Voice & memory', Content: () => <AssistantMemorySection onboarding /> },
   { id: 'invite_users', title: 'Invite your team', Content: InviteTeamStep },
@@ -278,27 +293,30 @@ const OPTIONAL_SETUP = [
 ] as const
 
 /** Optional tools have no checklist state and never affect setup completion. */
-function OptionalSetup() {
+function OptionalSetup(props: Parameters<typeof PublicVoiceStep>[0]) {
+  const { can } = usePermissions()
   const [open, setOpen] = useState<string | null>(null)
   const [visited, setVisited] = useState(() => new Set<string>())
   return (
     <div className="divide-y divide-th-border" data-optional-setup>
-      {OPTIONAL_SETUP.map(({ id, title, Content }) => (
-        <section key={id} className="py-4">
-          <SetupStepHeader
-            id={id}
-            title={title}
-            expanded={open === id}
-            onToggle={() => {
-              setOpen(open === id ? null : id)
-              setVisited((current) => new Set([...current, id]))
-            }}
-          />
-          <div id={`setup-step-${id}`} hidden={open !== id} className="pt-4 sm:pl-10">
-            {visited.has(id) && <Content />}
-          </div>
-        </section>
-      ))}
+      {OPTIONAL_SETUP.filter((step) => step.id !== 'public_voice' || can('agent-types:update')).map(
+        ({ id, title, Content }) => (
+          <section key={id} className="py-4">
+            <SetupStepHeader
+              id={id}
+              title={title}
+              expanded={open === id}
+              onToggle={() => {
+                setOpen(open === id ? null : id)
+                setVisited((current) => new Set([...current, id]))
+              }}
+            />
+            <div id={`setup-step-${id}`} hidden={open !== id} className="pt-4 sm:pl-10">
+              {visited.has(id) && <Content {...props} />}
+            </div>
+          </section>
+        )
+      )}
     </div>
   )
 }

@@ -115,6 +115,8 @@ export type PublicVoiceProfileUpdate = z.infer<typeof publicVoiceProfileUpdateSc
 export const squadPublicVoicePatchSchema = z
   .object({
     voiceId: publicVoiceIdSchema.nullable().optional(),
+    // Instance assignment controls must not silently replace the squad's custom base.
+    preserveCustomBase: z.boolean().optional(),
     base: voiceText.nullable().optional(),
     surfaces: publicVoiceSurfacesPatchSchema.optional(),
   })

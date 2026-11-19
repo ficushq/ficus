@@ -105,7 +105,7 @@ createRoot(document.getElementById('root')!).render(
   <main style={{ height: '100%', overflow: 'auto', padding: 16 }}>
     <div style={{ maxWidth: 850, margin: '0 auto' }}>
       <DeriveVoiceCard
-        squadId="fixture"
+        target={{ kind: 'squad', squadId: 'fixture' }}
         linkedLogin="octo"
         onUseDraft={() => {
           throw new Error('No fixture saves are permitted')

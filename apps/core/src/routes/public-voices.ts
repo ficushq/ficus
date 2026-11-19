@@ -1,3 +1,8 @@
+import { deriveSchema, respondWithVoiceDerivation } from './voice-derivation'
+import { z } from 'zod'
+import type { Identity } from '../services/rbac'
+import { resolveInstanceGitHubConnection } from '../services/integrations/github/resolve-connection'
+import { derivationOwners } from '../services/public-voice/operation'
 import { Hono } from 'hono'
 import {
   DEFAULT_PUBLIC_VOICE_ID,
@@ -39,6 +44,28 @@ publicVoicesRoutes.get('/', requirePermission('agent-types:read'), async (c) => 
   return c.json(await describeProfiles(await PublicVoice.list({ includeDisabled: true })))
 })
 
+publicVoicesRoutes.post(
+  '/derive',
+  requirePermission('agent-types:update'),
+  requirePermission('integrations:use'),
+  zValidator('json', deriveSchema.extend({ connectionId: z.string().min(1).max(200) }).strict()),
+  async (c) => {
+    const identity = c.get('identity') as Identity | undefined
+    if (identity?.type !== 'user') return c.json({ error: 'derivation_requires_person' }, 403)
+    const body = c.req.valid('json')
+    // Connection ids are UUIDs in storage. Unknown/malformed selections are an application
+    // error, not a database cast failure; normalize equivalent UUIDs for lock ownership.
+    const connectionId = body.connectionId.toLowerCase()
+    if (!z.uuid().safeParse(connectionId).success) return c.json({ error: 'github_connection_unavailable' }, 422)
+    if (derivationOwners.has(`connection:${connectionId}`)) return c.json({ error: 'derivation_in_progress' }, 429)
+    if (!(await resolveInstanceGitHubConnection(connectionId)))
+      return c.json({ error: 'github_connection_unavailable' }, 422)
+    // Resolution is asynchronous: another caller may have acquired ownership while it ran.
+    if (derivationOwners.has(`connection:${connectionId}`)) return c.json({ error: 'derivation_in_progress' }, 429)
+    return respondWithVoiceDerivation(c, { kind: 'connection', connectionId }, identity.userId ?? null, body)
+  }
+)
+
 publicVoicesRoutes.get('/:id', requirePermission('agent-types:read'), async (c) => {
   const profile = await describeOne(c.req.param('id'))
   return profile ? c.json(profile) : c.json({ error: 'Voice profile not found' }, 404)
@@ -67,7 +94,7 @@ publicVoicesRoutes.post(
     }
     const over = tooLong(candidate)
     if (over) return c.json(over, 400)
-    await PublicVoice.upsert(input)
+    if (!(await PublicVoice.create(input))) return c.json({ error: `Voice profile "${input.id}" already exists` }, 409)
     return c.json(await describeOne(input.id), 201)
   }
 )

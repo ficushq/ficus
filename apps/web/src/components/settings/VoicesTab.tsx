@@ -1,14 +1,9 @@
-import { useState } from 'react'
+import { draftBytes, draftOf, type ProfileDraft } from '../voice/profileDraft'
+import { SquadVoiceAssignments } from '../voice/SquadVoiceAssignments'
+import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  DEFAULT_PUBLIC_VOICE_ID,
-  PUBLIC_VOICE_MAX_BYTES,
-  publicVoiceBytes,
-  renderProfileAlone,
-  type PublicVoiceProfileJson,
-  type PublicVoiceSurfaces,
-} from '@ficus/shared'
+import { DEFAULT_PUBLIC_VOICE_ID, PUBLIC_VOICE_MAX_BYTES, type PublicVoiceProfileJson } from '@ficus/shared'
 import {
   createPublicVoice,
   deletePublicVoice,
@@ -20,35 +15,10 @@ import {
 import { ApiError } from '../../api/client'
 import { queries } from '../../queryOptions'
 import { usePermissions } from '../../hooks/usePermissions'
-import { VoiceSurfaceRows } from '../voice/VoiceSurfaceRows'
-import { DeriveVoiceCard } from '../voice/DeriveVoiceCard'
+import { VoiceProfileDraftFields } from '../voice/VoiceProfileDraftFields'
+import { AccountVoiceDerivation } from '../voice/AccountVoiceDerivation'
 import { NewProfileDialog } from '../voice/NewProfileDialog'
-import { VoicePicker } from '../voice/VoicePicker'
 import { ConfirmButton } from '../ConfirmButton'
-
-interface ProfileDraft {
-  name: string
-  description: string
-  base: string
-  surfaces: PublicVoiceSurfaces
-}
-
-function draftOf(profile: Pick<PublicVoiceProfileJson, 'name' | 'description' | 'base' | 'surfaces'>): ProfileDraft {
-  return { name: profile.name, description: profile.description ?? '', base: profile.base, surfaces: profile.surfaces }
-}
-
-function draftBytes(id: string, draft: ProfileDraft): number {
-  return publicVoiceBytes(
-    renderProfileAlone({
-      id,
-      name: draft.name,
-      description: null,
-      base: draft.base,
-      surfaces: draft.surfaces,
-      disabled: false,
-    })
-  )
-}
 
 const errorText = (error: unknown) => (error instanceof ApiError ? error.message : error ? String(error) : null)
 
@@ -59,7 +29,9 @@ export function VoiceProfileList({
   onEdit,
   onToggle,
   onDelete,
+  assignments,
 }: {
+  assignments?: (profile: PublicVoiceProfileJson) => ReactNode
   profiles: PublicVoiceProfileJson[]
   canWrite: boolean
   onEdit: (profile: PublicVoiceProfileJson) => void
@@ -98,6 +70,7 @@ export function VoiceProfileList({
               {profile.bytes.toLocaleString()} / {PUBLIC_VOICE_MAX_BYTES.toLocaleString()} bytes ·{' '}
               {profile.assignedSquadCount ?? 0} assigned {profile.assignedSquadCount === 1 ? 'squad' : 'squads'}
             </p>
+            {assignments?.(profile)}
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
             <button className="ficus-button ficus-button-ghost px-2 py-1 text-sm" onClick={() => onEdit(profile)}>
@@ -185,34 +158,7 @@ function ProfileEditor({
           Close
         </button>
       </div>
-      <input
-        aria-label="Profile name"
-        disabled={!canWrite}
-        className="ficus-field w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
-        value={draft.name}
-        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-      />
-      <input
-        aria-label="Profile description"
-        disabled={!canWrite}
-        placeholder="Short description"
-        className="ficus-field w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
-        value={draft.description}
-        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-      />
-      <textarea
-        aria-label="Voice"
-        disabled={!canWrite}
-        className="ficus-field h-40 w-full rounded-md border border-th-border bg-surface p-2 text-sm text-primary"
-        value={draft.base}
-        onChange={(e) => setDraft({ ...draft, base: e.target.value })}
-      />
-      <VoiceSurfaceRows
-        value={draft.surfaces}
-        onChange={(surfaces) => setDraft({ ...draft, surfaces })}
-        inheritLabel="None"
-        disabled={!canWrite}
-      />
+      <VoiceProfileDraftFields draft={draft} setDraft={setDraft} disabled={!canWrite} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className={clsx('text-xs', overCap ? 'text-status-danger-500' : 'text-muted')}>
           {bytes.toLocaleString()} / {PUBLIC_VOICE_MAX_BYTES.toLocaleString()} bytes
@@ -254,14 +200,13 @@ export function VoicesTab() {
   const { can } = usePermissions()
   const canWrite = can('agent-types:update')
   const { data: profiles = [], isLoading } = useQuery(queries.publicVoices.list())
-  const { data: squads = [] } = useQuery({ ...queries.squads.list(), enabled: canWrite })
+  const { data: squads = [] } = useQuery(queries.squads.list())
   const [editing, setEditing] = useState<{
     id: string
     initial: ProfileDraft
     isNew: boolean
     hasTemplate: boolean
   } | null>(null)
-  const [deriveSquadId, setDeriveSquadId] = useState('')
   const invalidate = () => queryClient.invalidateQueries({ queryKey: publicVoiceQueryKeys.all })
   const toggle = useMutation({
     mutationFn: (profile: PublicVoiceProfileJson) => setPublicVoiceDisabled(profile.id, !profile.disabled),
@@ -297,6 +242,7 @@ export function VoicesTab() {
       )}
       <VoiceProfileList
         profiles={profiles}
+        assignments={(profile) => <SquadVoiceAssignments key={profile.id} profile={profile} squads={squads} />}
         canWrite={canWrite}
         onEdit={(profile) =>
           setEditing({ id: profile.id, initial: draftOf(profile), isNew: false, hasTemplate: profile.hasTemplate })
@@ -323,26 +269,13 @@ export function VoicesTab() {
           <button className="ficus-button ficus-button-primary rounded px-3 py-2" onClick={() => startNew()}>
             Add profile
           </button>
-          <div className="space-y-2">
-            <span className="block text-xs text-muted">Derive through the GitHub connection of</span>
-            <VoicePicker
-              label="Squad whose GitHub connection to use"
-              value={deriveSquadId}
-              onChange={setDeriveSquadId}
-              options={[
-                { value: '', label: 'Choose a squad' },
-                ...squads.map((squad) => ({ value: squad.id, label: squad.name })),
-              ]}
-            />
-            {deriveSquadId && (
-              <DeriveVoiceCard
-                key={deriveSquadId}
-                squadId={deriveSquadId}
-                linkedLogin={null}
-                onSaveAsProfile={(draft) => startNew({ base: draft.base, surfaces: draft.surfaces })}
-              />
-            )}
-          </div>
+          <AccountVoiceDerivation
+            onTargetChange={() => {
+              setNewProfileSeed(null)
+              setEditing((current) => (current?.isNew ? null : current))
+            }}
+            onSaveAsProfile={(draft) => startNew({ base: draft.base, surfaces: draft.surfaces })}
+          />
         </>
       )}
     </div>

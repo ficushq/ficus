@@ -10,7 +10,7 @@ import {
   type DerivationSurface,
   type PublicVoiceSurfaces,
 } from '@ficus/shared'
-import { type VoiceDerivationResult } from '../../api/publicVoices'
+import { type VoiceDerivationResult, type VoiceDerivationTarget } from '../../api/publicVoices'
 import { ApiError } from '../../api/client'
 
 const SURFACE_LABELS: Record<DerivationSurface, string> = {
@@ -33,14 +33,14 @@ function splitRepos(text: string): string[] | undefined {
  * connection. The result is a draft: the caller decides where it goes, and a
  * person edits it before saving. Nothing is applied here.
  */
-export function DeriveVoiceCard({
-  squadId,
+function DeriveVoiceCardContent({
+  target,
   linkedLogin,
   onUseDraft,
   useDraftLabel,
   onSaveAsProfile,
 }: {
-  squadId: string
+  target: VoiceDerivationTarget
   linkedLogin: string | null
   onUseDraft?: (draft: { base: string; surfaces: PublicVoiceSurfaces }) => void
   useDraftLabel?: string
@@ -64,7 +64,7 @@ export function DeriveVoiceCard({
     ...(includeToolAuthored ? { excludeToolAuthored: false } : {}),
   })
 
-  const mutation = useVoiceDerivation(squadId, () => ({ login: login.trim(), filters: filters() }))
+  const mutation = useVoiceDerivation(target, () => ({ login: login.trim(), filters: filters() }))
 
   const result: VoiceDerivationResult | undefined = mutation.data
   const error =
@@ -82,9 +82,10 @@ export function DeriveVoiceCard({
       <div>
         <h4 className="text-sm font-medium text-primary">Derive a voice from GitHub</h4>
         <p className="mt-1 text-xs text-muted">
-          Samples a GitHub user's pull requests, comments, reviews and commit messages through this squad's GitHub
-          connection and drafts a style. Nothing is saved until you edit and save the draft. The draft describes a
-          writing style; agents never sign as or claim to be that person.
+          Samples a GitHub user's pull requests, comments, reviews and commit messages through{' '}
+          {target.kind === 'connection' ? 'this GitHub account' : "this squad's GitHub connection"} and drafts a style.
+          Nothing is saved until you edit and save the draft. The draft describes a writing style; agents never sign as
+          or claim to be that person.
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -211,7 +212,8 @@ export function DeriveVoiceCard({
             {result.sampling.pagingCapped && <p>Paging stopped at its limit; older items may exist.</p>}
             {result.sampling.unavailableRepositories?.length ? (
               <p>
-                Not found or not visible to the squad's GitHub account:{' '}
+                Not found or not visible to{' '}
+                {target.kind === 'connection' ? 'this GitHub account' : "the squad's GitHub account"}:{' '}
                 {result.sampling.unavailableRepositories.join(', ')}
               </p>
             ) : null}
@@ -275,4 +277,10 @@ export function DeriveVoiceCard({
       )}
     </div>
   )
+}
+
+export function DeriveVoiceCard(props: Parameters<typeof DeriveVoiceCardContent>[0]) {
+  const key =
+    props.target.kind === 'squad' ? `squad:${props.target.squadId}` : `connection:${props.target.connectionId}`
+  return <DeriveVoiceCardContent key={key} {...props} />
 }

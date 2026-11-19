@@ -81,6 +81,19 @@ describe('voice profile routes', () => {
     expect(await res.json()).toMatchObject({ error: 'public_voice_too_long', maxBytes: 2000 })
   })
 
+  test('concurrent creation never overwrites an existing name or draft', async () => {
+    const id = `${prefix}-collision`
+    const responses = await Promise.all([
+      request(admin, 'POST', '/', { id, name: 'First', base: 'First draft.' }),
+      request(admin, 'POST', '/', { id, name: 'Second', base: 'Second draft.' }),
+    ])
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 409])
+    const winner = await responses.find((r) => r.status === 201)!.json()
+    const stored = await PublicVoice.find(id)
+    expect(stored!.name).toBe(winner.name)
+    expect(stored!.base).toBe(winner.base)
+  })
+
   test('editing the default records a field override and reports squads pushed over the cap', async () => {
     const squad = await Squad.create({ name: `${prefix}-squad`, purpose: 'voice' })
     squadIds.push(squad.id)

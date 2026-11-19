@@ -30,7 +30,7 @@ for (const [code, sentence] of failures) {
       await dom.act(async () =>
         root.render(
           <QueryClientProvider client={client}>
-            <DeriveVoiceCard squadId="fixture-squad" linkedLogin={null} />
+            <DeriveVoiceCard target={{ kind: 'squad', squadId: 'fixture-squad' }} linkedLogin={null} />
           </QueryClientProvider>
         )
       )
@@ -94,7 +94,7 @@ test('partial progress is accessible, cancellation fences a late result and neve
     await dom.act(async () =>
       root.render(
         <DeriveVoiceCard
-          squadId="fixture"
+          target={{ kind: 'squad', squadId: 'fixture' }}
           linkedLogin="octo"
           onUseDraft={() => {
             used = true
@@ -157,7 +157,9 @@ test('a run with no kept repositories retains safe count snapshots on failure', 
     new Response(text, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch
   try {
     const { root, container } = dom.createRoot()
-    await dom.act(async () => root.render(<DeriveVoiceCard squadId="fixture" linkedLogin="octo" />))
+    await dom.act(async () =>
+      root.render(<DeriveVoiceCard target={{ kind: 'squad', squadId: 'fixture' }} linkedLogin="octo" />)
+    )
     await dom.act(async () => {
       ;[...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Derive')!.click()
     })

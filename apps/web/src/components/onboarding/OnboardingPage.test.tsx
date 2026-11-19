@@ -721,3 +721,56 @@ describe('OnboardingPage — appearance control', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 })
+
+test('public voice is optional, permission-gated and leaves ready and core completion unchanged', () => {
+  const allowed = renderStatic(seededQueryClient(['settings:read', 'agent-types:update'], coreSettledStatus()))
+  expect(allowed.indexOf('Public voice from GitHub')).toBeGreaterThan(allowed.indexOf('Optional setup'))
+  expect(allowed).toContain('Your workspace is ready.')
+  expect(allowed).toContain('Open Ficus')
+  const denied = renderStatic(seededQueryClient(['settings:read'], coreSettledStatus()))
+  expect(denied).not.toContain('Public voice from GitHub')
+  expect(denied).toContain('Your workspace is ready.')
+})
+
+test('the gated optional voice action actually opens the core GitHub setup step', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost' })
+  const original = globalThis.fetch
+  globalThis.fetch = (async (url) => {
+    if (String(url).includes('/onboarding/status')) return Response.json(coreSettledStatus())
+    if (String(url).includes('/auth/permissions'))
+      return Response.json({ permissions: ['settings:read', 'agent-types:update'] })
+    if (String(url).includes('/integrations/catalog'))
+      return Response.json({ integrations: [{ key: 'github', enabled: true }] })
+    return Response.json([])
+  }) as typeof fetch
+  const client = seededQueryClient(['settings:read', 'agent-types:update'], coreSettledStatus())
+  const { integrationQueries, queries } = await import('../../queryOptions')
+  client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [{ key: 'github', enabled: true }] })
+  client.setQueryData(integrationQueries.pool('github').queryKey, [])
+  client.setQueryData(queries.squads.list().queryKey, [])
+  try {
+    const { root, container } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <OnboardingPage />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    await dom.act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-controls="setup-step-public_voice"]')!.click()
+    )
+    const panel = container.querySelector('#setup-step-public_voice')!
+    expect(panel.textContent).toContain('Connect GitHub first.')
+    await dom.act(async () => panel.querySelector<HTMLButtonElement>('button')!.click())
+    expect(container.querySelector<HTMLElement>('#setup-step-github')!.hidden).toBe(false)
+    expect(container.querySelector('[aria-controls="setup-step-github"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('Your workspace is ready.')
+  } finally {
+    globalThis.fetch = original
+    client.clear()
+    await dom.cleanup()
+  }
+})

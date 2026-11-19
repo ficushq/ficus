@@ -1,3 +1,4 @@
+import type { GitHubActivitySource } from '../github/api-client'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
@@ -348,8 +349,7 @@ export async function runDerivationSession(
   }
 }
 
-export interface DerivePublicVoiceInput {
-  squadId: string
+export type DerivePublicVoiceInput = GitHubActivitySource & {
   userId: string | null
   login: string
   filters: DerivationFilters
@@ -358,13 +358,7 @@ export interface DerivePublicVoiceInput {
 }
 
 export interface DerivePublicVoiceDeps {
-  collect?: (input: {
-    squadId: string
-    login: string
-    filters: DerivationFilters
-    signal?: AbortSignal
-    onProgress?: PublishDerivationProgress
-  }) => Promise<CollectedActivity>
+  collect?: (input: Parameters<typeof collectGitHubActivity>[0]) => Promise<CollectedActivity>
   session?: DerivationSession
   deadlineMs?: number
 }
@@ -388,7 +382,7 @@ export async function derivePublicVoice(
   await publish({ type: 'phase', phase: 'collecting' })
   const collected = await abortable(
     collect({
-      squadId: input.squadId,
+      ...(input.source ? { source: input.source } : { squadId: input.squadId }),
       login: input.login,
       filters: input.filters,
       signal: requestSignal,
@@ -417,7 +411,10 @@ export async function derivePublicVoice(
       session({
         systemPrompt: DERIVATION_SYSTEM_PROMPT,
         prompt: buildDerivationPrompt(samples),
-        attribution: { userId: input.userId, squadId: input.squadId },
+        attribution: {
+          userId: input.userId,
+          squadId: input.source?.kind === 'connection' ? null : (input.source?.squadId ?? input.squadId),
+        },
         signal,
       }),
       signal

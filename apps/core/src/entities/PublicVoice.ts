@@ -81,6 +81,24 @@ export class PublicVoice implements PublicVoiceRow {
     return this.find(DEFAULT_PUBLIC_VOICE_ID)
   }
 
+  /** Insert-only person-created profiles. A concurrent id collision must never overwrite a draft. */
+  static async create(input: UpsertPublicVoiceInput): Promise<PublicVoice | null> {
+    const [row] = await db
+      .insert(publicVoices)
+      .values({
+        id: input.id,
+        name: input.name,
+        description: input.description ?? null,
+        base: input.base,
+        surfaces: input.surfaces ?? {},
+      })
+      .onConflictDoNothing({ target: publicVoices.id })
+      .returning()
+    if (!row) return null
+    this.invalidateCache()
+    return new PublicVoice(row)
+  }
+
   static async upsert(input: UpsertPublicVoiceInput): Promise<PublicVoice> {
     const hasDescription = Object.hasOwn(input, 'description')
     const surfaces = input.surfaces ?? {}
