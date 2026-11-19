@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MONOREPO_ROOT } from '../../lib/paths'
+import { MESSAGE_CONTEXT_PATH } from './chat-message'
 import type { VariantContext } from './define'
 
 /**
@@ -18,6 +19,15 @@ export interface PromptVariant {
 }
 
 const RESTART_CONTEXT_PATH = 'packages/shared/src/restart-context.ts'
+
+/**
+ * Production carriers a scenario reads per ref. They never fall back to the working tree: silently
+ * borrowing another ref's carrier invalidates the comparison.
+ */
+const REQUIRED_VARIANT_MODULES: Record<string, string> = {
+  [RESTART_CONTEXT_PATH]: "restart scenarios require that ref's own carrier",
+  [MESSAGE_CONTEXT_PATH]: "human chat scenarios require that ref's own chat renderer",
+}
 
 /**
  * Paths a variant needs; everything else (dependencies, other shared modules) comes from the working
@@ -92,13 +102,14 @@ export function resolveVariant(spec: string): PromptVariant {
 /**
  * Imports a module by repository-relative path from the variant, or from the working tree when the
  * variant predates it (for example a ref from before the module was added). The restart carrier
- * must exist in the variant: silently borrowing another ref's notice invalidates the comparison.
+ * and the chat renderer must exist in the variant (see REQUIRED_VARIANT_MODULES).
  */
 export async function importFromVariant<T>(variant: PromptVariant, relativePath: string): Promise<T> {
   const own = join(variant.root, relativePath)
-  if (!existsSync(own) && relativePath === RESTART_CONTEXT_PATH) {
+  const required = REQUIRED_VARIANT_MODULES[relativePath]
+  if (!existsSync(own) && required) {
     throw new Error(
-      `Missing ${relativePath} in variant ${variant.label}; restart scenarios require that ref's own carrier. ` +
+      `Missing ${relativePath} in variant ${variant.label}; ${required}. ` +
         'Pre-carrier refs need an explicit compatibility policy before comparison.'
     )
   }

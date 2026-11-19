@@ -39,7 +39,7 @@ export interface Verdict {
  * restart notice), so the old and new runs each read their own version of it.
  */
 export interface VariantContext {
-  /** Imports a variant module; absent modules fall back except the required per-ref restart carrier. */
+  /** Imports a variant module; absent modules fall back except the required per-ref carriers (restart, chat). */
   import: <T>(relativePath: string) => Promise<T>
 }
 
@@ -157,4 +157,4 @@ export function endsWithChatQuestion(text: string): boolean {
 }
 
 /** Harness fidelity revision; historical recording bytes and verdicts remain unchanged. */
-export const HARNESS_REVISION = '2026-11-19-restart-carrier-v3'
+export const HARNESS_REVISION = '2026-11-19-chat-sender-v4'
