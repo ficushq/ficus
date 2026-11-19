@@ -16,13 +16,26 @@ import {
 /** Pinned `ntn` release; keep in step with apps/core/package.json and the npm dist.integrity below. */
 const CLI_VERSION = '0.23.28'
 const CLI_INTEGRITY = '8XX88Roci3f7AZKvHZ8zobstDiqudybGVIBGW+nYccCpwddOuPzt7lTnr2N5qLBAmW6uM2ipznJf7pdKRy62XQ=='
-const CLI_SETUP_SCRIPT = [
-  `archive=$(npm pack --silent ntn@${CLI_VERSION})`,
-  `actual=$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$archive")`,
-  `test "$actual" = "${CLI_INTEGRITY}"`,
-  'npm install --global --prefix "$DEVBOX_PROJECT_ROOT/npm" --no-audit --no-fund "./$archive"',
-  'rm -f -- "$archive"',
-].join('\n')
+/**
+ * Download, verify and install `ntn` in a strict subshell inside a temporary directory, so a digest
+ * mismatch (or any failed command) stops the step before `npm install` and the subshell's non-zero
+ * status reaches the joined setup.sh. Mirrors deploymentCliSetup.
+ */
+export function notionCliSetupScript(version: string, integrity: string): string {
+  return [
+    '(',
+    'set -eu',
+    'tmp=$(mktemp -d)',
+    'trap \'rm -rf -- "$tmp"\' EXIT',
+    'cd "$tmp"',
+    `archive=$(npm pack --silent ntn@${version})`,
+    `actual=$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$archive")`,
+    `test "$actual" = "${integrity}"`,
+    'npm install --global --prefix "$DEVBOX_PROJECT_ROOT/npm" --no-audit --no-fund "./$archive"',
+    ')',
+  ].join('\n')
+}
+const CLI_SETUP_SCRIPT = notionCliSetupScript(CLI_VERSION, CLI_INTEGRITY)
 
 type NotionPlugin = Omit<
   IntegrationPluginV1<NotionConnectionConfiguration, OAuthCredentialBundleV1>,
