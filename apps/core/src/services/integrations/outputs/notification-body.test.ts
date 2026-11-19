@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { githubOutputAdapter } from './github'
+import { CI_RUN_NOTICE, githubOutputAdapter } from './github'
 import { integrationOutputRegistry } from './registry'
 
 const repository = { full_name: 'acme/project' }
@@ -136,7 +136,7 @@ test('compact lifecycle messages preserve merged/conflict state and work for ret
   expect(integrationOutputRegistry.notificationBody('github', conflict)).toContain(pr.html_url)
 })
 
-test('CI and other integrations retain their existing actionable body', () => {
+test('CI notifications keep their body and add the one-run caveat; other outputs do not', () => {
   const [ci] = githubOutputAdapter.normalize({
     type: 'workflow_run',
     payload: {
@@ -156,7 +156,20 @@ test('CI and other integrations retain their existing actionable body', () => {
       },
     },
   })
-  expect(integrationOutputRegistry.notificationBody('github', ci!)).toBe(ci!.body)
+  // The canonical body stays the evidence; the caveat is presentation for the recipient.
+  expect(ci!.output).toBe('pull_request.ci_completed')
+  expect(ci!.body).not.toContain(CI_RUN_NOTICE)
+  expect(integrationOutputRegistry.notificationBody('github', ci!)).toBe(`${ci!.body}\n\n${CI_RUN_NOTICE}`)
+  expect(CI_RUN_NOTICE).toContain('every required check before calling CI green')
+  for (const fact of [
+    resource('pull_request', 'synchronize'),
+    resource('pull_request', 'closed', { pull_request: { ...pr, state: 'closed', merged: true, merged_at: date } }),
+    resource('pull_request', 'review_requested'),
+    resource('issues', 'closed'),
+    review('approved'),
+    review('changes_requested'),
+  ])
+    expect(integrationOutputRegistry.notificationBody('github', fact)).not.toContain(CI_RUN_NOTICE)
   expect(integrationOutputRegistry.notificationBody('linear', resource('issues', 'closed'))).toBe(
     resource('issues', 'closed').body
   )

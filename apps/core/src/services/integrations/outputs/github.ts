@@ -12,6 +12,14 @@ function record(value: unknown): Record<string, any> | undefined {
 }
 
 /**
+ * Ficus-authored caveat appended to every CI completion notification. CI events reach running
+ * attempts as well as the delivery participant, so the reading rule travels with the event rather
+ * than in the always-loaded rules or the completion-ready delivery instructions alone.
+ */
+export const CI_RUN_NOTICE =
+  'This is one workflow run, not the pull request’s overall check result: check the current head and every required check before calling CI green. A successful run needs no acknowledgment.'
+
+/**
  * Ficus-authored guidance appended to a changes-requested review notification. That notification is
  * what reaches whichever agent owns the rework (the active attempt, or the `changeEventsTo` step at
  * completion-ready), so the reminder lives here once rather than in every delivery prompt. The
@@ -88,6 +96,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
   notificationBody(fact) {
     const reReview = changesRequestedReReviewGuidance(fact)
     if (reReview) return `${fact.body}\n\n${reReview}`
+    if (fact.output === 'pull_request.ci_completed') return `${fact.body}\n\n${CI_RUN_NOTICE}`
     // Feedback and CI already describe the event itself, not the parent resource.
     // Keep their text intact (including edited comments and review-thread links).
     if (
