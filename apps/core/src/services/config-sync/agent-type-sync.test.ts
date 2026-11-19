@@ -74,8 +74,9 @@ describe('AgentTypeSync', () => {
     )
     expect(securityAuditor!.tools?.allow ?? []).not.toContain('write')
     expect(securityAuditor!.tools?.allow ?? []).not.toContain('edit')
-    expect(securityAuditor!.systemPrompt).toContain('Threat Modeling')
-    expect(securityAuditor!.systemPrompt).toContain('Authentication and Authorization')
+    // Case-insensitive: the prose names these areas mid-sentence.
+    expect(securityAuditor!.systemPrompt.toLowerCase()).toContain('threat modeling')
+    expect(securityAuditor!.systemPrompt.toLowerCase()).toContain('authentication and authorization')
     expect(securityAuditor!.systemPrompt).toContain('Findings')
   })
 
@@ -305,8 +306,13 @@ describe('AgentTypeSync', () => {
   test('all worker types keep expertise and shared flow guidance in the composed prompt', async () => {
     const parsed = await loadComposed()
     const expectations: Record<string, string[]> = {
-      architect: ['### Creating Plans', '### Task Structure', '## Design Judgment', 'Testing strategy'],
-      engineer: ['### Implementation', '### Self-Review Checklist', '### Revision Feedback', '### Report Format'],
+      architect: ['### Creating Plans', '## Design Judgment', 'testing strategy', 'Scale detail to the work'],
+      engineer: [
+        '### Implementation',
+        'review your own diff against the original requirements',
+        '### Revision Feedback',
+        'reply to each individual thread',
+      ],
       reviewer: [
         '### Pass 1: Spec Compliance',
         '### Pass 2: Code Quality',
@@ -315,12 +321,18 @@ describe('AgentTypeSync', () => {
       ],
       general: ['Verify claims', 'non-code work'],
       'security-auditor': ['Threat Modeling', 'Authentication and Authorization', 'Findings'],
-      sysops: ['### Incident Response', '### High-Risk Operations Checklist', 'Rollback instructions'],
+      sysops: [
+        '### Incident Response',
+        '## Changing live systems',
+        'Rollback instructions',
+        '## Shared command runtime',
+      ],
     }
     for (const [id, expertise] of Object.entries(expectations)) {
       const type = parsed.find((row) => row.id === id)!
       expect(type).not.toHaveProperty('flowPrompt')
-      for (const text of expertise) expect(type.systemPrompt).toContain(text)
+      // Case-insensitive, so prose need not capitalize a phrase mid-sentence to satisfy a pin.
+      for (const text of expertise) expect(type.systemPrompt.toLowerCase()).toContain(text.toLowerCase())
       expect(type.systemPrompt).toContain('ficus workstream advance')
       expect(type.systemPrompt).toContain('Outside a flow, complete the assigned task')
       expect(type.systemPrompt).toContain('no role may grant itself that authority')
@@ -379,8 +391,10 @@ describe('AgentTypeSync', () => {
     expect(engineer).toBeTruthy()
 
     expect(reviewer!.systemPrompt).toContain('Report discovered follow-up work to the owner')
-    expect(engineer!.systemPrompt).toContain('If you discover follow-up work')
-    expect(engineer!.systemPrompt).toContain('flag them to the work stream owner')
+    // The engineer's own follow-up paragraph duplicated the shared Follow-Up Work rule
+    // (and named the owner where the rule names the manager); the shared rule carries it.
+    expect(engineer!.systemPrompt).not.toContain('If you discover follow-up work')
+    expect(engineer!.systemPrompt.split('## Follow-Up Work')).toHaveLength(2)
 
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
       const agentType = parsed.find((p) => p.id === id)

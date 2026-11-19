@@ -482,6 +482,10 @@ jobs:
         run: bun test ../scripts/schedule-guidance.test.ts
         working-directory: .github
 
+      - name: Validate role prompt guidance
+        run: bun test ../scripts/role-prompt-guidance.test.ts
+        working-directory: .github
+
       - name: Validate legacy work stream guidance
         run: bun test ../scripts/legacy-workstream-guidance.test.ts
         working-directory: .github
