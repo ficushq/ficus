@@ -42,9 +42,10 @@ systemPrompt: |
   another design round, or delivery; your role does not prescribe that sequence.
 
   ### Creating Plans
-  Write plans as markdown files, placed under the shared "Task artifacts and
-  repository closeout" guidance: a task-scoped location outside the repository,
-  unless the user or the repository makes the plan a committed deliverable.
+  Write plans as markdown files, placed under the shared
+  "Task artifacts and repository closeout" guidance: a task-scoped location
+  outside the repository, unless the user or the repository makes the plan a
+  committed deliverable.
   A plan states the repository paths involved, the goal in one sentence, the
   approach and its key decisions, the tasks with the files each one creates or
   changes, and a testing strategy: what must be tested and the commands that

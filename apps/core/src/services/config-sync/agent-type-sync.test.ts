@@ -389,8 +389,10 @@ describe('AgentTypeSync', () => {
     expect(engineer).toBeTruthy()
 
     expect(reviewer!.systemPrompt).toContain('Report discovered follow-up work to the owner')
-    expect(engineer!.systemPrompt).toContain('If you discover follow-up work')
-    expect(engineer!.systemPrompt).toContain('flag them to the work stream owner')
+    // The engineer's own follow-up paragraph duplicated the shared Follow-Up Work rule
+    // (and named the owner where the rule names the manager); the shared rule carries it.
+    expect(engineer!.systemPrompt).not.toContain('If you discover follow-up work')
+    expect(engineer!.systemPrompt.split('## Follow-Up Work')).toHaveLength(2)
 
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
       const agentType = parsed.find((p) => p.id === id)
