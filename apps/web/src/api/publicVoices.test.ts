@@ -39,7 +39,7 @@ test('handles an older structured 502 and never displays arbitrary validation re
     throw new Error('Expected the request to fail')
   } catch (error) {
     expect(error).toBeInstanceOf(ApiError)
-    expect((error as Error).message).toContain('derivation_invalid_output: The model returned an invalid voice draft')
+    expect((error as Error).message).toStartWith('The model returned an invalid voice draft')
     expect((error as Error).message).not.toContain('SYNTHETIC_PRIVATE_TEXT')
   }
 })

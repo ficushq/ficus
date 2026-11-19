@@ -129,6 +129,7 @@ export const squadVoiceRouter = new Hono()
       } catch (error) {
         if (error instanceof DerivationError) {
           log.warn('Voice derivation failed', {
+            squadId,
             code: error.code,
             reason: safeDerivationReason(error.code, error.details.reason),
           })

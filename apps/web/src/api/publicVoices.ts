@@ -97,7 +97,9 @@ export async function deriveSquadVoice(
   } catch (error) {
     if (error instanceof ApiError && (error.status === 422 || error.status === 502)) {
       const code = (error.payload as { error?: unknown } | undefined)?.error
-      const message = formatDerivationError(typeof code === 'string' ? code : undefined, error.payload)
+      const message = formatDerivationError(typeof code === 'string' ? code : undefined, error.payload, {
+        includeCode: false,
+      })
       if (message) throw new ApiError(error.status, message, error.payload)
     }
     throw error

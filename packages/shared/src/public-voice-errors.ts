@@ -15,7 +15,11 @@ export function safeDerivationReason(code: string, reason: unknown): string {
 }
 
 /** Shared web/CLI wording. Only validated counts and allowlisted reasons are displayed. */
-export function formatDerivationError(code: string | undefined, details?: unknown): string | undefined {
+export function formatDerivationError(
+  code: string | undefined,
+  details?: unknown,
+  options: { includeCode?: boolean } = {}
+): string | undefined {
   const payload = details as
     { reason?: unknown; counts?: { kept?: unknown; collected?: unknown }; minimum?: unknown } | undefined
   let message: string
@@ -56,5 +60,5 @@ export function formatDerivationError(code: string | undefined, details?: unknow
     default:
       return undefined
   }
-  return `${code}: ${message}`
+  return options.includeCode === false ? message : `${code}: ${message}`
 }

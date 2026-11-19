@@ -164,7 +164,7 @@ describe('squad voice routes', () => {
     expect((await request(reader, 'POST', '/preview', { surface: 'commits' })).status).toBe(403)
   })
 
-  test('derive logs only bounded diagnostic codes and reasons, never content or identifiers', async () => {
+  test('derive logs only bounded diagnostic codes and reasons, never private content', async () => {
     const privateFixture = 'SYNTHETIC_PRIVATE_CONTENT'
     const cases: Array<readonly [DerivationError['code'], unknown, string, number]> = [
       ...['not_json', 'schema', 'unsafe_base', 'private_text_in_base', 'too_long'].map(
@@ -203,9 +203,9 @@ describe('squad voice routes', () => {
         expect(await res.json()).toMatchObject({ error: code, counts: details.counts })
         const diagnostic = warn.mock.calls.find((args) => args.includes('Voice derivation failed'))
         expect(diagnostic).toBeDefined()
-        expect(diagnostic!.at(-1)).toEqual({ code, reason: expectedReason })
+        expect(diagnostic!.at(-1)).toEqual({ squadId, code, reason: expectedReason })
         expect(JSON.stringify(warn.mock.calls)).not.toContain(privateFixture)
-        expect(JSON.stringify(warn.mock.calls)).not.toContain(squadId)
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('private-login')
       }
     } finally {
       derive.mockRestore()

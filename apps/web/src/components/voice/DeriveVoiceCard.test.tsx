@@ -55,7 +55,8 @@ for (const [code, sentence] of failures) {
           body: { login: 'another-login', filters: {} },
         },
       ])
-      expect(container.textContent).toContain(code)
+      expect(container.querySelector('details code')?.textContent).toBe(code)
+      expect([...container.querySelectorAll('p')].some((p) => p.textContent?.includes(code))).toBe(false)
       expect(container.textContent).toContain(sentence)
       expect(container.textContent).not.toContain('Ficus is temporarily unavailable')
     } finally {

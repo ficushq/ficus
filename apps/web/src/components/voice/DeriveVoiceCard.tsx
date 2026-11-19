@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
   DERIVATION_SURFACES,
+  formatDerivationError,
   PUBLIC_SURFACES,
   PUBLIC_SURFACE_LABELS,
   type DerivationFilters,
@@ -69,6 +70,11 @@ export function DeriveVoiceCard({
   const result: VoiceDerivationResult | undefined = mutation.data
   const error =
     mutation.error instanceof ApiError ? mutation.error.message : mutation.error ? String(mutation.error) : null
+
+  const errorPayload =
+    mutation.error instanceof ApiError ? (mutation.error.payload as { error?: unknown } | undefined) : undefined
+  const errorCode =
+    typeof errorPayload?.error === 'string' && formatDerivationError(errorPayload.error) ? errorPayload.error : null
 
   return (
     <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4">
@@ -161,7 +167,17 @@ export function DeriveVoiceCard({
         {mutation.isPending ? 'Deriving… (up to a minute)' : 'Derive'}
       </button>
 
-      {error && <p className="text-xs text-status-danger-500">{error}</p>}
+      {error && (
+        <div className="text-xs text-status-danger-500">
+          <p>{error}</p>
+          {errorCode && (
+            <details className="mt-1">
+              <summary className="cursor-pointer">Details</summary>
+              <code>{errorCode}</code>
+            </details>
+          )}
+        </div>
+      )}
 
       {result && (
         <div className="space-y-3 text-sm">
