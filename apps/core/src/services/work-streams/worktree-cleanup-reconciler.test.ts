@@ -755,3 +755,49 @@ test('a removing row with missing operation identity stops without dispatch or r
     /cleanup|removal/i
   )
 })
+
+for (const status of ['error', 'removing'] as const) {
+  test(`persisted stopped ${status} survives startup/periodic scheduling and explicit unavailable reconciliation`, async () => {
+    const input = await claimWorktreeCleanup(streamId, {
+      generation: (await job()).generation,
+      ownership,
+      head,
+      metadata,
+    })
+    await db
+      .update(worktreeCleanupJobs)
+      .set({
+        status,
+        attempts: 716,
+        nextAttemptAt: new Date(0),
+        reason: 'Automatic reconciliation stopped: persisted uncertainty',
+        ...(status === 'removing' ? { operationId: null, removalInput: null } : {}),
+      })
+      .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+    const saved = await job()
+    const ensure = await import('../sandbox/ensure')
+    const unavailable = spyOn(ensure, 'ensureSquadSandbox').mockRejectedValue(Error('private runtime failure'))
+    try {
+      // Start from a persisted stopped row, not from in-memory retry state.
+      await reconciler.reconcileWorktreeCleanup()
+      await processJob()
+      expect(await job()).toEqual(saved)
+      expect(unavailable).not.toHaveBeenCalled()
+      await reconciler.reconcileWorktreeCleanupOperation(streamId)
+      const observed = await job()
+      expect(observed.status).toBe(status)
+      expect(observed.attempts).toBe(717)
+      expect(observed.operationId).toBe(status === 'error' ? input!.operationId : null)
+      expect(observed.reason).toStartWith('Automatic reconciliation stopped:')
+      expect(observed.reason).not.toContain('private')
+      await reconciler.reconcileWorktreeCleanup()
+      expect(await job()).toEqual(observed)
+      expect(unavailable.mock.calls.length).toBe(status === 'error' ? 1 : 0)
+      await expect((await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })).rejects.toThrow(
+        /cleanup|removal/i
+      )
+    } finally {
+      unavailable.mockRestore()
+    }
+  })
+}
