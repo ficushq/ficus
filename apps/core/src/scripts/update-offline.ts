@@ -6,7 +6,9 @@
  *   bun run update:offline -- --from <sha-before-pull>
  *
  * Same constants as services/updates/change-detector.ts (tasks selected from
- * `git diff --name-only <from>..HEAD`), same status file as LocalUpdateManager
+ * `git diff --name-only <base>..HEAD`, where the base is the last commit this
+ * checkout was built at: see services/updates/built-commit.ts), same status file
+ * as LocalUpdateManager
  * (`.ficus/local-update-status.json`, mode 'offline'), MINUS the restart
  * commands: the CLI restarts through pm2 afterwards, so a failed build never
  * leaves a half-restarted pair. This module must not import anything that
@@ -31,6 +33,7 @@ import {
   touchesDependencies,
 } from '../services/updates/dependency-install'
 import type { LocalUpdateRun, PlannedCommand, UpdateTask } from '../services/updates/types'
+import { readBuiltCommit, seedBuiltCommit, writeBuiltCommit } from '../services/updates/built-commit'
 import { staleCoreBundles } from '../db/migration-build-manifest'
 
 /** Planned as changed when a built Core bundle does not match the checkout's migrations. */
@@ -130,10 +133,26 @@ export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<L
   const env = options.env
   const flavor = detectDeploymentFlavor({ repoRoot: options.repoRoot, env })
   const afterSha = (await options.git(['rev-parse', 'HEAD'])).trim()
-  const changedFiles = (await options.git(['diff', '--name-only', `${options.fromSha}..HEAD`]))
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
+  // Plan from the last commit this checkout was built at. This pull's own range misses
+  // whatever an earlier run pulled and then failed to build, or a pull made by hand.
+  const stateDir = dirname(statusPath)
+  seedBuiltCommit(stateDir, options.fromSha)
+  const filesSince = async (sha: string) =>
+    (await options.git(['diff', '--name-only', `${sha}..HEAD`]))
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+  let baseSha = readBuiltCommit(stateDir) ?? options.fromSha
+  let changedFiles: string[]
+  try {
+    changedFiles = await filesSince(baseSha)
+  } catch (err) {
+    // A recorded commit this repository no longer has (a re-clone, a pruned history).
+    if (baseSha === options.fromSha) throw err
+    baseSha = options.fromSha
+    changedFiles = await filesSince(baseSha)
+  }
+  const catchingUp = baseSha !== options.fromSha
   const bootstrap = options.bootstrap
   const staleBundles = staleCoreBundles(options.repoRoot)
   const { tasks, commands } = planOfflineUpdate(changedFiles, flavor, {
@@ -175,7 +194,12 @@ export async function runOfflineUpdate(options: OfflineUpdateOptions): Promise<L
     await runner.runAll(commands.filter((c) => !installedByBootstrap(c)))
     run.status = 'succeeded'
     run.message =
-      commands.length === 0 ? 'No build tasks needed for the changed files.' : `Ran ${commands.length} command(s).`
+      (commands.length === 0 ? 'No build tasks needed for the changed files.' : `Ran ${commands.length} command(s).`) +
+      (catchingUp
+        ? ` Planned from ${baseSha.slice(0, 9)}, the last commit this checkout was built at, not only from this pull.`
+        : '')
+    // Every build for <base>..HEAD has now run.
+    writeBuiltCommit(stateDir, afterSha)
   } catch (err) {
     run.status = 'failed'
     run.error = (err as Error).message

@@ -298,6 +298,14 @@ are never rewritten. The updater then runs the checkout's
 in-app updater, minus the restarts — and then restarts through the supervisor
 recorded in the registry, worker first and API last. It prints the old → new commit.
 
+Build tasks are chosen from the files changed since the last commit this checkout
+was fully built at, which is recorded in `.ficus/built-commit.json` whenever an
+update completes every build. So a re-run after an update that pulled and then
+failed, or an update after a `git pull` made by hand, still rebuilds what is
+owed (the web app, the CLI, Core) even though its own pull changed nothing. The
+status message says when a run planned from an earlier commit than its own pull.
+A build made by hand does not move the record, so the next update may repeat it.
+
 Native persistence behavior:
 
 - launchd definitions start at GUI login and stop at logout; they do not prove or provide logged-out execution.
