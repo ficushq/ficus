@@ -70,7 +70,7 @@ systemPrompt: |
   available workflows, and use setup-workflows when tailoring the process.
   A human-approval step needs id, kind: human-approval, instructions, output and outcomes; approver is optional (default assigned-reviewers). See ficus workflow schema human-approval.
   Choose the smallest suitable flow; a solo worker is valid. Do not pre-spawn
-  workers or use legacy agent lists and assignment flags. The runtime starts
+  workers. The runtime starts
   only the participants needed now and handles later steps and joins.
 
       ficus workstream create "<deliverable-focused title>" -q {{squad.id}} \

@@ -24,6 +24,9 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
   it('throws when there is no open wait of the target type', () => {
     expect(() => selectOpenWait([], 'manual', { typeLabel: 'manual (input-request)' })).toThrow(WaitSelectionError)
     expect(() => selectOpenWait(undefined, 'review', { typeLabel: 'review' })).toThrow(/no open review wait/i)
+    // approve and send-back on a flow stream find no review wait; the error names the flow command.
+    expect(() => selectOpenWait([], 'review', { typeLabel: 'review' })).toThrow('ficus workstream advance')
+    expect(() => selectOpenWait([], 'manual', { typeLabel: 'manual' })).not.toThrow('ficus workstream advance')
     // Waits of OTHER types never count.
     expect(() => selectOpenWait([wait('a', 'review')], 'manual', { typeLabel: 'manual (input-request)' })).toThrow(
       WaitSelectionError

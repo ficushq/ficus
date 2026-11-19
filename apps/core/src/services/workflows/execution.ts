@@ -918,6 +918,23 @@ export async function stackNotice(
   )
 }
 
+/**
+ * Refusals for the pre-flow work stream verbs (handoff, done, approve, request-review, add-agent),
+ * each naming the flow command that replaces it, so agents learn the replacement at the point of use.
+ */
+export const FLOW_REFUSALS = {
+  ownership:
+    "This work stream's flow owns its participants and gates: submit step outcomes and rework with ficus workstream advance",
+  participants:
+    "This work stream's flow owns its participants: change them with an authorized revise through ficus workstream advance",
+  completionPolicy:
+    'Flow completion policy is controlled by its definition: change it with an authorized revise through ficus workstream advance',
+  reviewWait:
+    'Review waits do not apply to a flow, whose review steps are part of the flow: submit your step outcome or return with ficus workstream advance',
+  notReady:
+    'Required flow steps and return obligations must finish first: submit step outcomes with ficus workstream advance',
+} as const
+
 /** Mandatory at the entity boundary, including callers outside HTTP routes. */
 export async function guardFlowMutation(
   tx: DbTx,
@@ -929,22 +946,23 @@ export async function guardFlowMutation(
   const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id))
   if (!run?.activated) return
   if (stream.pause && input.status === 'done') throw new WorkflowError('Resume paused work before completing it', 409)
+  if (approval || (input.assigneeAgentId !== undefined && input.status !== 'canceled') || input.agentIds !== undefined)
+    throw new WorkflowError(FLOW_REFUSALS.ownership, 409)
   if (
-    approval ||
-    (input.assigneeAgentId !== undefined && input.status !== 'canceled') ||
-    input.agentIds !== undefined ||
-    input.completionMode !== undefined
+    input.completionMode !== undefined ||
+    (input.metadata && typeof input.metadata === 'object' && 'completion' in input.metadata)
   )
-    throw new WorkflowError('Use the flow transition API to change flow ownership or gates', 409)
-  if (input.metadata && typeof input.metadata === 'object' && 'completion' in input.metadata)
-    throw new WorkflowError('Flow completion policy is controlled by its definition', 409)
+    throw new WorkflowError(FLOW_REFUSALS.completionPolicy, 409)
   if (input.status === 'done' && run.state.status !== 'completion-ready')
-    throw new WorkflowError('Required flow steps and return obligations must finish first', 409)
+    throw new WorkflowError(FLOW_REFUSALS.notReady, 409)
   if (
     input.status === 'done' &&
     (!permit || permit.version !== run.version || permit.metadataHash !== workflowFingerprint(stream.metadata))
   )
-    throw new WorkflowError('Use flow completion to evaluate the configured delivery policy', 409)
+    throw new WorkflowError(
+      `Use flow completion to evaluate the configured delivery policy: ficus workstream finish ${stream.id} --version ${run.version}`,
+      409
+    )
   // The verified finish permit closes only the workflow's delivery approval wait,
   // in the same transaction as completion. Unrelated blockers still prevent finish.
   if (input.status === 'done' && permit)

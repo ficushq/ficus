@@ -1,4 +1,5 @@
 import { assemblerRepository } from './repository-fixtures'
+import { humanChat, type ChatSender } from './chat-message'
 import { gradeRequester } from './requester-grade'
 import { requesterResponder } from './requester-fixture'
 import { join } from 'node:path'
@@ -121,8 +122,11 @@ function inboxNotice(from: string, subject: string, body: string): string {
   ].join('\n')
 }
 
-/** A human message in a direct chat with the agent. */
-const chat = (text: string) => text
+/**
+ * A human message in a direct chat with the agent, rendered by the variant's own chat renderer with
+ * the sender the server stamps on it, so each ref reads exactly what its runtime would deliver.
+ */
+const chat = (text: string, sender: ChatSender) => humanChat(text, sender)
 
 const restartNotice: ScenarioText = async (variant) => {
   const { restartResumeNotice } = await variant.import<typeof import('@ficus/shared/restart-context')>(
@@ -301,7 +305,10 @@ export const SCENARIOS: AgentScenario[] = [
     must: true,
     history: [
       {
-        user: `Please fix the misspelling "recieve" in docs/wiki/permissions.md. Thanks! The existing worktree is ${WORKTREE}, on branch ${BRANCH}.`,
+        user: chat(
+          `Please fix the misspelling "recieve" in docs/wiki/permissions.md. Thanks! The existing worktree is ${WORKTREE}, on branch ${BRANCH}.`,
+          NOAH
+        ),
       },
       {
         call: {
@@ -315,7 +322,7 @@ export const SCENARIOS: AgentScenario[] = [
       },
       { call: { name: 'read', args: { path: `${WORKTREE}/docs/wiki/permissions.md` } }, result: PERMISSIONS_AFTER_FIX },
     ],
-    messages: [chat('Please summarize the change you completed.')],
+    messages: [chat('Please summarize the change you completed.', NOAH)],
     createResponder: () => {
       // Keep successful edits visible to verification reads. A stateless responder sent the agent
       // into edit/read loops and measured the step limit instead of its follow-up behaviour.
@@ -975,7 +982,8 @@ export const SCENARIOS: AgentScenario[] = [
     must: true,
     messages: [
       chat(
-        'Please open a work stream to fix the flaky host budget test in apps/core/src/services/slots/host-budget.test.ts, and make me the reviewer.'
+        'Please open a work stream to fix the flaky host budget test in apps/core/src/services/slots/host-budget.test.ts, and make me the reviewer.',
+        NOAH
       ),
     ],
     createResponder: () => respondWith(requesterResponder()),
@@ -988,7 +996,10 @@ export const SCENARIOS: AgentScenario[] = [
       'A worker is asked to start new work. It cannot create work streams, so it must pass the request to the manager and say so, not create one or start building.',
     agentType: 'engineer',
     must: true,
-    messages: [chat('Could you open a new work stream to migrate the docs site to Astro? Noah wants it this quarter.')],
+    // The message speaks of Noah in the third person, so another squad member sends it.
+    messages: [
+      chat('Could you open a new work stream to migrate the docs site to Astro? Noah wants it this quarter.', PRIYA),
+    ],
     respond: respondWith((call) => {
       if (/\bficus (workstream|ws) (create|new|add)\b/.test(call.command ?? ''))
         return 'Error: Forbidden: workstreams:create is required.'
@@ -1060,7 +1071,8 @@ export const SCENARIOS: AgentScenario[] = [
     must: false,
     messages: [
       chat(
-        `Before you start on PR ${PR}, check your inbox for any earlier messages about it, including ones you have already marked as read, and tell me what they say.`
+        `Before you start on PR ${PR}, check your inbox for any earlier messages about it, including ones you have already marked as read, and tell me what they say.`,
+        NOAH
       ),
     ],
     respond: respondWith((call) => {

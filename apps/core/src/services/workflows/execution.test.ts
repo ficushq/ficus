@@ -378,11 +378,18 @@ describe('lazy flow execution', () => {
       { completionMode: 'deliverable' },
       { metadata: { completion: { mode: 'deliverable' } } },
     ])
-      await expect(db.transaction((tx) => guardFlowMutation(tx, stream!, mutation))).rejects.toThrow()
+      // Each refusal names the flow command that replaces the pre-flow verb.
+      await expect(db.transaction((tx) => guardFlowMutation(tx, stream!, mutation))).rejects.toThrow(
+        'ficus workstream advance'
+      )
+    await expect(db.transaction((tx) => guardFlowMutation(tx, stream!, {}, true))).rejects.toThrow(
+      'ficus workstream advance'
+    )
     await advance(id, 'completed')
     await advance(id, 'approved')
+    const ready = await getFlow(id)
     await expect(db.transaction((tx) => guardFlowMutation(tx, stream!, { status: 'done' }))).rejects.toThrow(
-      'flow completion'
+      `Use flow completion to evaluate the configured delivery policy: ficus workstream finish ${id} --version ${ready!.version}`
     )
   })
   test('superseded and parked handoff messages cannot wake a participant', async () => {

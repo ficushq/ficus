@@ -387,7 +387,9 @@ describe('AgentTypeSync', () => {
       expect(agentType).toBeTruthy()
       expect(agentType!.systemPrompt).toContain('## Follow-Up Work')
       expect(agentType!.systemPrompt).toContain('must be communicated to the manager')
-      expect(agentType!.systemPrompt).toContain("work stream's next-steps metadata")
+      expect(agentType!.systemPrompt).toContain('to the manager by inbox message')
+      // next-steps metadata is written only by the pre-flow done verb, which a flow refuses.
+      expect(agentType!.systemPrompt).not.toContain('next-steps metadata')
       expect(agentType!.systemPrompt).toContain('Never rely solely on your own short-term memory')
     }
   })
