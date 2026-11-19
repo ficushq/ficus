@@ -169,6 +169,7 @@ describe('role-independent delivery guidance', () => {
       const base = [config.systemPrompt, ...parts].join('\n\n')
       expect(base).toContain('no role may grant itself that authority')
       expect(base).toContain('A PR link, passing CI, or review approval is')
+      expect(base.split('A later timestamp alone does not reconcile conflicting owner requirements')).toHaveLength(2)
       const { flowCompletionInstructions } = await import('../workflows/completion-prompt')
       for (const mode of ['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
         const generated = flowCompletionInstructions(mode)
@@ -177,6 +178,15 @@ describe('role-independent delivery guidance', () => {
         expect(generated).toContain('The flow, not an agent role, assigns delivery')
         expect(generated.includes('metadata.policies.allowAutoMerge')).toBe(mode === 'pr-auto-merge')
         expect(generated.includes('metadata.policies.allowDirectMerge')).toBe(mode === 'direct-merge')
+        // The rework procedure and CI-reading rule moved from squad-rules into the generated
+        // instructions: the composed prompt carries each exactly once, and the static rules
+        // keep only the invariant.
+        expect(base).not.toContain('Rework at completion-ready')
+        expect(base).not.toContain('Each CI notification reports one workflow run')
+        expect(base.replace(/\s+/g, ' ')).toContain('Never edit against a completed attempt')
+        if (mode !== 'review-approval' && mode !== 'deliverable' && mode !== 'direct-merge')
+          expect(composed.split('Each CI notification reports one workflow run')).toHaveLength(2)
+        expect(composed.split('Rework at completion-ready')).toHaveLength(2)
         if (mode === 'pr-auto-merge') {
           expect(composed).toContain('enable native auto-merge now')
           expect(composed).toContain('GitHub required CI and external PR approvals may still be pending')

@@ -33,6 +33,25 @@ The agent runs until it ends its turn or reaches the step limit (10 by default).
 grader then reads what the agent did, meaning its tool calls and its text, never its reasoning.
 Each grader has pass and fail fixtures in `evals.test.ts`.
 
+Scripted results must preserve the scenario premise when an agent verifies state: running assignments
+remain running, while completion-ready attempts are completed. A stateful fixture uses
+`createResponder` to allocate fresh state per run (including concurrent variants and repeats). For
+example, offer-followup verification reads reflect successful edits rather than returning stale text.
+Common discovery answers are deliberately path-specific: only the fictional worktree and known
+repository settings are scripted. Unknown paths and unrelated commands are not made successful.
+Repository API requests cannot accidentally receive PR JSON. Successful merge/rework calls update
+later inspections, with fresh state per run. `evals.test.ts` probes all 18 scenario premises and
+`fixtures.test.ts` checks known and unknown discovery/settings calls before live comparisons.
+
+The approved offer-followup goal starts after a small fix is done. Its earlier user/edit/read history
+now establishes that completion in the known worktree, including observations of unrelated issues.
+The current turn only asks for the result; it does not tell the model to avoid offers or authorize
+those unrelated fixes. This avoids measuring repository discovery and editing against the step
+limit instead of the intended post-completion decision. The grader and step limit are unchanged.
+
+Fixture corrections require both comparison sides to be rerun with that same corrected harness;
+preserve earlier recordings but label their limitations instead of mixing them into the new cohort.
+
 ## The scenario set
 
 Noah agreed the first set on 2026-11-18 for work stream 1250. Scenarios marked must protect an
@@ -123,8 +142,43 @@ the new text as with the old, and the total number of passing runs does not drop
 - that each scenario's premise holds in the assembled prompt. For example, the Slot Pools section
   is present for slot-queued, and no prompt shows `inbox list --all` for cli-discovery;
 - that the comparison applies the rule;
-- that each committed recording still grades as it did when recorded.
+- that each retained final recording still grades as recorded and the five minimal historical
+  correction traces retain their original verdicts and explicitly pinned corrections.
 
 `prompt.test.ts` additionally checks default voice composition across built-in types, capability
 filtering, deterministic per-variant profiles, runtime size limits, git-ref extraction and
 voice-free historical baselines. These prompt tests need no database or live model calls.
+
+### Read-only discovery is not starting implementation
+
+The new-work-request grader distinguishes `find ... astro.config*` (read-only discovery followed
+by routing to the manager) from actual Astro CLI execution or scaffolding. Its fixtures cover both.
+The authorized correction leaves historical recordings unchanged: offline replay pins the exact
+historical false positives it corrects, rather than allowing unrelated verdicts to drift. A fresh full
+comparison is still required after a guidance change; historical corrected scores are not substituted
+for new live runs.
+
+### Commands versus quoted evidence
+
+Merge grading and interactive response routing share the command-argv extractor in
+`shell-commands.ts`. A command name or flag inside quoted `ficus workstream finish` evidence is
+not another executable: “without --admin” is not an administrator merge. Literal heredoc payloads
+are data too. The focused tests also keep real commands, shell wrappers and substitutions visible,
+and distinguish read-only help and merge-state API inspections from mutations. This helper handles
+the shell forms used by the evals; it is not a general Bash evaluator or a runtime security boundary.
+
+Historical JSON verdicts stay unchanged. Offline replay explicitly pins the five authorized
+historical false-positive corrections (two read-only Astro searches and three quoted-evidence
+cases). This does not prove behaviour under a corrected interactive responder: if an earlier live
+trace received an incorrect response, both comparison sides must be run afresh under the corrected
+harness, not merely regraded to claim a pass.
+
+## Committed evidence size
+
+The `recordings/` directory has a recursively enforced **1 MiB** budget, including documentation
+and nested artifacts. Keep the current accepted cohort and minimal reusable regression traces in
+git, not every live experiment. Archive superseded full cohorts in the shared task workspace,
+verify byte identity and record filenames and hashes before removing their repository copies.
+Update the cohort-membership test and README references when replacing a cohort. The delivery
+comparison retains five complete historical correction runs with source hashes, so removing bulk
+cohorts does not remove the grader-correction regression coverage.

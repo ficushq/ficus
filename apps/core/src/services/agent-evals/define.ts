@@ -88,6 +88,8 @@ export interface AgentScenario {
   messages: ScenarioText[]
   /** Scripted tool results for this scenario; anything it does not answer gets a neutral default. */
   respond?: Responder
+  /** A fresh responder for each run, when scripted results depend on earlier calls. */
+  createResponder?: () => Responder
   /** Agent steps before the run stops; defaults to {@link DEFAULT_MAX_STEPS}. */
   maxSteps?: number
   grade: (trace: Trace) => Verdict

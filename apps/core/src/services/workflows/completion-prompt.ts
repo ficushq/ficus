@@ -27,6 +27,18 @@ export const ALREADY_MERGEABLE_REFUSAL_GUIDANCE = [
   'Record the refusal reason, the verified head, the approval, and the check state in delivery evidence.',
 ].join(' ')
 
+/**
+ * How changes reach a completion-ready flow. Delivered here, with the delivery instructions, because
+ * completion-ready is the only state in which rework applies; the always-loaded rules keep only the
+ * invariant that a completed attempt is never edited directly.
+ */
+export const COMPLETION_READY_REWORK_GUIDANCE =
+  'Rework at completion-ready: when CI failures, review findings, merge conflicts or other required changes need work, first check they apply to the current head, then request tracked rework with ficus workstream advance: action rework, the current expectedVersion, the latest completed attempt of the step that change events go to (the last agent attempt by default) as attemptId, and feedback. The delivery participant, the participant that owns that attempt, or a flow manager can request it, and the delivery participant may reference that attempt even when another agent owns it. Never edit against the completed attempt; follow the new tracked attempt and its normal return and review paths. Rework from a closed parallel branch replays its outer fork, including sibling checks and joins, and final delivery approval is requested again afterwards. Pauses, questions, dependencies and unrelated manual waits stay enforced.'
+
+/** How to read CI notifications for a delivery pull request. */
+export const CI_NOTIFICATION_GUIDANCE =
+  'Each CI notification reports one workflow run, not the overall check result of the pull request: check the current head and every remaining required check before concluding CI is green. Successful individual runs need no acknowledgment or rework; investigate failures promptly. Waiting for CI and PR events needs no extra manual wait, which would only block event-driven feedback.'
+
 /** Delivery guidance is shared by every flow participant, independent of squad or agent type. */
 export function flowCompletionInstructions(mode: WorkflowDefinition['completion']['mode']): string {
   const guidance = {
@@ -62,6 +74,9 @@ export function flowCompletionInstructions(mode: WorkflowDefinition['completion'
     pr
       ? 'Use the work stream’s existing codeHost binding. Open the delivery PR from this stream’s branch (metadata.git.branch) against its base branch: Ficus binds it to codeHost.changeRequest automatically as soon as the code host reports it (fork pull requests never bind), so its comments, reviews, and CI reach this stream during review, and finish resolves it from the branch as a fallback. No manual binding step is required; attach codeHost.changeRequest.number and codeHost.changeRequest.url yourself only when the delivery PR comes from a different branch or to replace a wrong binding (codeHost is strictly validated: changeRequest accepts only number and url, so record merge evidence such as state, verification time, or merge commit under metadata.delivery instead). If the binding is missing, identify the repository and squad-authorized integration first. Check live PR mergeability after creation, CI, and approval. Resolve conflicts through an authorized flow return or revision and re-review the affected changes. Do not use a legacy completing review wait to finish a flow. Additional pull requests that are part of the deliverable must be designated with `ficus workstream track <ws-id> --pr <owner/repo#n> --delivery`; finish verifies every designated delivery PR is merged. `ficus workstream tracked <ws-id>` shows the delivery state.'
       : '',
+    pr ? CI_NOTIFICATION_GUIDANCE : '',
+    // A pr-review stream reviews someone else's pull request and changes nothing itself.
+    mode === 'pr-review' ? '' : COMPLETION_READY_REWORK_GUIDANCE,
     'At completion-ready, use ficus workstream finish with the current --version once the delivery condition is met.',
   ]
     .filter(Boolean)

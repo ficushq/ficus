@@ -29,9 +29,15 @@ const VARIANT_PATHS = [
   'apps/core/drizzle/meta',
   'apps/cli/src',
   'apps/cli/package.json',
+  // Core modules the tool definitions load import a few files from outside apps/core
+  // (for example sandbox/host/browser.ts and sandbox/bashrc.ts).
+  'scripts/machine',
+  'scripts/bigbrain',
+  'scripts/artifact',
+  'packages/sandbox-server/src',
 ]
 /** Bump when VARIANT_PATHS changes so cached extractions are refreshed. */
-const EXTRACTION_VERSION = 3
+const EXTRACTION_VERSION = 5
 
 export function workingTreeVariant(): PromptVariant {
   return { label: 'working tree', root: MONOREPO_ROOT }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   ALREADY_MERGEABLE_REFUSAL_GUIDANCE,
+  CI_NOTIFICATION_GUIDANCE,
+  COMPLETION_READY_REWORK_GUIDANCE,
   deliveryBindingSelfCheck,
   deliveryInstructionsForFlow,
   deliveryInstructionsForRun,
@@ -365,6 +367,40 @@ describe('auto-merge enabling versus delivery', () => {
     expect(flowCompletionInstructions('deliverable')).toContain('No PR, repository mutation, or additional reviewer')
     for (const mode of ['pr-merge', 'direct-merge', 'review-approval', 'deliverable'] as const)
       expect(flowCompletionInstructions(mode)).not.toContain('enable native auto-merge now')
+  })
+})
+
+describe('completion-ready rework and CI reading arrive with the delivery instructions', () => {
+  // The always-loaded squad rules keep only the invariant (never edit a completed attempt; use the
+  // tracked rework action). The procedure and the CI-reading rule live here, where they are used.
+  test('every mode that can change its deliverable explains tracked rework once', () => {
+    for (const mode of ['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
+      const text = flowCompletionInstructions(mode)
+      expect(text.split(COMPLETION_READY_REWORK_GUIDANCE)).toHaveLength(2)
+    }
+    expect(COMPLETION_READY_REWORK_GUIDANCE).toContain('action rework, the current expectedVersion')
+    expect(COMPLETION_READY_REWORK_GUIDANCE).toContain('the last agent attempt by default')
+    expect(COMPLETION_READY_REWORK_GUIDANCE).toContain('Never edit against the completed attempt')
+    expect(COMPLETION_READY_REWORK_GUIDANCE).toContain('final delivery approval is requested again')
+  })
+
+  test('a pr-review stream, which changes nothing itself, is not told to rework', () => {
+    expect(flowCompletionInstructions('pr-review')).not.toContain('Rework at completion-ready')
+  })
+
+  test('only pull request modes explain how to read CI notifications', () => {
+    for (const mode of ['pr-merge', 'pr-auto-merge'] as const)
+      expect(flowCompletionInstructions(mode).split(CI_NOTIFICATION_GUIDANCE)).toHaveLength(2)
+    for (const mode of ['deliverable', 'review-approval', 'direct-merge', 'pr-review'] as const)
+      expect(flowCompletionInstructions(mode)).not.toContain('Each CI notification reports one workflow run')
+    expect(CI_NOTIFICATION_GUIDANCE).toContain('check the current head and every remaining required check')
+  })
+
+  test('the agent reading completion-ready instructions receives the rework procedure', () => {
+    const state = run('pr-auto-merge')
+    const text = deliveryInstructionsForRun({ id: '55555555-5555-4555-8555-555555555555', status: 'active' }, state, 3)!
+    expect(text).toContain(COMPLETION_READY_REWORK_GUIDANCE)
+    expect(text).toContain(CI_NOTIFICATION_GUIDANCE)
   })
 })
 
