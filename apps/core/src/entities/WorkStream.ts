@@ -1957,6 +1957,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         }
         throw new Error(`Cannot send back a ${locked.status} work stream`)
       }
+      const [run] = await tx
+        .select({ activated: workStreamFlowRuns.activated })
+        .from(workStreamFlowRuns)
+        .where(eq(workStreamFlowRuns.workStreamId, this.id))
+      if (run?.activated) {
+        const { FLOW_REFUSALS } = await import('../services/workflows/execution')
+        const { WorkflowError } = await import('../services/workflows/catalog')
+        throw new WorkflowError(FLOW_REFUSALS.reviewWait, 409)
+      }
       const closed = await closeOpenWaits(
         tx,
         { workStreamId: this.id, type: 'review', ...(opts.waitId ? { waitId: opts.waitId } : {}) },

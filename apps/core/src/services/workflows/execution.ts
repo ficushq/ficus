@@ -930,7 +930,7 @@ export const FLOW_REFUSALS = {
   completionPolicy:
     'Flow completion policy is controlled by its definition: change it with an authorized revise through ficus workstream advance',
   reviewWait:
-    'Review waits do not apply to a flow, whose review steps are part of the flow: submit your step outcome with ficus workstream advance',
+    'Review waits do not apply to a flow, whose review steps are part of the flow: submit your step outcome or return with ficus workstream advance',
   notReady:
     'Required flow steps and return obligations must finish first: submit step outcomes with ficus workstream advance',
 } as const
@@ -946,14 +946,12 @@ export async function guardFlowMutation(
   const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id))
   if (!run?.activated) return
   if (stream.pause && input.status === 'done') throw new WorkflowError('Resume paused work before completing it', 409)
-  if (
-    approval ||
-    (input.assigneeAgentId !== undefined && input.status !== 'canceled') ||
-    input.agentIds !== undefined ||
-    input.completionMode !== undefined
-  )
+  if (approval || (input.assigneeAgentId !== undefined && input.status !== 'canceled') || input.agentIds !== undefined)
     throw new WorkflowError(FLOW_REFUSALS.ownership, 409)
-  if (input.metadata && typeof input.metadata === 'object' && 'completion' in input.metadata)
+  if (
+    input.completionMode !== undefined ||
+    (input.metadata && typeof input.metadata === 'object' && 'completion' in input.metadata)
+  )
     throw new WorkflowError(FLOW_REFUSALS.completionPolicy, 409)
   if (input.status === 'done' && run.state.status !== 'completion-ready')
     throw new WorkflowError(FLOW_REFUSALS.notReady, 409)

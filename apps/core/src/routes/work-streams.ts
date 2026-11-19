@@ -1392,7 +1392,7 @@ export const workStreamsRouter = new Hono()
                 : 400
           return c.json({ error: error.message, code: error.code }, status)
         }
-        return c.json({ error: publicErrorMessage(error) }, 400)
+        return (await flowRefusal(c, error)) ?? c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1462,6 +1462,8 @@ export const workStreamsRouter = new Hono()
       })
       return c.json(existing.toJson())
     } catch (error) {
+      const refused = await flowRefusal(c, error)
+      if (refused) return refused
       const message = publicErrorMessage(error)
       return c.json({ error: message }, message.includes('no open review wait') ? 409 : 400)
     }
@@ -1480,6 +1482,8 @@ export const workStreamsRouter = new Hono()
         })
         return c.json(existing.toJson())
       } catch (error) {
+        const refused = await flowRefusal(c, error)
+        if (refused) return refused
         const message = publicErrorMessage(error)
         return c.json({ error: message }, message.includes('no open review wait') ? 409 : 400)
       }
