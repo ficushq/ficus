@@ -32,6 +32,8 @@ export async function respondWithVoiceDerivation(
   body: z.infer<typeof deriveSchema>
 ) {
   const squadId = source.kind === 'squad' ? source.squadId : null
+  // Ties account derivation logs to the selected connection. Never log the GitHub login.
+  const logContext = source.kind === 'squad' ? { squadId } : { squadId, connectionId: source.connectionId }
   const lockKey = source.kind === 'squad' ? source.squadId : `connection:${source.connectionId}`
   const operation = acquireDerivation(lockKey, c.req.raw.signal, source.kind === 'connection' ? 90_000 : undefined)
   const args = {
@@ -48,13 +50,13 @@ export async function respondWithVoiceDerivation(
         : safeDerivationFailure('derivation_failed')
     if (error instanceof DerivationError)
       log.warn('Voice derivation failed', {
-        squadId,
+        ...logContext,
         code: safe.code,
         reason: safeDerivationReason(safe.code, safe.reason),
       })
     else
       log.error('Voice derivation failed', {
-        squadId,
+        ...logContext,
         code: safe.code,
         stage,
         ...safeDerivationDiagnostic(error),
@@ -66,10 +68,10 @@ export async function respondWithVoiceDerivation(
   const onCancel = () => {
     const reason = operation.signal.reason
     if (reason instanceof DerivationError && reason.code === 'derivation_timed_out')
-      log.warn('Voice derivation timed out', { squadId, code: reason.code })
+      log.warn('Voice derivation timed out', { ...logContext, code: reason.code })
     else
       log.info('Voice derivation cancelled', {
-        squadId,
+        ...logContext,
         code: 'derivation_cancelled',
         source: c.req.raw.signal.aborted ? 'client_disconnect' : cancelSource,
       })

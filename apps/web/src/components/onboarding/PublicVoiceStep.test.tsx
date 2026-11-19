@@ -30,7 +30,17 @@ const result = {
   bytes: 23,
   maxBytes: 2000,
 }
-for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-failure'] as const)
+const CUSTOM_NOTE =
+  "uses its own custom voice; assigning a profile has no effect until that is cleared in the squad's Voice settings"
+for (const scenario of [
+  'created',
+  'recent',
+  'none',
+  'collision',
+  'assignment-failure',
+  'custom-base',
+  'stale-custom-base',
+] as const)
   test(`onboarding voice save: ${scenario}`, async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost' })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -46,7 +56,12 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
         ? []
         : [
             { id: 'older', name: 'Older', createdAt: '2025-01-01' },
-            { id: 'recent', name: 'Recent', createdAt: '2026-01-01' },
+            {
+              id: 'recent',
+              name: 'Recent',
+              createdAt: '2026-01-01',
+              ...(scenario === 'custom-base' ? { publicVoice: { base: 'Our own voice.', surfaces: {} } } : {}),
+            },
           ]
     client.setQueryData(queries.squads.list().queryKey, squads)
     const original = globalThis.fetch
@@ -72,6 +87,9 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
         assignmentFailed = true
         return Response.json({ error: 'Forbidden' }, { status: 403 })
       }
+      // A custom base set after the list loaded: the server preserves it and reports it back.
+      if (scenario === 'stale-custom-base')
+        return Response.json({ voiceId: 'from-github', local: { base: 'Our own voice.', surfaces: {} } })
       return Response.json({ voiceId: 'from-github' })
     }) as typeof fetch
     try {
@@ -105,7 +123,12 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
       expect(container.querySelector<HTMLInputElement>('[aria-label="Profile name"]')!.value).toBe('From GitHub')
       expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Voice"]')!.value).toBe(result.draft.base)
       const target = scenario === 'created' ? 'Created here' : 'Recent'
-      await click(scenario === 'none' ? 'Save profile' : `Save and use for ${target}`)
+      const saveOnly = scenario === 'none' || scenario === 'custom-base'
+      if (scenario === 'custom-base') {
+        expect(hasButton('Save and use for Recent')).toBe(false)
+        expect(container.textContent).toContain(`Recent ${CUSTOM_NOTE}`)
+      }
+      await click(saveOnly ? 'Save profile' : `Save and use for ${target}`)
       // Wait for the terminal state of each save path, never for elapsed time.
       await untilRendered(dom, () =>
         expect(container.textContent).toContain(
@@ -115,6 +138,8 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
             'assignment-failure': 'Profile saved; could not assign it',
             created: 'From GitHub is now used by',
             recent: 'From GitHub is now used by',
+            'custom-base': `Profile From GitHub saved. Recent ${CUSTOM_NOTE}`,
+            'stale-custom-base': `Profile From GitHub saved. Recent ${CUSTOM_NOTE}`,
           }[scenario]
         )
       )
@@ -134,6 +159,18 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
           })
         )
         expect(container.textContent).toContain('another-voice')
+      } else if (scenario === 'custom-base') {
+        // Saved only: no assignment request can touch the squad's own voice.
+        expect(saves.length).toBe(1)
+        expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+        expect(container.textContent).not.toContain('is now used by')
+      } else if (scenario === 'stale-custom-base') {
+        expect(saves[1]).toEqual({
+          url: 'http://localhost/api/squads/recent/voice',
+          method: 'PATCH',
+          body: { voiceId: 'from-github', preserveCustomBase: true },
+        })
+        expect(container.textContent).not.toContain('is now used by')
       } else if (scenario === 'none') {
         expect(saves.length).toBe(1)
         expect(container.textContent).toContain('Settings → Voices')
@@ -143,7 +180,7 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
         expect(saves[1]).toEqual({
           url: `http://localhost/api/squads/${scenario === 'created' ? 'created' : 'recent'}/voice`,
           method: 'PATCH',
-          body: { voiceId: 'from-github' },
+          body: { voiceId: 'from-github', preserveCustomBase: true },
         })
         if (scenario === 'assignment-failure') {
           expect(container.textContent).toContain('Profile saved; could not assign it to Recent: Forbidden')

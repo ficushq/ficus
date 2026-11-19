@@ -443,3 +443,25 @@ test('the safe list exposes only identity fields from usable current-authority a
     await fixture.dispose()
   }
 })
+
+test('account derivation failures log the connection id, never the login', async () => {
+  usable()
+  const { DerivationError } = await import('../services/public-voice/github-activity')
+  spies.push(
+    spyOn(derivation, 'derivePublicVoice').mockRejectedValue(
+      new DerivationError('derivation_login_not_visible', { login: 'private-login' })
+    )
+  )
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  spies.push(warn)
+  const res = await request(admin, selectedId, 'application/json', { login: 'private-login' })
+  expect(res.status).toBe(422)
+  const diagnostic = warn.mock.calls.find((args) => args.includes('Voice derivation failed'))
+  expect(diagnostic!.at(-1)).toEqual({
+    squadId: null,
+    connectionId: selectedId,
+    code: 'derivation_login_not_visible',
+    reason: 'unspecified',
+  })
+  expect(JSON.stringify(warn.mock.calls)).not.toContain('private-login')
+})

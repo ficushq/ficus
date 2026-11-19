@@ -83,7 +83,7 @@ export async function githubApiGraphql<T>(
     typeof source === 'string'
       ? await resolveGitHubConnection(source, connectionId)
       : source.kind === 'squad'
-        ? await resolveGitHubConnection(source.squadId)
+        ? await resolveGitHubConnection(source.squadId, connectionId)
         : await resolveInstanceGitHubConnection(source.connectionId)
   const token = resolved?.credential.accessToken
   options.signal?.throwIfAborted()
