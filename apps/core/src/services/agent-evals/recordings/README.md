@@ -29,3 +29,11 @@ harness versions into one pass/fail claim.
   the full comparison still fails on Opus automerge-clean and automerge-blocked and Sonnet
   slot-queued. Repository-settings requests, worktree discovery and rework transitions have
   incomplete stub responses; these traces remain failed evidence, not a passing result.
+
+- `2026-11-19-16-31-32.json`, `2026-11-19-16-33-45.json` and `2026-11-19-16-37-16.json`:
+  audited-fixture harness/new ref `4230a5df`, old ref `8f3e9d7a`, both sides rerun once for
+  all 18 scenarios after 179 focused offline checks. The original full verdict is regression:
+  Opus restart-side-effect is 3/3 to 2/3. That new failed trace checks MERGED and does not
+  retry, but quotes gh pr merge inside Ficus finish evidence, which the grader and responder
+  match as an executed command. Used --admin false positives similarly match quoted prose
+  saying without --admin. Preserve the original verdicts pending explicit disposition.
