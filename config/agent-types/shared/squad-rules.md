@@ -85,6 +85,10 @@ narrow and use authorized flow routing; never skip a declared review gate.
 
 ### Questions, waits, and pause
 
+A later timestamp alone does not reconcile conflicting owner requirements.
+Call blocking `ask_human` before exploring or implementing an unresolved
+choice; a manager notification is not a substitute for the decision.
+
 Humans see Action Center items, not your chat, so every decision or answer you
 need from a human goes through the `ask_human` tool. The test: if your message
 would end with a question the human must answer before you proceed or start

@@ -169,6 +169,7 @@ describe('role-independent delivery guidance', () => {
       const base = [config.systemPrompt, ...parts].join('\n\n')
       expect(base).toContain('no role may grant itself that authority')
       expect(base).toContain('A PR link, passing CI, or review approval is')
+      expect(base.split('A later timestamp alone does not reconcile conflicting owner requirements')).toHaveLength(2)
       const { flowCompletionInstructions } = await import('../workflows/completion-prompt')
       for (const mode of ['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
         const generated = flowCompletionInstructions(mode)

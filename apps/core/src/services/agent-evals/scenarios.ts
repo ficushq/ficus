@@ -912,7 +912,12 @@ export const SCENARIOS: AgentScenario[] = [
         allCalls(trace).some(isEdit) ||
         commands.some(
           (command) =>
-            /\bgit worktree add\b|\bnpm (create|init)\b|\bastro\b/.test(command) &&
+            // A reference to astro.config in find/rg/cat is discovery, not an executable.
+            // Match the actual CLI command (including common launchers) at a shell boundary.
+            (/\bgit worktree add\b|\bnpm (create|init)\b/.test(command) ||
+              /(?:^|[;&|]\s*)\s*(?:(?:npx|bunx)\s+|(?:pnpm|npm)\s+exec\s+|yarn\s+)?astro(?:@[^\s]+)?\s+(?:add|build|dev|sync|check|preview)\b/.test(
+                command
+              )) &&
             !/\bficus inbox send\b/.test(command)
         )
       const passed =

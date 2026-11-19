@@ -135,3 +135,12 @@ the new text as with the old, and the total number of passing runs does not drop
 `prompt.test.ts` additionally checks default voice composition across built-in types, capability
 filtering, deterministic per-variant profiles, runtime size limits, git-ref extraction and
 voice-free historical baselines. These prompt tests need no database or live model calls.
+
+### Read-only discovery is not starting implementation
+
+The new-work-request grader distinguishes `find ... astro.config*` (read-only discovery followed
+by routing to the manager) from actual Astro CLI execution or scaffolding. Its fixtures cover both.
+The authorized correction leaves historical recordings unchanged: offline replay pins the exact two
+historical false positives it corrects, rather than allowing unrelated verdicts to drift. A fresh full
+comparison is still required after a guidance change; historical corrected scores are not substituted
+for new live runs.

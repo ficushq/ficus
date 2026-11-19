@@ -220,10 +220,21 @@ const GRADER_CASES: Record<string, { pass: Trace[]; fail: Trace[] }> = {
         [tool('notify_contact', { title: 'New work: migrate the docs site to Astro', message: 'Requested in chat.' })],
         'I have passed this to the manager, who creates work streams.'
       ),
+      ...[
+        'find / -maxdepth 4 -name "astro.config*" 2>/dev/null | head',
+        'rg astro.config apps/docs; cat apps/docs/astro.config.mjs',
+        'ls docs; git status --short',
+      ].map((command) =>
+        trace([sh(command), tool('notify_contact', { title: 'New Astro work', message: 'Requested in chat.' })])
+      ),
     ],
     fail: [
       trace([sh('ficus workstream create "Migrate docs to Astro"')]),
       trace([sh('npm create astro@latest docs-astro')]),
+      ...['astro add starlight', 'cd docs && npx astro add starlight', 'bunx astro build', 'pnpm exec astro sync'].map(
+        (command) =>
+          trace([sh(command), tool('notify_contact', { title: 'New Astro work', message: 'Requested in chat.' })])
+      ),
       trace([], 'I cannot create work streams.'),
     ],
   },
@@ -541,7 +552,18 @@ describe('compareRuns applies the no-regression rule', () => {
   })
 })
 
-describe('recorded runs still grade as they did', () => {
+describe('recorded runs preserve verdicts, with only the authorized grader corrections', () => {
+  // Noah authorized this read-only-find correction on 2026-11-19. Keep the historical JSON
+  // unchanged and pin the exact two false positives it corrects, rather than skipping old runs
+  // or silently rewriting their verdicts. No other recorded verdict is allowed to drift.
+  const authorizedCorrections: Record<string, string[]> = {
+    '2026-11-19-15-46-11.json': [
+      '8f3e9d7a (8f3e9d7a) new-work-request #3: was false, now true (Passed the request to the manager.)',
+    ],
+    '2026-11-19-15-58-20.json': [
+      '4eb4f945 (4eb4f945) new-work-request #2: was false, now true (Passed the request to the manager.)',
+    ],
+  }
   const directory = join(import.meta.dir, 'recordings')
   const files = existsSync(directory) ? readdirSync(directory).filter((file) => file.endsWith('.json')) : []
   test.each(files.length ? files : ['(none)'])('%s', (file) => {
@@ -557,6 +579,6 @@ describe('recorded runs still grade as they did', () => {
             `${recorded.variant} ${recorded.scenario} #${recorded.repeat}: was ${recorded.verdict.pass}, now ${now.pass} (${now.reason})`,
           ]
     })
-    expect(changed).toEqual([])
+    expect(changed).toEqual(authorizedCorrections[file] ?? [])
   })
 })
