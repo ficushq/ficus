@@ -889,9 +889,9 @@ describe('work-streams routes', () => {
         createRequestHash: 'fixture',
         createdBy: 'test',
       })
-      expect((await postJson(`/api/workstreams/${auto.id}/request-review`, { message: 'ci will merge' })).status).toBe(
-        200
-      )
+      // A flow refuses request-review, so open the review wait directly: the fixture exercises the
+      // annotation, not the verb.
+      await openWait(db, { workStreamId: auto.id, type: 'review', message: 'ci will merge' })
 
       const dependency = await storedLegacyWorkStream({
         squadId: testSquadId,
@@ -2755,6 +2755,30 @@ describe('work-streams routes', () => {
       const second = await postJson(`/api/workstreams/${created.id}/request-review`, { message: 'again' })
       expect(second.status).toBe(200)
       expect((await second.json()).alreadyOpen).toBe(true)
+    })
+
+    it('a flow refuses request-review, naming the replacement, and opens no wait', async () => {
+      const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} Flow review` })
+      const definition = createBlankWorkflow()
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream.id,
+        activated: true,
+        state: createWorkflowRun(definition),
+        source: { schemaVersion: 1, source: { kind: 'inline' }, definition },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'fixture',
+        createdBy: 'test',
+      })
+
+      const res = await postJson(`/api/workstreams/${stream.id}/request-review`, { message: 'please review' })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toContain('ficus workstream advance')
+      const detail = await (await apiFetch(`/api/workstreams/${stream.id}`)).json()
+      expect(detail.openWaits ?? []).toHaveLength(0)
+
+      const add = await postJson(`/api/workstreams/${stream.id}/agents/${testAgentId}`, {})
+      expect(add.status).toBe(409)
+      expect((await add.json()).error).toContain('ficus workstream advance')
     })
 
     it('message-only handoff no longer opens a review wait (route removed)', async () => {

@@ -1833,6 +1833,55 @@ describe('workstream CLI commands', () => {
       expect(names).toContain('request-input')
       expect(names).toContain('request-review')
     })
+
+    it('help marks the pre-flow verbs as legacy and names the flow replacement', () => {
+      const program = new Command()
+      registerWorkstreamCommands(program)
+      const workstream = program.commands.find((command) => command.name() === 'workstream')!
+      const describe = (name: string) => workstream.commands.find((command) => command.name() === name)!.description()
+      for (const name of ['approve', 'send-back', 'request-review', 'handoff', 'done', 'add-agent', 'remove-agent'])
+        expect(describe(name)).toStartWith('Legacy, streams without a flow:')
+      for (const name of ['send-back', 'request-review', 'handoff', 'add-agent', 'remove-agent'])
+        expect(describe(name)).toContain('workstream advance')
+      expect(describe('done')).toContain('workstream finish')
+      for (const name of ['flow', 'advance', 'finish', 'unblock', 'request-input', 'update'])
+        expect(describe(name)).not.toContain('Legacy')
+
+      let help = ''
+      workstream.configureOutput({ writeOut: (text) => (help += text) })
+      workstream.outputHelp()
+      help = help.replace(/\s+/g, ' ')
+      expect(help).toContain('"ficus workstream advance"')
+      expect(help).toContain('"ficus workstream finish"')
+      expect(help).toContain('Commands marked "Legacy" serve only streams without a flow')
+    })
+
+    it('add-agent refuses a flow stream before spawning any agent', async () => {
+      ;(apiGet as ReturnType<typeof mock>).mockImplementation((path: string) =>
+        Promise.resolve(path.startsWith('/api/workflows/runs/') ? { version: 3 } : { id: 'ws-1', squadId: 'squad-1' })
+      )
+
+      await run(['workstream', 'add-agent', 'ws-1', 'engineer'])
+
+      expect(apiGet).toHaveBeenCalledWith('/api/workflows/runs/ws-1?integrationDeliveries=0')
+      expect(apiPost).not.toHaveBeenCalled()
+      expect(outputError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('revise through ficus workstream advance') })
+      )
+    })
+
+    it('add-agent still spawns and binds on a stream without a flow', async () => {
+      ;(apiGet as ReturnType<typeof mock>).mockImplementation((path: string) =>
+        Promise.resolve(path.startsWith('/api/workflows/runs/') ? null : { id: 'ws-1', squadId: 'squad-1' })
+      )
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ id: 'agent-12345678' })
+
+      await run(['workstream', 'add-agent', 'ws-1', 'engineer'])
+
+      expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/spawn', { agentTypeId: 'engineer' })
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/agents/agent-12345678')
+      expect(outputError).not.toHaveBeenCalled()
+    })
   })
 
   describe('park', () => {

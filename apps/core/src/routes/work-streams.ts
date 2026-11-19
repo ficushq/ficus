@@ -485,6 +485,12 @@ async function assetFailure(c: Context, error: unknown) {
   throw error
 }
 
+/** A flow's refusal of a pre-flow verb, with its status and the replacement command it names. */
+async function flowRefusal(c: Context, error: unknown) {
+  const { WorkflowError } = await import('../services/workflows/catalog')
+  return error instanceof WorkflowError ? c.json({ error: error.message }, error.status) : undefined
+}
+
 /** Tracked-link failures carry their own status; the delivery conflict is code-tagged for clients. */
 function trackedResourceFailure(c: Context, error: unknown) {
   if (!(error instanceof TrackedResourceError)) throw error
@@ -1429,7 +1435,7 @@ export const workStreamsRouter = new Hono()
         })
         return c.json({ ...existing.toJson(), wait: toWaitJson(wait), alreadyOpen })
       } catch (error) {
-        return c.json({ error: publicErrorMessage(error) }, 400)
+        return (await flowRefusal(c, error)) ?? c.json({ error: publicErrorMessage(error) }, 400)
       }
     }
   )
@@ -1718,8 +1724,8 @@ export const workStreamsRouter = new Hono()
       try {
         await ws.addAgent(agentId)
         return c.json(ws.toJson())
-      } catch {
-        return c.json({ error: 'Failed to add agent' }, 400)
+      } catch (error) {
+        return (await flowRefusal(c, error)) ?? c.json({ error: 'Failed to add agent' }, 400)
       }
     }
   )
@@ -1733,8 +1739,8 @@ export const workStreamsRouter = new Hono()
       try {
         await ws.removeAgent(agentId)
         return c.json(ws.toJson())
-      } catch {
-        return c.json({ error: 'Failed to remove agent' }, 400)
+      } catch (error) {
+        return (await flowRefusal(c, error)) ?? c.json({ error: 'Failed to remove agent' }, 400)
       }
     }
   )

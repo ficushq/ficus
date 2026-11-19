@@ -469,6 +469,13 @@ recorded — the note is never silently dropped.
 
 ---
 
+> **Legacy commands.** `request-review`, `approve`, `send-back`, `handoff`,
+> `done`, `add-agent` and `remove-agent` serve only work streams without a flow,
+> and `ficus workstream --help` marks them "Legacy". A flow refuses each of
+> them with a 409 that names the replacement: `ficus workstream advance` for
+> step outcomes, returns, rework and participant revisions, and
+> `ficus workstream finish` for delivery.
+
 ### request-review
 
 Open the review wait: the work is ready for someone to review. Approving the
