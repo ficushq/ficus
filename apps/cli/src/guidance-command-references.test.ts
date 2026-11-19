@@ -248,18 +248,17 @@ describe('ficus commands quoted in agent guidance', () => {
   })
 })
 
-// Work stream verbs that predate flows. A flow refuses them, so the external skills, which people
-// install into their own agents, may quote them only in a section for streams without a flow.
-const LEGACY_WORKSTREAM_VERBS = new Set([
-  'approve',
-  'send-back',
-  'reject',
-  'request-review',
-  'handoff',
-  'done',
-  'add-agent',
-  'remove-agent',
-])
+// Work stream verbs that predate flows, as the CLI help marks them. A flow refuses them, so the
+// external skills, which people install into their own agents, may quote them only in a section
+// for streams without a flow.
+function legacyWorkstreamVerbs(program: Command): Set<string> {
+  const workstream = findSubcommand(program, 'workstream')!
+  return new Set(
+    workstream.commands
+      .filter((command) => command.description().startsWith('Legacy, streams without a flow:'))
+      .flatMap((command) => [command.name(), ...command.aliases()])
+  )
+}
 
 /** The Markdown heading a line falls under, skipping `#` comment lines inside fenced code. */
 function headingAt(source: string, line: number): string {
@@ -283,9 +282,11 @@ describe('external skills teach the flow lifecycle', () => {
   })
 
   test('quote legacy work stream verbs only under a heading for streams without a flow', () => {
+    const verbs = legacyWorkstreamVerbs(createProgram())
+    expect([...verbs]).toEqual(expect.arrayContaining(['approve', 'send-back', 'reject']))
     const legacy = references.filter((reference) => {
       const [group, verb] = shellWords(reference.text)
-      return (group === 'ws' || group === 'workstream') && LEGACY_WORKSTREAM_VERBS.has(verb!)
+      return (group === 'ws' || group === 'workstream') && verbs.has(verb!)
     })
     expect(legacy.length).toBeGreaterThan(0)
     expect(

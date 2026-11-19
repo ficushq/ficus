@@ -196,8 +196,8 @@ is your human's decision. Sending work back is always safe.
 ## Streams without a flow
 
 Streams created before flows have no flow (`ficus ws flow <id>` returns none)
-and use review waits (`waitType` review) instead of gates. The legacy verbs
-below serve only such a stream:
+and use review waits (`waitType` review) instead of gates. `ficus ws --help`
+marks the verbs below "Legacy". Use them only on such a stream:
 
 - A review wait whose condition holds: `ficus ws approve <id> -m "<note>"`.
   A completing review wait is the merge gate: approve it only when the PR has
