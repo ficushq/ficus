@@ -13,6 +13,12 @@ import { awaitsCodeHostDelivery } from '../workflows/delivery-state'
 export interface SquadDemandSnapshot {
   count: number
   firstDemandAt: Date | null
+  /**
+   * Earliest unserved demand after execution-specific progress and admission
+   * gates have been checked. When present, unrelated squad run starts must not
+   * reset this clock. Aggregate-only callers can omit it.
+   */
+  unservedSince?: Date | null
   /** Present only when every demand item has a known executable agent route. */
   agentIds?: string[]
 }
@@ -21,6 +27,9 @@ const liveAgentStatusSql = sql.join(
   [...LIVE_AGENT_STATUSES].map((status) => sql`${status}`),
   sql`, `
 )
+
+/** Maximum silence between a claimed start or persisted foreground assistant steps. */
+export const FOREGROUND_PROGRESS_WINDOW_MS = 30 * 60_000
 
 /** Freshness window for managed local apps and their owners' check-ins. */
 export const SUPERVISED_ACTIVITY_WINDOW_MS = 2 * 60 * 60_000
@@ -67,7 +76,7 @@ export function hasRunnableStreamDemand(stream: StreamDemand): boolean {
       step?.kind === 'agent' &&
       !stream.waits.some((wait) => wait.flowAttemptId === attempt.id) &&
       // A live agent idle between events of work it supervises is progressing, not stalled.
-      (!attemptAgent || (stream.participants.includes(attemptAgent) && !supervising.has(attemptAgent)))
+      (attemptAgent ? stream.participants.includes(attemptAgent) && !supervising.has(attemptAgent) : !stream.busy)
     )
   })
 }
@@ -98,6 +107,7 @@ interface DemandRow extends Record<string, unknown> {
  */
 export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map<string, SquadDemandSnapshot>> {
   const now = input.now.toISOString()
+  const progressCutoff = new Date(input.now.getTime() - FOREGROUND_PROGRESS_WINDOW_MS).toISOString()
   const activityCutoff = new Date(input.now.getTime() - SUPERVISED_ACTIVITY_WINDOW_MS).toISOString()
   const rows = await db.execute<DemandRow>(sql`
     WITH active_squads AS (
@@ -120,6 +130,36 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         WHERE stream.status IN ('active', 'queued') AND stream.pause IS NOT NULL
           AND (stream.assignee_agent_id = agent.id OR stream.agent_ids @> ARRAY[agent.id])
       )
+    ), slot_waiting_agents AS (
+      -- A durable subscription is expected admission waiting, including when a
+      -- host-shared pool is blocked by another squad. Do not recalculate budget
+      -- availability here: only slot promotion/cancellation ends the wait.
+      SELECT owner.id FROM slot_waiters AS waiter
+      JOIN slot_pools AS pool ON pool.id = waiter.pool_id
+      JOIN active_squads AS squad ON squad.id = pool.squad_id
+      JOIN agents AS owner ON owner.id = waiter.owner_agent_id AND owner.squad_id = pool.squad_id
+      WHERE waiter.status = 'queued' AND waiter.ended_at IS NULL AND waiter.resulting_claim_id IS NULL
+        AND pool.disabled_at IS NULL AND pool.unregistered_at IS NULL
+        AND owner.status NOT IN ('dormant', 'terminated')
+    ), progressing_executions AS (
+      -- An actual claimed start gives a bounded grace period. Afterwards only
+      -- persisted assistant steps belonging to THIS execution prove progress.
+      -- Lease/worker heartbeats, inbox traffic and box activity are not progress.
+      SELECT execution.id, execution.agent_id
+      FROM executions AS execution
+      JOIN agents AS owner ON owner.id = execution.agent_id
+      JOIN active_squads AS squad ON squad.id = owner.squad_id
+      WHERE execution.status IN ('running', 'stopping')
+        AND execution.run_started_at IS NOT NULL
+        AND execution.run_started_at <= ${now}::timestamptz
+        AND (execution.run_started_at > ${progressCutoff}::timestamptz OR EXISTS (
+          SELECT 1 FROM messages AS message
+          WHERE message.agent_id = execution.agent_id AND message.role = 'assistant'
+            AND message.metadata->>'executionId' = execution.id::text
+            AND message.created_at > ${progressCutoff}::timestamptz
+            AND message.created_at <= ${now}::timestamptz
+            AND message.created_at >= execution.run_started_at
+        ))
     ), eligible_inbox AS (
       SELECT message.*, agent.squad_id, agent.status AS agent_status
       FROM inbox AS message
@@ -141,6 +181,8 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         AND agent.status <> 'terminated'
         AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = agent.id)
         AND agent.pending_dormancy_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM slot_waiting_agents WHERE id = agent.id)
+        AND NOT EXISTS (SELECT 1 FROM progressing_executions WHERE agent_id = agent.id)
         -- Observer delivery is informational and never starts an execution.
         AND message.metadata->>'source' IS DISTINCT FROM 'work-stream-observer'
     ), demand AS (
@@ -153,6 +195,8 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         -- Match pickup's lifecycle gates, not merely the existence of a row.
         AND agent.status <> 'terminated'
         AND agent.pending_dormancy_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM slot_waiting_agents WHERE id = agent.id)
+        AND NOT EXISTS (SELECT 1 FROM progressing_executions WHERE agent_id = agent.id)
         AND (agent.status <> 'dormant' OR execution.wake_eligible)
         AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = agent.id)
 
@@ -182,6 +226,8 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
           SELECT 1 FROM agents AS target
           WHERE target.status::text IN (${liveAgentStatusSql})
             AND target.pending_dormancy_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM slot_waiting_agents WHERE id = target.id)
+            AND NOT EXISTS (SELECT 1 FROM progressing_executions WHERE agent_id = target.id)
             AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = target.id)
             AND target.id::text = CASE
               WHEN schedule.action->'target'->>'type' = 'agent' THEN schedule.action->'target'->>'agentId'
@@ -220,10 +266,15 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
     , stream_candidates AS (
       SELECT stream.squad_id, jsonb_build_object(
         'createdAt', stream.created_at, 'metadata', stream.metadata,
-        'busy', EXISTS (SELECT 1 FROM executions AS execution JOIN agents AS participant ON participant.id = execution.agent_id
+        'busy', (EXISTS (SELECT 1 FROM slot_waiting_agents AS waiter
+          WHERE waiter.id = stream.assignee_agent_id OR waiter.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[]))
+            OR waiter.id::text IN (SELECT value FROM jsonb_each_text(COALESCE(flow.attempt_agents, '{}'::jsonb))))
+          OR EXISTS (SELECT 1 FROM executions AS execution JOIN agents AS participant ON participant.id = execution.agent_id
           WHERE participant.squad_id = stream.squad_id
-            AND (participant.id = stream.assignee_agent_id OR participant.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[])))
-            AND execution.status IN ('queued', 'running', 'stopping', 'waiting-maintenance', 'waiting-sandbox')),
+            AND (participant.id = stream.assignee_agent_id OR participant.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[]))
+              OR participant.id::text IN (SELECT value FROM jsonb_each_text(COALESCE(flow.attempt_agents, '{}'::jsonb))))
+            AND (execution.status IN ('queued', 'waiting-maintenance', 'waiting-sandbox')
+              OR execution.id IN (SELECT id FROM progressing_executions)))),
         'state', CASE WHEN flow.activated THEN flow.state ELSE NULL END,
         'attemptAgents', COALESCE(flow.attempt_agents, '{}'::jsonb),
         'waits', (SELECT COALESCE(jsonb_agg(jsonb_build_object('flowAttemptId', wait.flow_attempt_id)), '[]'::jsonb)
@@ -256,12 +307,13 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
           FROM agents AS participant
           WHERE participant.squad_id = stream.squad_id
             AND participant.pending_dormancy_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM slot_waiting_agents WHERE id = participant.id)
             AND participant.status::text IN (${liveAgentStatusSql})
             AND (participant.id = stream.assignee_agent_id OR participant.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[])))
             AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = participant.id)
             AND NOT EXISTS (SELECT 1 FROM executions AS execution
-              WHERE execution.agent_id = participant.id AND execution.status IN
-                ('queued', 'running', 'stopping', 'waiting-maintenance', 'waiting-sandbox')))
+              WHERE execution.agent_id = participant.id AND (execution.status IN
+                ('queued', 'waiting-maintenance', 'waiting-sandbox') OR execution.id IN (SELECT id FROM progressing_executions))))
       ) AS candidate
       FROM work_streams AS stream
       JOIN active_squads AS squad ON squad.id = stream.squad_id
@@ -308,6 +360,7 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
     snapshots.set(row.squadId, {
       count: Number(row.count) + messages.length + streams.length,
       firstDemandAt: dates.length ? new Date(Math.min(...dates)) : null,
+      unservedSince: dates.length ? new Date(Math.min(...dates)) : null,
       ...(!row.unknownRoutes && streams.length === 0 && dates.length > 0
         ? { agentIds: [...new Set([...(row.agentIds ?? []), ...messages.map((message) => message.recipientId)])] }
         : {}),

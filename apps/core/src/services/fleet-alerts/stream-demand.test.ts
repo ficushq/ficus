@@ -87,3 +87,13 @@ test('stream-level demand without a flow attempt owner honors any stream agent s
   legacy.supervisingAgents = []
   expect(hasRunnableStreamDemand(legacy)).toBe(true)
 })
+
+test('an unmapped attempt honors foreground activity without masking an idle mapped sibling', () => {
+  const stream = candidate()
+  stream.busy = true
+  delete stream.attemptAgents['1']
+  expect(hasRunnableStreamDemand(stream)).toBe(false)
+  stream.state.attempts.push({ ...stream.state.attempts[0]!, id: 2 })
+  stream.attemptAgents['2'] = 'engineer'
+  expect(hasRunnableStreamDemand(stream)).toBe(true)
+})

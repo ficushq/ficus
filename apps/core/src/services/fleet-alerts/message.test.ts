@@ -61,7 +61,7 @@ describe('fleet incident messages', () => {
     expect(message.subject).toBe('Squad Ficus Core stalled')
     expect(message.content).toBe(
       'Work in squad Ficus Core has been stalled for 45m.\n\n' +
-        'Cause: No agent run has started, and no provider or sandbox problem explains it.\n' +
+        'Cause: Pending work has no fresh execution progress, and no provider or sandbox problem explains it.\n' +
         'Waiting: 1 work item, the oldest for 2d 19h\n' +
         'Fix: Check machine + sandbox health first (the box/tunnel logs), then worker pickup (`ficus worker status`).'
     )
@@ -119,7 +119,7 @@ describe('fleet incident messages', () => {
     expect(message.subject).toBe('Squad Ficus Core is running again')
     expect(message.content).toBe(
       'Work in squad Ficus Core is running again after being stalled for 3h 10m.\n\n' +
-        'Earlier cause: No agent run has started, and no provider or sandbox problem explains it.'
+        'Earlier cause: Pending work has no fresh execution progress, and no provider or sandbox problem explains it.'
     )
     expect(message.push.interruptionLevel).toBe('passive')
   })

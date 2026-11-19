@@ -3,6 +3,8 @@ import type { Command, Option } from 'commander'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { createProgram } from './program'
+import { permissionMatches } from '@ficus/shared'
+import { CLI_COMMAND_PERMISSIONS } from '../../core/src/lib/utils/cli-help'
 
 // Agent guidance teaches `ficus` commands by example. When a command or flag is
 // renamed or removed, the guidance silently keeps teaching it. This test reads
@@ -243,5 +245,42 @@ describe('ficus commands quoted in agent guidance', () => {
   test('every known stale reference still occurs (remove the entry once it is fixed)', () => {
     const found = new Set(problems.map(({ key }) => key))
     expect([...KNOWN_STALE.keys()].filter((key) => !found.has(key))).toEqual([])
+  })
+})
+
+describe('fleet alert remediation is available to squad agents', () => {
+  const program = createProgram()
+  const references = listFiles('apps/core/src/services/fleet-alerts').flatMap((file) =>
+    extractCommandReferences(file, readFileSync(file, 'utf8'))
+  )
+  const roles = Bun.YAML.parse(readFileSync(join(repoRoot, 'config/roles/defaults.yaml'), 'utf8')) as {
+    roles: Array<{ slug: string; permissions: string[] }>
+  }
+
+  test('does not suggest the removed machine inventory command', () => {
+    expect(checkCommandReference(program, reference('machines list'))).toBe('`ficus machines` has no subcommand `list`')
+    expect(references.some((entry) => entry.text.startsWith('machines list'))).toBe(false)
+  })
+
+  test.each(['default-manager', 'default-worker'])('suggested commands exist within %s permissions', (slug) => {
+    const permissions = roles.roles.find((role) => role.slug === slug)!.permissions
+    expect(references.length).toBeGreaterThan(0)
+    // Fleet incidents go manager-first. Workers may also inspect the generic
+    // stall's read-only worker-status command, not overload remediation controls.
+    const scoped =
+      slug === 'default-worker' ? references.filter((entry) => entry.text.startsWith('worker ')) : references
+    expect(scoped.length).toBeGreaterThan(0)
+    for (const entry of scoped) {
+      expect(checkCommandReference(program, entry)).toBeNull()
+      const [group, subcommand] = shellWords(entry.text)
+      for (const key of [group!, `${group} ${subcommand}`]) {
+        const required = CLI_COMMAND_PERMISSIONS[key]
+        expect({
+          command: entry.text,
+          permitted:
+            !required || required.some((needed) => permissions.some((held) => permissionMatches(held, needed))),
+        }).toEqual({ command: entry.text, permitted: true })
+      }
+    }
   })
 })

@@ -23,19 +23,21 @@ export interface DeadFleetReconciliationAdapter extends DeadFleetIncidentStoreAd
 }
 
 /**
- * Reconcile one injected demand snapshot against actual execution-run starts.
- * The single bounded query deliberately ignores execution.started_at: only a
- * claimed execution's run_started_at proves that the fleet resumed work.
+ * Demand snapshots from the dispatcher gates already account for scoped,
+ * bounded foreground progress. Never let an unrelated run reset those clocks.
+ * Aggregate-only snapshots retain the run-start fallback; execution.started_at
+ * is queue creation, not evidence that the worker claimed anything.
  */
 export async function reconcileDeadFleet(
   input: DeadFleetReconciliationInput,
   adapter: DeadFleetReconciliationAdapter = {}
 ): Promise<void> {
-  const squadIds = [...input.demand.keys()]
-  if (squadIds.length === 0) return
+  if (input.demand.size === 0) return
+  const squadIds = [...input.demand].filter(([, snapshot]) => snapshot.unservedSince === undefined).map(([id]) => id)
   const now = input.now.toISOString()
 
-  const rows = await db.execute<LastRunRow>(sql`
+  const rows = squadIds.length
+    ? await db.execute<LastRunRow>(sql`
     SELECT
       agent.squad_id AS "squadId",
       MAX(execution.run_started_at) AS "lastRunStartedAt"
@@ -51,6 +53,7 @@ export async function reconcileDeadFleet(
       AND execution.run_started_at <= ${now}::timestamptz
     GROUP BY agent.squad_id
   `)
+    : []
   const lastRunBySquad = new Map(
     rows.map((row) => [
       row.squadId,
@@ -68,6 +71,7 @@ export async function reconcileDeadFleet(
       if (snapshot.count === 0 || snapshot.firstDemandAt == null) {
         return observeDeadFleet({ status: 'quiet', squadId, lastRunStartedAt, now: input.now }, adapter)
       }
+      const unservedSince = snapshot.unservedSince ?? snapshot.firstDemandAt
       const records = input.records ?? []
       const chains =
         snapshot.agentIds?.length && records.length
@@ -81,9 +85,9 @@ export async function reconcileDeadFleet(
           demandCount: snapshot.count,
           providerCause,
           firstDemandAt:
-            lastRunStartedAt == null && input.coldStartAt && snapshot.firstDemandAt < input.coldStartAt
+            lastRunStartedAt == null && input.coldStartAt && unservedSince < input.coldStartAt
               ? input.coldStartAt
-              : snapshot.firstDemandAt,
+              : unservedSince,
           lastRunStartedAt,
           now: input.now,
         },

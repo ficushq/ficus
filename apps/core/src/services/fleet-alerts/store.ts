@@ -41,22 +41,19 @@ const PROVIDER_WIDE_ACCOUNT = '__provider__'
 function describeStall(
   demandCount: number,
   firstDemandAt: Date,
-  now: Date,
-  lastRunStartedAt?: Date
+  now: Date
 ): {
   code: string
   summary: string
   remediation: string
 } {
   const oldestMin = Math.max(1, Math.round((now.getTime() - firstDemandAt.getTime()) / 60_000))
-  const stalledSince = Math.max(firstDemandAt.getTime(), lastRunStartedAt?.getTime() ?? firstDemandAt.getTime())
-  const stalledMin = Math.max(1, Math.round((now.getTime() - stalledSince) / 60_000))
   // The aggregate also includes inbox messages, schedules, and work streams;
   // its oldest row may predate recent progress by days.
   const work = demandCount === 1 ? '1 pending work item remains' : `${demandCount} pending work items remain`
   return {
     code: 'demand-not-served',
-    summary: `${work}; oldest is ${oldestMin}m old. No execution run has started in the last ${stalledMin}m of pending demand, and no open provider or sandbox incident explains the delay.`,
+    summary: `${work}; oldest is ${oldestMin}m old. No fresh execution progress serves this demand, and no open provider or sandbox incident explains the delay.`,
     remediation:
       'Check machine + sandbox health first (the box/tunnel logs for the affected machine), then worker pickup (`ficus worker status`).',
   }
@@ -423,7 +420,7 @@ export async function observeDeadFleet(
               : explaining.causeSummary,
           remediation: explaining.remediation,
         }
-      : describeStall(input.demandCount, input.firstDemandAt, input.now, input.lastRunStartedAt)
+      : describeStall(input.demandCount, input.firstDemandAt, input.now)
     // Structured facts let delivery name the provider and phrase reasons and durations for readers.
     const details = {
       demandCount: input.demandCount,
