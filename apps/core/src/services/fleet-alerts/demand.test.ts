@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   agents,
+  agentQuestions,
   executions,
   executionAdmissionReservations,
   inbox,
@@ -667,7 +668,20 @@ describe('actionable squad demand', () => {
       createRequestHash: 'test',
       createdBy: 'test',
     })
-    const questionId = crypto.randomUUID()
+    // Only the answer-delivery protocol delivers this row, and only while it still owes delivery.
+    const [question] = await db
+      .insert(agentQuestions)
+      .values({
+        agentId: targetAgentId,
+        squadId: targetSquadId,
+        questionData: { questions: [{ id: 'q', type: 'text', question: 'Which?' }] },
+        status: 'answered',
+        answer: 'This one.',
+        answerDeliveryStatus: 'pending',
+        answerDeliveryNextAttemptAt: at(1),
+      })
+      .returning()
+    const questionId = question!.id
     await db.insert(workStreamWaits).values({
       workStreamId: id,
       type: 'question',
@@ -694,6 +708,10 @@ describe('actionable squad demand', () => {
     expect(await isCurrentFlowMessage(message!)).toBe(true)
     // A parked branch's legitimate resolution is still deliverable.
     expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+    // Once delivery terminally fails, nothing will pick the row up again; the question's own
+    // failure alert and Action Center retry cover it, so it is not a stalled worker.
+    await db.update(agentQuestions).set({ answerDeliveryStatus: 'failed' }).where(eq(agentQuestions.id, questionId))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
   })
 
   test('dead schedule scopes and inbox targets are not executable demand', async () => {

@@ -1636,6 +1636,53 @@ test('the delivery participant can ask on the attempt it delivers from, and rece
   expect(await isCurrentQuestionAttempt(db, id, 3, reviewer)).toBe(true)
 })
 
+// Regression: finishing keeps the flow run's completion-ready state, so the delivery participant's
+// attempt stayed "current" after the stream was done. An unread answer to its merge question then
+// counted as executable squad demand forever and raised a false stall alert.
+test('finishing the stream ends the delivery participant question currency', async () => {
+  const { createAgentQuestion } = await import('../agents/questions')
+  const { isCurrentQuestionAttempt, lockFlowInboxDelivery } = await import('../work-streams/wait-scope')
+  const definition = structuredClone(flow)
+  definition.completion.mode = 'deliverable'
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const reviewer = (await getFlow(id))!.attemptAgents['2']!
+  const execution = await (await Agent.mustFind(reviewer)).queueExecution({ message: 'Review the change' })
+  expect(execution.flowContext).toMatchObject({ workStreamId: id, attemptId: 2 })
+  const question = await createAgentQuestion(
+    { agentId: reviewer, executionId: execution.id },
+    { questions: [{ id: 'merge', type: 'text', question: 'Should I merge once CI passes?' }] }
+  )
+  await advance(id, 'approved')
+  await execution.stop()
+  const [answer] = await db
+    .insert(inbox)
+    .values({
+      recipientType: 'agent',
+      recipientId: reviewer,
+      senderType: 'user',
+      content: 'Yes, merge it',
+      deliveryMode: 'steer',
+      metadata: { source: 'agent-question-answer', questionId: question.id },
+      idempotencyKey: `agent-question-answer:v1:${question.id}`,
+    })
+    .returning()
+  expect(await isCurrentQuestionAttempt(db, id, 2, reviewer)).toBe(true)
+  expect(await isCurrentFlowMessage(answer!)).toBe(true)
+
+  const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+  try {
+    expect((await finishFlow(id, 2, actor)).status).toBe('done')
+  } finally {
+    stop.mockRestore()
+  }
+  // The flow run is left completion-ready; only the stream status records the finish.
+  expect((await getFlow(id))!.state.status).toBe('completion-ready')
+  expect(await isCurrentQuestionAttempt(db, id, 2, reviewer)).toBe(false)
+  expect(await isCurrentFlowMessage(answer!)).toBe(false)
+  await expect(db.transaction((tx) => lockFlowInboxDelivery(tx, reviewer, [answer!.id]))).rejects.toThrow('superseded')
+})
+
 test('only completed PR workflows with a linked change and event routing suppress idle nudges', async () => {
   const definition = structuredClone(flow)
   definition.completion = { mode: 'pr-merge', followChanges: true }
