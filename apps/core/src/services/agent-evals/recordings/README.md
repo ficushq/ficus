@@ -37,3 +37,11 @@ harness versions into one pass/fail claim.
   retry, but quotes gh pr merge inside Ficus finish evidence, which the grader and responder
   match as an executed command. Used --admin false positives similarly match quoted prose
   saying without --admin. Preserve the original verdicts pending explicit disposition.
+
+- `2026-11-19-16-54-11.json`, `2026-11-19-16-56-10.json` and `2026-11-19-16-59-30.json`:
+  command-aware harness/new ref `59758c68`, old ref `8f3e9d7a`, both sides rerun afresh across
+  all 18 scenarios after the authorized command-recognition and responder repair. The full
+  result still fails on Opus offer-followup (old 2/3, new 1/3); all failures are step-limit
+  timeouts during discovery and verification, not chat offers. The approved goal says the
+  small fix is already done, but the opening fixture asks the agent to perform it without
+  an initial worktree path. This premise gap is recorded, not waived as noise.
