@@ -45,3 +45,11 @@ harness versions into one pass/fail claim.
   timeouts during discovery and verification, not chat offers. The approved goal says the
   small fix is already done, but the opening fixture asks the agent to perform it without
   an initial worktree path. This premise gap is recorded, not waived as noise.
+
+- `2026-11-19-17-06-49.json`, `2026-11-19-17-08-20.json` and `2026-11-19-17-11-34.json`:
+  final post-completion harness/new ref `8936a554`, old ref `8f3e9d7a`. Both full sides rerun
+  fresh after the authorized completed-fix premise correction. The complete 216-turn cohort
+  passes the unchanged rule: every must scenario is equal or better, with totals 41 to 42 on
+  Opus medium, 46 to 48 on Sonnet medium and 6 to 6 on Opus high. The non-must Opus
+  readable-handoff score drops 2/3 to 0/3; that batch-local failure is disclosed, not hidden.
+  See `delivery-comparison.md` for the complete table and provenance.
