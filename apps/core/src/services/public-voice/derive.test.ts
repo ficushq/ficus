@@ -1,10 +1,12 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { AgentSession } from '../../entities/AgentSession'
-import { PUBLIC_VOICE_MAX_BYTES } from '@ficus/shared'
+import { z } from 'zod'
+import { PUBLIC_SURFACES, PUBLIC_VOICE_MAX_BYTES } from '@ficus/shared'
 import type { CollectedActivity, RawActivityItem } from './github-activity'
 import {
   assembleDraft,
   buildDerivationPrompt,
+  copiesPrivateText,
   DERIVATION_SYSTEM_PROMPT,
   derivePublicVoice,
   isSafeVoiceText,
@@ -44,7 +46,72 @@ describe('parseDerivationOutput', () => {
 
   test('rejects text that is not JSON or does not match the schema', () => {
     expect(() => parseDerivationOutput('Here is the voice: ...')).toThrow('derivation_invalid_output')
-    expect(() => parseDerivationOutput(JSON.stringify({ base: 'x' }))).toThrow('derivation_invalid_output')
+    expect(() => parseDerivationOutput(JSON.stringify({ base: 42 }))).toThrow('derivation_invalid_output')
+  })
+  test('drops overlong and malformed optional items while retaining a usable base', () => {
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({
+          observations: ['x'.repeat(161), 'Keeps it short.', 42, ''],
+          surfaces: { commits: 'x'.repeat(201), channels: 'Short sentences.', pullRequests: 42 },
+          exemplars: [
+            { surface: 'commits', text: 'x'.repeat(241) },
+            { surface: 'issueComments', text: 'Fixed in the next release' },
+            { surface: 'unknown', text: 'Invalid surface.' },
+          ],
+        })
+      )
+    )
+    expect(parsed.observations).toEqual(['Keeps it short.'])
+    expect(parsed.surfaces).toEqual({ channels: 'Short sentences.' })
+    expect(parsed.exemplars).toEqual([{ surface: 'issueComments', text: 'Fixed in the next release' }])
+    expect(assembleDraft(parsed, samples).draft.base).toContain('Lead with the answer.')
+  })
+
+  test('caps optional counts and accepts a base with no usable optional items', () => {
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({
+          observations: Array.from({ length: 13 }, (_, i) => `Note ${i}.`),
+          exemplars: Array.from({ length: 7 }, (_, i) => ({ surface: 'commits', text: `Example ${i}.` })),
+        })
+      )
+    )
+    expect(parsed.observations).toHaveLength(12)
+    expect(parsed.exemplars).toHaveLength(6)
+    for (const optional of [
+      {},
+      { observations: [], surfaces: null, exemplars: [] },
+      {
+        observations: ['x'.repeat(161)],
+        surfaces: { commits: 'x'.repeat(201) },
+        exemplars: [{ surface: 'commits', text: 'x'.repeat(241) }],
+      },
+    ]) {
+      expect(
+        assembleDraft(parseDerivationOutput(JSON.stringify({ base: 'Write clearly.', ...optional })), samples).draft
+          .base
+      ).toBe('Write clearly.')
+    }
+  })
+
+  test('salvaged optional fields still pass every privacy and credential check', () => {
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({
+          observations: ['x'.repeat(161), 'Wait until all the checks pass.', 'Use Bearer abcdefghijklmnop.'],
+          surfaces: { commits: 'x'.repeat(201), channels: 'See example.com.' },
+          exemplars: [
+            { surface: 'commits', text: 'x'.repeat(241) },
+            { surface: 'commits', text: 'Wait until all the checks pass.' },
+          ],
+        })
+      )
+    )
+    const result = assembleDraft(parsed, [sample(1, 'Wait until all the checks pass.', true)])
+    expect(result.observations).toEqual([])
+    expect(result.exemplars).toEqual([])
+    expect(result.draft.surfaces).toEqual({})
   })
 })
 
@@ -114,6 +181,103 @@ describe('assembleDraft', () => {
       JSON.stringify(output({ base: 'Copy this: billing service to the new cluster before the March launch.' }))
     )
     expect(() => assembleDraft(leakyBase, privateSamples)).toThrow('derivation_invalid_output')
+  })
+
+  test.each([
+    'Describes @mentions as a habit.',
+    'Uses examples from example.com.',
+    'Wait until all the checks pass.',
+    'Contact person@example.com.',
+    'Open /home/user/private.',
+    'See ficus:ws:123.',
+    'Use Bearer abcdefghijklmnop.',
+  ])('salvages the safe base sentence while dropping %s', (unsafe) => {
+    const privateSamples = [sample(1, 'Wait until all the checks pass.', true)]
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({ base: `Lead with the result. ${unsafe}`, observations: ['Use @mentions.'], exemplars: [] })
+      )
+    )
+    const result = assembleDraft(parsed, privateSamples)
+    expect(result.draft.base).toBe('Lead with the result.')
+    expect(isSafeVoiceText(result.draft.base)).toBe(true)
+  })
+
+  test('revalidates newly adjacent sentences after dropping unsafe content', () => {
+    const privateSamples = [sample(1, 'Keep it short. Lead with facts.', true)]
+    const parsed = parseDerivationOutput(
+      JSON.stringify(
+        output({
+          base: 'Keep it short. Use @mentions. Lead with facts.',
+        })
+      )
+    )
+    expect(() => assembleDraft(parsed, privateSamples)).toThrow('derivation_invalid_output')
+  })
+
+  test('measures a fixed synthetic validation cohort before and after sentence salvage', () => {
+    const privateSamples = [sample(1, 'Wait until all the checks pass.', true)]
+    const raw = (base: string) => JSON.stringify(output({ base, observations: ['Use @mentions.'], exemplars: [] }))
+    // Deliberately enriched for failures, not a model-backed or production reliability estimate.
+    // Snapshot of the output schema at 8f3e9d7a, before optional-item and base salvage.
+    const legacySchema = z.object({
+      observations: z.array(z.string().trim().min(1).max(160)).min(1).max(12),
+      surfaces: z
+        .object(Object.fromEntries(PUBLIC_SURFACES.map((surface) => [surface, z.string().trim().max(200).optional()])))
+        .partial()
+        .optional(),
+      exemplars: z
+        .array(z.object({ surface: z.enum(PUBLIC_SURFACES), text: z.string().trim().min(1).max(240) }))
+        .max(6)
+        .optional(),
+      base: z.string().trim().min(1),
+    })
+    const cohort = [
+      raw('Lead with the result.'),
+      raw('Write complete sentences. Use calm language.'),
+      ...[
+        'Describes @mentions as a habit.',
+        'Uses examples from example.com.',
+        'Wait until all the checks pass.',
+        'Contact person@example.com.',
+        'Open /home/user/private.',
+        'See ficus:ws:123.',
+        'Use Bearer abcdefghijklmnop.',
+      ].map((unsafe) => raw(`Lead with the result. ${unsafe}`)),
+      raw('Use @mentions.'),
+      raw('Wait until all the checks pass.'),
+      'not JSON',
+      JSON.stringify({ base: 42 }),
+      raw('Write complete sentences. '.repeat(100)),
+      JSON.stringify(output({ observations: ['x'.repeat(161), 'Keeps it short.'] })),
+      JSON.stringify(output({ surfaces: { commits: 'x'.repeat(201), channels: 'Short sentences.' } })),
+      JSON.stringify(output({ exemplars: [{ surface: 'commits', text: 'x'.repeat(241) }] })),
+      JSON.stringify(output({ observations: Array.from({ length: 13 }, () => 'Keeps it short.') })),
+      JSON.stringify(
+        output({
+          exemplars: Array.from({ length: 7 }, () => ({ surface: 'commits', text: 'Fixed in the next release' })),
+        })
+      ),
+      JSON.stringify({ base: 'Write clearly.' }),
+    ]
+    const failures = (legacy: boolean) =>
+      cohort.filter((text) => {
+        try {
+          if (legacy && !legacySchema.safeParse(JSON.parse(text)).success) return true
+          const parsed = parseDerivationOutput(text)
+          if (legacy && (!isSafeVoiceText(parsed.base) || copiesPrivateText(parsed.base, privateSamples))) return true
+          const result = assembleDraft(parsed, privateSamples)
+          expect(isSafeVoiceText(result.draft.base)).toBe(true)
+          expect(copiesPrivateText(result.draft.base, privateSamples)).toBe(false)
+          expect(result.bytes).toBeLessThanOrEqual(PUBLIC_VOICE_MAX_BYTES)
+          return false
+        } catch {
+          return true
+        }
+      }).length
+    expect(cohort).toHaveLength(20)
+    expect(failures(true)).toBe(18)
+    expect(failures(false)).toBe(5)
   })
 
   test('public samples can be quoted; only private text is checked for copying', () => {

@@ -11,8 +11,10 @@ async function throwApiError(response: Response): Promise<never> {
   const code =
     payload && typeof payload === 'object' && typeof (payload as { code?: unknown }).code === 'string'
       ? (payload as { code: string }).code
-      : undefined
-  throw new ApiRequestError(formatApiErrorPayload(payload, fallback), response.status, code)
+      : payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : undefined
+  throw new ApiRequestError(formatApiErrorPayload(payload, fallback), response.status, code, payload)
 }
 
 export async function apiGet<T>(path: string): Promise<T> {

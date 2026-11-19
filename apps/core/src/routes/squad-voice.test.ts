@@ -1,4 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import * as derivation from '../services/public-voice/derive'
+import { DerivationError } from '../services/public-voice/github-activity'
 import { Hono } from 'hono'
 import { inArray, like } from 'drizzle-orm'
 import { db, publicVoices, squads } from '../db'
@@ -162,15 +164,73 @@ describe('squad voice routes', () => {
     expect((await request(reader, 'POST', '/preview', { surface: 'commits' })).status).toBe(403)
   })
 
-  test('derive needs integrations:use, confirmation for another login, and one run per squad', async () => {
-    expect(
-      (await request(updaterWithoutIntegrations, 'POST', '/derive', { login: 'octocat', confirmOtherPerson: true }))
-        .status
-    ).toBe(403)
+  test('derive logs only bounded diagnostic codes and reasons, never private content', async () => {
+    const privateFixture = 'SYNTHETIC_PRIVATE_CONTENT'
+    const cases: Array<readonly [DerivationError['code'], unknown, string, number]> = [
+      ...['not_json', 'schema', 'unsafe_base', 'private_text_in_base', 'too_long'].map(
+        (reason) => ['derivation_invalid_output', reason, reason, 422] as const
+      ),
+      ...['timeout', 'empty_output'].map((reason) => ['derivation_model_unavailable', reason, reason, 422] as const),
+      ...['no_token', 'network', 'invalid_body', 'rate_limited', 'http_401', 'http_429', 'http_503'].map(
+        (reason) => ['derivation_github_unavailable', reason, reason, 422] as const
+      ),
+      ['derivation_login_not_visible', undefined, 'unspecified', 422],
+      ['derivation_too_few_samples', undefined, 'unspecified', 422],
+      ['derivation_model_unavailable', undefined, 'unspecified', 422],
+      ...[privateFixture, 'schema\nforged log', 'http_503\n', 'x'.repeat(10000), { text: privateFixture }].map(
+        (reason) => ['derivation_invalid_output', reason, 'unknown', 422] as const
+      ),
+      ['derivation_github_unavailable', 'http_503\n', 'unknown', 422],
+    ]
+    const derive = spyOn(derivation, 'derivePublicVoice')
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      for (const [code, reason, expectedReason, status] of cases) {
+        warn.mockClear()
+        const details = {
+          reason,
+          samples: [privateFixture],
+          draft: privateFixture,
+          modelOutput: privateFixture,
+          login: 'private-login',
+          credential: privateFixture,
+          counts: { collected: 10, kept: 2 },
+          minimum: 8,
+        }
+        derive.mockRejectedValueOnce(new DerivationError(code, details))
+        const res = await request(admin, 'POST', '/derive', { login: 'octocat' })
+        expect(res.status).toBe(status)
+        expect(await res.json()).toMatchObject({ error: code, counts: details.counts })
+        const diagnostic = warn.mock.calls.find((args) => args.includes('Voice derivation failed'))
+        expect(diagnostic).toBeDefined()
+        expect(diagnostic!.at(-1)).toEqual({ squadId, code, reason: expectedReason })
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(privateFixture)
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('private-login')
+      }
+    } finally {
+      derive.mockRestore()
+      warn.mockRestore()
+    }
+  })
 
-    const unconfirmed = await request(admin, 'POST', '/derive', { login: 'octocat' })
-    expect(unconfirmed.status).toBe(409)
-    expect(await unconfirmed.json()).toMatchObject({ error: 'confirmation_required', linkedLogin: null })
+  test('a person can derive another visible login immediately without saving', async () => {
+    const result = { login: 'another-login', draft: { base: 'Synthetic draft.', surfaces: {} } }
+    const derive = spyOn(derivation, 'derivePublicVoice').mockResolvedValue(result as any)
+    const before = await Squad.find(squadId)
+    try {
+      const res = await request(admin, 'POST', '/derive', { login: result.login })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual(result)
+      const after = await Squad.find(squadId)
+      expect(after?.publicVoice).toEqual(before?.publicVoice)
+      expect(after?.publicVoiceId).toBe(before?.publicVoiceId)
+    } finally {
+      derive.mockRestore()
+    }
+  })
+
+  test('derive needs integrations:use and one run per squad', async () => {
+    expect((await request(updaterWithoutIntegrations, 'POST', '/derive', { login: 'octocat' })).status).toBe(403)
 
     expect(
       (await request(admin, 'POST', '/derive', { login: 'octocat', filters: { before: 'yesterday' } })).status
@@ -178,7 +238,7 @@ describe('squad voice routes', () => {
 
     __derivationsInProgress.add(squadId)
     try {
-      const busy = await request(admin, 'POST', '/derive', { login: 'octocat', confirmOtherPerson: true })
+      const busy = await request(admin, 'POST', '/derive', { login: 'octocat' })
       expect(busy.status).toBe(429)
     } finally {
       __derivationsInProgress.delete(squadId)
@@ -220,7 +280,7 @@ describe('derivation needs a person', () => {
       const res = await app.request(`/api/squads/${squadId}/voice/derive`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ login: 'octocat', confirmOtherPerson: true }),
+        body: JSON.stringify({ login: 'octocat' }),
       })
       expect(res.status).toBe(403)
       expect(await res.json()).toEqual({ error: 'derivation_requires_person' })

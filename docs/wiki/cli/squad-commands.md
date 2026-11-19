@@ -598,7 +598,7 @@ ficus squad voice set <squadId> --text "<voice>"     # the squad's own voice (cl
 ficus squad voice set <squadId> --surface pull-requests --add --text "<note>"   # or --override
 ficus squad voice clear <squadId> [--surface <name> | --all]
 ficus squad voice preview <squadId> [--surface <name>] [--sample <text>] [--voice <voiceId>]
-ficus squad voice derive <squadId> --github <login> [--before <date>] [--after <date>] [--repo <owner/name>] [--exclude-repo <owner/name>] [--surfaces <list>] [--include-tool-authored] [--confirm-other-person] [--out <draft.json>]
+ficus squad voice derive <squadId> --github <login> [--before <date>] [--after <date>] [--repo <owner/name>] [--exclude-repo <owner/name>] [--surfaces <list>] [--include-tool-authored] [--out <draft.json>]
 ```
 
 Surface names: `commits`, `pull-requests`, `review-replies`, `issue-comments`, `channels`. `derive` prints a draft and saves nothing.

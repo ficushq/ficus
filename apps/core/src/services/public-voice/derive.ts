@@ -22,24 +22,34 @@ export const DERIVATION_FEATURE = 'public-voice-derive'
 export const DERIVATION_TARGET_BYTES = 1_600
 export const DERIVATION_DEADLINE_MS = 90_000
 
+// Only the base is essential. Optional model-generated items are validated independently,
+// so one long note cannot discard an otherwise useful draft.
 const derivationOutputSchema = z.object({
-  observations: z.array(z.string().trim().min(1).max(160)).min(1).max(12),
-  surfaces: z
-    .object(
-      Object.fromEntries(PUBLIC_SURFACES.map((s) => [s, z.string().trim().max(200).optional()])) as Record<
-        PublicSurface,
-        z.ZodOptional<z.ZodString>
-      >
-    )
-    .partial()
-    .optional(),
-  exemplars: z
-    .array(z.object({ surface: z.enum(PUBLIC_SURFACES), text: z.string().trim().min(1).max(240) }))
-    .max(6)
-    .optional(),
   base: z.string().trim().min(1),
+  observations: z.unknown().optional(),
+  surfaces: z.unknown().optional(),
+  exemplars: z.unknown().optional(),
 })
-type DerivationOutput = z.infer<typeof derivationOutputSchema>
+const observationSchema = z.string().trim().min(1).max(160)
+const surfaceNoteSchema = z.string().trim().min(1).max(200)
+const exemplarSchema = z.object({ surface: z.enum(PUBLIC_SURFACES), text: z.string().trim().min(1).max(240) })
+interface DerivationOutput {
+  base: string
+  observations: string[]
+  surfaces: Partial<Record<PublicSurface, string>>
+  exemplars: Array<z.infer<typeof exemplarSchema>>
+}
+
+function validItems<T>(input: unknown, schema: z.ZodType<T>, maximum: number): T[] {
+  const kept: T[] = []
+  if (!Array.isArray(input)) return kept
+  for (const item of input) {
+    const result = schema.safeParse(item)
+    if (result.success) kept.push(result.data)
+    if (kept.length === maximum) break
+  }
+  return kept
+}
 
 export interface VoiceExemplar {
   surface: PublicSurface
@@ -103,7 +113,19 @@ export function parseDerivationOutput(raw: string): DerivationOutput {
   }
   const result = derivationOutputSchema.safeParse(parsed)
   if (!result.success) throw new DerivationError('derivation_invalid_output', { reason: 'schema' })
-  return result.data
+  const surfaces: DerivationOutput['surfaces'] = {}
+  if (result.data.surfaces && typeof result.data.surfaces === 'object') {
+    for (const surface of PUBLIC_SURFACES) {
+      const note = surfaceNoteSchema.safeParse((result.data.surfaces as Record<string, unknown>)[surface])
+      if (note.success) surfaces[surface] = note.data
+    }
+  }
+  return {
+    base: result.data.base,
+    observations: validItems(result.data.observations, observationSchema, 12),
+    surfaces,
+    exemplars: validItems(result.data.exemplars, exemplarSchema, 6),
+  }
 }
 
 const UNSAFE_TEXT = [
@@ -188,9 +210,18 @@ export function assembleDraft(
   samples: VoiceSample[]
 ): { draft: PublicVoiceDraftResult['draft']; observations: string[]; exemplars: VoiceExemplar[]; bytes: number } {
   const keep = (text: string) => isSafeVoiceText(text) && !copiesPrivateText(text, samples)
-  if (!isSafeVoiceText(output.base)) throw new DerivationError('derivation_invalid_output', { reason: 'unsafe_base' })
-  if (copiesPrivateText(output.base, samples))
-    throw new DerivationError('derivation_invalid_output', { reason: 'private_text_in_base' })
+  let base = output.base
+  if (!keep(base)) {
+    const reason = isSafeVoiceText(base) ? 'private_text_in_base' : 'unsafe_base'
+    // Keep whole sentences/lines only: never redact a token inside a private quote or
+    // credential. Revalidate the joined result because new adjacency can create overlap.
+    base = base
+      .split(/(?<=[.!?])\s+|\n+/)
+      .filter(keep)
+      .join(' ')
+      .trim()
+    if (!base || !keep(base)) throw new DerivationError('derivation_invalid_output', { reason })
+  }
   let observations = output.observations.filter(keep)
   let exemplars = verifyExemplars(output.exemplars, samples)
   const surfaces: PublicVoiceSurfaces = {}
@@ -199,8 +230,8 @@ export function assembleDraft(
     if (note && keep(note)) surfaces[surface] = { mode: 'add', text: note }
   }
   const render = () => {
-    const base = renderBase(output.base, observations, exemplars)
-    return { base, bytes: publicVoiceBytes(renderPublicVoicePrompt({ base, entries: surfaces })) }
+    const rendered = renderBase(base, observations, exemplars)
+    return { base: rendered, bytes: publicVoiceBytes(renderPublicVoicePrompt({ base: rendered, entries: surfaces })) }
   }
   let current = render()
   while (current.bytes > PUBLIC_VOICE_MAX_BYTES && (exemplars.length || observations.length)) {

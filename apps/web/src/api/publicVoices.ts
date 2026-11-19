@@ -7,7 +7,8 @@ import type {
   SquadPublicVoicePatch,
   SquadPublicVoiceState,
 } from '@ficus/shared'
-import { apiFetch } from './client'
+import { formatDerivationError } from '@ficus/shared'
+import { apiFetch, ApiError } from './client'
 
 /** Voice profiles and squad voice settings. See docs/wiki/public-voice.md. */
 
@@ -87,9 +88,20 @@ export interface VoiceDerivationResult {
   maxBytes: number
 }
 
-export function deriveSquadVoice(
+export async function deriveSquadVoice(
   squadId: string,
-  body: { login: string; confirmOtherPerson?: boolean; filters?: DerivationFilters }
+  body: { login: string; filters?: DerivationFilters }
 ): Promise<VoiceDerivationResult> {
-  return apiFetch(`/squads/${squadId}/voice/derive`, { method: 'POST', body: JSON.stringify(body) })
+  try {
+    return await apiFetch(`/squads/${squadId}/voice/derive`, { method: 'POST', body: JSON.stringify(body) })
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 422 || error.status === 502)) {
+      const code = (error.payload as { error?: unknown } | undefined)?.error
+      const message = formatDerivationError(typeof code === 'string' ? code : undefined, error.payload, {
+        includeCode: false,
+      })
+      if (message) throw new ApiError(error.status, message, error.payload)
+    }
+    throw error
+  }
 }

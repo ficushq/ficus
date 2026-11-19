@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
   DERIVATION_SURFACES,
+  formatDerivationError,
   PUBLIC_SURFACES,
   PUBLIC_SURFACE_LABELS,
   type DerivationFilters,
@@ -24,11 +25,6 @@ function splitRepos(text: string): string[] | undefined {
     .map((r) => r.trim())
     .filter(Boolean)
   return repos.length ? repos : undefined
-}
-
-/** True when the login is someone else's and needs the style-not-identity confirmation. */
-function needsOtherPersonConfirmation(login: string, linkedLogin: string | null): boolean {
-  return login.trim().toLowerCase() !== (linkedLogin ?? '').toLowerCase()
 }
 
 /**
@@ -57,7 +53,6 @@ export function DeriveVoiceCard({
   const [excludeRepos, setExcludeRepos] = useState('')
   const [surfaces, setSurfaces] = useState<DerivationSurface[]>([...DERIVATION_SURFACES])
   const [includeToolAuthored, setIncludeToolAuthored] = useState(false)
-  const [confirming, setConfirming] = useState(false)
 
   const filters = (): DerivationFilters => ({
     ...(before ? { before } : {}),
@@ -69,18 +64,17 @@ export function DeriveVoiceCard({
   })
 
   const mutation = useMutation({
-    mutationFn: (confirmOtherPerson: boolean) =>
-      deriveSquadVoice(squadId, { login: login.trim(), confirmOtherPerson, filters: filters() }),
+    mutationFn: () => deriveSquadVoice(squadId, { login: login.trim(), filters: filters() }),
   })
-
-  const start = () => {
-    if (needsOtherPersonConfirmation(login, linkedLogin)) setConfirming(true)
-    else mutation.mutate(false)
-  }
 
   const result: VoiceDerivationResult | undefined = mutation.data
   const error =
     mutation.error instanceof ApiError ? mutation.error.message : mutation.error ? String(mutation.error) : null
+
+  const errorPayload =
+    mutation.error instanceof ApiError ? (mutation.error.payload as { error?: unknown } | undefined) : undefined
+  const errorCode =
+    typeof errorPayload?.error === 'string' && formatDerivationError(errorPayload.error) ? errorPayload.error : null
 
   return (
     <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4">
@@ -168,38 +162,22 @@ export function DeriveVoiceCard({
       <button
         className="ficus-button ficus-button-primary rounded-md px-3 py-1.5 text-sm"
         disabled={!login.trim() || surfaces.length === 0 || mutation.isPending}
-        onClick={start}
+        onClick={() => mutation.mutate()}
       >
         {mutation.isPending ? 'Deriving… (up to a minute)' : 'Derive'}
       </button>
 
-      {confirming && (
-        <div role="alertdialog" className="rounded-lg border border-status-attention-500/40 p-3 text-sm text-primary">
-          <p>
-            <strong>{login}</strong> is not your linked GitHub account. The result describes a writing style only.
-            Agents will not sign as or impersonate that person, and posts still come from Ficus.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
-              className="ficus-button ficus-button-primary rounded-md px-3 py-1 text-sm"
-              onClick={() => {
-                setConfirming(false)
-                mutation.mutate(true)
-              }}
-            >
-              Continue
-            </button>
-            <button
-              className="ficus-button ficus-button-ghost rounded-md px-3 py-1 text-sm"
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </button>
-          </div>
+      {error && (
+        <div className="text-xs text-status-danger-500">
+          <p>{error}</p>
+          {errorCode && (
+            <details className="mt-1">
+              <summary className="cursor-pointer">Details</summary>
+              <code>{errorCode}</code>
+            </details>
+          )}
         </div>
       )}
-
-      {error && <p className="text-xs text-status-danger-500">{error}</p>}
 
       {result && (
         <div className="space-y-3 text-sm">
