@@ -1641,7 +1641,13 @@ test('the delivery participant can ask on the attempt it delivers from, and rece
 // counted as executable squad demand forever and raised a false stall alert.
 test('finishing the stream ends the delivery participant question currency', async () => {
   const { createAgentQuestion } = await import('../agents/questions')
-  const { isCurrentQuestionAttempt, lockFlowInboxDelivery } = await import('../work-streams/wait-scope')
+  const {
+    FLOW_WAIT_STREAM_ENDED_MESSAGES,
+    FlowWaitStreamEndedError,
+    FlowWaitSupersededError,
+    isCurrentQuestionAttempt,
+    lockFlowInboxDelivery,
+  } = await import('../work-streams/wait-scope')
   const definition = structuredClone(flow)
   definition.completion.mode = 'deliverable'
   const id = await create('active', definition)
@@ -1680,7 +1686,11 @@ test('finishing the stream ends the delivery participant question currency', asy
   expect((await getFlow(id))!.state.status).toBe('completion-ready')
   expect(await isCurrentQuestionAttempt(db, id, 2, reviewer)).toBe(false)
   expect(await isCurrentFlowMessage(answer!)).toBe(false)
-  await expect(db.transaction((tx) => lockFlowInboxDelivery(tx, reviewer, [answer!.id]))).rejects.toThrow('superseded')
+  // Refused as superseded (terminal, no wake), with the finished stream as the recorded cause.
+  const refused = await db.transaction((tx) => lockFlowInboxDelivery(tx, reviewer, [answer!.id])).catch((e) => e)
+  expect(refused).toBeInstanceOf(FlowWaitSupersededError)
+  expect(refused).toBeInstanceOf(FlowWaitStreamEndedError)
+  expect(refused.message).toBe(FLOW_WAIT_STREAM_ENDED_MESSAGES.done)
 })
 
 test('only completed PR workflows with a linked change and event routing suppress idle nudges', async () => {

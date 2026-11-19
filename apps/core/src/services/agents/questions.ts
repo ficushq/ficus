@@ -1,4 +1,4 @@
-import { isCurrentQuestionAttempt, lockAgentFlowStream } from '../work-streams/wait-scope'
+import { answerDeliveryRefusal, isCurrentQuestionAttempt, lockAgentFlowStream } from '../work-streams/wait-scope'
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import {
   assertHumanAnswerableQuestions,
@@ -143,6 +143,7 @@ async function listWaitableOriginStreamIds(tx: DbTransaction, questionId: string
 type Row = typeof agentQuestions.$inferSelect
 
 function toJson(row: Row): AgentQuestion {
+  const refusal = row.answerDeliveryStatus === 'failed' ? answerDeliveryRefusal(row.answerDeliveryLastError) : null
   const safe = {
     questionData: row.questionData,
     answer: row.answer,
@@ -178,7 +179,9 @@ function toJson(row: Row): AgentQuestion {
             nextAttemptAt: row.answerDeliveryNextAttemptAt?.toISOString() ?? null,
             lastError: safe.answerDeliveryLastError,
             deliveredAt: row.answerDeliveredAt?.toISOString() ?? null,
-            canRetry: row.answerDeliveryStatus === 'failed',
+            // A refused answer fails the same way on every retry, so none is offered.
+            canRetry: row.answerDeliveryStatus === 'failed' && !refusal,
+            refusal,
           },
         }
       : {}),

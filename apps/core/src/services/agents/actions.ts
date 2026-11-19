@@ -557,7 +557,10 @@ export async function listPendingActionsForIdentity(
           visible.push({
             ...action,
             canRespond: decision.canRespond,
-            data: { ...data, answerDelivery: { ...data.answerDelivery, canRetry: decision.canRespond } },
+            data: {
+              ...data,
+              answerDelivery: { ...data.answerDelivery, canRetry: decision.canRespond && data.answerDelivery.canRetry },
+            },
           })
           continue
         }
