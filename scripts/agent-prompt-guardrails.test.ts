@@ -49,14 +49,14 @@ function composeStaticPrompt(type: AgentTypeFile): string {
  * budget when guidance is removed.
  */
 const STATIC_PROMPT_BYTE_BUDGETS: Record<string, number> = {
-  manager: 69_500,
-  consultant: 50_500,
-  reviewer: 43_000,
-  sysops: 41_000,
-  architect: 40_500,
-  'security-auditor': 40_000,
-  engineer: 39_000,
-  general: 35_000,
+  manager: 64_000,
+  consultant: 46_500,
+  reviewer: 38_500,
+  sysops: 37_000,
+  architect: 36_000,
+  'security-auditor': 36_000,
+  engineer: 35_000,
+  general: 31_000,
   'system-manager': 22_000,
   'assistant-worker': 21_000,
   'artifact-builder-default': 9_500,
@@ -155,4 +155,26 @@ test('CI runs these database-free guardrails', () => {
     run: 'bun test ../scripts/agent-prompt-guardrails.test.ts',
     'working-directory': '.github',
   })
+})
+
+// The routing and stop rules must be known before a tool/command is chosen;
+// payload details are discoverable at the point of use, not paid for every turn.
+describe('questions and waits in composed squad prompts', () => {
+  for (const type of agentTypes.filter((type) => type.includes?.includes('squad-rules'))) {
+    test(type.id, () => {
+      const prompt = composeStaticPrompt(type)
+      expect(prompt.split('Use `ask_human` for every human')).toHaveLength(2)
+      expect(prompt.split('When owner instructions conflict, newer text does')).toHaveLength(2)
+      expect(prompt).toContain('ask with `ask_human` before exploring or implementing either')
+      expect(prompt).toContain('End your turn while blocked or paused')
+      expect(prompt).toContain('A pause requires explicit resume')
+      expect(prompt).toContain('check remaining waits and continue the saved attempt')
+      expect(prompt).toContain('`actor: owner` when the stream owner must')
+      expect(prompt).toContain('request-input --help')
+      expect(prompt).toContain('resolve-input --help')
+      expect(prompt).toContain('ficus agent-question resolve --help')
+      expect(prompt).not.toContain('Pick the wait by who must act')
+      expect(prompt).not.toContain('"kind":"decide"')
+    })
+  }
 })

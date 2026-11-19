@@ -85,93 +85,30 @@ narrow and use authorized flow routing; never skip a declared review gate.
 
 ### Questions, waits, and pause
 
-A later timestamp alone does not reconcile conflicting owner requirements.
-Call blocking `ask_human` before exploring or implementing an unresolved
-choice; a manager notification is not a substitute for the decision.
+Humans see the Action Center, not your chat. Use `ask_human` for every human
+decision or answer the work needs, including optional follow-up offers; never
+ask it in chat or by inbox. When owner instructions conflict, newer text does
+not win by default: ask with `ask_human` before exploring or implementing either
+choice. A manager notification is not a substitute for the decision.
+Managers' questions are asynchronous; workers set `blocking: true` when their
+step needs the answer, then end the turn. Follow the tool's question guidance.
+After asking, chat may note the Action Center question id, not repeat the ask.
+Casual conversation does not replace a tracked work decision.
 
-Humans see Action Center items, not your chat, so every decision or answer you
-need from a human goes through the `ask_human` tool. The test: if your message
-would end with a question the human must answer before you proceed or start
-work ("Do you want…?", "Should I…?", "Want me to…?", "Which…?"), you MUST call
-`ask_human` instead; never put that question in chat text. An offer of optional
-follow-up work is a decision too: do it when it is clearly in scope, otherwise
-ask with `ask_human`; never end a turn with an offer. After asking, your chat
-text only says the question is in the Action Center, with its id; it never
-repeats or re-asks it. Plain chat questions are allowed only in casual
-conversation with a human who is actively chatting with you, never for a
-decision, an approval, or anything work depends on.
+For a named task file, configuration value or owner task decision, use typed
+`ficus workstream request-input` with `actor: owner` when the stream owner must
+act (`human` is the default). Human questions still use `ask_human`. Discover
+payloads and resolution with `request-input --help` and `resolve-input --help`;
+for a human answer received elsewhere, use `ficus agent-question resolve --help`.
+Never request credentials in plaintext. Use dependencies for another stream's
+deliverable and native gates for provider events or exhausted recovery, not an
+invented task input or human question to bypass them.
 
-When your step cannot proceed without a human decision, ask it with the
-`ask_human` tool and `blocking: true`, then end your turn. That opens a
-`question` wait on your flow attempt; the answer clears the wait automatically
-and arrives in your inbox as your next instruction. Give the human the actual
-choice: state the options as `select` options with the trade-off and your
-recommendation, and name the evidence. Never substitute a manual wait or an
-inbox message for a question — `ficus workstream request-input` is for waits on
-a typed task input or owner task decision, never a free-prose diagnostic request; messaging a user directly is never the path
-(see Notifying Humans). Ask early: a question asked before the rest of the step
-is finished is cheaper than a blocked step discovered later. Use `ask_human`
-without `blocking` for questions whose answer can wait.
-
-If a human answers your open `ask_human` question in another channel (a PR
-comment reply, chat, or inbox), close it with `ficus agent-question resolve <id>
---answer "<their answer, quoted>" --source <url-or-reference>` instead of leaving
-it open (find the id with `ficus agent-question list <your-agent-id> --status
-open`). It is recorded as relayed by you and clears only that question's wait.
-Use it only when a human actually gave that answer: never with your own or
-another agent's inferred answer, never to unblock yourself, and never in place of
-a human approval or decision gate.
-
-Pick the wait by who must act:
-
-- A decision or answer from a human: `ask_human` (not a manual wait).
-- Another work stream's deliverable: a `dependsOn` dependency.
-- A named task file, config value or product choice: typed `provide` with
-  `purpose: task-input`; use `actor: human` (default) or `actor: owner` for the
-  stream owner. Never request credentials through plaintext input: use the
-  protected credential/integration surface.
-- An owner task decision: typed `decide` with `purpose: task-decision`, a subject
-  and at least two named options. Human questions still use `ask_human`.
-- Provider/third-party events: retain native provider, integration and delivery
-  gates; do not replace them with a recovery decision or an invented input.
-- Exhausted unexplained recovery: use the runtime-issued Continue / Stop record
-  and its version. The server routes manager-first; do not use `ask_human` to bypass it.
-
-`request-input` accepts exactly one `--content`, `--stdin` or `--file` typed source,
-not `-m` prose. For example:
-
-```bash
-ficus workstream request-input <id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.baseBranch","declaredIn":"ficus:work-stream"},"use":"Choose the implementation base"}'
-```
-
-The same validator rejects technical-evidence and human-run-command requests
-across typed inputs and human questions. Task input kinds cannot clear a pending
-recovery. Resolve new inputs with `resolve-input`, a matching action and
-`expectedVersion`; legacy waits retain their existing response paths.
-
-Only `human` manual waits are shown to users as actions they need to take;
-every actor blocks the stream the same way.
-When you own a stream, request owner task inputs with `actor: owner` in the typed payload so users are
-not asked to act. Correct a mis-attributed wait with `ficus workstream
-wait-actor <id> <actor> --wait <waitId> -m "<why>"` (stream owners and the
-squad manager only; the wait stays open).
-
-Blocking questions and typed `ficus workstream request-input <id>` default to
-the current flow attempt. Sibling branches can continue; their join waits for
-you. Use `scope: stream` in the typed payload for a manual blocker that affects everyone (or
-`waitScope: stream` for a shared blocking question). End the turn while waiting;
-do not arrange automatic continuations. Input answers are not review approvals.
-Use a declared human-approval step for an enforced human decision, and a decision step (`kind: decision`, see the setup-workflows skill) for a quick model judgment that routes work. When several
-waits exist, inspect their IDs and target the intended wait explicitly.
-
-A paused stream requires explicit resume. Parking releases admission capacity;
-it does not resume paused work or clear questions. Never create a replacement
-stream or schedule a wakeup to bypass a pause or wait.
-After explicit resume, re-read the current flow and continue from its saved state;
-do not restart completed work. After input resolution, check for remaining waits
-before continuing the named attempt. For a parked-stream event, the owner's notice
-does not release the retained worker delivery; resolve a wait only when its condition
-is satisfied and use normal admission to resume work.
+End your turn while blocked or paused; never schedule a continuation or create
+a replacement stream to bypass it. A pause requires explicit resume; parking
+and an input answer do not resume it or approve a review gate. After an answer
+or resume, re-read the flow, check remaining waits and continue the saved attempt,
+not completed work. Resolve only the specific wait whose condition is satisfied.
 
 ### Delivery
 

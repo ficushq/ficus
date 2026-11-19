@@ -208,17 +208,17 @@ describe('AgentTypeSync', () => {
   test('manager prompt asks humans through ask_human and reserves inbox messages for information', async () => {
     const manager = (await loadComposed()).find((item) => item.id === 'manager')!
 
-    expect(manager.systemPrompt).toContain('### Asking Humans')
-    expect(manager.systemPrompt).toContain('you never block on a human')
-    expect(manager.systemPrompt).toContain('Never ask a decision through an inbox message')
-    expect(manager.systemPrompt).toContain(
-      'goes through\n`ask_human` exactly once, not as a question in your chat text'
-    )
-    expect(manager.systemPrompt).toContain('apply the test\nin "Questions, waits, and pause"')
-    expect(manager.systemPrompt).toContain('they never end with an offer, and never re-ask or\nrecap an open question')
-    // The chat-question test lives once, in the shared squad rules, not duplicated in the manager body.
-    expect(manager.systemPrompt.split('you MUST call\n`ask_human` instead')).toHaveLength(2)
-    expect(manager.systemPrompt).not.toContain('casual, non-blocking conversation')
+    // Format and resolution procedures now arrive with the tool and CLI help. The
+    // composed prompt keeps the routing invariant once, shared by every squad role.
+    expect(manager.systemPrompt).toContain('Your `ask_human` is asynchronous')
+    expect(manager.systemPrompt).toContain('Status updates state facts,')
+    expect(manager.systemPrompt).toContain('never offers or repeated questions')
+    expect(manager.systemPrompt.split('Use `ask_human` for every human')).toHaveLength(2)
+    expect(manager.systemPrompt).toContain('never\nask it in chat or by inbox')
+    expect(manager.systemPrompt).toContain('chat may note the Action Center question id, not repeat the ask')
+    expect(manager.systemPrompt).toContain('Casual conversation does not replace a tracked work decision')
+    expect(manager.systemPrompt).toContain("If a worker's manual wait is really a human question")
+    expect(manager.systemPrompt).toContain('Resolve only after the\ncondition is met')
     expect(manager.systemPrompt).toContain('check `requestingUserId`')
     expect(manager.systemPrompt).toContain('--recipient-type user')
     expect(manager.systemPrompt).toContain('ficus inbox send system')
@@ -230,13 +230,12 @@ describe('AgentTypeSync', () => {
     const parsed = await loadComposed()
     for (const id of ['manager', 'consultant', 'engineer', 'general']) {
       const prompt = parsed.find((item) => item.id === id)?.systemPrompt ?? ''
-      expect(prompt).toContain('Humans see Action Center items, not your chat')
-      expect(prompt).toContain(
-        '("Do you want…?", "Should I…?", "Want me to…?", "Which…?"), you MUST call\n`ask_human` instead'
-      )
-      expect(prompt).toContain('never end a turn with an offer')
-      expect(prompt).toContain('it never\nrepeats or re-asks it')
-      expect(prompt).toContain('never for a\ndecision, an approval, or anything work depends on')
+      expect(prompt.split('Humans see the Action Center, not your chat')).toHaveLength(2)
+      expect(prompt).toContain('Use `ask_human` for every human')
+      expect(prompt).toContain('including optional follow-up offers; never')
+      expect(prompt).toContain('ask it in chat or by inbox')
+      expect(prompt).toContain('chat may note the Action Center question id, not repeat the ask')
+      expect(prompt).toContain('Casual conversation does not replace a tracked work decision')
     }
   })
 
@@ -254,8 +253,8 @@ describe('AgentTypeSync', () => {
     const parsed = await loadComposed()
     for (const id of ['engineer', 'sysops', 'reviewer']) {
       const prompt = parsed.find((item) => item.id === id)?.systemPrompt ?? ''
-      expect(prompt).toContain('`ask_human` tool and `blocking: true`')
-      expect(prompt).toContain('Never substitute a manual wait or an\ninbox message for a question')
+      expect(prompt).toContain('workers set `blocking: true` when their')
+      expect(prompt).toContain('Human questions still use `ask_human`')
     }
   })
 
@@ -322,7 +321,7 @@ describe('AgentTypeSync', () => {
       expect(type.systemPrompt).toContain('ficus workstream advance')
       expect(type.systemPrompt).toContain('Outside a flow, complete the assigned task')
       expect(type.systemPrompt).toContain('no role may grant itself that authority')
-      expect(type.systemPrompt).toContain('Sibling branches can continue')
+      expect(type.systemPrompt).toContain('step needs the answer, then end the turn')
       expect(type.systemPrompt).not.toMatch(/--to <(?:engineer|reviewer)-id>/)
       expect(type.systemPrompt).not.toContain('reviewer handles that')
     }

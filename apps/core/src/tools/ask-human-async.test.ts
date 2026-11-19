@@ -297,3 +297,23 @@ describe('async ask_human forensic guard', () => {
     expect(text).toContain('describe that action in plain words')
   })
 })
+
+// These procedures belong to the tool/result, rather than every static squad prompt.
+test('question guidance arrives with the tool and the recorded question', async () => {
+  const tool = createAsyncAskHumanTool({
+    agentId: 'worker-1',
+    executionId: 'execution-1',
+    flushPersistence: async () => {},
+  })
+  expect(tool.description).toContain('trade-off and your recommendation')
+  expect(tool.description).toContain('not a manual wait or inbox message')
+  expect(tool.description).toContain('Set blocking true when your current step needs the answer')
+  expect(tool.description).toContain('independent branches can continue')
+  expect(JSON.stringify(tool.parameters)).toContain('default is your active flow attempt')
+  const { result } = await executeWith(['ws-one'])
+  const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+  expect(text).toContain('Action Center')
+  expect(text).toContain('do not repeat the question in chat')
+  expect(text).toContain('agent-question resolve')
+  expect(text).toContain('only after a human actually answers elsewhere')
+})
