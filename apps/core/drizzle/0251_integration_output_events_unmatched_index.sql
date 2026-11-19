@@ -1,0 +1,1 @@
+CREATE INDEX "idx_integration_output_events_unmatched" ON "integration_output_events" USING btree ("integration","id") WHERE "integration_output_events"."matched_at" IS NULL;

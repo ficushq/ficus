@@ -1417,7 +1417,15 @@ export const integrationOutputEvents = pgTable(
     matchedAt: timestamp('matched_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique('integration_output_event_identity').on(table.integration, table.sourceKey, table.eventKey)]
+  (table) => [
+    unique('integration_output_event_identity').on(table.integration, table.sourceKey, table.eventKey),
+    // The unmatched-output sweep (reconcileUnmatchedOutputs) runs several times a minute and
+    // asks only for events with no match yet. Without this it read the whole table, facts
+    // included, on every pass.
+    index('idx_integration_output_events_unmatched')
+      .on(table.integration, table.id)
+      .where(sql`${table.matchedAt} IS NULL`),
+  ]
 )
 
 /** Ownership proof only: no integration credentials or derived squad grants. */

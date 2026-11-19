@@ -97,7 +97,7 @@ import { WorkStreamBusyError, WorkStreamNotParkableError, parkWorkStream } from 
 import { computeDerivedStates } from '../services/work-streams/derived-state'
 import { listWaitHistory, toWaitJson } from '../services/work-streams/waits'
 import { db, workStreamFlowRuns } from '../db'
-import { inArray } from 'drizzle-orm'
+import { inArray, sql } from 'drizzle-orm'
 import { userSessionRequired } from '../services/auth/user-session-required'
 import { ciNotificationSchema, settleCiNotification } from '../services/work-streams/ci-notifications'
 import {
@@ -144,9 +144,16 @@ async function annotateWorkStreams(streams: WorkStream[]) {
     computePriorityAnnotations(streams),
     computeDerivedStates(streams),
   ])
+  // Only the integrations a flow subscribes to, not the whole flow state: this runs for every
+  // row of every list.
   const flowRows = streams.length
     ? await db
-        .select({ id: workStreamFlowRuns.workStreamId, state: workStreamFlowRuns.state })
+        .select({
+          id: workStreamFlowRuns.workStreamId,
+          integrations: sql<
+            unknown[] | null
+          >`jsonb_path_query_array(${workStreamFlowRuns.state}, '$.definition.subscriptions[*].source.integration')`,
+        })
         .from(workStreamFlowRuns)
         .where(
           inArray(
@@ -158,7 +165,7 @@ async function annotateWorkStreams(streams: WorkStream[]) {
   const sources = new Map(
     flowRows.map((row) => [
       row.id,
-      [...new Set((row.state.definition.subscriptions ?? []).map((subscription) => subscription.source.integration))],
+      [...new Set((row.integrations ?? []).filter((value): value is string => typeof value === 'string'))],
     ])
   )
   const automatedReviewGates = await computeAutomatedReviewGates(streams, derived)
