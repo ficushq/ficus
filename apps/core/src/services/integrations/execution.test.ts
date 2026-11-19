@@ -69,14 +69,19 @@ describe('generic per-command execution', () => {
       'GITHUB_TOKEN',
       'GITHUB_USER',
       'LINEAR_API_KEY',
+      'LINEAR_GRAPHQL_ENDPOINT',
+      'LINEAR_IGNORE_ENV_FILE',
     ])
   })
   test('resolves defaults and explicit attached accounts; refuses other squads/accounts', async () => {
     const { service } = fixture()
-    expect(await service.environment('squad', 'linear')).toEqual({ LINEAR_API_KEY: 'synthetic-linear-token' })
-    expect(await service.environment('squad', 'linear', 'account')).toEqual({
+    const linearEnvironment = {
       LINEAR_API_KEY: 'synthetic-linear-token',
-    })
+      LINEAR_GRAPHQL_ENDPOINT: 'https://api.linear.app/graphql',
+      LINEAR_IGNORE_ENV_FILE: '1',
+    }
+    expect(await service.environment('squad', 'linear')).toEqual(linearEnvironment)
+    expect(await service.environment('squad', 'linear', 'account')).toEqual(linearEnvironment)
     expect(await service.environment('squad', 'linear', 'not-attached')).toBeNull()
     expect(await service.environment('other', 'linear')).toBeNull()
     expect(await service.environment('squad', 'channel')).toBeNull()

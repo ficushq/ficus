@@ -1,12 +1,32 @@
 # Linear integration
 
-Manage Linear in **Settings → Integrations → Linear**. Enable the integration, create a named account with a personal API key, validate it, and enable the account. Keys can be limited to specific teams in Linear; read access is sufficient for issue search and assignment routing. See [Linear’s API documentation](https://linear.app/docs/api-and-webhooks).
+Manage Linear in **Settings → Integrations → Linear**. Enable the integration, create a named account with a personal API key, validate it, and enable the account. Keys can be limited to specific teams in Linear. Read access is enough for issue search and assignment routing; give the key write access as well (creating issues and comments) so agents can update issues with the [Linear CLI](#agent-cli). Validation proves only that the key can read, and is recorded as `issues:read`; a read-only key fails when an agent tries to write. See [Linear’s API documentation](https://linear.app/docs/api-and-webhooks).
 
 In a squad’s **Integrations** tab, enable Linear and choose an account. Add team IDs to route assigned issues to its manager. Disabling the squad integration preserves the account choice; re-enabling restores it. Global disable preserves all account and squad settings while stopping use.
 
 For webhook delivery, configure an Issue webhook in Linear with the URL shown in the global card and the same signing secret in both applications. Save a signing secret to enable delivery; disabling clears it. Stored secrets are never returned to the browser. Rotate by entering a new value in both places.
 
 The connected account supplies the assignee identity. Ficus verifies current issue access, team, and assignee before delivering an event. Workflow subscriptions and squad triggers can consume the typed outputs below. When a flow handles the event, the same squad’s legacy team-based manager notification is suppressed.
+
+## Agent CLI
+
+A squad with an enabled, assigned Linear connection gets the `linear` command ([schpet/linear-cli](https://github.com/schpet/linear-cli), ISC license) and the `linear` agent skill (`config/skills/linear/SKILL.md`), the same way Notion provides `ntn`. Agents can view, query, create and update issues, comment, and send raw GraphQL with `linear api`.
+
+**Installation.** The plugin's sandbox setup step installs pinned release 3.1.0 from the GitHub release assets, not from npm: the npm package `@schpet/linear-cli` is a wrapper whose install script downloads the same asset without verifying it. The step selects the `x86_64` or `aarch64` glibc Linux asset, checks its pinned SHA-256 digest before extracting anything, and refuses any other platform. Upstream ships glibc builds only, while the Docker runtime image is Alpine (musl) with amd64-only glibc compatibility. The installed `linear` is therefore a small launcher that runs the binary through the Nix glibc loader and libgcc of the pinned devbox Node.js package, which works on every Linux runtime and architecture. It has been run on x86_64 (Ubuntu and Alpine); the `aarch64` asset has been checked by digest and loader name (`ld-linux-aarch64.so.1`) but not yet run on arm64 hardware. The step needs the devbox packages `nodejs@24.12.0` (hashing and the glibc runtime) and `xz@5.8.3` (the archive format). Readiness requires `linear --version` to print `linear 3.1.0`. Host sandboxes do not reconcile a managed toolchain, so they use whatever `linear` the operator installed.
+
+**Credentials.** `linear` is wrapped like `gh` and `ntn` (see [Integration command execution](integration-execution.md)). Each command, including one started from a script, fetches the selected connection's key as `LINEAR_API_KEY` for that process only. Nothing is written to disk, and disabling or detaching the connection takes effect on the next command; the wrapper then fails instead of running the CLI with any other credential.
+
+**Account selection.** The CLI resolves a key from the process environment first, then a `.env` file, then `api_key` in a project or global `.linear.toml`, then credentials stored by `linear auth login` (a credentials file or the system keyring). Ficus closes each other path:
+
+- `LINEAR_API_KEY` is always set by the wrapper, so `.linear.toml` keys and stored credentials are never consulted.
+- `LINEAR_IGNORE_ENV_FILE=1` stops `.env` loading. Without it, a repository `.env` could set `LINEAR_GRAPHQL_ENDPOINT` and receive the key. The endpoint is also pinned to `https://api.linear.app/graphql`.
+- `--workspace` fails with a usage error while `LINEAR_API_KEY` is set, so it cannot switch to a stored account.
+- A project `.linear.toml` can still set nonsecret defaults such as the team. The skill tells agents to pass `--team` explicitly.
+- The skill forbids `linear auth login` and `logout`.
+
+A person's own terminal has no agent identity, so the wrapper runs their own `linear` login unchanged.
+
+**OAuth readiness.** The CLI sends `LINEAR_API_KEY` verbatim as the `Authorization` header (checked against a local server for both a raw key and a `Bearer` value). A later OAuth agent-app connection can supply `Bearer <token>` through the same variable without changing the wrapper.
 
 ## Outputs
 
@@ -41,6 +61,6 @@ Work streams can track Linear issues the same way they track GitHub issues and p
 
 Linear issue and comment webhooks project into the squad's Activity feed (`squad_activity`, `linear-issue` family, lane 71, kind `issue`). Assignment, state, title, label, and generic-update facts come from `Issue` webhooks; new and edited comments come from `Comment` webhooks. One row is written per stream that tracks the issue — a stream matches through its `tracked[]` entry's `externalId`, or, for older streams, the legacy `metadata.linear.issueId` — so a squad with no stream tracking the issue gets no rows, however the receipt was owned. A squad with team routing configured (`metadata.linear[].teamId`) owns the receipt even when no stream names the issue yet, which is what lets a row appear later once a stream starts tracking it; a `Comment` delivery carries no `teamId` at all, so comments are only ever owned through a tracking stream. There is no polling path for Linear Activity — only the webhook.
 
-Live memory search resolves the calling squad’s selected connection. Existing memory grants and team-key filters further restrict search. `ficus integration exec linear --squad <id> -- <command>` supplies the selected key to a command without exposing it in CLI output.
+Live memory search resolves the calling squad’s selected connection. Existing memory grants and team-key filters further restrict search. `ficus integration exec linear --squad <id> -- <command>` supplies the selected key (and the fixed CLI settings above) to any other command without exposing it in CLI output.
 
 On upgrade, a legacy `LINEAR_API_KEY` is imported once as a disabled account. Validate, enable, and assign that account in Integrations. The old webhook secret is moved into encrypted integration settings. `LINEAR_USER_ID` and legacy secret editing are retired. Existing team routing metadata is preserved.

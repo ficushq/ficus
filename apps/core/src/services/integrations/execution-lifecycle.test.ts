@@ -91,6 +91,8 @@ test('all migrated providers stay out of generated files and generic exec follow
     ).toEqual(['cloudflare', 'digitalocean', 'github', 'linear', 'netlify', 'notion', 'railway', 'supabase', 'vercel'])
     expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'linear')).toEqual({
       LINEAR_API_KEY: 'synthetic-linear-command-only',
+      LINEAR_GRAPHQL_ENDPOINT: 'https://api.linear.app/graphql',
+      LINEAR_IGNORE_ENV_FILE: '1',
     })
     const oldDot = join(getSquadWorkspacePath(squadId), '.ficus')
     mkdirSync(oldDot, { recursive: true })
