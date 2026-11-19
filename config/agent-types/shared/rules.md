@@ -2,7 +2,7 @@
 
 ### Interrupted commands and bounded recovery
 
-A correlated Ficus restart is an interruption, not an incident: once the sandbox is back, check partial output and the affected state, then re-run only safe, idempotent work. Investigate inside your authorized sandbox; use bounded retries with backoff (default 3 unexplained failures total, with 1s then 2s delays), and a known restart is a free retry. Unknown transport loss is not proof of a restart; never blindly repeat an external side effect with an unknown outcome. If commands time out, stop your own heavy processes, wait, retry with a narrower safe command.
+After an interruption, inspect partial output and affected state in your authorized sandbox; retry only safe, idempotent work. Unknown transport loss is not proof of a restart; never repeat an external side effect with an unknown outcome. Bound retries to 3 unexplained failures per operation with 1s then 2s backoff; follow runtime recovery holds. If commands time out, stop your own heavy processes and retry a narrower safe command.
 
 ### Messaging / Shell Safety
 

@@ -6,6 +6,7 @@ import {
   drainCommands,
   isCommandDrainActive,
   resetCommandDrainForTests,
+  restartResumesExecution,
   trackCommand,
   withBoxCommandDrain,
   withIdleBoxCommandFence,
@@ -55,10 +56,13 @@ const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z
 test('the exact restart message carries authoritative correlation and partial-effect guidance', () => {
   const confirmed = commandCanceledForRestartError(restart)
   expect(confirmed.message).toStartWith(
-    'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; nothing is wrong with your work or the box. Re-run it when your sandbox is back.'
+    'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; partial effects are possible.'
   )
   expect(confirmed).toMatchObject({ reason: 'core_restart', restart })
   expect(confirmed.message).toContain('partial effects')
+  // Command results retain correlation and outcome facts, not another resume notice.
+  expect(confirmed.message).not.toMatch(/Re-run|check the affected state|not an incident/)
+  expect(confirmed.message.match(/restart id:/g)).toHaveLength(1)
   const unconfirmed = commandCanceledForRestartError(restart, new Error('cancel timed out')).message
   expect(unconfirmed).toContain('could not confirm it stopped (cancel timed out)')
   expect(unconfirmed).toContain('`ps`')
@@ -84,6 +88,15 @@ test('restart attribution follows genuine causes but rejects fabricated metadata
   const cycle = new Error('cycle')
   cycle.cause = cycle
   expect(restartContextForCommandError(cycle)).toBeUndefined()
+})
+
+test('only a worker drain marks its restart as resumed by a new prompt; a box drain does not', async () => {
+  const box = { restartId: 'box-restart', restartedAt: restart.restartedAt }
+  await withBoxCommandDrain('selected', async () => undefined, 0, box)
+  expect(restartResumesExecution(box)).toBe(false)
+  await drainCommands(0, restart)
+  expect(restartResumesExecution(restart)).toBe(true)
+  expect(restartResumesExecution(box)).toBe(false)
 })
 
 describe('box command drain', () => {

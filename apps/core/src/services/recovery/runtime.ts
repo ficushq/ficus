@@ -14,7 +14,12 @@ import {
   recoveryHoldGuidance,
   type RecoveryOrigin,
 } from './store'
-import { commandCanceledForRestartError, restartContextForCommandError } from '../sandbox/command-drain'
+import { RESTART_RECOVERY_BRIEF } from '@ficus/shared/restart-context'
+import {
+  commandCanceledForRestartError,
+  restartContextForCommandError,
+  restartResumesExecution,
+} from '../sandbox/command-drain'
 import { toolRecoveryContext, type ToolRecoveryContext } from './context'
 import { createLogger } from '../../lib/infra/logger'
 const log = createLogger('recovery-boundary')
@@ -174,13 +179,20 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
             const guidance = !record
               ? 'Recovery accounting is unavailable. No recovery reference is available in this result; a durable record may already exist. Do not repeat the operation until its affected state and native recovery state can be reconciled.'
               : record.state.state === 'recovering'
-                ? 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
+                ? restart
+                  ? // One brief per turn: a worker restart resumes the execution with the brief
+                    // as its prompt prefix; a box-only restart keeps this turn running, so the
+                    // tool result is the only carrier.
+                    restartResumesExecution(restart)
+                    ? ''
+                    : RESTART_RECOVERY_BRIEF
+                  : 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
                 : `The unexplained-failure budget is exhausted. ${recoveryHoldGuidance(record)}`
             let message = error instanceof Error ? error.message : String(error)
-            if (restart && !message.startsWith('This command was cancelled by a Ficus restart at '))
+            if (restart && !message.includes(`[reason: core_restart; restart id: ${restart.restartId}]`))
               message = `${commandCanceledForRestartError(restart).message} ${message}`
             throw Object.assign(
-              new Error(`${message}\n\n${guidance}`, { cause: error }),
+              new Error([message, guidance].filter(Boolean).join('\n\n'), { cause: error }),
               restart ? { reason: 'core_restart', restart } : {}
             )
           }

@@ -10,7 +10,12 @@ describe('restart notices: the agent copy and the chat copies', () => {
   const restart = { restartId: 'restart-7', restartedAt: '2026-10-30T16:35:22.839Z' }
 
   it('the agent copy names the restart id, which also appears on every command the restart cancelled', () => {
-    expect(restartResumeNotice(restart)).toContain('[restart id: restart-7]')
+    const notice = restartResumeNotice(restart)
+    expect(notice).toContain('[restart id: restart-7]')
+    expect(notice).toContain('safe, idempotent work')
+    expect(notice).toContain('unknown external side effect')
+    expect(notice).toContain('free retry')
+    expect(notice).toContain('not an incident')
   })
 
   it('the chat copies render as system rows for people: no id, no raw timestamp', () => {

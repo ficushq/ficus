@@ -41,9 +41,9 @@ describe('default tier selection', () => {
     expect(reviewer.every(({ tier }) => tier === 'deep')).toBe(true)
   })
 
-  test('the current suite sizes to its runs, models and logical-turn ceiling', () => {
-    // Derived from the real scenario and tier definitions; the numbers in the expectations below
-    // describe today's suite (18 scenarios) and change whenever the authorized scenarios do.
+  test('the suite sizes to its runs, models and logical-turn ceiling', () => {
+    // Expectations come from the scenario roles, not pinned totals. Today's 18 scenarios (2 reviewer)
+    // give 108 runs: 96 on Opus medium, 12 on Opus high, at most 1,092 logical turns.
     const selection = selectScenarioTiers(root, SCENARIOS)
     const runsByModel = new Map<string, number>()
     let maxTurns = 0
@@ -52,14 +52,15 @@ describe('default tier selection', () => {
       runsByModel.set(model, (runsByModel.get(model) ?? 0) + VARIANTS * REPEATS)
       maxTurns += (scenario.maxSteps ?? DEFAULT_MAX_STEPS) * VARIANTS * REPEATS
     }
-    const total = [...runsByModel.values()].reduce((sum, runs) => sum + runs, 0)
-    expect(total).toBe(SCENARIOS.length * VARIANTS * REPEATS)
+    const reviewerScenarios = SCENARIOS.filter(({ agentType }) => agentType === 'reviewer').length
+    expect(SCENARIOS.every(({ agentType }) => ['engineer', 'manager', 'reviewer'].includes(agentType))).toBe(true)
     expect(Object.fromEntries(runsByModel)).toEqual({
-      'anthropic:claude-opus-5-5:medium': 96,
-      'anthropic:claude-opus-5-5:high': 12,
+      'anthropic:claude-opus-5-5:medium': (SCENARIOS.length - reviewerScenarios) * VARIANTS * REPEATS,
+      'anthropic:claude-opus-5-5:high': reviewerScenarios * VARIANTS * REPEATS,
     })
-    expect(total).toBe(108)
-    expect(maxTurns).toBe(1_092)
+    expect(maxTurns).toBe(
+      SCENARIOS.reduce((sum, scenario) => sum + (scenario.maxSteps ?? DEFAULT_MAX_STEPS), 0) * VARIANTS * REPEATS
+    )
   })
 })
 

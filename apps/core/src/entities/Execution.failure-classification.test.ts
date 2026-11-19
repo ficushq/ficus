@@ -190,9 +190,8 @@ describe('Execution failure classification persistence', () => {
       await execution.run()
       const rows = await db.select().from(messages).where(eq(messages.agentId, testAgent.id))
       const notices = noticeIds.map((id) => rows.find((row) => row.id === id)?.content)
-      expect(notices[0]).toBe(
-        '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
-      )
+      // Status only: the agent's restart brief is the resumed prompt prefix, not this chat row.
+      expect(notices[0]).toBe('[System] Resumed after a restart.')
       expect(notices).toHaveLength(2)
       expect(notices[1]).toContain(
         'Resumed after a restart, but the run could not finish: Execution session capacity reservation was refused'

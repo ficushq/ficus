@@ -16,7 +16,7 @@ remains; an unconfirmed cleanup does not authorize blind replay.
 
 The agent-visible error begins exactly:
 
-> This command was cancelled by a Ficus restart at &lt;time&gt;; nothing is wrong with your work or the box. Re-run it when your sandbox is back.
+> This command was cancelled by a Ficus restart at &lt;time&gt;; partial effects are possible.
 
 It also includes `reason: core_restart`, the restart id, partial-effects guidance
 and, when necessary, a warning that process cleanup was not confirmed.
@@ -40,16 +40,14 @@ the chat get different copies of it:
 
 - **The agent** reads it as the prefix of the resumed turn's model prompt:
 
-  > Ficus restarted at &lt;time&gt;; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: &lt;id&gt;]
+  > Ficus restarted at &lt;time&gt;; any command running then was cancelled by the restart and may have partial effects. This is an interruption, not an incident, and a free retry: once the sandbox is back, check partial output and affected state, then re-run only safe, idempotent work. Never repeat an unknown external side effect; other gates still apply. [restart id: &lt;id&gt;]
 
   The id matches the one on every command the restart cancelled, so the agent
   can tie those failures to the restart.
 
 - **The chat** shows system rows without the id or a raw timestamp (the row
   shows local time on hover): "Paused for a restart; it will resume
-  automatically." at shutdown, and "Resumed after a restart. Commands that
-  were running were cancelled; the agent was told to check them and re-run
-  what was interrupted." at resume. The restart id and time stay in each
+  automatically." at shutdown, and "Resumed after a restart." at resume. The restart id and time stay in each
   message's metadata, which is what resume reads.
 
 A correlated startup failure retains its actual error but is presented as
@@ -102,13 +100,35 @@ exit 3). Nothing woke the agent until its production-change claim expired.
 
 ## Recovery safety and verification
 
-The shared agent doctrine instructs workers, engineers, reviewers, general agents
-and managers to inspect partial output inside their authorized sandbox, wait for
-sandbox recovery and retry safely with backoff. A known restart is a free retry;
-unknown failures have a default budget of three. No restart alone warrants a
-manual wait or a request for human platform forensics. Unknown external side
-effects must be reconciled, not repeated blindly. Existing approval and pause
-gates remain binding.
+Always-loaded shell rules keep the safety needed before a tool is chosen:
+inspect affected state in the authorized sandbox, retry only safe idempotent
+work, bound unexplained retries to three per operation with backoff, and never
+repeat an external side effect whose outcome is unknown. A transport loss is
+not restart proof. The recovery-waits include keeps native holds, runtime-owned
+counts and references, and the prohibition on human forensic/credential requests.
+
+The resumed prompt owns **one restart instruction brief**. Other surfaces retain
+facts and distinct events, not copies of that procedure:
+
+| Surface                                                 | What it carries                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restartResumeNotice`, prefixed once by the base runner | Correlation plus the shared `RESTART_RECOVERY_BRIEF` (free retry, safe recovery) for an execution resumed after a **worker** restart.                                                                                                                                     |
+| Command drain errors/refusals                           | Per-command outcome and correlation; unconfirmed cleanup still requires process inspection. No general replay instructions.                                                                                                                                               |
+| Recovery tool wrapper                                   | For a box-only restart (the execution keeps running, so no resumed prompt follows) it appends the same `RESTART_RECOVERY_BRIEF` once to the tool result. For a worker restart it adds nothing. Unknown losses and native holds still carry their own safety instructions. |
+| Startup pause/resume chat rows                          | Status and durable correlation metadata, not another agent procedure.                                                                                                                                                                                                     |
+| Failed-resume wake                                      | A **new failure** with unknown outcome and live obligations; its new execution has no restart resume marker.                                                                                                                                                              |
+| Recovery decision/continuation notices                  | Native versioned decision or authorized bounded cycle, not another restart notice.                                                                                                                                                                                        |
+
+Exhaustion and decision procedures arrive with the actual native recovery
+record: tool errors retain the issued id/version, and the designated manager's
+notification carries inspection, one-cycle/forwarding, Stop and gate-preservation
+instructions. Routing fallback, attempt counting and authorization remain
+runtime-owned; no new accounting or recipient inference is introduced.
+
+Include ids and lists are unchanged. Config sync updates unoverridden shared
+prompt content; instance content overrides remain intact. Custom types still
+resolve their existing `rules`, `squad-rules` and `recovery-waits` ids at compose
+time. No new include migration is needed or run by this rewrite.
 
 Focused tests cover exact tool text, RPC ordering, persisted registry cause,
 cleanup retries, durable pause/resume correlation and idempotence, stale-context

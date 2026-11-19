@@ -695,7 +695,7 @@ describe('runScenario', () => {
       expect(run.trace.ended).toBe(true)
       expect(run.verdict).toMatchObject({ pass: true })
       expect(run.usage).toEqual({ input: 20, output: 4, cacheRead: 6, cacheWrite: 8, estimatedCostUsd: 0.02 })
-      expect(run.harnessRevision).toBe('2026-11-19-baseline-fixtures-v2')
+      expect(run.harnessRevision).toBe('2026-11-19-restart-carrier-v3')
     },
     TOOLSET_TIMEOUT_MS
   )
