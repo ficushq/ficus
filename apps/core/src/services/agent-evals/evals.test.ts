@@ -441,7 +441,9 @@ describe('scenario premises hold in the assembled prompt', () => {
     expect(edit.call.args.path).toContain('worktrees/3f6c2d1e')
     const read = calls[1]!
     const contents = await scenario.createResponder!()({ name: 'read', args: read.call.args }, variantContext(variant))
-    expect(contents).toBe(read.result)
+    const expectedContents =
+      typeof read.result === 'function' ? await read.result(variantContext(variant)) : read.result
+    expect(contents).toBe(expectedContents)
     expect(contents).toContain('Agents receive permissions')
     expect(contents).not.toContain('recieve')
     expect(contents).toContain('seperate')
