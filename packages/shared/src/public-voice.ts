@@ -129,7 +129,10 @@ export const publicVoiceLayerSchema = z.object({
 })
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
-const repositoryName = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use owner/name')
+const repositoryName = z
+  .string()
+  .max(140)
+  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use owner/name')
 
 /** Where derivation samples a GitHub user's writing. */
 export const DERIVATION_SURFACES = ['pull-requests', 'issue-comments', 'reviews', 'commits'] as const

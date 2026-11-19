@@ -24,6 +24,7 @@ mock.module('./output', () => ({
 
 mock.module('./client', () => ({
   apiGet: mock(() => Promise.resolve({})),
+  apiPostResponse: mock(() => Promise.resolve(Response.json({}))),
   apiPost: mock(() => Promise.resolve({})),
   apiPatch: mock(() => Promise.resolve({})),
   apiPut: mock(() => Promise.resolve({})),

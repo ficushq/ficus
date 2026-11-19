@@ -1063,6 +1063,7 @@ jobs:
           src/services/work-streams/worktree-cleanup-attachments.test.ts
           src/services/work-streams/worktree-cleanup-reconciler.test.ts
           src/services/integrations/bigbrain/desktop-host.test.ts
+          src/routes/squad-voice-stream.process.test.ts
           src/services/integrations/bigbrain/stdio-transport.process.test.ts
           src/services/integrations/bigbrain/setup-command.process.test.ts
           src/services/integrations/bigbrain/local-setup.test.ts

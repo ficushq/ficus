@@ -12,7 +12,9 @@ import {
   type PublicVoiceProfileJson,
   type PublicVoiceSurfaces,
 } from '@ficus/shared'
-import { apiDelete, apiGet, apiPost, apiPut } from '../client'
+import { readVoiceDerivation } from '@ficus/client-core'
+import { formatVoiceProgress, withDerivationSignals, VoiceDerivationCancelled } from '../voice-progress'
+import { apiDelete, apiGet, apiPost, apiPostResponse, apiPut } from '../client'
 import { ApiRequestError } from '../client-errors'
 import { isJsonMode, output, outputError, outputTable } from '../output'
 
@@ -71,6 +73,7 @@ interface DeriveOptions {
   excludeRepo?: string[]
   surfaces?: string
   includeToolAuthored?: boolean
+  progress?: boolean
   out?: string
 }
 
@@ -106,33 +109,11 @@ export function addDeriveOptions(command: Command): Command {
     .option('--exclude-repo <owner/name>', 'Leave out this repository (repeatable)', collect, [])
     .option('--surfaces <list>', `Comma-separated: ${DERIVATION_SURFACES.join(', ')}`)
     .option('--include-tool-authored', 'Keep items that look written by an assistant or a bot')
+    .option('--no-progress', 'Suppress progress lines on stderr')
     .option('--out <path>', 'Write the draft as JSON to this file')
 }
 
-interface DerivationResponse {
-  login: string
-  draft: { base: string; surfaces: PublicVoiceSurfaces }
-  observations: string[]
-  exemplars: Array<{ surface: PublicSurface; text: string; repository: string }>
-  sampling: {
-    filters: DerivationFilters
-    counts: {
-      collected: number
-      kept: number
-      droppedByFilter: { date: number; repository: number }
-      droppedAsToolAuthored: number
-      droppedAsTemplate: number
-    }
-    dateRange: Record<string, { oldest: string; newest: string }>
-    publicRepositories: string[]
-    privateRepositories: string[]
-    pagingCapped: boolean
-    unavailableRepositories?: string[]
-    commitRepositoriesNotSampled?: string[]
-  }
-  bytes: number
-  maxBytes: number
-}
+type DerivationResponse = import('@ficus/shared').VoiceDerivationResult
 
 /** Run a derivation through a squad's GitHub connection and print the draft; nothing is saved. */
 export async function runDerivation(squadId: string, opts: DeriveOptions): Promise<void> {
@@ -142,7 +123,21 @@ export async function runDerivation(squadId: string, opts: DeriveOptions): Promi
   }
   let result: DerivationResponse
   try {
-    result = await apiPost<DerivationResponse>(`/api/squads/${squadId}/voice/derive`, body)
+    result = await withDerivationSignals(async (signal) => {
+      const response = await apiPostResponse(`/api/squads/${squadId}/voice/derive`, body, signal)
+      const result = await readVoiceDerivation(response, {
+        signal,
+        onProgress: (event) => {
+          if (opts.progress !== false) for (const line of formatVoiceProgress(event)) console.error(line)
+        },
+        onLegacyResponse: () => {
+          if (opts.progress !== false) console.error('This server does not report live progress.')
+        },
+      })
+      signal.throwIfAborted()
+      if (opts.progress !== false) console.error('Draft ready. Nothing was saved.')
+      return result
+    })
   } catch (error) {
     // Keep auth/permission and genuine gateway failures distinct. Accept old servers' 502 payloads too.
     if (error instanceof ApiRequestError && (error.status === 422 || error.status === 502)) {
@@ -270,7 +265,7 @@ export function registerVoiceCommands(program: Command) {
       try {
         await fn(...args)
       } catch (error) {
-        outputError(error as Error)
+        outputError(error as Error, error instanceof VoiceDerivationCancelled ? error.exitCode : 1)
       }
     }
 

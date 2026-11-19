@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  type PublishDerivationProgress,
+  type VoiceDerivationResult,
   PUBLIC_SURFACES,
   PUBLIC_VOICE_MAX_BYTES,
   publicVoiceBytes,
@@ -12,7 +14,9 @@ import {
 import { db, modelTiers } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { collectGitHubActivity, DerivationError, type CollectedActivity } from './github-activity'
-import { containsSecret, prepareSamples, type SamplingSummary, type VoiceSample } from './samples'
+import { safeDerivationDiagnostic } from './diagnostics'
+import { abortable } from './operation'
+import { containsSecret, summarizeSamples, prepareSamples, type VoiceSample } from './samples'
 
 const log = createLogger('public-voice-derive')
 
@@ -57,15 +61,7 @@ export interface VoiceExemplar {
   repository: string
 }
 
-export interface PublicVoiceDraftResult {
-  login: string
-  draft: { base: string; surfaces: PublicVoiceSurfaces }
-  observations: string[]
-  exemplars: VoiceExemplar[]
-  sampling: SamplingSummary
-  bytes: number
-  maxBytes: number
-}
+export type PublicVoiceDraftResult = VoiceDerivationResult
 
 export const DERIVATION_SYSTEM_PROMPT = [
   'You describe a writing style so that an automated system can write public text (commit messages, pull requests, review replies, issue comments, chat messages) in that style.',
@@ -143,7 +139,13 @@ const UNSAFE_TEXT = [
 
 /** Whether a generated string is safe to keep in a draft. */
 export function isSafeVoiceText(text: string): boolean {
-  return !UNSAFE_TEXT.some((pattern) => pattern.test(text)) && !containsSecret(text)
+  return (
+    // Reject terminal control characters, while retaining ordinary draft whitespace.
+    // eslint-disable-next-line no-control-regex
+    !/[\u0000-\u001f\u007f]/.test(text.replace(/\n|\r|\t/g, '')) &&
+    !UNSAFE_TEXT.some((pattern) => pattern.test(text)) &&
+    !containsSecret(text)
+  )
 }
 
 /** A run long enough that matching it means the text was copied, not paraphrased. */
@@ -222,7 +224,9 @@ export function assembleDraft(
       .trim()
     if (!base || !keep(base)) throw new DerivationError('derivation_invalid_output', { reason })
   }
-  let observations = output.observations.filter(keep)
+  // Finding events are single readable lines, not terminal commands.
+  // eslint-disable-next-line no-control-regex
+  let observations = output.observations.filter((text) => keep(text) && !/[\u0000-\u001f\u007f]/.test(text))
   let exemplars = verifyExemplars(output.exemplars, samples)
   const surfaces: PublicVoiceSurfaces = {}
   for (const surface of PUBLIC_SURFACES) {
@@ -267,9 +271,13 @@ export async function runDerivationSession(
   { systemPrompt, prompt, attribution, signal }: Parameters<DerivationSession>[0],
   deps: { resolveModel?: () => Promise<string> } = {}
 ): Promise<string> {
+  signal.throwIfAborted()
   const { AgentSession } = await import('../../entities/AgentSession')
-  const { pi: session } = await AgentSession.create({
-    model: await (deps.resolveModel ?? standardTierChain)(),
+  signal.throwIfAborted()
+  const model = await abortable((deps.resolveModel ?? standardTierChain)(), signal)
+  signal.throwIfAborted()
+  const creation = AgentSession.create({
+    model,
     systemPrompt,
     tools: { core: [], available: [] },
     precompaction: false,
@@ -278,31 +286,66 @@ export async function runDerivationSession(
       attribution: () => ({ userId: attribution.userId ?? null, squadId: attribution.squadId ?? null }),
     },
   })
-  // The deadline may have passed while the session was being created.
-  if (signal.aborted) {
-    void session.abort?.()
-    throw new DerivationError('derivation_model_unavailable', { reason: 'timeout' })
+  // Creation can finish after our caller is gone. Dispose that late session without prompting.
+  const stop = (session: Awaited<typeof creation>) => {
+    void Promise.resolve()
+      .then(() => session.pi.abort?.())
+      .catch(() => {})
+      .finally(() => session.dispose?.())
   }
-  const chunks: string[] = []
-  return new Promise<string>((resolve, reject) => {
-    const onAbort = () => {
-      void session.abort?.()
-      reject(new DerivationError('derivation_model_unavailable', { reason: 'timeout' }))
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    session.subscribe((event) => {
-      if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
-        chunks.push(event.assistantMessageEvent.delta)
-      } else if (event.type === 'agent_end') {
-        signal.removeEventListener('abort', onAbort)
-        resolve(chunks.join(''))
+  void creation.then(
+    (session) => {
+      if (signal.aborted) stop(session)
+    },
+    () => {}
+  )
+  const created = await abortable(creation, signal)
+  const session = created.pi
+  if (signal.aborted) {
+    stop(created)
+    throw signal.reason
+  }
+  let unsubscribe: (() => void) | undefined
+  let onAbort: () => void = () => {}
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      let raw = ''
+      let bytes = 0
+      let settled = false
+      const finish = (error?: unknown) => {
+        if (settled) return
+        settled = true
+        if (error) reject(error)
+        else resolve(raw)
       }
+      onAbort = () => {
+        void Promise.resolve()
+          .then(() => session.abort?.())
+          .catch(() => {})
+        finish(signal.reason)
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      unsubscribe = session.subscribe((event) => {
+        if (settled || signal.aborted) return
+        if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
+          const delta = event.assistantMessageEvent.delta
+          bytes += delta.length > 65_536 - bytes ? 65_537 : new TextEncoder().encode(delta).length
+          if (bytes > 65_536) {
+            void Promise.resolve()
+              .then(() => session.abort?.())
+              .catch(() => {})
+            finish(new DerivationError('derivation_invalid_output', { reason: 'too_long' }))
+          } else raw += delta
+        } else if (event.type === 'agent_end') finish()
+      })
+      if (signal.aborted) onAbort()
+      else session.prompt(prompt).catch(finish)
     })
-    session.prompt(prompt).catch((error) => {
-      signal.removeEventListener('abort', onAbort)
-      reject(error)
-    })
-  })
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+    unsubscribe?.()
+    created.dispose?.()
+  }
 }
 
 export interface DerivePublicVoiceInput {
@@ -310,10 +353,18 @@ export interface DerivePublicVoiceInput {
   userId: string | null
   login: string
   filters: DerivationFilters
+  signal?: AbortSignal
+  onProgress?: PublishDerivationProgress
 }
 
 export interface DerivePublicVoiceDeps {
-  collect?: (input: { squadId: string; login: string; filters: DerivationFilters }) => Promise<CollectedActivity>
+  collect?: (input: {
+    squadId: string
+    login: string
+    filters: DerivationFilters
+    signal?: AbortSignal
+    onProgress?: PublishDerivationProgress
+  }) => Promise<CollectedActivity>
   session?: DerivationSession
   deadlineMs?: number
 }
@@ -328,22 +379,57 @@ export async function derivePublicVoice(
 ): Promise<PublicVoiceDraftResult> {
   const collect = deps.collect ?? ((args) => collectGitHubActivity(args))
   const session = deps.session ?? runDerivationSession
-  const collected = await collect({ squadId: input.squadId, login: input.login, filters: input.filters })
+  const requestSignal = input.signal ?? new AbortController().signal
+  const publish: PublishDerivationProgress = async (event) => {
+    requestSignal.throwIfAborted()
+    await input.onProgress?.(event)
+    requestSignal.throwIfAborted()
+  }
+  await publish({ type: 'phase', phase: 'collecting' })
+  const collected = await abortable(
+    collect({
+      squadId: input.squadId,
+      login: input.login,
+      filters: input.filters,
+      signal: requestSignal,
+      onProgress: publish,
+    }),
+    requestSignal
+  )
+  await publish({ type: 'phase', phase: 'sampling' })
+  await publish({
+    type: 'counts',
+    provisional: false,
+    ...summarizeSamples(collected, input.filters).summary.breakdown!,
+  })
   const { samples, summary } = prepareSamples(collected, input.filters)
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), deps.deadlineMs ?? DERIVATION_DEADLINE_MS)
+  const timer = setTimeout(
+    () => controller.abort(new DerivationError('derivation_model_unavailable', { reason: 'timeout' })),
+    deps.deadlineMs ?? DERIVATION_DEADLINE_MS
+  )
   let raw: string
   try {
-    raw = await session({
-      systemPrompt: DERIVATION_SYSTEM_PROMPT,
-      prompt: buildDerivationPrompt(samples),
-      attribution: { userId: input.userId, squadId: input.squadId },
-      signal: controller.signal,
-    })
+    await publish({ type: 'phase', phase: 'drafting' })
+    const signal = AbortSignal.any([requestSignal, controller.signal])
+    raw = await abortable(
+      session({
+        systemPrompt: DERIVATION_SYSTEM_PROMPT,
+        prompt: buildDerivationPrompt(samples),
+        attribution: { userId: input.userId, squadId: input.squadId },
+        signal,
+      }),
+      signal
+    )
   } catch (error) {
+    requestSignal.throwIfAborted()
     if (error instanceof DerivationError) throw error
-    log.warn('Voice derivation call failed', { squadId: input.squadId, error: String(error) })
+    log.error('Voice derivation call failed', {
+      squadId: input.squadId,
+      code: 'derivation_model_unavailable',
+      ...safeDerivationDiagnostic(error),
+    })
     throw new DerivationError('derivation_model_unavailable')
   } finally {
     clearTimeout(timer)
@@ -351,7 +437,12 @@ export async function derivePublicVoice(
 
   // A provider error can end the turn with no text: that is the model being unavailable, not bad output.
   if (!raw.trim()) throw new DerivationError('derivation_model_unavailable', { reason: 'empty_output' })
+  requestSignal.throwIfAborted()
+  if (new TextEncoder().encode(raw).length > 65_536)
+    throw new DerivationError('derivation_invalid_output', { reason: 'too_long' })
+  await publish({ type: 'phase', phase: 'validating' })
   const assembled = assembleDraft(parseDerivationOutput(raw), samples)
+  for (const [index, text] of assembled.observations.entries()) await publish({ type: 'finding', index, text })
   return {
     login: input.login,
     draft: assembled.draft,

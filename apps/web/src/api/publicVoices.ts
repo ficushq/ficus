@@ -7,8 +7,9 @@ import type {
   SquadPublicVoicePatch,
   SquadPublicVoiceState,
 } from '@ficus/shared'
-import { formatDerivationError } from '@ficus/shared'
-import { apiFetch, ApiError } from './client'
+import { formatDerivationError, VOICE_DERIVATION_ACCEPT } from '@ficus/shared'
+import { readVoiceDerivation, VoiceDerivationError, type ReadVoiceDerivationOptions } from '@ficus/client-core'
+import { apiFetch, authFetch, readApiErrorMessage, ApiError } from './client'
 
 /** Voice profiles and squad voice settings. See docs/wiki/public-voice.md. */
 
@@ -63,38 +64,39 @@ export function previewSquadVoice(
   return apiFetch(`/squads/${squadId}/voice/preview`, { method: 'POST', body: JSON.stringify(body) })
 }
 
-export interface VoiceDerivationResult {
-  login: string
-  draft: { base: string; surfaces: PublicVoiceSurfaces }
-  observations: string[]
-  exemplars: Array<{ surface: PublicSurface; text: string; repository: string }>
-  sampling: {
-    filters: DerivationFilters
-    counts: {
-      collected: number
-      kept: number
-      droppedByFilter: { date: number; repository: number }
-      droppedAsToolAuthored: number
-      droppedAsTemplate: number
-    }
-    dateRange: Record<string, { oldest: string; newest: string }>
-    publicRepositories: string[]
-    privateRepositories: string[]
-    pagingCapped: boolean
-    unavailableRepositories?: string[]
-    commitRepositoriesNotSampled?: string[]
-  }
-  bytes: number
-  maxBytes: number
-}
+export type { VoiceDerivationResult } from '@ficus/shared'
+import type { VoiceDerivationResult } from '@ficus/shared'
 
 export async function deriveSquadVoice(
   squadId: string,
-  body: { login: string; filters?: DerivationFilters }
+  body: { login: string; filters?: DerivationFilters },
+  options: ReadVoiceDerivationOptions = {}
 ): Promise<VoiceDerivationResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new VoiceDerivationError('derivation_stream_interrupted')), 220_000)
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
   try {
-    return await apiFetch(`/squads/${squadId}/voice/derive`, { method: 'POST', body: JSON.stringify(body) })
+    const response = await authFetch(`/squads/${squadId}/voice/derive`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      signal,
+      headers: { 'Content-Type': 'application/json', Accept: VOICE_DERIVATION_ACCEPT },
+    })
+    if (!response.ok) {
+      const payload = await response
+        .clone()
+        .json()
+        .catch(() => undefined)
+      throw new ApiError(response.status, await readApiErrorMessage(response), payload)
+    }
+    return await readVoiceDerivation(response, { ...options, signal })
   } catch (error) {
+    if (error instanceof VoiceDerivationError)
+      throw new ApiError(
+        422,
+        formatDerivationError(error.code, error.payload, { includeCode: false }) ?? error.message,
+        error.payload
+      )
     if (error instanceof ApiError && (error.status === 422 || error.status === 502)) {
       const code = (error.payload as { error?: unknown } | undefined)?.error
       const message = formatDerivationError(typeof code === 'string' ? code : undefined, error.payload, {
@@ -103,5 +105,8 @@ export async function deriveSquadVoice(
       if (message) throw new ApiError(error.status, message, error.payload)
     }
     throw error
+  } finally {
+    clearTimeout(timer)
+    controller.abort()
   }
 }

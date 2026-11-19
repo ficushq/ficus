@@ -349,6 +349,7 @@ describe('derivePublicVoice', () => {
     pagingCapped: false,
     requests: 2,
     droppedByFilter: { date: 0, repository: 0 },
+    filteredBySurface: {},
     unavailableRepositories: [],
     commitRepositoriesNotSampled: [],
   })
@@ -383,18 +384,27 @@ describe('derivePublicVoice', () => {
     ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
   })
 
-  test('a failed or slow model call is model_unavailable', async () => {
-    await expect(
-      derivePublicVoice(
-        { squadId: 's', userId: null, login: 'octo', filters: {} },
-        {
-          collect,
-          session: async () => {
-            throw new Error('provider down')
-          },
-        }
-      )
-    ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+  test('an unexpected model call failure keeps safe error-level diagnostics', async () => {
+    const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(
+        derivePublicVoice(
+          { squadId: 's', userId: null, login: 'octo', filters: {} },
+          {
+            collect,
+            session: async () => {
+              throw new TypeError('SYNTHETIC_PRIVATE_SENTINEL')
+            },
+          }
+        )
+      ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+      const diagnostic = errorLog.mock.calls[0]!.at(-1) as any
+      expect(diagnostic.name).toBe('TypeError')
+      expect(diagnostic.stack).toContain('apps/core/src/services/public-voice/derive.test.ts:')
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+    } finally {
+      errorLog.mockRestore()
+    }
   })
 })
 
@@ -438,7 +448,7 @@ describe('runDerivationSession', () => {
     }
   })
 
-  test('a deadline that passes while the session is created rejects and aborts the session', async () => {
+  test('cancellation during session creation rejects and aborts the late session', async () => {
     const controller = new AbortController()
     let aborted = false
     const create = spyOn(AgentSession, 'create').mockImplementation((async () => {
@@ -459,10 +469,201 @@ describe('runDerivationSession', () => {
           { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: controller.signal },
           { resolveModel: async () => 'anthropic:test-model' }
         )
-      ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+      ).rejects.toBeDefined()
+      await Promise.resolve()
       expect(aborted).toBe(true)
     } finally {
       create.mockRestore()
     }
   })
+})
+
+test('request cancellation does not wait for a non-cooperative collector or publish late results', async () => {
+  const controller = new AbortController()
+  let called = false
+  const pending = derivePublicVoice(
+    { squadId: 's', userId: null, login: 'octo', filters: {}, signal: controller.signal },
+    {
+      collect: async () => new Promise(() => {}),
+      session: async () => {
+        called = true
+        return ''
+      },
+    }
+  )
+  controller.abort()
+  await expect(pending).rejects.toBeDefined()
+  expect(called).toBe(false)
+})
+
+test('findings are exactly the validated, cap-retained observations, never samples or model deltas', async () => {
+  const privateSentinel = 'Synthetic private sentinel should never leave this collection.'
+  const items: RawActivityItem[] = Array.from({ length: 20 }, (_, i) => ({
+    surface: 'issue-comments',
+    text: `${privateSentinel} Sample ${i} has enough writing to be useful.`,
+    repository: 'example/library',
+    isPrivate: true,
+    createdAt: '2026-01-01T00:00:00Z',
+  }))
+  const events: import('@ficus/shared').DerivationProgress[] = []
+  const result = await derivePublicVoice(
+    {
+      squadId: 's',
+      userId: null,
+      login: 'octo',
+      filters: {},
+      onProgress: async (event) => {
+        events.push(event)
+      },
+    },
+    {
+      collect: async () => ({
+        items,
+        pagingCapped: false,
+        requests: 1,
+        droppedByFilter: { date: 0, repository: 0 },
+        filteredBySurface: {},
+        unavailableRepositories: [],
+        commitRepositoriesNotSampled: [],
+      }),
+      session: async () =>
+        JSON.stringify(
+          output({
+            base: 'Lead with the result. '.repeat(65),
+            observations: [
+              privateSentinel,
+              'Use ghp_abcdefghijklmnopqrstuvwxyz0123.',
+              'Use @octo.',
+              ...Array.from(
+                { length: 9 },
+                (_, i) => `Observation ${i}: Write complete sentences and keep the opening direct.`
+              ),
+            ],
+            exemplars: [],
+          })
+        ),
+    }
+  )
+  const findings = events.filter((e): e is Extract<typeof e, { type: 'finding' }> => e.type === 'finding')
+  expect(findings.map((f) => f.text)).toEqual(result.observations)
+  expect(findings.length).toBeGreaterThan(0)
+  expect(findings.length).toBeLessThan(9)
+  expect(JSON.stringify(events)).not.toContain(privateSentinel)
+  expect(JSON.stringify(findings)).not.toContain('ghp_')
+  expect(events.findIndex((e) => e.type === 'phase' && e.phase === 'validating')).toBeLessThan(
+    events.findIndex((e) => e.type === 'finding')
+  )
+})
+test('model timeout does not wait for a provider that ignores its signal', async () => {
+  const items: RawActivityItem[] = Array.from({ length: 15 }, () => ({
+    surface: 'issue-comments',
+    text: 'Synthetic candidate prose with enough detail to count.',
+    repository: 'example/library',
+    isPrivate: true,
+    createdAt: '2026-01-01T00:00:00Z',
+  }))
+  await expect(
+    derivePublicVoice(
+      { squadId: 's', userId: null, login: 'octo', filters: {} },
+      {
+        collect: async () => ({
+          items,
+          pagingCapped: false,
+          requests: 1,
+          droppedByFilter: { date: 0, repository: 0 },
+          filteredBySurface: {},
+          unavailableRepositories: [],
+          commitRepositoriesNotSampled: [],
+        }),
+        deadlineMs: 5,
+        session: async () => new Promise(() => {}),
+      }
+    )
+  ).rejects.toMatchObject({ code: 'derivation_model_unavailable', details: { reason: 'timeout' } })
+})
+test('oversize model deltas abort and unsubscribe without retaining unbounded output', async () => {
+  let listener: (event: any) => void = () => {}
+  let stopped = 0
+  let unsubscribed = 0
+  let disposed = 0
+  const create = spyOn(AgentSession, 'create').mockResolvedValue({
+    pi: {
+      subscribe: (fn: typeof listener) => {
+        listener = fn
+        return () => {
+          unsubscribed++
+        }
+      },
+      prompt: async () => {
+        listener({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'x'.repeat(65537) } })
+      },
+      abort: async () => {
+        stopped++
+      },
+    },
+    dispose: () => {
+      disposed++
+    },
+  } as any)
+  try {
+    await expect(
+      runDerivationSession(
+        { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: new AbortController().signal },
+        { resolveModel: async () => 'fixture' }
+      )
+    ).rejects.toMatchObject({ code: 'derivation_invalid_output', details: { reason: 'too_long' } })
+    expect(stopped).toBe(1)
+    expect(unsubscribed).toBe(1)
+    expect(disposed).toBe(1)
+  } finally {
+    create.mockRestore()
+  }
+})
+
+test('cancelling active generation unsubscribes, disposes and ignores late model callbacks', async () => {
+  const controller = new AbortController()
+  let listener: (event: any) => void = () => {}
+  let started!: () => void
+  const active = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  let unsubscribed = 0
+  let disposed = 0
+  let aborted = 0
+  const create = spyOn(AgentSession, 'create').mockResolvedValue({
+    pi: {
+      subscribe: (fn: typeof listener) => {
+        listener = fn
+        return () => {
+          unsubscribed++
+        }
+      },
+      prompt: async () => {
+        started()
+        return new Promise(() => {})
+      },
+      abort: async () => {
+        aborted++
+      },
+    },
+    dispose: () => {
+      disposed++
+    },
+  } as any)
+  try {
+    const pending = runDerivationSession(
+      { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: controller.signal },
+      { resolveModel: async () => 'fixture' }
+    )
+    await active
+    controller.abort()
+    await expect(pending).rejects.toBe(controller.signal.reason)
+    listener({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late synthetic text' } })
+    listener({ type: 'agent_end' })
+    expect(aborted).toBe(1)
+    expect(unsubscribed).toBe(1)
+    expect(disposed).toBe(1)
+  } finally {
+    create.mockRestore()
+  }
 })
