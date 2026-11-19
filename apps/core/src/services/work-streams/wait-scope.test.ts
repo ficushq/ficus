@@ -28,7 +28,7 @@ describe('answerDeliveryRefusal', () => {
   })
 
   it('keeps the message constants and the errors that record them on the stored wording', () => {
-    const [superseded, done, canceled] = STORED_REFUSAL_MESSAGES.map(([message]) => message)
+    const [[superseded], [done], [canceled]] = STORED_REFUSAL_MESSAGES
     expect(FLOW_WAIT_SUPERSEDED_MESSAGE).toBe(superseded)
     expect(FLOW_WAIT_STREAM_ENDED_MESSAGES).toEqual({ done, canceled })
     expect(new FlowWaitSupersededError().message).toBe(superseded)
