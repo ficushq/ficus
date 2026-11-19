@@ -513,6 +513,11 @@ export interface DeliveryEvidence {
 /**
  * Batched local reads only: routed delivery events plus the presentation-only
  * snapshot cache, for activated completion-ready flows. Never a provider request.
+ *
+ * Every work-stream list and the Action Center call this, so each read asks only for what
+ * it uses. It used to select whole squad metadata per run (to read one policy flag), the
+ * flow state of runs that are not completion-ready, and whole polling cursors (to read one
+ * key): megabytes of JSON per call on a squad with a few hundred pull requests.
  */
 export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Promise<DeliveryEvidence[]> {
   if (!ids.length) return []
@@ -522,13 +527,20 @@ export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Prom
       version: workStreamFlowRuns.version,
       state: workStreamFlowRuns.state,
       metadata: workStreams.metadata,
-      squadMetadata: squads.metadata,
+      // Only a JSON `true` counts, as before.
+      allowAutoMerge: sql<boolean | null>`${squads.metadata}->'policies'->'allowAutoMerge' = 'true'::jsonb`,
       squadId: workStreams.squadId,
     })
     .from(workStreamFlowRuns)
     .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
     .innerJoin(squads, eq(squads.id, workStreams.squadId))
-    .where(and(inArray(workStreamFlowRuns.workStreamId, ids), eq(workStreamFlowRuns.activated, true)))
+    .where(
+      and(
+        inArray(workStreamFlowRuns.workStreamId, ids),
+        eq(workStreamFlowRuns.activated, true),
+        sql`${workStreamFlowRuns.state}->>'status' = 'completion-ready'`
+      )
+    )
   const candidates = runs.filter((run) => run.state.status === 'completion-ready')
   if (!candidates.length) return []
   const rows = await store
@@ -562,8 +574,11 @@ export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Prom
     })
     byStream.set(row.id, facts)
   }
+  // The snapshot is one small key of the cursor; the rest is the poller's own state.
   const cached = await store
-    .select({ cursor: integrationEventPollingCursors.cursor })
+    .select({
+      deliveryPresentation: sql<unknown>`${integrationEventPollingCursors.cursor}->'deliveryPresentation'`,
+    })
     .from(integrationEventPollingCursors)
     .where(
       and(
@@ -574,7 +589,7 @@ export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Prom
       )
     )
   const now = Date.now()
-  const snapshots = cached.flatMap(({ cursor }) => {
+  const snapshots = cached.flatMap((cursor) => {
     // Expired observations still carry the head, lifecycle and review facts;
     // deliverySnapshotEvent withholds their readiness facts.
     const snapshot = readGitHubDeliverySnapshot(cursor, now, true)
@@ -586,10 +601,7 @@ export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Prom
     version: run.version,
     state: run.state,
     metadata: run.metadata,
-    policies: {
-      allowAutoMerge:
-        (run.squadMetadata as { policies?: { allowAutoMerge?: boolean } } | null)?.policies?.allowAutoMerge === true,
-    },
+    policies: { allowAutoMerge: run.allowAutoMerge === true },
     events: [
       ...(byStream.get(run.id) ?? []),
       ...snapshots

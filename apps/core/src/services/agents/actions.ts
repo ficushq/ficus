@@ -67,8 +67,22 @@ const PRIORITY: Record<PendingActionType, number> = {
  * stream feed uses, never from provider calls.
  */
 async function listDeliveryGateActions(): Promise<PendingAction[]> {
+  // Polled by every open client: read the columns used below, not whole stream, squad and
+  // flow-state rows (a squad's metadata alone can be tens of kilobytes).
   const rows = await db
-    .select({ ws: workStreams, squad: squads, state: workStreamFlowRuns.state })
+    .select({
+      ws: {
+        id: workStreams.id,
+        number: workStreams.number,
+        title: workStreams.title,
+        status: workStreams.status,
+        pause: workStreams.pause,
+        metadata: workStreams.metadata,
+        updatedAt: workStreams.updatedAt,
+      },
+      squad: { id: squads.id, name: squads.name },
+      completionMode: sql<string | null>`${workStreamFlowRuns.state}->'definition'->'completion'->>'mode'`,
+    })
     .from(workStreamFlowRuns)
     .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
     .innerJoin(squads, eq(squads.id, workStreams.squadId))
@@ -80,10 +94,7 @@ async function listDeliveryGateActions(): Promise<PendingAction[]> {
       )
     )
   const candidates = rows.filter(
-    ({ ws, state }) =>
-      !ws.pause &&
-      state.status === 'completion-ready' &&
-      ['pr-merge', 'pr-auto-merge'].includes(state.definition.completion.mode)
+    ({ ws, completionMode }) => !ws.pause && ['pr-merge', 'pr-auto-merge'].includes(completionMode ?? '')
   )
   if (candidates.length === 0) return []
   const ids = candidates.map(({ ws }) => ws.id)
