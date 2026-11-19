@@ -24,6 +24,12 @@ export function formatDerivationError(
     { reason?: unknown; counts?: { kept?: unknown; collected?: unknown }; minimum?: unknown } | undefined
   let message: string
   switch (code) {
+    case 'derivation_timed_out':
+      message = 'Derivation timed out. Nothing was saved; try again.'
+      break
+    case 'derivation_stream_interrupted':
+      message = 'Derivation was interrupted. Nothing was saved; try again.'
+      break
     case 'derivation_github_unavailable':
       message = 'GitHub is unavailable through this squad’s connection. Check the connection and try again.'
       break
