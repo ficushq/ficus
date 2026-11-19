@@ -1046,9 +1046,11 @@ describe('AgentRunner (base class)', () => {
       execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
       mockSession.switchedBack = { from: 'old', to: 'new', reason: 'recovered' }
       await runner.run()
-      const expected =
-        'Ficus restarted at 2026-10-28T21:32:00.000Z; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: restart-1]'
-      expect(mockSession.pi.promptCalls[0].text).toStartWith(expected)
+      const text = mockSession.pi.promptCalls[0].text
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text.match(/\[restart id: restart-1\]/g)).toHaveLength(1)
+      expect(text.match(/safe, idempotent work/g)).toHaveLength(1)
+      expect(text).toContain('Never repeat an unknown external side effect')
       // The chat already gets the notice once, as the message prepareRestartResume
       // saves and emits. A stream copy rendered it a second time (2026-10-30).
       expect(events.filter((event) => event.type === 'system_message' && /restart/i.test(String(event.text)))).toEqual(

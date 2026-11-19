@@ -1177,9 +1177,7 @@ describeSubprocess('attemptPickup result matrix', () => {
     const rows = await db.select().from(messages).where(eq(messages.agentId, agent.id))
     const resumeRows = rows.filter((row) => (row.metadata as any)?.restartPhase === 'resume')
     expect(resumeRows).toHaveLength(1)
-    expect(resumeRows[0]?.content).toBe(
-      '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
-    )
+    expect(resumeRows[0]?.content).toBe('[System] Resumed after a restart.')
     for (const row of rows.filter((row) => (row.metadata as any)?.restartPhase)) {
       expect(row.metadata).toMatchObject({ restart, executionId: execution.id, isSystem: true })
     }

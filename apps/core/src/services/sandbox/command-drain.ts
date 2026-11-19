@@ -15,10 +15,20 @@ export const COMMAND_DRAIN_TIMEOUT_MS = 10_000
 const RESTART = 'the Ficus worker is restarting (a deploy or restart)'
 
 /** What an agent sees for a command it tried to start while the worker was stopping. */
-export const COMMAND_REFUSED_FOR_RESTART =
-  `Command not started: ${RESTART}. Nothing ran. Try it again; ` + 'your work resumes automatically after the restart.'
+export const COMMAND_REFUSED_FOR_RESTART = `Command not started: ${RESTART}. Nothing ran.`
 
 const restartErrors = new WeakMap<Error, RestartContext>()
+
+/**
+ * Restarts of the whole worker. Their interrupted executions are requeued and
+ * resume with the restart brief in the first prompt; a box-only restart leaves
+ * the execution running, so its tool result must carry the brief instead.
+ */
+const workerRestartIds = new Set<string>()
+
+export function restartResumesExecution(restart: RestartContext): boolean {
+  return workerRestartIds.has(restart.restartId)
+}
 
 export function restartContextForCommandError(error: unknown): RestartContext | undefined {
   const seen = new Set<Error>()
@@ -31,12 +41,14 @@ export function restartContextForCommandError(error: unknown): RestartContext | 
   return undefined
 }
 
-/** What an agent sees for a command the restart cut short. */
+/** Factual per-command result. The recovery wrapper adds the single restart
+ * brief only when no resumed prompt will carry it (a box-only restart); do not
+ * repeat that procedure here. Unconfirmed cleanup stays actionable. */
 export function commandCanceledForRestartError(restart: RestartContext, cleanupError?: Error): Error {
   const error = Object.assign(
     new Error(
-      `This command was cancelled by a Ficus restart at ${restart.restartedAt}; nothing is wrong with your work or the box. Re-run it when your sandbox is back. ` +
-        `It may have partial effects: check the affected state before retrying. [reason: core_restart; restart id: ${restart.restartId}]` +
+      `This command was cancelled by a Ficus restart at ${restart.restartedAt}; partial effects are possible. ` +
+        `Outcome unverified. [reason: core_restart; restart id: ${restart.restartId}]` +
         (cleanupError
           ? ` Ficus could not confirm it stopped (${cleanupError.message}); check with \`ps\` before retrying.`
           : ''),
@@ -73,7 +85,7 @@ export function commandRefusedForRestartError(sandboxId?: string): Error {
   if (!restart) return new Error(COMMAND_REFUSED_FOR_RESTART)
   const error = new Error(
     `Command not started: Ficus is restarting this box at ${restart.restartedAt}. Nothing ran. ` +
-      `Re-run it when your sandbox is back. [reason: core_restart; restart id: ${restart.restartId}]`
+      `[reason: core_restart; restart id: ${restart.restartId}]`
   )
   restartErrors.set(error, restart)
   return error
@@ -106,6 +118,7 @@ export async function drainCommands(
   restart = createRestartContext()
 ): Promise<{ finished: number; canceled: number }> {
   draining = true
+  workerRestartIds.add(restart.restartId)
   const initial = running.size
   if (initial === 0) return { finished: 0, canceled: 0 }
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -119,6 +132,7 @@ export async function drainCommands(
 
 export function resetCommandDrainForTests(): void {
   draining = false
+  workerRestartIds.clear()
   running.clear()
   boxDrains.clear()
 }

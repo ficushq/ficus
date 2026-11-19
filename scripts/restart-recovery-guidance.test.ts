@@ -5,58 +5,65 @@ import { resolve } from 'node:path'
 const root = resolve(import.meta.dir, '..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
-test('the canonical recovery doctrine is one paragraph in each include', () => {
+const types = [
+  'assistant-worker',
+  'architect',
+  'consultant',
+  'engineer',
+  'reviewer',
+  'general',
+  'manager',
+  'sysops',
+  'security-auditor',
+  'system-manager',
+  'subagent',
+  'artifact-builder-default',
+  'assistant',
+]
+
+function compose(role: string) {
+  const config = Bun.YAML.parse(read(`config/agent-types/${role}.yaml`)) as { includes: string[]; systemPrompt: string }
+  return {
+    config,
+    prompt: [config.systemPrompt, ...config.includes.map((part) => read(`config/agent-types/shared/${part}.md`))].join(
+      '\n\n'
+    ),
+  }
+}
+
+test('composed prompts keep pre-tool safety once, not the recovery decision procedure', () => {
+  for (const role of types) {
+    const { config, prompt } = compose(role)
+    if (role === 'assistant') {
+      expect(config.includes).not.toContain('rules')
+      expect(config.includes).not.toContain('recovery-waits')
+      continue
+    }
+    expect(prompt.split('Unknown transport loss is not proof of a restart')).toHaveLength(2)
+    expect(prompt).toContain('never repeat an external side effect with an unknown outcome')
+    expect(prompt).toContain('3 unexplained failures')
+    expect(prompt).toContain('1s then 2s')
+    expect(prompt).toContain('safe, idempotent work')
+    expect(prompt).toContain('stop your own heavy processes')
+    const hasWaits = config.includes.includes('recovery-waits')
+    expect(hasWaits).toBe(!['subagent', 'artifact-builder-default'].includes(role))
+    if (hasWaits) {
+      expect(prompt.split('Use the runtime-issued recovery record')).toHaveLength(2)
+      expect(prompt).toContain('never invent attempts or reset a budget')
+      expect(prompt).toContain('Never ask a person for technical evidence')
+    }
+    expect(prompt).not.toContain('at most one extra recovery cycle per normalized recovery scope')
+    expect(prompt).not.toContain('expectedRecoveryVersion')
+  }
+})
+
+test('the always-loaded recovery includes contain only the pre-tool invariants', () => {
   const interrupted = read('config/agent-types/shared/rules.md')
     .split('### Interrupted commands and bounded recovery')[1]!
     .split('### Messaging / Shell Safety')[0]!
     .trim()
-  expect(interrupted.split(/\n\s*\n/)).toHaveLength(1)
-  const waits = read('config/agent-types/shared/recovery-waits.md').split('### Recovery waits')[1]!.trim()
-  expect(waits.split(/\n\s*\n/)).toHaveLength(1)
-})
-
-test('shell-only types get restart-safe retries but not the human recovery-wait protocol; the Assistant gets neither', () => {
-  for (const role of ['subagent', 'artifact-builder-default', 'assistant']) {
-    const config = Bun.YAML.parse(read(`config/agent-types/${role}.yaml`)) as { includes: string[] }
-    expect(config.includes).not.toContain('recovery-waits')
-    expect(config.includes.includes('rules')).toBe(role !== 'assistant')
-  }
-})
-
-test('worker, engineer, reviewer, general and manager each receive restart-safe recovery doctrine', () => {
-  for (const role of ['assistant-worker', 'engineer', 'reviewer', 'general', 'manager']) {
-    const config = Bun.YAML.parse(read(`config/agent-types/${role}.yaml`)) as {
-      includes: string[]
-      systemPrompt: string
-    }
-    const prompt = [
-      config.systemPrompt,
-      ...config.includes.map((part) => read(`config/agent-types/shared/${part}.md`)),
-    ].join('\n')
-    expect(prompt).toContain('A correlated Ficus restart is an interruption, not an incident')
-    expect(prompt).toContain('check partial output and the affected state')
-    expect(prompt).toContain('default 3')
-    expect(prompt).toContain('known restart is a free retry')
-    expect(prompt).toContain('Never ask a person for host logs, registry records, platform forensics')
-    expect(prompt).toContain('squad manager first')
-    expect(prompt).toContain(
-      'at most one extra recovery cycle per normalized recovery scope, across successor attempts'
-    )
-    expect(prompt).toContain('automatically forwards')
-    expect(prompt).toContain('expectedVersion')
-    expect(prompt).not.toContain('request-input <id> -m')
-    expect(prompt).toContain(
-      'If no eligible manager exists, or the failing agent is the manager, the server routes directly to an eligible owner.'
-    )
-    expect(prompt).not.toContain('report the box as overloaded instead of retrying')
-    const withoutProhibition = prompt.replace(
-      'Never ask a person for host logs, registry records, platform forensics or technical evidence they cannot provide.',
-      ''
-    )
-    expect(withoutProhibition).not.toMatch(
-      /(?:ask|request|collect|gather)[^\n.]{0,80}(?:host logs|registry records|platform forensics|operator diagnostics)/i
-    )
-  }
+  expect(Buffer.byteLength(interrupted)).toBeLessThanOrEqual(550)
+  expect(Buffer.byteLength(read('config/agent-types/shared/recovery-waits.md'))).toBeLessThanOrEqual(500)
 })
 
 test('CI runs the database-free restart guidance checks', () => {

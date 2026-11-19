@@ -97,6 +97,11 @@ test('durably counts real failures once, opens manager wait on third and automat
     .from(inbox)
     .where(sql`${inbox.metadata}->>'workStreamId' = ${stream.id}`)
   expect(notices.map((notice) => notice.recipientId)).toEqual([squad.managerAgentId!])
+  expect(notices[0]!.content).toContain('one extra cycle per normalized recovery scope')
+  expect(notices[0]!.content).toContain('Inspect only authorized environments')
+  expect(notices[0]!.content).toContain('Stop retains the hold')
+  expect(notices[0]!.content).toContain('expectedVersion')
+  expect(notices[0]!.content).toContain('never bypasses')
   expect(wait.structured?.summary).toMatchObject({ attemptCount: 3, lastError: 'test process failed' })
   await expect(
     api.decideRecovery(record.id, { action: 'continue', expectedVersion: record.version }, { agentId: worker.id })
