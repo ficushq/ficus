@@ -98,7 +98,7 @@ test('locks by connection, not by person, and releases after completion', async 
       return {} as any
     })
   )
-  const started: Array<Promise<Response>> = []
+  const started: Array<ReturnType<typeof request>> = []
   try {
     started.push(request())
     await entered[0]
@@ -388,9 +388,9 @@ test('the safe list exposes only identity fields from usable current-authority a
   const fixture = await createTestGitHubConnection({ login: 'account-login' })
   const list = () => app.request('/api/public-voices/derive/github-accounts', { headers: authHeaders(admin.token) })
   spies.push(
-    spyOn(globalThis, 'fetch').mockImplementation(() => {
+    spyOn(globalThis, 'fetch').mockImplementation((() => {
       throw new Error('Account listing must never probe a provider')
-    })
+    }) as unknown as typeof fetch)
   )
   try {
     await db
