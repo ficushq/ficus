@@ -201,6 +201,11 @@ export async function notifyFlowWaitResolution(
   return true
 }
 
+/**
+ * Stored as the answer's delivery error when its attempt was replaced. Stored rows keep this exact
+ * wording and answerDeliveryRefusal reads the refusal kind back from it, so do not reword it;
+ * wait-scope.test.ts pins the literal text.
+ */
 export const FLOW_WAIT_SUPERSEDED_MESSAGE =
   'The flow attempt was superseded. The response is retained in history without waking an agent.'
 
@@ -214,6 +219,8 @@ export class FlowWaitSupersededError extends Error {
  * Recorded as the answer's delivery error when its work stream had already finished or been
  * canceled, so the failure alert and the Action Center can say the answer went nowhere instead of
  * blaming a replaced attempt. Keyed by the stream status seen under the stream lock at refusal.
+ * Stored rows keep this exact wording and answerDeliveryRefusal reads the refusal kind back from
+ * it, so do not reword these; wait-scope.test.ts pins the literal text.
  */
 export const FLOW_WAIT_STREAM_ENDED_MESSAGES = {
   done: 'The work stream had already finished. The response is retained in history without waking an agent.',
