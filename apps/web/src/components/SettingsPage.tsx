@@ -42,6 +42,7 @@ import { ConfirmButton } from './ConfirmButton'
 import { SecretsSection } from './settings/SecretsSection'
 import { ProviderAuthSection } from './settings/ProviderAuthSection'
 import { DecisionModelsSection } from './settings/DecisionModelsSection'
+import { VoicesSection } from './settings/VoicesSection'
 import { AgentTypesSection } from './settings/AgentTypesSection'
 import { SkillsSection } from './settings/SkillsSection'
 import { WorkflowsSection } from './settings/WorkflowsSection'
@@ -208,6 +209,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'memory' && <AssistantMemorySection />}
           {activeSection === 'skills' && <SkillsSection />}
           {activeSection === 'agent-types' && <AgentTypesSection />}
+          {activeSection === 'voices' && <VoicesSection />}
           {activeSection === 'squad-presets' && <SquadPresetsSection />}
           {activeSection === 'workflows' && <WorkflowsSection />}
           {activeSection === 'integrations' && <IntegrationsSection />}

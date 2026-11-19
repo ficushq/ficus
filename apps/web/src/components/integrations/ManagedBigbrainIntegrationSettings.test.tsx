@@ -654,7 +654,7 @@ describe('Ficus read access and squads on the global card', () => {
     // Read-only viewers see attachments but get no controls.
     expect(attachSelect('Research')).toBeNull()
     expect(button('Detach', squads)).toBeUndefined()
-    const agentTypes = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Agent types')
+    const agentTypes = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Agents')
     expect(agentTypes?.getAttribute('href')).toBe('/settings?section=agent-types')
     expect(container.textContent).toContain("BigBrain card in a squad's Settings → Integrations")
   })

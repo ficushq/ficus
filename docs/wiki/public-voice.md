@@ -85,7 +85,7 @@ Surface names on the CLI: `commits`, `pull-requests`, `review-replies`, `issue-c
 
 ## Web
 
-- **Settings → Agent Types → Voices**: the profile list with size and assigned squads, an editor per profile (name, description, voice, five surface rows, byte meter, revert for shipped profiles), disable, delete for admin-created profiles, Add profile, and a Derive card that drafts through a chosen squad's GitHub connection and opens a new profile prefilled.
+- **Settings → Voices**: the profile list with size and assigned squads, an editor per profile (name, description, voice, five surface rows, byte meter, revert for shipped profiles), disable, delete for admin-created profiles, Add profile, and a Derive card that drafts through a chosen squad's GitHub connection and opens a new profile prefilled.
 - **Squad settings → Voice** (`components/squads/SquadVoiceSettings.tsx`): pick Instance default, a profile, or Custom for this squad; per-surface rows (Inherit, Add to the voice, Replace the voice) with the inherited entry shown greyed; a byte meter computed with the shared renderer; Preview; and a Derive card whose draft fills the custom voice unsaved ("Save as new profile" with `agent-types:update`). Without `squads:update` the page shows the resolved voice read-only.
 
 ## Deriving a voice from GitHub

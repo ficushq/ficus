@@ -45,8 +45,13 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
       },
       {
         id: 'agent-types',
-        label: 'Agent Types',
+        label: 'Agents',
         description: 'Agent expertise, model tiers, tools, skills, and permissions.',
+      },
+      {
+        id: 'voices',
+        label: 'Voices',
+        description: 'Public writing voice profiles and squad assignments.',
       },
       {
         id: 'skills',
@@ -180,6 +185,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   'decision-providers': 'provider-auth:read',
   skills: 'skills:read',
   'agent-types': 'agent-types:read',
+  voices: 'agent-types:read',
   'squad-presets': 'squad-presets:read',
   workflows: 'workflows:read',
   'notification-rules': 'settings:read',
