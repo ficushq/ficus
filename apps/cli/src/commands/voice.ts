@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'fs'
 import type { Command } from 'commander'
 import {
   DERIVATION_SURFACES,
+  formatDerivationError,
   PUBLIC_SURFACES,
   PUBLIC_SURFACE_CLI_NAMES,
   PUBLIC_SURFACE_LABELS,
@@ -70,7 +71,6 @@ interface DeriveOptions {
   excludeRepo?: string[]
   surfaces?: string
   includeToolAuthored?: boolean
-  confirmOtherPerson?: boolean
   out?: string
 }
 
@@ -106,7 +106,6 @@ export function addDeriveOptions(command: Command): Command {
     .option('--exclude-repo <owner/name>', 'Leave out this repository (repeatable)', collect, [])
     .option('--surfaces <list>', `Comma-separated: ${DERIVATION_SURFACES.join(', ')}`)
     .option('--include-tool-authored', 'Keep items that look written by an assistant or a bot')
-    .option('--confirm-other-person', 'Confirm deriving from a login that is not your linked GitHub account')
     .option('--out <path>', 'Write the draft as JSON to this file')
 }
 
@@ -139,18 +138,16 @@ interface DerivationResponse {
 export async function runDerivation(squadId: string, opts: DeriveOptions): Promise<void> {
   const body = {
     login: opts.github,
-    ...(opts.confirmOtherPerson ? { confirmOtherPerson: true } : {}),
     filters: buildDerivationFilters(opts),
   }
   let result: DerivationResponse
   try {
     result = await apiPost<DerivationResponse>(`/api/squads/${squadId}/voice/derive`, body)
   } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 409) {
-      throw new Error(
-        `${opts.github} is not your linked GitHub account. The draft describes a writing style only; agents never sign as or claim to be that person. Re-run with --confirm-other-person to continue.`,
-        { cause: error }
-      )
+    // Keep auth/permission and genuine gateway failures distinct. Accept old servers' 502 payloads too.
+    if (error instanceof ApiRequestError && (error.status === 422 || error.status === 502)) {
+      const message = formatDerivationError(error.code, error.payload)
+      if (message) throw new Error(message, { cause: error })
     }
     throw error
   }

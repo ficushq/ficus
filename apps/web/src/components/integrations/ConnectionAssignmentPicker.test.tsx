@@ -261,7 +261,7 @@ describe('managed shared vaults', () => {
     expect(reason.querySelector('a')?.getAttribute('href')).toBe('/settings?section=integrations')
     expect(container.textContent).not.toContain('read access off')
     // Where the other half of the setup lives: the agent type's BigBrain tools.
-    const agentTypes = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Agent types')
+    const agentTypes = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Agents')
     expect(agentTypes?.getAttribute('href')).toBe('/settings?section=agent-types')
     expect(box('Beta').getAttribute('aria-describedby')).toBeNull()
   })

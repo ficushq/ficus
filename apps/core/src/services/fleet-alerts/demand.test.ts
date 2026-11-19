@@ -5,10 +5,14 @@ import { db } from '../../db'
 import {
   agents,
   executions,
+  executionAdmissionReservations,
   inbox,
   instanceMaintenanceState,
   localDeployments,
   monitors,
+  messages,
+  slotPools,
+  slotWaiters,
   schedules,
   squads,
   workStreamWaits,
@@ -16,7 +20,7 @@ import {
   workStreams,
 } from '../../db/schema'
 import { MONITOR_LIVENESS_WINDOW_MS } from '../monitors/liveness'
-import { getSquadDemandSnapshots, SUPERVISED_ACTIVITY_WINDOW_MS } from './demand'
+import { getSquadDemandSnapshots, FOREGROUND_PROGRESS_WINDOW_MS, SUPERVISED_ACTIVITY_WINDOW_MS } from './demand'
 
 const NOW = new Date('2026-08-18T12:00:00.000Z')
 const at = (minutesBeforeNow: number) => new Date(NOW.getTime() - minutesBeforeNow * 60_000)
@@ -82,6 +86,21 @@ describe('actionable squad demand', () => {
           quietAgentId,
         ])
       )
+    const pools = await db.select({ id: slotPools.id }).from(slotPools).where(inArray(slotPools.squadId, ownedSquadIds))
+    if (pools.length) {
+      await db.delete(slotWaiters).where(
+        inArray(
+          slotWaiters.poolId,
+          pools.map((pool) => pool.id)
+        )
+      )
+      await db.delete(slotPools).where(
+        inArray(
+          slotPools.id,
+          pools.map((pool) => pool.id)
+        )
+      )
+    }
     await db.delete(squads).where(inArray(squads.id, ownedSquadIds))
   })
 
@@ -411,6 +430,165 @@ describe('actionable squad demand', () => {
       .update(localDeployments)
       .set({ createdByAgentId: targetAgentId, archivedAt: at(1) })
       .where(eq(localDeployments.id, appId))
+    expect(await count()).toBe(1)
+  })
+
+  test('only bounded same-execution assistant progress shields a running attempt, never heartbeats or human traffic', async () => {
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId, createdAt: at(90) })
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: id,
+      activated: true,
+      state: createWorkflowRun(definition),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': targetAgentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const [execution] = await db
+      .insert(executions)
+      .values({
+        agentId: targetAgentId,
+        status: 'running',
+        startedAt: at(90),
+        runStartedAt: at(60),
+      })
+      .returning()
+    // A fresh generic heartbeat/update and unrelated output cannot cover a stuck turn.
+    await db.update(agents).set({ updatedAt: NOW }).where(eq(agents.id, targetAgentId))
+    await db.insert(messages).values([
+      {
+        agentId: targetAgentId,
+        role: 'human',
+        content: 'Please continue',
+        metadata: { executionId: execution!.id },
+        createdAt: at(1),
+      },
+      {
+        agentId: targetAgentId,
+        role: 'assistant',
+        content: 'Another execution',
+        metadata: { executionId: crypto.randomUUID() },
+        createdAt: at(1),
+      },
+      {
+        agentId: targetAgentId,
+        role: 'assistant',
+        content: 'Future output',
+        metadata: { executionId: execution!.id },
+        createdAt: at(-1),
+      },
+    ])
+    const count = async (now = NOW) => (await getSquadDemandSnapshots({ now })).get(targetSquadId)?.count
+    // Lease heartbeats (fresh or stale) prove ownership, not useful progress.
+    await db.insert(executionAdmissionReservations).values({
+      executionId: execution!.id,
+      agentId: targetAgentId,
+      state: 'running',
+      token: crypto.randomUUID(),
+      claimEpoch: 1n,
+      ownerId: 'fixture-worker',
+      ownerIncarnation: crypto.randomUUID(),
+      admittedGeneration: 0,
+      admittedHolderRevision: 0n,
+      leaseExpiresAt: at(-1),
+      lastHeartbeatAt: at(90),
+    })
+    expect(await count()).toBe(1)
+    await db
+      .update(executionAdmissionReservations)
+      .set({ lastHeartbeatAt: NOW })
+      .where(eq(executionAdmissionReservations.executionId, execution!.id))
+    expect(await count()).toBe(1)
+    const [step] = await db
+      .insert(messages)
+      .values({
+        agentId: targetAgentId,
+        role: 'assistant',
+        content: 'Tool step',
+        metadata: { executionId: execution!.id },
+        createdAt: at(1),
+      })
+      .returning()
+    expect(await count()).toBe(0)
+    await db
+      .update(messages)
+      .set({ createdAt: new Date(NOW.getTime() - FOREGROUND_PROGRESS_WINDOW_MS) })
+      .where(eq(messages.id, step!.id))
+    expect(await count()).toBe(1)
+    // A running row without a claimed start cannot borrow another row's output.
+    await db
+      .update(messages)
+      .set({ createdAt: at(1) })
+      .where(eq(messages.id, step!.id))
+    await db.update(executions).set({ runStartedAt: null }).where(eq(executions.id, execution!.id))
+    expect(await count()).toBe(1)
+    // Explicit provider/human waits remain quiet even when progress is stale.
+    await db.insert(workStreamWaits).values({ workStreamId: id, type: 'question', flowAttemptId: 1, openedAt: at(1) })
+    expect(await count()).toBe(0)
+  })
+
+  test('only a fresh attributed slot subscription in an active local pool exempts its pinned attempt', async () => {
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId, createdAt: at(240) })
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: id,
+      activated: true,
+      state: createWorkflowRun(definition),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': targetAgentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const [pool] = await db
+      .insert(slotPools)
+      .values({ squadId: targetSquadId, key: 'heavy-work', capacity: 1, hostShared: true, createdBy: 'test' })
+      .returning()
+    await db.insert(executions).values({
+      agentId: targetAgentId,
+      status: 'completed',
+      startedAt: at(46),
+      runStartedAt: at(46),
+      endedAt: at(44),
+      flowContext: { workStreamId: id, attemptId: 1, stepId: definition.steps[0]!.id },
+    })
+    const [waiter] = await db
+      .insert(slotWaiters)
+      .values({ poolId: pool!.id, ownerAgentId: targetAgentId, queuedAt: at(45) })
+      .returning()
+    const count = async () => (await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count
+    expect(await count()).toBe(0)
+    // A subscription cannot be attributed to an attempt with no pinned owner.
+    await db.update(workStreamFlowRuns).set({ attemptAgents: {} }).where(eq(workStreamFlowRuns.workStreamId, id))
+    expect(await count()).toBe(1)
+    await db
+      .update(workStreamFlowRuns)
+      .set({ attemptAgents: { '1': targetAgentId } })
+      .where(eq(workStreamFlowRuns.workStreamId, id))
+    expect(await count()).toBe(0)
+    for (const status of ['granted', 'canceled'] as const) {
+      await db
+        .update(slotWaiters)
+        .set({ status, endedAt: at(1) })
+        .where(eq(slotWaiters.id, waiter!.id))
+      expect(await count()).toBe(1)
+    }
+    await db.update(slotWaiters).set({ status: 'queued', endedAt: null }).where(eq(slotWaiters.id, waiter!.id))
+    for (const field of ['disabledAt', 'unregisteredAt'] as const) {
+      await db
+        .update(slotPools)
+        .set({ [field]: at(1) })
+        .where(eq(slotPools.id, pool!.id))
+      expect(await count()).toBe(1)
+      await db
+        .update(slotPools)
+        .set({ [field]: null })
+        .where(eq(slotPools.id, pool!.id))
+    }
+    // A malformed foreign-squad subscription cannot hide this owner's demand.
+    await db.update(slotPools).set({ squadId: crossSquadId }).where(eq(slotPools.id, pool!.id))
     expect(await count()).toBe(1)
   })
 
@@ -797,7 +975,9 @@ describe('actionable squad demand', () => {
       const workStreamId = await addWorkStream({ assigneeAgentId: secondTargetAgentId, createdAt: at(30) })
       await db.insert(workStreamWaits).values({ workStreamId, type, openedAt: at(1) })
     }
-    await db.insert(executions).values({ agentId: liveTargetAgentId, status: 'running', startedAt: at(30) })
+    await db
+      .insert(executions)
+      .values({ agentId: liveTargetAgentId, status: 'running', startedAt: at(30), runStartedAt: at(29) })
     const liveParticipantWorkStreamIds = await Promise.all([
       addWorkStream({ assigneeAgentId: liveTargetAgentId, createdAt: at(30) }),
       addWorkStream({ assigneeAgentId: null, agentIds: [liveTargetAgentId], createdAt: at(30) }),

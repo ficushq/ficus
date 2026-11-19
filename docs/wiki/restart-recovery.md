@@ -281,3 +281,79 @@ The first actual model tool can confirm continuation or replay-safe startup
 progress before a legitimate task question. It cannot settle a post-startup
 execution failure or authorize a held cycle. Consumed system recovery receipts
 remain task provenance after confirmation, without regaining delivery authority.
+
+### Foreground Bash transport losses
+
+A foreground stream can fail **inside a still-running model execution**. The HTTP
+client emits `BashOutcomeUnknownError` with its executor invocation id and a closed
+transport classification (or `protocol_truncated` if EOF arrived without a terminal
+exit code). The Bash operations layer attempts cancellation and zero-owned-process
+verification before surfacing the loss. Neither stream `end` nor successful process
+cleanup proves that an external side effect did not happen. Unconfirmed cleanup
+continues to warn that the invocation may still be running; transport recovery must
+not silently replay the command.
+
+The SDK Bash tool preserves this typed error through its cause chain. The recovery
+wrapper uses that **executor invocation id**, not a replacement tool-call hash, for
+its durable outcome. Its generated last-error summary uses only the transport
+classification, not raw endpoint, credential, output or cleanup-error text. A mapped
+`SandboxOutageError` takes precedence over nested transport provenance: its outage
+reason passes through the existing redaction and one-line length limit rather than
+being replaced by a generic transport summary. Other tool failures retain their
+existing invocation keys and classification policies.
+
+On the third unexplained loss of the **same normalized command target**, the tool
+error includes the server-issued recovery id, current `expectedVersion`, generated
+attempted-action/count/error summary, and the matching flow wait id. Standalone
+errors identify the owning agent. The worker is told that the squad manager or an
+eligible owner decides Continue or Stop using this record and version, and to end
+its turn until that authorized decision. It is not directed to run a recovery
+resolution command or clear its own hold. An
+already-held retry returns the same kind of actionable reference without executing
+another command. These are references for an authorized manager/owner, not authority
+for the worker to Continue itself. Decisions remain versioned: refresh the native
+record if a later outcome or decision changed its version. Do not invent an id,
+request a human diagnostic question, or substitute generic unblock. Continue grants
+one bounded cycle, not permission to replay an unknown external mutation or bypass
+pause, dependency, provider, credential or approval gates. A missing current flow
+binding is reported as a retained hold/diagnostic, not an invented wait. If accounting
+or delivery cannot return the outcome, the tool explicitly says no recovery
+reference is available in that result. A durable record may already exist; inspect
+native recovery state and reconcile the affected state before another attempt.
+
+Three invocation ids alone do not establish exhaustion: they might represent three
+different command targets. Timeout and ordinary unquoted spacing changes do not
+create a new target, but unrelated commands do. Confirmed success of an unrelated
+inspection does not reset the failing target; replacement model executions and the
+manager's extra cycle retain its real history.
+
+#### Duration and silence are separate from recovery accounting
+
+The current repository has these distinct lifetime controls:
+
+- `createHttpBashOperations` supplies a default command deadline of 180 seconds,
+  capped at 3600 seconds. The executor enforces that deadline by terminating the
+  owned session before returning its timeout/exit-124 frame. That expected command
+  timeout is not an unexplained transport loss.
+- `SandboxClient.bash` uses an explicit cancellation signal, not its unary RPC
+  deadline (normally 30 seconds). It incrementally decodes SSE lines and requires a
+  terminal numeric exit code. It has no application-level output-idle timer and
+  requires no heartbeat to keep a silent reader alive. EOF, stream reset or an
+  unexpected reader timeout without that terminal frame is an unknown outcome.
+- The sandbox HTTP server exempts `/bash` from the TCP listener's 255-second idle
+  timer. Unix listeners disable that timer globally because Bun ignores their
+  per-request override. This is important even for noisy commands: the documented
+  historical Bun idle timer was not reset by response writes. The server's separate
+  idle-exit coordinator retains reservations for pending admissions/running commands;
+  it does not infer idleness from a lack of command output.
+- Cancellation has its own 12-second HTTP request budget. A failed cancellation may
+  recover the transport and retry **cancellation**, never the original Bash command.
+  Correlated restart draining remains distinct and free under the restart policy.
+
+These controls do not guarantee that a network, SSH tunnel or runtime never drops a
+stream. Deterministic client regressions advance a mocked clock through ten quiet
+minutes, then deliver a split terminal SSE frame; separate fixtures inject timeout,
+reset and truncated-EOF outcomes. They verify the application contract, not a live
+network or deployed executor version. The reported long-foreground losses do not
+establish silence, a specific duration limit or restart as their cause. No timeout
+redesign or live restart/deployment is part of this recovery-accounting repair.

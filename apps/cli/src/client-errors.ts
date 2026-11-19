@@ -3,7 +3,9 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    /** Parsed response for command-specific diagnostics; do not print it wholesale. */
+    readonly payload?: unknown
   ) {
     super(message)
     this.name = 'ApiRequestError'

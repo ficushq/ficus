@@ -9,8 +9,14 @@ import {
   fleetIncidents,
   inbox,
   monitors,
+  messages,
+  slotPools,
+  slotClaims,
+  slotWaiters,
   squads,
+  schedules,
   workStreamFlowRuns,
+  workStreamFlowTransitions,
   workStreams,
 } from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -58,6 +64,28 @@ describe('dead fleet reconciliation', () => {
       await db.delete(fleetIncidentNotifications).where(inArray(fleetIncidentNotifications.incidentId, incidentIds))
       await db.delete(fleetIncidents).where(inArray(fleetIncidents.id, incidentIds))
     }
+    const pools = await db.select({ id: slotPools.id }).from(slotPools).where(inArray(slotPools.squadId, ownedSquadIds))
+    if (pools.length) {
+      await db.delete(slotWaiters).where(
+        inArray(
+          slotWaiters.poolId,
+          pools.map((pool) => pool.id)
+        )
+      )
+      await db.delete(slotClaims).where(
+        inArray(
+          slotClaims.poolId,
+          pools.map((pool) => pool.id)
+        )
+      )
+      await db.delete(slotPools).where(
+        inArray(
+          slotPools.id,
+          pools.map((pool) => pool.id)
+        )
+      )
+    }
+    await db.delete(schedules).where(inArray(schedules.scopeId, ownedSquadIds))
     await db.delete(squads).where(inArray(squads.id, ownedSquadIds))
   })
 
@@ -432,6 +460,571 @@ describe('dead fleet reconciliation', () => {
     expect((await notifications(incident!.id)).some((row) => row.kind === 'recovery')).toBe(true)
   })
 
+  test.each([false, true])(
+    'fresh foreground steps and queued capacity subscriptions stay quiet (host shared: %s)',
+    async (hostShared) => {
+      const definition = createBlankWorkflow()
+      const addStream = async (owner: string, mapped = true) => {
+        const [stream] = await db
+          .insert(workStreams)
+          .values({
+            squadId,
+            title: 'foreground progress fixture',
+            status: 'active',
+            assigneeAgentId: owner,
+            createdAt: START,
+          })
+          .returning()
+        await db.insert(workStreamFlowRuns).values({
+          workStreamId: stream!.id,
+          activated: true,
+          state: createWorkflowRun(definition),
+          source: resolveWorkflow({ kind: 'inline', definition }),
+          attemptAgents: mapped ? { '1': owner } : {},
+          createRequestId: crypto.randomUUID(),
+          createRequestHash: 'test',
+          createdBy: 'test',
+        })
+        return stream!.id
+      }
+      // The progressing owner has an old execution. Include an unmapped attempt to
+      // exercise the stream-level fallback that previously ignored stream.busy.
+      await addStream(agentId, false)
+      const [execution] = await db
+        .insert(executions)
+        .values({
+          agentId,
+          status: 'running',
+          startedAt: START,
+          runStartedAt: START,
+        })
+        .returning()
+      await db.insert(messages).values(
+        [7, 9, 13, 16, 18, 30].map((minute) => ({
+          agentId,
+          role: 'assistant' as const,
+          content: 'Browser check',
+          metadata: { executionId: execution!.id, toolCalls: [{ toolName: 'browser_read' }] },
+          createdAt: at(minute * 60_000),
+        }))
+      )
+      const [pool] = await db
+        .insert(slotPools)
+        .values({
+          squadId,
+          key: 'heavy-work',
+          capacity: 1,
+          hostShared,
+          capacityFollowsHost: false,
+          claimTimeoutMs: 120 * 60_000,
+          createdBy: 'test',
+        })
+        .returning()
+      await db
+        .insert(slotClaims)
+        .values({ poolId: pool!.id, ownerAgentId: agentId, claimedAt: START, expiresAt: at(90 * 60_000) })
+      for (let index = 0; index < 3; index++) {
+        const [owner] = await db.insert(agents).values({ squadId, agentTypeId: 'engineer', status: 'idle' }).returning()
+        const waitingStreamId = await addStream(owner!.id)
+        // Waiting-only demand: the subscription was enqueued by this current
+        // attempt's completed turn. Independent queued/mail work is NOT blocked
+        // by capacity waiting (covered by scoped-wait-demand.test.ts).
+        await db.insert(executions).values({
+          agentId: owner!.id,
+          status: 'completed',
+          startedAt: START,
+          runStartedAt: START,
+          endedAt: at(60_000),
+          flowContext: { workStreamId: waitingStreamId, attemptId: 1, stepId: definition.steps[0]!.id },
+        })
+        await db.insert(slotWaiters).values({ poolId: pool!.id, ownerAgentId: owner!.id, queuedAt: at(30_000) })
+      }
+      const reconcileAt = async (now: Date) => {
+        const snapshots = await getSquadDemandSnapshots({ now })
+        await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshots.get(squadId)!]]) })
+        return snapshots.get(squadId)!
+      }
+      expect((await reconcileAt(at(31 * 60_000))).count).toBe(0)
+      expect(await incidents()).toEqual([])
+
+      // A genuinely stale running execution is not protected by its status forever.
+      expect((await reconcileAt(at(61 * 60_000))).count).toBe(1)
+      const [incident] = await incidents()
+      expect((await notifications(incident!.id)).some((row) => row.kind === 'alert')).toBe(true)
+      // A persisted step resumes progress without a new execution start.
+      await db.insert(messages).values({
+        agentId,
+        role: 'assistant',
+        content: 'Next check',
+        metadata: { executionId: execution!.id },
+        createdAt: at(62 * 60_000),
+      })
+      expect((await reconcileAt(at(62 * 60_000))).count).toBe(0)
+      expect((await incidents())[0]!.resolvedAt).toEqual(at(62 * 60_000))
+    }
+  )
+
+  test('a progressing sibling and unrelated same-squad starts cannot hide an abandoned attempt', async () => {
+    const [owner] = await db.insert(agents).values({ squadId, agentTypeId: 'engineer', status: 'idle' }).returning()
+    const [stream] = await db
+      .insert(workStreams)
+      .values({
+        squadId,
+        title: 'Abandoned work',
+        status: 'active',
+        assigneeAgentId: owner!.id,
+        agentIds: [agentId],
+        createdAt: START,
+      })
+      .returning()
+    const definition = createBlankWorkflow()
+    const state = createWorkflowRun(definition)
+    state.attempts.push({ ...state.attempts[0]!, id: 2 })
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: stream!.id,
+      activated: true,
+      state,
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': owner!.id, '2': agentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const [execution] = await db
+      .insert(executions)
+      .values({ agentId, status: 'running', startedAt: at(WINDOW), runStartedAt: at(WINDOW) })
+      .returning()
+    const reconcileAt = async (now: Date) => {
+      const snapshots = await getSquadDemandSnapshots({ now })
+      expect(snapshots.get(squadId)!.count).toBe(1)
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshots.get(squadId)!]]) })
+    }
+    await reconcileAt(at(WINDOW + 60_000))
+    const [incident] = await incidents()
+    expect(incident!.startedAt).toEqual(START)
+    expect((await notifications(incident!.id)).some((row) => row.kind === 'alert')).toBe(true)
+    await db.insert(messages).values({
+      agentId,
+      role: 'assistant',
+      content: 'Next tool step',
+      metadata: { executionId: execution!.id },
+      createdAt: at(WINDOW + 120_000),
+    })
+    const [unrelated] = await db.insert(agents).values({ squadId, agentTypeId: 'engineer', status: 'idle' }).returning()
+    await db.insert(executions).values({
+      agentId: unrelated!.id,
+      status: 'completed',
+      startedAt: at(WINDOW + 120_000),
+      runStartedAt: at(WINDOW + 120_000),
+    })
+    await reconcileAt(at(WINDOW + 180_000))
+    expect(await incidents()).toHaveLength(1)
+    expect((await incidents())[0]!.resolvedAt).toBeNull()
+  })
+
+  test.each([false, true])(
+    'own completed execution progress survives turn boundaries and expires (flow: %s)',
+    async (flow) => {
+      const [stream] = await db
+        .insert(workStreams)
+        .values({
+          squadId,
+          title: 'Recent own completed progress',
+          status: 'active',
+          assigneeAgentId: agentId,
+          createdAt: START,
+        })
+        .returning()
+      if (flow) {
+        const definition = createBlankWorkflow()
+        await db.insert(workStreamFlowRuns).values({
+          workStreamId: stream!.id,
+          activated: true,
+          state: createWorkflowRun(definition),
+          source: resolveWorkflow({ kind: 'inline', definition }),
+          attemptAgents: { '1': agentId },
+          createRequestId: crypto.randomUUID(),
+          createRequestHash: 'test',
+          createdBy: 'test',
+          createdAt: START,
+          updatedAt: START,
+        })
+      }
+      const progressedAt = at(59.5 * 60_000)
+      const [execution] = await db
+        .insert(executions)
+        .values({
+          agentId,
+          status: 'completed',
+          startedAt: at(59 * 60_000),
+          runStartedAt: at(59 * 60_000),
+          endedAt: progressedAt,
+          flowContext: flow ? { workStreamId: stream!.id, attemptId: 1, stepId: 'implement' } : null,
+        })
+        .returning()
+      await db.insert(messages).values({
+        agentId,
+        role: 'assistant',
+        content: 'Completed a foreground check',
+        metadata: { executionId: execution!.id },
+        createdAt: progressedAt,
+      })
+      const reconcileAt = async (now: Date) => {
+        const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+        expect(snapshot.firstDemandAt).toEqual(START)
+        expect(snapshot.unservedSince).toEqual(progressedAt)
+        await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+      }
+      await reconcileAt(at(60 * 60_000))
+      const [incident] = await incidents()
+      expect(await notifications(incident!.id)).toEqual([])
+      await reconcileAt(new Date(progressedAt.getTime() + WINDOW - 1))
+      expect(await notifications(incident!.id)).toEqual([])
+      await reconcileAt(new Date(progressedAt.getTime() + WINDOW))
+      expect((await notifications(incident!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+      expect((await incidents())[0]!.startedAt).toEqual(progressedAt)
+      expect((await incidents())[0]!.details).toMatchObject({ oldestDemandAt: START.toISOString() })
+    }
+  )
+
+  test('own progress moves a pending episode clock and preserves the original backlog age', async () => {
+    await db.insert(workStreams).values({
+      squadId,
+      title: 'Pending episode progress',
+      status: 'active',
+      assigneeAgentId: agentId,
+      createdAt: START,
+    })
+
+    const reconcileAt = async (now: Date) => {
+      const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+    }
+    await reconcileAt(at(29 * 60_000))
+    const [pending] = await incidents()
+    await db.insert(executions).values({
+      agentId,
+      status: 'completed',
+      startedAt: at(29 * 60_000),
+      runStartedAt: at(29 * 60_000),
+      endedAt: at(29.5 * 60_000),
+    })
+    await reconcileAt(at(31 * 60_000))
+    expect((await incidents())[0]!.resolvedAt).toEqual(at(31 * 60_000))
+    expect(await notifications(pending!.id)).toEqual([])
+    await reconcileAt(at(32 * 60_000))
+    const next = (await incidents()).find((incident) => incident.id !== pending!.id)!
+    expect(next.startedAt).toEqual(at(29.5 * 60_000))
+    expect(next.details).toMatchObject({ oldestDemandAt: START.toISOString() })
+    expect(await notifications(next.id)).toEqual([])
+  })
+
+  test('own completed progress resolves an alerted incident, but only while its evidence is fresh', async () => {
+    await db.insert(workStreams).values({
+      squadId,
+      title: 'Alerted episode progress',
+      status: 'active',
+      assigneeAgentId: agentId,
+      createdAt: START,
+    })
+    const reconcileAt = async (now: Date) => {
+      const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+    }
+    await reconcileAt(at(31 * 60_000))
+    const [open] = await incidents()
+    await db
+      .update(fleetIncidentNotifications)
+      .set({ status: 'delivered', deliveredAt: at(31 * 60_000) })
+      .where(
+        and(eq(fleetIncidentNotifications.incidentId, open!.id), eq(fleetIncidentNotifications.audience, 'manager'))
+      )
+    await db.insert(executions).values({
+      agentId,
+      status: 'completed',
+      startedAt: at(32 * 60_000),
+      runStartedAt: at(32 * 60_000),
+      endedAt: at(32.5 * 60_000),
+    })
+    await reconcileAt(at(33 * 60_000))
+    expect((await incidents())[0]!.resolvedAt).toEqual(at(33 * 60_000))
+    expect((await notifications(open!.id)).filter((row) => row.kind === 'recovery')).toHaveLength(1)
+  })
+
+  test('a worker restart is not scoped execution progress and cannot resolve an existing stall', async () => {
+    await db.insert(workStreams).values({
+      squadId,
+      title: 'Still abandoned after restart',
+      status: 'active',
+      assigneeAgentId: agentId,
+      createdAt: START,
+    })
+    const initialAt = at(31 * 60_000)
+    const first = (await getSquadDemandSnapshots({ now: initialAt })).get(squadId)!
+    await reconcileDeadFleet({ now: initialAt, demand: new Map([[squadId, first]]) })
+    const [open] = await incidents()
+    const now = at(61 * 60_000)
+    const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+    await reconcileDeadFleet({ now, coldStartAt: at(60 * 60_000), demand: new Map([[squadId, snapshot]]) })
+    expect((await incidents())[0]!.id).toBe(open!.id)
+    expect((await incidents())[0]!.resolvedAt).toBeNull()
+  })
+
+  test('a missed progress interval advances the clock without falsely reporting recovery from already stale evidence', async () => {
+    await db.insert(workStreams).values({
+      squadId,
+      title: 'Missed progress observation',
+      status: 'active',
+      assigneeAgentId: agentId,
+      createdAt: START,
+    })
+    const reconcileAt = async (now: Date) => {
+      const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+    }
+    await reconcileAt(at(5 * 60_000))
+    const [open] = await incidents()
+    await db.insert(executions).values({
+      agentId,
+      status: 'completed',
+      startedAt: at(10 * 60_000),
+      runStartedAt: at(10 * 60_000),
+      endedAt: at(10 * 60_000),
+    })
+    await reconcileAt(at(50 * 60_000))
+    expect(await incidents()).toHaveLength(1)
+    expect((await incidents())[0]!.startedAt).toEqual(at(10 * 60_000))
+    expect((await incidents())[0]!.alertAfter).toEqual(at(40 * 60_000))
+    expect((await incidents())[0]!.resolvedAt).toBeNull()
+    expect((await notifications(open!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+    expect((await notifications(open!.id)).filter((row) => row.kind === 'recovery')).toHaveLength(0)
+  })
+
+  async function recordInlineDispatch(streamId: string, readyAt: Date, receipt: 'matching' | 'missing' | 'mismatched') {
+    const [flow] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const requestId = crypto.randomUUID()
+    flow!.state.attempts[0]!.responseAssignment = { requestId, agentId, version: 1, content: 'Inline assignment' }
+    await db.update(workStreamFlowRuns).set({ state: flow!.state }).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    if (receipt !== 'missing') {
+      await db.insert(workStreamFlowTransitions).values({
+        workStreamId: streamId,
+        requestId: receipt === 'matching' ? requestId : crypto.randomUUID(),
+        requestHash: 'test',
+        command: {
+          action: 'complete',
+          expectedVersion: 0,
+          attemptId: 1,
+          outcome: 'completed',
+          evidence: 'Previous work',
+          resume: false,
+        },
+        version: 1,
+        stateStatus: 'running',
+        activeAttemptId: 1,
+        actorKey: `agent:${agentId}`,
+        createdAt: readyAt,
+      })
+    }
+    return requestId
+  }
+
+  test.each(['dispatch', 'inline dispatch', 'slot promotion'] as const)(
+    'fresh %s starts its own demand clock on an old stream',
+    async (signal) => {
+      const [stream] = await db
+        .insert(workStreams)
+        .values({
+          squadId,
+          title: 'Newly executable work',
+          status: 'active',
+          assigneeAgentId: agentId,
+          createdAt: START,
+        })
+        .returning()
+      const definition = createBlankWorkflow()
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream!.id,
+        activated: true,
+        state: createWorkflowRun(definition),
+        source: resolveWorkflow({ kind: 'inline', definition }),
+        attemptAgents: { '1': agentId },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'test',
+        createdBy: 'test',
+        createdAt: START,
+        updatedAt: START,
+      })
+      const readyAt = at(59 * 60_000)
+      if (signal === 'dispatch') {
+        await db.insert(inbox).values({
+          recipientType: 'agent',
+          recipientId: agentId,
+          senderType: 'system',
+          content: 'New attempt assignment',
+          metadata: { source: 'workflow', workStreamId: stream!.id, attemptId: 1 },
+          idempotencyKey: `flow:${stream!.id}:1`,
+          createdAt: readyAt,
+        })
+      } else if (signal === 'inline dispatch') {
+        await recordInlineDispatch(stream!.id, readyAt, 'matching')
+      } else {
+        const [pool] = await db
+          .insert(slotPools)
+          .values({ squadId, key: 'heavy-work', capacity: 1, createdBy: 'test' })
+          .returning()
+        const [claim] = await db
+          .insert(slotClaims)
+          .values({ poolId: pool!.id, ownerAgentId: agentId, claimedAt: readyAt, expiresAt: at(120 * 60_000) })
+          .returning()
+        await db.insert(slotWaiters).values({
+          poolId: pool!.id,
+          ownerAgentId: agentId,
+          queuedAt: START,
+          status: 'granted',
+          endedAt: readyAt,
+          resultingClaimId: claim!.id,
+        })
+        await db.insert(schedules).values({
+          scopeType: 'squad',
+          scopeId: squadId,
+          name: 'Pending inbox work',
+          enabled: true,
+          schedule: { runAt: START.toISOString() },
+          action: { type: 'inbox_message', target: { type: 'agent', agentId }, content: 'Pending work' },
+          nextTriggerAt: START,
+        })
+        // Promotion makes an existing pending turn runnable; it is not 59 minutes abandoned.
+        await db.insert(executions).values({ agentId, status: 'queued', startedAt: START })
+      }
+      if (signal === 'inline dispatch') {
+        const [flow] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+        expect(flow!.state.attempts[0]!.responseAssignment?.requestId).toBeDefined()
+        expect(await db.select().from(slotPools).where(eq(slotPools.squadId, squadId))).toEqual([])
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).toEqual([])
+      }
+      const now = at(60 * 60_000)
+      const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+      expect(snapshot.unservedSince).toEqual(readyAt)
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+      const [incident] = await incidents()
+      expect(await notifications(incident!.id)).toEqual([])
+      const beforeExpiry = new Date(readyAt.getTime() + WINDOW - 1)
+      const before = (await getSquadDemandSnapshots({ now: beforeExpiry })).get(squadId)!
+      await reconcileDeadFleet({ now: beforeExpiry, demand: new Map([[squadId, before]]) })
+      expect(await notifications(incident!.id)).toEqual([])
+      const expiredAt = new Date(readyAt.getTime() + WINDOW)
+      const expired = (await getSquadDemandSnapshots({ now: expiredAt })).get(squadId)!
+      await reconcileDeadFleet({ now: expiredAt, demand: new Map([[squadId, expired]]) })
+      expect((await notifications(incident!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+    }
+  )
+
+  test.each(['missing', 'mismatched'] as const)(
+    'an inline assignment with a %s receipt cannot grant a fresh demand clock',
+    async (receipt) => {
+      const [stream] = await db
+        .insert(workStreams)
+        .values({
+          squadId,
+          title: 'Unproven inline assignment',
+          status: 'active',
+          assigneeAgentId: agentId,
+          createdAt: START,
+        })
+        .returning()
+      const definition = createBlankWorkflow()
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream!.id,
+        activated: true,
+        state: createWorkflowRun(definition),
+        source: resolveWorkflow({ kind: 'inline', definition }),
+        attemptAgents: { '1': agentId },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'test',
+        createdBy: 'test',
+        createdAt: START,
+        updatedAt: START,
+      })
+      const requestId = await recordInlineDispatch(stream!.id, at(59 * 60_000), receipt)
+      const receipts = await db
+        .select()
+        .from(workStreamFlowTransitions)
+        .where(eq(workStreamFlowTransitions.workStreamId, stream!.id))
+      expect(receipts).toHaveLength(receipt === 'missing' ? 0 : 1)
+      expect(receipts.some((row) => row.requestId === requestId)).toBe(false)
+      expect(await db.select().from(slotPools).where(eq(slotPools.squadId, squadId))).toEqual([])
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).toEqual([])
+      const now = at(60 * 60_000)
+      const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+      expect(snapshot.unservedSince).toEqual(START)
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+      const [incident] = await incidents()
+      expect(incident!.startedAt).toEqual(START)
+      expect((await notifications(incident!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+    }
+  )
+
+  test('a requeued execution retains its own bounded last-service clock instead of its original queue age', async () => {
+    const progressedAt = at(59.5 * 60_000)
+    const [execution] = await db
+      .insert(executions)
+      .values({ agentId, status: 'queued', startedAt: START, runStartedAt: at(5 * 60_000) })
+      .returning()
+    await db.insert(messages).values({
+      agentId,
+      role: 'assistant',
+      content: 'Last tool step before retry',
+      metadata: { executionId: execution!.id },
+      createdAt: progressedAt,
+    })
+    const now = at(60 * 60_000)
+    const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+    expect(snapshot.unservedSince).toEqual(progressedAt)
+    await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+    const [incident] = await incidents()
+    expect(await notifications(incident!.id)).toEqual([])
+    const expiredAt = new Date(progressedAt.getTime() + WINDOW)
+    const expired = (await getSquadDemandSnapshots({ now: expiredAt })).get(squadId)!
+    await reconcileDeadFleet({ now: expiredAt, demand: new Map([[squadId, expired]]) })
+    expect((await notifications(incident!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+  })
+
+  test('completed progress from another attempt of the same owner cannot mask the stale current attempt', async () => {
+    const definition = createBlankWorkflow()
+    const [stream] = await db
+      .insert(workStreams)
+      .values({ squadId, title: 'Stale current attempt', status: 'active', assigneeAgentId: agentId, createdAt: START })
+      .returning()
+    const state = createWorkflowRun(definition)
+    state.attempts[0]!.id = 2
+    state.activeAttemptId = 2
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: stream!.id,
+      activated: true,
+      state,
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '2': agentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+      createdAt: START,
+      updatedAt: START,
+    })
+    await db.insert(executions).values({
+      agentId,
+      status: 'completed',
+      startedAt: at(59 * 60_000),
+      runStartedAt: at(59 * 60_000),
+      endedAt: at(59.5 * 60_000),
+      flowContext: { workStreamId: stream!.id, attemptId: 1, stepId: 'implement' },
+    })
+    const now = at(60 * 60_000)
+    const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+    expect(snapshot.unservedSince).toEqual(START)
+    await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+    expect((await notifications((await incidents())[0]!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+  })
+
   test('does not persist incidents for quiet, parked, or open-wait demand represented by zero', async () => {
     const parkedSquadId = crypto.randomUUID()
     ownedSquadIds.push(parkedSquadId)
@@ -692,13 +1285,13 @@ describe('dead fleet reconciliation', () => {
     expect((await notifications(second!.id)).map((row) => row.audience).sort()).toEqual(['human', 'manager'])
   })
 
-  test('reports backlog age separately from the time since the last run started', async () => {
+  test('reports backlog age without claiming that no other execution has started', async () => {
     const oldest = at(-4115 * 60_000)
     await db.insert(executions).values({ agentId, status: 'completed', startedAt: START, runStartedAt: START })
     await reconcileDeadFleet({ now: at(WINDOW), demand: demand(2, oldest) })
     const [incident] = await incidents()
     expect(incident.causeSummary).toBe(
-      '2 pending work items remain; oldest is 4145m old. No execution run has started in the last 30m of pending demand, and no open provider or sandbox incident explains the delay.'
+      '2 pending work items remain; oldest is 4145m old. No fresh execution progress serves this demand, and no open provider or sandbox incident explains the delay.'
     )
   })
 
@@ -716,12 +1309,12 @@ describe('dead fleet reconciliation', () => {
     expect(incident).toMatchObject({
       causeCode: 'demand-not-served',
       remediation:
-        'Check machine + sandbox health first (the box/tunnel logs for the affected machine), then worker pickup (`ficus worker status`).',
+        'Check sandbox health with `ficus squad sandbox-status <squad-id>` and `ficus agent sandbox-status <agent-id>`; ask an authorized operator to inspect worker pickup if needed.',
       details: { demandCount: 1 },
     })
     // Demand also includes inbox messages, schedules, and work streams.
     expect(incident.causeSummary).toBe(
-      '1 pending work item remains; oldest is 30m old. No execution run has started in the last 30m of pending demand, and no open provider or sandbox incident explains the delay.'
+      '1 pending work item remains; oldest is 30m old. No fresh execution progress serves this demand, and no open provider or sandbox incident explains the delay.'
     )
     expect(incident.causeSummary).not.toMatch(/provider probe/)
     expect((await notifications(incident.id)).map((row) => row.audience).sort()).toEqual(['human', 'manager'])

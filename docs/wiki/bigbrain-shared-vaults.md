@@ -271,7 +271,7 @@ that they are separate from squad memory.
 
 To remove the tools from an agent type, list them (or `bigbrain_*`) in its `tools.deny`. Other
 agent types (assistant, assistant worker, artifact builder, system manager) get them only by
-opting in: in Settings → Agent types, turn on **BigBrain access → Agent tools** for the type
+opting in: in Settings → Agents, turn on **BigBrain access → Agent tools** for the type
 (shown once Ficus can read a vault) and list each tool name below in its `tools.allow`.
 Subagents never get tools their parent's session did not expose.
 

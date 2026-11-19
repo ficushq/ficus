@@ -20,9 +20,26 @@
      web content, so a dialog can never cover them. The scrim still dims the whole window
      (keeping the header unclickable), but panels sit below the title bar instead of under
      the controls. */
-  :root[data-desktop-shell='inset'] .ficus-modal-backdrop {
+  :root[data-desktop-shell='inset'] :is(.ficus-modal-backdrop, .mobile-chat-options) {
     --modal-top-reserve: var(--desktop-titlebar-height);
     padding-top: var(--modal-top-reserve);
+  }
+
+  .ficus-modal-drag-region {
+    display: none;
+  }
+
+  /* The backdrop is no-drag, so it masks the app header's native drag region.
+     Give each modal layer its own band in the reserved space, rather than lifting
+     the background header above the scrim. Keep it out of the native controls'
+     area and out of panel content; ordinary backdrop clicks still dismiss below it.
+     Closed Presence layers must not leave an invisible native drag target behind. */
+  :root[data-desktop-shell='inset'] [data-state='open'] > .ficus-modal-drag-region {
+    display: block;
+    position: absolute;
+    inset: 0 0 auto 96px;
+    height: var(--desktop-titlebar-height);
+    -webkit-app-region: drag;
   }
 
   .ficus-modal-backdrop > [data-modal-size='default'] {

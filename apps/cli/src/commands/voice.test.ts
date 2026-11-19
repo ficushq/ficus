@@ -5,7 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../client'
 import { ApiRequestError } from '../client-errors'
-import { output, outputError, setOutputOptions } from '../output'
+import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { registerSquadCommands } from './squad'
 import { registerVoiceCommands } from './voice'
 
@@ -182,12 +182,17 @@ describe('ficus voice', () => {
       filters: { before: '2026-03-01', repositories: ['acme/api'] },
     })
     expect(JSON.parse(readFileSync(out, 'utf8')).draft.base).toBe('Draft.')
-  })
-
-  it('explains the confirmation needed for another person', async () => {
-    m(apiPost).mockRejectedValue(new ApiRequestError('confirmation_required', 409))
-    await run(['voice', 'derive', '--squad', 's1', '--github', 'someone'])
-    expect(lastError()).toContain('--confirm-other-person')
+    expect(apiPost).toHaveBeenCalledTimes(1)
+    expect(apiPut).not.toHaveBeenCalled()
+    expect(apiPatch).not.toHaveBeenCalled()
+    m(apiPost).mockClear()
+    m(isJsonMode).mockReturnValue(true)
+    await run(['squad', 'voice', 'derive', 's1', '--github', 'someone'])
+    expect(output).toHaveBeenLastCalledWith(result)
+    expect(apiPost).toHaveBeenCalledTimes(1)
+    expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/derive', { login: 'someone', filters: {} })
+    expect(apiPut).not.toHaveBeenCalled()
+    expect(apiPatch).not.toHaveBeenCalled()
   })
 })
 
@@ -259,12 +264,61 @@ describe('ficus squad voice', () => {
     expect(apiDelete).toHaveBeenCalledWith('/api/squads/s1/voice')
   })
 
+  it.each([
+    ['derivation_github_unavailable', 422, 'GitHub is unavailable'],
+    ['derivation_login_not_visible', 422, 'The GitHub login was not found or is not visible'],
+    ['derivation_too_few_samples', 422, 'Too few samples: kept 2 of 10 collected; at least 8 are required.'],
+    ['derivation_invalid_output', 422, 'The model returned an invalid voice draft'],
+    ['derivation_model_unavailable', 422, 'The derivation model is unavailable'],
+  ])('explains %s without exposing the raw payload', async (code, status, sentence) => {
+    const payload = { error: code, counts: { kept: 2, collected: 10 }, minimum: 8, reason: 'PRIVATE_FIXTURE' }
+    m(apiPost).mockRejectedValue(new ApiRequestError(code, status, code, payload))
+    await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
+    expect(lastError()).toContain(`${code}: `)
+    expect(lastError()).toContain(sentence)
+    expect(lastError()).not.toContain('PRIVATE_FIXTURE')
+  })
+
+  it('shows a safe validation reason, not arbitrary server text', async () => {
+    m(apiPost).mockRejectedValue(
+      new ApiRequestError('derivation_invalid_output', 422, 'derivation_invalid_output', {
+        reason: 'private_text_in_base',
+      })
+    )
+    await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
+    expect(lastError()).toContain('overlapped private sample text')
+  })
+
+  it('handles missing or malformed counts without printing untrusted values', async () => {
+    for (const payload of [undefined, { counts: { kept: 'injected', collected: -1 }, minimum: 'injected' }]) {
+      m(apiPost).mockRejectedValue(
+        new ApiRequestError('derivation_too_few_samples', 422, 'derivation_too_few_samples', payload)
+      )
+      await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
+      expect(lastError()).toBe('derivation_too_few_samples: Too few usable samples were found to derive a voice.')
+    }
+  })
+
+  it.each([
+    new ApiRequestError('Unauthorized', 401),
+    new ApiRequestError('Permission denied', 403, 'forbidden'),
+    new ApiRequestError('Request failed: 502', 502),
+    new ApiRequestError('derivation_in_progress', 429, 'derivation_in_progress'),
+    new Error('Network disconnected'),
+  ])('preserves other failures: %s', async (error) => {
+    m(apiPost).mockRejectedValue(error)
+    await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
+    expect(lastError()).toBe(error.message)
+  })
+
   it('previews and derives', async () => {
     m(apiPost).mockResolvedValue({ text: 'Rewritten.', model: 'm' })
     await quiet(['squad', 'voice', 'preview', 's1', '--surface', 'channels', '--voice', 'team'])
     expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/preview', { surface: 'channels', voiceId: 'team' })
 
-    m(apiPost).mockRejectedValue(new ApiRequestError('confirmation_required', 409))
+    m(apiPost).mockRejectedValue(
+      new ApiRequestError('derivation_model_unavailable', 422, 'derivation_model_unavailable')
+    )
     await quiet([
       'squad',
       'voice',

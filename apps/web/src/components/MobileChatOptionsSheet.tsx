@@ -76,6 +76,7 @@ export function MobileChatOptionsSheet({
         if (event.target === event.currentTarget) onClose()
       }}
     >
+      <div className="ficus-modal-drag-region" aria-hidden="true" />
       <div
         ref={panelRef}
         className="mobile-chat-options-panel ficus-overlay relative w-full max-h-full overflow-y-auto overscroll-contain rounded-t-2xl border border-th-border bg-surface p-3 outline-hidden"

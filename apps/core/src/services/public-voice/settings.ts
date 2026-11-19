@@ -60,7 +60,8 @@ export async function renderedBytesFor(squadId: string, setting: SquadVoiceSetti
   return publicVoiceBytes(renderPublicVoicePrompt(resolved))
 }
 
-export async function linkedGitHubLogin(identity: Identity | undefined): Promise<string | null> {
+/** Prefill only; this is not a derivation permission or login comparison. */
+async function linkedGitHubLogin(identity: Identity | undefined): Promise<string | null> {
   try {
     return (await getGitHubPersonalIdentity(identity))?.login ?? null
   } catch (error) {
