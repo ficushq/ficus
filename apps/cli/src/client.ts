@@ -38,6 +38,18 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return response.json()
 }
 
+/** Authenticated, checked POST whose body stays unread for a negotiated stream. */
+export async function apiPostResponse(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) await throwApiError(response)
+  return response
+}
+
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${config.apiUrl}${path}`, {
     method: 'PATCH',
