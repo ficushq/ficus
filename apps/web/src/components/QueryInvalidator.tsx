@@ -32,6 +32,8 @@ type QueryInvalidatorDependencies = {
   subscribe: ReturnType<typeof useWebSocket>['subscribe']
   isConnected?: boolean
   lastReconnect?: { gapMs: number } | null
+  /** Tests shorten the status-tick window (STATUS_TICK_WINDOW_MS) to observe its trailing edge. */
+  statusTickWindowMs?: number
 }
 
 /**
@@ -149,6 +151,22 @@ function createRosterThrottle(
   }
 }
 
+/**
+ * Minimum spacing between refetches that an agent STATUS TICK drives for two caches no single
+ * tick needs fresh at once:
+ *
+ * - the agent summary rows (`GET /agents?view=summary`): every agent on the instance, shown as a
+ *   status dot beside a work stream or a head count on a squad card;
+ * - the Action Center list: Core already sends its own `actions` frame whenever a person's
+ *   actions change (see the `actions` subscription), so the tick is only a backstop.
+ *
+ * On a busy instance a tick arrives every two to three seconds around the clock. Refetching both
+ * on each one was about 1,500 requests an hour apiece from one open tab, and each waits behind
+ * every other request on Core's single thread. Membership changes (an agent created, terminated
+ * or deleted) and questions still invalidate at once.
+ */
+const STATUS_TICK_WINDOW_MS = 5_000
+
 const OPEN_RECONCILE_FALLBACK_MS = 150
 
 type QueryInvalidationClient = QueryInvalidatorDependencies['queryClient']
@@ -176,6 +194,7 @@ function QueryInvalidatorEffects({
   subscribe,
   isConnected = false,
   lastReconnect = null,
+  statusTickWindowMs = STATUS_TICK_WINDOW_MS,
 }: QueryInvalidatorDependencies) {
   const coalescerRef = useRef<ReturnType<typeof createInvalidationCoalescer> | null>(null)
   const repairedReconnectRef = useRef<{ gapMs: number } | null>(null)
@@ -202,6 +221,7 @@ function QueryInvalidatorEffects({
     slotCoalescerRef.current = slotCoalescer
     const invalidate = coalescer.queue
     const rosterThrottle = createRosterThrottle(invalidate)
+    const tickThrottle = createRosterThrottle(invalidate, statusTickWindowMs)
     const unsubscribes = [
       // ── Action Center content-free reconciliation ───────────────
       subscribe('actions', () => {
@@ -269,14 +289,19 @@ function QueryInvalidatorEffects({
           // Squad agents affect squad queries. Membership changes (an agent
           // appearing or disappearing) stay immediate; a mere status tick is
           // throttled, because it is the one that arrives continuously.
+          const membershipChanged = event === 'agent.created' || event === 'agent.terminated'
           if (data.squadId) {
-            const membershipChanged = event === 'agent.created' || event === 'agent.terminated'
             const queueRoster = membershipChanged ? invalidate : rosterThrottle.queue
             queueRoster(queryKeys.squads.agents(data.squadId))
             queueRoster(queryKeys.squads.agentsWithRecent(data.squadId))
           }
 
-          invalidate(queryKeys.actions.all)
+          // The same split for the instance-wide caches (see STATUS_TICK_WINDOW_MS). A person
+          // waiting on an agent is told at once.
+          const now = membershipChanged || event === 'agent.waiting-input'
+          const queueSlow = now ? invalidate : tickThrottle.queue
+          queueSlow(queryKeys.agents.summariesPrefix())
+          queueSlow(queryKeys.actions.all)
           return
         }
 
@@ -286,6 +311,7 @@ function QueryInvalidatorEffects({
           if (event === 'agent.deleted') {
             // Removal changes list membership, which `detail` alone does not cover.
             invalidate(queryKeys.agents.listPrefix())
+            invalidate(queryKeys.agents.summariesPrefix())
             invalidate(queryKeys.agents.childrenPrefix())
             invalidate(queryKeys.artifacts.all)
             invalidate(queryKeys.activity.presence())
@@ -305,7 +331,9 @@ function QueryInvalidatorEffects({
           // Execution frames carry no squadId, so they refresh agent-scoped
           // queries and the collections only — same narrowing as above.
           invalidateForAgent(invalidate, data.agentId)
-          invalidate(queryKeys.actions.all)
+          // An execution starting or ending moves an agent's status like a tick does.
+          tickThrottle.queue(queryKeys.agents.summariesPrefix())
+          tickThrottle.queue(queryKeys.actions.all)
           // Execution state affects scheduler order. The prefix reaches every
           // global, squad-scoped, and infinite active work-stream list.
           invalidate(queryKeys.squads.activeWorkStreamsPrefix())
@@ -381,15 +409,19 @@ function QueryInvalidatorEffects({
           return
         }
 
-        invalidate(queryKeys.squads.all)
-        if (event === 'squad.updated') invalidate(integrationQueryKeys.squadGitAuthorDefaults(data.squadId))
-        invalidate(queryKeys.activity.presence())
-
+        // A local deployment starting, stopping or changing health is not squad-data churn
+        // either. It used to fall through to the broad invalidation below, so a deployment
+        // that reported often refetched every squad, work-stream list and squad page query
+        // on the instance each time.
         if (event === 'sandboxLocalDeployment.updated') {
           invalidate(queryKeys.squads.localDeployments(data.squadId))
           invalidate(queryKeys.sandbox.status(data.squadId))
           return
         }
+
+        invalidate(queryKeys.squads.all)
+        if (event === 'squad.updated') invalidate(integrationQueryKeys.squadGitAuthorDefaults(data.squadId))
+        invalidate(queryKeys.activity.presence())
 
         // Spawn only — there is no unspawn counterpart on this topic. Unspawning
         // terminates the agent, which arrives as `agent.terminated` on the `agents`
@@ -478,6 +510,7 @@ function QueryInvalidatorEffects({
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe())
       rosterThrottle.dispose()
+      tickThrottle.dispose()
       coalescer.dispose()
       slotCoalescer.dispose()
       if (slotCoalescerRef.current === slotCoalescer) slotCoalescerRef.current = null

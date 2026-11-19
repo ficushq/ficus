@@ -1,4 +1,10 @@
-import { DERIVATION_SURFACES, type DerivationFilters, type DerivationSurface } from '@ficus/shared'
+import {
+  emptySamplingBreakdown,
+  type SamplingBreakdown,
+  DERIVATION_SURFACES,
+  type DerivationFilters,
+  type DerivationSurface,
+} from '@ficus/shared'
 import { DerivationError, type CollectedActivity, type RawActivityItem } from './github-activity'
 
 /**
@@ -27,6 +33,7 @@ export interface SamplingCounts {
 
 export interface SamplingSummary {
   filters: DerivationFilters
+  breakdown?: SamplingBreakdown
   counts: SamplingCounts
   /** Per surface, the oldest and newest kept item (ISO dates). */
   dateRange: Partial<Record<DerivationSurface, { oldest: string; newest: string }>>
@@ -131,10 +138,20 @@ function isOnlyStructure(text: string): boolean {
     .every((line) => /^#{1,6}\s/.test(line) || /^[-*]\s*$/.test(line))
 }
 
-export function prepareSamples(
+export function summarizeSamples(
   collected: CollectedActivity,
   filters: DerivationFilters
 ): { samples: VoiceSample[]; summary: SamplingSummary } {
+  const breakdown = emptySamplingBreakdown()
+  breakdown.pagingCapped = collected.pagingCapped
+  for (const surface of DERIVATION_SURFACES) {
+    const filtered = collected.filteredBySurface[surface]
+    if (filtered) {
+      breakdown.bySurface[surface].dropped.date = filtered.date
+      breakdown.bySurface[surface].dropped.repository = filtered.repository
+      breakdown.bySurface[surface].seen = filtered.date + filtered.repository
+    }
+  }
   const excludeToolAuthored = filters.excludeToolAuthored ?? true
   const counts: SamplingCounts = {
     collected: collected.items.length + collected.droppedByFilter.date + collected.droppedByFilter.repository,
@@ -146,12 +163,16 @@ export function prepareSamples(
 
   const bySurface = new Map<DerivationSurface, Omit<VoiceSample, 'id'>[]>()
   for (const item of collected.items) {
+    const tally = breakdown.bySurface[item.surface]
+    tally.seen++
     if (excludeToolAuthored && isToolAuthored(item)) {
       counts.droppedAsToolAuthored++
+      tally.dropped.tool_authored++
       continue
     }
     if (isBotTemplate(item)) {
       counts.droppedAsTemplate++
+      tally.dropped.template_or_short++
       continue
     }
     const cleaned = cleanSampleText(item.text)
@@ -160,6 +181,7 @@ export function prepareSamples(
     const text = joinTitle(item, body)
     if (text.length < MIN_SAMPLE_CHARS || isOnlyStructure(text)) {
       counts.droppedAsTemplate++
+      tally.dropped.template_or_short++
       continue
     }
     const list = bySurface.get(item.surface) ?? []
@@ -176,25 +198,41 @@ export function prepareSamples(
   // Newest first within each surface, capped per surface, then interleaved.
   for (const [surface, list] of bySurface) {
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    breakdown.bySurface[surface].dropped.surface_limit += Math.max(0, list.length - SAMPLE_TARGETS[surface])
     bySurface.set(surface, list.slice(0, SAMPLE_TARGETS[surface]))
   }
   const samples: VoiceSample[] = []
   let bytes = 0
   const encoder = new TextEncoder()
-  for (let index = 0; samples.length < MAX_SAMPLES; index++) {
+  for (let index = 0; ; index++) {
     let any = false
     for (const surface of DERIVATION_SURFACES) {
       const next = bySurface.get(surface)?.[index]
       if (!next) continue
       any = true
       const size = encoder.encode(next.text).length
-      if (bytes + size > MAX_SAMPLE_INPUT_BYTES || samples.length >= MAX_SAMPLES) continue
+      const tally = breakdown.bySurface[surface]
+      if (samples.length >= MAX_SAMPLES) {
+        tally.dropped.sample_limit++
+        continue
+      }
+      if (bytes + size > MAX_SAMPLE_INPUT_BYTES) {
+        tally.dropped.input_byte_limit++
+        continue
+      }
+      tally.kept++
       bytes += size
       samples.push({ id: samples.length + 1, ...next })
     }
     if (!any) break
   }
   counts.kept = samples.length
+  for (const tally of Object.values(breakdown.bySurface)) {
+    breakdown.totals.seen += tally.seen
+    breakdown.totals.kept += tally.kept
+    for (const reason of Object.keys(tally.dropped) as Array<keyof typeof tally.dropped>)
+      breakdown.totals.dropped[reason] += tally.dropped[reason]
+  }
 
   const dateRange: SamplingSummary['dateRange'] = {}
   for (const sample of samples) {
@@ -211,6 +249,7 @@ export function prepareSamples(
 
   const summary: SamplingSummary = {
     filters,
+    breakdown,
     counts,
     dateRange,
     publicRepositories: repos(false),
@@ -220,6 +259,13 @@ export function prepareSamples(
     commitRepositoriesNotSampled: collected.commitRepositoriesNotSampled ?? [],
     toolAuthoredIsHeuristic: true,
   }
+  return { samples, summary }
+}
+
+/** Finalize the very same selector used for provisional progress. */
+export function prepareSamples(collected: CollectedActivity, filters: DerivationFilters) {
+  const { samples, summary } = summarizeSamples(collected, filters)
+  const { counts } = summary
   if (samples.length < MIN_SAMPLES)
     throw new DerivationError('derivation_too_few_samples', { counts, minimum: MIN_SAMPLES })
   return { samples, summary }

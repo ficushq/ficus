@@ -17,6 +17,7 @@ import {
 import { detectDeploymentFlavor, resolveRepoRoot, supportsAutoUpdate } from './deployment-flavor'
 import type { DeploymentFlavor } from './deployment-flavor'
 import { acquireUpdateRunLock, type UpdateRunLock } from './run-lock'
+import { advanceBuiltCommit, seedBuiltCommit } from './built-commit'
 import { DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS, MANUAL_UPDATE_TARGETS } from './types'
 import type { LocalAutoUpdateSettings, LocalUpdateRun, UpdateTask } from './types'
 
@@ -355,6 +356,8 @@ export class LocalUpdateManager {
     }
     try {
       run.beforeSha = (await this.git(['rev-parse', 'HEAD'])).trim()
+      // If this run pulls and then fails, the next update still knows where the builds stand.
+      seedBuiltCommit(dirname(this.statusPath), run.beforeSha)
       const remoteSha = await this.fetchLatestWithGithubAuth(cfg)
       // Classify by ANCESTRY before merging. `git merge --ff-only` fails with a
       // bare `fatal: Not possible to fast-forward, aborting.` whenever the
@@ -495,6 +498,12 @@ export class LocalUpdateManager {
 
   private persistLatest(run: LocalUpdateRun): void {
     this.latest = run
+    // Keep the built-commit record (built-commit.ts) in step, so an offline update
+    // after this one plans from the right commit. Only a full update that built its
+    // whole range counts: not a check, and not a rebuild of chosen targets.
+    if (run.status === 'succeeded' && !run.targeted && run.mode !== 'check' && run.beforeSha && run.afterSha) {
+      advanceBuiltCommit(dirname(this.statusPath), run.beforeSha, run.afterSha)
+    }
     try {
       mkdirSync(dirname(this.statusPath), { recursive: true })
       writeFileSync(this.statusPath, JSON.stringify(run))

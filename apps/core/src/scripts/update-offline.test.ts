@@ -320,6 +320,126 @@ describe('runOfflineUpdate', () => {
   })
 })
 
+// Regression: `ficus server update` pulled, a build failed (or the run was interrupted), and the
+// re-run started on the new commit. Its own range was empty, so it built nothing and restarted
+// onto a stale web app; only a hand-run `bun run build:web` fixed it.
+describe('runOfflineUpdate after a run that pulled but did not finish its builds', () => {
+  let root: string
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'ficus-offline-catchup-'))
+    mkdirSync(join(root, '.git'))
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  const OLD = 'a'.repeat(40)
+  const NEW = 'b'.repeat(40)
+  const env = { FICUS_SANDBOX_RUNTIME: 'host' }
+  /** The pull OLD -> NEW changed the web app; nothing changed after NEW. */
+  const git = async (args: string[]) => {
+    if (args[0] !== 'diff') return NEW + '\n'
+    return args.at(-1) === `${OLD}..HEAD` ? 'apps/web/src/y.tsx\n' : ''
+  }
+  const builtCommit = () => JSON.parse(readFileSync(join(root, '.ficus/built-commit.json'), 'utf8')).sha as string
+
+  it('builds what the failed run owed, then records the commit as built', async () => {
+    await expect(
+      runOfflineUpdate({
+        repoRoot: root,
+        fromSha: OLD,
+        env,
+        git,
+        runProcess: async () => ({ exitCode: 1, output: 'vite: build failed' }),
+      })
+    ).rejects.toThrow()
+    // The failed run leaves the record on the commit the builds still match.
+    expect(builtCommit()).toBe(OLD)
+
+    const ran: string[] = []
+    const rerun = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: NEW, // the checkout is already on NEW: this run's own pull changed nothing
+      env,
+      git,
+      runProcess: async (command) => {
+        ran.push(command.join(' '))
+        return { exitCode: 0, output: '' }
+      },
+    })
+    expect(ran).toEqual(['bun run build:web'])
+    expect(rerun.selectedTasks).toEqual(['web'])
+    expect(rerun.changedFiles).toEqual(['apps/web/src/y.tsx'])
+    expect(rerun.beforeSha).toBe(NEW)
+    expect(rerun.message).toBe(
+      'Ran 1 command(s). Planned from aaaaaaaaa, the last commit this checkout was built at, not only from this pull.'
+    )
+    expect(builtCommit()).toBe(NEW)
+
+    // Up to date and built: nothing left to do, and nothing is said about catching up.
+    const again = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: NEW,
+      env,
+      git,
+      runProcess: async () => {
+        throw new Error('nothing should run')
+      },
+    })
+    expect(again.commands).toEqual([])
+    expect(again.message).toBe('No build tasks needed for the changed files.')
+  })
+
+  it('catches up after the checkout was moved by hand', async () => {
+    // An earlier update built OLD; `git pull` by hand then moved the checkout to NEW.
+    mkdirSync(join(root, '.ficus'), { recursive: true })
+    writeFileSync(join(root, '.ficus/built-commit.json'), JSON.stringify({ sha: OLD }))
+    const ran: string[] = []
+    await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: NEW,
+      env,
+      git,
+      runProcess: async (command) => {
+        ran.push(command.join(' '))
+        return { exitCode: 0, output: '' }
+      },
+    })
+    expect(ran).toEqual(['bun run build:web'])
+    expect(builtCommit()).toBe(NEW)
+  })
+
+  it('plans from its own pull when the recorded commit is gone or unreadable', async () => {
+    mkdirSync(join(root, '.ficus'), { recursive: true })
+    const gone = 'd'.repeat(40)
+    writeFileSync(join(root, '.ficus/built-commit.json'), JSON.stringify({ sha: gone }))
+    const ranges: string[] = []
+    const run = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: OLD,
+      env,
+      git: async (args) => {
+        if (args[0] !== 'diff') return NEW + '\n'
+        ranges.push(args.at(-1)!)
+        if (args.at(-1) === `${gone}..HEAD`) throw new Error('fatal: bad object')
+        return 'apps/web/src/y.tsx\n'
+      },
+      runProcess: async () => ({ exitCode: 0, output: '' }),
+    })
+    expect(ranges).toEqual([`${gone}..HEAD`, `${OLD}..HEAD`])
+    expect(run.selectedTasks).toEqual(['web'])
+    expect(run.message).toBe('Ran 1 command(s).')
+
+    writeFileSync(join(root, '.ficus/built-commit.json'), 'not json')
+    const unreadable = await runOfflineUpdate({
+      repoRoot: root,
+      fromSha: NEW,
+      env,
+      git,
+      runProcess: async () => ({ exitCode: 0, output: '' }),
+    })
+    expect(unreadable.commands).toEqual([])
+  })
+})
+
 describe('runOfflineUpdate after an update whose Core build failed', () => {
   let root: string
   const entries = [

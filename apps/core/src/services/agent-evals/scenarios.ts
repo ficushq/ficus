@@ -1,3 +1,6 @@
+import { assemblerRepository } from './repository-fixtures'
+import { gradeRequester } from './requester-grade'
+import { requesterResponder } from './requester-fixture'
 import { join } from 'node:path'
 import type { Command } from 'commander'
 import {
@@ -41,6 +44,7 @@ import {
   fixtureDiscovery,
   fixtureRepositorySettings,
   isFixturePrInspection,
+  type FixtureRepository,
 } from './fixtures'
 const WS_NUMBER = 1300
 const PR = 950
@@ -188,12 +192,18 @@ const ghPrView = (overrides: Record<string, unknown>) =>
   })
 
 /** Answers common to most scenarios; a scenario's own responder runs first. */
-function respondWith(own: Responder = () => undefined, repository = true): Responder {
+function respondWith(own: Responder = () => undefined, repository: boolean | FixtureRepository = true): Responder {
   return async (call, variant) => {
     const command = call.command ?? ''
     const scripted = await own(call, variant)
     const settings = fixtureRepositorySettings(command)
-    const discovery = repository ? fixtureDiscovery(command) : undefined
+    const discovery =
+      repository && !(call.name === 'read' && scripted !== undefined)
+        ? fixtureDiscovery(
+            call.name === 'read' ? `cat ${String(call.args.path)}` : command,
+            typeof repository === 'object' ? repository : undefined
+          )
+        : undefined
     if (scripted !== undefined || settings !== undefined || discovery !== undefined)
       return [settings, scripted, discovery].filter((value) => value !== undefined).join('\n')
     if (hasInvocation(command, 'ficus', 'workstream', 'flow') || hasInvocation(command, 'ficus', 'ws', 'flow'))
@@ -207,7 +217,7 @@ function respondWith(own: Responder = () => undefined, repository = true): Respo
         branch: BRANCH,
         metadata: { git: { worktree: WORKTREE, branch: BRANCH, baseBranch: 'main' } },
       })
-    if (/\bgit (status|diff)/.test(command)) return ''
+    if (/^git (status|diff)(?: --short)?$/.test(command.trim())) return ''
     return undefined
   }
 }
@@ -939,7 +949,7 @@ export const SCENARIOS: AgentScenario[] = [
         if (/\bgh run view\b/.test(command))
           return 'core-unit: FAIL src/lib/prompts/squad-agent-prompt.test.ts\n  expected "## Memory System" (memory: { map: undefined })\n  at assembleSquadWorkerPrompt (squad-agent-prompt.ts:96)'
         return undefined
-      })
+      }, assemblerRepository(true))
     },
     grade: (trace) => {
       const reworkAt = indexOf(trace, shell(advanceWith(/"rework"|action[":\s]+rework|\brework\b/)))
@@ -968,57 +978,8 @@ export const SCENARIOS: AgentScenario[] = [
         'Please open a work stream to fix the flaky host budget test in apps/core/src/services/slots/host-budget.test.ts, and make me the reviewer.'
       ),
     ],
-    respond: respondWith((call) => {
-      const command = call.command ?? ''
-      if (/\bficus\b.*\bagent messages\b/.test(command))
-        return JSON.stringify({
-          messages: [
-            {
-              id: 'm-1',
-              role: 'human',
-              createdAt: '2026-11-18T15:20:11Z',
-              content: 'Is the slot pool rename done?',
-              metadata: { sender: PRIYA },
-            },
-            {
-              id: 'm-2',
-              role: 'human',
-              createdAt: '2026-11-18T15:58:40Z',
-              content:
-                'Please open a work stream to fix the flaky host budget test in apps/core/src/services/slots/host-budget.test.ts, and make me the reviewer.',
-              metadata: { sender: NOAH },
-            },
-          ],
-        })
-      if (/\bficus whoami\b/.test(command))
-        return `Instance: https://ficus.example\nIdentity: agent ${FIXTURE_SQUAD.agentId} (Manager)\nCredential: injected FICUS_TOKEN`
-      if (/\bficus (workstream|ws) reviewers\b/.test(command))
-        return JSON.stringify([
-          { userId: NOAH.userId, name: 'noah' },
-          { userId: PRIYA.userId, name: 'priya' },
-        ])
-      if (/\bficus (workstream|ws) (create|new)\b/.test(command))
-        return `Created work stream #1301 (${'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d'})`
-      return undefined
-    }),
-    grade: (trace) => {
-      const creates = shellCommands(trace).filter((command) => /\bficus (workstream|ws) (create|new)\b/.test(command))
-      if (creates.length === 0)
-        return endsWithChatQuestion(finalText(trace))
-          ? fail('Asked in chat instead of reading the sender metadata.')
-          : fail('Did not create the work stream.')
-      const withNoah = creates.some(
-        (command) => command.includes(`--reviewer ${NOAH.userId}`) || command.includes(`--reviewer=${NOAH.userId}`)
-      )
-      const withOther = creates.some(
-        (command) => command.includes(PRIYA.userId) || command.includes(FIXTURE_SQUAD.agentId)
-      )
-      return allOf(
-        "Made the message's sender, from its metadata, the reviewer.",
-        [!withOther, 'Used the wrong identity (another sender, or its own) as the reviewer.'],
-        [withNoah, 'Did not set the requester as reviewer by user id.']
-      )
-    },
+    createResponder: () => respondWith(requesterResponder()),
+    grade: (trace) => gradeRequester(trace, NOAH.userId, [PRIYA.userId, FIXTURE_SQUAD.agentId]),
   }),
 
   defineScenario({
@@ -1167,7 +1128,7 @@ export const SCENARIOS: AgentScenario[] = [
       if (advanceWith(/./)(call.command ?? ''))
         return JSON.stringify({ version: 5, workStreamStatus: 'active', assignments: [] })
       return undefined
-    }),
+    }, assemblerRepository()),
     grade: (trace) => {
       const advance = shellCommands(trace).find(advanceWith(/evidence/))
       if (!advance) return fail('Did not submit the step with evidence.')

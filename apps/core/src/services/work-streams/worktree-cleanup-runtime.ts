@@ -19,6 +19,8 @@ export interface WorktreeRemovalReceipt {
   reason: string
   /** Shared refs (refs/ficus-archive/<scope>/<oid>) preserving reflog-only history removed with the worktree. */
   archivedRefs?: string[]
+  /** A recovery cancellation/settlement must never be re-armed by a late dispatcher. */
+  reconciled?: true
   operationId: string
   digest: string
 }
@@ -72,11 +74,41 @@ export async function readWorktreeRemovalReceipt(
   return invoke(exec, input, 'probe')
 }
 
+export type WorktreeRemovalReconciliation =
+  | WorktreeRemovalReceipt
+  | {
+      status: 'uncertain'
+      reason: string
+      operationId: string
+      digest: string
+      tree: 'present' | 'missing' | 'replaced'
+    }
+
+/** Never dispatches deletion. It may seal an undispatched claim, or record a
+ * separate settlement backed by an immutable terminal failure and runtime proof.
+ * An active marker without a receipt is never expired or taken over. */
+export async function reconcileWorktreeRemoval(
+  exec: RepositoryExec,
+  input: WorktreeRemovalInput
+): Promise<WorktreeRemovalReconciliation> {
+  return invoke(exec, input, 'reconcile')
+}
+
 async function invoke(
   exec: RepositoryExec,
   input: WorktreeRemovalInput,
   mode: 'remove' | 'probe'
-): Promise<WorktreeRemovalReceipt> {
+): Promise<WorktreeRemovalReceipt>
+async function invoke(
+  exec: RepositoryExec,
+  input: WorktreeRemovalInput,
+  mode: 'reconcile'
+): Promise<WorktreeRemovalReconciliation>
+async function invoke(
+  exec: RepositoryExec,
+  input: WorktreeRemovalInput,
+  mode: 'remove' | 'probe' | 'reconcile'
+): Promise<WorktreeRemovalReconciliation> {
   // PostgreSQL jsonb may reorder both outer and nested keys on recovery.
   const serialized = JSON.stringify({
     head: input.head,
@@ -86,15 +118,20 @@ async function invoke(
     ...(input.evidence ? { evidence: { files: input.evidence.files, identities: input.evidence.identities } } : {}),
   })
   const raw = await exec(['sh', '-c', runner, 'ficus-worktree-cleanup', serialized, mode])
-  const receipt = JSON.parse(raw) as WorktreeRemovalReceipt
+  const receipt = JSON.parse(raw) as WorktreeRemovalReconciliation
   if (
     !receipt ||
     receipt.operationId !== input.operationId ||
     receipt.digest !== createHash('sha256').update(serialized).digest('hex') ||
-    !['succeeded', 'retained', 'failed'].includes(receipt.status) ||
+    !(
+      mode === 'reconcile' ? ['succeeded', 'retained', 'failed', 'uncertain'] : ['succeeded', 'retained', 'failed']
+    ).includes(receipt.status) ||
+    (receipt.status === 'uncertain' && !['present', 'missing', 'replaced'].includes(receipt.tree)) ||
     typeof receipt.reason !== 'string' ||
-    (receipt.archivedRefs !== undefined &&
-      (!Array.isArray(receipt.archivedRefs) || receipt.archivedRefs.some((ref) => typeof ref !== 'string')))
+    ('reconciled' in receipt && receipt.reconciled !== true) ||
+    ('archivedRefs' in receipt &&
+      receipt.archivedRefs !== undefined &&
+      (!Array.isArray(receipt.archivedRefs) || receipt.archivedRefs.some((ref: unknown) => typeof ref !== 'string')))
   ) {
     throw new Error('Worktree cleanup outcome is unproven; keep the reuse fence')
   }

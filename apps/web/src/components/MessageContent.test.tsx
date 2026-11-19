@@ -62,6 +62,51 @@ ficus inbox read m1
     expect(html).not.toContain('Show more')
   })
 
+  for (const mode of ['steer', 'follow-up'] as const) {
+    test(`keeps an explicitly selected inbox ${mode} label after consumption and JSON reload`, () => {
+      const metadata: MessageMetadata = {
+        source: 'inbox',
+        deliveryMode: mode,
+        inboxDeliveryMode: mode,
+        inboxMessageIds: ['m1'],
+        inboxMessageSummaries: [
+          { id: 'm1', senderType: 'system', senderId: null, subject: 'Work', preview: 'Do this' },
+        ],
+      }
+      const render = (queued: boolean) =>
+        renderToStaticMarkup(
+          <HumanMessageContent
+            content={framedInbox('Work', 'Do this')}
+            metadata={JSON.parse(JSON.stringify(metadata))}
+            deliveryControl={queued ? { onChange: () => {} } : undefined}
+          />
+        )
+      for (const queued of [true, false]) {
+        const html = render(queued)
+        expect(html).toContain(mode === 'steer' ? '>Interrupt<' : '>Follow up<')
+        expect(html).not.toContain(mode === 'steer' ? '>Follow up<' : '>Interrupt<')
+      }
+    })
+  }
+
+  test('shows original follow-up intent for automatic idle-agent steering in history', () => {
+    const html = renderToStaticMarkup(
+      <HumanMessageContent
+        content={framedInbox('Work', 'Do this')}
+        metadata={{
+          source: 'inbox',
+          deliveryMode: 'steer',
+          inboxDeliveryMode: 'follow-up',
+          inboxMessageSummaries: [
+            { id: 'm1', senderType: 'system', senderId: null, subject: 'Work', preview: 'Do this' },
+          ],
+        }}
+      />
+    )
+    expect(html).toContain('>Follow up<')
+    expect(html).not.toContain('>Interrupt<')
+  })
+
   test('truncates a long inbox body behind Show more', () => {
     const longBody = `${'word '.repeat(120)}THE_TAIL_SHOULD_BE_HIDDEN`
     const metadata = {

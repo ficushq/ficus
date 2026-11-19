@@ -116,7 +116,7 @@ React Query keys are centralized in `packages/client-core/src/queryKeys.ts`.
 
 - Web and Expo subscribe globally to the bare `actions` WebSocket topic. An empty `actions.invalidated` frame invalidates both `actions.all` and `agentQuestions.all`.
 - Every successful authenticated socket open, including reconnect, queues the same reconciliation.
-- Existing `agent-question.*`, agent, and work-stream events remain compatible hints for old servers and clients.
+- Existing `agent-question.*`, agent, and work-stream events remain compatible hints for old servers and clients. On the web, an agent status tick (`agent.updated`) or an execution event is only such a backstop, so it refetches the list at most once every five seconds; a question, an agent waiting on a person, and an agent being created or ended still refetch at once.
 - Both web and Expo poll pending actions every 30 seconds while mounted and foregrounded. Screen focus and pull-to-refresh are additive fallbacks.
 - Bursts coalesce. Refetches use `cancelRefetch: false`, and a trailing retry preserves the final authoritative state when a hint arrives during an in-flight request.
 - Background refetch retains cached cards and counts; it never renders a transient zero or empty success.

@@ -68,7 +68,7 @@ Result: no regression.
 
 ## Provenance and limitations
 
-Earlier cohorts are preserved separately in this directory and documented in `README.md`,
+Earlier full cohorts are preserved in the shared task archive referenced by `README.md`,
 including all failed results. Pre-voice recordings omitted public voice and are historical only.
 Successive fresh full cohorts exposed fixture contradictions rather than being silently discarded:
 completed versus running assignments, stale edit reads, missing discovery/settings facts, missing
@@ -87,3 +87,13 @@ Known remaining weaknesses: requester-identity is 0/3 on both variants and model
 ci-failure-rework remains 0/3 on both; Opus readable-handoff falls from 2/3 to 0/3. Passing this
 comparison does not waive those findings. The command extractor covers the shell forms exercised
 by these evals and is not a general Bash evaluator or a runtime security boundary.
+
+## Trace review follow-up
+
+The subsequent [trace review](https://github.com/ficushq/ficus/pull/952#pullrequestreview-5979999689)
+identified the Opus readable-handoff decline as a contradictory fixture, not worse guidance. The
+claimed assembler commit is scripted as a slot-change commit and the expected assembler files are
+absent; new-text agents correctly refuse to submit unverifiable work. Scores above remain the
+original measured values. Repair that fixture before using it to measure prose again. Requester
+identity and fast-tier rework also need a failure-source diagnosis before later guidance areas rely
+on their baseline signal. These follow-ups do not alter this recorded cohort or its relative rule.

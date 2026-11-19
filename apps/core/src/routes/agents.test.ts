@@ -2009,6 +2009,57 @@ describe('GET /api/agents (filtered list)', () => {
     expect(ids).toContain(squadAgent.id)
     expect(ids).not.toContain(squadlessAgent.id)
   })
+
+  // The unfiltered list is every agent the instance ever had, about 2 KB each. Lists that only
+  // place an agent (a stream's assignee, a squad's head count) ask for summary rows instead.
+  it('view=summary returns the same agents as id, type, squad, parent and status only', async () => {
+    const full = await app.request(`/api/agents?agentTypeId=${testAgentTypeId}`, { headers: authHeaders(admin.token) })
+    const res = await app.request(`/api/agents?agentTypeId=${testAgentTypeId}&view=summary`, {
+      headers: authHeaders(admin.token),
+    })
+    expect(res.status).toBe(200)
+    const rows = (await res.json()) as Array<Record<string, unknown>>
+    expect(rows.map((row) => row.id).sort()).toEqual(
+      ((await full.json()) as Array<{ id: string }>).map((a) => a.id).sort()
+    )
+    const row = rows.find((candidate) => candidate.id === squadAgent.id)!
+    expect(row).toEqual({
+      id: squadAgent.id,
+      agentTypeId: testAgentTypeId,
+      squadId,
+      parentAgentId: null,
+      status: squadAgent.status,
+    })
+
+    expect((await app.request('/api/agents?view=everything', { headers: authHeaders(admin.token) })).status).toBe(400)
+  })
+
+  it('view=summary applies the same visibility, and live=true drops dormant and terminated agents', async () => {
+    const squadUser = await createTestUser({ prefix: rbacPrefix })
+    const readerRole = await createTestRole({ permissions: ['agents:read'], prefix: rbacPrefix })
+    await assignRole({ userId: squadUser.id, roleId: readerRole.id, scope: 'squad', squadId })
+    const scoped = await app.request(`/api/agents?agentTypeId=${testAgentTypeId}&view=summary`, {
+      headers: authHeaders(squadUser.token),
+    })
+    const scopedIds = ((await scoped.json()) as Array<{ id: string }>).map((row) => row.id)
+    expect(scopedIds).toContain(squadAgent.id)
+    expect(scopedIds).not.toContain(squadlessAgent.id)
+
+    await db.update(agents).set({ status: 'terminated', terminatedAt: new Date() }).where(eq(agents.id, squadAgent.id))
+    const idsFor = async (query: string) =>
+      (
+        (await (
+          await app.request(`/api/agents?agentTypeId=${testAgentTypeId}&${query}`, {
+            headers: authHeaders(admin.token),
+          })
+        ).json()) as Array<{ id: string }>
+      ).map((row) => row.id)
+    expect(await idsFor('view=summary')).toContain(squadAgent.id)
+    expect(await idsFor('view=summary&live=true')).not.toContain(squadAgent.id)
+    expect(await idsFor('view=summary&live=true')).toContain(squadlessAgent.id)
+    // The full view takes the same filter.
+    expect(await idsFor('live=true')).not.toContain(squadAgent.id)
+  })
 })
 
 // ── GET /api/agents/:id for squad-less agents ─────────────────────────────────

@@ -1,3 +1,4 @@
+import { VoiceDerivationCancelled } from '../voice-progress'
 import { readFileSync } from 'fs'
 import type { Command } from 'commander'
 import {
@@ -88,7 +89,7 @@ export function registerSquadVoiceCommands(squad: Command) {
       try {
         await fn(...args)
       } catch (error) {
-        outputError(error as Error)
+        outputError(error as Error, error instanceof VoiceDerivationCancelled ? error.exitCode : 1)
       }
     }
   const show = (state: SquadPublicVoiceState) => (isJsonMode() ? output(state) : printState(state))

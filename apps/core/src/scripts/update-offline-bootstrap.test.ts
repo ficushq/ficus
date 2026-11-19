@@ -18,6 +18,7 @@ import { bootstrapOfflineUpdate, USAGE, type BootstrapProcess } from './update-o
 const REPO_ROOT = join(import.meta.dir, '../../../..')
 const BOOTSTRAP = join(import.meta.dir, 'update-offline-bootstrap.ts')
 const DEPENDENCY_INSTALL = join(import.meta.dir, '../services/updates/dependency-install.ts')
+const BUILT_COMMIT = join(import.meta.dir, '../services/updates/built-commit.ts')
 const FROM = 'a'.repeat(40)
 const UPDATE = ['bun', 'update-offline.ts']
 
@@ -33,13 +34,25 @@ function importSpecifiers(source: string): string[] {
 }
 
 describe('the bootstrap loads nothing the previous release may not have installed', () => {
-  it('imports only built-ins and the import-free dependency-install module', () => {
+  it('imports only built-ins and the two modules that import nothing else', () => {
     const specifiers = importSpecifiers(readFileSync(BOOTSTRAP, 'utf8'))
     expect(specifiers.length).toBeGreaterThan(0)
     for (const specifier of specifiers) {
-      expect(specifier.startsWith('node:') || specifier === '../services/updates/dependency-install').toBe(true)
+      expect(
+        specifier.startsWith('node:') ||
+          specifier === '../services/updates/dependency-install' ||
+          specifier === '../services/updates/built-commit'
+      ).toBe(true)
     }
     expect(readFileSync(BOOTSTRAP, 'utf8')).not.toMatch(/\bimport\s*\(|\brequire\s*\(/)
+  })
+  it('built-commit.ts imports only Node built-ins', () => {
+    const source = readFileSync(BUILT_COMMIT, 'utf8')
+    const specifiers = importSpecifiers(source)
+    expect(specifiers.length).toBeGreaterThan(0)
+    for (const specifier of specifiers) expect(specifier.startsWith('node:')).toBe(true)
+    expect(source).not.toMatch(/\bimport\s*\(|\brequire\s*\(/)
+    expect(source).not.toContain('process.env')
   })
   it('dependency-install.ts imports nothing', () => {
     const source = readFileSync(DEPENDENCY_INSTALL, 'utf8')
@@ -135,6 +148,65 @@ describe('bootstrapOfflineUpdate', () => {
       `git diff --name-only ${FROM}..HEAD`,
       `bun update-offline.ts -- --from ${FROM}`,
     ])
+  })
+
+  // Regression: a run that pulled and then failed left the checkout on the new commit. The next
+  // run's own range was empty, so it skipped the install (and every build) the first one owed.
+  it('diffs from the last commit the checkout was built at, not only from this pull', async () => {
+    mkdirSync(join(root, 'node_modules/@ficus/shared'), { recursive: true })
+    const built = 'c'.repeat(40)
+    write(join(root, '.ficus/built-commit.json'), JSON.stringify({ sha: built }))
+    const ranges: string[] = []
+    const run: BootstrapProcess = async (command) => {
+      if (command[0] !== 'git') return { code: 0, stdout: '' }
+      ranges.push(command.at(-1)!)
+      // Nothing changed in this pull; the dependencies changed since the last build.
+      return { code: 0, stdout: command.at(-1) === `${built}..HEAD` ? 'bun.lock\n' : '' }
+    }
+    const commands: string[][] = []
+    const code = await bootstrapOfflineUpdate({
+      root,
+      args: ['--from', FROM],
+      run: async (command, options) => {
+        commands.push(command)
+        return run(command, options)
+      },
+      updateCommand: UPDATE,
+      log: () => {},
+      error: () => {},
+    })
+    expect(code).toBe(0)
+    expect(ranges).toEqual([`${built}..HEAD`])
+    expect(commands.map((command) => command.join(' '))).toEqual([
+      `git diff --name-only ${built}..HEAD`,
+      'bun install --frozen-lockfile',
+      `bun update-offline.ts --from ${FROM} ${BOOTSTRAP_INSTALLED_FLAG}`,
+    ])
+  })
+
+  it('records the starting commit on a first run, and falls back to it when the recorded one is gone', async () => {
+    mkdirSync(join(root, 'node_modules/@ficus/shared'), { recursive: true })
+    const quiet = { updateCommand: UPDATE, log: () => {}, error: () => {} }
+    const first = fakeRun('')
+    expect(await bootstrapOfflineUpdate({ root, args: ['--from', FROM], run: first.run, ...quiet })).toBe(0)
+    expect(JSON.parse(readFileSync(join(root, '.ficus/built-commit.json'), 'utf8')).sha).toBe(FROM)
+
+    // A recorded commit this repository no longer has: git cannot diff from it.
+    const gone = 'd'.repeat(40)
+    write(join(root, '.ficus/built-commit.json'), JSON.stringify({ sha: gone }))
+    const ranges: string[] = []
+    const code = await bootstrapOfflineUpdate({
+      root,
+      args: ['--from', FROM],
+      run: async (command) => {
+        if (command[0] !== 'git') return { code: 0, stdout: '' }
+        ranges.push(command.at(-1)!)
+        return command.at(-1) === `${gone}..HEAD` ? { code: 128, stdout: '' } : { code: 0, stdout: '' }
+      },
+      ...quiet,
+    })
+    expect(code).toBe(0)
+    expect(ranges).toEqual([`${gone}..HEAD`, `${FROM}..HEAD`])
   })
 
   it('installs when the diff cannot be read, and lets the update report that', async () => {
@@ -252,6 +324,7 @@ describe('bun run update:offline across a package-scope rename (real processes)'
     mkdirSync(join(root, 'apps/core/src/services/updates'), { recursive: true })
     copyFileSync(BOOTSTRAP, join(root, 'apps/core/src/scripts/update-offline-bootstrap.ts'))
     copyFileSync(DEPENDENCY_INSTALL, join(root, 'apps/core/src/services/updates/dependency-install.ts'))
+    copyFileSync(BUILT_COMMIT, join(root, 'apps/core/src/services/updates/built-commit.ts'))
     write(
       join(root, 'apps/core/src/scripts/update-offline.ts'),
       `import { scope } from '@ficus/shared'\nconsole.log('REAL UPDATE', scope, JSON.stringify(process.argv.slice(2)))\n`

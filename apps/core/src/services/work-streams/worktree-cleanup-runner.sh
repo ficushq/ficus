@@ -103,21 +103,88 @@ try { fs.mkdirSync(records, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXI
 physical(records);
 const active = path.join(records, operationId);
 const receipt = path.join(active, 'receipt.json');
-const replay = () => {
-  physical(active); physical(receipt);
-  const result = JSON.parse(fs.readFileSync(receipt, 'utf8'));
-  if (result.digest !== digest || result.operationId !== operationId) fail('Cleanup receipt identity mismatch');
-  console.log(JSON.stringify(result));
+const mode = process.argv[3];
+const emit = (result) => console.log(JSON.stringify(result));
+const readReceipt = (file) => {
+  physical(active); physical(file);
+  const result = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (result.digest !== digest || result.operationId !== operationId ||
+      !['succeeded', 'retained', 'failed'].includes(result.status)) fail('Cleanup receipt identity mismatch');
+  return result;
 };
-if (exists(active)) { replay(); process.exit(0); }
-if (process.argv[3] === 'probe') fail('No terminal cleanup receipt; keep the reuse fence');
-try { fs.mkdirSync(active, { mode: 0o700 }); }
-catch (e) { if (e.code !== 'EEXIST') throw e; replay(); process.exit(0); }
-// Persist the exclusive claim before any destructive action. A duplicate may
-// read a terminal receipt, but never takes over an interrupted active record.
-for (const directory of [o.commonDirectory, records, active]) {
+const syncDirectory = (directory) => {
   const fd = fs.openSync(directory, 'r');
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+};
+// Publish only complete, fsynced records. link is exclusive: concurrent recovery
+// cannot overwrite the first immutable settlement or expose a partial JSON file.
+const publish = (file, result) => {
+  const temporary = path.join(active, crypto.randomUUID() + '.tmp');
+  const fd = fs.openSync(temporary, 'wx', 0o600);
+  try { fs.writeFileSync(fd, JSON.stringify(result)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.linkSync(temporary, file); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  finally { fs.unlinkSync(temporary); }
+  syncDirectory(active);
+  return readReceipt(file);
+};
+const treeState = () => {
+  if (!exists(o.worktree)) return 'missing';
+  const stat = fs.lstatSync(o.worktree, { bigint: true });
+  return stat.isDirectory() && !stat.isSymbolicLink() && fs.realpathSync(o.worktree) === o.worktree &&
+    `${stat.dev}:${stat.ino}` === o.directoryIdentity ? 'present' : 'replaced';
+};
+const uncertain = (reason) => {
+  const tree = treeState();
+  return { status: 'uncertain', reason: reason + ' Observed owned directory: ' + tree + '.', tree, operationId, digest };
+};
+const replay = () => {
+  if (mode !== 'reconcile') return readReceipt(receipt);
+  physical(active);
+  if (!exists(receipt)) return uncertain('No terminal receipt; the operation may still be running. Keep the reuse fence.');
+  const terminal = readReceipt(receipt);
+  if (terminal.status !== 'failed') return terminal;
+  // A terminal failed receipt proves the original runner ended its destructive
+  // phase; all late requests replay it. Keep it immutable and write separate proof.
+  const settlement = path.join(active, 'reconciliation.json');
+  const terminalReceiptHash = crypto.createHash('sha256').update(fs.readFileSync(receipt)).digest('hex');
+  if (exists(settlement)) {
+    const result = readReceipt(settlement);
+    if (result.terminalReceiptHash !== terminalReceiptHash) fail('Terminal receipt changed');
+    return result;
+  }
+  const state = treeState();
+  const registrations = git(o.repository, 'worktree', 'list', '--porcelain', '-z').split('\0\0');
+  const registered = registrations.some((record) => record.split('\0')[0] === `worktree ${o.worktree}`);
+  let result;
+  if (state === 'missing' && !exists(o.gitDirectory) && !registered) {
+    result = { status: 'succeeded', reason: 'Terminal failed operation reconciled: owned directory and private Git directory are absent; no registration remains' };
+  } else if (state === 'present' && exists(o.gitDirectory) && registered) {
+    physical(o.gitDirectory);
+    if (!fs.lstatSync(path.join(o.worktree, '.git')).isFile() ||
+        git(o.worktree, 'rev-parse', '--show-toplevel').trim() !== o.worktree ||
+        git(o.worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir').trim() !== o.commonDirectory ||
+        git(o.worktree, 'rev-parse', '--path-format=absolute', '--git-dir').trim() !== o.gitDirectory)
+      return uncertain('Terminal failure left an unproven registration; keep the reuse fence.');
+    result = { status: 'retained', reason: 'Terminal failed operation reconciled: original registered directory retained; automatic removal stopped' };
+  } else return uncertain('Terminal failure left residual or replaced resources; keep the reuse fence.');
+  return publish(settlement, { ...result, operationId, digest, terminalReceiptHash, reconciled: true });
+};
+if (exists(active)) { emit(replay()); process.exit(0); }
+if (mode === 'probe') fail('No terminal cleanup receipt; keep the reuse fence');
+try { fs.mkdirSync(active, { mode: 0o700 }); }
+catch (e) { if (e.code !== 'EEXIST') throw e; emit(replay()); process.exit(0); }
+// Persist the exclusive claim before any destructive action. A duplicate may
+// read a terminal receipt, but never takes over an interrupted active record.
+for (const directory of [o.commonDirectory, records, active]) syncDirectory(directory);
+if (mode === 'reconcile') {
+  // Winning the SAME exclusive marker proves dispatch never started. Sealing it
+  // cancels the stale claim and prevents delayed original requests from deleting.
+  // Use the legacy failed status for the cancellation tombstone. An older
+  // dispatcher must keep its fence, never treat this as a retryable preflight
+  // retention and clear the operation. Reconcile publishes separate settlement.
+  publish(receipt, { status: 'failed', reason: 'Undispatched operation sealed without removal; automatic removal stopped', operationId, digest, reconciled: true });
+  emit(replay());
+  process.exit(0);
 }
 let removalStarted = false;
 let outcome;
@@ -283,9 +350,5 @@ try {
   outcome = { status: removalStarted ? 'failed' : 'retained', reason: String(error.message).slice(0, 500) };
 }
 const result = { ...outcome, operationId, digest };
-const fd = fs.openSync(receipt, 'wx', 0o600);
-try { fs.writeFileSync(fd, JSON.stringify(result)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-const directoryFd = fs.openSync(active, 'r');
-try { fs.fsyncSync(directoryFd); } finally { fs.closeSync(directoryFd); }
-console.log(JSON.stringify(result));
+emit(publish(receipt, result));
 BUN_SCRIPT

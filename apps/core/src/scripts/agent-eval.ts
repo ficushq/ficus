@@ -12,7 +12,8 @@
  * only (for example ANTHROPIC_API_KEY); no database, stored account or provider settings are read.
  * Exits 1 when the new text regresses. See docs/wiki/agent-behaviour-evals.md.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
@@ -35,6 +36,8 @@ process.env.DATABASE_URL ||= 'postgres://agent-evals:unused@127.0.0.1:1/unused'
 // Production squads run on the vm sandbox runtime; the workspace section depends on it.
 process.env.FICUS_SANDBOX_RUNTIME ||= 'vm'
 
+const { runBatch, writeRecordingSnapshot } = await import('../services/agent-evals/batch')
+const { HARNESS_REVISION } = await import('../services/agent-evals/define')
 const { SCENARIOS, findScenario } = await import('../services/agent-evals/scenarios')
 const { resolveVariant } = await import('../services/agent-evals/variant')
 const { assembleScenarioPrompt } = await import('../services/agent-evals/prompt')
@@ -79,7 +82,39 @@ async function main(): Promise<number> {
   }
 
   console.error(`Running ${jobs.length} agent turns (old: ${oldVariant.label}, new: ${newVariant.label})`)
-  const runs = await runPool(jobs, Number(flag('concurrency') ?? 3))
+  const markdown = flag('markdown')
+  const recordFile = flags.has('record')
+    ? join(
+        import.meta.dir,
+        '../services/agent-evals/recordings',
+        `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+      )
+    : undefined
+  const harnessCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  if (markdown) writeFileSync(markdown, 'Incomplete cohort: the live batch is running. No comparison is accepted.\n')
+  let reported = 0
+  const batch = await runBatch(jobs, Number(flag('concurrency') ?? 3), (snapshot) => {
+    if (recordFile)
+      writeRecordingSnapshot(recordFile, {
+        old: oldVariant.label,
+        new: newVariant.label,
+        harnessRevision: HARNESS_REVISION,
+        harnessCommit,
+        ...snapshot,
+      })
+    if (snapshot.runs.length !== reported && (snapshot.runs.length % 10 === 0 || snapshot.status === 'complete')) {
+      reported = snapshot.runs.length
+      console.error(`${reported}/${jobs.length} turns done`)
+    }
+  })
+  if (batch.errors.length) {
+    const message = `Incomplete cohort: ${batch.snapshot.runs.length}/${jobs.length} runs completed; ${batch.errors.length} jobs failed. No comparison is accepted.`
+    console.error(message)
+    if (recordFile) console.error(`Partial evidence: ${recordFile}`)
+    if (markdown) writeFileSync(markdown, `${message}\n`)
+    throw batch.errors[0]!.error
+  }
+  const runs = batch.snapshot.runs
   const oldRuns = runs.filter((run) => run.variant === oldVariant.label)
   const newRuns = runs.filter((run) => run.variant === newVariant.label)
   const comparison = compareRuns(scenarios, oldRuns, newRuns)
@@ -89,32 +124,9 @@ async function main(): Promise<number> {
     .map((run) => `- ${run.variant} / ${run.model} / ${run.scenario} #${run.repeat}: ${run.verdict.reason}`)
   console.log(`${report}\n\nFailed runs:\n${failuresByRun.join('\n') || '- none'}`)
 
-  const markdown = flag('markdown')
   if (markdown) writeFileSync(markdown, `${report}\n\nFailed runs:\n${failuresByRun.join('\n') || '- none'}\n`)
-  if (flags.has('record')) {
-    const directory = join(import.meta.dir, '../services/agent-evals/recordings')
-    mkdirSync(directory, { recursive: true })
-    const file = join(directory, `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`)
-    writeFileSync(file, `${JSON.stringify({ old: oldVariant.label, new: newVariant.label, runs }, null, 1)}\n`)
-    console.error(`Recorded ${runs.length} runs in ${file}`)
-  }
+  if (recordFile) console.error(`Recorded ${runs.length} runs in ${recordFile}`)
   return comparison.failures.length === 0 ? 0 : 1
-}
-
-async function runPool<T>(jobs: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
-  const results: T[] = new Array(jobs.length)
-  let next = 0
-  let done = 0
-  const worker = async () => {
-    while (next < jobs.length) {
-      const index = next++
-      results[index] = await jobs[index]!()
-      done += 1
-      if (done % 10 === 0 || done === jobs.length) console.error(`${done}/${jobs.length} turns done`)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker))
-  return results
 }
 
 function fail(message: string): never {

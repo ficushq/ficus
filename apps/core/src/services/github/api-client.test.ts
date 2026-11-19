@@ -176,3 +176,30 @@ test('confirmed-missing mode does not turn null success bodies or refused redire
       githubApiGet(`/repos/owner/repo/issues/${number}`, 'squad', undefined, { confirmedMissingOnly: true })
     ).rejects.toBeInstanceOf(GitHubApiUnavailableError)
 })
+
+test('GraphQL caller cancellation reaches fetch and is not classified as GitHub unavailable', async () => {
+  spies.push(
+    spyOn(resolveConnection, 'resolveGitHubConnection').mockResolvedValue({
+      credential: { accessToken: 'fixture-token' },
+    } as any)
+  )
+  const controller = new AbortController()
+  let reachedFetch!: () => void
+  const reached = new Promise<void>((resolve) => {
+    reachedFetch = resolve
+  })
+  let signal: AbortSignal | undefined
+  spies.push(
+    spyOn(globalThis, 'fetch').mockImplementation((async (_, init) => {
+      signal = init?.signal ?? undefined
+      reachedFetch()
+      return new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }))
+    }) as typeof fetch)
+  )
+  const pending = githubApiGraphql('query {}', {}, 'fixture-squad', undefined, { signal: controller.signal })
+  await reached
+  const reason = new DOMException('Fixture cancelled', 'AbortError')
+  controller.abort(reason)
+  await expect(pending).rejects.toBe(reason)
+  expect(signal!.aborted).toBe(true)
+})

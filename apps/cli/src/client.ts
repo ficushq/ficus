@@ -1,3 +1,4 @@
+import { VOICE_DERIVATION_ACCEPT } from '@ficus/shared'
 import { config } from './config'
 import { ApiRequestError, formatApiErrorPayload } from './client-errors'
 
@@ -36,6 +37,18 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   })
   if (!response.ok) await throwApiError(response)
   return response.json()
+}
+
+/** Authenticated, checked POST whose body stays unread for a negotiated stream. */
+export async function apiPostResponse(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: VOICE_DERIVATION_ACCEPT },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) await throwApiError(response)
+  return response
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {

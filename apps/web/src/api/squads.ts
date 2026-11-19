@@ -245,7 +245,12 @@ export async function listActiveWorkStreams(
 
 /** The feed's active-work list, server-filtered to what this user has not muted for progress. */
 export async function listAttentionWorkStreams(fetch: typeof apiFetch = apiFetch): Promise<WorkStream[]> {
-  const params = new URLSearchParams({ statuses: WS_ACTIVE_STATUSES.join(','), respectAttention: 'true' })
+  // The feed's rows show no description; a stream's detail view loads its own.
+  const params = new URLSearchParams({
+    statuses: WS_ACTIVE_STATUSES.join(','),
+    respectAttention: 'true',
+    omitDescription: 'true',
+  })
   return fetch<WorkStream[]>(`/workstreams?${params.toString()}`)
 }
 
@@ -259,6 +264,8 @@ export async function listDoneWorkStreams(
     completedBefore?: string
     feedUpdates?: boolean
     cursor?: string | null
+    /** For lists whose rows show no description: it is most of a row's bytes. */
+    omitDescription?: boolean
   },
   fetch: typeof apiFetch = apiFetch
 ): Promise<DoneWorkStreamsPage> {
@@ -271,6 +278,7 @@ export async function listDoneWorkStreams(
   if (opts.completedAfter) params.set('completedAfter', opts.completedAfter)
   if (opts.completedBefore) params.set('completedBefore', opts.completedBefore)
   if (opts.feedUpdates) params.set('feedUpdates', 'true')
+  if (opts.omitDescription) params.set('omitDescription', 'true')
   if (opts.cursor) params.set('cursor', opts.cursor)
   return fetch<DoneWorkStreamsPage>(`/workstreams?${params.toString()}`)
 }

@@ -598,3 +598,41 @@ test('dependent fences retain uncertain errors but release after terminal remova
   await (await WorkStream.mustFind(other.id)).reopen()
   expect(['active', 'queued']).toContain((await WorkStream.mustFind(other.id)).status)
 })
+
+for (const reason of ['Legacy failed receipt', 'Automatic reconciliation stopped: unknown outcome'] as const) {
+  test(`${reason} keeps lifecycle, dependent, execution and attachment fences intact`, async () => {
+    const { WorkStream } = await import('../../entities/WorkStream')
+    const other = await dependent()
+    expect(await claim()).not.toBeNull()
+    await db
+      .update(worktreeCleanupJobs)
+      .set({ status: 'error', reason })
+      .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+    expect(await store.cleanupWorktreeForAgent(agentId)).toBe(streamId)
+    await expect((await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })).rejects.toThrow(
+      /cleanup|removal/i
+    )
+    await expect((await WorkStream.mustFind(other.id)).reopen()).rejects.toThrow(/cleanup|removal/i)
+    await expect(
+      db.transaction((tx) =>
+        store.assertWorktreeAttachmentsAvailable(tx, {
+          id: other.id,
+          squadId,
+          metadata: { git: { worktree: ownership.worktree } },
+          dependsOn: [],
+        })
+      )
+    ).rejects.toThrow(/cleanup|worktree/i)
+    await expect(
+      db.transaction((tx) =>
+        store.assertWorktreeAttachmentsAvailable(tx, {
+          id: other.id,
+          squadId,
+          metadata: {},
+          dependsOn: [streamId],
+          checkPaths: false,
+        })
+      )
+    ).rejects.toThrow(/cleanup|worktree/i)
+  })
+}

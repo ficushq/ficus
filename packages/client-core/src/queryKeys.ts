@@ -37,6 +37,12 @@ export const queryKeys = {
      * every agent the UI had mounted.
      */
     listPrefix: () => [...queryKeys.agents.all, 'list'] as const,
+    /**
+     * Summary rows of every agent (`view=summary`). Deliberately NOT under `listPrefix`: it is
+     * refetched on a slower cadence than the lists an agent event invalidates at once.
+     */
+    summariesPrefix: () => [...queryKeys.agents.all, 'summaries'] as const,
+    summaries: (filters?: { live?: boolean }) => [...queryKeys.agents.all, 'summaries', filters ?? {}] as const,
     list: (filters?: { agentTypeId?: string; scopeType?: string; scopeId?: string }) =>
       [...queryKeys.agents.all, 'list', filters ?? {}] as const,
     detail: (id: string) => [...queryKeys.agents.all, 'detail', id] as const,

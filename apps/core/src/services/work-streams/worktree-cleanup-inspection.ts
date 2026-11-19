@@ -36,10 +36,12 @@ export async function inspectWorktreeCleanup(id: string): Promise<WorktreeCleanu
     recovery:
       job?.status === 'succeeded'
         ? 'reclaimed'
-        : job?.operationId || job?.status === 'removing'
-          ? 'in-flight'
-          : stream.autoCleanupWorktree
-            ? 'retain'
-            : 'retained',
+        : job?.status === 'retained'
+          ? 'retained'
+          : job?.operationId || job?.status === 'removing'
+            ? 'in-flight'
+            : stream.autoCleanupWorktree
+              ? 'retain'
+              : 'retained',
   }
 }

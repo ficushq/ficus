@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml'
 import type { Message, Tool } from '@earendil-works/pi-ai'
 import {
   DEFAULT_MAX_STEPS,
+  HARNESS_REVISION,
   type AgentScenario,
   type ScenarioText,
   type Trace,
@@ -38,6 +39,10 @@ export type AgentTurn = (input: {
 }) => Promise<{ text: string; calls: { id: string; name: string; args: Record<string, unknown> }[]; message: Message }>
 
 export interface RecordedRun {
+  /** Absent in historical cohorts. Never substitute corrected scores for a fresh live comparison. */
+  harnessRevision?: string
+  /** Development-eval diagnostics from provider SDK usage; never product ledger entries. */
+  usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; estimatedCostUsd: number }
   scenario: string
   variant: string
   commit?: string
@@ -83,10 +88,20 @@ export async function runScenario(input: {
   messages.push({ role: 'user', content: opening.join('\n\n'), timestamp: Date.now() })
   const steps: TraceStep[] = []
   let ended = false
+  let usage: RecordedRun['usage']
 
   for (let step = 0; step < (scenario.maxSteps ?? DEFAULT_MAX_STEPS); step++) {
     const reply = await turn({ systemPrompt, messages, tools: toolset.tools, model, signal: input.signal })
     messages.push(reply.message)
+    if (reply.message.role === 'assistant' && reply.message.usage) {
+      const observed = reply.message.usage
+      usage ??= { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, estimatedCostUsd: 0 }
+      usage.input += observed.input
+      usage.output += observed.output
+      usage.cacheRead += observed.cacheRead
+      usage.cacheWrite += observed.cacheWrite
+      usage.estimatedCostUsd += observed.cost.total
+    }
     const traceStep: TraceStep = { text: reply.text, calls: [] }
     steps.push(traceStep)
     if (reply.calls.length === 0) {
@@ -109,6 +124,8 @@ export async function runScenario(input: {
 
   const trace: Trace = { steps, ended }
   return {
+    harnessRevision: HARNESS_REVISION,
+    ...(usage ? { usage } : {}),
     scenario: scenario.name,
     variant: variant.label,
     ...(variant.commit ? { commit: variant.commit } : {}),
