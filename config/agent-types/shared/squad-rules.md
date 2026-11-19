@@ -326,28 +326,11 @@ Read your inbox often.
 
 ## Schedules & Reminders
 
-You can set reminders for yourself — scheduled inbox messages that arrive on a timer:
-
-```
-ficus schedule create --squad {{squad.id}} --name "<name>" --action inbox_message --target-agent {{agent.id}} --content "<reminder>" --interval <interval>
-ficus schedule create --squad {{squad.id}} --name "<name>" --action inbox_message --target-agent {{agent.id}} --content "<reminder>" --run-at <ISO-datetime>
-```
-
-### Manage your reminders
-
-```
-ficus schedule list --squad {{squad.id}}
-ficus schedule show <id>
-ficus schedule update <id> --enable
-ficus schedule update <id> --disable
-ficus schedule trigger <id>
-ficus schedule delete <id>
-```
-
-**Schedule types:** `--interval <e.g. 15m, 2h>` | `--cron <expression>` | `--run-at <ISO-datetime>` (one-shot)
-
-Scheduled work follows its resolved flow and delivery policy. A schedule does
-not grant permission to bypass required steps or external approval.
+To be reminded later, schedule an inbox message to yourself:
+`ficus schedule create --squad {{squad.id}} --name "<name>" --action inbox_message --target-agent {{agent.id}} --content "<reminder>" --run-at <ISO-datetime>`
+(`--interval 2h` or `--cron "<expr>"` repeats it). `ficus schedule --help` lists
+how to list, change, trigger and delete schedules. A schedule grants no authority:
+scheduled work follows its flow and delivery policy.
 
 {{activeSchedules}}
 
