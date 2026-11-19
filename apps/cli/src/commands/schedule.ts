@@ -62,7 +62,21 @@ interface WebhookEnableResult {
 }
 
 export function registerScheduleCommands(program: Command) {
-  const sched = program.command('schedule').description('Manage schedules')
+  const sched = program
+    .command('schedule')
+    .description('Manage schedules: reminders and recurring work')
+    .addHelpText(
+      'after',
+      `
+Reminder to yourself (an inbox message at a set time):
+  ficus schedule create --squad <squad-id> --name <name> --action inbox_message --target-agent <your-agent-id> --content <text> --run-at <ISO-datetime>
+Timing: --run-at <ISO-datetime> runs once; --interval <15m|2h> or --cron "<expr>" repeats.
+Find ids with list --squad <squad-id>; pause with disable <id>, resume with enable <id>,
+run now with trigger <id>, remove with delete <id>.
+Scheduled work follows its flow and delivery policy; a schedule grants no authority,
+and never use one to get around a pause or an open wait.
+`
+    )
 
   // ficus schedule list
   sched

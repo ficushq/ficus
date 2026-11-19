@@ -478,6 +478,10 @@ jobs:
         run: bun test ../scripts/tracking-guidance.test.ts
         working-directory: .github
 
+      - name: Validate schedule guidance
+        run: bun test ../scripts/schedule-guidance.test.ts
+        working-directory: .github
+
       - name: Validate agent prompt size and duplication guardrails
         run: bun test ../scripts/agent-prompt-guardrails.test.ts
         working-directory: .github

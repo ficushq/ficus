@@ -263,4 +263,50 @@ describe('schedule flow CLI', () => {
       expect.arrayContaining(['Workflow'])
     )
   })
+  it('schedule help carries the reminder recipe and management commands moved out of the agent rules', async () => {
+    const program = new Command()
+    registerScheduleCommands(program)
+    const sched = program.commands.find((command) => command.name() === 'schedule')!
+    let help = ''
+    sched.configureOutput({
+      writeOut: (chunk) => {
+        help += chunk
+      },
+    })
+    sched.outputHelp()
+    for (const name of ['list', 'create', 'update', 'enable', 'disable', 'trigger', 'delete', 'show']) {
+      expect(help).toContain(name)
+    }
+    expect(help).toContain('--interval <15m|2h>')
+    expect(help).toContain('--cron')
+    expect(help).toContain('a schedule grants no authority')
+    expect(help).toContain('never use one to get around a pause or an open wait')
+
+    // The reminder example in the help must be a command the CLI accepts as written.
+    const example = help.match(/ficus (schedule create [^\n]+)/)![1]!
+    const args = example
+      .replace('<squad-id>', 'squad-id')
+      .replace('<name>', 'check')
+      .replace('<your-agent-id>', 'agent-id')
+      .replace('<text>', 'look')
+      .replace('<ISO-datetime>', '2026-11-20T09:00:00Z')
+      .split(' ')
+    await run(args)
+    expect(outputError).not.toHaveBeenCalled()
+    expect(apiPost).toHaveBeenCalledWith(
+      '/api/schedules',
+      expect.objectContaining({
+        scopeType: 'squad',
+        scopeId: 'squad-id',
+        name: 'check',
+        enabled: true,
+        schedule: { runAt: '2026-11-20T09:00:00Z' },
+        action: expect.objectContaining({
+          type: 'inbox_message',
+          target: { type: 'agent', agentId: 'agent-id' },
+          content: 'look',
+        }),
+      })
+    )
+  })
 })
