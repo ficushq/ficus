@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { derivationFiltersSchema } from './public-voice'
 import { derivationEventSchema, emptySamplingBreakdown, safeDerivationFailure } from './public-voice-progress'
 
 test('metadata is strict and never accepts sample text or terminal controls', () => {
@@ -33,4 +34,9 @@ test('counts reject negative, inconsistent and unknown drop reasons', () => {
   snapshot.totals.seen = 1
   expect(derivationEventSchema.safeParse(event).success).toBe(false)
   expect(derivationEventSchema.safeParse({ ...event, extra: { sample: 'private' } }).success).toBe(false)
+})
+
+test('repository filter names are bounded before starting expensive work', () => {
+  expect(derivationFiltersSchema.safeParse({ repositories: ['a/' + 'b'.repeat(138)] }).success).toBe(true)
+  expect(derivationFiltersSchema.safeParse({ repositories: ['a/' + 'b'.repeat(139)] }).success).toBe(false)
 })

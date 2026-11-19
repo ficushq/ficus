@@ -25,6 +25,7 @@ function collected(items: RawActivityItem[], over: Partial<CollectedActivity> = 
     pagingCapped: false,
     requests: 2,
     droppedByFilter: { date: 0, repository: 0 },
+    filteredBySurface: {},
     unavailableRepositories: [],
     commitRepositoriesNotSampled: [],
     ...over,
@@ -105,7 +106,13 @@ describe('prepareSamples', () => {
       item({ surface: 'issue-comments', text: 'Bumps lodash from 4.17.20 to 4.17.21.' }),
       item({ surface: 'pull-requests', title: 'Add retry', text: '## Summary\n\n## Test plan\n', isPrivate: true }),
     ]
-    const { samples, summary } = prepareSamples(collected(items, { droppedByFilter: { date: 3, repository: 1 } }), {})
+    const { samples, summary } = prepareSamples(
+      collected(items, {
+        droppedByFilter: { date: 3, repository: 1 },
+        filteredBySurface: { reviews: { date: 3, repository: 1 } },
+      }),
+      {}
+    )
     expect(summary.counts.droppedAsToolAuthored).toBe(1)
     expect(summary.counts.droppedAsTemplate).toBe(2)
     expect(summary.counts.droppedByFilter).toEqual({ date: 3, repository: 1 })

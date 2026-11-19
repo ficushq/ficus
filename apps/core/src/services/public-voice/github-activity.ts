@@ -35,7 +35,7 @@ export interface CollectedActivity {
   requests: number
   /** Items seen but left out by the date and repository filters. */
   droppedByFilter: { date: number; repository: number }
-  filteredBySurface?: Partial<Record<DerivationSurface, { date: number; repository: number }>>
+  filteredBySurface: Partial<Record<DerivationSurface, { date: number; repository: number }>>
   /** Repositories asked for commits that GitHub returned as missing or not visible (for example a typo in a filter). */
   unavailableRepositories: string[]
   /** Repositories in the filter beyond the commit-sampling limit, whose commits were not read. */
@@ -242,7 +242,7 @@ export async function collectGitHubActivity(
   const droppedByFilter = { date: 0, repository: 0 }
   const unavailableRepositories: string[] = []
   const commitRepositoriesNotSampled: string[] = []
-  const filteredBySurface: NonNullable<CollectedActivity['filteredBySurface']> = {}
+  const filteredBySurface: CollectedActivity['filteredBySurface'] = {}
   const reported = new Set<string>()
   const repositoriesProgress = async (
     names: string[],

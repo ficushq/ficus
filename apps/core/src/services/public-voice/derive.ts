@@ -287,7 +287,8 @@ export async function runDerivationSession(
   })
   // Creation can finish after our caller is gone. Dispose that late session without prompting.
   const stop = (session: Awaited<typeof creation>) => {
-    void Promise.resolve().then(() => session.pi.abort?.())
+    void Promise.resolve()
+      .then(() => session.pi.abort?.())
       .catch(() => {})
       .finally(() => session.dispose?.())
   }
@@ -317,7 +318,9 @@ export async function runDerivationSession(
         else resolve(raw)
       }
       onAbort = () => {
-        void Promise.resolve().then(() => session.abort?.()).catch(() => {})
+        void Promise.resolve()
+          .then(() => session.abort?.())
+          .catch(() => {})
         finish(signal.reason)
       }
       signal.addEventListener('abort', onAbort, { once: true })
@@ -327,7 +330,9 @@ export async function runDerivationSession(
           const delta = event.assistantMessageEvent.delta
           bytes += delta.length > 65_536 - bytes ? 65_537 : new TextEncoder().encode(delta).length
           if (bytes > 65_536) {
-            void Promise.resolve().then(() => session.abort?.()).catch(() => {})
+            void Promise.resolve()
+              .then(() => session.abort?.())
+              .catch(() => {})
             finish(new DerivationError('derivation_invalid_output', { reason: 'too_long' }))
           } else raw += delta
         } else if (event.type === 'agent_end') finish()

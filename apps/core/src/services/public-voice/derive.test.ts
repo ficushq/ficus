@@ -349,6 +349,7 @@ describe('derivePublicVoice', () => {
     pagingCapped: false,
     requests: 2,
     droppedByFilter: { date: 0, repository: 0 },
+    filteredBySurface: {},
     unavailableRepositories: [],
     commitRepositoriesNotSampled: [],
   })
@@ -512,6 +513,7 @@ test('findings are exactly the validated, cap-retained observations, never sampl
         pagingCapped: false,
         requests: 1,
         droppedByFilter: { date: 0, repository: 0 },
+        filteredBySurface: {},
         unavailableRepositories: [],
         commitRepositoriesNotSampled: [],
       }),
@@ -560,6 +562,7 @@ test('model timeout does not wait for a provider that ignores its signal', async
           pagingCapped: false,
           requests: 1,
           droppedByFilter: { date: 0, repository: 0 },
+          filteredBySurface: {},
           unavailableRepositories: [],
           commitRepositoriesNotSampled: [],
         }),
@@ -601,6 +604,54 @@ test('oversize model deltas abort and unsubscribe without retaining unbounded ou
       )
     ).rejects.toMatchObject({ code: 'derivation_invalid_output', details: { reason: 'too_long' } })
     expect(stopped).toBe(1)
+    expect(unsubscribed).toBe(1)
+    expect(disposed).toBe(1)
+  } finally {
+    create.mockRestore()
+  }
+})
+
+test('cancelling active generation unsubscribes, disposes and ignores late model callbacks', async () => {
+  const controller = new AbortController()
+  let listener: (event: any) => void = () => {}
+  let started!: () => void
+  const active = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  let unsubscribed = 0
+  let disposed = 0
+  let aborted = 0
+  const create = spyOn(AgentSession, 'create').mockResolvedValue({
+    pi: {
+      subscribe: (fn: typeof listener) => {
+        listener = fn
+        return () => {
+          unsubscribed++
+        }
+      },
+      prompt: async () => {
+        started()
+        return new Promise(() => {})
+      },
+      abort: async () => {
+        aborted++
+      },
+    },
+    dispose: () => {
+      disposed++
+    },
+  } as any)
+  try {
+    const pending = runDerivationSession(
+      { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: controller.signal },
+      { resolveModel: async () => 'fixture' }
+    )
+    await active
+    controller.abort()
+    await expect(pending).rejects.toBe(controller.signal.reason)
+    listener({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'late synthetic text' } })
+    listener({ type: 'agent_end' })
+    expect(aborted).toBe(1)
     expect(unsubscribed).toBe(1)
     expect(disposed).toBe(1)
   } finally {

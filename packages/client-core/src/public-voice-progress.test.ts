@@ -130,3 +130,18 @@ test('outer deadline cancels even an idle connection', async () => {
     code: 'derivation_stream_interrupted',
   })
 })
+
+test('unknown nested draft fields fail closed rather than being silently stripped', async () => {
+  const bad = {
+    ...result,
+    draft: {
+      base: 'Lead with the result.',
+      surfaces: { commits: { mode: 'add', text: 'Use complete sentences.', raw: 'private sentinel' } },
+    },
+  }
+  await expect(
+    readVoiceDerivation(
+      response(frame(started) + frame({ version: 1, runId: 'fixture', seq: 2, type: 'complete', result: bad }))
+    )
+  ).rejects.toMatchObject({ code: 'derivation_stream_interrupted' })
+})

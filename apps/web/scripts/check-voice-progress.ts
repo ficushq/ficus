@@ -60,7 +60,7 @@ try {
     const useDraft = page.getByRole('button', { name: 'Use this draft', exact: true })
     await useDraft.waitFor()
     await useDraft.scrollIntoViewIfNeeded()
-    assert.equal(await page.getByRole('status').textContent(), 'Draft ready. Nothing was saved.')
+    assert.equal((await page.getByRole('status').textContent())?.trim(), 'Draft ready. Nothing was saved.')
     if (directory) await page.screenshot({ path: `${directory}/complete-${width}.png` })
     await page.getByRole('button', { name: 'Derive', exact: true }).click()
     await page.evaluate(() => (window as any).voiceFixture.collecting())

@@ -75,6 +75,8 @@ export function DeriveVoiceCard({
   const errorCode =
     typeof errorPayload?.error === 'string' && formatDerivationError(errorPayload.error) ? errorPayload.error : null
 
+  const hasProgress = mutation.isPending || Boolean(mutation.counts) || mutation.history.length > 0 || Boolean(result)
+
   return (
     <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4">
       <div>
@@ -173,8 +175,8 @@ export function DeriveVoiceCard({
         {mutation.isPending ? 'Deriving…' : 'Derive'}
       </button>
 
-      {(mutation.isPending || mutation.history.length > 0 || result) && <VoiceDerivationProgress {...mutation} />}
-      {mutation.notice && (mutation.history.length === 0 || mutation.notice !== mutation.phase) && (
+      {hasProgress && <VoiceDerivationProgress {...mutation} />}
+      {mutation.notice && (!hasProgress || mutation.notice !== mutation.phase) && (
         <p role="status" className="text-xs text-secondary">
           {mutation.notice}
         </p>

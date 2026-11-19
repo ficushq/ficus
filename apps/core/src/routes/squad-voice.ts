@@ -166,6 +166,7 @@ export const squadVoiceRouter = new Hono()
             },
             operation.signal
           )
+          let started = false
           try {
             await abortable(
               withDeviceStreamRevocation(c.get('authContext') ?? {}, stream, async (revoked) => {
@@ -174,6 +175,7 @@ export const squadVoiceRouter = new Hono()
                 if (revoked.aborted) onRevoke()
                 try {
                   await writer.publish({ type: 'started' })
+                  started = true
                   const result = await abortable(
                     derivePublicVoice({ ...args, onProgress: writer.publish }),
                     operation.signal
@@ -190,8 +192,10 @@ export const squadVoiceRouter = new Hono()
               operation.signal
             ).catch(async (error) => {
               if (error instanceof DerivationError && error.code === 'derivation_timed_out') await writer.timeout()
-              else if (!operation.signal.aborted)
-                log.warn('Voice derivation stream setup failed', { squadId, code: 'derivation_failed' })
+              else if (!operation.signal.aborted && operation.complete()) {
+                if (!started) await writer.publish({ type: 'started' })
+                await writer.publish({ type: 'error', error: failure(error) })
+              }
             })
           } finally {
             writer.dispose()

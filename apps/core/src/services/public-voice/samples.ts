@@ -145,7 +145,7 @@ export function summarizeSamples(
   const breakdown = emptySamplingBreakdown()
   breakdown.pagingCapped = collected.pagingCapped
   for (const surface of DERIVATION_SURFACES) {
-    const filtered = collected.filteredBySurface?.[surface]
+    const filtered = collected.filteredBySurface[surface]
     if (filtered) {
       breakdown.bySurface[surface].dropped.date = filtered.date
       breakdown.bySurface[surface].dropped.repository = filtered.repository

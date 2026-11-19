@@ -4,7 +4,7 @@ import {
   DERIVATION_SURFACES,
   PUBLIC_SURFACES,
   derivationFiltersSchema,
-  publicVoiceSurfacesSchema,
+  publicVoiceSurfaceEntrySchema,
 } from './public-voice'
 import { safeDerivationReason } from './public-voice-errors'
 
@@ -91,10 +91,25 @@ const samplingCountsSchema = z
     droppedAsTemplate: count,
   })
   .strict()
+const wireSurface = publicVoiceSurfaceEntrySchema.strict().optional()
+const wireSurfacesSchema = z
+  .object({
+    commits: wireSurface,
+    pullRequests: wireSurface,
+    reviewReplies: wireSurface,
+    issueComments: wireSurface,
+    channels: wireSurface,
+  })
+  .strict()
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const dateRange = z.object({ oldest: day, newest: day }).strict().optional()
+const dateRangesSchema = z
+  .object({ 'pull-requests': dateRange, 'issue-comments': dateRange, reviews: dateRange, commits: dateRange })
+  .strict()
 export const voiceDerivationResultSchema = z
   .object({
-    login: z.string().max(39),
-    draft: z.object({ base: z.string().max(2000), surfaces: publicVoiceSurfacesSchema }).strict(),
+    login: z.string().regex(/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i),
+    draft: z.object({ base: z.string().max(2000), surfaces: wireSurfacesSchema }).strict(),
     observations: z.array(z.string().min(1).max(160)).max(12),
     exemplars: z
       .array(
@@ -107,7 +122,7 @@ export const voiceDerivationResultSchema = z
       .object({
         filters: derivationFiltersSchema,
         counts: samplingCountsSchema,
-        dateRange: z.record(z.string(), z.object({ oldest: z.string().max(10), newest: z.string().max(10) }).strict()),
+        dateRange: dateRangesSchema,
         publicRepositories: z.array(progressRepositorySchema).max(120),
         privateRepositories: z.array(progressRepositorySchema).max(120),
         pagingCapped: z.boolean(),
