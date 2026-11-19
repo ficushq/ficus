@@ -268,6 +268,8 @@ A missed deadline is not fatal: the session shows as unresponsive until the next
 
 Latency budget, hosted: Linear → Platform ingest and `200` (under 1 second) → Core pull at a 2-second cadence → one Linear mutation (typically under 1 second), about 4 seconds in total. Direct: under 2 seconds. Decision predicates (model calls) never sit on this path.
 
+The 10-second acknowledgment is a target while the instance is running, not a guarantee. While a hosted tenant's Core is down, restarting or being upgraded, Platform still accepts and retains the webhook, but nothing pulls it: those sessions show as unresponsive in Linear until Core comes back and pulls the retained delivery (or the polling fallback, 5.7, finds the session), and then get the acknowledgment and disposition late. A self-hosted instance that is down misses the webhook entirely until Linear's retries (1 minute, 1 hour, 6 hours) or polling pick it up. Linear recovers an unresponsive session on the next activity, so a late acknowledgment still works.
+
 **Disposition.** After the fact fans out to every authorized squad, `linear/session-disposition.ts` reduces the squads' outcomes for the session and posts one templated activity:
 
 | Outcome across squads                                                                             | Activity                                                                                                     | Effect in Linear                                                                     |
@@ -383,31 +385,33 @@ New `linear/session-projector.ts`. It is state-based, not event-based: it compar
 - Wake-ups: `workStream.*` and `agent-question.*` emitter events for bound streams (debounced 3 seconds per session, like `services/push/live-activity.ts`), plus a 60-second reconcile sweep over bound sessions of active streams comparing `work_stream_flow_runs.version` with `last_flow_version`. The sweep makes delivery durable even if an in-process event is lost.
 - Inputs: flow state and attempts (`ficus workstream flow` data), `work_stream_flow_transitions` since `last_flow_version`, stream status and waits, `metadata.codeHost.changeRequest`, open and answered questions through `agent_question_work_stream_origins`.
 
-Mapping from stream state to activities. All bodies are fixed templates with bounded, sanitized interpolation (step names, pull request URL, question text written for humans); none include agent handoff evidence, internal IDs or paths.
+Mapping from stream state to activities. All bodies are fixed templates. The only interpolated values are the pull request URL and number, the step position (`<n>` of `<total>`), and question text and option labels that were written for the person answering (6.6); none include agent handoff evidence, internal IDs or paths.
 
-| Stream change                                                  | Activity                                                                                                                                    |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stream admitted (queued → active)                              | `thought`: "Started work."                                                                                                                  |
-| Flow attempt started                                           | `action` `{ action: 'Working on', parameter: <step name> }`, ephemeral                                                                      |
-| Flow attempt completed                                         | `action` `{ action: 'Finished', parameter: <step name>, result: <outcome label> }`                                                          |
-| Delivery pull request appears                                  | `action` `{ action: 'Opened pull request', parameter: <owner/repo#number>, result: <url> }`, plus the attachment and session URL (6.7)      |
-| Human question opened                                          | `elicitation` (6.6)                                                                                                                         |
-| Question answered or dismissed in Ficus                        | `thought`: "Answered in Ficus: <answer label>" or "Question withdrawn."                                                                     |
-| Waiting on a human approval gate                               | `thought`: "Waiting for approval in Ficus." Approval can never be given from Linear.                                                        |
-| Stream paused or parked                                        | `thought`: "Paused."                                                                                                                        |
-| Long-running active stream                                     | ephemeral `thought` heartbeat every 25 minutes ("Still working: <step name>.") so the session does not go `stale` after Linear's 30 minutes |
-| Stream done with a merged or delivered pull request            | `response`: "Done. Pull request: <url>."                                                                                                    |
-| Stream done without a pull request                             | `response`: "Done." plus the stream link if open question 5 allows it                                                                       |
-| Stream canceled                                                | `response`: "Ficus stopped working on this request."                                                                                        |
-| Unrecoverable failure (recovery exhausted or execution failed) | `error`: "Ficus hit a problem and a person on the team is looking at it."                                                                   |
+Step names, step IDs and participant names are squad-authored and can carry internal detail, so they are never shown in Linear. Each step maps to a fixed label by its kind: an agent step is "Working", a decision step is "Choosing the next step", a human approval step is "Waiting for approval in Ficus", and any other kind is "Working". In the table, `<step label>` means that fixed label plus the position, for example "Working (step 2 of 4)".
 
-Optional, behind a setting until Linear's plan API leaves technology preview: `agentSessionUpdate(plan)` mirroring flow steps (`pending`, `inProgress`, `completed`, `canceled`).
+| Stream change                                                  | Activity                                                                                                                                     |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stream admitted (queued → active)                              | `thought`: "Started work."                                                                                                                   |
+| Flow attempt started                                           | `action` `{ action: 'Started', parameter: <step label> }`, ephemeral                                                                         |
+| Flow attempt completed                                         | `action` `{ action: 'Finished', parameter: <step label> }`                                                                                   |
+| Delivery pull request appears                                  | `action` `{ action: 'Opened pull request', parameter: <owner/repo#number>, result: <url> }`, plus the attachment and session URL (6.7)       |
+| Human question opened                                          | `elicitation` (6.6)                                                                                                                          |
+| Question answered or dismissed in Ficus                        | `thought`: "Answered in Ficus: <answer label>" or "Question withdrawn."                                                                      |
+| Waiting on a human approval gate                               | `thought`: "Waiting for approval in Ficus." Approval can never be given from Linear.                                                         |
+| Stream paused or parked                                        | `thought`: "Paused."                                                                                                                         |
+| Long-running active stream                                     | ephemeral `thought` heartbeat every 25 minutes ("Still working: <step label>.") so the session does not go `stale` after Linear's 30 minutes |
+| Stream done with a merged or delivered pull request            | `response`: "Done. Pull request: <url>."                                                                                                     |
+| Stream done without a pull request                             | `response`: "Done." plus the stream link if open question 5 allows it                                                                        |
+| Stream canceled                                                | `response`: "Ficus stopped working on this request."                                                                                         |
+| Unrecoverable failure (recovery exhausted or execution failed) | `error`: "Ficus hit a problem and a person on the team is looking at it."                                                                    |
+
+Optional, behind a setting until Linear's plan API leaves technology preview: `agentSessionUpdate(plan)` mirroring flow steps (`pending`, `inProgress`, `completed`, `canceled`), with each entry's content set to its fixed step label.
 
 ### 6.4 Routing prompted follow-ups into the stream
 
 - `tracked-resources/linear.ts` adds `issue.delegated`, `issue.undelegated` and `agent_session.prompted` to `ISSUE_EVENTS`, so a stream tracking the issue receives prompts on any session for it through the existing `deliver: { to: 'delivery-owner', whenInactive: 'retain' }` subscription.
 - Comments in an agent session thread are delivered once, as `agent_session.prompted`; the tracked `issue.comment` subscription skips facts with `session.id` set (5.5), so the same message is not delivered twice.
-- A prompt that answers an open mirrored question is consumed by question resolution (6.6) instead of being delivered as a message.
+- A prompt that resolves an open mirrored question directly (6.6) is not also delivered as a message. Every other prompt sent while a question is open is delivered to the asking agent as a candidate answer.
 - `stop` signal (open question 3, recommended behavior): Core pauses the bound stream through the existing pause mechanism when the author is trusted, delivers the request to the owner, and posts `response`: "Stopped. Work is paused in Ficus." For untrusted authors the request is only delivered.
 - Prompts on a session whose stream is done or canceled, and prompts on unbound sessions, go through the `linear-agent-session-prompted` rule (default `notify-manager`) and get the acknowledgment plus disposition from 5.3.
 
@@ -423,13 +427,14 @@ Optional, behind a setting until Linear's plan API leaves technology preview: `a
 
 - `linear_question_mirrors` (Core): `question_id` (primary key), `session_id`, `activity_id`, `options` (jsonb), `state` (`open`, `answered_in_linear`, `answered_in_ficus`, `dismissed`), timestamps.
 - When a stream with a primary session gets a new human question (`agent-question.created` with a work stream origin), the projector posts an `elicitation` with the question text and context (bounded to 4,000 characters). `select` and `multi-select` questions add `signal: 'select'` with up to 100 options (`value` is the option value, `label` its label). The body ends with "Reply here or answer in Ficus."
-- The next trusted `prompted` activity after an open elicitation in that session is matched to the question:
-  - `select`: exact match on an option value or label (case-insensitive, trimmed).
-  - `multi-select`: comma- or newline-separated exact matches.
-  - `text`: the full prompt body.
-  - On a match, Core calls a new `resolveAgentQuestionFromIntegration(questionId, { integration: 'linear', connectionId, linearUserId, sessionId, activityId, answer })` in `services/agents/questions.ts`. It mirrors `answerAgentQuestion` (one transaction for the answer and the wait close) but records `answerSource` (new jsonb column on `agent_questions`) instead of a Ficus user, and has no approval authority.
-  - Without a clean match, the prompt is delivered to the asking agent, labeled as a candidate answer to that question, and the agent can close the question with the existing `resolveAgentQuestionWithRelayedAnswer` path, using the Linear activity URL as the source.
-- Who may answer from Linear is open question 4; the recommendation is trusted authors only, never untrusted ones.
+- A Linear reply resolves a Ficus question directly only when every one of these holds:
+  1. The question is `select` or `multi-select`, and the prompt is an exact match: one option value or label for `select`, or comma- or newline-separated option values or labels for `multi-select` (case-insensitive, trimmed). Text questions are never resolved directly.
+  2. The prompt's Linear author is linked to a Ficus user (below).
+  3. That Ficus user passes the same check as answering in Ficus: `canAnswerAgentQuestion(identity, question)` in `routes/agent-questions.ts` (the asking agent's owner, or `agents:run` on its squad).
+- When all three hold, Core calls `answerAgentQuestion(id, answer, linkedUserId, { expectedAgentScope })`, the same function the Ficus answer route uses, so the answer is recorded as that Ficus user's answer. A new optional `answerSource` jsonb column on `agent_questions` records the provenance (`{ integration: 'linear', connectionId, linearUserId, sessionId, activityId }`). The question mirror becomes `answered_in_linear`.
+- Every other reply while a question is open is delivered to the asking agent, labeled as a candidate answer from the named Linear user. This covers free text (for any question type), replies that do not match an option, and replies from unlinked users or users without answer permission. The agent decides whether the reply really answers the question. If it does, the agent closes it with the existing `resolveAgentQuestionWithRelayedAnswer` path, using the Linear activity URL as the source, under the same rules as any relayed answer; if it does not, the reply is an ordinary follow-up and the question stays open.
+- Default: direct resolution is available only to linked users with answer permission. No squad setting is needed, because a Linear workspace member without a linked Ficus account, or with a Ficus account that may not answer that agent, can never close a wait from Linear. Untrusted authors (5.6) only ever produce candidate answers. A Linear answer never satisfies a workflow approval gate.
+- Linking a Linear user to a Ficus user: a signed-in Ficus user runs a user-actor Linear authorization (`actor=user`, `scope=read`) with a new authorization purpose `linear_identity`, modeled on `github_identity` in `authorization/service.ts`. Core stores `viewer.id` and `organization.id` in a new `user_linear_identities` table (`user_id`, `organization_id`, `linear_user_id`, `linked_at`; unique on `organization_id` and `linear_user_id`) and keeps no token. Linear's best-practice guide describes this two-authorization pattern (personal plus app installation). When an unlinked user replies to an elicitation, the next elicitation for that session may carry Linear's `auth` signal with the Ficus link URL (subject to open question 5).
 - An answer in Ficus first marks the mirror `answered_in_ficus` and posts the `thought` from 6.3; a later Linear reply is delivered as an ordinary prompt.
 
 ### 6.7 Attaching the delivery pull request
@@ -572,7 +577,7 @@ Dependencies say which streams must be merged first ("done") or can start now ("
   1. The projector maps stream changes to the 6.3 activities through the outbox, idempotently, within the 6.5 rate limits.
   2. The delivery pull request is attached to every tracked Linear issue and added to the session's external URLs.
   3. Prompts reach the bound stream once; `stop` follows the answer to open question 3.
-  4. Questions mirror as elicitations and resolve from trusted Linear answers per 6.6, or reach the asking agent when no clean match exists.
+  4. Questions mirror as elicitations. Only an exact `select` or `multi-select` reply from a linked Ficus user with answer permission resolves a question directly, through `answerAgentQuestion`; every other reply reaches the asking agent as a candidate answer (6.6). Linear identity linking (`linear_identity` purpose, `user_linear_identities`) works on local and hosted instances.
   5. `--linear-session` creates and binds a session.
   6. The fake-provider end-to-end test passes; a live check in a test Linear workspace (human prerequisite: a test workspace with the self-hosted or hosted app installed) shows the full lifecycle.
   7. Docs: `linear-integrations.md` write-back section, `work-streams.md`.
@@ -601,9 +606,9 @@ flowchart LR
 3. **What should Linear's "Stop" request do?** Linear expects the agent to stop immediately.
    - Options: (a) pause the bound work stream at once when the requester is trusted, and tell the owner; (b) only notify the owner and let them decide.
    - Recommendation: (a). It honors Linear's contract; the owner can resume in Ficus.
-4. **Which Linear users does Ficus trust to start work, prompt a running stream, and answer Ficus questions?**
-   - Options: (a) active, non-guest members of the connected workspace; (b) only the person who started the session, for prompts and answers, plus (a) for starting work; (c) everyone who can see the issue, including guests.
-   - Recommendation: (a) for starting work and prompts, and (b) for answering questions, so only the requester can unblock a stream from Linear.
+4. **Which Linear users does Ficus trust to start work and to prompt a running stream?** Answering Ficus questions is not part of this question: 6.6 settles it by Ficus permissions (only a Linear user linked to a Ficus user who may answer that question can resolve it; everyone else's reply becomes a candidate answer for the agent).
+   - Options: (a) active, non-guest members of the connected workspace; (b) only the person who started the session may prompt it, plus (a) for starting work; (c) everyone who can see the issue, including guests.
+   - Recommendation: (a). Workspace membership is already an authentication boundary, prompts are evidence rather than instructions, and they cannot close waits on their own.
 5. **Should the Linear session link to the Ficus work stream?** Linear shows an "Open" button for a session URL. The URL reveals the Ficus instance address to everyone in the Linear workspace; people without a Ficus account see the sign-in page.
    - Options: (a) always add "Open in Ficus"; (b) add it only when the instance has a public URL configured; (c) never, link only the pull request.
    - Recommendation: (b).
@@ -623,6 +628,7 @@ Each item needs confirmation with a live Linear workspace or Linear support duri
 | `agentSessions` with an app token returns the app's own sessions in that workspace.                                                                                                      | G         | Poll `notifications` only and fetch sessions by ID.                                                                                   |
 | A response activity on a completed session reactivates it when a later stream binds.                                                                                                     | H         | Create a new session with `agentSessionCreateOnIssue` and bind that.                                                                  |
 | An ephemeral `thought` resets Linear's 30-minute stale timer.                                                                                                                            | H         | Send the heartbeat as a non-ephemeral `thought`, at most twice per hour.                                                              |
+| A user-actor `read` authorization of the Ficus app, for identity linking, leaves the workspace's app installation and its tokens untouched.                                              | H         | Use a separate small OAuth client for identity linking.                                                                               |
 | Revoking an app access token uninstalls the app from the workspace.                                                                                                                      | B         | Document that uninstalling is done in Linear's settings, and treat revocation as token cleanup only.                                  |
 | The hosted app can be installed by other workspaces without an integration-directory listing.                                                                                            | C         | List the app in Linear's integration directory before hosted launch.                                                                  |
 | A second installation of the same app in a workspace replaces or invalidates the first installation's tokens.                                                                            | F         | Enforce open question 1 (a) regardless.                                                                                               |
