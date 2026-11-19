@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useVoiceDerivation } from './useVoiceDerivation'
+import { VoiceDerivationProgress } from './VoiceDerivationProgress'
 import {
   DERIVATION_SURFACES,
   formatDerivationError,
@@ -9,7 +10,7 @@ import {
   type DerivationSurface,
   type PublicVoiceSurfaces,
 } from '@ficus/shared'
-import { deriveSquadVoice, type VoiceDerivationResult } from '../../api/publicVoices'
+import { type VoiceDerivationResult } from '../../api/publicVoices'
 import { ApiError } from '../../api/client'
 
 const SURFACE_LABELS: Record<DerivationSurface, string> = {
@@ -63,9 +64,7 @@ export function DeriveVoiceCard({
     ...(includeToolAuthored ? { excludeToolAuthored: false } : {}),
   })
 
-  const mutation = useMutation({
-    mutationFn: () => deriveSquadVoice(squadId, { login: login.trim(), filters: filters() }),
-  })
+  const mutation = useVoiceDerivation(squadId, () => ({ login: login.trim(), filters: filters() }))
 
   const result: VoiceDerivationResult | undefined = mutation.data
   const error =
@@ -90,6 +89,7 @@ export function DeriveVoiceCard({
         <label className="text-xs text-muted">
           GitHub login
           <input
+            disabled={mutation.isPending}
             aria-label="GitHub login"
             className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
             value={login}
@@ -100,6 +100,7 @@ export function DeriveVoiceCard({
           Only before (for example when Ficus started posting from the account)
           <input
             type="date"
+            disabled={mutation.isPending}
             aria-label="Only before"
             className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
             value={before}
@@ -110,6 +111,7 @@ export function DeriveVoiceCard({
           Only on or after
           <input
             type="date"
+            disabled={mutation.isPending}
             aria-label="Only on or after"
             className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
             value={after}
@@ -119,6 +121,7 @@ export function DeriveVoiceCard({
         <label className="text-xs text-muted">
           Only these repositories (owner/name)
           <input
+            disabled={mutation.isPending}
             aria-label="Only these repositories"
             className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
             value={repos}
@@ -128,6 +131,7 @@ export function DeriveVoiceCard({
         <label className="text-xs text-muted">
           Leave out these repositories
           <input
+            disabled={mutation.isPending}
             aria-label="Leave out these repositories"
             className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
             value={excludeRepos}
@@ -139,6 +143,7 @@ export function DeriveVoiceCard({
         {DERIVATION_SURFACES.map((surface) => (
           <label key={surface} className="flex items-center gap-1">
             <input
+              disabled={mutation.isPending}
               type="checkbox"
               checked={surfaces.includes(surface)}
               onChange={(e) =>
@@ -152,6 +157,7 @@ export function DeriveVoiceCard({
         ))}
         <label className="flex items-center gap-1">
           <input
+            disabled={mutation.isPending}
             type="checkbox"
             checked={includeToolAuthored}
             onChange={(e) => setIncludeToolAuthored(e.target.checked)}
@@ -164,11 +170,18 @@ export function DeriveVoiceCard({
         disabled={!login.trim() || surfaces.length === 0 || mutation.isPending}
         onClick={() => mutation.mutate()}
       >
-        {mutation.isPending ? 'Deriving… (up to a minute)' : 'Derive'}
+        {mutation.isPending ? 'Deriving…' : 'Derive'}
       </button>
 
+      {(mutation.isPending || mutation.history.length > 0 || result) && <VoiceDerivationProgress {...mutation} />}
+      {mutation.notice && (mutation.history.length === 0 || mutation.notice !== mutation.phase) && (
+        <p role="status" className="text-xs text-secondary">
+          {mutation.notice}
+        </p>
+      )}
+
       {error && (
-        <div className="text-xs text-status-danger-500">
+        <div role="alert" className="text-xs text-status-danger-500">
           <p>{error}</p>
           {errorCode && (
             <details className="mt-1">

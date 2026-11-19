@@ -45,7 +45,28 @@ test('handles an older structured 502 and never displays arbitrary validation re
 })
 
 test('returns the unchanged draft with one request and no automatic save', async () => {
-  const draft = { login: 'octocat', draft: { base: 'Synthetic draft.', surfaces: {} } }
+  const draft = {
+    login: 'octocat',
+    draft: { base: 'Synthetic draft.', surfaces: {} },
+    observations: [],
+    exemplars: [],
+    sampling: {
+      filters: {},
+      counts: {
+        collected: 20,
+        kept: 20,
+        droppedByFilter: { date: 0, repository: 0 },
+        droppedAsToolAuthored: 0,
+        droppedAsTemplate: 0,
+      },
+      dateRange: {},
+      publicRepositories: [],
+      privateRepositories: [],
+      pagingCapped: false,
+    },
+    bytes: 20,
+    maxBytes: 2000,
+  }
   const requests: string[] = []
   globalThis.fetch = (async (input, init) => {
     requests.push(String(input))
@@ -55,4 +76,32 @@ test('returns the unchanged draft with one request and no automatic save', async
   expect(await deriveSquadVoice('fixture', { login: 'octocat' })).toEqual(draft as any)
   expect(requests).toHaveLength(1)
   expect(requests[0]).toEndWith('/squads/fixture/voice/derive')
+})
+
+test('opts into streaming and reports partial progress before a typed terminal failure', async () => {
+  const frames = [
+    { version: 1, runId: 'fixture', seq: 1, type: 'started' },
+    {
+      version: 1,
+      runId: 'fixture',
+      seq: 2,
+      type: 'error',
+      error: { code: 'derivation_invalid_output', reason: 'not_json' },
+    },
+  ]
+    .map((e) => `event: derivation\ndata: ${JSON.stringify(e)}\n\n`)
+    .join('')
+  let calls = 0
+  globalThis.fetch = (async (_, init) => {
+    calls++
+    expect(init?.headers).toMatchObject({ Accept: 'text/event-stream', 'x-ficus-csrf': '1' })
+    expect(init?.credentials).toBe('include')
+    return new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } })
+  }) as typeof fetch
+  const events: unknown[] = []
+  await expect(
+    deriveSquadVoice('fixture', { login: 'octo' }, { onProgress: (event) => events.push(event) })
+  ).rejects.toMatchObject({ status: 422, payload: { error: 'derivation_invalid_output' } })
+  expect(events).toHaveLength(1)
+  expect(calls).toBe(1)
 })
