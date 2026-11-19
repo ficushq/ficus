@@ -16,7 +16,9 @@ describe('work stream context guidance', () => {
     expect(guidance).toContain('ficus workstream advance')
     expect(guidance).toContain('expectedVersion')
     expect(guidance).toContain('attemptId')
-    expect(guidance).toContain('Never advance by changing the assignee, calling legacy handoff, or editing status')
+    // The legacy-verb warnings moved to the point of use: workstream help marks the pre-flow verbs and
+    // a flow refuses them naming advance or finish (scripts/legacy-workstream-guidance.test.ts).
+    expect(guidance).not.toContain('legacy handoff')
     // Scope and approval-step procedures moved to request-input help. The
     // composed prompt keeps the stop rule and points to that carrier.
     for (const role of ['engineer', 'manager', 'reviewer']) {
@@ -54,7 +56,7 @@ describe('work stream context guidance', () => {
     expect(manager).toContain('No role inherently owns PR creation')
     expect(manager).toContain('metadata.policies.allowAutoMerge')
     expect(manager).toContain('metadata.policies.allowDirectMerge')
-    expect(manager).toContain('bare done command cannot finish a flow')
+    expect(manager).not.toContain('bare done command')
     expect(manager).not.toContain('ficus workflow finish')
   })
 

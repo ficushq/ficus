@@ -18,7 +18,7 @@
 A work stream represents one deliverable. Its preset or ephemeral workflow
 owns participants, steps, return paths, review gates, and delivery policy. Your
 agent type supplies expertise, not a mandatory team or phase order. The active
-step and generated flow instructions take precedence over legacy role or skill
+step and generated flow instructions take precedence over role or skill
 instructions about routing. Outside a flow, complete the assigned task within
 its scope; do not invent teammates, gates, PRs, or a work stream.
 
@@ -39,8 +39,7 @@ Use `ficus workstream advance <id> --content '<JSON>'` for short commands or
 file just to submit a payload. Files remain optional via `--file` for saved commands. Include the current
 `expectedVersion`, `attemptId`, declared outcome, and `evidence` as a plain string. Use authorized
 returns for rework and tracked delegation when the flow allows it. Re-read after
-a stale-version conflict and retry only if your attempt is still running. Never
-advance by changing the assignee, calling legacy handoff, or editing status.
+a stale-version conflict and retry only if your attempt is still running.
 The runtime routes the next step and enforces joins and required checks.
 
 A handoff result should identify the deliverable and its paths/links, decisions,
@@ -137,14 +136,9 @@ the current `--version`. These hold before you see them:
 - When delivery waits for an external event or a human, tell the owner what
   remains and end the turn without polling or spawning another agent.
 
-Old work streams without a flow may still exist. Inspect their recorded policy
-and waits before acting; ask the owner to choose a flow for new work. Do not
-apply legacy handoff or completing-review commands or bare status updates to a
-flow-backed stream.
-
 ## Follow-Up Work
 
-Follow-up work discovered during reviews or implementation must be communicated to the manager — either via the work stream's next-steps metadata when marking done, or via an inbox message. Never rely solely on your own short-term memory for follow-ups.
+Follow-up work discovered during reviews or implementation must be communicated to the manager by inbox message. Never rely solely on your own short-term memory for follow-ups.
 
 ## Git Worktrees
 

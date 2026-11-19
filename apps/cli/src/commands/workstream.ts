@@ -395,8 +395,22 @@ export function formatWorkStreamAgents(
   return agentIds.map((agentId) => formatAgentSummary(agentId, summaries.get(agentId))).join(', ')
 }
 
+/** Shown under `ficus workstream --help`: which verbs predate flows, and what replaces them. */
+const LEGACY_VERBS_HELP = `
+A work stream with a flow moves through flow, advance and finish: submit step outcomes,
+returns, rework and revisions with "ficus workstream advance", and finish delivery with
+"ficus workstream finish" at completion-ready. Commands marked "Legacy" serve only streams
+without a flow; a flow refuses them and names the replacement.`
+
+const FLOW_PARTICIPANTS_REFUSAL =
+  "This work stream's flow owns its participants: change them with an authorized revise through ficus workstream advance"
+
 export function registerWorkstreamCommands(program: Command, flowDependencies?: WorkstreamFlowDependencies) {
-  const ws = program.command('workstream').alias('ws').description('Manage work streams')
+  const ws = program
+    .command('workstream')
+    .alias('ws')
+    .description('Manage work streams')
+    .addHelpText('after', LEGACY_VERBS_HELP)
   registerWorkstreamFlowCommands(ws, flowDependencies)
   registerWorkstreamCleanupCommands(ws)
   registerWorkstreamAttachmentCommands(ws)
@@ -717,11 +731,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--clear-dependencies|--remove-dependency', 'Clear all dependencies (cannot be combined with --depends-on)')
     .option('--title <title>', 'New title')
     .option('-d, --description <desc>', 'New description')
-    .option('--assign <agentId>', 'Assign to agent')
+    .option('--assign <agentId>', 'Assign to agent (legacy, streams without a flow)')
     .option('--unassign', 'Remove assignee')
     .option('--owner <agentId>', 'Owner agent for this work stream (receives lifecycle notifications)')
     .option('--clear-owner', 'Clear owner agent and fall back to manager routing')
-    .option('--agent-ids <ids>', 'Agent IDs to bind (comma-separated)')
+    .option('--agent-ids <ids>', 'Agent IDs to bind, comma-separated (legacy, streams without a flow)')
     .option('--clear-agents', 'Remove agent restrictions')
     .option('--reviewer <userId>', 'Replace assigned reviewers with these user IDs (can repeat)', collect, [])
     .option('--clear-reviewers', 'Clear the reviewer filter; anyone with review permission may decide')
@@ -978,7 +992,7 @@ only when a human actually answered elsewhere, never an inferred answer.
   // ficus workstream approve <id> [-m <note>] [--wait <waitId>]
   ws.command('approve <id>')
     .description(
-      'Approve the open review: completes the stream in one transaction (a --no-complete checkpoint review resolves the wait only)'
+      'Legacy, streams without a flow: approve the open review wait, completing the stream (a --no-complete checkpoint resolves the wait only). Flows approve in their own steps'
     )
     .option('--wait <waitId>', 'Review wait id to approve (required when several review waits are open)')
     .option('-m, --message <note>', 'Approval note recorded on the wait and delivered with the outcome notification')
@@ -1005,7 +1019,9 @@ only when a human actually answered elsewhere, never an inferred answer.
   // ficus workstream send-back <id> -m <feedback> [--wait <waitId>] (alias: reject)
   ws.command('send-back <id>')
     .alias('reject')
-    .description('Close the open review wait with required feedback; the stream stays schedulable')
+    .description(
+      'Legacy, streams without a flow: close the open review wait with required feedback (on a flow stream, only a review wait left open from before). Flows return work with workstream advance'
+    )
     .option('-m, --message <feedback>', 'Send-back feedback (required)')
     .option('--note <note>', 'Alias for -m/--message')
     .option('-r, --reason <reason>', 'Alias for -m/--message')
@@ -1030,7 +1046,9 @@ only when a human actually answered elsewhere, never an inferred answer.
 
   // ficus workstream request-review <id> --message <msg> [--file <path>...]
   ws.command('request-review <id>')
-    .description('Open the review wait: the work is ready for someone to review (idempotent while open)')
+    .description(
+      'Legacy, streams without a flow: open the review wait (idempotent while open). In a flow, submit your step outcome with workstream advance'
+    )
     .requiredOption('-m, --message <msg>', 'What to review (stored on the review wait)')
     .option('-f, --file <path>', 'Artifact file to review (can repeat; stored on the work stream)', collect, [])
     .option(
@@ -1071,7 +1089,9 @@ only when a human actually answered elsewhere, never an inferred answer.
   // ficus workstream handoff <id> --to <agentId> --message <msg> [options]
   // Reassignment only — opening a review wait is `request-review`.
   ws.command('handoff <id>')
-    .description('Hand off the work stream to another agent (reassignment; use request-review to ask for review)')
+    .description(
+      'Legacy, streams without a flow: reassign the stream to another agent. In a flow, submit your step outcome with workstream advance'
+    )
     .option('--to <agentId>', 'Agent to hand off to')
     .requiredOption('-m, --message <msg>', "Handoff message explaining what was done/what's next")
     .option('-f, --file <path>', 'File to include for context (can repeat)', collect, [])
@@ -1104,7 +1124,7 @@ only when a human actually answered elsewhere, never an inferred answer.
 
   // ficus workstream done <id> [--next-steps <notes>]
   ws.command('done <id>')
-    .description('Mark work stream as done')
+    .description('Legacy, streams without a flow: mark the stream done. A flow finishes with workstream finish')
     .option(
       '--next-steps <notes>',
       'Follow-up notes to persist on the work stream and include in completion notifications'
@@ -1333,7 +1353,9 @@ only when a human actually answered elsewhere, never an inferred answer.
 
   // ficus workstream add-agent <workstreamId> <types...>
   ws.command('add-agent <workstreamId> <types...>')
-    .description('Spawn and bind agents to a work stream')
+    .description(
+      'Legacy, streams without a flow: spawn and bind agents. A flow starts its own participants; change them with a revise through workstream advance'
+    )
     .option(
       '--model <model>',
       'Model spec override for all spawned agents (provider:model-id[:thinking-level], or a comma-separated priority list of specs)'
@@ -1347,6 +1369,11 @@ only when a human actually answered elsewhere, never an inferred answer.
     .action(async (workstreamId: string, types: string[], options) => {
       try {
         const ws = await apiGet<WorkStream>(`/api/workstreams/${workstreamId}`)
+        // Refuse before spawning: a flow would reject the binding and leave the new agents unbound.
+        if (await apiGet(`/api/workflows/runs/${encodeURIComponent(ws.id)}?integrationDeliveries=0`)) {
+          outputError(new Error(FLOW_PARTICIPANTS_REFUSAL))
+          return
+        }
         const agentModelOverrides = parseAgentModelOverrides(options.agentModel)
 
         for (const agentType of types) {
@@ -1365,7 +1392,9 @@ only when a human actually answered elsewhere, never an inferred answer.
 
   // ficus workstream remove-agent <workstreamId> <agentId>
   ws.command('remove-agent <workstreamId> <agentId>')
-    .description('Remove an agent from a work stream')
+    .description(
+      'Legacy, streams without a flow: remove an agent. A flow owns its participants; change them with a revise through workstream advance'
+    )
     .action(async (workstreamId: string, agentId: string) => {
       try {
         await apiDelete(`/api/workstreams/${workstreamId}/agents/${agentId}`)

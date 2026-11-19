@@ -1743,6 +1743,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       if (locked.status === 'done' || locked.status === 'canceled') {
         throw new Error(`Cannot hand off a ${locked.status} work stream`)
       }
+      const [run] = await tx
+        .select({ activated: workStreamFlowRuns.activated })
+        .from(workStreamFlowRuns)
+        .where(eq(workStreamFlowRuns.workStreamId, this.id))
+      if (run?.activated) {
+        const { FLOW_REFUSALS } = await import('../services/workflows/execution')
+        const { WorkflowError } = await import('../services/workflows/catalog')
+        throw new WorkflowError(FLOW_REFUSALS.reviewWait, 409)
+      }
       const opened = await openWait(tx, {
         workStreamId: this.id,
         type: 'review',
@@ -1948,6 +1957,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         }
         throw new Error(`Cannot send back a ${locked.status} work stream`)
       }
+      // A flow opens no review waits, but one opened before this was refused (or before the flow
+      // was activated) would otherwise block the stream for good, so send-back still clears it.
       const closed = await closeOpenWaits(
         tx,
         { workStreamId: this.id, type: 'review', ...(opts.waitId ? { waitId: opts.waitId } : {}) },
@@ -1955,6 +1966,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         { note, closedAt: now }
       )
       if (closed.length === 0) {
+        const [run] = await tx
+          .select({ activated: workStreamFlowRuns.activated })
+          .from(workStreamFlowRuns)
+          .where(eq(workStreamFlowRuns.workStreamId, this.id))
+        if (run?.activated) {
+          const { FLOW_REFUSALS } = await import('../services/workflows/execution')
+          const { WorkflowError } = await import('../services/workflows/catalog')
+          throw new WorkflowError(FLOW_REFUSALS.reviewWait, 409)
+        }
         if (opts.waitId) {
           throw new WorkStreamWaitResolveError('wait_already_closed', `Wait ${opts.waitId} was closed concurrently`)
         }
@@ -2370,8 +2390,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Add an agent to this work stream.
    */
   async addAgent(agentId: string): Promise<this> {
-    const { getFlow } = await import('../services/workflows/execution')
-    if ((await getFlow(this.id))?.activated) throw new Error('Use a flow revision to change participants')
+    const { getFlow, FLOW_REFUSALS } = await import('../services/workflows/execution')
+    const { WorkflowError } = await import('../services/workflows/catalog')
+    if ((await getFlow(this.id))?.activated) throw new WorkflowError(FLOW_REFUSALS.participants, 409)
     if (this.status === 'canceled') {
       throw new Error('Work stream has been canceled')
     }
@@ -2396,8 +2417,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Remove an agent from this work stream.
    */
   async removeAgent(agentId: string): Promise<this> {
-    const { getFlow } = await import('../services/workflows/execution')
-    if ((await getFlow(this.id))?.activated) throw new Error('Use a flow revision to change participants')
+    const { getFlow, FLOW_REFUSALS } = await import('../services/workflows/execution')
+    const { WorkflowError } = await import('../services/workflows/catalog')
+    if ((await getFlow(this.id))?.activated) throw new WorkflowError(FLOW_REFUSALS.participants, 409)
     // Resolve full UUID, fallback to original value if validation fails (in case agent was deleted)
     agentId = (await Agent.validateAgentIds([agentId]).catch(() => [agentId]))[0]
 

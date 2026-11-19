@@ -889,9 +889,9 @@ describe('work-streams routes', () => {
         createRequestHash: 'fixture',
         createdBy: 'test',
       })
-      expect((await postJson(`/api/workstreams/${auto.id}/request-review`, { message: 'ci will merge' })).status).toBe(
-        200
-      )
+      // A flow refuses request-review, so open the review wait directly: the fixture exercises the
+      // annotation, not the verb.
+      await openWait(db, { workStreamId: auto.id, type: 'review', message: 'ci will merge' })
 
       const dependency = await storedLegacyWorkStream({
         squadId: testSquadId,
@@ -2755,6 +2755,73 @@ describe('work-streams routes', () => {
       const second = await postJson(`/api/workstreams/${created.id}/request-review`, { message: 'again' })
       expect(second.status).toBe(200)
       expect((await second.json()).alreadyOpen).toBe(true)
+    })
+
+    it('a flow refuses request-review, naming the replacement, and opens no wait', async () => {
+      const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} Flow review` })
+      const definition = createBlankWorkflow()
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream.id,
+        activated: true,
+        state: createWorkflowRun(definition),
+        source: { schemaVersion: 1, source: { kind: 'inline' }, definition },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'fixture',
+        createdBy: 'test',
+      })
+
+      const res = await postJson(`/api/workstreams/${stream.id}/request-review`, { message: 'please review' })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toContain('ficus workstream advance')
+      const detail = await (await apiFetch(`/api/workstreams/${stream.id}`)).json()
+      expect(detail.openWaits ?? []).toHaveLength(0)
+
+      const add = await postJson(`/api/workstreams/${stream.id}/agents/${testAgentId}`, {})
+      expect(add.status).toBe(409)
+      expect((await add.json()).error).toContain('ficus workstream advance')
+      const remove = await apiFetch(`/api/workstreams/${stream.id}/agents/${testAgentId}`, { method: 'DELETE' })
+      expect(remove.status).toBe(409)
+      expect((await remove.json()).error).toContain('ficus workstream advance')
+
+      const openReviewWaits = async () =>
+        ((await (await apiFetch(`/api/workstreams/${stream.id}`)).json()).openWaits ?? [])
+          .filter((open: { type: string }) => open.type === 'review')
+          .map((open: { id: string }) => open.id)
+
+      // With nothing to close, approve and send-back are refused and name the replacement.
+      for (const [path, body] of [
+        [`/api/workstreams/${stream.id}/approve`, {}],
+        [`/api/workstreams/${stream.id}/send-back`, { note: 'needs work' }],
+      ] as const) {
+        const refused = await postJson(path, body)
+        expect({ path, status: refused.status }).toEqual({ path, status: 409 })
+        expect((await refused.json()).error).toContain('ficus workstream advance')
+      }
+
+      // A review wait opened before these refusals (or before the flow was activated) cannot be
+      // approved, but send-back still clears it so the stream is not left blocked.
+      const { wait: older } = await openWait(db, { workStreamId: stream.id, type: 'review', message: 'older review' })
+      for (const [path, body] of [
+        [`/api/workstreams/${stream.id}/approve`, {}],
+        [`/api/workstreams/${stream.id}/waits/${older.id}/resolve`, { resolution: 'approved' }],
+      ] as const) {
+        const refused = await postJson(path, body)
+        expect({ path, status: refused.status }).toEqual({ path, status: 409 })
+        expect((await refused.json()).error).toContain('ficus workstream advance')
+      }
+      expect(await openReviewWaits()).toEqual([older.id])
+      expect(
+        (await postJson(`/api/workstreams/${stream.id}/send-back`, { note: 'superseded by the flow' })).status
+      ).toBe(200)
+      expect(await openReviewWaits()).toEqual([])
+
+      const { wait: typed } = await openWait(db, { workStreamId: stream.id, type: 'review', message: 'another' })
+      const resolved = await postJson(`/api/workstreams/${stream.id}/waits/${typed.id}/resolve`, {
+        resolution: 'sent_back',
+        note: 'superseded by the flow',
+      })
+      expect(resolved.status).toBe(200)
+      expect(await openReviewWaits()).toEqual([])
     })
 
     it('message-only handoff no longer opens a review wait (route removed)', async () => {

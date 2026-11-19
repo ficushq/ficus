@@ -137,7 +137,12 @@ export function selectOpenWait(
   }
 
   if (candidates.length === 0) {
-    throw new WaitSelectionError(`Work stream has no open ${opts.typeLabel} wait to resolve`)
+    throw new WaitSelectionError(
+      `Work stream has no open ${opts.typeLabel} wait to resolve` +
+        (type === 'review'
+          ? '. A stream with a flow has no review waits: its review steps take outcomes and returns through ficus workstream advance'
+          : '')
+    )
   }
   if (candidates.length > 1) {
     throw new WaitSelectionError(

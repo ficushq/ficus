@@ -469,6 +469,17 @@ recorded — the note is never silently dropped.
 
 ---
 
+> **Legacy commands.** `request-review`, `approve`, `send-back`, `handoff`,
+> `done`, `add-agent` and `remove-agent` serve only work streams without a flow,
+> and `ficus workstream --help` marks them "Legacy". A flow refuses each of
+> them (the API answers 409) with a message that names the replacement:
+> `ficus workstream advance` for step outcomes, returns, rework and participant
+> revisions, and `ficus workstream finish` for delivery. `approve` and
+> `send-back` find no review wait on a flow stream, and their error says the
+> same. One exception: `send-back` still closes a review wait that was opened
+> on a flow stream before these refusals existed, so that stream is not left
+> blocked.
+
 ### request-review
 
 Open the review wait: the work is ready for someone to review. Approving the
