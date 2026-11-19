@@ -1,3 +1,4 @@
+import type { PublicVoiceGitHubAccount } from '@ficus/shared'
 import { reconcileSquadIntegration } from '../scope-settings'
 import { integrationEnabledPredicate } from '../provider-state'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
@@ -142,35 +143,69 @@ export async function connectedGitHubLogins(): Promise<string[]> {
   ]
 }
 
-/** Privileged instance operations select explicitly when the pool is ambiguous. */
-export async function resolveInstanceGitHubConnection(connectionId?: string) {
-  const rows = await db
-    .select()
-    .from(integrationConnections)
-    .where(
-      and(
-        eq(integrationConnections.providerKey, 'github'),
-        eq(integrationConnections.adapterVersion, 1),
-        eq(integrationConnections.clientAuthority, resolveOAuthAuthority()),
-        eq(integrationConnections.enabled, true),
-        integrationEnabledPredicate(),
-        eq(integrationConnections.authState, 'authenticated'),
-        eq(integrationConnections.healthState, 'healthy'),
-        eq(integrationConnections.validatedRevision, integrationConnections.materialRevision),
-        gt(integrationConnections.validationExpiresAt, sql`clock_timestamp()`),
-        connectionId ? eq(integrationConnections.id, connectionId) : undefined
-      )
-    )
-    .limit(2)
-  if (rows.length !== 1) return undefined
-  const connection = rows[0]!
+/** The same persisted availability floor for selection and authoritative instance resolution. */
+function instanceGitHubAvailability(connectionId?: string) {
+  return and(
+    eq(integrationConnections.providerKey, 'github'),
+    eq(integrationConnections.adapterVersion, 1),
+    eq(integrationConnections.clientAuthority, resolveOAuthAuthority()),
+    eq(integrationConnections.enabled, true),
+    integrationEnabledPredicate(),
+    eq(integrationConnections.authState, 'authenticated'),
+    eq(integrationConnections.healthState, 'healthy'),
+    eq(integrationConnections.validatedRevision, integrationConnections.materialRevision),
+    gt(integrationConnections.validationExpiresAt, sql`clock_timestamp()`),
+    connectionId ? eq(integrationConnections.id, connectionId) : undefined
+  )
+}
+
+/** Local credential freshness only; this never probes GitHub or refreshes an OAuth token. */
+async function instanceGitHubCredential(credentialRef: string) {
   const store = getSecretStore()
-  await store.refreshKey(connection.credentialRef)
+  await store.refreshKey(credentialRef)
   try {
-    const credential = parseOAuthCredential(store.get(connection.credentialRef))
+    const credential = parseOAuthCredential(store.get(credentialRef))
     if (credential.expiresAt !== null && Date.parse(credential.expiresAt) <= Date.now()) return undefined
-    return { connection, credential }
+    return credential
   } catch {
     return undefined
   }
+}
+
+/** Minimal non-secret identities for the public-voice picker. No installation, usage or credential DTOs. */
+export async function listPublicVoiceGitHubAccounts(): Promise<PublicVoiceGitHubAccount[]> {
+  const rows = await db
+    .select({
+      id: integrationConnections.id,
+      configuration: integrationConnections.configuration,
+      displayName: integrationConnections.displayName,
+      credentialRef: integrationConnections.credentialRef,
+    })
+    .from(integrationConnections)
+    .where(instanceGitHubAvailability())
+    .orderBy(integrationConnections.id)
+  const accounts: PublicVoiceGitHubAccount[] = []
+  for (const row of rows) {
+    if (!(await instanceGitHubCredential(row.credentialRef))) continue
+    try {
+      const { login } = parseGitHubConfiguration(row.configuration)
+      accounts.push({
+        id: row.id,
+        login,
+        ...(row.displayName && row.displayName !== login ? { displayName: row.displayName } : {}),
+      })
+    } catch {
+      // A malformed identity cannot prefill a usable account selection.
+    }
+  }
+  return accounts
+}
+
+/** Privileged instance operations select explicitly when the pool is ambiguous. */
+export async function resolveInstanceGitHubConnection(connectionId?: string) {
+  const rows = await db.select().from(integrationConnections).where(instanceGitHubAvailability(connectionId)).limit(2)
+  if (rows.length !== 1) return undefined
+  const connection = rows[0]!
+  const credential = await instanceGitHubCredential(connection.credentialRef)
+  return credential ? { connection, credential } : undefined
 }

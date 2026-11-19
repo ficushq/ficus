@@ -18,7 +18,7 @@ import { assistantApi } from './api/assistant'
 import { assistantQueryKeys } from './queryKeys'
 import { getModelCatalog } from './api/modelCatalog'
 import { modelCatalogQueryKeys, publicVoiceQueryKeys } from './queryKeys'
-import { getPublicVoices, getSquadVoice } from './api/publicVoices'
+import { getPublicVoices, getSquadVoice, getPublicVoiceGitHubAccounts } from './api/publicVoices'
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { queryKeys, onboardingQueryKeys, integrationQueryKeys, themePresetQueryKeys } from './queryKeys'
 import {
@@ -348,6 +348,12 @@ export const queries = {
   },
 
   publicVoices: {
+    githubAccounts: () =>
+      queryOptions({
+        queryKey: publicVoiceQueryKeys.githubAccounts(),
+        queryFn: getPublicVoiceGitHubAccounts,
+        refetchInterval: 30_000,
+      }),
     list: () => queryOptions({ queryKey: publicVoiceQueryKeys.list(), queryFn: getPublicVoices }),
     squad: (squadId: string) =>
       queryOptions({ queryKey: publicVoiceQueryKeys.squad(squadId), queryFn: () => getSquadVoice(squadId) }),

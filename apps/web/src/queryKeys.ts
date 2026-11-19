@@ -40,6 +40,7 @@ export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 export const publicVoiceQueryKeys = {
   all: ['public-voices'] as const,
   list: () => [...publicVoiceQueryKeys.all, 'list'] as const,
+  githubAccounts: () => [...publicVoiceQueryKeys.all, 'github-accounts'] as const,
   squad: (squadId: string) => [...publicVoiceQueryKeys.all, 'squad', squadId] as const,
 }
 

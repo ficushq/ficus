@@ -1,3 +1,4 @@
+import { untilRendered } from '../../test/untilRendered'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { PublicVoiceProfileJson } from '@ficus/shared'
@@ -88,6 +89,86 @@ test('deleting an unshipped profile requires a second click and uses the danger 
     await dom.act(async () => remove.click())
     expect(removed).toEqual(['team'])
   } finally {
+    await dom.cleanup()
+  }
+})
+
+test('Voices derives through accounts instead of squads and still opens Save as new profile', async () => {
+  const { acquireDomHarness } = await import('../../test/domHarness')
+  const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+  const { MemoryRouter } = await import('react-router')
+  const { queries } = await import('../../queryOptions')
+  const { PermissionsProvider } = await import('../../hooks/usePermissions')
+  const { VoicesTab } = await import('./VoicesTab')
+  const dom = await acquireDomHarness({ url: 'http://localhost' })
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
+  client.setQueryData(queries.publicVoices.list().queryKey, [profile({})])
+  client.setQueryData(queries.squads.list().queryKey, [{ id: 'squad', name: 'Squad name', publicVoiceId: 'team' }])
+
+  client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [
+    {
+      id: 'account',
+      displayName: 'Display account',
+      login: 'octo',
+    },
+  ])
+  const original = globalThis.fetch
+  globalThis.fetch = (async () =>
+    Response.json({
+      login: 'octo',
+      draft: { base: 'A derived draft.', surfaces: {} },
+      observations: [],
+      exemplars: [],
+      sampling: {
+        filters: {},
+        counts: {
+          collected: 20,
+          kept: 20,
+          droppedByFilter: { date: 0, repository: 0 },
+          droppedAsToolAuthored: 0,
+          droppedAsTemplate: 0,
+        },
+        dateRange: {},
+        publicRepositories: [],
+        privateRepositories: [],
+        pagingCapped: false,
+      },
+      bytes: 20,
+      maxBytes: 2000,
+    })) as typeof fetch
+  try {
+    const { root, container } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <PermissionsProvider
+            usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
+          >
+            <MemoryRouter>
+              <VoicesTab />
+            </MemoryRouter>
+          </PermissionsProvider>
+        </QueryClientProvider>
+      )
+    )
+    expect(container.textContent).toContain('GitHub account to read through')
+    expect(container.textContent).toContain('octo (Display account)')
+    expect(container.textContent).not.toContain('Squad whose GitHub connection to use')
+    expect(container.textContent).toContain('Assigned squads: Squad name')
+    await dom.act(async () =>
+      [...container.querySelectorAll('button')].find((b) => b.textContent === 'Derive')!.click()
+    )
+    await untilRendered(dom, () =>
+      expect([...container.querySelectorAll('button')].some((b) => b.textContent === 'Save as new profile')).toBe(true)
+    )
+    await dom.act(async () =>
+      [...container.querySelectorAll('button')].find((b) => b.textContent === 'Save as new profile')!.click()
+    )
+    expect(dom.window.document.querySelector('[aria-label="Profile id"]')).not.toBeNull()
+    expect(dom.window.document.querySelector('[aria-label="Profile name"]')).not.toBeNull()
+  } finally {
+    globalThis.fetch = original
+    client.clear()
     await dom.cleanup()
   }
 })

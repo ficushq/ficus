@@ -1,6 +1,7 @@
 import type {
   DerivationFilters,
   PublicSurface,
+  PublicVoiceGitHubAccount,
   PublicVoiceProfileJson,
   PublicVoiceSurfaces,
   SquadPublicVoice,
@@ -20,6 +21,11 @@ export interface PublicVoiceProfileInput {
   description?: string | null
   base: string
   surfaces: PublicVoiceSurfaces
+}
+
+/** Usable identities only, authorized by the same person and grants as deriving. */
+export function getPublicVoiceGitHubAccounts(): Promise<PublicVoiceGitHubAccount[]> {
+  return apiFetch('/public-voices/derive/github-accounts')
 }
 
 export function getPublicVoices(): Promise<PublicVoiceProfileJson[]> {
@@ -67,8 +73,18 @@ export function previewSquadVoice(
 export type { VoiceDerivationResult } from '@ficus/shared'
 import type { VoiceDerivationResult } from '@ficus/shared'
 
-export async function deriveSquadVoice(
+export type VoiceDerivationTarget = { kind: 'squad'; squadId: string } | { kind: 'connection'; connectionId: string }
+
+export function deriveSquadVoice(
   squadId: string,
+  body: { login: string; filters?: DerivationFilters },
+  options: ReadVoiceDerivationOptions = {}
+): Promise<VoiceDerivationResult> {
+  return deriveVoice({ kind: 'squad', squadId }, body, options)
+}
+
+export async function deriveVoice(
+  target: VoiceDerivationTarget,
   body: { login: string; filters?: DerivationFilters },
   options: ReadVoiceDerivationOptions = {}
 ): Promise<VoiceDerivationResult> {
@@ -76,12 +92,15 @@ export async function deriveSquadVoice(
   const timer = setTimeout(() => controller.abort(new VoiceDerivationError('derivation_stream_interrupted')), 220_000)
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
   try {
-    const response = await authFetch(`/squads/${squadId}/voice/derive`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-      signal,
-      headers: { 'Content-Type': 'application/json', Accept: VOICE_DERIVATION_ACCEPT },
-    })
+    const response = await authFetch(
+      target.kind === 'squad' ? `/squads/${target.squadId}/voice/derive` : '/public-voices/derive',
+      {
+        method: 'POST',
+        body: JSON.stringify(target.kind === 'connection' ? { ...body, connectionId: target.connectionId } : body),
+        signal,
+        headers: { 'Content-Type': 'application/json', Accept: VOICE_DERIVATION_ACCEPT },
+      }
+    )
     if (!response.ok) {
       const payload = await response
         .clone()
@@ -94,13 +113,14 @@ export async function deriveSquadVoice(
     if (error instanceof VoiceDerivationError)
       throw new ApiError(
         422,
-        formatDerivationError(error.code, error.payload, { includeCode: false }) ?? error.message,
+        formatDerivationError(error.code, error.payload, { includeCode: false, target: target.kind }) ?? error.message,
         error.payload
       )
-    if (error instanceof ApiError && (error.status === 422 || error.status === 502)) {
+    if (error instanceof ApiError) {
       const code = (error.payload as { error?: unknown } | undefined)?.error
       const message = formatDerivationError(typeof code === 'string' ? code : undefined, error.payload, {
         includeCode: false,
+        target: target.kind,
       })
       if (message) throw new ApiError(error.status, message, error.payload)
     }

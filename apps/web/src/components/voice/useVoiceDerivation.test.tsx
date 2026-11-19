@@ -31,7 +31,7 @@ test('cancel, retry, context switch and unmount fence stale callbacks and drafts
     new Promise((resolve) => pending.push({ resolve, signal: init!.signal! }))) as typeof fetch
   let hook!: ReturnType<typeof useVoiceDerivation>
   function Fixture({ squadId }: { squadId: string }) {
-    hook = useVoiceDerivation(squadId, () => ({ login: 'octo', filters: {} }))
+    hook = useVoiceDerivation({ kind: 'squad', squadId }, () => ({ login: 'octo', filters: {} }))
     return <p>{hook.data?.draft.base ?? hook.notice}</p>
   }
   try {

@@ -202,7 +202,11 @@ describe('SettingsPage RBAC tabs', () => {
       expect(html.includes('Add profile')).toBe(canWrite)
       expect(html).toMatch(/aria-current="page"[^>]*>[\s\S]*?Voices/)
     }
-    const denied = await renderSettings('/settings?section=voices', ['agent-types:update'])
+    const creator = await renderSettings('/settings?section=voices', ['agent-types:update'])
+    expect(creator).toMatch(/<h3[^>]*>Voices<\/h3>/)
+    expect(creator).toContain('Add profile')
+    expect(creator).toContain('Profile listing requires permission to read voice profiles.')
+    const denied = await renderSettings('/settings?section=voices', [])
     expect(denied).not.toContain('Voice profiles set how agents write')
     expect(denied).not.toContain('>Voices<')
   })

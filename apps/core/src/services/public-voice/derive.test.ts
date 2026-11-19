@@ -667,3 +667,34 @@ test('cancelling active generation unsubscribes, disposes and ignores late model
     create.mockRestore()
   }
 })
+
+test('instance derivation session keeps the product feature and person attribution with null squad', async () => {
+  let listener: ((event: any) => void) | undefined
+  const create = spyOn(AgentSession, 'create').mockResolvedValue({
+    pi: {
+      subscribe: (cb: typeof listener) => {
+        listener = cb
+        return () => {}
+      },
+      prompt: async () => {
+        listener?.({ type: 'agent_end' })
+      },
+    },
+  } as any)
+  try {
+    await runDerivationSession(
+      {
+        systemPrompt: 'S',
+        prompt: 'Synthetic samples',
+        attribution: { userId: 'person', squadId: null },
+        signal: new AbortController().signal,
+      },
+      { resolveModel: async () => 'synthetic:test' }
+    )
+    const options = create.mock.calls[0]![0] as any
+    expect(options.usage.feature).toBe('public-voice-derive')
+    expect(options.usage.attribution()).toEqual({ userId: 'person', squadId: null })
+  } finally {
+    create.mockRestore()
+  }
+})

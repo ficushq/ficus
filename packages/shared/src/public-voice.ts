@@ -12,6 +12,14 @@
  */
 import { z } from 'zod'
 
+/** Safe selection DTO for person-initiated public-voice derivation, not an integration administration view. */
+export interface PublicVoiceGitHubAccount {
+  id: string
+  login: string
+  /** Included only when the label differs from the login. */
+  displayName?: string
+}
+
 export const PUBLIC_SURFACES = ['commits', 'pullRequests', 'reviewReplies', 'issueComments', 'channels'] as const
 export type PublicSurface = (typeof PUBLIC_SURFACES)[number]
 
@@ -115,6 +123,8 @@ export type PublicVoiceProfileUpdate = z.infer<typeof publicVoiceProfileUpdateSc
 export const squadPublicVoicePatchSchema = z
   .object({
     voiceId: publicVoiceIdSchema.nullable().optional(),
+    // Instance assignment controls must not silently replace the squad's custom base.
+    preserveCustomBase: z.boolean().optional(),
     base: voiceText.nullable().optional(),
     surfaces: publicVoiceSurfacesPatchSchema.optional(),
   })

@@ -1,4 +1,8 @@
-import { resolveGitHubConnection } from '../integrations/github/resolve-connection'
+import { resolveGitHubConnection, resolveInstanceGitHubConnection } from '../integrations/github/resolve-connection'
+
+export type GitHubActivitySource = { source: GitHubTokenSource; squadId?: never } | { squadId: string; source?: never }
+
+export type GitHubTokenSource = { kind: 'squad'; squadId: string } | { kind: 'connection'; connectionId: string }
 
 const GITHUB_API_BASE = 'https://api.github.com'
 
@@ -70,12 +74,18 @@ function isRateLimited(res: Response) {
 export async function githubApiGraphql<T>(
   query: string,
   variables: Record<string, unknown>,
-  squadId: string,
+  source: string | GitHubTokenSource,
   connectionId?: string,
   options: { allowPartial?: boolean; signal?: AbortSignal } = {}
 ): Promise<T | null> {
   options.signal?.throwIfAborted()
-  const token = (await resolveGitHubConnection(squadId, connectionId))?.credential.accessToken
+  const resolved =
+    typeof source === 'string'
+      ? await resolveGitHubConnection(source, connectionId)
+      : source.kind === 'squad'
+        ? await resolveGitHubConnection(source.squadId, connectionId)
+        : await resolveInstanceGitHubConnection(source.connectionId)
+  const token = resolved?.credential.accessToken
   options.signal?.throwIfAborted()
   if (!token) throw new GitHubApiUnavailableError('no_token')
   let res: Response
