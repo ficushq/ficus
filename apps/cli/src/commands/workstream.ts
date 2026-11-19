@@ -1424,7 +1424,9 @@ only when a human actually answered elsewhere, never an inferred answer.
   // ficus workstream tracked <id>
   ws.command('tracked <id>')
     .alias('links')
-    .description('List issues and pull requests tracked by a work stream')
+    .description(
+      'List issues and pull requests tracked by a work stream: source (primary delivery PR or tracked), whether a pull request counts toward delivery, observed merge state and subscription'
+    )
     .action(async (id) => {
       try {
         const view = await apiGet<TrackedResourcesView>(`/api/workstreams/${encodeURIComponent(id)}/tracked`)
@@ -1454,13 +1456,18 @@ only when a human actually answered elsewhere, never an inferred answer.
 
   // ficus workstream track <id> [--event | --url | --issue | --pr] [--connection]
   ws.command('track <id>')
-    .description('Track an issue or pull request alongside this work stream')
+    .description(
+      'Track an issue or pull request alongside this work stream. Tracking never changes the primary delivery PR (codeHost.changeRequest), and tracked activity, such as an issue closing, is information only: it never finishes the stream or clears its waits'
+    )
     .option('--event <eventId>', 'Track the resource observed by an integration event')
     .option('--url <url>', 'Track by code-host resource URL')
     .option('--issue <ref>', 'Track an issue: owner/repo#12 is GitHub, KEY-123 is always a Linear reference')
     .option('--pr <ref>', 'Track a GitHub pull request, e.g. owner/repo#12')
     .option('--connection <connectionId>', 'Integration connection ID (--issue/--pr only)')
-    .option('--delivery', 'Count this pull request toward the work stream delivery')
+    .option(
+      '--delivery',
+      'Count this pull request toward delivery: ficus workstream finish then also requires it to be merged (pull requests only)'
+    )
     .action(async (id, options) => {
       try {
         const body = buildTrackRequestBody(options)

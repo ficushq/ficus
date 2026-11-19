@@ -853,6 +853,27 @@ describe('workstream CLI commands', () => {
   })
 
   describe('track', () => {
+    it('explains tracking and delivery at the track and tracked commands, where agents look it up', () => {
+      const program = new Command()
+      registerWorkstreamCommands(program)
+      const workstream = program.commands.find((command) => command.name() === 'workstream')!
+      const help = (name: string) => {
+        let text = ''
+        const command = workstream.commands.find((candidate) => candidate.name() === name)!
+        command.configureOutput({ writeOut: (chunk) => (text += chunk) })
+        command.outputHelp()
+        return text.replace(/\s+/g, ' ')
+      }
+      const track = help('track')
+      expect(track).toContain('never changes the primary delivery PR (codeHost.changeRequest)')
+      expect(track).toContain('it never finishes the stream or clears its waits')
+      expect(track).toContain('ficus workstream finish then also requires it to be merged')
+      expect(track).toContain('KEY-123 is always a Linear reference')
+      expect(help('tracked')).toContain(
+        'whether a pull request counts toward delivery, observed merge state and subscription'
+      )
+    })
+
     it('tracks a GitHub issue given as owner/repo#number', async () => {
       await run(['workstream', 'track', 'stream-1', '--issue', 'acme/widgets#12'])
       expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {

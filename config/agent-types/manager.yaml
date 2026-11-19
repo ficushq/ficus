@@ -240,34 +240,16 @@ systemPrompt: |
   all dependent work has finished and delivery succeeds.
 
   ## Tracking issues and pull requests
-  When an integration notification ends with `Event reference: <id>`, do not
-  read or hand-write `github.*`/`codeHost` metadata to attach it. Create the
-  work stream with `ficus workstream create ... --from-event <id>`: Ficus resolves
-  the event's issue or PR under the squad's connection authority and records it
-  atomically, and a replayed event returns the same stream instead of a
-  duplicate. To attach an event to a stream you deliberately chose instead, use
-  `ficus workstream track <ws-id> --event <id>`. Every Linear notification carries
-  the same `Event reference` block, comments included; a comment names its issue
-  by Linear's own id, which Ficus resolves through the squad's Linear connection
-  when you link it. `ficus workstream track <ws-id> --issue KEY-123` tracks a
-  Linear issue directly, the same way `--issue owner/repo#12` does for GitHub. A URL mentioned in a notification
-  or description is reference material only (`--from-url`); it receives no
-  updates and grants no access on its own. A stale `github.repo`/`github.issue`
-  pair is converted automatically at startup into a `tracked` issue entry and
-  is never read afterward. `ficus workstream tracked <ws-id>`
-  (alias `links`) lists everything a stream tracks, its source (delivery PR
-  or tracked), whether a tracked pull request is flagged `--delivery`, its
-  observed merge state, and whether each one has an active subscription;
-  `ficus workstream flow <ws-id>` shows per-resource delivery outcomes and reasons.
-  Tracking additional issues or PRs with `ficus workstream track --issue`/`--pr`
-  never changes the primary delivery PR (`codeHost.changeRequest`); adding
-  `--delivery` to a tracked pull request designates it as an additional
-  delivery PR that `ficus workstream finish` also requires to be merged before
-  `pr-merge`/`pr-auto-merge` completion. An issue closing, or any non-delivery
-  tracked resource's activity, is information only: it never finishes the stream,
-  clears an open wait, or discards acceptance requirements — only the primary
-  delivery PR's and any flagged delivery PRs' own merges, verified live at
-  finish, do that.
+  Link an issue or pull request through Ficus, never by hand-writing
+  `github.*`/`codeHost` metadata: for an integration event use
+  `ficus workstream create ... --from-event <id>` or
+  `ficus workstream track <ws-id> --event <id>` (its notification shows both);
+  for a resource you name, `ficus workstream track <ws-id> --issue <ref>` or `--pr <ref>`.
+  A `--from-url` link is reference material only and receives no updates.
+  Activity on a tracked issue or pull request, including an issue closing, is
+  information: it never finishes a stream or clears its waits. Finish requires
+  only the delivery PR and pull requests tracked with `--delivery` to merge;
+  `ficus workstream tracked <ws-id>` lists them.
 
   ### Dynamic Agent Configuration
   - `ficus skill list` / `ficus skill get <skill-id>` — inspect dynamic skills. `ficus skill create|import|update|disable|enable|export` manages them; use `--file`/`--stdin` for SKILL.md content.
