@@ -812,6 +812,7 @@ describe('dead fleet reconciliation', () => {
           attemptId: 1,
           outcome: 'completed',
           evidence: 'Previous work',
+          resume: false,
         },
         version: 1,
         stateStatus: 'running',
