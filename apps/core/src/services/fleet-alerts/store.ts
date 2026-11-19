@@ -41,24 +41,21 @@ const PROVIDER_WIDE_ACCOUNT = '__provider__'
 function describeStall(
   demandCount: number,
   firstDemandAt: Date,
-  now: Date,
-  lastRunStartedAt?: Date
+  now: Date
 ): {
   code: string
   summary: string
   remediation: string
 } {
   const oldestMin = Math.max(1, Math.round((now.getTime() - firstDemandAt.getTime()) / 60_000))
-  const stalledSince = Math.max(firstDemandAt.getTime(), lastRunStartedAt?.getTime() ?? firstDemandAt.getTime())
-  const stalledMin = Math.max(1, Math.round((now.getTime() - stalledSince) / 60_000))
   // The aggregate also includes inbox messages, schedules, and work streams;
   // its oldest row may predate recent progress by days.
   const work = demandCount === 1 ? '1 pending work item remains' : `${demandCount} pending work items remain`
   return {
     code: 'demand-not-served',
-    summary: `${work}; oldest is ${oldestMin}m old. No execution run has started in the last ${stalledMin}m of pending demand, and no open provider or sandbox incident explains the delay.`,
+    summary: `${work}; oldest is ${oldestMin}m old. No fresh execution progress serves this demand, and no open provider or sandbox incident explains the delay.`,
     remediation:
-      'Check machine + sandbox health first (the box/tunnel logs for the affected machine), then worker pickup (`ficus worker status`).',
+      'Check sandbox health with `ficus squad sandbox-status <squad-id>` and `ficus agent sandbox-status <agent-id>`; ask an authorized operator to inspect worker pickup if needed.',
   }
 }
 
@@ -82,6 +79,8 @@ export type DeadFleetObservation =
       providerCause?: ProviderHealthRecord
       firstDemandAt: Date
       lastRunStartedAt?: Date | undefined
+      /** Earliest route-specific last-service/readmission clock, independent of backlog age. */
+      unservedSince?: Date
       now: Date
     }
   | { status: 'quiet'; squadId: string; lastRunStartedAt?: Date | undefined; now: Date }
@@ -374,7 +373,13 @@ export async function observeDeadFleet(
       openIncident != null &&
       input.lastRunStartedAt != null &&
       input.lastRunStartedAt.getTime() > openIncident.startedAt.getTime()
-    if (input.status === 'quiet' || recoveredByRun) {
+    const recoveredByScopedProgress =
+      input.status === 'stalled' &&
+      openIncident != null &&
+      input.unservedSince != null &&
+      input.unservedSince.getTime() > openIncident.startedAt.getTime() &&
+      input.now.getTime() < input.unservedSince.getTime() + DEAD_FLEET_ALERT_WINDOW_MS
+    if (input.status === 'quiet' || recoveredByRun || recoveredByScopedProgress) {
       if (!openIncident) return undefined
       await resolveFleetIncident(tx, openIncident.id, input.now)
       return openIncident.id
@@ -423,7 +428,7 @@ export async function observeDeadFleet(
               : explaining.causeSummary,
           remediation: explaining.remediation,
         }
-      : describeStall(input.demandCount, input.firstDemandAt, input.now, input.lastRunStartedAt)
+      : describeStall(input.demandCount, input.firstDemandAt, input.now)
     // Structured facts let delivery name the provider and phrase reasons and durations for readers.
     const details = {
       demandCount: input.demandCount,
@@ -443,9 +448,22 @@ export async function observeDeadFleet(
     })
 
     if (openIncident) {
+      // A sweep may miss the entire fresh-progress interval. Retain the episode
+      // (no invented recovery), but use its actual last-service clock. Preserve
+      // an existing recovery cooldown when moving the clock in either direction.
+      const startedAt = input.unservedSince ?? openIncident.startedAt
+      const cooldownUntil =
+        openIncident.alertAfter.getTime() > openIncident.startedAt.getTime() + DEAD_FLEET_ALERT_WINDOW_MS
+          ? openIncident.alertAfter.getTime()
+          : 0
+      const alertAfter = input.unservedSince
+        ? new Date(Math.max(startedAt.getTime() + DEAD_FLEET_ALERT_WINDOW_MS, cooldownUntil))
+        : openIncident.alertAfter
       await tx
         .update(fleetIncidents)
         .set({
+          startedAt,
+          alertAfter,
           lastObservedAt: input.now,
           causeCode: cause.code,
           causeSummary: cause.summary,
@@ -454,11 +472,11 @@ export async function observeDeadFleet(
           updatedAt: input.now,
         })
         .where(eq(fleetIncidents.id, openIncident.id))
-      if (input.now.getTime() < openIncident.alertAfter.getTime()) return openIncident.id
+      if (input.now.getTime() < alertAfter.getTime()) return openIncident.id
 
       await materializeManagerRoutedAlert(tx, {
         incidentId: openIncident.id,
-        managerDueAt: openIncident.alertAfter,
+        managerDueAt: alertAfter,
         humanDelayMs: audiencePlan.humanDelayMs,
         now: input.now,
       })
@@ -466,9 +484,10 @@ export async function observeDeadFleet(
     }
 
     const episodeStartedAt =
-      input.lastRunStartedAt != null && input.lastRunStartedAt.getTime() > input.firstDemandAt.getTime()
+      input.unservedSince ??
+      (input.lastRunStartedAt != null && input.lastRunStartedAt.getTime() > input.firstDemandAt.getTime()
         ? input.lastRunStartedAt
-        : input.firstDemandAt
+        : input.firstDemandAt)
     // Hold the alert down when this squad just came out of one (see
     // DEAD_FLEET_REALERT_COOLDOWN_MS) so an oscillating fleet cannot mail a
     // fresh alert/recovery pair every episode.

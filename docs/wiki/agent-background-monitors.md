@@ -138,7 +138,7 @@ The confirmation expires after 150 seconds: the 15-second maximum poll interval 
 
 The same live-monitor check also suppresses the work-stream idle nudge ("It seems like you stopped working on work stream ...") and the persistent-idle owner notice. While the stream's assignee, or one of its direct subagents, has a live monitor, the continuation sweep sends neither. This matches how a queued slot wait suppresses them. A monitor reaches `running` and records its first confirmation before the monitor tool returns, so an agent that creates a quiet monitor and ends its turn right away does not get the first nudge about 60 seconds later. Once the monitor stops counting as live (it exits, times out, is canceled, fails, is lost, passes its deadline, or its confirmation goes stale), the nudge works as before. A monitor's terminal message already wakes the agent. Provider transport retries are not idle nudges and are unaffected. Both checks use one shared predicate, `liveMonitorCondition` in `apps/core/src/services/monitors/live-monitors.ts`. The stall alert counts only the stream agents' own monitors.
 
-This confirms that the watcher is alive, not that the watched job is making useful progress. Monitor commands should still detect and report job-specific errors or stalled progress. Provider and sandbox outage alerts remain independent.
+This confirms that the watcher is alive, not that the watched job is making useful progress. Monitor commands should still detect and report job-specific errors or stalled progress. Provider and sandbox outage alerts remain independent. See [Squad stall alerts](fleet-stall-alerts.md) for foreground progress, capacity admission and recovery rules.
 
 ### Delivered offset
 

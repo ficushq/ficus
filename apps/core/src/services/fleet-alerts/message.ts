@@ -151,7 +151,7 @@ export function renderFleetIncidentMessage(
       short = 'sandbox degraded'
       if (reasons) cause = `The squad’s sandbox setup is degraded: ${reasons}.`
     } else if (claim.causeCode === 'demand-not-served') {
-      cause = 'No agent run has started, and no provider or sandbox problem explains it.'
+      cause = 'Pending work has no fresh execution progress, and no provider or sandbox problem explains it.'
     }
     subject = capitalize(alert ? `${squad} stalled${short ? `: ${short}` : ''}` : `${squad} is running again`)
     headline = alert
