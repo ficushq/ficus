@@ -7,7 +7,7 @@ description: Set up Linear through Ficus Integrations, assign accounts to squads
 
 Help the user configure **Settings → Integrations → Linear**. Manage credentials only in that integration card. Never ask the user to paste a private API key or signing secret into a chat.
 
-1. Enable Linear globally. Add an account name and personal API key. In Linear, create the key under Security & Access, with read access to the intended teams.
+1. Enable Linear globally. Add an account name and personal API key. In Linear, create the key under Security & Access, with read and write access to the intended teams. Read access is enough for routing and search; agents need write access to create, update and comment on issues.
 2. Validate and enable the account. An imported legacy account starts disabled and needs validation before use.
 3. Open the squad’s **Integrations → Linear** card, enable it for the squad, and select the account. Configure the Linear team IDs whose assigned issues should notify this squad’s manager.
 4. Expand **Webhook delivery** in global Linear settings. Copy its URL into a Linear webhook configured for Issue updates. Enter the same signing secret in Linear and Ficus. Saved signing secrets cannot be revealed; replace both to rotate.
@@ -29,6 +29,10 @@ Only a squad with an enabled, assigned Linear connection receives these events. 
 
 `ficus workstream track <ws-id> --issue KEY-123` (or `--url <linear issue url>`) links a work stream to a Linear issue through the squad's Linear connection — the same command used for GitHub issues and PRs. Linear has no pull requests, so `--pr` and `--delivery` are rejected for a Linear reference. A squad-level Linear notification (or `ficus workstream create --from-event <id>`) carries an `Event reference:` block naming the issue the same way GitHub notifications do — including comment notifications, which name the issue by its Linear id and are resolved through the squad's Linear connection when the link is made. See `docs/wiki/linear-integrations.md` (Tracked issues) for identity and linking details.
 
-For live issue search, enable the squad’s Linear connection. Memory grants may further restrict team keys, but cannot grant access beyond the connected account. To run an external command with the selected key, use `ficus integration exec linear --squad <id> -- <command>`; credentials are injected for that command and should never be printed.
+For live issue search, enable the squad’s Linear connection. Memory grants may further restrict team keys, but cannot grant access beyond the connected account.
 
-Troubleshoot in order: global enable, account validation and enable, squad enable and assignment, team routing, webhook signing secret, and current issue assignee.
+## Agent CLI
+
+Once the squad has an enabled, assigned connection, its sandbox installs the pinned `linear` CLI and agents get the `linear` skill. No login or other setup is needed: each `linear` command receives the connection's key for that command only. Never run `linear auth login` in a squad sandbox. To check it, run `linear --version` (it should report `linear 3.1.0`) and then `linear issue view KEY-123 --json` on an issue the key can read. If the connection is detached or disabled, `linear` fails rather than using another account. To run any other command with the selected key, use `ficus integration exec linear --squad <id> -- <command>`; credentials are injected for that command and should never be printed. See `docs/wiki/linear-integrations.md` (Agent CLI).
+
+Troubleshoot in order: global enable, account validation and enable, squad enable and assignment, team routing, webhook signing secret, and current issue assignee. For the CLI, also check the sandbox setup status (readiness `linear-cli`) and whether the key has write access.
