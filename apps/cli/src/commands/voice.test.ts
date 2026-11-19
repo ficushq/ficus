@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Command } from 'commander'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostResponse, apiPut } from '../client'
 import { ApiRequestError } from '../client-errors'
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { registerSquadCommands } from './squad'
@@ -13,7 +13,8 @@ const m = (fn: unknown) => fn as ReturnType<typeof mock>
 
 let dir: string
 beforeEach(() => {
-  for (const fn of [apiGet, apiPost, apiPut, apiPatch, apiDelete, output, outputError]) m(fn).mockClear()
+  for (const fn of [apiGet, apiPost, apiPostResponse, apiPut, apiPatch, apiDelete, output, outputError])
+    m(fn).mockClear()
   m(apiGet).mockResolvedValue({})
   m(apiPost).mockResolvedValue({})
   m(apiPatch).mockResolvedValue({})
@@ -155,7 +156,7 @@ describe('ficus voice', () => {
       bytes: 20,
       maxBytes: 2000,
     }
-    m(apiPost).mockResolvedValue(result)
+    m(apiPostResponse).mockImplementation(async () => Response.json(result))
     const out = join(dir, 'out.json')
     const log = console.log
     console.log = () => {}
@@ -177,20 +178,28 @@ describe('ficus voice', () => {
     } finally {
       console.log = log
     }
-    expect(apiPost).toHaveBeenCalledWith('/api/squads/s1/voice/derive', {
-      login: 'octocat',
-      filters: { before: '2026-03-01', repositories: ['acme/api'] },
-    })
+    expect(apiPostResponse).toHaveBeenCalledWith(
+      '/api/squads/s1/voice/derive',
+      {
+        login: 'octocat',
+        filters: { before: '2026-03-01', repositories: ['acme/api'] },
+      },
+      expect.any(AbortSignal)
+    )
     expect(JSON.parse(readFileSync(out, 'utf8')).draft.base).toBe('Draft.')
-    expect(apiPost).toHaveBeenCalledTimes(1)
+    expect(apiPostResponse).toHaveBeenCalledTimes(1)
     expect(apiPut).not.toHaveBeenCalled()
     expect(apiPatch).not.toHaveBeenCalled()
-    m(apiPost).mockClear()
+    m(apiPostResponse).mockClear()
     m(isJsonMode).mockReturnValue(true)
     await run(['squad', 'voice', 'derive', 's1', '--github', 'someone'])
     expect(output).toHaveBeenLastCalledWith(result)
-    expect(apiPost).toHaveBeenCalledTimes(1)
-    expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/derive', { login: 'someone', filters: {} })
+    expect(apiPostResponse).toHaveBeenCalledTimes(1)
+    expect(apiPostResponse).toHaveBeenLastCalledWith(
+      '/api/squads/s1/voice/derive',
+      { login: 'someone', filters: {} },
+      expect.any(AbortSignal)
+    )
     expect(apiPut).not.toHaveBeenCalled()
     expect(apiPatch).not.toHaveBeenCalled()
   })
@@ -272,7 +281,7 @@ describe('ficus squad voice', () => {
     ['derivation_model_unavailable', 422, 'The derivation model is unavailable'],
   ])('explains %s without exposing the raw payload', async (code, status, sentence) => {
     const payload = { error: code, counts: { kept: 2, collected: 10 }, minimum: 8, reason: 'PRIVATE_FIXTURE' }
-    m(apiPost).mockRejectedValue(new ApiRequestError(code, status, code, payload))
+    m(apiPostResponse).mockRejectedValue(new ApiRequestError(code, status, code, payload))
     await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
     expect(lastError()).toContain(`${code}: `)
     expect(lastError()).toContain(sentence)
@@ -280,7 +289,7 @@ describe('ficus squad voice', () => {
   })
 
   it('shows a safe validation reason, not arbitrary server text', async () => {
-    m(apiPost).mockRejectedValue(
+    m(apiPostResponse).mockRejectedValue(
       new ApiRequestError('derivation_invalid_output', 422, 'derivation_invalid_output', {
         reason: 'private_text_in_base',
       })
@@ -291,7 +300,7 @@ describe('ficus squad voice', () => {
 
   it('handles missing or malformed counts without printing untrusted values', async () => {
     for (const payload of [undefined, { counts: { kept: 'injected', collected: -1 }, minimum: 'injected' }]) {
-      m(apiPost).mockRejectedValue(
+      m(apiPostResponse).mockRejectedValue(
         new ApiRequestError('derivation_too_few_samples', 422, 'derivation_too_few_samples', payload)
       )
       await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
@@ -306,7 +315,7 @@ describe('ficus squad voice', () => {
     new ApiRequestError('derivation_in_progress', 429, 'derivation_in_progress'),
     new Error('Network disconnected'),
   ])('preserves other failures: %s', async (error) => {
-    m(apiPost).mockRejectedValue(error)
+    m(apiPostResponse).mockRejectedValue(error)
     await run(['squad', 'voice', 'derive', 's1', '--github', 'octocat'])
     expect(lastError()).toBe(error.message)
   })
@@ -316,7 +325,7 @@ describe('ficus squad voice', () => {
     await quiet(['squad', 'voice', 'preview', 's1', '--surface', 'channels', '--voice', 'team'])
     expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/preview', { surface: 'channels', voiceId: 'team' })
 
-    m(apiPost).mockRejectedValue(
+    m(apiPostResponse).mockRejectedValue(
       new ApiRequestError('derivation_model_unavailable', 422, 'derivation_model_unavailable')
     )
     await quiet([
@@ -330,9 +339,117 @@ describe('ficus squad voice', () => {
       '--surfaces',
       'commits,reviews',
     ])
-    expect(apiPost).toHaveBeenLastCalledWith('/api/squads/s1/voice/derive', {
-      login: 'octocat',
-      filters: { surfaces: ['commits', 'reviews'], excludeToolAuthored: false },
+    expect(apiPostResponse).toHaveBeenLastCalledWith(
+      '/api/squads/s1/voice/derive',
+      {
+        login: 'octocat',
+        filters: { surfaces: ['commits', 'reviews'], excludeToolAuthored: false },
+      },
+      expect.any(AbortSignal)
+    )
+  })
+})
+
+describe('live derivation output', () => {
+  const result = {
+    login: 'octo',
+    draft: { base: 'Lead with the result.', surfaces: {} },
+    observations: [],
+    exemplars: [],
+    sampling: {
+      filters: {},
+      counts: {
+        collected: 20,
+        kept: 20,
+        droppedByFilter: { date: 0, repository: 0 },
+        droppedAsToolAuthored: 0,
+        droppedAsTemplate: 0,
+      },
+      dateRange: {},
+      publicRepositories: [],
+      privateRepositories: [],
+      pagingCapped: false,
+    },
+    bytes: 20,
+    maxBytes: 2000,
+  }
+  it('prints partial lines to stderr before final JSON and only writes the completed file', async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>
+    m(apiPostResponse).mockImplementation(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              stream = c
+            },
+          }),
+          { headers: { 'Content-Type': 'text/event-stream' } }
+        )
+    )
+    m(isJsonMode).mockReturnValue(true)
+    const lines: string[] = []
+    const originalError = console.error
+    let progress!: () => void
+    const visible = new Promise<void>((resolve) => {
+      progress = resolve
     })
+    console.error = (line: string) => {
+      lines.push(line)
+      progress()
+    }
+    const path = join(dir, 'completed.json')
+    const send = (event: unknown) =>
+      stream.enqueue(new TextEncoder().encode(`event: derivation\ndata: ${JSON.stringify(event)}\n\n`))
+    try {
+      const running = run(['voice', 'derive', '--squad', 's', '--github', 'octo', '--out', path])
+      // The mocked HTTP boundary is synchronous up to the response construction.
+      await Promise.resolve()
+      send({ version: 1, runId: 'fixture', seq: 1, type: 'started' })
+      send({ version: 1, runId: 'fixture', seq: 2, type: 'phase', phase: 'collecting' })
+      await visible
+      expect(lines).toEqual(['Reading GitHub activity.'])
+      expect(output).not.toHaveBeenCalled()
+      expect(existsSync(path)).toBe(false)
+      send({ version: 1, runId: 'fixture', seq: 3, type: 'complete', result })
+      stream.close()
+      await running
+      expect(output).toHaveBeenCalledWith(result)
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(result)
+      expect(lines.at(-1)).toBe('Draft ready. Nothing was saved.')
+    } finally {
+      console.error = originalError
+    }
+  })
+  it('no-progress suppresses stderr, but a typed failure still reports an error and never writes a file', async () => {
+    const text = [
+      { version: 1, runId: 'fixture', seq: 1, type: 'started' },
+      { version: 1, runId: 'fixture', seq: 2, type: 'phase', phase: 'collecting' },
+      {
+        version: 1,
+        runId: 'fixture',
+        seq: 3,
+        type: 'error',
+        error: { code: 'derivation_model_unavailable', reason: 'timeout' },
+      },
+    ]
+      .map((e) => `event: derivation\ndata: ${JSON.stringify(e)}\n\n`)
+      .join('')
+    m(apiPostResponse).mockImplementation(
+      async () => new Response(text, { headers: { 'Content-Type': 'text/event-stream' } })
+    )
+    const originalError = console.error
+    const lines: string[] = []
+    console.error = (line: string) => {
+      lines.push(line)
+    }
+    const path = join(dir, 'missing.json')
+    try {
+      await run(['squad', 'voice', 'derive', 's', '--github', 'octo', '--no-progress', '--out', path])
+      expect(lines).toEqual([])
+      expect(lastError()).toContain('derivation_model_unavailable')
+      expect(existsSync(path)).toBe(false)
+    } finally {
+      console.error = originalError
+    }
   })
 })

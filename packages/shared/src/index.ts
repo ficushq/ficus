@@ -154,3 +154,4 @@ export * from './workflow-review-history'
 export * from './workflow-review-waits'
 
 export * from './workflow-review-presentation'
+export * from './public-voice-progress'

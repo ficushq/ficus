@@ -251,3 +251,9 @@ test('keeps the measured slow subprocess tests balanced as the inventory grows',
     expect(Math.abs(totals[0]! - totals[1]!)).toBeLessThan(30)
   }
 })
+
+test('voice derivation real socket regression is isolated', () => {
+  const file = './src/routes/squad-voice-stream.process.test.ts'
+  expect(plan.subprocess).toContain(file)
+  expect(plan.shared).not.toContain(file)
+})

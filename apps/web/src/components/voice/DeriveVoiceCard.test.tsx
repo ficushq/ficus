@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { emptySamplingBreakdown } from '@ficus/shared'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DeriveVoiceCard } from './DeriveVoiceCard'
 import { acquireDomHarness } from '../../test/domHarness'
@@ -66,3 +67,105 @@ for (const [code, sentence] of failures) {
     }
   })
 }
+
+test('partial progress is accessible, cancellation fences a late result and never saves', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost' })
+  const originalFetch = globalThis.fetch
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  let requestSignal: AbortSignal | undefined
+  let used = false
+  let saved = false
+  const encoder = new TextEncoder()
+  const send = (event: unknown) =>
+    stream.enqueue(encoder.encode(`event: derivation\ndata: ${JSON.stringify(event)}\n\n`))
+  globalThis.fetch = (async (_, init) => {
+    requestSignal = init?.signal ?? undefined
+    return new Response(
+      new ReadableStream({
+        start(c) {
+          stream = c
+        },
+      }),
+      { headers: { 'Content-Type': 'text/event-stream' } }
+    )
+  }) as typeof fetch
+  try {
+    const { root, container } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <DeriveVoiceCard
+          squadId="fixture"
+          linkedLogin="octo"
+          onUseDraft={() => {
+            used = true
+          }}
+          onSaveAsProfile={() => {
+            saved = true
+          }}
+        />
+      )
+    )
+    await dom.act(async () => {
+      ;[...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Derive')!.click()
+    })
+    await dom.act(async () => {
+      send({ version: 1, runId: 'fixture', seq: 1, type: 'started' })
+      send({
+        version: 1,
+        runId: 'fixture',
+        seq: 2,
+        type: 'repositories',
+        repositories: [{ name: 'example/private-library', activity: 'activity_read' }],
+      })
+    })
+    expect(container.querySelector('[aria-label="Voice derivation progress"]')).not.toBeNull()
+    expect(container.querySelector('[role="status"]')?.getAttribute('aria-live')).toBe('polite')
+    expect(container.textContent).toContain('example/private-library')
+    expect(container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')!.disabled).toBe(true)
+    expect(container.textContent).not.toContain('Use this draft')
+    await dom.act(async () => {
+      ;[...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')!.click()
+    })
+    expect(requestSignal!.aborted).toBe(true)
+    expect(container.textContent).toContain('Cancelled. Nothing was saved.')
+    expect(used || saved).toBe(false)
+  } finally {
+    globalThis.fetch = originalFetch
+    await dom.cleanup()
+  }
+})
+
+test('a run with no kept repositories retains safe count snapshots on failure', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost' })
+  const originalFetch = globalThis.fetch
+  const snapshot = emptySamplingBreakdown()
+  snapshot.bySurface.reviews.seen = 2
+  snapshot.bySurface.reviews.dropped.date = 2
+  snapshot.totals.seen = 2
+  snapshot.totals.dropped.date = 2
+  const text = [
+    { type: 'started' },
+    { type: 'counts', provisional: false, ...snapshot },
+    { type: 'error', error: { code: 'derivation_too_few_samples', counts: { collected: 2, kept: 0 }, minimum: 15 } },
+  ]
+    .map(
+      (event, index) =>
+        `event: derivation\ndata: ${JSON.stringify({ version: 1, runId: 'fixture', seq: index + 1, ...event })}\n\n`
+    )
+    .join('')
+  globalThis.fetch = (async () =>
+    new Response(text, { headers: { 'Content-Type': 'text/event-stream' } })) as typeof fetch
+  try {
+    const { root, container } = dom.createRoot()
+    await dom.act(async () => root.render(<DeriveVoiceCard squadId="fixture" linkedLogin="octo" />))
+    await dom.act(async () => {
+      ;[...container.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Derive')!.click()
+    })
+    expect(container.querySelector('[aria-label="Voice derivation progress"] table')).not.toBeNull()
+    expect(container.textContent).toContain('2 by date')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('kept 0 of 2 collected')
+  } finally {
+    globalThis.fetch = originalFetch
+    await dom.cleanup()
+  }
+})
