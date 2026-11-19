@@ -372,7 +372,19 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
           'source', message.metadata->'source', 'wakeEligible', message.metadata->'wakeEligible',
           'workStreamId', message.metadata->'workStreamId', 'attemptId', message.metadata->'attemptId',
           'integrationDeliveryId', message.metadata->'integrationDeliveryId', 'questionId', message.metadata->'questionId'),
-        'createdAt', message.created_at, 'readyAt', (SELECT ready_at FROM slot_ready_agents WHERE id = message.recipient_id::uuid),
+        'createdAt', message.created_at, 'readyAt', GREATEST(
+          (SELECT ready_at FROM slot_ready_agents WHERE id = message.recipient_id::uuid),
+          -- Only workflow assignments are held by attempt input waits. An
+          -- old undelivered assignment becomes newly executable at closure;
+          -- independent mail and answer/control delivery never borrow this clock.
+          CASE WHEN message.metadata->>'source' = 'workflow' THEN (
+            SELECT MAX(wait.closed_at) FROM work_stream_waits AS wait
+            WHERE wait.work_stream_id = CASE
+              WHEN message.metadata->>'workStreamId' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                THEN (message.metadata->>'workStreamId')::uuid END
+              AND (wait.flow_attempt_id IS NULL OR wait.flow_attempt_id::text = message.metadata->>'attemptId')
+              AND wait.closed_at <= ${now}::timestamptz
+          ) END),
         'agentStatus', message.agent_status)) FROM eligible_inbox AS message WHERE message.squad_id = squad.id) AS messages,
       (SELECT jsonb_agg(candidate) FROM stream_candidates WHERE squad_id = squad.id) AS streams
     FROM active_squads AS squad
