@@ -14,6 +14,7 @@ import {
 import { db, modelTiers } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { collectGitHubActivity, DerivationError, type CollectedActivity } from './github-activity'
+import { safeDerivationDiagnostic } from './diagnostics'
 import { abortable } from './operation'
 import { containsSecret, summarizeSamples, prepareSamples, type VoiceSample } from './samples'
 
@@ -424,7 +425,11 @@ export async function derivePublicVoice(
   } catch (error) {
     requestSignal.throwIfAborted()
     if (error instanceof DerivationError) throw error
-    log.warn('Voice derivation call failed', { squadId: input.squadId, code: 'derivation_model_unavailable' })
+    log.error('Voice derivation call failed', {
+      squadId: input.squadId,
+      code: 'derivation_model_unavailable',
+      ...safeDerivationDiagnostic(error),
+    })
     throw new DerivationError('derivation_model_unavailable')
   } finally {
     clearTimeout(timer)

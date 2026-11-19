@@ -1,5 +1,15 @@
-import { derivationEventSchema, type PublishDerivationProgress } from '@ficus/shared'
+import { derivationEventSchema, type DerivationProgress, type PublishDerivationProgress } from '@ficus/shared'
 import { abortable } from './operation'
+
+type TerminalProgress = Extract<DerivationProgress, { type: 'complete' | 'error' }>
+export class DerivationStreamError extends Error {
+  constructor(
+    readonly reason: 'schema' | 'frame_limit' | 'event_limit' | 'byte_limit' | 'closed' | 'stale_preparation'
+  ) {
+    super(`Derivation stream ${reason}`)
+    this.name = 'DerivationStreamError'
+  }
+}
 
 /** One serialized bounded writer. Publishers await backpressure; heartbeats never build a queue. */
 export function createProgressWriter(
@@ -48,29 +58,48 @@ export function createProgressWriter(
     tail = next.catch(() => {})
     return next
   }
-  const publishEvent = async (payload: Parameters<PublishDerivationProgress>[0], bestEffort = false) => {
-    if (terminal || disposed) throw new Error('Derivation stream closed')
-    const event = derivationEventSchema.parse({ version: 1, runId, seq: ++seq, ...payload })
+  // Reject without mutating sequence/budgets: a safe error frame must still be possible.
+  // The last event and 1 KiB are reserved for a terminal diagnostic, never extra work.
+  const prepare = (payload: DerivationProgress, bestEffort = false): (() => Promise<void>) => {
+    if (terminal || disposed || (!bestEffort && signal.aborted)) throw new DerivationStreamError('closed')
+    const nextSeq = seq + 1
+    const parsed = derivationEventSchema.safeParse({ version: 1, runId, seq: nextSeq, ...payload })
+    if (!parsed.success) throw new DerivationStreamError('schema')
+    const event = parsed.data
+    const isTerminal = event.type === 'complete' || event.type === 'error'
     const frame = `event: derivation\ndata: ${JSON.stringify(event)}\n\n`
     const size = new TextEncoder().encode(frame).length
-    bytes += size
-    if (seq > 512 || size > 65_536 || bytes > 2_097_152) {
-      cancel()
-      throw new Error('Derivation stream limit')
+    if (size > 65_536) throw new DerivationStreamError('frame_limit')
+    if (nextSeq > 512 || (!isTerminal && nextSeq >= 512)) throw new DerivationStreamError('event_limit')
+    if (bytes + size > 2_097_152 - (isTerminal ? 0 : 1024)) throw new DerivationStreamError('byte_limit')
+    return () => {
+      if (terminal || disposed || (!bestEffort && signal.aborted))
+        return Promise.reject(new DerivationStreamError('closed'))
+      if (nextSeq !== seq + 1) return Promise.reject(new DerivationStreamError('stale_preparation'))
+      seq = nextSeq
+      bytes += size
+      terminal = isTerminal
+      return enqueue(frame, bestEffort)
     }
-    if (event.type === 'complete' || event.type === 'error') terminal = true
-    await enqueue(frame, bestEffort)
   }
+  const publish: PublishDerivationProgress = async (payload) => prepare(payload)()
   const timer = setInterval(() => {
     if (!queued && !terminal && !disposed) void enqueue(': heartbeat\n\n').catch(() => {})
   }, options.heartbeatMs ?? 10_000)
   return {
-    publish: ((event) => publishEvent(event)) satisfies PublishDerivationProgress,
+    publish,
+    // Validate/encode/budget synchronously before the route releases its lock. Commit
+    // immediately afterwards, with no await between preparation and ownership transition.
+    prepareTerminal: (event: TerminalProgress) => prepare(event),
     // At the overall deadline, attempt one immediately writable terminal frame only.
     // Never queue behind a blocked write or extend work with a new delivery timeout.
     timeout: async () => {
       if (queued || terminal || disposed) return
-      await publishEvent({ type: 'error', error: { code: 'derivation_timed_out' } }, true).catch(() => {})
+      try {
+        await prepare({ type: 'error', error: { code: 'derivation_timed_out' } }, true)()
+      } catch {
+        /* The connection may already be gone. */
+      }
     },
     dispose: () => {
       disposed = true

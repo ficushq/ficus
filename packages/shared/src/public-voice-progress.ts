@@ -8,6 +8,24 @@ import {
 } from './public-voice'
 import { safeDerivationReason } from './public-voice-errors'
 
+/** Version 1 (including its legacy JSON result) is frozen; additions need a new version. */
+export const VOICE_DERIVATION_ACCEPT = 'text/event-stream; version=1'
+export function acceptsVoiceDerivationProgress(accept: string | undefined): boolean {
+  return (accept ?? '').split(',').some((media) => {
+    const [type, ...parameters] = media
+      .trim()
+      .toLowerCase()
+      .split(';')
+      .map((part) => part.trim())
+    if (type !== 'text/event-stream') return false
+    const versions = parameters.filter((part) => part.startsWith('version='))
+    if (versions.length > 1 || (versions.length === 1 && versions[0] !== 'version=1' && versions[0] !== 'version="1"'))
+      return false
+    const quality = parameters.find((part) => part.startsWith('q='))
+    return quality === undefined || Number(quality.slice(2)) > 0
+  })
+}
+
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 export const progressRepositorySchema = z
   .string()

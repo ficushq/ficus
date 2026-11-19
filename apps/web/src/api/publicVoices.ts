@@ -7,7 +7,7 @@ import type {
   SquadPublicVoicePatch,
   SquadPublicVoiceState,
 } from '@ficus/shared'
-import { formatDerivationError } from '@ficus/shared'
+import { formatDerivationError, VOICE_DERIVATION_ACCEPT } from '@ficus/shared'
 import { readVoiceDerivation, VoiceDerivationError, type ReadVoiceDerivationOptions } from '@ficus/client-core'
 import { apiFetch, authFetch, readApiErrorMessage, ApiError } from './client'
 
@@ -80,7 +80,7 @@ export async function deriveSquadVoice(
       method: 'POST',
       body: JSON.stringify(body),
       signal,
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      headers: { 'Content-Type': 'application/json', Accept: VOICE_DERIVATION_ACCEPT },
     })
     if (!response.ok) {
       const payload = await response

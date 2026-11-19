@@ -1,6 +1,10 @@
 import { DerivationError } from './github-activity'
 
-/** Process-local ownership, not a distributed lock. Tokens fence late finally blocks. */
+/** Process-local ownership, not a distributed lock. Tokens fence late finally blocks.
+ * Cancellation releases locally before best-effort provider abort finishes, so repeated
+ * Derive/Cancel can overlap remote calls briefly. This is not an in-flight spend cap;
+ * add remote-call accounting if measured cancellation overlap warrants it.
+ */
 export const derivationOwners = new Map<string, symbol>()
 export function acquireDerivation(squadId: string, requestSignal?: AbortSignal, deadlineMs = 210_000) {
   if (derivationOwners.has(squadId)) throw new Error('derivation_in_progress')

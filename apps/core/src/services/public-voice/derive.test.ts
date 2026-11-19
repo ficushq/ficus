@@ -384,18 +384,27 @@ describe('derivePublicVoice', () => {
     ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
   })
 
-  test('a failed or slow model call is model_unavailable', async () => {
-    await expect(
-      derivePublicVoice(
-        { squadId: 's', userId: null, login: 'octo', filters: {} },
-        {
-          collect,
-          session: async () => {
-            throw new Error('provider down')
-          },
-        }
-      )
-    ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+  test('an unexpected model call failure keeps safe error-level diagnostics', async () => {
+    const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(
+        derivePublicVoice(
+          { squadId: 's', userId: null, login: 'octo', filters: {} },
+          {
+            collect,
+            session: async () => {
+              throw new TypeError('SYNTHETIC_PRIVATE_SENTINEL')
+            },
+          }
+        )
+      ).rejects.toMatchObject({ code: 'derivation_model_unavailable' })
+      const diagnostic = errorLog.mock.calls[0]!.at(-1) as any
+      expect(diagnostic.name).toBe('TypeError')
+      expect(diagnostic.stack).toContain('apps/core/src/services/public-voice/derive.test.ts:')
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+    } finally {
+      errorLog.mockRestore()
+    }
   })
 })
 

@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import * as derivation from '../services/public-voice/derive'
+import * as operations from '../services/public-voice/operation'
+import * as progressStreams from '../services/public-voice/progress-stream'
 import { DerivationError } from '../services/public-voice/github-activity'
 import { Hono } from 'hono'
 import { inArray, like } from 'drizzle-orm'
@@ -335,5 +337,250 @@ test('stream negotiation does not turn permission and contention denials into su
     expect(response.headers.get('Content-Type')).toContain('application/json')
   } finally {
     __derivationsInProgress.delete(squadId)
+  }
+})
+
+test('a real derivation result crosses the success writer schema and remains unsaved', async () => {
+  const realDerive = derivation.derivePublicVoice
+  const before = await Squad.find(squadId)
+  const derive = spyOn(derivation, 'derivePublicVoice').mockImplementation((input) =>
+    realDerive(input, {
+      collect: async () => ({
+        items: Array.from({ length: 20 }, (_, i) => ({
+          surface: 'issue-comments' as const,
+          text: `Synthetic candidate ${i} contains enough distinct writing for collection.`,
+          repository: 'example/library',
+          isPrivate: true,
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+        pagingCapped: false,
+        requests: 1,
+        droppedByFilter: { date: 0, repository: 0 },
+        filteredBySurface: {},
+        unavailableRepositories: [],
+        commitRepositoriesNotSampled: [],
+      }),
+      session: async () => JSON.stringify({ base: 'Lead with the result.', observations: ['Use complete sentences.'] }),
+    })
+  )
+  try {
+    const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })
+    const events = (await response.text())
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+    expect(events.at(-1).type).toBe('complete')
+    expect(events.at(-1).result.sampling.counts.kept).toBe(20)
+    expect(events.at(-1).result.sampling.breakdown.totals.seen).toBe(20)
+    expect(events.at(-1).result.observations).toEqual(['Use complete sentences.'])
+    expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
+    expect((await Squad.find(squadId))?.publicVoice).toEqual(before?.publicVoice)
+  } finally {
+    derive.mockRestore()
+  }
+})
+test('a rejected complete result logs a diagnostic and sends a contiguous terminal error', async () => {
+  const derive = spyOn(derivation, 'derivePublicVoice').mockResolvedValue({
+    privateField: 'SYNTHETIC_PRIVATE_SENTINEL',
+  } as any)
+  const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })
+    const events = (await response.text())
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+    expect(events.map((event) => [event.seq, event.type])).toEqual([
+      [1, 'started'],
+      [2, 'error'],
+    ])
+    expect(events.at(-1).error.code).toBe('derivation_failed')
+    expect(errorLog.mock.calls).toHaveLength(1)
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+  } finally {
+    derive.mockRestore()
+    errorLog.mockRestore()
+  }
+})
+test('unexpected exceptions retain error-level names and stack locations without leaking messages', async () => {
+  const derive = spyOn(derivation, 'derivePublicVoice').mockRejectedValue(new TypeError('SYNTHETIC_PRIVATE_SENTINEL'))
+  const errorLog = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const response = await request(admin, 'POST', '/derive', { login: 'octo' })
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ error: 'derivation_failed' })
+    expect(errorLog.mock.calls).toHaveLength(1)
+    const diagnostic = errorLog.mock.calls[0]!.at(-1) as any
+    expect(diagnostic.name).toBe('TypeError')
+    expect(diagnostic.stack).toContain('apps/core/src/routes/squad-voice.test.ts:')
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+  } finally {
+    derive.mockRestore()
+    errorLog.mockRestore()
+  }
+})
+
+test('JSON disconnects are classified as cancellation, not an unknown derivation error', async () => {
+  const controller = new AbortController()
+  let entered!: () => void
+  const pending = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const derive = spyOn(derivation, 'derivePublicVoice').mockImplementation(async () => {
+    entered()
+    return new Promise(() => {})
+  })
+  const info = spyOn(console, 'log').mockImplementation(() => {})
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const response = app.request(`/api/squads/${squadId}/voice/derive`, {
+      method: 'POST',
+      headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login: 'octo' }),
+      signal: controller.signal,
+    })
+    await pending
+    controller.abort()
+    expect((await response).status).toBe(499)
+    const diagnostic = info.mock.calls.find((call) => call.includes('Voice derivation cancelled'))!.at(-1)
+    expect(diagnostic).toMatchObject({ code: 'derivation_cancelled', source: 'client_disconnect' })
+    expect(errors.mock.calls).toHaveLength(0)
+    expect(__derivationsInProgress.has(squadId)).toBe(false)
+  } finally {
+    derive.mockRestore()
+    info.mockRestore()
+    errors.mockRestore()
+  }
+})
+test('overall deadlines retain their typed timeout response and warning', async () => {
+  const realAcquire = operations.acquireDerivation
+  const acquire = spyOn(operations, 'acquireDerivation').mockImplementation((id, signal) => realAcquire(id, signal, 20))
+  const derive = spyOn(derivation, 'derivePublicVoice').mockImplementation(async () => new Promise(() => {}))
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    for (const accept of ['application/json', 'text/event-stream']) {
+      const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: accept })
+      if (accept === 'application/json') {
+        expect(response.status).toBe(422)
+        expect(await response.json()).toEqual({ error: 'derivation_timed_out' })
+      } else {
+        const frames = (await response.text())
+          .split('\n')
+          .filter((line) => line.startsWith('data: '))
+          .map((line) => JSON.parse(line.slice(6)))
+        expect(frames.at(-1)).toMatchObject({ type: 'error', error: { code: 'derivation_timed_out' } })
+      }
+    }
+    expect(warn.mock.calls.filter((call) => (call.at(-1) as any)?.code === 'derivation_timed_out')).toHaveLength(2)
+    expect(errors.mock.calls).toHaveLength(0)
+  } finally {
+    acquire.mockRestore()
+    derive.mockRestore()
+    warn.mockRestore()
+    errors.mockRestore()
+  }
+})
+
+test('unsupported progress versions return JSON without a second derivation', async () => {
+  const result = { login: 'octo', draft: { base: 'Synthetic draft.', surfaces: {} } }
+  const derive = spyOn(derivation, 'derivePublicVoice').mockResolvedValue(result as any)
+  try {
+    const response = await request(
+      admin,
+      'POST',
+      '/derive',
+      { login: 'octo' },
+      { Accept: 'text/event-stream; version=2' }
+    )
+    expect(response.headers.get('Content-Type')).toContain('application/json')
+    expect(await response.json()).toEqual(result)
+    expect(derive).toHaveBeenCalledTimes(1)
+  } finally {
+    derive.mockRestore()
+  }
+})
+
+for (const reason of ['schema', 'event_limit'] as const)
+  test(`a rejected progress ${reason} remains diagnosable and terminates in sequence`, async () => {
+    const derive = spyOn(derivation, 'derivePublicVoice').mockImplementation(async (input) => {
+      if (reason === 'schema')
+        await input.onProgress?.({ type: 'finding', index: 0, text: 'SYNTHETIC_PRIVATE_SENTINEL'.repeat(10) })
+      else for (let i = 0; i < 511; i++) await input.onProgress?.({ type: 'phase', phase: 'collecting' })
+      throw new Error('Unreachable after rejection')
+    })
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })
+      const events = (await response.text())
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => JSON.parse(line.slice(6)))
+      expect(events.at(-1).type).toBe('error')
+      expect(events.at(-1).error.code).toBe('derivation_failed')
+      expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
+      expect((errors.mock.calls[0]!.at(-1) as any).streamReason).toBe(reason)
+      expect(JSON.stringify([events, errors.mock.calls])).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+    } finally {
+      derive.mockRestore()
+      errors.mockRestore()
+    }
+  })
+test('an actual terminal write failure is logged even after computation ownership was released', async () => {
+  const realWriter = progressStreams.createProgressWriter
+  const writers = spyOn(progressStreams, 'createProgressWriter').mockImplementation((write, cancel, signal, options) =>
+    realWriter(
+      async (frame) => {
+        if (frame.includes('"type":"complete"')) throw new TypeError('SYNTHETIC_PRIVATE_SENTINEL')
+        return write(frame)
+      },
+      cancel,
+      signal,
+      options
+    )
+  )
+  const result = {
+    login: 'octo',
+    draft: { base: 'Lead with the result.', surfaces: {} },
+    observations: [],
+    exemplars: [],
+    sampling: {
+      filters: {},
+      counts: {
+        collected: 20,
+        kept: 20,
+        droppedByFilter: { date: 0, repository: 0 },
+        droppedAsToolAuthored: 0,
+        droppedAsTemplate: 0,
+      },
+      dateRange: {},
+      publicRepositories: [],
+      privateRepositories: [],
+      pagingCapped: false,
+    },
+    bytes: 20,
+    maxBytes: 2000,
+  }
+  const derive = spyOn(derivation, 'derivePublicVoice').mockResolvedValue(result as any)
+  let observed!: () => void
+  const logged = new Promise<void>((resolve) => {
+    observed = resolve
+  })
+  const errors = spyOn(console, 'error').mockImplementation(() => {
+    observed()
+  })
+  try {
+    const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })
+    const body = await response.text().catch(() => '')
+    await logged
+    const diagnostic = errors.mock.calls[0]!.at(-1) as any
+    expect(diagnostic).toMatchObject({ name: 'TypeError', stage: 'terminal_publication' })
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+    expect(body).not.toContain('"type":"complete"')
+    expect(__derivationsInProgress.has(squadId)).toBe(false)
+  } finally {
+    writers.mockRestore()
+    derive.mockRestore()
+    errors.mockRestore()
   }
 })

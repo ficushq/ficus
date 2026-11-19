@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { derivationFiltersSchema } from './public-voice'
+import { acceptsVoiceDerivationProgress, VOICE_DERIVATION_ACCEPT } from './public-voice-progress'
 import { derivationEventSchema, emptySamplingBreakdown, safeDerivationFailure } from './public-voice-progress'
 
 test('metadata is strict and never accepts sample text or terminal controls', () => {
@@ -39,4 +40,12 @@ test('counts reject negative, inconsistent and unknown drop reasons', () => {
 test('repository filter names are bounded before starting expensive work', () => {
   expect(derivationFiltersSchema.safeParse({ repositories: ['a/' + 'b'.repeat(138)] }).success).toBe(true)
   expect(derivationFiltersSchema.safeParse({ repositories: ['a/' + 'b'.repeat(139)] }).success).toBe(false)
+})
+
+test('frozen progress versions negotiate before work, including implicit version 1', () => {
+  expect(acceptsVoiceDerivationProgress('text/event-stream')).toBe(true)
+  expect(acceptsVoiceDerivationProgress(VOICE_DERIVATION_ACCEPT)).toBe(true)
+  expect(acceptsVoiceDerivationProgress('text/event-stream; version=2')).toBe(false)
+  expect(acceptsVoiceDerivationProgress('text/event-stream; version=1; q=0')).toBe(false)
+  expect(acceptsVoiceDerivationProgress('application/json')).toBe(false)
 })

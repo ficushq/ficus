@@ -94,7 +94,7 @@ test('opts into streaming and reports partial progress before a typed terminal f
   let calls = 0
   globalThis.fetch = (async (_, init) => {
     calls++
-    expect(init?.headers).toMatchObject({ Accept: 'text/event-stream', 'x-ficus-csrf': '1' })
+    expect(init?.headers).toMatchObject({ Accept: 'text/event-stream; version=1', 'x-ficus-csrf': '1' })
     expect(init?.credentials).toBe('include')
     return new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } })
   }) as typeof fetch
