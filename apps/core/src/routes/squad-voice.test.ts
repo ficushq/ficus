@@ -65,10 +65,10 @@ afterAll(async () => {
   await cleanupTestRbac(prefix)
 })
 
-function request(user: TestUser, method: string, path: string, body?: unknown) {
+function request(user: TestUser, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   return app.request(`/api/squads/${squadId}/voice${path}`, {
     method,
-    headers: { ...authHeaders(user.token), 'content-type': 'application/json' },
+    headers: { ...authHeaders(user.token), 'content-type': 'application/json', ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 }
@@ -288,4 +288,52 @@ describe('derivation needs a person', () => {
       await db.delete(agents).where(eq(agents.id, agent.id))
     }
   })
+})
+
+for (const code of [
+  'derivation_github_unavailable',
+  'derivation_login_not_visible',
+  'derivation_too_few_samples',
+  'derivation_invalid_output',
+  'derivation_model_unavailable',
+] as const) {
+  test(`stream preserves ${code}, the last safe snapshot and no arbitrary exception fields`, async () => {
+    const derive = spyOn(derivation, 'derivePublicVoice').mockImplementationOnce(async (input) => {
+      await input.onProgress?.({ type: 'phase', phase: 'sampling' })
+      throw new DerivationError(code, {
+        reason: code === 'derivation_invalid_output' ? 'schema' : undefined,
+        counts: { collected: 10, kept: 2 },
+        minimum: 15,
+        raw: 'SYNTHETIC_PRIVATE_SENTINEL',
+      })
+    })
+    try {
+      const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Cache-Control')).toBe('no-store, no-transform')
+      const events = (await response.text())
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => JSON.parse(line.slice(6)))
+      expect(events.map((event) => event.type)).toEqual(['started', 'phase', 'error'])
+      expect(events.at(-1).error).toMatchObject({ code, counts: { collected: 10, kept: 2 }, minimum: 15 })
+      expect(JSON.stringify(events)).not.toContain('SYNTHETIC_PRIVATE_SENTINEL')
+      expect(__derivationsInProgress.has(squadId)).toBe(false)
+    } finally {
+      derive.mockRestore()
+    }
+  })
+}
+test('stream negotiation does not turn permission and contention denials into successful streams', async () => {
+  expect((await request(reader, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })).status).toBe(
+    403
+  )
+  __derivationsInProgress.set(squadId, Symbol('fixture'))
+  try {
+    const response = await request(admin, 'POST', '/derive', { login: 'octo' }, { Accept: 'text/event-stream' })
+    expect(response.status).toBe(429)
+    expect(response.headers.get('Content-Type')).toContain('application/json')
+  } finally {
+    __derivationsInProgress.delete(squadId)
+  }
 })

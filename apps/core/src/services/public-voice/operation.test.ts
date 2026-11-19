@@ -16,8 +16,22 @@ test('terminal and abort races have one winner; already cancelled requests do no
   a.cancel()
   expect(a.complete()).toBe(false)
   a.dispose()
-  const controller = new AbortController(); controller.abort()
+  const controller = new AbortController()
+  controller.abort()
   const b = acquireDerivation('fixture', controller.signal)
   expect(b.signal.aborted).toBe(true)
-  const c = acquireDerivation('fixture'); b.dispose(); c.dispose()
+  const c = acquireDerivation('fixture')
+  b.dispose()
+  c.dispose()
+})
+
+test('overall deadline aborts and releases without waiting for work', async () => {
+  const a = acquireDerivation('deadline-fixture', undefined, 5)
+  try {
+    await expect(abortable(new Promise(() => {}), a.signal)).rejects.toMatchObject({ code: 'derivation_timed_out' })
+    const b = acquireDerivation('deadline-fixture')
+    b.dispose()
+  } finally {
+    a.dispose()
+  }
 })

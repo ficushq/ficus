@@ -83,7 +83,9 @@ export async function githubApiGraphql<T>(
     res = await fetch(`${GITHUB_API_BASE}/graphql`, {
       method: 'POST',
       redirect: 'error',
-      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
       headers: {
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,

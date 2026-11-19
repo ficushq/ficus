@@ -8,9 +8,11 @@ export function acquireDerivation(squadId: string, requestSignal?: AbortSignal, 
   derivationOwners.set(squadId, owner)
   const controller = new AbortController()
   let settled = false
-  const release = () => { if (derivationOwners.get(squadId) === owner) derivationOwners.delete(squadId) }
+  const release = () => {
+    if (derivationOwners.get(squadId) === owner) derivationOwners.delete(squadId)
+  }
   const cancel = (reason: unknown = new DOMException('Derivation cancelled', 'AbortError')) => {
-    if (settled) return
+    if (controller.signal.aborted) return
     settled = true
     release()
     controller.abort(reason)
@@ -20,9 +22,20 @@ export function acquireDerivation(squadId: string, requestSignal?: AbortSignal, 
   const timer = setTimeout(() => cancel(new DerivationError('derivation_timed_out')), deadlineMs)
   if (requestSignal?.aborted) onAbort()
   return {
-    signal: controller.signal, cancel,
-    complete: () => { if (settled) return false; settled = true; release(); return true },
-    dispose: () => { cancel(); clearTimeout(timer); requestSignal?.removeEventListener('abort', onAbort); release() },
+    signal: controller.signal,
+    cancel,
+    complete: () => {
+      if (settled) return false
+      settled = true
+      release()
+      return true
+    },
+    dispose: () => {
+      cancel()
+      clearTimeout(timer)
+      requestSignal?.removeEventListener('abort', onAbort)
+      release()
+    },
   }
 }
 

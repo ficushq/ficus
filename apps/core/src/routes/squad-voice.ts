@@ -123,39 +123,80 @@ export const squadVoiceRouter = new Hono()
       const body = c.req.valid('json')
       if (derivationsInProgress.has(squadId)) return c.json({ error: 'derivation_in_progress' }, 429)
       const operation = acquireDerivation(squadId, c.req.raw.signal)
-      const args = { squadId, userId: userIdOf(identity), login: body.login, filters: body.filters ?? {}, signal: operation.signal }
+      const args = {
+        squadId,
+        userId: userIdOf(identity),
+        login: body.login,
+        filters: body.filters ?? {},
+        signal: operation.signal,
+      }
       const failure = (error: unknown) => {
-        const safe = error instanceof DerivationError ? safeDerivationFailure(error.code, error.details) : safeDerivationFailure('derivation_failed')
-        log.warn('Voice derivation failed', { squadId, code: safe.code, reason: safeDerivationReason(safe.code, safe.reason) })
+        const safe =
+          error instanceof DerivationError
+            ? safeDerivationFailure(error.code, error.details)
+            : safeDerivationFailure('derivation_failed')
+        log.warn('Voice derivation failed', {
+          squadId,
+          code: safe.code,
+          reason: safeDerivationReason(safe.code, safe.reason),
+        })
         return safe
       }
-      if (c.req.header('Accept')?.split(',').some(value => value.trim().split(';')[0] === 'text/event-stream')) {
+      if (
+        c.req
+          .header('Accept')
+          ?.split(',')
+          .some((value) => value.trim().split(';')[0] === 'text/event-stream')
+      ) {
         c.header('Cache-Control', 'no-store, no-transform')
         c.header('X-Accel-Buffering', 'no')
         c.header('Vary', 'Accept')
-        return streamSSE(c, async stream => {
+        return streamSSE(c, async (stream) => {
           c.header('Cache-Control', 'no-store, no-transform')
           stream.onAbort(() => operation.cancel())
-          const writer = createProgressWriter(async frame => {
-            if (stream.aborted) throw new Error('Derivation disconnected')
-            await stream.write(frame)
-            if (stream.aborted) throw new Error('Derivation disconnected')
-          }, () => { operation.cancel(); stream.abort() }, operation.signal)
+          const writer = createProgressWriter(
+            async (frame) => {
+              if (stream.aborted) throw new Error('Derivation disconnected')
+              await stream.write(frame)
+              if (stream.aborted) throw new Error('Derivation disconnected')
+            },
+            () => {
+              operation.cancel()
+              stream.abort()
+            },
+            operation.signal
+          )
           try {
-            await withDeviceStreamRevocation(c.get('authContext') ?? {}, stream, async revoked => {
-              const onRevoke = () => operation.cancel()
-              revoked.addEventListener('abort', onRevoke, { once: true })
-              if (revoked.aborted) onRevoke()
-              try {
-                await writer.publish({ type: 'started' })
-                const result = await abortable(derivePublicVoice({ ...args, onProgress: writer.publish }), operation.signal)
-                // Release ownership before waiting for a terminal write, fencing any late cleanup.
-                if (operation.complete()) await writer.publish({ type: 'complete', result })
-              } catch (error) {
-                if (!operation.signal.aborted && operation.complete()) await writer.publish({ type: 'error', error: failure(error) })
-              } finally { revoked.removeEventListener('abort', onRevoke) }
+            await abortable(
+              withDeviceStreamRevocation(c.get('authContext') ?? {}, stream, async (revoked) => {
+                const onRevoke = () => operation.cancel()
+                revoked.addEventListener('abort', onRevoke, { once: true })
+                if (revoked.aborted) onRevoke()
+                try {
+                  await writer.publish({ type: 'started' })
+                  const result = await abortable(
+                    derivePublicVoice({ ...args, onProgress: writer.publish }),
+                    operation.signal
+                  )
+                  // Release ownership before waiting for a terminal write, fencing any late cleanup.
+                  if (operation.complete()) await writer.publish({ type: 'complete', result })
+                } catch (error) {
+                  if (!operation.signal.aborted && operation.complete())
+                    await writer.publish({ type: 'error', error: failure(error) })
+                } finally {
+                  revoked.removeEventListener('abort', onRevoke)
+                }
+              }),
+              operation.signal
+            ).catch(async (error) => {
+              if (error instanceof DerivationError && error.code === 'derivation_timed_out') await writer.timeout()
+              else if (!operation.signal.aborted)
+                log.warn('Voice derivation stream setup failed', { squadId, code: 'derivation_failed' })
             })
-          } finally { writer.dispose(); operation.dispose() }
+          } finally {
+            writer.dispose()
+            operation.dispose()
+          }
         })
       }
       c.header('Vary', 'Accept')
@@ -166,8 +207,18 @@ export const squadVoiceRouter = new Hono()
         return c.json(result)
       } catch (error) {
         const safe = failure(error)
-        return c.json({ error: safe.code, ...('reason' in safe ? { reason: safe.reason } : {}), ...(safe.counts ? { counts: safe.counts } : {}), ...(safe.minimum !== undefined ? { minimum: safe.minimum } : {}) }, safe.code === 'derivation_failed' ? 500 : 422)
-      } finally { operation.dispose() }
+        return c.json(
+          {
+            error: safe.code,
+            ...('reason' in safe ? { reason: safe.reason } : {}),
+            ...(safe.counts ? { counts: safe.counts } : {}),
+            ...(safe.minimum !== undefined ? { minimum: safe.minimum } : {}),
+          },
+          safe.code === 'derivation_failed' ? 500 : 422
+        )
+      } finally {
+        operation.dispose()
+      }
     }
   )
 

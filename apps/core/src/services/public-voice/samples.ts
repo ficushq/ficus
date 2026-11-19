@@ -1,4 +1,10 @@
-import { emptySamplingBreakdown, type SamplingBreakdown, DERIVATION_SURFACES, type DerivationFilters, type DerivationSurface } from '@ficus/shared'
+import {
+  emptySamplingBreakdown,
+  type SamplingBreakdown,
+  DERIVATION_SURFACES,
+  type DerivationFilters,
+  type DerivationSurface,
+} from '@ficus/shared'
 import { DerivationError, type CollectedActivity, type RawActivityItem } from './github-activity'
 
 /**
@@ -206,8 +212,14 @@ export function summarizeSamples(
       any = true
       const size = encoder.encode(next.text).length
       const tally = breakdown.bySurface[surface]
-      if (samples.length >= MAX_SAMPLES) { tally.dropped.sample_limit++; continue }
-      if (bytes + size > MAX_SAMPLE_INPUT_BYTES) { tally.dropped.input_byte_limit++; continue }
+      if (samples.length >= MAX_SAMPLES) {
+        tally.dropped.sample_limit++
+        continue
+      }
+      if (bytes + size > MAX_SAMPLE_INPUT_BYTES) {
+        tally.dropped.input_byte_limit++
+        continue
+      }
       tally.kept++
       bytes += size
       samples.push({ id: samples.length + 1, ...next })
@@ -218,7 +230,8 @@ export function summarizeSamples(
   for (const tally of Object.values(breakdown.bySurface)) {
     breakdown.totals.seen += tally.seen
     breakdown.totals.kept += tally.kept
-    for (const reason of Object.keys(tally.dropped) as Array<keyof typeof tally.dropped>) breakdown.totals.dropped[reason] += tally.dropped[reason]
+    for (const reason of Object.keys(tally.dropped) as Array<keyof typeof tally.dropped>)
+      breakdown.totals.dropped[reason] += tally.dropped[reason]
   }
 
   const dateRange: SamplingSummary['dateRange'] = {}

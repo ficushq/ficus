@@ -471,10 +471,139 @@ describe('runDerivationSession', () => {
 test('request cancellation does not wait for a non-cooperative collector or publish late results', async () => {
   const controller = new AbortController()
   let called = false
-  const pending = derivePublicVoice({ squadId: 's', userId: null, login: 'octo', filters: {}, signal: controller.signal }, {
-    collect: async () => new Promise(() => {}), session: async () => { called = true; return '' },
-  })
+  const pending = derivePublicVoice(
+    { squadId: 's', userId: null, login: 'octo', filters: {}, signal: controller.signal },
+    {
+      collect: async () => new Promise(() => {}),
+      session: async () => {
+        called = true
+        return ''
+      },
+    }
+  )
   controller.abort()
   await expect(pending).rejects.toBeDefined()
   expect(called).toBe(false)
+})
+
+test('findings are exactly the validated, cap-retained observations, never samples or model deltas', async () => {
+  const privateSentinel = 'Synthetic private sentinel should never leave this collection.'
+  const items: RawActivityItem[] = Array.from({ length: 20 }, (_, i) => ({
+    surface: 'issue-comments',
+    text: `${privateSentinel} Sample ${i} has enough writing to be useful.`,
+    repository: 'example/library',
+    isPrivate: true,
+    createdAt: '2026-01-01T00:00:00Z',
+  }))
+  const events: import('@ficus/shared').DerivationProgress[] = []
+  const result = await derivePublicVoice(
+    {
+      squadId: 's',
+      userId: null,
+      login: 'octo',
+      filters: {},
+      onProgress: async (event) => {
+        events.push(event)
+      },
+    },
+    {
+      collect: async () => ({
+        items,
+        pagingCapped: false,
+        requests: 1,
+        droppedByFilter: { date: 0, repository: 0 },
+        unavailableRepositories: [],
+        commitRepositoriesNotSampled: [],
+      }),
+      session: async () =>
+        JSON.stringify(
+          output({
+            base: 'Lead with the result. '.repeat(65),
+            observations: [
+              privateSentinel,
+              'Use ghp_abcdefghijklmnopqrstuvwxyz0123.',
+              'Use @octo.',
+              ...Array.from(
+                { length: 9 },
+                (_, i) => `Observation ${i}: Write complete sentences and keep the opening direct.`
+              ),
+            ],
+            exemplars: [],
+          })
+        ),
+    }
+  )
+  const findings = events.filter((e): e is Extract<typeof e, { type: 'finding' }> => e.type === 'finding')
+  expect(findings.map((f) => f.text)).toEqual(result.observations)
+  expect(findings.length).toBeGreaterThan(0)
+  expect(findings.length).toBeLessThan(9)
+  expect(JSON.stringify(events)).not.toContain(privateSentinel)
+  expect(JSON.stringify(findings)).not.toContain('ghp_')
+  expect(events.findIndex((e) => e.type === 'phase' && e.phase === 'validating')).toBeLessThan(
+    events.findIndex((e) => e.type === 'finding')
+  )
+})
+test('model timeout does not wait for a provider that ignores its signal', async () => {
+  const items: RawActivityItem[] = Array.from({ length: 15 }, () => ({
+    surface: 'issue-comments',
+    text: 'Synthetic candidate prose with enough detail to count.',
+    repository: 'example/library',
+    isPrivate: true,
+    createdAt: '2026-01-01T00:00:00Z',
+  }))
+  await expect(
+    derivePublicVoice(
+      { squadId: 's', userId: null, login: 'octo', filters: {} },
+      {
+        collect: async () => ({
+          items,
+          pagingCapped: false,
+          requests: 1,
+          droppedByFilter: { date: 0, repository: 0 },
+          unavailableRepositories: [],
+          commitRepositoriesNotSampled: [],
+        }),
+        deadlineMs: 5,
+        session: async () => new Promise(() => {}),
+      }
+    )
+  ).rejects.toMatchObject({ code: 'derivation_model_unavailable', details: { reason: 'timeout' } })
+})
+test('oversize model deltas abort and unsubscribe without retaining unbounded output', async () => {
+  let listener: (event: any) => void = () => {}
+  let stopped = 0
+  let unsubscribed = 0
+  let disposed = 0
+  const create = spyOn(AgentSession, 'create').mockResolvedValue({
+    pi: {
+      subscribe: (fn: typeof listener) => {
+        listener = fn
+        return () => {
+          unsubscribed++
+        }
+      },
+      prompt: async () => {
+        listener({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'x'.repeat(65537) } })
+      },
+      abort: async () => {
+        stopped++
+      },
+    },
+    dispose: () => {
+      disposed++
+    },
+  } as any)
+  try {
+    await expect(
+      runDerivationSession(
+        { systemPrompt: 'S', prompt: 'P', attribution: {}, signal: new AbortController().signal },
+        { resolveModel: async () => 'fixture' }
+      )
+    ).rejects.toMatchObject({ code: 'derivation_invalid_output', details: { reason: 'too_long' } })
+    expect(stopped).toBe(1)
+    expect(unsubscribed).toBe(1)
+    expect(disposed).toBe(1)
+  } finally {
+    create.mockRestore()
+  }
 })

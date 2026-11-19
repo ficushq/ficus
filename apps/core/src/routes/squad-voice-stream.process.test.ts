@@ -17,15 +17,24 @@ test('socket disconnect cancels collection, releases ownership and permits a rep
   const app = new Hono().use('*', identityMiddleware).route('/api/squads', squadVoiceRouter)
   const server = Bun.serve({ port: 0, fetch: app.fetch })
   let observedAbort!: () => void
-  const aborted = new Promise<void>(resolve => { observedAbort = resolve })
-  const derive = spyOn(derivation, 'derivePublicVoice').mockImplementationOnce(async input => {
-    input.signal!.addEventListener('abort', () => observedAbort(), { once: true })
-    await input.onProgress?.({ type: 'phase', phase: 'collecting' })
-    return new Promise(() => {})
-  }).mockRejectedValueOnce(new DerivationError('derivation_invalid_output', { reason: 'not_json', raw: 'synthetic private sentinel' }))
-  const request = () => fetch(`http://localhost:${server.port}/api/squads/${squad.id}/voice/derive`, {
-    method: 'POST', headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify({ login: 'octo' }),
+  const aborted = new Promise<void>((resolve) => {
+    observedAbort = resolve
   })
+  const derive = spyOn(derivation, 'derivePublicVoice')
+    .mockImplementationOnce(async (input) => {
+      input.signal!.addEventListener('abort', () => observedAbort(), { once: true })
+      await input.onProgress?.({ type: 'phase', phase: 'collecting' })
+      return new Promise(() => {})
+    })
+    .mockRejectedValueOnce(
+      new DerivationError('derivation_invalid_output', { reason: 'not_json', raw: 'synthetic private sentinel' })
+    )
+  const request = () =>
+    fetch(`http://localhost:${server.port}/api/squads/${squad.id}/voice/derive`, {
+      method: 'POST',
+      headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({ login: 'octo' }),
+    })
   try {
     const response = await request()
     expect(response.status).toBe(200)
@@ -35,7 +44,10 @@ test('socket disconnect cancels collection, releases ownership and permits a rep
     // Wait for real work admission before closing the underlying HTTP response.
     await reader.read()
     await reader.cancel()
-    await Promise.race([aborted, new Promise((_, reject) => setTimeout(() => reject(new Error('Disconnect was not propagated')), 1000))])
+    await Promise.race([
+      aborted,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Disconnect was not propagated')), 1000)),
+    ])
     expect(__derivationsInProgress.has(squad.id)).toBe(false)
     const repeated = await request()
     const text = await repeated.text()
