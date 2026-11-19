@@ -312,9 +312,8 @@ test('question guidance arrives with the tool and the recorded question', async 
   expect(JSON.stringify(tool.parameters)).toContain('default is your active flow attempt')
   const { result } = await executeWith(['ws-one'])
   const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
-  expect(text).toContain('Action Center')
-  expect(text).toContain('do not repeat the question in chat')
-  expect(text).toContain('only after a human actually answers')
+  expect(text).toContain('Do not repeat the question in chat or infer an answer')
+  expect(text).toContain('A human answer is not review approval')
 })
 
 test('question replies do not assume the caller has a shell', async () => {
@@ -331,6 +330,34 @@ test('question replies do not assume the caller has a shell', async () => {
     {} as any
   )
   const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
-  expect(text).toContain('do not repeat the question in chat')
+  expect(text).toContain('Do not repeat the question in chat')
+  expect(text).not.toContain('ficus agent-question')
+})
+
+test('the shared result leaves Assistant pending labels and conversational answers intact', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const assistant = Bun.YAML.parse(
+    readFileSync(join(import.meta.dir, '../../../../config/agent-types/assistant.yaml'), 'utf8')
+  ) as { systemPrompt: string }
+  expect(assistant.systemPrompt).toContain('waiting in Needs you')
+  expect(assistant.systemPrompt).toContain('When the user supplies an answer conversationally, continue')
+  const tool = createAsyncAskHumanTool(
+    { agentId: 'assistant-1', executionId: 'execution-1', flushPersistence: async () => {} },
+    { createQuestion: async () => ({ ...record, openedWaitWorkStreamIds: [] }) },
+    { allowBlocking: false }
+  )
+  const result = await tool.execute(
+    'call-1',
+    { questions: [{ id: 'q', question: 'Which option?' }] },
+    undefined,
+    undefined,
+    {} as any
+  )
+  const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+  expect(text).toContain('Do not repeat the question in chat')
+  expect(text).not.toContain('Action Center')
+  expect(text).not.toContain('question id')
+  expect(text).not.toContain('Record an answer received elsewhere')
   expect(text).not.toContain('ficus agent-question')
 })

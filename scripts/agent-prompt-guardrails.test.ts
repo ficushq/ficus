@@ -49,11 +49,11 @@ function composeStaticPrompt(type: AgentTypeFile): string {
  * budget when guidance is removed.
  */
 const STATIC_PROMPT_BYTE_BUDGETS: Record<string, number> = {
-  manager: 64_000,
+  manager: 64_500,
   consultant: 46_500,
-  reviewer: 38_500,
+  reviewer: 39_000,
   sysops: 37_000,
-  architect: 36_000,
+  architect: 36_500,
   'security-auditor': 36_000,
   engineer: 35_000,
   general: 31_000,
@@ -166,6 +166,10 @@ describe('questions and waits in composed squad prompts', () => {
       expect(prompt.split('Use `ask_human` for every human')).toHaveLength(2)
       expect(prompt.split('When owner instructions conflict, newer text does')).toHaveLength(2)
       expect(prompt).toContain('ask with `ask_human` before exploring or implementing either')
+      expect(prompt).toContain('Do clearly in-scope follow-up work without asking')
+      expect(prompt).toContain('ask only for work outside scope, and never end a turn with an offer')
+      expect(prompt).toContain('Chat questions are allowed in casual conversation with an actively chatting')
+      expect(prompt).toContain('human, never for a work decision')
       expect(prompt).toContain('End your turn while blocked or paused')
       expect(prompt).toContain('A pause requires explicit resume')
       expect(prompt).toContain('check remaining waits and continue the saved attempt')

@@ -214,9 +214,11 @@ describe('AgentTypeSync', () => {
     expect(manager.systemPrompt).toContain('Status updates state facts,')
     expect(manager.systemPrompt).toContain('never offers or repeated questions')
     expect(manager.systemPrompt.split('Use `ask_human` for every human')).toHaveLength(2)
-    expect(manager.systemPrompt).toContain('never\nask it in chat or by inbox')
+    expect(manager.systemPrompt).toContain('never ask it in chat or by inbox')
     expect(manager.systemPrompt).toContain('chat may note the Action Center question id, not repeat the ask')
-    expect(manager.systemPrompt).toContain('Casual conversation does not replace a tracked work decision')
+    expect(manager.systemPrompt).toContain(
+      'Chat questions are allowed in casual conversation with an actively chatting'
+    )
     expect(manager.systemPrompt).toContain("If a worker's manual wait is really a human question")
     expect(manager.systemPrompt).toContain('Resolve only after the\ncondition is met')
     expect(manager.systemPrompt).toContain('check `requestingUserId`')
@@ -232,10 +234,11 @@ describe('AgentTypeSync', () => {
       const prompt = parsed.find((item) => item.id === id)?.systemPrompt ?? ''
       expect(prompt.split('Humans see the Action Center, not your chat')).toHaveLength(2)
       expect(prompt).toContain('Use `ask_human` for every human')
-      expect(prompt).toContain('including optional follow-up offers; never')
+      expect(prompt).toContain('Do clearly in-scope follow-up work without asking')
+      expect(prompt).toContain('ask only for work outside scope, and never end a turn with an offer')
       expect(prompt).toContain('ask it in chat or by inbox')
       expect(prompt).toContain('chat may note the Action Center question id, not repeat the ask')
-      expect(prompt).toContain('Casual conversation does not replace a tracked work decision')
+      expect(prompt).toContain('Chat questions are allowed in casual conversation with an actively chatting')
     }
   })
 

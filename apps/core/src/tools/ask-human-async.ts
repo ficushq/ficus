@@ -212,9 +212,7 @@ export function createAsyncAskHumanTool(
             ? ` Opened a wait on 1 work stream: ${openedWaitWorkStreamIds[0]}.`
             : ` Opened waits on ${openedWaitWorkStreamIds.length} work streams: ${openedWaitWorkStreamIds.join(', ')}.`
       const questionGuidance =
-        ' In chat, note only the Action Center question id; do not repeat the question in chat. ' +
-        'Record an answer received elsewhere only after a human actually answers; ' +
-        'never infer an answer or use it as review approval.'
+        ' Do not repeat the question in chat or infer an answer. A human answer is not review approval.'
       return {
         content: [
           {

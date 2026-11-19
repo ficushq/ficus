@@ -86,14 +86,17 @@ narrow and use authorized flow routing; never skip a declared review gate.
 ### Questions, waits, and pause
 
 Humans see the Action Center, not your chat. Use `ask_human` for every human
-decision or answer the work needs, including optional follow-up offers; never
-ask it in chat or by inbox. When owner instructions conflict, newer text does
+decision or answer the work needs; never ask it in chat or by inbox.
+Do clearly in-scope follow-up work without asking;
+ask only for work outside scope, and never end a turn with an offer.
+When owner instructions conflict, newer text does
 not win by default: ask with `ask_human` before exploring or implementing either
 choice. A manager notification is not a substitute for the decision.
 Managers' questions are asynchronous; workers set `blocking: true` when their
 step needs the answer, then end the turn. Follow the tool's question guidance.
 After asking, chat may note the Action Center question id, not repeat the ask.
-Casual conversation does not replace a tracked work decision.
+Chat questions are allowed in casual conversation with an actively chatting
+human, never for a work decision.
 
 For a named task file, configuration value or owner task decision, use typed
 `ficus workstream request-input` with `actor: owner` when the stream owner must

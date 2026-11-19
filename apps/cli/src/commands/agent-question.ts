@@ -83,6 +83,10 @@ export function registerAgentQuestionCommands(program: Command) {
         'delivered back to you. Only the asking agent can do this. Never use it for your own or ' +
         "another agent's inferred answer, to unblock yourself, or in place of a human approval."
     )
+    .addHelpText(
+      'after',
+      '\nFind your open question id with: ficus agent-question list <your-agent-id> --status open\n'
+    )
     .requiredOption('-a, --answer <text>', "The human's answer, verbatim or a faithful summary")
     .requiredOption('-s, --source <url-or-reference>', 'Where the human answered (e.g. the PR comment URL)')
     .option('--json', 'Output in JSON format')
