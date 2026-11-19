@@ -5,8 +5,10 @@ import { controlledPiSession } from '../../test-utils/controlled-pi-session'
 import { afterEach, beforeEach, expect, it, mock } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { Agent } from '../../entities/Agent'
+import { InboxMessage } from '../../entities/InboxMessage'
+import { prepareInboxDelivery } from '../inbox/inboxDelivery'
 import { AgentType } from '../../entities/AgentType'
-import { db, agents, agentTypes, messages, chatSendReceipts } from '../../db'
+import { db, agents, agentTypes, messages, chatSendReceipts, inbox } from '../../db'
 import { updateUnclaimedMessage, updateClaimedMessage } from './pending-message-control'
 import { handleControlSignal } from '../execution/control-signals'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -28,6 +30,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
   await db.delete(messages).where(eq(messages.agentId, agent.id))
+  await db.delete(inbox).where(eq(inbox.recipientId, agent.id))
   await db.delete(agents).where(eq(agents.id, agent.id))
   await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
 })
@@ -310,3 +313,104 @@ it('resolves receipt-less history once per execution and refreshes the identity 
     setDatabaseQueryObserverForTest(undefined)
   }
 })
+
+for (const originalMode of ['follow-up', 'steer'] as const) {
+  for (const editAt of ['unclaimed', 'claimed', 'unchanged'] as const) {
+    it(`preserves inbox ${originalMode} delivery history through ${editAt} queue editing and SDK ingestion`, async () => {
+      const [source] = await db
+        .insert(inbox)
+        .values({
+          recipientType: 'agent',
+          recipientId: agent.id,
+          senderType: 'system',
+          content: 'Inbox work',
+          deliveryMode: originalMode,
+          deliveredAt: new Date(),
+        })
+        .returning()
+      // An idle agent uses steer mechanically, even for a follow-up inbox request.
+      const effectiveMode = editAt === 'unchanged' ? 'steer' : originalMode
+      const delivery = prepareInboxDelivery([new InboxMessage(source!)], originalMode, effectiveMode)
+      const message = await agent.recordMessage({
+        role: 'human',
+        content: delivery.prompt,
+        pending: true,
+        metadata: delivery.metadata,
+      })
+      const editedMode = originalMode === 'steer' ? 'follow-up' : 'steer'
+      const historyMode = editAt === 'unchanged' ? originalMode : editedMode
+      const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+      const root = mkdtempSync(join(tmpdir(), 'pi-inbox-mode-'))
+      const { session, ...fixture } = await controlledPiSession(root)
+      const persisted: Array<{ deliveryId?: string; entryId: string }> = []
+      session.subscribe((event) => {
+        if (event.type === 'session_message_persisted') persisted.push(event)
+      })
+      const updates: string[] = []
+      const unsubscribe = eventEmitter.on('message.updated', (event) => {
+        if (event.agentId === agent.id) updates.push(event.messageId)
+      })
+      const run = session.prompt('start', { deliveryId: 'initial' })
+      try {
+        await fixture.waitForRequest(1)
+        if (editAt === 'unclaimed')
+          expect(await updateUnclaimedMessage(agent.id, message.id, editedMode)).toBe('updated')
+        const claimed = await agent.claimPendingInterventionForSessionDelivery(message.id, owner)
+        const deliveryId = claimed!.metadata!.sessionDelivery!.id
+        const mode = claimed!.metadata!.deliveryMode
+        await session[mode === 'steer' ? 'steer' : 'followUp'](claimed!.content, undefined, { deliveryId })
+        if (editAt === 'claimed') {
+          expect(
+            await updateClaimedMessage({
+              agentId: agent.id,
+              messageId: message.id,
+              executionId: owner.executionId,
+              operation: editedMode,
+              session: { pi: session } as any,
+              stillOwned: () => true,
+              expiresAt: Date.now() + 10_000,
+            })
+          ).toBe('updated')
+        }
+        expect(updates).toContain(message.id)
+        const expectedMetadata = {
+          ...delivery.metadata,
+          deliveryMode: editAt === 'unchanged' ? effectiveMode : editedMode,
+          inboxDeliveryMode: historyMode,
+        }
+        const queued = (await agent.listMessages()).messages.find((row) => row.id === message.id)!
+        expect(queued.metadata).toMatchObject(expectedMetadata)
+        expect(
+          session[queued.metadata!.deliveryMode === 'steer' ? 'getSteeringMessages' : 'getFollowUpMessages']()
+        ).toEqual([delivery.prompt])
+        fixture.reply(0)
+        await fixture.waitForRequest(2)
+        fixture.reply(1)
+        await run
+        const entry = persisted.find((event) => event.deliveryId === deliveryId)!
+        expect(entry).toBeDefined()
+        updates.length = 0
+        const confirmed = await agent.confirmSessionDelivery(deliveryId, owner, entry.entryId, {
+          executionId: owner.executionId,
+          streamGroupId: 'inbox-consumed',
+        })
+        expect(confirmed).toHaveLength(1)
+        expect(confirmed[0]!.pending).toBe(false)
+        expect(confirmed[0]!.metadata).toMatchObject(expectedMetadata)
+        const reloaded = (await agent.listMessages()).messages.find((row) => row.id === message.id)!
+        expect(reloaded.pending).toBe(false)
+        expect(reloaded.metadata).toMatchObject(expectedMetadata)
+        expect(updates).toEqual([message.id])
+        expect(await updateUnclaimedMessage(agent.id, message.id, originalMode)).toBe('not_pending')
+        // The already-delivered inbox source retains the sender's original request.
+        expect((await InboxMessage.mustFind(source!.id)).deliveryMode).toBe(originalMode)
+      } finally {
+        unsubscribe()
+        await session.abort()
+        await run.catch(() => {})
+        session.dispose()
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+}
