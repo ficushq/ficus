@@ -74,8 +74,9 @@ describe('AgentTypeSync', () => {
     )
     expect(securityAuditor!.tools?.allow ?? []).not.toContain('write')
     expect(securityAuditor!.tools?.allow ?? []).not.toContain('edit')
-    expect(securityAuditor!.systemPrompt).toContain('Threat Modeling')
-    expect(securityAuditor!.systemPrompt).toContain('Authentication and Authorization')
+    // Case-insensitive: the prose names these areas mid-sentence.
+    expect(securityAuditor!.systemPrompt.toLowerCase()).toContain('threat modeling')
+    expect(securityAuditor!.systemPrompt.toLowerCase()).toContain('authentication and authorization')
     expect(securityAuditor!.systemPrompt).toContain('Findings')
   })
 
@@ -330,7 +331,8 @@ describe('AgentTypeSync', () => {
     for (const [id, expertise] of Object.entries(expectations)) {
       const type = parsed.find((row) => row.id === id)!
       expect(type).not.toHaveProperty('flowPrompt')
-      for (const text of expertise) expect(type.systemPrompt).toContain(text)
+      // Case-insensitive, so prose need not capitalize a phrase mid-sentence to satisfy a pin.
+      for (const text of expertise) expect(type.systemPrompt.toLowerCase()).toContain(text.toLowerCase())
       expect(type.systemPrompt).toContain('ficus workstream advance')
       expect(type.systemPrompt).toContain('Outside a flow, complete the assigned task')
       expect(type.systemPrompt).toContain('no role may grant itself that authority')

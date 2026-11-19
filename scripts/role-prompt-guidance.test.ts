@@ -50,6 +50,7 @@ test('role prompts keep their judgment and Ficus-specific rules', () => {
   expect(flat('engineer')).toContain('reply to each individual thread')
   expect(flat('sysops')).toContain('use `squad_bash` by default')
   expect(flat('sysops')).toContain('An assignment to investigate is not permission to change a live system')
+  expect(flat('sysops')).toContain('staging or another isolated environment')
   expect(flat('security-auditor')).toContain('Never reproduce a secret value')
   expect(flat('security-auditor')).toContain('unless the task explicitly asks for it')
 })
@@ -67,6 +68,10 @@ test('the long manager sections stay short', () => {
     expect(manager).not.toContain(removed)
   expect(manager).toContain('Encode only invariants')
   expect(manager).toContain('Never encode manual process that gates execution')
+  expect(manager).toContain('tests, typechecks, lint, formatting and mutation checks whenever they like')
+  expect(manager).toContain('"one execution authorized"')
+  expect(manager).toContain('evidence, results and run logs belong in the PR or handoff, never in a new ledger')
+  expect(manager).toContain('retire something before adding anything')
   expect(manager).toContain('never use `ficus agent message` to send messages to workers')
 })
 
