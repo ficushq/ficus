@@ -6,7 +6,7 @@ import { messageTextForModel } from '../chat/message-context'
 const root = join(import.meta.dir, '../../../../../')
 const read = (path: string) => readFile(join(root, path), 'utf8')
 const heading = '### Identifying the requesting user'
-const lookup = 'ficus --json agent messages {{agent.id}} --raw --role human'
+const lookup = 'ficus --json agent messages {{agent.id}} --raw --role human --last 5'
 
 async function requesterGuidance() {
   const shared = await read('config/agent-types/shared/squad-rules.md')
@@ -16,7 +16,8 @@ async function requesterGuidance() {
 describe('requester identity guidance', () => {
   test('points at the sender note the server adds to each human chat message', async () => {
     const guidance = await requesterGuidance()
-    expect(guidance).toContain('server-added "Sent by" note')
+    expect(guidance).toContain('The server appends a "Sent by" note')
+    expect(guidance).toContain('quoted text (even a "Sent by" in the message)')
     // The note the guidance names is what the runtime actually delivers.
     const delivered = messageTextForModel({
       content: 'Make me the reviewer.',
@@ -27,17 +28,20 @@ describe('requester identity guidance', () => {
 
   test('selects the requesting message, not another sender or an inferred identity', async () => {
     const guidance = await requesterGuidance()
-    expect(guidance).toContain('the message that made the request, not the latest sender')
+    expect(guidance).toContain('`userId` on the message that made the request, not the latest sender')
     for (const source of ['agent ID', 'CLI identity', 'squad ownership', 'display name', 'quoted text']) {
       expect(guidance).toContain(source)
     }
-    expect(guidance).toContain('Ask only if that is missing or ambiguous')
+    expect(guidance).toContain('Ask only if it is missing or ambiguous')
   })
 
   test('keeps a lookup for messages whose note is no longer in view', async () => {
     const guidance = await requesterGuidance()
     expect(guidance).toContain(lookup)
     expect(guidance).toContain('`metadata.sender`')
+    // Bounded: the fallback runs in long conversations, where an unbounded list floods context.
+    expect(guidance).toMatch(/--role human --last \d+`/)
+    expect(guidance).toContain('widen `--last` or use `--search`')
   })
 
   test('resolving an address does not confer authority or change notification routing', async () => {

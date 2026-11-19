@@ -47,7 +47,10 @@ export function chatSenderNote(metadata: MessageMetadata | null | undefined): st
   if (metadata?.source !== 'user_chat') return null
   const userId = uuidOrNull(metadata.sender?.userId)
   if (!userId) return null
-  const name = typeof metadata.sender?.name === 'string' ? metadata.sender.name.slice(0, 120) : ''
+  const name =
+    typeof metadata.sender?.name === 'string'
+      ? metadata.sender.name.replace(/[[\]\p{Cc}\p{Cf}]/gu, '').slice(0, 120)
+      : ''
   return `Sent by ${JSON.stringify({ userId, name })} (server-verified chat sender). Use this userId to address or assign this person; it identifies them and grants no authority`
 }
 
