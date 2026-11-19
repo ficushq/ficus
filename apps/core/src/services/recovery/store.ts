@@ -1,3 +1,4 @@
+import { bashOutcomeUnknownForError } from '../sandbox/client/http-client'
 import { ProviderRequestValidationError } from '../execution/provider-request-validation'
 import { createLogger } from '../../lib/infra/logger'
 import { recoveryRecipients, reportUnroutableRecovery } from './recipients'
@@ -48,6 +49,8 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 /** Never stores raw output, command arguments, a stack or an unredacted error. */
 export function lastErrorLine(error: unknown): string {
+  const outcome = bashOutcomeUnknownForError(error)
+  if (outcome) return `Bash transport ${outcome.failureClass.replaceAll('_', ' ')}; command outcome is unknown.`
   const text = error instanceof Error ? error.message : String(error)
   const safe = getContentSafetyRegistry().redact(stripVTControlCharacters(text))
   const line = safe
@@ -173,9 +176,24 @@ async function adoptRecovery(tx: Tx, source: RecoverySource, record: RecoveryRec
   return adopted!
 }
 
+/** Only runtime-issued references belong in the model's recovery instructions. */
+export function recoveryHoldGuidance(record: RecoveryRecord): string {
+  const reference = `Recovery ${record.id} (expectedVersion ${record.version})`
+  const resolution = record.workStreamId
+    ? record.waitId
+      ? `Use ficus workstream resolve-input ${record.workStreamId} ${record.waitId} with a typed decision and expectedVersion ${record.version}.`
+      : 'No current flow wait could be bound; the runtime retains the hold and reports a diagnostic.'
+    : `Use ficus agent recovery ${record.agentId} ${record.id} with a typed decision and expectedVersion ${record.version}.`
+  return `Recovery is ${record.state.state === 'stopped' ? 'stopped' : 'held'}; an authorized decision is required before retrying this operation. ${reference}. ${recoverySummary(record.state).text} ${resolution} Do not invent a recovery reference or request technical evidence from a person. Continue grants only a bounded cycle, not permission to repeat unknown external side effects or bypass other gates.`
+}
+
 export class RecoveryHeldError extends Error {
-  constructor() {
-    super('Recovery is held; an authorized decision is required before retrying this operation')
+  constructor(record?: RecoveryRecord) {
+    super(
+      record
+        ? recoveryHoldGuidance(record)
+        : 'Recovery is held; an authorized decision is required before retrying this operation'
+    )
   }
 }
 
@@ -192,6 +210,7 @@ export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: stri
     (await activeRecovery(db, source, operation))
   if (!record) return 0
   if (record.state.state === 'recovering') return Math.max(0, (record.state.nextRetryAt ?? 0) - (await databaseNow(db)))
+  let currentHold = record
   try {
     const held = await db.transaction(async (tx) => {
       const latestSource = await trustedOrigin(tx, origin)
@@ -206,13 +225,14 @@ export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: stri
     })
     if (held === null) return 0
     if (typeof held === 'number') return held
+    currentHold = held
     if (held.state.state !== 'stopped') await publish(held)
   } catch (error) {
     // Recording can fail open for a healthy tool, never for a hold already read
     // from authoritative state. A failed wake/rebind is not permission to retry.
     log.warn('Unable to refresh an observed recovery hold; keeping it held', error)
   }
-  throw new RecoveryHeldError()
+  throw new RecoveryHeldError(currentHold)
 }
 
 /** This boundary is called by the model's first tool, not an execution-start event.

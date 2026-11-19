@@ -1643,7 +1643,8 @@ describe('createHttpBashOperations', () => {
       expect(error.cause).toBeInstanceOf(BashOutcomeUnknownError)
       if (cleanup === 'confirmed') {
         expect(error.message).toContain('confirmed none of its processes are still running')
-        expect(error.message).toContain('re-run it if needed')
+        expect(error.message).toContain('re-run only what is safe to repeat')
+        expect(error.message).toContain('Process termination does not prove that an external change did not happen')
       } else {
         expect(error.message).toContain('could not confirm it stopped (Bash cancellation cleanup did not settle')
         expect(error.message).toContain('Check with `ps`')

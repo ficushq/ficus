@@ -1,5 +1,10 @@
-import { describe, expect, mock, test } from 'bun:test'
-import { BashCleanupUnprovenError, BashOutcomeUnknownError, SandboxClient } from './http-client'
+import { describe, expect, jest, mock, test } from 'bun:test'
+import {
+  bashOutcomeUnknownForError,
+  BashCleanupUnprovenError,
+  BashOutcomeUnknownError,
+  SandboxClient,
+} from './http-client'
 
 describe('SandboxClient public bash cancellation', () => {
   test('proves cleanup for an invocation independently of the original stream', async () => {
@@ -68,7 +73,7 @@ describe('SandboxClient bash cancellation', () => {
 })
 
 describe('SandboxClient ambiguous bash outcomes', () => {
-  test.each(['clean-eof', 'reader-reset'] as const)(
+  test.each(['clean-eof', 'reader-reset', 'reader-timeout'] as const)(
     '%s fails closed and cancels the stable invocation without replay',
     async (mode) => {
       const previousFetch = globalThis.fetch
@@ -82,6 +87,8 @@ describe('SandboxClient ambiguous bash outcomes', () => {
           start(controller) {
             controller.enqueue(new TextEncoder().encode('data: {"stdout":"aGk="}\n\n'))
             if (mode === 'clean-eof') controller.close()
+            else if (mode === 'reader-timeout')
+              controller.error(new DOMException('The operation timed out', 'TimeoutError'))
             else controller.error(new Error('The socket connection was closed unexpectedly'))
           },
         })
@@ -95,6 +102,9 @@ describe('SandboxClient ambiguous bash outcomes', () => {
         const error = await new Promise<Error>((resolve) => stream.once('error', resolve))
         expect(error).toBeInstanceOf(BashOutcomeUnknownError)
         expect((error as BashOutcomeUnknownError).invocationId).toBe('stable')
+        expect((error as BashOutcomeUnknownError).failureClass).toBe(
+          mode === 'clean-eof' ? 'protocol_truncated' : mode === 'reader-timeout' ? 'timeout' : 'socket_closed'
+        )
         await stream.cancelAndWait('transport-loss')
 
         expect(calls.filter(({ url }) => url.endsWith('/bash'))).toHaveLength(1)
@@ -149,4 +159,71 @@ test('records the restart cancellation before disconnecting the stream, avoiding
   releaseCancel?.()
   await cancelled
   expect(streamSignal?.aborted).toBe(true)
+})
+
+test('a silent foreground stream has no unary or output-idle deadline and accepts split SSE after a long quiet interval', async () => {
+  jest.useFakeTimers()
+  let body!: ReadableStreamDefaultController<Uint8Array>
+  let requestSignal: AbortSignal | undefined
+  let terminal = false
+  const errors: Error[] = []
+  const calls: string[] = []
+  const encoder = new TextEncoder()
+  const client = new SandboxClient('quiet.test', undefined, {
+    unaryTimeoutMs: 1,
+    fetch: async (url, init) => {
+      calls.push(String(url))
+      requestSignal = init?.signal ?? undefined
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            body = controller
+          },
+        })
+      )
+    },
+  })
+  try {
+    const stream = client.bash({ command: 'quiet-command', invocationId: 'quiet', timeoutSeconds: 3600 })
+    const ended = new Promise<void>((resolve) => stream.on('end', resolve))
+    stream.on('data', (data) => {
+      if (data.exitCode === 0) terminal = true
+    })
+    stream.on('error', (error) => errors.push(error))
+    // No output, heartbeat or terminal frame is required just to keep the reader alive.
+    await Promise.resolve()
+    jest.advanceTimersByTime(10 * 60 * 1000)
+    await Promise.resolve()
+    expect(requestSignal?.aborted).toBe(false)
+    expect(terminal).toBe(false)
+    expect(errors).toEqual([])
+    body.enqueue(encoder.encode(': heartbeat\n\ndata: {"exit'))
+    body.enqueue(encoder.encode('Code":0}\n\n'))
+    body.close()
+    await ended
+    expect(terminal).toBe(true)
+    expect(errors).toEqual([])
+    expect(calls).toHaveLength(1)
+  } finally {
+    client.close()
+    jest.useRealTimers()
+  }
+})
+
+test('command-loss provenance survives wrappers but cannot be inferred from prose or forged fields', () => {
+  const loss = new BashOutcomeUnknownError('stable', 'connection_reset', new Error('PRIVATE_TRANSPORT'))
+  const wrapped = new Error('SDK/outage wrapper', { cause: loss })
+  expect(bashOutcomeUnknownForError(wrapped)).toBe(loss)
+  expect(
+    bashOutcomeUnknownForError(
+      Object.assign(new Error(loss.message), {
+        code: loss.code,
+        invocationId: loss.invocationId,
+        failureClass: loss.failureClass,
+      })
+    )
+  ).toBeUndefined()
+  const cyclic = new Error('cycle')
+  cyclic.cause = cyclic
+  expect(bashOutcomeUnknownForError(cyclic)).toBeUndefined()
 })

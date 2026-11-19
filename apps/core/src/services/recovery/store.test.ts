@@ -1748,3 +1748,231 @@ test('unrelated subagent provider failures still deliver a final failure and bec
   expect(final[0]!.content).toContain('Unrelated model error')
   expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))).toHaveLength(0)
 })
+
+test.each(['flow', 'standalone'] as const)(
+  'foreground transport losses retain invocation identity and issue an actionable native %s recovery while execution continues',
+  async (mode) => {
+    const { createBlankWorkflow, createWorkflowRun, resolveWorkflow } = await import('@ficus/shared')
+    const { executions, recoveryEpisodes, recoveryAttempts, workStreamFlowRuns, workflowBindings } =
+      await import('../../db')
+    const { SandboxClient, bashOutcomeUnknownForError } = await import('../sandbox/client/http-client')
+    const { createK8sSandboxedBashTool } = await import('../../tools/sandbox-tools')
+    const { wrapToolWithRecovery } = await import('./runtime')
+    if (mode === 'flow') {
+      const definition = createBlankWorkflow()
+      const { workflowFingerprint } = await import('../workflows/catalog')
+      const [snapshot] = await db.select().from(agentTypes).where(eq(agentTypes.id, prefix))
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream.id,
+        activated: true,
+        state: createWorkflowRun(definition),
+        source: resolveWorkflow({ kind: 'inline', definition }),
+        attemptAgents: { '1': worker.id },
+        participantSnapshots: { worker: snapshot! },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'test',
+        createdBy: 'test',
+      })
+      await db.insert(workflowBindings).values({
+        agentId: worker.id,
+        workStreamId: stream.id,
+        participantId: 'worker',
+        bindingKey: `worker:${workflowFingerprint(snapshot)}:reuse-0`,
+        agentSnapshot: snapshot!,
+      })
+    } else {
+      await db.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
+      await db.update(agents).set({ ownerUserId: ownerId }).where(eq(agents.id, worker.id))
+    }
+    await db
+      .update(executions)
+      .set({
+        status: 'running',
+        flowContext: mode === 'flow' ? { workStreamId: stream.id, attemptId: 1, stepId: 'work' } : null,
+      })
+      .where(eq(executions.id, execution.id))
+    const invocationIds: string[] = []
+    const cancellations: string[] = []
+    const client = new SandboxClient('transport-fixture', undefined, {
+      fetch: async (url, init) => {
+        const body = JSON.parse(String(init?.body))
+        if (String(url).endsWith('/bash/cancel')) {
+          cancellations.push(body.invocationId)
+          return Response.json({ remainingPids: [] })
+        }
+        if (body.command === 'git status') return new Response('data: {"exitCode":0}\n\n')
+        invocationIds.push(body.invocationId)
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(Object.assign(new Error('PRIVATE_ENDPOINT_AND_TOKEN'), { code: 'ECONNRESET' }))
+            },
+          })
+        )
+      },
+    })
+    const manager = {
+      getClientForSandbox: () => client,
+      getSandboxStatus: async () => ({ status: 'running' }),
+      resolveToolApiUrl: () => 'http://fixture',
+    }
+    let currentExecutionId = execution.id
+    const source = () => ({ agentId: worker.id, executionId: currentExecutionId })
+    const bash = createK8sSandboxedBashTool('/workspace', 'fixture', manager)
+    bash.name = 'squad_bash'
+    const tool = wrapToolWithRecovery(bash, source)
+    const errors: Error[] = []
+    try {
+      for (let n = 0; n < 3; n++) {
+        const error = await executeTool(tool, `loss-${n}`, { command: 'npm test', timeout: 10 + n }).catch((e) => e)
+        expect(error).toBeInstanceOf(Error)
+        expect(error.message).toContain('Ficus stopped it')
+        expect(error.message).not.toContain('PRIVATE_ENDPOINT')
+        expect(bashOutcomeUnknownForError(error)).toMatchObject({
+          invocationId: invocationIds[n],
+          failureClass: 'connection_reset',
+          code: 'BASH_OUTCOME_UNKNOWN',
+        })
+        errors.push(error)
+        if (n === 0) await executeTool(tool, 'inspection', { command: 'git status' })
+      }
+      let [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+      expect(record!.state).toMatchObject({ failures: 3, cycleFailures: 3, state: 'waiting-manager' })
+      expect(cancellations).toEqual(invocationIds)
+      const attempts = await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record!.id))
+      expect(attempts.map((a) => a.invocationId).sort()).toEqual([...invocationIds].sort())
+      expect(attempts.every((a) => a.outcome === 'unknown')).toBe(true)
+      expect(record!.state.lastError).toBe('Bash transport connection reset; command outcome is unknown.')
+      expect(errors[2]!.message).toContain(record!.id)
+      expect(errors[2]!.message).toContain(`expectedVersion ${record!.version}`)
+      if (mode === 'flow') {
+        const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record!.waitId!))
+        expect(wait).toMatchObject({ actor: 'manager', flowAttemptId: 1 })
+        expect(wait!.structured!.request).toMatchObject({
+          recoveryId: record!.id,
+          expectedRecoveryVersion: record!.version,
+        })
+        expect(errors[2]!.message).toContain(record!.waitId!)
+      } else expect(record!.waitId).toBeNull()
+      const [active] = await db.select().from(executions).where(eq(executions.id, execution.id))
+      expect(active!.status).toBe('running')
+      await expect(executeTool(tool, 'blocked', { command: 'npm test' })).rejects.toThrow('authorized decision')
+      expect(invocationIds).toHaveLength(3)
+      const api = await store()
+      const { recoveryOperationKey } = await import('./operation')
+      const duplicate = await api.recordRecoveryFailure(source(), {
+        operationKey: recoveryOperationKey('squad_bash', { command: 'npm test' }),
+        attempted: 'run the requested command',
+        invocationId: invocationIds[2]!,
+        error: errors[2],
+      })
+      expect(duplicate.version).toBe(record!.version)
+      expect(duplicate.state.failures).toBe(3)
+      const notices = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+      expect(notices.filter((notice) => notice.metadata?.recoveryId === record!.id)).toHaveLength(1)
+      await expect(
+        api.decideRecovery(
+          record!.id,
+          {
+            action: 'continue',
+            expectedVersion: record!.version,
+          },
+          { agentId: worker.id }
+        )
+      ).rejects.toThrow('authorized')
+      record = await api.decideRecovery(
+        record!.id,
+        {
+          action: 'continue',
+          expectedVersion: record!.version,
+        },
+        { agentId: squad.managerAgentId! }
+      )
+      expect(record!.state).toMatchObject({ managerCycles: 1, cycleFailures: 0, failures: 3 })
+      // A replacement model execution/turn must not buy a fresh allowance.
+      await db
+        .update(executions)
+        .set({ status: 'completed', endedAt: new Date() })
+        .where(eq(executions.id, execution.id))
+      const [next] = await db
+        .insert(executions)
+        .values({
+          agentId: worker.id,
+          status: 'running',
+          flowContext: mode === 'flow' ? { workStreamId: stream.id, attemptId: 1, stepId: 'work' } : null,
+        })
+        .returning()
+      currentExecutionId = next!.id
+      for (let n = 3; n < 6; n++)
+        await expect(executeTool(tool, `loss-${n}`, { command: ' npm  test ', timeout: 10 + n })).rejects.toThrow(
+          'Lost the connection'
+        )
+      ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record!.id))
+      expect(record!.state).toMatchObject({ failures: 6, cycleFailures: 3, managerCycles: 1, state: 'waiting-owner' })
+      expect(await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record!.id))).toHaveLength(
+        6
+      )
+      expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(1)
+      const waits = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))
+      expect(waits.filter((w) => !w.closedAt)).toHaveLength(mode === 'flow' ? 1 : 0)
+      if (mode === 'flow') expect(waits.find((w) => !w.closedAt)!.actor).toBe('human')
+      await expect(
+        api.decideRecovery(
+          record!.id,
+          {
+            action: 'continue',
+            expectedVersion: record!.version,
+          },
+          { agentId: squad.managerAgentId! }
+        )
+      ).rejects.toThrow('owner')
+      await api.decideRecovery(
+        record!.id,
+        {
+          action: 'stop',
+          expectedVersion: record!.version,
+        },
+        { userId: ownerId }
+      )
+      await expect(executeTool(tool, 'stopped', { command: 'npm test' })).rejects.toThrow('stopped')
+      expect(invocationIds).toHaveLength(6)
+      const [stillRunning] = await db.select().from(executions).where(eq(executions.id, currentExecutionId))
+      expect(stillRunning!.status).toBe('running')
+    } finally {
+      client.close()
+    }
+  },
+  15000 // Includes the existing real 1s/2s backoff and database fixture setup.
+)
+
+test('a lost foreground outcome never invents a recovery decision when accounting is unavailable', async () => {
+  const { spyOn } = await import('bun:test')
+  const { Type } = await import('@sinclair/typebox')
+  const { BashOutcomeUnknownError } = await import('../sandbox/client/http-client')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const outcome = new BashOutcomeUnknownError('unrecorded-invocation', 'connection_reset')
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'squad_bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Any(),
+      execute: async () => {
+        throw outcome
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  const transaction = spyOn(db, 'transaction').mockRejectedValue(new Error('accounting unavailable'))
+  try {
+    const error = await executeTool(tool, 'loss', { command: 'npm test' }).catch((e) => e)
+    expect(error.message).toContain('Recovery accounting is unavailable')
+    expect(error.message).toContain('No recovery reference is available in this result')
+    expect(error.message).toContain('a durable record may already exist')
+    expect(error.message).not.toContain('budget is exhausted')
+    expect(error.message).not.toContain('expectedVersion')
+    expect(error.cause).toBe(outcome)
+  } finally {
+    transaction.mockRestore()
+  }
+})
