@@ -20,6 +20,8 @@ import { agentTypesRoutes } from './routes/agent-types'
 import { modelTiersRoutes } from './routes/model-tiers'
 import { skillsRoutes } from './routes/skills'
 import { sharedPromptsRoutes } from './routes/shared-prompts'
+import { publicVoicesRoutes } from './routes/public-voices'
+import { squadVoiceRouter } from './routes/squad-voice'
 import { assistantRouter } from './routes/assistant'
 import { screenshotsRouter } from './routes/screenshots'
 import { assistantTasksRouter } from './routes/assistant-tasks'
@@ -310,6 +312,7 @@ app.route('/api/skills', skillsRoutes)
 app.route('/api/shared-prompts', sharedPromptsRoutes)
 app.route('/api/agent-types', agentTypesRoutes)
 app.route('/api/model-tiers', modelTiersRoutes)
+app.route('/api/public-voices', publicVoicesRoutes)
 app.route('/api/chat', chatRouter)
 app.route('/api/assistant', assistantRouter)
 app.route('/api/screenshots', screenshotsRouter)
@@ -337,6 +340,7 @@ app.route('/api/workflows', workflowsRouter)
 app.route('/api/squads', createGitHubFeedbackRouter())
 app.route('/api/squads', squadsRouter)
 app.route('/api/squads', slotsRouter)
+app.route('/api/squads', squadVoiceRouter)
 app.route('/api/slots', slotResourcesRouter)
 app.route('/api/activity', activityRouter)
 app.route('/api/integrations/providers/bigbrain/shared-vaults', createBigbrainSharedRouter(managedVaultService))

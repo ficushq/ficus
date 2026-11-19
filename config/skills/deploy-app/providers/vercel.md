@@ -7,6 +7,7 @@ Read `deploy-app` first; this note holds only what differs for Vercel.
   projects can bill). Token: https://vercel.com/account/settings/tokens, scoped to
   that account or team. Settings card: **Settings → Integrations → Vercel**.
 - **CLI:** `vercel`. Check access with `vercel whoami`.
+  Wrap project scripts: `ficus integration exec vercel -- npm run deploy`.
 - **Upload:** `.vercelignore` as a fallback; check the build output directory for
   static builds.
 

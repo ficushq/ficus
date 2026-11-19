@@ -6,6 +6,7 @@ import { AgentSession } from '../AgentSession'
 import { AgentType } from '../AgentType'
 import * as modelTiers from '../../services/model-selection/model-tier-resolution'
 import * as cliHelp from '../../lib/utils/cli-help'
+import * as prompts from '../../lib/prompts'
 import * as tools from '../../tools'
 import { assistantEditorInstructionsByKind } from '@ficus/shared'
 
@@ -379,5 +380,24 @@ describe('SystemManagerRunner.buildManagerPrompt model override guidance', () =>
     expect(systemPrompt).toContain('TYPE-PROMPT')
     expect(systemPrompt.includes('## Model Overrides')).toBe(expected)
     expect(systemPrompt).not.toContain('--agent-model')
+  })
+
+  it('resolves the public voice token to the instance default voice', async () => {
+    spies.push(
+      spyOn(AgentType, 'find').mockResolvedValue({
+        id: 'system-manager',
+        systemPrompt: '## Public text\n\n{{squad.publicVoice}}',
+        includes: [],
+      } as any)
+    )
+    spies.push(spyOn(modelTiers, 'resolveAgentTypeChain').mockResolvedValue('anthropic:claude-sonnet-4-5'))
+    spies.push(spyOn(cliHelp, 'getCliCommandIndex').mockResolvedValue('cli'))
+    spies.push(spyOn(SystemManagerRunner as any, 'buildSquadsContext').mockResolvedValue('squads'))
+    const voiceSpy = spyOn(prompts, 'buildPublicVoicePrompt').mockResolvedValue('### Voice\n\nDEFAULT-VOICE')
+    spies.push(voiceSpy)
+    const { systemPrompt } = await SystemManagerRunner.buildManagerPrompt(undefined, 'system-manager')
+    expect(voiceSpy).toHaveBeenCalledWith(null)
+    expect(systemPrompt).toContain('## Public text\n\n### Voice\n\nDEFAULT-VOICE')
+    expect(systemPrompt).not.toContain('{{squad.publicVoice}}')
   })
 })

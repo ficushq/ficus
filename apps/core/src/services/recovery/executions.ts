@@ -3,7 +3,9 @@ import { routeFailure } from '../execution/failure-routing'
 
 export const EXECUTION_RECOVERY_OPERATION = 'execution:run'
 
-/** Preserve provider, admission, provisioning-follower and deliberate stop policies. */
+/** Preserve provider, admission, provisioning-follower and deliberate stop policies.
+ * Known request validation is an explained immediate hold handled separately by
+ * Execution.fail, not an unexplained provider outage or a retryable failure. */
 export function isUnexplainedExecutionFailure(error: string, failure?: ExecutionFailure, cause?: unknown): boolean {
   if (routeFailure(error, undefined, cause).disposition.status === 'waiting-input') return false
   if (!failure) return true

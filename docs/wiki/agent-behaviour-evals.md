@@ -16,7 +16,10 @@ A scenario (`scenarios.ts`) gives an agent of one built-in type:
   and its includes from `config/`, and the runner sections from
   `lib/prompts/squad-agent-prompt.ts`, which is the same function the squad worker and manager
   runners call. That covers the workspace, Slot Pools, CLI index, workflow contract and delivery,
-  memory and purpose sections. Squad data comes from a fixture squad, not a database. The skills
+  memory and purpose sections. Public-capable built-in types (those including `public-text`) also
+  receive the variant’s shipped default public voice, resolved and fitted to its byte cap with
+  the same pure shared functions as runtime. The fixed public-text rules and voice appear once;
+  types without that include receive no voice. Squad data comes from a fixture squad, not a database. The skills
   list and connected-squad state are not included;
 - its **real tools**: names, descriptions and parameter schemas from the variant's tool modules.
   Execution is stubbed: the scenario scripts what each call returns. `ask_human` runs its real
@@ -85,8 +88,17 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
 - `--old` and `--new` take a git ref, or `working` for the working tree. A ref is extracted into
   a temporary directory (`config/`, `apps/core/src`, `apps/cli/src` and the migration journal)
   that uses the working tree's installed dependencies. Workspace packages such as `@ficus/shared`
-  therefore come from the working tree. When a ref predates a module the eval uses (for example
+  therefore come from the working tree, except that `packages/shared/src/public-voice.ts` is
+  extracted and imported directly from the ref for voice resolution, validation, rendering and
+  size limits. The default profile comes from that ref’s `config/public-voices/default.yaml`.
+  A ref missing either voice file receives no voice; the assembler never silently injects the
+  working tree’s newer voice into a pre-voice baseline. When a ref predates another module the eval uses (for example
   `squad-agent-prompt.ts`), the working tree's copy is used.
+- **Comparing historical runs:** this fixes a prompt-assembly omission, so new runs for voice-aware
+  refs include more guidance than recordings made by the earlier harness. Re-run both sides with
+  the same harness for a fair comparison, and record the harness revision. Pre-voice refs remain
+  voice-free. If an experiment deliberately normalizes voices across refs, label that normalization
+  in its report; it is not the default behavior. Live database profile overrides are never loaded.
 - **Models:** each scenario runs on its agent type's default tier and on the cheaper `fast` tier.
   Noah asked for both. `fast` is the cheapest tier built for agent turns with tools and the tier
   the Assistant ships with; `lite` is for one-shot calls. A tier's model is the first entry in
@@ -112,3 +124,7 @@ the new text as with the old, and the total number of passing runs does not drop
   is present for slot-queued, and no prompt shows `inbox list --all` for cli-discovery;
 - that the comparison applies the rule;
 - that each committed recording still grades as it did when recorded.
+
+`prompt.test.ts` additionally checks default voice composition across built-in types, capability
+filtering, deterministic per-variant profiles, runtime size limits, git-ref extraction and
+voice-free historical baselines. These prompt tests need no database or live model calls.

@@ -8,6 +8,7 @@ includes:
   - entity-references
   - readable-text
   - rules
+  - public-text
   - recovery-waits
   - subagents
   - assistant-task-reporting

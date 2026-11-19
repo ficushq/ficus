@@ -15,6 +15,7 @@ Read `deploy-app` first; this note holds only what differs for Cloudflare.
   nonsecret account ID on the connection when needed; it is passed to each command.
 
 - **CLI:** `wrangler`. Check access with `wrangler whoami`.
+  Wrap project scripts: `ficus integration exec cloudflare -- npm run deploy`.
 - **Billing to ask about:** routes, custom domains, KV, R2, D1 and Workers usage.
 
 ```bash

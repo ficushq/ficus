@@ -43,6 +43,11 @@ export const INFERENCE_FEATURES: readonly InferenceFeatureInfo[] = [
   { id: 'tts-reformat', label: 'Speech rewrite', description: 'Rewriting a message so it reads well aloud.' },
   { id: 'tts', label: 'Text to speech', description: 'Reading messages aloud.' },
   { id: 'ai-extract', label: 'AI extract', description: 'Pulling structured fields out of text.' },
+  {
+    id: 'public-voice-derive',
+    label: 'Voice derivation',
+    description: "Drafting a public voice from a GitHub user's writing.",
+  },
   { id: 'embedding:index', label: 'Memory indexing', description: 'Embeddings for indexed memory.' },
   { id: 'embedding:search', label: 'Memory search', description: 'Embeddings for memory search queries.' },
 ]

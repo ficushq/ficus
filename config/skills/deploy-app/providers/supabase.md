@@ -9,6 +9,7 @@ not the web host.
   Account → Access Tokens (https://supabase.com/dashboard/account/tokens). Settings
   card: **Settings → Integrations → Supabase**.
 - **CLI:** `supabase`. Check access with `supabase projects list`.
+  Wrap project scripts: `ficus integration exec supabase -- npm run deploy`.
 - Run from the directory that holds `supabase/config.toml` and the migrations, and
   confirm the linked project before anything non-local.
 

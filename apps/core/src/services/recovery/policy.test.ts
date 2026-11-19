@@ -53,3 +53,15 @@ test('neither an early continuation nor a restart clears a stopped or exhausted 
   expect(() => continueRecovery(state, 'manager', 0)).toThrow()
   expect(() => failedRecovery({ ...state, state: 'stopped' }, { kind: 'restart' }, 0)).toThrow()
 })
+
+test('deterministic request validation holds on the first actual failure and immediately escalates after a manager continuation', async () => {
+  const { initialRecoveryState, failedRecovery, continueRecovery, recoverySummary } = await policy()
+  const rejected = { kind: 'request-validation' as const, error: 'The provider rejected a tool-search function name.' }
+  let state = failedRecovery(initialRecoveryState('continue the task'), rejected, 1000)
+  expect(state).toMatchObject({ failures: 1, cycleFailures: 1, state: 'waiting-manager', nextRetryAt: null })
+  expect(recoverySummary(state).text).toContain('Correct the request or safely re-plan before Continue')
+  state = continueRecovery(state, 'manager', 2000)
+  state = failedRecovery(state, rejected, 3000)
+  expect(state).toMatchObject({ failures: 2, cycleFailures: 1, managerCycles: 1, state: 'waiting-owner' })
+  expect(() => continueRecovery(state, 'manager', 4000)).toThrow('owner')
+})

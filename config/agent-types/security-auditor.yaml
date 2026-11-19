@@ -11,6 +11,7 @@ includes:
   - subagents
   - new-work-routing
   - squad-rules
+  - public-text
 extensions:
   - code-ast
 tools:

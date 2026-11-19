@@ -234,7 +234,7 @@ ficus integration exec <provider> -- pnpm run deploy
 ficus integration exec <provider> --connection <connection-id> -- <command>
 ```
 
-The current squad context supplies the squad selector; outside that context provide `--squad <squad-id>` before `--`. Exec still checks authorization and assignment on every invocation. If authentication fails, ask a person to check account validation, enablement, token scope and squad assignment; do not inspect token variables or restart a process to reload credentials. Human terminals receive no integration credentials and may use their own CLI login. Host-runtime CLIs must already be installed by the operator.
+The current squad context supplies the squad selector; outside that context provide `--squad <squad-id>` before `--`. Exec still checks authorization and assignment on every invocation. If authentication fails, ask a person to check account validation, enablement, token scope and squad assignment; do not inspect token variables or restart a process to reload credentials. Human terminals receive no integration credentials and may use their own CLI login. On the host runtime, the operator must install the real CLIs; the wrappers still authenticate each command, so never replace them with token exports.
 
 Custom app secrets belong in squad **Environment Variables** (visible to agents and
 terminals) or human-directed files in the squad or agent workspace. Never copy

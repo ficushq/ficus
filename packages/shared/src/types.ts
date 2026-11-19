@@ -1061,6 +1061,10 @@ export interface Squad {
   managerAgentId: string | null
   context: string | null
   typeContext: Record<string, string> | null
+  /** Assigned voice profile id; null = the instance default (see docs/wiki/public-voice.md). */
+  publicVoiceId?: string | null
+  /** The squad's own voice layer. */
+  publicVoice?: import('./public-voice').SquadPublicVoice | null
   isAnonymous: boolean
   globalCollaborationEnabled: boolean
   order: number

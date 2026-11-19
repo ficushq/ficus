@@ -9,6 +9,8 @@ import {
   buildActiveSchedulesPrompt,
   buildPlatformUrlsPrompt,
   buildSlotPoolsPrompt,
+  buildPublicVoicePrompt,
+  publicTextIncludeEnabled,
 } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
@@ -81,8 +83,9 @@ export class SquadManagerRunner extends AgentRunner {
       'squad.purpose': squad.purpose,
       'squad.defaultAgents': squad.defaultAgents.join(', ') || 'none',
       'squad.context': squad.context ?? '',
-      // Pools need a database read; this synchronous helper omits them.
+      // Pools and the public voice need a database read; this synchronous helper omits them.
       'squad.slotPools': '',
+      'squad.publicVoice': '',
     })
   }
 
@@ -149,10 +152,12 @@ export class SquadManagerRunner extends AgentRunner {
 
   private async buildSquadManagerPrompt(): Promise<string> {
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, squadContext, slotPools] = await Promise.all([
+    const [cliHelp, squadContext, slotPools, publicVoice, publicTextEnabled] = await Promise.all([
       getCliCommandIndex(undefined, { omitHostGroups: true }),
       this.buildSquadContext(),
       buildSlotPoolsPrompt(this.squad.id),
+      buildPublicVoicePrompt(this.squad),
+      publicTextIncludeEnabled(),
     ])
 
     const typePrompt = await composeAgentTypePrompt(this.agentType)
@@ -171,6 +176,7 @@ export class SquadManagerRunner extends AgentRunner {
       },
       typePrompt,
       slotPools,
+      publicVoice: { section: publicVoice, publicTextEnabled },
       workspace: buildWorkspacePrompt({
         agentId: this.agent.id,
         squadId: this.squad.id,

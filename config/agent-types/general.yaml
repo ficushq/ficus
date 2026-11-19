@@ -10,6 +10,7 @@ includes:
   - recovery-waits
   - new-work-routing
   - squad-rules
+  - public-text
 tools: {}
 systemPrompt: |
   You are a helpful AI assistant. Complete the assigned task

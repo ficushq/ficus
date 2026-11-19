@@ -160,7 +160,9 @@ test('unknown or foreign recovery references cannot open an early wait and Stop 
     error: new Error('read failed'),
   }
   let record = await api.recordRecoveryFailure(origin, input)
-  await expect(api.openRecoveryWait(record.id, record.version, worker.id, stream.id)).rejects.toThrow('exhausted')
+  await expect(api.openRecoveryWait(record.id, record.version, worker.id, stream.id)).rejects.toThrow(
+    'not awaiting a decision'
+  )
   await expect(api.recordRecoveryFailure({ ...origin, agentId: squad.managerAgentId! }, input)).rejects.toThrow(
     'execution'
   )
@@ -1373,4 +1375,376 @@ test('executor error frames with exit 127 count; completed commands with exit 12
   const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
   expect(record!.state.failures).toBe(1)
   client.close()
+})
+
+const toolNameRejection =
+  "Codex error: [ToolSearchOutputFunctionToolNameParam] [input[49].name] [invalid_string] Invalid 'input[49].name': string does not match pattern. Expected a string that matches the pattern '^[a-zA-Z0-9_.-]+\\Z'. PRIVATE_PROMPT_AND_SECRET"
+
+test('provider validation fails into a visible flow-attempt hold on the first failure without replay or duplicate notices', async () => {
+  const { createBlankWorkflow, createWorkflowRun, resolveWorkflow } = await import('@ficus/shared')
+  const { executions, recoveryEpisodes, workStreamFlowRuns, workflowBindings } = await import('../../db')
+  const { classifyTurnFailure } = await import('../execution/failure-classification')
+  const { computeDerivedStates } = await import('../work-streams/derived-state')
+  const { workflowFingerprint } = await import('../workflows/catalog')
+  const [snapshot] = await db.select().from(agentTypes).where(eq(agentTypes.id, prefix))
+  const definition = createBlankWorkflow()
+  await db.insert(workStreamFlowRuns).values({
+    workStreamId: stream.id,
+    activated: true,
+    state: createWorkflowRun(definition),
+    source: resolveWorkflow({ kind: 'inline', definition }),
+    attemptAgents: { '1': worker.id },
+    participantSnapshots: { worker: snapshot! },
+    createRequestId: crypto.randomUUID(),
+    createRequestHash: 'test',
+    createdBy: 'test',
+  })
+  await db.insert(workflowBindings).values({
+    agentId: worker.id,
+    workStreamId: stream.id,
+    participantId: 'worker',
+    bindingKey: `worker:${workflowFingerprint(snapshot)}:reuse-0`,
+    agentSnapshot: snapshot!,
+  })
+  // Queue against the active attempt to use the same origin capture as production.
+  await execution.stop()
+  execution = await worker.queueExecution({ message: 'Retained private task' })
+  expect(execution.flowContext?.attemptId).toBe(1)
+  await execution.fail(toolNameRejection, undefined, classifyTurnFailure(toolNameRejection, false))
+  const api = await store()
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record?.state).toMatchObject({ state: 'waiting-manager', failures: 1, cycleFailures: 1 })
+  expect(record?.flowAttemptId).toBe(1)
+  const projection = (await computeDerivedStates([stream])).get(stream.id)!
+  expect(projection.derivedState).toBe('blocked')
+  expect(projection.openWaits[0]).toMatchObject({ flowAttemptId: 1, actor: 'manager' })
+  const [failed] = await db.select().from(executions).where(eq(executions.id, execution.id))
+  expect(failed.error).not.toContain('PRIVATE_PROMPT')
+  expect(failed.failureReason).toBe('request_validation_tool_name')
+  const { recoveryAttempts } = await import('../../db')
+  const [outcome] = await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record!.id))
+  expect(outcome!.outcome).toBe('explained')
+  // Retried delivery of the same outcome is idempotent; another queued run cannot dispatch it.
+  await execution.fail(toolNameRejection, undefined, classifyTurnFailure(toolNameRejection, false))
+  const next = await worker.queueExecution({ message: 'Unchanged request' })
+  await expect(api.recoveryRetryDelay({ agentId: worker.id, executionId: next.id }, 'execution:run')).rejects.toThrow(
+    'Recovery is held'
+  )
+  const notices = await db
+    .select()
+    .from(inbox)
+    .where(sql`${inbox.metadata}->>'recoveryId' = ${record!.id}`)
+  expect(notices).toHaveLength(1)
+  expect(notices[0]!.recipientId).toBe(squad.managerAgentId!)
+  expect(notices[0]!.content).toContain('Correct the request or safely re-plan')
+  expect(notices[0]!.content).not.toContain('PRIVATE_PROMPT')
+  expect(notices[0]!.content).not.toContain('Retained private task')
+  await next.stop()
+  const continued = await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [wake] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `recovery-continued:${continued.id}:${continued.version}`))
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, worker.id)).toBe(true)
+  const [flow] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id))
+  expect(flow!.state.attempts).toHaveLength(1)
+  expect(flow!.state.attempts[0]!.status).toBe('running')
+  const [closed] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record!.waitId!))
+  expect(closed!.closedAt).not.toBeNull()
+})
+
+test('a standalone validation hold permits only authorized versioned correction and re-holds at the next rejection', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { classifyTurnFailure } = await import('../execution/failure-classification')
+  await db.delete(workStreams).where(eq(workStreams.id, stream.id))
+  await db.update(agents).set({ ownerUserId: ownerId }).where(eq(agents.id, worker.id))
+  await execution.fail(toolNameRejection, undefined, classifyTurnFailure(toolNameRejection, false))
+  const api = await store()
+  let [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record?.state).toMatchObject({ state: 'waiting-manager', failures: 1 })
+  await expect(
+    api.decideRecovery(record!.id, { action: 'continue', expectedVersion: record!.version }, { agentId: worker.id })
+  ).rejects.toThrow('authorized manager')
+  await expect(
+    api.decideRecovery(
+      record!.id,
+      { action: 'continue', expectedVersion: record!.version - 1 },
+      { agentId: squad.managerAgentId! }
+    )
+  ).rejects.toThrow('version changed')
+  record = await api.decideRecovery(
+    record!.id,
+    { action: 'stop', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  await expect(
+    api.recoveryRetryDelay({ agentId: worker.id, executionId: execution.id }, 'execution:run')
+  ).rejects.toThrow('Recovery is held')
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [wake] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `recovery-continued:${record.id}:${record.version}`))
+  expect(wake!.content).toContain('Correct the request or safely re-plan')
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, worker.id)).toBe(true)
+  expect(await api.recoveryRetryDelay({ agentId: worker.id, executionId: execution.id }, 'execution:run')).toBe(0)
+  const next =
+    (await worker.getActiveExecution()) ?? (await worker.queueExecution({ message: 'Safe correction attempt' }))
+  await next.fail(toolNameRejection, undefined, classifyTurnFailure(toolNameRejection, false))
+  ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state).toMatchObject({ state: 'waiting-owner', failures: 2, managerCycles: 1 })
+  const { listPendingActions } = await import('../agents/actions')
+  const action = (await listPendingActions()).find((item) => item.id === `agent-recovery:${record!.id}`)
+  expect(action).toBeDefined()
+  await expect(
+    api.decideRecovery(
+      record!.id,
+      { action: 'continue', expectedVersion: record!.version },
+      { agentId: squad.managerAgentId! }
+    )
+  ).rejects.toThrow('authorized owner')
+  record = await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { userId: ownerId }
+  )
+  // A confirmed corrected result settles the episode; no session reset is needed.
+  const corrected =
+    (await worker.getActiveExecution()) ?? (await worker.queueExecution({ message: 'Corrected request' }))
+  await corrected.complete()
+  expect((await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record.id)))[0]!.state.state).toBe(
+    'resolved'
+  )
+})
+
+test('validation Continue retains pauses, provider questions and other waits rather than admitting a blocked task', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { classifyTurnFailure } = await import('../execution/failure-classification')
+  await execution.fail(toolNameRejection, undefined, classifyTurnFailure(toolNameRejection, false))
+  const api = await store()
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record).toBeDefined()
+  const other = await stream.block({ message: 'Independent approval', createdBy: 'system' })
+  const pause = {
+    reason: 'Owner pause',
+    id: crypto.randomUUID(),
+    pausedAt: new Date().toISOString(),
+    parkAt: null,
+    agentIds: [worker.id],
+  }
+  await db.update(workStreams).set({ pause }).where(eq(workStreams.id, stream.id))
+  await db
+    .update(agents)
+    .set({
+      status: 'waiting-input',
+      questionData: { questions: [{ id: 'provider', type: 'text', question: 'Provider authorization required' }] },
+    })
+    .where(eq(agents.id, worker.id))
+  const continued = await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [wake] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `recovery-continued:${continued.id}:${continued.version}`))
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, worker.id)).toBe(false)
+  expect((await db.select().from(workStreams).where(eq(workStreams.id, stream.id)))[0]!.pause).toEqual(pause)
+  expect((await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, other.id)))[0]!.closedAt).toBeNull()
+  expect((await db.select().from(agents).where(eq(agents.id, worker.id)))[0]!.status).toBe('waiting-input')
+  await db.update(agents).set({ status: 'idle', questionData: null }).where(eq(agents.id, worker.id))
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, worker.id)).toBe(false) // Pause still applies.
+  await db.update(workStreams).set({ pause: null }).where(eq(workStreams.id, stream.id))
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, worker.id)).toBe(false) // Independent wait still applies.
+  await db
+    .update(workStreamWaits)
+    .set({ closedAt: new Date(), resolution: 'cleared' })
+    .where(eq(workStreamWaits.id, other.id))
+  const dependency = await storedLegacyWorkStream({ squadId: squad.id, title: 'Required dependency' })
+  await stream.update({ dependsOn: [dependency.id] })
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, worker.id)).toBe(false)
+})
+
+test('late validation outcomes update real counts and versions without repeating the same hold notification', async () => {
+  const api = await store()
+  const { ProviderRequestValidationError } = await import('../execution/provider-request-validation')
+  const origin = { agentId: worker.id, executionId: execution.id }
+  let record: Awaited<ReturnType<typeof api.recordRecoveryFailure>>
+  for (const invocationId of ['one', 'two', 'three']) {
+    record = await api.recordRecoveryFailure(origin, {
+      operationKey: 'execution:run',
+      attempted: 'continue the task',
+      invocationId,
+      error: new ProviderRequestValidationError(),
+    })
+  }
+  expect(record!.state).toMatchObject({ state: 'waiting-manager', failures: 3 })
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record!.waitId!))
+  expect(wait!.structured!.version).toBe(record!.version)
+  expect(wait!.structured!.summary.attemptCount).toBe(3)
+  const notices = await db
+    .select()
+    .from(inbox)
+    .where(sql`${inbox.metadata}->>'recoveryId' = ${record!.id}`)
+  expect(notices).toHaveLength(1)
+})
+
+async function failedSubagent(error = toolNameRejection) {
+  const { spyOn } = await import('bun:test')
+  const { SubagentRunner } = await import('../../entities/agent-runners/subagent-runner')
+  const { classifyTurnFailure } = await import('../execution/failure-classification')
+  const child = await Agent.create({ agentTypeId: prefix, squadId: squad.id, parentAgentId: worker.id, persist: false })
+  const run = await child.queueExecution({ message: 'Narrow delegated task' })
+  const runner = new SubagentRunner(run, child, await child.mustGetAgentType())
+  let finalResult: Promise<void> | undefined
+  const target = runner as unknown as { deliverResultAndSelfTerminate: (...args: any[]) => Promise<void> }
+  const deliver = target.deliverResultAndSelfTerminate.bind(runner)
+  const delivered = spyOn(target, 'deliverResultAndSelfTerminate').mockImplementation((...args) => {
+    finalResult = deliver(...args)
+    return finalResult
+  })
+  let settle!: () => void
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve
+  })
+  const original = run.fail.bind(run)
+  const failed = spyOn(run, 'fail').mockImplementation(async (...args) => {
+    try {
+      return await original(...args)
+    } finally {
+      settle()
+    }
+  })
+  ;(runner as any).buffer = { push() {}, close() {}, fail() {} }
+  ;(runner as any).onError(error, classifyTurnFailure(error, false))
+  await settled
+  await finalResult
+  failed.mockRestore()
+  delivered.mockRestore()
+  return { child, run, runner }
+}
+
+test('a validation-held subagent remains recoverable, notifies its parent without a final result, and delivers completion once after correction', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { SubagentRunner } = await import('../../entities/agent-runners/subagent-runner')
+  const { Subagent } = await import('../../entities/Subagent')
+  const { child, run } = await failedSubagent()
+  expect((await Agent.mustFind(child.id)).status).toBe('idle')
+  expect((await Agent.mustFind(child.id)).metadata?.completionDelivered).not.toBe(true)
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))
+  expect(record!.state.state).toBe('waiting-manager')
+  await expect(
+    Subagent.dispatch({ parentAgentId: worker.id, subagents: [{ instructions: 'Replace held child' }] })
+  ).rejects.toThrow('pending request-validation recovery')
+  expect(await Subagent.listChildren(worker.id)).toHaveLength(1)
+  await expect(
+    Subagent.dispatch({
+      parentAgentId: worker.id,
+      subagents: Array.from({ length: 10 }, () => ({ instructions: 'Attempt replacement' })),
+    })
+  ).rejects.toThrow('Subagent cap exceeded: 9 slots free')
+  const [parentNotice] = await db
+    .select()
+    .from(inbox)
+    .where(
+      sql`${inbox.metadata}->>'source' = 'subagent-recovery-held' AND ${inbox.metadata}->>'subagentId' = ${child.id}`
+    )
+  expect(parentNotice!.recipientId).toBe(worker.id)
+  expect(parentNotice!.content).toContain('not a final result')
+  expect(parentNotice!.content).not.toContain('PRIVATE')
+  expect(parentNotice!.metadata?.resultStatus).toBeUndefined()
+  await expect(
+    Subagent.revive({ parentAgentId: worker.id, subagentId: child.id, instructions: 'Bypass hold' })
+  ).rejects.toThrow('already live')
+  const api = await store()
+  await expect(api.recoveryRetryDelay({ agentId: child.id, executionId: run.id }, 'execution:run')).rejects.toThrow(
+    'Recovery is held'
+  )
+  await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const next = (await child.getActiveExecution()) ?? (await child.queueExecution({ message: 'Corrected request' }))
+  const corrected = new SubagentRunner(next, child, await child.mustGetAgentType())
+  ;(corrected as any).buffer = { push() {}, close() {}, fail() {} }
+  await (corrected as any).onComplete('Corrected final result', undefined, {})
+  await (corrected as any).deliverResultAndSelfTerminate('completed', 'Duplicate final result')
+  const final = await db.select().from(inbox).where(eq(inbox.senderId, child.id))
+  expect(final).toHaveLength(1)
+  expect(final[0]!.metadata?.resultStatus).toBe('completed')
+  expect((await Agent.mustFind(child.id)).status).toBe('dormant')
+})
+
+test('a parent can cancel a validation-held child and an old continuation cannot revive it', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { Subagent } = await import('../../entities/Subagent')
+  const { child } = await failedSubagent()
+  expect((await Agent.mustFind(child.id)).status).toBe('idle')
+  await Subagent.stop({ parentAgentId: worker.id, subagentId: child.id, reason: 'Task canceled' })
+  expect((await Agent.mustFind(child.id)).status).toBe('dormant')
+  await expect(
+    Subagent.revive({ parentAgentId: worker.id, subagentId: child.id, instructions: 'Bypass stopped hold' })
+  ).rejects.toThrow('pending request-validation recovery')
+  await expect(
+    Subagent.dispatch({ parentAgentId: worker.id, subagents: [{ instructions: 'Replace canceled child' }] })
+  ).rejects.toThrow('pending request-validation recovery')
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))
+  const api = await store()
+  const continued = await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [wake] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `recovery-continued:${continued.id}:${continued.version}`))
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, child.id)).toBe(false)
+  expect(await child.getActiveExecution()).toBeNull()
+  await Subagent.stop({ parentAgentId: worker.id, subagentId: child.id })
+  const final = await db.select().from(inbox).where(eq(inbox.senderId, child.id))
+  expect(final).toHaveLength(1)
+  expect(final[0]!.metadata?.resultStatus).toBe('stopped')
+})
+
+test('parent task cancellation cascades to a validation-held child and fences recovery delivery', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { requestAgentLifecycle } = await import('../agent/lifecycle')
+  const { child } = await failedSubagent()
+  await requestAgentLifecycle(worker, { target: 'dormant', reason: 'Parent task canceled', stopActive: true })
+  expect((await Agent.mustFind(child.id)).status).toBe('dormant')
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))
+  const api = await store()
+  const continued = await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [wake] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `recovery-continued:${continued.id}:${continued.version}`))
+  expect(await api.recoveryContinuationIsCurrent(db, wake!.id, child.id)).toBe(false)
+  expect(await child.getActiveExecution()).toBeNull()
+})
+
+test('unrelated subagent provider failures still deliver a final failure and become dormant rather than opening validation holds', async () => {
+  const { recoveryEpisodes } = await import('../../db')
+  const { child } = await failedSubagent('Unrelated model error')
+  expect((await Agent.mustFind(child.id)).status).toBe('dormant')
+  const final = await db.select().from(inbox).where(eq(inbox.senderId, child.id))
+  expect(final).toHaveLength(1)
+  expect(final[0]!.metadata?.resultStatus).toBe('failed')
+  expect(final[0]!.content).toContain('Unrelated model error')
+  expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, child.id))).toHaveLength(0)
 })

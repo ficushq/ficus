@@ -13,6 +13,10 @@ export interface RecoveryState {
   lastError: string | null
   /** Only replay-safe pre-model startup failures can be settled by model-tool progress. */
   startupOnly?: boolean
+  /** Known-invalid model requests hold immediately, without fabricated retries. */
+  requestValidation?: boolean
+  /** Runtime-issued version that opened this validation hold, for notice deduplication. */
+  validationHoldVersion?: number
 }
 
 export function initialRecoveryState(attempted: string): RecoveryState {
@@ -41,19 +45,21 @@ export function successorRecoveryState(attempted: string, previous?: RecoverySta
 /** Internal runtime input only. No caller-facing API accepts counted outcomes or restart claims. */
 export function failedRecovery(
   previous: RecoveryState,
-  failure: { kind: 'unknown'; error: string } | { kind: 'restart' },
+  failure: { kind: 'unknown' | 'request-validation'; error: string } | { kind: 'restart' },
   now: number
 ): RecoveryState {
   if (previous.state !== 'recovering') throw new Error('Recovery is held; an authorized decision is required')
   if (failure.kind === 'restart') return { ...previous, nextRetryAt: now }
   const cycleFailures = previous.cycleFailures + 1
-  const exhausted = cycleFailures >= RECOVERY_ATTEMPT_BUDGET
+  const requestValidation = failure.kind === 'request-validation'
+  const exhausted = requestValidation || cycleFailures >= RECOVERY_ATTEMPT_BUDGET
   const ownerEscalated = previous.ownerEscalated || (exhausted && previous.managerCycles >= RECOVERY_MANAGER_CYCLES)
   return {
     ...previous,
     failures: previous.failures + 1,
     cycleFailures,
     lastError: failure.error,
+    requestValidation,
     ownerEscalated,
     state: exhausted ? (ownerEscalated ? 'waiting-owner' : 'waiting-manager') : 'recovering',
     nextRetryAt: exhausted ? null : now + 1000 * 2 ** (cycleFailures - 1),
@@ -81,6 +87,8 @@ export function recoverySummary(state: RecoveryState): RecoverySummary {
     attempted: state.attempted,
     attemptCount: state.failures,
     lastError: state.lastError,
-    text: `I tried to ${state.attempted.charAt(0).toLowerCase()}${state.attempted.slice(1)} ${state.failures} times. The last error was: ${state.lastError ?? 'No unexplained failure was recorded.'}`,
+    text: state.requestValidation
+      ? `The provider rejected the tool-search function name in the model request. Recovery is held after ${state.failures} actual failure${state.failures === 1 ? '' : 's'}. Correct the request or safely re-plan before Continue; do not replay the unchanged invalid request. The last error was: ${state.lastError}`
+      : `I tried to ${state.attempted.charAt(0).toLowerCase()}${state.attempted.slice(1)} ${state.failures} times. The last error was: ${state.lastError ?? 'No unexplained failure was recorded.'}`,
   }
 }

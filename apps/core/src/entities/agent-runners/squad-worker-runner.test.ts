@@ -329,6 +329,51 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     }
   })
 
+  it('places the resolved public voice at its token, once', async () => {
+    const section = '### Voice\n\nVOICE-MARKER'
+    const voiceSpy = spyOn(prompts, 'buildPublicVoicePrompt').mockResolvedValue(section)
+    const enabledSpy = spyOn(prompts, 'publicTextIncludeEnabled').mockResolvedValue(true)
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const agentType = makeAgentType({
+        id: 'worker',
+        systemPrompt: 'You are a worker.\n\n## Public text\n\n{{squad.publicVoice}}\n\nAFTER',
+      }) as AgentType
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+
+      await runner.exposeCreateSession()
+
+      const systemPrompt: string = agentSessionCreateSpy.mock.calls[0][0].systemPrompt
+      expect(voiceSpy).toHaveBeenCalledTimes(1)
+      expect(voiceSpy.mock.calls[0]![0]!.id).toBe(TEST_SQUAD_ID)
+      expect(systemPrompt).toContain(`## Public text\n\n${section}\n\nAFTER`)
+      expect(systemPrompt.split('VOICE-MARKER')).toHaveLength(2)
+      expect(systemPrompt).not.toContain('{{squad.publicVoice}}')
+    } finally {
+      voiceSpy.mockRestore()
+      enabledSpy.mockRestore()
+    }
+  })
+
+  it('still gives custom agent types without the voice token the voice, once, unless public-text is off', async () => {
+    const section = '### Voice\n\nVOICE-MARKER'
+    const voiceSpy = spyOn(prompts, 'buildPublicVoicePrompt').mockResolvedValue(section)
+    const enabledSpy = spyOn(prompts, 'publicTextIncludeEnabled').mockResolvedValue(true)
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const agentType = makeAgentType({ id: 'worker', systemPrompt: 'Custom worker. {{squad.context}}' }) as AgentType
+      await new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType).exposeCreateSession()
+      expect((agentSessionCreateSpy.mock.calls[0][0].systemPrompt as string).split('VOICE-MARKER')).toHaveLength(2)
+
+      enabledSpy.mockResolvedValue(false)
+      await new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType).exposeCreateSession()
+      expect(agentSessionCreateSpy.mock.calls[1][0].systemPrompt as string).not.toContain('VOICE-MARKER')
+    } finally {
+      voiceSpy.mockRestore()
+      enabledSpy.mockRestore()
+    }
+  })
+
   it('renders no slot pools section or leftover token when the squad has no active pools', async () => {
     const slotPoolsSpy = spyOn(prompts, 'buildSlotPoolsPrompt').mockResolvedValue('')
     try {

@@ -1,3 +1,8 @@
+import type { ExecutionFailure } from '../../services/execution/failure-classification'
+import {
+  ProviderRequestValidationError,
+  REQUEST_VALIDATION_REASON,
+} from '../../services/execution/provider-request-validation'
 import { isLiveAgentStatus, type SessionUsage, type MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
@@ -276,8 +281,14 @@ export class SubagentRunner extends AgentRunner {
     })
   }
 
-  protected override onError(error: string): void {
-    super.onError(error)
+  protected override onError(error: string, failure?: ExecutionFailure): void {
+    if (failure?.failureClass === 'provider_model' && failure.failureReason === REQUEST_VALIDATION_REASON) {
+      // A repairable request rejection is a hold, not the child's final result.
+      // Recovery publishes an idempotent non-final notice to the live parent.
+      super.onError(new ProviderRequestValidationError().message, failure)
+      return
+    }
+    super.onError(error, failure)
     this.deliverResultAndSelfTerminate('failed', `Subagent failed: ${error}`, { completion: 'fallback' }).catch(
       () => {}
     )

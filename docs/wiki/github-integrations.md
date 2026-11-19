@@ -26,6 +26,8 @@ The execution endpoint requires squad-scoped `integrations:use` permission. Conn
 
 For completion checks, set `github.connectionId` in work-stream metadata to select an attached account, or omit it for the squad default. Flow subscriptions and squad event triggers can set `source.connectionId`. Repository and PR metadata establish polling interest; they do not grant repository access. Polling cursors include the connection identity, and normalized outputs retain it through delivery. Signed webhook ingress verifies repository access before attributing an event to a connection.
 
+Deriving a [public voice](public-voice.md) draft reads a GitHub user's pull requests, comments, reviews and commit messages through the squad's default account with two to eight GraphQL requests. It needs `squads:update` and `integrations:use` in the squad and saves nothing.
+
 ## Refresh and disconnect
 
 Ficus refreshes expiring user tokens centrally. GitHub refresh invalidates the previous pair, so Ficus saves the replacement before validating account identity. A failed identity check disables access; a transient provider failure preserves the replacement refresh token for recovery. Each connection remains bound to its issuing app configuration even after an operator changes the default app.

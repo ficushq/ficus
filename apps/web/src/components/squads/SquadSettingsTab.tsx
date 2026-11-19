@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { SquadGeneralSettings } from './SquadGeneralSettings'
 import { SquadContextEditor } from './SquadContextEditor'
+import { SquadVoiceSettings } from './SquadVoiceSettings'
 import { SquadAgentContextEditor } from './SquadAgentContextEditor'
 import { SlotPoolsSettings } from './SlotPoolsSettings'
 import { SquadSshKeys } from './SquadSshKeys'
@@ -101,7 +102,7 @@ export function SquadSettingsTab({
   }
 
   const groups = [
-    { label: 'Squad', ids: ['general', 'context', 'work'] },
+    { label: 'Squad', ids: ['general', 'context', 'voice', 'work'] },
     { label: 'Connections', ids: ['integrations', 'notifications'] },
     { label: 'Workspace', ids: ['workspace', 'storage', 'memory', 'access'] },
   ].map((group) => ({
@@ -150,6 +151,8 @@ export function SquadSettingsTab({
               <SlotPoolsSettings squadId={squadId} />
             </div>
           )}
+
+          {activeSection === 'voice' && <SquadVoiceSettings squadId={squadId} />}
 
           {activeSection === 'workspace' && sandboxSectionReady && (
             <div className="mb-8 space-y-8">

@@ -115,15 +115,19 @@ describe('AgentTypeSync', () => {
     expect(consultant!.skills ?? []).toEqual(expect.arrayContaining(['setup-squad', 'setup-notifications']))
   })
 
-  test('engineering squad prompts include public communication guidance', async () => {
+  test('publicly posting agent types carry the fixed public-text rules and the voice token', async () => {
     const parsed = await loadComposed()
-    for (const id of ['engineer', 'reviewer', 'manager']) {
+    for (const id of ['engineer', 'reviewer', 'manager', 'consultant', 'system-manager', 'assistant-worker']) {
       const agentType = parsed.find((p) => p.id === id)
       expect(agentType).toBeTruthy()
-      expect(agentType!.systemPrompt).toContain('## Public communication')
-      expect(agentType!.systemPrompt).toContain('Never include internal sandbox paths like `{{workspaceRoot}}/...`')
-      expect(agentType!.systemPrompt).toContain('Do **not** mention sandbox details')
-      expect(agentType!.systemPrompt).toContain('Avoid internal-handoff')
+      expect(agentType!.systemPrompt).toContain('## Public text')
+      expect(agentType!.systemPrompt).toContain('{{squad.publicVoice}}')
+      expect(agentType!.systemPrompt).toContain('no sandbox paths such as `{{workspaceRoot}}/...`')
+      expect(agentType!.systemPrompt).toContain('Never describe a skipped or bypassed check as passed.')
+      expect(agentType!.systemPrompt).not.toContain('## Public communication')
+    }
+    for (const id of ['assistant', 'artifact-builder-default', 'subagent']) {
+      expect(parsed.find((p) => p.id === id)!.systemPrompt).not.toContain('## Public text')
     }
   })
 

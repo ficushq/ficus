@@ -25,6 +25,10 @@ not included in default roles. See [decision evaluation access](decision-evaluat
 for worker invocation, temporary per-worker grants/revocation, scoping, cost
 attribution, rate limits and rollout requirements.
 
+## Public voice
+
+Voice profiles are instance-wide prompt text, so they use the agent type permissions: `agent-types:read` lists and reads them, `agent-types:update` creates, edits, disables, reverts and deletes them. Within a squad, `squads:read` reads the squad's voice (including the names of the profiles it may choose), `squads:update` assigns a profile and edits the squad's own voice, and deriving a draft through the squad's GitHub connection also needs `integrations:use`. See [public voice](public-voice.md).
+
 ## Squad storage
 
 `storage:read` lets a caller read one squad's storage breakdown with

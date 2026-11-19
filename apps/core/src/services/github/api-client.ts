@@ -62,12 +62,17 @@ function isRateLimited(res: Response) {
  * carrying GraphQL errors (for example a node the token cannot see). Every other failure (no usable
  * token, network, 401, 429, a rate-limited 403, 5xx, an unreadable body) throws
  * {@link GitHubApiUnavailableError} so the caller can retry later instead of deciding.
+ *
+ * With `allowPartial`, a response that carries GraphQL errors alongside `data` returns that partial
+ * `data` (for example one aliased repository that does not exist comes back null while the others
+ * are kept). Rate limiting still throws. Off by default: other callers decide on all-or-nothing reads.
  */
 export async function githubApiGraphql<T>(
   query: string,
   variables: Record<string, unknown>,
   squadId: string,
-  connectionId?: string
+  connectionId?: string,
+  options: { allowPartial?: boolean } = {}
 ): Promise<T | null> {
   const token = (await resolveGitHubConnection(squadId, connectionId))?.credential.accessToken
   if (!token) throw new GitHubApiUnavailableError('no_token')
@@ -96,7 +101,8 @@ export async function githubApiGraphql<T>(
     throw new GitHubApiUnavailableError('invalid_body')
   }
   if (body.errors?.some((error) => error?.type === 'RATE_LIMITED')) throw new GitHubApiUnavailableError('rate_limited')
-  if (body.errors?.length || !body.data) return null
+  if (!body.data) return null
+  if (body.errors?.length && !options.allowPartial) return null
   return body.data
 }
 

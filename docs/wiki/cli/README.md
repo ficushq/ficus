@@ -94,6 +94,7 @@ Other current command groups include:
 | `ficus deploy`                           | Manage local app runs and external deployment records                            |
 | `ficus skill` (`skills`)                 | Manage bundled and dynamic agent skills                                          |
 | `ficus shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                                    |
+| `ficus voice`                            | Manage public voice profiles squads are assigned to ([public voice](../public-voice.md)) |
 | `ficus remote-hosts`                     | Manage team-owned SSH hosts                                                      |
 | `ficus amtp` / `ficus remote`            | Manage federation and agent federation identity                                  |
 | `ficus machines`                         | Manage VM sandbox machines                                                       |
@@ -128,6 +129,8 @@ ficus workstream list --squad <id>  # List work streams for a squad
 ficus squad spawn <type> <id> # Spawn agent in squad
 ficus squad link <a> <b>      # Link two squads
 ficus squad storage [squad-id] # One squad's storage breakdown (storage:read; defaults to FICUS_SQUAD_ID)
+ficus squad voice show <id>   # Public voice: assignment, squad layer, resolved text (see ../public-voice.md)
+ficus squad voice use|set|clear|preview|derive <id> # Change or preview it (squads:update)
 ficus squad idle-consultants [squad-id] [--days <n>] [--agent <id>] [--make-dormant [--yes]] # Preview idle consultants; make them dormant (agents:terminate)
 ```
 

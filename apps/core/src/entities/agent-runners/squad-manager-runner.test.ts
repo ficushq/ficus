@@ -275,6 +275,48 @@ describe('SquadManagerRunner typeContext injection', () => {
     expect(systemPrompt).toContain(`## Run Identity\n\nCTX-MARKER\n\n${section}`)
   })
 
+  it('publishes the resolved public voice once at its token for managers and consultants', async () => {
+    const section = '### Voice\n\nVOICE-MARKER'
+    const voiceSpy = spyOn(prompts, 'buildPublicVoicePrompt').mockResolvedValue(section)
+    const enabledSpy = spyOn(prompts, 'publicTextIncludeEnabled').mockResolvedValue(true)
+    spies.push(voiceSpy, enabledSpy)
+    squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
+      id: TEST_SQUAD_ID,
+      name: 'S',
+      purpose: 'p',
+      defaultAgents: [],
+      context: 'CTX',
+      sandboxId: 'sbx',
+      managerAgentId: 'm1',
+      isMemoryEnabled: false,
+      getActiveAgents: async () => [],
+      getTypeContext: () => null,
+      withRelationships: async () => null,
+    } as any)
+    const agent = {
+      id: 'm1',
+      agentTypeId: 'manager',
+      squadId: TEST_SQUAD_ID,
+      metadata: null,
+      modelOverride: null,
+      selectedModel: null,
+      getOrCreateToken: async () => undefined,
+      getSandboxId: async () => 'agent_manager_m1',
+      getEffectiveModelSpec: async (m: string) => m,
+    } as any
+    const runner = new TestableSquadManagerRunner(
+      { id: 'e1', agentId: 'm1', message: 'go', imageIds: null } as any,
+      agent,
+      makeAgentType({ systemPrompt: 'You manage the squad.\n\n## Public text\n\n{{squad.publicVoice}}' })
+    )
+    await runner.exposeCreateSession()
+
+    const systemPrompt: string = sessionSpy.mock.calls[0][0].systemPrompt
+    expect(systemPrompt.split('VOICE-MARKER')).toHaveLength(2)
+    expect(systemPrompt).toContain(`## Public text\n\n${section}`)
+    expect(systemPrompt).not.toContain('{{squad.publicVoice}}')
+  })
+
   it('does not add Type-Specific Context section when absent', async () => {
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
       id: TEST_SQUAD_ID,

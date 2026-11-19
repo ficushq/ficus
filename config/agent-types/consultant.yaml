@@ -16,6 +16,7 @@ includes:
   - recovery-waits
   - subagents
   - squad-rules
+  - public-text
   - slot-manager
   - squad-dynamic-context
   - assistant-task-reporting

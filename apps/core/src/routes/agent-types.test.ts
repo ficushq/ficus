@@ -255,9 +255,13 @@ describe('agent type route validation', () => {
       'subagents',
       'new-work-routing',
       'squad-rules',
+      'public-text',
     ])
     expect(body.resolvedSystemPrompt).toContain('### Incident Response')
     expect(body.resolvedSystemPrompt).toContain('### Questions, waits, and pause')
+    // The voice token resolves to the instance default profile in the preview.
+    expect(body.resolvedSystemPrompt).toContain('## Public text')
+    expect(body.resolvedSystemPrompt).not.toContain('{{squad.publicVoice}}')
     expect(body.systemPrompt).not.toContain('### Questions, waits, and pause')
   })
 
@@ -306,6 +310,7 @@ describe('agent type route validation', () => {
       'subagents',
       'new-work-routing',
       'squad-rules',
+      'public-text',
     ])
     expect(body.yamlFieldOverrides).not.toContain('includes')
   })

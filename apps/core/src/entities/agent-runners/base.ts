@@ -1,3 +1,4 @@
+import { providerRequestValidationError } from '../../services/execution/provider-request-validation'
 import { restartResumeNotice } from '@ficus/shared/restart-context'
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
@@ -488,6 +489,7 @@ export abstract class AgentRunner {
 
   /** Runtime failover after an exhaustion error — see ModelFailoverCoordinator.attempt. */
   protected async attemptFailover(error: unknown): Promise<boolean> {
+    if (providerRequestValidationError(error)) return false
     return this.failover.attempt(error)
   }
 
@@ -1139,7 +1141,8 @@ export abstract class AgentRunner {
     this.agent.update({ sessionUsage: withoutDelta(sessionUsage) }).catch((err) => log.error('Error:', err))
 
     if (this.collector.lastError || this.collector.settledWithAssistantError) {
-      const errorMsg = this.collector.lastError ?? 'Provider request settled with an assistant error'
+      const providerError = this.collector.lastError ?? 'Provider request settled with an assistant error'
+      const errorMsg = providerRequestValidationError(providerError)?.message ?? providerError
       if (this.leaveForShutdownRequeue(errorMsg)) return
       log.error(`Execution ${this.execution.id} (agent ${this.agent.id}) ended with SDK error: ${errorMsg}`)
       // Attempt runtime failover before surfacing the error. If failover
@@ -1603,16 +1606,17 @@ export abstract class AgentRunner {
       for (const message of claimed) {
         await this.agent.resetPendingInterventionSessionDelivery(message.id, message.metadata?.sessionDelivery)
       }
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const validationError = providerRequestValidationError(err)
+      const errorMsg = validationError?.message ?? (err instanceof Error ? err.message : String(err))
       // The re-queued run sends this prompt again, images included.
       if (this.leaveForShutdownRequeue(errorMsg)) return
       if (imageIds.length > 0) await Image.markManyFailed(imageIds)
-      log.error(`session.prompt() failed for execution ${this.execution.id}:`, err)
+      log.error(`session.prompt() failed for execution ${this.execution.id}:`, validationError ?? err)
       // Attempt runtime failover before surfacing the error. Wrap in try-catch
       // so a failover failure (e.g. setModel rejecting) falls through to the
       // normal error-surfacing path instead of escaping sendPrompt.
       try {
-        if (await this.attemptFailover(err)) return
+        if (await this.attemptFailover(validationError ?? err)) return
       } catch (failoverErr) {
         log.error(`Failover failed for execution ${this.execution.id}:`, failoverErr)
       }
@@ -1621,7 +1625,10 @@ export abstract class AgentRunner {
       this.buffer.fail()
       // lastAssistant() is the last assistant row written THIS run, so its
       // presence is exactly "the model produced output before this failure".
-      this.onError(terminalError, classifyTurnFailure(err, this.persistence.lastAssistant() !== undefined))
+      this.onError(
+        terminalError,
+        classifyTurnFailure(validationError ?? err, this.persistence.lastAssistant() !== undefined)
+      )
     }
   }
 }

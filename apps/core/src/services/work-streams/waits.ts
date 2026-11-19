@@ -130,10 +130,11 @@ export async function openWait(
         record.flowAttemptId !== flowAttemptId ||
         record.agentId !== input.createdByAgentId ||
         record.version !== request.expectedRecoveryVersion ||
-        record.state.cycleFailures !== RECOVERY_ATTEMPT_BUDGET ||
+        (record.state.cycleFailures !== RECOVERY_ATTEMPT_BUDGET &&
+          !(record.state.requestValidation === true && record.state.cycleFailures > 0)) ||
         !['waiting-manager', 'waiting-owner', 'stopped'].includes(record.state.state)
       ) {
-        throw new Error('Recovery must be exhausted and belong to this exact wait scope')
+        throw new Error('Recovery must be held and belong to this exact wait scope')
       }
       const { recoverySummary } = await import('../recovery/policy')
       structured = {
