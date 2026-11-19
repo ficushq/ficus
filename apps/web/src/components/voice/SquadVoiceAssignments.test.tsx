@@ -1,3 +1,4 @@
+import { untilRendered } from '../../test/untilRendered'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Squad } from '@ficus/shared'
@@ -66,10 +67,9 @@ for (const disabled of [false, true])
           box('new').click()
           box('custom').click()
         })
-        await dom.act(async () => {
-          container.querySelector<HTMLButtonElement>('button')!.click()
-          await new Promise((r) => setTimeout(r, 20))
-        })
+        await dom.act(async () => container.querySelector<HTMLButtonElement>('button')!.click())
+        // The failure list renders only after every sequential PATCH settled.
+        await untilRendered(dom, () => expect(container.querySelector('[role="alert"]')).not.toBeNull())
         expect(calls).toEqual([
           { url: 'http://localhost/api/squads/old/voice', body: { voiceId: null, preserveCustomBase: true } },
           { url: 'http://localhost/api/squads/new/voice', body: { voiceId: 'team', preserveCustomBase: true } },
@@ -116,10 +116,8 @@ test('assigning default clears the selected assignment and explains effective de
     expect(boxes[0]!.checked).toBe(false)
     expect(boxes[1]!.checked).toBe(true)
     await dom.act(async () => boxes[0]!.click())
-    await dom.act(async () => {
-      container.querySelector<HTMLButtonElement>('button')!.click()
-      await new Promise((r) => setTimeout(r, 10))
-    })
+    await dom.act(async () => container.querySelector<HTMLButtonElement>('button')!.click())
+    await untilRendered(dom, () => expect(container.textContent).toContain('Updated 1 squad.'))
     expect(patches).toEqual([{ voiceId: null, preserveCustomBase: true }])
   } finally {
     globalThis.fetch = original

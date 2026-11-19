@@ -87,33 +87,34 @@ test('locks by connection, not by person, and releases after completion', async 
   const waiting = new Promise<void>((resolve) => {
     release = resolve
   })
+  // Explicit entry barriers: the conflicting request is sent only after the first owns the lock.
+  const entries: Array<() => void> = []
+  const entered = [0, 1].map((i) => new Promise<void>((resolve) => (entries[i] = resolve)))
   let callCount = 0
-  let bothStarted!: () => void
-  const entered = new Promise<void>((resolve) => {
-    bothStarted = resolve
-  })
   spies.push(
     spyOn(derivation, 'derivePublicVoice').mockImplementation(async () => {
-      if (++callCount === 2) bothStarted()
+      entries[callCount++]?.()
       await waiting
       return {} as any
     })
   )
-  const first = request()
+  const started: Array<Promise<Response>> = []
   try {
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    started.push(request())
+    await entered[0]
+    expect(derivationOwners.size).toBe(1)
     expect((await request()).status).toBe(429)
     expect((await request(admin, selectedId.toUpperCase())).status).toBe(429)
-    const second = request(admin, differentId)
-    await entered
+    started.push(request(admin, differentId))
+    await entered[1]
     expect(derivationOwners.size).toBe(2)
     release()
-    expect((await second).status).toBe(200)
-    expect((await first).status).toBe(200)
+    for (const response of started) expect((await response).status).toBe(200)
+    expect(callCount).toBe(2)
     expect(derivationOwners.size).toBe(0)
   } finally {
     release()
-    await first
+    await Promise.allSettled(started)
   }
 })
 

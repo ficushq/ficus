@@ -1,3 +1,4 @@
+import { untilRendered } from '../../test/untilRendered'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { PublicVoiceProfileJson } from '@ficus/shared'
@@ -154,10 +155,12 @@ test('Voices derives through accounts instead of squads and still opens Save as 
     expect(container.textContent).toContain('octo (Display account)')
     expect(container.textContent).not.toContain('Squad whose GitHub connection to use')
     expect(container.textContent).toContain('Assigned squads: Squad name')
-    await dom.act(async () => {
-      ;[...container.querySelectorAll('button')].find((b) => b.textContent === 'Derive')!.click()
-      await new Promise((r) => setTimeout(r, 15))
-    })
+    await dom.act(async () =>
+      [...container.querySelectorAll('button')].find((b) => b.textContent === 'Derive')!.click()
+    )
+    await untilRendered(dom, () =>
+      expect([...container.querySelectorAll('button')].some((b) => b.textContent === 'Save as new profile')).toBe(true)
+    )
     await dom.act(async () =>
       [...container.querySelectorAll('button')].find((b) => b.textContent === 'Save as new profile')!.click()
     )

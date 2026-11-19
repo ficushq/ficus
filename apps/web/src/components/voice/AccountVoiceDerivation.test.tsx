@@ -1,7 +1,8 @@
+import { untilRendered } from '../../test/untilRendered'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { fireEvent } from '@testing-library/dom'
 import { queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { AccountVoiceDerivation } from './AccountVoiceDerivation'
@@ -58,11 +59,11 @@ test('single usable account is selected and prefilled but editable, and reads th
       const login = container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')!
       expect(login.value).toBe('octocat')
       await dom.act(async () => fireEvent.input(login, { target: { value: 'another-person' } }))
-      await dom.act(async () => {
-        ;[...container.querySelectorAll('button')].find((b) => b.textContent === 'Derive')!.click()
-        await new Promise((r) => setTimeout(r, 10))
-      })
-      await waitFor(() => expect(calls.length).toBe(1))
+      await dom.act(async () =>
+        [...container.querySelectorAll('button')].find((b) => b.textContent === 'Derive')!.click()
+      )
+      await untilRendered(dom, () => expect(container.querySelector('[role="alert"]')).not.toBeNull())
+      expect(calls.length).toBe(1)
       expect(calls[0]).toEqual({
         url: 'http://localhost/api/public-voices/derive',
         body: { connectionId: 'selected', login: 'another-person', filters: {} },
@@ -122,19 +123,18 @@ test('choosing another account aborts an in-flight request and discards late res
       await choose('two')
       expect(pending[0]!.signal.aborted).toBe(true)
       expect(container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')!.value).toBe('two')
-      await dom.act(async () => {
-        pending[0]!.resolve(Response.json(result))
-        await new Promise((r) => setTimeout(r, 10))
-      })
-      expect(container.textContent).not.toContain('The old account draft.')
+      // Resolve the stale request first. The current request starts later through the same async
+      // chain, so once its draft renders the stale response has settled and must have been dropped.
+      await dom.act(async () =>
+        pending[0]!.resolve(Response.json({ ...result, draft: { base: 'Stale account draft.', surfaces: {} } }))
+      )
       await dom.act(async () =>
         [...container.querySelectorAll('button')].find((b) => b.textContent === 'Derive')!.click()
       )
-      await dom.act(async () => {
-        pending[1]!.resolve(Response.json(result))
-        await new Promise((r) => setTimeout(r, 10))
-      })
-      expect(container.textContent).toContain('The old account draft.')
+      await untilRendered(dom, () => expect(pending.length).toBe(2))
+      await dom.act(async () => pending[1]!.resolve(Response.json(result)))
+      await untilRendered(dom, () => expect(container.textContent).toContain('The old account draft.'))
+      expect(container.textContent).not.toContain('Stale account draft.')
       await choose('one')
       expect(container.textContent).not.toContain('The old account draft.')
     } finally {

@@ -1,3 +1,4 @@
+import { untilRendered } from '../../test/untilRendered'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
@@ -89,11 +90,10 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
         )
       )
       const click = async (text: string) =>
-        dom.act(async () => {
-          ;[...container.querySelectorAll('button')].find((b) => b.textContent === text)!.click()
-          await new Promise((r) => setTimeout(r, 15))
-        })
+        dom.act(async () => [...container.querySelectorAll('button')].find((b) => b.textContent === text)!.click())
+      const hasButton = (text: string) => [...container.querySelectorAll('button')].some((b) => b.textContent === text)
       await click('Derive')
+      await untilRendered(dom, () => expect(hasButton('Use this draft')).toBe(true))
       await click('Use this draft')
       expect(isInaccessible(container.querySelector('[aria-label="GitHub login"]')!)).toBe(true)
       expect(isInaccessible(container.querySelector('[aria-label="Voice"]')!)).toBe(false)
@@ -106,6 +106,18 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
       expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Voice"]')!.value).toBe(result.draft.base)
       const target = scenario === 'created' ? 'Created here' : 'Recent'
       await click(scenario === 'none' ? 'Save profile' : `Save and use for ${target}`)
+      // Wait for the terminal state of each save path, never for elapsed time.
+      await untilRendered(dom, () =>
+        expect(container.textContent).toContain(
+          {
+            collision: 'already exists',
+            none: 'Settings → Voices',
+            'assignment-failure': 'Profile saved; could not assign it',
+            created: 'From GitHub is now used by',
+            recent: 'From GitHub is now used by',
+          }[scenario]
+        )
+      )
       const saves = calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/derive'))
       expect(saves[0]).toEqual({
         url: 'http://localhost/api/public-voices',
@@ -142,6 +154,7 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
             ])
           )
           await click('Retry assignment')
+          await untilRendered(dom, () => expect(container.textContent).toContain('From GitHub is now used by'))
           expect(calls.filter((c) => c.method === 'POST' && !c.url.endsWith('/derive')).length).toBe(1)
           expect(calls.filter((c) => c.method === 'PATCH').length).toBe(2)
           expect(calls.filter((c) => c.method === 'PATCH').at(-1)!.url).toBe('http://localhost/api/squads/recent/voice')

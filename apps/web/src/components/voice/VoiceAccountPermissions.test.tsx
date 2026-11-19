@@ -1,3 +1,4 @@
+import { untilRendered } from '../../test/untilRendered'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
@@ -115,16 +116,19 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
             </MemoryRouter>
           </QueryClientProvider>
         )
-        await new Promise((resolve) => setTimeout(resolve, 30))
       })
-      await dom.act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20))
-      })
-      if (surface === 'Onboarding page')
-        await dom.act(async () => {
+      if (surface === 'Onboarding page') {
+        await untilRendered(dom, () =>
+          expect(container.querySelector('[aria-controls="setup-step-public_voice"]')).not.toBeNull()
+        )
+        await dom.act(async () =>
           container.querySelector<HTMLButtonElement>('[aria-controls="setup-step-public_voice"]')!.click()
-          await new Promise((resolve) => setTimeout(resolve, 20))
-        })
+        )
+      }
+      // The account list arrives through the real client; wait until it has rendered the prefilled login.
+      await untilRendered(dom, () =>
+        expect(container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')?.value).toBe('octo')
+      )
       expect(permissions.can('integrations:read:github')).toBe(false)
       expect(permissions.can('agent-types:read')).toBe(false)
       expect(container.textContent).not.toContain('Reader-only profile')
@@ -133,11 +137,10 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
       expect(permissions.can('integrations:use')).toBe(true)
       expect(container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')?.value).toBe('octo')
       expect(container.textContent).toContain('octo (My account)')
-      await dom.act(async () => {
-        ;[...container.querySelectorAll('button')].find((button) => button.textContent === 'Derive')!.click()
-        await new Promise((resolve) => setTimeout(resolve, 15))
-      })
-      expect(container.textContent).toContain(result.draft.base)
+      await dom.act(async () =>
+        [...container.querySelectorAll('button')].find((button) => button.textContent === 'Derive')!.click()
+      )
+      await untilRendered(dom, () => expect(container.textContent).toContain(result.draft.base))
       expect(requests).toContainEqual({ path: '/api/public-voices/derive/github-accounts', method: 'GET' })
       expect(requests).toContainEqual({
         path: '/api/public-voices/derive',
@@ -151,11 +154,9 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
           false
         )
       if (fullPage) {
-        const click = async (label: string) =>
-          dom.act(async () => {
-            ;[...dom.window.document.querySelectorAll('button')].find((button) => button.textContent === label)!.click()
-            await new Promise((resolve) => setTimeout(resolve, 15))
-          })
+        const button = (label: string) =>
+          [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)
+        const click = async (label: string) => dom.act(async () => button(label)!.click())
         if (settingsSurface) {
           await click('Save as new profile')
           await dom.act(async () => {
@@ -167,11 +168,17 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
             })
           })
           await click('Create')
+          await untilRendered(dom, () => expect(button('Save')).toBeDefined())
           await click('Save')
+          await untilRendered(dom, () =>
+            expect(requests.some((request) => request.path === '/api/public-voices' && request.method === 'POST')).toBe(
+              true
+            )
+          )
         } else {
           await click('Use this draft')
           await click('Save profile')
-          expect(container.textContent).toContain('Profile From GitHub saved.')
+          await untilRendered(dom, () => expect(container.textContent).toContain('Profile From GitHub saved.'))
         }
         expect(requests).toContainEqual({
           path: '/api/public-voices',
