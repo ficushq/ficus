@@ -15,6 +15,7 @@ interface ClockRow extends Record<string, unknown> {
   unservedSince: Date | string
   progressAt: Date | string | null
   running: boolean
+  slotWaiting: boolean
 }
 
 /**
@@ -36,7 +37,29 @@ export async function getStreamDemandClocks(routes: StreamDemandRoute[], now: Da
     SELECT route.key,
       GREATEST(route.ready_at, dispatch.created_at, receipt.created_at, closed_wait.closed_at,
         admission.ready_at, progress.at) AS "unservedSince",
-      progress.at AS "progressAt", COALESCE(execution.status IN ('running', 'stopping'), false) AS running
+      progress.at AS "progressAt", COALESCE(execution.status IN ('running', 'stopping'), false) AS running,
+      EXISTS (
+        -- Match loadSlotWaitingStreams attribution: the subscription must have
+        -- been enqueued inside an execution of this still-current pinned attempt.
+        -- This bounds the alert exemption, not the actual durable subscription.
+        SELECT 1 FROM slot_waiters AS waiter
+        JOIN slot_pools AS pool ON pool.id = waiter.pool_id
+        JOIN agents AS owner ON owner.id = waiter.owner_agent_id AND owner.squad_id = pool.squad_id
+        JOIN work_stream_flow_runs AS flow ON flow.work_stream_id = route.stream_id
+          AND flow.activated AND flow.state->>'status' = 'running'
+          AND flow.attempt_agents->>route.attempt_id::text = route.agent_id::text
+        JOIN executions AS origin ON origin.agent_id = waiter.owner_agent_id
+          AND origin.started_at <= waiter.queued_at
+          AND (origin.ended_at IS NULL OR origin.ended_at >= waiter.queued_at)
+          AND origin.flow_context->>'workStreamId' = route.stream_id::text
+          AND origin.flow_context->>'attemptId' = route.attempt_id::text
+        WHERE waiter.owner_agent_id = route.agent_id AND waiter.status = 'queued'
+          AND waiter.ended_at IS NULL AND waiter.resulting_claim_id IS NULL
+          AND pool.disabled_at IS NULL AND pool.unregistered_at IS NULL
+          AND owner.status NOT IN ('dormant', 'terminated')
+          AND waiter.queued_at <= ${now.toISOString()}::timestamptz
+          AND waiter.queued_at > ${now.toISOString()}::timestamptz - pool.claim_timeout_ms * interval '1 millisecond'
+      ) AS "slotWaiting"
     FROM routes AS route
     LEFT JOIN LATERAL (
       SELECT created_at FROM inbox

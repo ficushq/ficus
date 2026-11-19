@@ -516,6 +516,7 @@ describe('dead fleet reconciliation', () => {
           capacity: 1,
           hostShared,
           capacityFollowsHost: false,
+          claimTimeoutMs: 120 * 60_000,
           createdBy: 'test',
         })
         .returning()
@@ -524,16 +525,19 @@ describe('dead fleet reconciliation', () => {
         .values({ poolId: pool!.id, ownerAgentId: agentId, claimedAt: START, expiresAt: at(90 * 60_000) })
       for (let index = 0; index < 3; index++) {
         const [owner] = await db.insert(agents).values({ squadId, agentTypeId: 'engineer', status: 'idle' }).returning()
-        await addStream(owner!.id)
-        await db.insert(slotWaiters).values({ poolId: pool!.id, ownerAgentId: owner!.id, queuedAt: START })
-        await db.insert(executions).values({ agentId: owner!.id, status: 'queued', startedAt: START })
-        await db.insert(inbox).values({
-          recipientType: 'agent',
-          recipientId: owner!.id,
-          senderType: 'system',
-          content: 'continue',
-          createdAt: START,
+        const waitingStreamId = await addStream(owner!.id)
+        // Waiting-only demand: the subscription was enqueued by this current
+        // attempt's completed turn. Independent queued/mail work is NOT blocked
+        // by capacity waiting (covered by scoped-wait-demand.test.ts).
+        await db.insert(executions).values({
+          agentId: owner!.id,
+          status: 'completed',
+          startedAt: START,
+          runStartedAt: START,
+          endedAt: at(60_000),
+          flowContext: { workStreamId: waitingStreamId, attemptId: 1, stepId: definition.steps[0]!.id },
         })
+        await db.insert(slotWaiters).values({ poolId: pool!.id, ownerAgentId: owner!.id, queuedAt: at(30_000) })
       }
       const reconcileAt = async (now: Date) => {
         const snapshots = await getSquadDemandSnapshots({ now })
@@ -1305,7 +1309,7 @@ describe('dead fleet reconciliation', () => {
     expect(incident).toMatchObject({
       causeCode: 'demand-not-served',
       remediation:
-        'Check machine + sandbox health first (the box/tunnel logs for the affected machine), then worker pickup (`ficus worker status`).',
+        'Check sandbox health with `ficus squad sandbox-status <squad-id>` and `ficus agent sandbox-status <agent-id>`; ask an authorized operator to inspect worker pickup if needed.',
       details: { demandCount: 1 },
     })
     // Demand also includes inbox messages, schedules, and work streams.

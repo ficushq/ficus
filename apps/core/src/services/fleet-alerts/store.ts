@@ -55,7 +55,7 @@ function describeStall(
     code: 'demand-not-served',
     summary: `${work}; oldest is ${oldestMin}m old. No fresh execution progress serves this demand, and no open provider or sandbox incident explains the delay.`,
     remediation:
-      'Check machine + sandbox health first (the box/tunnel logs for the affected machine), then worker pickup (`ficus worker status`).',
+      'Check sandbox health with `ficus squad sandbox-status <squad-id>` and `ficus agent sandbox-status <agent-id>`; ask an authorized operator to inspect worker pickup if needed.',
   }
 }
 

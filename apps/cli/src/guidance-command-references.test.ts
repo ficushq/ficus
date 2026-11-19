@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { createProgram } from './program'
 import { permissionMatches } from '@ficus/shared'
-import { CLI_COMMAND_PERMISSIONS } from '../../core/src/lib/utils/cli-help'
+import { CLI_COMMAND_PERMISSIONS, renderCliCommandIndex } from '../../core/src/lib/utils/cli-help'
 
 // Agent guidance teaches `ficus` commands by example. When a command or flag is
 // renamed or removed, the guidance silently keeps teaching it. This test reads
@@ -265,14 +265,26 @@ describe('fleet alert remediation is available to squad agents', () => {
   test.each(['default-manager', 'default-worker'])('suggested commands exist within %s permissions', (slug) => {
     const permissions = roles.roles.find((role) => role.slug === slug)!.permissions
     expect(references.length).toBeGreaterThan(0)
-    // Fleet incidents go manager-first. Workers may also inspect the generic
-    // stall's read-only worker-status command, not overload remediation controls.
+    // Fleet incidents go manager-first. Workers may inspect the generic
+    // stall's read-only sandbox-status commands, not overload remediation controls.
     const scoped =
-      slug === 'default-worker' ? references.filter((entry) => entry.text.startsWith('worker ')) : references
+      slug === 'default-worker'
+        ? references.filter((entry) => /^(squad|agent) sandbox-status /.test(entry.text))
+        : references
     expect(scoped.length).toBeGreaterThan(0)
+    const index = renderCliCommandIndex(
+      program.commands.map((command) => ({
+        name: command.name(),
+        aliases: command.aliases(),
+        description: command.description(),
+      })),
+      permissions,
+      { omitHostGroups: true }
+    )
     for (const entry of scoped) {
       expect(checkCommandReference(program, entry)).toBeNull()
       const [group, subcommand] = shellWords(entry.text)
+      expect(index).toMatch(new RegExp(`^- ${group}(?:[: (])`, 'm'))
       for (const key of [group!, `${group} ${subcommand}`]) {
         const required = CLI_COMMAND_PERMISSIONS[key]
         expect({

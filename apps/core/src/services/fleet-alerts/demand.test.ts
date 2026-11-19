@@ -529,7 +529,7 @@ describe('actionable squad demand', () => {
     expect(await count()).toBe(0)
   })
 
-  test('an old slot subscription blocks demand until promotion or cancellation, not a time-based expiry', async () => {
+  test('only a fresh attributed slot subscription in an active local pool exempts its pinned attempt', async () => {
     const id = await addWorkStream({ assigneeAgentId: targetAgentId, createdAt: at(240) })
     const definition = createBlankWorkflow()
     await db.insert(workStreamFlowRuns).values({
@@ -546,14 +546,27 @@ describe('actionable squad demand', () => {
       .insert(slotPools)
       .values({ squadId: targetSquadId, key: 'heavy-work', capacity: 1, hostShared: true, createdBy: 'test' })
       .returning()
+    await db.insert(executions).values({
+      agentId: targetAgentId,
+      status: 'completed',
+      startedAt: at(46),
+      runStartedAt: at(46),
+      endedAt: at(44),
+      flowContext: { workStreamId: id, attemptId: 1, stepId: definition.steps[0]!.id },
+    })
     const [waiter] = await db
       .insert(slotWaiters)
-      .values({ poolId: pool!.id, ownerAgentId: targetAgentId, queuedAt: at(240) })
+      .values({ poolId: pool!.id, ownerAgentId: targetAgentId, queuedAt: at(45) })
       .returning()
     const count = async () => (await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count
     expect(await count()).toBe(0)
-    // Unknown attempt ownership also respects the stream-level admission gate.
+    // A subscription cannot be attributed to an attempt with no pinned owner.
     await db.update(workStreamFlowRuns).set({ attemptAgents: {} }).where(eq(workStreamFlowRuns.workStreamId, id))
+    expect(await count()).toBe(1)
+    await db
+      .update(workStreamFlowRuns)
+      .set({ attemptAgents: { '1': targetAgentId } })
+      .where(eq(workStreamFlowRuns.workStreamId, id))
     expect(await count()).toBe(0)
     for (const status of ['granted', 'canceled'] as const) {
       await db

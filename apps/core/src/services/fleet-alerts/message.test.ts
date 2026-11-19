@@ -25,7 +25,7 @@ function claim(overrides: Partial<FleetIncidentNotificationClaim>): FleetInciden
     causeSummary:
       '1 pending work item remains; oldest is 4070m old. No execution run has started in the last 45m of pending demand, and no open provider or sandbox incident explains the delay.',
     remediation:
-      'Check machine + sandbox health first (the box/tunnel logs), then worker pickup (`ficus worker status`).',
+      'Check sandbox health with `ficus squad sandbox-status <squad-id>` and `ficus agent sandbox-status <agent-id>`; ask an authorized operator to inspect worker pickup if needed.',
     details: {},
     ...overrides,
   }
@@ -63,7 +63,7 @@ describe('fleet incident messages', () => {
       'Work in squad Ficus Core has been stalled for 45m.\n\n' +
         'Cause: Pending work has no fresh execution progress, and no provider or sandbox problem explains it.\n' +
         'Waiting: 1 work item, the oldest for 2d 19h\n' +
-        'Fix: Check machine + sandbox health first (the box/tunnel logs), then worker pickup (`ficus worker status`).'
+        'Fix: Check sandbox health with `ficus squad sandbox-status <squad-id>` and `ficus agent sandbox-status <agent-id>`; ask an authorized operator to inspect worker pickup if needed.'
     )
     expect(message.content).not.toContain(SQUAD_ID)
     expect(message.content).not.toContain('4070m')
