@@ -228,6 +228,28 @@ describe('workstream CLI commands', () => {
     expect(outputError).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'Removal pending terminal proof' }))
   })
 
+  it('teaches cleanup diagnosis at the cleanup command, where agents look it up', () => {
+    const program = new Command()
+    registerWorkstreamCommands(program)
+    const cleanup = program.commands
+      .find((command) => command.name() === 'workstream')!
+      .commands.find((command) => command.name() === 'cleanup')!
+    let help = ''
+    cleanup.configureOutput({ writeOut: (chunk) => (help += chunk) })
+    cleanup.outputHelp()
+    const flat = help.replace(/\s+/g, ' ')
+    expect(flat).toContain('compare owned (the original server-observed creation receipt) with current (metadata.git)')
+    expect(flat).toContain('A null cleanup means no cleanup job exists, not that no worktree is owned')
+    expect(flat).toContain('Do not fix a mismatch by rewriting bindings')
+    expect(flat).toContain('Retain first')
+    expect(flat).toContain('fresh live-use, uncommitted-change and unpushed-commit checks')
+    expect(flat).toContain('Keep open-PR trees and recoverable branches')
+    expect(flat).toContain('An uncertain removal blocks reuse')
+    expect(flat).toContain('never clears operation markers')
+    expect(flat).toContain('provision a new stream')
+    for (const name of ['inspect', 'reconcile', 'retain']) expect(help).toContain(name)
+  })
+
   it('requests only non-destructive cleanup reconciliation and reports the returned state', async () => {
     const inspection = {
       workStreamId: 'stream-1',

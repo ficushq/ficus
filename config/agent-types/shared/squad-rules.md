@@ -148,86 +148,43 @@ Follow-up work discovered during reviews or implementation must be communicated 
 
 ## Git Worktrees
 
-For repository-changing work, use a dedicated git worktree so your changes are
-isolated on a feature branch instead of landing on `main`. **On startup,
-before doing any code work, verify the worktree is set up** — do not assume
-this is already done.
+Repository changes happen in the work stream's dedicated git worktree, on its
+own branch, never on the base branch. Confirm the tree before any code work:
 
-1. Look up the work stream metadata:
-   ```
-   ficus workstream get <workstream-id> --json
-   ```
-2. Read `.metadata.git.worktree` and `.metadata.git.branch` (or the top-level
-   `.worktree` and `.branch` convenience fields). There is **no top-level `.git`**:
-   `jq '.git'` returning null does not mean setup is missing.
-   ```
-   ficus workstream get <workstream-id> --json | jq '{git: .metadata.git, worktreeCleanup}'
-   ```
-   A dispatched flow assignment also includes the configured worktree. Use that
-   existing tree; do not create a replacement or overwrite its bindings.
-3. Verify the worktree directory exists and is on the correct branch, then
-   `cd` into it for all your work (you won't normally start inside it):
-   ```
-   git -C <git.worktree> branch --show-current   # should print <git.branch>
-   cd <git.worktree>
-   ```
-   Keep all reads/writes/commands scoped to this directory.
+1. Your flow assignment names the `Worktree`, `Branch` and `Base`. Otherwise read
+   `.metadata.git.worktree` and `.metadata.git.branch` (or the top-level
+   `.worktree` and `.branch`) from `ficus workstream get <workstream-id> --json`;
+   there is no top-level `.git`.
+2. Check that `git -C <worktree> branch --show-current` prints the branch, then
+   keep all work inside that directory. Use the existing tree; do not create a
+   replacement or rewrite its bindings.
 
-If `git.worktree`/`git.branch` metadata is present but the worktree directory
-wasn't actually created, first inspect `worktreeCleanup`. Never recreate or
-manually modify a cleanup-owned path (pending, uncertain, or already removed).
-For a never-provisioned metadata-only stream, you may set it up yourself rather than blocking:
+If the metadata names a worktree whose directory is missing, inspect
+`worktreeCleanup` in that output first. Never recreate or reuse a path the
+platform is removing or has removed. Only a never-provisioned, metadata-only
+stream may be set up by you, from its configured base:
+`git worktree add <worktree> -b <branch> <baseBranch>`.
 
-```
-git worktree add <git.worktree> -b <git.branch> <git.baseBranch>
-cd <git.worktree>
-```
-
-Use the configured base branch; do not assume it is `main` or reset another
-checkout. Read-only research and non-repository tasks need no worktree.
-
-If repository changes are required and `git.worktree`/`git.branch` are **entirely missing** from the work stream
-metadata, **do not implement on `main`** — request input on the work stream so
-the manager can configure it before you continue:
+If repository changes are required and the stream has no worktree or branch,
+do not implement on the base branch. Request the input and end your turn:
 
 ```
 ficus workstream request-input <workstream-id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.worktree","declaredIn":"ficus:work-stream"},"use":"Configure the dedicated worktree and matching branch before implementation"}'
 ```
 
-**Intentional no-worktree case:** In rare cases the manager may indicate (in
-the work stream description or a direct message) that a worktree/separate
-branch is intentionally not used for read-only research or non-repository work.
-Proceed within that scope; repository mutations require a worktree-backed flow.
+Read-only research and non-repository work need no worktree, and the manager
+may say a stream intentionally has none; repository mutations still require a
+worktree-backed stream.
 
-### Platform-owned cleanup
+### After delivery
 
-New streams default to `autoCleanupWorktree: true`. After delivered `done`, the
-platform queues prompt asynchronous cleanup once associated executions settle;
-it is not synchronous deletion. Do not linger, manually reuse, remove, or
-interfere with a cleanup-owned path. Unrelated workspace executions continue.
-Registered sharing/dependencies block cleanup; undeclared cross-stream shell
-access is not protected, so attach shared use before accessing another tree.
-
-To retain a worktree, use `ficus workstream cleanup retain <workstream-id>` (or
-`ficus workstream update <workstream-id> --auto-cleanup-worktree false`). This works
-before or after delivery **if no removal is in flight**. The server serializes it
-with cleanup claims and rejects unsafe changes. Retention stops automatic cleanup;
-it does not delete files, adopt a replacement tree, or erase ownership history.
-
-For duplicate folders or binding mismatches, run
-`ficus workstream cleanup inspect <workstream-id> --json`. Compare `owned` (the
-original server-observed creation receipt) with `current` (metadata.git). A null
-`worktreeCleanup` means no cleanup job exists, not that no worktree is owned.
-Do not fix a mismatch by rewriting bindings or ownership. Retain first; after
-successful retention, an authorized operator can manually remove only confirmed
-unused trees after fresh live-use, uncommitted-change and unpushed-commit checks.
-Keep open-PR working trees and recoverable branches. Disabling cleanup is not proof
-that any particular folder is disposable. No database edits are required to retain.
-Inspect effective configuration and `worktreeCleanup` with `ficus workstream get`.
-An uncertain removal blocks reuse even if the directory appears missing; do not
-clear operation markers. After successful cleanup, provision a new stream for
-further work. The branch and delivery history remain. Historical or manually
-created trees without platform ownership are retained, not swept.
+Once a stream is done, the platform removes its worktree asynchronously. Do not
+reuse, write into, recreate or remove a finished stream's worktree; read its code
+from the base branch or its pushed branch instead. Work in another stream's tree
+only when your stream depends on it or is bound to it, because other access is
+not protected from cleanup. `ficus workstream cleanup retain <workstream-id>`
+keeps a worktree; `ficus workstream cleanup --help` covers duplicate folders and
+binding mismatches.
 
 ## Diagrams
 
