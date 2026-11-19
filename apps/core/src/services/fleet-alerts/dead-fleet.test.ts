@@ -16,6 +16,7 @@ import {
   squads,
   schedules,
   workStreamFlowRuns,
+  workStreamFlowTransitions,
   workStreams,
 } from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -795,6 +796,33 @@ describe('dead fleet reconciliation', () => {
     expect((await notifications(open!.id)).filter((row) => row.kind === 'recovery')).toHaveLength(0)
   })
 
+  async function recordInlineDispatch(streamId: string, readyAt: Date, receipt: 'matching' | 'missing' | 'mismatched') {
+    const [flow] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const requestId = crypto.randomUUID()
+    flow!.state.attempts[0]!.responseAssignment = { requestId, agentId, version: 1, content: 'Inline assignment' }
+    await db.update(workStreamFlowRuns).set({ state: flow!.state }).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    if (receipt !== 'missing') {
+      await db.insert(workStreamFlowTransitions).values({
+        workStreamId: streamId,
+        requestId: receipt === 'matching' ? requestId : crypto.randomUUID(),
+        requestHash: 'test',
+        command: {
+          action: 'complete',
+          expectedVersion: 0,
+          attemptId: 1,
+          outcome: 'completed',
+          evidence: 'Previous work',
+        },
+        version: 1,
+        stateStatus: 'running',
+        activeAttemptId: 1,
+        actorKey: `agent:${agentId}`,
+        createdAt: readyAt,
+      })
+    }
+    return requestId
+  }
+
   test.each(['dispatch', 'inline dispatch', 'slot promotion'] as const)(
     'fresh %s starts its own demand clock on an old stream',
     async (signal) => {
@@ -832,6 +860,8 @@ describe('dead fleet reconciliation', () => {
           idempotencyKey: `flow:${stream!.id}:1`,
           createdAt: readyAt,
         })
+      } else if (signal === 'inline dispatch') {
+        await recordInlineDispatch(stream!.id, readyAt, 'matching')
       } else {
         const [pool] = await db
           .insert(slotPools)
@@ -861,15 +891,70 @@ describe('dead fleet reconciliation', () => {
         // Promotion makes an existing pending turn runnable; it is not 59 minutes abandoned.
         await db.insert(executions).values({ agentId, status: 'queued', startedAt: START })
       }
+      if (signal === 'inline dispatch') {
+        const [flow] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+        expect(flow!.state.attempts[0]!.responseAssignment?.requestId).toBeDefined()
+        expect(await db.select().from(slotPools).where(eq(slotPools.squadId, squadId))).toEqual([])
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).toEqual([])
+      }
       const now = at(60 * 60_000)
       const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
       expect(snapshot.unservedSince).toEqual(readyAt)
       await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
       const [incident] = await incidents()
       expect(await notifications(incident!.id)).toEqual([])
+      const beforeExpiry = new Date(readyAt.getTime() + WINDOW - 1)
+      const before = (await getSquadDemandSnapshots({ now: beforeExpiry })).get(squadId)!
+      await reconcileDeadFleet({ now: beforeExpiry, demand: new Map([[squadId, before]]) })
+      expect(await notifications(incident!.id)).toEqual([])
       const expiredAt = new Date(readyAt.getTime() + WINDOW)
       const expired = (await getSquadDemandSnapshots({ now: expiredAt })).get(squadId)!
       await reconcileDeadFleet({ now: expiredAt, demand: new Map([[squadId, expired]]) })
+      expect((await notifications(incident!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
+    }
+  )
+
+  test.each(['missing', 'mismatched'] as const)(
+    'an inline assignment with a %s receipt cannot grant a fresh demand clock',
+    async (receipt) => {
+      const [stream] = await db
+        .insert(workStreams)
+        .values({
+          squadId,
+          title: 'Unproven inline assignment',
+          status: 'active',
+          assigneeAgentId: agentId,
+          createdAt: START,
+        })
+        .returning()
+      const definition = createBlankWorkflow()
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: stream!.id,
+        activated: true,
+        state: createWorkflowRun(definition),
+        source: resolveWorkflow({ kind: 'inline', definition }),
+        attemptAgents: { '1': agentId },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'test',
+        createdBy: 'test',
+        createdAt: START,
+        updatedAt: START,
+      })
+      const requestId = await recordInlineDispatch(stream!.id, at(59 * 60_000), receipt)
+      const receipts = await db
+        .select()
+        .from(workStreamFlowTransitions)
+        .where(eq(workStreamFlowTransitions.workStreamId, stream!.id))
+      expect(receipts).toHaveLength(receipt === 'missing' ? 0 : 1)
+      expect(receipts.some((row) => row.requestId === requestId)).toBe(false)
+      expect(await db.select().from(slotPools).where(eq(slotPools.squadId, squadId))).toEqual([])
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).toEqual([])
+      const now = at(60 * 60_000)
+      const snapshot = (await getSquadDemandSnapshots({ now })).get(squadId)!
+      expect(snapshot.unservedSince).toEqual(START)
+      await reconcileDeadFleet({ now, demand: new Map([[squadId, snapshot]]) })
+      const [incident] = await incidents()
+      expect(incident!.startedAt).toEqual(START)
       expect((await notifications(incident!.id)).filter((row) => row.kind === 'alert')).toHaveLength(2)
     }
   )
