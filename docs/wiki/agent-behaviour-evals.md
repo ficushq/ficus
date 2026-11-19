@@ -135,7 +135,12 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
   overrides the tiers.
 - `--repeat` defaults to 3. Old and new runs interleave so provider drift affects both.
 - `--record` writes every run, with its trace and verdict, to `agent-evals/recordings/`.
-  `--markdown <file>` writes the comparison table for a pull request description.
+  `--markdown <file>` writes the comparison table for a pull request description. Recordings are
+  atomically checkpointed before work and after every completed or failed job. Their `status` is
+  `running`, `partial`, or `complete`, with `plannedRuns` and `failedJobs`. A provider failure stops
+  scheduling new work, drains in-flight calls, retains completed traces/known usage, exits with a
+  failure, and writes no accepted comparison table. A partial cohort is not acceptance evidence;
+  archive it outside git rather than selecting favorable completed runs.
 
 ## Pass rule
 

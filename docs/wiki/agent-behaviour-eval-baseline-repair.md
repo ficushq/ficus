@@ -58,17 +58,42 @@ and restoration on exceptions. `evals.test.ts` retains positive/negative grader 
 owner-versus-reviewer, quoted/help, and same-stream reviewer-update cases.
 
 Offline passing tests establish consistent premises and discriminating graders, **not a passing live
-baseline**. At this report revision, corrected-harness live verification is not yet recorded. The
-requester-identity and CI-tracking guidance comparisons must remain incomplete until the repaired
-must scenarios demonstrate baseline signal. No true behavioral blocker is established by the
-contaminated original cohort; that is not a waiver of the original zero baselines. Re-run both sides
-of the same controlled cohort without selecting favorable repeats, and report model usage and cost
-separately from product inference accounting.
+baseline**. A controlled main-versus-working baseline was attempted on 2026-11-19 using the approved
+development credential: all three affected scenarios, default and fast tiers, three repeats per side
+(36 planned runs), concurrency 2. The harness was commit `4e900f64`, main was `ae02bb9b`, and static
+prompts were unchanged. After reporting 10/36 completed, the provider refused further calls because
+the account's specified API usage limit was reached (access resumes 2026-12-01 at 00:00 UTC).
+No retry, account substitution or favorable subset was used.
+
+**This cohort is incomplete, not passing evidence.** At the time of that invocation, the CLI persisted
+recordings only after all jobs finished, so the interrupted invocation has no persisted traces, verdict table or
+recoverable SDK usage total. Its actual cost is therefore unavailable; it is not reported as zero.
+The main baseline log is retained outside git in the shared task workspace at
+`docs/plans/agent-guidance-slim-2026-11-18/stream-4-harness/main-baseline.log`. There is no new complete
+recording to commit or replay. The original cohort bytes remain preserved above.
+
+The requester-identity and CI-tracking guidance comparisons must remain incomplete until the repaired
+must scenarios demonstrate live baseline signal. No true behavioral blocker is established by the
+contaminated original cohort or the interrupted new attempt; that is not a waiver of the original
+zero baselines. Re-run both sides of the same controlled cohort without selecting favorable repeats,
+and report model usage and cost separately from product inference accounting.
+
+The CLI now atomically checkpoints completed runs and SDK usage after each job, stops scheduling
+on failure, and drains in-flight calls. New recordings distinguish `running`, `partial` and
+`complete` cohorts; failed batches cannot produce an accepted comparison. `batch.test.ts` verifies
+failure after success, in-flight draining, successful completion and checkpoint-write failure.
+This fix does not retroactively recover the lost invocation and has not been re-run live.
+
+Final offline checks: `bun run test src/services/agent-evals` from `apps/core` completed all
+116 tests across 10 files with zero failures. The static prompt guard completed 33 tests with zero
+failures. Focused ESLint and `git diff --check` passed. Full Core tests/typechecking were not run
+locally; they remain CI checks. The focused test database was shut down after each use.
 
 ## Static prompt sizes
 
-The harness changes no static guidance, includes, roles, overrides or public voice. There is no
-include migration. Measured against the stacked implementation base `1ca76e47`, composed static
+The harness changes no configured static guidance, includes, roles, overrides or public voice.
+`AGENTS.md` only clarifies Noah’s product-inference versus development-eval accounting boundary.
+There is no include migration. Measured against the stacked implementation base `1ca76e47`, composed static
 UTF-8 bytes are identical before and after (runner sections and tools are excluded):
 
 | Built-in type            | Before |  After |
