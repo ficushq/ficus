@@ -155,3 +155,6 @@ export function endsWithChatQuestion(text: string): boolean {
     )
   )
 }
+
+/** Fixture/help fidelity revision; historical recordings predate this marker and remain unchanged. */
+export const HARNESS_REVISION = '2026-11-19-baseline-fixtures-v2'

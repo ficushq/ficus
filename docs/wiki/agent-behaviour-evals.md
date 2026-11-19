@@ -8,6 +8,15 @@ results.
 
 Code: `apps/core/src/services/agent-evals/`. Command: `bun run agents:eval`.
 
+This is development tooling, not product inference. Offline tests make no provider calls; explicit
+live evals use environment-only provider credentials and do not write product inference-ledger or
+Spend entries. New recordings retain SDK token usage and estimated USD cost per run separately.
+The running product's model calls must still use its metered inference paths.
+
+For the corrected baseline premises, original trace classification and remaining live-validation
+requirements, see [baseline repair](./agent-behaviour-eval-baseline-repair.md). New runs declare
+harness revision `2026-11-19-baseline-fixtures-v2`; historical verdicts are not rewritten.
+
 ## What a scenario is
 
 A scenario (`scenarios.ts`) gives an agent of one built-in type:

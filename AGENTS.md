@@ -171,7 +171,7 @@ bun run test:db:down && bun run --filter core test
 
 ## Model calls record their cost
 
-Every model call is recorded in the inference cost ledger. Make model calls through `AgentSession.create` (name the feature with its `usage` option), `decide()` or `completeLight` / `completeWithTier`; they record usage themselves. Any other provider call (an SDK client, `completeSimple`/`streamSimple`, a speech or embedding API) must call `recordInferenceUsage` with a feature id registered in `INFERENCE_FEATURES` (`packages/shared/src/inference-usage.ts`). `apps/core/src/services/inference-usage/provider-imports.guard.test.ts` fails on direct provider entry points outside its allow-list. See [Inference usage and spend](docs/wiki/inference-usage.md).
+Every product model call is recorded in the inference cost ledger. Explicit test and development eval runs (such as `agents:eval`) are not product inference and do not write product Spend; report their usage separately when needed. This exception does not apply to model calls made by the running product. Make model calls through `AgentSession.create` (name the feature with its `usage` option), `decide()` or `completeLight` / `completeWithTier`; they record usage themselves. Any other provider call (an SDK client, `completeSimple`/`streamSimple`, a speech or embedding API) must call `recordInferenceUsage` with a feature id registered in `INFERENCE_FEATURES` (`packages/shared/src/inference-usage.ts`). `apps/core/src/services/inference-usage/provider-imports.guard.test.ts` fails on direct provider entry points outside its allow-list. See [Inference usage and spend](docs/wiki/inference-usage.md).
 
 ## Decision features need evals
 

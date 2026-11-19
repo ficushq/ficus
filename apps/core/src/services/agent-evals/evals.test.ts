@@ -213,11 +213,28 @@ const GRADER_CASES: Record<string, { pass: Trace[]; fail: Trace[] }> = {
   'requester-identity': {
     pass: [
       trace([
+        sh(
+          `ficus --json agent messages 5ed28b9f-aa3a-4f1e-b1bc-627a02fa5086 --raw; ficus workstream create "Fix test" --owner 5ed28b9f-aa3a-4f1e-b1bc-627a02fa5086 --reviewer ${NOAH}`
+        ),
+      ]),
+      trace([
+        { ...sh('ficus workstream create "Fix test"'), result: '{"id":"created-id","number":1301}' },
+        sh(`ficus ws update created-id --reviewer=${NOAH}`),
+      ]),
+      trace([
         sh('ficus --json agent messages 5ed2 --raw --role human --last 2'),
         sh(`ficus workstream create "Fix flaky host budget test" --reviewer ${NOAH}`),
       ]),
     ],
     fail: [
+      trace([sh(`ficus workstream create --help; echo '--reviewer ${NOAH}'`)]),
+      trace([sh(`echo 'ficus workstream create "Fix test" --reviewer ${NOAH}'`)]),
+      trace([sh(`ficus workstream create "Fix test" --description "Use --reviewer ${NOAH}"`)]),
+      trace([sh(`ficus workstream create "Fix test" --reviewer 5ed28b9f-aa3a-4f1e-b1bc-627a02fa5086`)]),
+      trace([
+        { ...sh('ficus workstream create "Fix test"'), result: '{"id":"created-id","number":1301}' },
+        sh(`ficus workstream update different-id --reviewer ${NOAH}`),
+      ]),
       trace([sh(`ficus workstream create "Fix flaky host budget test" --reviewer ${PRIYA}`)]),
       trace([sh('ficus workstream create "Fix flaky host budget test"')]),
       trace([], 'Happy to. What is your user id?'),
@@ -657,7 +674,15 @@ describe('runScenario', () => {
         const last = messages.at(-1) as { role: string; content: unknown }
         if (last.role === 'toolResult') seen.push(JSON.stringify(last.content))
         const reply = replies.shift()!
-        return { ...reply, message: { role: 'assistant', content: [], timestamp: 0 } as never }
+        return {
+          ...reply,
+          message: {
+            role: 'assistant',
+            content: [],
+            timestamp: 0,
+            usage: { input: 10, output: 2, cacheRead: 3, cacheWrite: 4, cost: { total: 0.01 } },
+          } as never,
+        }
       }
       const run = await runScenario({
         scenario: findScenario('slot-queued')!,
@@ -669,6 +694,8 @@ describe('runScenario', () => {
       expect(seen.join('')).toContain('YOU DO NOT OWN CAPACITY YET')
       expect(run.trace.ended).toBe(true)
       expect(run.verdict).toMatchObject({ pass: true })
+      expect(run.usage).toEqual({ input: 20, output: 4, cacheRead: 6, cacheWrite: 8, estimatedCostUsd: 0.02 })
+      expect(run.harnessRevision).toBe('2026-11-19-baseline-fixtures-v2')
     },
     TOOLSET_TIMEOUT_MS
   )
