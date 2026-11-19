@@ -188,8 +188,10 @@ export function registerAgentCommands(program: Command) {
   // ficus agent messages <id> [options]
   agent
     .command('messages <id>')
-    .description('Show conversation messages for an agent')
-    .option('--raw', 'Output full JSON including metadata')
+    .description(
+      'Show conversation messages for an agent. With --raw and the global --json, each human chat message carries metadata.sender: userId is the stable address, name is for display only.'
+    )
+    .option('--raw', 'Output full JSON including metadata (metadata.sender names who sent a human message)')
     .option('--last <n>', 'Shortcut for --limit (show last N messages)')
     .option('--limit <n>', 'Max messages to return')
     .option('--offset <n>', 'Offset for pagination')

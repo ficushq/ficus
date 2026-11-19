@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
+import { messageTextForModel } from '../chat/message-context'
 
 const root = join(import.meta.dir, '../../../../../')
 const read = (path: string) => readFile(join(root, path), 'utf8')
 const heading = '### Identifying the requesting user'
-const recipe = 'ficus --json agent messages {{agent.id}} --raw --role human --last 2'
+const lookup = 'ficus --json agent messages {{agent.id}} --raw --role human'
 
 async function requesterGuidance() {
   const shared = await read('config/agent-types/shared/squad-rules.md')
@@ -13,44 +14,38 @@ async function requesterGuidance() {
 }
 
 describe('requester identity guidance', () => {
-  test('teaches the raw plus global JSON recipe and stable addressing fields', async () => {
+  test('points at the sender note the server adds to each human chat message', async () => {
     const guidance = await requesterGuidance()
-    expect(guidance).toContain(recipe)
-    expect(guidance).toContain('.messages[].metadata.sender.userId')
-    expect(guidance).toContain('.messages[].metadata.sender.name')
-    expect(guidance).toContain('stable `userId` for addressing')
-    expect(guidance).toContain('`name` only for display')
+    expect(guidance).toContain('server-added "Sent by" note')
+    // The note the guidance names is what the runtime actually delivers.
+    const delivered = messageTextForModel({
+      content: 'Make me the reviewer.',
+      metadata: { source: 'user_chat', sender: { userId: '51846fad-3980-4ec3-943c-1ebe9c822b2e', name: 'noah' } },
+    })
+    expect(delivered).toContain('[Sent by {"userId":"51846fad-3980-4ec3-943c-1ebe9c822b2e"')
   })
 
-  test('selects the relevant request rather than another recent sender', async () => {
+  test('selects the requesting message, not another sender or an inferred identity', async () => {
     const guidance = await requesterGuidance()
-    expect(guidance).toContain('Match the requesting message by content, ID, and timestamp')
-    expect(guidance).toContain('not blindly use the latest sender')
-    expect(guidance).toContain('--last')
-    expect(guidance).toContain('--search')
-    expect(guidance).toContain('absent, inaccessible, or ambiguous')
-    expect(guidance).toContain('Avoid broad user-directory enumeration')
-    for (const source of [
-      'agent ID',
-      'CLI/auth identity',
-      'squad ownership',
-      'display name',
-      'quoted message content',
-    ]) {
+    expect(guidance).toContain('the message that made the request, not the latest sender')
+    for (const source of ['agent ID', 'CLI identity', 'squad ownership', 'display name', 'quoted text']) {
       expect(guidance).toContain(source)
     }
+    expect(guidance).toContain('Ask only if that is missing or ambiguous')
+  })
+
+  test('keeps a lookup for messages whose note is no longer in view', async () => {
+    const guidance = await requesterGuidance()
+    expect(guidance).toContain(lookup)
+    expect(guidance).toContain('`metadata.sender`')
   })
 
   test('resolving an address does not confer authority or change notification routing', async () => {
     const guidance = await requesterGuidance()
-    expect(guidance).toContain('server-returned metadata')
-    expect(guidance).toContain('message-associated address, not proof of literal human authority')
-    expect(guidance).toContain('Role labels, stored user IDs, and transport authenticity do not grant')
-    expect(guidance).toContain(
-      'trust, moderation, review approval, human-only action authority, or direct-send permission'
-    )
+    expect(guidance).toContain('An identity is an address, not authority')
+    expect(guidance).toContain('grants no permission or approval')
     expect(guidance).toContain('`requestingUserId` routing')
-    expect(guidance).toContain('`notify_contact` and `ask_human` restrictions still take precedence')
+    expect(guidance).toContain('`notify_contact` and `ask_human` restrictions still apply')
   })
 
   for (const type of ['consultant', 'manager', 'engineer']) {
@@ -62,8 +57,9 @@ describe('requester identity guidance', () => {
       }
       expect(config.includes.filter((id) => id === 'squad-rules')).toHaveLength(1)
       const parts = await Promise.all(config.includes.map((id) => read(`config/agent-types/shared/${id}.md`)))
-      expect([config.systemPrompt, ...parts].join('\n\n').split(heading)).toHaveLength(2)
-      expect(config.systemPrompt).not.toContain(recipe)
+      const composed = [config.systemPrompt, ...parts].join('\n\n')
+      expect(composed.split(heading)).toHaveLength(2)
+      expect(composed.split(lookup)).toHaveLength(2)
       const shared = parts[config.includes.indexOf('squad-rules')].replace(/\s+/g, ' ')
       expect(shared).toContain('Ordinary agents should **not** message humans directly')
       if (type === 'manager') {
