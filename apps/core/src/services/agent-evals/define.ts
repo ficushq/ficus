@@ -39,7 +39,7 @@ export interface Verdict {
  * restart notice), so the old and new runs each read their own version of it.
  */
 export interface VariantContext {
-  /** Imports a module by repository-relative path from the variant (or the working tree when absent). */
+  /** Imports a variant module; absent modules fall back except the required per-ref restart carrier. */
   import: <T>(relativePath: string) => Promise<T>
 }
 
@@ -156,5 +156,5 @@ export function endsWithChatQuestion(text: string): boolean {
   )
 }
 
-/** Fixture/help fidelity revision; historical recordings predate this marker and remain unchanged. */
-export const HARNESS_REVISION = '2026-11-19-baseline-fixtures-v2'
+/** Harness fidelity revision; historical recording bytes and verdicts remain unchanged. */
+export const HARNESS_REVISION = '2026-11-19-restart-carrier-v3'

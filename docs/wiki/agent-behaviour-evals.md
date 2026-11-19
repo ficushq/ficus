@@ -15,7 +15,7 @@ The running product's model calls must still use its metered inference paths.
 
 For the corrected baseline premises, original trace classification and remaining live-validation
 requirements, see [baseline repair](./agent-behaviour-eval-baseline-repair.md). New runs declare
-harness revision `2026-11-19-baseline-fixtures-v2`; historical verdicts are not rewritten.
+harness revision `2026-11-19-restart-carrier-v3`; historical verdicts are not rewritten.
 
 ## What a scenario is
 
@@ -116,17 +116,32 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
 - `--old` and `--new` take a git ref, or `working` for the working tree. A ref is extracted into
   a temporary directory (`config/`, `apps/core/src`, `apps/cli/src` and the migration journal)
   that uses the working tree's installed dependencies. Workspace packages such as `@ficus/shared`
-  therefore come from the working tree, except that `packages/shared/src/public-voice.ts` is
-  extracted and imported directly from the ref for voice resolution, validation, rendering and
-  size limits. The default profile comes from that ref’s `config/public-voices/default.yaml`.
-  A ref missing either voice file receives no voice; the assembler never silently injects the
-  working tree’s newer voice into a pre-voice baseline. When a ref predates another module the eval uses (for example
-  `squad-agent-prompt.ts`), the working tree's copy is used.
+  therefore come from the working tree, except that `packages/shared/src/public-voice.ts` and
+  `packages/shared/src/restart-context.ts` are extracted and imported directly from the ref.
+  The voice module supplies resolution, validation, rendering and size limits; the default profile
+  comes from that ref’s `config/public-voices/default.yaml`. A ref missing either voice file receives
+  no voice. Both restart scenarios require the ref’s own restart carrier and fail explicitly if it
+  is absent: a pre-carrier ref is not silently normalized to a newer notice. Such historical refs
+  need a separately agreed compatibility policy before a restart comparison. The restart carrier
+  has no runtime imports; public voice only needs the installed `zod` dependency. No other shared
+  source files are needed for these direct imports. Other missing modules (for example
+  `squad-agent-prompt.ts`) retain the working-source fallback.
 - **Comparing historical runs:** this fixes a prompt-assembly omission, so new runs for voice-aware
   refs include more guidance than recordings made by the earlier harness. Re-run both sides with
   the same harness for a fair comparison, and record the harness revision. Pre-voice refs remain
   voice-free. If an experiment deliberately normalizes voices across refs, label that normalization
   in its report; it is not the default behavior. Live database profile overrides are never loaded.
+- **Restart provenance:** revision `2026-11-19-restart-carrier-v3` also corrects shared carrier
+  extraction (cache format v6). Earlier harnesses could feed the working tree's restart notice to
+  both refs, even though their labels/commits differed. Those restart results are not evidence of
+  per-ref carrier behavior. Preserve their recording bytes and verdicts; rerun both sides with this
+  harness for a fresh comparison, without changing graders, step limits or relative pass thresholds.
+  New recordings carry `harnessRevision` and the variant `commit`, which identifies the committed
+  restart source at `packages/shared/src/restart-context.ts`. In the comparison report, also pin
+  the harness Git revision and installed dependency provenance, and disclose other module fallbacks.
+  For a `working` variant (which has no recorded commit), retain its source commit and any dirty
+  diff with the report; prefer committed refs for the final comparison. `promptSha256` hashes only
+  the system prompt, not this opening restart message, and is not a substitute for source provenance.
 - **Models:** each scenario runs on its agent type's default tier and on the cheaper `fast` tier.
   Noah asked for both. `fast` is the cheapest tier built for agent turns with tools and the tier
   the Assistant ships with; `lite` is for one-shot calls. A tier's model is the first entry in
@@ -161,7 +176,10 @@ the new text as with the old, and the total number of passing runs does not drop
 
 `prompt.test.ts` additionally checks default voice composition across built-in types, capability
 filtering, deterministic per-variant profiles, runtime size limits, git-ref extraction and
-voice-free historical baselines. These prompt tests need no database or live model calls.
+voice-free historical baselines. `variant.test.ts` extracts two real Git fixture refs and checks
+both restart scenarios against each ref’s distinct carrier, rejects pre-carrier refs, refreshes the
+old extraction cache and preserves working variants and unrelated module fallbacks. These prompt
+and variant tests need no database or live model calls.
 
 ### Read-only discovery is not starting implementation
 
