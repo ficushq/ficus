@@ -49,6 +49,7 @@ test('squad agents get worktree setup and post-delivery safety once, not cleanup
     // A cleaned-up tree is never recreated; only a never-provisioned one may be set up.
     once(prompt, 'Never recreate or reuse a path the\nplatform is removing or has removed')
     once(prompt, 'never-provisioned, metadata-only')
+    once(prompt, "without resetting\nanother stream's checkout")
     once(prompt, "reuse, write into, recreate or remove a finished stream's worktree")
     once(prompt, 'ficus workstream cleanup retain <workstream-id>')
     once(prompt, 'ficus workstream cleanup --help')

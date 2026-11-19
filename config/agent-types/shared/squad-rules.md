@@ -162,8 +162,8 @@ own branch, never on the base branch. Confirm the tree before any code work:
 If the metadata names a worktree whose directory is missing, inspect
 `worktreeCleanup` in that output first. Never recreate or reuse a path the
 platform is removing or has removed. Only a never-provisioned, metadata-only
-stream may be set up by you, from its configured base:
-`git worktree add <worktree> -b <branch> <baseBranch>`.
+stream may be set up by you, from its configured base and without resetting
+another stream's checkout: `git worktree add <worktree> -b <branch> <baseBranch>`.
 
 If repository changes are required and the stream has no worktree or branch,
 do not implement on the base branch. Request the input and end your turn:
