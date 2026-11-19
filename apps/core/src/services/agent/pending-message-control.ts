@@ -51,7 +51,7 @@ async function commitChange(tx: Tx, row: Row, operation: PendingMessageOperation
           deliveryMode: operation,
           // An explicit queue edit also changes the inbox delivery's history label.
           // Automatic steer delivery (for example to an idle agent) does not.
-          ...(row.metadata?.source === 'inbox' ? { inboxDeliveryMode: operation } : {}),
+          ...((row.metadata as MessageMetadata | null)?.source === 'inbox' ? { inboxDeliveryMode: operation } : {}),
         },
       })
       .where(eq(messages.id, row.id))
