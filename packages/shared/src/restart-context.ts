@@ -19,12 +19,20 @@ export function isRestartContext(value: unknown): value is RestartContext {
 }
 
 /**
+ * The one restart instruction brief a model turn receives: prefixed to a resumed
+ * execution's prompt, or appended to the cancelled tool result when only a box
+ * restarted and the execution keeps running. Never both in one turn.
+ */
+export const RESTART_RECOVERY_BRIEF =
+  'This is an interruption, not an incident, and a free retry: once the sandbox is back, check partial output and affected state, then re-run only safe, idempotent work. Never repeat an unknown external side effect; other gates still apply.'
+
+/**
  * The AGENT's copy, prepended to the resumed turn's prompt. The id ties it to
  * the identical id on every command the restart cancelled, so the agent can
  * tell those failures came from the restart, not from its own work.
  */
 export function restartResumeNotice(restart: RestartContext): string {
-  return `Ficus restarted at ${restart.restartedAt}; any command running then was cancelled by the restart and may have partial effects. This is an interruption, not an incident, and a free retry: once the sandbox is back, check partial output and affected state, then re-run only safe, idempotent work. Never repeat an unknown external side effect; other gates still apply. [restart id: ${restart.restartId}]`
+  return `Ficus restarted at ${restart.restartedAt}; any command running then was cancelled by the restart and may have partial effects. ${RESTART_RECOVERY_BRIEF} [restart id: ${restart.restartId}]`
 }
 
 // The CHAT copies, for people reading the conversation. `[System]` renders

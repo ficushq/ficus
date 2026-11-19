@@ -110,14 +110,14 @@ counts and references, and the prohibition on human forensic/credential requests
 The resumed prompt owns **one restart instruction brief**. Other surfaces retain
 facts and distinct events, not copies of that procedure:
 
-| Surface                                                 | What it carries                                                                                                             |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `restartResumeNotice`, prefixed once by the base runner | Correlation, free-retry policy and safe recovery instructions.                                                              |
-| Command drain errors/refusals                           | Per-command outcome and correlation; unconfirmed cleanup still requires process inspection. No general replay instructions. |
-| Recovery tool wrapper                                   | No second brief for a verified restart; unknown losses and native holds still carry their own safety instructions.          |
-| Startup pause/resume chat rows                          | Status and durable correlation metadata, not another agent procedure.                                                       |
-| Failed-resume wake                                      | A **new failure** with unknown outcome and live obligations; its new execution has no restart resume marker.                |
-| Recovery decision/continuation notices                  | Native versioned decision or authorized bounded cycle, not another restart notice.                                          |
+| Surface                                                 | What it carries                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restartResumeNotice`, prefixed once by the base runner | Correlation plus the shared `RESTART_RECOVERY_BRIEF` (free retry, safe recovery) for an execution resumed after a **worker** restart.                                                                                                                                     |
+| Command drain errors/refusals                           | Per-command outcome and correlation; unconfirmed cleanup still requires process inspection. No general replay instructions.                                                                                                                                               |
+| Recovery tool wrapper                                   | For a box-only restart (the execution keeps running, so no resumed prompt follows) it appends the same `RESTART_RECOVERY_BRIEF` once to the tool result. For a worker restart it adds nothing. Unknown losses and native holds still carry their own safety instructions. |
+| Startup pause/resume chat rows                          | Status and durable correlation metadata, not another agent procedure.                                                                                                                                                                                                     |
+| Failed-resume wake                                      | A **new failure** with unknown outcome and live obligations; its new execution has no restart resume marker.                                                                                                                                                              |
+| Recovery decision/continuation notices                  | Native versioned decision or authorized bounded cycle, not another restart notice.                                                                                                                                                                                        |
 
 Exhaustion and decision procedures arrive with the actual native recovery
 record: tool errors retain the issued id/version, and the designated manager's

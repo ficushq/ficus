@@ -6,6 +6,7 @@ import {
   drainCommands,
   isCommandDrainActive,
   resetCommandDrainForTests,
+  restartResumesExecution,
   trackCommand,
   withBoxCommandDrain,
   withIdleBoxCommandFence,
@@ -87,6 +88,15 @@ test('restart attribution follows genuine causes but rejects fabricated metadata
   const cycle = new Error('cycle')
   cycle.cause = cycle
   expect(restartContextForCommandError(cycle)).toBeUndefined()
+})
+
+test('only a worker drain marks its restart as resumed by a new prompt; a box drain does not', async () => {
+  const box = { restartId: 'box-restart', restartedAt: restart.restartedAt }
+  await withBoxCommandDrain('selected', async () => undefined, 0, box)
+  expect(restartResumesExecution(box)).toBe(false)
+  await drainCommands(0, restart)
+  expect(restartResumesExecution(restart)).toBe(true)
+  expect(restartResumesExecution(box)).toBe(false)
 })
 
 describe('box command drain', () => {

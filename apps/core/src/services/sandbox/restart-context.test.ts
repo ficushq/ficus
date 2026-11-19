@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
-import { restartResumeNotice } from '@ficus/shared/restart-context'
+import { RESTART_RECOVERY_BRIEF, restartResumeNotice } from '@ficus/shared/restart-context'
 import { createK8sSandboxedBashTool, type SandboxToolsManager } from '../../tools/sandbox-tools'
 import { wrapToolWithRecovery } from '../recovery/runtime'
 import { SandboxClient } from './client/http-client'
@@ -126,6 +126,8 @@ test('actual bash tool and recovery wrapper preserve a drained restart without c
     expect((outcome as Error).message.match(/restart id:/g)).toHaveLength(1)
     expect((outcome as Error).message).not.toContain('before an explicit safe retry')
     expect((outcome as Error).message).not.toMatch(/Re-run|not an incident/)
+    // A worker restart requeues the execution; its resumed prompt carries the brief instead.
+    expect((outcome as Error).message).not.toContain(RESTART_RECOVERY_BRIEF)
     const resumedTurn = `${(outcome as Error).message}\n${restartResumeNotice(restart)}`
     expect(resumedTurn.match(/safe, idempotent work/g)).toHaveLength(1)
     expect(resumedTurn).toContain('Never repeat an unknown external side effect')

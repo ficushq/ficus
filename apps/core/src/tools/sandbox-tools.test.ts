@@ -1706,8 +1706,10 @@ describe('createHttpBashOperations', () => {
       expect(stream.cancelAndWait).toHaveBeenCalledWith('core_restart', restart)
       const error = (await running.catch((caught: unknown) => caught)) as Error
       expect(error.message).toStartWith(
-        'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; nothing is wrong with your work or the box. Re-run it when your sandbox is back.'
+        'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; partial effects are possible.'
       )
+      expect(error.message).toContain('[reason: core_restart; restart id: restart-1]')
+      expect(error.message).not.toMatch(/Re-run|not an incident/)
       expect(error).toMatchObject({ reason: 'core_restart', restart })
 
       const bash = (manager.getClientForSandbox as ReturnType<typeof mock>).mock.results[0].value.bash

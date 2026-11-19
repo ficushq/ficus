@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
-import { restartResumeNotice } from '@ficus/shared/restart-context'
+import { RESTART_RECOVERY_BRIEF, restartResumeNotice } from '@ficus/shared/restart-context'
 import { createK8sSandboxedBashTool, type SandboxToolsManager } from '../../tools/sandbox-tools'
 import { wrapToolWithRecovery } from '../recovery/runtime'
 import { SandboxClient } from './client/http-client'
@@ -209,6 +209,10 @@ test('box-only graceful restart preserves genuine tool recovery and leaves anoth
       'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; partial effects are possible.'
     )
     expect(restartContextForCommandError(outcome)).toEqual(restart)
+    // A box-only restart keeps the execution running: no resumed prompt follows,
+    // so the model-facing tool result carries the one restart brief.
+    expect((outcome as Error).message.split(RESTART_RECOVERY_BRIEF)).toHaveLength(2)
+    expect((outcome as Error).message.match(/restart id:/g)).toHaveLength(1)
     const invocationId = createHash('sha256').update(execution!.id).update('\0').update('long-command').digest('hex')
     const key = createHash('sha256').update(invocationId).digest('hex')
     expect(
