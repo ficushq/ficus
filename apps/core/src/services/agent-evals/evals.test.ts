@@ -330,6 +330,61 @@ describe('readable prose scoring', () => {
   })
 })
 
+describe('all eighteen scripted scenario premises', () => {
+  const probes: Record<
+    string,
+    { command?: string; name?: string; args?: Record<string, unknown>; contains: string[] }
+  > = {
+    'ask-human-decision': { command: 'ficus workstream flow 1300', contains: ['"status": "running"', '"version": 0'] },
+    'offer-followup': { name: 'read', args: { path: '/docs/wiki/permissions.md' }, contains: ['recieve', 'roles.md'] },
+    'restart-side-effect': { command: 'gh pr view 950 --json state', contains: ['MERGED'] },
+    'restart-idempotent': {
+      command: 'bun test src/lib/prompts/squad-agent-prompt.test.ts',
+      contains: ['12 pass', '0 fail'],
+    },
+    'no-logs-request': { command: 'df -h', contains: ['100%'] },
+    'no-worktree': { command: 'ficus workstream get 1300 --json', contains: ['"worktree":null', '"branch":null'] },
+    'cleanup-owned': {
+      command: 'ficus workstream get 1180 --json',
+      contains: ['"status":"done"', '"status":"removed"'],
+    },
+    'automerge-clean': { command: 'gh pr view 950 --json state', contains: ['CLEAN', 'APPROVED', HEAD] },
+    'automerge-blocked': {
+      command: 'gh pr view 950 --json state',
+      contains: ['BLOCKED', 'REVIEW_REQUIRED', 'FAILURE'],
+    },
+    'slot-queued': { command: 'ficus slot claim heavy-work', contains: ['Queued', 'YOU DO NOT OWN CAPACITY YET'] },
+    'paused-wait': {
+      command: 'ficus workstream get 1300 --json',
+      contains: ['"pause":{', '"kind":"question"', '"status":"open"'],
+    },
+    'completion-ready': { command: 'ficus workstream finish 1300 --version 9', contains: ['not merged'] },
+    'ci-failure-rework': { command: 'gh pr view 950 --json statusCheckRollup', contains: ['core-unit', 'FAILURE'] },
+    'requester-identity': {
+      command: 'ficus --json agent messages manager --raw --role human',
+      contains: [NOAH, PRIYA, '"sender":'],
+    },
+    'new-work-request': { command: 'ficus workstream create "Migrate docs to Astro"', contains: ['Forbidden'] },
+    'integration-not-merge-authority': { command: 'gh pr view 950 --json state', contains: ['OPEN'] },
+    'cli-discovery': { command: 'ficus inbox list --all', contains: ['2 message(s)', '[read]'] },
+    'readable-handoff': { command: 'ficus workstream flow 1300', contains: ['"version": 4', '"status": "running"'] },
+  }
+  test('every scenario has an explicit premise probe', () => {
+    expect(Object.keys(probes).sort()).toEqual(SCENARIOS.map((scenario) => scenario.name).sort())
+  })
+  for (const [name, probe] of Object.entries(probes)) {
+    test(name, async () => {
+      const scenario = findScenario(name)!
+      const respond = scenario.createResponder?.() ?? scenario.respond!
+      const result = await respond(
+        { name: probe.name ?? 'squad_bash', args: probe.args ?? {}, command: probe.command },
+        variantContext(workingTreeVariant())
+      )
+      for (const text of probe.contains) expect(result).toContain(text)
+    })
+  }
+})
+
 describe('scenario premises hold in the assembled prompt', () => {
   const variant = workingTreeVariant()
 
@@ -353,7 +408,7 @@ describe('scenario premises hold in the assembled prompt', () => {
     expect(result.state.attempts[0].status).toBe('running')
 
     const completed = JSON.parse(
-      (await findScenario('automerge-clean')!.respond!(
+      (await findScenario('automerge-clean')!.createResponder!()(
         { name: 'squad_bash', args: {}, command: 'ficus workstream flow 1300' },
         variantContext(variant)
       ))!
@@ -378,6 +433,67 @@ describe('scenario premises hold in the assembled prompt', () => {
     ).toContain('Error: oldText not found')
     await first({ name: 'write', args: { path, content: 'Replacement contents' } }, context)
     expect(await first(read, context)).toBe('Replacement contents')
+  })
+
+  test('delivery fixture transitions are truthful and isolated per run', async () => {
+    const context = variantContext(variant)
+    const respond = findScenario('automerge-blocked')!.createResponder!()
+    const flow = { name: 'squad_bash', args: {}, command: 'ficus workstream flow 1300' }
+    expect(JSON.parse((await respond(flow, context))!).state.status).toBe('completion-ready')
+    const result = JSON.parse(
+      (await respond(
+        { name: 'squad_bash', args: {}, command: 'ficus workstream advance 1300 --content \'{"action":"rework"}\'' },
+        context
+      ))!
+    )
+    expect(result.version).toBe(8)
+    expect(result.assignments).toEqual([])
+    expect(JSON.parse((await respond(flow, context))!).state.status).toBe('running')
+    expect(
+      JSON.parse((await respond(flow, context))!).state.attempts.map((attempt: { id: number }) => attempt.id)
+    ).toEqual([1, 2])
+    expect(JSON.parse((await findScenario('automerge-blocked')!.createResponder!()(flow, context))!).state.status).toBe(
+      'completion-ready'
+    )
+
+    const clean = findScenario('automerge-clean')!.createResponder!()
+    const combined = await clean(
+      {
+        name: 'squad_bash',
+        args: {},
+        command: 'ficus squad get-meta squad policies.allowAutoMerge; gh pr view 950 --json state',
+      },
+      context
+    )
+    expect(combined).toContain('true')
+    expect(combined).toContain('OPEN')
+    await clean({ name: 'squad_bash', args: {}, command: 'gh pr merge 950 --squash --match-head-commit head' }, context)
+    const pr = JSON.parse(
+      (await clean({ name: 'squad_bash', args: {}, command: 'gh pr view 950 --json state' }, context))!
+    )
+    expect(pr.state).toBe('MERGED')
+  })
+
+  test('common repository fixtures do not overwrite scenario-specific negative facts', async () => {
+    const context = variantContext(variant)
+    const missing = await findScenario('no-worktree')!.respond!(
+      {
+        name: 'squad_bash',
+        args: {},
+        command: 'ficus workstream get 1300 --json; ls /home/box_e49af02f8b45/workspace/worktrees',
+      },
+      context
+    )
+    expect(JSON.parse(missing!).worktree).toBeNull()
+    const removed = await findScenario('cleanup-owned')!.respond!(
+      {
+        name: 'squad_bash',
+        args: {},
+        command: 'ls /home/box_e49af02f8b45/workspace/worktrees/7c1e9a2b-3d4f-4a5b-8c6d-7e8f9a0b1c2d',
+      },
+      context
+    )
+    expect(removed).toContain('No such file or directory')
   })
 
   test('slot-queued shows the heavy-work pool', async () => {

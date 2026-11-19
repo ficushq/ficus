@@ -37,6 +37,12 @@ Scripted results must preserve the scenario premise when an agent verifies state
 remain running, while completion-ready attempts are completed. A stateful fixture uses
 `createResponder` to allocate fresh state per run (including concurrent variants and repeats). For
 example, offer-followup verification reads reflect successful edits rather than returning stale text.
+Common discovery answers are deliberately path-specific: only the fictional worktree and known
+repository settings are scripted. Unknown paths and unrelated commands are not made successful.
+Repository API requests cannot accidentally receive PR JSON. Successful merge/rework calls update
+later inspections, with fresh state per run. `evals.test.ts` probes all 18 scenario premises and
+`fixtures.test.ts` checks known and unknown discovery/settings calls before live comparisons.
+
 Fixture corrections require both comparison sides to be rerun with that same corrected harness;
 preserve earlier recordings but label their limitations instead of mixing them into the new cohort.
 
