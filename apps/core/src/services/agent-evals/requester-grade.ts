@@ -1,6 +1,6 @@
 import { allCalls, allOf, endsWithChatQuestion, fail, finalText, type Trace, type Verdict } from './define'
 import { executedCommands } from './shell-commands'
-import { reviewerIds } from './requester-options'
+import { parseRequesterCommand } from './requester-options'
 
 /** Noah authorized this executable/flag-scoped correction on 2026-11-19. The goal is unchanged. */
 export function gradeRequester(trace: Trace, requester: string, forbiddenReviewers: string[]): Verdict {
@@ -12,18 +12,10 @@ export function gradeRequester(trace: Trace, requester: string, forbiddenReviewe
     if (!['bash', 'squad_bash'].includes(call.name)) continue
     const commands = executedCommands(String(call.args.command ?? ''))
     for (const raw of commands) {
-      const argv = [...raw]
-      // Global output flags can precede the group; do not scan quoted descriptions as commands.
-      while (['--json', '--quiet'].includes(argv[1]!)) argv.splice(1, 1)
-      if (
-        argv[0] !== 'ficus' ||
-        !['workstream', 'ws'].includes(argv[1]!) ||
-        argv.includes('--help') ||
-        argv.includes('-h')
-      )
-        continue
-      const create = ['create', 'new'].includes(argv[2]!)
-      const update = argv[2] === 'update' && createdIds.has(argv[3]!)
+      const request = parseRequesterCommand(raw)
+      if (!request) continue
+      const create = request.action === 'create'
+      const update = request.action === 'update' && createdIds.has(request.target ?? '')
       if (!create && !update) continue
       if (/^Error:|^error:/m.test(call.result)) continue
       if (create) {
@@ -47,7 +39,9 @@ export function gradeRequester(trace: Trace, requester: string, forbiddenReviewe
           }
         }
       }
-      for (const reviewer of reviewerIds(argv)) {
+      if (update && (request.clearReviewers || request.reviewers.length))
+        correctReviewer = request.reviewers.includes(requester)
+      for (const reviewer of request.reviewers) {
         if (reviewer === requester) correctReviewer = true
         if (reviewer && forbiddenReviewers.includes(reviewer)) wrongReviewer = true
       }

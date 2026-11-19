@@ -6,7 +6,7 @@ import { FIXTURE_SQUAD } from './prompt'
 import { FIXTURE_WORK_STREAM_ID } from './fixtures'
 import { executedCommands } from './shell-commands'
 import { workingTreeVariant } from './variant'
-import { reviewerIds } from './requester-options'
+import { parseRequesterCommand } from './requester-options'
 
 export const REQUESTER = { userId: '51846fad-3980-4ec3-943c-1ebe9c822b2e', name: 'noah' }
 const otherSender = { userId: '7a9e3c21-5b4d-4f6e-8a1b-2c3d4e5f6a7b', name: 'priya' }
@@ -25,8 +25,12 @@ export function requesterResponder(): Responder {
     const results: string[] = []
     for (const raw of executedCommands(call.command ?? '')) {
       const argv = raw.filter((word, index) => index === 0 || !['--json', '--quiet'].includes(word))
-      if (argv[0] !== 'ficus' || argv.includes('--help') || argv.includes('-h') || argv[1] === 'help') continue
-      const [, group, action, target] = argv
+      if (argv[0] !== 'ficus' || argv[1] === 'help') continue
+      const request = parseRequesterCommand(raw)
+      if (!request && (argv.includes('--help') || argv.includes('-h'))) continue
+      const group = request ? 'workstream' : argv[1]
+      const action = request?.action ?? argv[2]
+      const target = request ? request.target : argv[3]
       if (group === 'agent' && action === 'messages' && ['manager', FIXTURE_SQUAD.agentId].includes(target!)) {
         results.push(
           JSON.stringify({
@@ -58,6 +62,7 @@ export function requesterResponder(): Responder {
           `Instance: https://ficus.example\nIdentity: agent ${FIXTURE_SQUAD.agentId} (Manager)\nCredential: injected FICUS_TOKEN`
         )
       else if (['workstream', 'ws'].includes(group!)) {
+        if (!request) continue
         if (action === 'reviewers') results.push(JSON.stringify([REQUESTER, otherSender]))
         else if (action === 'list') results.push(JSON.stringify(created ? [created] : []))
         else if (action === 'create' || action === 'new') {
@@ -65,7 +70,7 @@ export function requesterResponder(): Responder {
             results.push('Error: the fixture stream already exists. Inspect it before creating another.')
             continue
           }
-          const reviewers = reviewerIds(argv)
+          const reviewers = request.reviewers
           created = { id: CREATED_STREAM_ID, number: 1301, title: target ?? '', assignedReviewerIds: reviewers }
           results.push(JSON.stringify(created))
         } else if (action === 'get' && !['1300', FIXTURE_WORK_STREAM_ID].includes(target!))
@@ -75,8 +80,9 @@ export function requesterResponder(): Responder {
               : 'Error: work stream not found'
           )
         else if (action === 'update' && created && ['1301', CREATED_STREAM_ID].includes(target!)) {
-          const reviewers = reviewerIds(argv)
-          if (reviewers.length) created.assignedReviewerIds = reviewers
+          const reviewers = request.reviewers
+          if (request.clearReviewers) created.assignedReviewerIds = []
+          else if (reviewers.length) created.assignedReviewerIds = reviewers
           results.push(JSON.stringify(created))
         }
       }

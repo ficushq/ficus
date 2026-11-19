@@ -92,7 +92,7 @@ failure after success, in-flight draining, successful completion and checkpoint-
 This fix does not retroactively recover the lost invocation and has not been re-run live.
 
 Final offline checks: `bun run test src/services/agent-evals` from `apps/core` completed all
-123 tests across 11 files with zero failures. The static prompt guard completed 33 tests with zero
+129 tests across 11 files with zero failures. The static prompt guard completed 33 tests with zero
 failures. Focused ESLint and `git diff --check` passed. Full Core tests/typechecking were not run
 locally; they remain CI checks. The focused test database was shut down after each use.
 
@@ -102,9 +102,18 @@ created stream. The repair uses one reviewer-option collector for create/update/
 binds follow-up identity only from a standalone create's whole result (including formatted JSON).
 `requester-contract.test.ts` feeds actual create/update/get responses into the grader, compares
 repeated options with the real CLI parser, and rejects unrelated or ambiguous creation output.
-The collector reads real CLI option arity, so a flag-looking description value cannot assign a reviewer.
+The shared parser uses the real CLI, so a flag-looking description value cannot assign a reviewer.
 Original recording bytes, verdicts, scenario goals and thresholds remain unchanged. No further live
 calls were made; live validation remains separately blocked.
+
+Follow-up review found that fixed positional offsets still rejected valid options before a title or
+ID. The parser now uses a fresh real CLI command tree and `parseOptions` for every invocation,
+without executing actions. The fixture and grader use the same parsed target and reviewer options.
+Responder-to-grader tests compare both option forms before the title/ID against the real CLI and
+verify later reads. Invalid/incomplete inputs are rejected, option state cannot leak, and clearing
+reviewers removes the fixture assignment and its grading credit. The previous quoted-value,
+repeated-option and unrelated-stream regressions remain covered. This is a CLI-fidelity repair,
+not a scenario-goal or threshold change; no paid calls were made.
 
 ## Static prompt sizes
 

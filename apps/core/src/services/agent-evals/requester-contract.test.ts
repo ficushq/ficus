@@ -93,3 +93,91 @@ test('reviewer-looking description values are not actual reviewer options', asyn
   expect(JSON.parse(result).assignedReviewerIds).toEqual([])
   expect(gradeRequester(trace([shell(command, result)]), REQUESTER.userId, [otherReviewer]).pass).toBe(false)
 })
+
+for (const equalsForm of [false, true]) {
+  test(`create accepts reviewer options before its title (${equalsForm ? 'equals' : 'separated'} form)`, async () => {
+    const { createProgram } = await import('../../../../cli/src/program')
+    const options = equalsForm ? [`--reviewer=${REQUESTER.userId}`] : ['--reviewer', REQUESTER.userId]
+    const command = createProgram()
+      .commands.find((command) => command.name() === 'workstream')!
+      .commands.find((command) => command.name() === 'create')!
+    const parsed = command.parseOptions([...options, 'Fix'])
+    expect(parsed).toEqual({ operands: ['Fix'], unknown: [] })
+    const source = `ficus workstream create ${options.join(' ')} Fix`
+    const result = (await requesterResponder()(
+      { name: 'squad_bash', args: { command: source }, command: source },
+      context
+    ))!
+    const created = JSON.parse(result)
+    expect(created.title).toBe(parsed.operands[0])
+    expect(created.assignedReviewerIds).toEqual(command.opts().reviewer)
+    expect(gradeRequester(trace([shell(source, result)]), REQUESTER.userId, [otherReviewer]).pass).toBe(true)
+  })
+
+  test(`update accepts reviewer options before its target (${equalsForm ? 'equals' : 'separated'} form)`, async () => {
+    const { createProgram } = await import('../../../../cli/src/program')
+    const respond = requesterResponder()
+    const calls: TraceCall[] = []
+    const invoke = async (source: string) => {
+      const result = (await respond({ name: 'squad_bash', args: { command: source }, command: source }, context))!
+      calls.push(shell(source, result))
+      return JSON.parse(result)
+    }
+    const created = await invoke('ficus workstream create Fix')
+    const options = equalsForm ? [`--reviewer=${REQUESTER.userId}`] : ['--reviewer', REQUESTER.userId]
+    const command = createProgram()
+      .commands.find((command) => command.name() === 'workstream')!
+      .commands.find((command) => command.name() === 'update')!
+    const parsed = command.parseOptions([...options, created.id])
+    expect(parsed).toEqual({ operands: [created.id], unknown: [] })
+    const updated = await invoke(`ficus workstream update ${options.join(' ')} ${created.id}`)
+    expect(updated.assignedReviewerIds).toEqual(command.opts().reviewer)
+    expect((await invoke(`ficus workstream get --json ${created.id}`)).assignedReviewerIds).toEqual([REQUESTER.userId])
+    expect(gradeRequester(trace(calls), REQUESTER.userId, [otherReviewer]).pass).toBe(true)
+  })
+}
+
+test('a parsed clear-reviewers update removes the actual assignment and cannot retain a passing grade', async () => {
+  const respond = requesterResponder()
+  const calls: TraceCall[] = []
+  const invoke = async (source: string) => {
+    const result = (await respond({ name: 'squad_bash', args: { command: source }, command: source }, context))!
+    calls.push(shell(source, result))
+    return JSON.parse(result)
+  }
+  const created = await invoke(`ficus workstream create --reviewer=${REQUESTER.userId} Fix`)
+  const cleared = await invoke(`ficus workstream update --clear-reviewers ${created.id}`)
+  expect(cleared.assignedReviewerIds).toEqual([])
+  expect((await invoke(`ficus workstream get ${created.id}`)).assignedReviewerIds).toEqual([])
+  expect(gradeRequester(trace(calls), REQUESTER.userId, [otherReviewer]).pass).toBe(false)
+})
+
+test('invalid or incomplete option input cannot create a successful fixture operation or leak parser state', async () => {
+  const { parseRequesterCommand } = await import('./requester-options')
+  expect(parseRequesterCommand(['ficus', 'workstream', 'create', '--reviewer'])).toBeUndefined()
+  expect(parseRequesterCommand(['ficus', 'workstream', 'create', '--reviewer', REQUESTER.userId])).toBeUndefined()
+  expect(parseRequesterCommand(['ficus', 'workstream', 'create', '--unknown', 'Fix'])).toBeUndefined()
+  expect(
+    parseRequesterCommand([
+      'ficus',
+      'workstream',
+      'update',
+      '--clear-reviewers',
+      '--reviewer',
+      REQUESTER.userId,
+      '1301',
+    ])
+  ).toBeUndefined()
+  expect(
+    parseRequesterCommand(['ficus', 'workstream', 'create', '--reviewer', REQUESTER.userId, 'Fix'])?.reviewers
+  ).toEqual([REQUESTER.userId])
+  expect(parseRequesterCommand(['ficus', 'workstream', 'create', 'Fix'])?.reviewers).toEqual([])
+  const respond = requesterResponder()
+  const invalid = 'ficus workstream create --reviewer'
+  expect(await respond({ name: 'squad_bash', args: { command: invalid }, command: invalid }, context)).toBeUndefined()
+  const valid = 'ficus workstream create Fix'
+  expect(
+    JSON.parse((await respond({ name: 'squad_bash', args: { command: valid }, command: valid }, context))!)
+      .assignedReviewerIds
+  ).toEqual([])
+})
