@@ -4,6 +4,7 @@ import { hasRunnableStreamDemand } from './demand'
 
 function candidate() {
   return {
+    id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     metadata: {},
     participants: ['engineer'],

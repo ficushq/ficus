@@ -71,7 +71,9 @@ export async function reconcileDeadFleet(
       if (snapshot.count === 0 || snapshot.firstDemandAt == null) {
         return observeDeadFleet({ status: 'quiet', squadId, lastRunStartedAt, now: input.now }, adapter)
       }
-      const unservedSince = snapshot.unservedSince ?? snapshot.firstDemandAt
+      // Scoped clocks are durable facts. A worker restart is not a new service
+      // event and must not manufacture recovery for an existing stale route.
+      const unservedSince = snapshot.unservedSince ?? undefined
       const records = input.records ?? []
       const chains =
         snapshot.agentIds?.length && records.length
@@ -85,9 +87,13 @@ export async function reconcileDeadFleet(
           demandCount: snapshot.count,
           providerCause,
           firstDemandAt:
-            lastRunStartedAt == null && input.coldStartAt && unservedSince < input.coldStartAt
+            snapshot.unservedSince === undefined &&
+            lastRunStartedAt == null &&
+            input.coldStartAt &&
+            snapshot.firstDemandAt < input.coldStartAt
               ? input.coldStartAt
-              : unservedSince,
+              : snapshot.firstDemandAt,
+          unservedSince,
           lastRunStartedAt,
           now: input.now,
         },

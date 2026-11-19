@@ -8,6 +8,7 @@ import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { isInboxMessageWakeEligible } from '../../entities/InboxMessage'
 import { liveMonitorCondition } from '../monitors/live-monitors'
+import { getStreamDemandClocks, type StreamDemandRoute } from './scoped-progress'
 import { awaitsCodeHostDelivery } from '../workflows/delivery-state'
 
 export interface SquadDemandSnapshot {
@@ -28,13 +29,15 @@ const liveAgentStatusSql = sql.join(
   sql`, `
 )
 
-/** Maximum silence between a claimed start or persisted foreground assistant steps. */
+/** Maximum silence after an attributed start, assistant step or successful completion. */
 export const FOREGROUND_PROGRESS_WINDOW_MS = 30 * 60_000
 
 /** Freshness window for managed local apps and their owners' check-ins. */
 export const SUPERVISED_ACTIVITY_WINDOW_MS = 2 * 60 * 60_000
 
 interface StreamDemand {
+  id: string
+  flowCreatedAt?: string
   createdAt: string
   metadata: unknown
   participants: string[]
@@ -51,34 +54,49 @@ interface StreamDemand {
   supervisingAgents?: string[]
 }
 
+interface RunnableStreamRoute {
+  agentId?: string
+  attemptId?: number
+  responseRequestId?: string
+}
+
 /** Match workflow dispatch: a blocked branch must not hide a runnable sibling. */
-export function hasRunnableStreamDemand(stream: StreamDemand): boolean {
-  if (stream.waits.some((wait) => wait.flowAttemptId == null)) return false
+function runnableStreamRoutes(stream: StreamDemand): RunnableStreamRoute[] {
+  if (stream.waits.some((wait) => wait.flowAttemptId == null)) return []
   const supervising = new Set(stream.supervisingAgents ?? [])
-  // Without a per-attempt owner, any stream agent's live background work is the stream's progress.
   if (!stream.state)
-    return !stream.busy && stream.waits.length === 0 && stream.participants.length > 0 && supervising.size === 0
-  if (stream.state.status === 'paused' || awaitsCodeHostDelivery(stream.state, stream.metadata)) return false
+    return !stream.busy && stream.waits.length === 0 && supervising.size === 0
+      ? stream.participants.map((agentId) => ({ agentId }))
+      : []
+  if (stream.state.status === 'paused' || awaitsCodeHostDelivery(stream.state, stream.metadata)) return []
   if (stream.state.status === 'completion-ready') {
-    // Human delivery approval is external; missing PR/delivery setup still needs an agent.
-    return (
-      !stream.busy &&
-      stream.state.definition.completion.mode !== 'review-approval' &&
-      stream.participants.length > 0 &&
-      supervising.size === 0
-    )
+    return !stream.busy && stream.state.definition.completion.mode !== 'review-approval' && supervising.size === 0
+      ? stream.participants.map((agentId) => ({ agentId }))
+      : []
   }
-  if (stream.state.status !== 'running') return false
-  return activeWorkflowAttempts(stream.state).some((attempt) => {
+  if (stream.state.status !== 'running') return []
+  return activeWorkflowAttempts(stream.state).flatMap((attempt) => {
     const step = attempt.step ?? stream.state!.definition.steps.find((step) => step.id === attempt.stepId)
     const attemptAgent = stream.attemptAgents[String(attempt.id)]
-    return (
-      step?.kind === 'agent' &&
-      !stream.waits.some((wait) => wait.flowAttemptId === attempt.id) &&
-      // A live agent idle between events of work it supervises is progressing, not stalled.
-      (attemptAgent ? stream.participants.includes(attemptAgent) && !supervising.has(attemptAgent) : !stream.busy)
-    )
+    if (step?.kind !== 'agent' || stream.waits.some((wait) => wait.flowAttemptId === attempt.id)) return []
+    let owners: Array<string | undefined>
+    if (attemptAgent) {
+      owners = stream.participants.includes(attemptAgent) && !supervising.has(attemptAgent) ? [attemptAgent] : []
+    } else {
+      // No pinned owner: retain the stream-level busy fallback, then use only
+      // its own available participants (or the unassigned routing demand).
+      owners = stream.busy ? [] : stream.participants.length ? stream.participants : [undefined]
+    }
+    return owners.map((agentId) => ({
+      agentId,
+      attemptId: attempt.id,
+      responseRequestId: attempt.responseAssignment?.requestId,
+    }))
   })
+}
+
+export function hasRunnableStreamDemand(stream: StreamDemand): boolean {
+  return runnableStreamRoutes(stream).length > 0
 }
 
 interface InboxDemand {
@@ -88,12 +106,14 @@ interface InboxDemand {
   metadata: Record<string, unknown>
   createdAt: string
   agentStatus: string
+  readyAt?: string
 }
 
 interface DemandRow extends Record<string, unknown> {
   squadId: string
   count: number | string
   firstDemandAt: Date | string | null
+  unservedSince: Date | string | null
   streams: StreamDemand[] | null
   agentIds: string[] | null
   unknownRoutes: boolean
@@ -141,6 +161,14 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
       WHERE waiter.status = 'queued' AND waiter.ended_at IS NULL AND waiter.resulting_claim_id IS NULL
         AND pool.disabled_at IS NULL AND pool.unregistered_at IS NULL
         AND owner.status NOT IN ('dormant', 'terminated')
+    ), slot_ready_agents AS (
+      SELECT owner.id, MAX(waiter.ended_at) AS ready_at
+      FROM slot_waiters AS waiter
+      JOIN slot_pools AS pool ON pool.id = waiter.pool_id
+      JOIN agents AS owner ON owner.id = waiter.owner_agent_id AND owner.squad_id = pool.squad_id
+      JOIN active_squads AS squad ON squad.id = owner.squad_id
+      WHERE waiter.status IN ('granted', 'canceled') AND waiter.ended_at <= ${now}::timestamptz
+      GROUP BY owner.id
     ), progressing_executions AS (
       -- An actual claimed start gives a bounded grace period. Afterwards only
       -- persisted assistant steps belonging to THIS execution prove progress.
@@ -186,7 +214,16 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         -- Observer delivery is informational and never starts an execution.
         AND message.metadata->>'source' IS DISTINCT FROM 'work-stream-observer'
     ), demand AS (
-      SELECT agent.squad_id, execution.started_at AS demanded_at, agent.id AS agent_id
+      SELECT agent.squad_id, execution.started_at AS demanded_at, agent.id AS agent_id,
+        GREATEST(execution.started_at, (SELECT ready_at FROM slot_ready_agents WHERE id = agent.id),
+          -- Requeue retains the original creation timestamp. Only this exact
+          -- execution's real service (not another turn's activity) moves it.
+          CASE WHEN execution.run_started_at <= ${now}::timestamptz THEN GREATEST(execution.run_started_at,
+            (SELECT message.created_at FROM messages AS message
+              WHERE message.agent_id = execution.agent_id AND message.role = 'assistant'
+                AND message.metadata->>'executionId' = execution.id::text
+                AND message.created_at >= execution.run_started_at AND message.created_at <= ${now}::timestamptz
+              ORDER BY message.created_at DESC LIMIT 1)) END) AS unserved_since
       FROM executions AS execution
       JOIN agents AS agent ON agent.id = execution.agent_id
       JOIN active_squads AS squad ON squad.id = agent.squad_id
@@ -206,7 +243,12 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
           WHEN schedule.scope_type = 'agent' THEN scoped_agent.squad_id
           ELSE schedule.scope_id
         END AS squad_id,
-        schedule.next_trigger_at AS demanded_at, NULL::uuid AS agent_id
+        schedule.next_trigger_at AS demanded_at, NULL::uuid AS agent_id,
+        GREATEST(schedule.next_trigger_at, CASE WHEN schedule.action->>'type' = 'inbox_message' THEN (
+          SELECT ready_at FROM slot_ready_agents WHERE id::text = CASE
+            WHEN schedule.action->'target'->>'type' = 'agent' THEN schedule.action->'target'->>'agentId'
+            ELSE squad.manager_agent_id::text END
+        ) END) AS unserved_since
       FROM schedules AS schedule
       LEFT JOIN agents AS scoped_agent
         ON schedule.scope_type = 'agent'
@@ -257,7 +299,7 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
         )
 
     ), aggregate_demand AS (
-      SELECT squad_id, count(*)::integer AS count, min(demanded_at) AS first_demand_at,
+      SELECT squad_id, count(*)::integer AS count, min(demanded_at) AS first_demand_at, min(unserved_since) AS unserved_since,
         array_agg(DISTINCT agent_id) FILTER (WHERE agent_id IS NOT NULL) AS agent_ids,
         bool_or(agent_id IS NULL) AS unknown_routes
       FROM demand
@@ -265,7 +307,7 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
     )
     , stream_candidates AS (
       SELECT stream.squad_id, jsonb_build_object(
-        'createdAt', stream.created_at, 'metadata', stream.metadata,
+        'id', stream.id, 'createdAt', stream.created_at, 'flowCreatedAt', flow.created_at, 'metadata', stream.metadata,
         'busy', (EXISTS (SELECT 1 FROM slot_waiting_agents AS waiter
           WHERE waiter.id = stream.assignee_agent_id OR waiter.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[]))
             OR waiter.id::text IN (SELECT value FROM jsonb_each_text(COALESCE(flow.attempt_agents, '{}'::jsonb))))
@@ -309,11 +351,12 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
             AND participant.pending_dormancy_at IS NULL
             AND NOT EXISTS (SELECT 1 FROM slot_waiting_agents WHERE id = participant.id)
             AND participant.status::text IN (${liveAgentStatusSql})
-            AND (participant.id = stream.assignee_agent_id OR participant.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[])))
+            AND (participant.id = stream.assignee_agent_id OR participant.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[]))
+              OR participant.id::text IN (SELECT value FROM jsonb_each_text(COALESCE(flow.attempt_agents, '{}'::jsonb))))
             AND NOT EXISTS (SELECT 1 FROM paused_agents WHERE id = participant.id)
             AND NOT EXISTS (SELECT 1 FROM executions AS execution
               WHERE execution.agent_id = participant.id AND (execution.status IN
-                ('queued', 'waiting-maintenance', 'waiting-sandbox') OR execution.id IN (SELECT id FROM progressing_executions))))
+                ('queued', 'waiting-maintenance', 'waiting-sandbox'))))
       ) AS candidate
       FROM work_streams AS stream
       JOIN active_squads AS squad ON squad.id = stream.squad_id
@@ -322,14 +365,14 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
     )
     SELECT squad.id AS "squadId",
       COALESCE(aggregate.count, 0)::integer AS count,
-      aggregate.first_demand_at AS "firstDemandAt",
+      aggregate.first_demand_at AS "firstDemandAt", aggregate.unserved_since AS "unservedSince",
       aggregate.agent_ids AS "agentIds", COALESCE(aggregate.unknown_routes, false) AS "unknownRoutes",
       (SELECT jsonb_agg(jsonb_build_object('id', message.id, 'recipientId', message.recipient_id,
         'senderType', message.sender_type, 'metadata', jsonb_build_object(
           'source', message.metadata->'source', 'wakeEligible', message.metadata->'wakeEligible',
           'workStreamId', message.metadata->'workStreamId', 'attemptId', message.metadata->'attemptId',
           'integrationDeliveryId', message.metadata->'integrationDeliveryId', 'questionId', message.metadata->'questionId'),
-        'createdAt', message.created_at,
+        'createdAt', message.created_at, 'readyAt', (SELECT ready_at FROM slot_ready_agents WHERE id = message.recipient_id::uuid),
         'agentStatus', message.agent_status)) FROM eligible_inbox AS message WHERE message.squad_id = squad.id) AS messages,
       (SELECT jsonb_agg(candidate) FROM stream_candidates WHERE squad_id = squad.id) AS streams
     FROM active_squads AS squad
@@ -339,6 +382,26 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
   // Use delivery's authoritative policy for integration subscriptions, question
   // origins, and attempt gates. Never inspect payloads or mutate inbox history.
   const { isCurrentFlowMessage } = await import('../workflows/execution')
+  // Keep clocks separate for every runnable attempt. Taking a maximum over a
+  // stream or squad would let a healthy sibling postpone a different route.
+  const routesByStream = new Map<StreamDemand, StreamDemandRoute[]>()
+  for (const row of rows) {
+    for (const stream of row.streams ?? []) {
+      const readyTimes = [new Date(stream.createdAt).getTime()]
+      if (stream.flowCreatedAt && new Date(stream.flowCreatedAt) <= input.now)
+        readyTimes.push(new Date(stream.flowCreatedAt).getTime())
+      routesByStream.set(
+        stream,
+        runnableStreamRoutes(stream).map((route, index) => ({
+          ...route,
+          streamId: stream.id,
+          key: `${stream.id}:${index}`,
+          readyAt: new Date(Math.max(...readyTimes)),
+        }))
+      )
+    }
+  }
+  const clocks = await getStreamDemandClocks([...routesByStream.values()].flat(), input.now)
   const snapshots = new Map<string, SquadDemandSnapshot>()
   for (const row of rows) {
     const eligible: InboxDemand[] = []
@@ -349,18 +412,39 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
     const messages = eligible.filter(
       (message) => message.agentStatus !== 'dormant' || wakingAgents.has(message.recipientId)
     )
-    const streams = (row.streams ?? []).filter(hasRunnableStreamDemand)
+    const streamClocks = new Map<StreamDemand, number>()
+    for (const stream of row.streams ?? []) {
+      const unserved = (routesByStream.get(stream) ?? []).flatMap((route) => {
+        const clock = clocks.get(route.key)!
+        if (
+          clock.running &&
+          clock.progressAt &&
+          new Date(clock.progressAt).getTime() > input.now.getTime() - FOREGROUND_PROGRESS_WINDOW_MS
+        )
+          return []
+        return [new Date(clock.unservedSince).getTime()]
+      })
+      if (unserved.length) streamClocks.set(stream, Math.min(...unserved))
+    }
+    const streams = [...streamClocks.keys()]
     const dates = [
       ...streams.map((stream) => new Date(stream.createdAt).getTime()),
       ...messages.map((message) => new Date(message.createdAt).getTime()),
     ]
     if (row.firstDemandAt) dates.push(new Date(row.firstDemandAt).getTime())
+    const unservedTimes = [
+      ...streamClocks.values(),
+      ...messages.map((message) =>
+        Math.max(new Date(message.createdAt).getTime(), message.readyAt ? new Date(message.readyAt).getTime() : 0)
+      ),
+    ]
+    if (row.unservedSince) unservedTimes.push(new Date(row.unservedSince).getTime())
     // An undispatched stream or a schedule may still need routing/spawning.
     // Keep its demand, but do not invent a provider explanation for it.
     snapshots.set(row.squadId, {
       count: Number(row.count) + messages.length + streams.length,
       firstDemandAt: dates.length ? new Date(Math.min(...dates)) : null,
-      unservedSince: dates.length ? new Date(Math.min(...dates)) : null,
+      unservedSince: unservedTimes.length ? new Date(Math.min(...unservedTimes)) : null,
       ...(!row.unknownRoutes && streams.length === 0 && dates.length > 0
         ? { agentIds: [...new Set([...(row.agentIds ?? []), ...messages.map((message) => message.recipientId)])] }
         : {}),
