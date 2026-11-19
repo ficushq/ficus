@@ -15,7 +15,7 @@ The running product's model calls must still use its metered inference paths.
 
 For the corrected baseline premises, original trace classification and remaining live-validation
 requirements, see [baseline repair](./agent-behaviour-eval-baseline-repair.md). New runs declare
-harness revision `2026-11-19-restart-carrier-v3`; historical verdicts are not rewritten.
+harness revision `2026-11-19-chat-sender-v4`; historical verdicts are not rewritten.
 
 ## What a scenario is
 
@@ -36,7 +36,12 @@ A scenario (`scenarios.ts`) gives an agent of one built-in type:
 - a **situation**: earlier conversation (for example a command a restart cut short) and the
   messages that start the turn. Where production code generates that text (the restart notice,
   the cancelled-command error, the slot `queued` output, the delivery instructions), the scenario
-  calls the variant's own code, so each version is tested with its own just-in-time text.
+  calls the variant's own code, so each version is tested with its own just-in-time text. Human
+  chat messages, in the opening and in earlier conversation, go through the variant's own
+  `messageTextForModel` with the metadata the server stores on a human chat message
+  (`source: user_chat` and the scenario's sender `userId` and `name`), so each version reads
+  whatever that runtime adds, such as the sender note. Inbox notices, step assignments and
+  restart framing are not human chat and stay literal.
 
 The agent runs until it ends its turn or reaches the step limit (10 by default). The scenario's
 grader then reads what the agent did, meaning its tool calls and its text, never its reasoning.
@@ -125,8 +130,12 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
   is absent: a pre-carrier ref is not silently normalized to a newer notice. Such historical refs
   need a separately agreed compatibility policy before a restart comparison. The restart carrier
   has no runtime imports; public voice only needs the installed `zod` dependency. No other shared
-  source files are needed for these direct imports. Other missing modules (for example
-  `squad-agent-prompt.ts`) retain the working-source fallback.
+  source files are needed for these direct imports. The chat renderer
+  `apps/core/src/services/chat/message-context.ts` comes from the ref's extracted `apps/core/src`
+  with its direct imports, and is required in the same way: a ref without it, or whose module
+  does not export `messageTextForModel`, fails the chat scenarios explicitly instead of borrowing
+  the working tree's note. Other missing modules (for example `squad-agent-prompt.ts`) retain the
+  working-source fallback.
 - **Comparing historical runs:** this fixes a prompt-assembly omission, so new runs for voice-aware
   refs include more guidance than recordings made by the earlier harness. Re-run both sides with
   the same harness for a fair comparison, and record the harness revision. Pre-voice refs remain
@@ -143,6 +152,18 @@ bun run agents:eval --prompt automerge-clean             # print the assembled p
   For a `working` variant (which has no recorded commit), retain its source commit and any dirty
   diff with the report; prefer committed refs for the final comparison. `promptSha256` hashes only
   the system prompt, not this opening restart message, and is not a substitute for source provenance.
+- **Chat sender provenance:** revision `2026-11-19-chat-sender-v4` renders human chat through each
+  ref's own chat renderer. Earlier harnesses sent every chat as bare text with no sender metadata,
+  so requester-identity only measured the fallback lookup through `agent messages`, never the
+  server-written "Sent by" note that main has added since PR 969. Refs from before that change add no
+  note, so their chat text is byte-identical under both revisions; refs that carry the note now
+  read it on requester-identity, offer-followup (opening and history), new-work-request and
+  cli-discovery. Results from earlier revisions are not evidence of the note's effect: preserve
+  their recording bytes and verdicts, and rerun both sides with this revision for a comparison
+  that includes a noted ref. Senders: noah for every chat except new-work-request, whose message
+  speaks of Noah in the third person and comes from priya (both fixture users). Scenario
+  goals, graders, must flags, step limits, tiers, repeats and thresholds are unchanged. The
+  extraction cache format stays v6 because no new path is extracted.
 - **Models:** each scenario runs only on its agent type's own configured tier: `standard` for the
   engineer and manager, `deep` (high effort) for the reviewer. The comparison measures the model
   each role really uses, and the no-regression rule applies to these tiers. The `fast` tier is not
@@ -182,8 +203,14 @@ the new text as with the old, and the total number of passing runs does not drop
 filtering, deterministic per-variant profiles, runtime size limits, git-ref extraction and
 voice-free historical baselines. `variant.test.ts` extracts two real Git fixture refs and checks
 both restart scenarios against each ref’s distinct carrier, rejects pre-carrier refs, refreshes the
-old extraction cache and preserves working variants and unrelated module fallbacks. These prompt
-and variant tests need no database or live model calls.
+old extraction cache and preserves working variants and unrelated module fallbacks.
+`chat-message.test.ts` commits main's real chat renderer from before and after the sender note to
+two fixture refs and checks every human chat (opening and history) byte for byte: no note for the
+old ref, the exact note for the new one, the working renderer for `working`, literal non-chat
+messages, and explicit failures for a missing renderer or export. It reads the old renderer from
+Git history, so it needs a full clone, as CI checks out. These prompt, variant and chat tests need
+no database or live model calls; `evals.test.ts` also checks that `runScenario` delivers the note
+on both the history and the opening chat.
 
 ### Read-only discovery is not starting implementation
 

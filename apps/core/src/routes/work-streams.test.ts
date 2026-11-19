@@ -2783,20 +2783,45 @@ describe('work-streams routes', () => {
       expect(remove.status).toBe(409)
       expect((await remove.json()).error).toContain('ficus workstream advance')
 
-      // A review wait left from before the flow is neither approved nor sent back through the legacy verbs.
-      const { wait } = await openWait(db, { workStreamId: stream.id, type: 'review', message: 'older review' })
+      const openReviewWaits = async () =>
+        ((await (await apiFetch(`/api/workstreams/${stream.id}`)).json()).openWaits ?? [])
+          .filter((open: { type: string }) => open.type === 'review')
+          .map((open: { id: string }) => open.id)
+
+      // With nothing to close, approve and send-back are refused and name the replacement.
       for (const [path, body] of [
         [`/api/workstreams/${stream.id}/approve`, {}],
         [`/api/workstreams/${stream.id}/send-back`, { note: 'needs work' }],
-        [`/api/workstreams/${stream.id}/waits/${wait.id}/resolve`, { resolution: 'approved' }],
-        [`/api/workstreams/${stream.id}/waits/${wait.id}/resolve`, { resolution: 'sent_back', note: 'needs work' }],
       ] as const) {
         const refused = await postJson(path, body)
         expect({ path, status: refused.status }).toEqual({ path, status: 409 })
         expect((await refused.json()).error).toContain('ficus workstream advance')
       }
-      const after = await (await apiFetch(`/api/workstreams/${stream.id}`)).json()
-      expect((after.openWaits ?? []).map((open: { id: string }) => open.id)).toEqual([wait.id])
+
+      // A review wait opened before these refusals (or before the flow was activated) cannot be
+      // approved, but send-back still clears it so the stream is not left blocked.
+      const { wait: older } = await openWait(db, { workStreamId: stream.id, type: 'review', message: 'older review' })
+      for (const [path, body] of [
+        [`/api/workstreams/${stream.id}/approve`, {}],
+        [`/api/workstreams/${stream.id}/waits/${older.id}/resolve`, { resolution: 'approved' }],
+      ] as const) {
+        const refused = await postJson(path, body)
+        expect({ path, status: refused.status }).toEqual({ path, status: 409 })
+        expect((await refused.json()).error).toContain('ficus workstream advance')
+      }
+      expect(await openReviewWaits()).toEqual([older.id])
+      expect(
+        (await postJson(`/api/workstreams/${stream.id}/send-back`, { note: 'superseded by the flow' })).status
+      ).toBe(200)
+      expect(await openReviewWaits()).toEqual([])
+
+      const { wait: typed } = await openWait(db, { workStreamId: stream.id, type: 'review', message: 'another' })
+      const resolved = await postJson(`/api/workstreams/${stream.id}/waits/${typed.id}/resolve`, {
+        resolution: 'sent_back',
+        note: 'superseded by the flow',
+      })
+      expect(resolved.status).toBe(200)
+      expect(await openReviewWaits()).toEqual([])
     })
 
     it('message-only handoff no longer opens a review wait (route removed)', async () => {

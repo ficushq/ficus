@@ -476,7 +476,9 @@ recorded — the note is never silently dropped.
 > `ficus workstream advance` for step outcomes, returns, rework and participant
 > revisions, and `ficus workstream finish` for delivery. `approve` and
 > `send-back` find no review wait on a flow stream, and their error says the
-> same.
+> same. One exception: `send-back` still closes a review wait that was opened
+> on a flow stream before these refusals existed, so that stream is not left
+> blocked.
 
 ### request-review
 

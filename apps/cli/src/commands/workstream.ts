@@ -1020,7 +1020,7 @@ only when a human actually answered elsewhere, never an inferred answer.
   ws.command('send-back <id>')
     .alias('reject')
     .description(
-      'Legacy, streams without a flow: close the open review wait with required feedback. Flows return work with workstream advance'
+      'Legacy, streams without a flow: close the open review wait with required feedback (on a flow stream, only a review wait left open from before). Flows return work with workstream advance'
     )
     .option('-m, --message <feedback>', 'Send-back feedback (required)')
     .option('--note <note>', 'Alias for -m/--message')

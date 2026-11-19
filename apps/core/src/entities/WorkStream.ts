@@ -1957,15 +1957,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         }
         throw new Error(`Cannot send back a ${locked.status} work stream`)
       }
-      const [run] = await tx
-        .select({ activated: workStreamFlowRuns.activated })
-        .from(workStreamFlowRuns)
-        .where(eq(workStreamFlowRuns.workStreamId, this.id))
-      if (run?.activated) {
-        const { FLOW_REFUSALS } = await import('../services/workflows/execution')
-        const { WorkflowError } = await import('../services/workflows/catalog')
-        throw new WorkflowError(FLOW_REFUSALS.reviewWait, 409)
-      }
+      // A flow opens no review waits, but one opened before this was refused (or before the flow
+      // was activated) would otherwise block the stream for good, so send-back still clears it.
       const closed = await closeOpenWaits(
         tx,
         { workStreamId: this.id, type: 'review', ...(opts.waitId ? { waitId: opts.waitId } : {}) },
@@ -1973,6 +1966,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         { note, closedAt: now }
       )
       if (closed.length === 0) {
+        const [run] = await tx
+          .select({ activated: workStreamFlowRuns.activated })
+          .from(workStreamFlowRuns)
+          .where(eq(workStreamFlowRuns.workStreamId, this.id))
+        if (run?.activated) {
+          const { FLOW_REFUSALS } = await import('../services/workflows/execution')
+          const { WorkflowError } = await import('../services/workflows/catalog')
+          throw new WorkflowError(FLOW_REFUSALS.reviewWait, 409)
+        }
         if (opts.waitId) {
           throw new WorkStreamWaitResolveError('wait_already_closed', `Wait ${opts.waitId} was closed concurrently`)
         }
