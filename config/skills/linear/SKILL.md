@@ -33,7 +33,7 @@ linear team list
 
 ## Writing
 
-Pass `--no-input` so the CLI fails instead of waiting for a prompt, and name every target explicitly.
+Everything you write through the CLI (issues, descriptions, comments) appears in Linear under the connected account, usually a person's own name. Treat it as public text: follow the squad's public voice and do not mention Ficus internals. Pass `--no-input` so the CLI fails instead of waiting for a prompt, and name every target explicitly.
 
 ```bash
 linear --no-input issue create --team ENG --title "Fix login timeout" --description-file - -y <<'EOF'
