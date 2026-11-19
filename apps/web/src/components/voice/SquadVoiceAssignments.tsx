@@ -1,3 +1,4 @@
+import { VoiceDisclosure } from './VoiceDisclosure'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DEFAULT_PUBLIC_VOICE_ID, type Squad, type PublicVoiceProfileJson } from '@ficus/shared'
@@ -23,16 +24,24 @@ function AssignmentOption({
   const { can, isLoading } = usePermissions(squad.id)
   const readOnly = isLoading || !can('squads:update')
   return (
-    <label data-squad-id={squad.id} className="block text-sm text-secondary">
+    <label
+      data-squad-id={squad.id}
+      className="flex min-h-11 items-start gap-2 rounded-lg border border-th-border p-3 text-sm text-secondary"
+    >
       <input
         type="checkbox"
+        className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
         checked={checked}
         disabled={disabled || readOnly}
         onChange={(e) => onChange(e.target.checked)}
-      />{' '}
-      {squad.name}
-      {readOnly && <span className="text-xs text-muted"> (read-only)</span>}
-      {squad.publicVoice?.base && <span className="block text-xs text-muted">{CUSTOM_VOICE_ASSIGNMENT_NOTE}</span>}
+      />
+      <span className="min-w-0 break-words">
+        {squad.name}
+        {readOnly && <span className="text-xs text-muted"> (read-only)</span>}
+        {squad.publicVoice?.base && (
+          <span className="mt-1 block text-xs leading-relaxed text-muted">{CUSTOM_VOICE_ASSIGNMENT_NOTE}</span>
+        )}
+      </span>
     </label>
   )
 }
@@ -100,25 +109,31 @@ export function SquadVoiceAssignments({
           Unassigned squads already use the instance default. Assigning default clears a squad's assignment.
         </p>
       )}
-      <fieldset disabled={profile.disabled || apply.isPending} className="space-y-2">
-        <legend className="text-sm font-medium text-primary">Assign to squads</legend>
-        {available.map((squad) => (
-          <AssignmentOption
-            key={squad.id}
-            squad={squad}
-            checked={edits[squad.id] ?? usesProfile(squad)}
-            disabled={profile.disabled || apply.isPending || (isDefault && !squad.publicVoiceId)}
-            onChange={(checked) => setEdits((current) => ({ ...current, [squad.id]: checked }))}
-          />
-        ))}
-        <button
-          className="ficus-button ficus-button-secondary rounded px-3 py-1 text-sm"
-          disabled={profile.disabled || !changes.length || apply.isPending}
-          onClick={() => apply.mutate()}
-        >
-          {apply.isPending ? 'Applying…' : 'Apply assignments'}
-        </button>
-      </fieldset>
+      <VoiceDisclosure summary="Assign to squads">
+        <div className="mt-3">
+          <fieldset disabled={profile.disabled || apply.isPending} className="space-y-2">
+            <legend className="sr-only">Squad assignments</legend>
+            <div className="grid gap-2">
+              {available.map((squad) => (
+                <AssignmentOption
+                  key={squad.id}
+                  squad={squad}
+                  checked={edits[squad.id] ?? usesProfile(squad)}
+                  disabled={profile.disabled || apply.isPending || (isDefault && !squad.publicVoiceId)}
+                  onChange={(checked) => setEdits((current) => ({ ...current, [squad.id]: checked }))}
+                />
+              ))}
+            </div>
+            <button
+              className="ficus-button ficus-button-secondary rounded px-3 py-1 text-sm"
+              disabled={profile.disabled || !changes.length || apply.isPending}
+              onClick={() => apply.mutate()}
+            >
+              {apply.isPending ? 'Applying…' : 'Apply assignments'}
+            </button>
+          </fieldset>
+        </div>
+      </VoiceDisclosure>
       {profile.disabled && <p className="text-xs text-muted">Disabled profiles cannot be assigned.</p>}
       {notice && (
         <p role="status" className="text-xs text-muted">

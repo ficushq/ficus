@@ -2,31 +2,18 @@ import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { fireEvent, waitFor } from '@testing-library/dom'
-import { integrationQueries } from '../../queryOptions'
+import { queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { AccountVoiceDerivation } from './AccountVoiceDerivation'
 
-export const account = (id: string, login = id, over = {}) => ({
-  id,
-  providerKey: 'github',
-  displayName: `Display ${login}`,
-  enabled: true,
-  adapterVersion: 1,
-  configuration: { version: 1, login },
-  credentialConfigured: true,
-  authState: 'authenticated',
-  healthState: 'healthy',
-  validationExpiresAt: '2999-01-01',
-  ...over,
-})
+const account = (id: string, login = id) => ({ id, login, displayName: `Display ${login}` })
 async function fixture(
   accounts: unknown[],
   action: (container: HTMLElement, dom: Awaited<ReturnType<typeof acquireDomHarness>>) => Promise<void>
 ) {
   const dom = await acquireDomHarness({ url: 'http://localhost' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [{ key: 'github', enabled: true }] })
-  client.setQueryData(integrationQueries.pool('github').queryKey, accounts)
+  client.setQueryData(queries.publicVoices.githubAccounts().queryKey, accounts)
   try {
     const { root, container } = dom.createRoot()
     await dom.act(async () =>
@@ -45,14 +32,11 @@ async function fixture(
   }
 }
 test('no usable account links to Integrations without showing a derive form', async () => {
-  await fixture(
-    [account('disabled', 'octo', { enabled: false }), account('expired', 'old', { validationExpiresAt: '2000-01-01' })],
-    async (container) => {
-      expect(container.textContent).toContain('Connect a GitHub account first')
-      expect(container.querySelector('a')?.getAttribute('href')).toBe('/settings?section=integrations')
-      expect(container.querySelector('[aria-label="GitHub login"]')).toBeNull()
-    }
-  )
+  await fixture([], async (container) => {
+    expect(container.textContent).toContain('Connect a GitHub account first')
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('/settings?section=integrations')
+    expect(container.querySelector('[aria-label="GitHub login"]')).toBeNull()
+  })
 })
 test('single usable account is selected and prefilled but editable, and reads through the selected connection', async () => {
   const original = globalThis.fetch
@@ -64,6 +48,11 @@ test('single usable account is selected and prefilled but editable, and reads th
         return Response.json({ error: 'github_connection_unavailable' }, { status: 422 })
       }) as typeof fetch
 
+      const filters = [...container.querySelectorAll('details')].find((el) =>
+        el.querySelector('summary')?.textContent?.includes('Filter activity')
+      )
+      expect(filters).toBeDefined()
+      expect(filters!.open).toBe(false)
       expect(container.textContent).toContain('GitHub account to read through')
       expect(container.textContent).toContain('Display octocat')
       const login = container.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')!

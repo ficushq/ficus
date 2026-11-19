@@ -22,7 +22,7 @@ export function PublicVoiceStep({
   onConnectGitHub: () => void
 }) {
   const client = useQueryClient()
-  const { accounts } = useVoiceAccounts()
+  const { accounts, isPending: accountsPending, error: accountsError } = useVoiceAccounts()
   const { data: squads = [] } = useQuery(queries.squads.list())
   const target = createdSquad ?? pickMostRecentlyCreated(squads)
   const [draft, setDraft] = useState<ProfileDraft | null>(null)
@@ -33,6 +33,7 @@ export function PublicVoiceStep({
   const [assignmentError, setAssignmentError] = useState('')
   const [complete, setComplete] = useState(false)
   const saving = useRef(false)
+  const accountFields = useRef<HTMLFieldSetElement>(null)
   const id = profileIdFromName(draft?.name ?? '')
   const refresh = () =>
     Promise.all([
@@ -117,6 +118,7 @@ export function PublicVoiceStep({
         </button>
       </div>
     )
+  if (githubDone && (accountsPending || accountsError)) return <AccountVoiceDerivation />
   if (!githubDone || !accounts.length)
     return (
       <div className="space-y-3">
@@ -130,7 +132,7 @@ export function PublicVoiceStep({
     )
   return (
     <div className="space-y-3">
-      <fieldset disabled={save.isPending}>
+      <fieldset ref={accountFields} disabled={save.isPending} hidden={Boolean(draft)}>
         <AccountVoiceDerivation
           onTargetChange={() => {
             if (!saving.current) {
@@ -145,7 +147,22 @@ export function PublicVoiceStep({
         />
       </fieldset>
       {draft && (
-        <div className="space-y-3 rounded-xl border border-panel-border p-4">
+        <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-medium text-primary">Review your voice</h4>
+            <button
+              className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
+              disabled={save.isPending}
+              onClick={() => {
+                setDraft(null)
+                requestAnimationFrame(() =>
+                  accountFields.current?.querySelector<HTMLInputElement>('[aria-label="GitHub login"]')?.focus()
+                )
+              }}
+            >
+              Back to derivation
+            </button>
+          </div>
           <VoiceProfileDraftFields draft={draft} setDraft={setDraft} disabled={save.isPending} />
           <p className="text-xs text-muted">New profile id: {id}. Nothing is saved until you save the draft.</p>
           <p className="text-xs text-muted">
@@ -157,7 +174,7 @@ export function PublicVoiceStep({
             </p>
           )}
           <button
-            className="ficus-button ficus-button-primary rounded px-3 py-1.5 text-sm"
+            className="ficus-button ficus-button-primary min-h-11 rounded px-3 py-1.5 text-sm sm:min-h-0"
             disabled={
               save.isPending ||
               !draft.name.trim() ||

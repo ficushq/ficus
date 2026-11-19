@@ -1,3 +1,4 @@
+import { VoiceDisclosure } from './VoiceDisclosure'
 import { useState } from 'react'
 import { useVoiceDerivation } from './useVoiceDerivation'
 import { VoiceDerivationProgress } from './VoiceDerivationProgress'
@@ -77,15 +78,98 @@ function DeriveVoiceCardContent({
 
   const hasProgress = mutation.isPending || Boolean(mutation.counts) || mutation.history.length > 0 || Boolean(result)
 
+  const filterInputs = (
+    <>
+      <label className="text-xs text-muted">
+        Only before (for example when Ficus started posting from the account)
+        <input
+          type="date"
+          disabled={mutation.isPending}
+          aria-label="Only before"
+          className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+          value={before}
+          onChange={(e) => setBefore(e.target.value)}
+        />
+      </label>
+      <label className="text-xs text-muted">
+        Only on or after
+        <input
+          type="date"
+          disabled={mutation.isPending}
+          aria-label="Only on or after"
+          className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+          value={after}
+          onChange={(e) => setAfter(e.target.value)}
+        />
+      </label>
+      <label className="text-xs text-muted">
+        Only these repositories (owner/name)
+        <input
+          disabled={mutation.isPending}
+          aria-label="Only these repositories"
+          className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+          value={repos}
+          onChange={(e) => setRepos(e.target.value)}
+        />
+      </label>
+      <label className="text-xs text-muted">
+        Leave out these repositories
+        <input
+          disabled={mutation.isPending}
+          aria-label="Leave out these repositories"
+          className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+          value={excludeRepos}
+          onChange={(e) => setExcludeRepos(e.target.value)}
+        />
+      </label>
+    </>
+  )
+  const surfaceInputs = (
+    <div className="flex flex-wrap gap-3 text-xs text-secondary">
+      {DERIVATION_SURFACES.map((surface) => (
+        <label key={surface} className="flex items-center gap-1">
+          <input
+            disabled={mutation.isPending}
+            type="checkbox"
+            checked={surfaces.includes(surface)}
+            onChange={(e) =>
+              setSurfaces((current) =>
+                e.target.checked ? [...current, surface] : current.filter((s) => s !== surface)
+              )
+            }
+          />
+          {SURFACE_LABELS[surface]}
+        </label>
+      ))}
+      <label className="flex items-center gap-1">
+        <input
+          disabled={mutation.isPending}
+          type="checkbox"
+          checked={includeToolAuthored}
+          onChange={(e) => setIncludeToolAuthored(e.target.checked)}
+        />
+        Keep items that look written by an assistant or a bot
+      </label>
+    </div>
+  )
+
   return (
     <div className="space-y-3 rounded-xl border border-panel-border bg-surface p-4">
       <div>
         <h4 className="text-sm font-medium text-primary">Derive a voice from GitHub</h4>
         <p className="mt-1 text-xs text-muted">
-          Samples a GitHub user's pull requests, comments, reviews and commit messages through{' '}
-          {target.kind === 'connection' ? 'this GitHub account' : "this squad's GitHub connection"} and drafts a style.
-          Nothing is saved until you edit and save the draft. The draft describes a writing style; agents never sign as
-          or claim to be that person.
+          {target.kind === 'connection' ? (
+            <>
+              Read pull requests, comments, reviews and commits through this GitHub account. Nothing is saved until you
+              save the draft. This describes a writing style; agents never sign as or claim to be that person.
+            </>
+          ) : (
+            <>
+              Samples a GitHub user's pull requests, comments, reviews and commit messages through this squad's GitHub
+              connection and drafts a style. Nothing is saved until you edit and save the draft. The draft describes a
+              writing style; agents never sign as or claim to be that person.
+            </>
+          )}
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -94,82 +178,23 @@ function DeriveVoiceCardContent({
           <input
             disabled={mutation.isPending}
             aria-label="GitHub login"
-            className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
+            className={`ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-primary ${target.kind === 'connection' ? 'min-h-11 text-base sm:min-h-0 sm:text-sm' : 'text-sm'}`}
             value={login}
             onChange={(e) => setLogin(e.target.value)}
           />
         </label>
-        <label className="text-xs text-muted">
-          Only before (for example when Ficus started posting from the account)
-          <input
-            type="date"
-            disabled={mutation.isPending}
-            aria-label="Only before"
-            className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
-            value={before}
-            onChange={(e) => setBefore(e.target.value)}
-          />
-        </label>
-        <label className="text-xs text-muted">
-          Only on or after
-          <input
-            type="date"
-            disabled={mutation.isPending}
-            aria-label="Only on or after"
-            className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
-            value={after}
-            onChange={(e) => setAfter(e.target.value)}
-          />
-        </label>
-        <label className="text-xs text-muted">
-          Only these repositories (owner/name)
-          <input
-            disabled={mutation.isPending}
-            aria-label="Only these repositories"
-            className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
-            value={repos}
-            onChange={(e) => setRepos(e.target.value)}
-          />
-        </label>
-        <label className="text-xs text-muted">
-          Leave out these repositories
-          <input
-            disabled={mutation.isPending}
-            aria-label="Leave out these repositories"
-            className="ficus-field mt-1 w-full rounded-md border border-th-border bg-surface px-2 py-1 text-sm text-primary"
-            value={excludeRepos}
-            onChange={(e) => setExcludeRepos(e.target.value)}
-          />
-        </label>
+        {target.kind === 'squad' && filterInputs}
       </div>
-      <div className="flex flex-wrap gap-3 text-xs text-secondary">
-        {DERIVATION_SURFACES.map((surface) => (
-          <label key={surface} className="flex items-center gap-1">
-            <input
-              disabled={mutation.isPending}
-              type="checkbox"
-              checked={surfaces.includes(surface)}
-              onChange={(e) =>
-                setSurfaces((current) =>
-                  e.target.checked ? [...current, surface] : current.filter((s) => s !== surface)
-                )
-              }
-            />
-            {SURFACE_LABELS[surface]}
-          </label>
-        ))}
-        <label className="flex items-center gap-1">
-          <input
-            disabled={mutation.isPending}
-            type="checkbox"
-            checked={includeToolAuthored}
-            onChange={(e) => setIncludeToolAuthored(e.target.checked)}
-          />
-          Keep items that look written by an assistant or a bot
-        </label>
-      </div>
+      {target.kind === 'connection' ? (
+        <VoiceDisclosure summary="Filter activity (optional)">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">{filterInputs}</div>
+          <div className="mt-3">{surfaceInputs}</div>
+        </VoiceDisclosure>
+      ) : (
+        surfaceInputs
+      )}
       <button
-        className="ficus-button ficus-button-primary rounded-md px-3 py-1.5 text-sm"
+        className={`ficus-button ficus-button-primary rounded-md px-3 py-1.5 text-sm ${target.kind === 'connection' ? 'min-h-11 sm:min-h-0' : ''}`}
         disabled={!login.trim() || surfaces.length === 0 || mutation.isPending}
         onClick={() => mutation.mutate()}
       >
@@ -187,10 +212,11 @@ function DeriveVoiceCardContent({
         <div role="alert" className="text-xs text-status-danger-500">
           <p>{error}</p>
           {errorCode && (
-            <details className="mt-1">
-              <summary className="cursor-pointer">Details</summary>
-              <code>{errorCode}</code>
-            </details>
+            <VoiceDisclosure summary="Details" className="mt-1">
+              <div className="mt-2">
+                <code>{errorCode}</code>
+              </div>
+            </VoiceDisclosure>
           )}
         </div>
       )}

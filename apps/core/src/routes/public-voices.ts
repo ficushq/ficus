@@ -1,7 +1,10 @@
 import { deriveSchema, respondWithVoiceDerivation } from './voice-derivation'
 import { z } from 'zod'
 import type { Identity } from '../services/rbac'
-import { resolveInstanceGitHubConnection } from '../services/integrations/github/resolve-connection'
+import {
+  resolveInstanceGitHubConnection,
+  listPublicVoiceGitHubAccounts,
+} from '../services/integrations/github/resolve-connection'
 import { derivationOwners } from '../services/public-voice/operation'
 import { Hono } from 'hono'
 import {
@@ -63,6 +66,19 @@ publicVoicesRoutes.post(
     // Resolution is asynchronous: another caller may have acquired ownership while it ran.
     if (derivationOwners.has(`connection:${connectionId}`)) return c.json({ error: 'derivation_in_progress' }, 429)
     return respondWithVoiceDerivation(c, { kind: 'connection', connectionId }, identity.userId ?? null, body)
+  }
+)
+
+// Selection is part of deriving, not integration administration. Keep the pool's read gate unchanged.
+publicVoicesRoutes.get(
+  '/github-accounts',
+  requirePermission('agent-types:update'),
+  requirePermission('integrations:use'),
+  async (c) => {
+    const identity = c.get('identity') as Identity | undefined
+    if (identity?.type !== 'user') return c.json({ error: 'derivation_requires_person' }, 403)
+    c.header('Cache-Control', 'no-store')
+    return c.json(await listPublicVoiceGitHubAccounts())
   }
 )
 

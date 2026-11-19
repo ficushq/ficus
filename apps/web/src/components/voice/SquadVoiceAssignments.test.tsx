@@ -44,6 +44,11 @@ for (const disabled of [false, true])
           </QueryClientProvider>
         )
       )
+      const disclosure = container.querySelector('details')
+      expect(disclosure).not.toBeNull()
+      expect(disclosure!.open).toBe(false)
+      await dom.act(async () => disclosure!.querySelector('summary')!.click())
+      expect(disclosure!.open).toBe(true)
       expect(container.textContent).toContain('Assigned squads: Original')
       expect(container.textContent).toContain(
         "uses its own custom voice; assigning a profile has no effect until that is cleared in the squad's Voice settings"

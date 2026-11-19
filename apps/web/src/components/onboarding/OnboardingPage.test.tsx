@@ -746,6 +746,7 @@ test('the gated optional voice action actually opens the core GitHub setup step'
   const client = seededQueryClient(['settings:read', 'agent-types:update'], coreSettledStatus())
   const { integrationQueries, queries } = await import('../../queryOptions')
   client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [{ key: 'github', enabled: true }] })
+  client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [])
   client.setQueryData(integrationQueries.pool('github').queryKey, [])
   client.setQueryData(queries.squads.list().queryKey, [])
   try {

@@ -209,6 +209,8 @@ export function isSectionAllowed(
   isLoading: boolean,
   integrationAllowed = false
 ): boolean {
+  // Derivation and new-profile creation do not grant access to protected profile bodies.
+  if (section === 'voices') return !isLoading && (can('agent-types:read') || can('agent-types:update'))
   if (section === 'integrations') return !isLoading && integrationAllowed
   if (section === 'git') {
     if (isLoading) return false

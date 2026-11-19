@@ -96,26 +96,19 @@ test('Voices derives through accounts instead of squads and still opens Save as 
   const { acquireDomHarness } = await import('../../test/domHarness')
   const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
   const { MemoryRouter } = await import('react-router')
-  const { integrationQueries, queries } = await import('../../queryOptions')
+  const { queries } = await import('../../queryOptions')
   const { PermissionsProvider } = await import('../../hooks/usePermissions')
   const { VoicesTab } = await import('./VoicesTab')
   const dom = await acquireDomHarness({ url: 'http://localhost' })
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
   client.setQueryData(queries.publicVoices.list().queryKey, [profile({})])
   client.setQueryData(queries.squads.list().queryKey, [{ id: 'squad', name: 'Squad name', publicVoiceId: 'team' }])
-  client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [{ key: 'github', enabled: true }] })
-  client.setQueryData(integrationQueries.pool('github').queryKey, [
+
+  client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [
     {
       id: 'account',
-      providerKey: 'github',
       displayName: 'Display account',
-      enabled: true,
-      adapterVersion: 1,
-      configuration: { login: 'octo' },
-      credentialConfigured: true,
-      authState: 'authenticated',
-      healthState: 'healthy',
-      validationExpiresAt: '2999-01-01',
+      login: 'octo',
     },
   ])
   const original = globalThis.fetch

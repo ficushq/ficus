@@ -1,6 +1,7 @@
 import type {
   DerivationFilters,
   PublicSurface,
+  PublicVoiceGitHubAccount,
   PublicVoiceProfileJson,
   PublicVoiceSurfaces,
   SquadPublicVoice,
@@ -20,6 +21,11 @@ export interface PublicVoiceProfileInput {
   description?: string | null
   base: string
   surfaces: PublicVoiceSurfaces
+}
+
+/** Usable identities only, authorized by the same person and grants as deriving. */
+export function getPublicVoiceGitHubAccounts(): Promise<PublicVoiceGitHubAccount[]> {
+  return apiFetch('/public-voices/github-accounts')
 }
 
 export function getPublicVoices(): Promise<PublicVoiceProfileJson[]> {

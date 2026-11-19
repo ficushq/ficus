@@ -37,15 +37,13 @@ export function AccountVoiceDerivation({
       <span className="block text-xs text-muted">GitHub account to read through</span>
       <VoicePicker
         label="GitHub account to read through"
+        className="min-h-11 w-full sm:min-h-0 sm:w-auto"
         value={selected?.id ?? ''}
         options={[
           { value: '', label: 'Choose a GitHub account' },
           ...accounts.map((c) => ({
             value: c.id,
-            label:
-              c.displayName && c.displayName !== c.configuration.login
-                ? `${c.configuration.login} (${c.displayName})`
-                : c.configuration.login!,
+            label: c.displayName ? `${c.login} (${c.displayName})` : c.login,
           })),
         ]}
         onChange={(id) => {
@@ -56,7 +54,7 @@ export function AccountVoiceDerivation({
         <DeriveVoiceCard
           key={selected.id}
           target={{ kind: 'connection', connectionId: selected.id }}
-          linkedLogin={selected.configuration.login!}
+          linkedLogin={selected.login}
           {...cardProps}
         />
       )}

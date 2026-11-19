@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
-import { fireEvent } from '@testing-library/dom'
+import { fireEvent, isInaccessible } from '@testing-library/dom'
 import type { Squad } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
-import { integrationQueries, queries } from '../../queryOptions'
+import { queries } from '../../queryOptions'
 import { PublicVoiceStep } from './PublicVoiceStep'
 
 const result = {
@@ -33,19 +33,11 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
   test(`onboarding voice save: ${scenario}`, async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost' })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-    client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [{ key: 'github', enabled: true }] })
-    client.setQueryData(integrationQueries.pool('github').queryKey, [
+
+    client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [
       {
         id: 'account',
-        providerKey: 'github',
-        displayName: 'octo',
-        enabled: true,
-        adapterVersion: 1,
-        configuration: { login: 'octo' },
-        credentialConfigured: true,
-        authState: 'authenticated',
-        healthState: 'healthy',
-        validationExpiresAt: '2999-01-01',
+        login: 'octo',
       },
     ])
     const squads =
@@ -66,7 +58,8 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
         body: init?.body ? JSON.parse(String(init.body)) : null,
       }
       calls.push(request)
-      if (request.method === 'GET') return Response.json(squads)
+      if (request.method === 'GET')
+        return Response.json(request.url.endsWith('/github-accounts') ? [{ id: 'account', login: 'octo' }] : squads)
       if (request.url.endsWith('/derive')) return Response.json(result)
       if (request.url.endsWith('/public-voices'))
         return scenario === 'collision'
@@ -100,6 +93,13 @@ for (const scenario of ['created', 'recent', 'none', 'collision', 'assignment-fa
         })
       await click('Derive')
       await click('Use this draft')
+      expect(isInaccessible(container.querySelector('[aria-label="GitHub login"]')!)).toBe(true)
+      expect(isInaccessible(container.querySelector('[aria-label="Voice"]')!)).toBe(false)
+      if (scenario === 'none') {
+        await click('Back to derivation')
+        expect(isInaccessible(container.querySelector('[aria-label="GitHub login"]')!)).toBe(false)
+        await click('Use this draft')
+      }
       expect(container.querySelector<HTMLInputElement>('[aria-label="Profile name"]')!.value).toBe('From GitHub')
       expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Voice"]')!.value).toBe(result.draft.base)
       const target = scenario === 'created' ? 'Created here' : 'Recent'
@@ -158,8 +158,8 @@ test('gated step opens GitHub setup and never shows the derivation form', async 
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
   let opened = 0
   client.setQueryData(queries.squads.list().queryKey, [])
-  client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [{ key: 'github', enabled: true }] })
-  client.setQueryData(integrationQueries.pool('github').queryKey, [])
+
+  client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [])
   try {
     const { root, container } = dom.createRoot()
     await dom.act(async () =>

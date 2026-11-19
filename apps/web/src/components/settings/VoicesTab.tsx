@@ -47,7 +47,7 @@ export function VoiceProfileList({
           data-voice-profile={profile.id}
           className="flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-panel-border bg-surface p-4 sm:flex-row sm:items-start"
         >
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 font-semibold text-primary">
               <span>{profile.name}</span>
               {profile.id === DEFAULT_PUBLIC_VOICE_ID && (
@@ -199,8 +199,13 @@ export function VoicesTab() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
   const canWrite = can('agent-types:update')
-  const { data: profiles = [], isLoading } = useQuery(queries.publicVoices.list())
-  const { data: squads = [] } = useQuery(queries.squads.list())
+  const canRead = can('agent-types:read')
+  const {
+    data: profiles = [],
+    isLoading,
+    error: profilesError,
+  } = useQuery({ ...queries.publicVoices.list(), enabled: canRead })
+  const { data: squads = [] } = useQuery({ ...queries.squads.list(), enabled: canRead })
   const [editing, setEditing] = useState<{
     id: string
     initial: ProfileDraft
@@ -221,7 +226,6 @@ export function VoicesTab() {
   const [newProfileSeed, setNewProfileSeed] = useState<Partial<ProfileDraft> | null>(null)
   const startNew = (initial: Partial<ProfileDraft> = {}) => setNewProfileSeed(initial)
 
-  if (isLoading) return <p className="text-sm text-muted">Loading voice profiles…</p>
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted">
@@ -229,7 +233,18 @@ export function VoicesTab() {
         channel messages. Squads use the instance default until they are assigned a profile in their Voice settings. The
         fixed public-text rules always apply on top.
       </p>
-      {editing && (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h4 className="text-sm font-medium text-primary">Voice profiles</h4>
+        {canWrite && (
+          <button
+            className="ficus-button ficus-button-primary min-h-11 rounded px-3 py-2 sm:min-h-0"
+            onClick={() => startNew()}
+          >
+            Add profile
+          </button>
+        )}
+      </div>
+      {editing && (editing.isNew || canRead) && (
         <ProfileEditor
           key={editing.id}
           id={editing.id}
@@ -240,16 +255,26 @@ export function VoicesTab() {
           onClose={() => setEditing(null)}
         />
       )}
-      <VoiceProfileList
-        profiles={profiles}
-        assignments={(profile) => <SquadVoiceAssignments key={profile.id} profile={profile} squads={squads} />}
-        canWrite={canWrite}
-        onEdit={(profile) =>
-          setEditing({ id: profile.id, initial: draftOf(profile), isNew: false, hasTemplate: profile.hasTemplate })
-        }
-        onToggle={(profile) => toggle.mutate(profile)}
-        onDelete={(profile) => remove.mutate(profile)}
-      />
+      {!canRead ? (
+        <p className="text-sm text-muted">Profile listing requires permission to read voice profiles.</p>
+      ) : isLoading ? (
+        <p className="text-sm text-muted">Loading voice profiles…</p>
+      ) : profilesError ? (
+        <p role="alert" className="text-sm text-status-danger-500">
+          Could not load voice profiles.
+        </p>
+      ) : (
+        <VoiceProfileList
+          profiles={profiles}
+          assignments={(profile) => <SquadVoiceAssignments key={profile.id} profile={profile} squads={squads} />}
+          canWrite={canWrite}
+          onEdit={(profile) =>
+            setEditing({ id: profile.id, initial: draftOf(profile), isNew: false, hasTemplate: profile.hasTemplate })
+          }
+          onToggle={(profile) => toggle.mutate(profile)}
+          onDelete={(profile) => remove.mutate(profile)}
+        />
+      )}
       {remove.error && <p className="text-xs text-status-danger-500">{errorText(remove.error)}</p>}
       <NewProfileDialog
         isOpen={newProfileSeed !== null}
@@ -266,9 +291,9 @@ export function VoicesTab() {
       />
       {canWrite && (
         <>
-          <button className="ficus-button ficus-button-primary rounded px-3 py-2" onClick={() => startNew()}>
-            Add profile
-          </button>
+          <h4 className="border-t border-th-border pt-5 text-sm font-medium text-primary">
+            Create a voice from GitHub
+          </h4>
           <AccountVoiceDerivation
             onTargetChange={() => {
               setNewProfileSeed(null)
