@@ -99,6 +99,7 @@ export interface ConnectionServiceDependencies {
    * Whether the provider's plugin can hold OAuth-granted connections (an OAuth2
    * plugin or a manual plugin with a managed driver). `create` refuses an
    * authorization grant for such a provider unless `authorizationKind` is explicit.
+   * Fails closed: without this predicate every grant must state its kind.
    */
   offersOAuth?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
@@ -129,7 +130,7 @@ export class IntegrationConnectionService {
   readonly #deproject?: ConnectionServiceDependencies['deproject']
   readonly #prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
   readonly #allowsManualCredential: (providerKey: string) => boolean
-  readonly #offersOAuth: (providerKey: string) => boolean
+  readonly #offersOAuth?: (providerKey: string) => boolean
   readonly #safeConfiguration: (providerKey: string, configuration: unknown) => unknown
   readonly #refreshAvailable: NonNullable<ConnectionServiceDependencies['refreshAvailable']>
   readonly #refreshAuthenticationFailure?: ConnectionServiceDependencies['refreshAuthenticationFailure']
@@ -149,7 +150,7 @@ export class IntegrationConnectionService {
     this.#deproject = dependencies.deproject
     this.#prepareRemoval = dependencies.prepareRemoval
     this.#allowsManualCredential = dependencies.allowsManualCredential ?? (() => true)
-    this.#offersOAuth = dependencies.offersOAuth ?? (() => false)
+    this.#offersOAuth = dependencies.offersOAuth
     this.#safeConfiguration = dependencies.safeConfiguration ?? ((_providerKey, configuration) => configuration)
     this.#refreshAvailable = dependencies.refreshAvailable ?? (() => undefined)
     this.#refreshAuthenticationFailure = dependencies.refreshAuthenticationFailure
@@ -168,7 +169,8 @@ export class IntegrationConnectionService {
     authorizationGrant?: true
     /**
      * `oauth2` only for material from an OAuth grant; defaults to `manual`.
-     * Required with `authorizationGrant` when the provider offers OAuth.
+     * Required with `authorizationGrant` when the provider offers OAuth, or
+     * when this service has no `offersOAuth` predicate to tell.
      */
     authorizationKind?: IntegrationAuthorizationKind
     clientAuthority?: OAuthAuthority
@@ -177,7 +179,11 @@ export class IntegrationConnectionService {
   }): Promise<SafeIntegrationConnection> {
     if (!input.authorizationGrant && !this.#allowsManualCredential(input.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
-    if (input.authorizationGrant && input.authorizationKind === undefined && this.#offersOAuth(input.providerKey))
+    if (
+      input.authorizationGrant &&
+      input.authorizationKind === undefined &&
+      (!this.#offersOAuth || this.#offersOAuth(input.providerKey))
+    )
       throw new IntegrationAuthorizationKindRequiredError(input.providerKey)
     const provider = this.#resolveProvider(input.providerKey, input.adapterVersion)
     const configuration = provider.parseConfig(input.configuration)

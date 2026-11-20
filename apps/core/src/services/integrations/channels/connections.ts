@@ -13,6 +13,7 @@ import type {
 } from '../connection-repository'
 import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { DbIntegrationAuditRecorder } from '../db-audit'
+import { pluginOffersOAuth } from '../oauth-plugin-view'
 import type { IntegrationSetupStatus } from '../plugin'
 import { credentialSetupStatus } from '../setup-status'
 import { resolveOAuthAuthority, type OAuthAuthority } from '../authorization/authority'
@@ -228,6 +229,7 @@ export class ChannelConnections {
         if (!isChannelProviderKey(key)) throw new Error(`Unknown channel provider: ${key}`)
         return this.#plugins[key].runtime.provider
       },
+      offersOAuth: (key) => isChannelProviderKey(key) && pluginOffersOAuth(this.#plugins[key]),
       audit: new DbIntegrationAuditRecorder(),
       now: this.#now,
     })

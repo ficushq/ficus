@@ -85,6 +85,8 @@ test('Desktop host setup and all four tools work with OS HOME separate from Ficu
       assignments: repository,
       credentials,
       resolveProvider: () => new BigbrainProvider(),
+      // BigBrain is manual-only, so its grant-created connections default to `manual`.
+      offersOAuth: () => false,
     })
     const local = new BigbrainLocalConnections(bindings, service)
     expect(await local.list()).toEqual({ state: 'setup_required', bindings: [] })
@@ -225,6 +227,8 @@ test('one-click Desktop setup creates, enables and reuses the connection; four t
       assignments: repository,
       credentials,
       resolveProvider: () => new BigbrainProvider(),
+      // BigBrain is manual-only, so its grant-created connections default to `manual`.
+      offersOAuth: () => false,
     })
     // Only Ficus's own rows: the shared test DB may hold other suites' connections.
     const ownRepository = {

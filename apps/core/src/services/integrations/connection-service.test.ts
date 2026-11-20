@@ -306,6 +306,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'platform_broker',
       authorizationFlowId,
     })
@@ -330,6 +331,7 @@ describe('IntegrationConnectionService', () => {
         credential: 'oauth-token',
         actor: 'user:user-1',
         authorizationGrant: true,
+        authorizationKind: 'oauth2',
         clientAuthority: 'platform_broker',
         authorizationFlowId,
       })
@@ -371,6 +373,7 @@ describe('IntegrationConnectionService', () => {
         credential: 'oauth-token',
         actor: 'user:user-1',
         authorizationGrant: true,
+        authorizationKind: 'oauth2',
         clientAuthority: 'platform_broker',
         authorizationFlowId,
       })
@@ -399,6 +402,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
     })
     expect(view.configuration).toEqual({ workspaceId: 'workspace-1' })
     expect(JSON.stringify(view)).not.toContain('TOKEN-SENTINEL')
@@ -438,6 +442,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-credential',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     const callsBeforeReconciliation = harness.validationCalls()
@@ -467,6 +472,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'historical-local-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     await harness.service.validate(created.id)
@@ -486,6 +492,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'historical-local-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     const callsBefore = harness.validationCalls()
@@ -508,6 +515,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-credential',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     const callsBeforeReconciliation = harness.validationCalls()
@@ -563,6 +571,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
     })
     await expect(service.replaceCredential(connection.id, 'token', 'user:user-1')).rejects.toThrow(
       'OAuth authorization required'
@@ -604,6 +613,19 @@ describe('IntegrationConnectionService', () => {
       const { service, getRow } = setup({ offersOAuth })
       await service.create({ ...grant(providerKey), authorizationKind })
       expect(getRow()!.authorizationKind).toBe(authorizationKind)
+    })
+
+    test('a service without an offersOAuth predicate fails closed for any grant without a kind', async () => {
+      const { service, getRow, secrets } = setup()
+      for (const providerKey of ['notion', 'slack', 'bigbrain']) {
+        await expect(service.create(grant(providerKey))).rejects.toBeInstanceOf(
+          IntegrationAuthorizationKindRequiredError
+        )
+      }
+      expect(getRow()).toBeNull()
+      expect(secrets.size).toBe(0)
+      await service.create({ ...grant('notion'), authorizationKind: 'oauth2' })
+      expect(getRow()!.authorizationKind).toBe('oauth2')
     })
 
     test('a grant for a manual-only provider (BigBrain) stays manual without a kind', async () => {
@@ -795,6 +817,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
     })
     await service.remove(connection.id, 'user:user-1', true)
     expect(getRow()).toBeNull()

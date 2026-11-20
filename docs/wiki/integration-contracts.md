@@ -320,7 +320,9 @@ instead of failing.
   explicit `authorizationKind` when the provider's plugin offers OAuth (an OAuth2
   plugin, or a manual plugin with a managed driver; see `pluginOffersOAuth`),
   throwing `IntegrationAuthorizationKindRequiredError` before any material is
-  stored. The kind is not derived: for dual-driver plugins (Slack, Linear) the
+  stored. A service built without the `offersOAuth` predicate fails closed and
+  refuses every grant that has no kind; the runtime service and the channel
+  connections service wire it. The kind is not derived: for dual-driver plugins (Slack, Linear) the
   plugin alone cannot tell a managed grant from manual material. A grant for a
   manual-only plugin (BigBrain's grant-created rows) still defaults to `manual`,
   so it is never sent to a revocation endpoint. When a grant replaces
