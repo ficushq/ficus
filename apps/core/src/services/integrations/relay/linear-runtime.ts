@@ -198,6 +198,11 @@ export function createLinearRelayDispatcher(deps: LinearRelayDispatchDependencie
  * handlers (`processLinearAppEvent`). Platform verified the signature, freshness, type and client ID
  * before ingesting. Like the direct path, a handler failure is recorded on the row, not retried;
  * failing to store the row throws so the delivery is pulled again.
+ *
+ * A redelivery whose row is already finished (processed, or carrying a recorded handler error) was
+ * handled by an earlier attempt that could not complete its receipt: it returns without running the
+ * handlers again, so the receipt completes and the delivery is acknowledged. A stored row that was
+ * never finished is processed.
  */
 export async function processRelayedLinearDelivery(
   delivery: LinearRelayDelivery,
@@ -219,10 +224,12 @@ export async function processRelayedLinearDelivery(
     if (!(error instanceof DuplicateWebhookDeliveryError)) throw error
     // Stored by an earlier attempt that did not complete its receipt: process the stored row again.
     const [existing] = await db
-      .select({ id: webhookEvents.id })
+      .select({ id: webhookEvents.id, processedAt: webhookEvents.processedAt, error: webhookEvents.error })
       .from(webhookEvents)
       .where(and(eq(webhookEvents.provider, 'linear-app'), eq(webhookEvents.deliveryId, delivery.deliveryId)))
     if (!existing) throw error
+    // Already handled (or failed in a handler, which is never retried): do not handle it twice.
+    if (existing.processedAt || existing.error) return
     eventId = existing.id
   }
   await materializeWebhookActivity('linear', eventId).catch((error) =>

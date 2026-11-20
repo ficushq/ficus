@@ -6,6 +6,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { LinearRelayDelivery } from '@ficus/shared/integration-relay'
 import { db, integrationConnections, integrationEventPollingDispatches, webhookEvents } from '../../../db'
 import { ensureQueryIndex } from '../../../test-utils/message-query-indexes'
+import { storeWebhookEvent } from '../../webhooks/store'
 import { PlatformRequestError, type platformRequest } from '../../platform/instance-client'
 import { getSecretStore } from '../../secrets'
 import { DbIntegrationConnectionRepository } from '../db-connection-repository'
@@ -280,6 +281,120 @@ describe('createLinearRelayDispatcher', () => {
     fail = false
     await dispatch(event, interests)
     expect(processed).toEqual([event.deliveryId])
+  })
+})
+
+describe('processRelayedLinearDelivery redelivery', () => {
+  const organizationId = randomUUID()
+  const live: ManagedLinearConnection = {
+    connection: { id: randomUUID(), materialRevision: randomUUID() },
+    configuration: { organizationId },
+  }
+  const interests: LinearRelayInterest[] = [{ connectionId: live.connection.id, organizationId }]
+  function delivery(): LinearRelayDelivery {
+    const deliveryId = randomUUID()
+    deliveryIds.push(deliveryId)
+    return {
+      id: randomUUID(),
+      leaseToken: randomUUID(),
+      connectionId: live.connection.id,
+      connectionRevision: live.connection.materialRevision,
+      deliveryId,
+      resourceId: organizationId,
+      resourceKey: organizationId,
+      eventType: 'Issue',
+      payload: { type: 'Issue', organizationId },
+    }
+  }
+  async function row(deliveryId: string) {
+    const [stored] = await db
+      .select()
+      .from(webhookEvents)
+      .where(and(eq(webhookEvents.provider, 'linear-app'), eq(webhookEvents.deliveryId, deliveryId)))
+    return stored
+  }
+  async function receipt(deliveryId: string) {
+    const [stored] = await db
+      .select()
+      .from(integrationEventPollingDispatches)
+      .where(
+        and(
+          eq(integrationEventPollingDispatches.providerKey, 'linear'),
+          eq(integrationEventPollingDispatches.eventKey, linearRelayReceiptKey(deliveryId))
+        )
+      )
+    return stored
+  }
+
+  test('processing succeeded but the receipt did not complete: the redelivery runs the handlers no second time', async () => {
+    const handled: string[] = []
+    const handlers = (async (ctx: { payload: Record<string, unknown>; headers: Record<string, string> }) => {
+      handled.push(ctx.headers['linear-delivery']!)
+    }) as Parameters<typeof processRelayedLinearDelivery>[1]
+    const store = new DbEventPollingDispatchStore()
+    let failComplete = true
+    const dispatch = createLinearRelayDispatcher({
+      resolveConnection: async () => live,
+      receipts: {
+        claim: (...args) => store.claim(...args),
+        release: (...args) => store.release(...args),
+        complete: async (...args) => {
+          if (failComplete) throw new Error('database unavailable')
+          return store.complete(...args)
+        },
+      },
+      process: (event) => processRelayedLinearDelivery(event, handlers),
+    })
+    const event = delivery()
+    await expect(dispatch(event, interests)).rejects.toThrow('database unavailable')
+    expect(handled).toEqual([event.deliveryId])
+    expect((await row(event.deliveryId))?.processedAt).toBeInstanceOf(Date)
+    expect((await receipt(event.deliveryId))?.completedAt ?? null).toBeNull()
+
+    // Platform redelivers the unacknowledged delivery with a new lease.
+    failComplete = false
+    await dispatch({ ...event, id: randomUUID(), leaseToken: randomUUID() }, interests)
+    expect(handled).toEqual([event.deliveryId])
+    expect((await receipt(event.deliveryId))?.completedAt).toBeInstanceOf(Date)
+  })
+
+  test('a row that recorded a handler error is not retried on redelivery', async () => {
+    let calls = 0
+    const failing = (async () => {
+      calls++
+      throw new Error('handler failed')
+    }) as Parameters<typeof processRelayedLinearDelivery>[1]
+    const event = delivery()
+    await processRelayedLinearDelivery(event, failing)
+    expect((await row(event.deliveryId))?.error).toBeTruthy()
+    await processRelayedLinearDelivery(event, failing)
+    expect(calls).toBe(1)
+  })
+
+  test('a stored row that was never processed is processed on redelivery', async () => {
+    const event = delivery()
+    // An earlier attempt stored the row and then stopped before any handler finished.
+    await storeWebhookEvent({
+      provider: 'linear-app',
+      eventType: event.eventType,
+      payload: event.payload,
+      headers: { 'linear-delivery': event.deliveryId, 'linear-event': event.eventType },
+      signature: null,
+      verified: true,
+      deliveryId: event.deliveryId,
+    })
+    expect((await row(event.deliveryId))?.processedAt ?? null).toBeNull()
+    const handled: string[] = []
+    await processRelayedLinearDelivery(event, (async (ctx: { headers: Record<string, string> }) => {
+      handled.push(ctx.headers['linear-delivery']!)
+    }) as Parameters<typeof processRelayedLinearDelivery>[1])
+    expect(handled).toEqual([event.deliveryId])
+    expect((await row(event.deliveryId))?.processedAt).toBeInstanceOf(Date)
+    const stored = await db
+      .select({ id: webhookEvents.id })
+      .from(webhookEvents)
+      .where(and(eq(webhookEvents.provider, 'linear-app'), eq(webhookEvents.deliveryId, event.deliveryId)))
+    expect(stored).toHaveLength(1)
   })
 })
 
