@@ -750,3 +750,43 @@ test('a clipped chat row expands in place to its full message, and only the butt
     await dom.cleanup()
   }
 })
+
+test('without agents:read the details panel shows the stream without chat or participant links', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  // Presence withholds working agents and the feed withholds agent rows from such a viewer.
+  const selected = card({ workingAgentIds: [] })
+  const streamRow: SquadActivityItem = {
+    id: '30:created',
+    at: new Date().toISOString(),
+    agentId: null,
+    agentTypeId: null,
+    kind: 'workstream',
+    summary: 'created',
+    preview: [{ text: 'created' }],
+    ref: { type: 'workstream', workStreamId: selected.id, workStreamNumber: selected.number },
+  }
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <MemoryRouter>
+          <ActivityFeedView
+            {...feedProps}
+            items={[streamRow]}
+            onOpen={() => {}}
+            presence={{ workingCount: 0, needsYouCount: 0, streamCount: 1, streams: [selected] }}
+            workStreamFilter={selected.id}
+            onWorkStreamFilterChange={() => {}}
+          />
+        </MemoryRouter>
+      )
+    )
+    const panel = view.container.querySelector('[data-testid="activity-work-stream-filter"]')!
+    expect(panel.textContent).toContain('Open work stream')
+    expect(panel.textContent).not.toContain('Open chat')
+    expect(panel.textContent).not.toContain('Working now')
+    await dom.act(() => view.root.unmount())
+  } finally {
+    await dom.cleanup()
+  }
+})

@@ -157,8 +157,12 @@ function Feed({ streams }: { streams: WorkStream[] }) {
 }
 const feedList = (streams: WorkStream[]) => <Feed streams={streams} />
 
-/** The Feed's "Summaries" switch: in its Active work header, beside nothing but the list it controls. */
+/** Open the Feed's Filters panel and return its "Summaries" row (the Feed keeps it under View). */
 async function feedSwitch(doc: Document) {
+  const existing = doc.querySelector<HTMLButtonElement>('[data-testid="show-summaries-feed"]')
+  if (existing) return existing
+  const filters = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-filters"] button')!
+  await dom!.act(async () => filters.click())
   return doc.querySelector<HTMLButtonElement>('[data-testid="show-summaries-feed"]')!
 }
 
@@ -353,15 +357,15 @@ test('the detail modal shows the summary as "Now" under the title', async () => 
   expect(now.textContent).toContain('Generated summary · updated 4 min ago')
 })
 
-test('"Summaries" sits in the Active header beside the view controls on Feed, Work and Home, never among filters', async () => {
+test('"Summaries" sits with the view controls on Work and Home, and in the Feed\'s Filters panel under View', async () => {
   const { doc, draw } = await render(feedList([workStream()]))
+  // The Feed: not in the list header, but a padded row in the Filters panel's View group.
+  expect(doc.querySelector('[data-testid="show-summaries-feed"]')).toBeNull()
   const feed = await feedSwitch(doc)
-  expect(feed.textContent).toBe('Summaries')
   expect(feed.getAttribute('aria-label')).toBe('Show work stream summaries')
-  expect(feed.closest('section')?.textContent).toContain('Active work')
-  const filters = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-filters"] button')!
-  await dom!.act(async () => filters.click())
-  expect(doc.querySelector('[aria-label="Feed filters"] [data-testid^="show-summaries"]')).toBeNull()
+  expect(feed.textContent).toContain('Summaries')
+  expect(feed.closest('[aria-label="Feed filters"]')).not.toBeNull()
+  expect(feed.closest('[role="group"]')?.getAttribute('aria-label')).toBe('View')
 
   // Work tab: the filter row holds only Filters and the page action; the switch is with List / Kanban / Graph.
   await draw(<SquadWorkStreamList workStreams={[workStream()]} squadId={squad.id} squad={squad} />)

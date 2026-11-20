@@ -471,6 +471,7 @@ function WorkStreamRow({
       anchor={rowRef}
       agentMap={agentMap}
       agentTypeNames={agentTypeNameMap}
+      squadSlug={slugFor(workStream.squadId)}
     />
   )
   const summaryLine = showSummary && !isDone && <WorkStreamSummaryLine workStream={workStream} />
@@ -821,7 +822,11 @@ export function WorkStreamList({
   const [selectedWsId, setSelectedWsId] = useURLStringState<string>('ws', '')
   const [summariesOn] = useShowWorkStreamSummaries(summarySurface ?? 'feed')
   const showSummaries = !!summarySurface && summariesOn
-  const summarySwitch = summarySurface && <ShowSummariesSwitch surface={summarySurface} />
+  const filtersInHeader = filterContainer !== undefined && !hideFilters
+  const feedSummarySwitch = filtersInHeader && summarySurface && (
+    <ShowSummariesSwitch surface={summarySurface} variant="row" />
+  )
+  const summarySwitch = !filtersInHeader && summarySurface && <ShowSummariesSwitch surface={summarySurface} />
   const { data: agentTypes = [] } = useQuery(queries.agentTypes.list())
   const agentTypeNameMap = useMemo(
     () => new Map(agentTypes.map((agentType) => [agentType.id, agentType.name])),
@@ -975,10 +980,16 @@ export function WorkStreamList({
             />
           </WorkStreamFilterGroup>
         )}
+        {feedSummarySwitch && (
+          <div className="border-t border-th-border pt-3">
+            <WorkStreamFilterGroup title="View">{feedSummarySwitch}</WorkStreamFilterGroup>
+          </div>
+        )}
       </div>
     </WorkStreamFiltersPopover>
   )
-  // "Summaries" sits with the list's other view controls in the Active header on every list.
+  // "Summaries" sits with the list's other view controls in the Active header, except on the Feed
+  // (filters in its page header), where it is the View row of the Filters panel (owner review).
   const activeActions =
     summarySwitch && activeHeaderActions ? (
       <>
