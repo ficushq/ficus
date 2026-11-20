@@ -99,7 +99,6 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
     teams: [{ id: 'team-eng', key: 'ENG', name: 'Engineering', connectionIds: [summary.id] }],
     connections: [{ id: summary.id, displayName: 'Linear', isDefault: true, status: 'ok' }],
   }))
-  const reconcileLinearTeamRoutes = mock(async (_squadId: string) => true)
   const githubCommitSigning = mock(async () => ({ state: 'off' as const }))
   const setGitHubCommitSigning = mock(async (_id: string, enabled: boolean, _actor: string) =>
     enabled ? { state: 'on' as const, fingerprint: 'SHA256:abc', registeredOnGitHub: true } : { state: 'off' as const }
@@ -164,7 +163,6 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       executionVariableNames: () => ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
       signGitObject,
       linearTeams,
-      reconcileLinearTeamRoutes,
     })
   )
   return {
@@ -205,7 +203,6 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       retryProjection,
       executionEnvironment,
       linearTeams,
-      reconcileLinearTeamRoutes,
       githubCommitSigning,
       setGitHubCommitSigning,
       signGitObject,
@@ -979,23 +976,68 @@ describe('integration routes', () => {
     expect(anonymous.calls.linearTeams).not.toHaveBeenCalled()
   })
 
-  test('reading Linear settings rewrites routes saved by team key and survives a Linear failure', async () => {
-    const identity = { type: 'system', systemTokenId: 'linear-routes', name: 'test', scopes: ['integrations:read'] }
-    const { app, calls } = createApp(identity as Identity)
-    const updated = await app.request(`/api/squads/${squadId}/integrations/linear`)
-    expect(updated.status).toBe(200)
-    expect(calls.reconcileLinearTeamRoutes).toHaveBeenCalledWith(squadId)
-    expect((await updated.json()).teamRoutesUpdated).toBe(true)
-
-    calls.reconcileLinearTeamRoutes.mockImplementationOnce(async () => {
-      throw new Error('provider_unavailable')
+  test('reading Linear settings never rewrites team keys stored in squad metadata', async () => {
+    // A reader holding only integrations:read must not trigger a squad metadata write or squad.updated,
+    // even when the stored routes and event-rule filters hold keys a Linear listing could resolve.
+    const { squadIntegrationRoutesService } = await import('../services/integrations/runtime')
+    const store = await import('../services/integrations/linear/team-route-store')
+    const team = { id: crypto.randomUUID(), key: 'FIC', name: 'Ficus', connectionIds: ['c1'] }
+    const directory: LinearTeamDirectory = {
+      teams: [team],
+      connections: [{ id: 'c1', displayName: 'Linear', isDefault: true, status: 'ok' }],
+    }
+    const realReconcile = store.reconcileSquadLinearTeamRoutes
+    const reconcile = spyOn(store, 'reconcileSquadLinearTeamRoutes').mockImplementation((id) =>
+      realReconcile(id, async () => directory)
+    )
+    const metadata = {
+      linear: [{ teamId: 'FIC' }],
+      integrationRules: {
+        linear: [
+          {
+            id: 'keyed',
+            enabled: true,
+            source: { integration: 'linear', output: 'issue.assigned', version: 1 },
+            filters: { squadRouting: false, audience: 'any', teamId: 'FIC' },
+            action: { type: 'notify-manager' },
+          },
+        ],
+      },
+    }
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `integrations-linear-read-${crypto.randomUUID()}`, purpose: 'read-only fixture', metadata })
+      .returning()
+    const updates: string[] = []
+    const { eventEmitter } = await import('../lib/infra/event-emitter')
+    const unsubscribe = eventEmitter.on('squad.updated', (data) => {
+      if (data.squadId === squad!.id) updates.push(data.squadId)
     })
-    const failed = await app.request(`/api/squads/${squadId}/integrations/linear`)
-    expect(failed.status).toBe(200)
-    expect((await failed.json()).teamRoutesUpdated).toBeUndefined()
-
-    await app.request(`/api/squads/${squadId}/integrations/github`)
-    expect(calls.reconcileLinearTeamRoutes).toHaveBeenCalledTimes(2)
+    try {
+      const app = new Hono()
+      app.use('/api/*', async (c, next) => {
+        c.set('identity', {
+          type: 'system',
+          systemTokenId: 'linear-read',
+          name: 'test',
+          scopes: ['integrations:read'],
+        } as Identity)
+        await next()
+      })
+      app.use('/api/*', authzSentinel)
+      app.route('/api/squads', createSquadIntegrationsRouter(squadIntegrationRoutesService))
+      const response = await app.request(`/api/squads/${squad!.id}/integrations/linear`)
+      expect(response.status).toBe(200)
+      expect(reconcile).not.toHaveBeenCalled()
+      const [stored] = await db.select().from(squads).where(eq(squads.id, squad!.id))
+      expect(stored!.metadata).toEqual(metadata)
+      expect(stored!.updatedAt).toEqual(squad!.updatedAt)
+      expect(updates).toEqual([])
+    } finally {
+      unsubscribe()
+      reconcile.mockRestore()
+      await db.delete(squads).where(eq(squads.id, squad!.id))
+    }
   })
 
   test('picker response contains only redacted summaries', async () => {

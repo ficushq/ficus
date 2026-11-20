@@ -321,27 +321,6 @@ test('providers keep independent drafts and save against the latest unrelated me
   expect([...linearCard.querySelectorAll('button')].find((item) => item.textContent === 'Save settings')).toBeDefined()
 })
 
-test('opening Linear settings after Core rewrote team keys to IDs reloads the squad routes', async () => {
-  // A route saved by key before the team picker; reading the Linear settings rewrote it to the ID.
-  client.setQueryData(queries.squads.basic('one').queryKey, {
-    ...makeSquad('one'),
-    metadata: { ...makeSquad('one').metadata, linear: [{ teamId: 'ONE' }] },
-  })
-  client.setQueryData(integrationQueries.squad('one', 'linear').queryKey, {
-    scope: { enabled: true },
-    assignment: null,
-    connections: [],
-    attached: [],
-    teamRoutesUpdated: true,
-  })
-  const linearCard = document.querySelectorAll('article')[1]!
-  const linearSettings = [...linearCard.querySelectorAll('button')].find((item) => item.textContent === 'Settings')!
-  await dom.act(async () => linearSettings.click())
-  await flush()
-  // The server's squad now stores the team ID, so the routed team no longer shows as saved by key.
-  expect(linearCard.querySelector('[data-team-match]')?.getAttribute('data-team-match')).toBe('id')
-})
-
 test('a failed post-save refetch keeps the acknowledged saved baseline', async () => {
   await input(context(), 'Acknowledged')
   pendingSave = deferred<Response>()

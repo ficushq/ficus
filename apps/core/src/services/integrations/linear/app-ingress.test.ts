@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('linear')
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { getSecretStore } from '../../secrets'
 import { randomUUID } from 'node:crypto'
 import { createBlankWorkflow } from '@ficus/shared'
@@ -14,6 +14,8 @@ import {
   integrationOutputTriggerRuns,
   linearAgentSessions,
   linearTeamAccess,
+  settings,
+  squads,
   workStreams,
 } from '../../../db'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
@@ -522,6 +524,59 @@ describe('connection lifecycle', () => {
       `Squad ${squad.name} routes Linear team key FIC, which is not a team ID, so it routes no Linear events. Open the squad's Linear settings and choose the team so Ficus stores the team ID.`,
     ])
     expect(await inaccessibleLinearTeams(squad.id, fixture.connectionId)).toEqual([])
+  })
+
+  test('setup status names an event rule whose stored team filter is a team key', async () => {
+    const keyed = rule('keyed', 'issue.assigned', { type: 'notify-manager' })
+    const squad = await fixture.addSquad({
+      teamIds: [teamId],
+      rules: [
+        { ...keyed, filters: { ...keyed.filters, teamId: 'FIC' } },
+        { ...rule('by-id', 'issue.unassigned', { type: 'notify-manager' }), filters: { teamId, audience: 'any' } },
+      ],
+    })
+    const issues = (await linearTeamAccessSetupIssues()).filter((issue) => issue.includes(squad.name))
+    expect(issues).toEqual([
+      `Squad ${squad.name} has a Linear event rule whose team filter is not a team ID, so it matches no Linear events: rule keyed (team key FIC is not a team ID). Open the squad's Linear event rules and choose the team in each Team filter so Ficus stores the team ID.`,
+    ])
+  })
+
+  test('attaching a Linear connection resolves team keys the squad stored before it had one', async () => {
+    const { squadIntegrationRoutesService } = await import('../runtime')
+    const store = await import('./team-route-store')
+    const realReconcile = store.reconcileSquadLinearTeamRoutes
+    // The real reconcile, answered by a listing instead of Linear.
+    const reconcile = spyOn(store, 'reconcileSquadLinearTeamRoutes').mockImplementation((squadId) =>
+      realReconcile(squadId, async () => ({
+        teams: [{ id: teamId, key: 'FIC', name: 'Ficus', connectionIds: [fixture.connectionId] }],
+        connections: [{ id: fixture.connectionId, displayName: 'Linear', isDefault: true, status: 'ok' }],
+      }))
+    )
+    const keyed = rule('keyed', 'issue.assigned', { type: 'notify-manager' })
+    const [squad] = await db
+      .insert(squads)
+      .values({
+        name: `linear-attach-${randomUUID()}`,
+        purpose: 'Linear attach fixture',
+        metadata: {
+          linear: [{ teamId: 'FIC' }],
+          integrationRules: { linear: [{ ...keyed, filters: { ...keyed.filters, teamId: 'fic' } }] },
+        },
+      })
+      .returning()
+    try {
+      await squadIntegrationRoutesService.assign(squad!.id, 'linear', fixture.connectionId)
+      expect(reconcile).toHaveBeenCalledTimes(1)
+      const [stored] = await db.select({ metadata: squads.metadata }).from(squads).where(eq(squads.id, squad!.id))
+      expect(stored!.metadata).toEqual({
+        linear: [{ teamId }],
+        integrationRules: { linear: [{ ...keyed, filters: { ...keyed.filters, teamId } }] },
+      })
+    } finally {
+      reconcile.mockRestore()
+      await db.delete(settings).where(sql`${settings.key} like ${`%:linear:${squad!.id}`}`)
+      await db.delete(squads).where(eq(squads.id, squad!.id))
+    }
   })
 
   test('a PermissionChange for another app user is ignored', async () => {

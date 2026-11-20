@@ -483,13 +483,23 @@ export const squadsRouter = new Hono()
       }
     }
 
-    // Linear team routes are stored as team IDs: a key or ID is resolved through the squad's Linear
-    // connections, and an unknown team is rejected here instead of silently routing nothing.
-    if (input.metadata && Object.hasOwn(input.metadata, 'linear')) {
+    // Linear team routes and Linear event-rule team filters are stored as team IDs: a key or ID is
+    // resolved through the squad's Linear connections, and an unknown team is rejected here instead of
+    // silently matching nothing.
+    const linearRules = input.metadata?.integrationRules as Record<string, unknown> | null | undefined
+    const savesLinearRoutes = !!input.metadata && Object.hasOwn(input.metadata, 'linear')
+    const savesLinearRules = Array.isArray(linearRules?.linear)
+    if (input.metadata && (savesLinearRoutes || savesLinearRules)) {
       const { LinearTeamRouteError } = await import('../services/integrations/linear/team-routes')
       try {
-        const { resolveSquadLinearRoutes } = await import('../services/integrations/runtime')
-        input.metadata.linear = await resolveSquadLinearRoutes(squad.id, input.metadata.linear)
+        const { resolveSquadLinearRoutes, resolveSquadLinearEventRules } =
+          await import('../services/integrations/runtime')
+        if (savesLinearRoutes) input.metadata.linear = await resolveSquadLinearRoutes(squad.id, input.metadata.linear)
+        if (savesLinearRules)
+          input.metadata.integrationRules = {
+            ...linearRules,
+            linear: await resolveSquadLinearEventRules(squad.id, linearRules!.linear),
+          }
       } catch (error) {
         if (error instanceof LinearTeamRouteError) return c.json({ error: error.message }, 400)
         throw error

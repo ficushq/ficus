@@ -9,7 +9,7 @@ import {
 } from '../../../db'
 import { InboxMessage } from '../../../entities/InboxMessage'
 import { linearQuery } from './plugin'
-import { isLinearTeamId, linearRouteTeamValues } from './team-routes'
+import { isLinearTeamId, linearEventRuleTeamKeys, linearRouteTeamValues } from './team-routes'
 
 function strings(value: unknown): string[] {
   return Array.isArray(value)
@@ -141,9 +141,9 @@ export async function inaccessibleLinearTeams(squadId: string, connectionId: str
 }
 
 /**
- * Squad setup issues for Linear routing, naming the squad: routes saved by team key rather than team ID
- * (they route nothing), and routed team IDs the assigned agent app cannot access (5.8). API-key
- * connections and unrecorded access report no access issue.
+ * Squad setup issues for Linear routing, naming the squad: routes and event-rule team filters saved by
+ * team key rather than team ID (they match nothing), and routed team IDs the assigned agent app cannot
+ * access (5.8). API-key connections and unrecorded access report no access issue.
  */
 export async function linearTeamAccessSetupIssues(): Promise<string[]> {
   const assigned = await db
@@ -172,7 +172,7 @@ export async function linearTeamAccessSetupIssues(): Promise<string[]> {
       : []
   )
   const issues: string[] = []
-  // A squad with several attached Linear connections names its key routes once.
+  // A squad with several attached Linear connections names its key routes and rule filters once.
   const keyChecked = new Set<string>()
   for (const row of assigned) {
     const keys = keyChecked.has(row.squadId)
@@ -180,10 +180,19 @@ export async function linearTeamAccessSetupIssues(): Promise<string[]> {
       : linearRouteTeamValues((row.metadata as Record<string, unknown> | null)?.linear).filter(
           (value) => !isLinearTeamId(value)
         )
+    const ruleKeys = keyChecked.has(row.squadId)
+      ? []
+      : linearEventRuleTeamKeys(
+          (row.metadata as { integrationRules?: { linear?: unknown } } | null)?.integrationRules?.linear
+        )
     keyChecked.add(row.squadId)
     if (keys.length)
       issues.push(
         `Squad ${row.squadName} routes Linear ${keys.length === 1 ? 'team key' : 'team keys'} ${keys.join(', ')}, which ${keys.length === 1 ? 'is not a team ID' : 'are not team IDs'}, so ${keys.length === 1 ? 'it routes' : 'they route'} no Linear events. Open the squad's Linear settings and choose the ${keys.length === 1 ? 'team' : 'teams'} so Ficus stores the team ID.`
+      )
+    if (ruleKeys.length)
+      issues.push(
+        `Squad ${row.squadName} has ${ruleKeys.length === 1 ? 'a Linear event rule' : 'Linear event rules'} whose team filter is not a team ID, so ${ruleKeys.length === 1 ? 'it matches' : 'they match'} no Linear events: ${ruleKeys.map((key) => `rule ${key.ruleId} (team key ${key.value} is not a team ID)`).join(', ')}. Open the squad's Linear event rules and choose the team in each Team filter so Ficus stores the team ID.`
       )
     if (!recorded.has(row.connectionId)) continue
     const teams = await inaccessibleLinearTeams(row.squadId, row.connectionId)
