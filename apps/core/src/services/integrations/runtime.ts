@@ -79,6 +79,7 @@ import {
   connectionRequiresRemoteRevocation,
   oauthFencingAuthority,
   oauthPluginView,
+  pluginOffersOAuth,
   refreshableOAuthProviderKeys,
 } from './oauth-plugin-view'
 import { channelConnections } from './channels/connections'
@@ -557,6 +558,10 @@ export const integrationConnectionService = new IntegrationConnectionService({
   resolveProvider: (key, version) => integrationRegistry.require(key, version),
   allowsManualCredential: (key) =>
     key !== 'bigbrain' && integrationRegistry.plugin(key)?.authorization.kind !== 'oauth2',
+  offersOAuth: (key) => {
+    const plugin = integrationRegistry.plugin(key)
+    return plugin !== undefined && pluginOffersOAuth(plugin)
+  },
   currentOAuthAuthority: (connection) => oauthFencingAuthority(connection, resolveOAuthAuthority()),
   operatorAlert: sendOAuthControlPlaneAlert,
   authorizationLease: connectionAuthorizationLease,

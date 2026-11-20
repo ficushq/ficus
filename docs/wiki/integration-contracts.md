@@ -315,7 +315,15 @@ instead of failing.
 - **Writes.** Installing an OAuth grant writes `oauth2`: a new connection from the
   connection authorizer, and `installAuthorizedMaterial` on reconnect. Every
   manual credential write (create without a grant, and every credential
-  replacement through `rotateMaterial`) writes `manual`. When a grant replaces
+  replacement through `rotateMaterial`) writes `manual`. `ConnectionService.create`
+  refuses an authorization grant (`authorizationGrant: true`) without an
+  explicit `authorizationKind` when the provider's plugin offers OAuth (an OAuth2
+  plugin, or a manual plugin with a managed driver; see `pluginOffersOAuth`),
+  throwing `IntegrationAuthorizationKindRequiredError` before any material is
+  stored. The kind is not derived: for dual-driver plugins (Slack, Linear) the
+  plugin alone cannot tell a managed grant from manual material. A grant for a
+  manual-only plugin (BigBrain's grant-created rows) still defaults to `manual`,
+  so it is never sent to a revocation endpoint. When a grant replaces
   manual material, the old credential is only deleted, never sent to a
   provider's revocation endpoint.
 - **Reads.** `connectionOAuthView(plugin, connection)` in

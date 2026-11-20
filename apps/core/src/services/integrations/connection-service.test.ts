@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  IntegrationAuthorizationKindRequiredError,
   IntegrationConnectionCreateCommittedError,
   IntegrationConnectionInUseError,
   IntegrationConnectionService,
@@ -16,6 +17,7 @@ import type {
 function setup(
   options: {
     allowsManualCredential?: (providerKey: string) => boolean
+    offersOAuth?: (providerKey: string) => boolean
     safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
     refreshAvailable?: (connection: IntegrationConnectionRecord, credential: string | undefined) => boolean
     refreshAuthenticationFailure?: () => Promise<{
@@ -196,6 +198,7 @@ function setup(
     }),
     requiresRemoteRevocation: options.requiresRemoteRevocation ?? ((connection) => connection.providerKey === 'notion'),
     allowsManualCredential: options.allowsManualCredential,
+    offersOAuth: options.offersOAuth,
     refreshAuthenticationFailure: options.refreshAuthenticationFailure,
     safeConfiguration: options.safeConfiguration,
     refreshAvailable: options.refreshAvailable,
@@ -564,6 +567,57 @@ describe('IntegrationConnectionService', () => {
     await expect(service.replaceCredential(connection.id, 'token', 'user:user-1')).rejects.toThrow(
       'OAuth authorization required'
     )
+  })
+
+  describe('authorization kind of a granted connection', () => {
+    // Mirrors the runtime wiring: OAuth2 plugins (github, notion) and manual
+    // plugins with a managed driver (slack, linear) offer OAuth; bigbrain does not.
+    const offersOAuth = (providerKey: string) => ['github', 'notion', 'slack', 'linear'].includes(providerKey)
+    const grant = (providerKey: string) => ({
+      providerKey,
+      adapterVersion: 1,
+      displayName: providerKey,
+      configuration: { version: 1 },
+      credential: 'granted-material',
+      actor: 'user:user-1',
+      authorizationGrant: true as const,
+    })
+
+    test.each(['github', 'notion', 'slack', 'linear'])(
+      'refuses a %s grant without an explicit kind before storing anything',
+      async (providerKey) => {
+        const { service, getRow, secrets, validationCalls } = setup({ offersOAuth })
+        await expect(service.create(grant(providerKey))).rejects.toBeInstanceOf(
+          IntegrationAuthorizationKindRequiredError
+        )
+        expect(getRow()).toBeNull()
+        expect(secrets.size).toBe(0)
+        expect(validationCalls()).toBe(0)
+      }
+    )
+
+    test.each([
+      ['notion', 'oauth2'],
+      ['slack', 'oauth2'],
+      ['linear', 'manual'],
+    ] as const)('stores an explicit kind unchanged (%s, %s)', async (providerKey, authorizationKind) => {
+      const { service, getRow } = setup({ offersOAuth })
+      await service.create({ ...grant(providerKey), authorizationKind })
+      expect(getRow()!.authorizationKind).toBe(authorizationKind)
+    })
+
+    test('a grant for a manual-only provider (BigBrain) stays manual without a kind', async () => {
+      const { service, getRow } = setup({ offersOAuth })
+      await service.create(grant('bigbrain'))
+      expect(getRow()!.authorizationKind).toBe('manual')
+    })
+
+    test('manual entry for a dual-driver provider needs no kind and stays manual', async () => {
+      const { service, getRow } = setup({ offersOAuth })
+      const { authorizationGrant: _grant, ...manualEntry } = grant('slack')
+      await service.create(manualEntry)
+      expect(getRow()!.authorizationKind).toBe('manual')
+    })
   })
 
   test('permits multiple provider connections without a single-enabled check', async () => {

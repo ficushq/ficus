@@ -43,6 +43,20 @@ export class IntegrationManualCredentialNotAllowedError extends Error {
   }
 }
 
+/**
+ * An authorization grant was stored for a provider that offers OAuth without
+ * saying whether the material is `oauth2` or `manual`. Defaulting to `manual`
+ * would silently drop an OAuth grant from refresh, authority fencing and
+ * remote revocation, and the plugin alone cannot decide for dual-driver
+ * providers (Slack, Linear), so the call is refused.
+ */
+export class IntegrationAuthorizationKindRequiredError extends Error {
+  constructor(readonly providerKey: string) {
+    super(`Authorization kind required for an authorization grant on provider ${providerKey}`)
+    this.name = 'IntegrationAuthorizationKindRequiredError'
+  }
+}
+
 export class IntegrationConnectionCreateCommittedError extends Error {
   constructor(
     readonly connectionId: string,
@@ -81,6 +95,12 @@ export interface ConnectionServiceDependencies {
     credential: string | undefined
   ) => Promise<(() => Promise<void>) | undefined>
   allowsManualCredential?: (providerKey: string) => boolean
+  /**
+   * Whether the provider's plugin can hold OAuth-granted connections (an OAuth2
+   * plugin or a manual plugin with a managed driver). `create` refuses an
+   * authorization grant for such a provider unless `authorizationKind` is explicit.
+   */
+  offersOAuth?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
   refreshAvailable?: (connection: IntegrationConnectionRecord, credential: string | undefined) => boolean | undefined
   /** The authority an `oauth2` connection must hold; undefined for connections that are not fenced. */
@@ -109,6 +129,7 @@ export class IntegrationConnectionService {
   readonly #deproject?: ConnectionServiceDependencies['deproject']
   readonly #prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
   readonly #allowsManualCredential: (providerKey: string) => boolean
+  readonly #offersOAuth: (providerKey: string) => boolean
   readonly #safeConfiguration: (providerKey: string, configuration: unknown) => unknown
   readonly #refreshAvailable: NonNullable<ConnectionServiceDependencies['refreshAvailable']>
   readonly #refreshAuthenticationFailure?: ConnectionServiceDependencies['refreshAuthenticationFailure']
@@ -128,6 +149,7 @@ export class IntegrationConnectionService {
     this.#deproject = dependencies.deproject
     this.#prepareRemoval = dependencies.prepareRemoval
     this.#allowsManualCredential = dependencies.allowsManualCredential ?? (() => true)
+    this.#offersOAuth = dependencies.offersOAuth ?? (() => false)
     this.#safeConfiguration = dependencies.safeConfiguration ?? ((_providerKey, configuration) => configuration)
     this.#refreshAvailable = dependencies.refreshAvailable ?? (() => undefined)
     this.#refreshAuthenticationFailure = dependencies.refreshAuthenticationFailure
@@ -144,7 +166,10 @@ export class IntegrationConnectionService {
     credential: string
     actor: string
     authorizationGrant?: true
-    /** `oauth2` only for material from an OAuth grant; defaults to `manual`. */
+    /**
+     * `oauth2` only for material from an OAuth grant; defaults to `manual`.
+     * Required with `authorizationGrant` when the provider offers OAuth.
+     */
     authorizationKind?: IntegrationAuthorizationKind
     clientAuthority?: OAuthAuthority
     authorizationFlowId?: string
@@ -152,6 +177,8 @@ export class IntegrationConnectionService {
   }): Promise<SafeIntegrationConnection> {
     if (!input.authorizationGrant && !this.#allowsManualCredential(input.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
+    if (input.authorizationGrant && input.authorizationKind === undefined && this.#offersOAuth(input.providerKey))
+      throw new IntegrationAuthorizationKindRequiredError(input.providerKey)
     const provider = this.#resolveProvider(input.providerKey, input.adapterVersion)
     const configuration = provider.parseConfig(input.configuration)
     const credential = input.authorizationGrant ? input.credential : input.credential.trim()

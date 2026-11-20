@@ -3,6 +3,8 @@ import { bigbrainPlugin } from './bigbrain/plugin'
 import { assertIntegrationPluginContract } from './plugin-contract'
 import { notionPlugin } from './notion/plugin'
 import { linearPlugin } from './linear/plugin'
+import { firstPartyIntegrationPlugins } from './first-party-plugins'
+import { pluginOffersOAuth } from './oauth-plugin-view'
 
 const fixtures = {
   validConfiguration: {
@@ -91,5 +93,13 @@ describe('first-party integration plugin contract', () => {
       code: 'provider_error',
       retryable: true,
     })
+  })
+})
+
+describe('first-party authorization grant kinds', () => {
+  test('only OAuth2 and dual-driver providers require an explicit kind for a granted connection', () => {
+    // BigBrain stores grant-created material under a manual plugin, so it must keep defaulting to `manual`.
+    const offering = firstPartyIntegrationPlugins.filter(pluginOffersOAuth).map((plugin) => plugin.key)
+    expect(offering.sort()).toEqual(['github', 'linear', 'notion', 'slack'])
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { oauthPluginView } from './oauth-plugin-view'
+import { oauthPluginView, pluginOffersOAuth } from './oauth-plugin-view'
 import type { IntegrationPluginV1, ManagedOAuthDriver } from './plugin'
 import { serializeOAuthCredential, type OAuthCredentialBundleV1 } from './authorization/credential-bundle'
 
@@ -172,5 +172,13 @@ describe('oauthPluginView', () => {
     expect(view.runtime).toBe(plugin.runtime)
     expect(view.sandbox).toBe(plugin.sandbox)
     expect(view.lifecycle).toBe(plugin.lifecycle)
+  })
+})
+
+describe('pluginOffersOAuth', () => {
+  test('true for OAuth2 plugins and manual plugins with a managed driver, false for manual-only plugins', () => {
+    expect(pluginOffersOAuth(oauthPlugin())).toBe(true)
+    expect(pluginOffersOAuth(manualWithManagedPlugin(['platform_broker']))).toBe(true)
+    expect(pluginOffersOAuth(manualOnlyPlugin())).toBe(false)
   })
 })
