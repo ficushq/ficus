@@ -4,6 +4,7 @@ import {
   integrationAuthorizationReturnPath,
   integrationReturnPath,
   integrationSettingsPath,
+  isSameOriginReturnPath,
 } from './integrationReturnPath'
 
 for (const provider of ['github', 'notion', 'slack'] as const) {
@@ -46,4 +47,67 @@ test('personal GitHub link returns to the linked-account setting, not the integr
       `${base}settings?section=account&setting=github-identity`
     )
   }
+})
+
+const UNSAFE_RETURN_TARGETS = [
+  'https://evil.example/settings',
+  'http://evil.example',
+  'HTTPS://evil.example/settings',
+  '//evil.example/settings',
+  '///evil.example',
+  '/\\evil.example',
+  '\\\\evil.example',
+  '\\/evil.example',
+  '/\t/evil.example',
+  '/\n/evil.example',
+  ' /settings',
+  'javascript:alert(1)',
+  'JavaScript:alert(1)//',
+  'data:text/html,<script>alert(1)</script>',
+  'settings',
+  '',
+  '/%2F/evil.example',
+  '/%2f%2fevil.example',
+  '/%5Cevil.example',
+  '/%5cevil.example',
+  '/%09/evil.example',
+  '/%E0%A4%A',
+]
+
+test('only same-origin paths count as return paths', () => {
+  for (const value of UNSAFE_RETURN_TARGETS) expect([value, isSameOriginReturnPath(value)]).toEqual([value, false])
+  for (const value of [undefined, null, 42, { toString: () => '/settings' }])
+    expect(isSameOriginReturnPath(value)).toBe(false)
+  for (const value of [
+    '/',
+    '/settings',
+    '/ficus/settings?section=integrations&setting=integration-github#anchor',
+    '/squads/test?tab=settings',
+    '/onboarding',
+    '/docs/a%20b',
+    '/search?q=https://example.com',
+  ])
+    expect([value, isSameOriginReturnPath(value)]).toEqual([value, true])
+})
+
+test('callback falls back to the provider settings for a return target that is not a same-origin path', () => {
+  for (const base of ['/', '/ficus/']) {
+    for (const provider of ['github', 'linear', 'notion', 'slack'] as const) {
+      for (const value of UNSAFE_RETURN_TARGETS)
+        expect([value, integrationReturnPath(value, provider, base)]).toEqual([
+          value,
+          integrationSettingsPath(provider, base),
+        ])
+    }
+  }
+})
+
+test('callback still maps and preserves same-origin return paths', () => {
+  expect(integrationReturnPath('/ficus/settings', 'slack', '/ficus/')).toBe(
+    '/ficus/settings?section=integrations&setting=integration-slack'
+  )
+  expect(integrationReturnPath('/ficus/settings/linear-identity', 'linear', '/ficus/')).toBe(
+    '/ficus/settings?section=account&setting=linear-account'
+  )
+  expect(integrationReturnPath('/squads/test?tab=settings', 'notion')).toBe('/squads/test?tab=settings')
 })

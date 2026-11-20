@@ -579,6 +579,30 @@ test('a saved connection says so before the redirect and links to the same desti
   expect(links()).toEqual([['Continue', '/settings?section=integrations&setting=integration-notion']])
 })
 
+for (const returnTo of ['https://evil.example/settings', '//evil.example', '/\\evil.example', 'javascript:alert(1)']) {
+  test(`a saved connection never redirects or links to ${JSON.stringify(returnTo)}`, async () => {
+    mockCore('notion', () => Response.json({ returnTo }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let refreshed!: () => void
+    client.invalidateQueries = (() =>
+      new Promise<void>((resolve) => {
+        refreshed = resolve
+      })) as typeof client.invalidateQueries
+    const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
+    try {
+      await renderPage(client)
+      await flushEffects()
+      const settings = '/settings?section=integrations&setting=integration-notion'
+      expect(links()).toEqual([['Continue', settings]])
+      await harness.act(async () => refreshed())
+      await flushEffects()
+      expect(redirect.mock.calls).toEqual([[settings]])
+    } finally {
+      redirect.mockRestore()
+    }
+  })
+}
+
 test('a terminal failure links back to the provider settings and to the app home', async () => {
   window.sessionStorage.setItem('ficusOAuthProviderHint', 'notion')
   window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=error&code=provider_error')
