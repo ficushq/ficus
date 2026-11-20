@@ -13,6 +13,12 @@ import type { QuestionData, QuestionItem, QuestionOption } from './types'
 /** Inbox `metadata.source` of the answer delivered back to the asking agent. */
 export const QUESTION_ANSWER_INBOX_SOURCE = 'agent-question-answer'
 
+/**
+ * Inbox `metadata.source` of an answer passed on because the attempt it was asked from was no longer
+ * running. It is an ordinary inbox message, not bound to the asking attempt.
+ */
+export const QUESTION_ANSWER_FORWARD_INBOX_SOURCE = 'agent-question-answer-forward'
+
 /** What the answer form submits when every (optional) question was skipped. */
 export const SKIPPED_QUESTION_ANSWER = '(empty)'
 

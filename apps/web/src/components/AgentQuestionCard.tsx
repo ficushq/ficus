@@ -7,6 +7,7 @@ import { queryKeys } from '../queryKeys'
 import { QuestionInput } from './QuestionInput'
 import { QuestionAnswerList } from './QuestionAnswerCard'
 import { actionErrorMessage } from '../lib/actionError'
+import { forwardedAnswerText } from '../lib/forwardedAnswer'
 
 interface Props {
   question: AgentQuestion
@@ -100,6 +101,9 @@ export function AgentQuestionCard({
             ))}
             {question.answer && <p className="mt-1 text-secondary whitespace-pre-wrap">{question.answer}</p>}
           </>
+        )}
+        {question.answerDelivery?.forwarded && (
+          <p className="mt-1 text-xs text-muted">{forwardedAnswerText(question.answerDelivery.forwarded)}</p>
         )}
         {question.answerRelayedByAgentId && question.answerSource && (
           <p className="mt-1 text-xs text-muted break-all">

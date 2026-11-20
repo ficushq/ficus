@@ -179,12 +179,19 @@ function toJson(row: Row): AgentQuestion {
             nextAttemptAt: row.answerDeliveryNextAttemptAt?.toISOString() ?? null,
             lastError: safe.answerDeliveryLastError,
             deliveredAt: row.answerDeliveredAt?.toISOString() ?? null,
-            // A refused answer fails the same way on every retry, so none is offered.
-            canRetry: row.answerDeliveryStatus === 'failed' && !refusal,
+            // An answer to an ended stream fails the same way on every retry, so none is offered. One
+            // refused because its attempt was replaced is now passed on to the current work instead,
+            // so retrying those older refusals delivers them.
+            canRetry: row.answerDeliveryStatus === 'failed' && (!refusal || refusal === 'attempt-replaced'),
             refusal,
+            forwarded: row.answerDeliveryStatus === 'delivered' ? (row.answerDeliveryForward ?? null) : null,
           },
         }
       : {}),
+    flowAttempt:
+      row.flowWorkStreamId && row.flowAttemptId != null
+        ? { workStreamId: row.flowWorkStreamId, attemptId: row.flowAttemptId }
+        : null,
   }
 }
 
@@ -288,6 +295,9 @@ export async function createAgentQuestion(
         squadId: agent.squadId ?? null,
         ownerUserId: agent.ownerUserId ?? null,
         executionId: origin.executionId,
+        // The attempt the question is asked from, so a late answer's target is never inferred.
+        flowWorkStreamId: execution.flowContext?.workStreamId ?? null,
+        flowAttemptId: execution.flowContext?.attemptId ?? null,
         audienceResolution: 'pending',
         questionData,
       })

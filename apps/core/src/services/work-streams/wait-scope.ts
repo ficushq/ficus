@@ -236,9 +236,26 @@ export class FlowWaitStreamEndedError extends FlowWaitSupersededError {
   }
 }
 
+/**
+ * Recorded as the answer's delivery error when the asking attempt was no longer running and nobody
+ * was left to take the answer on: the asker is terminated or terminating, no live agent holds the
+ * stream's work, and the squad has no live manager. Stored rows keep this exact wording and
+ * answerDeliveryRefusal reads the refusal kind back from it, so do not reword it.
+ */
+export const ANSWER_NO_RECIPIENT_MESSAGE =
+  'Nobody was left to receive the answer: the asking agent had stopped, and no live agent held the work. The response is retained in history.'
+
+/** An answer refused because no live agent could receive it (ANSWER_NO_RECIPIENT_MESSAGE). */
+export class AnswerNoRecipientError extends Error {
+  constructor() {
+    super(ANSWER_NO_RECIPIENT_MESSAGE)
+  }
+}
+
 /** Why an answer refused as superseded went undelivered, read back from its recorded error. */
 export function answerDeliveryRefusal(lastError: string | null | undefined): AgentQuestionAnswerRefusal | null {
   if (lastError === FLOW_WAIT_SUPERSEDED_MESSAGE) return 'attempt-replaced'
+  if (lastError === ANSWER_NO_RECIPIENT_MESSAGE) return 'no-recipient'
   if (lastError === FLOW_WAIT_STREAM_ENDED_MESSAGES.done) return 'stream-done'
   if (lastError === FLOW_WAIT_STREAM_ENDED_MESSAGES.canceled) return 'stream-canceled'
   return null
@@ -291,12 +308,25 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
         ...(metadata.workStreamReadmission ? { readmission: true } : {}),
       })
     if (metadata?.source === 'agent-question-answer' && metadata.questionId) {
+      // The attempt recorded on the question when it was asked; older rows fall back to the asking
+      // execution's flow context, which a later inline handoff may have rebound.
       const [origin] = await store
-        .select({ flowContext: executions.flowContext })
+        .select({
+          workStreamId: agentQuestions.flowWorkStreamId,
+          attemptId: agentQuestions.flowAttemptId,
+          flowContext: executions.flowContext,
+        })
         .from(agentQuestions)
-        .innerJoin(executions, eq(executions.id, agentQuestions.executionId))
+        .leftJoin(executions, eq(executions.id, agentQuestions.executionId))
         .where(eq(agentQuestions.id, metadata.questionId))
-      if (origin?.flowContext) targets.push({ ...origin.flowContext, assignment: false, answer: true })
+      if (origin?.workStreamId && origin.attemptId != null)
+        targets.push({
+          workStreamId: origin.workStreamId,
+          attemptId: origin.attemptId,
+          assignment: false,
+          answer: true,
+        })
+      else if (origin?.flowContext) targets.push({ ...origin.flowContext, assignment: false, answer: true })
       else {
         const waits = await store
           .select()

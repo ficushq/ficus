@@ -261,14 +261,6 @@ describe('question answers as squad demand', () => {
       alertSays:
         'the work stream had already been canceled when the answer arrived, so it was not delivered to the agent',
     },
-    {
-      ending: 'replaces the attempt',
-      end: replaceAttempt,
-      streamEnds: false,
-      lastError: FLOW_WAIT_SUPERSEDED_MESSAGE,
-      refusal: 'attempt-replaced',
-      alertSays: 'the workflow attempt the question was asked from was replaced before the answer arrived',
-    },
   ] as const)(
     'an answer saved before the stream $ending is refused with that cause, not delivered or lost',
     async ({ end, streamEnds, lastError, refusal, alertSays }) => {
@@ -322,6 +314,41 @@ describe('question answers as squad demand', () => {
       expect(observed.incidents[0]!.resolvedAt).toEqual(NOW)
     }
   )
+
+  // Regression: an attempt that stops running between routing and acceptance used to refuse the
+  // answer as superseded, so it reached nobody. Now delivery routes again and passes it on.
+  test('an answer whose attempt is replaced mid-delivery is passed on, not refused', async () => {
+    const result = await reconcileQuestionAnswerDeliveriesOnce({
+      now: NOW,
+      questionId,
+      testHooks: { afterInboxPersisted: replaceAttempt },
+    })
+    expect(result).toMatchObject({ delivered: 1, failed: 0 })
+    const [question] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+    expect(question!.answerDeliveryStatus).toBe('delivered')
+    expect(question!.answerDeliveryLastError).toBeNull()
+    // The replacement attempt has no agent and the stream no owner, so the asker itself is told,
+    // as an ordinary message rather than a reply bound to its old attempt.
+    expect(question!.answerDeliveryForward).toMatchObject({
+      reason: 'attempt-finished',
+      workStreamId: streamId,
+      originAttemptId: 1,
+      recipients: [{ role: 'asker', agentId }],
+    })
+    const [forwarded] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${questionId}:forward:${agentId}`))
+    expect(forwarded).toMatchObject({ recipientId: agentId, senderType: 'user', deliveryMode: 'follow-up' })
+    expect(forwarded!.content).toContain('Yes, merge it.')
+    // The copy bound to the old attempt can never be delivered, so it is closed rather than left unread.
+    const [stale] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${questionId}`))
+    expect(stale!.readAt).not.toBeNull()
+    expect((await listActionableAgentQuestions()).map((row) => row.id)).not.toContain(questionId)
+  })
 
   test('a terminal delivery failure for a still-current attempt is surfaced by its own alert, not as a stall', async () => {
     const answer = await persistedAnswer()

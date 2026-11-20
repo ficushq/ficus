@@ -24,6 +24,8 @@ function alertKey(questionId: string, generation: number): string {
 const REFUSAL_SENTENCES: Record<AgentQuestionAnswerRefusal, (agentId: string) => string> = {
   'attempt-replaced': (agentId) =>
     `An accepted answer was not delivered to agent ${agentId}: the workflow attempt the question was asked from was replaced before the answer arrived.`,
+  'no-recipient': (agentId) =>
+    `An accepted answer to agent ${agentId}'s question went nowhere: the step it was asked from had ended, the agent had stopped, and no live agent held the work or managed the squad, so nobody was left to receive it.`,
   'stream-done': (agentId) =>
     `An accepted answer to agent ${agentId}'s question went nowhere: the work stream had already finished when the answer arrived, so it was not delivered to the agent.`,
   'stream-canceled': (agentId) =>
@@ -38,6 +40,10 @@ const REFUSAL_SENTENCES: Record<AgentQuestionAnswerRefusal, (agentId: string) =>
  */
 export function questionDeliveryFailureAlertContent(question: Pick<DeliveryFailureAlert, 'agentId' | 'lastError'>) {
   const refusal = answerDeliveryRefusal(question.lastError)
+  // Answers to a replaced attempt are now passed on to the current work, so a retry delivers one
+  // refused before that change. An ended stream still refuses every retry.
+  if (refusal === 'attempt-replaced')
+    return `${REFUSAL_SENTENCES[refusal](question.agentId)} Retry from the Action Center to pass it to whoever now holds that work, with a note saying who asked.`
   if (refusal) {
     return `${REFUSAL_SENTENCES[refusal](question.agentId)} Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message.`
   }

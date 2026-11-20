@@ -5,6 +5,7 @@ import type { AgentQuestion } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { AgentQuestionCard } from './AgentQuestionCard'
+import { forwardedAnswerText } from '../lib/forwardedAnswer'
 
 const question: AgentQuestion = {
   id: 'question-1',
@@ -408,4 +409,68 @@ test('AgentQuestionCard completes the selected secondary effect after pending-ac
     globalThis.fetch = originalFetch
     await dom.cleanup()
   }
+})
+
+test('AgentQuestionCard says when an answer was passed on because the asking step had finished', async () => {
+  const forwarded: AgentQuestion = {
+    ...question,
+    status: 'answered',
+    answer: 'yes',
+    answeredByUserId: 'user-1',
+    answeredAt: '2026-08-28T00:05:00.000Z',
+    answerDelivery: {
+      status: 'delivered',
+      generation: 1,
+      attemptCount: 0,
+      nextAttemptAt: null,
+      lastError: null,
+      deliveredAt: '2026-08-28T00:05:01.000Z',
+      canRetry: false,
+      refusal: null,
+      forwarded: {
+        reason: 'attempt-finished',
+        workStreamId: 'stream-1',
+        originAttemptId: 1,
+        originStepId: 'design',
+        recipients: [
+          { role: 'current-work', agentId: 'agent-2', label: 'Implementer', attemptId: 2, stepId: 'implement' },
+        ],
+        forwardedAt: '2026-08-28T00:05:01.000Z',
+      },
+    },
+  }
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const rendered = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      rendered.root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentQuestionCard question={forwarded} />
+        </QueryClientProvider>
+      )
+    )
+    expect(dom.window.document.body.textContent).toContain(
+      'The agent had already finished that step; the answer was passed to Implementer.'
+    )
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('forwardedAnswerText names the owner, and the asker case as a plain message', () => {
+  const base = { workStreamId: 's', originAttemptId: 3, forwardedAt: '2026-08-28T00:00:00.000Z' }
+  expect(
+    forwardedAnswerText({
+      ...base,
+      reason: 'attempt-finished',
+      recipients: [{ role: 'owner', agentId: 'm', label: 'Manager' }],
+    })
+  ).toBe('The agent had already finished that step; the answer was passed to Manager (work stream owner).')
+  expect(
+    forwardedAnswerText({
+      ...base,
+      reason: 'attempt-replaced',
+      recipients: [{ role: 'asker', agentId: 'a', label: 'Architect' }],
+    })
+  ).toBe('The step the agent asked from had been replaced; the answer was sent to the agent as a message.')
 })
