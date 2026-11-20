@@ -50,6 +50,8 @@ export type IntegrationOutputField = {
   type: 'string' | 'number' | 'boolean'
   normalize?: 'lowercase'
   description: string
+  /** The value a fact that predates the field (or omits it) is matched as. */
+  absent?: string | number | boolean
 }
 export interface IntegrationOutputDescriptor {
   integration: string
@@ -92,7 +94,8 @@ export function integrationSubscriptionMatches(
   return Object.entries(subscription.match).every(([path, binding]) => {
     const field = descriptor.fields[path]
     if (!field) return false
-    const actual = integrationValueAt(fact.data, path)
+    const value = integrationValueAt(fact.data, path)
+    const actual = value === undefined && field.absent !== undefined ? field.absent : value
     const expected = 'value' in binding ? binding.value : integrationValueAt(metadata, binding.streamMetadata)
     if (typeof actual !== field.type || typeof expected !== field.type) return false
     return field.normalize === 'lowercase' && typeof actual === 'string' && typeof expected === 'string'

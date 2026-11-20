@@ -120,6 +120,7 @@ const linearExtraFields: Record<string, IntegrationOutputField> = {
   'comment.author': { type: 'string', description: 'Linear user ID of the comment author.' },
   'comment.inSession': {
     type: 'boolean',
+    absent: false,
     description:
       'Whether the comment is in a thread of one of this app\u2019s agent sessions; such comments also arrive as agent_session.prompted.',
   },

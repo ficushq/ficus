@@ -115,9 +115,11 @@ describe('Linear session projection', () => {
       content: { type: 'response', body: `Done. Details in Ficus: ${streamUrl}` },
     })
     const url = 'https://github.com/acme/widgets/pull/7'
-    expect(byKey(snapshot({ ...done, pullRequest: { url, label: 'acme/widgets#7' } }), 'stream:done')?.payload).toEqual({
-      content: { type: 'response', body: `Done. Pull request: ${url}.` },
-    })
+    expect(byKey(snapshot({ ...done, pullRequest: { url, label: 'acme/widgets#7' } }), 'stream:done')?.payload).toEqual(
+      {
+        content: { type: 'response', body: `Done. Pull request: ${url}.` },
+      }
+    )
   })
 
   test('pause, cancellation and unrecoverable failure use fixed templates', () => {
@@ -213,8 +215,10 @@ describe('Linear session projection', () => {
       )?.payload
     ).toEqual({ content: { type: 'thought', body: 'Answered in Ficus: X' } })
     expect(
-      byKey(snapshot({ questions: [{ id: 'q4', status: 'dismissed', data, mirrorState: 'open' }] }), 'question:q4:resolved')
-        ?.payload
+      byKey(
+        snapshot({ questions: [{ id: 'q4', status: 'dismissed', data, mirrorState: 'open' }] }),
+        'question:q4:resolved'
+      )?.payload
     ).toEqual({ content: { type: 'thought', body: 'Question withdrawn.' } })
     expect(
       keys(snapshot({ questions: [{ id: 'q5', status: 'answered', data, mirrorState: 'answered_in_linear' }] }))

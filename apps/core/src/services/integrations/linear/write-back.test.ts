@@ -242,7 +242,9 @@ describe('progress projection', () => {
     const [row] = await db
       .select()
       .from(linearActivityOutbox)
-      .where(and(eq(linearActivityOutbox.sessionId, sessionId), eq(linearActivityOutbox.projectionKey, 'stream:started')))
+      .where(
+        and(eq(linearActivityOutbox.sessionId, sessionId), eq(linearActivityOutbox.projectionKey, 'stream:started'))
+      )
     // Linear already holds the activity, as if a response had been lost.
     linear.activities.push({ id: row!.activityId, agentSessionId: sessionId, content: {}, at: Date.now() })
     await drainLinearOutbox()
@@ -290,7 +292,9 @@ describe('progress projection', () => {
     const rows = await db
       .select()
       .from(linearActivityOutbox)
-      .where(and(eq(linearActivityOutbox.sessionId, sessionId), inArray(linearActivityOutbox.status, ['pending', 'skipped'])))
+      .where(
+        and(eq(linearActivityOutbox.sessionId, sessionId), inArray(linearActivityOutbox.status, ['pending', 'skipped']))
+      )
     const state = Object.fromEntries(rows.map((row) => [row.projectionKey, row.status]))
     expect(state['flow:1:completed']).toBe('skipped')
     expect(state['flow:2:completed']).toBe('pending')
@@ -387,7 +391,10 @@ describe('questions as elicitations', () => {
     const [answered] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
     expect(answered).toMatchObject({ status: 'answered', answer: 'redis', answeredByUserId: userId })
     expect(answered!.answerProvenance).toMatchObject({ integration: 'linear', linearUserId: member.id, sessionId })
-    const [mirror] = await db.select().from(linearQuestionMirrors).where(eq(linearQuestionMirrors.questionId, questionId))
+    const [mirror] = await db
+      .select()
+      .from(linearQuestionMirrors)
+      .where(eq(linearQuestionMirrors.questionId, questionId))
     expect(mirror!.state).toBe('answered_in_linear')
     // An answer from Linear posts no "answered in Ficus" thought.
     await project(stream.id)
@@ -426,7 +433,10 @@ describe('questions as elicitations', () => {
       .where(eq(agentQuestions.id, questionId))
     await project(stream.id)
     expect(bodies(sessionId)).toContainEqual(['thought', 'Answered in Ficus: Postgres'])
-    const [mirror] = await db.select().from(linearQuestionMirrors).where(eq(linearQuestionMirrors.questionId, questionId))
+    const [mirror] = await db
+      .select()
+      .from(linearQuestionMirrors)
+      .where(eq(linearQuestionMirrors.questionId, questionId))
     expect(mirror!.state).toBe('answered_in_ficus')
   })
 
@@ -492,7 +502,12 @@ describe('--linear-session', () => {
     })
     expect(result.created).toBe(true)
     const [session] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, result.sessionId))
-    expect(session).toMatchObject({ workStreamId: stream!.id, primary: true, trigger: 'proactive', disposition: 'bound' })
+    expect(session).toMatchObject({
+      workStreamId: stream!.id,
+      primary: true,
+      trigger: 'proactive',
+      disposition: 'bound',
+    })
     expect(bodies(result.sessionId)[0]).toEqual(['thought', 'Ficus started tracking this work.'])
     // Asking again returns the bound session instead of opening another.
     const again = await openLinearSessionForStream(stream!.id, {
