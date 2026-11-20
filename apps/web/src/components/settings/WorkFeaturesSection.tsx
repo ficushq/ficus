@@ -4,7 +4,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { StreamSummariesSetting } from './StreamSummariesSetting'
 
 /**
- * Settings → Work features: instance-wide switches for features of work itself, kept apart from the
+ * Settings → Features (section id `work-features`): instance-wide switches for features of work itself, kept apart from the
  * model tiers they happen to run on. Work stream summaries is the first.
  */
 export function WorkFeaturesSection() {
@@ -14,7 +14,7 @@ export function WorkFeaturesSection() {
   const lite = tiers.data?.find((tier) => tier.slug === 'lite')
   return (
     <div className="ficus-section py-5">
-      <h2 className="text-sm font-medium text-secondary">Work features</h2>
+      <h2 className="text-sm font-medium text-secondary">Features</h2>
       <div data-setting-target="stream-summaries">
         <StreamSummariesSetting usableCandidates={lite?.usableCandidates} />
       </div>
