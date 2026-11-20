@@ -15,7 +15,11 @@ export function isLinearTeamId(value: string): boolean {
 
 /** A route value that cannot be stored; the message is safe to show the person saving it. */
 export class LinearTeamRouteError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** The submitted team value that could not be stored. */
+    readonly value?: string
+  ) {
     super(message)
     this.name = 'LinearTeamRouteError'
   }
@@ -53,13 +57,55 @@ function unresolvedReason(directory: LinearTeamDirectory): string {
   return 'it is not among the teams Ficus could list'
 }
 
-export interface ResolveLinearTeamRoutesInput {
-  /** The submitted `metadata.linear` value. */
-  routes: unknown
+interface ResolveLinearTeamValuesInput {
   /** Team values already stored for the squad. */
   stored: readonly string[]
   /** Lists the teams the squad's attached connections can see; called at most once, and only when needed. */
   listTeams(): Promise<LinearTeamDirectory>
+}
+
+export interface ResolveLinearTeamRoutesInput extends ResolveLinearTeamValuesInput {
+  /** The submitted `metadata.linear` value. */
+  routes: unknown
+}
+
+/**
+ * Maps each submitted team value to its team ID: a key (any case) or ID of a listed team becomes that
+ * team's ID. A new value that names no listed team is rejected with {@link LinearTeamRouteError}. An
+ * already-stored value that cannot be resolved is left out of the map, so the caller keeps it unchanged.
+ */
+async function resolveLinearTeamValues(
+  values: readonly string[],
+  input: ResolveLinearTeamValuesInput
+): Promise<Map<string, string>> {
+  const stored = new Set(input.stored)
+  const resolved = new Map<string, string>()
+  const pending = values.filter((value) => !(stored.has(value) && isLinearTeamId(value)))
+  if (!pending.length) return resolved
+
+  const directory = await input.listTeams()
+  for (const value of pending) {
+    const match = matchLinearTeamValue(value, directory.teams)
+    if (match.kind !== 'unknown') {
+      resolved.set(value, match.team.id)
+      continue
+    }
+    if (stored.has(value)) continue
+    if (isLinearTeamId(value)) {
+      if (listingIsConclusive(directory))
+        throw new LinearTeamRouteError(
+          `Linear team ${value} is not a team the squad's Linear connections can see. Choose a team key or ID from the squad's Linear settings.`,
+          value
+        )
+      // The listing was partial, so an ID Ficus could not see may still be valid.
+      continue
+    }
+    throw new LinearTeamRouteError(
+      `Ficus could not resolve Linear team key ${value} to a team ID: ${unresolvedReason(directory)}. Use a team key or ID the squad's Linear connection can see.`,
+      value
+    )
+  }
+  return resolved
 }
 
 /**
@@ -71,31 +117,8 @@ export interface ResolveLinearTeamRoutesInput {
  */
 export async function resolveLinearTeamRoutes(input: ResolveLinearTeamRoutesInput): Promise<unknown> {
   if (input.routes === null || input.routes === undefined) return input.routes
-  const stored = new Set(input.stored)
-  const pending = linearRouteTeamValues(input.routes).filter((value) => !(stored.has(value) && isLinearTeamId(value)))
-  if (!pending.length) return input.routes
-
-  const directory = await input.listTeams()
-  const resolved = new Map<string, string>()
-  for (const value of pending) {
-    const match = matchLinearTeamValue(value, directory.teams)
-    if (match.kind !== 'unknown') {
-      resolved.set(value, match.team.id)
-      continue
-    }
-    if (stored.has(value)) continue
-    if (isLinearTeamId(value)) {
-      if (listingIsConclusive(directory))
-        throw new LinearTeamRouteError(
-          `Linear team ${value} is not a team the squad's Linear connections can see. Choose a team key or ID from the squad's Linear settings.`
-        )
-      // The listing was partial, so an ID Ficus could not see may still be valid.
-      continue
-    }
-    throw new LinearTeamRouteError(
-      `Ficus could not resolve Linear team key ${value} to a team ID: ${unresolvedReason(directory)}. Use a team key or ID the squad's Linear connection can see.`
-    )
-  }
+  const resolved = await resolveLinearTeamValues(linearRouteTeamValues(input.routes), input)
+  if (!resolved.size) return input.routes
 
   const rewrite = (route: Route): Route => {
     const value = routeTeamId(route)
@@ -115,4 +138,61 @@ export async function resolveLinearTeamRoutes(input: ResolveLinearTeamRoutesInpu
       seen.add(key)
       return true
     })
+}
+
+function ruleTeamFilter(rule: unknown): string | undefined {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return undefined
+  const filters = (rule as Route).filters
+  return filters && typeof filters === 'object' && !Array.isArray(filters) ? routeTeamId(filters as Route) : undefined
+}
+
+/** Every non-empty team filter in stored or submitted Linear event rules (`integrationRules.linear`). */
+export function linearEventRuleTeamValues(rules: unknown): string[] {
+  return Array.isArray(rules) ? [...new Set(rules.flatMap((rule) => ruleTeamFilter(rule) ?? []))] : []
+}
+
+/** Stored Linear event rules whose team filter is not a team ID, so they match no event. */
+export function linearEventRuleTeamKeys(rules: unknown): Array<{ ruleId: string; value: string }> {
+  if (!Array.isArray(rules)) return []
+  return rules.flatMap((rule) => {
+    const value = ruleTeamFilter(rule)
+    if (!value || isLinearTeamId(value)) return []
+    const id = (rule as Route).id
+    return [{ ruleId: typeof id === 'string' ? id : 'unnamed', value }]
+  })
+}
+
+export interface ResolveLinearEventRuleTeamsInput extends ResolveLinearTeamValuesInput {
+  /** The submitted `integrationRules.linear` value. */
+  rules: unknown
+}
+
+/**
+ * Rewrites each submitted Linear event rule's team filter (`filters.teamId`) to the team ID, with the
+ * same rules as {@link resolveLinearTeamRoutes}: a key or ID of a listed team becomes its ID, a new
+ * unknown value is rejected with a message naming the rule, and an already-stored value that cannot
+ * be resolved is kept. Rules without a team filter, and values that are not rule lists, pass through.
+ */
+export async function resolveLinearEventRuleTeams(input: ResolveLinearEventRuleTeamsInput): Promise<unknown> {
+  if (!Array.isArray(input.rules)) return input.rules
+  let resolved: Map<string, string>
+  try {
+    resolved = await resolveLinearTeamValues(linearEventRuleTeamValues(input.rules), input)
+  } catch (error) {
+    if (!(error instanceof LinearTeamRouteError)) throw error
+    const rule = input.rules.find((item) => ruleTeamFilter(item) === error.value) as Route | undefined
+    const ruleId = typeof rule?.id === 'string' ? rule.id : undefined
+    throw new LinearTeamRouteError(
+      `${ruleId ? `Linear event rule ${ruleId}` : 'A Linear event rule'} has an invalid team filter. ${error.message}`,
+      error.value
+    )
+  }
+  if (!resolved.size) return input.rules
+  return input.rules.map((rule) => {
+    const value = ruleTeamFilter(rule)
+    const teamId = value ? resolved.get(value) : undefined
+    if (!teamId) return rule
+    const item = rule as Route
+    return { ...item, filters: { ...(item.filters as Route), teamId } }
+  })
 }
