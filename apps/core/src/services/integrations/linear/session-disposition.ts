@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity, type LinearActivityContent } from './app-api'
+import { enqueueLinearWrites } from './outbox'
 
 const log = createLogger('linear-session-disposition')
 
@@ -101,6 +102,25 @@ export async function postLinearSessionDisposition(input: {
         .update(linearAgentSessions)
         .set({ dispositionState: 'failed', updatedAt: new Date() })
         .where(eq(linearAgentSessions.id, input.sessionId))
+    // The write-back outbox retries it with backoff, under the same activity ID.
+    const [session] = await db
+      .select({ connectionId: linearAgentSessions.connectionId })
+      .from(linearAgentSessions)
+      .where(eq(linearAgentSessions.id, input.sessionId))
+    if (session)
+      await enqueueLinearWrites({
+        connectionId: session.connectionId,
+        scopeKey: input.sessionId,
+        sessionId: input.sessionId,
+        items: [
+          {
+            projectionKey,
+            kind: 'activity',
+            payload: { content: LINEAR_DISPOSITION_ACTIVITIES[input.disposition.kind] },
+            collapsible: false,
+          },
+        ],
+      }).catch(() => undefined)
     return false
   }
 }

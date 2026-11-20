@@ -3,7 +3,7 @@ useEnabledIntegrationFixtures('linear')
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { createBlankWorkflow } from '@ficus/shared'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { getSecretStore } from '../../secrets'
 import {
   agentQuestions,
@@ -12,6 +12,7 @@ import {
   agentTypes,
   db,
   inbox,
+  integrationOutputEvents,
   linearActivityOutbox,
   linearAgentSessions,
   linearQuestionMirrors,
@@ -352,7 +353,52 @@ describe('pull request attachments', () => {
   })
 })
 
+describe('acknowledgment and disposition retries', () => {
+  test('a failed acknowledgment is retried by the outbox under the same activity ID', async () => {
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    linear.failNext(500, 'FicusAgentActivity')
+    linear.failNext(500, 'FicusAgentActivity')
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, { sessionId, issue, creatorId: member.id }),
+    })
+    const [failed] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(failed!.ackState).toBe('failed')
+    await drainLinearOutbox()
+    const [sent] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(sent!.ackState).toBe('sent')
+    expect(bodies(sessionId)).toContainEqual(['thought', 'Received. Checking how to handle this request.'])
+    expect(
+      bodies(sessionId).filter(([, body]) => body === 'Received. Checking how to handle this request.')
+    ).toHaveLength(1)
+  })
+})
+
 describe('prompts on a bound session', () => {
+  test('an ordinary prompt belongs to the bound stream and does not also follow the prompted rule', async () => {
+    const { squad, sessionId } = await boundStream()
+    const before = (await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))).length
+    await prompt(sessionId, member.id, 'Please also cover the refund path')
+    const [event] = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          eq(integrationOutputEvents.integration, 'linear'),
+          sql`${integrationOutputEvents.fact}->>'output' = 'agent_session.prompted'`,
+          sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`
+        )
+      )
+      .orderBy(desc(integrationOutputEvents.createdAt))
+      .limit(1)
+    expect(event).toBeDefined()
+    // The tracking stream owns it (delivered per its flow's subscriptions); the manager hears nothing.
+    const after = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+    expect(after.length).toBe(before)
+    expect(bodies(sessionId).some(([type]) => type === 'response')).toBe(false)
+  })
+
   test('a member’s stop pauses the stream at once, tells the owner and posts the stopped response', async () => {
     const { squad, sessionId, stream } = await boundStream()
     await prompt(sessionId, member.id, 'stop', 'stop')

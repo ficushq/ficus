@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity } from './app-api'
+import { enqueueLinearWrites } from './outbox'
 
 const log = createLogger('linear-session-ack')
 
@@ -81,6 +82,22 @@ export async function acknowledgeLinearSession(
       log.warn(`Linear session ${sessionId} acknowledgment attempt ${attempt + 1} failed: ${errorCode(error)}`)
     }
   }
+  // A failed acknowledgment is retried by the write-back outbox under the same activity ID, so it
+  // never shows twice even if the last attempt's outcome was unknown.
+  if (!acknowledged)
+    await enqueueLinearWrites({
+      connectionId: input.connectionId,
+      scopeKey: sessionId,
+      sessionId,
+      items: [
+        {
+          projectionKey: 'ack',
+          kind: 'activity',
+          payload: { content: { type: 'thought', body: LINEAR_ACK_BODY } },
+          collapsible: false,
+        },
+      ],
+    }).catch((error) => log.warn(`Linear session ${sessionId} acknowledgment not queued: ${errorCode(error)}`))
   const [updated] = await db
     .update(linearAgentSessions)
     .set({
