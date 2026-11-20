@@ -51,13 +51,14 @@ try {
     const theme = appearance === 'dark' ? '&dark' : ''
     await page.setViewportSize({ width: 1100, height: 720 })
 
-    // Rows are unchanged by default; hovering one opens its peek after about half a second. The
-    // pointer is parked first: left over a row from the previous page, it would start the delay early.
+    // With "Show summaries" off, rows are unchanged; hovering one opens its peek after about half a
+    // second. The pointer is parked first: left over a row from the previous page, it would start the
+    // delay early.
     await page.mouse.move(0, 0)
-    await page.goto(`${base}?view=feed${theme}`)
+    await page.goto(`${base}?view=feed&nosummaries${theme}`)
     const row = page.locator('[data-testid="feed-work-row"]').first()
     await row.waitFor()
-    assert.equal(await page.locator('[data-testid="work-stream-summary-line"]').count(), 0, 'rows changed by default')
+    assert.equal(await page.locator('[data-testid="work-stream-summary-line"]').count(), 0, 'rows changed while off')
     await row.hover({ position: { x: 200, y: 12 } })
     await page.waitForTimeout(250)
     assert.equal(await page.locator('[data-testid="work-stream-peek"]').count(), 0, 'the peek opened too early')
@@ -70,8 +71,8 @@ try {
     assert.ok(rowBox && peekBox && peekBox.y >= rowBox.y + rowBox.height - 1, 'the peek is not below its row')
     await shot(`peek-${appearance}`)
 
-    // "Show summaries": one muted, truncated line under active rows only.
-    await page.goto(`${base}?view=feed&summaries${theme}`)
+    // "Show summaries", on by default: one muted, truncated line under active rows only.
+    await page.goto(`${base}?view=feed${theme}`)
     await page.locator('[data-testid="feed-work-row"]').first().waitFor()
     const lines = page.locator('[data-testid="work-stream-summary-line"]')
     assert.equal(await lines.count(), 3, 'expected a line for each active stream with a summary')
@@ -84,12 +85,17 @@ try {
       await page.goto(`${base}?view=${surface}${theme}`)
       const toggle = page.locator(`[data-testid="show-summaries-${surface}"]`)
       await toggle.waitFor()
-      assert.equal(await toggle.getAttribute('aria-checked'), 'false', `${surface}: summaries are on by default`)
-      await toggle.click()
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true', `${surface}: summaries are off by default`)
       assert.equal(await page.locator('[data-testid="work-stream-summary-line"]').count(), 3, `${surface}: no lines`)
-      assert.equal(await toggle.getAttribute('aria-checked'), 'true', `${surface}: the switch did not turn on`)
       await page.waitForTimeout(300)
       await shot(`${surface}-summaries-${appearance}`)
+      await toggle.click()
+      assert.equal(await toggle.getAttribute('aria-checked'), 'false', `${surface}: the switch did not turn off`)
+      assert.equal(
+        await page.locator('[data-testid="work-stream-summary-line"]').count(),
+        0,
+        `${surface}: lines remain`
+      )
     }
 
     // Board cards show the summary clamped to two lines.
