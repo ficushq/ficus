@@ -197,7 +197,12 @@ describe('work-stream derived state', () => {
       const input = { ...ws.toJson(), ...row.facts, agentIds: ['matrix-agent'], assigneeAgentId: null }
       const derived = (
         await computeDerivedStates([input], {
-          loadSlotWaitingStreams: async () => new Set(row.facts.hasActiveSlotWait ? [ws.id] : []),
+          loadSlotWaits: async () =>
+            new Map(
+              row.facts.hasActiveSlotWait
+                ? [[ws.id, { poolKey: 'heavy-work', attemptId: 1, position: 1, queuedCount: 1, queuedAt: '' }]]
+                : []
+            ),
           loadMonitoringAgentIds: async () => new Set(row.facts.hasActiveMonitor ? ['matrix-agent'] : []),
           loadDelivery: async () => new Map(row.facts.delivery ? [[ws.id, row.facts.delivery]] : []),
           loadBusyAgentIds: async () => new Set(row.facts.derivedState === 'in_progress' ? ['matrix-agent'] : []),

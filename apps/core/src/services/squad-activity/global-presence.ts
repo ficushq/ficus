@@ -216,6 +216,7 @@ async function buildWorkStreamCards(
       lastEventAt: lastEventAt(stream),
       // Already computed for needsYou above: no extra read.
       ...(presentation?.derivedState ? { derivedState: presentation.derivedState } : {}),
+      ...(presentation?.slotWait ? { slotWait: presentation.slotWait } : {}),
       ...(summary ? { summary: summary.text, summaryGeneratedAt: summary.generatedAt } : {}),
     }
   })

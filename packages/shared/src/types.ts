@@ -1363,6 +1363,25 @@ export interface WorkStreamWait {
  * active with no execution and no wait. Resource-wait context is a separate
  * presentation fact; ordinary idle is neutral.
  */
+/** Why an otherwise idle stream is waiting: its participant is queued for capacity in a slot pool. */
+export interface WorkStreamSlotWait {
+  /** The squad's pool key, such as `heavy-work`. */
+  poolKey: string
+  /** The flow attempt whose participant queued. */
+  attemptId: number
+  /** One-based place in the pool's grant order. */
+  position: number
+  /** Waiters queued in the pool, this one included. */
+  queuedCount: number
+  /** ISO time the participant queued. */
+  queuedAt: string
+  /**
+   * Host-shared pools only: every unit of the machine host's budget is in use, so the queue moves
+   * only when a holder (possibly in another squad) releases or its claim expires.
+   */
+  hostBusy?: boolean
+}
+
 export type WorkStreamDerivedState =
   | 'paused'
   | 'in_progress'
@@ -1551,8 +1570,14 @@ export interface WorkStream {
   /** Work streams in this squad that depend on this stream. Computed server-side; never stored. */
   dependedOnBy: string[]
   /** Display state derived from executions + open waits. Populated by list/detail endpoints. */
-  /** Server-owned, current-flow resource wait context; no pool or participant details. */
+  /** Server-owned, current-flow resource wait context; true exactly when `slotWait` is present. */
   hasActiveSlotWait?: boolean
+  /**
+   * Server-owned: the current flow attempt's participant is queued for a slot in its squad's pool.
+   * Counts and the squad's own pool key only, never agent identities or other squads' details.
+   * Absent when no attributable wait is open; it clears when the slot is granted.
+   */
+  slotWait?: WorkStreamSlotWait
   /**
    * Server-owned: an agent bound to this active stream (or its subagent) has a
    * live background monitor. Presentation-only; no monitor details.

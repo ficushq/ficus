@@ -7,6 +7,7 @@ import {
   planFleetAlert,
   planSandboxAlert,
   planSandboxOverloadAlert,
+  planSlotCapacityAlert,
   SANDBOX_OVERLOAD_ALERT_AFTER_MS,
   SANDBOX_OVERLOAD_STALE_MS,
   type FleetIncidentAudience,
@@ -844,6 +845,140 @@ export async function listOpenSandboxOverloadSandboxIds(): Promise<string[]> {
     .from(fleetIncidents)
     .where(and(eq(fleetIncidents.kind, 'sandbox_overloaded'), isNull(fleetIncidents.resolvedAt)))
   return rows.flatMap((row) => (row.scopeKey.startsWith('sandbox:') ? [row.scopeKey.slice('sandbox:'.length)] : []))
+}
+
+/**
+ * Facts of one slot pool's long queue. Counts only: another squad's agents,
+ * streams and pools are never named, only how many host units they hold.
+ */
+export interface SlotCapacityWaitDetails {
+  poolKey: string
+  queuedCount: number
+  oldestQueuedAt: string
+  claimTimeoutMs: number
+  /** The pool's effective capacity and its live claims. */
+  capacity: number
+  activeCount: number
+  hostShared: boolean
+  /** Host-shared pools with an enforced machine host budget only. */
+  hostCapacity?: number
+  hostActiveCount?: number
+  hostHeldByOtherSquads?: number
+}
+
+export type SlotCapacityWaitObservation =
+  | { status: 'waiting'; poolId: string; squadId: string; details: SlotCapacityWaitDetails; now: Date }
+  | { status: 'clear'; poolId: string; now: Date }
+
+/** Why the queue is not moving, from counts alone, with a suggestion that fits that reason. */
+export function describeSlotCapacityWait(details: SlotCapacityWaitDetails): {
+  code: string
+  summary: string
+  remediation: string
+} {
+  const hostFull =
+    details.hostShared && details.hostCapacity !== undefined && (details.hostActiveCount ?? 0) >= details.hostCapacity
+  const elsewhere = details.hostHeldByOtherSquads ?? 0
+  const units = (count: number) => (count === 1 ? '1 unit' : `${count} units`)
+  if (hostFull && elsewhere > 0) {
+    return {
+      code: 'slot-host-held-elsewhere',
+      summary: `The machine host's budget for host-shared pools is full: other squads hold ${elsewhere} of its ${units(details.hostCapacity!)}.`,
+      remediation:
+        'Nothing needs restarting: queued agents get a unit automatically when a holder releases it or its claim expires. If this keeps happening, raise the host budget in Settings → System or ask an operator to review heavy work on this machine host.',
+    }
+  }
+  if (hostFull || details.activeCount >= details.capacity) {
+    const held = hostFull ? (details.hostActiveCount ?? details.activeCount) : details.activeCount
+    return {
+      code: 'slot-held-by-squad',
+      summary: `All ${units(held)} ${hostFull ? "of the machine host's budget" : `of ${details.poolKey}`} ${held === 1 ? 'is' : 'are'} held by this squad's agents, and the queue has outlasted the claim timeout.`,
+      remediation:
+        'Check the holders with `ficus slot list`. A holder that has finished its heavy work should release its claim with `ficus slot release <claim-id>`; a claim nobody renews expires after the claim timeout.',
+    }
+  }
+  return {
+    code: 'slot-queue-not-granted',
+    summary: `${details.poolKey} has a free unit, but its queued agents have not been granted one.`,
+    remediation:
+      'Check the pool with `ficus slot list`, and ask an authorized operator to check slot promotion if the queue still does not move.',
+  }
+}
+
+/**
+ * Persist one long-queue episode per slot pool. The detector reports a pool
+ * only while its oldest queued waiter is past the pool's claim timeout plus a
+ * margin, so the alert is due at once; it resolves when that no longer holds.
+ * Queued work itself is never a squad stall (see scoped-progress.ts).
+ */
+export async function observeSlotCapacityWait(input: SlotCapacityWaitObservation): Promise<string | undefined> {
+  const scopeKey = `slot-pool:${input.poolId}`
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'fleet-incident:slot_capacity_wait:' + scopeKey}))`)
+    const [openIncident] = await tx
+      .select()
+      .from(fleetIncidents)
+      .where(
+        and(
+          eq(fleetIncidents.kind, 'slot_capacity_wait'),
+          eq(fleetIncidents.scopeKey, scopeKey),
+          isNull(fleetIncidents.resolvedAt)
+        )
+      )
+      .limit(1)
+    if (input.status === 'clear') {
+      if (!openIncident) return undefined
+      await resolveFleetIncident(tx, openIncident.id, input.now)
+      return openIncident.id
+    }
+
+    const cause = describeSlotCapacityWait(input.details)
+    const values = {
+      lastObservedAt: input.now,
+      causeCode: cause.code,
+      causeSummary: cause.summary,
+      remediation: cause.remediation,
+      details: { ...input.details },
+      updatedAt: input.now,
+    }
+    let incidentId = openIncident?.id
+    if (openIncident) {
+      await tx.update(fleetIncidents).set(values).where(eq(fleetIncidents.id, openIncident.id))
+    } else {
+      const [incident] = await tx
+        .insert(fleetIncidents)
+        .values({
+          kind: 'slot_capacity_wait',
+          scopeKey,
+          squadId: input.squadId,
+          // The episode is the wait itself, so a recovery reports how long the queue stood still.
+          startedAt: new Date(input.details.oldestQueuedAt),
+          alertAfter: input.now,
+          ...values,
+        })
+        .returning()
+      if (!incident) throw new Error('Failed to persist slot capacity incident')
+      incidentId = incident.id
+    }
+    const plan = planSlotCapacityAlert((await validCurrentManagerForSquad(tx, input.squadId)) != null)
+    await materializeManagerRoutedAlert(tx, {
+      incidentId: incidentId!,
+      managerDueAt: openIncident?.alertAfter ?? input.now,
+      managerStatus: plan.manager === 'skip' ? 'skipped' : 'pending',
+      humanDelayMs: plan.humanDelayMs,
+      now: input.now,
+    })
+    return incidentId
+  })
+}
+
+/** Pools with an open long-queue episode, so the detector can close ones it no longer reports. */
+export async function listOpenSlotCapacityWaitPoolIds(): Promise<string[]> {
+  const rows = await db
+    .select({ scopeKey: fleetIncidents.scopeKey })
+    .from(fleetIncidents)
+    .where(and(eq(fleetIncidents.kind, 'slot_capacity_wait'), isNull(fleetIncidents.resolvedAt)))
+  return rows.flatMap((row) => (row.scopeKey.startsWith('slot-pool:') ? [row.scopeKey.slice('slot-pool:'.length)] : []))
 }
 
 export interface FleetIncidentNotificationClaim {

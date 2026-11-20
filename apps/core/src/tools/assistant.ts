@@ -4,7 +4,12 @@ import { Type, type TSchema, type Static } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, workStreamRef } from '@ficus/shared'
+import {
+  selectWorkStreamPresentationState,
+  workStreamNeedsHumanAttention,
+  workStreamRef,
+  workStreamSlotWaitLabel,
+} from '@ficus/shared'
 import {
   agents,
   assistantEntries,
@@ -81,6 +86,7 @@ function presentStream(stream: Pick<StreamRow, 'status' | 'pause'>, facts: Deriv
   }
   return {
     state: selectWorkStreamPresentationState(presentation),
+    ...(facts?.slotWait ? { slotWaitLabel: workStreamSlotWaitLabel(facts.slotWait) } : {}),
     needsHuman: workStreamNeedsHumanAttention(presentation),
   }
 }

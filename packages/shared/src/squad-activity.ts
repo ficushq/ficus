@@ -224,6 +224,11 @@ export interface ActivityWorkStreamCard {
    * reads as paused even when its flow is not. Absent from older servers.
    */
   derivedState?: import('./types').WorkStreamDerivedState
+  /**
+   * The participant is queued for a slot (the same value as `WorkStream.slotWait`). The row reads
+   * "Waiting for heavy-work slot (position 2 of 5, host busy)" instead of Idle. Absent from older servers.
+   */
+  slotWait?: import('./types').WorkStreamSlotWait
 }
 
 /**
@@ -244,8 +249,8 @@ export function activityStepLabel(step: string | null | undefined): string | nul
 
 /**
  * The one state an Active work row shows, in precedence order: a person must act; a participant is
- * running; the stream is paused; it waits on something else (a review, an answer, a dependency or its
- * pull request); it is queued; otherwise nobody is working on it right now.
+ * running; the stream is paused; it waits on something else (a review, an answer, a dependency, its
+ * pull request or a slot); it is queued; otherwise nobody is working on it right now.
  */
 export type ActivityWorkStreamCardState = 'needs-you' | 'working' | 'paused' | 'waiting' | 'queued' | 'idle'
 
@@ -258,12 +263,18 @@ const WAITING_DERIVED_STATES = new Set<string>([
 ])
 
 export function activityWorkStreamCardState(
-  card: Pick<ActivityWorkStreamCard, 'needsYou' | 'workingAgentIds' | 'step' | 'waits' | 'status' | 'derivedState'>
+  card: Pick<ActivityWorkStreamCard, 'needsYou' | 'workingAgentIds' | 'step' | 'waits' | 'status' | 'derivedState'> &
+    Partial<Pick<ActivityWorkStreamCard, 'slotWait'>>
 ): ActivityWorkStreamCardState {
   if (card.needsYou) return 'needs-you'
   if (card.workingAgentIds.length > 0) return 'working'
   if (card.derivedState === 'paused' || card.step === 'Paused') return 'paused'
-  if (card.waits.length > 0 || (card.derivedState && WAITING_DERIVED_STATES.has(card.derivedState))) return 'waiting'
+  if (
+    card.waits.length > 0 ||
+    (card.derivedState && WAITING_DERIVED_STATES.has(card.derivedState)) ||
+    (card.slotWait && card.derivedState === 'idle')
+  )
+    return 'waiting'
   if (card.status === 'queued') return 'queued'
   return 'idle'
 }

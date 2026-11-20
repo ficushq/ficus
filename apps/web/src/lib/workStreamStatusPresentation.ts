@@ -12,6 +12,7 @@ import {
   type WorkStreamDeliveryExplanation,
   type WorkStreamPresentationFacts,
   type WorkStreamPresentationState,
+  workStreamSlotWaitLabel,
   type StatusRole,
   type PendingAction,
   type WorkStreamActionData,
@@ -109,6 +110,7 @@ export function workStreamStatusLabel(workStream: WorkStreamPresentationFacts): 
   if (state === 'delivery_external' || state === 'delivery_failure' || state === 'delivery_setup') {
     return codeHostDeliveryLabel(workStream.delivery) ?? WS_STATUS_LABELS[state]
   }
+  if (state === 'waiting_for_slot') return workStreamSlotWaitLabel(workStream.slotWait)
   return WS_STATUS_LABELS[state]
 }
 

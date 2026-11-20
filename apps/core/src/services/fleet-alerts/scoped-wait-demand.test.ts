@@ -22,7 +22,7 @@ const START = new Date('2026-08-18T12:00:00Z')
 const at = (minutes: number) => new Date(START.getTime() + minutes * 60_000)
 const NOW = at(45)
 
-describe('bounded route-scoped slot waiting and alternative participant clocks', () => {
+describe('route-scoped slot waiting and alternative participant clocks', () => {
   let squadId: string
   let owner: string
   let sibling: string
@@ -154,15 +154,48 @@ describe('bounded route-scoped slot waiting and alternative participant clocks',
     return { snapshot, incidents, notices }
   }
 
-  test('an attributed waiter exempts only its current attempt until the pool timeout, without canceling the subscription', async () => {
+  test('an attributed waiter exempts its current attempt for as long as it stays queued, past the pool timeout', async () => {
     const waiter = await wait()
     expect((await observe()).snapshot.count).toBe(0)
     expect((await observe()).incidents).toEqual([])
-    expect((await observe(at(61 - 1 / 60_000))).snapshot.count).toBe(0)
-    const expired = await observe(at(61))
-    expect(expired.snapshot.count).toBe(1)
-    expect(expired.notices.filter((row) => row.kind === 'alert')).toHaveLength(2)
+    // Waiting for capacity is not a stall at any age; a long queue is the separate slot_capacity_wait alert.
+    for (const minutes of [61, 300]) {
+      const later = await observe(at(minutes))
+      expect(later.snapshot.count).toBe(0)
+      expect(later.incidents).toEqual([])
+    }
     expect((await db.select().from(slotWaiters).where(eq(slotWaiters.id, waiter.id)))[0]!.status).toBe('queued')
+
+    // Once granted, the attempt is ordinary demand again with a fresh readmission clock.
+    await db
+      .update(slotWaiters)
+      .set({ status: 'granted', endedAt: at(300) })
+      .where(eq(slotWaiters.id, waiter.id))
+    const granted = await observe(at(310))
+    expect(granted.snapshot.count).toBe(1)
+    expect(granted.notices).toEqual([])
+    const unserved = await observe(at(331))
+    expect(unserved.notices.filter((row) => row.kind === 'alert')).toHaveLength(2)
+    expect(unserved.incidents[0]!.causeCode).toBe('demand-not-served')
+  })
+
+  test('the reported shape: a 45-minute host-shared pool queued for 48 minutes stays quiet', async () => {
+    await db
+      .update(slotPools)
+      .set({ claimTimeoutMs: 45 * 60_000 })
+      .where(eq(slotPools.id, poolId))
+    await wait(1, streamId, 1)
+    const result = await observe(at(49))
+    expect(result.snapshot.count).toBe(0)
+    expect(result.incidents).toEqual([])
+  })
+
+  test('the same idle attempt without a subscription still alerts as an unexplained stall', async () => {
+    await run()
+    const result = await observe()
+    expect(result.snapshot.count).toBe(1)
+    expect(result.incidents[0]!.causeCode).toBe('demand-not-served')
+    expect(result.notices.filter((row) => row.kind === 'alert')).toHaveLength(2)
   })
 
   test.each(['queued execution', 'inbox', 'schedule'] as const)(
@@ -258,7 +291,7 @@ describe('bounded route-scoped slot waiting and alternative participant clocks',
     }
   )
 
-  test('a subscription queued for several hours cannot hide an abandoned attempt', async () => {
+  test('a subscription queued for several hours is a capacity wait, not a stall', async () => {
     await db
       .update(workStreams)
       .set({ createdAt: at(-300) })
@@ -269,8 +302,8 @@ describe('bounded route-scoped slot waiting and alternative participant clocks',
       .where(eq(workStreamFlowRuns.workStreamId, streamId))
     await wait(1, streamId, -240)
     const result = await observe()
-    expect(result.snapshot.count).toBe(1)
-    expect(result.notices.filter((row) => row.kind === 'alert')).toHaveLength(2)
+    expect(result.snapshot.count).toBe(0)
+    expect(result.incidents).toEqual([])
   })
 
   test('subscribing cannot resolve an incident while independent overdue inbox work remains', async () => {

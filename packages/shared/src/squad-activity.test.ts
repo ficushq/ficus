@@ -266,4 +266,14 @@ describe('Active work row state and step labels', () => {
     expect(activityWorkStreamCardState(card({ status: 'queued', step: null }))).toBe('queued')
     expect(activityWorkStreamCardState(card())).toBe('idle')
   })
+
+  it('reads a participant queued for a slot as waiting, not idle', () => {
+    const slotWait = { poolKey: 'heavy-work', attemptId: 1, position: 1, queuedCount: 3, queuedAt: '' }
+    expect(activityWorkStreamCardState(card({ derivedState: 'idle', slotWait }))).toBe('waiting')
+    // Running work and pause keep their precedence.
+    expect(activityWorkStreamCardState(card({ derivedState: 'idle', slotWait, workingAgentIds: ['a'] }))).toBe(
+      'working'
+    )
+    expect(activityWorkStreamCardState(card({ derivedState: 'paused', slotWait }))).toBe('paused')
+  })
 })

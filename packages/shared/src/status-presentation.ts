@@ -5,6 +5,7 @@ import type {
   SandboxRuntimeState,
   SandboxToolchainStatus,
   WorkStreamDerivedState,
+  WorkStreamSlotWait,
   WorkStreamStatus,
   WorkStreamWaitActor,
   WorkStreamWaitType,
@@ -267,6 +268,8 @@ export function workStreamWaitDisplayType(wait: WorkStreamWaitDisplayFacts): Wor
 export interface WorkStreamPresentationFacts {
   /** Read-only server projection; absent/false never implies a live resource wait. */
   hasActiveSlotWait?: boolean
+  /** Pool and queue detail for `hasActiveSlotWait`; older servers send only the boolean. */
+  slotWait?: WorkStreamSlotWait
   /** Read-only server projection; absent/false never implies a live agent monitor. */
   hasActiveMonitor?: boolean
   delivery?: WorkStreamDeliveryPresentation
@@ -359,9 +362,24 @@ export function selectWorkStreamPresentationState(
  * wait outranks a live monitor; neither fact ever replaces any other state.
  */
 function idlePresentationState(workStream: WorkStreamPresentationFacts): WorkStreamPresentationState {
-  if (workStream.hasActiveSlotWait === true) return 'waiting_for_slot'
+  if (workStream.hasActiveSlotWait === true || workStream.slotWait) return 'waiting_for_slot'
   if (workStream.hasActiveMonitor === true) return 'monitoring'
   return 'idle'
+}
+
+/**
+ * "Waiting for heavy-work slot (position 2 of 5, host busy)". Without detail (an older server)
+ * it is the plain "Waiting for slot".
+ */
+export function workStreamSlotWaitLabel(slotWait: WorkStreamSlotWait | undefined): string {
+  if (!slotWait) return 'Waiting for slot'
+  const parts = [
+    slotWait.queuedCount > 1
+      ? `position ${slotWait.position} of ${slotWait.queuedCount}`
+      : `position ${slotWait.position}`,
+    ...(slotWait.hostBusy ? ['host busy'] : []),
+  ]
+  return `Waiting for ${slotWait.poolKey} slot (${parts.join(', ')})`
 }
 
 /** Delivery stays discoverable while execution owns the primary status.

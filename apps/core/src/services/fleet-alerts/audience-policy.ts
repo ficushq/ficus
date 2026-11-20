@@ -38,6 +38,15 @@ export function planSandboxOverloadAlert(hasValidManager: boolean): FleetAlertAu
   return { manager: 'deliver', humanDelayMs: HUMAN_FALLBACK_MS }
 }
 
+/**
+ * A long slot queue goes to the squad manager first, who can check the squad's
+ * own holders; humans hear after the standard fallback if it persists.
+ */
+export function planSlotCapacityAlert(hasValidManager: boolean): FleetAlertAudiencePlan {
+  if (!hasValidManager) return { manager: 'skip', humanDelayMs: 0 }
+  return { manager: 'deliver', humanDelayMs: HUMAN_FALLBACK_MS }
+}
+
 export function planFleetAlert(input: {
   kind: 'provider_unhealthy' | 'squad_dead_fleet'
   causeCode: string

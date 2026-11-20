@@ -23,6 +23,7 @@ import {
   selectWorkStreamPresentationState,
   workStreamNeedsHumanAttention,
   workStreamSecondaryDeliveryLabel,
+  workStreamSlotWaitLabel,
   type AgentPresentationState,
   type SandboxPresentationState,
   type StatusRole,
@@ -366,6 +367,30 @@ describe('slot wait presentation', () => {
       selectWorkStreamPresentationState({ ...idle, openWaits: [{ type: 'manual' }], hasActiveSlotWait: true })
     ).toBe('blocked')
     expect(selectWorkStreamPresentationState({ status: 'active', derivedState: 'idle', hasActiveSlotWait: true })).toBe(
+      'waiting_for_slot'
+    )
+  })
+
+  test('names the pool, the queue position and a busy host when the server sends them', () => {
+    const slotWait = {
+      poolKey: 'heavy-work',
+      attemptId: 1,
+      position: 2,
+      queuedCount: 5,
+      queuedAt: '2026-11-20T21:00:00.000Z',
+    }
+    expect(workStreamSlotWaitLabel({ ...slotWait, hostBusy: true })).toBe(
+      'Waiting for heavy-work slot (position 2 of 5, host busy)'
+    )
+    expect(workStreamSlotWaitLabel({ ...slotWait, hostBusy: false })).toBe(
+      'Waiting for heavy-work slot (position 2 of 5)'
+    )
+    expect(workStreamSlotWaitLabel({ ...slotWait, position: 1, queuedCount: 1 })).toBe(
+      'Waiting for heavy-work slot (position 1)'
+    )
+    // An older server sends only the boolean.
+    expect(workStreamSlotWaitLabel(undefined)).toBe('Waiting for slot')
+    expect(selectWorkStreamPresentationState({ status: 'active', derivedState: 'idle', openWaits: [], slotWait })).toBe(
       'waiting_for_slot'
     )
   })

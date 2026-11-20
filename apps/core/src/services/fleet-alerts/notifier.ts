@@ -104,7 +104,9 @@ export class FleetIncidentNotifier {
     const subject = rendered.subject
     const managerInstruction =
       claim.audience === 'manager' && claim.phase === 'alert'
-        ? '\n\nDiagnose this incident, attempt safe recovery or rerouting, and escalate only when credentials, approval, billing, or other external/operator action is required.'
+        ? claim.incidentKind === 'slot_capacity_wait'
+          ? "\n\nQueued agents are waiting for capacity, not stuck: do not restart them or cancel their subscriptions. Check this squad's own holders, and escalate only when the host budget or another squad's use needs an operator."
+          : '\n\nDiagnose this incident, attempt safe recovery or rerouting, and escalate only when credentials, approval, billing, or other external/operator action is required.'
         : ''
     const content = `${rendered.content}${managerInstruction}`
 

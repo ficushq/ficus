@@ -203,3 +203,19 @@ describe('work-stream pending action presentation', () => {
     expect(noEntry.sort()).toEqual(['blocked', 'delivery_setup'])
   })
 })
+
+describe('slot wait label', () => {
+  const idle = { status: 'active' as const, derivedState: 'idle' as const, openWaits: [] }
+  test('an idle stream whose participant is queued names the pool, position and busy host', () => {
+    expect(
+      workStreamStatusLabel({
+        ...idle,
+        hasActiveSlotWait: true,
+        slotWait: { poolKey: 'heavy-work', attemptId: 1, position: 3, queuedCount: 5, queuedAt: '', hostBusy: true },
+      })
+    ).toBe('Waiting for heavy-work slot (position 3 of 5, host busy)')
+    // An older server sends only the boolean; without either the stream is plainly idle.
+    expect(workStreamStatusLabel({ ...idle, hasActiveSlotWait: true })).toBe('Waiting for slot')
+    expect(workStreamStatusLabel(idle)).toBe('Idle')
+  })
+})
