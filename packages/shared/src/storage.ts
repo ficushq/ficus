@@ -14,6 +14,13 @@ export interface StorageAgent {
   removalPending?: boolean
   /** The last "remove now" request for this dormancy was given up after repeated failures. */
   removalError?: string
+  /**
+   * Backs a Slack, Discord or Telegram conversation. Never removed: dormant retention (or
+   * "remove now") only frees its storage, and a new channel message wakes it again.
+   */
+  channelBound?: boolean
+  /** A dormant channel-bound agent whose storage was already freed in this dormancy. */
+  storageReclaimed?: boolean
 }
 
 /** Read-only, approximate allocated-byte accounting for VM sandbox machines. */

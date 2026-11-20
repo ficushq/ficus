@@ -123,7 +123,8 @@ async function resolveDirectAgent(
     .values({
       agentTypeId: 'consultant',
       squadId,
-      persist: true,
+      // Not persistent: see ChannelInstance.queueForConsultant.
+      persist: false,
       context: {
         scope: { type: 'consultant' },
         origin: 'channel',

@@ -125,18 +125,33 @@ export function StorageSquadView({
   const agentFolders = squad.folders.filter(isAgentFolder)
   const dormant = agentFolders.filter((folder) => folder.agent?.status === 'dormant').sort(bySize)
   const others = agentFolders.filter((folder) => folder.agent?.status !== 'dormant').sort(bySize)
+  // Channel-bound agents are never removed: retention only frees their storage.
+  const channelDormant = dormant.filter((folder) => folder.agent?.channelBound)
+  const removedDormant = dormant.filter((folder) => !folder.agent?.channelBound)
   const removalDate = automaticRemovalDate(
-    dormant.map((folder) => folder.agent!.dormantAt),
+    removedDormant.map((folder) => folder.agent!.dormantAt),
     retentionDays
   )
   // Past the date, the dormant sweep is working through them (up to 5 a minute).
-  const dormantSummary = `${dormant.length} dormant · ${approximateSum(dormant)} · ${
-    !removalDate
-      ? `removed automatically after ${retentionDays} days`
-      : removalDate.getTime() <= now
-        ? 'removal pending'
-        : `removed automatically from ${removalDate.toLocaleDateString()}`
-  }`
+  const dormantSummary = [
+    `${dormant.length} dormant`,
+    approximateSum(dormant),
+    ...(removedDormant.length
+      ? [
+          !removalDate
+            ? `removed automatically after ${retentionDays} days`
+            : removalDate.getTime() <= now
+              ? 'removal pending'
+              : `removed automatically from ${removalDate.toLocaleDateString()}`,
+        ]
+      : []),
+    ...(channelDormant.length
+      ? [
+          `${removedDormant.length ? `${channelDormant.length} channel agent${channelDormant.length === 1 ? '' : 's'}: ` : ''}storage freed after ${retentionDays} days, never removed`,
+        ]
+      : []),
+  ].join(' · ')
+  const channelBoundIds = new Set(channelDormant.map((folder) => folder.agent!.id))
   const hasConsultants = squad.folders.some((folder) => folder.agent?.agentTypeId === 'consultant')
 
   const makeDormantAction = (folder: StorageFolder) => {
@@ -145,16 +160,27 @@ export function StorageSquadView({
     if (STORAGE_DORMANCY_EXEMPT_AGENT_TYPES.includes(agent.agentTypeId)) return undefined
     return <RowButton label="Make dormant" onClick={() => setDialog({ kind: 'dormant', folder })} />
   }
-  const removeAction = (folder: StorageFolder) =>
-    folder.agent?.removalPending ? (
-      <span className="text-xs text-secondary">Removing…</span>
-    ) : canCleanup ? (
-      <RowButton danger label="Remove now" onClick={() => setDialog({ kind: 'remove', folders: [folder] })} />
-    ) : undefined
-  const removable = dormant.filter((folder) => !folder.agent?.removalPending)
+  const removeAction = (folder: StorageFolder) => {
+    const channelBound = folder.agent?.channelBound === true
+    if (channelBound && folder.agent?.storageReclaimed)
+      return <span className="text-xs text-secondary">Storage freed</span>
+    if (folder.agent?.removalPending)
+      return <span className="text-xs text-secondary">{channelBound ? 'Freeing…' : 'Removing…'}</span>
+    if (!canCleanup) return undefined
+    return (
+      <RowButton
+        danger={!channelBound}
+        label={channelBound ? 'Free storage now' : 'Remove now'}
+        onClick={() => setDialog({ kind: 'remove', folders: [folder] })}
+      />
+    )
+  }
+  const removable = dormant.filter((folder) => !folder.agent?.removalPending && !folder.agent?.storageReclaimed)
 
   const removing = dialog?.kind === 'remove' ? dialog.folders : []
   const removingBytes = approximateSum(removing)
+  const removingChannel = removing.filter((folder) => folder.agent?.channelBound)
+  const removingOnlyChannel = removing.length > 0 && removingChannel.length === removing.length
   const dormantFolder = dialog?.kind === 'dormant' ? dialog.folder : null
 
   return (
@@ -204,8 +230,12 @@ export function StorageSquadView({
                   {canCleanup && removable.length > 1 && (
                     <div className="flex justify-end py-1">
                       <RowButton
-                        danger
-                        label={`Remove all ${removable.length} now`}
+                        danger={!removable.every((folder) => folder.agent?.channelBound)}
+                        label={
+                          removable.every((folder) => folder.agent?.channelBound)
+                            ? `Free storage of all ${removable.length} now`
+                            : `Remove all ${removable.length} now`
+                        }
                         onClick={() => setDialog({ kind: 'remove', folders: removable })}
                       />
                     </div>
@@ -234,33 +264,73 @@ export function StorageSquadView({
         </p>
         <p>
           No space is freed now: its files ({measuredSize(dormantFolder ?? { bytes: null })}) stay on disk while it is
-          dormant. It is removed automatically {retentionDays} days after it becomes dormant, which frees that space.
+          dormant.{' '}
+          {dormantFolder?.agent?.channelBound
+            ? `${retentionDays} days after it becomes dormant that space is freed, but the agent is never removed: a new channel message wakes it with its history.`
+            : `It is removed automatically ${retentionDays} days after it becomes dormant, which frees that space.`}
         </p>
       </ConfirmStorageAction>
 
       <ConfirmStorageAction
         isOpen={removing.length > 0}
         onClose={close}
-        danger
-        title={removing.length === 1 ? 'Remove dormant agent now' : `Remove ${removing.length} dormant agents now`}
-        confirmLabel={removing.length === 1 ? 'Remove now' : `Remove ${removing.length} now`}
+        danger={!removingOnlyChannel}
+        title={
+          removingOnlyChannel
+            ? 'Free storage now'
+            : removing.length === 1
+              ? 'Remove dormant agent now'
+              : `Remove ${removing.length} dormant agents now`
+        }
+        confirmLabel={
+          removingOnlyChannel
+            ? 'Free storage now'
+            : removing.length === 1
+              ? 'Remove now'
+              : `Remove ${removing.length} now`
+        }
         action={() => removeDormantAgents(removing.map((folder) => folder.agent!.id))}
-        onDone={(result) => onDone(removalSummary(result))}
+        onDone={(result) => onDone(removalSummary(result, channelBoundIds))}
       >
+        {removingOnlyChannel ? (
+          <>
+            <p>
+              Frees the storage of{' '}
+              <span className="font-medium text-primary">
+                {removing.length === 1 ? removing[0]!.agent!.label : `${removing.length} dormant channel agents`}
+              </span>{' '}
+              now instead of after the {retentionDays}-day retention period.
+            </p>
+            <p>
+              The agent&apos;s home is archived and removed from the machine, which frees up to {removingBytes}. The
+              agent is not removed: it stays dormant with its conversation history, and a new channel message wakes it.
+            </p>
+          </>
+        ) : (
+          <>
+            <p>
+              Permanently removes{' '}
+              <span className="font-medium text-primary">
+                {removing.length === 1 ? removing[0]!.agent!.label : `${removing.length} dormant agents`}
+              </span>{' '}
+              now instead of after the {retentionDays}-day retention period.
+            </p>
+            <p>
+              The agent&apos;s home is archived and removed from the machine, and the agent can no longer be woken or
+              reused. This frees up to {removingBytes}.
+            </p>
+            {removingChannel.length > 0 && (
+              <p>
+                {removingChannel.length === 1 ? 'One of them backs' : `${removingChannel.length} of them back`} a
+                channel conversation: only {removingChannel.length === 1 ? 'its' : 'their'} storage is freed, and{' '}
+                {removingChannel.length === 1 ? 'it stays' : 'they stay'} dormant and wakeable.
+              </p>
+            )}
+          </>
+        )}
         <p>
-          Permanently removes{' '}
-          <span className="font-medium text-primary">
-            {removing.length === 1 ? removing[0]!.agent!.label : `${removing.length} dormant agents`}
-          </span>{' '}
-          now instead of after the {retentionDays}-day retention period.
-        </p>
-        <p>
-          The agent&apos;s home is archived and removed from the machine, and the agent can no longer be woken or
-          reused. This frees up to {removingBytes}.
-        </p>
-        <p>
-          Removal runs in the background over the next few minutes; until then the agent shows as Removing…. Sizes
-          update after the next scan.
+          This runs in the background over the next few minutes; until then the agent shows as{' '}
+          {removingOnlyChannel ? 'Freeing…' : 'Removing…'}. Sizes update after the next scan.
         </p>
       </ConfirmStorageAction>
 

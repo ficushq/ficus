@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { squads, workStreams } from '../db/schema'
 import { ChannelInstance } from './ChannelInstance'
+import { Agent } from './Agent'
+import { InboxMessage } from './InboxMessage'
+import { isChannelBoundAgent } from './agent-queries'
+import * as channelAccess from '../services/channel-access'
 
 function instance(overrides: Partial<ChannelInstance> = {}): ChannelInstance {
   return new ChannelInstance({
@@ -191,5 +195,26 @@ describe('ChannelInstance status command', () => {
     expect(mutated).toContain('Queued second')
     expect(mutated).not.toContain('Queued first')
     expect(mutated).toContain('1 more not shown')
+  })
+})
+
+describe('ChannelInstance.queueForConsultant', () => {
+  it('creates a non-persistent, channel-bound consultant so idle dormancy and storage reclamation apply', async () => {
+    const access = spyOn(channelAccess, 'canUseChannel').mockResolvedValue(true)
+    const create = spyOn(Agent, 'create').mockResolvedValue({ id: 'agent-1' } as Agent)
+    const send = spyOn(InboxMessage, 'send').mockResolvedValue({} as never)
+    try {
+      await instance({ defaultSquadId: 'squad-1' }).queueForConsultant(inbound('C123'))
+      const input = create.mock.calls[0]![0]
+      expect(input).toMatchObject({ agentTypeId: 'consultant', squadId: 'squad-1', persist: false })
+      expect(isChannelBoundAgent({ agentTypeId: input.agentTypeId, parentAgentId: null, context: input.context })).toBe(
+        true
+      )
+      expect(send.mock.calls[0]![0]).toMatchObject({ recipientId: 'agent-1', wakeEligible: true })
+    } finally {
+      access.mockRestore()
+      create.mockRestore()
+      send.mockRestore()
+    }
   })
 })

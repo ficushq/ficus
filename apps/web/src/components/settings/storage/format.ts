@@ -73,7 +73,7 @@ export function daysAgoLabel(iso: string, now = Date.now()): string {
 export function agentDetails(agent: StorageAgent): string {
   const status = agent.status === 'terminated' ? 'removed' : agent.status.replace('-', ' ')
   const activity = agent.lastMessageAt ? `last active ${daysAgoLabel(agent.lastMessageAt)}` : 'never messaged'
-  return `${agent.agentTypeId} · ${status} · ${activity}`
+  return `${agent.channelBound ? 'channel consultant' : agent.agentTypeId} · ${status} · ${activity}`
 }
 
 /** When retention removes the earliest of these dormant agents, or null when none has a dormancy time. */
@@ -86,9 +86,19 @@ export function automaticRemovalDate(dormantAt: Array<string | null>, retentionD
 export const sumBytes = (items: Array<{ bytes: number | null }>) =>
   items.reduce((sum, item) => sum + (item.bytes ?? 0), 0)
 
-export function removalSummary(result: RemoveDormantAgentsResult & { error?: string }): string {
-  const n = result.accepted.length
-  const parts = [`Removing ${n} dormant agent${n === 1 ? '' : 's'} in the background.`]
+export function removalSummary(
+  result: RemoveDormantAgentsResult & { error?: string },
+  /** Channel-bound agents only have their storage freed; they are never removed. */
+  channelBoundIds: ReadonlySet<string> = new Set()
+): string {
+  const freed = result.accepted.filter((id) => channelBoundIds.has(id)).length
+  const n = result.accepted.length - freed
+  const parts: string[] = []
+  if (n || !freed) parts.push(`Removing ${n} dormant agent${n === 1 ? '' : 's'} in the background.`)
+  if (freed)
+    parts.push(
+      `Freeing the storage of ${freed} channel agent${freed === 1 ? '' : 's'} in the background; ${freed === 1 ? 'it stays' : 'they stay'} dormant and can be woken.`
+    )
   for (const skipped of result.skipped) parts.push(`Not removed: ${skipped.reason}`)
   if (result.error) parts.push(`Stopped after an error: ${result.error}`)
   return parts.join(' ')

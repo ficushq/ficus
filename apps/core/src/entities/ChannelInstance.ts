@@ -283,7 +283,9 @@ export class ChannelInstance implements ChannelInstanceRow {
     const agent = await Agent.create({
       agentTypeId: CHANNEL_AGENT_TYPE,
       squadId: targetSquad,
-      persist: true,
+      // Not persistent: idle dormancy applies, and dormant retention reclaims
+      // storage without ever terminating a channel-bound agent.
+      persist: false,
       context: {
         scope: { type: 'consultant' },
         origin: 'channel',

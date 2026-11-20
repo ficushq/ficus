@@ -238,7 +238,8 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
   AGENT_DORMANT_RETENTION_DAYS: {
     type: 'number',
     default: '7',
-    description: 'Days a dormant agent remains recoverable before final termination',
+    description:
+      'Days a dormant agent remains recoverable before final termination (channel agents only have their storage reclaimed and stay wakeable)',
     validate: (value) =>
       /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 3650
         ? null
