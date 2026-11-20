@@ -57,6 +57,19 @@ export class IntegrationAuthorizationKindRequiredError extends Error {
   }
 }
 
+/**
+ * `replaceCredential` was given an authorization grant for a provider that may
+ * hold OAuth connections. Rotation always records `manual`, which would drop an
+ * OAuth connection from refresh, authority fencing and remote revocation, so
+ * only manual-only providers (BigBrain) may rotate granted material.
+ */
+export class IntegrationGrantRotationNotAllowedError extends Error {
+  constructor(readonly providerKey: string) {
+    super(`Authorization grant rotation is not allowed for provider ${providerKey}`)
+    this.name = 'IntegrationGrantRotationNotAllowedError'
+  }
+}
+
 export class IntegrationConnectionCreateCommittedError extends Error {
   constructor(
     readonly connectionId: string,
@@ -98,8 +111,9 @@ export interface ConnectionServiceDependencies {
   /**
    * Whether the provider's plugin can hold OAuth-granted connections (an OAuth2
    * plugin or a manual plugin with a managed driver). `create` refuses an
-   * authorization grant for such a provider unless `authorizationKind` is explicit.
-   * Fails closed: without this predicate every grant must state its kind.
+   * authorization grant for such a provider unless `authorizationKind` is explicit,
+   * and `replaceCredential` refuses an authorization grant for it outright.
+   * Fails closed: without this predicate both treat every provider as OAuth-capable.
    */
   offersOAuth?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
@@ -159,6 +173,11 @@ export class IntegrationConnectionService {
     this.#authorizationLease = dependencies.authorizationLease
   }
 
+  /** Fails closed: without an `offersOAuth` predicate every provider may hold OAuth grants. */
+  #mayHoldOAuth(providerKey: string): boolean {
+    return !this.#offersOAuth || this.#offersOAuth(providerKey)
+  }
+
   async create(input: {
     providerKey: string
     adapterVersion: number
@@ -179,11 +198,7 @@ export class IntegrationConnectionService {
   }): Promise<SafeIntegrationConnection> {
     if (!input.authorizationGrant && !this.#allowsManualCredential(input.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
-    if (
-      input.authorizationGrant &&
-      input.authorizationKind === undefined &&
-      (!this.#offersOAuth || this.#offersOAuth(input.providerKey))
-    )
+    if (input.authorizationGrant && input.authorizationKind === undefined && this.#mayHoldOAuth(input.providerKey))
       throw new IntegrationAuthorizationKindRequiredError(input.providerKey)
     const provider = this.#resolveProvider(input.providerKey, input.adapterVersion)
     const configuration = provider.parseConfig(input.configuration)
@@ -339,6 +354,11 @@ export class IntegrationConnectionService {
     const current = await this.#mustGet(id)
     if (!authorizationGrant && !this.#allowsManualCredential(current.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
+    // Rotation always records `manual`, so a grant may only rotate into a
+    // provider known to be manual-only. OAuth material is reinstalled through
+    // `installAuthorizedMaterial`, never here.
+    if (authorizationGrant && this.#mayHoldOAuth(current.providerKey))
+      throw new IntegrationGrantRotationNotAllowedError(current.providerKey)
     if (!authorizationGrant) credential = credential.trim()
     const parsedConfiguration =
       configuration === undefined

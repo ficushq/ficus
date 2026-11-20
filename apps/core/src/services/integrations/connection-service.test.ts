@@ -3,6 +3,7 @@ import {
   IntegrationAuthorizationKindRequiredError,
   IntegrationConnectionCreateCommittedError,
   IntegrationConnectionInUseError,
+  IntegrationGrantRotationNotAllowedError,
   IntegrationConnectionService,
   type ConnectionServiceDependencies,
 } from './connection-service'
@@ -626,6 +627,45 @@ describe('IntegrationConnectionService', () => {
       expect(secrets.size).toBe(0)
       await service.create({ ...grant('notion'), authorizationKind: 'oauth2' })
       expect(getRow()!.authorizationKind).toBe('oauth2')
+    })
+
+    test.each(['github', 'notion', 'slack', 'linear'])(
+      'refuses rotating a grant into a %s connection before touching material',
+      async (providerKey) => {
+        const { service, getRow, secrets, audits } = setup({ offersOAuth })
+        await service.create({ ...grant(providerKey), authorizationKind: 'oauth2' })
+        const before = getRow()
+        const secretsBefore = new Map(secrets)
+        const auditsBefore = audits.length
+        await expect(
+          service.replaceCredential(before!.id, 'rotated-grant', 'user:user-1', true, undefined, true)
+        ).rejects.toBeInstanceOf(IntegrationGrantRotationNotAllowedError)
+        expect(getRow()).toEqual(before)
+        expect(secrets).toEqual(secretsBefore)
+        expect(audits.length).toBe(auditsBefore)
+      }
+    )
+
+    test('a service without an offersOAuth predicate refuses every grant rotation', async () => {
+      const { service, getRow, secrets } = setup()
+      await service.create({ ...grant('bigbrain'), authorizationKind: 'manual' })
+      const before = getRow()
+      const secretsBefore = new Map(secrets)
+      await expect(
+        service.replaceCredential(before!.id, 'rotated-grant', 'user:user-1', true, undefined, true)
+      ).rejects.toBeInstanceOf(IntegrationGrantRotationNotAllowedError)
+      expect(getRow()).toEqual(before)
+      expect(secrets).toEqual(secretsBefore)
+    })
+
+    test('BigBrain grant rotation through a wired manual-only predicate succeeds and stays manual', async () => {
+      const { service, getRow, secrets } = setup({ offersOAuth })
+      await service.create(grant('bigbrain'))
+      const originalRef = getRow()!.credentialRef
+      await service.replaceCredential(getRow()!.id, 'rotated-grant', 'user:user-1', true, undefined, true)
+      expect(getRow()!.credentialRef).not.toBe(originalRef)
+      expect(secrets.get(getRow()!.credentialRef)).toBe('rotated-grant')
+      expect(getRow()!.authorizationKind).toBe('manual')
     })
 
     test('a grant for a manual-only provider (BigBrain) stays manual without a kind', async () => {

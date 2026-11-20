@@ -325,7 +325,11 @@ instead of failing.
   connections service wire it. The kind is not derived: for dual-driver plugins (Slack, Linear) the
   plugin alone cannot tell a managed grant from manual material. A grant for a
   manual-only plugin (BigBrain's grant-created rows) still defaults to `manual`,
-  so it is never sent to a revocation endpoint. When a grant replaces
+  so it is never sent to a revocation endpoint. Because rotation always records
+  `manual`, `replaceCredential` refuses an authorization grant
+  (`IntegrationGrantRotationNotAllowedError`, before any material is written)
+  unless `offersOAuth` is wired and reports the provider as manual-only; OAuth
+  material is reinstalled only through `installAuthorizedMaterial`. When a grant replaces
   manual material, the old credential is only deleted, never sent to a
   provider's revocation endpoint.
 - **Reads.** `connectionOAuthView(plugin, connection)` in
