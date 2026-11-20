@@ -302,7 +302,7 @@ describe('settling the toolchain without blocking the sandbox', () => {
         if (behaviour === 'fail') throw new ToolchainAdapterError('setup_failed', 1)
         return 'applied' as const
       },
-    } as ISandboxManager
+    } as unknown as ISandboxManager
   }
 
   async function tracked<T>(promise: Promise<T>) {
