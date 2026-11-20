@@ -2,12 +2,13 @@ import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integ
 useEnabledIntegrationFixtures('linear')
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { LinearRelayDelivery } from '@ficus/shared/integration-relay'
 import {
   db,
   integrationConnections,
   integrationEventPollingDispatches,
+  integrationOutputEvents,
   linearAgentSessions,
   webhookEvents,
 } from '../../../db'
@@ -470,6 +471,113 @@ describe('hosted relay end to end (fake Platform and fake Linear)', () => {
     await runner.tick()
     expect(calls).toEqual(['pull', 'ack'])
     expect(linear.calls.length).toBe(before)
+  })
+
+  test("relayed sessions route by their live shape: delegation, mention, and the app's own session", async () => {
+    const fixture = await hosted()
+    const teamId = randomUUID()
+    await fixture.addSquad({ teamIds: [teamId] })
+    linear = createFakeLinear({
+      organization: { id: fixture.organizationId, name: 'Acme', urlKey: 'acme' },
+      app: { id: fixture.appUserId, name: 'Ficus', app: true, active: true },
+    })
+    globalThis.fetch = linear.fetch
+    const person = { id: randomUUID(), name: 'Member', active: true }
+    linear.addUser(person)
+    const addIssue = (number: number, delegateId: string | null) =>
+      linear.addIssue({
+        id: randomUUID(),
+        number,
+        identifier: `ENG-${number}`,
+        title: 'Relay routing',
+        url: `https://linear.app/acme/issue/ENG-${number}`,
+        team: { id: teamId, key: 'ENG' },
+        delegateId,
+      })
+    const delegatedIssue = addIssue(21, fixture.appUserId)
+    const mentionedIssue = addIssue(22, null)
+    const ownIssue = addIssue(23, null)
+    const delegation = randomUUID()
+    const mention = randomUUID()
+    const own = randomUUID()
+    const commentId = randomUUID()
+    linear.addSession({ id: delegation, issueId: delegatedIssue.id, creatorId: person.id })
+    linear.addSession({ id: mention, issueId: mentionedIssue.id, creatorId: person.id, commentId })
+    linear.addSession({ id: own, issueId: ownIssue.id })
+    // The fake payloads carry the live shapes: Linear's authorless thread comment for the delegation,
+    // an authored comment for the mention, and no creator for the app's own session.
+    let pending: LinearRelayDelivery[] = [
+      relayDelivery(
+        fixture,
+        agentSessionCreatedPayload(fixture.context, {
+          sessionId: delegation,
+          issue: delegatedIssue,
+          creatorId: person.id,
+        })
+      ),
+      relayDelivery(
+        fixture,
+        agentSessionCreatedPayload(fixture.context, {
+          sessionId: mention,
+          issue: mentionedIssue,
+          creatorId: person.id,
+          commentId,
+        })
+      ),
+      relayDelivery(fixture, agentSessionCreatedPayload(fixture.context, { sessionId: own, issue: ownIssue })),
+    ]
+    const request: typeof platformRequest = async (input) => {
+      const path = input.path.split('/').at(-1)!
+      if (path === 'status') return input.schema.parse({ enabled: true, connections: [] })
+      if (path === 'pull') {
+        const deliveries = pending
+        pending = []
+        return input.schema.parse({ deliveries })
+      }
+      return input.schema.parse({ ok: true })
+    }
+    const runner = new HostedIntegrationRelayRunner(linearRelayProvider, {
+      managed: () => true,
+      interests: async () =>
+        (await linearRelayInterests()).filter((interest) => interest.connectionId === fixture.connectionId),
+      resolve: createManagedLinearRelayResolver(),
+      request,
+      dispatch: createLinearRelayDispatcher({
+        resolveConnection: resolveManagedLinearConnection,
+        receipts: new DbEventPollingDispatchStore(),
+        process: (delivery) => processRelayedLinearDelivery(delivery, handleLinearAppEvent),
+      }),
+      prepare: createLinearRelayAcknowledger({
+        resolveConnection: resolveManagedLinearConnection,
+        acknowledge: (payload) => acknowledgeLinearSessionEvent(payload),
+      }),
+      onError: (code) => {
+        throw new Error(`unexpected relay error ${code}`)
+      },
+    })
+    await runner.tick()
+    await runner.stop()
+    const routed = async (sessionId: string) =>
+      (
+        await db
+          .select({ output: sql<string>`${integrationOutputEvents.fact}->>'output'` })
+          .from(integrationOutputEvents)
+          .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`)
+      )
+        .map((row) => row.output)
+        .sort()
+    expect(await routed(delegation)).toEqual(['agent_session.created', 'issue.delegated'])
+    expect(await routed(mention)).toEqual(['agent_session.created', 'issue.mentioned'])
+    expect(await routed(own)).toEqual([])
+    const trigger = async (sessionId: string) =>
+      (await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId)))[0]?.trigger
+    expect(await trigger(delegation)).toBe('delegation')
+    expect(await trigger(mention)).toBe('mention')
+    expect(await trigger(own)).toBe('proactive')
+    // The app's own session gets no acknowledgment or disposition; the others get both.
+    expect(linear.activitiesFor(own)).toEqual([])
+    for (const sessionId of [delegation, mention])
+      expect(linear.activitiesFor(sessionId).map((activity) => activity.content.body)[0]).toBe(LINEAR_ACK_BODY)
   })
 
   test('a session in a batch is acknowledged before the Comment delivery ahead of it is probed and routed', async () => {

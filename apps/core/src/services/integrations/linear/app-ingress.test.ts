@@ -67,7 +67,7 @@ function bodies(sessionId: string) {
 }
 async function created(
   sessionId: string,
-  input: { creatorId?: string; commentId?: string; issue?: FakeLinearIssue | null } = {}
+  input: { creatorId?: string | null; commentId?: string; issue?: FakeLinearIssue | null } = {}
 ) {
   await processLinearAppEvent(
     {
@@ -75,7 +75,8 @@ async function created(
       payload: agentSessionCreatedPayload(fixture.context, {
         sessionId,
         issue: input.issue === undefined ? issue : input.issue,
-        creatorId: input.creatorId ?? member.id,
+        // null: no creator, as Linear sends for a session an agent user (the app itself) started.
+        creatorId: input.creatorId === null ? undefined : (input.creatorId ?? member.id),
         commentId: input.commentId,
         timestamp: now,
       }),
@@ -263,8 +264,10 @@ describe('disposition and authority', () => {
   test('a session the app opened on itself is recorded as its own and never acknowledged or routed', async () => {
     const squad = await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()
-    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: fixture.appUserId })
-    await created(sessionId, { creatorId: fixture.appUserId })
+    // Live shape (session 53becf37): no creator, Linear's authorless thread comment, issue not delegated.
+    const own = linear.addIssue({ ...issue, id: randomUUID(), number: 9, identifier: 'ENG-9', delegateId: null })
+    linear.addSession({ id: sessionId, issueId: own.id })
+    await created(sessionId, { creatorId: null, issue: own })
     expect(bodies(sessionId)).toEqual([])
     expect(linear.calls).toEqual([])
     const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))

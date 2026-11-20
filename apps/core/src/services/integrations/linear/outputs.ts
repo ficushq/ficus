@@ -79,25 +79,36 @@ const SYSTEM_THREAD_COMMENT = /^This thread is for an agent session with /
 
 /**
  * What opened a session, from an `AgentSessionEvent` `agentSession` (or the poller's equivalent).
+ *
  * Linear gives every session a root comment, a delegation included: for a delegation it is a system
  * comment with no author ("This thread is for an agent session with ficus."), so a root comment alone
- * does not mean a mention. A root comment with a human author (`comment.userId`) is a mention. One
- * without an author is a delegation when it is Linear's thread comment or the issue is delegated to
- * the app; otherwise (a mention synced from another tool, for example) it stays a mention. A payload
- * without the `comment` object carries no author information and is read as before: a mention.
+ * does not mean a mention. In order:
+ *
+ * 1. A root comment with an author (`comment.userId`, or `comment.user.id` when polled) is a mention.
+ * 2. Linear's webhook schema always carries `comment` with `commentId`; a payload with only the ID
+ *    has no author information and is read as before, as a mention.
+ * 3. A session without a creator is one the app opened on itself (`proactive`). Linear sets `creator`
+ *    to the responsible person for a delegation or mention, also when an automation delegates, and
+ *    leaves it unset for a session an agent user started (live: the app's own session had none). A
+ *    polled session whose issue is delegated to the app is still a delegation. A webhook issue has
+ *    no delegate field, so an agent user delegating to Ficus would read as proactive.
+ * 4. Otherwise an authorless root comment, or none, is a delegation when it is Linear's thread
+ *    comment or the issue is delegated to the app; any other authorless comment (a mention synced
+ *    from another tool, for example) stays a mention.
  */
 export function linearSessionTrigger(session: Record<string, any>, appUserId: string): LinearSessionTrigger {
   const creator = text(session.creatorId, 200) || text(record(session.creator)?.id, 200)
   if (appUserId && creator === appUserId) return 'proactive'
   const comment = record(session.comment)
   const commentId = text(session.commentId, 200) || text(comment?.id, 200)
-  if (!commentId) return 'delegation'
-  if (!comment) return 'mention'
-  if (text(comment.userId, 200) || text(record(comment.user)?.id, 200)) return 'mention'
+  if (comment && (text(comment.userId, 200) || text(record(comment.user)?.id, 200))) return 'mention'
+  if (commentId && !comment) return 'mention'
   const issue = record(session.issue) ?? {}
-  const delegate = text(issue.delegateId, 200) || text(record(issue.delegate)?.id, 200)
-  if (SYSTEM_THREAD_COMMENT.test(text(comment.body)) || (appUserId && delegate === appUserId)) return 'delegation'
-  return 'mention'
+  const delegatedToApp =
+    !!appUserId && (text(issue.delegateId, 200) || text(record(issue.delegate)?.id, 200)) === appUserId
+  const systemComment = !commentId || SYSTEM_THREAD_COMMENT.test(text(comment?.body))
+  if (!creator && systemComment && !delegatedToApp) return 'proactive'
+  return systemComment || delegatedToApp ? 'delegation' : 'mention'
 }
 
 /** `AgentSessionEvent`: the session facts plus exactly one delegated or mentioned fact for `created`. */

@@ -453,7 +453,8 @@ export function agentSessionCreatedPayload(
   input: {
     sessionId: string
     issue?: FakeLinearIssue | null
-    creatorId: string
+    /** Unset for a session an agent user (the app itself) started, as Linear leaves it. */
+    creatorId?: string
     /** A mention's root comment, written by the creator. Without it the session is a delegation. */
     commentId?: string
     /** False to leave out the root comment object (an older payload); a delegation then has none at all. */
@@ -491,7 +492,7 @@ export function agentSessionCreatedPayload(
           }
         : {}),
       ...(comment ? { commentId: comment.id, ...(input.rootComment === false ? {} : { comment }) } : {}),
-      creatorId: input.creatorId,
+      ...(input.creatorId ? { creatorId: input.creatorId, creator: { id: input.creatorId } } : {}),
       url: `https://linear.app/acme/agent-session/${input.sessionId}`,
       status: 'pending',
     },
