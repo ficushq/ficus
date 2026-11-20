@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { db, inferenceUsage, inferenceUsageDaily } from '../../db'
-import type { AccountStoreV1 } from '../agent/account-store'
+import type { Account, AccountStoreV1 } from '../agent/account-store'
 import { detailCutoff, spendBreakdown, spendSummary } from './query'
 
 // Fixed clock: 2026-09-20 12:00 UTC, 180-day retention, so detail rows start 2026-03-24.
@@ -154,7 +154,7 @@ describe('spend queries', () => {
         provider: 'openai-codex',
         accountId: `acc_${marker}`,
         plan: 'pro',
-        planLabel: 'ChatGPT Pro',
+        planLabel: 'ChatGPT Pro 200',
         monthlyPriceUsd: 200,
         priceSource: 'default',
         needsChoice: false,
@@ -164,6 +164,41 @@ describe('spend queries', () => {
         listUsd: 5,
       }),
     ])
+  })
+
+  test('each ChatGPT Pro tier counts its own fee in line items and the month projection', async () => {
+    const codexAccount = (id: string, subscription: NonNullable<Account['subscription']>): Account => ({
+      id: `${id}_${marker}`,
+      enabled: true,
+      credential: { type: 'oauth', access: 'a', refresh: 'r', expires: 1 } as never,
+      createdAt: Date.parse('2026-01-01T00:00:00Z'),
+      subscription,
+    })
+    const tiers: AccountStoreV1 = {
+      version: 1,
+      accounts: {
+        'openai-codex': [
+          codexAccount('lite', { plan: 'prolite', planSource: 'detected', detectedPlan: 'prolite' }),
+          // Stored before the tiers existed: the plain pro plan is the $200 tier.
+          codexAccount('legacy', { plan: 'pro', planSource: 'detected', detectedPlan: 'pro' }),
+          codexAccount('max', { plan: 'promax', planSource: 'manual', detectedPlan: 'pro' }),
+        ],
+      },
+    }
+    // Subscription calls bill nothing, so the projection is the three monthly fees alone.
+    const summary = await spendSummary(
+      september,
+      { provider: 'openai-codex', billing: 'subscription' },
+      { ...options(), store: tiers }
+    )
+    const lines = summary.subscriptions.map((line) => [line.plan, line.planLabel, line.monthlyPriceUsd, line.feeUsd])
+    expect(lines).toEqual([
+      ['prolite', 'ChatGPT Pro 100', 100, 66.67],
+      ['pro', 'ChatGPT Pro 200', 200, 133.33],
+      ['promax', 'ChatGPT Pro 500', 500, 333.33],
+    ])
+    expect(summary.totals.subscriptionFeesUsd).toBeCloseTo(533.33, 2)
+    expect(summary.projection.monthUsd).toBe(800)
   })
 
   test('an unknown plan is listed for a choice and counts no fee', async () => {
