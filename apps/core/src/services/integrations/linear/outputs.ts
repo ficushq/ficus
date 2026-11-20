@@ -333,6 +333,50 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
   },
 }
 
+/**
+ * The polling fallback's undelegation (5.7): an `issueUnassignedFromYou` notification for the app
+ * user, as the poller builds it from Linear's `notifications` query, becomes one `issue.undelegated`
+ * fact naming the app as the removed delegate. Webhook notifications never come through here; they
+ * produce no outputs (the `Issue` webhook reports the same change).
+ */
+export function normalizeLinearUndelegationNotification(
+  payload: Record<string, unknown>,
+  appUserId: string
+): IntegrationOutputFact[] {
+  const notification = record(payload.notification)
+  if (!notification || text(notification.type, 100) !== 'issueUnassignedFromYou' || !appUserId) return []
+  const notificationId = text(notification.id, 200)
+  const issue = record(notification.issue) ?? {}
+  const id = text(notification.issueId, 200) || text(issue.id, 200)
+  const at = when(notification.createdAt)
+  if (!notificationId || !id || !at) return []
+  const fields = issueFields(issue, id)
+  const url = text(issue.url, 2000)
+  return [
+    {
+      output: 'issue.undelegated',
+      version: 1,
+      resourceKey: id,
+      occurredAt: at,
+      eventKey: key(['issue.undelegated', id, appUserId, at]),
+      data: {
+        issue: fields.issue,
+        teamId: fields.teamId,
+        ...(fields.teamKey ? { teamKey: fields.teamKey } : {}),
+        actor: text(notification.actorId, 200) || text(record(notification.actor)?.id, 200),
+        state: fields.state,
+        labels: fields.labels,
+        assignee: text(issue.assigneeId, 200) || text(record(issue.assignee)?.id, 200),
+        delegate: appUserId,
+        action: 'undelegated',
+      },
+      subject: subject('issue.undelegated', fields.identifier, id, fields.title),
+      body: [url, fields.title].filter(Boolean).join('\n\n').slice(0, 30000),
+      ...(url ? { url } : {}),
+    },
+  ]
+}
+
 function normalizeIssueCreate(payload: Record<string, any>, data: Record<string, any>): IntegrationOutputFact[] {
   const id = text(data.id, 200)
   const at = when(data.createdAt, webhookTime(payload))

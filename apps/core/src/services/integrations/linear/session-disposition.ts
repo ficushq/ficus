@@ -1,8 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity, type LinearActivityContent } from './app-api'
-import { enqueueLinearWrites } from './outbox'
 
 const log = createLogger('linear-session-disposition')
 
@@ -46,6 +45,33 @@ const SESSION_DISPOSITION: Record<LinearSessionDisposition['kind'], string> = {
   busy: 'closed',
 }
 
+/**
+ * The disposition a session was given, read back from its stored `disposition`, so a post that
+ * failed can be retried without routing the session again. `closed` is a session without an issue,
+ * or one refused while the workspace was busy.
+ */
+export function storedLinearSessionDisposition(row: {
+  disposition: string
+  issueId: string | null
+}): LinearSessionDisposition | null {
+  switch (row.disposition) {
+    case 'bound':
+      return { kind: 'queued' }
+    case 'notified':
+      return { kind: 'notified' }
+    case 'ignored':
+      return { kind: 'ignored', unrouted: false }
+    case 'unrouted':
+      return { kind: 'ignored', unrouted: true }
+    case 'inaccessible':
+      return { kind: 'inaccessible' }
+    case 'closed':
+      return row.issueId ? { kind: 'busy' } : { kind: 'no-issue' }
+    default:
+      return null
+  }
+}
+
 /** One outcome per authorized squad, reduced: any started work wins, then any notification. */
 export function reduceLinearSessionOutcomes(outcomes: readonly LinearSquadOutcome[]): LinearSessionDisposition {
   if (outcomes.includes('started')) return { kind: 'queued' }
@@ -78,7 +104,13 @@ export async function postLinearSessionDisposition(input: {
         dispositionState: 'sent',
         updatedAt: new Date(),
       })
-      .where(and(eq(linearAgentSessions.id, input.sessionId), eq(linearAgentSessions.dispositionState, 'pending')))
+      // A failed post may be claimed again by the retry sweep (`session-retry.ts`); a sent one never.
+      .where(
+        and(
+          eq(linearAgentSessions.id, input.sessionId),
+          inArray(linearAgentSessions.dispositionState, ['pending', 'failed'])
+        )
+      )
       .returning({ id: linearAgentSessions.id })
     if (!claimed) return false
   }
@@ -102,25 +134,6 @@ export async function postLinearSessionDisposition(input: {
         .update(linearAgentSessions)
         .set({ dispositionState: 'failed', updatedAt: new Date() })
         .where(eq(linearAgentSessions.id, input.sessionId))
-    // The write-back outbox retries it with backoff, under the same activity ID.
-    const [session] = await db
-      .select({ connectionId: linearAgentSessions.connectionId })
-      .from(linearAgentSessions)
-      .where(eq(linearAgentSessions.id, input.sessionId))
-    if (session)
-      await enqueueLinearWrites({
-        connectionId: session.connectionId,
-        scopeKey: input.sessionId,
-        sessionId: input.sessionId,
-        items: [
-          {
-            projectionKey,
-            kind: 'activity',
-            payload: { content: LINEAR_DISPOSITION_ACTIVITIES[input.disposition.kind] },
-            collapsible: false,
-          },
-        ],
-      }).catch(() => undefined)
     return false
   }
 }

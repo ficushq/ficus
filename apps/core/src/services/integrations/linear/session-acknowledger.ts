@@ -2,13 +2,14 @@ import { eq } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity } from './app-api'
-import { enqueueLinearWrites } from './outbox'
 
 const log = createLogger('linear-session-ack')
 
 /** Linear marks a session unresponsive without an activity within 10 seconds of `created`. */
 export const LINEAR_ACK_BUDGET_MS = 9_000
 const ACK_ATTEMPT_TIMEOUT_MS = 4_000
+/** Acknowledgment calls one `acknowledgeLinearSession` makes at most: the first attempt and one retry. */
+export const LINEAR_ACK_MAX_ATTEMPTS = 2
 export const LINEAR_ACK_BODY = 'Received. Checking how to handle this request.'
 
 export type LinearSessionRow = typeof linearAgentSessions.$inferSelect
@@ -65,7 +66,7 @@ export async function acknowledgeLinearSession(
   const sentAt = typeof input.payload.webhookTimestamp === 'number' ? input.payload.webhookTimestamp : now()
   const deadline = Math.min(sentAt, now()) + LINEAR_ACK_BUDGET_MS
   let acknowledged = false
-  for (let attempt = 0; attempt < 2 && !acknowledged; attempt++) {
+  for (let attempt = 0; attempt < LINEAR_ACK_MAX_ATTEMPTS && !acknowledged; attempt++) {
     const remaining = deadline - now()
     // The first attempt always runs: a late acknowledgment still recovers an unresponsive session.
     if (attempt > 0 && remaining <= 0) break
@@ -82,22 +83,6 @@ export async function acknowledgeLinearSession(
       log.warn(`Linear session ${sessionId} acknowledgment attempt ${attempt + 1} failed: ${errorCode(error)}`)
     }
   }
-  // A failed acknowledgment is retried by the write-back outbox under the same activity ID, so it
-  // never shows twice even if the last attempt's outcome was unknown.
-  if (!acknowledged)
-    await enqueueLinearWrites({
-      connectionId: input.connectionId,
-      scopeKey: sessionId,
-      sessionId,
-      items: [
-        {
-          projectionKey: 'ack',
-          kind: 'activity',
-          payload: { content: { type: 'thought', body: LINEAR_ACK_BODY } },
-          collapsible: false,
-        },
-      ],
-    }).catch((error) => log.warn(`Linear session ${sessionId} acknowledgment not queued: ${errorCode(error)}`))
   const [updated] = await db
     .update(linearAgentSessions)
     .set({

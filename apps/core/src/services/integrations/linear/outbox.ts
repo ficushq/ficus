@@ -161,13 +161,7 @@ async function finish(row: OutboxRow, status: 'sent' | 'failed' | 'skipped', cod
   if (status === 'sent' && row.sessionId && row.kind === 'activity')
     await db
       .update(linearAgentSessions)
-      .set({
-        lastActivityAt: now,
-        // A retried acknowledgment or disposition records that it finally reached Linear.
-        ...(row.projectionKey === 'ack' ? { ackState: 'sent' } : {}),
-        ...(row.projectionKey === 'disposition' ? { dispositionState: 'sent' } : {}),
-        updatedAt: now,
-      })
+      .set({ lastActivityAt: now, updatedAt: now })
       .where(eq(linearAgentSessions.id, row.sessionId))
 }
 

@@ -353,28 +353,6 @@ describe('pull request attachments', () => {
   })
 })
 
-describe('acknowledgment and disposition retries', () => {
-  test('a failed acknowledgment is retried by the outbox under the same activity ID', async () => {
-    const sessionId = randomUUID()
-    linear.addSession({ id: sessionId, issueId: issue.id })
-    linear.failNext(500, 'FicusAgentActivity')
-    linear.failNext(500, 'FicusAgentActivity')
-    await processLinearAppEvent({
-      type: 'AgentSessionEvent',
-      payload: agentSessionCreatedPayload(fixture.context, { sessionId, issue, creatorId: member.id }),
-    })
-    const [failed] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
-    expect(failed!.ackState).toBe('failed')
-    await drainLinearOutbox()
-    const [sent] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
-    expect(sent!.ackState).toBe('sent')
-    expect(bodies(sessionId)).toContainEqual(['thought', 'Received. Checking how to handle this request.'])
-    expect(
-      bodies(sessionId).filter(([, body]) => body === 'Received. Checking how to handle this request.')
-    ).toHaveLength(1)
-  })
-})
-
 describe('prompts on a bound session', () => {
   test('an ordinary prompt belongs to the bound stream and does not also follow the prompted rule', async () => {
     const { squad, sessionId } = await boundStream()

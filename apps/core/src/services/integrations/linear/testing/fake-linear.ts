@@ -42,6 +42,21 @@ export interface FakeLinearCall {
   authorization: string
   at: number
 }
+export interface FakeLinearPrompt {
+  id: string
+  sessionId: string
+  userId: string
+  body: string
+  createdAt: string
+  signal?: 'stop'
+}
+export interface FakeLinearNotification {
+  id: string
+  type: string
+  issueId: string
+  actorId?: string
+  createdAt: string
+}
 export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'timeout'
 
 export interface FakeLinearOptions {
@@ -71,8 +86,15 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       appUserId: string
       externalUrls: Array<{ label: string; url: string }>
       updatedAt: string
+      createdAt: string
+      status: string
+      creatorId?: string
+      commentId?: string
     }
   >()
+  /** User prompts and the app's notifications, as the polling fallback reads them. */
+  const prompts: FakeLinearPrompt[] = []
+  const notifications: FakeLinearNotification[] = []
   const activities: Array<{ id: string; agentSessionId: string; content: Record<string, any>; at: number }> = []
   const attachments = new Map<string, { issueId: string; url: string; linkKind?: string }>()
   const teams: string[] = []
@@ -130,6 +152,10 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
           content: input.content,
           at: clock(),
         })
+        const session = sessions.get(input.agentSessionId)!
+        session.updatedAt = new Date(clock()).toISOString()
+        session.status =
+          input.content?.type === 'response' ? 'complete' : input.content?.type === 'error' ? 'error' : 'active'
         data.agentActivityCreate = { success: true }
       }
       if (query.includes('agentSessionUpdate')) {
@@ -149,6 +175,8 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
           appUserId: app.id,
           externalUrls: [],
           updatedAt: new Date(clock()).toISOString(),
+          createdAt: new Date(clock()).toISOString(),
+          status: 'pending',
         })
         data.agentSessionCreateOnIssue = { success: true, agentSession: { id } }
       }
@@ -184,12 +212,72 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     }
     if (asks(query, 'teams', variables))
       data.teams = { nodes: teams.map((id) => ({ id })), pageInfo: { hasNextPage: false, endCursor: null } }
+    // Linear pages newest first with `first` and oldest first with `last`.
+    const page = <T>(items: T[], at: (item: T) => string) => {
+      const sorted = [...items].sort((a, b) => Date.parse(at(b)) - Date.parse(at(a)))
+      return typeof variables.last === 'number'
+        ? sorted.slice(-variables.last).reverse()
+        : sorted.slice(0, variables.first ?? 50)
+    }
+    const since = (value: string) => !variables.after || Date.parse(value) >= Date.parse(variables.after)
     if (asks(query, 'agentSessions', variables))
       data.agentSessions = {
-        nodes: [...sessions.values()].map((session) => ({ id: session.id, updatedAt: session.updatedAt })),
+        nodes: page([...sessions.values()], (session) => session.updatedAt).map((session) => {
+          const issue = issues.get(session.issueId)
+          return {
+            id: session.id,
+            status: session.status,
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt,
+            url: `https://linear.app/acme/agent-session/${session.id}`,
+            appUser: { id: session.appUserId },
+            creator: session.creatorId ? { id: session.creatorId } : null,
+            comment: session.commentId ? { id: session.commentId } : null,
+            issue: issue ? issueNode(issue) : null,
+          }
+        }),
       }
-    if (asks(query, 'agentActivities', variables)) data.agentActivities = { nodes: [] }
-    if (asks(query, 'notifications', variables)) data.notifications = { nodes: [] }
+    if (asks(query, 'agentActivities', variables))
+      data.agentActivities = {
+        nodes: page(
+          prompts.filter((prompt) => since(prompt.createdAt)),
+          (prompt) => prompt.createdAt
+        ).map((prompt) => {
+          const session = sessions.get(prompt.sessionId)
+          const issue = session ? issues.get(session.issueId) : undefined
+          return {
+            id: prompt.id,
+            createdAt: prompt.createdAt,
+            signal: prompt.signal ?? null,
+            user: { id: prompt.userId },
+            promptAuthor: { id: prompt.userId },
+            sourceComment: null,
+            content: { body: prompt.body },
+            agentSession: {
+              id: prompt.sessionId,
+              url: `https://linear.app/acme/agent-session/${prompt.sessionId}`,
+              appUser: { id: session?.appUserId ?? app.id },
+              issue: issue ? issueNode(issue) : null,
+            },
+          }
+        }),
+      }
+    if (asks(query, 'notifications', variables))
+      data.notifications = {
+        nodes: page(
+          notifications.filter((notification) => since(notification.createdAt)),
+          (notification) => notification.createdAt
+        ).map((notification) => {
+          const issue = issues.get(notification.issueId)
+          return {
+            id: notification.id,
+            type: notification.type,
+            createdAt: notification.createdAt,
+            actor: notification.actorId ? { id: notification.actorId } : null,
+            issue: issue ? issueNode(issue) : null,
+          }
+        }),
+      }
     return { data }
   }
 
@@ -244,14 +332,35 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       if (!teams.includes(issue.team.id)) teams.push(issue.team.id)
       return issue
     },
-    addSession(session: { id: string; issueId: string }) {
+    addSession(session: {
+      id: string
+      issueId: string
+      appUserId?: string
+      status?: string
+      creatorId?: string
+      commentId?: string
+      at?: number
+    }) {
+      const at = new Date(session.at ?? clock()).toISOString()
       sessions.set(session.id, {
         ...session,
-        appUserId: app.id,
+        appUserId: session.appUserId ?? app.id,
         externalUrls: [],
-        updatedAt: new Date(clock()).toISOString(),
+        updatedAt: at,
+        createdAt: at,
+        status: session.status ?? 'pending',
       })
     },
+    addPrompt(prompt: Omit<FakeLinearPrompt, 'createdAt'> & { at?: number }) {
+      const { at, ...rest } = prompt
+      prompts.push({ ...rest, createdAt: new Date(at ?? clock()).toISOString() })
+    },
+    addNotification(notification: Omit<FakeLinearNotification, 'createdAt'> & { at?: number }) {
+      const { at, ...rest } = notification
+      notifications.push({ ...rest, createdAt: new Date(at ?? clock()).toISOString() })
+    },
+    prompts,
+    notifications,
     activitiesFor(sessionId: string) {
       return activities.filter((activity) => activity.agentSessionId === sessionId)
     },
