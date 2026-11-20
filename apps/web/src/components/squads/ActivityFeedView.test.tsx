@@ -409,7 +409,7 @@ test('sender rows hide only while a matching received row is shown, and Show eve
   }
 })
 
-test('the Active work strip shows step, waits, PR and CI, working dots and time, and filters on click', async () => {
+test('the Active work pill opens a searchable, arrow-navigable list of streams that filters the feed', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const cards = [
     card({
@@ -419,14 +419,23 @@ test('the Active work strip shows step, waits, PR and CI, working dots and time,
       ci: 'failing',
       deliveryLabel: 'CI failed',
       workingAgentIds: ['engineer', 'reviewer'],
+      summary: 'Waiting for review of the floating window drag handles',
     }),
-    ...Array.from({ length: 7 }, (_, index) =>
-      card({ id: `stream-${index}`, number: 2000 + index, title: `Other ${index}`, step: null, status: 'queued' })
-    ),
+    card({ id: 'working', number: 1395, title: 'Spend tiers', step: 'implement', workingAgentIds: ['engineer-2'] }),
+    card({ id: 'paused', number: 1392, title: 'Linear verification', step: 'Verify', derivedState: 'paused' }),
+    card({
+      id: 'blocked',
+      number: 1391,
+      title: 'Dependency',
+      step: 'Verify',
+      waits: [{ type: 'dependency', needsYou: false }],
+    }),
+    card({ id: 'queued', number: 2000, title: 'Queued work', step: null, status: 'queued' }),
   ]
   let filter: string | null = null
   try {
     const view = dom.createRoot()
+    const doc = dom.window.document
     const render = () =>
       dom.act(() =>
         view.root.render(
@@ -435,7 +444,7 @@ test('the Active work strip shows step, waits, PR and CI, working dots and time,
               {...feedProps}
               items={[]}
               onOpen={() => {}}
-              presence={{ workingCount: 2, needsYouCount: 1, streamCount: 9, streams: cards }}
+              presence={{ workingCount: 3, needsYouCount: 1, streamCount: 9, streams: cards }}
               workStreamFilter={filter}
               onWorkStreamFilterChange={(next) => {
                 filter = next
@@ -446,45 +455,166 @@ test('the Active work strip shows step, waits, PR and CI, working dots and time,
         )
       )
     await render()
+    // Hidden by default: only the presence line with its counts and the pill.
     const presence = view.container.querySelector('[data-testid="activity-presence"]')!
-    expect(presence.textContent).toContain('2 working')
+    expect(presence.textContent).toContain('3 working')
     expect(presence.textContent).toContain('1 waiting on you')
-    expect(presence.textContent).not.toContain('active streams')
+    expect(doc.querySelector('[role="option"]')).toBeNull()
+    const trigger = view.container.querySelector<HTMLButtonElement>('[data-testid="activity-work-trigger"]')!
+    expect(trigger.textContent).toBe('Active work9')
+    expect(trigger.getAttribute('aria-label')).toBe('Active work, 9 streams')
 
-    const strip = view.container.querySelector('[data-testid="activity-work-strip"]')!
-    const buttons = [...strip.querySelectorAll<HTMLButtonElement>('button[data-work-stream-card]')]
-    expect(buttons).toHaveLength(6)
-    const first = buttons[0]
-    expect(first.textContent).toContain('#1352 Floating agent windows')
-    expect(first.textContent).toContain('Implement · Waiting on you: review')
-    expect(first.textContent).toContain('PR #996 · CI failing')
-    expect(first.textContent).not.toContain('CI failed')
-    expect(first.querySelector('[title="Working now"]')?.textContent).toContain('2 working')
-    expect(first.querySelector('time')?.getAttribute('dateTime')).toBe(cards[0].lastEventAt)
-    expect(buttons[1].textContent).toContain('Queued')
-    const more = strip.querySelector<HTMLAnchorElement>('a[href="/squads/team/work"]')!
-    expect(more.textContent).toBe('+3 more')
+    await dom.act(async () => trigger.click())
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const search = doc.querySelector<HTMLInputElement>('input[aria-label="Search active work"]')!
+    expect(doc.activeElement).toBe(search)
+    const options = () => [...doc.querySelectorAll<HTMLButtonElement>('[role="listbox"] [role="option"]')]
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual([
+      'All activity',
+      '#1352 Floating agent windows',
+      '#1395 Spend tiers',
+      '#1392 Linear verification',
+      '#1391 Dependency',
+      '#2000 Queued work',
+      'All 9 active streams',
+    ])
+    // Title, state and step (normalized), PR and CI, and the summary; one marker per state.
+    expect(options()[1].textContent).toContain('Waiting on you: review · Implement · PR #996 · CI failing')
+    expect(options()[1].textContent).toContain('Waiting for review of the floating window drag handles')
+    expect(options()[2].textContent).toContain('Working · Implement')
+    expect(options()[3].textContent).toContain('Paused · Verify')
+    expect(options()[4].textContent).toContain('Waiting: dependency · Verify')
+    expect(
+      options()
+        .slice(1, 6)
+        .map((option) => option.querySelector('[data-activity-work-state]')?.getAttribute('data-activity-work-state'))
+    ).toEqual(['needs-you', 'working', 'paused', 'waiting', 'queued'])
+    expect(options()[0].getAttribute('aria-selected')).toBe('true')
 
-    await dom.act(() => first.click())
-    expect(filter).toBe(streamContext.id)
+    // Typing filters by title, number or summary; ArrowDown moves into the list.
+    const type = (value: string) =>
+      dom.act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
+        setter.call(search, value)
+        search.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+    await type('drag handles')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1352 Floating agent windows'])
+    await type('1392')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1392 Linear verification'])
+    await type('')
+    await dom.act(async () => {
+      search.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    expect(doc.activeElement?.getAttribute('role')).toBe('option')
+
+    // Choosing a stream filters the feed and closes the list.
+    await dom.act(async () => options()[3].click())
+    expect(filter).toBe('paused')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
     await render()
-    const selected = view.container.querySelector<HTMLButtonElement>('button[data-work-stream-card="1352"]')!
-    expect(selected.getAttribute('aria-pressed')).toBe('true')
-    expect(view.container.querySelector('[data-testid="activity-work-stream-filter"]')?.textContent).toContain(
-      'Showing #1352 Floating agent windows'
-    )
-    // Clicking the selected card again clears the filter; so does Clear.
-    await dom.act(() => selected.click())
+    expect(trigger.getAttribute('aria-label')).toBe('Active work, 9 streams, showing #1392')
+    // "All activity" clears it; Clear in the details panel does too.
+    await dom.act(async () => trigger.click())
+    expect(
+      options()
+        .find((option) => option.getAttribute('aria-selected') === 'true')
+        ?.getAttribute('aria-label')
+    ).toBe('#1392 Linear verification')
+    await dom.act(async () => options()[0].click())
     expect(filter).toBeNull()
-    filter = 'stream-6'
+    filter = 'queued'
     await render()
-    // A selected card beyond the cap stays visible.
-    expect(view.container.querySelector('button[data-work-stream-card="2006"]')?.getAttribute('aria-pressed')).toBe(
-      'true'
-    )
     const clear = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Clear')!
-    await dom.act(() => clear.click())
+    await dom.act(async () => clear.click())
     expect(filter).toBeNull()
+    await dom.act(() => view.root.unmount())
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('the selected stream details show everything in full and open the stream and a chat in place', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const longTitle =
+    'Deliver human PR comments when the commenter is the GitHub connection account, and record skipped deliveries'
+  const longSummary =
+    "Writing tests for holding human PR comments from the GitHub connection account's author filter, then the docs."
+  const selected = card({
+    title: longTitle,
+    step: 'implement',
+    summary: longSummary,
+    summaryGeneratedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+    pullRequest: {
+      number: 1026,
+      repository: 'ficushq/ficus',
+      url: 'https://github.com/ficushq/ficus/pull/1026',
+      state: 'open',
+    },
+    workingAgentIds: ['engineer'],
+  })
+  const participantRow: SquadActivityItem = {
+    id: '10:engineer-row',
+    at: new Date().toISOString(),
+    agentId: 'engineer',
+    agentTypeId: 'engineer',
+    kind: 'message',
+    summary: 'Renewing the claim',
+    preview: [{ text: 'Renewing the claim' }],
+    ref: { type: 'agent', agentId: 'engineer', view: 'chat' },
+    context: { workStream: { ...streamContext, title: longTitle, step: 'implement' } },
+  }
+  const opened: SquadActivityItem[] = []
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <MemoryRouter>
+          <ActivityFeedView
+            {...feedProps}
+            items={[participantRow]}
+            onOpen={(item) => opened.push(item)}
+            presence={{ workingCount: 1, needsYouCount: 0, streamCount: 1, streams: [selected] }}
+            workStreamFilter={selected.id}
+            onWorkStreamFilterChange={() => {}}
+          />
+        </MemoryRouter>
+      )
+    )
+    const panel = view.container.querySelector<HTMLElement>('[data-testid="activity-work-stream-filter"]')!
+    expect(panel.tagName).toBe('SECTION')
+    const heading = panel.querySelector('h2')!
+    expect(panel.getAttribute('aria-labelledby')).toBe(heading.id)
+    expect(heading.textContent).toBe(`Showing only activity for #1352 ${longTitle}`)
+    expect(panel.querySelector('[data-testid="activity-work-details-summary"]')?.textContent).toContain(longSummary)
+    expect(panel.textContent).toContain('Generated summary · updated 4 min ago')
+    const state = panel.querySelector('[data-testid="activity-work-details-state"]')!.textContent
+    expect(state).toContain('Working')
+    expect(state).toContain('Step: Implement')
+    expect(state).toContain('Working now: Engineer')
+    expect(panel.querySelector<HTMLAnchorElement>('a[href="https://github.com/ficushq/ficus/pull/1026"]')?.target).toBe(
+      '_blank'
+    )
+
+    const openStream = [...panel.querySelectorAll('a')].find((link) => link.textContent === 'Open work stream')!
+    expect(openStream.getAttribute('href')).toBe('/squads/team/work?ws=1352')
+    await dom.act(() => openStream.click())
+    expect(opened.at(-1)?.ref).toEqual({ type: 'workstream', workStreamId: selected.id, workStreamNumber: 1352 })
+    const openChat = panel.querySelector<HTMLAnchorElement>('a[aria-label="Open chat with Engineer"]')!
+    expect(openChat.textContent).toBe('Open chat · Engineer')
+    await dom.act(() => openChat.click())
+    expect(opened.at(-1)?.ref).toEqual({ type: 'agent', agentId: 'engineer', view: 'chat' })
+    // A modified click keeps the link's own navigation (new tab, floating window).
+    const before = opened.length
+    await dom.act(() =>
+      openChat.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+    )
+    expect(opened).toHaveLength(before)
+
+    // Filtered to this stream, the participant row no longer repeats the stream's title and step.
+    const row = view.container.querySelector('[data-activity-column="summary"]')!
+    expect(row.querySelector('[data-activity-context]')).toBeNull()
+    expect(row.textContent).toBe('Renewing the claim')
     await dom.act(() => view.root.unmount())
   } finally {
     await dom.cleanup()
@@ -509,7 +639,118 @@ test('without server cards the strip keeps the plain stream count', async () => 
       )
     )
     expect(view.container.textContent).toContain('3 active streams')
-    expect(view.container.querySelector('[data-testid="activity-work-strip"]')).toBeNull()
+    expect(view.container.querySelector('[data-testid="activity-work-trigger"]')).toBeNull()
+    await dom.act(() => view.root.unmount())
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('a clipped chat row expands in place to its full message, and only the button toggles it', async () => {
+  const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const at = '2026-11-20T14:27:00.000Z'
+  const clipped = (id: string, messageId: string): SquadActivityItem => ({
+    id,
+    at,
+    agentId: 'engineer',
+    agentTypeId: 'engineer',
+    kind: 'message',
+    summary: 'One failure: an existing test asserting own comments create no delivery row. Renewing the c…',
+    preview: [
+      { text: 'One failure: an existing test asserting own comments create no delivery row. Renewing the c' },
+      { text: '…' },
+    ],
+    ref: { type: 'agent', agentId: 'engineer', view: 'chat', messageId },
+  })
+  const short: SquadActivityItem = { ...clipped('10:short', 'm-short'), preview: [{ text: 'Short and whole' }] }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const message = (id: string, createdAt: string) => ({
+    id,
+    agentId: 'engineer',
+    role: 'assistant',
+    content: 'One failure: an existing test asserting own comments create no delivery row. Renewing the claim **now**.',
+    createdAt,
+  })
+  client.setQueryData(['agents', 'message', 'engineer', 'm-full'], message('m-full', at))
+  // Mid-step the row links the previous message: that one is not this row's text.
+  client.setQueryData(['agents', 'message', 'engineer', 'm-old'], message('m-old', '2026-11-20T14:20:00.000Z'))
+  const opened: SquadActivityItem[] = []
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <ActivityFeedView
+              {...feedProps}
+              items={[clipped('10:full', 'm-full'), clipped('10:live', 'm-old'), short]}
+              onOpen={(item) => opened.push(item)}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    const rows = [...view.container.querySelectorAll('li')]
+    expect(rows[2].querySelector('[data-activity-row-expand]')).toBeNull()
+    const toggle = rows[0].querySelector<HTMLButtonElement>('[data-activity-row-expand]')!
+    expect(toggle.textContent).toBe('Show more')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await dom.act(() => toggle.click())
+    expect(opened).toHaveLength(0)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toBe('Show less')
+    const full = rows[0].querySelector('[data-activity-row-full]')!
+    expect(toggle.getAttribute('aria-controls')).toBe(full.id)
+    expect(full.textContent).toContain('Renewing the claim now.')
+    expect(full.querySelector('strong')?.textContent).toBe('now')
+    await dom.act(() => toggle.click())
+    expect(rows[0].querySelector('[data-activity-row-full]')).toBeNull()
+
+    const live = rows[1].querySelector<HTMLButtonElement>('[data-activity-row-expand]')!
+    await dom.act(() => live.click())
+    expect(rows[1].textContent).toContain('This step is still writing; open the chat for the latest text.')
+    await dom.act(() => view.root.unmount())
+  } finally {
+    client.clear()
+    await dom.cleanup()
+  }
+})
+
+test('without agents:read the details panel shows the stream without chat or participant links', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  // Presence withholds working agents and the feed withholds agent rows from such a viewer.
+  const selected = card({ workingAgentIds: [] })
+  const streamRow: SquadActivityItem = {
+    id: '30:created',
+    at: new Date().toISOString(),
+    agentId: null,
+    agentTypeId: null,
+    kind: 'workstream',
+    summary: 'created',
+    preview: [{ text: 'created' }],
+    ref: { type: 'workstream', workStreamId: selected.id, workStreamNumber: selected.number },
+  }
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <MemoryRouter>
+          <ActivityFeedView
+            {...feedProps}
+            items={[streamRow]}
+            onOpen={() => {}}
+            presence={{ workingCount: 0, needsYouCount: 0, streamCount: 1, streams: [selected] }}
+            workStreamFilter={selected.id}
+            onWorkStreamFilterChange={() => {}}
+          />
+        </MemoryRouter>
+      )
+    )
+    const panel = view.container.querySelector('[data-testid="activity-work-stream-filter"]')!
+    expect(panel.textContent).toContain('Open work stream')
+    expect(panel.textContent).not.toContain('Open chat')
+    expect(panel.textContent).not.toContain('Working now')
     await dom.act(() => view.root.unmount())
   } finally {
     await dom.cleanup()

@@ -38,6 +38,7 @@ import {
   getAgentSlotWaits,
   getAgentSlotHolds,
   getAgent,
+  getMessage,
   getActiveExecution,
   getAgentContext,
   getAgentSandboxStatus,
@@ -274,6 +275,13 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.agents.detail(id),
         queryFn: () => getAgent(id),
+      }),
+    /** One chat message in full (an Activity row's "Show more"); messages do not change once written. */
+    message: (agentId: string, messageId: string) =>
+      queryOptions({
+        queryKey: [...queryKeys.agents.all, 'message', agentId, messageId] as const,
+        queryFn: () => getMessage(agentId, messageId),
+        staleTime: Infinity,
       }),
     activeExecution: (agentId: string) =>
       queryOptions({

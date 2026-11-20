@@ -219,6 +219,63 @@ export interface ActivityWorkStreamCard {
   summary?: string | null
   /** ISO time `summary` was generated; present with it. */
   summaryGeneratedAt?: string
+  /**
+   * The stream's derived state (the same value as `WorkStream.derivedState`), so a paused stream
+   * reads as paused even when its flow is not. Absent from older servers.
+   */
+  derivedState?: import('./types').WorkStreamDerivedState
+}
+
+/**
+ * Step labels as a person reads them: each running step starts with a capital letter, so a step
+ * named `implement` and one named `Implement` look the same ("Implement + review").
+ */
+export function activityStepLabel(step: string | null | undefined): string | null {
+  const trimmed = step?.trim()
+  if (!trimmed) return null
+  return trimmed
+    .split(' + ')
+    .map((part) => {
+      const name = part.trim()
+      return name ? name[0].toUpperCase() + name.slice(1) : name
+    })
+    .join(' + ')
+}
+
+/**
+ * The one state an Active work row shows, in precedence order: a person must act; a participant is
+ * running; the stream is paused; it waits on something else (a review, an answer, a dependency or its
+ * pull request); it is queued; otherwise nobody is working on it right now.
+ */
+export type ActivityWorkStreamCardState = 'needs-you' | 'working' | 'paused' | 'waiting' | 'queued' | 'idle'
+
+const WAITING_DERIVED_STATES = new Set<string>([
+  'in_review',
+  'waiting_on_answer',
+  'waiting_on_dependency',
+  'awaiting_delivery',
+  'blocked',
+])
+
+export function activityWorkStreamCardState(
+  card: Pick<ActivityWorkStreamCard, 'needsYou' | 'workingAgentIds' | 'step' | 'waits' | 'status' | 'derivedState'>
+): ActivityWorkStreamCardState {
+  if (card.needsYou) return 'needs-you'
+  if (card.workingAgentIds.length > 0) return 'working'
+  if (card.derivedState === 'paused' || card.step === 'Paused') return 'paused'
+  if (card.waits.length > 0 || (card.derivedState && WAITING_DERIVED_STATES.has(card.derivedState))) return 'waiting'
+  if (card.status === 'queued') return 'queued'
+  return 'idle'
+}
+
+/** Display labels for {@link ActivityWorkStreamCardState}, shared by the row badge and the counts. */
+export const ACTIVITY_WORK_STREAM_CARD_STATE_LABELS: Record<ActivityWorkStreamCardState, string> = {
+  'needs-you': 'Waiting on you',
+  working: 'Working',
+  paused: 'Paused',
+  waiting: 'Waiting',
+  queued: 'Queued',
+  idle: 'Idle',
 }
 
 /** Permission-filtered presence summary for the cross-squad activity feed. */
@@ -281,7 +338,7 @@ export interface NormalizedSquadActivityFilters {
 export function activityRowContextLabel(item: Pick<SquadActivityItem, 'ref' | 'context'>): string | null {
   if (!item.ref || typeof item.ref !== 'object' || item.ref.type !== 'agent') return null
   const stream = item.context?.workStream
-  if (stream) return [`#${stream.number} ${stream.title}`, stream.step].filter(Boolean).join(' · ')
+  if (stream) return [`#${stream.number} ${stream.title}`, activityStepLabel(stream.step)].filter(Boolean).join(' · ')
   const purpose = item.context?.purpose?.trim()
   return purpose || null
 }

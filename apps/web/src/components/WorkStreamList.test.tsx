@@ -283,7 +283,8 @@ describe('WorkStreamList', () => {
       squads: [],
     })
 
-    expect(html).toContain('All squads')
+    // The filters sit in the Filters dropdown, present (closed) while squads load.
+    expect(html).toContain('data-testid="work-stream-filters"')
     expect(html).toContain('aria-label="Loading squad quick links"')
     expect(html).not.toContain('Open squad home')
     expect(html.indexOf('>Done</span>')).toBeLessThan(html.indexOf('aria-label="Loading squad quick links"'))
@@ -590,6 +591,12 @@ describe('WorkStreamList', () => {
       const button = (label: string) =>
         [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)!
       const pageText = () => dom.window.document.body.textContent ?? ''
+      // Inline lists (the Work tab) show the same Filters dropdown as the Feed: open it first.
+      const trigger = dom.window.document.querySelector<HTMLButtonElement>(
+        '[data-testid="work-stream-filters"] button'
+      )!
+      expect(trigger.textContent).toBe('Filters')
+      await dom.act(async () => trigger.click())
 
       expect(button('All').getAttribute('aria-pressed')).toBe('true')
       expect(button('All squads').getAttribute('aria-pressed')).toBe('true')
@@ -625,6 +632,19 @@ describe('WorkStreamList', () => {
       expect(button('All squads').getAttribute('aria-pressed')).toBe('true')
       expect(button('Ficus').getAttribute('aria-pressed')).toBe('false')
       expect(button('Beta').getAttribute('aria-pressed')).toBe('false')
+
+      // The trigger names one active choice, counts several, and Clear resets every group.
+      await dom.act(async () => button('In Review').click())
+      expect(trigger.textContent).toBe('Filters·In Review')
+      expect(trigger.getAttribute('aria-label')).toBe('Filters, In Review')
+      await dom.act(async () => button('Beta').click())
+      expect(trigger.textContent).toBe('Filters·2')
+      const clear = dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Clear filters"]')!
+      await dom.act(async () => clear.click())
+      expect(trigger.textContent).toBe('Filters')
+      expect(button('All').getAttribute('aria-pressed')).toBe('true')
+      expect(button('All squads').getAttribute('aria-pressed')).toBe('true')
+      expect(dom.window.document.querySelector('button[aria-label="Clear filters"]')).toBeNull()
     } finally {
       await dom.cleanup()
     }
@@ -682,12 +702,12 @@ describe('WorkStreamList', () => {
       expect(pageText()).toContain('Done Ficus')
       expect(pageText()).not.toContain('Active Beta')
       expect(pageText()).not.toContain('Done Beta')
-      expect(trigger.textContent).toBe('Filters1')
+      expect(trigger.textContent).toBe('Filters·Ficus')
 
       await dom.act(async () => button('Done').click())
       expect(pageText()).not.toContain('Active Ficus')
       expect(pageText()).toContain('Done Ficus')
-      expect(trigger.textContent).toBe('Filters2')
+      expect(trigger.textContent).toBe('Filters·2')
       await dom.act(async () =>
         dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       )

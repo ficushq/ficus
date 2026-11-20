@@ -421,6 +421,13 @@ export function SquadActivityTab({
   }, [])
 
   const hrefFor = useCallback((item: SquadActivityItem) => squadActivityItemHref(item, squadSlug), [squadSlug])
+  const agentLabelFor = useCallback(
+    (agentId: string) => {
+      const agent = agentById.get(agentId)
+      return agent ? activityAgentLabel(agent.agentTypeId) : undefined
+    },
+    [agentById]
+  )
   const agentDetailFor = useCallback(
     (item: SquadActivityItem) => activityAgentDetail(item.agentId ? agentById.get(item.agentId) : undefined),
     [agentById]
@@ -440,6 +447,7 @@ export function SquadActivityTab({
         workStreamFilter={workStreamFilter}
         onWorkStreamFilterChange={setWorkStreamFilter}
         workListHref={`/squads/${squadSlug}/work`}
+        agentLabelFor={agentLabelFor}
         showEverything={showEverything}
         onShowEverythingChange={setShowEverything}
         isLoading={!squadId || permissionsLoading || (activityEnabled && query.isPending)}

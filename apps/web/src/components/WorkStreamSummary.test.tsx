@@ -1,12 +1,14 @@
 /**
  * Work stream summaries on the web: the peek card on Feed, Home and Work list rows and graph nodes
- * (hover after a delay, keyboard focus, Escape and blur), the "Show summaries" switch remembered per
- * surface, the board card line and the detail modal's "Now" line.
+ * (hover after a delay, keyboard focus, Escape and blur; participants link to their chats), the
+ * "Summaries" switch in each list's Active header remembered per surface, the board card line and the
+ * detail modal's "Now" line.
  */
 import { afterEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation } from 'react-router'
+import { agentChatTargetOf } from '../lib/agentChatLinks'
 import type { AgentSummary, Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
@@ -155,13 +157,18 @@ function Feed({ streams }: { streams: WorkStream[] }) {
 }
 const feedList = (streams: WorkStream[]) => <Feed streams={streams} />
 
-/** Open the Feed's Filters popover and return its "Show summaries" switch. */
+/** Open the Feed's Filters panel and return its "Summaries" row (the Feed keeps it under View). */
 async function feedSwitch(doc: Document) {
-  const filters = [...doc.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-    button.textContent?.startsWith('Filters')
-  )!
+  const existing = doc.querySelector<HTMLButtonElement>('[data-testid="show-summaries-feed"]')
+  if (existing) return existing
+  const filters = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-filters"] button')!
   await dom!.act(async () => filters.click())
   return doc.querySelector<HTMLButtonElement>('[data-testid="show-summaries-feed"]')!
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="location">{location.pathname + location.search}</output>
 }
 
 test('hovering a Feed row opens the peek card after about half a second', async () => {
@@ -217,7 +224,7 @@ test('touch never opens the peek on hover', async () => {
   expect(peekCard()).toBeNull()
 })
 
-test('"Show summaries" is on by default, shows the line under active rows only, and is remembered per surface', async () => {
+test('"Summaries" is on by default, shows the line under active rows only, and is remembered per surface', async () => {
   const done = workStream({ id: 'ws-2', title: 'Finished work', status: 'done', derivedState: 'done' })
   const { doc, draw } = await render(feedList([workStream(), done]))
   const lines = [...doc.querySelectorAll('[data-testid="work-stream-summary-line"]')]
@@ -271,7 +278,7 @@ test('Home shows summaries by default and remembers turning them off across a re
   expect(doc.querySelector('[data-testid="work-stream-summary-line"]')?.textContent).toBe(SUMMARY)
 })
 
-test('a corrupt stored "Show summaries" value falls back to on', async () => {
+test('a corrupt stored "Summaries" value falls back to on', async () => {
   const { doc } = await render(homeList(), { [workStreamSummariesStorageKey('home')]: '{not-a-boolean' })
   expect(homeSwitch(doc).getAttribute('aria-checked')).toBe('true')
   expect(doc.querySelector('[data-testid="work-stream-summary-line"]')?.textContent).toBe(SUMMARY)
@@ -348,4 +355,91 @@ test('the detail modal shows the summary as "Now" under the title', async () => 
   expect(now.textContent).toContain('Now')
   expect(now.textContent).toContain(SUMMARY)
   expect(now.textContent).toContain('Generated summary · updated 4 min ago')
+})
+
+test('"Summaries" sits with the view controls on Work and Home, and in the Feed\'s Filters panel under View', async () => {
+  const { doc, draw } = await render(feedList([workStream()]))
+  // The Feed: not in the list header, but a padded row in the Filters panel's View group.
+  expect(doc.querySelector('[data-testid="show-summaries-feed"]')).toBeNull()
+  const feed = await feedSwitch(doc)
+  expect(feed.getAttribute('aria-label')).toBe('Show work stream summaries')
+  expect(feed.textContent).toContain('Summaries')
+  expect(feed.closest('[aria-label="Feed filters"]')).not.toBeNull()
+  expect(feed.closest('[role="group"]')?.getAttribute('aria-label')).toBe('View')
+
+  // Work tab: the filter row holds only Filters and the page action; the switch is with List / Kanban / Graph.
+  await draw(<SquadWorkStreamList workStreams={[workStream()]} squadId={squad.id} squad={squad} />)
+  const work = doc.querySelector('[data-testid="show-summaries-work"]')!
+  const viewToggle = doc.querySelector('[aria-label="Work stream view"]')!
+  expect(work.closest('section')).toBe(viewToggle.closest('section'))
+  expect(doc.querySelector('[data-testid="work-stream-filters"]')!.closest('section')).toBeNull()
+  // The board has no summary lines to toggle (cards always show it), so the switch is not offered there.
+  await dom!.act(async () => {
+    dom!.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
+    dom!.window.dispatchEvent(
+      new dom!.window.CustomEvent('ficus:work-stream-view-changed', { detail: `work:${squad.id}` })
+    )
+  })
+  expect(doc.querySelector('[data-testid="show-summaries-work"]')).toBeNull()
+
+  // Home: inside the Active header, and the graph action is labelled and set apart from it.
+  await draw(
+    <SquadWorkStreamList workStreams={[workStream()]} squadId={squad.id} squad={squad} compact activeOnly expandable />
+  )
+  const home = doc.querySelector('[data-testid="show-summaries-home"]')!
+  const graph = doc.querySelector<HTMLButtonElement>('button[aria-label="Show work stream graph"]')!
+  expect(graph.textContent).toBe('Graph')
+  expect(home.parentElement!.parentElement).toBe(graph.parentElement)
+  expect(graph.previousElementSibling?.getAttribute('aria-hidden')).toBe('true')
+})
+
+test('peek card participants link to their chats: click navigates, Shift/Alt-click is a floating-window target, keyboard reaches them', async () => {
+  const { doc, wait, peekCard, mouse, keyboardFocus } = await render(
+    <>
+      <LocationProbe />
+      <WorkStreamList
+        workStreams={[workStream()]}
+        squadMap={new Map([[squad.id, squad]])}
+        agentMap={new Map(agents.map((agent) => [agent.id, agent]))}
+        squads={[squad]}
+        feedLayout
+        hideFilters
+        summarySurface="feed"
+      />
+    </>
+  )
+  const row = doc.querySelector('[data-testid="feed-work-row"]')!
+  await mouse(row, 'mouseover')
+  await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
+  const card = peekCard()!
+  // Moving the pointer from the row into the card keeps it open.
+  await dom!.act(async () => {
+    row.dispatchEvent(new dom!.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: card }))
+    card.dispatchEvent(new dom!.window.MouseEvent('mouseover', { bubbles: true, relatedTarget: row }))
+  })
+  await wait(300)
+  expect(peekCard()).toBe(card)
+
+  const links = [...card.querySelectorAll<HTMLAnchorElement>('[data-testid="work-stream-peek-participant"]')]
+  expect(links.map((link) => link.textContent)).toEqual(['Engineer', 'Reviewer'])
+  expect(links[0].getAttribute('href')).toBe('/squads/squad-1/agents?agent=agent-1')
+  expect(links[0].tagName).toBe('A')
+  expect(links[0].tabIndex).toBe(0)
+  // The same recognition the floating windows use for Shift- or Alt/Option-click on the row subtitle.
+  expect(agentChatTargetOf(links[1], dom!.window.location.origin)).toBe('agent-2')
+
+  await dom!.act(async () => links[0].click())
+  expect(doc.querySelector('[data-testid="location"]')?.textContent).toBe('/squads/squad-1/agents?agent=agent-1')
+  // Following the link closes the card and does not open the row's own stream dialog.
+  expect(peekCard()).toBeNull()
+  expect(doc.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+
+  // Keyboard: focus the row (the card opens), then the links are in the card's tab order.
+  const button = doc.querySelector<HTMLButtonElement>('[data-testid="feed-work-row"] button')!
+  await keyboardFocus(button)
+  const again = peekCard()!
+  const link = again.querySelector<HTMLAnchorElement>('[data-testid="work-stream-peek-participant"]')!
+  await dom!.act(async () => link.focus())
+  expect(doc.activeElement).toBe(link)
+  expect(peekCard()).toBe(again)
 })
