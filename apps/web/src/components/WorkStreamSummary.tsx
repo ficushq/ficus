@@ -1,7 +1,7 @@
 /**
  * One-line work stream summaries on the web (docs/wiki/work-stream-summaries.md): the peek card
  * shared by Feed, Home and Work list rows and graph nodes, the inline summary line, the detail
- * modal's "Now" line, and the per-surface "Show summaries" switch.
+ * modal's "Now" line, and the per-surface "Summaries" switch.
  */
 import clsx from 'clsx'
 import {
@@ -14,7 +14,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react'
+import { Link } from 'react-router'
 import {
+  activityStepLabel,
   visibleWorkStreamSummary,
   workStreamDeliveryCiState,
   workStreamTitle,
@@ -37,7 +39,7 @@ export const GENERATED_SUMMARY_TITLE = "Generated summary of the participants' r
 /** Hovering a row this long opens its peek card ("about half a second"). */
 export const WORK_STREAM_PEEK_OPEN_DELAY_MS = 500
 
-/** The lists that remember their own "Show summaries" choice. */
+/** The lists that remember their own "Summaries" choice. */
 export type WorkStreamSummarySurface = 'feed' | 'home' | 'work'
 
 export function workStreamSummariesStorageKey(surface: WorkStreamSummarySurface): string {
@@ -100,37 +102,81 @@ export function useShowWorkStreamSummaries(
   return [show, setShow] as const
 }
 
-/** The "Show summaries" switch for a list's view or filter menu. */
-export function ShowSummariesSwitch({ surface, className }: { surface: WorkStreamSummarySurface; className?: string }) {
+/**
+ * The "Summaries" control every work list shows. `compact` (the default) is a small switch the height
+ * of the List / Kanban / Graph control, for the Active section header (Home, Work); `row` is
+ * a full-width row with a short hint, for the Feed's Filters panel. Both are labelled "Summaries" with
+ * an accessible name that says what they toggle.
+ */
+export function ShowSummariesSwitch({
+  surface,
+  className,
+  variant = 'compact',
+}: {
+  surface: WorkStreamSummarySurface
+  className?: string
+  variant?: 'compact' | 'row'
+}) {
   const [show, setShow] = useShowWorkStreamSummaries(surface)
-  return (
-    <label
+  const track = (
+    <span
+      aria-hidden
       className={clsx(
-        'flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-secondary',
-        className
+        'relative inline-flex shrink-0 items-center rounded-full transition-colors',
+        variant === 'row' ? 'h-5 w-9' : 'h-3.5 w-6',
+        show ? 'bg-accent' : 'bg-th-border'
       )}
     >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={show}
-        onClick={() => setShow(!show)}
+      <span
         className={clsx(
-          'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
-          show ? 'bg-accent' : 'bg-th-border'
+          'inline-block rounded-full bg-surface transition-transform',
+          variant === 'row'
+            ? clsx('h-4 w-4', show ? 'translate-x-[1.125rem]' : 'translate-x-0.5')
+            : clsx('h-2.5 w-2.5', show ? 'translate-x-3' : 'translate-x-0.5')
         )}
-        data-testid={`show-summaries-${surface}`}
+      />
+    </span>
+  )
+  const switchProps = {
+    type: 'button' as const,
+    role: 'switch' as const,
+    'aria-checked': show,
+    'aria-label': 'Show work stream summaries',
+    onClick: () => setShow(!show),
+    'data-testid': `show-summaries-${surface}`,
+  }
+  if (variant === 'row')
+    return (
+      <button
+        {...switchProps}
+        className={clsx(
+          'flex w-full cursor-pointer items-center justify-between gap-4 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-surface-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
+          className
+        )}
       >
-        <span
-          aria-hidden
-          className={clsx(
-            'inline-block h-4 w-4 transform rounded-full bg-surface transition-transform',
-            show ? 'translate-x-4' : 'translate-x-0'
-          )}
-        />
+        <span className="min-w-0 space-y-0.5">
+          <span className="block text-xs leading-4 font-medium text-primary">Summaries</span>
+          <span className="block text-[11px] leading-4 text-muted">A one-line summary under each active stream</span>
+        </span>
+        {track}
       </button>
-      Show summaries
-    </label>
+    )
+  return (
+    <div className={clsx('inline-flex shrink-0 rounded-lg bg-surface-secondary p-0.5', className)}>
+      <button
+        {...switchProps}
+        title={
+          show
+            ? 'Hide the one-line summary under each active stream'
+            : 'Show a one-line summary under each active stream'
+        }
+        className="flex h-6 cursor-pointer items-center gap-2 whitespace-nowrap rounded-md px-2 text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        {track}
+        {/* A line box exactly the track's height, so the label's middle is the track's middle. */}
+        <span className="block leading-[0.875rem]">Summaries</span>
+      </button>
+    </div>
   )
 }
 
@@ -151,7 +197,7 @@ export function formatSummaryAge(value: string | Date, now: number = Date.now())
   return `${days} ${days === 1 ? 'day' : 'days'} ago`
 }
 
-/** One muted, truncated summary line under a list row ("Show summaries" on). */
+/** One muted, truncated summary line under a list row ("Summaries" on). */
 export function WorkStreamSummaryLine({ workStream, className }: { workStream: WorkStream; className?: string }) {
   const summary = workStreamSummaryFor(workStream)
   if (!summary) return null
@@ -284,16 +330,19 @@ export function WorkStreamPeekCard({
   anchor,
   agentMap,
   agentTypeNames,
+  squadSlug,
 }: {
   peek: WorkStreamPeek
   workStream: WorkStream
   anchor: RefObject<HTMLElement | null>
   agentMap?: Map<string, PeekAgent>
   agentTypeNames?: Map<string, string>
+  /** The stream's squad slug for participant chat links; squad routes also accept the id. */
+  squadSlug?: string
 }) {
   const summary = workStreamSummaryFor(workStream)
   const facts = workStreamPeekFacts(workStream)
-  const step = workStream.step ?? (workStream.status === 'queued' ? 'Queued' : null)
+  const step = activityStepLabel(workStream.step) ?? (workStream.status === 'queued' ? 'Queued' : null)
   const participants = (workStream.agentIds ?? []).flatMap((id) => {
     const agent = agentMap?.get(id)
     return agent ? [agent] : []
@@ -363,12 +412,29 @@ export function WorkStreamPeekCard({
             <div className="flex gap-2">
               <dt className="w-20 shrink-0 text-muted">Participants</dt>
               <dd className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-secondary">
-                {participants.map((agent) => (
-                  <span key={agent.id} className="inline-flex items-center gap-1">
-                    <AgentActivityDot status={agent.status} />
-                    {typeLabel(agent.agentTypeId, agentTypeNames)}
-                  </span>
-                ))}
+                {participants.map((agent) => {
+                  const name = typeLabel(agent.agentTypeId, agentTypeNames)
+                  return (
+                    // The same agent chat link as a row's subtitle: a plain click opens the chat, and
+                    // Shift- or Alt/Option-click opens it in a floating window (FloatingWindows).
+                    <Link
+                      key={agent.id}
+                      to={`/squads/${squadSlug ?? workStream.squadId}/agents?agent=${agent.id}`}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-xs hover:text-link-hover hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+                      title={`Open ${name} agent thread`}
+                      data-testid="work-stream-peek-participant"
+                      onClick={(event) => {
+                        // The card is portaled from inside the row: keep the row's own click (open the
+                        // stream) from running too, and close the card as following a link would.
+                        event.stopPropagation()
+                        peek.hover.hide()
+                      }}
+                    >
+                      <AgentActivityDot status={agent.status} />
+                      {name}
+                    </Link>
+                  )
+                })}
               </dd>
             </div>
           )}

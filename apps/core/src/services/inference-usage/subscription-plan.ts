@@ -38,7 +38,12 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | undef
   }
 }
 
-/** The ChatGPT plan in a Codex access token (`chatgpt_plan_type`), mapped to a SUBSCRIPTION_PLANS id. */
+/**
+ * The ChatGPT plan in a Codex access token (`chatgpt_plan_type`), mapped to a SUBSCRIPTION_PLANS id. The
+ * claim value is the plan id (`go`, `prolite`, `self_serve_business_prolite`, ...) except `team`, the
+ * Standard Business seat, which is `business`. A value the table does not know is kept as is, so the
+ * account shows that id and asks for a price instead of counting $0.
+ */
 export function detectCodexPlan(accessToken: unknown): string | undefined {
   if (typeof accessToken !== 'string') return undefined
   const claim = decodeJwtPayload(accessToken)?.[OPENAI_AUTH_CLAIM]

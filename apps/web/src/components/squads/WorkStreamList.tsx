@@ -216,16 +216,21 @@ export function WorkStreamList({
     <>
       {!inFullscreen && !compact && <WorkStreamViewToggle squadId={squadId} surface={surface} modes={modes} />}
       {showExpand && (
-        <button
-          ref={expandTriggerRef}
-          type="button"
-          onClick={enterFullscreen}
-          className="ficus-button ficus-button-ghost rounded-md p-1.5 transition-colors"
-          aria-label="Show work stream graph"
-          title="Show work stream graph"
-        >
-          <GraphIcon className="h-4 w-4" />
-        </button>
+        <>
+          {/* A rule keeps the graph action visibly apart from the "Summaries" switch before it. */}
+          <span aria-hidden className="h-4 w-px bg-th-border" />
+          <button
+            ref={expandTriggerRef}
+            type="button"
+            onClick={enterFullscreen}
+            className="ficus-button ficus-button-ghost flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors"
+            aria-label="Show work stream graph"
+            title="Show work stream graph"
+          >
+            <GraphIcon className="h-3.5 w-3.5" />
+            Graph
+          </button>
+        </>
       )}
     </>
   )

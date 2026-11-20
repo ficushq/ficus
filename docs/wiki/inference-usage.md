@@ -86,8 +86,23 @@ A subscription account's calls bill $0. Its monthly fee shows as its own line it
 
   `pro` was the only Pro plan before the tiers existed, and it has always been the $200 one, so accounts stored as `pro` keep their price with no migration. The `prolite` and `promax` mappings follow the Codex CLI's own status labels; OpenAI does not document the claim values.
 
+- **ChatGPT Go and Business seats**: Go and the two ChatGPT Business seat types are priced the same way. Team plans are priced per seat at the monthly-billed rate; an annual Business seat is cheaper ($20 Standard, $100 Premium), so an admin on annual billing sets the price.
+
+  | Claim value                   | Plan id                       | Label                    | Default price |
+  | ----------------------------- | ----------------------------- | ------------------------ | ------------- |
+  | `go`                          | `go`                          | ChatGPT Go               | $8 a month    |
+  | `team`                        | `business`                    | ChatGPT Business         | $25 a seat    |
+  | `self_serve_business_prolite` | `self_serve_business_prolite` | ChatGPT Business Premium | $125 a seat   |
+
+  `team` is a Standard Business seat (the plan was called Team before OpenAI renamed it). The Premium seat's id is its claim value, so accounts that signed in with it before it was priced are priced now with no migration. Prices were checked on 2026-11-20 against OpenAI's ChatGPT Go launch post and the ChatGPT Business overview help article; the claim values and names follow the Codex CLI's plan types and status labels.
+
+- **Claim values without a price**: the Codex CLI also knows these `chatgpt_plan_type` values, which the table leaves out. An account on one shows the value as its plan and asks for a price; no fee counts until an admin sets one.
+  - `self_serve_business_usage_based`: a legacy Business Codex seat, which has no seat fee and spends workspace credits instead.
+  - `business`, `ent26`, `enterprise_cbp_automation`, `enterprise_cbp_usage_based` and `hc`: Enterprise workspaces, which have negotiated prices. The Codex CLI labels a `business` claim "Enterprise", but the table still prices the `business` plan id as a Standard Business seat because `team` maps to it.
+  - `edu_plus`, `edu_pro`, `sci` and `sci_plus`: Edu and academic research plans, which are sold through institutions. `education` is also an Edu value; it is kept as `education`, so it shows by id too.
+
 - **Detection**: the plan is detected where the provider says. The account shows "Detected" or "Set by you".
-  - ChatGPT/Codex: the access token's `https://api.openai.com/auth.chatgpt_plan_type` claim, read when the account signs in and whenever the token refreshes (`team` maps to Business). The claim names the Pro tier (`prolite`, `pro` or `promax`), so the detected tier is used as is. A tier an admin picked is never replaced by a detected one. pi keeps no id_token, but the access token carries the same claim.
+  - ChatGPT/Codex: the access token's `https://api.openai.com/auth.chatgpt_plan_type` claim, read when the account signs in and whenever the token refreshes (`team`, a Standard Business seat, maps to `business`). The claim names the Pro tier (`prolite`, `pro` or `promax`), so the detected tier is used as is. A tier an admin picked is never replaced by a detected one. pi keeps no id_token, but the access token carries the same claim.
   - Claude Code: `subscriptionType` from `claude auth status`. `max` does not say whether it is 5x or 20x, so the admin picks one. Until then no fee is counted.
   - Anthropic OAuth through pi is not stored at all: Claude subscriptions only reach Ficus through Claude Code.
   - Anything else shows "plan unknown". No fee is counted until a plan or price is chosen; nothing is guessed.

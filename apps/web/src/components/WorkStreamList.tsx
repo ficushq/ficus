@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { createPortal } from 'react-dom'
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 import { useURLStringState, useURLStringArrayState, useURLBooleanState } from '../hooks/useURLState'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { useTick } from '../hooks/useTick'
@@ -18,7 +18,7 @@ import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { workStreamStatusLabel, WS_STATUS_ICONS } from '../lib/workStreamStatusPresentation'
 import { Badge } from './Badge'
 import { AgentActivityDot } from './AgentActivityDot'
-import { WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
+import { WorkStreamFilterGroup, WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
 import { ChevronDownIcon, ChevronRightIcon, PullRequestIcon } from './icons'
 import {
   LoadingContent,
@@ -164,26 +164,31 @@ function SectionHeader({
   )
 
   if (collapsible && onToggle) {
+    // One header row: the hover fill covers the whole row, view controls included, so they never
+    // make the disclosure look narrower than the list below it.
     return (
-      <div className="flex items-center">
+      <div className="flex flex-wrap items-center rounded-lg has-[[data-section-toggle]:hover]:bg-surface-hover">
         <button
           onClick={onToggle}
+          aria-expanded={!collapsed}
+          data-section-toggle=""
           className={clsx(
-            'ficus-button ficus-button-ghost min-w-0 flex-1 py-2 text-left',
+            'ficus-button ficus-button-ghost min-w-fit flex-1 py-2 text-left hover:bg-transparent',
             feedLayout ? FEED_DISCLOSURE_HEADER_CLASS : 'px-3'
           )}
         >
           {content}
         </button>
-        {actions && <div className="flex shrink-0 items-center gap-1 px-2">{actions}</div>}
+        {actions && <div className="ml-auto flex shrink-0 items-center gap-2 px-2">{actions}</div>}
       </div>
     )
   }
 
   return (
-    <div className="flex items-center">
-      <div className="min-w-0 flex-1 px-3 py-2">{content}</div>
-      {actions && <div className="flex shrink-0 items-center gap-1 px-2">{actions}</div>}
+    // Narrow widths wrap the view controls under the title rather than squeezing it.
+    <div className="flex flex-wrap items-center">
+      <div className="min-w-fit flex-1 px-3 py-2">{content}</div>
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-2 px-2">{actions}</div>}
     </div>
   )
 }
@@ -337,25 +342,24 @@ function SquadManagerChatMenuSkeleton({ count }: { count: number }) {
   )
 }
 
+/** Filter chips in the Filters panel: an even grid, so labels never wrap into ragged rows. */
+const FILTER_CHIP_CLASS =
+  'ficus-button ficus-button-ghost min-w-0 truncate rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors'
+const FILTER_CHIP_ON_CLASS = 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
+
 function StatusFilters({
   values,
   onChange,
-  wrap = false,
 }: {
   values: WsStatusFilterValue[]
   onChange: (values: WsStatusFilterValue[]) => void
-  wrap?: boolean
 }) {
   return (
-    <div className={clsx('flex gap-1.5 pb-1', wrap ? 'flex-wrap' : 'overflow-x-auto')}>
+    <div className="grid grid-cols-3 gap-1">
       <button
         type="button"
         onClick={() => onChange([])}
-        className={clsx(
-          'ficus-button ficus-button-ghost',
-          'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
-          values.length === 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
-        )}
+        className={clsx(FILTER_CHIP_CLASS, values.length === 0 && FILTER_CHIP_ON_CLASS)}
         aria-pressed={values.length === 0}
       >
         All
@@ -365,11 +369,7 @@ function StatusFilters({
           type="button"
           key={option.value}
           onClick={() => onChange(toggleFilter(values, option.value))}
-          className={clsx(
-            'ficus-button ficus-button-ghost',
-            'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
-            values.includes(option.value) && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
-          )}
+          className={clsx(FILTER_CHIP_CLASS, values.includes(option.value) && FILTER_CHIP_ON_CLASS)}
           aria-pressed={values.includes(option.value)}
         >
           {option.label}
@@ -385,28 +385,22 @@ function SquadFilters({
   squads,
   isLoading = false,
   loadingCount = 0,
-  wrap = false,
 }: {
   values: string[]
   onChange: (values: string[]) => void
   squads: Squad[]
   isLoading?: boolean
   loadingCount?: number
-  wrap?: boolean
 }) {
   if (!squads.length && !isLoading) return null
 
   return (
-    <div className={clsx('flex gap-1.5 pb-1', wrap ? 'flex-wrap' : 'overflow-x-auto')}>
+    <div className="grid grid-cols-2 gap-1">
       <button
         type="button"
         onClick={() => onChange([])}
         disabled={isLoading}
-        className={clsx(
-          'ficus-button ficus-button-ghost',
-          'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
-          values.length === 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
-        )}
+        className={clsx(FILTER_CHIP_CLASS, values.length === 0 && FILTER_CHIP_ON_CLASS)}
         aria-pressed={values.length === 0}
       >
         All squads
@@ -416,11 +410,8 @@ function SquadFilters({
           type="button"
           key={squad.id}
           onClick={() => onChange(toggleFilter(values, squad.id))}
-          className={clsx(
-            'ficus-button ficus-button-ghost',
-            'px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors',
-            values.includes(squad.id) && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
-          )}
+          className={clsx(FILTER_CHIP_CLASS, values.includes(squad.id) && FILTER_CHIP_ON_CLASS)}
+          title={squad.name}
           aria-pressed={values.includes(squad.id)}
         >
           {squad.name}
@@ -456,7 +447,7 @@ function WorkStreamRow({
   agentTypeNameMap: Map<string, string>
   showSquadBadge: boolean
   feedLayout?: boolean
-  /** "Show summaries" is on: active rows add one muted summary line. */
+  /** "Summaries" is on: active rows add one muted summary line. */
   showSummary?: boolean
   onClick: () => void
 }) {
@@ -480,6 +471,7 @@ function WorkStreamRow({
       anchor={rowRef}
       agentMap={agentMap}
       agentTypeNames={agentTypeNameMap}
+      squadSlug={slugFor(workStream.squadId)}
     />
   )
   const summaryLine = showSummary && !isDone && <WorkStreamSummaryLine workStream={workStream} />
@@ -790,8 +782,8 @@ interface WorkStreamListProps {
   isFetchingMoreDone?: boolean
   onLoadMoreDone?: () => void
   /**
-   * Which list this is, for the "Show summaries" switch (remembered per surface). The switch sits in
-   * the filter popover, else beside the filter row, else (filters hidden) in the Active header.
+   * Which list this is, for the "Summaries" switch (remembered per surface). It sits in the Active
+   * section header beside the list's other view controls on every list.
    */
   summarySurface?: WorkStreamSummarySurface
 }
@@ -830,7 +822,11 @@ export function WorkStreamList({
   const [selectedWsId, setSelectedWsId] = useURLStringState<string>('ws', '')
   const [summariesOn] = useShowWorkStreamSummaries(summarySurface ?? 'feed')
   const showSummaries = !!summarySurface && summariesOn
-  const summarySwitch = summarySurface && <ShowSummariesSwitch surface={summarySurface} />
+  const filtersInHeader = filterContainer !== undefined && !hideFilters
+  const feedSummarySwitch = filtersInHeader && summarySurface && (
+    <ShowSummariesSwitch surface={summarySurface} variant="row" />
+  )
+  const summarySwitch = !filtersInHeader && summarySurface && <ShowSummariesSwitch surface={summarySurface} />
   const { data: agentTypes = [] } = useQuery(queries.agentTypes.list())
   const agentTypeNameMap = useMemo(
     () => new Map(agentTypes.map((agentType) => [agentType.id, agentType.name])),
@@ -939,39 +935,69 @@ export function WorkStreamList({
   })
   const selectedWorkStream = loadedSelectedWorkStream ?? fetchedSelectedWorkStream ?? null
 
-  const filters = !hideFilters && (
-    <div className="space-y-2 px-1" aria-label="Work stream filters">
-      {filterContainer && <p className="text-xs font-medium text-secondary">Status</p>}
-      <StatusFilters values={statusFilters} onChange={setStatusFilters} wrap={!!filterContainer} />
-      {filterContainer && showSquadFilter && <p className="pt-2 text-xs font-medium text-secondary">Squads</p>}
-      {showSquadFilter && (
-        <SquadFilters
-          values={squadFilters}
-          onChange={setSquadFilters}
-          squads={squads}
-          isLoading={squadsLoading}
-          loadingCount={squadLoadingCount}
-          wrap={!!filterContainer}
-        />
-      )}
-      {filterContainer && summarySwitch && (
-        <>
-          <p className="pt-2 text-xs font-medium text-secondary">View</p>
-          {summarySwitch}
-        </>
-      )}
-    </div>
+  const filterCount = statusFilters.length + (showSquadFilter ? squadFilters.length : 0)
+  const activeFilterLabel =
+    filterCount !== 1
+      ? undefined
+      : statusFilters.length === 1
+        ? WS_STATUS_FILTER_OPTIONS.find((option) => option.value === statusFilters[0])?.label
+        : squads.find((squad) => squad.id === squadFilters[0])?.name
+  // One URL update for both groups: two setters in one handler would each start from the same
+  // search params, and the second would restore what the first removed.
+  const [, setSearchParams] = useSearchParams()
+  const clearFilters = () =>
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        next.delete('status')
+        if (showSquadFilter) next.delete('squad')
+        return next
+      },
+      { replace: true }
+    )
+  // One Filters dropdown for the Feed (portaled into its header) and the Work tab (inline, beside
+  // the page action).
+  const filtersPopover = !hideFilters && (
+    <WorkStreamFiltersPopover
+      count={filterCount}
+      activeLabel={activeFilterLabel}
+      onClear={clearFilters}
+      label={filterContainer === undefined ? 'Work filters' : 'Feed filters'}
+      align={filterContainer === undefined ? 'start' : undefined}
+    >
+      <div className="space-y-3" aria-label="Work stream filters">
+        <WorkStreamFilterGroup title="Status">
+          <StatusFilters values={statusFilters} onChange={setStatusFilters} />
+        </WorkStreamFilterGroup>
+        {showSquadFilter && (squads.length > 0 || squadsLoading) && (
+          <WorkStreamFilterGroup title="Squads">
+            <SquadFilters
+              values={squadFilters}
+              onChange={setSquadFilters}
+              squads={squads}
+              isLoading={squadsLoading}
+              loadingCount={squadLoadingCount}
+            />
+          </WorkStreamFilterGroup>
+        )}
+        {feedSummarySwitch && (
+          <div className="border-t border-th-border pt-3">
+            <WorkStreamFilterGroup title="View">{feedSummarySwitch}</WorkStreamFilterGroup>
+          </div>
+        )}
+      </div>
+    </WorkStreamFiltersPopover>
   )
-  const inlineSummarySwitch = filterContainer === undefined && !hideFilters ? summarySwitch : null
-  const headerSummarySwitch = hideFilters ? summarySwitch : null
+  // "Summaries" sits with the list's other view controls in the Active header, except on the Feed
+  // (filters in its page header), where it is the View row of the Filters panel (owner review).
   const activeActions =
-    headerSummarySwitch && activeHeaderActions ? (
+    summarySwitch && activeHeaderActions ? (
       <>
-        {headerSummarySwitch}
+        {summarySwitch}
         {activeHeaderActions}
       </>
     ) : (
-      (headerSummarySwitch ?? activeHeaderActions)
+      (summarySwitch ?? activeHeaderActions)
     )
 
   const activePending = isLoading && activeStreams.length === 0
@@ -984,25 +1010,13 @@ export function WorkStreamList({
     <div className={clsx('flex flex-col', feedLayout ? 'gap-4' : 'gap-6')}>
       {/* Filters */}
       {filterContainer === undefined
-        ? (filters || filterActions) && (
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">{filters}</div>
-              {(filterActions || inlineSummarySwitch) && (
-                <div className="flex shrink-0 items-center gap-3">
-                  {inlineSummarySwitch}
-                  {filterActions}
-                </div>
-              )}
+        ? (filtersPopover || filterActions) && (
+            <div className="flex items-center gap-3 px-1">
+              <div className="min-w-0 flex-1">{filtersPopover}</div>
+              {filterActions && <div className="flex shrink-0 items-center gap-3">{filterActions}</div>}
             </div>
           )
-        : filterContainer &&
-          !hideFilters &&
-          createPortal(
-            <WorkStreamFiltersPopover count={statusFilters.length + (showSquadFilter ? squadFilters.length : 0)}>
-              {filters}
-            </WorkStreamFiltersPopover>,
-            filterContainer
-          )}
+        : filterContainer && filtersPopover && createPortal(filtersPopover, filterContainer)}
 
       {loadingError && (
         <p role="alert" className="px-3 text-sm text-muted">

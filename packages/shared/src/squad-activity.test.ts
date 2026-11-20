@@ -7,7 +7,10 @@ import {
   makeSquadActivityId,
   parseSquadActivityId,
   activityRowContextLabel,
+  activityStepLabel,
+  activityWorkStreamCardState,
   hideRelayedSenderRows,
+  type ActivityWorkStreamCard,
   RELAYED_SENDER_ROW_SLACK_MS,
   type SquadActivityItem,
 } from './squad-activity'
@@ -219,5 +222,48 @@ describe('hideRelayedSenderRows', () => {
     // A step's message row lands after its tool calls, so a slightly later sender row is still the send.
     const justAfter = { ...sender, at: '2026-11-20T08:00:30.000Z' }
     expect(hideRelayedSenderRows([justAfter, received('20:a')]).map((row) => row.id)).toEqual(['20:a'])
+  })
+})
+
+describe('Active work row state and step labels', () => {
+  it('capitalizes each running step so lower-case step names match the rest', () => {
+    expect(activityStepLabel('implement')).toBe('Implement')
+    expect(activityStepLabel('implement + review')).toBe('Implement + Review')
+    expect(activityStepLabel('Completion-ready')).toBe('Completion-ready')
+    expect(activityStepLabel('  ')).toBeNull()
+    expect(activityStepLabel(null)).toBeNull()
+  })
+
+  it('normalizes the step in the row context line', () => {
+    const ref = { type: 'agent' as const, agentId: 'a', view: 'chat' as const }
+    const workStream = {
+      id: 'ws',
+      number: 1395,
+      title: 'Spend',
+      squadId: 's',
+      status: 'active' as const,
+      step: 'implement',
+    }
+    expect(activityRowContextLabel({ ref, context: { workStream } })).toBe('#1395 Spend · Implement')
+  })
+
+  const card = (overrides: Partial<ActivityWorkStreamCard> = {}) => ({
+    needsYou: false,
+    workingAgentIds: [] as string[],
+    step: 'Implement' as string | null,
+    waits: [] as ActivityWorkStreamCard['waits'],
+    status: 'active' as const,
+    ...overrides,
+  })
+
+  it('gives every row exactly one state, in precedence order', () => {
+    expect(activityWorkStreamCardState(card({ needsYou: true, workingAgentIds: ['a'] }))).toBe('needs-you')
+    expect(activityWorkStreamCardState(card({ workingAgentIds: ['a'], derivedState: 'paused' }))).toBe('working')
+    expect(activityWorkStreamCardState(card({ derivedState: 'paused' }))).toBe('paused')
+    expect(activityWorkStreamCardState(card({ step: 'Paused' }))).toBe('paused')
+    expect(activityWorkStreamCardState(card({ waits: [{ type: 'dependency', needsYou: false }] }))).toBe('waiting')
+    expect(activityWorkStreamCardState(card({ derivedState: 'awaiting_delivery' }))).toBe('waiting')
+    expect(activityWorkStreamCardState(card({ status: 'queued', step: null }))).toBe('queued')
+    expect(activityWorkStreamCardState(card())).toBe('idle')
   })
 })

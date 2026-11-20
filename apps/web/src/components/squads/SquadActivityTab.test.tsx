@@ -811,11 +811,12 @@ describe('background presence (operator decisions 2026-08-27)', () => {
         ],
       },
     })
-    expect(withCards).toContain('data-testid="activity-work-strip"')
-    expect(withCards).toContain('#7 Squad stream')
-    expect(withCards).toContain('Waiting on you: review')
-    expect(withCards).toContain('PR #5 · CI passing')
+    // The streams stay behind the Active work pill (a searchable list), not inline on Activity.
+    expect(withCards).toContain('data-testid="activity-work-trigger"')
+    expect(withCards).toContain('aria-label="Active work, 1 stream"')
+    expect(withCards).not.toContain('Squad stream')
     expect(withCards).not.toContain('active streams')
+    expect(withCards).toContain('1 working')
 
     // Idle roster: gray dot, zero counts, no live dots.
     const quiet = staticRender([], false, { agents: [agent] })

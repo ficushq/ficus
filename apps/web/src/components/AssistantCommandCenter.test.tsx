@@ -217,7 +217,9 @@ test('work opens inline, assigned chats stay mounted, and Back restores the quer
     expect(footer.closest('[style*="display: none"]')).toBeNull()
     await f.click('[data-command-preview] button')
     expect(f.container.querySelector('footer')).toBeNull()
-    expect(f.container.querySelector('a')?.getAttribute('href')).toBe('/squads/ficus/agents?agent=worker')
+    expect(f.container.querySelector('a[aria-label="Open full conversation"]')?.getAttribute('href')).toBe(
+      '/squads/ficus/agents?agent=worker'
+    )
     const draft = f.container.querySelector<HTMLInputElement>('[aria-label="Inline draft"]')!
     await f.type(draft, 'A draft to keep')
     await f.click('[aria-label="Back to preview"]')
@@ -251,7 +253,9 @@ test('a squad-targeted request opens a consultant chat with the exact initial pr
     expect(props.initialMessage).toEqual({ content: 'Research database options' })
     expect(props.enableFullscreen).toBe(false)
     await f.dom.act(async () => props.onAgentCreated('new-consultant'))
-    expect(f.container.querySelector('a')?.getAttribute('href')).toBe('/squads/ficus/agents?agent=new-consultant')
+    expect(f.container.querySelector('a[aria-label="Open full conversation"]')?.getAttribute('href')).toBe(
+      '/squads/ficus/agents?agent=new-consultant'
+    )
     expect(f.ask).not.toHaveBeenCalled()
   } finally {
     await f.cleanup()
@@ -414,6 +418,15 @@ test('a restored conversation resolves its purpose in the breadcrumb with a sing
     expect(f.container.querySelector('[title="Fix OAuth implementation"]') !== null).toBe(true)
     expect(f.container.querySelectorAll('[aria-label="Open full conversation"]')).toHaveLength(1)
     expect(f.chats.mock.calls.at(-1)![0].header).toBeUndefined()
+    // The breadcrumb's squad name links to the squad's Home in the app, and the assistant stays on the chat.
+    const squadLink = f.container.querySelector<HTMLAnchorElement>('a[title="Open Ficus"]')!
+    expect(squadLink.textContent).toBe('Ficus')
+    expect(squadLink.getAttribute('href')).toBe('/squads/ficus')
+    expect(squadLink.className).toContain('ficus-button-link')
+    expect(squadLink.target).toBe('')
+    await f.click('a[title="Open Ficus"]')
+    expect(f.location.current).toBe('/squads/ficus')
+    expect(f.container.querySelector('[title="Fix OAuth implementation"]') !== null).toBe(true)
     await f.click('[aria-label="Back to preview"]')
     expect(f.container.querySelector('[title="Ficus"]') !== null).toBe(true)
   } finally {

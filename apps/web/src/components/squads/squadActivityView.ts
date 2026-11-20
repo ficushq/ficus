@@ -1,5 +1,13 @@
 import type { AuthIdentity } from '@ficus/client-core'
-import type { ActivityWorkStreamCard, SquadActivityItem, SquadActivityKind, WorkStreamWaitType } from '@ficus/shared'
+import {
+  ACTIVITY_WORK_STREAM_CARD_STATE_LABELS,
+  activityStepLabel,
+  activityWorkStreamCardState,
+  type ActivityWorkStreamCard,
+  type SquadActivityItem,
+  type SquadActivityKind,
+  type WorkStreamWaitType,
+} from '@ficus/shared'
 
 /**
  * Kind toggles as the user sees them (2026-08-27 audit): the three
@@ -123,10 +131,21 @@ export function activityExternalHref(value: string): string | undefined {
   }
 }
 
-/* Active work strip labels (ActivityWorkStrip.tsx). */
+/* Active work labels (ActivityWorkPicker.tsx, ActivityWorkStreamDetails.tsx). */
 
-/** Cards shown before "+N more" (operator request 2026-11-20: "about six"). */
-export const ACTIVE_WORK_VISIBLE_CARDS = 6
+/**
+ * A row's state line: the state ("Working", "Paused", "Waiting on you: review", "Waiting: dependency")
+ * then the step when it adds something ("Working · Implement"). The step label is normalized, so
+ * `implement` and `Implement` read the same.
+ */
+export function activityWorkStateLine(card: ActivityWorkStreamCard): { state: string; step: string | null } {
+  const kind = activityWorkStreamCardState(card)
+  const waits = activityCardWaitLabel(card)
+  const state =
+    (kind === 'needs-you' || kind === 'waiting') && waits ? waits : ACTIVITY_WORK_STREAM_CARD_STATE_LABELS[kind]
+  const step = activityStepLabel(card.step)
+  return { state, step: step && step !== state && step !== 'Paused' ? step : null }
+}
 
 const WAIT_LABELS: Record<WorkStreamWaitType, string> = {
   review: 'review',

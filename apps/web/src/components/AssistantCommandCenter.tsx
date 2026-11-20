@@ -2,7 +2,7 @@ import { workStreamRef } from '@ficus/shared'
 import { workStreamTitle } from '@ficus/shared'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import clsx from 'clsx'
 import { integrationQueries, queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
@@ -185,6 +185,10 @@ export function AssistantCommandCenter({
             : getAgentPrimaryLabel(currentAgent)
           : undefined
   const destination = entry && label ? { ...entry, label } : entry
+  const destinationSquad =
+    destination?.kind === 'chat' && destination.squadId
+      ? data.squads.find((squad) => squad.id === destination.squadId)
+      : undefined
   const push = (next: CommandDestination | AssistantConversationDestination) => {
     // An agent that already floats comes forward in its window instead of opening here.
     if (next.kind === 'chat' && next.agentId && floating?.focusIfFloating(next.agentId)) return
@@ -379,8 +383,17 @@ export function AssistantCommandCenter({
           )}
           {destination.kind === 'chat' && destination.squadId && (
             <>
-              <span className="ml-auto truncate text-muted max-w-[25%]">
-                {data.squads.find((s) => s.id === destination.squadId)?.name}
+              {/* The chat's squad, linking to its Home in the main app (the assistant stays open). */}
+              <span className="ml-auto flex min-w-0 max-w-[25%]">
+                {destinationSquad && (
+                  <Link
+                    to={`/squads/${slugFor(destinationSquad.id)}`}
+                    className="ficus-button ficus-button-link truncate"
+                    title={`Open ${destinationSquad.name}`}
+                  >
+                    {destinationSquad.name}
+                  </Link>
+                )}
               </span>
               {currentAgentId && (
                 <OpenFullConversationLink squadSlug={slugFor(destination.squadId)} agentId={currentAgentId} />

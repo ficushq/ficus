@@ -1,7 +1,7 @@
 /**
  * Focused, DB-free Chromium check of work stream summaries with the real components and stylesheet
  * and made-up streams: the Feed rows are unchanged by default, hovering a row opens its peek card
- * after about half a second, "Show summaries" adds one truncated line under active rows only, board
+ * after about half a second, "Summaries" adds one truncated line under active rows only, board
  * cards clamp the summary to two lines, and the detail modal shows the "Now" line under the title.
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-work-stream-summaries.ts
  * Optional SCREENSHOT_DIR saves screenshots (peek card, summary lines, board, detail modal; light and dark).
@@ -51,7 +51,7 @@ try {
     const theme = appearance === 'dark' ? '&dark' : ''
     await page.setViewportSize({ width: 1100, height: 720 })
 
-    // With "Show summaries" off, rows are unchanged; hovering one opens its peek after about half a
+    // With "Summaries" off, rows are unchanged; hovering one opens its peek after about half a
     // second. The pointer is parked first: left over a row from the previous page, it would start the
     // delay early.
     await page.mouse.move(0, 0)
@@ -71,7 +71,7 @@ try {
     assert.ok(rowBox && peekBox && peekBox.y >= rowBox.y + rowBox.height - 1, 'the peek is not below its row')
     await shot(`peek-${appearance}`)
 
-    // "Show summaries", on by default: one muted, truncated line under active rows only.
+    // "Summaries", on by default: one muted, truncated line under active rows only.
     await page.goto(`${base}?view=feed${theme}`)
     await page.locator('[data-testid="feed-work-row"]').first().waitFor()
     const lines = page.locator('[data-testid="work-stream-summary-line"]')
@@ -80,7 +80,7 @@ try {
     assert.equal(overflow, 'ellipsis', 'the summary line is not truncated')
     await shot(`feed-summaries-${appearance}`)
 
-    // The Work list has the switch beside its filter row; Home (no filters) in the Active header.
+    // Work and Home have the switch in the Active header, beside the view controls.
     for (const surface of ['work', 'home'] as const) {
       await page.goto(`${base}?view=${surface}${theme}`)
       const toggle = page.locator(`[data-testid="show-summaries-${surface}"]`)

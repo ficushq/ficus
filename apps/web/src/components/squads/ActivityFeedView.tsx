@@ -1,5 +1,6 @@
-import { ActivityPreview } from './ActivityPreview'
-import { ActivityWorkStrip } from './ActivityWorkStrip'
+import { ActivityRowText } from './ActivityRowText'
+import { ActivityWorkPicker } from './ActivityWorkPicker'
+import { ActivityWorkStreamDetails } from './ActivityWorkStreamDetails'
 import { agentChatTarget } from '../../lib/agentChatLinks'
 import clsx from 'clsx'
 import { useEffect, useMemo, useRef } from 'react'
@@ -39,8 +40,10 @@ export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivi
   /** The Active work card filter: only this stream's rows. */
   workStreamFilter?: string | null
   onWorkStreamFilterChange?: (workStreamId: string | null) => void
-  /** "+N more" destination: the full work list. */
+  /** The work picker's "All N active streams" destination: the full work list. */
   workListHref?: string
+  /** A participant's display name for the selected stream's details ("Engineer"), when the caller has a roster. */
+  agentLabelFor?: (agentId: string) => string | undefined
   /**
    * "Show everything": rows the default view cleans up (relayed sender rows here, and
    * CI/auto-merge notices the server folds unless the query is verbose) are shown.
@@ -90,6 +93,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   workStreamFilter = null,
   onWorkStreamFilterChange,
   workListHref = '/',
+  agentLabelFor,
   showEverything = false,
   onShowEverythingChange,
   isLoading,
@@ -130,6 +134,60 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   const filteredCard = workStreamFilter ? streamCards?.find((card) => card.id === workStreamFilter) : undefined
   const openStreamOf = (item: T, stream: { id: string; number: number }) =>
     ({ ...item, ref: { type: 'workstream', workStreamId: stream.id, workStreamNumber: stream.number } }) as T
+
+  // The selected stream's details: links reuse the rows' own href and in-place open, through a
+  // synthetic row that carries the card's squad (so the global feed resolves the right slug).
+  const agentTypeIdByAgent = useMemo(() => {
+    const types = new Map<string, string>()
+    for (const item of shownItems)
+      if (item.ref.type === 'agent' && item.agentTypeId && !types.has(item.ref.agentId))
+        types.set(item.ref.agentId, item.agentTypeId)
+    return types
+  }, [shownItems])
+  const details = (() => {
+    if (!workStreamFilter || !onWorkStreamFilterChange) return null
+    if (!filteredCard) return { card: undefined, stream: null, chat: null, workingLabels: [] as string[] }
+    const card = filteredCard
+    const rowFor = (ref: SquadActivityItem['ref'], agentTypeId: string | null = null) =>
+      ({
+        id: `card:${card.id}`,
+        at: card.lastEventAt,
+        agentId: null,
+        agentTypeId,
+        kind: 'workstream',
+        summary: '',
+        preview: [],
+        ref,
+        squadId: card.squadId,
+      }) as unknown as T
+    const labelFor = (agentId: string) => {
+      const type = agentTypeIdByAgent.get(agentId)
+      return agentLabelFor?.(agentId) ?? (type ? activityAgentLabel(type) : undefined)
+    }
+    const streamRow = rowFor({ type: 'workstream', workStreamId: card.id, workStreamNumber: card.number })
+    // Chat with whoever works on it now, else the participant with the newest row in this view.
+    const newestParticipant = shownItems.find(
+      (item) => item.ref.type === 'agent' && item.context?.workStream?.id === card.id
+    )
+    const chatAgentId =
+      card.workingAgentIds[0] ?? (newestParticipant?.ref.type === 'agent' ? newestParticipant.ref.agentId : null)
+    const chatRow = chatAgentId
+      ? rowFor({ type: 'agent', agentId: chatAgentId, view: 'chat' }, agentTypeIdByAgent.get(chatAgentId) ?? null)
+      : null
+    return {
+      card,
+      stream: { href: hrefFor(streamRow), onOpen: () => onOpen(streamRow) },
+      chat: chatRow
+        ? {
+            agentId: chatAgentId!,
+            label: labelFor(chatAgentId!) ?? 'Agent',
+            href: hrefFor(chatRow),
+            onOpen: () => onOpen(chatRow),
+          }
+        : null,
+      workingLabels: card.workingAgentIds.map((agentId) => labelFor(agentId) ?? 'Agent'),
+    }
+  })()
   const loadingRowCount = useLoadingShapeCount(loadingShapeKey, isLoading ? undefined : shownItems.length, {
     fallbackCount: 8,
     maxCount: 12,
@@ -243,9 +301,11 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
       </div>
 
       {/* Presence strip: background work at a glance even while no rows
-          stream in. Counts only — per-agent chips were considered and
-          rejected (can be many); the row dots below carry per-agent live
-          state (operator decisions 2026-08-27). */}
+          stream in. Activity is the agent stream, not a work tracker (owner
+          decision 2026-11-20): the active streams stay out of the way behind
+          the "Active work" pill, a searchable list that filters the feed.
+          Per-agent chips were considered and rejected (can be many); the row
+          dots below carry per-agent live state (operator decisions 2026-08-27). */}
       {presence && (
         <div
           className="mb-2 flex shrink-0 items-center gap-2 flex-wrap px-3 py-2 text-xs text-secondary"
@@ -267,40 +327,26 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
           >
             {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.needsYouCount} waiting on you
           </span>
-          {/* Older servers send no cards: keep the plain count there. */}
-          {!streamCards && (
-            <>
-              <span aria-hidden>·</span>
-              <span>
-                {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.streamCount} active{' '}
-                {presence.streamCount === 1 ? 'stream' : 'streams'}
-              </span>
-            </>
-          )}
-          {workStreamFilter && onWorkStreamFilterChange && (
-            <span className="ml-auto flex min-w-0 items-center gap-1.5" data-testid="activity-work-stream-filter">
-              <span className="min-w-0 truncate">
-                Showing {filteredCard ? `#${filteredCard.number} ${filteredCard.title}` : 'one work stream'}
-              </span>
-              <button
-                type="button"
-                className="ficus-button ficus-button-ghost shrink-0 rounded-lg px-2 py-0.5 text-xs"
-                onClick={() => onWorkStreamFilterChange(null)}
-              >
-                Clear
-              </button>
+          <span aria-hidden>·</span>
+          {/* Older servers send no cards, and with no active streams there is nothing to pick: a plain count. */}
+          {streamCards && streamCards.length > 0 && onWorkStreamFilterChange ? (
+            <ActivityWorkPicker
+              cards={streamCards}
+              total={Math.max(presence.streamCount, streamCards.length)}
+              selectedId={workStreamFilter}
+              onSelect={onWorkStreamFilterChange}
+              moreHref={workListHref}
+            />
+          ) : (
+            <span>
+              {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.streamCount} active{' '}
+              {presence.streamCount === 1 ? 'stream' : 'streams'}
             </span>
           )}
         </div>
       )}
-      {presence && streamCards && onWorkStreamFilterChange && (
-        <ActivityWorkStrip
-          cards={streamCards}
-          total={Math.max(presence.streamCount, streamCards.length)}
-          selectedId={workStreamFilter}
-          onSelect={onWorkStreamFilterChange}
-          moreHref={workListHref}
-        />
+      {details && onWorkStreamFilterChange && (
+        <ActivityWorkStreamDetails {...details} onClear={() => onWorkStreamFilterChange(null)} />
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -363,8 +409,12 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                 !!subjectAgentId && workingAgentIds.has(subjectAgentId) && !liveDotted.has(subjectAgentId)
               if (showLiveDot) liveDotted.add(subjectAgentId!)
               const chip = showSquadColumn ? squadChipFor?.(item) : null
-              const contextLabel = activityRowContextLabel(item)
-              const contextStream = item.ref.type === 'agent' ? item.context?.workStream : undefined
+              const rowStream = item.ref.type === 'agent' ? item.context?.workStream : undefined
+              // Filtered to one stream, every participant row would repeat its title and step: the
+              // details panel above says it once.
+              const repeatsFilter = !!workStreamFilter && rowStream?.id === workStreamFilter
+              const contextLabel = repeatsFilter ? null : activityRowContextLabel(item)
+              const contextStream = repeatsFilter ? undefined : rowStream
               const contextStreamItem = contextStream ? openStreamOf(item, contextStream) : null
               // Issue rows point at the code host; when the server resolved the
               // stream they also offer an in-app jump to it. Reusing `hrefFor`
@@ -484,7 +534,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                     {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
                       <span>By {activityAgentLabel(item.agentTypeId)} · </span>
                     )}
-                    <ActivityPreview spans={item.preview} onOpenAgent={onOpenAgentReference} />
+                    <ActivityRowText item={item} onOpenAgent={onOpenAgentReference} />
                     {workStreamChip && (
                       <button
                         type="button"

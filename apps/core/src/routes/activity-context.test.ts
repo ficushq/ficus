@@ -312,6 +312,7 @@ describe('Active work cards', () => {
         pullRequest: null,
         ci: null,
         workingAgentIds: [fixture.engineerId],
+        derivedState: 'in_progress',
       })
       expect(Date.parse(card!.lastEventAt)).toBeGreaterThan(Date.now() - 5 * 60_000)
     }
