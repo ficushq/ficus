@@ -102,6 +102,8 @@ export interface SubscriptionPlanInfo {
  * plan is priced without a mapping. ChatGPT Pro has three tiers, which the claim tells apart: `prolite`
  * is Pro 100, `pro` is Pro 200 (so accounts stored as `pro` before the tiers existed stay at $200) and
  * `promax` is Pro 500. The names follow OpenAI's Pro tiers help page and the Codex CLI's status labels.
+ * ChatGPT Business has two seat types: a Standard seat signs in as `team` (mapped to `business`) and a
+ * Premium seat as `self_serve_business_prolite`. Team prices are the monthly-billed seat price.
  */
 export const SUBSCRIPTION_PLANS: Record<string, Record<string, SubscriptionPlanInfo>> = {
   anthropic: {
@@ -113,11 +115,13 @@ export const SUBSCRIPTION_PLANS: Record<string, Record<string, SubscriptionPlanI
   },
   'openai-codex': {
     free: { label: 'ChatGPT Free', monthlyUsd: 0 },
+    go: { label: 'ChatGPT Go', monthlyUsd: 8 },
     plus: { label: 'ChatGPT Plus', monthlyUsd: 20 },
     prolite: { label: 'ChatGPT Pro 100', monthlyUsd: 100 },
     pro: { label: 'ChatGPT Pro 200', monthlyUsd: 200 },
     promax: { label: 'ChatGPT Pro 500', monthlyUsd: 500 },
-    business: { label: 'ChatGPT Business', monthlyUsd: 30 },
+    business: { label: 'ChatGPT Business', monthlyUsd: 25 },
+    self_serve_business_prolite: { label: 'ChatGPT Business Premium', monthlyUsd: 125 },
     enterprise: { label: 'ChatGPT Enterprise', monthlyUsd: null },
     edu: { label: 'ChatGPT Edu', monthlyUsd: null },
   },
