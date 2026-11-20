@@ -39,10 +39,18 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | undef
 }
 
 /**
+ * Claim values whose plan id differs from the claim. `team` is the Standard Business seat. A raw
+ * `business` claim is an Enterprise workspace: the Codex CLI labels it "Enterprise" and groups it with
+ * `ent26` and `enterprise_cbp_*` (`PlanType::is_business_like`), so it is not priced as a $25 seat.
+ */
+const CODEX_CLAIM_PLANS: Record<string, string> = { team: 'business', business: 'enterprise' }
+
+/**
  * The ChatGPT plan in a Codex access token (`chatgpt_plan_type`), mapped to a SUBSCRIPTION_PLANS id. The
  * claim value is the plan id (`go`, `prolite`, `self_serve_business_prolite`, ...) except `team`, the
- * Standard Business seat, which is `business`. A value the table does not know is kept as is, so the
- * account shows that id and asks for a price instead of counting $0.
+ * Standard Business seat, which is `business`, and `business`, an Enterprise workspace, which is
+ * `enterprise`. A value the table does not know is kept as is, so the account shows that id and asks for
+ * a price instead of counting $0.
  */
 export function detectCodexPlan(accessToken: unknown): string | undefined {
   if (typeof accessToken !== 'string') return undefined
@@ -50,7 +58,7 @@ export function detectCodexPlan(accessToken: unknown): string | undefined {
   const raw = claim && typeof claim === 'object' ? (claim as Record<string, unknown>).chatgpt_plan_type : undefined
   if (typeof raw !== 'string' || !raw.trim()) return undefined
   const plan = raw.trim().toLowerCase()
-  return plan === 'team' ? 'business' : plan
+  return CODEX_CLAIM_PLANS[plan] ?? plan
 }
 
 /**
@@ -102,6 +110,19 @@ export function applyDetectedPlan(
   else delete next.planSource
   account.subscription = next
   return true
+}
+
+/**
+ * Re-reads the plan of a Codex account stored as `business`. Until a raw `business` claim was mapped to
+ * Enterprise, both that claim and `team` were stored as `business`, so the stored plan cannot tell them
+ * apart; the stored access token can. Runs whenever the account store is read, so such an account asks
+ * for its Enterprise price without waiting for a token refresh. An admin's plan choice is kept, and the
+ * original detection time is kept because the claim is the one read then. Returns whether it changed.
+ */
+export function redetectStoredCodexBusinessPlan(provider: string, account: SubscribedAccount): boolean {
+  const stored = account.subscription
+  if (provider !== 'openai-codex' || stored?.detectedPlan !== 'business') return false
+  return applyDetectedPlan(account, detectedPlanFor(provider, account), stored.detectedAt ?? Date.now())
 }
 
 /** The account's monthly price: the admin's override, else the plan's default; null when unknown. */
