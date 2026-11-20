@@ -146,7 +146,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   }, [shownItems])
   const details = (() => {
     if (!workStreamFilter || !onWorkStreamFilterChange) return null
-    if (!filteredCard) return { card: undefined, stream: null, chat: null, workingLabels: [] as string[] }
+    if (!filteredCard) return { card: undefined, stream: null, chat: null, working: [] }
     const card = filteredCard
     const rowFor = (ref: SquadActivityItem['ref'], agentTypeId: string | null = null) =>
       ({
@@ -171,21 +171,15 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
     )
     const chatAgentId =
       card.workingAgentIds[0] ?? (newestParticipant?.ref.type === 'agent' ? newestParticipant.ref.agentId : null)
-    const chatRow = chatAgentId
-      ? rowFor({ type: 'agent', agentId: chatAgentId, view: 'chat' }, agentTypeIdByAgent.get(chatAgentId) ?? null)
-      : null
+    const chatLink = (agentId: string) => {
+      const row = rowFor({ type: 'agent', agentId, view: 'chat' }, agentTypeIdByAgent.get(agentId) ?? null)
+      return { agentId, label: labelFor(agentId) ?? 'Agent', href: hrefFor(row), onOpen: () => onOpen(row) }
+    }
     return {
       card,
       stream: { href: hrefFor(streamRow), onOpen: () => onOpen(streamRow) },
-      chat: chatRow
-        ? {
-            agentId: chatAgentId!,
-            label: labelFor(chatAgentId!) ?? 'Agent',
-            href: hrefFor(chatRow),
-            onOpen: () => onOpen(chatRow),
-          }
-        : null,
-      workingLabels: card.workingAgentIds.map((agentId) => labelFor(agentId) ?? 'Agent'),
+      chat: chatAgentId ? chatLink(chatAgentId) : null,
+      working: card.workingAgentIds.map(chatLink),
     }
   })()
   const loadingRowCount = useLoadingShapeCount(loadingShapeKey, isLoading ? undefined : shownItems.length, {

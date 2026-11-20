@@ -478,12 +478,12 @@ test('the Active work pill opens a searchable, arrow-navigable list of streams t
       '#2000 Queued work',
       'All 9 active streams',
     ])
-    // Title, state and step (normalized), PR and CI, and the summary; one marker per state.
-    expect(options()[1].textContent).toContain('Waiting on you: review · Implement · PR #996 · CI failing')
-    expect(options()[1].textContent).toContain('Waiting for review of the floating window drag handles')
-    expect(options()[2].textContent).toContain('Working · Implement')
-    expect(options()[3].textContent).toContain('Paused · Verify')
-    expect(options()[4].textContent).toContain('Waiting: dependency · Verify')
+    // Only the number and title, on one line with the full title on hover; one marker per state.
+    expect(options()[1].textContent).toBe('#1352 Floating agent windows')
+    expect(options()[1].getAttribute('title')).toBe('#1352 Floating agent windows')
+    expect(options()[1].getAttribute('aria-describedby')).toBeNull()
+    expect(options()[1].querySelector('.truncate')?.textContent).toBe('#1352 Floating agent windows')
+    expect(options()[2].textContent).toBe('#1395 Spend tiers')
     expect(
       options()
         .slice(1, 6)
@@ -491,7 +491,7 @@ test('the Active work pill opens a searchable, arrow-navigable list of streams t
     ).toEqual(['needs-you', 'working', 'paused', 'waiting', 'queued'])
     expect(options()[0].getAttribute('aria-selected')).toBe('true')
 
-    // Typing filters by title, number or summary; ArrowDown moves into the list.
+    // Typing filters by title, number, state, step, PR and CI, or summary (shown only in the details card).
     const type = (value: string) =>
       dom.act(async () => {
         const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
@@ -501,6 +501,12 @@ test('the Active work pill opens a searchable, arrow-navigable list of streams t
     await type('drag handles')
     expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1352 Floating agent windows'])
     await type('1392')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1392 Linear verification'])
+    await type('waiting: dependency')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1391 Dependency'])
+    await type('PR #996')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1352 Floating agent windows'])
+    await type('paused')
     expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1392 Linear verification'])
     await type('')
     await dom.act(async () => {
@@ -588,13 +594,27 @@ test('the selected stream details show everything in full and open the stream an
     expect(heading.textContent).toBe(`Showing only activity for #1352 ${longTitle}`)
     expect(panel.querySelector('[data-testid="activity-work-details-summary"]')?.textContent).toContain(longSummary)
     expect(panel.textContent).toContain('Generated summary · updated 4 min ago')
-    const state = panel.querySelector('[data-testid="activity-work-details-state"]')!.textContent
-    expect(state).toContain('Working')
-    expect(state).toContain('Step: Implement')
-    expect(state).toContain('Working now: Engineer')
-    expect(panel.querySelector<HTMLAnchorElement>('a[href="https://github.com/ficushq/ficus/pull/1026"]')?.target).toBe(
-      '_blank'
+    // One chip each: the state with its marker, the step, who is working (a chat link), the PR (a link).
+    const chips = [...panel.querySelectorAll('[data-testid="activity-work-details-state"] > li')]
+    expect(chips.map((chip) => chip.textContent)).toEqual(['Working', 'Step Implement', 'Working Engineer', 'PR #1026'])
+    expect(chips[0].querySelector('[data-activity-work-state]')?.getAttribute('data-activity-work-state')).toBe(
+      'working'
     )
+    expect(panel.textContent).not.toMatch(/Step:|Working now:/)
+    const pullRequest = chips[3].querySelector('a')!
+    expect(pullRequest.getAttribute('href')).toBe('https://github.com/ficushq/ficus/pull/1026')
+    expect(pullRequest.target).toBe('_blank')
+    expect(panel.textContent).toContain('Last event')
+    const workingAgent = chips[2].querySelector('a')!
+    expect(workingAgent.getAttribute('aria-label')).toBe('Open chat with Engineer, working now')
+    expect(workingAgent.getAttribute('href')).toBe('/source')
+    await dom.act(() => workingAgent.click())
+    expect(opened.at(-1)?.ref).toEqual({ type: 'agent', agentId: 'engineer', view: 'chat' })
+    const beforeAltClick = opened.length
+    await dom.act(() =>
+      workingAgent.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, altKey: true }))
+    )
+    expect(opened).toHaveLength(beforeAltClick)
 
     const openStream = [...panel.querySelectorAll('a')].find((link) => link.textContent === 'Open work stream')!
     expect(openStream.getAttribute('href')).toBe('/squads/team/work?ws=1352')
@@ -750,7 +770,7 @@ test('without agents:read the details panel shows the stream without chat or par
     const panel = view.container.querySelector('[data-testid="activity-work-stream-filter"]')!
     expect(panel.textContent).toContain('Open work stream')
     expect(panel.textContent).not.toContain('Open chat')
-    expect(panel.textContent).not.toContain('Working now')
+    expect(panel.querySelectorAll('[data-testid="activity-work-details-state"] a')).toHaveLength(0)
     await dom.act(() => view.root.unmount())
   } finally {
     await dom.cleanup()
