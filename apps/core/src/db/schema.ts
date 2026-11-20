@@ -842,6 +842,11 @@ export const webhookEvents = pgTable(
       .on(table.provider, sql`lower(${table.payload}->'repository'->>'full_name')`, table.createdAt.desc())
       .where(sql`${table.verified} = true AND (${table.payload}->'repository'->>'full_name') IS NOT NULL`)
       .concurrently(),
+    // Linear polling's per-workspace "did an app webhook arrive recently" check, once per connection per scan.
+    index('idx_webhook_events_verified_organization_created')
+      .on(table.provider, sql`(${table.payload}->>'organizationId')`, table.createdAt.desc())
+      .where(sql`${table.verified} = true AND (${table.payload}->>'organizationId') IS NOT NULL`)
+      .concurrently(),
     index('idx_webhook_events_verified_created_id')
       .on(table.provider, table.createdAt, table.id)
       .where(sql`${table.verified} = true`)

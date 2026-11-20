@@ -24,21 +24,28 @@ export function linearPollingResourceKey(connectionId: string) {
   return `linear-app:${connectionId}`
 }
 
-async function receivedRecentWebhook(organizationId: string, withinMs: number): Promise<boolean> {
+/**
+ * Whether a verified `linear-app` webhook for the workspace was stored within `withinMs`. Direct and
+ * relayed (`processRelayedLinearDelivery`) deliveries store the same row, so both count. One bounded
+ * read of `idx_webhook_events_verified_organization_created`; `verified` and the `IS NOT NULL` guard
+ * are literal so a generic prepared plan still matches the index predicate.
+ */
+export function recentLinearAppWebhookSql(organizationId: string, withinMs: number) {
   // `created_at` is written by the database clock, so the window is measured on it too.
-  const [row] = await db
-    .select({ id: webhookEvents.id })
-    .from(webhookEvents)
-    .where(
-      and(
-        eq(webhookEvents.provider, 'linear-app'),
-        eq(webhookEvents.verified, true),
-        sql`${webhookEvents.createdAt} >= now() - (${withinMs} * interval '1 millisecond')`,
-        sql`${webhookEvents.payload}->>'organizationId' = ${organizationId}`
-      )
-    )
-    .limit(1)
-  return !!row
+  return sql`
+    SELECT 1 FROM ${webhookEvents}
+    WHERE ${webhookEvents.provider} = 'linear-app'
+      AND ${webhookEvents.verified} = true
+      AND (${webhookEvents.payload}->>'organizationId') IS NOT NULL
+      AND (${webhookEvents.payload}->>'organizationId') = ${organizationId}
+      AND ${webhookEvents.createdAt} >= now() - (${withinMs} * interval '1 millisecond')
+    LIMIT 1
+  `
+}
+
+export async function receivedRecentWebhook(organizationId: string, withinMs: number): Promise<boolean> {
+  const rows = await db.execute(recentLinearAppWebhookSql(organizationId, withinMs))
+  return rows.length > 0
 }
 
 export const linearPollingDependencies: LinearPollingDependencies = {

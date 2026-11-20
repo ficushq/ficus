@@ -1,5 +1,5 @@
 {
-  "id": "c3aeb8bc-3bc5-4304-8581-51529a2b0eda",
+  "id": "55166505-e212-467a-9f61-78b7117cde05",
   "prevId": "26352ee7-03d8-4f10-8bb6-774b623ce9e9",
   "version": "7",
   "dialect": "postgresql",
@@ -13148,66 +13148,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.managed_toolchain_lock_pins": {
-      "name": "managed_toolchain_lock_pins",
-      "schema": "",
-      "columns": {
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lock_content": {
-          "name": "lock_content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "managed_toolchain_lock_pins_squad_id_squads_id_fk": {
-          "name": "managed_toolchain_lock_pins_squad_id_squads_id_fk",
-          "tableFrom": "managed_toolchain_lock_pins",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "managed_toolchain_lock_pins_squad_id_fingerprint_pk": {
-          "name": "managed_toolchain_lock_pins_squad_id_fingerprint_pk",
-          "columns": [
-            "squad_id",
-            "fingerprint"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.memory_access_audit": {
       "name": "memory_access_audit",
       "schema": "",
@@ -22561,6 +22501,34 @@
           ],
           "isUnique": false,
           "where": "\"webhook_events\".\"verified\" = true AND (\"webhook_events\".\"payload\"->'repository'->>'full_name') IS NOT NULL",
+          "concurrently": true,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_webhook_events_verified_organization_created": {
+          "name": "idx_webhook_events_verified_organization_created",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"payload\"->>'organizationId')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"webhook_events\".\"verified\" = true AND (\"webhook_events\".\"payload\"->>'organizationId') IS NOT NULL",
           "concurrently": true,
           "method": "btree",
           "with": {}
