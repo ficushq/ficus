@@ -92,6 +92,46 @@ test('slack callback (hinted via sessionStorage at authorization start) complete
   }
 })
 
+test('a self-hosted Linear app callback posts the code to the linear provider', async () => {
+  window.history.replaceState(null, '', `/settings/integrations/oauth/callback/linear?state=${HANDLE}&code=linear-code`)
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'linear')
+  let request: { url: string; body: string } | undefined
+  globalThis.fetch = (async (input, init) => {
+    request = { url: String(input), body: String(init?.body) }
+    return Response.json({ returnTo: '/settings' })
+  }) as typeof fetch
+  const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
+  try {
+    await renderPage()
+    await flushEffects()
+    expect(request).toEqual({
+      url: 'http://localhost/api/integrations/providers/linear/authorization/callback',
+      body: JSON.stringify({ state: HANDLE, code: 'linear-code' }),
+    })
+    expect(container.textContent).toContain('Connecting Linear')
+    expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-linear')
+  } finally {
+    redirect.mockRestore()
+  }
+})
+
+test('a hosted Linear app callback (hinted at install start) completes against the linear provider', async () => {
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'linear')
+  let path = ''
+  globalThis.fetch = (async (input) => {
+    path = String(input)
+    return Response.json({ returnTo: '/settings' })
+  }) as typeof fetch
+  const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
+  try {
+    await renderPage()
+    await flushEffects()
+    expect(path).toContain('/integrations/providers/linear/authorization/complete')
+  } finally {
+    redirect.mockRestore()
+  }
+})
+
 test('a github-suffixed path wins over a stale provider hint left by an abandoned flow', async () => {
   window.history.replaceState(null, '', CALLBACK.replace('/callback?', '/callback/github?'))
   window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')

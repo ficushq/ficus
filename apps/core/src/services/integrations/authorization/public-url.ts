@@ -2,9 +2,14 @@ import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
 const CALLBACK_PATH = '/settings/integrations/oauth/callback'
 
+/**
+ * GitHub and Linear callbacks carry the provider in the path, so the callback
+ * page knows which provider a local (self-hosted) code belongs to; Notion and
+ * Slack share the bare path.
+ */
 export function resolveIntegrationOAuthCallbackUrl(providerKey = 'notion'): string {
   const url = new URL(resolveOAuthCallbackUrl())
-  if (providerKey === 'github') url.pathname += '/github'
+  if (providerKey === 'github' || providerKey === 'linear') url.pathname += `/${providerKey}`
   return url.toString()
 }
 const hasControlCharacter = (value: string) =>

@@ -55,6 +55,8 @@ export interface IntegrationSandboxProjection {
     name: string
     /** Nonsecret configuration only. Credentials must use execution.environment. */
     source: { kind: 'configuration'; field: string }
+    /** Omit the binding for a connection whose configuration has no such field, instead of failing projection. */
+    optional?: true
   }[]
 }
 

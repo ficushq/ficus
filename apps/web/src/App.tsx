@@ -150,6 +150,7 @@ export default function App() {
               <Route path="/inbox" element={<InboxPage />} />
               <Route path="/settings/integrations/oauth/callback" element={<OAuthCallbackPage />} />
               <Route path="/settings/integrations/oauth/callback/github" element={<OAuthCallbackPage />} />
+              <Route path="/settings/integrations/oauth/callback/linear" element={<OAuthCallbackPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/schedules" element={<SchedulesPage />} />

@@ -1,12 +1,14 @@
 import { notionAdapter } from './notion/adapter'
 import { githubAdapter } from './github/adapter'
 import { slackAdapter } from './slack/adapter'
+import { linearAdapter } from './linear/adapter'
 import type { OAuthProviderAdapter } from './types'
 
 const ADAPTERS = new Map<string, OAuthProviderAdapter>([
   ['notion', notionAdapter],
   ['github', githubAdapter],
   ['slack', slackAdapter],
+  ['linear', linearAdapter],
 ])
 
 export function getOAuthProviderAdapter(key: string): OAuthProviderAdapter | undefined {
@@ -31,4 +33,5 @@ export function registerOAuthProviderAdapterForTest(adapter: OAuthProviderAdapte
 export { classifyNotionError } from './notion/adapter'
 export { classifyGitHubOAuthError } from './github/adapter'
 export { classifySlackError } from './slack/adapter'
+export { classifyLinearOAuthError } from './linear/adapter'
 export type { OAuthProviderAdapter, OAuthProviderFailure, OAuthProviderGrant, OAuthProviderTokens } from './types'

@@ -22,6 +22,8 @@ const TERMINAL_COMPLETION_CODES = new Set([
   'operation_key_conflict',
 ])
 
+const PROVIDER_LABELS = { github: 'GitHub', linear: 'Linear', notion: 'Notion', slack: 'Slack' } as const
+
 type CompletionRequest =
   { kind: 'broker'; body: BrokerCompletionPayload } | { kind: 'local'; body: LocalCallbackPayload }
 type PageState = 'working' | 'retryable_failure' | 'terminal_failure' | 'cancelled'
@@ -42,9 +44,10 @@ export function OAuthCallbackPage() {
   //
   // What the callback carries is read once, when the page opens.
   const [prepared] = useState(readPreparedOAuthCallback)
-  const [provider] = useState<'github' | 'notion' | 'slack'>(() => {
+  const [provider] = useState<'github' | 'linear' | 'notion' | 'slack'>(() => {
     if (window.location.pathname.endsWith('/oauth/callback/github')) return 'github'
-    return prepared?.kind === 'broker' && prepared.provider === 'slack' ? 'slack' : 'notion'
+    if (window.location.pathname.endsWith('/oauth/callback/linear')) return 'linear'
+    return prepared?.kind === 'broker' && prepared.provider ? prepared.provider : 'notion'
   })
   const queryClient = useQueryClient()
   const initialized = useRef(false)
@@ -107,7 +110,7 @@ export function OAuthCallbackPage() {
   return (
     <section className="mx-auto max-w-lg rounded-lg border border-th-border bg-surface p-6 text-center">
       <h1 className="text-lg font-semibold">
-        Connecting {provider === 'github' ? 'GitHub' : provider === 'slack' ? 'Slack' : 'Notion'}
+        Connecting {PROVIDER_LABELS[provider]}
       </h1>
       {pageState === 'cancelled' ? (
         <p role="status" aria-live="polite" className="mt-2 text-sm text-muted">

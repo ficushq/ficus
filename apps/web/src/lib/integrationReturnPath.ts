@@ -1,6 +1,6 @@
 import { appBasePath } from './basePath'
 
-type OAuthProvider = 'github' | 'notion' | 'slack'
+type OAuthProvider = 'github' | 'linear' | 'notion' | 'slack'
 
 /** Authorization accepts paths only. The callback restores the integration query parameters. */
 export function integrationAuthorizationReturnPath(baseUrl = appBasePath()) {

@@ -48,6 +48,13 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
     login?: string
     userId?: number
     botId?: string
+    /** Linear agent app connections only. */
+    mode?: 'app'
+    organizationId?: string
+    organizationName?: string
+    organizationUrlKey?: string
+    appUserId?: string
+    appUserName?: string
   }
   credentialConfigured: boolean
   refreshAvailable?: boolean
@@ -91,6 +98,8 @@ export interface OAuthAppSettings {
   configured: boolean
   clientId: string | null
   callbackUrl: string
+  /** Linear on a self-hosted instance: the URL for the OAuth application's webhook. */
+  webhookUrl?: string
   requiredCapabilities: string[]
 }
 
@@ -99,7 +108,9 @@ export const getIntegrationOAuthApp = (provider: string, fetcher: ApiFetcher = a
 
 export const configureIntegrationOAuthApp = (
   provider: string,
-  input: { clientId: string; clientSecret?: string; capabilitiesAcknowledged: true } | { useDefault: true },
+  input:
+    | { clientId: string; clientSecret?: string; webhookSecret?: string; capabilitiesAcknowledged: true }
+    | { useDefault: true },
   fetcher: ApiFetcher = apiFetch
 ) =>
   fetcher<OAuthAppSettings>(`/integrations/providers/${provider}/oauth-app`, {
