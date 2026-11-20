@@ -62,14 +62,18 @@ describe('linear output catalog', () => {
     }
   })
 
-  test('descriptions name the webhook source and the state field is the workflow state type', () => {
+  test('descriptions name the webhook source and what polling recovers; state is the workflow state type', () => {
+    const description = (output: string) => linearOutputCatalog.find((entry) => entry.output === output)!.description
     for (const entry of linearOutputCatalog) {
-      expect(entry.description).toMatch(new RegExp(`^${entry.title} from Linear (agent app )?webhooks\\.$`))
+      expect(entry.description).toMatch(new RegExp(`^${entry.title} from Linear (agent app )?webhooks`))
       expect(entry.fields.state?.description).toBe('Linear workflow state type (e.g. completed, canceled, started).')
     }
-    expect(linearOutputCatalog.find((entry) => entry.output === 'agent_session.prompted')?.description).toContain(
-      'agent app'
-    )
+    for (const output of ['agent_session.created', 'agent_session.prompted', 'issue.mentioned'])
+      expect(description(output)).toContain('agent app webhooks, or from polling when a webhook is missed')
+    expect(description('issue.delegated')).toContain('Delegations to the Ficus app are also recovered by polling')
+    expect(description('issue.undelegated')).toContain('own undelegations are also recovered by polling')
+    for (const output of ['issue.assigned', 'issue.unassigned', 'issue.updated', 'issue.created', 'issue.comment'])
+      expect(description(output)).toContain('polling does not recover it')
   })
 
   test('every output carries the shared field set plus its own extras', () => {

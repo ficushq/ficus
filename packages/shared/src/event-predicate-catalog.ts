@@ -149,6 +149,20 @@ const linearOutputExtras: Record<string, string[]> = {
 }
 /** Outputs only the Linear agent app's session webhooks produce (an `issue.delegated` can also come from an issue update). */
 const linearSessionOutputs = new Set(['issue.mentioned', 'agent_session.created', 'agent_session.prompted'])
+/**
+ * The agent app's polling fallback recovers sessions and prompts (and the delegation or mention a
+ * session reports) and the app's own undelegation. Issue and comment changes, and every API-key
+ * connection, depend on webhook delivery alone.
+ */
+function linearOutputDescription(output: string, title: string) {
+  if (linearSessionOutputs.has(output))
+    return `${title} from Linear agent app webhooks, or from polling when a webhook is missed.`
+  if (output === 'issue.delegated')
+    return `${title} from Linear webhooks. Delegations to the Ficus app are also recovered by polling.`
+  if (output === 'issue.undelegated')
+    return `${title} from Linear webhooks. The Ficus app's own undelegations are also recovered by polling.`
+  return `${title} from Linear webhooks only; polling does not recover it.`
+}
 export const linearOutputCatalog: IntegrationOutputDescriptor[] = Object.entries(linearOutputs).map(
   ([output, title]) => {
     const fields = {
@@ -160,10 +174,7 @@ export const linearOutputCatalog: IntegrationOutputDescriptor[] = Object.entries
       output,
       version: 1,
       title,
-      // No polling path yet: a missed or failed webhook delivery is not recovered.
-      description: linearSessionOutputs.has(output)
-        ? `${title} from Linear agent app webhooks.`
-        : `${title} from Linear webhooks.`,
+      description: linearOutputDescription(output, title),
       fields,
       predicateFields: {
         ...fields,
