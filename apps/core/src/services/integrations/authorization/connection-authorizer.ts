@@ -79,6 +79,7 @@ export interface OAuthConnectionAuthorizerDependencies<C> {
       credential: string
       actor: string
       authorizationGrant: true
+      authorizationKind: 'oauth2'
       clientAuthority: OAuthStateRecord['authority']
       authorizationFlowId?: string
       stagedCredentialRef?: string
@@ -411,6 +412,7 @@ export class OAuthConnectionAuthorizer<C> {
         credential: this.#dependencies.plugin.connection.credential.serialize(grant.credential),
         actor: `user:${userId}`,
         authorizationGrant: true,
+        authorizationKind: 'oauth2',
         clientAuthority: this.#dependencies.transport.authority,
         authorizationFlowId,
         stagedCredentialRef,

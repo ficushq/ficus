@@ -5,6 +5,7 @@ import { fingerprintToolchain } from '../../sandbox/toolchain/config'
 import { readToolchainReconcileSnapshot } from '../../sandbox/toolchain/state'
 import type { IntegrationAssignmentRepository, IntegrationConnectionRepository } from '../connection-repository'
 import { parseOAuthCredential } from '../authorization/credential-bundle'
+import { connectionOAuthView } from '../oauth-plugin-view'
 import type { ClaimedIntegrationProjection } from './state-repository'
 import type { ISandboxManager, SandboxOptions } from '../../sandbox/types'
 import { ensureSandboxToolchain } from '../../sandbox/toolchain/provision'
@@ -132,8 +133,8 @@ export class IntegrationProjectionReconciler {
     const assigned = await this.#dependencies.connections.getAssigned(claim.squadId, claim.providerKey)
     if (!assigned) return { fingerprint, credentialRevision: null }
     const raw = getSecretStore().get(assigned.credentialRef)
-    if (!raw || firstPartyIntegrationPlugin(claim.providerKey)?.authorization.kind !== 'oauth2')
-      return { fingerprint, credentialRevision: null }
+    const plugin = firstPartyIntegrationPlugin(claim.providerKey)
+    if (!raw || !plugin || !connectionOAuthView(plugin, assigned)) return { fingerprint, credentialRevision: null }
     try {
       return { fingerprint, credentialRevision: BigInt(parseOAuthCredential(raw).tokenRevision) }
     } catch {

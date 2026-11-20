@@ -11,7 +11,7 @@ import {
   AUTOMATIC_BIGBRAIN_PROMPT_HINT,
   allowsBigbrainIntegrationTools,
   automaticBigbrainToolNames,
-  deploymentOAuthAuthorityForProvider,
+  deploymentOAuthAuthorityForConnection,
 } from './base'
 import { ArtifactBuilderRunner } from './artifact-builder-runner'
 import { SquadManagerRunner } from './squad-manager-runner'
@@ -43,12 +43,17 @@ test('automatic tool names follow the runner grant minus tools.deny', () => {
   expect(automaticBigbrainToolNames('read_and_drop', ['bigbrain_*'])).toEqual([])
 })
 
-test('managed registry wiring applies deployment authority only to OAuth providers', () => {
+test('managed registry wiring applies deployment authority only to OAuth connections', () => {
   const previousManaged = process.env.FICUS_MANAGED
   process.env.FICUS_MANAGED = '1'
   try {
-    expect(deploymentOAuthAuthorityForProvider('bigbrain')).toBeUndefined()
-    expect(deploymentOAuthAuthorityForProvider('notion')).toBe('platform_broker')
+    const manual = { authorizationKind: 'manual', clientAuthority: 'local' } as const
+    const oauth = { authorizationKind: 'oauth2', clientAuthority: 'local' } as const
+    expect(deploymentOAuthAuthorityForConnection('bigbrain', manual)).toBeUndefined()
+    expect(deploymentOAuthAuthorityForConnection('notion', oauth)).toBe('platform_broker')
+    // A manually entered connection of a plugin with a managed OAuth driver is not fenced.
+    expect(deploymentOAuthAuthorityForConnection('slack', manual)).toBeUndefined()
+    expect(deploymentOAuthAuthorityForConnection('slack', oauth)).toBe('platform_broker')
   } finally {
     if (previousManaged === undefined) delete process.env.FICUS_MANAGED
     else process.env.FICUS_MANAGED = previousManaged

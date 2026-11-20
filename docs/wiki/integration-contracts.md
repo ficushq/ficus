@@ -298,6 +298,53 @@ Dev servers use it for hot reload (Next.js `/_next/webpack-hmr`, Vite).
 - **Cloudflare**: WebSockets must be enabled (the default) on both the Ficus
   zone and the apps-domain zone.
 
+## Per-connection authorization kind: the OAuth lifecycle follows the connection
+
+Every row in `integration_connections` records how its material was obtained in
+`authorization_kind`: `oauth2` for an OAuth grant, `manual` for entered
+material. A plugin's `authorization.kind` alone no longer decides the OAuth
+lifecycle, because a manual plugin can also offer a same-provider managed OAuth
+driver (`ManualCredentialDriver.managed`, used by Slack's "Add to Slack" and
+planned for the Linear agent app). Such a plugin has both kinds of connections
+under one provider key.
+
+- **Writes.** Installing an OAuth grant writes `oauth2`: a new connection from the
+  connection authorizer, and `installAuthorizedMaterial` on reconnect. Every
+  manual credential write (create without a grant, and every credential
+  replacement through `rotateMaterial`) writes `manual`. When a grant replaces
+  manual material, the old credential is only deleted, never sent to a
+  provider's revocation endpoint.
+- **Reads.** `connectionOAuthView(plugin, connection)` in
+  `services/integrations/oauth-plugin-view.ts` returns the OAuth view (the
+  plugin itself, or the managed driver with the OAuth bundle codec) only for an
+  `oauth2` connection whose plugin offers OAuth under the connection's client
+  authority. Proactive refresh, refresh on authentication failure, remote
+  revocation on delete, execution-time access-token expiry, client-authority
+  fencing (execution, projections, agent refs, the runtime gate and validation's
+  authority reconciliation) and projection credential revisions all key off it
+  or off the kind. `manual` connections get none of them.
+- **Plugin-wide settings stay plugin-wide.** `lifecycle.refresh` and
+  `lifecycle.revoke` still belong to the plugin. The refresh worker sweeps OAuth2
+  plugins and manual plugins whose managed driver opts into `lifecycle.refresh`,
+  and its candidate query selects only `oauth2` connections.
+- **Flows before a connection exists.** Authorization start, callback, complete
+  and grant installation still use `oauthPluginView(plugin, authority)`, because
+  there is no connection to read a kind from yet; what they install is `oauth2`.
+- **Migration.** `0252_integration_connection_authorization_kind` adds the
+  column (default `manual`, checked to `manual` or `oauth2`) and backfills
+  `oauth2` for every `github` and `notion` row and for `slack` rows whose
+  `client_authority` is `platform_broker`. Rows inserted directly (fixtures,
+  seed scripts) must set `oauth2` for OAuth material, or they are treated as
+  manual.
+
+Slack keeps its behavior: brokered rows are revoked on delete and fenced to the
+broker authority as before, manually entered apps are never revoked, fenced or
+refreshed, and Slack stays out of the refresh sweep because its
+`lifecycle.refresh` is false. Tests:
+[managed-driver lifecycle](../../apps/core/src/services/integrations/managed-driver-lifecycle.test.ts),
+[repository writes](../../apps/core/src/services/integrations/db-connection-repository.concurrent.test.ts),
+[migration backfill](../../apps/core/src/db/integration-authorization-kind-migration.test.ts).
+
 ## Hosted GitHub: subscription interest does not grant authority
 
 Platform accepts the shared App's signed webhook and durably fans it out to

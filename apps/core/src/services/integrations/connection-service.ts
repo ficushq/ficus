@@ -3,6 +3,7 @@ import { createLogger } from '../../lib/infra/logger'
 import type {
   GuardedConnectionMutation,
   IntegrationAssignmentRepository,
+  IntegrationAuthorizationKind,
   IntegrationConnectionRecord,
   IntegrationConnectionRepository,
   IntegrationConnectionUsage,
@@ -67,7 +68,8 @@ export interface ConnectionServiceDependencies {
   now?: () => Date
   uuid?: () => string
   audit?: IntegrationAuditRecorder
-  requiresRemoteRevocation?: (providerKey: string, adapterVersion: number, clientAuthority: OAuthAuthority) => boolean
+  /** Whether deleting this connection must revoke its material at the provider (only `oauth2` connections). */
+  requiresRemoteRevocation?: (connection: IntegrationConnectionRecord) => boolean
   deproject?: (input: { squadIds: readonly string[]; providerKey: string }) => Promise<void>
   /**
    * Capture provider-side cleanup while the connection and its credential still
@@ -80,8 +82,9 @@ export interface ConnectionServiceDependencies {
   ) => Promise<(() => Promise<void>) | undefined>
   allowsManualCredential?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
-  refreshAvailable?: (providerKey: string, credential: string | undefined) => boolean | undefined
-  currentOAuthAuthority?: (providerKey: string, adapterVersion: number) => OAuthAuthority | undefined
+  refreshAvailable?: (connection: IntegrationConnectionRecord, credential: string | undefined) => boolean | undefined
+  /** The authority an `oauth2` connection must hold; undefined for connections that are not fenced. */
+  currentOAuthAuthority?: (connection: IntegrationConnectionRecord) => OAuthAuthority | undefined
   authorizationLease?: { runExclusive<T>(resource: string, operation: () => Promise<T>): Promise<T> }
   operatorAlert?: (input: {
     connectionId: string
@@ -102,16 +105,12 @@ export class IntegrationConnectionService {
   readonly #now: () => Date
   readonly #uuid: () => string
   readonly #auditRecorder?: IntegrationAuditRecorder
-  readonly #requiresRemoteRevocation: (
-    providerKey: string,
-    adapterVersion: number,
-    clientAuthority: OAuthAuthority
-  ) => boolean
+  readonly #requiresRemoteRevocation: NonNullable<ConnectionServiceDependencies['requiresRemoteRevocation']>
   readonly #deproject?: ConnectionServiceDependencies['deproject']
   readonly #prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
   readonly #allowsManualCredential: (providerKey: string) => boolean
   readonly #safeConfiguration: (providerKey: string, configuration: unknown) => unknown
-  readonly #refreshAvailable: (providerKey: string, credential: string | undefined) => boolean | undefined
+  readonly #refreshAvailable: NonNullable<ConnectionServiceDependencies['refreshAvailable']>
   readonly #refreshAuthenticationFailure?: ConnectionServiceDependencies['refreshAuthenticationFailure']
   readonly #currentOAuthAuthority: NonNullable<ConnectionServiceDependencies['currentOAuthAuthority']>
   readonly #operatorAlert?: ConnectionServiceDependencies['operatorAlert']
@@ -145,6 +144,8 @@ export class IntegrationConnectionService {
     credential: string
     actor: string
     authorizationGrant?: true
+    /** `oauth2` only for material from an OAuth grant; defaults to `manual`. */
+    authorizationKind?: IntegrationAuthorizationKind
     clientAuthority?: OAuthAuthority
     authorizationFlowId?: string
     stagedCredentialRef?: string
@@ -174,6 +175,7 @@ export class IntegrationConnectionService {
       providerKey: provider.key,
       adapterVersion: provider.adapterVersion,
       clientAuthority: input.clientAuthority ?? ('local' as const),
+      authorizationKind: input.authorizationKind ?? ('manual' as const),
       authorizationFlowId: input.authorizationFlowId,
       displayName: input.displayName,
       configuration,
@@ -350,11 +352,7 @@ export class IntegrationConnectionService {
     const removeWhileLeased = async () => {
       const connection = await this.#mustGet(id)
       const usage = await this.#assignments.usage(id)
-      const requiresRevocation = this.#requiresRemoteRevocation(
-        connection.providerKey,
-        connection.adapterVersion,
-        connection.clientAuthority
-      )
+      const requiresRevocation = this.#requiresRemoteRevocation(connection)
       if (requiresRevocation && !this.#repository.deleteWithRevocation) {
         throw new Error('Remote revocation is unavailable')
       }
@@ -405,7 +403,7 @@ export class IntegrationConnectionService {
       displayName: connection.displayName,
       configuration: this.#safeConfiguration(connection.providerKey, connection.configuration),
       credentialConfigured: credential !== undefined,
-      ...optionalRefreshAvailability(this.#refreshAvailable(connection.providerKey, credential)),
+      ...optionalRefreshAvailability(this.#refreshAvailable(connection, credential)),
       enabled: connection.enabled,
       authState: connection.authState,
       healthState: connection.healthState,
@@ -490,7 +488,7 @@ export class IntegrationConnectionService {
   }
 
   async #reconcileAuthority(connection: IntegrationConnectionRecord): Promise<boolean> {
-    const currentAuthority = this.#currentOAuthAuthority(connection.providerKey, connection.adapterVersion)
+    const currentAuthority = this.#currentOAuthAuthority(connection)
     if (!currentAuthority || currentAuthority === connection.clientAuthority) return false
     const updated = await this.#repository.markReauthorizationRequired({
       id: connection.id,

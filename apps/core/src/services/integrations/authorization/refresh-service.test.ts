@@ -26,6 +26,7 @@ const connection: IntegrationConnectionRecord = {
   providerKey: 'notion',
   adapterVersion: 1,
   clientAuthority: 'local',
+  authorizationKind: 'oauth2',
   authorizationFlowId: null,
   displayName: 'Workspace',
   configuration: {

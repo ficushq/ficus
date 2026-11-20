@@ -1765,6 +1765,13 @@
       "when": 1795119741716,
       "tag": "0251_integration_output_events_unmatched_index",
       "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1795134205989,
+      "tag": "0252_integration_connection_authorization_kind",
+      "breakpoints": true
     }
   ]
 }

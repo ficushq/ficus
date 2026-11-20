@@ -827,6 +827,7 @@ function sharedToolsOver(vaults: { vaultId: string; name: string; client: Bigbra
           providerKey: 'bigbrain',
           adapterVersion: 2,
           clientAuthority: 'local' as const,
+          authorizationKind: 'manual' as const,
           authorizationFlowId: null,
           displayName: row.displayName,
           configuration: {

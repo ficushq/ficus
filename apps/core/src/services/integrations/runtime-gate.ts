@@ -1,5 +1,9 @@
 import type { AgentTypeIntegrationPolicyV1, IntegrationCapability } from '@ficus/shared'
-import type { AssignedConnectionResolver, AssignedIntegrationConnectionRecord } from './connection-repository'
+import type {
+  AssignedConnectionResolver,
+  AssignedIntegrationConnectionRecord,
+  IntegrationConnectionRecord,
+} from './connection-repository'
 import type { IntegrationProjectionTarget } from './projection/reconciler'
 import type { SandboxOptions } from '../sandbox/types'
 
@@ -29,7 +33,11 @@ export interface RuntimeGateAgent {
 export interface RuntimeGateDependencies {
   repository: AssignedConnectionResolver
   now?: () => Date
-  currentAuthority(provider: string): 'local' | 'platform_broker' | undefined
+  /** The client authority this connection must hold here, or undefined when it is not fenced (manual connections). */
+  currentAuthority(
+    provider: string,
+    connection: Pick<IntegrationConnectionRecord, 'authorizationKind' | 'clientAuthority'>
+  ): 'local' | 'platform_broker' | undefined
   supportedAdapterVersion(provider: string): number | undefined
   supportedConfigVersion(provider: string): number | undefined
 }
@@ -98,7 +106,7 @@ export class IntegrationRuntimeGate {
         : ((await repository.getAssignedById?.(input.squadId, input.provider, input.connectionId)) ?? null)
     if (!connection) return denied('connection_unavailable')
     if (!connection.enabled) return denied('connection_disabled')
-    const currentAuthority = this.#dependencies.currentAuthority(input.provider)
+    const currentAuthority = this.#dependencies.currentAuthority(input.provider, connection)
     if (currentAuthority && connection.clientAuthority !== currentAuthority) {
       return denied('authority_mismatch')
     }

@@ -803,6 +803,7 @@ test('local staged revocation ownership transfers atomically on create and recon
         providerKey: 'notion',
         adapterVersion: 1,
         clientAuthority: 'local',
+        authorizationKind: 'oauth2',
         displayName: 'Workspace',
         configuration: {
           version: 1,
@@ -829,6 +830,7 @@ test('local staged revocation ownership transfers atomically on create and recon
         providerKey: 'notion',
         adapterVersion: 1,
         clientAuthority: 'local',
+        authorizationKind: 'oauth2',
         displayName: 'Workspace',
         configuration: {
           version: 1,
@@ -849,6 +851,7 @@ test('local staged revocation ownership transfers atomically on create and recon
       providerKey: 'notion',
       adapterVersion: 1,
       clientAuthority: 'local',
+      authorizationKind: 'oauth2',
       displayName: 'Workspace',
       configuration: {
         version: 1,
@@ -1434,6 +1437,7 @@ test('authorized Notion reconnect atomically compares workspace and revision bef
     providerKey: 'notion',
     adapterVersion: 1,
     clientAuthority: 'platform_broker',
+    authorizationKind: 'oauth2',
     authorizationFlowId: priorFlowId,
     displayName: 'Workspace',
     configuration: {
@@ -1501,6 +1505,7 @@ test('authorized Notion reconnect atomically compares workspace and revision bef
       materialRevision: nextRevision,
       authState: 'authenticated',
       clientAuthority: 'platform_broker',
+      authorizationKind: 'oauth2',
       configuration: { workspaceId: 'workspace-1', botId: 'bot-new' },
     })
     expect(
@@ -1707,6 +1712,7 @@ test('refresh candidate keyset admits the initial current-authority page, advanc
       providerKey: 'notion',
       adapterVersion: 1,
       clientAuthority: 'platform_broker' as const,
+      authorizationKind: 'oauth2' as const,
       displayName: `Current authority ${index} ${crypto.randomUUID()}`,
       configuration: { version: 1, workspaceId: `current-workspace-${index}` },
       credentialRef: `test:current:${crypto.randomUUID()}`,
@@ -1744,6 +1750,7 @@ test('refresh candidate pagination exhausts more than fifty historical authority
       providerKey: 'notion',
       adapterVersion: 1,
       clientAuthority: 'local' as const,
+      authorizationKind: 'oauth2' as const,
       displayName: `Historical authority ${index} ${crypto.randomUUID()}`,
       configuration: { version: 1, workspaceId: `workspace-${index}` },
       credentialRef: `test:historical:${crypto.randomUUID()}`,
@@ -1848,6 +1855,7 @@ test('hosted projection emits zero material for a historical local Notion connec
       providerKey: 'notion',
       adapterVersion: 1,
       clientAuthority: 'local',
+      authorizationKind: 'oauth2',
       displayName: 'Historical Notion',
       configuration: { version: 1, workspaceId: 'workspace', workspaceName: 'Workspace' },
       credentialRef: `test:notion:${crypto.randomUUID()}`,
@@ -1941,3 +1949,117 @@ for (const method of ['enableValidated', 'recordValidation'] as const) {
     }
   })
 }
+
+test('authorization kind: manual by default, oauth2 when explicit, manual again after a credential rotation', async () => {
+  const repository = new DbIntegrationConnectionRepository()
+  const manual = await repository.createPending(pending())
+  const oauth = await repository.createPending({ ...pending(), authorizationKind: 'oauth2' })
+  try {
+    expect(manual.authorizationKind).toBe('manual')
+    expect((await repository.get(oauth.id))?.authorizationKind).toBe('oauth2')
+    const rotated = await repository.rotateMaterial({
+      id: oauth.id,
+      materialRevision: crypto.randomUUID(),
+      credentialRef: `test:${crypto.randomUUID()}`,
+    })
+    expect(rotated.status).toBe('updated')
+    expect((await repository.get(oauth.id))?.authorizationKind).toBe('manual')
+  } finally {
+    await db.delete(integrationConnections).where(inArray(integrationConnections.id, [manual.id, oauth.id]))
+    await db
+      .delete(integrationCredentialCleanupJobs)
+      .where(inArray(integrationCredentialCleanupJobs.credentialRef, [oauth.credentialRef]))
+  }
+})
+
+test('installing an OAuth grant over manual material marks it oauth2 and only deletes the manual credential', async () => {
+  const repository = new DbIntegrationConnectionRepository()
+  const id = crypto.randomUUID()
+  const manualRef = `test:manual:${crypto.randomUUID()}`
+  const grantRef = `test:grant:${crypto.randomUUID()}`
+  const revision = crypto.randomUUID()
+  await db.insert(secrets).values({ key: manualRef, encryptedValue: 'ciphertext', iv: 'iv' })
+  await repository.createPending({
+    id,
+    providerKey: 'notion',
+    adapterVersion: 1,
+    clientAuthority: 'local',
+    displayName: `Manual ${id}`,
+    configuration: { version: 1, workspaceId: 'workspace-manual' },
+    credentialRef: manualRef,
+    materialRevision: revision,
+  })
+  try {
+    expect(
+      await repository.installAuthorizedMaterial({
+        id,
+        expectedMaterialRevision: revision,
+        expectedProviderKey: 'notion',
+        expectedAdapterVersion: 1,
+        expectedIdentity: { workspaceId: 'workspace-manual' },
+        configuration: { version: 1, workspaceId: 'workspace-manual' },
+        credentialRef: grantRef,
+        materialRevision: crypto.randomUUID(),
+        displayName: `Installed ${id}`,
+        updatedByUserId: await createActor(),
+        clientAuthority: 'local',
+      })
+    ).toEqual({ status: 'updated' })
+    expect(await repository.get(id)).toMatchObject({ authorizationKind: 'oauth2', credentialRef: grantRef })
+    expect(await repository.hasRevocation(manualRef)).toBe(false)
+    expect(
+      await db
+        .select({ credentialRef: integrationCredentialCleanupJobs.credentialRef })
+        .from(integrationCredentialCleanupJobs)
+        .where(eq(integrationCredentialCleanupJobs.credentialRef, manualRef))
+    ).toEqual([{ credentialRef: manualRef }])
+  } finally {
+    await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
+    await db
+      .delete(integrationCredentialCleanupJobs)
+      .where(eq(integrationCredentialCleanupJobs.credentialRef, manualRef))
+    await db.delete(secrets).where(eq(secrets.key, manualRef))
+  }
+})
+
+test('refresh candidates are oauth2 connections only, never manual ones of the same provider', async () => {
+  const repository = new DbIntegrationConnectionRepository()
+  const rows = (['oauth2', 'manual'] as const).map((authorizationKind) => {
+    const materialRevision = crypto.randomUUID()
+    return {
+      providerKey: 'notion',
+      adapterVersion: 1,
+      clientAuthority: 'local' as const,
+      authorizationKind,
+      displayName: `Dual ${authorizationKind} ${crypto.randomUUID()}`,
+      configuration: { version: 1 },
+      credentialRef: `test:dual:${crypto.randomUUID()}`,
+      materialRevision,
+      validatedRevision: materialRevision,
+      enabled: true,
+      authState: 'authenticated' as const,
+      healthState: 'healthy' as const,
+      validationExpiresAt: new Date(Date.now() + 60_000),
+    }
+  })
+  const inserted = await db
+    .insert(integrationConnections)
+    .values(rows)
+    .returning({ id: integrationConnections.id, authorizationKind: integrationConnections.authorizationKind })
+  try {
+    const oauthId = inserted.find((row) => row.authorizationKind === 'oauth2')!.id
+    const ours = (rows: readonly { id: string }[]) =>
+      rows.map((row) => row.id).filter((rowId) => inserted.some((candidate) => candidate.id === rowId))
+    expect(ours(await repository.listRefreshCandidates('notion', 'local', null, 100))).toEqual([oauthId])
+    expect(ours(await repository.listRefreshCandidates('notion', 'platform_broker', null, 100, 'mismatched'))).toEqual([
+      oauthId,
+    ])
+  } finally {
+    await db.delete(integrationConnections).where(
+      inArray(
+        integrationConnections.id,
+        inserted.map((row) => row.id)
+      )
+    )
+  }
+})

@@ -4236,6 +4236,9 @@ export const integrationConnections = pgTable(
     providerKey: varchar('provider_key', { length: 64 }).notNull(),
     adapterVersion: integer('adapter_version').notNull(),
     clientAuthority: varchar('client_authority', { length: 32 }).notNull().default('local'),
+    // How this connection's material was obtained: `oauth2` rows get refresh, revocation, execution
+    // expiry and authority fencing even when their plugin is manual with a managed OAuth driver.
+    authorizationKind: varchar('authorization_kind', { length: 16 }).notNull().default('manual'),
     authorizationFlowId: uuid('authorization_flow_id'),
     displayName: varchar('display_name', { length: 200 }).notNull(),
     configuration: jsonb('configuration').notNull(),
@@ -4275,6 +4278,7 @@ export const integrationConnections = pgTable(
       'integration_connections_client_authority_check',
       sql`${table.clientAuthority} in ('local', 'platform_broker')`
     ),
+    check('integration_connections_authorization_kind_check', sql`${table.authorizationKind} in ('manual', 'oauth2')`),
   ]
 )
 

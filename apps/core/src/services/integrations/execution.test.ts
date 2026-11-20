@@ -12,6 +12,7 @@ const row: AssignedIntegrationConnectionRecord = {
   providerKey: 'linear',
   adapterVersion: 1,
   clientAuthority: 'local',
+  authorizationKind: 'manual',
   authorizationFlowId: null,
   displayName: 'fixture',
   configuration: { version: 1 },
@@ -104,7 +105,12 @@ describe('generic per-command execution', () => {
     expect(await fixture(row, null).service.environment('squad', 'linear')).toBeNull()
   })
   test('GitHub declares account login and fresh OAuth tokens; rejects authority and expiry', async () => {
-    const github = { ...row, providerKey: 'github', configuration: { version: 1, userId: 7, login: 'fixture' } }
+    const github = {
+      ...row,
+      providerKey: 'github',
+      authorizationKind: 'oauth2' as const,
+      configuration: { version: 1, userId: 7, login: 'fixture' },
+    }
     const credential = {
       version: 1,
       accessToken: 'synthetic-gh-access',
@@ -135,6 +141,7 @@ describe('generic per-command execution', () => {
 const notion = {
   ...row,
   providerKey: 'notion',
+  authorizationKind: 'oauth2' as const,
   configuration: { version: 1, workspaceId: 'workspace', workspaceName: null, workspaceIcon: null, botId: 'bot' },
 }
 const notionCredential = {

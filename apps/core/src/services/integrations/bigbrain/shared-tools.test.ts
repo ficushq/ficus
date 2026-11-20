@@ -57,6 +57,7 @@ function vault(name: string, patch: Partial<ManagedVault> = {}) {
     providerKey: 'bigbrain',
     adapterVersion: 2,
     clientAuthority: 'local',
+    authorizationKind: 'manual',
     authorizationFlowId: null,
     displayName: name,
     configuration: {

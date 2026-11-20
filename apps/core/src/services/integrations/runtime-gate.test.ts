@@ -10,6 +10,7 @@ const connection: AssignedIntegrationConnectionRecord = {
   providerKey: 'bigbrain',
   adapterVersion: 1,
   clientAuthority: 'local',
+  authorizationKind: 'manual',
   authorizationFlowId: null,
   displayName: 'Brain',
   configuration: { version: 1 },

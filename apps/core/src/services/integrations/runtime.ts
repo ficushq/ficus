@@ -74,7 +74,13 @@ import { getSecretStore } from '../secrets'
 import { IntegrationRegistry } from './registry'
 import { resolveOAuthAuthority, requireBrokerConfig } from './authorization/authority'
 import { firstPartyIntegrationPlugins } from './first-party-plugins'
-import { oauthPluginView } from './oauth-plugin-view'
+import {
+  connectionOAuthView,
+  connectionRequiresRemoteRevocation,
+  oauthFencingAuthority,
+  oauthPluginView,
+  refreshableOAuthProviderKeys,
+} from './oauth-plugin-view'
 import { channelConnections } from './channels/connections'
 import { OAuthConnectionAuthorizer } from './authorization/connection-authorizer'
 import { DbIntegrationConnectionRepository } from './db-connection-repository'
@@ -293,7 +299,10 @@ export const integrationRefreshService = new IntegrationRefreshService({
     refreshKey: (key) => getSecretStore().refreshKey(key),
     mutateSecret: (key, mutate, actor) => getSecretStore().mutateSecret(key, mutate, actor),
   },
-  resolvePlugin: (providerKey) => integrationRegistry.plugin(providerKey),
+  resolvePlugin: (providerKey, connection) => {
+    const plugin = integrationRegistry.plugin(providerKey)
+    return plugin && connectionOAuthView(plugin, connection)
+  },
   transport: oauthTransport,
   lease: connectionAuthorizationLease,
   invalidateAssignments: async (connectionId) => {
@@ -333,11 +342,7 @@ export const integrationRefreshService = new IntegrationRefreshService({
   },
 })
 export const integrationRefreshWorker = new IntegrationRefreshWorker({
-  oauthProviderKeys: () =>
-    integrationRegistry
-      .plugins()
-      .filter((plugin) => plugin.authorization.kind === 'oauth2')
-      .map((plugin) => plugin.key),
+  oauthProviderKeys: () => refreshableOAuthProviderKeys(integrationRegistry.plugins()),
   listConnections: (providerKey, currentAuthority, afterId, limit, authorityFilter) =>
     integrationConnectionRepository.listRefreshCandidates(
       providerKey,
@@ -552,13 +557,13 @@ export const integrationConnectionService = new IntegrationConnectionService({
   resolveProvider: (key, version) => integrationRegistry.require(key, version),
   allowsManualCredential: (key) =>
     key !== 'bigbrain' && integrationRegistry.plugin(key)?.authorization.kind !== 'oauth2',
-  currentOAuthAuthority: (key) =>
-    integrationRegistry.plugin(key)?.authorization.kind === 'oauth2' ? resolveOAuthAuthority() : undefined,
+  currentOAuthAuthority: (connection) => oauthFencingAuthority(connection, resolveOAuthAuthority()),
   operatorAlert: sendOAuthControlPlaneAlert,
   authorizationLease: connectionAuthorizationLease,
-  refreshAvailable: (key, raw) => {
-    const plugin = integrationRegistry.plugin(key)
-    if (!plugin || plugin.authorization.kind !== 'oauth2') return undefined
+  refreshAvailable: (connection, raw) => {
+    const source = integrationRegistry.plugin(connection.providerKey)
+    const plugin = source && connectionOAuthView(source, connection)
+    if (!plugin) return undefined
     if (!raw || !plugin.lifecycle.refresh) return false
     try {
       return parseOAuthCredential(raw).refreshToken !== null
@@ -574,12 +579,8 @@ export const integrationConnectionService = new IntegrationConnectionService({
       ? plugin.connection.safeConfiguration(plugin.connection.parseConfiguration(configuration))
       : configuration
   },
-  requiresRemoteRevocation: (key, version, clientAuthority) => {
-    const plugin = integrationRegistry.plugin(key)
-    if (!plugin || plugin.adapterVersion !== version) return false
-    if (plugin.authorization.kind === 'oauth2') return true
-    return Boolean(plugin.authorization.managed?.authorities.includes(clientAuthority))
-  },
+  requiresRemoteRevocation: (connection) =>
+    connectionRequiresRemoteRevocation(integrationRegistry.plugin(connection.providerKey), connection),
   deproject: async ({ squadIds, providerKey }) => {
     for (const squadId of squadIds) {
       await regenerateEnvFileForSquad(squadId)

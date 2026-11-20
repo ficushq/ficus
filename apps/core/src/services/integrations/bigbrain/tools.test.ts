@@ -160,6 +160,7 @@ test('a local vault is readable only when the gate admits the attached connectio
     providerKey: 'bigbrain',
     adapterVersion: 2,
     clientAuthority: 'local',
+    authorizationKind: 'manual',
     authorizationFlowId: null,
     displayName: 'Local',
     configuration: { version: 2 },

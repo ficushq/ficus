@@ -9,6 +9,13 @@ export interface CredentialCodec<Credential> {
   serialize(value: Credential): string
 }
 
+/**
+ * How a connection's material was obtained. `oauth2` connections get the OAuth lifecycle (refresh,
+ * revocation, execution expiry and authority fencing) even when their plugin is manual and offers a
+ * managed OAuth driver; `manual` connections never do.
+ */
+export type IntegrationAuthorizationKind = 'manual' | 'oauth2'
+
 export interface AuthorizationGrant<C, Credential> {
   configuration: C
   credential: Credential

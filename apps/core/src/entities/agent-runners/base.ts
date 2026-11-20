@@ -78,6 +78,7 @@ import {
 import { BIGBRAIN_SHARED_TOOL_NAMES } from '../../services/integrations/bigbrain/shared-tools'
 import type { BigbrainAgentToolFactory } from '../../services/integrations/bigbrain/plugin'
 import { resolveOAuthAuthority } from '../../services/integrations/authorization/authority'
+import { oauthFencingAuthority, type OAuthConnectionFacts } from '../../services/integrations/oauth-plugin-view'
 import { IntegrationRuntimeGate } from '../../services/integrations/runtime-gate'
 import {
   integrationAuditRecorder,
@@ -96,8 +97,12 @@ import { toolNameMatchesAny } from '../../lib'
 import { durableProviderTransportFailureText } from '../../lib/error'
 import type { SandboxSetupProgressListener } from '../../services/sandbox/setup-progress'
 
-export function deploymentOAuthAuthorityForProvider(provider: string): 'local' | 'platform_broker' | undefined {
-  return integrationRegistry.plugin(provider)?.authorization.kind === 'oauth2' ? resolveOAuthAuthority() : undefined
+/** The authority an `oauth2` connection must match to be used here; manual connections are not fenced. */
+export function deploymentOAuthAuthorityForConnection(
+  _provider: string,
+  connection: OAuthConnectionFacts
+): 'local' | 'platform_broker' | undefined {
+  return oauthFencingAuthority(connection, resolveOAuthAuthority())
 }
 
 export function allowsBigbrainIntegrationTools(
@@ -721,7 +726,7 @@ export abstract class AgentRunner {
     if (!factory) return { available: [], automatic: [] }
     const gate = new IntegrationRuntimeGate({
       repository: integrationConnectionRepository,
-      currentAuthority: deploymentOAuthAuthorityForProvider,
+      currentAuthority: deploymentOAuthAuthorityForConnection,
       supportedAdapterVersion: (provider) => integrationRegistry.get(provider)?.adapterVersion,
       supportedConfigVersion: (provider) => (provider === 'bigbrain' ? 2 : undefined),
     })

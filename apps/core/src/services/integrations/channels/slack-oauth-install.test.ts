@@ -150,6 +150,7 @@ function harness(fetchImpl: typeof fetch) {
           providerKey: 'slack',
           adapterVersion: 1,
           clientAuthority: input.clientAuthority,
+          authorizationKind: input.authorizationKind,
           authorizationFlowId: input.authorizationFlowId ?? null,
           displayName: input.displayName,
           configuration: input.configuration,
@@ -213,6 +214,7 @@ describe('managed Slack OAuth install (OAuthConnectionAuthorizer over the Slack 
       providerKey: 'slack',
       adapterVersion: 1,
       clientAuthority: 'platform_broker',
+      authorizationKind: 'oauth2',
       configuration: { version: 1, teamId: 'T1', botUserId: 'U1', teamName: 'Acme', appId: 'A1' },
     })
     expect(h.enabled).toEqual(['new-slack-connection'])
@@ -220,6 +222,7 @@ describe('managed Slack OAuth install (OAuthConnectionAuthorizer over the Slack 
 
     const created = h.getCreated()!
     expect(created.clientAuthority).toBe('platform_broker')
+    expect(created.authorizationKind).toBe('oauth2')
     const serializedCredential = (h.creates[0] as { credential: string }).credential
     expect(parseOAuthCredential(serializedCredential)).toEqual({
       version: 1,

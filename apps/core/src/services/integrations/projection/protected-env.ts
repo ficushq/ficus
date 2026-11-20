@@ -2,6 +2,7 @@ import { integrationEnabledPredicate } from '../provider-state'
 import { and, eq, gt } from 'drizzle-orm'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
 import { resolveOAuthAuthority } from '../authorization/authority'
+import { isFencedOAuthConnection, type OAuthConnectionFacts } from '../oauth-plugin-view'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
 import { projectIntegrationAssignments } from './projector'
 import type { IntegrationProjection, IntegrationProjectionInput } from './types'
@@ -40,7 +41,7 @@ export async function loadProtectedIntegrationBindings(
   for (const { connection } of rows) {
     const plugin = firstPartyIntegrationPlugin(connection.providerKey)
     if (!plugin || plugin.adapterVersion !== connection.adapterVersion) continue
-    if (plugin.authorization.kind === 'oauth2' && connection.clientAuthority !== resolveOAuthAuthority()) continue
+    if (isFencedOAuthConnection(plugin, connection as OAuthConnectionFacts, resolveOAuthAuthority())) continue
     inputs.push({ plugin, connection })
   }
   const projection = projectIntegrationAssignments(inputs)

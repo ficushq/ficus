@@ -139,6 +139,8 @@ export class DbIntegrationConnectionRepository
       .where(
         and(
           eq(integrationConnections.providerKey, providerKey),
+          // Manual connections of a plugin with a managed OAuth driver are never refreshed.
+          eq(integrationConnections.authorizationKind, 'oauth2'),
           eq(integrationConnections.enabled, true),
           integrationEnabledPredicate(),
           eq(integrationConnections.authState, 'authenticated'),
@@ -907,6 +909,7 @@ export class DbIntegrationConnectionRepository
           credentialRef: integrationConnections.credentialRef,
           materialRevision: integrationConnections.materialRevision,
           clientAuthority: integrationConnections.clientAuthority,
+          authorizationKind: integrationConnections.authorizationKind,
           authorizationFlowId: integrationConnections.authorizationFlowId,
         })
         .from(integrationConnections)
@@ -969,16 +972,21 @@ export class DbIntegrationConnectionRepository
           })
           .where(eq(integrationAuthorizationFlowReceipts.localFlowId, hint.authorizationFlowId!))
       }
-      await tx
-        .insert(integrationRevocationJobs)
-        .values({
-          providerKey: connection.providerKey,
-          adapterVersion: connection.adapterVersion,
-          credentialRef: connection.credentialRef,
-          clientAuthority: connection.clientAuthority,
-          authorizationFlowId: priorFlowOwnsArtifact ? hint.authorizationFlowId : null,
-        })
-        .onConflictDoNothing({ target: integrationRevocationJobs.credentialRef })
+      if (connection.authorizationKind === 'oauth2' || priorFlowOwnsArtifact) {
+        await tx
+          .insert(integrationRevocationJobs)
+          .values({
+            providerKey: connection.providerKey,
+            adapterVersion: connection.adapterVersion,
+            credentialRef: connection.credentialRef,
+            clientAuthority: connection.clientAuthority,
+            authorizationFlowId: priorFlowOwnsArtifact ? hint.authorizationFlowId : null,
+          })
+          .onConflictDoNothing({ target: integrationRevocationJobs.credentialRef })
+      } else {
+        // Manually entered material is never sent to an OAuth revocation endpoint; it is only deleted.
+        await enqueueCredentialCleanup(tx, connection.credentialRef)
+      }
       await tx
         .update(integrationConnections)
         .set({
@@ -999,6 +1007,7 @@ export class DbIntegrationConnectionRepository
           nextValidationAt: nextHealthyValidationAt(now, new Date(now.getTime() + 15 * 60_000)),
           updatedByUserId: input.updatedByUserId,
           clientAuthority: input.clientAuthority,
+          authorizationKind: 'oauth2',
           authorizationFlowId:
             input.authorizationFlowId ?? (priorFlowOwnsArtifact ? null : connection.authorizationFlowId),
           updatedAt: now,
@@ -1108,6 +1117,8 @@ export class DbIntegrationConnectionRepository
           ...(input.credentialRef === undefined ? {} : { credentialRef: input.credentialRef }),
           ...(input.updatedByUserId === undefined ? {} : { updatedByUserId: input.updatedByUserId }),
           ...(retiredCredentialRef && receipt ? { authorizationFlowId: null } : {}),
+          // A replaced credential is entered material, never an OAuth grant.
+          authorizationKind: 'manual',
           materialRevision: input.materialRevision,
           validatedRevision: null,
           enabled: false,
@@ -1331,6 +1342,7 @@ function map(row: typeof integrationConnections.$inferSelect): IntegrationConnec
     providerKey: row.providerKey,
     adapterVersion: row.adapterVersion,
     clientAuthority: row.clientAuthority as IntegrationConnectionRecord['clientAuthority'],
+    authorizationKind: row.authorizationKind as IntegrationConnectionRecord['authorizationKind'],
     authorizationFlowId: row.authorizationFlowId,
     displayName: row.displayName,
     configuration: row.configuration,
