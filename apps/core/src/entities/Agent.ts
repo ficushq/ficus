@@ -50,7 +50,7 @@ import {
   type AttachmentScope,
 } from '../services/attachments/agent-scope'
 import { BaseEntity } from './base'
-import { splitModelPriorityList, supportsImageInput, validateModelSpecList } from '../lib/utils/model-spec'
+import { isKnownModelSpec, tryImageInputSupport, validateModelSpecList } from '../lib/utils/model-spec'
 import { randomUUID, createHash } from 'crypto'
 import { chatSendRequestHashes } from '../services/agents/chat-send-request-hash'
 import { cacheAgentToken, getCachedAgentToken, removeCachedAgentToken } from '../services/rbac/token-cache'
@@ -663,16 +663,34 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return resolveAgentTypeChain(await this.mustGetAgentType(), this.modelOverride)
   }
 
+  /**
+   * The selected model, or before selection the first configured candidate the current catalog
+   * knows (selection skips unknown candidates too). When none is known the first candidate is
+   * returned so callers can report it.
+   */
   getSelectedOrConfiguredModelSpec(agentTypeModel?: string): string | undefined {
     if (this.selectedModel) return this.selectedModel
     const configured = this.modelOverride?.trim() || agentTypeModel?.trim() || this._agentType?.model?.trim()
     if (!configured) return undefined
-    return splitModelPriorityList(configured)[0]
+    const candidates = configured
+      .split(',')
+      .map((candidate) => candidate.trim())
+      .filter(Boolean)
+    return candidates.find(isKnownModelSpec) ?? candidates[0]
   }
 
+  /**
+   * Whether the selected (or first usable configured) model reads images; undefined when there is
+   * no model or the current catalog does not know it. Never throws: a stored spec that a catalog
+   * update has removed must not break listing or serializing the agent.
+   */
   supportsSelectedModelImages(agentTypeModel?: string): boolean | undefined {
+    return this.selectedModelImageSupport(agentTypeModel).supportsImages
+  }
+
+  private selectedModelImageSupport(agentTypeModel?: string): { supportsImages?: boolean; error?: string } {
     const modelSpec = this.getSelectedOrConfiguredModelSpec(agentTypeModel)
-    return modelSpec ? supportsImageInput(modelSpec) : undefined
+    return modelSpec ? tryImageInputSupport(modelSpec) : {}
   }
 
   /**
@@ -2239,6 +2257,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * @returns The agent as a JSON object.
    */
   toJson(): AgentJson {
+    const imageSupport = this.selectedModelImageSupport()
     return {
       id: this.id,
       agentTypeId: this.agentTypeId,
@@ -2249,7 +2268,8 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       modelOverride: this.modelOverride,
       configuredModel: this.modelOverride?.trim() || this._agentType?.model?.trim() || undefined,
       selectedModel: this.selectedModel ?? undefined,
-      selectedModelSupportsImages: this.supportsSelectedModelImages(),
+      selectedModelSupportsImages: imageSupport.supportsImages,
+      ...(imageSupport.error ? { modelSpecWarning: imageSupport.error } : {}),
       metadata: this.metadata,
       context: this.context,
       questionData: this.questionData,
