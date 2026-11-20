@@ -363,6 +363,14 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         ...(event.type === 'issue_comment' && 'performed_via_github_app' in item!
           ? { viaApp: githubCommentApp(item!.performed_via_github_app) }
           : {}),
+        // An unrecognised app's client ID, so Core can still match it against the app the connection itself
+        // was authorized with (for example an earlier custom app) when it records the event.
+        ...(event.type === 'issue_comment' &&
+        githubCommentApp(item!.performed_via_github_app) === 'other' &&
+        typeof record(item!.performed_via_github_app)?.client_id === 'string' &&
+        /^[\w.-]{1,200}$/.test(record(item!.performed_via_github_app)!.client_id)
+          ? { viaAppClientId: record(item!.performed_via_github_app)!.client_id as string }
+          : {}),
         labels: Array.isArray(native?.labels)
           ? native.labels.map((label: any) => String(label?.name ?? label)).slice(0, 100)
           : [],

@@ -52,6 +52,7 @@ import {
   type GitHubSignResult,
 } from '../services/integrations/github/commit-signing'
 import { MAX_SIGNING_PAYLOAD_BYTES } from '../services/integrations/github/signing-payload'
+import { closeGitHubWriteWindow, openGitHubWriteWindow } from '../services/integrations/github/write-windows'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
 import type {
   IntegrationAuthorizationStart,
@@ -887,6 +888,9 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
           inheritedSelection: z
             .strictObject({ providerKey: z.string().min(1), squadId: z.uuid(), connectionId: z.uuid() })
             .optional(),
+          // GitHub only: false when the CLI knows the command cannot post comments or reviews. Absent (older
+          // CLIs, direct callers) is treated as a possible write.
+          feedbackWrite: z.boolean().optional(),
         })
       ),
       async (c) => {
@@ -911,11 +915,28 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
             },
             409
           )
+        // Before the token leaves Core: a review this command posts is then always recorded as Ficus's own
+        // before GitHub can send its webhook. The CLI closes the window when the command exits.
+        const writeWindowId =
+          providerKey === 'github' && c.req.valid('json').feedbackWrite !== false && environment.GITHUB_USER
+            ? await openGitHubWriteWindow({ squadId, login: environment.GITHUB_USER })
+            : undefined
         return c.json({
           environment,
           scrubVariables: service.executionVariableNames?.() ?? [],
           selection: connectionId ? { providerKey, squadId, connectionId } : null,
+          ...(writeWindowId ? { writeWindowId } : {}),
         })
+      }
+    )
+    .post(
+      '/:squadId/integrations/github/write-windows/:windowId/close',
+      requireSquadPermission('integrations:use', 'squadId'),
+      async (c) => {
+        const windowId = c.req.param('windowId')
+        if (!z.uuid().safeParse(windowId).success) return c.json({ error: 'Invalid write window' }, 400)
+        c.header('Cache-Control', 'no-store')
+        return c.json({ closed: await closeGitHubWriteWindow({ squadId: resolvedSquadId(c), windowId }) })
       }
     )
     .post(

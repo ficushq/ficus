@@ -543,6 +543,16 @@ describe('comments by the connected account', () => {
     expect(githubOutputAdapter.shouldNotify!(fact, { ...configuration, login: 'someone-else' })).toBe(true)
   })
 
+  test("an unrecognised app's client ID is kept so Core can match the connection's own app binding", () => {
+    expect(comment(OTHER_APP).data.viaAppClientId).toBe(OTHER_APP.client_id)
+    // A missing client ID still leaves the comment undecided (other), with nothing to match.
+    const anonymous = comment({ id: 7, slug: 'no-client' })
+    expect(anonymous.data.viaApp).toBe('other')
+    expect(anonymous.data).not.toHaveProperty('viaAppClientId')
+    expect(comment(FICUS_APP).data).not.toHaveProperty('viaAppClientId')
+    expect(comment(null).data).not.toHaveProperty('viaAppClientId')
+  })
+
   test("an instance's own configured GitHub App counts as Ficus too", () => {
     const custom = { id: 99, slug: 'acme-ficus', client_id: 'Iv23custom' }
     expect(comment(custom).data.viaApp).toBe('other')

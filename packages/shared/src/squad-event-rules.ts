@@ -200,9 +200,21 @@ export const GITHUB_SELF_COMMENT_OTHER_APP_REASON =
  */
 export const GITHUB_SELF_COMMENT_ACCOUNT_REASON =
   'Skipped: written by the connected GitHub account, and GitHub does not say whether Ficus wrote it'
+/**
+ * Delivery reason for a comment or review the connected account wrote while Ficus held that account's
+ * GitHub credential for a command that can post comments or reviews.
+ */
+export const GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON =
+  'Skipped: written by the connected GitHub account while a Ficus command was writing to GitHub as that account'
 
 /** Which GitHub App wrote a comment, as normalization records it in `viaApp`. */
 export type GitHubCommentApp = 'none' | 'ficus' | 'other'
+
+/**
+ * Whether the connected account's comment or review was written inside one of Ficus's recorded GitHub
+ * write windows, as Core records it in `ficusWriteWindow` when it first stores the event.
+ */
+export type GitHubWriteWindowMatch = 'inside' | 'outside'
 
 /**
  * Why a comment or review is an echo of Ficus's own write, or undefined when it is not one.
@@ -210,9 +222,13 @@ export type GitHubCommentApp = 'none' | 'ficus' | 'other'
  * Ficus writes as the connected account through its GitHub App, but the person who owns that account
  * can also comment as themselves. Issue and pull request comments carry the app that wrote them, which
  * normalization records as `viaApp`: `none` (a person typing as themselves) is delivered, `ficus` and
- * `other` are skipped, the latter because it may be Ficus's own write through an app it no longer knows.
- * Reviews and review comments carry no such attribution (and facts stored before it existed lack the
- * field), so for those the login alone still decides: loop protection outranks delivery.
+ * `other` is unrecognised, so it falls through to the write-window rule below.
+ *
+ * Reviews and review comments carry no such attribution. For them (and for `other`), Core records
+ * `ficusWriteWindow` when it stores the event: `inside` when a Ficus command held the account's GitHub
+ * credential at the time the review was written, which is skipped, and `outside` otherwise, which is
+ * delivered. Facts without either signal (stored before these fields existed, or written before Ficus
+ * began recording windows) keep the login rule: loop protection outranks delivery.
  */
 export function githubSelfCommentReason(fact: IntegrationOutputFact, login: string): string | undefined {
   if (
@@ -227,6 +243,9 @@ export function githubSelfCommentReason(fact: IntegrationOutputFact, login: stri
   const viaApp = record(fact.data).viaApp
   if (viaApp === 'none') return undefined
   if (viaApp === 'ficus') return GITHUB_SELF_COMMENT_APP_REASON
+  const writeWindow = record(fact.data).ficusWriteWindow
+  if (writeWindow === 'inside') return GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON
+  if (writeWindow === 'outside') return undefined
   if (viaApp === 'other') return GITHUB_SELF_COMMENT_OTHER_APP_REASON
   return GITHUB_SELF_COMMENT_ACCOUNT_REASON
 }

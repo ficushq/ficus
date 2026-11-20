@@ -53,10 +53,12 @@ export function narrowToMonitorPermissions(held: readonly string[]): string[] {
 }
 
 const INTEGRATION_ENVIRONMENT_PATH = /^\/api\/squads\/[^/]+\/integrations\/[^/]+\/execute-environment\/?$/
+/** Closing the GitHub write window the credential exchange opened, once the command has exited. */
+const GITHUB_WRITE_WINDOW_CLOSE_PATH = /^\/api\/squads\/[^/]+\/integrations\/github\/write-windows\/[^/]+\/close\/?$/
 
 /** HTTP requests a monitor token may make: reads, and the integration credential exchange. */
 export function isMonitorTokenRequestAllowed(method: string, path: string): boolean {
   const verb = method.toUpperCase()
   if (verb === 'GET' || verb === 'HEAD') return true
-  return verb === 'POST' && INTEGRATION_ENVIRONMENT_PATH.test(path)
+  return verb === 'POST' && (INTEGRATION_ENVIRONMENT_PATH.test(path) || GITHUB_WRITE_WINDOW_CLOSE_PATH.test(path))
 }

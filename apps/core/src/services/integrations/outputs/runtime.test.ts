@@ -25,6 +25,8 @@ import {
   inbox,
   integrationConnections,
   integrationConnectionAssignments,
+  githubWriteWindows,
+  settings,
 } from '../../../db'
 import { Agent } from '../../../entities/Agent'
 import { WorkStream } from '../../../entities/WorkStream'
@@ -42,6 +44,7 @@ import { listTrackedResources } from '../../work-streams/tracked-resources'
 import { outputDeliveryHistory, publishIntegrationOutput, reconcileOutputDeliveries } from './runtime'
 import { lockFlowInboxDelivery } from '../../work-streams/wait-scope'
 import { githubOutputAdapter } from './github'
+import { closeGitHubWriteWindow, openGitHubWriteWindow, GITHUB_WRITE_WINDOWS_SINCE_KEY } from '../github/write-windows'
 
 const prefix = `outputs-${randomUUID()}`
 const eventIds: string[] = []
@@ -2068,6 +2071,74 @@ test('the connected account commenting as itself is delivered; Ficus echoes leav
     await publishAs(by('pull_request.comment', 'ficus-bot', { viaApp: 'ficus' }))
     expect((await deliveries(id)).filter((delivery) => delivery.eventId === ficus)).toHaveLength(1)
   })
+})
+
+test("the connected account's own reviews are delivered; Ficus's, recorded by write windows, are skipped", async () => {
+  const [since] = await db.select().from(settings).where(eq(settings.key, GITHUB_WRITE_WINDOWS_SINCE_KEY))
+  await db.delete(settings).where(eq(settings.key, GITHUB_WRITE_WINDOWS_SINCE_KEY))
+  try {
+    await withNativeRouting(async (connectionId) => {
+      const authority = { kind: 'connection' as const, connectionId, squadId }
+      const id = await create(108, { codeHost: true })
+      const start = Date.now() - 10 * 60_000
+      const at = (seconds: number) => new Date(start + seconds * 1000)
+      // The connection authenticates as `ficus-bot`, which is also a person's own GitHub account.
+      const by = (output: string, actor: string, seconds: number) =>
+        fact(108, {
+          output,
+          occurredAt: at(seconds).toISOString(),
+          data: { repository: `${prefix}/repo`, pullRequest: { number: 108 }, actor },
+        })
+      const publishAs = async (event: IntegrationOutputFact) => {
+        const eventId = (await publishIntegrationOutput('github', event, authority))!
+        eventIds.push(eventId)
+        return eventId
+      }
+      // An agent's `gh pr review`: Core opened the window before handing out the token, and GitHub's
+      // webhooks arrive while the command is still running (its close is not recorded yet).
+      const windowId = (await openGitHubWriteWindow({ squadId, login: 'ficus-bot', now: at(0) }))!
+      const ficusReview = await publishAs(by('pull_request.reviewed', 'ficus-bot', 5))
+      const ficusInline = await publishAs(by('pull_request.review_comment', 'ficus-bot', 5))
+      // Someone else reviewing at the same moment is unaffected.
+      const otherReview = await publishAs(by('pull_request.reviewed', 'reviewer', 5))
+      await closeGitHubWriteWindow({ squadId, windowId, now: at(30) })
+      // Minutes later the person who owns the account reviews from GitHub: no Ficus command was writing.
+      const personReview = await publishAs(by('pull_request.reviewed', 'ficus-bot', 300))
+      const personInline = await publishAs(by('pull_request.review_comment', 'ficus-bot', 300))
+      const rows = await deliveries(id)
+      const row = (eventId: string) => rows.find((delivery) => delivery.eventId === eventId)
+      for (const eventId of [ficusReview, ficusInline])
+        expect(row(eventId)).toMatchObject({
+          status: 'superseded',
+          reason:
+            'Skipped: written by the connected GitHub account while a Ficus command was writing to GitHub as that account',
+          targets: [],
+        })
+      for (const eventId of [personReview, personInline, otherReview]) {
+        expect(row(eventId)?.status).not.toBe('superseded')
+        expect(row(eventId)?.targets).toHaveLength(1)
+      }
+      // The decision is stored with each event, so later routing passes reach the same answer.
+      const stored = await db
+        .select({ id: integrationOutputEvents.id, fact: integrationOutputEvents.fact })
+        .from(integrationOutputEvents)
+        .where(inArray(integrationOutputEvents.id, [ficusReview, personReview, otherReview]))
+      const decision = (eventId: string) => stored.find((event) => event.id === eventId)?.fact.data.ficusWriteWindow
+      expect(decision(ficusReview)).toBe('inside')
+      expect(decision(personReview)).toBe('outside')
+      expect(decision(otherReview)).toBeUndefined()
+      // Skipped reviews are visible in the stream's delivery history.
+      const history = await outputDeliveryHistory(id)
+      expect(history.filter((item) => item.status === 'superseded').map((item) => item.reason)).toEqual([
+        row(ficusReview)!.reason,
+        row(ficusInline)!.reason,
+      ])
+    })
+  } finally {
+    await db.delete(githubWriteWindows).where(eq(githubWriteWindows.squadId, squadId))
+    await db.delete(settings).where(eq(settings.key, GITHUB_WRITE_WINDOWS_SINCE_KEY))
+    if (since) await db.insert(settings).values(since)
+  }
 })
 
 test('pre-existing self-comment deliveries are fenced at worker and parked-owner queue acceptance', async () => {

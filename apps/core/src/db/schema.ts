@@ -1556,6 +1556,27 @@ export const githubFeedbackObjects = pgTable(
   ]
 )
 
+/**
+ * When Ficus may have written to GitHub as a connected account: one row per credential exchange for a
+ * command that can post comments or reviews, opened before the token leaves Core and closed when the
+ * command exits. GitHub does not attribute reviews or review comments to an app, so a review by the
+ * connected login is Ficus's own only when it was written inside one of these windows.
+ */
+export const githubWriteWindows = pgTable(
+  'github_write_windows',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    /** Lowercased GitHub login the command wrote as. */
+    login: varchar('login', { length: 100 }).notNull(),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (table) => [index('github_write_windows_login_opened').on(table.login, table.openedAt)]
+)
+
 /** Server-owned, short-lived exact-resource witness. Never accepted from a fact or API DTO. */
 export const githubOutputProofs = pgTable(
   'github_output_proofs',

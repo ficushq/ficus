@@ -16,6 +16,7 @@ import {
   GITHUB_SELF_COMMENT_APP_REASON,
   GITHUB_SELF_COMMENT_OTHER_APP_REASON,
   GITHUB_SELF_COMMENT_ACCOUNT_REASON,
+  GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON,
   type IntegrationSubscription,
   type IntegrationOutputFact,
   type EventRuleDecisions,
@@ -76,6 +77,7 @@ import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runti
 import { readOutputEvent, readOutputCandidate, readOutputInbox } from '../github/feedback-pass-read'
 import { isGitHubOutputRevoked, renewKnownGitHubOutputs } from '../github/feedback-renewal'
 import { setConfiguredGitHubAppClientId } from '../github/ficus-app'
+import { annotateGitHubWriteAttribution } from '../github/write-windows'
 import { resolveGitHubAppCredentials } from '../authorization/github-app'
 import { getSecretStore } from '../../secrets/store'
 
@@ -108,6 +110,7 @@ const SKIPPED_DELIVERY_REASONS = [
   GITHUB_SELF_COMMENT_APP_REASON,
   GITHUB_SELF_COMMENT_OTHER_APP_REASON,
   GITHUB_SELF_COMMENT_ACCOUNT_REASON,
+  GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON,
   SUPPRESSED_DELIVERY_REASON,
 ]
 
@@ -219,6 +222,9 @@ async function recordIntegrationOutputInPass(
   }
   if (authority.kind === 'connection' && !(await authorized(db, integration, authority, authority.squadId)))
     throw new Error('Integration connection is not assigned and enabled')
+  // Whether Ficus wrote the connected account's own comment or review, decided once from its recorded write
+  // windows and stored with the event, so the echo guard never depends on when the event is routed.
+  if (integration === 'github') fact = await annotateGitHubWriteAttribution(fact, authority)
   const sourceKey =
     authority.kind === 'instance'
       ? 'instance'

@@ -304,6 +304,16 @@ describe('credential handling', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/integrations/github/execute-environment', {})
     expect(lastError()).toBe('This squad has no GitHub integration credential')
   })
+
+  test('the write window Core opened for the comment is closed, even when the command fails', async () => {
+    ;(apiPost as AnyMock).mockResolvedValueOnce({ environment: {}, writeWindowId: 'window-1' })
+    ;(apiPost as AnyMock).mockResolvedValueOnce({ closed: true })
+    const program = new Command().exitOverride()
+    registerPrCommands(program)
+    await program.parseAsync(['pr', 'attach', '7', 'after.png', '--repo', REPO, '--squad', 'squad-1'], { from: 'user' })
+    expect(apiPost).toHaveBeenLastCalledWith('/api/squads/squad-1/integrations/github/write-windows/window-1/close', {})
+    expect(lastError()).toBe('This squad has no GitHub integration credential')
+  })
 })
 
 describe('parsing', () => {

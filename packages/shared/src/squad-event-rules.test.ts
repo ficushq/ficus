@@ -5,6 +5,7 @@ import {
   GITHUB_SELF_COMMENT_ACCOUNT_REASON,
   GITHUB_SELF_COMMENT_APP_REASON,
   GITHUB_SELF_COMMENT_OTHER_APP_REASON,
+  GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON,
   githubSelfCommentReason,
   isGitHubSelfComment,
   isLinearSelfComment,
@@ -650,6 +651,28 @@ describe('GitHub self-comment suppression', () => {
     }
     expect(githubSelfCommentReason(github('pull_request.updated', { actor: 'owner' }), 'owner')).toBeUndefined()
     expect(githubSelfCommentReason(github('issue.comment', { actor: 'owner' }), '')).toBeUndefined()
+  })
+
+  test('a recorded write window decides reviews, review comments and unrecognised-app comments', () => {
+    for (const output of ['pull_request.reviewed', 'pull_request.review_comment', 'pull_request.comment']) {
+      // Written while a Ficus command held the account's credential: Ficus's own.
+      const ficus = github(output, { actor: 'Owner', ficusWriteWindow: 'inside' })
+      expect(githubSelfCommentReason(ficus, 'owner')).toBe(GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON)
+      // Written outside every window: the person who owns the account, delivered.
+      const person = github(output, { actor: 'Owner', ficusWriteWindow: 'outside' })
+      expect(githubSelfCommentReason(person, 'owner')).toBeUndefined()
+      // Another account is never this connection's echo, whatever was recorded.
+      expect(githubSelfCommentReason(ficus, 'someone-else')).toBeUndefined()
+    }
+    const otherInside = github('issue.comment', { actor: 'owner', viaApp: 'other', ficusWriteWindow: 'inside' })
+    expect(githubSelfCommentReason(otherInside, 'owner')).toBe(GITHUB_SELF_COMMENT_WRITE_WINDOW_REASON)
+    const otherOutside = github('issue.comment', { actor: 'owner', viaApp: 'other', ficusWriteWindow: 'outside' })
+    expect(githubSelfCommentReason(otherOutside, 'owner')).toBeUndefined()
+    // App attribution, when GitHub gives one Ficus recognises, outranks the window.
+    const appEcho = github('issue.comment', { actor: 'owner', viaApp: 'ficus', ficusWriteWindow: 'outside' })
+    expect(githubSelfCommentReason(appEcho, 'owner')).toBe(GITHUB_SELF_COMMENT_APP_REASON)
+    const typed = github('issue.comment', { actor: 'owner', viaApp: 'none', ficusWriteWindow: 'inside' })
+    expect(githubSelfCommentReason(typed, 'owner')).toBeUndefined()
   })
 
   test('rule preview does not suppress the account owner commenting as themselves', () => {

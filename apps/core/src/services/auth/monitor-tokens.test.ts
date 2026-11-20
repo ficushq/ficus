@@ -55,6 +55,13 @@ describe('isMonitorTokenRequestAllowed', () => {
     expect(isMonitorTokenRequestAllowed('head', '/api/anything')).toBe(true)
     expect(isMonitorTokenRequestAllowed('POST', '/api/squads/abc/integrations/github/execute-environment')).toBe(true)
     expect(isMonitorTokenRequestAllowed('POST', '/api/squads/abc/integrations/github/sign')).toBe(false)
+    // Closing the write window that exchange opened, once the command has exited.
+    expect(isMonitorTokenRequestAllowed('POST', '/api/squads/abc/integrations/github/write-windows/w1/close')).toBe(
+      true
+    )
+    expect(isMonitorTokenRequestAllowed('POST', '/api/squads/abc/integrations/github/write-windows/w1/open')).toBe(
+      false
+    )
     expect(isMonitorTokenRequestAllowed('POST', '/api/inbox/send')).toBe(false)
     expect(isMonitorTokenRequestAllowed('POST', '/api/auth/ws-ticket')).toBe(false)
     expect(isMonitorTokenRequestAllowed('PUT', '/api/squads/abc/integrations/github/execute-environment')).toBe(false)

@@ -1,7 +1,18 @@
 import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import { agentExtraScopes, agents, db, roleAssignments, roles, squads, users } from '../db'
+import {
+  agentExtraScopes,
+  agents,
+  db,
+  githubWriteWindows,
+  roleAssignments,
+  roles,
+  settings,
+  squads,
+  users,
+} from '../db'
+import { GITHUB_WRITE_WINDOWS_SINCE_KEY } from '../services/integrations/github/write-windows'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import { csrfProtection } from '../middleware/csrf'
 import { BigbrainSetupError } from '../services/integrations/bigbrain/local-setup'
@@ -548,6 +559,49 @@ describe('integration routes', () => {
     })
     expect(response.status).toBe(409)
     expect((await response.json()).error).toContain('No usable GitHub account is configured for this squad')
+  })
+
+  test('a GitHub command that can post reviews opens a write window before its token leaves, and can close it', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'exec-window',
+      name: 'test',
+      scopes: ['integrations:use'],
+    })
+    calls.executionEnvironment.mockImplementation(async () => ({
+      GH_TOKEN: 'execution-only-token',
+      GITHUB_USER: 'Owner',
+    }))
+    const exchange = (body: unknown) =>
+      app.request(`/api/squads/${squadId}/integrations/github/execute-environment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    // Opening a window records when coverage began; leave the shared setting as other tests found it.
+    const [since] = await db.select().from(settings).where(eq(settings.key, GITHUB_WRITE_WINDOWS_SINCE_KEY))
+    try {
+      // An older CLI says nothing about the command: it may write, so a window opens.
+      const opened = (await (await exchange({})).json()) as { writeWindowId?: string }
+      expect(opened.writeWindowId).toBeString()
+      const [row] = await db.select().from(githubWriteWindows).where(eq(githubWriteWindows.id, opened.writeWindowId!))
+      expect(row).toMatchObject({ squadId, login: 'owner', closedAt: null })
+      // A command the CLI knows cannot post comments or reviews opens none.
+      expect(await (await exchange({ feedbackWrite: false })).json()).not.toHaveProperty('writeWindowId')
+      const close = (route: string, windowId: string) =>
+        app.request(`/api/squads/${route}/integrations/github/write-windows/${windowId}/close`, { method: 'POST' })
+      expect(await (await close(squadId, opened.writeWindowId!)).json()).toEqual({ closed: true })
+      expect(await (await close(squadId, opened.writeWindowId!)).json()).toEqual({ closed: false })
+      expect((await close(squadId, 'not-a-uuid')).status).toBe(400)
+      const [closed] = await db
+        .select()
+        .from(githubWriteWindows)
+        .where(eq(githubWriteWindows.id, opened.writeWindowId!))
+      expect(closed!.closedAt).toBeInstanceOf(Date)
+    } finally {
+      await db.delete(githubWriteWindows).where(eq(githubWriteWindows.squadId, squadId))
+      if (!since) await db.delete(settings).where(eq(settings.key, GITHUB_WRITE_WINDOWS_SINCE_KEY))
+    }
   })
 
   test('missing Linear account keeps the existing configuration guidance', async () => {

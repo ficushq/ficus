@@ -260,24 +260,38 @@ export function createGitHubRequest(token: string, fetcher: typeof fetch = fetch
   }
 }
 
+/** A GitHub client and, when Core recorded a write window for it, the call that closes that window. */
+export type GitHubSession = GitHubRequest & { close?: () => Promise<void> }
+
 export interface PrCommandDependencies {
   /** GitHub client authenticated with the squad's integration credential. */
-  github: (options: { squad?: string; connection?: string }) => Promise<GitHubRequest>
+  github: (options: { squad?: string; connection?: string }) => Promise<GitHubSession>
   /** `owner/repo` of the current directory's origin remote. */
   originRepo: () => Promise<string>
   readBodyFile: (path: string) => Promise<string>
 }
 
-async function integrationGitHub(options: { squad?: string; connection?: string }): Promise<GitHubRequest> {
+async function integrationGitHub(options: { squad?: string; connection?: string }): Promise<GitHubSession> {
   const squad = options.squad ?? process.env.FICUS_SQUAD_ID
   if (!squad) throw new Error('Pass --squad (FICUS_SQUAD_ID is not set)')
-  const { environment } = await apiPost<{ environment: Record<string, string> }>(
+  // This command posts a comment, so Core opens a write window for it; close it once the command is done.
+  const { environment, writeWindowId } = await apiPost<{ environment: Record<string, string>; writeWindowId?: string }>(
     `/api/squads/${encodeURIComponent(squad)}/integrations/github/execute-environment`,
     options.connection ? { connectionId: options.connection } : {}
   )
+  const close = async () => {
+    if (writeWindowId)
+      await apiPost(
+        `/api/squads/${encodeURIComponent(squad)}/integrations/github/write-windows/${encodeURIComponent(writeWindowId)}/close`,
+        {}
+      ).catch(() => {})
+  }
   const token = environment?.GH_TOKEN
-  if (!token) throw new Error('This squad has no GitHub integration credential')
-  return createGitHubRequest(token)
+  if (!token) {
+    await close()
+    throw new Error('This squad has no GitHub integration credential')
+  }
+  return Object.assign(createGitHubRequest(token), { close })
 }
 
 async function gitOriginRepo(): Promise<string> {
@@ -321,23 +335,29 @@ export function registerPrCommands(program: Command, dependencies: PrCommandDepe
         const body =
           options.bodyFile !== undefined ? await dependencies.readBodyFile(options.bodyFile) : (options.body ?? '')
         const github = await dependencies.github(options)
-        const issue = await github<Issue>('GET', `/repos/${repo}/issues/${number}`).catch((error) => {
-          if (error instanceof GitHubError && error.status === 404)
-            throw new Error(
-              `No pull request or issue ${number} in ${repo} (or the squad's GitHub account cannot see it)`
-            )
-          throw error
-        })
-        const upload = await uploadAssets(github, repo, number, files)
-        const markdown = composeBody(body, files, upload.assets)
+        let upload: Awaited<ReturnType<typeof uploadAssets>>
+        let markdown: string
         let posted: string | undefined
-        if (options.comment && options.editBody) {
-          const description = [issue.body?.trimEnd(), markdown].filter(Boolean).join('\n\n')
-          posted = (await github<Issue>('PATCH', `/repos/${repo}/issues/${number}`, { body: description })).html_url
-        } else if (options.comment) {
-          posted = (
-            await github<{ html_url: string }>('POST', `/repos/${repo}/issues/${number}/comments`, { body: markdown })
-          ).html_url
+        try {
+          const issue = await github<Issue>('GET', `/repos/${repo}/issues/${number}`).catch((error) => {
+            if (error instanceof GitHubError && error.status === 404)
+              throw new Error(
+                `No pull request or issue ${number} in ${repo} (or the squad's GitHub account cannot see it)`
+              )
+            throw error
+          })
+          upload = await uploadAssets(github, repo, number, files)
+          markdown = composeBody(body, files, upload.assets)
+          if (options.comment && options.editBody) {
+            const description = [issue.body?.trimEnd(), markdown].filter(Boolean).join('\n\n')
+            posted = (await github<Issue>('PATCH', `/repos/${repo}/issues/${number}`, { body: description })).html_url
+          } else if (options.comment) {
+            posted = (
+              await github<{ html_url: string }>('POST', `/repos/${repo}/issues/${number}/comments`, { body: markdown })
+            ).html_url
+          }
+        } finally {
+          await github.close?.()
         }
         output(
           { repo, number, ...upload, markdown, ...(posted ? { posted } : {}) },

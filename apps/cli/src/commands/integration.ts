@@ -12,6 +12,7 @@ import { Command, Option } from 'commander'
 import { apiDelete, apiGet, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputError } from '../output'
 import { registerBigbrainVaultCommands, type BigbrainVaultCommandDependencies } from './integration-bigbrain'
+import { githubCommandMayWriteFeedback } from './github-feedback-write'
 
 const MAX_CREDENTIAL_BYTES = 16 * 1024
 
@@ -79,7 +80,7 @@ export function registerIntegrationCommands(
     .action(
       run(async (provider, command: string[], options) => {
         const inheritedSelection = inheritedExecutionSelection(options.connection)
-        const result = await apiPost<IntegrationExecutionEnvironment>(
+        const result = await apiPost<IntegrationExecutionEnvironment & { writeWindowId?: string }>(
           `/api/squads/${options.squad}/integrations/${provider}/execute-environment`,
           {
             ...(options.connection !== undefined
@@ -87,11 +88,22 @@ export function registerIntegrationCommands(
               : inheritedSelection
                 ? { inheritedSelection }
                 : {}),
+            // Core records when Ficus may write GitHub comments or reviews, to tell them from the account owner's.
+            ...(provider === 'github' ? { feedbackWrite: githubCommandMayWriteFeedback(command) } : {}),
           }
         )
         if (result.selection === undefined)
           throw new Error('Unsupported integration execution selection contract; update Core and CLI together')
-        process.exitCode = await runIntegrationCommand(command, result, process.env, result.selection ?? undefined)
+        try {
+          process.exitCode = await runIntegrationCommand(command, result, process.env, result.selection ?? undefined)
+        } finally {
+          // Best effort: a window left open stops covering writes on its own after a bounded time.
+          if (result.writeWindowId)
+            await apiPost(
+              `/api/squads/${options.squad}/integrations/github/write-windows/${encodeURIComponent(result.writeWindowId)}/close`,
+              {}
+            ).catch(() => {})
+        }
       })
     )
 
