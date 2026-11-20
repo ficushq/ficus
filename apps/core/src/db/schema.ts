@@ -4075,6 +4075,25 @@ export const devboxLockCache = pgTable('devbox_lock_cache', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
+// The `devbox.lock` the first successful install of a squad's managed toolchain
+// produced, keyed by squad and toolchain fingerprint. Later boxes install from
+// it instead of resolving against the moving nixpkgs-unstable tip (and
+// downloading that source tree). Never shared across squads; a changed
+// configuration has a new fingerprint and resolves afresh. See
+// services/sandbox/toolchain/lock-pin.ts.
+export const managedToolchainLockPins = pgTable(
+  'managed_toolchain_lock_pins',
+  {
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    lockContent: text('lock_content').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.squadId, t.fingerprint] })]
+)
+
 export const operationsExecutionAnalyses = pgTable('operations_execution_analyses', {
   executionId: uuid('execution_id')
     .primaryKey()

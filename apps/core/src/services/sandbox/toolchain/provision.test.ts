@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import type { ISandboxManager, SandboxOptions } from '../types'
+import type { ISandboxManager, ManagedToolchainRequest, SandboxOptions } from '../types'
+import { fingerprintToolchain } from './config'
 import {
   createToolchainProvisioner,
   ensureSandboxToolchain,
@@ -37,8 +38,18 @@ function harness(initial: ToolchainReconcileSnapshot) {
       calls.push('lease')
       return reconcile()
     },
+    readLockPin: async () => null,
+    storeLockPin: async () => {},
   }
   return { manager, deps, calls, setSnapshot: (next: ToolchainReconcileSnapshot) => (snapshot = next) }
+}
+
+const REV = 'c7def046b9a883d46974757852106483d741586f'
+function devboxLock(rev = REV): string {
+  return JSON.stringify({
+    lockfile_version: '1',
+    packages: { 'python3@latest': { resolved: `github:NixOS/nixpkgs/${rev}#python3`, source: 'devbox-search' } },
+  })
 }
 
 describe('sandbox toolchain provisioning orchestration', () => {
@@ -142,6 +153,8 @@ describe('sandbox toolchain provisioning orchestration', () => {
       clearState: async () => {
         current = { config: undefined, provision: undefined, activation: undefined }
       },
+      readLockPin: async () => null,
+      storeLockPin: async () => {},
     }
     const provision = createToolchainProvisioner()
     const applying = provision(manager, 'squad_race', opts, squadId, deps)
@@ -153,6 +166,78 @@ describe('sandbox toolchain provisioning orchestration', () => {
     expect(calls).toEqual(['runtime:apply', 'runtime:clear'])
     expect(maxRuntimeConcurrency).toBe(1)
     expect(current).toEqual({ config: undefined, provision: undefined, activation: undefined })
+  })
+
+  describe('pinned devbox.lock', () => {
+    // A runtime stub that loads the pin and then reports what it resolved.
+    function pinHarness(stored: string | null, resolved: { lock: string; unrealizable: boolean } | undefined) {
+      const h = harness({ config, provision: undefined, activation: undefined })
+      const reads: Array<[string, string]> = []
+      const stores: Array<{ fingerprint: string; lock: string; replacing?: string }> = []
+      let loaded: string | undefined
+      h.deps.readLockPin = async (squad, fingerprint) => {
+        reads.push([squad, fingerprint])
+        return stored
+      }
+      h.deps.storeLockPin = async (_squad, fingerprint, lock, replacing) =>
+        void stores.push({ fingerprint, lock, replacing })
+      const manager = {
+        reconcileToolchain: async (_id: string, _opts: SandboxOptions, request: ManagedToolchainRequest) => {
+          loaded = await request.loadPinnedLock?.()
+          if (resolved) await request.recordResolvedLock?.(resolved.lock, { unrealizable: resolved.unrealizable })
+          return 'applied' as const
+        },
+      } as ISandboxManager
+      return { ...h, manager, reads, stores, loaded: () => loaded }
+    }
+
+    it('hands the runtime the squad pin for the current fingerprint', async () => {
+      const h = pinHarness(devboxLock(), undefined)
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.reads).toEqual([[squadId, fingerprintToolchain(config)]])
+      expect(h.loaded()).toBe(devboxLock())
+      expect(h.stores).toEqual([])
+    })
+
+    it('records the first fresh resolution without replacing anything', async () => {
+      const h = pinHarness(null, { lock: devboxLock(), unrealizable: false })
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.loaded()).toBeUndefined()
+      expect(h.stores).toEqual([
+        { fingerprint: fingerprintToolchain(config), lock: devboxLock(), replacing: undefined },
+      ])
+    })
+
+    it('treats a corrupt pin as missing and lets the fresh resolution replace it', async () => {
+      const h = pinHarness('{not json', { lock: devboxLock(), unrealizable: false })
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.loaded()).toBeUndefined()
+      expect(h.stores).toEqual([
+        { fingerprint: fingerprintToolchain(config), lock: devboxLock(), replacing: '{not json' },
+      ])
+    })
+
+    it('replaces only the pin that failed to install', async () => {
+      const fresh = devboxLock('346dd96ad74dc4457a9db9de4f4f57dab2e5731d')
+      const h = pinHarness(devboxLock(), { lock: fresh, unrealizable: true })
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.stores).toEqual([{ fingerprint: fingerprintToolchain(config), lock: fresh, replacing: devboxLock() }])
+    })
+
+    it('never stores a resolved lock that fails validation', async () => {
+      const poisoned = devboxLock().replace('NixOS/nixpkgs', 'attacker/nixpkgs')
+      const h = pinHarness(null, { lock: poisoned, unrealizable: false })
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.stores).toEqual([])
+    })
+
+    it('resolves afresh when the pin cannot be read', async () => {
+      const h = pinHarness(null, undefined)
+      h.deps.readLockPin = async () => Promise.reject(new Error('db down'))
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.loaded()).toBeUndefined()
+      expect(h.calls).toContain('ready')
+    })
   })
 
   it('fails safely when a configured runtime has no adapter', async () => {

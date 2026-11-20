@@ -2,7 +2,9 @@ import type { SandboxToolchainStatus } from '@ficus/shared'
 import { KeyedSerialQueue } from '../../../lib/infra/inflight'
 import { createLogger } from '../../../lib/infra/logger'
 import type { ISandboxManager, SandboxOptions } from '../types'
+import { ManagedToolchainLockPin } from '../../../entities/ManagedToolchainLockPin'
 import { fingerprintToolchain, isEmptyToolchain, normalizeToolchain, renderManagedDevbox } from './config'
+import { checkToolchainLock } from './lock-pin'
 import {
   clearCurrentToolchainState,
   markActivationRequired,
@@ -59,6 +61,10 @@ export interface ToolchainProvisionDeps {
   markFailed(input: StateKey & { errorCode: ToolchainErrorCode; exitCode?: number }): Promise<void>
   clearState(sandboxId: string, squadId: string): Promise<void>
   withLease<T>(sandboxId: string, reconcile: () => Promise<T>): Promise<T>
+  /** The squad's pinned devbox.lock for a fingerprint (see lock-pin.ts). */
+  readLockPin(squadId: string, fingerprint: string): Promise<string | null>
+  /** First write wins; `replacing` swaps only a pin still equal to that value. */
+  storeLockPin(squadId: string, fingerprint: string, lockContent: string, replacing?: string): Promise<void>
 }
 
 const defaultDeps: ToolchainProvisionDeps = {
@@ -70,6 +76,33 @@ const defaultDeps: ToolchainProvisionDeps = {
   markFailed,
   clearState: clearCurrentToolchainState,
   withLease: withProvisionLease,
+  readLockPin: ManagedToolchainLockPin.get,
+  storeLockPin: ManagedToolchainLockPin.store,
+}
+
+/**
+ * Load the squad's pin for this fingerprint. Never fails the reconcile: an
+ * unreadable or invalid pin is treated as missing, and `stale` names an
+ * invalid stored value so a fresh resolution may replace it.
+ */
+async function loadLockPin(
+  squadId: string,
+  fingerprint: string,
+  packages: readonly string[],
+  deps: ToolchainProvisionDeps
+): Promise<{ pinned?: string; stale?: string }> {
+  let stored: string | null
+  try {
+    stored = await deps.readLockPin(squadId, fingerprint)
+  } catch (error) {
+    log.warn(`Reading the toolchain lock pin failed for squad ${squadId}; resolving afresh`, error)
+    return {}
+  }
+  if (stored === null) return {}
+  const check = checkToolchainLock(stored, packages)
+  if (check.ok) return { pinned: stored }
+  log.warn(`Ignoring invalid toolchain lock pin for squad ${squadId} (${check.reason})`)
+  return { stale: stored }
 }
 
 function isClean(snapshot: ToolchainReconcileSnapshot): boolean {
@@ -102,6 +135,27 @@ async function reconcileLocked(
     await deps.markActivationRequired(stateKey)
   }
 
+  const packages = normalized?.packages ?? []
+  // Loaded only when the runtime is about to install, never for an unchanged box.
+  let pin: { pinned?: string; stale?: string } = {}
+  const loadPinnedLock = async () => {
+    if (!fingerprint) return undefined
+    pin = await loadLockPin(squadId, fingerprint, packages, deps)
+    return pin.pinned
+  }
+  const recordResolvedLock = async (lockContent: string, outcome: { unrealizable: boolean }) => {
+    if (!fingerprint) return
+    const check = checkToolchainLock(lockContent, packages)
+    if (!check.ok) {
+      log.warn(`Not pinning the toolchain lock from ${sandboxId} (${check.reason})`)
+      return
+    }
+    // A failed pin or an invalid stored value may be replaced; otherwise the
+    // first resolution recorded for this fingerprint stays the pin.
+    const replacing = outcome.unrealizable ? pin.pinned : pin.stale
+    await deps.storeLockPin(squadId, fingerprint, lockContent, replacing)
+  }
+
   try {
     await manager.reconcileToolchain(sandboxId, opts, {
       config: configured ? normalized : undefined,
@@ -111,6 +165,8 @@ async function reconcileLocked(
       readiness: normalized?.readiness,
       reportStage: (status: Extract<SandboxToolchainStatus, 'installing' | 'running_setup'>) =>
         deps.markStage({ ...stateKey, status }),
+      loadPinnedLock,
+      recordResolvedLock,
     })
     if (configured) await deps.markReady(stateKey)
     else await deps.clearState(sandboxId, squadId)

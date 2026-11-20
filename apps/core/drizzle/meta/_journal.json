@@ -1800,6 +1800,13 @@
       "when": 1795152000334,
       "tag": "0256_integration_connection_relay_subscribe_error",
       "breakpoints": true
+    },
+    {
+      "idx": 257,
+      "version": "7",
+      "when": 1795155798987,
+      "tag": "0257_managed_toolchain_lock_pins",
+      "breakpoints": true
     }
   ]
 }

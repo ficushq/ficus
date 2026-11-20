@@ -299,9 +299,10 @@ loose objects already available in packs, so it is safe while other box commands
 run Nix. It never runs Git garbage collection because Nix's roots live outside
 Git refs.
 
-The private objects are still large: the managed toolchain is unpinned, so Devbox
-resolves it against the current `nixpkgs-unstable` commit and downloads that full
-nixpkgs source tree (measured 2026-11-20 on an agent box: 94,806 loose objects,
+The private objects are still large when a managed toolchain resolves afresh:
+Devbox resolves it against the current `nixpkgs-unstable` commit and downloads that
+full nixpkgs source tree (later boxes of the squad reuse a pinned lock instead; see
+[Pinned toolchain resolution](#pinned-toolchain-resolution)) (measured 2026-11-20 on an agent box: 94,806 loose objects,
 408 MB; prune-packed leaves 19,425 objects, 96 MB). The shared cache cannot hold
 a commit that did not exist when it was prewarmed. So at every box service start
 (`ExecStartPre`, before the box server or any box command runs), Ficus also
@@ -484,6 +485,47 @@ This managed toolchain is separate from repository `devbox.json`, legacy
 `.ficus/setup.sh`, custom images, and ad hoc `devbox add` workflows. Those existing
 mechanisms remain unchanged. It is not available on the `host` runtime (see the
 comparison table above).
+
+### Pinned toolchain resolution
+
+On VM and Kubernetes sandboxes, the first sandbox that installs a squad's toolchain
+configuration resolves it afresh and Ficus keeps the resulting `devbox.lock` for
+that squad and toolchain fingerprint (`managed_toolchain_lock_pins`). Every later
+sandbox of the squad installs from that lock, so `@latest` and bare package names
+mean the versions the first install resolved, not whatever is newest today. The
+lock is pinned until either of these happens:
+
+1. The configuration changes (packages, setup script, init hooks, readiness
+   checks or integration contributions). The new fingerprint has no pin, so its
+   first install resolves afresh. A fresh resolution always starts without a lock,
+   so it never keeps versions from the previous configuration.
+2. An operator deletes the squad's row for that fingerprint to pick up newer
+   versions without changing the configuration.
+
+Pinning never breaks a sandbox. A pin that cannot be read or fails validation is
+ignored, and the next fresh resolution replaces it. If installing from a pin
+fails, the sandbox removes the lock and resolves afresh, and that result replaces
+the pin. A pinned install that times out fails like any other install timeout.
+The first lock recorded for a fingerprint wins; a later sandbox never moves it.
+
+The lock is read back from the sandbox right after `devbox install`, before the
+setup script runs, and is recorded only after setup, readiness and activation
+succeed. Because an agent can write to its sandbox, Ficus accepts only a lock with
+exactly one entry per declared package (plus Devbox's own nixpkgs entry), every
+source pinned to an exact `github:NixOS/nixpkgs` commit and every output a
+`/nix/store` path. Pins are never shared between squads and are deleted with the
+squad. An agent that controls a sandbox during the first install of a new
+configuration can still influence that squad's pin within those limits.
+
+Measured on a VM box with an empty per-user Nix cache (2026-11-20, Devbox 0.14.0,
+Nix 2.24.9): `bun@latest` and `jq@latest` took 50 seconds and wrote 409 MB of
+Nix download cache for the first install, and 1.5 seconds and 1 MB when installed
+from the pin. Pinning only helps versioned packages (`name@latest`,
+`name@1.2`). Devbox evaluates a bare package such as `bun` from a nixpkgs input
+without a content hash, so Nix downloads that commit's source in every new
+sandbox whether or not it is pinned (80 seconds and about 400 MB in the same
+measurement). Declare packages with a version to avoid that cost. Docker
+sandboxes do not pin.
 
 ## Switching runtimes on an existing install
 

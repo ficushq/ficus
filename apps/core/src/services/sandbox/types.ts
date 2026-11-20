@@ -130,6 +130,19 @@ export interface ManagedToolchainRequest {
   initHooks?: readonly string[]
   readiness?: readonly { id: string; command: string; expectedSubstring: string }[]
   reportStage(status: Extract<SandboxToolchainStatus, 'installing' | 'running_setup'>): Promise<void>
+  /**
+   * Load the squad's validated `devbox.lock` for this fingerprint, if any.
+   * Never rejects. A runtime that supports pinning calls it only before an
+   * install, installs from the pin and falls back to a fresh resolution when
+   * that install fails (see toolchain/lock-pin.ts).
+   */
+  loadPinnedLock?(): Promise<string | undefined>
+  /**
+   * Report the lock a fresh resolution produced, once the whole reconcile has
+   * succeeded. `unrealizable` is set when the pinned lock was tried and its
+   * install failed. Best-effort: the runtime ignores a rejection.
+   */
+  recordResolvedLock?(lockContent: string, outcome: { unrealizable: boolean }): Promise<void>
 }
 
 export type SandboxStopOutcome =
