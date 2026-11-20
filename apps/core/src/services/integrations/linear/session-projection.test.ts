@@ -213,6 +213,13 @@ describe('Linear session projection', () => {
         'question:q3:resolved'
       )?.payload
     ).toEqual({ content: { type: 'thought', body: 'Answered in Ficus: X' } })
+    // No label (free text, or several questions): no summary rather than a placeholder.
+    expect(
+      byKey(
+        snapshot({ questions: [{ id: 'q6', status: 'answered', data, mirrorState: 'open' }] }),
+        'question:q6:resolved'
+      )?.payload
+    ).toEqual({ content: { type: 'thought', body: 'Answered in Ficus.' } })
     expect(
       byKey(
         snapshot({ questions: [{ id: 'q4', status: 'dismissed', data, mirrorState: 'open' }] }),

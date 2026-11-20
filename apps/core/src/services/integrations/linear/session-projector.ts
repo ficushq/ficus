@@ -84,7 +84,9 @@ export function streamPullRequest(metadata: unknown): { url: string; label: stri
 }
 
 function answerLabel(data: QuestionData, answer: string | null): string | undefined {
-  // Only option labels are shown in Linear; free text written in Ficus stays in Ficus.
+  // Only option labels are shown in Linear; free text written in Ficus stays in Ficus. Labels joined
+  // across several questions would read as one answer, so a multi-question answer shows none.
+  if (data.questions.length !== 1) return undefined
   const choices = resolveQuestionAnswers(data, answer)?.flatMap((entry) => entry.choices) ?? []
   const labels = choices.filter((choice) => choice.value !== undefined).map((choice) => choice.label)
   return labels.length && labels.length === choices.length ? labels.join(', ') : undefined
