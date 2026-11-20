@@ -95,8 +95,13 @@ export interface SubscriptionPlanInfo {
 }
 
 /**
- * Well-known subscription plans by provider, with their monthly list prices in USD. Reviewed 2026-10-15;
+ * Well-known subscription plans by provider, with their monthly list prices in USD. Reviewed 2026-11-20;
  * admins can override the price per account in Settings → Spend.
+ *
+ * ChatGPT plan ids are the values of the Codex access token's `chatgpt_plan_type` claim, so a detected
+ * plan is priced without a mapping. ChatGPT Pro has three tiers, which the claim tells apart: `prolite`
+ * is Pro 100, `pro` is Pro 200 (so accounts stored as `pro` before the tiers existed stay at $200) and
+ * `promax` is Pro 500. The names follow OpenAI's Pro tiers help page and the Codex CLI's status labels.
  */
 export const SUBSCRIPTION_PLANS: Record<string, Record<string, SubscriptionPlanInfo>> = {
   anthropic: {
@@ -109,7 +114,9 @@ export const SUBSCRIPTION_PLANS: Record<string, Record<string, SubscriptionPlanI
   'openai-codex': {
     free: { label: 'ChatGPT Free', monthlyUsd: 0 },
     plus: { label: 'ChatGPT Plus', monthlyUsd: 20 },
-    pro: { label: 'ChatGPT Pro', monthlyUsd: 200 },
+    prolite: { label: 'ChatGPT Pro 100', monthlyUsd: 100 },
+    pro: { label: 'ChatGPT Pro 200', monthlyUsd: 200 },
+    promax: { label: 'ChatGPT Pro 500', monthlyUsd: 500 },
     business: { label: 'ChatGPT Business', monthlyUsd: 30 },
     enterprise: { label: 'ChatGPT Enterprise', monthlyUsd: null },
     edu: { label: 'ChatGPT Edu', monthlyUsd: null },

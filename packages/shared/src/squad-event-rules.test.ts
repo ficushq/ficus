@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { squadMetadataSchema } from './schemas'
 import {
   effectiveSquadEventRules,
+  GITHUB_SELF_COMMENT_ACCOUNT_REASON,
+  GITHUB_SELF_COMMENT_APP_REASON,
+  GITHUB_SELF_COMMENT_OTHER_APP_REASON,
+  githubSelfCommentReason,
+  isGitHubSelfComment,
   isLinearSelfComment,
   LINEAR_DEFAULT_RULE_IDS,
   previewSquadEventRules,
@@ -611,5 +616,47 @@ describe('Linear rules', () => {
       passed: true,
       description: 'Delegated or undelegated agent must be the connected account.',
     })
+  })
+})
+
+describe('GitHub self-comment suppression', () => {
+  const github = (output: string, data: Record<string, unknown>): IntegrationOutputFact => ({
+    ...fact,
+    output,
+    data: { repository: 'acme/repo', pullRequest: { number: 1 }, ...data },
+  })
+
+  test('with app attribution, only a comment the account owner typed as themselves is delivered', () => {
+    for (const output of ['issue.comment', 'pull_request.comment']) {
+      const person = github(output, { actor: 'Owner', viaApp: 'none' })
+      expect(githubSelfCommentReason(person, 'owner')).toBeUndefined()
+      expect(isGitHubSelfComment(person, 'owner')).toBe(false)
+      const ficus = github(output, { actor: 'Owner', viaApp: 'ficus' })
+      expect(githubSelfCommentReason(ficus, 'owner')).toBe(GITHUB_SELF_COMMENT_APP_REASON)
+      // An app Ficus does not recognize may still be Ficus (an earlier custom app): keep the echo guard.
+      const other = github(output, { actor: 'Owner', viaApp: 'other' })
+      expect(githubSelfCommentReason(other, 'owner')).toBe(GITHUB_SELF_COMMENT_OTHER_APP_REASON)
+      // Any app comment by another account is not this connection's echo.
+      expect(githubSelfCommentReason(ficus, 'someone-else')).toBeUndefined()
+      expect(githubSelfCommentReason(other, 'someone-else')).toBeUndefined()
+    }
+  })
+
+  test('without app attribution the connected login still decides, for reviews, review comments and old facts', () => {
+    for (const output of ['pull_request.reviewed', 'pull_request.review_comment', 'pull_request.comment']) {
+      const echo = github(output, { actor: 'owner' })
+      expect(githubSelfCommentReason(echo, 'Owner')).toBe(GITHUB_SELF_COMMENT_ACCOUNT_REASON)
+      expect(githubSelfCommentReason(github(output, { actor: 'reviewer' }), 'owner')).toBeUndefined()
+    }
+    expect(githubSelfCommentReason(github('pull_request.updated', { actor: 'owner' }), 'owner')).toBeUndefined()
+    expect(githubSelfCommentReason(github('issue.comment', { actor: 'owner' }), '')).toBeUndefined()
+  })
+
+  test('rule preview does not suppress the account owner commenting as themselves', () => {
+    const metadata = { integrationRules: { github: [rule('comments')] } }
+    const person = github('issue.comment', { actor: 'owner', viaApp: 'none' })
+    expect(previewSquadEventRules(metadata, 'github', person, 'owner').suppression).toBeNull()
+    const ficus = github('issue.comment', { actor: 'owner', viaApp: 'ficus' })
+    expect(previewSquadEventRules(metadata, 'github', ficus, 'owner').suppression).toBe('self-comment')
   })
 })

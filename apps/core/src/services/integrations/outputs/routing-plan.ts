@@ -38,6 +38,8 @@ export interface OutputRoutingPlan {
   relevant: boolean
   routes: OutputRoutingRoute[]
   fingerprint: string
+  /** The integration's notification policy suppresses this event (for example Ficus's own comment). */
+  suppressed?: true
 }
 export function outputSourceMatches(subscription: IntegrationSubscription, event: Event): boolean {
   return (
@@ -103,7 +105,7 @@ export async function planOutputRouting(
   const configuration = options.login === undefined ? connection?.configuration : { login: options.login }
   const login = String((configuration as { login?: string } | undefined)?.login ?? '')
   if (integrationOutputRegistry.adapter(event.integration)?.shouldNotify?.(event.fact, configuration) === false)
-    return result([])
+    return { ...result([]), suppressed: true }
   const rows = await store
     .select({ stream: workStreams, run: workStreamFlowRuns })
     .from(workStreams)

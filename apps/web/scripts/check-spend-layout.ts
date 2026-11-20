@@ -55,7 +55,7 @@ const summary: SpendSummary = {
       accountId: 'work',
       label: 'OpenAI Codex · Work ChatGPT',
       plan: 'pro',
-      planLabel: 'ChatGPT Pro',
+      planLabel: 'ChatGPT Pro 200',
       planSource: 'detected',
       detectedPlan: 'pro',
       monthlyPriceUsd: 200,

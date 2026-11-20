@@ -212,7 +212,7 @@ export function EventRulePreview({
               {preview.suppression
                 ? provider === 'linear'
                   ? 'No matching action: comments authored by the connected account (including Ficus’s own session replies) are suppressed.'
-                  : 'No matching action: comments/reviews authored by the connected account are suppressed.'
+                  : 'No matching action: Ficus’s own comments and reviews as the connected account are suppressed.'
                 : preview.selectedRuleId
                   ? `Selected: ${preview.selectedRuleId} → ${preview.action}`
                   : 'No matching rule: no squad action. Work-stream subscriptions are unaffected.'}

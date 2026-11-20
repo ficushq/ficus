@@ -31,9 +31,21 @@ describe('inference usage registry', () => {
     }
     expect(planLabel('anthropic', 'max-20x')).toBe('Claude Max 20x')
     expect(planLabel('claude-code', 'max-5x')).toBe('Claude Max 5x')
-    expect(planLabel('openai-codex', 'pro')).toBe('ChatGPT Pro')
+    expect(planLabel('openai-codex', 'pro')).toBe('ChatGPT Pro 200')
     expect(planLabel('xai', 'whatever')).toBe('whatever')
     expect(subscriptionPlansFor('xai')).toBeUndefined()
+  })
+
+  test('ChatGPT Pro has three tiers, keyed by the Codex plan claim, and a stored pro stays the $200 tier', () => {
+    const plans = subscriptionPlansFor('openai-codex')!
+    const pro = Object.entries(plans).filter(([, plan]) => plan.label.startsWith('ChatGPT Pro'))
+    expect(pro).toEqual([
+      ['prolite', { label: 'ChatGPT Pro 100', monthlyUsd: 100 }],
+      ['pro', { label: 'ChatGPT Pro 200', monthlyUsd: 200 }],
+      ['promax', { label: 'ChatGPT Pro 500', monthlyUsd: 500 }],
+    ])
+    // Picker order is the table's order: the tiers sit together, cheapest first, after Plus.
+    expect(Object.keys(plans)).toEqual(['free', 'plus', 'prolite', 'pro', 'promax', 'business', 'enterprise', 'edu'])
   })
 
   test('every spend dimension has a filter', () => {

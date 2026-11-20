@@ -12,6 +12,10 @@ import { and, eq, gte, inArray, isNull, lte, ne, desc, sql, or, gt, asc } from '
 import {
   integrationValueAt,
   integrationSubscriptionMatches,
+  githubSelfCommentReason,
+  GITHUB_SELF_COMMENT_APP_REASON,
+  GITHUB_SELF_COMMENT_OTHER_APP_REASON,
+  GITHUB_SELF_COMMENT_ACCOUNT_REASON,
   type IntegrationSubscription,
   type IntegrationOutputFact,
   type EventRuleDecisions,
@@ -56,6 +60,7 @@ import {
   prepareGitHubOutputOutcome,
   githubMatchingEvent,
   lockGitHubOutputAuthority,
+  GITHUB_OUTPUT_SUPPRESSED,
 } from '../github/feedback-routing'
 import { isGitHubAuthorFilterEnabled } from '../github/author-filter'
 import {
@@ -70,11 +75,17 @@ import {
 import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runtime'
 import { readOutputEvent, readOutputCandidate, readOutputInbox } from '../github/feedback-pass-read'
 import { isGitHubOutputRevoked, renewKnownGitHubOutputs } from '../github/feedback-renewal'
+import { setConfiguredGitHubAppClientId } from '../github/ficus-app'
+import { resolveGitHubAppCredentials } from '../authorization/github-app'
+import { getSecretStore } from '../../secrets/store'
 
 import { isInferredCIObservation, outputRecipients } from './routing-audience'
 export { outputRecipients } from './routing-audience'
 
 const log = createLogger('integration-outputs')
+
+// GitHub normalization runs here; it recognizes Ficus's own comments by the instance's configured app too.
+setConfiguredGitHubAppClientId(() => resolveGitHubAppCredentials(getSecretStore())?.clientId)
 
 type Store = typeof db | DbTx
 type Event = typeof integrationOutputEvents.$inferSelect
@@ -90,6 +101,16 @@ export async function isOutputEventAuthorizedForSquad(event: Event, squadId: str
     (await authorized(db, event.integration, event.authority, squadId))
   )
 }
+/** Delivery reason when an integration's notification policy suppresses an event for another reason. */
+const SUPPRESSED_DELIVERY_REASON = 'Event suppressed by integration notification policy'
+/** Reasons of deliveries recorded only to show that a tracked event was received and skipped. */
+const SKIPPED_DELIVERY_REASONS = [
+  GITHUB_SELF_COMMENT_APP_REASON,
+  GITHUB_SELF_COMMENT_OTHER_APP_REASON,
+  GITHUB_SELF_COMMENT_ACCOUNT_REASON,
+  SUPPRESSED_DELIVERY_REASON,
+]
+
 async function shouldNotifyEvent(store: Store, event: Event): Promise<boolean> {
   const adapter = integrationOutputRegistry.adapter(event.integration)
   if (!adapter?.shouldNotify || event.authority.kind !== 'connection') return true
@@ -262,7 +283,7 @@ export async function publishIntegrationOutput(
 ) {
   const source = await recordIntegrationOutput(integration, fact, authority)
   const outcome = await prepareGitHubOutputOutcome(source)
-  if (outcome.kind === 'settle') await settleUnroutableOutput(source.id, outcome.reason)
+  if (outcome.kind === 'settle') await settleUnroutableOutput(source, outcome.reason)
   if (outcome.kind !== 'ready') return source.id
   const event = outcome.event
   let triggerError: unknown
@@ -332,6 +353,7 @@ async function matchOutputEvent(event: Event): Promise<string[]> {
       : undefined
   )
   if (await shouldNotifyEvent(db, event)) await routeOutputEvent(event)
+  else await recordSkippedOutputDeliveries(event)
   // Feedback on the pull request that arrived before it was bound (for example a comment
   // delivered ahead of the opened event) was not routed then; route it to the newly bound stream.
   for (const id of bound) await routeEarlierResourceEvents(event, id)
@@ -477,11 +499,59 @@ async function routeOutputEvent(event: Event, only?: string[]) {
  * is marked matched with its reason, exactly as pre-filter routing marked every event once it had
  * been considered. Otherwise the durable unmatched queue would re-plan it on every pass for ever.
  */
-async function settleUnroutableOutput(eventId: string, reason: string) {
+async function settleUnroutableOutput(source: Event, reason: string) {
+  if (reason === GITHUB_OUTPUT_SUPPRESSED) await recordSkippedOutputDeliveries(source)
   await db
     .update(integrationOutputEvents)
     .set({ matchedAt: new Date(), lastErrorCode: reason })
-    .where(and(eq(integrationOutputEvents.id, eventId), isNull(integrationOutputEvents.matchedAt)))
+    .where(and(eq(integrationOutputEvents.id, source.id), isNull(integrationOutputEvents.matchedAt)))
+}
+
+/**
+ * An event the notification policy suppresses (Ficus's own comment, an echo it cannot tell from one)
+ * is never delivered, but each tracked work stream whose subscription it matches records a skipped
+ * (`superseded`) delivery with a stable reason, so the stream's delivery history shows it arrived.
+ * Only the observing squad's streams, under its live connection authority; nothing is dispatched.
+ */
+async function recordSkippedOutputDeliveries(event: Event) {
+  if (event.authority.kind !== 'connection') return
+  const squadId = event.authority.squadId
+  const matching = await githubMatchingEvent(db, event)
+  const rows = await db
+    .select({ stream: workStreams, run: workStreamFlowRuns })
+    .from(workStreams)
+    .innerJoin(workStreamFlowRuns, eq(workStreamFlowRuns.workStreamId, workStreams.id))
+    .where(
+      and(
+        eq(workStreams.squadId, squadId),
+        inArray(workStreams.status, ['active', 'queued']),
+        lte(workStreamFlowRuns.createdAt, event.createdAt)
+      )
+    )
+  if (!rows.length || !(await authorized(db, event.integration, event.authority, squadId))) return
+  const reason = githubSelfCommentReason(matching.fact, await eventLogin(db, event)) ?? SUPPRESSED_DELIVERY_REASON
+  for (const { stream, run } of rows) {
+    for (const subscription of codeHostingRegistry.subscriptions(run.state.definition, stream.metadata)) {
+      const descriptor = integrationOutputRegistry.descriptor(subscription.source)
+      if (
+        !descriptor ||
+        !sourceMatches(subscription, event) ||
+        !integrationSubscriptionMatches(subscription, matching.fact, stream.metadata, descriptor)
+      )
+        continue
+      await db
+        .insert(integrationOutputDeliveries)
+        .values({
+          eventId: event.id,
+          workStreamId: stream.id,
+          subscriptionId: subscription.id,
+          subscription,
+          status: 'superseded',
+          reason,
+        })
+        .onConflictDoNothing()
+    }
+  }
 }
 
 async function finalizeOutputRouting(event: Event) {
@@ -632,7 +702,7 @@ async function reconcileOutputDeliveryCandidates(
           .update(integrationOutputDeliveries)
           .set({
             status: 'superseded',
-            reason: 'Event suppressed by integration notification policy',
+            reason: SUPPRESSED_DELIVERY_REASON,
             updatedAt: new Date(),
           })
           .where(eq(integrationOutputDeliveries.id, delivery.id))
@@ -666,7 +736,7 @@ async function reconcileOutputDeliveryCandidates(
             : !(await authorized(tx, event.integration, event.authority, stream.squadId))
               ? 'Connection no longer available'
               : !(await shouldNotifyEvent(tx, event))
-                ? 'Event suppressed by integration notification policy'
+                ? SUPPRESSED_DELIVERY_REASON
                 : undefined
       if (!reason && (await hasLaterOutputObservation(tx, delivery, event))) reason = 'Newer event already received'
       if (reason) {
@@ -1185,7 +1255,7 @@ async function reconcileUnmatchedOutputsInPass() {
       if (!source) return
       try {
         const outcome = await prepareGitHubOutputOutcome(source)
-        if (outcome.kind === 'settle') return settleUnroutableOutput(source.id, outcome.reason)
+        if (outcome.kind === 'settle') return settleUnroutableOutput(source, outcome.reason)
         if (outcome.kind !== 'ready') return
         const event = outcome.event
         await applyOutputTriggers(event)
@@ -1219,6 +1289,27 @@ function historyQuery() {
     .from(integrationOutputDeliveries)
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
     .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
+}
+/** What a skipped delivery may show of an unreviewed event: its kind and resource, never its prose. */
+function skippedFactOutline(fact: IntegrationOutputFact): IntegrationOutputFact {
+  const data = fact.data
+  const number = (value: unknown) => (value as { number?: unknown } | undefined)?.number
+  return {
+    output: fact.output,
+    version: fact.version,
+    eventKey: fact.eventKey,
+    resourceKey: fact.resourceKey,
+    occurredAt: fact.occurredAt,
+    data: {
+      repository: data.repository,
+      ...(data.pullRequest ? { pullRequest: { number: number(data.pullRequest) } } : {}),
+      ...(data.issue ? { issue: { number: number(data.issue) } } : {}),
+      action: data.action,
+    },
+    subject: fact.subject,
+    body: '',
+    ...(fact.url ? { url: fact.url } : {}),
+  }
 }
 type HistoryRow = Awaited<ReturnType<typeof historyQuery>>[number]
 type HistoryItem = Omit<HistoryRow, 'eventId' | 'squadId'> & { fact: Event['fact'] }
@@ -1283,6 +1374,16 @@ export async function outputDeliveryHistoryPage(
         if (!reserveGitHubEvent(row.eventId)) return false
         const event = await readOutputCandidate(db, row.eventId)
         if (!event) return false
+        // A skipped delivery was never sent, so it needs no renewed provider proof to be listed. Content the
+        // author filter has not admitted (a raw, unreviewed event) is shown only as its content-free outline.
+        if (row.status === 'superseded' && SKIPPED_DELIVERY_REASONS.includes(row.reason ?? '')) {
+          if (await authorized(db, event.integration, event.authority, row.squadId)) {
+            const visible = (await isGitHubOutputAdmitted(db, event)) && !(await isGitHubOutputRevoked(db, event))
+            const { eventId: _eventId, squadId: _squadId, ...history } = row
+            items.push({ ...history, fact: visible ? event.fact : skippedFactOutline(event.fact) })
+          }
+          return true
+        }
         if (renew) {
           const renewal = await renewKnownGitHubOutputs([row.eventId])
           if (renewal.deferred.length) return false
