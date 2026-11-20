@@ -305,8 +305,12 @@ Every row in `integration_connections` records how its material was obtained in
 material. A plugin's `authorization.kind` alone no longer decides the OAuth
 lifecycle, because a manual plugin can also offer a same-provider managed OAuth
 driver (`ManualCredentialDriver.managed`, used by Slack's "Add to Slack" and
-planned for the Linear agent app). Such a plugin has both kinds of connections
-under one provider key.
+by the Linear agent app). Such a plugin has both kinds of connections
+under one provider key. Its own credential codec must therefore parse both
+shapes (Linear's codec reads an OAuth bundle or a raw API key), and a
+`sandbox.protectedBindings` entry that only one mode's configuration carries
+is marked `optional: true`, so the projector omits it for the other mode
+instead of failing.
 
 - **Writes.** Installing an OAuth grant writes `oauth2`: a new connection from the
   connection authorizer, and `installAuthorizedMaterial` on reconnect. Every

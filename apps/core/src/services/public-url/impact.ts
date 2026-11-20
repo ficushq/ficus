@@ -5,6 +5,7 @@ import {
   normalizeBasePath,
 } from '../../lib/app-base-path'
 import { resolveOAuthCallbackUrl } from '../integrations/authorization/public-url'
+import { isLinearAppReady } from '../integrations/linear/app-readiness'
 
 export interface UrlChange {
   label: string
@@ -79,15 +80,21 @@ function callbackFor(appUrl: string | undefined, basePath: string | undefined): 
   }
 }
 
-/** Mirrors resolveIntegrationOAuthCallbackUrl and the GitHub/Linear webhook URL derivation, for an explicit address. */
+/**
+ * Mirrors resolveIntegrationOAuthCallbackUrl (GitHub and the Linear app carry a
+ * provider suffix; other providers share the bare path) and the GitHub, Linear
+ * organization and Linear app webhook URL derivations, for an explicit address.
+ */
 function providerUrls(appUrl: string | undefined, basePath: string | undefined) {
   const callback = callbackFor(appUrl, basePath)
   const webhook = (provider: string) => callback?.replace(OAUTH_CALLBACK_SUFFIX, `/api/webhooks/${provider}`) ?? null
   return {
     oauthGithub: callback ? `${callback}/github` : null,
+    oauthLinearApp: callback ? `${callback}/linear` : null,
     oauthOther: callback,
     webhookGithub: webhook('github'),
     webhookLinear: webhook('linear'),
+    webhookLinearApp: webhook('linear-app'),
   }
 }
 
@@ -97,6 +104,7 @@ export function computePublicAppUrlChangeImpact(
   basePath: string | undefined = process.env.APP_BASE_PATH,
   apps: AffectedLocalApps = { managed: 0, external: 0 }
 ): PublicAppUrlChangeImpact {
+  const linearApp = isLinearAppReady('local')
   const b = providerUrls(before, basePath)
   const a = providerUrls(after, basePath)
   const beforeBase = basePathOf(before, basePath)
@@ -116,11 +124,14 @@ export function computePublicAppUrlChangeImpact(
     externalAppsAffected: localAppsBaseChanged ? apps.external : 0,
     oauthCallbacks: [
       { label: 'GitHub OAuth callback', before: b.oauthGithub, after: a.oauthGithub },
+      // The Linear app's URLs are listed only once a self-hosted install is possible (app-readiness.ts).
+      ...(linearApp ? [{ label: 'Linear app OAuth callback', before: b.oauthLinearApp, after: a.oauthLinearApp }] : []),
       { label: 'Other integrations OAuth callback', before: b.oauthOther, after: a.oauthOther },
     ],
     webhooks: [
       { label: 'GitHub webhook', before: b.webhookGithub, after: a.webhookGithub },
       { label: 'Linear webhook', before: b.webhookLinear, after: a.webhookLinear },
+      ...(linearApp ? [{ label: 'Linear app webhook', before: b.webhookLinearApp, after: a.webhookLinearApp }] : []),
     ],
   }
 }

@@ -5,12 +5,14 @@ description: Safely use Ficus's authenticated Linear CLI to read, create, update
 
 # Linear CLI
 
-Use Ficus's authenticated `linear` CLI (schpet/linear-cli) to work with the Linear workspace of the connection assigned to the current squad. Each `linear` command, including one started from a script, receives the connection's key for that command only. If the squad's Linear connection is detached or disabled, `linear` fails instead of falling back to any other account.
+Use Ficus's authenticated `linear` CLI (schpet/linear-cli) to work with the Linear workspace of the connection assigned to the current squad. Each `linear` command, including one started from a script, receives the connection's credential for that command only.
+
+The connection is either the **Ficus agent app** or a person's **API key**. With the app, `LINEAR_ORGANIZATION_URL_KEY` names the workspace (the `acme` in `linear.app/acme/...`), and everything you write appears in Linear as the app user, not as a person. Without that variable, the connection is a personal API key and you act as that person. If the squad's Linear connection is detached or disabled, `linear` fails instead of falling back to any other account.
 
 ## Ficus owns authentication
 
 - Never run `linear auth login`, `linear auth logout` or any other `linear auth` command, and never create credential files or `.linear.toml` files that hold an `api_key`.
-- Never print or echo `LINEAR_API_KEY`, dump the environment, or put the key in commands, files, logs or messages.
+- Never print or echo `LINEAR_API_KEY` (a key, or `Bearer <token>` for the app), dump the environment, or put the key in commands, files, logs or messages.
 - Do not pass `--workspace`. The CLI refuses it while Ficus supplies the key, and the connection already selects the workspace.
 - Ficus sets `LINEAR_IGNORE_ENV_FILE=1` and pins the API endpoint, so a repository `.env` is never read. Do not override these variables.
 - A repository `.linear.toml` can still set defaults such as the team. Pass `--team` explicitly when creating issues so a checked-in default does not decide where an issue goes.
@@ -33,7 +35,7 @@ linear team list
 
 ## Writing
 
-Everything you write through the CLI (issues, descriptions, comments) appears in Linear under the connected account, usually a person's own name. Treat it as public text: follow the squad's public voice and do not mention Ficus internals. Pass `--no-input` so the CLI fails instead of waiting for a prompt, and name every target explicitly.
+Everything you write through the CLI (issues, descriptions, comments) appears in Linear under the connected account: the Ficus app user for an app connection, otherwise a person's own name. Treat it as public text: follow the squad's public voice and do not mention Ficus internals. Pass `--no-input` so the CLI fails instead of waiting for a prompt, and name every target explicitly.
 
 ```bash
 linear --no-input issue create --team ENG --title "Fix login timeout" --description-file - -y <<'EOF'
@@ -64,8 +66,8 @@ Never pass `-y` to a destructive command to skip the CLI's own confirmation unle
 
 ### Leave workflow states to Linear
 
-Do not change an issue's workflow state (`--state`, `issue start`, `issue create --start`) unless a person asked you to. Linear's own GitHub integration moves an issue through its states when a branch or pull request references the issue key. Put the key, for example `ENG-123`, in the branch name and in the pull request title or body, and let that integration update the state. Create pull requests with the squad's normal workflow rather than `linear issue pull-request`.
+Do not change an issue's workflow state (`--state`, `issue start`, `issue create --start`) unless a person asked you to. This holds for the Ficus app too, even on issues delegated to it. Linear's own GitHub integration moves an issue through its states when a branch or pull request references the issue key. Put the key, for example `ENG-123`, in the branch name and in the pull request title or body, and let that integration update the state. Create pull requests with the squad's normal workflow rather than `linear issue pull-request`.
 
 ## Assignee and delegate
 
-An issue has one **assignee**: the person accountable for it. It can also have a **delegate**: an agent working on the issue on that person's behalf, while the assignee stays responsible. Assigning an issue to an agent app in Linear sets it as the delegate, not the assignee. Use `--assignee` and `--unassign` for people, and `--delegate` and `--clear-delegate` for agents. Do not reassign or undelegate an issue that someone else owns unless asked.
+An issue has one **assignee**: the person accountable for it. It can also have a **delegate**: an agent working on the issue on that person's behalf, while the assignee stays responsible. Assigning an issue to an agent app in Linear, including the Ficus app, sets it as the delegate, not the assignee; the app can never be an ordinary assignee. Use `--assignee` and `--unassign` for people, and `--delegate` and `--clear-delegate` for agents. Do not reassign or undelegate an issue that someone else owns unless asked.

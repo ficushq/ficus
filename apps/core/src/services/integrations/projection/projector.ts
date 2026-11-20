@@ -31,6 +31,7 @@ export function projectIntegrationAssignments(inputs: readonly IntegrationProjec
     for (const skill of plugin.sandbox.skills) skills.add(skill)
     for (const extension of plugin.sandbox.extensions) extensions.add(extension)
     for (const binding of plugin.sandbox.protectedBindings) {
+      if (binding.optional && !hasConfigurationField(plugin, connection, binding.source.field)) continue
       const sourceIdentity = JSON.stringify(binding.source)
       const existing = bindingSources.get(binding.name)
       if (existing !== undefined) throw new Error('protected_binding_conflict')
@@ -71,6 +72,21 @@ function createBindingResolver(
     const value = configuration[source.field]
     if (typeof value !== 'string') throw new Error('protected_binding_unavailable')
     return value
+  }
+}
+
+/** Whether an optional binding applies: the connection's parsed configuration carries the field as a string. */
+function hasConfigurationField(
+  plugin: IntegrationProjectionInput['plugin'],
+  connection: IntegrationProjectionInput['connection'],
+  field: string
+): boolean {
+  try {
+    const configuration = plugin.connection.parseConfiguration(connection.configuration) as Record<string, unknown>
+    return typeof configuration[field] === 'string'
+  } catch {
+    // An unparsable configuration keeps the binding, whose resolver then fails closed.
+    return true
   }
 }
 

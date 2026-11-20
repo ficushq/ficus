@@ -49,6 +49,8 @@
     "./oauth-providers/github/app": "./src/oauth-providers/github/app.ts",
     "./oauth-providers/github/client": "./src/oauth-providers/github/client.ts",
     "./oauth-providers/github/config": "./src/oauth-providers/github/config.ts",
+    "./oauth-providers/linear/client": "./src/oauth-providers/linear/client.ts",
+    "./oauth-providers/linear/config": "./src/oauth-providers/linear/config.ts",
     "./oauth-providers/fake": "./src/oauth-providers/fake/adapter.ts",
     "./discord-commands": "./src/discord-commands.ts",
     "./integration-relay": "./src/integration-relay/protocol.ts",

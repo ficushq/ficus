@@ -5,11 +5,19 @@ export const MIN_INTEGRATION_CREDENTIAL_LENGTH = 8
 
 export const INTEGRATION_CREDENTIAL_PREFIX = '__integration-credential:'
 
-// Keep existing immutable GitHub app bindings and the Notion settings key at
-// rest. Only matcher labels are namespaced; no credential migration is needed.
+// Keep existing immutable GitHub app bindings and the Notion and Linear
+// settings keys at rest. Only matcher labels are namespaced; no credential
+// migration is needed.
 function isOAuthAppCredentialKey(key: string): boolean {
-  return key === '__integration-oauth-app:notion' || /^__integration-oauth-app:github:client:[a-f0-9-]{36}$/.test(key)
+  return (
+    key === '__integration-oauth-app:notion' ||
+    key === '__integration-oauth-app:linear' ||
+    /^__integration-oauth-app:github:client:[a-f0-9-]{36}$/.test(key)
+  )
 }
+
+/** The secret leaves of a self-hosted OAuth application's settings; the client ID is public. */
+const OAUTH_APP_SECRET_FIELDS = ['clientSecret', 'webhookSecret'] as const
 
 export function isIntegrationCredentialKey(key: string): boolean {
   return key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) || isOAuthAppCredentialKey(key)
@@ -26,15 +34,13 @@ export function integrationCredentialEntries(key: string, raw: string): Entry[] 
   if (isOAuthAppCredentialKey(key)) {
     try {
       const app: unknown = JSON.parse(raw)
-      if (
-        app &&
-        typeof app === 'object' &&
-        'clientSecret' in app &&
-        typeof app.clientSecret === 'string' &&
-        app.clientSecret.length >= MIN_INTEGRATION_CREDENTIAL_LENGTH
-      ) {
-        return [{ key: `${INTEGRATION_CREDENTIAL_PREFIX}${key.slice(2)}.clientSecret`, value: app.clientSecret }]
-      }
+      if (!app || typeof app !== 'object' || Array.isArray(app)) return []
+      return OAUTH_APP_SECRET_FIELDS.flatMap((field) => {
+        const value = (app as Record<string, unknown>)[field]
+        return typeof value === 'string' && value.length >= MIN_INTEGRATION_CREDENTIAL_LENGTH
+          ? [{ key: `${INTEGRATION_CREDENTIAL_PREFIX}${key.slice(2)}.${field}`, value }]
+          : []
+      })
     } catch {
       // Invalid legacy envelopes grant no authority and are never matched whole.
     }

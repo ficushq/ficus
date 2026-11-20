@@ -83,3 +83,44 @@ export function fakeGrant(
     displayName: 'Fake workspace',
   }
 }
+
+/**
+ * A Linear agent app grant as Core installs it: the token pair plus the app
+ * user and workspace that `resolveGrantIdentity` reads. Pass
+ * `configuration: null` to get the raw adapter shape, which carries no identity.
+ */
+export function fakeLinearGrant(
+  overrides: Partial<{
+    accessToken: string
+    refreshToken: string | null
+    expiresAt: string | null
+    organizationId: string
+    organizationName: string
+    organizationUrlKey: string
+    appUserId: string
+    configuration: null
+  }> = {}
+): OAuthProviderGrant {
+  const organizationName = overrides.organizationName ?? 'Fake Linear workspace'
+  return {
+    tokens: {
+      accessToken: overrides.accessToken ?? 'fake-linear-access-token',
+      refreshToken: overrides.refreshToken === undefined ? 'fake-linear-refresh-token' : overrides.refreshToken,
+      expiresAt: overrides.expiresAt === undefined ? '2030-01-01T00:00:00.000Z' : overrides.expiresAt,
+    },
+    configuration:
+      overrides.configuration === null
+        ? null
+        : {
+            version: 2,
+            mode: 'app',
+            organizationId: overrides.organizationId ?? 'fake-linear-organization-id',
+            organizationName,
+            organizationUrlKey: overrides.organizationUrlKey ?? 'fake-linear',
+            appUserId: overrides.appUserId ?? 'fake-linear-app-user-id',
+            appUserName: 'Ficus',
+            scopes: ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'],
+          },
+    displayName: overrides.configuration === null ? 'Linear' : `${organizationName} (Ficus app)`,
+  }
+}

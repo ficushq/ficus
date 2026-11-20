@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { integrationCredentialEntries } from './integration-credential-entries'
+import { integrationCredentialEntries, isIntegrationCredentialKey } from './integration-credential-entries'
 import { ContentSafety } from './content-safety'
 
 test('short legacy integration leaves never mangle prose or refuse ordinary calls', () => {
@@ -56,4 +56,26 @@ test('legacy OAuth app envelopes register only secret leaves using integration c
     ).toEqual([])
     expect(integrationCredentialEntries(key, 'malformed-envelope')).toEqual([])
   }
+})
+
+test('the self-hosted Linear app registers its client secret and webhook signing secret', () => {
+  const key = '__integration-oauth-app:linear'
+  const raw = JSON.stringify({
+    version: 1,
+    clientId: 'public-client-id',
+    clientSecret: 'synthetic-linear-client-secret',
+    webhookSecret: 'synthetic-linear-webhook-secret',
+    capabilitiesAcknowledged: true,
+  })
+  expect(isIntegrationCredentialKey(key)).toBe(true)
+  expect(integrationCredentialEntries(key, raw)).toEqual([
+    {
+      key: '__integration-credential:integration-oauth-app:linear.clientSecret',
+      value: 'synthetic-linear-client-secret',
+    },
+    {
+      key: '__integration-credential:integration-oauth-app:linear.webhookSecret',
+      value: 'synthetic-linear-webhook-secret',
+    },
+  ])
 })

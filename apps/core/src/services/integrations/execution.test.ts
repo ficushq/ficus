@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { setLinearAppReadinessForTest } from './linear/app-readiness'
 import { IntegrationExecutionService, executionVariableNames } from './execution'
 import { linearPlugin } from './linear/plugin'
 import { notionPlugin } from './notion/plugin'
@@ -36,6 +37,11 @@ function fixture(
   const arbitrary = {
     ...linearPlugin,
     key: 'example',
+    // An opaque string credential: Linear's own codec parses a key/OAuth union.
+    connection: {
+      ...linearPlugin.connection,
+      credential: { parse: (value: unknown) => String(value), serialize: String },
+    },
     execution: {
       binaries: ['example'],
       environment: { EXAMPLE_TOKEN: ({ credential }: { credential: string }) => credential },
@@ -218,4 +224,65 @@ test('Notion keeps explicit attached workspaces separate from the default and ne
   })
   attached.delete(alternate.id)
   expect(await service.environment('squad', 'notion', alternate.id)).toBeNull()
+})
+
+describe('Linear app connections', () => {
+  let restoreReadiness: () => void
+  beforeEach(() => {
+    restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: true })
+  })
+  afterEach(() => restoreReadiness())
+
+  const app = {
+    ...row,
+    authorizationKind: 'oauth2' as const,
+    configuration: {
+      version: 2,
+      mode: 'app',
+      organizationId: 'org-1',
+      organizationName: 'Acme',
+      organizationUrlKey: 'acme',
+      appUserId: 'app-user',
+      appUserName: 'Ficus',
+      scopes: ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'],
+    },
+  }
+  const bundle = {
+    version: 1,
+    accessToken: 'synthetic-linear-app-access',
+    refreshToken: 'synthetic-linear-app-refresh',
+    tokenRevision: 1,
+    expiresAt: '2026-10-29T00:00:00.000Z',
+  }
+
+  test('inject the access token as a Bearer Authorization value', async () => {
+    expect(await fixture(app, JSON.stringify(bundle)).service.environment('squad', 'linear')).toEqual({
+      LINEAR_API_KEY: 'Bearer synthetic-linear-app-access',
+      LINEAR_GRAPHQL_ENDPOINT: 'https://api.linear.app/graphql',
+      LINEAR_IGNORE_ENV_FILE: '1',
+    })
+  })
+
+  test('refuse expired tokens and connections fenced to another authority', async () => {
+    expect(
+      await fixture(app, JSON.stringify({ ...bundle, expiresAt: now.toISOString() })).service.environment(
+        'squad',
+        'linear'
+      )
+    ).toBeNull()
+    const { service, reads } = fixture(
+      { ...app, clientAuthority: 'platform_broker' } as AssignedIntegrationConnectionRecord,
+      JSON.stringify(bundle)
+    )
+    expect(await service.environment('squad', 'linear')).toBeNull()
+    expect(reads).toEqual([])
+  })
+
+  test('API-key connections are never fenced or expiry-checked as OAuth', async () => {
+    const { service } = fixture(
+      { ...row, clientAuthority: 'platform_broker' } as AssignedIntegrationConnectionRecord,
+      'lin_api_synthetic'
+    )
+    expect((await service.environment('squad', 'linear'))?.LINEAR_API_KEY).toBe('lin_api_synthetic')
+  })
 })

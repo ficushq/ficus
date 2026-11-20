@@ -18,7 +18,7 @@ const PROVIDER_STATE_KEY = OAUTH_CALLBACK_PROVIDER_STATE_KEY
 export type BrokerCompletionPayload = { localFlowId: string; handle: string }
 export type LocalCallbackPayload = { state: string; code?: string; denied?: true }
 export type PreparedOAuthCallback =
-  | { kind: 'broker'; body: BrokerCompletionPayload; provider?: 'notion' | 'slack' }
+  | { kind: 'broker'; body: BrokerCompletionPayload; provider?: 'linear' | 'notion' | 'slack' }
   | { kind: 'local'; body: LocalCallbackPayload }
   | { kind: 'cancelled' }
   | { kind: 'terminal' }
@@ -45,9 +45,12 @@ function validLocalPayload(value: unknown): value is LocalCallbackPayload {
   return keys === 'code,state' && typeof value.code === 'string' && value.code.length >= 1 && value.code.length <= 4_096
 }
 
-function validProviderHintValue(value: unknown): value is 'notion' | 'slack' {
-  return value === 'notion' || value === 'slack'
+function validProviderHintValue(value: unknown): value is 'linear' | 'notion' | 'slack' {
+  return value === 'linear' || value === 'notion' || value === 'slack'
 }
+
+/** GitHub and Linear self-hosted callbacks name their provider in the path. */
+const PROVIDER_CALLBACK_SUFFIXES = ['github', 'linear'] as const
 
 function validRouterHistoryMetadata(key: string, value: unknown): boolean {
   if (!ROUTER_HISTORY_KEYS.has(key)) return false
@@ -69,7 +72,9 @@ export function prepareOAuthCallbackHistory(): void {
   if (
     !(
       window.location.pathname.endsWith(CALLBACK_PATH_SUFFIX) ||
-      window.location.pathname.endsWith(`${CALLBACK_PATH_SUFFIX}/github`)
+      PROVIDER_CALLBACK_SUFFIXES.some((provider) =>
+        window.location.pathname.endsWith(`${CALLBACK_PATH_SUFFIX}/${provider}`)
+      )
     ) ||
     window.location.search === ''
   )

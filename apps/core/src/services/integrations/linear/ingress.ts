@@ -55,7 +55,7 @@ export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (s
     let access: LinearIssueAccess
     try {
       access = await linearQuery<LinearIssueAccess>(
-        resolved.credential,
+        resolved.authorization,
         'query IssueAccess($id: String!) { viewer { id } issue(id: $id) { id team { id } assignee { id } } }',
         { id: identity.issueId }
       )

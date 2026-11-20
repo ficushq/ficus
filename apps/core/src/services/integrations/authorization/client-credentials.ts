@@ -2,12 +2,26 @@ import { isPlatformManaged } from '../../secrets/managed'
 import type { OAuthAuthority } from './authority'
 import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
 import { configureGitHubApp, resolveGitHubAppCredentials } from './github-app'
+import { isLinearAppReady } from '../linear/app-readiness'
 
 export const SELF_HOSTED_OAUTH_APP_KEY = {
   notion: '__integration-oauth-app:notion',
+  linear: '__integration-oauth-app:linear',
 } as const
 
-const REQUIRED_CAPABILITIES = ['read_content', 'insert_content', 'update_content'] as const
+type SelfHostedOAuthProvider = keyof typeof SELF_HOSTED_OAUTH_APP_KEY
+
+const REQUIRED_CAPABILITIES: Readonly<Record<SelfHostedOAuthProvider, readonly string[]>> = {
+  notion: ['read_content', 'insert_content', 'update_content'],
+  // What the operator's Linear OAuth application needs for the agent app.
+  linear: [
+    'Webhooks: Agent session events, Inbox notifications, Permission changes, Issues, Comments',
+    'Scopes requested at install: read, issues:create, comments:create, app:assignable, app:mentionable',
+  ],
+}
+
+/** Linear's app webhook, the direct (self-hosted) ingress path for the agent app. */
+const LINEAR_APP_WEBHOOK_PATH = '/api/webhooks/linear-app'
 
 interface OAuthAppSecretStore {
   get(key: string): string | undefined
@@ -23,6 +37,8 @@ interface SelfHostedOAuthAppV1 {
   version: 1
   clientId: string
   clientSecret: string
+  /** Linear only: the OAuth application's webhook signing secret. */
+  webhookSecret?: string
   capabilitiesAcknowledged: true
 }
 
@@ -37,6 +53,10 @@ export interface SafeOAuthAppSettings {
   configured: boolean
   clientId: string | null
   callbackUrl: string
+  /** Linear on a self-hosted instance: where the OAuth application's webhook must point. */
+  webhookUrl?: string
+  /** Linear only: false until the agent app can be installed under this authority. */
+  available?: boolean
   requiredCapabilities: readonly string[]
   authorizationMode?: 'device' | 'browser'
 }
@@ -47,10 +67,24 @@ export function resolveOAuthClientCredentials(
   binding?: OAuthClientBinding
 ): ResolvedOAuthClientCredentials | undefined {
   if (providerKey === 'github') return isPlatformManaged() ? undefined : resolveGitHubAppCredentials(store, binding)
-  requireNotion(providerKey)
+  const provider = requireSelfHostedProvider(providerKey)
   if (isPlatformManaged()) return undefined
-  const configured = parseSelfHostedOAuthApp(store.get(SELF_HOSTED_OAUTH_APP_KEY.notion))
+  const configured = parseSelfHostedOAuthApp(provider, store.get(SELF_HOSTED_OAUTH_APP_KEY[provider]))
   return configured ? { clientId: configured.clientId, clientSecret: configured.clientSecret } : undefined
+}
+
+/**
+ * The self-hosted Linear app's client ID and webhook signing secret, for the
+ * direct app webhook. Undefined on hosted instances and until configured.
+ */
+export function resolveLinearAppWebhookSettings(
+  store: Pick<OAuthAppSecretStore, 'get'>
+): { clientId: string; webhookSecret: string } | undefined {
+  if (isPlatformManaged()) return undefined
+  const configured = parseSelfHostedOAuthApp('linear', store.get(SELF_HOSTED_OAUTH_APP_KEY.linear))
+  return configured?.webhookSecret
+    ? { clientId: configured.clientId, webhookSecret: configured.webhookSecret }
+    : undefined
 }
 
 /** Job-gated resolver for historical local revocation only. */
@@ -64,9 +98,9 @@ export async function resolveHistoricalLocalOAuthClientCredentials(
     if (binding.credentialRef) await store.refreshKey(binding.credentialRef)
     return resolveGitHubAppCredentials(store, binding)
   }
-  requireNotion(providerKey)
-  await store.refreshKey(SELF_HOSTED_OAUTH_APP_KEY.notion)
-  const configured = parseSelfHostedOAuthApp(store.get(SELF_HOSTED_OAUTH_APP_KEY.notion))
+  const provider = requireSelfHostedProvider(providerKey)
+  await store.refreshKey(SELF_HOSTED_OAUTH_APP_KEY[provider])
+  const configured = parseSelfHostedOAuthApp(provider, store.get(SELF_HOSTED_OAUTH_APP_KEY[provider]))
   return configured ? { clientId: configured.clientId, clientSecret: configured.clientSecret } : undefined
 }
 
@@ -95,14 +129,15 @@ export function getOAuthAppSettings(
       ],
     }
   }
-  requireNotion(providerKey)
+  const provider = requireSelfHostedProvider(providerKey)
   if (isPlatformManaged()) {
     return {
       authority: 'platform_broker',
       configured: true,
       clientId: null,
       callbackUrl,
-      requiredCapabilities: [...REQUIRED_CAPABILITIES],
+      ...(provider === 'linear' ? { available: isLinearAppReady('platform_broker') } : {}),
+      requiredCapabilities: [...REQUIRED_CAPABILITIES[provider]],
     }
   }
   const credentials = resolveOAuthClientCredentials(providerKey, store)
@@ -111,8 +146,19 @@ export function getOAuthAppSettings(
     configured: credentials !== undefined,
     clientId: credentials?.clientId ?? null,
     callbackUrl,
-    requiredCapabilities: [...REQUIRED_CAPABILITIES],
+    ...(provider === 'linear'
+      ? { webhookUrl: linearAppWebhookUrl(callbackUrl), available: isLinearAppReady('local') }
+      : {}),
+    requiredCapabilities: [...REQUIRED_CAPABILITIES[provider]],
   }
+}
+
+/** Same origin and base path as the OAuth callback, so reverse-proxy prefixes carry over. */
+function linearAppWebhookUrl(callbackUrl: string): string {
+  const url = new URL(callbackUrl)
+  url.pathname =
+    url.pathname.replace(/\/settings\/integrations\/oauth\/callback(?:\/[a-z-]+)?\/?$/, '') + LINEAR_APP_WEBHOOK_PATH
+  return url.toString()
 }
 
 export async function configureOAuthApp(
@@ -127,39 +173,50 @@ export async function configureOAuthApp(
     await configureGitHubApp(input, store, actor)
     return getOAuthAppSettings(providerKey, store, callbackUrl)
   }
-  requireNotion(providerKey)
+  const provider = requireSelfHostedProvider(providerKey)
   if (isPlatformManaged()) throw new Error('OAuth application credentials are platform-managed')
-  const bundle = parseSelfHostedOAuthAppInput(input)
-  await store.set(SELF_HOSTED_OAUTH_APP_KEY.notion, JSON.stringify(bundle), actor)
+  // An operator must not point a Linear webhook at Ficus before it can receive one.
+  if (provider === 'linear' && !isLinearAppReady('local')) throw new Error('Linear agent app is not available yet')
+  const bundle = parseSelfHostedOAuthAppInput(provider, input)
+  await store.set(SELF_HOSTED_OAUTH_APP_KEY[provider], JSON.stringify(bundle), actor)
   return getOAuthAppSettings(providerKey, store, callbackUrl)
 }
 
-function parseSelfHostedOAuthApp(raw: string | undefined): SelfHostedOAuthAppV1 | undefined {
+function parseSelfHostedOAuthApp(
+  provider: SelfHostedOAuthProvider,
+  raw: string | undefined
+): SelfHostedOAuthAppV1 | undefined {
   if (raw === undefined) return undefined
   try {
-    return parseSelfHostedOAuthAppValue(JSON.parse(raw))
+    return parseSelfHostedOAuthAppValue(provider, JSON.parse(raw))
   } catch {
     return undefined
   }
 }
 
-function parseSelfHostedOAuthAppInput(value: unknown): SelfHostedOAuthAppV1 {
-  if (!isRecord(value)) throw invalidSettings()
-  const keys = Object.keys(value).sort()
-  if (keys.join() !== ['capabilitiesAcknowledged', 'clientId', 'clientSecret'].join()) throw invalidSettings()
-  return parseSelfHostedOAuthAppValue({ version: 1, ...value })
+/** Notion stores a client ID and secret; Linear also stores the app's webhook signing secret. */
+function appKeys(provider: SelfHostedOAuthProvider): string[] {
+  return ['capabilitiesAcknowledged', 'clientId', 'clientSecret', ...(provider === 'linear' ? ['webhookSecret'] : [])]
 }
 
-function parseSelfHostedOAuthAppValue(value: unknown): SelfHostedOAuthAppV1 {
+function parseSelfHostedOAuthAppInput(provider: SelfHostedOAuthProvider, value: unknown): SelfHostedOAuthAppV1 {
   if (!isRecord(value)) throw invalidSettings()
   const keys = Object.keys(value).sort()
-  if (keys.join() !== ['capabilitiesAcknowledged', 'clientId', 'clientSecret', 'version'].join()) {
+  if (keys.join() !== appKeys(provider).join()) throw invalidSettings()
+  return parseSelfHostedOAuthAppValue(provider, { version: 1, ...value })
+}
+
+function parseSelfHostedOAuthAppValue(provider: SelfHostedOAuthProvider, value: unknown): SelfHostedOAuthAppV1 {
+  if (!isRecord(value)) throw invalidSettings()
+  const keys = Object.keys(value).sort()
+  if (keys.join() !== [...appKeys(provider), 'version'].sort().join()) {
     throw invalidSettings()
   }
   if (
     value.version !== 1 ||
     !isClientId(value.clientId) ||
     !isClientSecret(value.clientSecret) ||
+    (provider === 'linear' && !isClientSecret(value.webhookSecret)) ||
     value.capabilitiesAcknowledged !== true
   ) {
     throw invalidSettings()
@@ -168,6 +225,7 @@ function parseSelfHostedOAuthAppValue(value: unknown): SelfHostedOAuthAppV1 {
     version: 1,
     clientId: value.clientId.trim(),
     clientSecret: value.clientSecret,
+    ...(provider === 'linear' ? { webhookSecret: value.webhookSecret as string } : {}),
     capabilitiesAcknowledged: true,
   }
 }
@@ -186,8 +244,9 @@ function isClientSecret(value: unknown): value is string {
   return typeof value === 'string' && value.length >= 1 && value.length <= 16_384
 }
 
-function requireNotion(providerKey: string): void {
-  if (providerKey !== 'notion') throw new Error('Unsupported OAuth application provider')
+function requireSelfHostedProvider(providerKey: string): SelfHostedOAuthProvider {
+  if (providerKey !== 'notion' && providerKey !== 'linear') throw new Error('Unsupported OAuth application provider')
+  return providerKey
 }
 
 function invalidSettings(): Error {

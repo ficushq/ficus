@@ -199,7 +199,7 @@ describe('per-connection OAuth view', () => {
   test('the refresh sweep covers OAuth2 plugins and managed drivers that opt into refresh', () => {
     expect(
       refreshableOAuthProviderKeys([dualPlugin, githubPlugin, notionPlugin, linearPlugin, slackPlugin]).sort()
-    ).toEqual(['fake-dual', 'github', 'notion'])
+    ).toEqual(['fake-dual', 'github', 'linear', 'notion'])
   })
 })
 

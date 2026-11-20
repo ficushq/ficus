@@ -44,7 +44,9 @@ interface LinearSearchResponse {
 
 export class LinearLiveSource implements LiveMemorySourceAdapter {
   constructor(
-    private readonly resolveCredential = async (squadId: string) => (await resolveLinearConnection(squadId))?.credential
+    /** The Authorization header value for the squad's Linear connection (an API key or `Bearer <token>`). */
+    private readonly resolveAuthorization = async (squadId: string) =>
+      (await resolveLinearConnection(squadId))?.authorization
   ) {}
 
   private static _instance: LinearLiveSource | null = null
@@ -65,14 +67,14 @@ export class LinearLiveSource implements LiveMemorySourceAdapter {
   }
 
   async search(query: string, opts: LiveSearchScope): Promise<LiveSearchResult[]> {
-    const token = await this.resolveCredential(opts.callerSquadId)
-    if (!token) return []
+    const authorization = await this.resolveAuthorization(opts.callerSquadId)
+    if (!authorization) return []
 
     const response = await fetch(ENDPOINT, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: token,
+        authorization,
       },
       body: JSON.stringify({
         query: SEARCH_QUERY,

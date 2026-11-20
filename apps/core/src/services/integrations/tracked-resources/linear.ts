@@ -69,7 +69,7 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
     let issue: Record<string, unknown> | null | undefined
     try {
       // Provider failures are identity answers here, not diagnostics: never leak provider text.
-      ;({ issue } = await linearQuery<{ issue?: Record<string, unknown> | null }>(resolved.credential, ISSUE_QUERY, {
+      ;({ issue } = await linearQuery<{ issue?: Record<string, unknown> | null }>(resolved.authorization, ISSUE_QUERY, {
         id,
       }))
     } catch {
