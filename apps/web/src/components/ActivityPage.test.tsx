@@ -742,17 +742,20 @@ describe('ActivityPage Active work strip and Show everything', () => {
         )
       })
       const document = dom.window.document
-      // Every card is from one squad: "+N more" would open that squad's Work tab (none needed here).
-      const cardButton = document.querySelector<HTMLButtonElement>('button[data-work-stream-card="12"]')!
-      expect(cardButton.textContent).toContain('#12 Cross-squad work')
+      // Every card is from one squad. The pill opens the stream list; choosing one filters the feed.
+      const trigger = document.querySelector<HTMLButtonElement>('[data-testid="activity-work-trigger"]')!
+      await dom.act(async () => trigger.click())
+      const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+        (candidate) => candidate.getAttribute('aria-label') === '#12 Cross-squad work'
+      )!
       await dom.act(async () => {
-        cardButton.click()
+        option.click()
         await Bun.sleep(0)
       })
       await dom.act(async () => {
         await waitFor(() => expect(requested.some((url) => url.includes(`workStreamId=${streamId}`))).toBe(true))
       })
-      expect(cardButton.getAttribute('aria-pressed')).toBe('true')
+      expect(trigger.getAttribute('aria-label')).toContain('showing #12')
 
       await dom.act(async () => {
         document.querySelector<HTMLButtonElement>('[data-testid="activity-show-everything"]')!.click()
@@ -766,9 +769,11 @@ describe('ActivityPage Active work strip and Show everything', () => {
         )
       })
 
-      // Clicking the selected card again drops the filter but keeps Show everything.
+      // Clear in the details panel drops the filter but keeps Show everything.
       await dom.act(async () => {
-        cardButton.click()
+        ;[...document.querySelectorAll<HTMLButtonElement>('button')]
+          .find((button) => button.textContent === 'Clear')!
+          .click()
         await Bun.sleep(0)
       })
       await dom.act(async () => {

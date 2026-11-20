@@ -409,9 +409,8 @@ test('sender rows hide only while a matching received row is shown, and Show eve
   }
 })
 
-test('the Active work list shows one row per stream, counts what the rows show, caps at five and filters on click', async () => {
+test('the Active work pill opens a searchable, arrow-navigable list of streams that filters the feed', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
-  dom.window.localStorage.removeItem('ficus.activityWork.expanded')
   const cards = [
     card({
       waits: [{ type: 'review', needsYou: true }],
@@ -420,6 +419,7 @@ test('the Active work list shows one row per stream, counts what the rows show, 
       ci: 'failing',
       deliveryLabel: 'CI failed',
       workingAgentIds: ['engineer', 'reviewer'],
+      summary: 'Waiting for review of the floating window drag handles',
     }),
     card({ id: 'working', number: 1395, title: 'Spend tiers', step: 'implement', workingAgentIds: ['engineer-2'] }),
     card({ id: 'paused', number: 1392, title: 'Linear verification', step: 'Verify', derivedState: 'paused' }),
@@ -430,13 +430,12 @@ test('the Active work list shows one row per stream, counts what the rows show, 
       step: 'Verify',
       waits: [{ type: 'dependency', needsYou: false }],
     }),
-    ...Array.from({ length: 4 }, (_, index) =>
-      card({ id: `stream-${index}`, number: 2000 + index, title: `Other ${index}`, step: null, status: 'queued' })
-    ),
+    card({ id: 'queued', number: 2000, title: 'Queued work', step: null, status: 'queued' }),
   ]
   let filter: string | null = null
   try {
     const view = dom.createRoot()
+    const doc = dom.window.document
     const render = () =>
       dom.act(() =>
         view.root.render(
@@ -445,8 +444,7 @@ test('the Active work list shows one row per stream, counts what the rows show, 
               {...feedProps}
               items={[]}
               onOpen={() => {}}
-              workingAgentIds={new Set(['engineer', 'reviewer', 'engineer-2', 'manager'])}
-              presence={{ workingCount: 4, needsYouCount: 1, streamCount: 9, streams: cards }}
+              presence={{ workingCount: 3, needsYouCount: 1, streamCount: 9, streams: cards }}
               workStreamFilter={filter}
               onWorkStreamFilterChange={(next) => {
                 filter = next
@@ -457,111 +455,79 @@ test('the Active work list shows one row per stream, counts what the rows show, 
         )
       )
     await render()
-    const list = view.container.querySelector('[data-testid="activity-work-list"]')!
-    // The header counts the rows by state; agents outside every listed stream are counted apart.
-    const counts = list.querySelector('[data-testid="activity-presence"]')!.textContent
-    expect(counts).toContain('1 waiting on you')
-    expect(counts).toContain('1 working')
-    expect(counts).toContain('1 waiting')
-    expect(counts).toContain('1 paused')
-    expect(counts).toContain('4 queued')
-    expect(counts).toContain('1 other agent working')
-    expect(counts).not.toContain('active streams')
+    // Hidden by default: only the presence line with its counts and the pill.
+    const presence = view.container.querySelector('[data-testid="activity-presence"]')!
+    expect(presence.textContent).toContain('3 working')
+    expect(presence.textContent).toContain('1 waiting on you')
+    expect(doc.querySelector('[role="option"]')).toBeNull()
+    const trigger = view.container.querySelector<HTMLButtonElement>('[data-testid="activity-work-trigger"]')!
+    expect(trigger.textContent).toBe('Active work9')
+    expect(trigger.getAttribute('aria-label')).toBe('Active work, 9 streams')
 
-    const rows = () => [...list.querySelectorAll<HTMLButtonElement>('button[data-work-stream-card]')]
-    expect(rows()).toHaveLength(5)
-    const first = rows()[0]
-    expect(first.textContent).toContain('#1352 Floating agent windows')
-    expect(first.textContent).toContain('Waiting on you: review · Implement')
-    expect(first.textContent).toContain('PR #996 · CI failing')
-    expect(first.textContent).not.toContain('CI failed')
-    expect(first.querySelector('time')?.getAttribute('dateTime')).toBe(cards[0].lastEventAt)
-    // One state each, marked differently: working, paused and waiting never look alike.
-    expect(rows().map((row) => row.getAttribute('data-activity-work-state'))).toEqual([
-      'needs-you',
-      'working',
-      'paused',
-      'waiting',
-      'queued',
+    await dom.act(async () => trigger.click())
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const search = doc.querySelector<HTMLInputElement>('input[aria-label="Search active work"]')!
+    expect(doc.activeElement).toBe(search)
+    const options = () => [...doc.querySelectorAll<HTMLButtonElement>('[role="listbox"] [role="option"]')]
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual([
+      'All activity',
+      '#1352 Floating agent windows',
+      '#1395 Spend tiers',
+      '#1392 Linear verification',
+      '#1391 Dependency',
+      '#2000 Queued work',
+      'All 9 active streams',
     ])
-    // Step labels are normalized ("implement" reads "Implement"); a paused row does not repeat itself.
-    expect(rows()[1].textContent).toContain('Working · Implement')
-    expect(rows()[2].textContent).toContain('Paused · Verify')
-    expect(rows()[3].textContent).toContain('Waiting: dependency · Verify')
-    expect(rows()[4].textContent).toContain('Queued')
+    // Title, state and step (normalized), PR and CI, and the summary; one marker per state.
+    expect(options()[1].textContent).toContain('Waiting on you: review · Implement · PR #996 · CI failing')
+    expect(options()[1].textContent).toContain('Waiting for review of the floating window drag handles')
+    expect(options()[2].textContent).toContain('Working · Implement')
+    expect(options()[3].textContent).toContain('Paused · Verify')
+    expect(options()[4].textContent).toContain('Waiting: dependency · Verify')
+    expect(
+      options()
+        .slice(1, 6)
+        .map((option) => option.querySelector('[data-activity-work-state]')?.getAttribute('data-activity-work-state'))
+    ).toEqual(['needs-you', 'working', 'paused', 'waiting', 'queued'])
+    expect(options()[0].getAttribute('aria-selected')).toBe('true')
 
-    // "Show 3 more" expands in place and is remembered; streams past the server's cards link to the list.
-    const more = [...list.querySelectorAll('button')].find((button) => button.textContent === 'Show 3 more')!
-    expect(more.getAttribute('aria-expanded')).toBe('false')
-    expect(list.querySelector<HTMLAnchorElement>('a[href="/squads/team/work"]')?.textContent).toBe(
-      'All 9 active streams'
-    )
-    await dom.act(() => more.click())
-    expect(rows()).toHaveLength(8)
-    expect(dom.window.localStorage.getItem('ficus.activityWork.expanded')).toBe('true')
-    const fewer = [...list.querySelectorAll('button')].find((button) => button.textContent === 'Show fewer')!
-    expect(fewer.getAttribute('aria-expanded')).toBe('true')
-    await dom.act(() => fewer.click())
-    expect(rows()).toHaveLength(5)
-    expect(dom.window.localStorage.getItem('ficus.activityWork.expanded')).toBeNull()
+    // Typing filters by title, number or summary; ArrowDown moves into the list.
+    const type = (value: string) =>
+      dom.act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
+        setter.call(search, value)
+        search.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+    await type('drag handles')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1352 Floating agent windows'])
+    await type('1392')
+    expect(options().map((option) => option.getAttribute('aria-label'))).toEqual(['#1392 Linear verification'])
+    await type('')
+    await dom.act(async () => {
+      search.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    expect(doc.activeElement?.getAttribute('role')).toBe('option')
 
-    await dom.act(() => first.click())
-    expect(filter).toBe(streamContext.id)
+    // Choosing a stream filters the feed and closes the list.
+    await dom.act(async () => options()[3].click())
+    expect(filter).toBe('paused')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
     await render()
-    const selected = view.container.querySelector<HTMLButtonElement>('button[data-work-stream-card="1352"]')!
-    expect(selected.getAttribute('aria-pressed')).toBe('true')
-    // Clicking the selected row again clears the filter; so does Clear in the details panel.
-    await dom.act(() => selected.click())
+    expect(trigger.getAttribute('aria-label')).toBe('Active work, 9 streams, showing #1392')
+    // "All activity" clears it; Clear in the details panel does too.
+    await dom.act(async () => trigger.click())
+    expect(
+      options()
+        .find((option) => option.getAttribute('aria-selected') === 'true')
+        ?.getAttribute('aria-label')
+    ).toBe('#1392 Linear verification')
+    await dom.act(async () => options()[0].click())
     expect(filter).toBeNull()
-    filter = 'stream-3'
+    filter = 'queued'
     await render()
-    // A selected row beyond the cap stays visible.
-    expect(view.container.querySelector('button[data-work-stream-card="2003"]')?.getAttribute('aria-pressed')).toBe(
-      'true'
-    )
     const clear = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Clear')!
-    await dom.act(() => clear.click())
+    await dom.act(async () => clear.click())
     expect(filter).toBeNull()
-    await dom.act(() => view.root.unmount())
-  } finally {
-    await dom.cleanup()
-  }
-})
-
-test('Summaries shows each row a full-width summary line, never an empty gap, and is remembered', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
-  dom.window.localStorage.removeItem('ficus.wsSummaries.activity')
-  const cards = [
-    card({ summary: 'Writing tests for holding human PR comments', summaryGeneratedAt: new Date().toISOString() }),
-    card({ id: 'no-summary', number: 7, title: 'Quiet stream' }),
-  ]
-  try {
-    const view = dom.createRoot()
-    await dom.act(() =>
-      view.root.render(
-        <MemoryRouter>
-          <ActivityFeedView
-            {...feedProps}
-            items={[]}
-            onOpen={() => {}}
-            presence={{ workingCount: 0, needsYouCount: 0, streamCount: 2, streams: cards }}
-            onWorkStreamFilterChange={() => {}}
-          />
-        </MemoryRouter>
-      )
-    )
-    const toggle = view.container.querySelector<HTMLButtonElement>('[data-testid="show-summaries-activity"]')!
-    expect(toggle.textContent).toBe('Summaries')
-    expect(toggle.getAttribute('aria-label')).toBe('Show work stream summaries')
-    expect(toggle.getAttribute('aria-checked')).toBe('true')
-    const lines = () => [...view.container.querySelectorAll('[data-testid="activity-work-summary"]')]
-    expect(lines().map((line) => line.textContent)).toEqual(['Writing tests for holding human PR comments'])
-    const quiet = view.container.querySelector('button[data-work-stream-card="7"]')!
-    expect(quiet.children).toHaveLength(2) // the title line and the narrow-width state line, no summary slot
-    await dom.act(() => toggle.click())
-    expect(lines()).toHaveLength(0)
-    expect(dom.window.localStorage.getItem('ficus.wsSummaries.activity')).toBe('false')
-    await dom.act(() => toggle.click())
     await dom.act(() => view.root.unmount())
   } finally {
     await dom.cleanup()
@@ -673,7 +639,7 @@ test('without server cards the strip keeps the plain stream count', async () => 
       )
     )
     expect(view.container.textContent).toContain('3 active streams')
-    expect(view.container.querySelector('[data-testid="activity-work-list"]')).toBeNull()
+    expect(view.container.querySelector('[data-testid="activity-work-trigger"]')).toBeNull()
     await dom.act(() => view.root.unmount())
   } finally {
     await dom.cleanup()

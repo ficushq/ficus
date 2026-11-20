@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { activityWorkStreamCardState, type ActivityWorkStreamCard } from '@ficus/shared'
 import { formatSummaryAge, GENERATED_SUMMARY_TITLE } from '../WorkStreamSummary'
-import { ActivityWorkStateMarker } from './ActivityWorkList'
+import { ActivityWorkStateMarker } from './ActivityWorkPicker'
 import { activityExternalHref, activityWorkStateLine, formatActivityTimestamp } from './squadActivityView'
 
 /** The element the Active work rows control (`aria-controls`). */

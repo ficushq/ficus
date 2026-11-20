@@ -157,7 +157,7 @@ for (const item of [...streams, done]) {
 }
 localStorage.clear()
 if (params.has('nosummaries'))
-  for (const surface of ['feed', 'home', 'work', 'activity'] as const)
+  for (const surface of ['feed', 'home', 'work'] as const)
     localStorage.setItem(workStreamSummariesStorageKey(surface), 'false')
 if (view === 'board') localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
 

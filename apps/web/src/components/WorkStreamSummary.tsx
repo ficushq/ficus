@@ -40,7 +40,7 @@ export const GENERATED_SUMMARY_TITLE = "Generated summary of the participants' r
 export const WORK_STREAM_PEEK_OPEN_DELAY_MS = 500
 
 /** The lists that remember their own "Summaries" choice. */
-export type WorkStreamSummarySurface = 'feed' | 'home' | 'work' | 'activity'
+export type WorkStreamSummarySurface = 'feed' | 'home' | 'work'
 
 export function workStreamSummariesStorageKey(surface: WorkStreamSummarySurface): string {
   return `${WORK_STREAM_SUMMARIES_STORAGE_PREFIX}${surface}`
@@ -104,7 +104,7 @@ export function useShowWorkStreamSummaries(
 
 /**
  * The "Summaries" control every work list shows. `compact` (the default) is a small switch the height
- * of the List / Kanban / Graph control, for the Active section header (Activity, Home, Work); `row` is
+ * of the List / Kanban / Graph control, for the Active section header (Home, Work); `row` is
  * a full-width row with a short hint, for the Feed's Filters panel. Both are labelled "Summaries" with
  * an accessible name that says what they toggle.
  */

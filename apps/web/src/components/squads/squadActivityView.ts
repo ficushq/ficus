@@ -4,7 +4,6 @@ import {
   activityStepLabel,
   activityWorkStreamCardState,
   type ActivityWorkStreamCard,
-  type ActivityWorkStreamCardState,
   type SquadActivityItem,
   type SquadActivityKind,
   type WorkStreamWaitType,
@@ -132,29 +131,7 @@ export function activityExternalHref(value: string): string | undefined {
   }
 }
 
-/* Active work list labels (ActivityWorkList.tsx). */
-
-/** Rows shown before "Show N more" (owner decision 2026-11-20: a compact list, about five rows). */
-export const ACTIVE_WORK_VISIBLE_ROWS = 5
-
-/** Header order of the row states: what needs a person first, then what moves, then what does not. */
-export const ACTIVE_WORK_STATE_ORDER: readonly ActivityWorkStreamCardState[] = [
-  'needs-you',
-  'working',
-  'waiting',
-  'paused',
-  'queued',
-  'idle',
-]
-
-/** How many rows are in each state: the header counts exactly what the rows show. */
-export function activityWorkCounts(
-  cards: readonly ActivityWorkStreamCard[]
-): Record<ActivityWorkStreamCardState, number> {
-  const counts = { 'needs-you': 0, working: 0, waiting: 0, paused: 0, queued: 0, idle: 0 }
-  for (const card of cards) counts[activityWorkStreamCardState(card)] += 1
-  return counts
-}
+/* Active work labels (ActivityWorkPicker.tsx, ActivityWorkStreamDetails.tsx). */
 
 /**
  * A row's state line: the state ("Working", "Paused", "Waiting on you: review", "Waiting: dependency")

@@ -6,12 +6,15 @@ export function PopoverRowContent({
   icon,
   label,
   description,
+  detail,
   descriptionId,
   checked,
 }: {
   icon?: ReactNode
   label: string
   description?: string
+  /** A quieter second line under the description, part of the same accessible description. */
+  detail?: string
   descriptionId?: string
   checked?: boolean
 }) {
@@ -20,9 +23,10 @@ export function PopoverRowContent({
       {icon}
       <span className="min-w-0 flex-1 wrap-break-word">
         <span>{label}</span>
-        {description && (
+        {(description || detail) && (
           <span id={descriptionId} className="mt-1 block text-xs font-normal text-secondary">
             {description}
+            {detail && <span className="mt-0.5 block text-muted">{detail}</span>}
           </span>
         )}
       </span>

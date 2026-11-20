@@ -1,5 +1,5 @@
 import { ActivityRowText } from './ActivityRowText'
-import { ActivityWorkList } from './ActivityWorkList'
+import { ActivityWorkPicker } from './ActivityWorkPicker'
 import { ActivityWorkStreamDetails } from './ActivityWorkStreamDetails'
 import { agentChatTarget } from '../../lib/agentChatLinks'
 import clsx from 'clsx'
@@ -40,7 +40,7 @@ export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivi
   /** The Active work card filter: only this stream's rows. */
   workStreamFilter?: string | null
   onWorkStreamFilterChange?: (workStreamId: string | null) => void
-  /** "All N active streams" destination: the full work list. */
+  /** The work picker's "All N active streams" destination: the full work list. */
   workListHref?: string
   /** A participant's display name for the selected stream's details ("Engineer"), when the caller has a roster. */
   agentLabelFor?: (agentId: string) => string | undefined
@@ -131,7 +131,6 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
     activityGridClass(showSquadColumn)
   )
   const streamCards = presence?.streams
-  const hasStreamCards = !!streamCards && streamCards.length > 0
   const filteredCard = workStreamFilter ? streamCards?.find((card) => card.id === workStreamFilter) : undefined
   const openStreamOf = (item: T, stream: { id: string; number: number }) =>
     ({ ...item, ref: { type: 'workstream', workStreamId: stream.id, workStreamNumber: stream.number } }) as T
@@ -302,11 +301,12 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
       </div>
 
       {/* Presence strip: background work at a glance even while no rows
-          stream in. With Active work rows (newer servers, at least one active
-          stream) the list's own header carries the counts instead. Counts only:
-          per-agent chips were considered and rejected (can be many); the row
+          stream in. Activity is the agent stream, not a work tracker (owner
+          decision 2026-11-20): the active streams stay out of the way behind
+          the "Active work" pill, a searchable list that filters the feed.
+          Per-agent chips were considered and rejected (can be many); the row
           dots below carry per-agent live state (operator decisions 2026-08-27). */}
-      {presence && !hasStreamCards && (
+      {presence && (
         <div
           className="mb-2 flex shrink-0 items-center gap-2 flex-wrap px-3 py-2 text-xs text-secondary"
           data-testid="activity-presence"
@@ -327,28 +327,23 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
           >
             {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.needsYouCount} waiting on you
           </span>
-          {/* Older servers send no cards: keep the plain count there. */}
-          {!streamCards && (
-            <>
-              <span aria-hidden>·</span>
-              <span>
-                {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.streamCount} active{' '}
-                {presence.streamCount === 1 ? 'stream' : 'streams'}
-              </span>
-            </>
+          <span aria-hidden>·</span>
+          {/* Older servers send no cards, and with no active streams there is nothing to pick: a plain count. */}
+          {streamCards && streamCards.length > 0 && onWorkStreamFilterChange ? (
+            <ActivityWorkPicker
+              cards={streamCards}
+              total={Math.max(presence.streamCount, streamCards.length)}
+              selectedId={workStreamFilter}
+              onSelect={onWorkStreamFilterChange}
+              moreHref={workListHref}
+            />
+          ) : (
+            <span>
+              {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.streamCount} active{' '}
+              {presence.streamCount === 1 ? 'stream' : 'streams'}
+            </span>
           )}
         </div>
-      )}
-      {presence && streamCards && streamCards.length > 0 && onWorkStreamFilterChange && (
-        <ActivityWorkList
-          cards={streamCards}
-          total={Math.max(presence.streamCount, streamCards.length)}
-          selectedId={workStreamFilter}
-          onSelect={onWorkStreamFilterChange}
-          moreHref={workListHref}
-          workingAgentIds={workingAgentIds}
-          countsLoading={presenceLoading}
-        />
       )}
       {details && onWorkStreamFilterChange && (
         <ActivityWorkStreamDetails {...details} onClear={() => onWorkStreamFilterChange(null)} />

@@ -1,13 +1,12 @@
 // Synthetic data only: every query is seeded or disabled, so this fixture never contacts a backend.
-// The Activity feed body with its Active work list: ?select=1352 filters to that stream (details
-// panel), &nosummaries turns "Summaries" off, &expanded shows every row, &dark for the dark appearance.
+// The Activity feed body with its Active work pill: ?select=1394 filters to that stream (details
+// panel), &dark for the dark appearance.
 import { createRoot } from 'react-dom/client'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ActivityWorkStreamCard, SquadActivityItem, SquadActivityKind } from '@ficus/shared'
 import { ActivityFeedView } from '../../src/components/squads/ActivityFeedView'
-import { workStreamSummariesStorageKey } from '../../src/components/WorkStreamSummary'
 import '../../src/index.css'
 import { applyResolvedTheme } from '../../src/theme/apply'
 import { FICUS_THEME } from '../../src/theme/registry'
@@ -142,11 +141,6 @@ cache.setQueryData(['agents', 'message', 'eng-1', 'm-1'], {
   content: `${clipped}laim and running the **focused** test file again before pushing.`,
   createdAt: items[0].at,
 })
-
-// The expanded choice is left alone so a reload shows it remembered; the summaries choice follows the URL.
-if (params.has('nosummaries')) localStorage.setItem(workStreamSummariesStorageKey('activity'), 'false')
-else localStorage.removeItem(workStreamSummariesStorageKey('activity'))
-if (params.has('expanded')) localStorage.setItem('ficus.activityWork.expanded', 'true')
 
 function App() {
   const [kinds, setKinds] = useState<SquadActivityKind[]>([])

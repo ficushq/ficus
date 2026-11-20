@@ -1,11 +1,11 @@
 /**
- * Focused, DB-free Chromium check of Activity's Active work list with the real components and
- * stylesheet and made-up streams: compact full-width rows that fit one line each on desktop, five
- * shown with a remembered "Show N more", "Summaries" lines, the selected stream's details panel with
- * the full title and summary, filtered rows without the repeated stream line, and a clipped row
- * expanding in place. Desktop and narrow widths.
+ * Focused, DB-free Chromium check of Activity's Active work pill with the real components and
+ * stylesheet and made-up streams: the streams stay hidden behind an "Active work" pill in the presence
+ * line; it opens a searchable list (title, state and step, summary) that the arrow keys move through;
+ * choosing a stream filters the feed and opens its details panel with the full title and summary;
+ * filtered rows drop the repeated stream line; and a clipped row expands in place. Desktop and narrow.
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-activity-work.ts
- * Optional SCREENSHOT_DIR saves screenshots (list, details panel, expanded row; desktop and narrow).
+ * Optional SCREENSHOT_DIR saves screenshots (feed, open list, details panel, expanded row).
  * Uses Core's declared playwright-core dependency, without loading any Core test setup.
  */
 import assert from 'node:assert/strict'
@@ -45,7 +45,8 @@ try {
   const shot = async (name: string) => {
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `${name}.png`) })
   }
-  const rows = page.locator('[data-testid="activity-work-list"] button[data-work-stream-card]')
+  const trigger = page.locator('[data-testid="activity-work-trigger"]')
+  const options = page.locator('[role="listbox"] [role="option"]')
 
   for (const [width, label] of [
     [1280, 'desktop'],
@@ -54,29 +55,35 @@ try {
     for (const appearance of ['dark', 'light'] as const) {
       const theme = appearance === 'dark' ? '&dark' : ''
       await page.setViewportSize({ width, height: 900 })
-      await page.goto(`${base}?view=list${theme}`)
-      await rows.first().waitFor()
-      assert.equal(await rows.count(), 5, `${label}: five rows before "Show N more"`)
-      const summaries = page.locator('[data-testid="activity-work-summary"]')
-      assert.equal(await summaries.count(), 4, `${label}: a summary line for each visible row that has one`)
-      if (label === 'desktop') {
-        // One line per row (plus the summary line): the title gets the full width, not a third of it.
-        const box = await rows.nth(4).boundingBox()
-        assert.ok(box && box.height < 40, `desktop: a row without a summary is not one line (${box?.height})`)
-        const title = rows.first().locator('span.truncate').first()
-        assert.ok((await title.boundingBox())!.width > 500, 'desktop: the title is not full width')
-      }
+
+      // Hidden by default: the presence line holds the counts and the pill, nothing else.
+      await page.goto(`${base}?view=feed${theme}`)
+      await trigger.waitFor()
+      assert.equal(await options.count(), 0, `${label}: the stream list shows before the pill is opened`)
+      assert.ok(((await trigger.textContent()) ?? '').includes('7'), `${label}: the pill lacks the stream count`)
+      await shot(`activity-feed-${label}-${appearance}`)
+
+      // The list: title, state and step, and summary; search and arrows.
+      await trigger.click()
+      await options.first().waitFor()
+      assert.equal(await options.count(), 8, `${label}: expected "All activity" and seven streams`)
+      const first = (await options.nth(1).textContent()) ?? ''
+      for (const part of ['#1394', 'Working · Implement', 'author filter.'])
+        assert.ok(first.includes(part), `${label}: the first stream lacks "${part}"`)
+      const search = page.getByRole('searchbox', { name: 'Search active work' })
+      assert.ok(await search.evaluate((el) => el === document.activeElement), `${label}: search is not focused`)
       await shot(`activity-list-${label}-${appearance}`)
-
-      // "Summaries" off: single-line rows.
-      await page.goto(`${base}?view=list&nosummaries${theme}`)
-      await rows.first().waitFor()
-      assert.equal(await page.locator('[data-testid="activity-work-summary"]').count(), 0, 'lines remain while off')
-
-      // Selecting a stream: the details panel has everything in full, and rows stop repeating it.
-      await page.goto(`${base}?select=1394${theme}`)
+      await search.fill('paused while')
+      assert.equal(await options.count(), 1, `${label}: searching the summary did not filter`)
+      await search.fill('')
+      await search.press('ArrowDown')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
       const panel = page.locator('[data-testid="activity-work-stream-filter"]')
       await panel.waitFor()
+      assert.ok(((await panel.textContent()) ?? '').includes('#1394'), `${label}: Enter did not select the stream`)
+
+      // The details panel has everything in full, and rows stop repeating the stream.
       const text = (await panel.textContent()) ?? ''
       for (const part of [
         'and record skipped deliveries',
@@ -93,27 +100,17 @@ try {
       await shot(`activity-selected-${label}-${appearance}`)
 
       // A clipped chat row expands in place.
-      const more = page.locator('[data-activity-row-expand]').first()
-      await more.click()
+      await page.locator('[data-activity-row-expand]').first().click()
       await page.locator('[data-activity-row-full]').waitFor()
       assert.ok(
         ((await page.locator('[data-activity-row-full]').textContent()) ?? '').includes('focused test file again'),
         `${label}: the full message did not render`
       )
       await shot(`activity-row-expanded-${label}-${appearance}`)
-
-      // "Show 2 more" expands and is remembered across a reload.
-      await page.goto(`${base}?view=list${theme}`)
-      await page.getByRole('button', { name: 'Show 2 more' }).click()
-      assert.equal(await rows.count(), 7, `${label}: Show more did not expand`)
-      await page.reload()
-      await rows.first().waitFor()
-      assert.equal(await rows.count(), 7, `${label}: the expanded list was not remembered`)
-      await page.getByRole('button', { name: 'Show fewer' }).click()
     }
   }
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`)
-  console.log('Activity work list checks passed.')
+  console.log('Activity work checks passed.')
 } finally {
   await browser?.close()
   await server.close()
