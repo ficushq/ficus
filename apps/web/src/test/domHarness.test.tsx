@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { useEffect } from 'react'
+import { QueryClient } from '@tanstack/react-query'
 import { acquireDomHarness, DOM_GLOBAL_NAMES, installDomHarness, withDomOwnership } from './domHarness'
 
 function descriptorSnapshot() {
@@ -304,5 +305,53 @@ describe('DOM harness', () => {
     expect(listenerCalls).toBe(0)
     expect(taskCalls).toBe(0)
     expect(intervalCalls).toBe(0)
+  })
+
+  test('aborts in-flight fetches at cleanup so a late query settlement cannot stall the next owner', async () => {
+    // A request that outlives its owner settles under whichever window is installed then.
+    // TanStack Query reacts by scheduling its five-minute garbage-collection timer through
+    // the global setTimeout, so the next owner's waitUntilComplete() would wait on it.
+    let release!: () => void
+    const released = new Promise<void>((resolve) => (release = resolve))
+    const server = Bun.serve({
+      port: 0,
+      fetch: async () => {
+        await released
+        return Response.json({ ok: true })
+      },
+    })
+    const queryClient = new QueryClient()
+    try {
+      const first = await acquireDomHarness({ url: server.url.href })
+      const settled = queryClient
+        .fetchQuery({
+          queryKey: ['late-response'],
+          queryFn: async () => (await fetch(new URL('/late', server.url))).json(),
+          retry: false,
+        })
+        .then(
+          () => 'resolved',
+          () => 'rejected'
+        )
+      await Bun.sleep(20)
+      await first.cleanup()
+      const next = await acquireDomHarness({ url: server.url.href })
+      try {
+        release()
+        await Bun.sleep(50)
+        const outcome = await Promise.race([
+          next.window.happyDOM.waitUntilComplete().then(() => 'complete'),
+          Bun.sleep(1_000).then(() => 'stalled'),
+        ])
+        expect(outcome).toBe('complete')
+        expect(await settled).toBe('rejected')
+      } finally {
+        await next.cleanup()
+      }
+    } finally {
+      release()
+      queryClient.clear()
+      await server.stop(true)
+    }
   })
 })
