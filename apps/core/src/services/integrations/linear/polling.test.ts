@@ -15,6 +15,7 @@ import {
   parseLinearPollingCursor,
   type KnownLinearSession,
   type LinearPollingDependencies,
+  type UnfinishedLinearSession,
 } from './polling'
 import {
   agentSessionCreatedPayload,
@@ -60,6 +61,8 @@ let known: Map<string, KnownLinearSession>
 let recentWebhook: boolean
 let authorization: string | null
 let installedAt: Date | null
+let unfinished: UnfinishedLinearSession[]
+let retried: Array<[string, string]>
 
 function polling(overrides: Partial<LinearPollingDependencies> = {}) {
   return createLinearAgentSessionPolling({
@@ -70,6 +73,11 @@ function polling(overrides: Partial<LinearPollingDependencies> = {}) {
       return recentWebhook
     },
     knownSessions: async (ids) => new Map([...known].filter(([id]) => ids.includes(id))),
+    unfinishedSessions: async () => unfinished,
+    retrySession: async (session, auth) => {
+      retried.push([session.id, auth])
+      return true
+    },
     now: () => new Date(NOW),
     ...overrides,
   })
@@ -86,6 +94,8 @@ beforeEach(() => {
   recentWebhook = false
   authorization = 'Bearer linear-app-access-token'
   installedAt = new Date(NOW - 3_600_000)
+  unfinished = []
+  retried = []
 })
 afterEach(() => {
   globalThis.fetch = originalFetch
@@ -166,16 +176,18 @@ describe('advanceLinearWatermark', () => {
 })
 
 describe('linearSessionNeedsHandling', () => {
-  test('pending unknown sessions and unfinished known ones are handled; the rest are left alone', () => {
+  test('pending unknown sessions and recorded ones not yet disposed are reprocessed; the rest are left alone', () => {
     expect(linearSessionNeedsHandling('pending', undefined, 'c')).toBe(true)
     expect(linearSessionNeedsHandling('active', undefined, 'c')).toBe(false)
     const handled = { connectionId: 'c', ackState: 'sent', dispositionState: 'sent' }
     expect(linearSessionNeedsHandling('pending', handled, 'c')).toBe(false)
-    expect(linearSessionNeedsHandling('active', { ...handled, ackState: 'failed' }, 'c')).toBe(true)
     expect(linearSessionNeedsHandling('active', { ...handled, dispositionState: 'pending' }, 'c')).toBe(true)
-    expect(linearSessionNeedsHandling('pending', { ...handled, ackState: 'failed', connectionId: 'other' }, 'c')).toBe(
-      false
-    )
+    // A failed post after routing is the retry sweep's, not a second routing.
+    expect(linearSessionNeedsHandling('pending', { ...handled, ackState: 'failed' }, 'c')).toBe(false)
+    expect(linearSessionNeedsHandling('pending', { ...handled, dispositionState: 'failed' }, 'c')).toBe(false)
+    expect(
+      linearSessionNeedsHandling('pending', { ...handled, dispositionState: 'pending', connectionId: 'other' }, 'c')
+    ).toBe(false)
   })
 })
 
@@ -236,6 +248,36 @@ describe('Linear agent session polling', () => {
     expect(linear.calls).toEqual([])
     expect(result.events).toEqual([])
     expect(result.nextCursor).toEqual({ ...stored })
+  })
+
+  test('unfinished sessions are retried with the app token, each reserving two requests from the budget', async () => {
+    unfinished = [{ id: 's1' }, { id: 's2' }, { id: 's3' }] as UnfinishedLinearSession[]
+    const budget = createEventPollingBudget(LINEAR_POLL_REQUESTS_PER_TICK + 4)
+    await polling().poll(appConnection, null, budget.signal)
+    // Three queries, then only two of the three retries fit the remaining budget.
+    expect(retried).toEqual([
+      ['s1', 'Bearer linear-app-access-token'],
+      ['s2', 'Bearer linear-app-access-token'],
+    ])
+    expect(budget.remaining).toBe(0)
+  })
+
+  test('a retry that throws does not fail the poll', async () => {
+    unfinished = [{ id: 's1' }] as UnfinishedLinearSession[]
+    const result = await polling({
+      retrySession: async () => {
+        throw new Error('provider_unavailable')
+      },
+    }).poll(appConnection, null)
+    expect(result.nextCursor).toMatchObject({ version: 1 })
+  })
+
+  test('API-key and unusable connections retry nothing', async () => {
+    unfinished = [{ id: 's1' }] as UnfinishedLinearSession[]
+    await polling().poll({ ...appConnection, configuration: { version: 1 } }, null)
+    authorization = null
+    await polling().poll(appConnection, null)
+    expect(retried).toEqual([])
   })
 
   test('a rate-limited poll backs off for Linear’s Retry-After', async () => {

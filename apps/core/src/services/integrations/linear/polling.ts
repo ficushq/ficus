@@ -8,6 +8,7 @@ import type {
   VerifiedIngressEvent,
 } from '../types'
 import { linearDeliveryKey } from './delivery-receipts'
+import type { LinearSessionRow } from './session-acknowledger'
 import {
   isLinearAppConfiguration,
   LinearRateLimitedError,
@@ -120,8 +121,9 @@ export function advanceLinearWatermark<T extends { id: string; at: number }>(
   }
 }
 
-const ISSUE_FIELDS =
-  'id number identifier title url team { id key } assignee { id } delegate { id } state { type } labels { nodes { name } }'
+// Labels are left out: an unbounded connection costs Linear complexity on every poll, and the
+// enrichment probe reads them again for every routed event.
+const ISSUE_FIELDS = 'id number identifier title url team { id key } assignee { id } delegate { id } state { type }'
 
 /** Newest first; the page is read down to the watermark. */
 export const LINEAR_POLL_SESSIONS_QUERY = `query FicusLinearPollSessions($first: Int!) {
@@ -158,9 +160,13 @@ function issuePayload(issue: Record<string, any>) {
     assigneeId: text(record(issue.assignee).id),
     delegateId: text(record(issue.delegate).id),
     ...(issue.state ? { state: { type: text(record(issue.state).type, 100) } } : {}),
-    ...(issue.labels ? { labels: issue.labels } : {}),
   }
 }
+
+/** A recorded session the retry sweep may try again (a `linear_agent_sessions` row). */
+export type UnfinishedLinearSession = LinearSessionRow
+/** Linear calls one session retry makes at most. */
+export const LINEAR_SESSION_RETRY_REQUESTS = 2
 
 /** What Ficus already recorded for a polled session. */
 export interface KnownLinearSession {
@@ -177,6 +183,10 @@ export interface LinearPollingDependencies {
   /** Whether a verified app webhook arrived for the workspace within the last `withinMs`. */
   receivedRecentWebhook(organizationId: string, withinMs: number): Promise<boolean>
   knownSessions(ids: readonly string[]): Promise<Map<string, KnownLinearSession>>
+  /** Sessions Ficus recorded whose acknowledgment or disposition post failed, due for a retry. */
+  unfinishedSessions(connectionId: string): Promise<readonly UnfinishedLinearSession[]>
+  /** One more acknowledgment and disposition attempt; the session is not routed again. */
+  retrySession(session: UnfinishedLinearSession, authorization: string): Promise<boolean>
   query?: typeof linearQuery
   now?: () => Date
 }
@@ -187,10 +197,11 @@ export function linearPollingInterval(receivedRecentWebhook: boolean) {
 }
 
 /**
- * A polled session is handed to the webhook path only while it still needs Ficus: Linear still
- * shows it `pending` (never acknowledged), or Ficus recorded it but did not finish handling it.
- * Sessions Ficus has acknowledged and disposed of, and unknown sessions that are no longer pending,
- * are left alone.
+ * Whether a polled session is handed to the webhook path. An unknown session is, while Linear still
+ * shows it `pending` (never acknowledged). A recorded one is only while it has no disposition yet,
+ * so its routing may not have finished: the shared delivery receipt then decides whether it is
+ * processed again. A recorded session whose acknowledgment or disposition post failed after routing
+ * is not reprocessed here; the retry sweep in the same poll posts those (`session-retry.ts`).
  */
 export function linearSessionNeedsHandling(
   status: string,
@@ -199,7 +210,7 @@ export function linearSessionNeedsHandling(
 ): boolean {
   if (known) {
     if (known.connectionId !== connectionId) return false
-    return known.ackState !== 'sent' || known.dispositionState === 'pending'
+    return known.dispositionState === 'pending'
   }
   return status === 'pending'
 }
@@ -368,6 +379,17 @@ export function createLinearAgentSessionPolling(
               actorId: text(record(node.actor).id),
             },
           },
+        })
+      }
+
+      // 4. Recorded sessions whose acknowledgment or disposition post failed get one more attempt,
+      // without routing them again. Each reserves its Linear calls from the same budget.
+      for (const session of await dependencies.unfinishedSessions(connection.id)) {
+        if (signal && signal.remainingBudgetUnits < LINEAR_SESSION_RETRY_REQUESTS) break
+        signal?.reserveRequest(LINEAR_SESSION_RETRY_REQUESTS)
+        // A session that still fails is tried again later; it never holds back the cursor.
+        await dependencies.retrySession(session, authorization).catch((error) => {
+          log.warn(`Linear session retry failed: ${error instanceof Error ? error.message.slice(0, 64) : 'error'}`)
         })
       }
 

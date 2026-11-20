@@ -9,10 +9,12 @@ import { isLinearAppConfiguration, linearPlugin, parseLinearConfiguration } from
 import {
   createLinearAgentSessionPolling,
   LINEAR_POLL_REQUESTS_PER_TICK,
+  LINEAR_SESSION_RETRY_REQUESTS,
   LINEAR_POLL_WEBHOOK_RECENCY_MS,
   type LinearPollingDependencies,
 } from './polling'
 import { resolveLinearAppConnection } from './resolve-connection'
+import { LINEAR_SESSION_RETRY_LIMIT, listUnfinishedLinearSessions, retryLinearSession } from './session-retry'
 
 const log = createLogger('linear-polling')
 
@@ -64,6 +66,8 @@ export const linearPollingDependencies: LinearPollingDependencies = {
       .where(inArray(linearAgentSessions.id, [...ids]))
     return new Map(rows.map((row) => [row.id, row]))
   },
+  unfinishedSessions: (connectionId) => listUnfinishedLinearSessions(connectionId),
+  retrySession: retryLinearSession,
 }
 
 /** The Linear provider's `event_polling` capability, with its database-backed dependencies. */
@@ -125,7 +129,8 @@ export async function dispatchPolledLinearEvent(event: { type: string; payload: 
 /**
  * The Linear polling fallback's scheduler, separate from the GitHub poller so neither's budget or
  * cadence affects the other. Polls run every 60 seconds (5 minutes while app webhooks arrive), with
- * no jitter, and make at most three requests each: at most 180 requests per connection per hour.
+ * no jitter, and make at most three queries each: at most 180 queries per connection per hour. Retries
+ * of unfinished sessions add at most two calls per session, for at most five spaced-out sessions.
  */
 export const linearAgentSessionPollingRuntime = new EventPollingRunner({
   listWatches: listLinearPollingWatches,
@@ -139,7 +144,9 @@ export const linearAgentSessionPollingRuntime = new EventPollingRunner({
   },
   scanIntervalMs: 15_000,
   maxResourcesPerTick: 20,
-  maxBudgetUnitsPerTick: 20 * LINEAR_POLL_REQUESTS_PER_TICK,
+  // Room for every watch's queries plus one connection's full retry sweep.
+  maxBudgetUnitsPerTick:
+    20 * LINEAR_POLL_REQUESTS_PER_TICK + LINEAR_SESSION_RETRY_LIMIT * LINEAR_SESSION_RETRY_REQUESTS,
   // Routing a backlog (probe, rules, decision conditions) runs inside the poll's deadline.
   leaseMs: 300_000,
   pollTimeoutMs: 240_000,

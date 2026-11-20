@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('linear')
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, like, sql } from 'drizzle-orm'
 import {
@@ -24,6 +24,7 @@ import {
   listLinearPollingWatches,
 } from './polling-runtime'
 import { createLinearAppFixture } from './testing/app-fixtures'
+import { setLinearAppReadinessForTest } from './app-readiness'
 import {
   agentSessionCreatedPayload,
   agentSessionPromptedPayload,
@@ -65,6 +66,17 @@ async function outputs(output: string) {
       )
     )
 }
+async function sessionRow(sessionId: string) {
+  const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+  return row
+}
+/** Moves a session's last attempt back, so the retry sweep finds it due. */
+async function ageSession(sessionId: string) {
+  await db
+    .update(linearAgentSessions)
+    .set({ updatedAt: sql`now() - interval '2 minutes'` })
+    .where(eq(linearAgentSessions.id, sessionId))
+}
 async function recordAppWebhook() {
   await db.insert(webhookEvents).values({
     provider: 'linear-app',
@@ -76,9 +88,13 @@ async function recordAppWebhook() {
   })
 }
 
+// The app stays uninstallable in production until write-back ships; these tests exercise its event path.
+let restoreReadiness: () => void = () => {}
 beforeAll(async () => {
+  restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: false })
   await getSecretStore().initialize()
 })
+afterAll(() => restoreReadiness())
 beforeEach(async () => {
   clearLinearUserCacheForTest()
   fixture = await createLinearAppFixture()
@@ -180,24 +196,93 @@ describe('recovered sessions', () => {
     expect(bodies(sessionId)).toHaveLength(2)
   })
 
-  test('a session the webhook handled is not handled again by polling', async () => {
+  test('a session the webhook fully handled is not handled again by polling', async () => {
     await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()
     linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
     const payload = agentSessionCreatedPayload(fixture.context, { sessionId, issue, creatorId: member.id })
     await processLinearAppEvent({ type: 'AgentSessionEvent', payload })
+    await ageSession(sessionId)
     const before = linear.calls.length
     const result = await pollOnce()
     expect(result.events).toEqual([])
-    // Even a forced redelivery of the polled shape is skipped by the shared receipt.
-    linear.sessions.get(sessionId)!.status = 'pending'
-    await db.update(linearAgentSessions).set({ ackState: 'failed' }).where(eq(linearAgentSessions.id, sessionId))
-    const forced = await linearAgentSessionPolling.poll((await watch()).connection, null)
-    expect(forced.events.map((event) => event.logicalEventKey)).toEqual([`linear:session:${sessionId}:created`])
-    for (const event of forced.events) await dispatchPolledLinearEvent(event)
     expect(linear.calls.slice(before).map((call) => call.operation)).not.toContain('FicusAgentActivity')
     expect(bodies(sessionId)).toHaveLength(2)
     expect(await outputs('agent_session.created')).toHaveLength(1)
+  })
+
+  test('a session whose acknowledgment and disposition failed is answered by the next poll, once', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    // Linear is failing while the webhook is processed: both acknowledgment attempts and the disposition.
+    for (let i = 0; i < 3; i++) linear.failNext(500, 'FicusAgentActivity')
+    const payload = agentSessionCreatedPayload(fixture.context, { sessionId, issue, creatorId: member.id })
+    await processLinearAppEvent({ type: 'AgentSessionEvent', payload })
+    expect(bodies(sessionId)).toEqual([])
+    expect(await sessionRow(sessionId)).toMatchObject({ ackState: 'failed', dispositionState: 'failed' })
+    expect(linear.sessions.get(sessionId)!.status).toBe('pending')
+    // Not retried within a minute of the failure.
+    await pollOnce()
+    expect(bodies(sessionId)).toEqual([])
+    await ageSession(sessionId)
+    await pollOnce()
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body],
+    ])
+    expect(await sessionRow(sessionId)).toMatchObject({
+      ackState: 'sent',
+      dispositionState: 'sent',
+      disposition: 'notified',
+    })
+    // Recovery does not route the session a second time, and a later poll does nothing more.
+    expect(await outputs('agent_session.created')).toHaveLength(1)
+    expect(await outputs('issue.delegated')).toHaveLength(1)
+    await ageSession(sessionId)
+    await pollOnce()
+    expect(bodies(sessionId)).toHaveLength(2)
+  })
+
+  test('a failed disposition alone is retried; a failed acknowledgment after a sent disposition is not', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const dispositionFailed = randomUUID()
+    linear.addSession({ id: dispositionFailed, issueId: issue.id, creatorId: member.id })
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, {
+        sessionId: dispositionFailed,
+        issue,
+        creatorId: member.id,
+      }),
+    })
+    // Simulate the disposition post failing after a sent acknowledgment.
+    linear.activities.splice(
+      linear.activities.findIndex(
+        (activity) => activity.agentSessionId === dispositionFailed && activity.content.type === 'response'
+      ),
+      1
+    )
+    await db
+      .update(linearAgentSessions)
+      .set({ dispositionState: 'failed' })
+      .where(eq(linearAgentSessions.id, dispositionFailed))
+    const answered = randomUUID()
+    linear.addSession({ id: answered, issueId: issue.id, creatorId: member.id })
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, { sessionId: answered, issue, creatorId: member.id }),
+    })
+    // Its acknowledgment failed, but the disposition reached Linear: the session has its answer.
+    await db.update(linearAgentSessions).set({ ackState: 'failed' }).where(eq(linearAgentSessions.id, answered))
+    await ageSession(dispositionFailed)
+    await ageSession(answered)
+    const before = linear.activities.length
+    await pollOnce()
+    expect(linear.activities.slice(before).map((activity) => [activity.agentSessionId, activity.content.type])).toEqual(
+      [[dispositionFailed, 'response']]
+    )
+    expect(await sessionRow(dispositionFailed)).toMatchObject({ dispositionState: 'sent', disposition: 'notified' })
   })
 
   test('a late webhook for a session polling already handled changes nothing', async () => {

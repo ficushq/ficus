@@ -317,6 +317,10 @@ export const LINEAR_UNDELEGATION_MATCH_MS = 2 * 60_000
  * (issue and removed delegate, within two minutes) under another event key. The `Issue` webhook keys
  * it by the issue's `updatedAt` and the polled notification by its own `createdAt`, so the two paths
  * cannot share a key; this keeps the change recorded once in either order.
+ *
+ * The check reads before it records, so a webhook and a poll processed at the same moment could both
+ * record it. That is accepted: the webhook is processed within seconds of the change while a poll
+ * usually reads it much later, and a duplicate only repeats a manager notice.
  */
 async function withoutRepeatedUndelegations(
   connectionId: string,
