@@ -3,7 +3,7 @@ import type { EventMap } from '@ficus/shared'
 import { agentQuestionWorkStreamOrigins, db } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../../lib/infra/PeriodicRunner'
-import { drainLinearOutbox } from './outbox'
+import { drainLinearOutbox, pruneLinearOutbox } from './outbox'
 import { linearWriteBackSweepCandidates, projectLinearWriteBack, streamHasLinearWriteBack } from './session-projector'
 
 const log = createLogger('linear-write-back')
@@ -100,6 +100,7 @@ export function registerLinearWriteBack(emitter: Emitter): LinearWriteBackRuntim
     task: async () => {
       for (const id of await linearWriteBackSweepCandidates()) await projectLinearWriteBack(id)
       await drainLinearOutboxSoon()
+      await pruneLinearOutbox().catch(() => undefined)
     },
   })
   const drain: PeriodicRunner = createPeriodicRunner({

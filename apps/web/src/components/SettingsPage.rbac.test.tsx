@@ -8,6 +8,7 @@ import {
   publicVoiceQueryKeys,
   channelLinkQueryKeys,
   githubIdentityQueryKeys,
+  linearIdentityQueryKeys,
   integrationQueryKeys,
   queryKeys,
   serverConnectionQueryKeys,
@@ -749,6 +750,7 @@ describe('SettingsPage global integration RBAC', () => {
       confirmation: null,
       authorization: { configured: true, authority: 'local', mode: 'browser' },
     })
+    queryClient.setQueryData(linearIdentityQueryKeys.all, { linked: [] })
     await dom.act(async () => {
       root.render(
         <QueryClientProvider client={queryClient!}>

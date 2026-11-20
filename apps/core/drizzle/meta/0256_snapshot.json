@@ -1,5 +1,5 @@
 {
-  "id": "c5ef45fe-1b6c-4938-a294-ec3e3fa82912",
+  "id": "aa777ea5-f0c2-4002-b214-42a11366eed5",
   "prevId": "ad98d13b-f22f-409b-b172-0056aaedca5e",
   "version": "7",
   "dialect": "postgresql",
@@ -11390,6 +11390,63 @@
             },
             {
               "expression": "sent_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_linear_activity_outbox_session": {
+          "name": "idx_linear_activity_outbox_session",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_linear_activity_outbox_work_stream": {
+          "name": "idx_linear_activity_outbox_work_stream",
+          "columns": [
+            {
+              "expression": "work_stream_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_linear_activity_outbox_retention": {
+          "name": "idx_linear_activity_outbox_retention",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

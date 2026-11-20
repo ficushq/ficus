@@ -5,7 +5,6 @@ import {
   resolveCodeHostReference,
   resolveQuestionAnswers,
   resolveTrackedResources,
-  trackedResourceUrl,
   type QuestionData,
 } from '@ficus/shared'
 import {
@@ -58,20 +57,30 @@ export function linearAccountLinkUrl(): string | undefined {
   return base ? `${base}/settings?setting=linear-account` : undefined
 }
 
-/** The bound stream's delivery pull request, from `metadata.codeHost.changeRequest`. */
+const GITHUB_OWNER = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})'
+const GITHUB_REPO = '[A-Za-z0-9._-]{1,100}'
+const GITHUB_PULL_URL = new RegExp(`^https://github\\.com/(${GITHUB_OWNER})/(${GITHUB_REPO})/pull/([1-9][0-9]{0,9})$`)
+const GITHUB_REPOSITORY = new RegExp(`^(${GITHUB_OWNER})/(${GITHUB_REPO})$`)
+
+/**
+ * The stream's delivery pull request, from `metadata.codeHost.changeRequest`, only when it is a real
+ * GitHub pull request URL whose number matches the change request. Agents can write this metadata,
+ * so nothing else (another host, a free-form repository string, a mismatched number) ever reaches
+ * public text in Linear; the label is rebuilt from the parsed URL.
+ */
 export function streamPullRequest(metadata: unknown): { url: string; label: string } | undefined {
   const reference = resolveCodeHostReference(metadata)
-  if (!reference?.changeRequest) return undefined
-  const url =
-    reference.changeRequest.url ??
-    trackedResourceUrl({
-      integration: reference.integration,
-      repository: reference.repository,
-      kind: 'pull_request',
-      number: reference.changeRequest.number,
-    })
-  if (!url || reference.integration !== 'github') return undefined
-  return { url, label: `${reference.repository}#${reference.changeRequest.number}` }
+  if (!reference?.changeRequest || reference.integration !== 'github') return undefined
+  const number = reference.changeRequest.number
+  let url = reference.changeRequest.url
+  if (!url) {
+    const repository = GITHUB_REPOSITORY.exec(reference.repository.trim())
+    if (!repository) return undefined
+    url = `https://github.com/${repository[1]}/${repository[2]}/pull/${number}`
+  }
+  const match = GITHUB_PULL_URL.exec(url)
+  if (!match || Number(match[3]) !== number) return undefined
+  return { url, label: `${match[1]}/${match[2]}#${number}` }
 }
 
 function answerLabel(data: QuestionData, answer: string | null): string | undefined {
@@ -121,8 +130,12 @@ async function loadQuestions(streamId: string, sessionId: string): Promise<Proje
   })
 }
 
-async function streamFailed(streamId: string) {
-  // Recovery exhausted: a structured manual wait is open for a person to decide.
+/**
+ * The open recovery wait of a stream whose recovery is exhausted and waits for a person (`continue`).
+ * Typed task inputs (`decide`, `provide`) are structured waits too, but they are ordinary questions
+ * to the owner, never a failure.
+ */
+async function openRecoveryWaitId(streamId: string) {
   const [wait] = await db
     .select({ id: workStreamWaits.id })
     .from(workStreamWaits)
@@ -131,11 +144,12 @@ async function streamFailed(streamId: string) {
         eq(workStreamWaits.workStreamId, streamId),
         eq(workStreamWaits.type, 'manual'),
         isNull(workStreamWaits.closedAt),
-        isNotNull(workStreamWaits.structured)
+        isNotNull(workStreamWaits.structured),
+        sql`${workStreamWaits.structured}->'request'->>'kind' = 'continue'`
       )
     )
     .limit(1)
-  return !!wait
+  return wait?.id
 }
 
 /** Snapshot of the stream as the session should see it, plus the run version it was taken at. */
@@ -144,7 +158,10 @@ async function sessionSnapshot(stream: StreamRow, session: SessionRow, now: Date
   const state = run?.activated ? run.state : undefined
   const steps = (state?.definition.steps ?? []).map((step) => ({ id: step.id, kind: step.kind ?? 'agent' }))
   const snapshot: LinearProjectionSnapshot = {
-    stream: { status: stream.status, pause: stream.pause ? { id: stream.pause.id } : null },
+    stream: {
+      status: stream.status,
+      pause: stream.pause ? { id: stream.pause.id, reason: stream.pause.reason } : null,
+    },
     steps,
     attempts: (state?.attempts ?? []).map((attempt) => ({
       id: attempt.id,
@@ -154,7 +171,7 @@ async function sessionSnapshot(stream: StreamRow, session: SessionRow, now: Date
     })),
     attemptFloor: session.projectionAttemptFloor ?? projectionAttemptFloor(state),
     pullRequest: streamPullRequest(stream.metadata),
-    failed: await streamFailed(stream.id),
+    failedWaitId: await openRecoveryWaitId(stream.id),
     questions: await loadQuestions(stream.id, session.id),
     streamUrl: linearOpenInFicusUrl(stream),
     authLinkUrl: session.authLinkRequested ? linearAccountLinkUrl() : undefined,
@@ -313,11 +330,16 @@ export async function projectLinearWriteBack(workStreamId: string, now = new Dat
   if (!stream) return 0
   const session = await primaryLinearSession(stream.id)
   let added = 0
+  // Session progress and attachments fail independently: one never starves the other.
   try {
     if (session) added += await projectSession(stream, session, now)
+  } catch (error) {
+    log.warn(`Linear session projection failed for a stream: ${error instanceof Error ? error.message : 'error'}`)
+  }
+  try {
     added += await projectAttachments(stream, session)
   } catch (error) {
-    log.warn(`Linear write-back projection failed for a stream: ${error instanceof Error ? error.message : 'error'}`)
+    log.warn(`Linear attachment projection failed for a stream: ${error instanceof Error ? error.message : 'error'}`)
   }
   return added
 }
@@ -345,8 +367,9 @@ export async function streamHasLinearWriteBack(workStreamId: string): Promise<bo
  */
 export async function linearWriteBackSweepCandidates(now = new Date(), limit = 200): Promise<string[]> {
   const since = new Date(now.getTime() - 3_600_000)
+  // Least recently projected first, so heartbeats are never starved on a large instance.
   const bound = await db
-    .selectDistinct({ id: workStreams.id })
+    .select({ id: workStreams.id })
     .from(linearAgentSessions)
     .innerJoin(workStreams, eq(workStreams.id, linearAgentSessions.workStreamId))
     .where(
@@ -356,6 +379,7 @@ export async function linearWriteBackSweepCandidates(now = new Date(), limit = 2
         or(inArray(workStreams.status, ['active', 'queued']), gte(workStreams.updatedAt, since))
       )
     )
+    .orderBy(sql`${linearAgentSessions.lastProjectedAt} ASC NULLS FIRST`)
     .limit(limit)
   const tracking = await db
     .select({ id: workStreams.id })

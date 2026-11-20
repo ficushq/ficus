@@ -43,6 +43,7 @@ import {
 } from './team-access'
 import { handleLinearAppRevoked } from './app-revocation'
 import { handleBoundSessionPrompt } from './session-prompts'
+import { isProactiveLinearSession } from './proactive-session'
 
 const log = createLogger('linear-app-ingress')
 
@@ -159,6 +160,15 @@ async function processSessionCreated(
   payload: Record<string, unknown>,
   dependencies: LinearAppIngressDependencies
 ) {
+  // Ficus's own `--linear-session` session is bound by the request that opened it: no rules run.
+  if (
+    await isProactiveLinearSession({
+      connectionId: resolved.connection.id,
+      sessionId,
+      issueId: text(session.issueId) || text(record(session.issue).id) || undefined,
+    })
+  )
+    return
   // Before any rule, decision predicate or squad fan-out.
   const row = await acknowledgeLinearSession(
     {

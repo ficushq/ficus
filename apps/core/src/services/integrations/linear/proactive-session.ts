@@ -9,6 +9,31 @@ import { projectLinearWriteBack } from './session-projector'
 import { drainLinearOutboxSoon } from './write-back-runtime'
 import { createLinearSessionOnIssue } from './write-api'
 
+/** Issues with a `--linear-session` request in flight in this process, by connection. */
+const pendingProactiveSessions = new Set<string>()
+const proactiveSessionKey = (connectionId: string, issueId: string) => `${connectionId}:${issueId}`
+
+/**
+ * Whether a `created` session event is Ficus's own `--linear-session` session. Those are bound by the
+ * request that opened them and never go through the event rules (a `start-workstream` rule on
+ * `agent_session.created` would otherwise start a second stream). While the request is still in
+ * flight, this waits up to five seconds for its row.
+ */
+export async function isProactiveLinearSession(input: { connectionId: string; sessionId: string; issueId?: string }) {
+  const deadline = Date.now() + 5_000
+  for (;;) {
+    const [row] = await db
+      .select({ trigger: linearAgentSessions.trigger })
+      .from(linearAgentSessions)
+      .where(eq(linearAgentSessions.id, input.sessionId))
+    if (row?.trigger === 'proactive') return true
+    const pending =
+      !!input.issueId && pendingProactiveSessions.has(proactiveSessionKey(input.connectionId, input.issueId))
+    if (!pending || Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
 /**
  * `ficus workstream track <ws> --issue KEY-123 --linear-session` (6.8): opens a Linear agent session
  * on a tracked issue with `agentSessionCreateOnIssue` and binds it to the stream, so a stream that was
@@ -52,9 +77,14 @@ export async function openLinearSessionForStream(
   if (existing) return { sessionId: existing.id, ...(existing.url ? { url: existing.url } : {}), created: false }
 
   let session: { id: string; url?: string }
+  // The `created` webhook for this session may arrive before the row below exists; ingress waits
+  // for it while the issue is marked here, so the session never goes through the rules.
+  const pendingKey = proactiveSessionKey(resolved.connection.id, resource.externalId)
+  pendingProactiveSessions.add(pendingKey)
   try {
     session = await createLinearSessionOnIssue(resolved.authorization, resource.externalId)
   } catch {
+    pendingProactiveSessions.delete(pendingKey)
     // Provider text is never relayed; the stream keeps tracking the issue either way.
     throw new TrackedResourceError('Linear did not open an agent session on this issue', 409)
   }
@@ -73,12 +103,16 @@ export async function openLinearSessionForStream(
       ackState: 'sent',
       dispositionState: 'sent',
     })
-    .onConflictDoNothing({ target: linearAgentSessions.id })
+    .onConflictDoUpdate({
+      // A webhook that won the race recorded it first; it is still Ficus's own proactive session.
+      target: linearAgentSessions.id,
+      set: { trigger: 'proactive', ackState: 'sent', dispositionState: 'sent', updatedAt: new Date() },
+    })
+  pendingProactiveSessions.delete(pendingKey)
   const bound = await db.transaction((tx) => bindLinearSession(tx, session.id, stream.id))
-  if (bound) {
-    await announceLinearSessionBinding(session.id, stream.id)
-    await projectLinearWriteBack(stream.id)
-    void drainLinearOutboxSoon()
-  }
+  if (!bound) throw new TrackedResourceError('The new Linear agent session is already bound to another stream', 409)
+  await announceLinearSessionBinding(session.id, stream.id)
+  await projectLinearWriteBack(stream.id)
+  void drainLinearOutboxSoon()
   return { sessionId: session.id, ...(session.url ? { url: session.url } : {}), created: true }
 }

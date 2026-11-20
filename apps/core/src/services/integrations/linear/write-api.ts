@@ -84,6 +84,8 @@ export async function linearWrite<T>(
     throw new LinearWriteError('rate_limited', retryAfterMs(response.headers.get('Retry-After')))
   if (response.status === 401) throw new LinearWriteError('invalid_auth')
   if (response.status === 403) throw new LinearWriteError('forbidden')
+  // A server error is transient whatever its body says.
+  if (response.status >= 500) throw new LinearWriteError('unavailable')
   let result: { data?: T | null; errors?: unknown[] }
   try {
     result = (await response.json()) as typeof result

@@ -23,13 +23,22 @@ type OutboxRow = typeof linearActivityOutbox.$inferSelect
 export const LINEAR_CONNECTION_WRITES_PER_HOUR = 1_200
 /** At most this many activities per session per hour. */
 export const LINEAR_SESSION_ACTIVITIES_PER_HOUR = 30
+/** Collapsible progress gives up after this many failed attempts. */
 export const LINEAR_OUTBOX_MAX_ATTEMPTS = 8
+/**
+ * Responses, errors, elicitations, attachments and session links are never collapsed or counted out:
+ * they keep retrying (at most every 10 minutes) until this long after they were queued, so a token
+ * that expired before the refresh worker ran or an outage of a few hours does not lose them.
+ */
+export const LINEAR_OUTBOX_FINAL_ITEM_MAX_AGE_MS = 24 * 3_600_000
+const CONNECTION_WAIT_MS = 60_000
 const FIRST_BACKOFF_MS = 5_000
 const MAX_BACKOFF_MS = 10 * 60_000
 /** A `sending` claim older than this was lost with its process and is retried. */
 const CLAIM_LEASE_MS = 2 * 60_000
 const HOUR_MS = 3_600_000
 const BATCH = 25
+const PROJECTION_KEY_MAX = 400
 
 /** Backoff after a failed attempt: 5 seconds, doubling, at most 10 minutes. */
 export function linearOutboxBackoffMs(attempts: number): number {
@@ -57,12 +66,15 @@ export interface EnqueueLinearWritesInput {
  * Returns the projection keys that were new.
  */
 export async function enqueueLinearWrites(input: EnqueueLinearWritesInput, store: Store = db): Promise<string[]> {
-  if (!input.items.length) return []
+  // A key that does not fit the column is never written, so one bad item cannot fail the whole batch.
+  const items = input.items.filter((item) => item.projectionKey.length <= PROJECTION_KEY_MAX)
+  if (items.length !== input.items.length) log.warn('A Linear write-back item with an over-long key was skipped')
+  if (!items.length) return []
   const base = Date.now()
   const rows = await store
     .insert(linearActivityOutbox)
     .values(
-      input.items.map((item, index) => ({
+      items.map((item, index) => ({
         connectionId: input.connectionId,
         scopeKey: input.scopeKey,
         sessionId: input.sessionId ?? null,
@@ -103,7 +115,7 @@ async function claimDue(now: Date, limit: number): Promise<OutboxRow[]> {
       .limit(limit)
       .for('update', { skipLocked: true })
     if (!due.length) return []
-    return tx
+    const claimed = await tx
       .update(linearActivityOutbox)
       .set({ status: 'sending', claimToken: token, claimedAt: now, updatedAt: now })
       .where(
@@ -113,6 +125,8 @@ async function claimDue(now: Date, limit: number): Promise<OutboxRow[]> {
         )
       )
       .returning()
+    // UPDATE ... RETURNING has no order: items are sent oldest first.
+    return claimed.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
   })
 }
 
@@ -325,7 +339,11 @@ async function drainRow(row: OutboxRow, at: Date, result: DrainLinearOutboxResul
     !!row.sessionId &&
     row.kind === 'activity' &&
     (await sentWithinHour(
-      and(eq(linearActivityOutbox.sessionId, row.sessionId), eq(linearActivityOutbox.kind, 'activity')),
+      and(
+        eq(linearActivityOutbox.connectionId, row.connectionId),
+        eq(linearActivityOutbox.sessionId, row.sessionId),
+        eq(linearActivityOutbox.kind, 'activity')
+      ),
       at
     )) >= LINEAR_SESSION_ACTIVITIES_PER_HOUR
   if (connectionBusy || sessionBusy) {
@@ -338,8 +356,12 @@ async function drainRow(row: OutboxRow, at: Date, result: DrainLinearOutboxResul
   }
   const resolved = await resolveLinearConnectionById(row.connectionId, at)
   if (!resolved) {
-    // The refresh worker renews an expiring token; the item waits for a usable connection.
-    await retry(row, at, 'connection_unavailable', result)
+    // The refresh worker renews an expiring token; waiting for a usable connection costs no attempt.
+    if (expired(row, at)) await giveUp(row, row.attempts, 'connection_unavailable', result)
+    else {
+      await defer(row, new Date(at.getTime() + CONNECTION_WAIT_MS), 'connection_unavailable')
+      result.deferred++
+    }
     return
   }
   try {
@@ -355,7 +377,7 @@ async function drainRow(row: OutboxRow, at: Date, result: DrainLinearOutboxResul
       return
     }
     if (failure.code === 'rate_limited') {
-      const until = at.getTime() + (failure.retryAfterMs ?? 60_000)
+      const until = at.getTime() + Math.max(1_000, failure.retryAfterMs ?? 60_000)
       connectionCooldown.set(row.connectionId, until)
       await defer(row, new Date(until), 'rate_limited')
       result.deferred++
@@ -372,26 +394,30 @@ async function drainRow(row: OutboxRow, at: Date, result: DrainLinearOutboxResul
       result.failed++
       return
     }
+    // A rejected token takes the refresh path (as for any OAuth authentication failure), then retries.
+    if (failure.code === 'invalid_auth') await refreshAfterAuthenticationFailure(row.connectionId)
     await retry(row, at, failure.code, result)
   }
 }
 
+function expired(row: OutboxRow, at: Date) {
+  return at.getTime() - row.createdAt.getTime() >= LINEAR_OUTBOX_FINAL_ITEM_MAX_AGE_MS
+}
+
+async function giveUp(row: OutboxRow, attempts: number, code: string, result: DrainLinearOutboxResult) {
+  await db
+    .update(linearActivityOutbox)
+    .set({ status: 'failed', attempts, lastErrorCode: code, claimToken: null, claimedAt: null, updatedAt: new Date() })
+    .where(and(eq(linearActivityOutbox.id, row.id), eq(linearActivityOutbox.claimToken, row.claimToken!)))
+  log.warn(`Linear outbox item ${row.id} failed after ${attempts} attempts: ${code}`)
+  result.failed++
+}
+
 async function retry(row: OutboxRow, at: Date, code: string, result: DrainLinearOutboxResult) {
   const attempts = row.attempts + 1
-  if (attempts >= LINEAR_OUTBOX_MAX_ATTEMPTS) {
-    await db
-      .update(linearActivityOutbox)
-      .set({
-        status: 'failed',
-        attempts,
-        lastErrorCode: code,
-        claimToken: null,
-        claimedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(linearActivityOutbox.id, row.id), eq(linearActivityOutbox.claimToken, row.claimToken!)))
-    log.warn(`Linear outbox item ${row.id} failed after ${attempts} attempts: ${code}`)
-    result.failed++
+  // Progress may be counted out; a final item keeps retrying until its wall-clock limit.
+  if (row.collapsible ? attempts >= LINEAR_OUTBOX_MAX_ATTEMPTS : expired(row, at)) {
+    await giveUp(row, attempts, code, result)
     return
   }
   await db
@@ -407,6 +433,33 @@ async function retry(row: OutboxRow, at: Date, code: string, result: DrainLinear
     })
     .where(and(eq(linearActivityOutbox.id, row.id), eq(linearActivityOutbox.claimToken, row.claimToken!)))
   result.deferred++
+}
+
+/** Asks the OAuth refresh service for a new token after Linear rejected the current one. */
+async function refreshAfterAuthenticationFailure(connectionId: string) {
+  try {
+    const { integrationRefreshService } = await import('../runtime')
+    await integrationRefreshService.refresh(connectionId, 'authentication_failure')
+  } catch (error) {
+    log.warn(
+      `Linear token refresh after an authentication failure failed: ${error instanceof Error ? error.name : 'error'}`
+    )
+  }
+}
+
+/** Finished outbox rows are kept this long (for idempotency of late re-projections), then pruned. */
+export const LINEAR_OUTBOX_RETENTION_MS = 30 * 24 * 3_600_000
+
+/** Removes finished rows older than the retention window; pending and sending rows are never pruned. */
+export async function pruneLinearOutbox(now = new Date()) {
+  await db
+    .delete(linearActivityOutbox)
+    .where(
+      and(
+        inArray(linearActivityOutbox.status, ['sent', 'skipped', 'failed']),
+        lt(linearActivityOutbox.updatedAt, new Date(now.getTime() - LINEAR_OUTBOX_RETENTION_MS))
+      )
+    )
 }
 
 /** Whether anything is due now (the drain loop runs again at once when a pass was full). */

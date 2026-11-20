@@ -109,7 +109,8 @@ test('GitHub merged and closed always reach the delivery owner; other PR and iss
   }
   // Issue-tracker events keep following the flow's change-event target.
   for (const [key, to] of Object.entries(explicit)) if (key.includes(':issue.')) expect(to).toEqual(step)
-  expect(Object.keys(explicit).filter((key) => key.startsWith('linear:'))).toHaveLength(4)
+  // Four issue events, delegation and undelegation, and agent session prompts.
+  expect(Object.keys(explicit).filter((key) => key.startsWith('linear:'))).toHaveLength(7)
   // Explicit delivery-owner and the omitted default both send every event to the delivery owner.
   for (const changeEventsTo of ['delivery-owner' as const, undefined]) {
     const definition = { ...flow, completion: { mode: 'pr-merge' as const, followChanges: true, changeEventsTo } }
@@ -373,10 +374,16 @@ test('tracked fan-out is delegated to the tracked-resource adapters, not the cod
     'issue.unassigned',
     'issue.updated',
     'issue.comment',
+    'issue.delegated',
+    'issue.undelegated',
+    'agent_session.prompted',
   ])
   for (const sub of subscriptions) {
     expect(integrationSubscriptionSchema.parse(sub).source.integration).toBe('linear')
-    expect(sub.match).toEqual({ 'issue.id': { value: 'issue-uuid' } })
+    expect(sub.match).toEqual({
+      'issue.id': { value: 'issue-uuid' },
+      ...(sub.source.output === 'issue.comment' ? { 'comment.inSession': { value: false } } : {}),
+    })
     // The flow's own delivery target still applies to every inferred subscription.
     expect(sub.deliver).toEqual({ to: 'delivery-owner', whenInactive: 'retain' })
   }
@@ -405,9 +412,9 @@ test('a Linear issue link is never delivery feedback, even beside a link claimin
       ],
     }
     const subscriptions = registry.subscriptions(flow, metadata)
-    expect(subscriptions).toHaveLength(4)
+    expect(subscriptions).toHaveLength(7)
     for (const subscription of subscriptions) {
-      expect(subscription.source.output.startsWith('issue.')).toBe(true)
+      expect(/^(issue|agent_session)\./.test(subscription.source.output)).toBe(true)
       expect(isDeliveryFeedbackSubscription(subscription, metadata)).toBe(false)
     }
   }

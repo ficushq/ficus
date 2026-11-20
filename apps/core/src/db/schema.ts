@@ -4394,6 +4394,9 @@ export const linearActivityOutbox = pgTable(
       .on(table.nextAttemptAt)
       .where(sql`${table.status} IN ('pending', 'sending')`),
     index('idx_linear_activity_outbox_sent').on(table.connectionId, table.sentAt),
+    index('idx_linear_activity_outbox_session').on(table.sessionId, table.status),
+    index('idx_linear_activity_outbox_work_stream').on(table.workStreamId),
+    index('idx_linear_activity_outbox_retention').on(table.status, table.updatedAt),
     check('linear_activity_outbox_kind_check', sql`${table.kind} in ('activity', 'session_update', 'attachment')`),
     check(
       'linear_activity_outbox_status_check',

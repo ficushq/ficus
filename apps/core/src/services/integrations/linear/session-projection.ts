@@ -43,7 +43,7 @@ export interface ProjectionQuestion {
 export interface LinearProjectionSnapshot {
   stream: {
     status: 'queued' | 'active' | 'done' | 'canceled'
-    pause: Pick<WorkStreamPause, 'id'> | null
+    pause: (Pick<WorkStreamPause, 'id'> & { reason?: string | null }) | null
   }
   /** Step IDs in definition order with their kinds, for "step <n> of <total>". */
   steps: Array<{ id: string; kind: string }>
@@ -51,8 +51,8 @@ export interface LinearProjectionSnapshot {
   /** Attempts below this ID ran before the session was bound and are never shown. */
   attemptFloor: number
   pullRequest?: { url: string; label: string }
-  /** An unrecoverable failure: recovery exhausted, waiting for a person. */
-  failed: boolean
+  /** An unrecoverable failure: the open recovery wait (recovery exhausted, waiting for a person). */
+  failedWaitId?: string
   questions: ProjectionQuestion[]
   /** The stream link, only when the instance has an `https:` public URL (decision 9.5). */
   streamUrl?: string
@@ -74,6 +74,9 @@ export function projectionAttemptFloor(
   if (running.length) return Math.min(...running)
   return attempts.reduce((max, attempt) => Math.max(max, attempt.id), 0) + 1
 }
+
+/** The pause reason a Linear stop request records (`session-prompts.ts`). */
+export const LINEAR_STOP_PAUSE_REASON_PREFIX = 'Stopped from Linear by '
 
 /** Linear marks a session stale 30 minutes after its last activity; a heartbeat comes before that. */
 export const LINEAR_HEARTBEAT_MS = 25 * 60_000
@@ -174,6 +177,12 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
   // A stream created from an event waits, paused, for its owner to prepare it; until a step runs,
   // nothing has started and nothing was paused from the session's point of view.
   const begun = snapshot.attempts.some((attempt) => attempt.id >= snapshot.attemptFloor)
+  const kindOf = (attempt: ProjectionAttempt) =>
+    attempt.kind ?? snapshot.steps.find((step) => step.id === attempt.stepId)?.kind
+  // While a person is being waited on, a heartbeat would move the session out of "awaiting input".
+  const awaitingPerson =
+    snapshot.questions.some((question) => question.status === 'open') ||
+    snapshot.attempts.some((attempt) => attempt.status === 'running' && kindOf(attempt) === 'human-approval')
 
   if (stream.status === 'active' && (begun || !stream.pause))
     items.push(
@@ -232,7 +241,12 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
   for (const question of snapshot.questions) {
     if (question.status === 'open' && !question.mirrorState && live)
       items.push(linearElicitation(question, snapshot.authLinkUrl).item)
-    if (question.status !== 'open' && (question.mirrorState === 'open' || question.mirrorState === 'answered_in_ficus'))
+    // After the final response nothing more is said about questions; it would reopen the turn.
+    if (
+      live &&
+      question.status !== 'open' &&
+      (question.mirrorState === 'open' || question.mirrorState === 'answered_in_ficus')
+    )
       items.push(
         activity(
           `question:${question.id}:resolved`,
@@ -248,7 +262,8 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
       )
   }
 
-  if (live && stream.pause && begun)
+  // A pause from a Linear stop request already got its "Stopped" response.
+  if (live && stream.pause && begun && !stream.pause.reason?.startsWith(LINEAR_STOP_PAUSE_REASON_PREFIX))
     items.push(
       activity(
         `pause:${stream.pause.id}`,
@@ -257,10 +272,13 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
       )
     )
 
-  if (live && snapshot.failed)
-    items.push(activity('stream:failed', { type: 'error', body: LINEAR_PROJECTION_TEXT.failed }))
+  // Keyed by the wait, so a later, separate failure is reported again.
+  if (live && snapshot.failedWaitId)
+    items.push(
+      activity(`stream:failed:${snapshot.failedWaitId}`, { type: 'error', body: LINEAR_PROJECTION_TEXT.failed })
+    )
 
-  if (stream.status === 'active' && !stream.pause && !snapshot.failed) {
+  if (stream.status === 'active' && !stream.pause && !snapshot.failedWaitId && !awaitingPerson) {
     const quietFor = snapshot.lastActivityAt ? snapshot.now.getTime() - snapshot.lastActivityAt.getTime() : 0
     if (quietFor >= LINEAR_HEARTBEAT_MS) {
       const running = snapshot.attempts.find((attempt) => attempt.status === 'running')

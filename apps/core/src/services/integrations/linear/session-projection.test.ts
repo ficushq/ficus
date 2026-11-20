@@ -21,7 +21,6 @@ function snapshot(overrides: Partial<LinearProjectionSnapshot> = {}): LinearProj
     steps,
     attempts: [],
     attemptFloor: 1,
-    failed: false,
     questions: [],
     lastActivityAt: now,
     now,
@@ -132,7 +131,7 @@ describe('Linear session projection', () => {
     expect(byKey(snapshot({ stream: { status: 'canceled', pause: null } }), 'stream:canceled')?.payload).toEqual({
       content: { type: 'response', body: 'Ficus stopped working on this request.' },
     })
-    const failed = byKey(snapshot({ failed: true }), 'stream:failed')!
+    const failed = byKey(snapshot({ failedWaitId: 'w1' }), 'stream:failed:w1')!
     expect(failed.payload).toEqual({
       content: { type: 'error', body: 'Ficus hit a problem and a person on the team is looking at it.' },
     })
@@ -227,6 +226,39 @@ describe('Linear session projection', () => {
     expect(keys(snapshot({ questions: [{ id: 'q6', status: 'open', data, mirrorState: 'open' }] }))).not.toContain(
       'question:q6:asked'
     )
+  })
+
+  test('no heartbeat while a person is being waited on', () => {
+    const quiet = { lastActivityAt: new Date(now.getTime() - LINEAR_HEARTBEAT_MS) }
+    const question = {
+      id: 'q9',
+      status: 'open',
+      data: { questions: [{ id: 'a', type: 'text' as const, question: 'Which?' }] },
+      mirrorState: 'open' as const,
+    }
+    const heartbeats = (value: LinearProjectionSnapshot) => keys(value).filter((key) => key.startsWith('heartbeat:'))
+    expect(heartbeats(snapshot({ ...quiet, questions: [question] }))).toEqual([])
+    expect(heartbeats(snapshot({ ...quiet, attempts: [{ id: 1, stepId: 'approve', status: 'running' }] }))).toEqual([])
+    expect(
+      heartbeats(snapshot({ ...quiet, attempts: [{ id: 1, stepId: 'implement', status: 'running' }] }))
+    ).toHaveLength(1)
+  })
+
+  test('a pause from a Linear stop gets no extra "Paused." thought, and nothing follows the final response', () => {
+    const running = [{ id: 1, stepId: 'implement', status: 'running' as const }]
+    const stopped = { id: 'p2', reason: 'Stopped from Linear by Mira' }
+    expect(keys(snapshot({ stream: { status: 'active', pause: stopped }, attempts: running }))).not.toContain(
+      'pause:p2'
+    )
+    const data = { questions: [{ id: 'a', type: 'select' as const, question: 'Pick', options: [{ value: 'x' }] }] }
+    expect(
+      keys(
+        snapshot({
+          stream: { status: 'done', pause: null },
+          questions: [{ id: 'q7', status: 'dismissed', data, mirrorState: 'open' }],
+        })
+      )
+    ).not.toContain('question:q7:resolved')
   })
 
   test('projecting the same state twice yields the same keys, so the outbox sends nothing new', () => {
