@@ -54,6 +54,8 @@ spec:
           env:
             - name: FORCE_COLOR
               value: "1"
+            - name: LOG_LEVEL
+              value: "info"
             - name: WORKER_URL
               value: "http://ficus-worker:3002"
             - name: FICUS_SANDBOX_RUNTIME
@@ -130,6 +132,8 @@ spec:
           env:
             - name: FORCE_COLOR
               value: "1"
+            - name: LOG_LEVEL
+              value: "info"
             - name: FICUS_SANDBOX_RUNTIME
               value: "k8s"
             - name: NODE_EXTRA_CA_CERTS

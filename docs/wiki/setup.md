@@ -667,6 +667,29 @@ enter a replacement to rotate them. OpenAI API-service and Google speech
 credential changes apply to new requests without a restart. Restart with
 `ficus server restart` after changing server environment settings.
 
+### Log level
+
+`LOG_LEVEL` sets the lowest level the api and worker print: `debug`, `info`,
+`warn` or `error`. When it is unset, Core logs at `info` if
+`NODE_ENV=production` and at `debug` otherwise. The shipped deployments all
+start at `info`:
+
+| Deployment                                      | Where the default comes from                                 |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| Local install (PM2, launchd, systemd-user)      | `NODE_ENV=production` in the supervisor's service definition |
+| Docker image, `docker-compose.core.yml`, `k8s/` | `LOG_LEVEL=info`                                             |
+| Hosts set up with `scripts/setup/setup-host.sh` | `LOG_LEVEL=info` in the rendered `<dest>/.env`               |
+| `bun run dev`                                   | none, so `debug`                                             |
+
+To see debug output while diagnosing a problem, set `LOG_LEVEL=debug` in the
+server environment and restart. On a `setup-host.sh` host, set
+`core.env.LOG_LEVEL` in the setup config; it replaces the rendered default.
+An upgrade does not rewrite `<dest>/.env`, so a host set up before this default
+existed keeps logging at `debug` until `LOG_LEVEL=info` is added to that file
+and `ficus-api` and `ficus-worker` are restarted. Do not set
+`NODE_ENV=production` only to change the log level: it also changes other
+behaviour, such as which development origins the API accepts.
+
 ### Browser tools
 
 On the **`host` runtime** nothing is downloaded: the core drives a

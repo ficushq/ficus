@@ -30,6 +30,8 @@ services:
       DATABASE_URL: postgres://ficus:${POSTGRES_PASSWORD:-ficus}@postgres:5432/ficus
       WORKER_URL: http://ficus-worker:3002
       FICUS_SYSTEM_LOG_PROVIDER: docker
+      # Core logs at debug unless LOG_LEVEL is set; change to debug when diagnosing.
+      LOG_LEVEL: info
       FICUS_DOCKER_API_CONTAINER: ficus-api
       FICUS_DOCKER_WORKER_CONTAINER: ficus-worker
       # Mandatory and explicit (no default, no auto-detection): both processes
@@ -52,6 +54,7 @@ services:
     command: bun run apps/core/dist/worker.js
     environment:
       DATABASE_URL: postgres://ficus:${POSTGRES_PASSWORD:-ficus}@postgres:5432/ficus
+      LOG_LEVEL: info
       FICUS_PASSWORD: ${FICUS_PASSWORD:?set FICUS_PASSWORD}
       FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}
       # The worker's stream server binds loopback by default (#1348); the api
