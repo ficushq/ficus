@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
 import { agentConversationLink, type AssistantConversationLink } from '../lib/assistantConversationLinks'
 import { AgentActivityDot } from './AgentActivityDot'
+import { agentChatTarget } from '../lib/agentChatLinks'
 import { ChevronRightIcon, ChatBubbleIcon } from './icons'
 
 export function AssistantConversationLinkRow({
@@ -16,6 +17,8 @@ export function AssistantConversationLinkRow({
   return (
     <button
       type="button"
+      // Shift- or Alt/Option-click opens the agent in a floating window instead.
+      {...agentChatTarget(conversation.agentId)}
       onClick={() => onOpen(resolved)}
       className="ficus-button ficus-button-secondary my-1 flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-selection"
       aria-label={`${conversation.kind === 'background' || conversation.kind === 'squad' ? 'View task' : 'Open conversation'}: ${resolved.label}`}

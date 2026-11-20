@@ -17,7 +17,11 @@ import type { AssistantConversationLink } from '../lib/assistantConversationLink
 import type { CommandDestination } from '../lib/commandCenterSearch'
 import { AssistantConversationView, type AssistantViewControls } from './AssistantConversationView'
 import { AssistantSnapMenu } from './AssistantSnapMenu'
-import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon, ResizeCornerIcon } from './icons'
+import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon } from './icons'
+import { FloatingWindowFrame } from './FloatingWindowFrame'
+import { useFloatingWindows } from './floatingWindowsContext'
+import { activeFloatingWindow } from '../lib/floatingWindowRegistry'
+import { ASSISTANT_WINDOW_KEY } from '../lib/chatWindows'
 import { OPEN_ASSISTANT_EVENT, TOGGLE_ASSISTANT_EVENT } from '@ficus/shared/browser-keys'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
@@ -74,11 +78,21 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
         ? 'Microphone access needs HTTPS or localhost.'
         : undefined
   const panel = useRef<HTMLDivElement>(null)
+  // The assistant shares one stack with floating agent chat windows: the last one used is on top.
+  const floating = useFloatingWindows()
   const assistantWindow = useAssistantWindow(panel, {
     visible: open || live,
     small,
     layoutKey: small ? 'compact' : viewing || stack.length > 0 ? 'conversation' : 'search',
+    z: floating?.rankOf(ASSISTANT_WINDOW_KEY) ?? 0,
   })
+  const floatingRef = useStableRef(floating)
+  const setAssistantShown = floating?.setAssistantShown
+  useEffect(() => {
+    setAssistantShown?.(open)
+    // Opening the assistant brings it in front of every agent window.
+    if (open) floatingRef.current?.bringToFront(ASSISTANT_WINDOW_KEY)
+  }, [open, setAssistantShown, floatingRef])
   const positionControl = (
     <AssistantSnapMenu
       snap={assistantWindow.placement.snap}
@@ -126,6 +140,8 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const onControls = useCallback((next: AssistantViewControls) => setControls(next), [])
   const openConversation = useCallback(
     (conversation: AssistantConversationLink) => {
+      // An agent that already floats comes forward in its window instead; the assistant stays as it is.
+      if (floatingRef.current?.focusIfFloating(conversation.agentId)) return
       const nav = navigationRef.current
       // Preserve an Assistant parent even when a compact voice session opens a chat from search.
       const needsParent = !nav.entries.some((entry) => entry.kind === 'assistant' && entry.id === idRef.current)
@@ -142,7 +158,7 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       else setState('open')
       setCompact(false)
     },
-    [existing, idRef, navigationRef, setState]
+    [existing, idRef, navigationRef, setState, floatingRef]
   )
   const newChat = () => {
     if (live) return
@@ -170,6 +186,10 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
         event.preventDefault()
         toggle()
       } else if (event.key === 'Escape' && openRef.current) {
+        // Only when the assistant is the window in use: Escape inside an agent window (or with one in
+        // front and focus on the page) leaves the assistant alone.
+        const active = activeFloatingWindow(event.target)
+        if (active && active !== ASSISTANT_WINDOW_KEY) return
         event.preventDefault()
         if (navigationRef.current.entries.length) navigationRef.current.back()
         else navigationRef.current.close()
@@ -209,12 +229,28 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
     }
   }, [open])
   return (
-    <div
-      ref={panel}
+    <FloatingWindowFrame
+      frameRef={panel}
+      windowKey={ASSISTANT_WINDOW_KEY}
       role="dialog"
       aria-label="Assistant"
       hidden={!open && !live}
-      {...assistantWindow.panelHandlers}
+      gesture={{
+        handlers: assistantWindow.panelHandlers,
+        beginResize: assistantWindow.beginResize,
+        dragSnap: assistantWindow.dragSnap,
+        dragging: assistantWindow.dragging,
+      }}
+      zIndex={floating ? floating.zIndexFor(ASSISTANT_WINDOW_KEY) : undefined}
+      onActivate={floating ? () => floating.bringToFront(ASSISTANT_WINDOW_KEY) : undefined}
+      resizable={!small}
+      snapOnDrag={!small}
+      corner={{
+        label: 'Resize assistant',
+        title: 'Drag to resize · double-click to reset',
+        onKeyDown: assistantWindow.resizeHandle.onKeyDown,
+        onDoubleClick: assistantWindow.resizeHandle.onDoubleClick,
+      }}
       data-assistant-drag-handle={small || undefined}
       style={{
         ...assistantWindow.style,
@@ -445,17 +481,6 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
           positionControl={positionControl}
         />
       </div>
-      {!small && (
-        <button
-          type="button"
-          aria-label="Resize assistant"
-          title="Drag to resize · double-click to reset"
-          {...assistantWindow.resizeHandle}
-          className="absolute bottom-0.5 right-0.5 z-10 flex h-5 w-5 cursor-nwse-resize touch-none items-center justify-center rounded text-muted opacity-60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          <ResizeCornerIcon className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
+    </FloatingWindowFrame>
   )
 }

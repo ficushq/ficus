@@ -20,6 +20,8 @@ const ALLOWLIST: Record<string, string> = {
   'components/MobileChatOptionsSheet.tsx': 'a modal bottom sheet (dialog), not an anchored popup',
   'components/ExpandableChatPanel.tsx': 'portals the chat into a host slot in the layout; nothing floats',
   'components/WorkStreamList.tsx': 'portals the Filters trigger into its header slot; the panel is a Popover',
+  'components/FloatingWindowFrame.tsx':
+    'the snap preview and zone picker shown only while a window is dragged (pointer captured), not an anchored popup',
   // Follow-ups: scrim-dismissed header sheets opened by app events, not anchored to a trigger.
   'components/InboxPopup.tsx': 'scrimmed header sheet opened by an app event (follow-up: move to Panel)',
   'components/ActionCenterPanel.tsx': 'scrimmed header sheet, currently unused (follow-up: move to Panel)',

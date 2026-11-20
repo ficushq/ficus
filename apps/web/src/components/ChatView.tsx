@@ -258,6 +258,8 @@ interface ChatViewProps {
    * Needs `agentId` and `onLoadOlder`.
    */
   enableHistorySearch?: boolean
+  /** More controls at the end of the composer's bottom-left row (the floating-window button). Desktop only. */
+  composerControls?: React.ReactNode
   /**
    * Live typing with teammates in this agent's chat: show who else is typing, and tell them when
    * this person is (see useAgentChatTyping). Off for conversations private to one person.
@@ -656,6 +658,7 @@ export function ChatView({
   focusMessageId,
   focusInboxMessageId,
   enableHistorySearch = false,
+  composerControls,
   showTeammateTyping = false,
   dependencies,
 }: ChatViewProps) {
@@ -2891,6 +2894,7 @@ export function ChatView({
                       </button>
                       {rawTextToggle('composer')}
                       {historySearchButton('composer')}
+                      {composerControls}
                     </div>
                     {composerStatus}
                   </div>
