@@ -55,6 +55,7 @@ import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
 import { Menu, popoverRowClass, useHoverOpen, usePopover } from './popover'
 import { ChatComposerOptionsContext, type ChatComposerOptionRow } from './chatComposerOptions'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useComposerFit } from '../hooks/useComposerFit'
 import {
   InlineActionNotice,
   InlineActionRow,
@@ -1134,11 +1135,32 @@ export function ChatView({
   }, [focusMessageId, focusInboxMessageId, startFocus])
 
   // A narrow composer's options (attach, voice, auto-scroll, raw text, history search and the caller's
-  // composer controls): its actions fold behind one trigger when the composer itself is narrow (a phone,
-  // or a floating window or side panel on a wide screen; see ResponsiveChat.css). Phones open them as a
-  // bottom sheet, wider screens as a menu anchored to the trigger. Without matchMedia it is the sheet.
+  // composer controls): its actions fold behind one trigger on a phone, and anywhere else as soon as they
+  // would not fit on one line beside the status and whatever the right-hand group holds now (Send, or Stop
+  // with Interrupt / Follow up), measured by useComposerFit. Phones open them as a bottom sheet, wider
+  // screens as a menu anchored to the trigger. Without matchMedia it is the sheet.
   const [attachSheetOpen, setAttachSheetOpen] = useState(false)
   const optionsAsSheet = useMediaQuery('(max-width: 767px)', true)
+  const composerRowRef = useRef<HTMLDivElement>(null)
+  const composerLeadRef = useRef<HTMLDivElement>(null)
+  const composerActionsRef = useRef<HTMLDivElement>(null)
+  const composerStatusRef = useRef<HTMLDivElement>(null)
+  const composerSendRef = useRef<HTMLDivElement>(null)
+  const actionsDontFit = useComposerFit(
+    {
+      row: composerRowRef,
+      lead: composerLeadRef,
+      actions: composerActionsRef,
+      status: composerStatusRef,
+      send: composerSendRef,
+    },
+    // The menu belongs to the folded row: once the actions are back inline its trigger is gone. A phone's
+    // sheet stays, as its row is always folded.
+    (folded) => {
+      if (!folded && !optionsAsSheet) setAttachSheetOpen(false)
+    }
+  )
+  const composerFolded = optionsAsSheet || actionsDontFit
   const optionsMenu = usePopover({ kind: 'menu', open: attachSheetOpen, onOpenChange: setAttachSheetOpen })
   // The menu opens on hover like the app's other hover menus; the phone sheet stays tap-only.
   const optionsHover = useHoverOpen(optionsMenu, { enabled: !optionsAsSheet })
@@ -2884,9 +2906,13 @@ export function ChatView({
                     'Enter to send, ↑ for voice'
                   )}
                 </p>
-                <div className="chat-composer-controls flex gap-2 items-center justify-between">
-                  <div className="flex items-center gap-1 min-w-0">
-                    {/* Shown instead of the action buttons while the composer is narrow (ResponsiveChat.css). */}
+                <div
+                  ref={composerRowRef}
+                  data-folded={composerFolded ? '' : undefined}
+                  className="chat-composer-controls flex gap-2 items-center justify-between"
+                >
+                  <div ref={composerLeadRef} className="flex items-center gap-1 min-w-0">
+                    {/* Shown instead of the action buttons while they are folded (ResponsiveChat.css). */}
                     <button
                       type="button"
                       {...optionsMenu.triggerProps}
@@ -2899,149 +2925,157 @@ export function ChatView({
                     >
                       <MoreIcon className="w-5 h-5" />
                     </button>
-                    <div className="chat-composer-actions gap-1 items-center">
-                      {/* Image button */}
-                      <button
-                        type="button"
-                        onClick={() => imageAttachState.allowed && fileInputRef.current?.click()}
-                        disabled={!imageAttachState.allowed || disabled || isUploading}
-                        className="ficus-button ficus-button-ghost p-2.5 md:p-2 rounded-md disabled:opacity-50 transition-colors shrink-0"
-                        title={imageAttachState.title}
-                      >
-                        <ImageIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={() => {
-                          if (document.activeElement === textareaRef.current && textareaRef.current) {
-                            agentFileSelectionRef.current = {
-                              start: textareaRef.current.selectionStart,
-                              end: textareaRef.current.selectionEnd,
+                    {/* While folded the actions stay laid out, unseen and inert, so their width is still known. */}
+                    <div className="chat-composer-actions-slot" inert={composerFolded}>
+                      <div ref={composerActionsRef} className="chat-composer-actions gap-1 items-center">
+                        {/* Image button */}
+                        <button
+                          type="button"
+                          onClick={() => imageAttachState.allowed && fileInputRef.current?.click()}
+                          disabled={!imageAttachState.allowed || disabled || isUploading}
+                          className="ficus-button ficus-button-ghost p-2.5 md:p-2 rounded-md disabled:opacity-50 transition-colors shrink-0"
+                          title={imageAttachState.title}
+                        >
+                          <ImageIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={() => {
+                            if (document.activeElement === textareaRef.current && textareaRef.current) {
+                              agentFileSelectionRef.current = {
+                                start: textareaRef.current.selectionStart,
+                                end: textareaRef.current.selectionEnd,
+                              }
                             }
-                          }
-                        }}
-                        onClick={() => agentId && agentFileInputRef.current?.click()}
-                        disabled={!agentId || disabled}
-                        className="ficus-button ficus-button-ghost p-2.5 md:p-2 rounded-md disabled:opacity-50 transition-colors shrink-0"
-                        title="Attach a file"
-                        aria-label="Attach a file"
-                      >
-                        <FileIcon className="h-5 w-5" />
-                      </button>
-                      {/* Mic button */}
-                      {voiceSupported && (
-                        <div className="relative flex items-center justify-center">
-                          {voiceState === 'recording' && (
-                            <span
-                              className="absolute inset-0 rounded-md bg-status-danger-400 pointer-events-none"
-                              style={{
-                                opacity: 0.15 + voiceVolume * 0.35,
-                                transform: `scale(${1 + voiceVolume * 0.4})`,
-                                transition: 'transform 75ms, opacity 75ms',
-                              }}
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault()
-                              beginPress()
-                            }}
-                            onMouseUp={() => endPress()}
-                            onMouseLeave={() => {
-                              if (isHoldMode) cancelPress()
-                            }}
-                            onTouchStart={(e) => {
-                              e.preventDefault()
-                              beginPress()
-                            }}
-                            onTouchEnd={() => endPress()}
-                            disabled={disabled || voiceState === 'transcribing'}
-                            className={clsx(
-                              'ficus-button ficus-button-ghost',
-                              'relative z-10 p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors disabled:opacity-50',
-                              voiceState === 'recording'
-                                ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
-                                : voiceState === 'transcribing'
-                                  ? 'bg-surface-secondary'
-                                  : ''
-                            )}
-                            title={
-                              voiceState === 'recording'
-                                ? isHoldMode
-                                  ? 'Release to send'
-                                  : 'Stop recording'
-                                : voiceState === 'transcribing'
-                                  ? 'Transcribing...'
-                                  : hasInput
-                                    ? 'Record voice message (Ctrl+Shift+V)'
-                                    : 'Record voice message (↑)'
-                            }
-                          >
-                            {voiceState === 'transcribing' ? (
-                              <span className="inline-block w-5 h-5 border-2 border-th-border border-t-secondary rounded-full animate-spin" />
-                            ) : (
-                              <MicIcon className="w-5 h-5" />
-                            )}
+                          }}
+                          onClick={() => agentId && agentFileInputRef.current?.click()}
+                          disabled={!agentId || disabled}
+                          className="ficus-button ficus-button-ghost p-2.5 md:p-2 rounded-md disabled:opacity-50 transition-colors shrink-0"
+                          title="Attach a file"
+                          aria-label="Attach a file"
+                        >
+                          <FileIcon className="h-5 w-5" />
+                        </button>
+                        {/* Mic button */}
+                        {voiceSupported && (
+                          <div className="relative flex items-center justify-center">
                             {voiceState === 'recording' && (
-                              <span className="ml-1 text-xs font-mono tabular-nums">
-                                {Math.floor(voiceElapsed / 60)}:{String(voiceElapsed % 60).padStart(2, '0')}
-                              </span>
+                              <span
+                                className="absolute inset-0 rounded-md bg-status-danger-400 pointer-events-none"
+                                style={{
+                                  opacity: 0.15 + voiceVolume * 0.35,
+                                  transform: `scale(${1 + voiceVolume * 0.4})`,
+                                  transition: 'transform 75ms, opacity 75ms',
+                                }}
+                              />
                             )}
-                          </button>
-                        </div>
-                      )}
-                      {/* TTS toggle button */}
-                      {tts && (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={tts.toggle}
-                            className={clsx(
-                              'ficus-button ficus-button-ghost',
-                              'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
-                              tts.isPlaying || tts.isSynthesizing
-                                ? 'bg-accent/15 hover:bg-accent/15 text-accent-light hover:text-accent-light'
-                                : tts.enabled
-                                  ? 'text-accent-light hover:text-accent-light hover:bg-accent/10'
-                                  : ''
-                            )}
-                            title={tts.enabled ? 'Disable auto-speak' : 'Enable auto-speak'}
-                          >
-                            {tts.isSynthesizing ? (
-                              <span className="inline-block w-5 h-5 border-2 border-accent-light/30 border-t-accent-light rounded-full animate-spin" />
-                            ) : tts.enabled ? (
-                              <SpeakerOnIcon className={clsx('w-5 h-5', tts.isPlaying && 'animate-pulse')} />
-                            ) : (
-                              <SpeakerOffIcon className="w-5 h-5" />
-                            )}
-                          </button>
-                        </div>
-                      )}
-                      {/* Auto-scroll toggle */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !autoScroll
-                          updateAutoScroll(next)
-                          if (next) pinTranscriptToBottom()
-                        }}
-                        className={clsx(
-                          'ficus-button ficus-button-ghost',
-                          'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
-                          autoScroll && 'text-accent hover:text-accent hover:bg-selection'
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                beginPress()
+                              }}
+                              onMouseUp={() => endPress()}
+                              onMouseLeave={() => {
+                                if (isHoldMode) cancelPress()
+                              }}
+                              onTouchStart={(e) => {
+                                e.preventDefault()
+                                beginPress()
+                              }}
+                              onTouchEnd={() => endPress()}
+                              disabled={disabled || voiceState === 'transcribing'}
+                              className={clsx(
+                                'ficus-button ficus-button-ghost',
+                                'relative z-10 p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors disabled:opacity-50',
+                                voiceState === 'recording'
+                                  ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
+                                  : voiceState === 'transcribing'
+                                    ? 'bg-surface-secondary'
+                                    : ''
+                              )}
+                              title={
+                                voiceState === 'recording'
+                                  ? isHoldMode
+                                    ? 'Release to send'
+                                    : 'Stop recording'
+                                  : voiceState === 'transcribing'
+                                    ? 'Transcribing...'
+                                    : hasInput
+                                      ? 'Record voice message (Ctrl+Shift+V)'
+                                      : 'Record voice message (↑)'
+                              }
+                            >
+                              {voiceState === 'transcribing' ? (
+                                <span className="inline-block w-5 h-5 border-2 border-th-border border-t-secondary rounded-full animate-spin" />
+                              ) : (
+                                <MicIcon className="w-5 h-5" />
+                              )}
+                              {voiceState === 'recording' && (
+                                <span className="ml-1 text-xs font-mono tabular-nums">
+                                  {Math.floor(voiceElapsed / 60)}:{String(voiceElapsed % 60).padStart(2, '0')}
+                                </span>
+                              )}
+                            </button>
+                          </div>
                         )}
-                        title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
-                      >
-                        <AutoScrollIcon className="w-5 h-5" />
-                      </button>
-                      {rawTextToggle('composer')}
-                      {historySearchButton('composer')}
-                      {composerControls}
+                        {/* TTS toggle button */}
+                        {tts && (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={tts.toggle}
+                              className={clsx(
+                                'ficus-button ficus-button-ghost',
+                                'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
+                                tts.isPlaying || tts.isSynthesizing
+                                  ? 'bg-accent/15 hover:bg-accent/15 text-accent-light hover:text-accent-light'
+                                  : tts.enabled
+                                    ? 'text-accent-light hover:text-accent-light hover:bg-accent/10'
+                                    : ''
+                              )}
+                              title={tts.enabled ? 'Disable auto-speak' : 'Enable auto-speak'}
+                            >
+                              {tts.isSynthesizing ? (
+                                <span className="inline-block w-5 h-5 border-2 border-accent-light/30 border-t-accent-light rounded-full animate-spin" />
+                              ) : tts.enabled ? (
+                                <SpeakerOnIcon className={clsx('w-5 h-5', tts.isPlaying && 'animate-pulse')} />
+                              ) : (
+                                <SpeakerOffIcon className="w-5 h-5" />
+                              )}
+                            </button>
+                          </div>
+                        )}
+                        {/* Auto-scroll toggle */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !autoScroll
+                            updateAutoScroll(next)
+                            if (next) pinTranscriptToBottom()
+                          }}
+                          className={clsx(
+                            'ficus-button ficus-button-ghost',
+                            'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
+                            autoScroll && 'text-accent hover:text-accent hover:bg-selection'
+                          )}
+                          title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
+                        >
+                          <AutoScrollIcon className="w-5 h-5" />
+                        </button>
+                        {rawTextToggle('composer')}
+                        {historySearchButton('composer')}
+                        {composerControls}
+                      </div>
                     </div>
-                    {composerStatus}
+                    <div
+                      ref={composerStatusRef}
+                      className="chat-composer-status flex min-w-0 items-center empty:hidden"
+                    >
+                      {composerStatus}
+                    </div>
                   </div>
-                  <div className="chat-composer-send flex shrink-0 items-center gap-2 md:gap-1">
+                  <div ref={composerSendRef} className="chat-composer-send flex shrink-0 items-center gap-2 md:gap-1">
                     {/* Any active turn, not only a streaming one: a queued or sandbox-waiting run stops too. */}
                     {onStop && (isStreaming || agentBusy) && (
                       <button

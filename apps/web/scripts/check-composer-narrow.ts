@@ -1,10 +1,18 @@
 /**
- * Focused, DB-free Chromium check that a chat composer follows its own width, not the viewport's, with
- * the real components and stylesheet and made-up messages, in a wide (1440px) viewport:
- * - a floating agent window or side panel narrower than COMPOSER_COLLAPSE_WIDTH folds the action
- *   buttons behind one options trigger, as phones do; wider composers keep them inline;
+ * Focused, DB-free Chromium check that a chat composer folds its actions by measured space, not by a
+ * fixed width, with the real components and stylesheet and made-up messages, in a wide (1440px) viewport:
+ * - the actions stay inline exactly while they, the context indicator and the right-hand group as it is
+ *   now (Send, or Stop with the Interrupt / Follow up split button) fit on one line, and fold behind the
+ *   More controls trigger otherwise, in floating agent windows and side panels of several widths, idle
+ *   and busy;
+ * - the row never wraps at any of those widths; only the last-resort fallback, where even the trigger,
+ *   the context indicator and the right-hand group cannot share a line, may wrap, and the check reports
+ *   the widths at which that starts;
+ * - a side panel resized a step at a time folds once on the way down and unfolds once on the way up,
+ *   later by the unfold margin (no flicker at the boundary), idle and busy;
+ * - a turn starting and ending in place folds and unfolds the actions at the same width;
  * - at every width, Send, Stop, the Interrupt / Follow up split button and the context indicator sit
- *   fully inside the composer and never under another control (a busy turn wraps them to a new line);
+ *   fully inside the composer and never under another control;
  * - the trigger opens the shared menu (arrow keys, Escape and focus return) with every action as a
  *   labelled row, including the window's own "Open full page";
  * - the window title bar truncates a long agent name in a narrow window, keeps its four buttons whole, and links the
@@ -21,8 +29,8 @@ import { resolve } from 'node:path'
 import type { Browser, Page } from 'playwright-core'
 import { startFixtureServer } from './fixture-server'
 
-/** The composer width below which its actions fold away; ResponsiveChat.css says 30rem. */
-const COMPOSER_COLLAPSE_WIDTH = 480
+/** How much room folded actions need to spare before they come back; COMPOSER_UNFOLD_MARGIN in useComposerFit. */
+const UNFOLD_MARGIN = 16
 
 const root = resolve(import.meta.dir, '..')
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
@@ -47,8 +55,9 @@ function measure(page: Page, scope: string) {
       const r = el.getBoundingClientRect()
       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width }
     }
+    // Folded actions stay laid out but hidden, so visibility counts too.
     const shown = (el: Element | null): el is HTMLElement =>
-      !!el && (el as HTMLElement).offsetParent !== null && el.getBoundingClientRect().width > 0
+      !!el && el.checkVisibility({ visibilityProperty: true }) && el.getBoundingClientRect().width > 0
     const actions = form.querySelector('.chat-composer-actions')!
     const trigger = form.querySelector('.chat-composer-attach')!
     const send = form.querySelector('.chat-composer-send')!
@@ -73,8 +82,20 @@ function measure(page: Page, scope: string) {
       }
     const formBox = box(form)
     const outside = boxes.filter((b) => b.left < formBox.left - 0.5 || b.right > formBox.right + 0.5).map((b) => b.name)
+    const row = form.querySelector('.chat-composer-controls')!
+    const lead = send.previousElementSibling!
+    const status = form.querySelector('.chat-composer-status')!
+    const gap = (el: Element) => parseFloat(getComputedStyle(el).columnGap) || 0
+    const statusPart = status.getClientRects().length > 0 ? gap(lead) + box(status).width : 0
+    // What one line needs with the actions inline, and with them folded behind the trigger.
+    const inlineNeeded = box(actions).width + statusPart + gap(row) + box(send).width
+    const triggerWidth = shown(trigger) ? box(trigger).width : 36
+    const foldedNeeded = triggerWidth + gap(lead) + statusPart + gap(row) + box(send).width
     return {
       composerWidth: formBox.width,
+      rowWidth: box(row).width,
+      inlineNeeded,
+      foldedNeeded,
       collapsed: shown(trigger),
       actionsShown: shown(actions),
       contextShown: shown(context),
@@ -82,9 +103,8 @@ function measure(page: Page, scope: string) {
       overlaps,
       outside,
       rows: new Set(boxes.filter((b) => send.contains(controls[boxes.indexOf(b)]!)).map((b) => Math.round(b.top))).size,
-      sendTop: box(send).top,
-      // The row's leading group (the trigger or actions, and the status); Send below it has wrapped.
-      leadBottom: box(send.previousElementSibling!).bottom,
+      // Send below the leading group (the trigger or actions, and the status) has wrapped.
+      wrapped: box(send).top >= box(lead).bottom - 0.5,
     }
   }, scope)
 }
@@ -142,8 +162,8 @@ try {
   await page.setViewportSize({ width: 1440, height: 720 })
   for (const appearance of ['dark', 'light']) {
     for (const [layout, widths] of [
-      ['window', [340, 420, 520, 720]],
-      ['panel', [400, 560]],
+      ['window', [340, 420, 520, 600, 720]],
+      ['panel', [400, 560, 640]],
     ] as const) {
       for (const width of widths) {
         for (const busy of [false, true]) {
@@ -152,11 +172,19 @@ try {
           const scope = layout === 'window' ? '[data-floating-window]' : '[data-testid="side-panel"]'
           const m = await measure(page, scope)
           report.push(
-            `${label}: composer ${m.composerWidth.toFixed(0)}px, ${m.collapsed ? 'folded' : 'inline'}, send rows ${m.rows}, ${m.sendTop >= m.leadBottom ? 'send wrapped' : 'one line'}`
+            `${label}: composer ${m.composerWidth.toFixed(0)}px, inline needs ${m.inlineNeeded.toFixed(0)}px, ${m.collapsed ? 'folded' : 'inline'}, ${m.wrapped ? 'wrapped' : 'one line'}`
           )
-          const narrow = m.composerWidth < COMPOSER_COLLAPSE_WIDTH
-          assert.equal(m.collapsed, narrow, `${label}: folded=${m.collapsed} at ${m.composerWidth}px`)
-          assert.equal(m.actionsShown, !narrow, `${label}: inline actions shown=${m.actionsShown}`)
+          // Freshly opened, so no unfold margin applies: folded exactly when the inline row would not fit.
+          const tooWide = m.inlineNeeded > m.rowWidth + 0.5
+          assert.equal(
+            m.collapsed,
+            tooWide,
+            `${label}: folded=${m.collapsed}, needs ${m.inlineNeeded} of ${m.rowWidth}`
+          )
+          assert.equal(m.actionsShown, !tooWide, `${label}: inline actions shown=${m.actionsShown}`)
+          // Never wraps in normal use, the narrowest floating window included.
+          assert.equal(m.wrapped, false, `${label}: the row wrapped (folded needs ${m.foldedNeeded} of ${m.rowWidth})`)
+          assert.equal(m.rows, 1, `${label}: the send controls split across lines`)
           assert.ok(m.contextShown, `${label}: the context indicator is hidden`)
           assert.ok(m.sendShown, `${label}: the send controls are hidden`)
           assert.deepEqual(m.overlaps, [], `${label}: controls overlap`)
@@ -190,6 +218,90 @@ try {
     assert.deepEqual(wide.overlaps, [], `page ${appearance}: controls overlap`)
     report.push(`page-1440-${appearance}: composer ${wide.composerWidth.toFixed(0)}px, inline`)
     await shot(`page-1440-${appearance}`)
+  }
+
+  // A side panel resized a step at a time, narrowing and then widening, idle and busy.
+  const setPanelWidth = (width: number) =>
+    page.evaluate(async (width) => {
+      document.querySelector<HTMLElement>('[data-testid="side-panel"]')!.style.width = `${width}px`
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    }, width)
+  const foldWidths: Record<'idle' | 'busy', number> = { idle: 0, busy: 0 }
+  for (const busy of [false, true]) {
+    const state = busy ? 'busy' : 'idle'
+    await open(`layout=panel&w=760&appearance=dark${busy ? '&busy=1' : ''}`)
+    const transitions: string[] = []
+    let folded = false
+    let foldedAt = 0
+    let unfoldedAt = 0
+    let wrapsBelow = 0
+    const step = async (width: number, direction: 'down' | 'up') => {
+      await setPanelWidth(width)
+      const m = await measure(page, '[data-testid="side-panel"]')
+      const label = `panel ${state} ${direction} ${width}`
+      assert.ok(m.contextShown, `${label}: the context indicator is hidden`)
+      assert.ok(m.sendShown, `${label}: the send controls are hidden`)
+      assert.deepEqual(m.overlaps, [], `${label}: controls overlap`)
+      assert.deepEqual(m.outside, [], `${label}: controls spill outside the composer`)
+      assert.equal(m.actionsShown, !m.collapsed, `${label}: actions and trigger shown together`)
+      // Inline only while the row fits; folded only while it does not fit with the margin to spare.
+      if (!m.collapsed) assert.ok(m.inlineNeeded <= m.rowWidth + 0.5, `${label}: inline actions do not fit`)
+      else assert.ok(m.inlineNeeded > m.rowWidth - UNFOLD_MARGIN, `${label}: folded with room to spare`)
+      // A wrap is only the fallback, where even the folded row cannot share a line.
+      if (m.wrapped) {
+        assert.ok(m.collapsed && m.foldedNeeded > m.rowWidth + 0.5, `${label}: wrapped although the folded row fits`)
+        wrapsBelow = Math.max(wrapsBelow, width)
+      } else assert.ok(m.foldedNeeded <= m.rowWidth + 0.5 || !m.collapsed, `${label}: should have wrapped`)
+      if (m.collapsed !== folded) {
+        transitions.push(`${m.collapsed ? 'fold' : 'unfold'} at ${width} (composer ${m.composerWidth.toFixed(0)}px)`)
+        folded = m.collapsed
+        if (folded) foldedAt = width
+        else unfoldedAt = width
+      }
+    }
+    for (let width = 760; width >= 220; width -= 2) await step(width, 'down')
+    for (let width = 222; width <= 760; width += 2) await step(width, 'up')
+    // One fold on the way down and one unfold on the way up: no flicker at the boundary.
+    assert.deepEqual(
+      transitions.map((t) => t.split(' ')[0]),
+      ['fold', 'unfold'],
+      `panel ${state}: ${transitions.join(', ')}`
+    )
+    assert.ok(
+      unfoldedAt >= foldedAt + UNFOLD_MARGIN,
+      `panel ${state}: unfolded at ${unfoldedAt}, folded at ${foldedAt}`
+    )
+    foldWidths[state] = foldedAt
+    report.push(
+      `panel sweep ${state}: ${transitions.join(', ')}; wraps (fallback) at panel width ${wrapsBelow} and below`
+    )
+  }
+  // Stop and the picker need more room than Send, so a busy composer folds wider.
+  assert.ok(foldWidths.busy > foldWidths.idle, `busy folds at ${foldWidths.busy}, idle at ${foldWidths.idle}`)
+
+  // A turn starting and ending in place, at a width that fits the idle row but not the busy one.
+  const between = Math.round((foldWidths.idle + foldWidths.busy) / 2)
+  await open(`layout=panel&w=${between}&appearance=dark`)
+  const setBusy = async (busy: boolean) => {
+    await page.evaluate((busy) => {
+      ;(window as unknown as { composerFixture: { setBusy(next: boolean): void } }).composerFixture.setBusy(busy)
+    }, busy)
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  }
+  for (const [busy, folded] of [
+    [false, false],
+    [true, true],
+    [false, false],
+  ] as const) {
+    await setBusy(busy)
+    const m = await measure(page, '[data-testid="side-panel"]')
+    const label = `panel ${between} ${busy ? 'busy' : 'idle'} in place`
+    assert.equal(m.collapsed, folded, `${label}: folded=${m.collapsed}`)
+    assert.equal(m.wrapped, false, `${label}: the row wrapped`)
+    assert.deepEqual(m.overlaps, [], `${label}: controls overlap`)
+    report.push(`${label}: ${m.collapsed ? 'folded' : 'inline'}, one line`)
+    await page.mouse.move(1400, 700)
+    await shot(`panel-${between}-${busy ? 'busy' : 'idle'}-in-place-dark`)
   }
 
   // The options menu in a narrow window: every action as a row, arrows, Escape and focus return.

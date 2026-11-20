@@ -58,45 +58,45 @@
     max-width: min(80rem, calc(100vw - 2rem));
   }
 
-  /* The chat composer folds its action buttons behind one options trigger when it is narrow: on a
-     phone, and also wherever the composer itself is narrow on a wide screen (a floating agent window,
-     a side panel, the assistant). The decision follows the composer's own width, not the viewport's.
-     Keep the 30rem below in step with COMPOSER_COLLAPSE_WIDTH in scripts/check-composer-narrow.ts. */
-  .chat-composer {
-    container: chat-composer / inline-size;
-  }
-
+  /* The chat composer folds its action buttons behind one More controls trigger (data-folded) on a
+     phone, and anywhere else as soon as they would not fit on one line beside the status and the
+     right-hand group as it is now: Send, or Stop with Interrupt / Follow up. useComposerFit measures
+     that; nothing here depends on a fixed width. */
   .chat-composer-actions {
     display: flex;
+  }
+
+  .chat-composer-actions-slot {
+    display: contents;
   }
 
   .chat-composer-attach {
     display: none;
   }
 
-  @media (max-width: 767px) {
-    .chat-composer-actions {
-      display: none;
-    }
-
-    .chat-composer-attach {
-      display: flex;
-    }
+  .chat-composer-controls[data-folded] .chat-composer-attach {
+    display: flex;
   }
 
-  @container chat-composer (width < 30rem) {
-    .chat-composer-actions {
-      display: none;
-    }
-
-    .chat-composer-attach {
-      display: flex;
-    }
+  /* Folded actions stay laid out at their natural width, unseen, in a box that takes no room and adds
+     no overflow, so the composer still knows when they fit again. */
+  .chat-composer-controls[data-folded] .chat-composer-actions-slot {
+    display: block;
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
   }
 
-  /* Send, Stop and the Interrupt / Follow up split button never sit under the actions: when a
-     composer is too narrow for both on one line (a busy turn in a narrow window), they wrap below and
-     stay at the right edge. */
+  .chat-composer-controls[data-folded] .chat-composer-actions {
+    width: max-content;
+  }
+
+  /* A last resort only: when even the trigger, the status and the right-hand group cannot share a
+     line (a composer narrower than about 300px while a turn runs), Send, Stop and the Interrupt /
+     Follow up split button wrap below and stay at the right edge, never under another control. */
   .chat-composer-controls {
     flex-wrap: wrap;
   }
