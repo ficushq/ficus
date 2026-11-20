@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { squadActivity, squads } from '../../db/schema'
+import { ensureQueryIndex } from '../../test-utils/message-query-indexes'
 
 const squadIds: string[] = []
 afterEach(async () => {
@@ -91,18 +92,10 @@ describe('squad_activity schema', () => {
   test('feed, kind, agent, and own-inbox shapes use their projection indexes', async () => {
     // drizzle-kit push intentionally skips concurrent/index extras in the shared
     // test schema; install the generated migration definitions before EXPLAIN.
-    await db.execute(
-      sql`CREATE INDEX IF NOT EXISTS idx_squad_activity_feed ON squad_activity (squad_id,at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST)`
-    )
-    await db.execute(
-      sql`CREATE INDEX IF NOT EXISTS idx_squad_activity_kind ON squad_activity (squad_id,kind,at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST)`
-    )
-    await db.execute(
-      sql`CREATE INDEX IF NOT EXISTS idx_squad_activity_agent ON squad_activity (squad_id,agent_id,at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST) WHERE agent_id IS NOT NULL`
-    )
-    await db.execute(
-      sql`CREATE INDEX IF NOT EXISTS idx_squad_activity_inbox ON squad_activity (squad_id,inbox_recipient_id,at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST) WHERE inbox_recipient_id IS NOT NULL`
-    )
+    await ensureQueryIndex('idx_squad_activity_feed')
+    await ensureQueryIndex('idx_squad_activity_kind')
+    await ensureQueryIndex('idx_squad_activity_agent')
+    await ensureQueryIndex('idx_squad_activity_inbox')
     const squadId = crypto.randomUUID()
     const agentId = crypto.randomUUID()
     // Seed real statistics for THIS squad before EXPLAINing. On an empty table
