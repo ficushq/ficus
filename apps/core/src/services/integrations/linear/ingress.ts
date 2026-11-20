@@ -52,7 +52,9 @@ export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (s
     )
   for (const { squadId } of assignments) {
     const resolved = await resolveLinearConnection(squadId)
-    if (!resolved) continue
+    // The agent app has its own webhook, probe and trust check (app-ingress.ts); the organization
+    // webhook serves API-key connections only, so the two authorities never mix.
+    if (!resolved || resolved.connection.authorizationKind === 'oauth2') continue
     let access: LinearIssueAccess
     try {
       access = await linearQuery<LinearIssueAccess>(
@@ -77,6 +79,8 @@ export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (s
         connectionRevision: resolved.connection.materialRevision,
         // Rule audiences and self-comment suppression bind to the probed viewer, never to payload claims.
         accountId: access.viewer.id,
+        // API-key connections have no author check (design 5.6 applies to the agent app); say so explicitly.
+        actorTrust: 'trusted',
       },
       (normalized) => normalized.filter(receivable).map((item) => withIssueInvolvement(item, access))
     )

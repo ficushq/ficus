@@ -155,7 +155,7 @@ test('comments become issue facts keyed by the issue', () => {
     actor: 'user-2',
     state: '',
     labels: [],
-    comment: { id: 'comment-uuid' },
+    comment: { id: 'comment-uuid', author: 'user-2' },
   })
   expect(fact.subject).toBe('Linear issue comment: issue-uuid Fix bug')
   expect(fact.body).toBe(`${issueUrl}#comment-comment-uuid\n\nLooks good to me`)
@@ -424,5 +424,6 @@ test('comments carry their own ID and parent', () => {
   expect(only(commentEvent({ parentId: 'parent-uuid' })).data.comment).toEqual({
     id: 'comment-uuid',
     parentId: 'parent-uuid',
+    author: 'user-2',
   })
 })

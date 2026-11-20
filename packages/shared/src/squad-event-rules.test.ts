@@ -587,16 +587,24 @@ describe('Linear rules', () => {
   test('comments authored by the connected account are suppressed as self-comments', () => {
     const comment = linear('issue.comment', { actor: app, delegate: app })
     expect(isLinearSelfComment(comment, app)).toBe(true)
+    // The author counts even when the delivery's actor is someone else or missing.
+    expect(isLinearSelfComment(linear('issue.comment', { actor: '', comment: { author: app } }), app)).toBe(true)
+    expect(isLinearSelfComment(linear('issue.comment', { actor: 'person', comment: { author: 'person' } }), app)).toBe(
+      false
+    )
     expect(isLinearSelfComment(comment, '')).toBe(false)
     const preview = previewSquadEventRules(routed, 'linear', comment, app)
     expect(preview.suppression).toBe('self-comment')
     expect(preview.selectedRuleId).toBeNull()
   })
 
-  test('an event without a recorded account keeps the old unrestricted Linear audience', () => {
+  test('an event without a recorded account keeps the old Linear audience only for the older outputs', () => {
     expect(selectSquadEventRule(routed, 'linear', linear('issue.assigned', { assignee: 'someone' }), '')?.id).toBe(
       'linear-issue-assigned'
     )
+    // The agent app outputs fail closed: an ingress that forgot the account must not match everything.
+    expect(selectSquadEventRule(routed, 'linear', linear('issue.delegated', { delegate: app }), '')).toBeUndefined()
+    expect(selectSquadEventRule(routed, 'linear', linear('issue.mentioned', {}), '')).toBeUndefined()
     const preview = previewSquadEventRules(routed, 'linear', linear('issue.delegated', { delegate: app }), app)
     expect(preview.rules.find((rule) => rule.id === 'linear-issue-delegated')?.checks).toContainEqual({
       kind: 'audience',
