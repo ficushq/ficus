@@ -83,6 +83,22 @@ export class DbIntegrationProjectionStateRepository implements IntegrationProjec
     })
   }
 
+  async renew(input: {
+    squadId: string
+    providerKey: string
+    generation: bigint
+    leaseToken: string
+    leaseExpiresAt: Date
+    now: Date
+  }): Promise<boolean> {
+    const rows = await db
+      .update(integrationProjectionStates)
+      .set({ leaseExpiresAt: input.leaseExpiresAt, updatedAt: input.now })
+      .where(fence(input))
+      .returning({ squadId: integrationProjectionStates.squadId })
+    return rows.length === 1
+  }
+
   async complete(input: {
     squadId: string
     providerKey: string

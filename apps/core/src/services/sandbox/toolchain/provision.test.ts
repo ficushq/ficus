@@ -270,3 +270,165 @@ describe('sandbox toolchain provisioning orchestration', () => {
     expect(calls).toContain('failed:devbox_unavailable')
   })
 })
+
+describe('settling the toolchain without blocking the sandbox', () => {
+  function gated() {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    return { gate, release }
+  }
+
+  /** A runtime whose install (or applied-path check) waits on a gate the test controls. */
+  function slowRuntime(calls: string[], gate: Promise<void>, behaviour: 'install' | 'unchanged' | 'fail' = 'install') {
+    return {
+      reconcileToolchain: async (_id: string, _opts: SandboxOptions, request: ManagedToolchainRequest) => {
+        calls.push('runtime')
+        if (behaviour === 'unchanged') {
+          await gate
+          return 'unchanged' as const
+        }
+        await request.reportStage('installing')
+        await gate
+        if (behaviour === 'fail') {
+          const { ToolchainAdapterError } = await import('./provision')
+          throw new ToolchainAdapterError('setup_failed', 1)
+        }
+        return 'applied' as const
+      },
+    } as ISandboxManager
+  }
+
+  it('returns as soon as a slow install starts and finishes it in the background', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    const provisioner = createToolchainProvisioner()
+    const outcome = await provisioner.settle(slowRuntime(h.calls, gate), 'squad_slow', opts, squadId, {
+      deps: h.deps,
+      waitMs: 60_000,
+    })
+    expect(outcome).toBe('installing')
+    expect(provisioner.isInstalling('squad_slow')).toBe(true)
+    expect(h.calls).not.toContain('ready')
+
+    release()
+    await provisioner(slowRuntime(h.calls, gate), 'squad_slow', opts, squadId, h.deps)
+    expect(h.calls).toContain('ready')
+    expect(provisioner.isInstalling('squad_slow')).toBe(false)
+  })
+
+  it('waits for an already-applied toolchain so the first command has it', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    const provisioner = createToolchainProvisioner()
+    let returned = false
+    const settling = provisioner
+      .settle(slowRuntime(h.calls, gate, 'unchanged'), 'squad_unchanged', opts, squadId, {
+        deps: h.deps,
+        waitMs: 60_000,
+      })
+      .then((outcome) => {
+        returned = true
+        return outcome
+      })
+    while (!h.calls.includes('runtime')) await Bun.sleep(1)
+    await Bun.sleep(10)
+    expect(returned).toBe(false)
+    release()
+    expect(await settling).toBe('settled')
+  })
+
+  it('reports a failed install without throwing and records the readiness failure', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    release()
+    const provisioner = createToolchainProvisioner()
+    // The runtime reports install work first, so settle returns early; the
+    // failure lands in the recorded status rather than in the caller.
+    expect(
+      await provisioner.settle(slowRuntime(h.calls, gate, 'fail'), 'squad_fail', opts, squadId, {
+        deps: h.deps,
+        waitMs: 60_000,
+      })
+    ).toBe('installing')
+    while (!h.calls.includes('failed:setup_failed')) await Bun.sleep(1)
+    expect(h.calls).not.toContain('ready')
+
+    // A failure before any install work returns `failed`, still without throwing.
+    const noAdapter = harness({ config, provision: undefined, activation: undefined })
+    expect(
+      await provisioner.settle({} as ISandboxManager, 'squad_no_adapter', opts, squadId, { deps: noAdapter.deps })
+    ).toBe('failed')
+    expect(noAdapter.calls).toContain('failed:devbox_unavailable')
+  })
+
+  it('lets every other ensure through while an attach-triggered install is running, without stacking reconciles', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    const provisioner = createToolchainProvisioner()
+    const runtime = slowRuntime(h.calls, gate)
+    // The integration projection awaits the full reconcile.
+    const projection = provisioner(runtime, 'squad_busy', opts, squadId, h.deps)
+    while (!provisioner.isInstalling('squad_busy')) await Bun.sleep(1)
+
+    // Agent turns starting meanwhile return immediately.
+    const outcomes = await Promise.all(
+      [1, 2, 3].map(() => provisioner.settle(runtime, 'squad_busy', opts, squadId, { deps: h.deps, waitMs: 60_000 }))
+    )
+    expect(outcomes).toEqual(['installing', 'installing', 'installing'])
+
+    release()
+    await projection
+    // One follow-up reconcile is shared by all three ensures.
+    while (h.calls.filter((call) => call === 'ready').length < 2) await Bun.sleep(1)
+    await Bun.sleep(20)
+    expect(h.calls.filter((call) => call === 'runtime').length).toBe(2)
+    expect(provisioner.isInstalling('squad_busy')).toBe(false)
+  })
+
+  it('stops waiting when another process holds the provisioning lease for an install', async () => {
+    const h = harness({
+      config,
+      provision: {
+        sandboxId: 'squad_peer',
+        squadId,
+        desiredFingerprint: fingerprintToolchain(config),
+        status: 'installing',
+        updatedAt: new Date(),
+      },
+      activation: undefined,
+    })
+    const { gate, release } = gated()
+    h.deps.withLease = async (_id, reconcile) => {
+      await gate
+      return reconcile()
+    }
+    const provisioner = createToolchainProvisioner()
+    const started = Date.now()
+    expect(
+      await provisioner.settle(slowRuntime(h.calls, Promise.resolve()), 'squad_peer', opts, squadId, {
+        deps: h.deps,
+        waitMs: 60_000,
+      })
+    ).toBe('installing')
+    expect(Date.now() - started).toBeLessThan(5_000)
+    release()
+  })
+
+  it('stops waiting after the budget when the lease is held without a visible install', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    h.deps.withLease = async (_id, reconcile) => {
+      await gate
+      return reconcile()
+    }
+    const provisioner = createToolchainProvisioner()
+    expect(
+      await provisioner.settle(slowRuntime(h.calls, Promise.resolve()), 'squad_lease', opts, squadId, {
+        deps: h.deps,
+        waitMs: 20,
+      })
+    ).toBe('installing')
+    expect(h.calls).not.toContain('runtime')
+    release()
+  })
+})

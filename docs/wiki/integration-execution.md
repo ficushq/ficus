@@ -106,6 +106,8 @@ The wrapper retains PATH, so non-shell children also find wrappers and obtain fr
 
 With no injected `FICUS_TOKEN` identity, a wrapper never calls Ficus. It prints one stderr line explaining that integration credentials are only available to agents, then execs the real binary unchanged. A person's own CLI login remains usable. Terminals never receive an agent identity.
 
+While the squad's managed toolchain is installing a newly declared CLI in the background (its `devbox.json` exists but its `.ready` marker does not), a wrapper that cannot find its real binary says the tool is not installed yet and exits 127, instead of the generic not-found message. Attaching an integration never takes the sandbox down; see [Installing in the background](sandbox-runtimes.md#installing-in-the-background).
+
 Unassignment or provider disable removes projected wrappers during regeneration. VM copies are pruned by the managed asset manifest on synchronization. A stale wrapper still uses live authorization and refuses detached/disabled access immediately. Removing only a default account preserves other attached accounts and their explicit selection; it does not invent a replacement default.
 
 ## Runtime paths and entrypoints
@@ -299,6 +301,7 @@ Run focused files, not the full Core suite.
 | Generic assigned/healthy/default/alternate-account exec; expiry/authority/refusal | `services/integrations/execution.test.ts`, `deployment/execution.test.ts` under that directory |
 | Inherited all-provider env scrubbing; unrestricted commands, selector defaults and nested explicit accounts | `apps/cli/src/commands/integration-exec.test.ts`, `integration-selection.process.test.ts`, `integration-squad-context.process.test.ts` (repo-relative) |
 | Executable wrapper lookup without recursion, child-process PATH use, argv/status, human pass-through, assignment removal | `services/integrations/execution-wrappers.test.ts`, `execution-lifecycle.test.ts` |
+| Background integration tool install: ensures not held by installs, failed installs reported without failing the ensure, still-installing wrapper message, projection lease renewal | `services/sandbox/toolchain/provision.test.ts`, `services/sandbox/ensure.test.ts`, `services/integrations/execution-wrappers.test.ts`, `services/integrations/projection/worker.test.ts`, `db-state-repository.test.ts` |
 | Docker agent/squad command hooks and terminal activation | `services/sandbox/docker/manager.test.ts`, `services/sandbox/bashrc.test.ts` |
 | Kubernetes agent/squad preambles and terminal activation | `packages/sandbox-server/src/services/bash.test.ts` (repo-relative), `services/sandbox/bashrc.test.ts` |
 | VM member/squad command and terminal paths; executable copies and pruning | Same sandbox-server/bashrc tests, `services/sandbox/vm/file-sync.test.ts` |

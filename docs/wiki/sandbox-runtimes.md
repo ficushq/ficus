@@ -487,6 +487,41 @@ This managed toolchain is separate from repository `devbox.json`, legacy
 mechanisms remain unchanged. It is not available on the `host` runtime (see the
 comparison table above).
 
+### Installing in the background
+
+Changing the toolchain, including attaching an integration that contributes
+packages or setup steps (the Linear CLI, for example), installs the new tools in
+the background. It never restarts, drains or recreates the sandbox, and the
+sandbox stays available while it runs:
+
+- Every sandbox ensure (agent turns, terminals, deployments) waits only for the
+  cheap already-applied path: readiness checks and activating the cached
+  environment, at most 30 seconds. That keeps an unchanged toolchain active
+  before the first command after a box wakes. As soon as real install work
+  starts, or another reconcile of the box is already installing (in this Core
+  process, or under the provisioning lease in another one), the ensure returns
+  and the install continues. Concurrent ensures share one follow-up reconcile
+  instead of queuing one each.
+- Until the install finishes, commands run with the previous toolchain. The box
+  server swaps in the new environment only after setup and readiness pass.
+  Integration wrappers whose real binary is not on `PATH` yet fail with a
+  message saying the tool is still being installed, rather than a bare "not
+  found". Commands started after the install finishes find the new tool.
+- A failed install is recorded in the toolchain status (`sandbox_status` reports
+  `toolchain failed (<reason>)`) and logged; it no longer fails the ensure, so
+  agents keep working without the new tools. Integration setup steps still fail
+  closed (each runs in its own `set -eu` subshell, and a failed integrity check
+  installs nothing), and the projection still reports `toolchain_readiness_failed`
+  and retries with backoff.
+- The integration projection worker, which awaits the full install, renews its
+  lease every 20 seconds while it runs, so an install longer than the 60-second
+  lease is not claimed and started again.
+
+The install itself still uses the box's CPU, memory and network, so a large
+fresh resolution can slow other commands on a busy box. A genuine box restart
+(Recovery → Restart, a spec change or a runtime update) keeps its existing
+drain, notice and recovery behavior; a toolchain change does not cause one.
+
 ### Pinned toolchain resolution
 
 On VM and Kubernetes sandboxes, the first sandbox that installs a squad's toolchain

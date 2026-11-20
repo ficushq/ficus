@@ -30,6 +30,15 @@ export interface IntegrationProjectionStateRepository {
     now: Date
   }): Promise<IntegrationProjectionState>
   claim(now: Date, leaseExpiresAt: Date, leaseToken: string): Promise<ClaimedIntegrationProjection | null>
+  /** Extend a claim that is still held; false once the claim was superseded or its generation changed. */
+  renew(input: {
+    squadId: string
+    providerKey: string
+    generation: bigint
+    leaseToken: string
+    leaseExpiresAt: Date
+    now: Date
+  }): Promise<boolean>
   complete(input: {
     squadId: string
     providerKey: string

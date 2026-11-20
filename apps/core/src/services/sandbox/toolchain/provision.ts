@@ -235,17 +235,130 @@ export type ToolchainProvisioner = (
   deps?: ToolchainProvisionDeps
 ) => Promise<void>
 
-export function createToolchainProvisioner(): ToolchainProvisioner {
-  const queues = new KeyedSerialQueue()
-  return (manager, sandboxId, opts, squadId, deps = defaultDeps) =>
-    queues.run(sandboxId, async () => {
-      const preflight = await deps.readSnapshot(squadId, sandboxId)
-      if (isClean(preflight)) return
-      await deps.withLease(sandboxId, async () => {
-        const locked = await deps.readSnapshot(squadId, sandboxId)
-        await reconcileLocked(manager, sandboxId, opts, squadId, locked, deps)
-      })
-    })
+/**
+ * How a sandbox ensure left the managed toolchain:
+ * - `settled`: the toolchain is reconciled (or nothing is declared).
+ * - `installing`: packages or setup are still being installed in the background.
+ * - `failed`: reconciliation failed; the failure is recorded in the toolchain
+ *   status and the sandbox stays usable without the new tools.
+ */
+export type ToolchainSettleOutcome = 'settled' | 'installing' | 'failed'
+
+export interface ToolchainSettleOptions {
+  deps?: ToolchainProvisionDeps
+  /** Upper bound on waiting for a reconcile that has not (yet) reported install work. */
+  waitMs?: number
 }
 
-export const ensureSandboxToolchain: ToolchainProvisioner = createToolchainProvisioner()
+export interface ToolchainProvisionerHandle extends ToolchainProvisioner {
+  /**
+   * Start (or join) a reconcile without making the caller wait for package
+   * installation or setup. Never throws.
+   *
+   * The caller waits only while the reconcile is cheap: the already-applied
+   * path (readiness checks and activating the cached environment), bounded by
+   * `waitMs`. As soon as the reconcile reports install work, or another
+   * reconcile of this sandbox is already installing, or the wait budget runs
+   * out (for example while another Core process holds the provisioning
+   * lease), this returns `installing` and the reconcile finishes in the
+   * background. Its outcome is recorded in the toolchain status either way.
+   */
+  settle(
+    manager: ISandboxManager,
+    sandboxId: string,
+    opts: SandboxOptions,
+    squadId: string,
+    options?: ToolchainSettleOptions
+  ): Promise<ToolchainSettleOutcome>
+  /** Whether a reconcile in this process is installing packages or running setup for the sandbox. */
+  isInstalling(sandboxId: string): boolean
+}
+
+/** Default bound on how long a sandbox ensure waits for the managed toolchain before continuing. */
+export const TOOLCHAIN_SETTLE_WAIT_MS = 30_000
+
+const INSTALLING_STATUSES = new Set<SandboxToolchainStatus>(['installing', 'running_setup'])
+
+export function createToolchainProvisioner(): ToolchainProvisionerHandle {
+  const queues = new KeyedSerialQueue()
+  // At most one queued, not-yet-started reconcile per sandbox. Every queued
+  // reconcile reads the latest declaration when it starts, so later callers
+  // can share it instead of piling up one reconcile per ensure behind a long
+  // install.
+  const queued = new Map<string, Promise<void>>()
+  const installing = new Set<string>()
+  const installListeners = new Map<string, Set<() => void>>()
+
+  const noteInstalling = (sandboxId: string) => {
+    installing.add(sandboxId)
+    const listeners = installListeners.get(sandboxId)
+    if (listeners) for (const listener of [...listeners]) listener()
+  }
+
+  const provision: ToolchainProvisioner = (manager, sandboxId, opts, squadId, deps = defaultDeps) => {
+    const waiting = queued.get(sandboxId)
+    if (waiting) return waiting
+    const observed: ToolchainProvisionDeps = {
+      ...deps,
+      markStage: async (input) => {
+        // Record first, so a caller released by this signal already sees the
+        // install in the toolchain status.
+        try {
+          await deps.markStage(input)
+        } finally {
+          noteInstalling(sandboxId)
+        }
+      },
+    }
+    const run: Promise<void> = queues.run(sandboxId, async () => {
+      if (queued.get(sandboxId) === run) queued.delete(sandboxId)
+      try {
+        const preflight = await deps.readSnapshot(squadId, sandboxId)
+        if (isClean(preflight)) return
+        // Another process may already be installing under the lease; callers
+        // that only want to settle should not wait for it.
+        if (preflight.provision && INSTALLING_STATUSES.has(preflight.provision.status)) noteInstalling(sandboxId)
+        await deps.withLease(sandboxId, async () => {
+          const locked = await deps.readSnapshot(squadId, sandboxId)
+          await reconcileLocked(manager, sandboxId, opts, squadId, locked, observed)
+        })
+      } finally {
+        installing.delete(sandboxId)
+      }
+    })
+    queued.set(sandboxId, run)
+    return run
+  }
+
+  const settle: ToolchainProvisionerHandle['settle'] = async (manager, sandboxId, opts, squadId, options = {}) => {
+    const outcome = provision(manager, sandboxId, opts, squadId, options.deps).then(
+      () => 'settled' as const,
+      (error: unknown) => {
+        log.warn(`Managed toolchain for ${sandboxId} is unavailable; the sandbox stays usable without it`, error)
+        return 'failed' as const
+      }
+    )
+    if (installing.has(sandboxId)) return 'installing'
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let listener: (() => void) | undefined
+    const background = new Promise<'installing'>((resolve) => {
+      listener = () => resolve('installing')
+      let listeners = installListeners.get(sandboxId)
+      if (!listeners) installListeners.set(sandboxId, (listeners = new Set()))
+      listeners.add(listener)
+      timer = setTimeout(listener, options.waitMs ?? TOOLCHAIN_SETTLE_WAIT_MS)
+    })
+    try {
+      return await Promise.race([outcome, background])
+    } finally {
+      clearTimeout(timer)
+      const listeners = installListeners.get(sandboxId)
+      if (listener) listeners?.delete(listener)
+      if (listeners?.size === 0) installListeners.delete(sandboxId)
+    }
+  }
+
+  return Object.assign(provision, { settle, isInstalling: (sandboxId: string) => installing.has(sandboxId) })
+}
+
+export const ensureSandboxToolchain: ToolchainProvisionerHandle = createToolchainProvisioner()

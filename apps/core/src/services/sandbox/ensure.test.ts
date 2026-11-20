@@ -13,7 +13,7 @@ import * as localDeploymentHealth from '../deploy/local-deployment-health'
 import * as identityModule from '../amtp/agent-identity'
 import { db, agents, sandboxExposureCleanup } from '../../db'
 import { squads } from '../../db/schema'
-import { ToolchainAdapterError, ToolchainProvisioningError } from './toolchain/provision'
+import { ToolchainAdapterError } from './toolchain/provision'
 import { getProvisionState } from './toolchain/state'
 import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
@@ -1093,14 +1093,14 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     }
   }
 
-  function toolchainManager(calls: string[], reconcile?: () => Promise<never>) {
+  function toolchainManager(calls: string[], reconcile?: (request: any) => Promise<any>) {
     return {
       ensureSandbox: async () => void calls.push('ensureSandbox'),
       reconcileToolchain: async (_id: string, _opts: any, request: any) => {
         calls.push(
           `reconcile:${request.config?.packages.join(',') ?? 'none'}:${request.devboxJson ? 'json' : 'nojson'}`
         )
-        if (reconcile) return reconcile()
+        if (reconcile) return reconcile(request)
         return 'applied' as const
       },
       getWorkspaceLayout: () => ({
@@ -1137,7 +1137,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     }
   })
 
-  it('fails the ensure when the declaration cannot be provisioned', async () => {
+  it('keeps the sandbox usable and records the failure when the declaration cannot be provisioned', async () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain gate fail ${randomUUID()}`,
@@ -1151,17 +1151,55 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
       throw new ToolchainAdapterError('install_failed', 1)
     })
     try {
+      // A broken toolchain used to fail every agent turn on this box. The
+      // failure is now reported through the toolchain status instead.
       await expect(
         ensureWorkspaceSandbox(
           { sandboxId: `agent_${gateSandboxUuid}`, workspaceId: 'w', squadId: squad.id },
           toolchainDeps(manager, tmp)
         )
-      ).rejects.toBeInstanceOf(ToolchainProvisioningError)
+      ).resolves.toBeString()
       expect(await getProvisionState(`agent_${gateSandboxUuid}`)).toMatchObject({
         status: 'failed',
         errorCode: 'install_failed',
       })
     } finally {
+      rmSync(tmp, { recursive: true, force: true })
+      await db.delete(squads).where(eq(squads.id, squad.id))
+    }
+  })
+
+  it('does not hold the ensure while new tools install, and finishes the install in the background', async () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+    const squad = await Squad.create({
+      name: `toolchain background ${randomUUID()}`,
+      purpose: 'test',
+      metadata: { sandbox: { toolchain: { packages: ['python3@latest'], setupScript: 'echo ready' } } },
+    })
+    const sandboxId = `agent_${randomUUID()}`
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-background-'))
+    const calls: string[] = []
+    let release!: () => void
+    const install = new Promise<void>((resolve) => (release = resolve))
+    const manager = toolchainManager(calls, async (request) => {
+      await request.reportStage('installing')
+      await install
+      return 'applied' as const
+    })
+    try {
+      await expect(
+        ensureWorkspaceSandbox({ sandboxId, workspaceId: 'w', squadId: squad.id }, toolchainDeps(manager, tmp))
+      ).resolves.toBeString()
+      expect(await getProvisionState(sandboxId)).toMatchObject({ status: 'installing' })
+
+      release()
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if ((await getProvisionState(sandboxId))?.status === 'ready') break
+        await Bun.sleep(10)
+      }
+      expect(await getProvisionState(sandboxId)).toMatchObject({ status: 'ready' })
+    } finally {
+      release()
       rmSync(tmp, { recursive: true, force: true })
       await db.delete(squads).where(eq(squads.id, squad.id))
     }
