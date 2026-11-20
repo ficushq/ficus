@@ -240,6 +240,106 @@ describe('ensure — host runtime', () => {
     expect(clientStarts).toEqual([{ include: ['docs/**/*.md'], exclude: [], squadId: squad.id }])
   })
 
+  it('logs the executor watch status compactly, and at info only when it changes', async () => {
+    const include = Array.from({ length: 40 }, (_, i) => `docs/area-${i}/**/*.md`)
+    await squad.update({
+      metadata: { memory: { enabled: true, workspacePaths: { include, exclude: ['docs/draft/**'] } } },
+    })
+    let status: any = { active: true, config: { include, exclude: ['docs/draft/**'], squadId: squad.id } }
+    const clientStarts: any[] = []
+    const fake = fakeWatchManager({
+      getClient: () => ({
+        startWatch: async (c: any) => {
+          clientStarts.push(c)
+          status = { active: true, config: c }
+        },
+        getWatchStatus: async () => status,
+      }),
+    })
+    spies.push(spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue(fake))
+    spies.push(spyOn(localDeploymentHealth, 'restartManagedLocalDeploymentsForSandbox').mockResolvedValue())
+
+    const prevLevel = process.env.LOG_LEVEL
+    process.env.LOG_LEVEL = 'info'
+    const lines: string[] = []
+    const consoleSpy = spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(' '))
+    })
+    const watchLines = () =>
+      lines.filter((l) => l.includes('[sandbox-ensure]') && l.includes(squad.id) && /watch/i.test(l))
+    try {
+      // First sighting: one compact info line, no pattern list.
+      await ensureSquadSandbox(squad)
+      expect(watchLines()).toHaveLength(1)
+      expect(watchLines()[0]).toMatch(
+        /Workspace watch status for squad \S+: active=true include=40 exclude=1 hash=[0-9a-f]{12}; desired include=40 exclude=1 hash=[0-9a-f]{12}$/
+      )
+      expect(watchLines()[0]).not.toContain('docs/area-')
+      expect(clientStarts).toEqual([])
+
+      // Unchanged repeats stay out of info logs.
+      await ensureSquadSandbox(squad)
+      await ensureSquadSandbox(squad)
+      expect(watchLines()).toHaveLength(1)
+
+      // The sandbox lost its watch: the change is logged and the watch restarted.
+      status = { active: false, config: null }
+      await ensureSquadSandbox(squad)
+      expect(clientStarts).toHaveLength(1)
+      expect(watchLines().slice(1)).toEqual([
+        expect.stringMatching(/Workspace watch status for squad \S+: active=false none; desired include=40 /),
+        expect.stringMatching(/Configured workspace watch for squad \S+: include=40 exclude=1 hash=[0-9a-f]{12}$/),
+      ])
+
+      // The restarted watch is the expected state, so the next ensure stays quiet.
+      await ensureSquadSandbox(squad)
+      expect(watchLines()).toHaveLength(3)
+      expect(lines.join('\n')).not.toContain('docs/area-')
+    } finally {
+      consoleSpy.mockRestore()
+      if (prevLevel === undefined) delete process.env.LOG_LEVEL
+      else process.env.LOG_LEVEL = prevLevel
+    }
+  })
+
+  it('logs the host watch configuration at info only when it changes', async () => {
+    await squad.update({
+      metadata: { memory: { enabled: true, workspacePaths: { include: ['docs/**/*.md', 'notes/**/*.md'] } } },
+    })
+    const fake = fakeWatchManager({
+      configureWatch: async () => ({ owned: true, fileCount: 0, skipped: [] }),
+    })
+    spies.push(spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue(fake))
+    spies.push(spyOn(localDeploymentHealth, 'restartManagedLocalDeploymentsForSandbox').mockResolvedValue())
+
+    const prevLevel = process.env.LOG_LEVEL
+    process.env.LOG_LEVEL = 'info'
+    const lines: string[] = []
+    const consoleSpy = spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(' '))
+    })
+    const watchLines = () =>
+      lines.filter((l) => l.includes('[sandbox-ensure]') && l.includes(squad.id) && /watch/i.test(l))
+    try {
+      await ensureSquadSandbox(squad)
+      await ensureSquadSandbox(squad)
+      expect(watchLines()).toEqual([
+        expect.stringMatching(/Configured host workspace watch for squad \S+: include=2 exclude=0 hash=[0-9a-f]{12}$/),
+      ])
+
+      await squad.update({
+        metadata: { memory: { enabled: true, workspacePaths: { include: ['docs/**/*.md'] } } },
+      })
+      await ensureSquadSandbox(squad)
+      expect(watchLines()).toHaveLength(2)
+      expect(watchLines()[1]).toMatch(/Configured host workspace watch for squad \S+: include=1 exclude=0 /)
+    } finally {
+      consoleSpy.mockRestore()
+      if (prevLevel === undefined) delete process.env.LOG_LEVEL
+      else process.env.LOG_LEVEL = prevLevel
+    }
+  })
+
   it('ensure resolves when restarting the squad apps fails', async () => {
     const fake = fakeWatchManager({
       getClient: () => ({ startWatch: async () => {}, getWatchStatus: async () => ({ active: false, config: null }) }),
