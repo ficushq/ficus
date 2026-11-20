@@ -236,15 +236,20 @@ const uuidList = (ids: string[]) =>
  * matter to a participant (PR and CI notices, handoffs) reach its inbox and so its rows anyway.
  */
 export function workStreamLastEventsSql(streamIds: string[], retentionFloor: Date) {
+  // MATERIALIZED pins the join order: participants are resolved first, then probed once each.
+  // Inlined, the planner can run the probe for every binding x stream pair before filtering.
   return sql`
-    SELECT b.work_stream_id,max(latest.at) AS last_at
-    FROM workflow_bindings b
-    JOIN work_streams ws ON ws.id=b.work_stream_id
+    WITH participants AS MATERIALIZED (
+      SELECT b.work_stream_id,b.agent_id,ws.squad_id FROM workflow_bindings b
+      JOIN work_streams ws ON ws.id=b.work_stream_id
+      WHERE b.work_stream_id IN (${uuidList(streamIds)})
+    )
+    SELECT p.work_stream_id,max(latest.at) AS last_at
+    FROM participants p
     CROSS JOIN LATERAL (
       SELECT sa.at FROM squad_activity sa
-      WHERE sa.squad_id=ws.squad_id AND sa.agent_id=b.agent_id AND sa.at>=${retentionFloor.toISOString()}::timestamptz
+      WHERE sa.squad_id=p.squad_id AND sa.agent_id=p.agent_id AND sa.at>=${retentionFloor.toISOString()}::timestamptz
       ORDER BY sa.at DESC NULLS LAST LIMIT 1
     ) latest
-    WHERE b.work_stream_id IN (${uuidList(streamIds)})
-    GROUP BY b.work_stream_id`
+    GROUP BY p.work_stream_id`
 }

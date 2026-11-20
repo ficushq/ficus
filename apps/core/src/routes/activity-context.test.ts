@@ -12,6 +12,7 @@ import {
   executions,
   inbox,
   messages,
+  squadActivity,
   squads,
   workflowBindings,
   workStreamFlowRuns,
@@ -173,7 +174,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const inboxId of inboxIds) await db.delete(inbox).where(eq(inbox.id, inboxId))
-  for (const squadId of squadIds) await db.delete(squads).where(eq(squads.id, squadId))
+  for (const squadId of squadIds) {
+    // No foreign key cascades to the projection; remove it so later repair tests see no orphans.
+    await db.delete(squadActivity).where(eq(squadActivity.squadId, squadId))
+    await db.delete(squads).where(eq(squads.id, squadId))
+  }
   await cleanupTestRbac(prefix)
 })
 

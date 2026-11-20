@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import { eq, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, squads, inbox } from '../../db/schema'
+import { agents, squadActivity, squads, inbox } from '../../db/schema'
 import { ensureQueryIndex } from '../../test-utils/message-query-indexes'
 import { relatedInboxPageSql } from './event-handlers'
 import { chatSourcePageSql, listChatSourcePage } from './source-loaders'
@@ -12,7 +12,11 @@ const squadIds: string[] = []
 const recipientIds: string[] = []
 afterEach(async () => {
   for (const id of recipientIds.splice(0)) await db.delete(inbox).where(eq(inbox.recipientId, id))
-  for (const id of squadIds.splice(0)) await db.delete(squads).where(eq(squads.id, id))
+  for (const id of squadIds.splice(0)) {
+    // squad_activity has no foreign key to squads: left behind, fixture rows look orphaned to later repair tests.
+    await db.delete(squadActivity).where(eq(squadActivity.squadId, id))
+    await db.delete(squads).where(eq(squads.id, id))
+  }
 })
 async function fixtureAgent() {
   const [squad] = await db
@@ -26,6 +30,9 @@ async function fixtureAgent() {
 async function explain(query: SQL) {
   const [row] = await db.execute(sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${query}`)
   return (row['QUERY PLAN'] as any)[0].Plan
+}
+function planNodes(plan: any): any[] {
+  return [plan, ...(plan.Plans ?? []).flatMap(planNodes)]
 }
 function buffers(plan: any): number {
   return plan['Shared Hit Blocks'] + plan['Shared Read Blocks']
@@ -119,7 +126,6 @@ test('runtime aggregation reads a covering index rather than wide execution rows
 })
 
 test('Active work last events probe each participant once instead of scanning its history', async () => {
-  await ensureQueryIndex('idx_squad_activity_agent')
   const [squad] = await db
     .insert(squads)
     .values({ name: `scan-cost-${crypto.randomUUID()}`, purpose: 'test' })
@@ -144,31 +150,51 @@ test('Active work last events probe each participant once instead of scanning it
       )
       SELECT work_stream_id id FROM bound`)
   ).map((row) => row.id)
-  await db.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
-      agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
-    SELECT ${squad.id}::uuid,10,gen_random_uuid(),'chat',gen_random_uuid()::text,
-      now() - (n * interval '1 minute'),b.agent_id,'engineer','message',repeat(md5(n::text),8),'[]'::jsonb,
-      jsonb_build_object('type','agent','agentId',b.agent_id,'view','chat'),true,'agents',md5(n::text) || md5(b.agent_id::text)
-    FROM workflow_bindings b CROSS JOIN generate_series(1,${rowsPerAgent}) n
-    WHERE b.work_stream_id IN (${sql.join(
-      streamIds.map((id) => sql`${id}::uuid`),
-      sql`,`
-    )})`)
-  await db.execute(sql`VACUUM (ANALYZE) squad_activity`)
+  const query = workStreamLastEventsSql(streamIds, new Date(Date.now() - 30 * 24 * 60 * 60_000))
 
-  const floor = new Date(Date.now() - 30 * 24 * 60 * 60_000)
-  const query = workStreamLastEventsSql(streamIds, floor)
-  const result = await db.execute<{ work_stream_id: string; last_at: Date | string }>(query)
+  // The 24,000 activity rows live in a temporary squad_activity that shadows the shared table
+  // for this transaction only (pg_temp is searched first) and disappears on rollback. Inserting
+  // and deleting them in the shared table would leave dead entries in its agent index and skew
+  // later plan tests (schema.test.ts) toward the feed index.
+  const rollback = new Error('discard fixture')
+  let result: Array<{ last_at: Date | string }> = []
+  let plan: any
+  await expect(
+    db.transaction(async (tx) => {
+      await tx.execute(
+        sql`CREATE TEMP TABLE squad_activity (LIKE public.squad_activity INCLUDING DEFAULTS) ON COMMIT DROP`
+      )
+      await tx.execute(
+        sql`CREATE INDEX idx_squad_activity_agent ON pg_temp.squad_activity (squad_id,agent_id,at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST) WHERE agent_id IS NOT NULL`
+      )
+      await tx.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
+          agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
+        SELECT ${squad.id}::uuid,10,gen_random_uuid(),'chat',gen_random_uuid()::text,
+          now() - (n * interval '1 minute'),b.agent_id,'engineer','message',repeat(md5(n::text),8),'[]'::jsonb,
+          jsonb_build_object('type','agent','agentId',b.agent_id,'view','chat'),true,'agents',md5(n::text) || md5(b.agent_id::text)
+        FROM workflow_bindings b CROSS JOIN generate_series(1,${rowsPerAgent}) n
+        WHERE b.work_stream_id IN (${sql.join(
+          streamIds.map((id) => sql`${id}::uuid`),
+          sql`,`
+        )})`)
+      await tx.execute(sql`ANALYZE squad_activity`)
+      result = (await tx.execute(query)) as unknown as Array<{ last_at: Date | string }>
+      const [row] = await tx.execute(sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${query}`)
+      plan = (row['QUERY PLAN'] as any)[0].Plan
+      throw rollback
+    })
+  ).rejects.toBe(rollback)
+
   expect(result).toHaveLength(streams)
   // The newest row per participant is one minute old.
   for (const row of result) expect(Date.now() - new Date(row.last_at).getTime()).toBeLessThan(5 * 60_000)
-
-  const plan = await explain(query)
-  const old = await withoutIndex('idx_squad_activity_agent', query)
-  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('last event plans', JSON.stringify({ plan, old }))
-  expect(JSON.stringify(plan)).toContain('idx_squad_activity_agent')
-  // A few index pages per participant, never a sort of its 600-row history.
-  expect(JSON.stringify(plan)).not.toContain('"Sort"')
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('last event plan', JSON.stringify(plan))
+  // Each participant's probe stops at its newest row instead of reading (and sorting) its 600-row
+  // history, which needs the ORDER BY to match the index. Sorting the 40 grouped results above the
+  // probes is fine, so the assertion is on the probe itself, not on the whole plan.
+  const probes = planNodes(plan).filter((node) => node['Index Name'] === 'idx_squad_activity_agent')
+  expect(probes).toHaveLength(1)
+  expect(probes[0]['Actual Loops']).toBe(streams)
+  expect(probes[0]['Actual Rows']).toBeLessThanOrEqual(1)
   expect(buffers(plan)).toBeLessThan(streams * 6)
-  expect(buffers(plan)).toBeLessThan(buffers(old) / 50)
 })
