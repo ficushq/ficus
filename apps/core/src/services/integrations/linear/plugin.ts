@@ -16,7 +16,7 @@ import {
 } from '../authorization/credential-bundle'
 import { linearOutputAdapter } from './outputs'
 import type { OAuthAuthority } from '../authorization/authority'
-import { isLinearScopeError, LinearInsufficientScopeError } from './scope-error'
+import { isLinearScopeError, LinearInsufficientScopeError, readGraphQLErrors } from './scope-error'
 import { LINEAR_CLI_PACKAGES, LINEAR_CLI_RELEASE, LINEAR_GRAPHQL_ENDPOINT, linearCliSetupStep } from './cli'
 
 export type { LinearAppConfiguration } from '@ficus/shared/oauth-providers/linear/config'
@@ -87,14 +87,6 @@ function retryAfterMs(value: string | null): number {
   if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 86_400) * 1_000
   const at = value ? Date.parse(value) : NaN
   return Number.isFinite(at) ? Math.min(Math.max(at - Date.now(), 1_000), 86_400_000) : 60_000
-}
-
-async function readGraphQLErrors(response: Response): Promise<unknown> {
-  try {
-    return ((await response.json()) as { errors?: unknown })?.errors
-  } catch {
-    return undefined
-  }
 }
 
 /** Sends one GraphQL request with an `Authorization` value from `linearAuthorization`. */

@@ -21,3 +21,13 @@ export function isLinearScopeError(errors: unknown): boolean {
     })
   )
 }
+
+/** The `errors` of a GraphQL response body, or `undefined` when the body is not readable JSON. */
+export async function readGraphQLErrors(response: Response): Promise<unknown> {
+  try {
+    const body: unknown = await response.json()
+    return body && typeof body === 'object' ? (body as { errors?: unknown }).errors : undefined
+  } catch {
+    return undefined
+  }
+}

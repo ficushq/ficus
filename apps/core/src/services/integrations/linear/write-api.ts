@@ -1,5 +1,5 @@
 import { LINEAR_GRAPHQL_ENDPOINT } from './cli'
-import { isLinearScopeError } from './scope-error'
+import { isLinearScopeError, readGraphQLErrors } from './scope-error'
 
 /**
  * Linear writes made by the write-back outbox, with failures classified so the outbox can decide
@@ -100,15 +100,10 @@ export async function linearWrite<T>(
   if (response.status === 429)
     throw new LinearWriteError('rate_limited', retryAfterMs(response.headers.get('Retry-After')))
   if (response.status === 401) throw new LinearWriteError('invalid_auth')
-  if (response.status === 403) {
-    let body: { errors?: unknown } | null = null
-    try {
-      body = (await response.json()) as typeof body
-    } catch {
-      // No readable body: a plain refusal.
-    }
-    throw new LinearWriteError(isLinearScopeError(body?.errors) ? 'insufficient_scope' : 'forbidden')
-  }
+  if (response.status === 403)
+    throw new LinearWriteError(
+      isLinearScopeError(await readGraphQLErrors(response)) ? 'insufficient_scope' : 'forbidden'
+    )
   // A server error is transient whatever its body says.
   if (response.status >= 500) throw new LinearWriteError('unavailable')
   let result: { data?: T | null; errors?: unknown[] }
