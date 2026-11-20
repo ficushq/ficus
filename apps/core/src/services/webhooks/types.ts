@@ -61,6 +61,18 @@ export interface WebhookProcessor {
    * Returns null if not configured.
    */
   getSecret(): string | null
+
+  /** First-party integration whose enabled state gates this processor, when it differs from `provider`. */
+  integration?: string
+
+  /**
+   * Checks a signature-verified delivery further (freshness, type agreement, sender identity).
+   * Returns a short reason to reject it, or null to accept.
+   */
+  verifyDelivery?(ctx: WebhookContext): string | null
+
+  /** The provider's delivery ID, for deduplicating retried deliveries. */
+  getDeliveryId?(ctx: WebhookContext): string | undefined
 }
 
 /**
@@ -96,4 +108,6 @@ export interface StoreWebhookEventInput {
   signature: string | null
   verified: boolean
   error?: string
+  /** Provider delivery ID; a verified delivery with a stored ID is rejected as a duplicate. */
+  deliveryId?: string
 }

@@ -121,6 +121,19 @@ export function EventRulePreview({
             ))}
           </select>
         </label>
+        {provider === 'linear' && (
+          <label className="text-sm">
+            Hypothetical connected account ID
+            <input
+              aria-label="Sample connected account ID"
+              className="ficus-field mt-1 block w-full"
+              value={login}
+              maxLength={100}
+              placeholder="Linear user ID of the app or API key owner"
+              onChange={(e) => setLogin(e.target.value)}
+            />
+          </label>
+        )}
         {provider === 'github' && (
           <>
             <label className="text-sm">
@@ -149,7 +162,11 @@ export function EventRulePreview({
           maxLength={64000}
           value={fieldsText}
           onChange={(e) => setFieldsText(e.target.value)}
-          placeholder={'{"repository":"owner/repo","issue.number":15,"labels":["bug"]}'}
+          placeholder={
+            provider === 'linear'
+              ? '{"teamId":"<team ID>","delegate":"<account ID>","actor":"<user ID>","actorType":"user"}'
+              : '{"repository":"owner/repo","issue.number":15,"labels":["bug"]}'
+          }
         />
       </label>
       {hasDecisions && (
@@ -193,7 +210,9 @@ export function EventRulePreview({
           <>
             <p>
               {preview.suppression
-                ? 'No matching action: comments/reviews authored by the connected account are suppressed.'
+                ? provider === 'linear'
+                  ? 'No matching action: comments authored by the connected account (including Ficus’s own session replies) are suppressed.'
+                  : 'No matching action: comments/reviews authored by the connected account are suppressed.'
                 : preview.selectedRuleId
                   ? `Selected: ${preview.selectedRuleId} → ${preview.action}`
                   : 'No matching rule: no squad action. Work-stream subscriptions are unaffected.'}

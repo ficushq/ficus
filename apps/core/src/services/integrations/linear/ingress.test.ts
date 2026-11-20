@@ -1,10 +1,12 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('linear')
-import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import {
+  agents,
   db,
+  inbox,
   integrationConnectionAssignments,
   integrationConnections,
   integrationOutputEvents,
@@ -13,6 +15,8 @@ import {
 import { getSecretStore } from '../../secrets'
 import { linearOutputAdapter } from './outputs'
 import { canReceiveLinearEvent, routeLinearEvent } from './ingress'
+import { createLinearAppFixture } from './testing/app-fixtures'
+import { setLinearAppReadinessForTest } from './app-readiness'
 
 const store = getSecretStore()
 const connectionIds: string[] = []
@@ -198,6 +202,26 @@ test('a squad whose account cannot read the issue receives nothing', async () =>
   expect(await publishedFor(second)).toEqual([])
 })
 
+test('each fact of one update is checked on its own: a delegation change still reaches squads not assigned', async () => {
+  stubLinear({ [keyA]: readable('user-a', 'user-a'), [keyB]: readable('user-b', 'user-a') })
+  const event = issueEvent({ assigneeId: null, delegateId: null }, { delegateId: 'other-agent' })
+  await routeLinearEvent(event, async () => {})
+  const facts = linearOutputAdapter.normalize(event)
+  expect(facts.map((fact) => fact.output)).toEqual(['issue.assigned', 'issue.delegated'])
+  eventKeys.push(...facts.map((fact) => fact.eventKey))
+  const squadsFor = async (eventKey: string) =>
+    (
+      await db
+        .select({ authority: integrationOutputEvents.authority })
+        .from(integrationOutputEvents)
+        .where(and(eq(integrationOutputEvents.integration, 'linear'), eq(integrationOutputEvents.eventKey, eventKey)))
+    )
+      .map((row) => (row.authority.kind === 'connection' ? row.authority.squadId : 'instance'))
+      .sort()
+  expect(await squadsFor(facts[0]!.eventKey)).toEqual([squadA])
+  expect(await squadsFor(facts[1]!.eventKey)).toEqual([squadA, squadB].sort())
+})
+
 test('events that normalize to nothing never probe a connection', async () => {
   const probed = stubLinear({ [keyA]: readable('user-a', 'user-a') })
   await routeLinearEvent({ type: 'Issue', payload: { action: 'create', data: { id: 'issue-uuid' } } }, async () => {})
@@ -224,4 +248,91 @@ test('readability decides publication, and assignment outputs additionally bind 
   expect(canReceiveLinearEvent(readable('user-b'), { ...event, output: 'issue.comment', assignee: '' })).toBe(true)
   // An unknown team on the fact does not relax the issue check.
   expect(canReceiveLinearEvent(readable('user-b'), { ...event, output: 'issue.updated', teamId: '' })).toBe(true)
+})
+
+describe('API-key rule audiences bind to the probed viewer', () => {
+  /** Squad A's default Linear rules with its team routed; returns the notices its manager received. */
+  async function routeWithDefaults(event: { type: string; payload: unknown }) {
+    const [manager] = await db.insert(agents).values({ agentTypeId: 'manager', squadId: squadA }).returning()
+    await db
+      .update(squads)
+      .set({ managerAgentId: manager!.id, metadata: { linear: [{ teamId: 'team-uuid' }] } })
+      .where(eq(squads.id, squadA))
+    try {
+      await routeLinearEvent(event, async () => {})
+      const fact = linearOutputAdapter.normalize(event)[0]!
+      eventKeys.push(...linearOutputAdapter.normalize(event).map((item) => item.eventKey))
+      const [recorded] = await db
+        .select({ authority: integrationOutputEvents.authority })
+        .from(integrationOutputEvents)
+        .where(
+          and(
+            eq(integrationOutputEvents.eventKey, fact.eventKey),
+            sql`${integrationOutputEvents.authority}->>'squadId' = ${squadA}`
+          )
+        )
+      return {
+        accountId: recorded?.authority.kind === 'connection' ? recorded.authority.accountId : undefined,
+        notices: await db.select().from(inbox).where(eq(inbox.recipientId, manager!.id)),
+      }
+    } finally {
+      await db.update(squads).set({ managerAgentId: null, metadata: {} }).where(eq(squads.id, squadA))
+      await db.delete(inbox).where(eq(inbox.recipientId, manager!.id))
+      await db.delete(agents).where(eq(agents.id, manager!.id))
+    }
+  }
+
+  test('a comment on an issue the viewer is not assigned or delegated does not notify the manager', async () => {
+    stubLinear({ [keyA]: readable('user-a', 'someone-else') })
+    const { accountId, notices } = await routeWithDefaults(commentEvent())
+    expect(accountId).toBe('user-a')
+    expect(notices).toEqual([])
+  })
+
+  test('a comment on an issue assigned to the viewer notifies the manager', async () => {
+    stubLinear({ [keyA]: readable('user-a', 'user-a') })
+    const { notices } = await routeWithDefaults(commentEvent())
+    expect(notices).toHaveLength(1)
+  })
+
+  test('the viewer’s own comment is suppressed as a self-comment', async () => {
+    stubLinear({ [keyA]: readable('user-a', 'user-a') })
+    const own = commentEvent()
+    ;(own.payload.data as Record<string, unknown>).userId = 'user-a'
+    const { notices } = await routeWithDefaults(own)
+    expect(notices).toEqual([])
+  })
+
+  test('a delegation to another agent does not match the connected-account delegation rule', async () => {
+    stubLinear({ [keyA]: readable('user-a', 'user-a') })
+    const delegated = issueEvent({ delegateId: null }, { delegateId: 'other-agent' })
+    const { notices } = await routeWithDefaults(delegated)
+    expect(notices).toEqual([])
+  })
+})
+
+test('the organization webhook never routes to squads on an agent app connection', async () => {
+  // With the app usable, the connection is skipped because it is an app connection, not because it is fenced.
+  const restore = setLinearAppReadinessForTest({ local: true, platform_broker: false })
+  const app = await createLinearAppFixture({ appSettings: false })
+  try {
+    const appSquad = await app.addSquad({ teamIds: ['team-uuid'] })
+    const probed = stubLinear({ [keyA]: readable('user-a', 'user-a'), [keyB]: readable('user-b', 'user-a') })
+    const comment = commentEvent()
+    await routeLinearEvent(comment, async () => {})
+    // The app's token is never used on this path, and only the API-key squads record the comment.
+    expect(probed.some((value) => value.startsWith('Bearer'))).toBe(false)
+    const published = await publishedFor(comment)
+    expect(published).toEqual([squadA, squadB].sort())
+    expect(published).not.toContain(appSquad.id)
+    const [recorded] = await db
+      .select({ authority: integrationOutputEvents.authority })
+      .from(integrationOutputEvents)
+      .where(sql`${integrationOutputEvents.authority}->>'squadId' = ${squadA}`)
+      .limit(1)
+    expect(recorded?.authority).toMatchObject({ accountId: 'user-a', actorTrust: 'trusted' })
+  } finally {
+    restore()
+    await app.cleanup()
+  }
 })

@@ -129,7 +129,7 @@ export function effectiveSquadEventRules(metadata: unknown, provider: string): S
           ),
         ]
       : provider === 'linear'
-        ? [['issue.assigned', 'notify-manager', 'connected-account']]
+        ? LINEAR_DEFAULT_RULES
         : []
   for (const [output, action, audience] of defaults) {
     const id = `${provider}-${output!.replaceAll('_', '-').replaceAll('.', '-')}`
@@ -154,6 +154,35 @@ export function effectiveSquadEventRules(metadata: unknown, provider: string): S
       )
   }
   return existing
+}
+
+/**
+ * Linear defaults mirror GitHub's: account-bound changes and mentions notify the manager. `issue.created`,
+ * `issue.updated` and `agent_session.created` have no default (`agent_session.created` always pairs with a
+ * delegated or mentioned fact).
+ */
+const LINEAR_DEFAULT_RULES: string[][] = [
+  ['issue.assigned', 'notify-manager', 'connected-account'],
+  ['issue.unassigned', 'notify-manager', 'connected-account'],
+  ['issue.delegated', 'notify-manager', 'connected-account'],
+  ['issue.undelegated', 'notify-manager', 'connected-account'],
+  ['issue.mentioned', 'notify-manager', 'assigned-or-mentioned'],
+  ['issue.comment', 'notify-manager', 'assigned-or-mentioned'],
+  ['agent_session.prompted', 'notify-manager', 'connected-account'],
+]
+/** IDs of the default Linear rules, for offering them to squads whose stored rules predate them. */
+export const LINEAR_DEFAULT_RULE_IDS = LINEAR_DEFAULT_RULES.map(
+  ([output]) => `linear-${output!.replaceAll('_', '-').replaceAll('.', '-')}`
+)
+
+/**
+ * Linear turns the app's own `response`, `elicitation` and `error` activities into comments, and agents comment
+ * through the CLI, so a comment authored by the connected account must never start another turn.
+ */
+export function isLinearSelfComment(fact: IntegrationOutputFact, account: string): boolean {
+  if (!account || fact.output !== 'issue.comment') return false
+  // The author (who wrote it) or the actor (who triggered this delivery, e.g. an edit) being the account.
+  return fact.data.actor === account || record(fact.data.comment).author === account
 }
 
 /** Comment/review echoes from the connected account must not start another agent turn. */
@@ -263,7 +292,11 @@ export function evaluateSquadEventRules(
   preview: SquadEventRulePreview
   pending?: { rule: SquadEventRule; predicates: EventDecisionPredicate[] }
 } {
-  const suppression = integration === 'github' && isGitHubSelfComment(fact, login) ? 'self-comment' : null
+  const suppression =
+    (integration === 'github' && isGitHubSelfComment(fact, login)) ||
+    (integration === 'linear' && isLinearSelfComment(fact, login))
+      ? 'self-comment'
+      : null
   const preview: SquadEventRulePreview = {
     selectedRuleId: null,
     action: null,
@@ -384,13 +417,15 @@ export function evaluateSquadEventRules(
     check(
       'audience',
       matchesAudience(integration, fact, login, filters.audience),
-      integration !== 'github' || filters.audience === 'any'
-        ? 'No account-involvement restriction.'
-        : filters.audience === 'connected-account' && fact.output === 'pull_request.review_requested'
-          ? 'Review requested from this account or a team delivered to this connection.'
-          : filters.audience === 'connected-account' && ['issue.assigned', 'issue.unassigned'].includes(fact.output)
-            ? 'Assigned or unassigned login must be the connected account.'
-            : 'Connected account must be assigned or @mentioned; self and bot authors do not match.'
+      integration === 'linear' && filters.audience !== 'any'
+        ? linearAudienceDescription(fact.output, filters.audience, login)
+        : integration !== 'github' || filters.audience === 'any'
+          ? 'No account-involvement restriction.'
+          : filters.audience === 'connected-account' && fact.output === 'pull_request.review_requested'
+            ? 'Review requested from this account or a team delivered to this connection.'
+            : filters.audience === 'connected-account' && ['issue.assigned', 'issue.unassigned'].includes(fact.output)
+              ? 'Assigned or unassigned login must be the connected account.'
+              : 'Connected account must be assigned or @mentioned; self and bot authors do not match.'
     )
     // Decision conditions cost a model call: asked last, only once every other check has passed.
     const decisionPredicates = (rule.predicates ?? []).filter(isEventDecisionPredicate)
@@ -448,7 +483,9 @@ function matchesAudience(
   audience: SquadEventRule['filters']['audience']
 ) {
   const data = record(fact.data)
-  if (integration !== 'github' || audience === 'any') return true
+  if (audience === 'any') return true
+  if (integration === 'linear') return matchesLinearAudience(fact, login, audience)
+  if (integration !== 'github') return true
   if (!login) return false
   if (audience === 'connected-account') {
     if (fact.output === 'pull_request.review_requested')
@@ -462,6 +499,51 @@ function matchesAudience(
     strings(data.assignees).some((assignee) => assignee.toLowerCase() === login.toLowerCase()) ||
     mention.test(fact.body)
   )
+}
+
+const LINEAR_SESSION_OUTPUTS = ['agent_session.created', 'agent_session.prompted']
+const LINEAR_DELEGATION_OUTPUTS = ['issue.delegated', 'issue.undelegated']
+const LINEAR_ASSIGNMENT_OUTPUTS = ['issue.assigned', 'issue.unassigned']
+
+/**
+ * `account` is the connection's Linear user ID: the app user for an app connection, or the API key's viewer
+ * recorded on the event's authority. An event recorded without one (before account binding existed) keeps the
+ * old Linear behavior of no account restriction; ingress already bound the account for those.
+ */
+/** Outputs that existed before account binding; events of these without an account keep the old behavior. */
+const LINEAR_LEGACY_OUTPUTS = ['issue.assigned', 'issue.unassigned', 'issue.updated', 'issue.comment']
+
+function matchesLinearAudience(
+  fact: IntegrationOutputFact,
+  account: string,
+  audience: 'connected-account' | 'assigned-or-mentioned'
+) {
+  // Fail closed for the newer outputs: an ingress that forgot the account must not match everything.
+  if (!account) return LINEAR_LEGACY_OUTPUTS.includes(fact.output)
+  const data = record(fact.data)
+  if (audience === 'connected-account') {
+    if (LINEAR_ASSIGNMENT_OUTPUTS.includes(fact.output)) return data.assignee === account
+    if (LINEAR_DELEGATION_OUTPUTS.includes(fact.output)) return data.delegate === account
+    if (LINEAR_SESSION_OUTPUTS.includes(fact.output)) return record(data.session).appUserId === account
+  }
+  if (data.actor === account || data.actorType === 'app') return false
+  // A comment in one of the account's agent session threads is already routed as a mention or a prompt.
+  if (fact.output === 'issue.comment' && record(data.session).id) return false
+  return fact.output === 'issue.mentioned' || data.assignee === account || data.delegate === account
+}
+
+function linearAudienceDescription(output: string, audience: string, account: string) {
+  if (!account)
+    return LINEAR_LEGACY_OUTPUTS.includes(output)
+      ? 'No connected account recorded for this event: no account-involvement restriction.'
+      : 'No connected account recorded for this event, so account involvement cannot match.'
+  if (audience === 'connected-account') {
+    if (LINEAR_ASSIGNMENT_OUTPUTS.includes(output)) return 'Assigned or unassigned user must be the connected account.'
+    if (LINEAR_DELEGATION_OUTPUTS.includes(output))
+      return 'Delegated or undelegated agent must be the connected account.'
+    if (LINEAR_SESSION_OUTPUTS.includes(output)) return 'Agent session must belong to the connected account.'
+  }
+  return 'Connected account must be @mentioned, or the issue’s assignee or delegate; self and app authors do not match.'
 }
 
 export function eventRuleWorkflow(rule: SquadEventRule, metadata: unknown): WorkflowSource {

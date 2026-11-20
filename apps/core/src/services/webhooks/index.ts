@@ -9,6 +9,7 @@ export * from './types'
 export { webhookRegistry } from './registry'
 export { dispatchVerifiedWebhookContext, dispatchVerifiedWebhookEvent } from './dispatch'
 export {
+  DuplicateWebhookDeliveryError,
   storeWebhookEvent,
   markWebhookProcessed,
   markWebhookError,
@@ -35,6 +36,7 @@ import {
   handleLinearIssueUpdate,
 } from './processors'
 import { createLogger } from '../../lib/infra/logger'
+import { handleLinearAppEvent, linearAppProcessor } from '../integrations/linear/app-webhook'
 
 const log = createLogger('webhooks')
 
@@ -83,6 +85,11 @@ export function initializeWebhooks(): void {
   webhookRegistry.registerHandler('linear', 'Issue', handleLinearIssueUpdate)
   webhookRegistry.registerHandler('linear', 'Comment', handleLinearIssueUpdate)
   log.info('Registered 2 Linear handlers: Issue, Comment')
+
+  // The Linear agent app's own webhook: sessions, notifications, permissions, uninstall, issues and comments.
+  webhookRegistry.registerProcessor(linearAppProcessor)
+  webhookRegistry.registerHandler('linear-app', '*', handleLinearAppEvent)
+  log.info('Registered processor: linear-app')
 
   log.info(`Initialization complete. Providers: ${webhookRegistry.getProviders().join(', ')}`)
 }

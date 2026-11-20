@@ -12,7 +12,7 @@ import { BigbrainLocalSetup } from './bigbrain/local-setup'
 import { GitHubIdentityAuthorization } from './github/identity-authorization'
 import { GitHubPersonalOAuthFinalizer } from './github/personal-oauth-finalizer'
 import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
-import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
+import { credentialSetupStatus, connectionSetupStatus, withRoutingIssues } from './setup-status'
 import {
   pushIntegrationCatalog,
   isPushIntegration,
@@ -684,11 +684,16 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
                 ? credentialSetupStatus(getGoogleCloudIntegrationSettings().fields)
                 : entry.key === 'openai-services'
                   ? credentialSetupStatus(getOpenAIServicesSettings().fields)
-                  : connectionSetupStatus(
-                      (await integrationConnectionRepository.list(entry.key)).map((connection) => ({
-                        ...connection,
-                        credentialConfigured: !!getSecretStore().get(connection.credentialRef)?.trim(),
-                      }))
+                  : withRoutingIssues(
+                      connectionSetupStatus(
+                        (await integrationConnectionRepository.list(entry.key)).map((connection) => ({
+                          ...connection,
+                          credentialConfigured: !!getSecretStore().get(connection.credentialRef)?.trim(),
+                        }))
+                      ),
+                      entry.key === 'linear'
+                        ? await (await import('./linear/team-access')).linearTeamAccessSetupIssues()
+                        : []
                     ),
       }))
     ),

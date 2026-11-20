@@ -16,8 +16,9 @@ export async function ensureQueryIndex(name: string) {
     (migration) => migration.sql
   )
   const statement = statements.find(
-    (value) => value.trim().startsWith('CREATE INDEX') && value.includes(`"${name}" ON `)
+    (value) => /^CREATE (UNIQUE )?INDEX/.test(value.trim()) && value.includes(`"${name}" ON `)
   )
   if (!statement) throw new Error(`Missing generated index migration: ${name}`)
-  await db.execute(sql.raw(statement))
+  // A concurrently built index is built plainly here: the test database has no concurrent writers.
+  await db.execute(sql.raw(statement.replace(/^(\s*CREATE (?:UNIQUE )?INDEX) CONCURRENTLY/, '$1')))
 }

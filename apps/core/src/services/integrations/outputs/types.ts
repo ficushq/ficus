@@ -35,4 +35,20 @@ export interface IntegrationOutputAdapter {
 }
 /** Supplied by the authenticated ingress, never by event payload or stream metadata. */
 export type IntegrationOutputAuthority =
-  { kind: 'instance' } | { kind: 'connection'; connectionId: string; squadId: string; connectionRevision?: string }
+  | { kind: 'instance' }
+  | {
+      kind: 'connection'
+      connectionId: string
+      squadId: string
+      connectionRevision?: string
+      /**
+       * The account the connection acts as, from a live probe (Linear: the API key's viewer or the
+       * agent app user). Rule audiences bind to it instead of payload claims.
+       */
+      accountId?: string
+      /**
+       * Linear agent app: whether the acting Linear user may start work (decision 9.4), from the live
+       * actor probe. `untrusted` holds `start-workstream` and consultant actions for the manager.
+       */
+      actorTrust?: 'trusted' | 'untrusted'
+    }

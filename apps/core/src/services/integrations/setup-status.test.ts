@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
+import { credentialSetupStatus, connectionSetupStatus, withRoutingIssues } from './setup-status'
 import { channelPlugins } from './channels/plugins'
 import { deploymentPlugins } from './deployment/plugins'
 
@@ -45,4 +45,17 @@ test('every channel declares required fields and deploy providers require a manu
     expect(plugin.authorization.kind).toBe('manual')
     expect(() => plugin.connection.credential.parse('')).toThrow()
   }
+})
+
+test('routing issues turn a configured integration into needs attention and keep worse states', () => {
+  const issue = 'Squad Core routes Linear team T, which the Ficus app cannot access.'
+  expect(withRoutingIssues(connectionSetupStatus([account]), [issue])).toEqual({
+    state: 'needs_attention',
+    issues: [issue],
+  })
+  expect(withRoutingIssues(connectionSetupStatus([account]), [])).toEqual({ state: 'configured', issues: [] })
+  expect(withRoutingIssues(connectionSetupStatus([]), [issue])).toEqual({
+    state: 'needs_setup',
+    issues: ['Connect an account to finish setup.', issue],
+  })
 })

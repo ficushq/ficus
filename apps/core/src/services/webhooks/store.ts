@@ -41,8 +41,9 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
     payload: input.payload,
     // Each provider names its delivery id in its own header.
     metadata: {
-      providerDeliveryId:
-        input.provider === 'linear' ? input.headers['linear-delivery'] : input.headers['x-github-delivery'],
+      providerDeliveryId: isLinearProvider(input.provider)
+        ? input.headers['linear-delivery']
+        : input.headers['x-github-delivery'],
     },
   }
   // Ownership only needs the delivering repository, which both GitHub receipt
@@ -53,7 +54,7 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       ? (extractGitHubPrDispatchFact('github', ingress) ?? extractGitHubIssueDispatchFact('github', ingress))
       : null
   const linear =
-    input.verified && input.provider === 'linear' ? linearReceiptIdentity(input.eventType, input.payload) : null
+    input.verified && isLinearProvider(input.provider) ? linearReceiptIdentity(input.eventType, input.payload) : null
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
     // A squad owns interest in a repo's PR/issue events through EITHER claim:
@@ -90,21 +91,42 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       : linear
         ? await linearOwners(tx, linear)
         : []
-    const [result] = await tx
-      .insert(webhookEvents)
-      .values({
-        provider: input.provider,
-        eventType: input.eventType,
-        payload: input.payload,
-        headers: input.headers,
-        signature: input.signature,
-        verified: input.verified,
-        activitySquadIds: owners.map((owner) => owner.squadId),
-        error: input.error ?? null,
-      })
-      .returning({ id: webhookEvents.id })
+    const insert = tx.insert(webhookEvents).values({
+      provider: input.provider,
+      eventType: input.eventType,
+      payload: input.payload,
+      headers: input.headers,
+      signature: input.signature,
+      verified: input.verified,
+      activitySquadIds: owners.map((owner) => owner.squadId),
+      error: input.error ?? null,
+      deliveryId: input.deliveryId ?? null,
+    })
+    // A delivery ID seen before is a provider retry of a stored delivery: it is not stored or processed again.
+    const [result] = input.deliveryId
+      ? await insert
+          .onConflictDoNothing({
+            target: [webhookEvents.provider, webhookEvents.deliveryId],
+            where: sql`${webhookEvents.deliveryId} IS NOT NULL`,
+          })
+          .returning({ id: webhookEvents.id })
+      : await insert.returning({ id: webhookEvents.id })
+    if (!result) throw new DuplicateWebhookDeliveryError()
     return result.id
   })
+}
+
+/** The Linear organization webhook (`linear`) and the Linear agent app webhook (`linear-app`). */
+function isLinearProvider(provider: string) {
+  return provider === 'linear' || provider === 'linear-app'
+}
+
+/** `storeWebhookEvent` found the same provider delivery ID already stored. */
+export class DuplicateWebhookDeliveryError extends Error {
+  constructor() {
+    super('Duplicate webhook delivery')
+    this.name = 'DuplicateWebhookDeliveryError'
+  }
 }
 
 /**

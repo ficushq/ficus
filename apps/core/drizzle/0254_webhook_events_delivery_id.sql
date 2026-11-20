@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY "uq_webhook_events_provider_delivery" ON "webhook_events" USING btree ("provider","delivery_id") WHERE "webhook_events"."delivery_id" IS NOT NULL;

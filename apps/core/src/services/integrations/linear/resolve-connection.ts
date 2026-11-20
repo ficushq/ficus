@@ -2,7 +2,16 @@ import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { getSecretStore } from '../../secrets'
 import { resolveOAuthAuthority } from '../authorization/authority'
 import { isFencedOAuthConnection } from '../oauth-plugin-view'
-import { linearAuthorization, linearCredentialCodec, linearPlugin } from './plugin'
+import { and, desc, eq, sql } from 'drizzle-orm'
+import { db, integrationConnections } from '../../../db'
+import type { IntegrationConnectionRecord } from '../connection-repository'
+import {
+  isLinearAppConfiguration,
+  linearAuthorization,
+  linearCredentialCodec,
+  linearPlugin,
+  parseLinearConfiguration,
+} from './plugin'
 
 /**
  * The squad's usable Linear connection and the `Authorization` header value
@@ -12,8 +21,46 @@ import { linearAuthorization, linearCredentialCodec, linearPlugin } from './plug
  */
 export async function resolveLinearConnection(squadId: string, now = new Date()) {
   const connection = await new DbIntegrationConnectionRepository().getAssigned(squadId, 'linear')
+  return connection ? usableLinearConnection(connection, now) : null
+}
+
+/**
+ * The enabled, healthy Linear agent app connection for a workspace, whether or not any squad is
+ * assigned to it: every session the app receives is acknowledged, routed or not.
+ */
+export async function resolveLinearAppConnection(organizationId: string, now = new Date()) {
+  const [row] = await db
+    .select({ id: integrationConnections.id })
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.providerKey, 'linear'),
+        eq(integrationConnections.authorizationKind, 'oauth2'),
+        eq(integrationConnections.enabled, true),
+        sql`${integrationConnections.configuration}->>'organizationId' = ${organizationId}`
+      )
+    )
+    .orderBy(desc(integrationConnections.updatedAt))
+    .limit(1)
+  if (!row) return null
+  const connection = await new DbIntegrationConnectionRepository().get(row.id)
+  if (!connection) return null
+  const configuration = (() => {
+    try {
+      return parseLinearConfiguration(connection.configuration)
+    } catch {
+      return null
+    }
+  })()
+  if (!configuration || !isLinearAppConfiguration(configuration)) return null
+  const usable = await usableLinearConnection(connection, now)
+  return usable ? { ...usable, configuration } : null
+}
+
+/** The `Authorization` value for a connection that is enabled, validated, unfenced and unexpired. */
+async function usableLinearConnection(connection: IntegrationConnectionRecord, now: Date) {
   if (
-    !connection?.enabled ||
+    !connection.enabled ||
     connection.authState !== 'authenticated' ||
     connection.healthState !== 'healthy' ||
     connection.materialRevision !== connection.validatedRevision ||

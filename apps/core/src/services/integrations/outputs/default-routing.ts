@@ -42,6 +42,7 @@ import { ciNotificationSchema, settleCiNotification } from '../../work-streams/c
 import { readOutputInbox } from '../github/feedback-pass-read'
 import { completedReviewRequest } from './trigger-receipts'
 import { resolveSquadEventRule } from './event-rule-decisions'
+import { isUntrustedOutputActor, outputAccount } from './authority'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 const record = (value: unknown): Record<string, any> =>
@@ -175,7 +176,7 @@ export async function routeDefaultNotifications(
     .select({ configuration: integrationConnections.configuration })
     .from(integrationConnections)
     .where(eq(integrationConnections.id, event.authority.connectionId))
-  const login = String(record(connection?.configuration).login ?? '')
+  const login = outputAccount(connection?.configuration, event.authority)
   if (
     integrationOutputRegistry.adapter(event.integration)?.shouldNotify?.(matching.fact, connection?.configuration) ===
     false
@@ -235,7 +236,9 @@ export async function routeDefaultNotifications(
     event.fact.data.projection === 'status' ? event : matching,
     squad,
     login,
-    event.fact.output === 'pull_request.review_requested'
+    // A held start-workstream rule (untrusted Linear author) becomes a manager notice, so its decision
+    // conditions matter here too.
+    event.fact.output === 'pull_request.review_requested' || isUntrustedOutputActor(event.integration, event.authority)
       ? ['notify-manager', 'notify-consultant', 'start-workstream']
       : ['notify-manager', 'notify-consultant']
   )
@@ -253,6 +256,16 @@ export async function routeDefaultNotifications(
     }
   }
   if (latest?.handled.includes(squadId)) return { refused }
+  // Decision 9.4: a Linear author who is not an active, non-guest, non-app workspace member only ever
+  // notifies the manager. Their start-workstream or consultant action is held for the manager to decide.
+  if (
+    isUntrustedOutputActor(event.integration, event.authority) &&
+    (rule?.action.type === 'start-workstream' || rule?.action.type === 'notify-consultant')
+  ) {
+    if (squad.managerAgentId)
+      await send(event, squad.managerAgentId, undefined, untrustedHoldContext(rule.action), squadId)
+    return { refused }
+  }
   if (rule?.action.type === 'notify-manager' && squad.managerAgentId) {
     if (await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)) refused = true
   }
@@ -277,6 +290,16 @@ export async function routeDefaultNotifications(
     }
   }
   return { refused }
+}
+
+/** The manager notice for a held rule action: the author is untrusted, and how to start work anyway. */
+function untrustedHoldContext(action: SquadEventRule['action']) {
+  return [
+    action.type !== 'ignore' ? action.additionalContext : undefined,
+    `The author of this Linear request is not a trusted member of the connected Linear workspace (an active, non-guest, non-app user), so the squad’s ${action.type === 'start-workstream' ? 'start-workstream' : 'consultant'} rule was held and no work was started. If the request should be worked on, start it with the ficus workstream create --from-event command below.`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 function logicalEventKey(event: Event, suffix: string) {
