@@ -1096,6 +1096,125 @@ describe('WorkStreamList inline pull request links', () => {
   })
 })
 
+describe('WorkStreamList delivery label on the pull request', () => {
+  const ciFailed = (pullRequests?: Array<{ number: number; state: 'open' }>) =>
+    ({
+      kind: 'failure',
+      explanation: { codeHostReason: 'ci-failed', ...(pullRequests ? { pullRequests } : {}) },
+    }) as const
+  const tracked = (...numbers: number[]) => ({ tracked: numbers.map((number) => trackedDeliveryPullRequest(number)) })
+  // The desktop row, then the stacked mobile row, share one list item.
+  const desktopRow = (html: string) => html.slice(html.indexOf('hidden md:flex'), html.indexOf('flex md:hidden'))
+  const mobileRow = (html: string) => html.slice(html.indexOf('flex md:hidden'))
+  const prLink = (html: string, number: number) => {
+    const start = html.indexOf(`href="https://github.com/example/product/pull/${number}"`)
+    return html.slice(start, html.indexOf('</a>', start))
+  }
+  const feedProps = { feedLayout: true, hideFilters: true }
+  const feedStatus = (html: string) =>
+    html.slice(html.indexOf('data-testid="feed-work-row"'), html.indexOf('ml-4 mt-1'))
+
+  test('desktop rows put the label on the primary delivery pull request badge in the delivery color', () => {
+    const html = renderWorkStreamList([
+      workStream({
+        metadata: tracked(31, 32),
+        delivery: ciFailed([
+          { number: 32, state: 'open' },
+          { number: 31, state: 'open' },
+        ]),
+      }),
+    ])
+    const desktop = desktopRow(html)
+    const primary = prLink(desktop, 32)
+    expect(primary).toContain('title="Open PR #32 · Delivery: CI failed"')
+    expect(primary).toContain('text-status-danger-badge-fg')
+    expect(primary).toContain('<span class="sr-only">Delivery: </span>CI failed')
+    // Only one badge carries it; the other keeps the plain pull request look.
+    expect(prLink(desktop, 31)).toContain('text-badge-accent-2-fg')
+    expect(prLink(desktop, 31)).not.toContain('CI failed')
+    expect(desktop.match(/CI failed<\/span>/g)).toHaveLength(1)
+    expect(desktop).not.toContain('text-xs text-secondary')
+    expect(desktop).toContain('In Progress')
+    // The mobile row is text by design and keeps the label in its details line.
+    const mobile = mobileRow(html)
+    expect(mobile).toContain('<span class="text-xs text-secondary" title="Delivery: CI failed">')
+    expect(mobile).not.toContain('text-status-danger-badge-fg')
+  })
+
+  test('without designated pull requests the first delivery pull request carries the label', () => {
+    const html = renderWorkStreamList([
+      workStream({
+        metadata: tracked(31, 32),
+        delivery: { kind: 'external', explanation: { codeHostReason: 'ci-pending' } },
+      }),
+    ])
+    const desktop = desktopRow(html)
+    expect(prLink(desktop, 31)).toContain('Awaiting CI')
+    expect(prLink(desktop, 31)).toContain('text-status-external-wait-badge-fg')
+    expect(prLink(desktop, 32)).not.toContain('Awaiting CI')
+  })
+
+  test('without a pull request link the label is a colored pill beside the status', () => {
+    const html = renderWorkStreamList([workStream({ delivery: { kind: 'approval' } })])
+    const desktop = desktopRow(html)
+    expect(desktop).toMatch(/text-status-review-badge-fg" title="Delivery: Approve Delivery">/)
+    expect(desktop).not.toContain('text-xs text-secondary')
+    expect(desktop.indexOf('In Progress')).toBeLessThan(desktop.indexOf('Approve Delivery'))
+  })
+
+  test('a delivery state that owns the primary pill leaves the pull request badge alone', () => {
+    const html = renderWorkStreamList([
+      workStream({ derivedState: 'idle', metadata: tracked(31), delivery: ciFailed([{ number: 31, state: 'open' }]) }),
+    ])
+    const desktop = desktopRow(html)
+    expect(desktop).toContain('CI failed')
+    expect(prLink(desktop, 31)).toContain('text-badge-accent-2-fg')
+    expect(prLink(desktop, 31)).not.toContain('CI failed')
+  })
+
+  test('feed rows tint the label beside the primary pull request link', () => {
+    const html = renderWorkStreamList(
+      [
+        workStream({
+          metadata: tracked(31, 32),
+          delivery: ciFailed([
+            { number: 32, state: 'open' },
+            { number: 31, state: 'open' },
+          ]),
+        }),
+      ],
+      feedProps
+    )
+    const primary = prLink(html, 32)
+    expect(primary).toContain('aria-label="Open PR #32, delivery: CI failed"')
+    expect(primary).toContain('<span class="text-status-danger-fg" data-testid="pull-request-delivery-label">CI failed')
+    expect(prLink(html, 31)).toContain('aria-label="Open PR #31"')
+    expect(prLink(html, 31)).not.toContain('CI failed')
+    expect(feedStatus(html)).toContain('In Progress')
+    expect(feedStatus(html)).not.toContain('CI failed')
+  })
+
+  test('feed rows without a pull request link show the label as a colored pill', () => {
+    const html = renderWorkStreamList([workStream({ delivery: ciFailed() })], feedProps)
+    expect(feedStatus(html)).toMatch(/text-status-danger-badge-fg" title="Delivery: CI failed">/)
+    expect(html).not.toContain('text-xs text-secondary')
+  })
+
+  test('desktop and feed rows leave "Review queued" to the peek card', () => {
+    const gate = workStreamWait({ id: 'gate', type: 'manual', flowAttemptId: 2, workflowHumanGate: true })
+    const question = workStreamWait({ id: 'question', type: 'question', flowAttemptId: 2 })
+    const stream = workStream({ derivedState: 'waiting_on_answer', openWaits: [question, gate] })
+    const html = renderWorkStreamList([stream])
+    expect(desktopRow(html)).toContain('Waiting on Answer')
+    expect(desktopRow(html)).not.toContain('Review queued')
+    // The mobile details line is text and keeps it.
+    expect(mobileRow(html)).toContain('Review queued')
+    const feed = renderWorkStreamList([stream], feedProps)
+    expect(feed).toContain('Waiting on Answer')
+    expect(feed).not.toContain('Review queued')
+  })
+})
+
 describe('squad WorkStreamList canonical ordering', () => {
   // Pre-sorted to mirror the server contract (GET /workstreams); the
   // component must render that order as-is.

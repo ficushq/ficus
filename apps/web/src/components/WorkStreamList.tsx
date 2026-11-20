@@ -15,7 +15,12 @@ import { webStatus } from '../lib/statusPresentation'
 import { queries } from '../queryOptions'
 import { WorkStreamDetailModal, getWsDisplayState } from './WorkStreamDetailModal'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
-import { workStreamStatusLabel, WS_STATUS_ICONS } from '../lib/workStreamStatusPresentation'
+import {
+  deliveryTagPullRequestKey,
+  workStreamDeliveryTag,
+  workStreamStatusLabel,
+  WS_STATUS_ICONS,
+} from '../lib/workStreamStatusPresentation'
 import { Badge } from './Badge'
 import { AgentActivityDot } from './AgentActivityDot'
 import { WorkStreamFilterGroup, WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
@@ -480,6 +485,11 @@ function WorkStreamRow({
   const now = useTick(1000, hasActiveRuntime)
   const elapsed = computeWorkStreamElapsedMs(workStream, now)
   const pullRequests = workStreamPullRequests(workStream.metadata ?? {})
+  // Desktop and feed rows attach the in-progress delivery state to one pull request: the
+  // primary delivery PR. Without a PR link it falls back to a colored pill beside the status.
+  const deliveryTag = workStreamDeliveryTag(workStream)
+  const deliveryTagKey = deliveryTag ? deliveryTagPullRequestKey(workStream.delivery, pullRequests) : null
+  const deliveryLabelMode = deliveryTagKey ? 'none' : 'pill'
   const assignee = workStream.assigneeAgentId ? agentMap.get(workStream.assigneeAgentId) : null
   const assigneeTypeName = assignee ? (agentTypeNameMap.get(assignee.agentTypeId) ?? assignee.agentTypeId) : null
   const assigneeTarget = assignee ? `/squads/${slugFor(workStream.squadId)}/agents?agent=${assignee.id}` : null
@@ -515,7 +525,12 @@ function WorkStreamRow({
           <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 wrap-break-word">
             {workStreamTitle(workStream)}
           </span>
-          <WorkStreamStatusBadges workStream={workStream} className="max-w-[50%] sm:max-w-none" />
+          <WorkStreamStatusBadges
+            workStream={workStream}
+            deliveryLabel={deliveryLabelMode}
+            showQueuedReview={false}
+            className="max-w-[50%] sm:max-w-none"
+          />
         </button>
         {summaryLine && <div className="ml-4 mt-0.5 min-w-0">{summaryLine}</div>}
         <div className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -554,8 +569,10 @@ function WorkStreamRow({
               <span>{formatDuration(elapsed)}</span>
             </>
           )}
-          {pullRequests.map((pullRequest) =>
-            pullRequest.url ? (
+          {pullRequests.map((pullRequest) => {
+            if (!pullRequest.url) return null
+            const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null
+            return (
               <Fragment key={pullRequest.key}>
                 <span aria-hidden="true">·</span>
                 <a
@@ -563,13 +580,24 @@ function WorkStreamRow({
                   target="_blank"
                   rel="noopener noreferrer"
                   className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
-                  aria-label={`Open PR #${pullRequest.number}`}
+                  aria-label={
+                    tag ? `Open PR #${pullRequest.number}, delivery: ${tag.label}` : `Open PR #${pullRequest.number}`
+                  }
+                  title={tag ? `Delivery: ${tag.label}` : undefined}
                 >
                   <PullRequestIcon className="h-3.5 w-3.5" /> #{pullRequest.number}
+                  {tag && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className={tag.textClass} data-testid="pull-request-delivery-label">
+                        {tag.label}
+                      </span>
+                    </>
+                  )}
                 </a>
               </Fragment>
-            ) : null
-          )}
+            )
+          })}
         </div>
         {peekCard}
       </li>
@@ -605,8 +633,10 @@ function WorkStreamRow({
             {formatDuration(elapsed)}
           </span>
         )}
-        {pullRequests.map((pullRequest) =>
-          pullRequest.url ? (
+        {pullRequests.map((pullRequest) => {
+          if (!pullRequest.url) return null
+          const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null
+          return (
             <a
               key={pullRequest.key}
               href={pullRequest.url}
@@ -614,14 +644,23 @@ function WorkStreamRow({
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className="shrink-0"
-              title={`Open PR #${pullRequest.number}`}
+              title={tag ? `Open PR #${pullRequest.number} · Delivery: ${tag.label}` : `Open PR #${pullRequest.number}`}
             >
-              <Badge color="accent-2" className="gap-1">
+              <Badge color={tag?.color ?? 'accent-2'} className="gap-1">
                 <PullRequestIcon className="w-3.5 h-3.5" />#{pullRequest.number}
+                {tag && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span data-testid="pull-request-delivery-label">
+                      <span className="sr-only">Delivery: </span>
+                      {tag.label}
+                    </span>
+                  </>
+                )}
               </Badge>
             </a>
-          ) : null
-        )}
+          )
+        })}
         <div className="flex items-center gap-1.5 shrink-0">
           {assignee && (
             <Badge
@@ -652,7 +691,13 @@ function WorkStreamRow({
               {queuePositionText}
             </Badge>
           )}
-          {state !== 'done' && <WorkStreamStatusBadges workStream={workStream} />}
+          {state !== 'done' && (
+            <WorkStreamStatusBadges
+              workStream={workStream}
+              deliveryLabel={deliveryLabelMode}
+              showQueuedReview={false}
+            />
+          )}
           {showSquadBadge && squad && (
             <Badge
               color="accent-1"
