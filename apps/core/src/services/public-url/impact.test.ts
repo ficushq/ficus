@@ -79,3 +79,17 @@ test('a path that cannot be used for squad apps is reported, and their base does
     localAppsAffected: 2,
   })
 })
+
+test('the Linear agent app callback and app webhook are listed for operators to update', () => {
+  const impact = computePublicAppUrlChangeImpact('https://a.example', 'https://b.example/ficus', '')
+  expect(impact.oauthCallbacks).toContainEqual({
+    label: 'Linear app OAuth callback',
+    before: 'https://a.example/settings/integrations/oauth/callback/linear',
+    after: 'https://b.example/ficus/settings/integrations/oauth/callback/linear',
+  })
+  expect(impact.webhooks).toContainEqual({
+    label: 'Linear app webhook',
+    before: 'https://a.example/api/webhooks/linear-app',
+    after: 'https://b.example/ficus/api/webhooks/linear-app',
+  })
+})

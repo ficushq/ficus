@@ -6,6 +6,7 @@ const NON_RETRYABLE = new Set([
   'invalid_grant',
   'invalid_client',
   'invalid_auth',
+  'invalid_request',
   'already_revoked',
   'not_app_actor',
   'workspace_identity_mismatch',

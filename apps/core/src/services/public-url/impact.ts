@@ -79,15 +79,21 @@ function callbackFor(appUrl: string | undefined, basePath: string | undefined): 
   }
 }
 
-/** Mirrors resolveIntegrationOAuthCallbackUrl and the GitHub/Linear webhook URL derivation, for an explicit address. */
+/**
+ * Mirrors resolveIntegrationOAuthCallbackUrl (GitHub and the Linear app carry a
+ * provider suffix; other providers share the bare path) and the GitHub, Linear
+ * organization and Linear app webhook URL derivations, for an explicit address.
+ */
 function providerUrls(appUrl: string | undefined, basePath: string | undefined) {
   const callback = callbackFor(appUrl, basePath)
   const webhook = (provider: string) => callback?.replace(OAUTH_CALLBACK_SUFFIX, `/api/webhooks/${provider}`) ?? null
   return {
     oauthGithub: callback ? `${callback}/github` : null,
+    oauthLinearApp: callback ? `${callback}/linear` : null,
     oauthOther: callback,
     webhookGithub: webhook('github'),
     webhookLinear: webhook('linear'),
+    webhookLinearApp: webhook('linear-app'),
   }
 }
 
@@ -116,11 +122,13 @@ export function computePublicAppUrlChangeImpact(
     externalAppsAffected: localAppsBaseChanged ? apps.external : 0,
     oauthCallbacks: [
       { label: 'GitHub OAuth callback', before: b.oauthGithub, after: a.oauthGithub },
+      { label: 'Linear app OAuth callback', before: b.oauthLinearApp, after: a.oauthLinearApp },
       { label: 'Other integrations OAuth callback', before: b.oauthOther, after: a.oauthOther },
     ],
     webhooks: [
       { label: 'GitHub webhook', before: b.webhookGithub, after: a.webhookGithub },
       { label: 'Linear webhook', before: b.webhookLinear, after: a.webhookLinear },
+      { label: 'Linear app webhook', before: b.webhookLinearApp, after: a.webhookLinearApp },
     ],
   }
 }

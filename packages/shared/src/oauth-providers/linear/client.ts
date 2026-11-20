@@ -27,9 +27,10 @@ const PROVIDER_ERROR_CODES: Readonly<Record<string, string>> = {
   invalid_grant: 'invalid_grant',
   invalid_client: 'invalid_client',
   unauthorized_client: 'invalid_client',
-  invalid_request: 'provider_error',
-  invalid_scope: 'provider_error',
-  unsupported_grant_type: 'provider_error',
+  // Client misconfiguration: retrying the same request cannot succeed.
+  invalid_request: 'invalid_request',
+  invalid_scope: 'invalid_request',
+  unsupported_grant_type: 'invalid_request',
 }
 
 export class LinearOAuthError extends Error {

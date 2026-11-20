@@ -125,6 +125,8 @@ describe('LinearOAuthClient', () => {
     const cases: [Response, string][] = [
       [json({ error: 'invalid_grant', error_description: 'secret detail' }, 400), 'invalid_grant'],
       [json({ error: 'invalid_client' }, 401), 'invalid_client'],
+      [json({ error: 'unsupported_grant_type' }, 400), 'invalid_request'],
+      [json({ error: 'invalid_scope' }, 400), 'invalid_request'],
       [json({ message: 'no' }, 401), 'invalid_client'],
       [json({ error: 'server_error' }, 503), 'provider_unavailable'],
       [new Response('<html>bad gateway</html>', { status: 502 }), 'provider_unavailable'],
@@ -294,6 +296,11 @@ describe('linear adapter', () => {
     })
     expect(classifyLinearOAuthError(new LinearOAuthError('invalid_client'))).toEqual({
       code: 'invalid_client',
+      retryable: false,
+    })
+    // A misconfigured token request stops retrying instead of degrading forever.
+    expect(classifyLinearOAuthError(new LinearOAuthError('invalid_request'))).toEqual({
+      code: 'invalid_request',
       retryable: false,
     })
   })
