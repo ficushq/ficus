@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { isHttpResponseError } from '@ficus/client-core'
+import type { Agent } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { useStableRef } from '../hooks/useStableRef'
@@ -22,6 +23,8 @@ import { CloseIcon, ExpandIcon, MinusIcon } from './icons'
 
 interface AgentChatWindowDependencies {
   ConversationComponent?: typeof AgentConversation
+  /** Test seam: loads the window's agent instead of the API. */
+  loadAgent?: (agentId: string) => Promise<Agent>
 }
 
 /** Keeps windows on this screen as the browser window or an on-screen keyboard resizes it. */
@@ -97,8 +100,10 @@ export function AgentChatWindow({
 
   // A missing agent closes at once; a 403 is retried first, so a permission change still settling
   // (a role update in flight) does not close the window for good.
+  const loadAgent = dependencies?.loadAgent
   const agent = useQuery({
     ...queries.agents.detail(agentId),
+    ...(loadAgent ? { queryFn: () => loadAgent(agentId) } : {}),
     retry: (count, error) => (isHttpResponseError(error, 403) || !isGone(error)) && count < 2,
   })
   const types = useQuery(queries.agentTypes.list())

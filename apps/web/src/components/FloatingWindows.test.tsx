@@ -86,8 +86,8 @@ async function setup(
     wide = true,
     url = '/',
     stored,
-    seed,
-  }: { wide?: boolean; url?: string; stored?: unknown; seed?: (cache: QueryClient) => void } = {}
+    window: WindowComponent = Window,
+  }: { wide?: boolean; url?: string; stored?: unknown; window?: typeof Window } = {}
 ) {
   const dom = await acquireDomHarness({
     url: `http://localhost${url}`,
@@ -120,7 +120,6 @@ async function setup(
     [queries.agents.activeExecution(A).queryKey, null],
   ] as const)
     cache.setQueryData(key, value)
-  seed?.(cache)
   let location = ''
   const onLocation = (next: string) => {
     location = next
@@ -145,7 +144,7 @@ async function setup(
                 terminateSquadAgentsBulk: async () => ({ terminated: [], deferred: [], skipped: [] }),
               }}
             >
-              <FloatingWindowsProvider dependencies={{ WindowComponent: Window }}>
+              <FloatingWindowsProvider dependencies={{ WindowComponent }}>
                 {page}
                 <Probe onLocation={onLocation} />
               </FloatingWindowsProvider>
@@ -463,7 +462,19 @@ test('pressing anywhere in a window brings it to the front; Escape never closes 
 test('windows for agents that no longer exist or are not accessible close themselves', async () => {
   const gone = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
   const { HttpResponseError } = await import('@ficus/client-core')
+  // The window loads its agent through this seam, so the answer never depends on the network or on
+  // whatever an earlier test file left installed.
+  const loadAgent = async (agentId: string): Promise<Agent> => {
+    if (agentId === A) return agent(A, 'Researcher')
+    throw new HttpResponseError(404, 'Not found')
+  }
+  // A chat body that loads nothing itself, so the window's own query is the only one for the agent.
+  const QuietConversation = ({ agentId }: { agentId: string }) => <div data-stub-conversation={agentId} />
+  const GoneAwareWindow = (props: { win: Parameters<typeof AgentChatWindow>[0]['win'] }) => (
+    <AgentChatWindow {...props} dependencies={{ ConversationComponent: QuietConversation as never, loadAgent }} />
+  )
   const t = await setup(null, {
+    window: GoneAwareWindow,
     stored: {
       assistantZ: 0,
       windows: [
@@ -472,11 +483,6 @@ test('windows for agents that no longer exist or are not accessible close themse
       ],
       remembered: {},
     },
-    seed: (cache) =>
-      void cache.prefetchQuery({
-        ...queries.agents.detail(gone),
-        queryFn: () => Promise.reject(new HttpResponseError(404, 'Not found')),
-      }),
   })
   try {
     await untilRendered(t.dom, () => expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A]))
