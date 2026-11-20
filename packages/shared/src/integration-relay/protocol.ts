@@ -78,7 +78,7 @@ export const relayAckRequest = z.strictObject({
 export type RelayDelivery = z.infer<typeof relayDelivery>
 
 /** Provider keys accepted at `/api/integration-relay/<provider>/...` route paths. */
-export const RELAY_PROVIDER_KEYS = ['github', 'slack'] as const
+export const RELAY_PROVIDER_KEYS = ['github', 'slack', 'linear'] as const
 export type RelayProviderKey = (typeof RELAY_PROVIDER_KEYS)[number]
 
 // ---- Slack -----------------------------------------------------------------
@@ -117,3 +117,62 @@ export type SlackRelayEventType = (typeof SLACK_RELAY_EVENT_TYPES)[number]
 export const slackRelayDelivery = relayDeliveryEnvelope(slackTeamId, slackTeamId, z.enum(SLACK_RELAY_EVENT_TYPES))
 export const slackRelayPullResponse = z.strictObject({ deliveries: z.array(slackRelayDelivery).max(RELAY_BATCH_SIZE) })
 export type SlackRelayDelivery = z.infer<typeof slackRelayDelivery>
+
+// ---- Linear ----------------------------------------------------------------
+//
+// The Linear agent app has one webhook URL for every workspace it is installed
+// in, so Platform fans deliveries out by Linear organization (workspace) ID. The
+// organization ID is both the relay resourceId and resourceKey: one app
+// connection per workspace.
+export const linearOrganizationId = z.uuid()
+
+/**
+ * Platform proves the token is an app-actor token (`viewer.app`) and derives the
+ * organization and app user from it, rather than trusting client-declared IDs.
+ */
+export const linearRelaySubscribeRequest = z.strictObject({ connectionId, connectionRevision, accessToken })
+
+/** Identical shape to the GitHub pull request; reused rather than duplicated. */
+export const linearRelayPullRequest = relayPullRequest
+
+/** The Linear webhook categories the hosted app relays; `payload.type` names one of them. */
+export const LINEAR_RELAY_EVENT_TYPES = [
+  'AgentSessionEvent',
+  'AppUserNotification',
+  'PermissionChange',
+  'OAuthApp',
+  'Issue',
+  'Comment',
+] as const
+export type LinearRelayEventType = (typeof LINEAR_RELAY_EVENT_TYPES)[number]
+
+/**
+ * Safe codes Platform answers on the Linear relay routes.
+ *
+ * - `organizationClaimed` (`409` on subscribe): another hosted tenant holds an
+ *   unexpired subscription for the same Linear workspace. One hosted instance
+ *   per workspace; retrying with the same connection cannot succeed.
+ * - `authorizationRequired` (`422` on pull): the token no longer matches the one
+ *   proven at subscribe time (Linear rotates access tokens daily), so the tenant
+ *   must subscribe again with its current token.
+ */
+export const LINEAR_RELAY_CODES = {
+  organizationClaimed: 'linear_organization_claimed',
+  authorizationRequired: 'linear_authorization_required',
+} as const
+
+/**
+ * Delivery envelope for Linear app webhooks relayed through Platform.
+ * `deliveryId` is Linear's `Linear-Delivery` header, `eventType` its
+ * `Linear-Event` header (equal to `payload.type`), and `payload` the verified
+ * JSON body.
+ */
+export const linearRelayDelivery = relayDeliveryEnvelope(
+  linearOrganizationId,
+  linearOrganizationId,
+  z.enum(LINEAR_RELAY_EVENT_TYPES)
+)
+export const linearRelayPullResponse = z.strictObject({
+  deliveries: z.array(linearRelayDelivery).max(RELAY_BATCH_SIZE),
+})
+export type LinearRelayDelivery = z.infer<typeof linearRelayDelivery>

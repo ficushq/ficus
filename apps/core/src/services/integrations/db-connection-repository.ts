@@ -1356,6 +1356,9 @@ function map(row: typeof integrationConnections.$inferSelect): IntegrationConnec
     validatedAt: row.validatedAt,
     validationExpiresAt: row.validationExpiresAt,
     lastErrorCode: row.lastErrorCode,
+    // Fenced by revision: a reconnect replaces the material and makes an older refusal stale.
+    relaySubscribeErrorCode:
+      row.relaySubscribeErrorRevision === row.materialRevision ? row.relaySubscribeErrorCode : null,
     updatedAt: row.updatedAt,
   }
 }

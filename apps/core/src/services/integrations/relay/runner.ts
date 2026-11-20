@@ -7,6 +7,12 @@ export interface RelayConnection {
   id: string
   revision: string
   accessToken: string
+  /**
+   * Changes whenever the access token rotates without a new connection revision
+   * (OAuth refresh). Providers whose Platform side pins the token proven at
+   * subscribe time set it so the next pass re-subscribes with the new token.
+   */
+  credentialRevision?: string | number
 }
 
 /** Common envelope fields every provider's relay delivery shares; provider-specific identity/eventType/payload shapes vary. */
@@ -40,6 +46,13 @@ export interface HostedRelayProvider<Interest extends { connectionId: string }, 
   subscribeExtra(interests: readonly Interest[]): Record<string, unknown>
   /** Whether a delivery belongs to the given declared interest. */
   matchesDelivery(interest: Interest, delivery: Delivery): boolean
+  /** Pull answers meaning the subscription's token is stale: subscribe again at once, then pull. */
+  resubscribeCodes?: readonly string[]
+  /**
+   * Subscribe answers that cannot change by retrying the same connection revision.
+   * The runner stops subscribing that revision and reports it through `onSubscribeRejected`.
+   */
+  terminalSubscribeCodes?: readonly string[]
 }
 
 export interface HostedRelayDependencies<
@@ -51,6 +64,8 @@ export interface HostedRelayDependencies<
   resolve(connectionId: string): Promise<RelayConnection | undefined>
   request: typeof platformRequest
   dispatch(delivery: Delivery, interests: Interest[]): Promise<void>
+  /** Durably records a terminal subscribe answer so the revision stays parked across restarts. */
+  onSubscribeRejected?(rejection: { connectionId: string; connectionRevision: string; code: string }): Promise<void>
   now?(): number
   onError(code: string): void
 }
@@ -65,6 +80,8 @@ export class HostedIntegrationRelayRunner<
   private controller = new AbortController()
   private renewAt = new Map<string, { key: string; at: number }>()
   private retryAt = new Map<string, number>()
+  /** Connection revisions Platform refused for good (`terminalSubscribeCodes`). */
+  private rejected = new Map<string, string>()
   private remote: { connectionId: string; connectionRevision: string }[] = []
   private statusAt = 0
   private enabled = false
@@ -145,47 +162,7 @@ export class HostedIntegrationRelayRunner<
         if (this.controller.signal.aborted) break
         if ((this.retryAt.get(id) ?? 0) > now) continue
         try {
-          const connection = await this.deps.resolve(id)
-          if (!connection) continue
-          const extra = this.provider.subscribeExtra(groups.get(id)!)
-          const revisionKey = JSON.stringify([id, connection.revision, extra])
-          if (this.renewAt.get(id)?.key !== revisionKey || this.renewAt.get(id)!.at <= now) {
-            await this.call(
-              'subscribe',
-              {
-                connectionId: id,
-                connectionRevision: connection.revision,
-                accessToken: connection.accessToken,
-                ...extra,
-              },
-              relaySuccessResponse,
-              180_000
-            )
-            this.renewAt.set(id, { key: revisionKey, at: now + RENEW_MS })
-          }
-          const owner = { connectionId: id, connectionRevision: connection.revision }
-          const result = await this.call(
-            'pull',
-            { ...owner, accessToken: connection.accessToken },
-            this.provider.pullResponseSchema,
-            60_000
-          )
-          const acknowledgments: { id: string; leaseToken: string }[] = []
-          for (const delivery of result.deliveries) {
-            if (this.controller.signal.aborted) break
-            if (delivery.connectionId !== id || delivery.connectionRevision !== connection.revision)
-              throw new PlatformRequestError('invalid_response', false)
-            // Re-read after the network boundary: a detach/reconnect cannot receive a queued old event.
-            const live = await this.deps.resolve(id)
-            if (!live || live.revision !== connection.revision) break
-            const current = (await this.deps.interests()).filter(
-              (interest) => interest.connectionId === id && this.provider.matchesDelivery(interest, delivery)
-            )
-            if (current.length) await this.deps.dispatch(delivery, current)
-            acknowledgments.push({ id: delivery.id, leaseToken: delivery.leaseToken })
-          }
-          if (acknowledgments.length)
-            await this.call('ack', { ...owner, deliveries: acknowledgments }, relaySuccessResponse)
+          await this.sync(id, groups.get(id)!, now)
           this.retryAt.delete(id)
         } catch (error) {
           this.retryAt.set(id, now + 60_000)
@@ -194,9 +171,88 @@ export class HostedIntegrationRelayRunner<
       }
       for (const id of this.retryAt.keys()) if (!groups.has(id)) this.retryAt.delete(id)
       for (const id of this.renewAt.keys()) if (!groups.has(id)) this.renewAt.delete(id)
+      for (const id of this.rejected.keys()) if (!groups.has(id)) this.rejected.delete(id)
     } catch (error) {
       this.report(error)
     }
+  }
+  /** Subscribes (or renews) one connection, then pulls, dispatches and acknowledges one batch. */
+  private async sync(id: string, interests: Interest[], now: number) {
+    const connection = await this.deps.resolve(id)
+    if (!connection) return
+    if (this.rejected.get(id) === connection.revision) return
+    const extra = this.provider.subscribeExtra(interests)
+    const revisionKey = JSON.stringify([id, connection.revision, connection.credentialRevision ?? null, extra])
+    for (let attempt = 0; ; attempt++) {
+      if (this.renewAt.get(id)?.key !== revisionKey || this.renewAt.get(id)!.at <= now) {
+        if (!(await this.subscribe(connection, extra))) return
+        this.renewAt.set(id, { key: revisionKey, at: now + RENEW_MS })
+      }
+      try {
+        await this.pull(connection)
+        return
+      } catch (error) {
+        const stale =
+          error instanceof PlatformRequestError && this.provider.resubscribeCodes?.includes(error.code) === true
+        if (!stale || attempt > 0) throw error
+        // The token Platform proved at subscribe time is no longer this one: subscribe again now.
+        this.renewAt.delete(id)
+      }
+    }
+  }
+  /** False when Platform refused this revision for good; the revision is parked, not retried. */
+  private async subscribe(connection: RelayConnection, extra: Record<string, unknown>) {
+    try {
+      await this.call(
+        'subscribe',
+        {
+          connectionId: connection.id,
+          connectionRevision: connection.revision,
+          accessToken: connection.accessToken,
+          ...extra,
+        },
+        relaySuccessResponse,
+        180_000
+      )
+      return true
+    } catch (error) {
+      if (!(error instanceof PlatformRequestError) || !this.provider.terminalSubscribeCodes?.includes(error.code))
+        throw error
+      this.rejected.set(connection.id, connection.revision)
+      this.renewAt.delete(connection.id)
+      this.report(error)
+      await this.deps.onSubscribeRejected?.({
+        connectionId: connection.id,
+        connectionRevision: connection.revision,
+        code: error.code,
+      })
+      return false
+    }
+  }
+  private async pull(connection: RelayConnection) {
+    const id = connection.id
+    const owner = { connectionId: id, connectionRevision: connection.revision }
+    const result = await this.call(
+      'pull',
+      { ...owner, accessToken: connection.accessToken },
+      this.provider.pullResponseSchema,
+      60_000
+    )
+    const acknowledgments: { id: string; leaseToken: string }[] = []
+    for (const delivery of result.deliveries) {
+      if (this.controller.signal.aborted) break
+      if (delivery.connectionId !== id || delivery.connectionRevision !== connection.revision)
+        throw new PlatformRequestError('invalid_response', false)
+      // Re-read after the network boundary: a detach/reconnect cannot receive a queued old event.
+      const live = await this.deps.resolve(id)
+      if (!live || live.revision !== connection.revision) break
+      const current = (await this.deps.interests()).filter(
+        (interest) => interest.connectionId === id && this.provider.matchesDelivery(interest, delivery)
+      )
+      if (current.length) await this.deps.dispatch(delivery, current)
+      acknowledgments.push({ id: delivery.id, leaseToken: delivery.leaseToken })
+    }
+    if (acknowledgments.length) await this.call('ack', { ...owner, deliveries: acknowledgments }, relaySuccessResponse)
   }
   private report(error: unknown) {
     if (!this.controller.signal.aborted)

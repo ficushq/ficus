@@ -3,7 +3,8 @@ import { HostedIntegrationRelayRunner } from './runner'
 import { githubRelayProvider } from './runtime'
 import { slackRelayProvider, type SlackRelayInterest } from './slack-runtime'
 import { PlatformRequestError, type platformRequest } from '../../platform/instance-client'
-import type { RelayDelivery, SlackRelayDelivery } from '@ficus/shared/integration-relay'
+import { linearRelayProvider, type LinearRelayInterest } from './linear-runtime'
+import type { LinearRelayDelivery, RelayDelivery, SlackRelayDelivery } from '@ficus/shared/integration-relay'
 
 function fixture() {
   const id = crypto.randomUUID(),
@@ -298,5 +299,208 @@ describe('managed relay consumer — Slack provider', () => {
     await runner.tick()
     expect(state.calls).toEqual([])
     expect(state.errors).toEqual([])
+  })
+})
+
+/** Linear-flavored fake Platform: subscribe and pull can answer the Linear relay's safe codes. */
+function linearFixture() {
+  const id = crypto.randomUUID(),
+    revision = crypto.randomUUID(),
+    organizationId = crypto.randomUUID()
+  const state = {
+    now: 0,
+    revision,
+    token: 'token-1',
+    tokenRevision: 1,
+    interests: [{ connectionId: id, organizationId }] satisfies LinearRelayInterest[],
+    deliveries: [] as LinearRelayDelivery[],
+    calls: [] as { path: string; fullPath: string; body: any }[],
+    dispatched: [] as string[],
+    errors: [] as string[],
+    rejected: [] as { connectionId: string; connectionRevision: string; code: string }[],
+    /** Platform's view: the token proven at the last subscribe, and whether another tenant holds the workspace. */
+    subscribedToken: undefined as string | undefined,
+    claimedElsewhere: false,
+  }
+  const delivery = (overrides: Partial<LinearRelayDelivery> = {}): LinearRelayDelivery => ({
+    id: crypto.randomUUID(),
+    leaseToken: crypto.randomUUID(),
+    connectionId: id,
+    connectionRevision: state.revision,
+    deliveryId: crypto.randomUUID(),
+    resourceId: organizationId,
+    resourceKey: organizationId,
+    eventType: 'AgentSessionEvent',
+    payload: { type: 'AgentSessionEvent', organizationId },
+    ...overrides,
+  })
+  const request: typeof platformRequest = async (input) => {
+    const path = input.path.split('/').at(-1)!
+    const body = input.body as any
+    state.calls.push({ path, fullPath: input.path, body })
+    if (path === 'status') return input.schema.parse({ enabled: true, connections: [] })
+    if (path === 'subscribe') {
+      if (state.claimedElsewhere) throw new PlatformRequestError('linear_organization_claimed', false, 409)
+      state.subscribedToken = body.accessToken
+      return input.schema.parse({ ok: true })
+    }
+    if (path === 'pull') {
+      if (body.accessToken !== state.subscribedToken)
+        throw new PlatformRequestError('linear_authorization_required', false, 422)
+      const deliveries = state.deliveries
+      state.deliveries = []
+      return input.schema.parse({ deliveries })
+    }
+    return input.schema.parse({ ok: true })
+  }
+  const runner = new HostedIntegrationRelayRunner(linearRelayProvider, {
+    managed: () => true,
+    interests: async () => state.interests,
+    resolve: async (connectionId) => ({
+      id: connectionId,
+      revision: state.revision,
+      accessToken: state.token,
+      credentialRevision: state.tokenRevision,
+    }),
+    request,
+    dispatch: async (event, interests) => {
+      state.dispatched.push(...interests.map((interest) => `${event.deliveryId}:${interest.organizationId}`))
+    },
+    onSubscribeRejected: async (rejection) => {
+      state.rejected.push(rejection)
+    },
+    now: () => state.now,
+    onError: (code) => state.errors.push(code),
+  })
+  const paths = () => state.calls.map((call) => call.path)
+  return { state, runner, delivery, id, organizationId, paths }
+}
+
+describe('hosted Linear relay (fake Platform)', () => {
+  test('pulls every 2 seconds under /linear and subscribes with only the connection and token', async () => {
+    expect(linearRelayProvider.intervalMs).toBe(2_000)
+    const { state, runner, paths } = linearFixture()
+    await runner.tick()
+    expect(paths()).toEqual(['status', 'subscribe', 'pull'])
+    expect(state.calls.every((call) => call.fullPath.startsWith('/api/integration-relay/linear/'))).toBe(true)
+    expect(state.calls[1]!.body).toEqual({
+      connectionId: state.interests[0]!.connectionId,
+      connectionRevision: state.revision,
+      accessToken: 'token-1',
+    })
+    state.calls = []
+    state.now += 2_000
+    await runner.tick()
+    expect(paths()).toEqual(['pull'])
+  })
+
+  test('dispatches deliveries for the connection workspace and acknowledges every pulled delivery', async () => {
+    const { state, runner, delivery, organizationId } = linearFixture()
+    const ours = delivery()
+    const otherWorkspace = delivery({ resourceId: crypto.randomUUID(), resourceKey: crypto.randomUUID() })
+    state.deliveries = [ours, otherWorkspace]
+    await runner.tick()
+    expect(state.dispatched).toEqual([`${ours.deliveryId}:${organizationId}`])
+    const ack = state.calls.at(-1)!
+    expect(ack.path).toBe('ack')
+    expect(ack.body.deliveries.map((entry: { id: string }) => entry.id)).toEqual([ours.id, otherWorkspace.id])
+  })
+
+  test('re-subscribes with the new token after a rotation, before pulling', async () => {
+    const { state, runner, paths } = linearFixture()
+    await runner.tick()
+    state.calls = []
+    state.now += 2_000
+    // An OAuth refresh rotates the token without a new connection revision.
+    state.token = 'token-2'
+    state.tokenRevision = 2
+    await runner.tick()
+    expect(paths()).toEqual(['subscribe', 'pull'])
+    expect(state.calls[0]!.body.accessToken).toBe('token-2')
+    expect(state.calls[0]!.body.connectionRevision).toBe(state.revision)
+    expect(state.errors).toEqual([])
+  })
+
+  test('a linear_authorization_required pull answer re-subscribes at once and pulls again in the same pass', async () => {
+    const { state, runner, paths, delivery } = linearFixture()
+    await runner.tick()
+    // Platform lost or replaced the subscribed token hash without Core noticing a rotation.
+    state.subscribedToken = 'something-else'
+    state.deliveries = [delivery()]
+    state.calls = []
+    state.now += 2_000
+    await runner.tick()
+    expect(paths()).toEqual(['pull', 'subscribe', 'pull', 'ack'])
+    expect(state.dispatched).toHaveLength(1)
+    expect(state.errors).toEqual([])
+  })
+
+  test('a second linear_authorization_required in a row backs off instead of looping', async () => {
+    const { state, runner, paths } = linearFixture()
+    await runner.tick()
+    const request = (runner as any).deps.request as typeof platformRequest
+    ;(runner as any).deps.request = async (input: Parameters<typeof platformRequest>[0]) => {
+      if (input.path.endsWith('/pull')) {
+        state.calls.push({ path: 'pull', fullPath: input.path, body: input.body })
+        throw new PlatformRequestError('linear_authorization_required', false, 422)
+      }
+      return request(input)
+    }
+    state.calls = []
+    state.now += 2_000
+    await runner.tick()
+    expect(paths()).toEqual(['pull', 'subscribe', 'pull'])
+    expect(state.errors).toEqual(['linear_authorization_required'])
+    state.calls = []
+    state.now += 2_000
+    await runner.tick()
+    expect(paths()).toEqual([])
+  })
+
+  test('409 linear_organization_claimed parks that connection revision: no pull, no retries, recorded once', async () => {
+    const { state, runner, paths, id } = linearFixture()
+    state.claimedElsewhere = true
+    await runner.tick()
+    expect(paths()).toEqual(['status', 'subscribe'])
+    expect(state.rejected).toEqual([
+      { connectionId: id, connectionRevision: state.revision, code: 'linear_organization_claimed' },
+    ])
+    expect(state.errors).toEqual(['linear_organization_claimed'])
+    for (const step of [2_000, 60_000, 300_000, 3_600_000]) {
+      state.calls = []
+      state.now += step
+      // A token rotation of the same revision does not retry either.
+      state.token = `token-${step}`
+      state.tokenRevision += 1
+      await runner.tick()
+      expect(paths()).toEqual(step === 300_000 || step === 3_600_000 ? ['status'] : [])
+    }
+    expect(state.rejected).toHaveLength(1)
+    // A reconnect (new material revision) subscribes again, and succeeds once the other instance lets go.
+    state.claimedElsewhere = false
+    state.revision = crypto.randomUUID()
+    state.calls = []
+    state.now += 2_000
+    await runner.tick()
+    expect(paths()).toEqual(['subscribe', 'pull'])
+  })
+
+  test('other subscribe failures keep retrying after the normal backoff', async () => {
+    const { state, runner, paths } = linearFixture()
+    const request = (runner as any).deps.request as typeof platformRequest
+    let failures = 1
+    ;(runner as any).deps.request = async (input: Parameters<typeof platformRequest>[0]) => {
+      if (input.path.endsWith('/subscribe') && failures-- > 0) {
+        state.calls.push({ path: 'subscribe', fullPath: input.path, body: input.body })
+        throw new PlatformRequestError('broker_unavailable', true, 503)
+      }
+      return request(input)
+    }
+    await runner.tick()
+    expect(state.rejected).toEqual([])
+    state.calls = []
+    state.now += 60_000
+    await runner.tick()
+    expect(paths()).toEqual(['subscribe', 'pull'])
   })
 })

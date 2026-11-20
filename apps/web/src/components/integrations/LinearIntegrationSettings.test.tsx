@@ -168,6 +168,25 @@ test('app connections reconnect through Linear; API-key connections keep key rep
   expect(JSON.parse(body)).toEqual({ returnTo: '/settings', connectionId: 'app-connection' })
 })
 
+test('a workspace another Ficus Cloud instance holds is explained on its app connection only', async () => {
+  globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch
+  const app = { version: 2, mode: 'app', organizationId: 'org-1', organizationName: 'Acme' }
+  await render({ ...localApp, authority: 'platform_broker', configured: true }, [
+    connection({
+      id: 'claimed',
+      displayName: 'Acme (Ficus app)',
+      configuration: app,
+      relaySubscribeErrorCode: 'linear_organization_claimed',
+    }),
+    connection({ id: 'other', displayName: 'Beta (Ficus app)', configuration: { ...app, organizationId: 'org-2' } }),
+  ])
+  const [claimed, other] = [...container.querySelectorAll('article')]
+  expect(claimed!.querySelector('[role="alert"]')?.textContent).toContain(
+    'This Linear workspace is already connected to another Ficus Cloud instance'
+  )
+  expect(other!.textContent).not.toContain('another Ficus Cloud instance')
+})
+
 for (const authority of ['local', 'platform_broker'] as const) {
   test(`the agent app stays hidden while the server reports it unavailable (${authority}); API keys are unaffected`, async () => {
     globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch

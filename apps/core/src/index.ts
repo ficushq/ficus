@@ -740,6 +740,17 @@ const subsystems: Subsystem[] = [
     }
   ),
   subsystem(
+    'hosted-linear-relay',
+    async () => {
+      const { hostedLinearRelayRuntime } = await import('./services/integrations/relay/linear-runtime')
+      hostedLinearRelayRuntime.start()
+    },
+    async () => {
+      const { hostedLinearRelayRuntime } = await import('./services/integrations/relay/linear-runtime')
+      await hostedLinearRelayRuntime.stop()
+    }
+  ),
+  subsystem(
     'slack-dispatch-receipt-sweep',
     async () => {
       const { slackDispatchReceiptSweepWorker } = await import('./services/integrations/relay/slack-receipt-sweep')
