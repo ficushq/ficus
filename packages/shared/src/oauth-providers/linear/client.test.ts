@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { LINEAR_APP_SCOPES, LinearOAuthClient, LinearOAuthError } from './client'
+import { LINEAR_APP_SCOPES, LinearOAuthClient, LinearOAuthError, missingLinearAppScopes } from './client'
 import { classifyLinearOAuthError, createLinearAdapter } from './adapter'
-import { parseLinearAppConfiguration, safeLinearAppConfiguration } from './config'
+import { parseLinearAppConfiguration, parseLinearGrantScopes, safeLinearAppConfiguration } from './config'
 import { fakeLinearGrant } from '../fake/adapter'
 
 const NOW = new Date('2026-11-20T00:00:00.000Z')
@@ -26,7 +26,7 @@ const tokenPayload = {
   access_token: 'access-token',
   token_type: 'Bearer',
   expires_in: 86399,
-  scope: 'read issues:create comments:create app:assignable app:mentionable',
+  scope: 'read write app:assignable app:mentionable',
   refresh_token: 'refresh-token',
 }
 
@@ -43,13 +43,56 @@ describe('LinearOAuthClient', () => {
       client_id: 'client id',
       redirect_uri: 'https://ficus.example/settings/integrations/oauth/callback/linear',
       response_type: 'code',
-      scope: 'read,issues:create,comments:create,app:assignable,app:mentionable',
+      scope: 'read,write,app:assignable,app:mentionable',
       state: 'state-value',
       actor: 'app',
       prompt: 'consent',
     })
     expect(LINEAR_APP_SCOPES).not.toContain('admin')
     expect(url.toString()).not.toContain('secret')
+  })
+
+  test('requests write, which the agent mutations need, instead of the targeted create scopes', () => {
+    // agentActivityCreate, agentSessionUpdate, agentSessionCreateOnIssue and attachmentLinkGitHubPR
+    // are refused under issues:create and comments:create with "Invalid scope: `write` required".
+    expect([...LINEAR_APP_SCOPES]).toEqual(['read', 'write', 'app:assignable', 'app:mentionable'])
+  })
+
+  test('a reconnect asks Linear to update the existing installation with the complete scope set', () => {
+    const { client } = recordingClient(() => json({}))
+    const input = { clientId: 'id', redirectUri: 'https://ficus.example/cb', state: 'state-value' }
+    const reconnect = client.buildAuthorizationUrl({ ...input, intent: 'reconnect' })
+    expect(reconnect.searchParams.get('update_scopes_on_existing_token')).toBe('true')
+    expect(reconnect.searchParams.get('scope')).toBe(LINEAR_APP_SCOPES.join(','))
+    expect(reconnect.searchParams.get('actor')).toBe('app')
+    for (const url of [
+      client.buildAuthorizationUrl(input),
+      client.buildAuthorizationUrl({ ...input, intent: 'connect' }),
+    ])
+      expect(url.searchParams.has('update_scopes_on_existing_token')).toBe(false)
+  })
+
+  test('a person’s account-linking URL never carries the scope update, even for a reconnect intent', async () => {
+    const { createLinearIdentityAdapter } = await import('./adapter')
+    const { client } = recordingClient(() => json({}))
+    const url = createLinearIdentityAdapter(client).buildAuthorizationUrl({
+      clientId: 'id',
+      redirectUri: 'https://ficus.example/cb',
+      state: 'state-value',
+      intent: 'reconnect',
+    })
+    expect(url.searchParams.get('actor')).toBe('user')
+    expect(url.searchParams.get('scope')).toBe('read')
+    expect(url.searchParams.has('update_scopes_on_existing_token')).toBe(false)
+  })
+
+  test('missingLinearAppScopes reports what a grant lacks and never read', () => {
+    expect(missingLinearAppScopes(['read', 'write', 'app:assignable', 'app:mentionable'])).toEqual([])
+    expect(missingLinearAppScopes(['write', 'app:assignable', 'app:mentionable'])).toEqual([])
+    expect(
+      missingLinearAppScopes(['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'])
+    ).toEqual(['write'])
+    expect(missingLinearAppScopes([])).toEqual(['write', 'app:assignable', 'app:mentionable'])
   })
 
   test('exchanges a code with a form body and HTTP Basic client authentication', async () => {
@@ -64,7 +107,7 @@ describe('LinearOAuthClient', () => {
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
       expiresAt: '2026-11-20T23:59:59.000Z',
-      scopes: ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'],
+      scopes: ['read', 'write', 'app:assignable', 'app:mentionable'],
     })
     const [request] = requests
     expect(request!.url).toBe('https://api.linear.app/oauth/token')
@@ -294,17 +337,47 @@ describe('LinearOAuthClient', () => {
 })
 
 describe('linear adapter', () => {
-  test('returns the token pair with no identity so Core can persist it first', async () => {
+  test('returns the token pair and the granted scopes, with no identity, so Core can persist it first', async () => {
     const { client } = recordingClient(() => json(tokenPayload))
     const adapter = createLinearAdapter(client)
     expect(adapter.key).toBe('linear')
     expect(adapter.authorizeHosts).toEqual(['linear.app'])
-    const grant = await adapter.refresh({ refreshToken: 'r', clientId: 'i', clientSecret: 's' })
+    const grant = await adapter.exchangeCode({
+      code: 'c',
+      redirectUri: 'https://x.test/cb',
+      clientId: 'i',
+      clientSecret: 's',
+    })
     expect(grant).toEqual({
       tokens: { accessToken: 'access-token', refreshToken: 'refresh-token', expiresAt: '2026-11-20T23:59:59.000Z' },
-      configuration: null,
+      configuration: { version: 'linear-grant', scopes: ['read', 'write', 'app:assignable', 'app:mentionable'] },
       displayName: 'Linear',
     })
+    // The broker passes configuration through as JSON; the scopes survive the round trip.
+    expect(parseLinearGrantScopes(JSON.parse(JSON.stringify(grant.configuration)))).toEqual([
+      'read',
+      'write',
+      'app:assignable',
+      'app:mentionable',
+    ])
+  })
+
+  test('a token response without scopes leaves the grant configuration empty', async () => {
+    const { client } = recordingClient(() => json({ ...tokenPayload, scope: undefined }))
+    const grant = await createLinearAdapter(client).refresh({ refreshToken: 'r', clientId: 'i', clientSecret: 's' })
+    expect(grant.configuration).toBeNull()
+  })
+
+  test('parseLinearGrantScopes accepts only the exact grant shape', () => {
+    for (const value of [
+      null,
+      { scopes: ['read'] },
+      { version: 'linear-grant', scopes: ['read'], extra: true },
+      { version: 'linear-grant', scopes: 'read' },
+      { version: 'linear-grant', scopes: ['has space'] },
+      { version: 2, mode: 'app' },
+    ])
+      expect(parseLinearGrantScopes(value)).toBeNull()
   })
 
   test('classifies unknown errors as retryable provider errors', () => {
@@ -337,7 +410,7 @@ describe('Linear app configuration', () => {
     scopes: ['read', 'app:assignable'],
   }
 
-  test('parses the exact app shape and omits scopes from the safe view', () => {
+  test('parses the exact app shape; the safe view omits scopes and names the missing ones', () => {
     expect(parseLinearAppConfiguration(configuration)).toEqual(configuration as never)
     expect(safeLinearAppConfiguration(parseLinearAppConfiguration(configuration))).toEqual({
       version: 2,
@@ -347,7 +420,11 @@ describe('Linear app configuration', () => {
       organizationUrlKey: 'acme',
       appUserId: 'app-user',
       appUserName: 'Ficus',
+      missingScopes: ['write', 'app:mentionable'],
     })
+    expect(
+      safeLinearAppConfiguration({ ...configuration, scopes: [...LINEAR_APP_SCOPES] } as never).missingScopes
+    ).toEqual([])
   })
 
   test('rejects extra keys, the API-key shape and malformed fields', () => {

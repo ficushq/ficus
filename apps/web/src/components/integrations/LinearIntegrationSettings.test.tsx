@@ -185,6 +185,31 @@ test('a workspace another Ficus Cloud instance holds is explained on its app con
   expect(other!.textContent).not.toContain('another Ficus Cloud instance')
 })
 
+test('an app connection without the write scope, or refused for a scope, asks an admin to reconnect', async () => {
+  globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch
+  const app = { version: 2, mode: 'app', organizationId: 'org-1', organizationName: 'Acme', missingScopes: [] }
+  await render({ ...localApp, authority: 'platform_broker', configured: true }, [
+    connection({ id: 'old', displayName: 'Old (Ficus app)', configuration: { ...app, missingScopes: ['write'] } }),
+    connection({
+      id: 'refused',
+      displayName: 'Refused (Ficus app)',
+      configuration: app,
+      authState: 'reauthorization_required',
+      lastErrorCode: 'insufficient_scope',
+    }),
+    connection({ id: 'current', displayName: 'Current (Ficus app)', configuration: app }),
+    connection({ id: 'key', lastErrorCode: 'insufficient_scope' }),
+  ])
+  const [old, refused, current, key] = [...container.querySelectorAll('article')]
+  for (const article of [old, refused]) {
+    expect(article!.querySelector('[role="alert"]')?.textContent).toContain('Ficus needs new Linear permissions')
+    expect(article!.textContent).toContain('Reconnect')
+  }
+  expect(current!.textContent).not.toContain('new Linear permissions')
+  // An API key cannot gain scopes by reconnecting; the card offers no reconnect for it.
+  expect(key!.textContent).not.toContain('new Linear permissions')
+})
+
 for (const authority of ['local', 'platform_broker'] as const) {
   test(`the agent app section is always shown (${authority}), next to the API-key connections`, async () => {
     globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch

@@ -344,6 +344,29 @@ describe('progress projection', () => {
     await project(stream.id)
     expect(linear.calls.length).toBe(before)
   })
+
+  test('a missing scope marks the connection for reconnect and keeps the item, not the session, waiting', async () => {
+    const { sessionId, stream } = await boundStream()
+    await projectLinearWriteBack(stream.id)
+    linear.failNext('scope', 'FicusAgentActivity')
+    await drainLinearOutbox()
+    const [session] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(session!.disposition).not.toBe('inaccessible')
+    const [connection] = await db
+      .select()
+      .from(integrationConnections)
+      .where(eq(integrationConnections.id, fixture.connectionId))
+    expect(connection).toMatchObject({ authState: 'reauthorization_required', lastErrorCode: 'insufficient_scope' })
+    const rows = await db.select().from(linearActivityOutbox).where(eq(linearActivityOutbox.sessionId, sessionId))
+    expect(rows.some((row) => row.status === 'pending' && row.lastErrorCode === 'insufficient_scope')).toBe(true)
+    expect(rows.some((row) => row.status === 'failed')).toBe(false)
+    // No owner notice about lost team access: this is the app's scopes, not the session.
+    const notices = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'sessionId' = ${sessionId}`)
+    expect(notices).toHaveLength(0)
+  })
 })
 
 describe('failures and waits', () => {

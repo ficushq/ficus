@@ -67,6 +67,10 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
             enabled={connection.enabled}
             health={connection.authState === 'authenticated' ? connection.healthState : connection.authState}
             relayError={connection.relaySubscribeErrorCode}
+            needsPermissions={
+              (connection.configuration.missingScopes?.length ?? 0) > 0 ||
+              connection.lastErrorCode === 'insufficient_scope'
+            }
             canWrite={canWrite}
             refresh={refresh}
             reconnect={() => install.mutate(connection.id)}
@@ -391,6 +395,7 @@ function LinearAccount({
   enabled,
   health,
   relayError,
+  needsPermissions,
   canWrite,
   refresh,
   reconnect,
@@ -403,6 +408,8 @@ function LinearAccount({
   health: string
   /** The hosted event relay's refusal for this connection, if any. */
   relayError?: string
+  /** An app connection without the scopes Ficus needs (for example `write`): Reconnect grants them. */
+  needsPermissions?: boolean
   canWrite: boolean
   refresh: () => Promise<void>
   reconnect: () => void
@@ -438,6 +445,12 @@ function LinearAccount({
         <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           This Linear workspace is already connected to another Ficus Cloud instance. Ficus does not receive its events
           here. Disconnect it from the other instance, then select Reconnect.
+        </p>
+      )}
+      {app && needsPermissions && (
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
+          Ficus needs new Linear permissions to acknowledge agent sessions, post progress and attach pull requests. A
+          Linear workspace admin should select Reconnect and approve the updated permissions.
         </p>
       )}
       {canWrite && (
