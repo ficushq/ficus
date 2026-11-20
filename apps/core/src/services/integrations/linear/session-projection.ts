@@ -171,8 +171,11 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
   const items: LinearProjectionItem[] = []
   const { stream } = snapshot
   const live = stream.status === 'active' || stream.status === 'queued'
+  // A stream created from an event waits, paused, for its owner to prepare it; until a step runs,
+  // nothing has started and nothing was paused from the session's point of view.
+  const begun = snapshot.attempts.some((attempt) => attempt.id >= snapshot.attemptFloor)
 
-  if (stream.status === 'active')
+  if (stream.status === 'active' && (begun || !stream.pause))
     items.push(
       activity('stream:started', { type: 'thought', body: LINEAR_PROJECTION_TEXT.started }, { collapsible: true })
     )
@@ -245,7 +248,7 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
       )
   }
 
-  if (live && stream.pause)
+  if (live && stream.pause && begun)
     items.push(
       activity(
         `pause:${stream.pause.id}`,
