@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { builtinModules } from 'node:module'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, relative, resolve } from 'node:path'
 import { coreTestPlan, subprocessShardFiles } from '../scripts/run-core-tests'
 
 /**
@@ -196,4 +210,163 @@ test('aggregate shell rejects failed, skipped, cancelled and absent shard result
     const child = Bun.spawnSync(['bash', '-c', command], { env: { ...process.env, RESULT: result } })
     expect(child.exitCode === 0).toBe(result === 'success')
   }
+})
+
+/**
+ * Every repository file `entry` loads through relative imports, plus every
+ * import that needs installed packages (anything that is neither relative nor
+ * a Node/Bun builtin).
+ */
+function importClosure(entry: string): { files: string[]; packages: string[] } {
+  const transpiler = new Bun.Transpiler({ loader: 'ts' })
+  const files = new Set<string>()
+  const packages = new Set<string>()
+  const visit = (file: string) => {
+    if (files.has(file)) return
+    files.add(file)
+    for (const { path } of transpiler.scanImports(readFileSync(file, 'utf8'))) {
+      if (path.startsWith('.')) {
+        const base = resolve(dirname(file), path)
+        const target = [base, `${base}.ts`, join(base, 'index.ts')].find(
+          (candidate) => existsSync(candidate) && statSync(candidate).isFile()
+        )
+        if (!target) throw new Error(`${relative(REPO_ROOT, file)} imports unresolvable ${path}`)
+        visit(target)
+      } else if (!path.startsWith('node:') && !path.startsWith('bun:') && path !== 'bun') {
+        if (!builtinModules.includes(path)) packages.add(`${relative(REPO_ROOT, file)}: ${path}`)
+      }
+    }
+  }
+  visit(entry)
+  return { files: [...files], packages: [...packages] }
+}
+
+function workflowStep(job: string, name: string): any {
+  const { jobs } = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf8')) as any
+  const step = jobs[job].steps.find((candidate: any) => candidate.name === name)
+  expect(step).toBeDefined()
+  return step
+}
+
+// The fallback runs when setup failed, possibly before `bun install`. A
+// workspace-package import (`@ficus/shared/...`) then fails with "Cannot find
+// module" and the summary loses the list of files that never started.
+test('setup-failure inventory lists unstarted files without installed dependencies', () => {
+  const closure = importClosure(join(REPO_ROOT, 'scripts/run-core-tests.ts'))
+  expect(closure.packages).toEqual([])
+
+  const report = workflowStep('subprocess-shards', 'Report lane wall time')
+  const plan = coreTestPlan()
+  for (const shard of [1, 2] as const) {
+    // A checkout with no node_modules anywhere on the resolution path: only
+    // the script's import closure is copied; apps/ and the workflow are linked.
+    const root = mkdtempSync(join(tmpdir(), 'subprocess-inventory-'))
+    try {
+      for (const file of closure.files) {
+        const target = join(root, relative(REPO_ROOT, file))
+        mkdirSync(dirname(target), { recursive: true })
+        copyFileSync(file, target)
+      }
+      symlinkSync(join(REPO_ROOT, 'apps'), join(root, 'apps'))
+      symlinkSync(join(REPO_ROOT, '.github'), join(root, '.github'))
+      expect(existsSync(join(root, 'node_modules'))).toBe(false)
+
+      const summary = join(root, 'summary.md')
+      const child = Bun.spawnSync(['bash', '-c', report.run.replaceAll('${{ matrix.shard }}', String(shard))], {
+        cwd: root,
+        env: {
+          PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ''}`,
+          TEST_OUTCOME: 'skipped',
+          FICUS_TEST_LANE_STARTED: String(Math.floor(Date.now() / 1000)),
+          GITHUB_STEP_SUMMARY: summary,
+        },
+      })
+      const stderr = child.stderr.toString()
+      expect(stderr).not.toContain('Cannot find module')
+      expect(child.exitCode).toBe(0)
+      const unstarted = child.stdout
+        .toString()
+        .split('\n')
+        .filter((line) => line.startsWith('UNSTARTED 0.000s '))
+        .map((line) => line.slice('UNSTARTED 0.000s '.length))
+      expect(unstarted.length).toBeGreaterThan(0)
+      expect(unstarted).toEqual(subprocessShardFiles(plan.isolated, shard))
+      expect(readFileSync(summary, 'utf8')).toContain(`UNSTARTED 0.000s ${unstarted[0]}`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+}, 30000) // Discovers and reads the full Core test inventory once per shard.
+
+describe('subprocess lane PostgreSQL pull retry', () => {
+  /** Runs the step with stub `docker`, `timeout` and `sleep`; pulls fail `failures` times. */
+  function startPostgres(failures: number) {
+    const step = workflowStep('subprocess-shards', 'Start PostgreSQL')
+    const dir = mkdtempSync(join(tmpdir(), 'subprocess-postgres-'))
+    try {
+      const bin = join(dir, 'bin')
+      const calls = join(dir, 'calls')
+      const count = join(dir, 'pulls')
+      mkdirSync(bin)
+      writeFileSync(count, '0')
+      const stub = (name: string, body: string) => {
+        writeFileSync(join(bin, name), `#!/bin/bash\n${body}\n`)
+        chmodSync(join(bin, name), 0o755)
+      }
+      stub('sleep', 'exit 0')
+      stub('timeout', `echo "timeout $*" >> '${calls}'; shift 2; exec "$@"`)
+      stub(
+        'docker',
+        [
+          `echo "docker $*" >> '${calls}'`,
+          'if [ "$1" = pull ]; then',
+          `  n=$(( $(cat '${count}') + 1 )); echo "$n" > '${count}'`,
+          `  (( n > ${failures} ))`,
+          'fi',
+        ].join('\n')
+      )
+      const child = Bun.spawnSync(['bash', '-e', '-c', step.run], {
+        env: { PATH: `${bin}:${process.env.PATH ?? ''}` },
+      })
+      return {
+        step,
+        exitCode: child.exitCode,
+        output: child.stdout.toString(),
+        calls: readFileSync(calls, 'utf8').trim().split('\n'),
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  test('retries a failed or stalled pull and starts the container from the pulled image', () => {
+    const result = startPostgres(2)
+    expect(result.exitCode).toBe(0)
+    expect(result.step['timeout-minutes']).toBe(3)
+    const pulls = result.calls.filter((call) => call.startsWith('docker pull'))
+    expect(pulls).toEqual(Array(3).fill('docker pull --quiet paradedb/paradedb:latest'))
+    // Each attempt is bounded well inside the step limit.
+    expect(result.calls.filter((call) => call.startsWith('timeout'))).toEqual(
+      Array(3).fill('timeout --kill-after=5s 50s docker pull --quiet paradedb/paradedb:latest')
+    )
+    expect(result.output.match(/::warning::/g)).toHaveLength(2)
+    const run = result.calls.at(-1)!
+    expect(run).toStartWith('docker run -d --name postgres-test')
+    expect(run).toEndWith(' paradedb/paradedb:latest')
+  })
+
+  test('fails after three attempts without starting a container', () => {
+    const result = startPostgres(3)
+    expect(result.exitCode).not.toBe(0)
+    expect(result.calls.filter((call) => call.startsWith('docker pull'))).toHaveLength(3)
+    expect(result.calls.some((call) => call.startsWith('docker run'))).toBe(false)
+    expect(result.output).toContain('::error::docker pull paradedb/paradedb:latest failed or stalled on all 3 attempts')
+  })
+
+  test('the subprocess lane runs the same PostgreSQL image as the test-core job', () => {
+    const test = workflowStep('test-core', 'Start PostgreSQL')
+    const lane = workflowStep('subprocess-shards', 'Start PostgreSQL')
+    const image = (run: string) => run.match(/paradedb\/paradedb\S*/)![0]
+    expect(image(lane.run)).toBe(image(test.run))
+  })
 })

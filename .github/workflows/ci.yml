@@ -950,7 +950,7 @@ jobs:
     runs-on: ubuntu-24.04
     # Hang backstop, NOT the performance budget: the final wall-time check
     # still fails at 600s and the runner stops tests at 540s plus cleanup.
-    # Setup hang limits total 16m; reserve time to report unstarted inventory
+    # Setup hang limits total 17m; reserve time to report unstarted inventory
     # even in that worst case instead of letting the outer job cancel first.
     timeout-minutes: 20
     strategy:
@@ -1005,10 +1005,35 @@ jobs:
           restore-keys: |
             bun-${{ runner.os }}-
 
-      # Start PostgreSQL container (allows caching the image)
+      # Pull separately from `docker run` so a stalled pull can be retried.
+      # The two timeouts seen on main (runs 44688747502 and 44693405836) both
+      # stopped receiving one layer and made no further progress until the
+      # 1-minute limit. Across 216 recent shard runs this step took 16s at the
+      # median and 45s at the slowest success. A new attempt keeps the layers
+      # already pulled and asks for the stalled one again; three 50s attempts
+      # fit the 3-minute limit. Shard jobs finish in about 370-520s, so one
+      # retry still fits the 600s lane budget.
+      #
+      # The image is deliberately not pinned to a digest: the `test-core` job,
+      # docker-compose.test.yml and the shipped CLI (apps/cli POSTGRES_IMAGE)
+      # all use :latest, and a pin here alone would let this lane test a
+      # different PostgreSQL build from the rest of CI and from real installs.
+      # A digest would not speed up the pull either.
       - name: Start PostgreSQL
-        timeout-minutes: 1
+        timeout-minutes: 3
         run: |
+          image=paradedb/paradedb:latest
+          for attempt in 1 2 3; do
+            if timeout --kill-after=5s 50s docker pull --quiet "$image"; then
+              break
+            fi
+            if (( attempt == 3 )); then
+              echo "::error::docker pull $image failed or stalled on all 3 attempts"
+              exit 1
+            fi
+            echo "::warning::docker pull $image attempt $attempt failed or stalled after 50s; retrying"
+            sleep 2
+          done
           docker run -d \
             --name postgres-test \
             -e POSTGRES_USER=postgres \
@@ -1019,7 +1044,7 @@ jobs:
             --health-interval 2s \
             --health-timeout 5s \
             --health-retries 10 \
-            paradedb/paradedb:latest
+            "$image"
 
       - name: Wait for PostgreSQL
         timeout-minutes: 1
