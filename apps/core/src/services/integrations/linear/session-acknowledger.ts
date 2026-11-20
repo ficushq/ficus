@@ -2,12 +2,18 @@ import { eq } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity } from './app-api'
+import { linearSessionTrigger } from './outputs'
 import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
 
 const log = createLogger('linear-session-ack')
 
 /** Linear marks a session unresponsive without an activity within 10 seconds of `created`. */
 export const LINEAR_ACK_BUDGET_MS = 9_000
+/**
+ * The first attempt's timeout. A hung first call must leave the retry most of the budget: a call
+ * that lands normally takes well under a second.
+ */
+export const LINEAR_ACK_FIRST_ATTEMPT_TIMEOUT_MS = 2_500
 const ACK_ATTEMPT_TIMEOUT_MS = 4_000
 /** Acknowledgment calls one `acknowledgeLinearSession` makes at most: the first attempt and one retry. */
 export const LINEAR_ACK_MAX_ATTEMPTS = 2
@@ -45,6 +51,10 @@ export async function acknowledgeLinearSession(
   if (!sessionId) return null
   const issue = record(session.issue)
   const commentId = text(session.commentId) ?? text(record(session.comment).id)
+  const trigger = linearSessionTrigger(session, text(input.payload.appUserId) ?? text(session.appUserId) ?? '')
+  // A session the app opened on itself (outside `--linear-session`) is recorded as already handled:
+  // whoever opened it reports in it, and it is never acknowledged or routed as a request.
+  const own = trigger === 'proactive'
   await db
     .insert(linearAgentSessions)
     .values({
@@ -57,7 +67,8 @@ export async function acknowledgeLinearSession(
       url: text(session.url, 2000),
       rootCommentId: commentId,
       creatorLinearUserId: text(session.creatorId) ?? text(record(session.creator).id),
-      trigger: commentId ? 'mention' : 'delegation',
+      trigger,
+      ...(own ? { ackState: 'sent', dispositionState: 'sent' } : {}),
     })
     .onConflictDoNothing({ target: linearAgentSessions.id })
   const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
@@ -76,7 +87,7 @@ export async function acknowledgeLinearSession(
         input.authorization,
         { sessionId, projectionKey: 'ack', content: { type: 'thought', body: LINEAR_ACK_BODY } },
         AbortSignal.timeout(
-          Math.max(1, Math.min(ACK_ATTEMPT_TIMEOUT_MS, attempt === 0 ? ACK_ATTEMPT_TIMEOUT_MS : remaining))
+          Math.max(1, attempt === 0 ? LINEAR_ACK_FIRST_ATTEMPT_TIMEOUT_MS : Math.min(ACK_ATTEMPT_TIMEOUT_MS, remaining))
         )
       )
       acknowledged = true

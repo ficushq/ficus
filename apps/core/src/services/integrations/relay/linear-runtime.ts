@@ -16,6 +16,7 @@ import {
 import { DbIntegrationAuditRecorder } from '../db-audit'
 import { DbEventPollingDispatchStore } from '../db-event-polling-dispatch-store'
 import { integrationEnabledPredicate } from '../provider-state'
+import { acknowledgeLinearSessionEvent } from '../linear/app-ingress'
 import { isLinearAppConfiguration, parseLinearConfiguration } from '../linear/plugin'
 import { resolveManagedLinearConnection } from '../linear/resolve-connection'
 import { HostedIntegrationRelayRunner, type HostedRelayProvider, type RelayConnection } from './runner'
@@ -192,6 +193,44 @@ export function createLinearRelayDispatcher(deps: LinearRelayDispatchDependencie
   }
 }
 
+export interface LinearRelayAcknowledgeDependencies {
+  resolveConnection: LinearRelayDispatchDependencies['resolveConnection']
+  /** The acknowledgment step alone (`acknowledgeLinearSessionEvent`). */
+  acknowledge(payload: Record<string, unknown>): Promise<void>
+}
+
+/**
+ * The relay's `prepare` step: acknowledges every agent session `created` delivery in a pulled batch,
+ * concurrently, before the batch is dispatched one delivery at a time. Without it a session waits
+ * for the full processing of the deliveries ahead of it (a mention's `Comment` delivery arrives
+ * first), which took a live mention 9.8 seconds against Linear's 10-second limit. The same fences
+ * as dispatch apply: the live connection revision and the payload's organization.
+ */
+export function createLinearRelayAcknowledger(deps: LinearRelayAcknowledgeDependencies) {
+  return async function acknowledgeBatch(deliveries: LinearRelayDelivery[]): Promise<void> {
+    const sessions = deliveries.filter(
+      (delivery) => delivery.eventType === 'AgentSessionEvent' && delivery.payload.action === 'created'
+    )
+    if (!sessions.length) return
+    const results = await Promise.allSettled(
+      sessions.map(async (delivery) => {
+        const live = await deps.resolveConnection(delivery.connectionId)
+        if (!live || live.connection.materialRevision !== delivery.connectionRevision) return
+        const payload = delivery.payload
+        if (
+          payload.organizationId !== delivery.resourceId ||
+          payload.organizationId !== live.configuration.organizationId
+        )
+          return
+        await deps.acknowledge(payload)
+      })
+    )
+    // The delivery's own processing acknowledges it again if this failed.
+    for (const result of results)
+      if (result.status === 'rejected') log.warn('Early acknowledgment of a relayed Linear session failed')
+  }
+}
+
 /**
  * Runs a relayed delivery through the direct webhook's processing: the verified `linear-app` webhook
  * row (delivery ID deduplicated, Activity projected from it), then the registered `linear-app`
@@ -256,12 +295,18 @@ export const dispatchHostedLinearDelivery = createLinearRelayDispatcher({
   process: (delivery) => processRelayedLinearDelivery(delivery),
 })
 
+export const acknowledgeHostedLinearSessions = createLinearRelayAcknowledger({
+  resolveConnection: resolveManagedLinearConnection,
+  acknowledge: (payload) => acknowledgeLinearSessionEvent(payload),
+})
+
 export const hostedLinearRelayRuntime = new HostedIntegrationRelayRunner(linearRelayProvider, {
   managed: isPlatformManaged,
   interests: linearRelayInterests,
   resolve: createManagedLinearRelayResolver(),
   request: platformRequest,
   dispatch: (delivery, interests) => dispatchHostedLinearDelivery(delivery, interests),
+  prepare: (deliveries) => acknowledgeHostedLinearSessions(deliveries),
   onSubscribeRejected: recordLinearRelaySubscribeRejection,
   onError: (code) => log.warn(`Hosted Linear delivery deferred: ${code}`),
 })

@@ -27,6 +27,7 @@ import {
   agentSessionCreatedPayload,
   agentSessionPromptedPayload,
   createFakeLinear,
+  linearSystemCommentId,
   oauthAppRevokedPayload,
   permissionChangePayload,
   type FakeLinear,
@@ -213,6 +214,62 @@ describe('disposition and authority', () => {
       )
     expect(notices).toHaveLength(1)
     expect(notices[0]!.content).toContain('linear:issue.delegated')
+  })
+
+  test("a delegation (with Linear's authorless thread comment) routes as issue.delegated, a mention as issue.mentioned", async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    const notices = async () =>
+      (
+        await db
+          .select({ content: inbox.content })
+          .from(inbox)
+          .where(
+            and(
+              eq(inbox.recipientId, squad.managerAgentId!),
+              sql`${inbox.metadata}->>'source' = 'integration-notification'`
+            )
+          )
+      ).map((notice) => notice.content)
+    const delegation = randomUUID()
+    linear.addSession({ id: delegation, issueId: issue.id })
+    await created(delegation)
+    const [delegated] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, delegation))
+    // The live shape: a delegation's session has a root comment too, the system thread comment.
+    expect(delegated).toMatchObject({ trigger: 'delegation', rootCommentId: linearSystemCommentId(delegation) })
+    expect(await notices()).toHaveLength(1)
+    expect((await notices())[0]).toContain('linear:issue.delegated')
+
+    const mention = randomUUID()
+    const commentId = randomUUID()
+    linear.addSession({ id: mention, issueId: issue.id, commentId })
+    await created(mention, { commentId })
+    const [mentioned] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, mention))
+    expect(mentioned).toMatchObject({ trigger: 'mention', rootCommentId: commentId })
+    const all = await notices()
+    expect(all).toHaveLength(2)
+    expect(all.filter((content) => content.includes('linear:issue.mentioned'))).toHaveLength(1)
+    const outputs = await db
+      .select({ output: sql<string>`${integrationOutputEvents.fact}->>'output'` })
+      .from(integrationOutputEvents)
+      .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' in (${delegation}, ${mention})`)
+    expect(outputs.map((row) => row.output).sort()).toEqual([
+      'agent_session.created',
+      'agent_session.created',
+      'issue.delegated',
+      'issue.mentioned',
+    ])
+  })
+
+  test('a session the app opened on itself is recorded as its own and never acknowledged or routed', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: fixture.appUserId })
+    await created(sessionId, { creatorId: fixture.appUserId })
+    expect(bodies(sessionId)).toEqual([])
+    expect(linear.calls).toEqual([])
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row).toMatchObject({ trigger: 'proactive', ackState: 'sent', dispositionState: 'sent' })
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))).toEqual([])
   })
 
   test('one probe per event is shared by every squad; unrouted teams match nothing', async () => {

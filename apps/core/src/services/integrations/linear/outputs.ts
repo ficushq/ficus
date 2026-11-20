@@ -71,6 +71,35 @@ function subject(output: string, identifier: string, id: string, title: string) 
   )
 }
 
+/** What opened an agent session: `proactive` is a session the app user opened on itself. */
+export type LinearSessionTrigger = 'delegation' | 'mention' | 'proactive'
+
+/** The root comment Linear writes, without an author, when a session starts without a comment. */
+const SYSTEM_THREAD_COMMENT = /^This thread is for an agent session with /
+
+/**
+ * What opened a session, from an `AgentSessionEvent` `agentSession` (or the poller's equivalent).
+ * Linear gives every session a root comment, a delegation included: for a delegation it is a system
+ * comment with no author ("This thread is for an agent session with ficus."), so a root comment alone
+ * does not mean a mention. A root comment with a human author (`comment.userId`) is a mention. One
+ * without an author is a delegation when it is Linear's thread comment or the issue is delegated to
+ * the app; otherwise (a mention synced from another tool, for example) it stays a mention. A payload
+ * without the `comment` object carries no author information and is read as before: a mention.
+ */
+export function linearSessionTrigger(session: Record<string, any>, appUserId: string): LinearSessionTrigger {
+  const creator = text(session.creatorId, 200) || text(record(session.creator)?.id, 200)
+  if (appUserId && creator === appUserId) return 'proactive'
+  const comment = record(session.comment)
+  const commentId = text(session.commentId, 200) || text(comment?.id, 200)
+  if (!commentId) return 'delegation'
+  if (!comment) return 'mention'
+  if (text(comment.userId, 200) || text(record(comment.user)?.id, 200)) return 'mention'
+  const issue = record(session.issue) ?? {}
+  const delegate = text(issue.delegateId, 200) || text(record(issue.delegate)?.id, 200)
+  if (SYSTEM_THREAD_COMMENT.test(text(comment.body)) || (appUserId && delegate === appUserId)) return 'delegation'
+  return 'mention'
+}
+
 /** `AgentSessionEvent`: the session facts plus exactly one delegated or mentioned fact for `created`. */
 function normalizeSessionEvent(payload: Record<string, any>): IntegrationOutputFact[] {
   const action = text(payload.action, 100)
@@ -133,7 +162,10 @@ function normalizeSessionEvent(payload: Record<string, any>): IntegrationOutputF
       ),
     ]
   }
-  const trigger = commentId ? 'mention' : 'delegation'
+  const trigger = linearSessionTrigger(session, appUserId)
+  // A session the app opened on itself is its own work, not a request to route (it has no human creator).
+  if (trigger === 'proactive') return []
+  const mention = trigger === 'mention'
   const creator = text(session.creatorId, 200) || text(record(session.creator)?.id, 200)
   const context = text(payload.promptContext, 30000)
   const created = fact(
@@ -153,7 +185,7 @@ function normalizeSessionEvent(payload: Record<string, any>): IntegrationOutputF
     },
     context
   )
-  const routed = commentId
+  const routed = mention
     ? fact(
         'issue.mentioned',
         key(['issue.mentioned', sessionId]),

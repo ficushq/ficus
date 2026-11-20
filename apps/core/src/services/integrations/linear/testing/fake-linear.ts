@@ -91,6 +91,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       status: string
       creatorId?: string
       commentId?: string
+      rootComment?: boolean
     }
   >()
   /** User prompts and the app's notifications, as the polling fallback reads them. */
@@ -104,6 +105,21 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
 
   function failNext(failure: FakeLinearFailure, operation?: string) {
     failures.push({ operation, failure })
+  }
+
+  /**
+   * A session's root comment as Linear returns it: a mention's comment written by its creator, or
+   * for a delegation Linear's own thread comment, which has no author.
+   */
+  function rootCommentNode(session: { id: string; commentId?: string; creatorId?: string; rootComment?: boolean }) {
+    if (session.commentId)
+      return {
+        id: session.commentId,
+        body: FAKE_MENTION_BODY,
+        user: session.creatorId ? { id: session.creatorId } : null,
+      }
+    if (session.rootComment === false) return null
+    return { id: linearSystemCommentId(session.id), body: LINEAR_SYSTEM_THREAD_BODY, user: null }
   }
 
   function userNode(id: string | null | undefined) {
@@ -243,7 +259,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
             url: `https://linear.app/acme/agent-session/${session.id}`,
             appUser: { id: session.appUserId },
             creator: session.creatorId ? { id: session.creatorId } : null,
-            comment: session.commentId ? { id: session.commentId } : null,
+            comment: rootCommentNode(session),
             issue: issue ? issueNode(issue) : null,
           }
         }),
@@ -362,7 +378,10 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       appUserId?: string
       status?: string
       creatorId?: string
+      /** A mention's root comment, written by the creator. Without it the session is a delegation. */
       commentId?: string
+      /** False for a session without Linear's system thread comment (older payloads). */
+      rootComment?: boolean
       at?: number
     }) {
       const at = new Date(session.at ?? clock()).toISOString()
@@ -421,16 +440,33 @@ interface AppContext {
   appUserId: string
 }
 
+/** Linear's root comment for a session opened without one (a delegation): it has no author. */
+export const LINEAR_SYSTEM_THREAD_BODY = 'This thread is for an agent session with ficus.'
+const FAKE_MENTION_BODY = '@ficus please take a look'
+/** The fake's ID for a session's system thread comment. */
+export function linearSystemCommentId(sessionId: string) {
+  return `thread-${sessionId}`
+}
+
 export function agentSessionCreatedPayload(
   context: AppContext,
   input: {
     sessionId: string
     issue?: FakeLinearIssue | null
     creatorId: string
+    /** A mention's root comment, written by the creator. Without it the session is a delegation. */
     commentId?: string
+    /** False to leave out the root comment object (an older payload); a delegation then has none at all. */
+    rootComment?: boolean
     timestamp?: number
   }
 ) {
+  // Linear gives a delegation a root comment too: its authorless thread comment.
+  const comment = input.commentId
+    ? { id: input.commentId, body: FAKE_MENTION_BODY, userId: input.creatorId }
+    : input.rootComment === false
+      ? undefined
+      : { id: linearSystemCommentId(input.sessionId), body: LINEAR_SYSTEM_THREAD_BODY }
   return {
     type: 'AgentSessionEvent',
     action: 'created',
@@ -454,7 +490,7 @@ export function agentSessionCreatedPayload(
             },
           }
         : {}),
-      ...(input.commentId ? { commentId: input.commentId } : {}),
+      ...(comment ? { commentId: comment.id, ...(input.rootComment === false ? {} : { comment }) } : {}),
       creatorId: input.creatorId,
       url: `https://linear.app/acme/agent-session/${input.sessionId}`,
       status: 'pending',

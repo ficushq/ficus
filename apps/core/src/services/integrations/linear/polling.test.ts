@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createEventPollingBudget } from '../event-polling-budget'
 import { EventPollingRetryError, type RuntimeConnection } from '../types'
-import { linearOutputAdapter, LINEAR_APP_USER_METADATA_KEY } from './outputs'
+import { linearOutputAdapter, linearSessionTrigger, LINEAR_APP_USER_METADATA_KEY } from './outputs'
 import {
   advanceLinearWatermark,
   createLinearAgentSessionPolling,
@@ -343,6 +343,14 @@ describe('Linear agent session polling', () => {
       agentSession: { id: 'pending-new', issueId: issue.id, creatorId: 'member', status: 'pending' },
     })
     expect((mention!.payload as any).agentSession.commentId).toBe('comment-1')
+    // The root comment's author is carried so the webhook path can tell a mention from a delegation.
+    expect((mention!.payload as any).agentSession.comment).toMatchObject({ id: 'comment-1', userId: 'member' })
+    expect((delegation!.payload as any).agentSession.comment).toEqual({
+      id: 'thread-pending-new',
+      body: 'This thread is for an agent session with ficus.',
+    })
+    expect(linearSessionTrigger((delegation!.payload as any).agentSession, appUserId)).toBe('delegation')
+    expect(linearSessionTrigger((mention!.payload as any).agentSession, appUserId)).toBe('mention')
     expect(result.nextCursor.sessions).toEqual({ updatedAfter: iso(-4_000), boundaryIds: ['other-app'] })
   })
 

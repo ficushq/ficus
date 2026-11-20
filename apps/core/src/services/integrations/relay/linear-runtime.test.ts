@@ -4,7 +4,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:te
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import type { LinearRelayDelivery } from '@ficus/shared/integration-relay'
-import { db, integrationConnections, integrationEventPollingDispatches, webhookEvents } from '../../../db'
+import {
+  db,
+  integrationConnections,
+  integrationEventPollingDispatches,
+  linearAgentSessions,
+  webhookEvents,
+} from '../../../db'
 import { ensureQueryIndex } from '../../../test-utils/message-query-indexes'
 import { storeWebhookEvent } from '../../webhooks/store'
 import { PlatformRequestError, type platformRequest } from '../../platform/instance-client'
@@ -12,7 +18,7 @@ import { getSecretStore } from '../../secrets'
 import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { DbEventPollingDispatchStore } from '../db-event-polling-dispatch-store'
 import { serializeOAuthCredential } from '../authorization/credential-bundle'
-import { clearLinearUserCacheForTest } from '../linear/app-ingress'
+import { acknowledgeLinearSessionEvent, clearLinearUserCacheForTest } from '../linear/app-ingress'
 import { handleLinearAppEvent } from '../linear/app-webhook'
 import { resolveManagedLinearConnection } from '../linear/resolve-connection'
 import { LINEAR_ACK_BODY } from '../linear/session-acknowledger'
@@ -20,6 +26,7 @@ import { APP_TOKEN, createLinearAppFixture } from '../linear/testing/app-fixture
 import { agentSessionCreatedPayload, createFakeLinear, type FakeLinear } from '../linear/testing/fake-linear'
 import { HostedIntegrationRelayRunner } from './runner'
 import {
+  createLinearRelayAcknowledger,
   createLinearRelayDispatcher,
   createManagedLinearRelayResolver,
   linearRelayInterests,
@@ -463,6 +470,126 @@ describe('hosted relay end to end (fake Platform and fake Linear)', () => {
     await runner.tick()
     expect(calls).toEqual(['pull', 'ack'])
     expect(linear.calls.length).toBe(before)
+  })
+
+  test('a session in a batch is acknowledged before the Comment delivery ahead of it is probed and routed', async () => {
+    // The live mention (stream 1368): Linear sends the mention's Comment webhook first, and the relay
+    // handles a batch one delivery at a time, so the session waited for the comment's probes.
+    const fixture = await hosted()
+    let now = Date.now()
+    linear = createFakeLinear({
+      organization: { id: fixture.organizationId, name: 'Acme', urlKey: 'acme' },
+      app: { id: fixture.appUserId, name: 'Ficus', app: true, active: true },
+      clock: () => now,
+      advance: (ms) => (now += ms),
+      latencyMs: 1_500,
+    })
+    globalThis.fetch = linear.fetch
+    const person = { id: randomUUID(), name: 'Member', active: true }
+    linear.addUser(person)
+    const issue = linear.addIssue({
+      id: randomUUID(),
+      number: 8,
+      identifier: 'ENG-8',
+      title: 'Mention timing',
+      url: 'https://linear.app/acme/issue/ENG-8',
+      team: { id: randomUUID(), key: 'ENG' },
+    })
+    const batch = () => {
+      const sessionId = randomUUID()
+      const commentId = randomUUID()
+      linear.comments.set(commentId, { id: commentId, issueId: issue.id, userId: person.id })
+      linear.addSession({ id: sessionId, issueId: issue.id, commentId, creatorId: person.id })
+      const comment = {
+        type: 'Comment',
+        action: 'create',
+        organizationId: fixture.organizationId,
+        webhookTimestamp: now,
+        data: {
+          id: commentId,
+          body: '@ficus please',
+          issueId: issue.id,
+          userId: person.id,
+          createdAt: new Date(now).toISOString(),
+        },
+      }
+      const session = agentSessionCreatedPayload(fixture.context, {
+        sessionId,
+        issue,
+        creatorId: person.id,
+        commentId,
+        timestamp: now,
+      })
+      return { sessionId, deliveries: [relayDelivery(fixture, comment), relayDelivery(fixture, session)] }
+    }
+    const run = async (sessions: { sessionId: string; deliveries: LinearRelayDelivery[] }, prepare: boolean) => {
+      let pending = sessions.deliveries
+      const request: typeof platformRequest = async (input) => {
+        const path = input.path.split('/').at(-1)!
+        if (path === 'status') return input.schema.parse({ enabled: true, connections: [] })
+        if (path === 'pull') {
+          const deliveries = pending
+          pending = []
+          return input.schema.parse({ deliveries })
+        }
+        return input.schema.parse({ ok: true })
+      }
+      const runner = new HostedIntegrationRelayRunner(linearRelayProvider, {
+        managed: () => true,
+        interests: async () =>
+          (await linearRelayInterests()).filter((interest) => interest.connectionId === fixture.connectionId),
+        resolve: createManagedLinearRelayResolver(),
+        request,
+        dispatch: createLinearRelayDispatcher({
+          resolveConnection: resolveManagedLinearConnection,
+          receipts: new DbEventPollingDispatchStore(),
+          process: (delivery) => processRelayedLinearDelivery(delivery, handleLinearAppEvent),
+        }),
+        ...(prepare
+          ? {
+              prepare: createLinearRelayAcknowledger({
+                resolveConnection: resolveManagedLinearConnection,
+                acknowledge: (payload) => acknowledgeLinearSessionEvent(payload, { now: () => now }),
+              }),
+            }
+          : {}),
+        onError: (code) => {
+          throw new Error(`unexpected relay error ${code}`)
+        },
+      })
+      const start = linear.calls.length
+      const sentAt = now
+      await runner.tick()
+      await runner.stop()
+      const calls = linear.calls.slice(start)
+      const ack = calls.findIndex(
+        (call) =>
+          call.operation === 'FicusAgentActivity' &&
+          call.variables.input?.agentSessionId === sessions.sessionId &&
+          call.variables.input?.content?.body === LINEAR_ACK_BODY
+      )
+      return { ack, calls, latency: calls[ack]!.at - sentAt }
+    }
+
+    // Without the early acknowledgment, the comment's probe and lookups run first (the defect).
+    const before = await run(batch(), false)
+    expect(before.ack).toBeGreaterThan(before.calls.findIndex((call) => call.operation === 'FicusLinearAppProbe'))
+
+    const after = await run(batch(), true)
+    // The acknowledgment is the first Linear call of the batch, before any probe or lookup.
+    expect(after.ack).toBe(0)
+    expect(after.latency).toBeLessThan(before.latency)
+    expect(after.latency).toBeLessThanOrEqual(1_500)
+    // The session's own processing still routes it once, as a mention, and does not acknowledge twice.
+    const acks = after.calls.filter(
+      (call) => call.operation === 'FicusAgentActivity' && call.variables.input?.content?.body === LINEAR_ACK_BODY
+    )
+    expect(acks).toHaveLength(1)
+    const [row] = await db
+      .select()
+      .from(linearAgentSessions)
+      .where(eq(linearAgentSessions.id, after.calls[0]!.variables.input.agentSessionId))
+    expect(row).toMatchObject({ trigger: 'mention', ackState: 'sent', dispositionState: 'sent' })
   })
 
   test('a 409 linear_organization_claimed answer is recorded on the connection and stops its subscription', async () => {

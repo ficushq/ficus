@@ -153,12 +153,34 @@ export async function processPolledLinearNotification(payload: Record<string, un
   )
 }
 
-async function processSessionCreated(
+/**
+ * The acknowledgment alone, for an `AgentSessionEvent` `created` delivery that would otherwise wait
+ * its turn: the hosted relay handles a pulled batch one delivery at a time, and a mention's `Comment`
+ * delivery usually comes first, so its enrichment probes and fan-out would run before the session is
+ * acknowledged. The relay calls this for the whole batch first; processing the delivery later finds
+ * the acknowledgment sent and does not post it again.
+ */
+export async function acknowledgeLinearSessionEvent(
+  payload: Record<string, unknown>,
+  dependencies: AcknowledgeDependencies = {}
+): Promise<void> {
+  if (payload.type !== 'AgentSessionEvent' || payload.action !== 'created') return
+  const organizationId = text(payload.organizationId)
+  const session = record(payload.agentSession)
+  const sessionId = text(session.id)
+  if (!organizationId || !sessionId) return
+  const resolved = await resolveLinearAppConnection(organizationId)
+  if (!resolved || text(payload.appUserId) !== resolved.configuration.appUserId) return
+  await acknowledgeSessionCreated(resolved, sessionId, session, payload, dependencies)
+}
+
+/** The acknowledgment step of `created`; null when there is nothing to acknowledge or route. */
+async function acknowledgeSessionCreated(
   resolved: Resolved,
   sessionId: string,
   session: Record<string, any>,
   payload: Record<string, unknown>,
-  dependencies: LinearAppIngressDependencies
+  dependencies: AcknowledgeDependencies
 ) {
   // Ficus's own `--linear-session` session is bound by the request that opened it: no rules run.
   if (
@@ -168,7 +190,7 @@ async function processSessionCreated(
       issueId: text(session.issueId) || text(record(session.issue).id) || undefined,
     })
   )
-    return
+    return null
   // Before any rule, decision predicate or squad fan-out.
   const row = await acknowledgeLinearSession(
     {
@@ -179,6 +201,18 @@ async function processSessionCreated(
     },
     dependencies
   )
+  // No row, or a session the app opened on itself: there is no request to route.
+  return row && row.trigger !== 'proactive' ? row : null
+}
+
+async function processSessionCreated(
+  resolved: Resolved,
+  sessionId: string,
+  session: Record<string, any>,
+  payload: Record<string, unknown>,
+  dependencies: LinearAppIngressDependencies
+) {
+  const row = await acknowledgeSessionCreated(resolved, sessionId, session, payload, dependencies)
   if (!row) return
   const dispose = (disposition: LinearSessionDisposition) =>
     postLinearSessionDisposition({ sessionId, authorization: resolved.authorization, disposition })
