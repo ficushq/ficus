@@ -82,7 +82,7 @@ export function MobileChatOptionsSheet({
         className="mobile-chat-options-panel ficus-overlay relative w-full max-h-full overflow-y-auto overscroll-contain rounded-t-2xl border border-th-border bg-surface p-3 outline-hidden"
         role="dialog"
         aria-modal="true"
-        aria-label="Attach or change controls"
+        aria-label="More controls"
         tabIndex={-1}
       >
         <div className="flex items-center justify-between pl-3 pb-1">

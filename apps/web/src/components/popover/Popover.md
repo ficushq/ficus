@@ -80,7 +80,8 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   hover-to-open for a click popover (`ActionPopup`'s and `SelectionPopup`'s `openOnHover`: the top nav's
   squad switcher, the squad tabs' More menu, the composer's delivery-mode chevron and context ring, the
   squad Chats "…" menu and the tablet Agent view dropdown; neither opens on hover while disabled; the
-  assistant's Arrange menu; the top nav's theme flyout, a `Panel`, where only the trigger pins it and
+  assistant's Arrange menu; the narrow chat composer's More controls menu, on wider screens only (the phone
+  sheet stays tap-only), where any press inside calls `pin()`; the top nav's theme flyout, a `Panel`, where only the trigger pins it and
   choosing a theme keeps hover mode; the work stream Filters panel, where likewise only the trigger pins it
   and toggling a filter keeps hover mode; and the squad notifications bell, where any press inside calls
   `pin()`). Spread its `triggerProps` on the trigger (its `onClick` replaces

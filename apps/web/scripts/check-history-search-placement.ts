@@ -120,7 +120,7 @@ try {
     assert.equal(phone.button, null, `phone ${appearance}: the desktop search button shows on a phone`)
     await shot(`phone-${appearance}-closed`)
 
-    const trigger = page.locator('button[aria-label="Attach or change controls"]')
+    const trigger = page.locator('button[aria-label="More controls"]')
     await trigger.click()
     const sheetSearch = page.getByRole('dialog').getByRole('button', { name: 'Search this conversation' })
     await sheetSearch.waitFor()
@@ -146,7 +146,7 @@ try {
     await page.waitForTimeout(100)
     assert.equal(
       await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
-      'Attach or change controls',
+      'More controls',
       `phone ${appearance}: closing did not return focus to the options sheet trigger`
     )
 
