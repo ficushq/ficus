@@ -727,14 +727,15 @@ async function listReceiptSourcePage<F extends ReceiptDispatchFact>(
       // `linear-app` webhook), merged and cut to the page: each branch stops after `limit` rows.
       const providers = pager.provider === 'linear' ? ['linear', 'linear-app'] : [pager.provider]
       const branches = providers.map(
-        (provider) => sql`(SELECT id,event_type,payload,${deliveryIdSql} delivery_id,created_at FROM webhook_events
+        (provider) => sql`(SELECT id,event_type,payload,${deliveryIdSql} delivery_id,created_at,
+            to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') receipt_cursor FROM webhook_events
           WHERE provider=${provider} AND verified=true
             AND created_at>=${fromIso}::timestamptz AND created_at<${scanTo.toISOString()}::timestamptz
             AND (created_at>${receiptAfter}::timestamptz OR (created_at=${receiptAfter}::timestamptz AND id::text>${eventAfter}))
           ORDER BY created_at,id LIMIT ${limit})`
       )
       const candidates = rows<any>(
-        await db.execute(sql`SELECT id::text id,event_type,payload,delivery_id,created_at
+        await db.execute(sql`SELECT id::text id,event_type,payload,delivery_id,created_at,receipt_cursor
           FROM (${sql.join(branches, sql` UNION ALL `)}) candidates ORDER BY created_at,id LIMIT ${limit}`)
       )
       if (candidates.length === 0) return { groupIds: [], next: null }
@@ -754,7 +755,9 @@ async function listReceiptSourcePage<F extends ReceiptDispatchFact>(
       const scanCursor: SourceGroupCursor = {
         id: '',
         sourceKind: 'hook',
-        receiptAt: new Date(last.created_at).toISOString(),
+        // Full microsecond precision: a millisecond cursor sits before its own row, which would then be
+        // read again on every page and never let the scan advance.
+        receiptAt: last.receipt_cursor,
         scanId: last.id,
         pending,
         hasMoreCandidates,
