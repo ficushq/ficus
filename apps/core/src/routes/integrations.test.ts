@@ -84,6 +84,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
   const oauthAppConfigure = mock(async () => oauthAppGet('notion'))
   const authorizationStart = mock(async () => ({ authorizationUrl: 'https://provider.example/authorize' }))
   const authorizationPurpose = mock(async (): Promise<OAuthAuthorizationPurpose | null> => 'integration')
+  const authorizationProvider = mock(async (_input: unknown): Promise<string | null> => 'linear')
   const authorizationCallback = mock(async () => ({ returnTo: '/settings/integrations' }))
   const authorizationComplete = mock(async () => ({ returnTo: '/settings/integrations' }))
   const authorizationPollDevice = mock(async () => ({ status: 'pending' as const, retryAfterSeconds: 5 }))
@@ -138,6 +139,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       authorization: {
         start: authorizationStart,
         resolvePurpose: authorizationPurpose,
+        resolveProvider: authorizationProvider,
         callback: authorizationCallback,
         complete: authorizationComplete,
         pollDevice: authorizationPollDevice,
@@ -185,6 +187,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       oauthAppConfigure,
       authorizationStart,
       authorizationPurpose,
+      authorizationProvider,
       authorizationCallback,
       authorizationComplete,
       authorizationPollDevice,
@@ -1003,6 +1006,75 @@ describe('instance versus squad permission scope', () => {
     })
     expect(response.status).toBe(200)
     expect(calls.disable).toHaveBeenCalled()
+  })
+
+  test("the shared callback asks which provider started the signed-in person's own flow", async () => {
+    const userId = crypto.randomUUID()
+    const { app, calls } = createApp({ type: 'user', userId })
+    const ask = (body: unknown) =>
+      app.request('/api/integrations/authorization/provider', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const localFlowId = crypto.randomUUID()
+
+    // A hosted broker flow, named by its flow ID (the Desktop-to-browser path carries nothing else).
+    const hosted = await ask({ localFlowId })
+    expect(hosted.status).toBe(200)
+    expect(hosted.headers.get('cache-control')).toBe('no-store')
+    expect(await hosted.json()).toEqual({ provider: 'linear' })
+    expect(calls.authorizationProvider).toHaveBeenLastCalledWith({
+      userId,
+      source: { kind: 'complete', localFlowId },
+    })
+
+    // A self-hosted callback, named by its state.
+    calls.authorizationProvider.mockResolvedValueOnce('slack')
+    const local = await ask({ state: 's'.repeat(43) })
+    expect(await local.json()).toEqual({ provider: 'slack' })
+    expect(calls.authorizationProvider).toHaveBeenLastCalledWith({
+      userId,
+      source: { kind: 'callback', state: 's'.repeat(43) },
+    })
+
+    // Someone else's flow, an expired flow and an unknown flow all look the same: terminal.
+    calls.authorizationProvider.mockResolvedValueOnce(null)
+    const unknown = await ask({ localFlowId })
+    expect(unknown.status).toBe(400)
+    expect(await unknown.json()).toEqual({ error: 'invalid_or_expired_state', code: 'invalid_or_expired_state' })
+
+    // A stored value that is not a provider key never reaches the browser.
+    calls.authorizationProvider.mockResolvedValueOnce('../notion')
+    expect((await ask({ localFlowId })).status).toBe(400)
+
+    // Malformed bodies are refused before any lookup.
+    const before = calls.authorizationProvider.mock.calls.length
+    for (const body of [
+      {},
+      { localFlowId: 'not-a-uuid' },
+      { state: 'short' },
+      { localFlowId, state: 's'.repeat(43) },
+    ]) {
+      expect((await ask(body)).status).toBe(400)
+    }
+    expect(calls.authorizationProvider.mock.calls.length).toBe(before)
+  })
+
+  test('only a signed-in person can ask which provider started a flow', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'check',
+      name: 'check',
+      scopes: ['integrations:write:linear'],
+    })
+    const response = await app.request('/api/integrations/authorization/provider', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ localFlowId: crypto.randomUUID() }),
+    })
+    expect(response.status).toBe(403)
+    expect(calls.authorizationProvider).not.toHaveBeenCalled()
   })
 
   test('user instance provider write role can start and complete authenticated authorization', async () => {
