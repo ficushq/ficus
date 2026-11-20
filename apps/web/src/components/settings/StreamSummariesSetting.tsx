@@ -29,7 +29,7 @@ export function StreamSummariesSetting({ usableCandidates }: { usableCandidates?
   if (!setting) return null
   const enabled = setting.value === 'true'
   return (
-    <div data-setting-target="stream-summaries" className="mt-4 space-y-1">
+    <div className="mt-4 space-y-1">
       <label className="flex items-center justify-between gap-4 text-sm font-medium text-primary">
         Work stream summaries
         <input
@@ -42,12 +42,13 @@ export function StreamSummariesSetting({ usableCandidates }: { usableCandidates?
       </label>
       <p className="text-sm text-muted">
         Write one line about what each active work stream is doing, from its participants&apos; messages, and show it on
-        work lists and in the stream. Each update is one small call to this tier, at most every few minutes per busy
-        stream; turning this off stops them and hides the lines already written.
+        work lists and in the stream. Each update is one small call to the Lite model tier, at most every few minutes
+        per busy stream; turning this off stops them and hides the lines already written.
       </p>
       {enabled && usableCandidates?.length === 0 && (
         <p className="text-sm text-status-warning-600 dark:text-status-warning-400">
-          No Lite model is signed in, so no summaries are written. Sign in to a provider in this tier to use them.
+          No Lite model is signed in, so no summaries are written. Sign in to a provider in the Lite tier (Settings →
+          Agents) to use them.
         </p>
       )}
       {update.error && (

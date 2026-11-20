@@ -32,7 +32,6 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { PlusIcon, TrashIcon } from '../icons'
 import { formatResolvedModel, modelChainWarnings } from './modelTierUi'
 import { ReplySuggestionsSetting } from './ReplySuggestionsSetting'
-import { StreamSummariesSetting } from './StreamSummariesSetting'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
@@ -1305,12 +1304,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
             derivedFallbacks={tier.derivedOpenRouterFallbacks}
             onSave={(next) => mutation.mutate(next)}
           />
-          {tier.slug === 'lite' && (
-            <>
-              <ReplySuggestionsSetting usableCandidates={tier.usableCandidates} />
-              <StreamSummariesSetting usableCandidates={tier.usableCandidates} />
-            </>
-          )}
+          {tier.slug === 'lite' && <ReplySuggestionsSetting usableCandidates={tier.usableCandidates} />}
         </div>
       ))}
       <button

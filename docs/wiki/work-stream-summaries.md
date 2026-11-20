@@ -47,7 +47,7 @@ The save is one `UPDATE` that merges the key into the metadata (recovering a dou
 
 ## The switch
 
-**Work stream summaries** under the Lite tier in Settings → Agents → Model tiers, beside Reply suggestions (`STREAM_SUMMARIES_ENABLED`, on by default). While it is off the event handlers return before any database read, no model call happens, pending timers are dropped, and the API leaves saved summaries out. Turning it back on shows them again (subject to the step rule). When the tier has no usable model, Settings says "No Lite model is signed in" beside the switch.
+**Work stream summaries** on Settings → Work features (`/settings?section=work-features`, needs `settings:read`; `STREAM_SUMMARIES_ENABLED`, on by default). It is a work feature, so it is not under Model tiers, although it runs on the Lite tier (owner decision 2026-11-20). Settings search finds it as "Work stream summaries". While it is off the event handlers return before any database read, no model call happens, pending timers are dropped, and the API leaves saved summaries out. Turning it back on shows them again (subject to the step rule). When the Lite tier has no usable model, the page says "No Lite model is signed in" beside the switch (for viewers with `agent-types:read`, who can see the tiers).
 
 ## The API contract
 

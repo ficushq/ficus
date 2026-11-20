@@ -7,6 +7,10 @@ import { queryKeys } from '../../queryKeys'
 import { acquireDomHarness } from '../../test/domHarness'
 import { SettingsApiProvider } from './settingsApi'
 import { STREAM_SUMMARIES_SETTING, StreamSummariesSetting } from './StreamSummariesSetting'
+import { WorkFeaturesSection } from './WorkFeaturesSection'
+import { modelTierQueryKeys } from '../../queryKeys'
+import { isSectionAllowed } from './settingsSections'
+import { SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -85,4 +89,39 @@ test('is read-only without settings:write', async () => {
   const { toggle } = await renderSetting('false', ['settings:read'])
   expect(toggle().checked).toBe(false)
   expect(toggle().disabled).toBe(true)
+})
+
+test('lives on the Work features page, which warns when no Lite model is signed in', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const { root, container } = dom.createRoot()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(queries.settings.list().queryKey, [setting('true')])
+  client.setQueryData(modelTierQueryKeys.list(), [{ slug: 'lite', usableCandidates: [] }])
+  const permissions = ['settings:read', 'settings:write', 'agent-types:read']
+  await dom.act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PermissionsProvider
+          usePermissions={() => ({
+            can: (permission: string) => permissions.includes(permission),
+            permissions,
+            isLoading: false,
+            isError: false,
+          })}
+        >
+          <SettingsApiProvider api={{ setSetting: () => Promise.resolve() }}>
+            <WorkFeaturesSection />
+          </SettingsApiProvider>
+        </PermissionsProvider>
+      </QueryClientProvider>
+    )
+  )
+  expect(container.querySelector('[data-setting-target="stream-summaries"]')).not.toBeNull()
+  expect(container.textContent).toContain(NO_MODEL)
+  // Settings search lands on the switch, and the page needs settings:read.
+  expect(SETTINGS_SEARCH_ENTRIES).toContainEqual(
+    expect.objectContaining({ section: 'work-features', id: 'stream-summaries' })
+  )
+  expect(isSectionAllowed('work-features', (permission) => permission === 'settings:read', false)).toBe(true)
+  expect(isSectionAllowed('work-features', () => false, false)).toBe(false)
 })

@@ -31,6 +31,8 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
     'public text writing profiles tone style commits pull requests review replies issue comments channel messages',
   'agent-types':
     'model tiers lite provider chain reasoning effort system prompt skills tools allow deny extensions agent templates reply suggestions quick replies chips',
+  'work-features':
+    'work stream summaries one-line summary status now peek card show summaries lite tier generated feature switch toggle',
   'squad-presets': 'templates manager instructions default agents schedules purpose context',
   workflows: 'flows presets participants handoffs loops parallel branches review solo engineering completion policy',
 
@@ -58,6 +60,12 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
 }
 
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
+  {
+    section: 'work-features',
+    id: 'stream-summaries',
+    label: 'Work stream summaries',
+    keywords: 'one-line summary now line peek card show summaries generated lite tier work streams feed home work',
+  },
   {
     section: 'help',
     id: 'send-feedback',
