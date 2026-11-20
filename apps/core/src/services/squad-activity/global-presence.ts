@@ -214,6 +214,8 @@ async function buildWorkStreamCards(
       deliveryLabel: deliveryLabel(delivery),
       workingAgentIds: workingByStream.get(stream.id) ?? [],
       lastEventAt: lastEventAt(stream),
+      // Already computed for needsYou above: no extra read.
+      ...(presentation?.derivedState ? { derivedState: presentation.derivedState } : {}),
       ...(summary ? { summary: summary.text, summaryGeneratedAt: summary.generatedAt } : {}),
     }
   })

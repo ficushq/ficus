@@ -409,8 +409,9 @@ test('sender rows hide only while a matching received row is shown, and Show eve
   }
 })
 
-test('the Active work strip shows step, waits, PR and CI, working dots and time, and filters on click', async () => {
+test('the Active work list shows one row per stream, counts what the rows show, caps at five and filters on click', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  dom.window.localStorage.removeItem('ficus.activityWork.expanded')
   const cards = [
     card({
       waits: [{ type: 'review', needsYou: true }],
@@ -420,7 +421,16 @@ test('the Active work strip shows step, waits, PR and CI, working dots and time,
       deliveryLabel: 'CI failed',
       workingAgentIds: ['engineer', 'reviewer'],
     }),
-    ...Array.from({ length: 7 }, (_, index) =>
+    card({ id: 'working', number: 1395, title: 'Spend tiers', step: 'implement', workingAgentIds: ['engineer-2'] }),
+    card({ id: 'paused', number: 1392, title: 'Linear verification', step: 'Verify', derivedState: 'paused' }),
+    card({
+      id: 'blocked',
+      number: 1391,
+      title: 'Dependency',
+      step: 'Verify',
+      waits: [{ type: 'dependency', needsYou: false }],
+    }),
+    ...Array.from({ length: 4 }, (_, index) =>
       card({ id: `stream-${index}`, number: 2000 + index, title: `Other ${index}`, step: null, status: 'queued' })
     ),
   ]
@@ -435,7 +445,8 @@ test('the Active work strip shows step, waits, PR and CI, working dots and time,
               {...feedProps}
               items={[]}
               onOpen={() => {}}
-              presence={{ workingCount: 2, needsYouCount: 1, streamCount: 9, streams: cards }}
+              workingAgentIds={new Set(['engineer', 'reviewer', 'engineer-2', 'manager'])}
+              presence={{ workingCount: 4, needsYouCount: 1, streamCount: 9, streams: cards }}
               workStreamFilter={filter}
               onWorkStreamFilterChange={(next) => {
                 filter = next
@@ -446,45 +457,198 @@ test('the Active work strip shows step, waits, PR and CI, working dots and time,
         )
       )
     await render()
-    const presence = view.container.querySelector('[data-testid="activity-presence"]')!
-    expect(presence.textContent).toContain('2 working')
-    expect(presence.textContent).toContain('1 waiting on you')
-    expect(presence.textContent).not.toContain('active streams')
+    const list = view.container.querySelector('[data-testid="activity-work-list"]')!
+    // The header counts the rows by state; agents outside every listed stream are counted apart.
+    const counts = list.querySelector('[data-testid="activity-presence"]')!.textContent
+    expect(counts).toContain('1 waiting on you')
+    expect(counts).toContain('1 working')
+    expect(counts).toContain('1 waiting')
+    expect(counts).toContain('1 paused')
+    expect(counts).toContain('4 queued')
+    expect(counts).toContain('1 other agent working')
+    expect(counts).not.toContain('active streams')
 
-    const strip = view.container.querySelector('[data-testid="activity-work-strip"]')!
-    const buttons = [...strip.querySelectorAll<HTMLButtonElement>('button[data-work-stream-card]')]
-    expect(buttons).toHaveLength(6)
-    const first = buttons[0]
+    const rows = () => [...list.querySelectorAll<HTMLButtonElement>('button[data-work-stream-card]')]
+    expect(rows()).toHaveLength(5)
+    const first = rows()[0]
     expect(first.textContent).toContain('#1352 Floating agent windows')
-    expect(first.textContent).toContain('Implement · Waiting on you: review')
+    expect(first.textContent).toContain('Waiting on you: review · Implement')
     expect(first.textContent).toContain('PR #996 · CI failing')
     expect(first.textContent).not.toContain('CI failed')
-    expect(first.querySelector('[title="Working now"]')?.textContent).toContain('2 working')
     expect(first.querySelector('time')?.getAttribute('dateTime')).toBe(cards[0].lastEventAt)
-    expect(buttons[1].textContent).toContain('Queued')
-    const more = strip.querySelector<HTMLAnchorElement>('a[href="/squads/team/work"]')!
-    expect(more.textContent).toBe('+3 more')
+    // One state each, marked differently: working, paused and waiting never look alike.
+    expect(rows().map((row) => row.getAttribute('data-activity-work-state'))).toEqual([
+      'needs-you',
+      'working',
+      'paused',
+      'waiting',
+      'queued',
+    ])
+    // Step labels are normalized ("implement" reads "Implement"); a paused row does not repeat itself.
+    expect(rows()[1].textContent).toContain('Working · Implement')
+    expect(rows()[2].textContent).toContain('Paused · Verify')
+    expect(rows()[3].textContent).toContain('Waiting: dependency · Verify')
+    expect(rows()[4].textContent).toContain('Queued')
+
+    // "Show 3 more" expands in place and is remembered; streams past the server's cards link to the list.
+    const more = [...list.querySelectorAll('button')].find((button) => button.textContent === 'Show 3 more')!
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    expect(list.querySelector<HTMLAnchorElement>('a[href="/squads/team/work"]')?.textContent).toBe(
+      'All 9 active streams'
+    )
+    await dom.act(() => more.click())
+    expect(rows()).toHaveLength(8)
+    expect(dom.window.localStorage.getItem('ficus.activityWork.expanded')).toBe('true')
+    const fewer = [...list.querySelectorAll('button')].find((button) => button.textContent === 'Show fewer')!
+    expect(fewer.getAttribute('aria-expanded')).toBe('true')
+    await dom.act(() => fewer.click())
+    expect(rows()).toHaveLength(5)
+    expect(dom.window.localStorage.getItem('ficus.activityWork.expanded')).toBeNull()
 
     await dom.act(() => first.click())
     expect(filter).toBe(streamContext.id)
     await render()
     const selected = view.container.querySelector<HTMLButtonElement>('button[data-work-stream-card="1352"]')!
     expect(selected.getAttribute('aria-pressed')).toBe('true')
-    expect(view.container.querySelector('[data-testid="activity-work-stream-filter"]')?.textContent).toContain(
-      'Showing #1352 Floating agent windows'
-    )
-    // Clicking the selected card again clears the filter; so does Clear.
+    // Clicking the selected row again clears the filter; so does Clear in the details panel.
     await dom.act(() => selected.click())
     expect(filter).toBeNull()
-    filter = 'stream-6'
+    filter = 'stream-3'
     await render()
-    // A selected card beyond the cap stays visible.
-    expect(view.container.querySelector('button[data-work-stream-card="2006"]')?.getAttribute('aria-pressed')).toBe(
+    // A selected row beyond the cap stays visible.
+    expect(view.container.querySelector('button[data-work-stream-card="2003"]')?.getAttribute('aria-pressed')).toBe(
       'true'
     )
     const clear = [...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Clear')!
     await dom.act(() => clear.click())
     expect(filter).toBeNull()
+    await dom.act(() => view.root.unmount())
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('Summaries shows each row a full-width summary line, never an empty gap, and is remembered', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  dom.window.localStorage.removeItem('ficus.wsSummaries.activity')
+  const cards = [
+    card({ summary: 'Writing tests for holding human PR comments', summaryGeneratedAt: new Date().toISOString() }),
+    card({ id: 'no-summary', number: 7, title: 'Quiet stream' }),
+  ]
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <MemoryRouter>
+          <ActivityFeedView
+            {...feedProps}
+            items={[]}
+            onOpen={() => {}}
+            presence={{ workingCount: 0, needsYouCount: 0, streamCount: 2, streams: cards }}
+            onWorkStreamFilterChange={() => {}}
+          />
+        </MemoryRouter>
+      )
+    )
+    const toggle = view.container.querySelector<HTMLButtonElement>('[data-testid="show-summaries-activity"]')!
+    expect(toggle.textContent).toBe('Summaries')
+    expect(toggle.getAttribute('aria-label')).toBe('Show work stream summaries')
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    const lines = () => [...view.container.querySelectorAll('[data-testid="activity-work-summary"]')]
+    expect(lines().map((line) => line.textContent)).toEqual(['Writing tests for holding human PR comments'])
+    const quiet = view.container.querySelector('button[data-work-stream-card="7"]')!
+    expect(quiet.children).toHaveLength(2) // the title line and the narrow-width state line, no summary slot
+    await dom.act(() => toggle.click())
+    expect(lines()).toHaveLength(0)
+    expect(dom.window.localStorage.getItem('ficus.wsSummaries.activity')).toBe('false')
+    await dom.act(() => toggle.click())
+    await dom.act(() => view.root.unmount())
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('the selected stream details show everything in full and open the stream and a chat in place', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const longTitle =
+    'Deliver human PR comments when the commenter is the GitHub connection account, and record skipped deliveries'
+  const longSummary =
+    "Writing tests for holding human PR comments from the GitHub connection account's author filter, then the docs."
+  const selected = card({
+    title: longTitle,
+    step: 'implement',
+    summary: longSummary,
+    summaryGeneratedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+    pullRequest: {
+      number: 1026,
+      repository: 'ficushq/ficus',
+      url: 'https://github.com/ficushq/ficus/pull/1026',
+      state: 'open',
+    },
+    workingAgentIds: ['engineer'],
+  })
+  const participantRow: SquadActivityItem = {
+    id: '10:engineer-row',
+    at: new Date().toISOString(),
+    agentId: 'engineer',
+    agentTypeId: 'engineer',
+    kind: 'message',
+    summary: 'Renewing the claim',
+    preview: [{ text: 'Renewing the claim' }],
+    ref: { type: 'agent', agentId: 'engineer', view: 'chat' },
+    context: { workStream: { ...streamContext, title: longTitle, step: 'implement' } },
+  }
+  const opened: SquadActivityItem[] = []
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <MemoryRouter>
+          <ActivityFeedView
+            {...feedProps}
+            items={[participantRow]}
+            onOpen={(item) => opened.push(item)}
+            presence={{ workingCount: 1, needsYouCount: 0, streamCount: 1, streams: [selected] }}
+            workStreamFilter={selected.id}
+            onWorkStreamFilterChange={() => {}}
+          />
+        </MemoryRouter>
+      )
+    )
+    const panel = view.container.querySelector<HTMLElement>('[data-testid="activity-work-stream-filter"]')!
+    expect(panel.tagName).toBe('SECTION')
+    const heading = panel.querySelector('h2')!
+    expect(panel.getAttribute('aria-labelledby')).toBe(heading.id)
+    expect(heading.textContent).toBe(`Showing only activity for #1352 ${longTitle}`)
+    expect(panel.querySelector('[data-testid="activity-work-details-summary"]')?.textContent).toContain(longSummary)
+    expect(panel.textContent).toContain('Generated summary · updated 4 min ago')
+    const state = panel.querySelector('[data-testid="activity-work-details-state"]')!.textContent
+    expect(state).toContain('Working')
+    expect(state).toContain('Step: Implement')
+    expect(state).toContain('Working now: Engineer')
+    expect(panel.querySelector<HTMLAnchorElement>('a[href="https://github.com/ficushq/ficus/pull/1026"]')?.target).toBe(
+      '_blank'
+    )
+
+    const openStream = [...panel.querySelectorAll('a')].find((link) => link.textContent === 'Open work stream')!
+    expect(openStream.getAttribute('href')).toBe('/squads/team/work?ws=1352')
+    await dom.act(() => openStream.click())
+    expect(opened.at(-1)?.ref).toEqual({ type: 'workstream', workStreamId: selected.id, workStreamNumber: 1352 })
+    const openChat = panel.querySelector<HTMLAnchorElement>('a[aria-label="Open chat with Engineer"]')!
+    expect(openChat.textContent).toBe('Open chat · Engineer')
+    await dom.act(() => openChat.click())
+    expect(opened.at(-1)?.ref).toEqual({ type: 'agent', agentId: 'engineer', view: 'chat' })
+    // A modified click keeps the link's own navigation (new tab, floating window).
+    const before = opened.length
+    await dom.act(() =>
+      openChat.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+    )
+    expect(opened).toHaveLength(before)
+
+    // Filtered to this stream, the participant row no longer repeats the stream's title and step.
+    const row = view.container.querySelector('[data-activity-column="summary"]')!
+    expect(row.querySelector('[data-activity-context]')).toBeNull()
+    expect(row.textContent).toBe('Renewing the claim')
     await dom.act(() => view.root.unmount())
   } finally {
     await dom.cleanup()
@@ -509,9 +673,80 @@ test('without server cards the strip keeps the plain stream count', async () => 
       )
     )
     expect(view.container.textContent).toContain('3 active streams')
-    expect(view.container.querySelector('[data-testid="activity-work-strip"]')).toBeNull()
+    expect(view.container.querySelector('[data-testid="activity-work-list"]')).toBeNull()
     await dom.act(() => view.root.unmount())
   } finally {
+    await dom.cleanup()
+  }
+})
+
+test('a clipped chat row expands in place to its full message, and only the button toggles it', async () => {
+  const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const at = '2026-11-20T14:27:00.000Z'
+  const clipped = (id: string, messageId: string): SquadActivityItem => ({
+    id,
+    at,
+    agentId: 'engineer',
+    agentTypeId: 'engineer',
+    kind: 'message',
+    summary: 'One failure: an existing test asserting own comments create no delivery row. Renewing the c…',
+    preview: [
+      { text: 'One failure: an existing test asserting own comments create no delivery row. Renewing the c' },
+      { text: '…' },
+    ],
+    ref: { type: 'agent', agentId: 'engineer', view: 'chat', messageId },
+  })
+  const short: SquadActivityItem = { ...clipped('10:short', 'm-short'), preview: [{ text: 'Short and whole' }] }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const message = (id: string, createdAt: string) => ({
+    id,
+    agentId: 'engineer',
+    role: 'assistant',
+    content: 'One failure: an existing test asserting own comments create no delivery row. Renewing the claim **now**.',
+    createdAt,
+  })
+  client.setQueryData(['agents', 'message', 'engineer', 'm-full'], message('m-full', at))
+  // Mid-step the row links the previous message: that one is not this row's text.
+  client.setQueryData(['agents', 'message', 'engineer', 'm-old'], message('m-old', '2026-11-20T14:20:00.000Z'))
+  const opened: SquadActivityItem[] = []
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <ActivityFeedView
+              {...feedProps}
+              items={[clipped('10:full', 'm-full'), clipped('10:live', 'm-old'), short]}
+              onOpen={(item) => opened.push(item)}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    const rows = [...view.container.querySelectorAll('li')]
+    expect(rows[2].querySelector('[data-activity-row-expand]')).toBeNull()
+    const toggle = rows[0].querySelector<HTMLButtonElement>('[data-activity-row-expand]')!
+    expect(toggle.textContent).toBe('Show more')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await dom.act(() => toggle.click())
+    expect(opened).toHaveLength(0)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toBe('Show less')
+    const full = rows[0].querySelector('[data-activity-row-full]')!
+    expect(toggle.getAttribute('aria-controls')).toBe(full.id)
+    expect(full.textContent).toContain('Renewing the claim now.')
+    expect(full.querySelector('strong')?.textContent).toBe('now')
+    await dom.act(() => toggle.click())
+    expect(rows[0].querySelector('[data-activity-row-full]')).toBeNull()
+
+    const live = rows[1].querySelector<HTMLButtonElement>('[data-activity-row-expand]')!
+    await dom.act(() => live.click())
+    expect(rows[1].textContent).toContain('This step is still writing; open the chat for the latest text.')
+    await dom.act(() => view.root.unmount())
+  } finally {
+    client.clear()
     await dom.cleanup()
   }
 })

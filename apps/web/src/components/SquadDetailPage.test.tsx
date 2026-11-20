@@ -289,7 +289,7 @@ test('cold squad Home keeps real navigation and static sections with local place
 
 test('cold squad Work keeps filters instead of a generic page skeleton or premature empty state', () => {
   const html = renderSquadDetail({ loading: true, entry: `/squads/${squad.id}/work` })
-  expect(html).toContain('Work stream filters')
+  expect(html).toContain('data-testid="work-stream-filters"')
   expect(html).toContain('Loading active work streams')
   expect(html).not.toContain('No work streams yet')
 })

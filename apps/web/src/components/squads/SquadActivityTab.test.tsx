@@ -811,11 +811,14 @@ describe('background presence (operator decisions 2026-08-27)', () => {
         ],
       },
     })
-    expect(withCards).toContain('data-testid="activity-work-strip"')
-    expect(withCards).toContain('#7 Squad stream')
-    expect(withCards).toContain('Waiting on you: review')
+    expect(withCards).toContain('data-testid="activity-work-list"')
+    expect(withCards).toContain('Squad stream')
+    expect(withCards).toContain('Waiting on you: review · Review')
     expect(withCards).toContain('PR #5 · CI passing')
     expect(withCards).not.toContain('active streams')
+    // The list's header counts its rows; the working agent is on no listed stream, so it is counted apart.
+    expect(withCards).toContain('1 waiting on you')
+    expect(withCards).toContain('1 other agent working')
 
     // Idle roster: gray dot, zero counts, no live dots.
     const quiet = staticRender([], false, { agents: [agent] })

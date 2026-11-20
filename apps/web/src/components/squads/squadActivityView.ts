@@ -1,5 +1,14 @@
 import type { AuthIdentity } from '@ficus/client-core'
-import type { ActivityWorkStreamCard, SquadActivityItem, SquadActivityKind, WorkStreamWaitType } from '@ficus/shared'
+import {
+  ACTIVITY_WORK_STREAM_CARD_STATE_LABELS,
+  activityStepLabel,
+  activityWorkStreamCardState,
+  type ActivityWorkStreamCard,
+  type ActivityWorkStreamCardState,
+  type SquadActivityItem,
+  type SquadActivityKind,
+  type WorkStreamWaitType,
+} from '@ficus/shared'
 
 /**
  * Kind toggles as the user sees them (2026-08-27 audit): the three
@@ -123,10 +132,43 @@ export function activityExternalHref(value: string): string | undefined {
   }
 }
 
-/* Active work strip labels (ActivityWorkStrip.tsx). */
+/* Active work list labels (ActivityWorkList.tsx). */
 
-/** Cards shown before "+N more" (operator request 2026-11-20: "about six"). */
-export const ACTIVE_WORK_VISIBLE_CARDS = 6
+/** Rows shown before "Show N more" (owner decision 2026-11-20: a compact list, about five rows). */
+export const ACTIVE_WORK_VISIBLE_ROWS = 5
+
+/** Header order of the row states: what needs a person first, then what moves, then what does not. */
+export const ACTIVE_WORK_STATE_ORDER: readonly ActivityWorkStreamCardState[] = [
+  'needs-you',
+  'working',
+  'waiting',
+  'paused',
+  'queued',
+  'idle',
+]
+
+/** How many rows are in each state: the header counts exactly what the rows show. */
+export function activityWorkCounts(
+  cards: readonly ActivityWorkStreamCard[]
+): Record<ActivityWorkStreamCardState, number> {
+  const counts = { 'needs-you': 0, working: 0, waiting: 0, paused: 0, queued: 0, idle: 0 }
+  for (const card of cards) counts[activityWorkStreamCardState(card)] += 1
+  return counts
+}
+
+/**
+ * A row's state line: the state ("Working", "Paused", "Waiting on you: review", "Waiting: dependency")
+ * then the step when it adds something ("Working · Implement"). The step label is normalized, so
+ * `implement` and `Implement` read the same.
+ */
+export function activityWorkStateLine(card: ActivityWorkStreamCard): { state: string; step: string | null } {
+  const kind = activityWorkStreamCardState(card)
+  const waits = activityCardWaitLabel(card)
+  const state =
+    (kind === 'needs-you' || kind === 'waiting') && waits ? waits : ACTIVITY_WORK_STREAM_CARD_STATE_LABELS[kind]
+  const step = activityStepLabel(card.step)
+  return { state, step: step && step !== state && step !== 'Paused' ? step : null }
+}
 
 const WAIT_LABELS: Record<WorkStreamWaitType, string> = {
   review: 'review',

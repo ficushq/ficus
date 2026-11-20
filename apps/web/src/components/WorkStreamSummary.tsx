@@ -14,7 +14,10 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react'
+import { Link } from 'react-router'
+import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import {
+  activityStepLabel,
   visibleWorkStreamSummary,
   workStreamDeliveryCiState,
   workStreamTitle,
@@ -37,8 +40,8 @@ export const GENERATED_SUMMARY_TITLE = "Generated summary of the participants' r
 /** Hovering a row this long opens its peek card ("about half a second"). */
 export const WORK_STREAM_PEEK_OPEN_DELAY_MS = 500
 
-/** The lists that remember their own "Show summaries" choice. */
-export type WorkStreamSummarySurface = 'feed' | 'home' | 'work'
+/** The lists that remember their own "Summaries" choice. */
+export type WorkStreamSummarySurface = 'feed' | 'home' | 'work' | 'activity'
 
 export function workStreamSummariesStorageKey(surface: WorkStreamSummarySurface): string {
   return `${WORK_STREAM_SUMMARIES_STORAGE_PREFIX}${surface}`
@@ -100,37 +103,46 @@ export function useShowWorkStreamSummaries(
   return [show, setShow] as const
 }
 
-/** The "Show summaries" switch for a list's view or filter menu. */
+/**
+ * The "Summaries" control every work list shows beside its other view controls (the Active section
+ * header on Feed, Home and Work, the Active work header on Activity): a compact switch the height of
+ * the List / Kanban / Graph control, with an accessible name that says what it toggles.
+ */
 export function ShowSummariesSwitch({ surface, className }: { surface: WorkStreamSummarySurface; className?: string }) {
   const [show, setShow] = useShowWorkStreamSummaries(surface)
   return (
-    <label
-      className={clsx(
-        'flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-secondary',
-        className
-      )}
-    >
+    <div className={clsx('inline-flex shrink-0 rounded-lg bg-surface-secondary p-0.5', className)}>
       <button
         type="button"
         role="switch"
         aria-checked={show}
+        aria-label="Show work stream summaries"
+        title={
+          show
+            ? 'Hide the one-line summary under each active stream'
+            : 'Show a one-line summary under each active stream'
+        }
         onClick={() => setShow(!show)}
-        className={clsx(
-          'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
-          show ? 'bg-accent' : 'bg-th-border'
-        )}
+        className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium text-secondary transition-colors hover:bg-surface-hover hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
         data-testid={`show-summaries-${surface}`}
       >
         <span
           aria-hidden
           className={clsx(
-            'inline-block h-4 w-4 transform rounded-full bg-surface transition-transform',
-            show ? 'translate-x-4' : 'translate-x-0'
+            'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors',
+            show ? 'bg-accent' : 'bg-th-border'
           )}
-        />
+        >
+          <span
+            className={clsx(
+              'inline-block h-2.5 w-2.5 rounded-full bg-surface transition-transform',
+              show ? 'translate-x-3' : 'translate-x-0.5'
+            )}
+          />
+        </span>
+        Summaries
       </button>
-      Show summaries
-    </label>
+    </div>
   )
 }
 
@@ -291,9 +303,10 @@ export function WorkStreamPeekCard({
   agentMap?: Map<string, PeekAgent>
   agentTypeNames?: Map<string, string>
 }) {
+  const { slugFor } = useSquadSlugs()
   const summary = workStreamSummaryFor(workStream)
   const facts = workStreamPeekFacts(workStream)
-  const step = workStream.step ?? (workStream.status === 'queued' ? 'Queued' : null)
+  const step = activityStepLabel(workStream.step) ?? (workStream.status === 'queued' ? 'Queued' : null)
   const participants = (workStream.agentIds ?? []).flatMap((id) => {
     const agent = agentMap?.get(id)
     return agent ? [agent] : []
@@ -363,12 +376,29 @@ export function WorkStreamPeekCard({
             <div className="flex gap-2">
               <dt className="w-20 shrink-0 text-muted">Participants</dt>
               <dd className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-secondary">
-                {participants.map((agent) => (
-                  <span key={agent.id} className="inline-flex items-center gap-1">
-                    <AgentActivityDot status={agent.status} />
-                    {typeLabel(agent.agentTypeId, agentTypeNames)}
-                  </span>
-                ))}
+                {participants.map((agent) => {
+                  const name = typeLabel(agent.agentTypeId, agentTypeNames)
+                  return (
+                    // The same agent chat link as a row's subtitle: a plain click opens the chat, and
+                    // Shift- or Alt/Option-click opens it in a floating window (FloatingWindows).
+                    <Link
+                      key={agent.id}
+                      to={`/squads/${slugFor(workStream.squadId)}/agents?agent=${agent.id}`}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-xs hover:text-link-hover hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+                      title={`Open ${name} agent thread`}
+                      data-testid="work-stream-peek-participant"
+                      onClick={(event) => {
+                        // The card is portaled from inside the row: keep the row's own click (open the
+                        // stream) from running too, and close the card as following a link would.
+                        event.stopPropagation()
+                        peek.hover.hide()
+                      }}
+                    >
+                      <AgentActivityDot status={agent.status} />
+                      {name}
+                    </Link>
+                  )
+                })}
               </dd>
             </div>
           )}

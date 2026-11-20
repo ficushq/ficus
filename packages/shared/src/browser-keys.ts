@@ -39,8 +39,10 @@ export const LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY = 'ficus-theme-local-overri
 
 /** Work stream list/kanban/graph choice: `${prefix}${squadId}` and `${prefix}home.${squadId}`. */
 export const WORK_STREAM_VIEW_STORAGE_PREFIX = 'ficus.wsView.'
-/** "Show summaries" on a work list: `${prefix}${surface}` (feed, home, work), `'true'` or `'false'`; on when unset. */
+/** "Summaries" on a work list: `${prefix}${surface}` (feed, home, work, activity), `'true'` or `'false'`; on when unset. */
 export const WORK_STREAM_SUMMARIES_STORAGE_PREFIX = 'ficus.wsSummaries.'
+/** Activity's Active work list shows every card (`'true'`) or the first few (unset or `'false'`). */
+export const ACTIVITY_WORK_EXPANDED_STORAGE_KEY = 'ficus.activityWork.expanded'
 /** Remembered skeleton counts: `${prefix}.${scope}.${surface}`. */
 export const LOADING_SHAPE_STORAGE_PREFIX = 'ficus.loadingShape.v1'
 export const DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY = 'ficus.devBackend.shapeScope'
@@ -91,7 +93,7 @@ export const OAUTH_CALLBACK_REASON_STATE_KEY = 'ficusOAuthCallbackReason'
 export const REFERENCE_PREVIEW_OPEN_EVENT = 'ficus:reference-preview-open'
 /** window Event: a work stream view choice changed in this tab. */
 export const WORK_STREAM_VIEW_CHANGED_EVENT = 'ficus:work-stream-view-changed'
-/** window Event: a list's "Show summaries" choice changed in this tab (detail: the surface). */
+/** window Event: a list's "Summaries" choice changed in this tab (detail: the surface). */
 export const WORK_STREAM_SUMMARIES_CHANGED_EVENT = 'ficus:work-stream-summaries-changed'
 /** postMessage `type` from artifact frames to the voice workspace (push-to-talk key held/released). */
 export const VOICE_HOLD_KEYDOWN_MESSAGE = 'ficus:voice-hold-keydown'
