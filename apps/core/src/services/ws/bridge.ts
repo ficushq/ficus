@@ -136,6 +136,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
   if (
     event === 'workStream.created' ||
     event === 'workStream.updated' ||
+    event === 'workStream.summaryUpdated' ||
     event === 'workStream.assigned' ||
     event === 'workStream.agentAdded' ||
     event === 'workStream.agentRemoved' ||

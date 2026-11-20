@@ -7,8 +7,8 @@ nothing is tracked, no wait is opened, and nothing blocks on them.
 ## The Lite model tier
 
 `config/model-tiers/lite.yaml` is the cheapest tier, for one-shot utility calls (suggestions, labels,
-short summaries). Its chain is Claude Haiku 4.5, then GPT-6 Luna, then the cheapest zai model, all
-without thinking. It appears in **Settings → Agents → Model tiers** like any other tier and can be
+short summaries). Reply suggestions and [work stream summaries](work-stream-summaries.md) use it. Its
+chain is Claude Haiku 4.5, then GPT-6 Luna, then the cheapest zai model, all without thinking. It appears in **Settings → Agents → Model tiers** like any other tier and can be
 edited there. No shipped agent type uses it.
 
 One-shot calls go through `completeWithTier` (`apps/core/src/services/model-tiers/`). It walks the

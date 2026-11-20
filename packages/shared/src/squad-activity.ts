@@ -212,8 +212,13 @@ export interface ActivityWorkStreamCard {
   workingAgentIds: string[]
   /** Newest of the bound participants' latest Activity row and the stream's last update (ISO). */
   lastEventAt: string
-  /** Reserved for the one-line stream summary a later change adds; absent today. */
+  /**
+   * The stream's one-line summary (docs/wiki/work-stream-summaries.md), only while it was generated
+   * for `step` and the instance switch is on; absent otherwise.
+   */
   summary?: string | null
+  /** ISO time `summary` was generated; present with it. */
+  summaryGeneratedAt?: string
 }
 
 /** Permission-filtered presence summary for the cross-squad activity feed. */

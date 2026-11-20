@@ -1,3 +1,4 @@
+import { loadWorkStreamStepPresentation } from '../services/stream-summaries/presentation'
 import { bindLinearSessionForEvent } from '../services/integrations/linear/session-binding'
 import { publicErrorMessage } from '../db/errors'
 import {
@@ -141,11 +142,13 @@ async function routeWorkStreamSquadId(c: Context): Promise<string | null> {
   }
 }
 
-async function annotateWorkStreams(streams: WorkStream[]) {
-  const [runtimes, priorityAnnotations, derived] = await Promise.all([
+/** `identity` is the viewer: some annotations (the stream summary) depend on what it may read. */
+async function annotateWorkStreams(streams: WorkStream[], identity: Identity | undefined) {
+  const [runtimes, priorityAnnotations, derived, steps] = await Promise.all([
     WorkStream.computeRuntimes(streams),
     computePriorityAnnotations(streams),
     computeDerivedStates(streams),
+    loadWorkStreamStepPresentation(streams, identity),
   ])
   // Only the integrations a flow subscribes to, not the whole flow state: this runs for every
   // row of every list.
@@ -179,11 +182,12 @@ async function annotateWorkStreams(streams: WorkStream[]) {
     ...(priorityAnnotations.get(stream.id) ?? {}),
     ...(derived.get(stream.id) ?? {}),
     ...(automatedReviewGates.has(stream.id) ? { automatedReviewGate: true } : {}),
+    ...(steps.get(stream.id) ?? {}),
   }))
 }
 
-async function serializeCanonicalWorkStreams(streams: WorkStream[]) {
-  return sortCanonicalWorkStreams(await annotateWorkStreams(streams))
+async function serializeCanonicalWorkStreams(streams: WorkStream[], identity: Identity | undefined) {
+  return sortCanonicalWorkStreams(await annotateWorkStreams(streams, identity))
 }
 
 const ALL_STATUSES: WorkStreamStatus[] = ['active', 'queued', 'done', 'canceled']
@@ -319,9 +323,9 @@ async function orderNonTerminalCandidates(
   )
 }
 
-async function serializeSnapshotPage(orderedIds: string[]) {
+async function serializeSnapshotPage(orderedIds: string[], identity: Identity | undefined) {
   const rows = await WorkStream.listSnapshotRowsByIds(orderedIds)
-  const annotated = await annotateWorkStreams(rows)
+  const annotated = await annotateWorkStreams(rows, identity)
   const byId = new Map(annotated.map((row) => [row.id, row]))
   return orderedIds.flatMap((id) => {
     const row = byId.get(id)
@@ -569,7 +573,7 @@ export const workStreamsRouter = new Hono()
       status,
       squadIds: accessible === 'all' ? undefined : accessible,
     })
-    return c.json(await serializeCanonicalWorkStreams(streams))
+    return c.json(await serializeCanonicalWorkStreams(streams, identity))
   })
   .get('/', requireWorkStreamListPermission, async (c) => {
     const squadId = c.req.query('squadId')
@@ -807,7 +811,10 @@ export const workStreamsRouter = new Hono()
           advancedOrdinal = consumedOrdinalRows[consumedOrdinalRows.length - 1]!.ordinal + 1
           nonTerminalItems = [
             ...nonTerminalItems,
-            ...(await serializeSnapshotPage(consumedOrdinalRows.map((row) => row.workStreamId))),
+            ...(await serializeSnapshotPage(
+              consumedOrdinalRows.map((row) => row.workStreamId),
+              identity
+            )),
           ]
         }
         const nonTerminalPending = advancedOrdinal < snapshot.nonTerminalCount
@@ -865,7 +872,7 @@ export const workStreamsRouter = new Hono()
         const accessibleSet = new Set(accessibleSquadIds)
         streams = streams.filter((stream) => accessibleSet.has(stream.squadId))
       }
-      return c.json(completeVolatilePage(rows(await serializeCanonicalWorkStreams(streams))))
+      return c.json(completeVolatilePage(rows(await serializeCanonicalWorkStreams(streams, identity))))
     }
 
     if (squadId) {
@@ -875,7 +882,7 @@ export const workStreamsRouter = new Hono()
         statuses,
       })
       const attended = respectAttention ? await filterToAttendedStreams(identity, streams) : streams
-      return c.json(rows(await serializeCanonicalWorkStreams(attended)))
+      return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))
     }
 
     // No squadId — filtered-list
@@ -887,7 +894,7 @@ export const workStreamsRouter = new Hono()
     const requestedStreams = requestedSet ? streams.filter((stream) => requestedSet.has(stream.squadId)) : streams
     const filtered = await filterToAccessibleSquads(identity, requestedStreams, (s) => s.squadId ?? null)
     const attended = respectAttention ? await filterToAttendedStreams(identity, filtered) : filtered
-    return c.json(rows(await serializeCanonicalWorkStreams(attended)))
+    return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))
   })
   .post('/:id/feed-seen', zValidator('json', z.object({ completedAt: z.iso.datetime() })), async (c) => {
     const identity: Identity = c.get('identity')
@@ -1081,6 +1088,8 @@ export const workStreamsRouter = new Hono()
       const runtime = (await WorkStream.computeRuntimes([stream])).get(stream.id)
       const priorityAnnotations = (await computePriorityAnnotations([stream])).get(stream.id) ?? {}
       const derived = (await computeDerivedStates([stream])).get(stream.id) ?? {}
+      const stepPresentation =
+        (await loadWorkStreamStepPresentation([stream], c.get('identity') as Identity | undefined)).get(stream.id) ?? {}
       // Full audit trail (every wait, open + closed, newest first); reviewHistory
       // is the review-typed subset, so one query feeds both.
       const waitHistory = (await listWaitHistory(db, stream.id)).map(toWaitJson)
@@ -1099,6 +1108,7 @@ export const workStreamsRouter = new Hono()
         requestingUserName,
         ...priorityAnnotations,
         ...derived,
+        ...stepPresentation,
         reviewHistory,
         reviewRounds,
         waitHistory,

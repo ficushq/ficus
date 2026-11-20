@@ -63,7 +63,8 @@ interface ActivityWorkStreamCard {
   deliveryLabel: string | null // "Awaiting CI", "Review Pull Request", …
   workingAgentIds: string[] // bound participants with status active
   lastEventAt: string // ISO
-  summary?: string | null // reserved for the one-line stream summary; absent today
+  summary?: string | null // the stream's one-line summary; see work-stream-summaries.md
+  summaryGeneratedAt?: string // ISO, present with summary
 }
 ```
 
@@ -71,6 +72,7 @@ interface ActivityWorkStreamCard {
 - `waits[].type` is the display type (`workStreamWaitDisplayType`, so a workflow approval gate reads `review`); `needsYou` uses `workStreamWaitNeedsHuman`, the per-wait half of `workStreamNeedsHumanAttention`.
 - `pullRequest` comes from the stream's code-host binding (`resolveCodeHostReference`) with the state observed by delivery tracking. `ci` and `deliveryLabel` come only from the server's delivery presentation (`delivery.explanation.gates.checksState` and `codeHostReason`), so they are null before a flow reaches completion-ready. An individual successful CI run is never reported as passing.
 - `workingAgentIds` is empty unless the viewer has `agents:read` in the stream's squad.
+- `summary` is the stream's one-line summary, only while the instance switch is on and it was generated for the card's `step` ([Work stream summaries](work-stream-summaries.md)).
 - `lastEventAt` is the later of the stream's `updatedAt` and its bound participants' newest retained Activity row (participants' rows only with `agents:read`). The participant lookup is one `LIMIT 1` probe of `idx_squad_activity_agent` per participant (`workStreamLastEventsSql`). The stream's own rows are not read: no index orders them by time, and the events that matter (PR and CI notices, handoffs) also reach a participant's inbox.
 
 The web strip (`apps/web/src/components/squads/ActivityWorkStrip.tsx`) shows six cards (`ACTIVE_WORK_VISIBLE_CARDS`) and a "+N more" link, which opens the squad's Work tab (or the Feed when cards span several squads). A selected card beyond the first six stays visible. Each card shows working dots, number and title, the step and wait line ("Waiting on you: review" in attention color when a person must act, otherwise "Waiting: dependency"), an optional summary line, the PR/CI line ("PR #996 · CI failing", followed by a delivery label that is not about CI), and the last event time. Clicking a card sets the work stream filter; clicking it again, or **Clear** beside the counts, removes it. Narrow widths scroll the cards horizontally; from the `lg` breakpoint they sit in a three-column grid (six columns from `2xl`), with "+N more" right-aligned below them. The "working" and "waiting on you" counts stay; the plain "N active streams" count shows only when the server sends no cards. Per-agent presence chips remain out of scope (operator decision 2026-08-27); this strip is per stream. Presence costs several queries, so clients refetch it only for live rows that can change a card (`ACTIVITY_PRESENCE_ROW_KINDS`: work stream, wait, handoff, PR and issue rows), debounced. Agent status changes already refresh it through the agents topic (`QueryInvalidator` invalidates the `presence` prefix, which covers the squad key), and a 30-second poll covers the rest. Chat steps and messages refresh only the feed. Presence also sorts and caps the cards before reading their steps, so a request reads at most 12 flow runs, and none whose version is cached.

@@ -1,5 +1,5 @@
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import clsx from 'clsx'
 import type { Agent, WorkStream } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
@@ -11,7 +11,9 @@ import {
   WORK_STREAM_GRAPH_NODE_HEIGHT,
   WORK_STREAM_GRAPH_NODE_WIDTH,
   type WorkStreamGraphEdgeLayout,
+  type WorkStreamGraphNodeLayout,
 } from '../lib/workStreamGraphLayout'
+import { useWorkStreamPeek, WorkStreamPeekCard } from './WorkStreamSummary'
 
 interface WorkStreamGraphProps {
   workStreams: WorkStream[]
@@ -97,68 +99,15 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
               </path>
             )
           })}
-          {layout.nodes.map((node) => {
-            const stream = streamById.get(node.id)!
-            const storedPriority = stream.priority ?? 'normal'
-            const effectivePriority = stream.effectivePriority ?? storedPriority
-            const boosted = effectivePriority !== storedPriority
-            const assignee = stream.assigneeAgentId ? agentMap.get(stream.assigneeAgentId) : undefined
-            const assigneeLabel = assignee ? getAgentPrimaryLabel(assignee) : null
-            const assigneeInitial = assigneeLabel?.charAt(0).toUpperCase() ?? '—'
-            return (
-              <g
-                key={node.id}
-                role="button"
-                tabIndex={0}
-                aria-label={`Open ${stream.title}, ${workStreamStatusLabel(stream)}, ${effectivePriority} priority`}
-                onClick={() => onSelectWorkStream(stream.id)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    onSelectWorkStream(stream.id)
-                  }
-                }}
-                className="group cursor-pointer focus-visible:outline-hidden"
-              >
-                <foreignObject
-                  x={node.x}
-                  y={node.y}
-                  width={WORK_STREAM_GRAPH_NODE_WIDTH}
-                  height={WORK_STREAM_GRAPH_NODE_HEIGHT}
-                >
-                  <div
-                    className={clsx(
-                      'h-full rounded-lg border bg-surface p-3 transition-colors motion-reduce:transition-none hover:border-accent group-focus-visible:ring-2 group-focus-visible:ring-accent group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-surface',
-                      boosted
-                        ? 'border-status-external-wait-400 ring-2 ring-status-external-wait-400/50'
-                        : 'border-th-border',
-                      node.unresolved && 'border-dashed border-status-danger-400'
-                    )}
-                  >
-                    <div className="mb-2 truncate text-sm font-medium text-primary" title={stream.title}>
-                      {stream.title.length > 28 ? `${stream.title.slice(0, 28)}…` : stream.title}
-                    </div>
-                    <WorkStreamStatusBadges workStream={stream} />
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <Badge
-                        color={WS_PRIORITY_BADGE_COLORS[effectivePriority]}
-                        title={boosted ? `${storedPriority} → ${effectivePriority}` : undefined}
-                      >
-                        {boosted ? '↑ ' : ''}
-                        {effectivePriority}
-                      </Badge>
-                      <span
-                        className="ml-auto flex h-6 w-6 items-center justify-center rounded-full bg-status-human-wait-100 text-xs font-semibold text-status-human-wait-700 dark:bg-status-human-wait-900/50 dark:text-status-human-wait-200"
-                        aria-label={assigneeLabel ? `Assigned to ${assigneeLabel}` : 'Unassigned'}
-                      >
-                        {assigneeInitial}
-                      </span>
-                    </div>
-                  </div>
-                </foreignObject>
-              </g>
-            )
-          })}
+          {layout.nodes.map((node) => (
+            <WorkStreamGraphNode
+              key={node.id}
+              node={node}
+              stream={streamById.get(node.id)!}
+              agentMap={agentMap}
+              onSelectWorkStream={onSelectWorkStream}
+            />
+          ))}
         </svg>
       </div>
       <details className="text-xs text-muted">
@@ -183,5 +132,80 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
         </div>
       </details>
     </div>
+  )
+}
+
+/** One graph node: opens the stream on click or Enter, and its peek card on hover and focus. */
+function WorkStreamGraphNode({
+  node,
+  stream,
+  agentMap,
+  onSelectWorkStream,
+}: {
+  node: WorkStreamGraphNodeLayout
+  stream: WorkStream
+  agentMap: Map<string, Agent>
+  onSelectWorkStream: (id: string) => void
+}) {
+  const card = useRef<HTMLDivElement>(null)
+  const peek = useWorkStreamPeek()
+  const storedPriority = stream.priority ?? 'normal'
+  const effectivePriority = stream.effectivePriority ?? storedPriority
+  const boosted = effectivePriority !== storedPriority
+  const assignee = stream.assigneeAgentId ? agentMap.get(stream.assigneeAgentId) : undefined
+  const assigneeLabel = assignee ? getAgentPrimaryLabel(assignee) : null
+  const assigneeInitial = assigneeLabel?.charAt(0).toUpperCase() ?? '—'
+  const select = () => {
+    peek.hover.hide()
+    onSelectWorkStream(stream.id)
+  }
+  return (
+    <g
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${stream.title}, ${workStreamStatusLabel(stream)}, ${effectivePriority} priority`}
+      onClick={select}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          select()
+        }
+      }}
+      className="group cursor-pointer focus-visible:outline-hidden"
+      {...peek.pointerHandlers}
+      {...peek.focusHandlers}
+    >
+      <foreignObject x={node.x} y={node.y} width={WORK_STREAM_GRAPH_NODE_WIDTH} height={WORK_STREAM_GRAPH_NODE_HEIGHT}>
+        <div
+          ref={card}
+          className={clsx(
+            'h-full rounded-lg border bg-surface p-3 transition-colors motion-reduce:transition-none hover:border-accent group-focus-visible:ring-2 group-focus-visible:ring-accent group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-surface',
+            boosted ? 'border-status-external-wait-400 ring-2 ring-status-external-wait-400/50' : 'border-th-border',
+            node.unresolved && 'border-dashed border-status-danger-400'
+          )}
+        >
+          <div className="mb-2 truncate text-sm font-medium text-primary" title={stream.title}>
+            {stream.title.length > 28 ? `${stream.title.slice(0, 28)}…` : stream.title}
+          </div>
+          <WorkStreamStatusBadges workStream={stream} />
+          <div className="mt-1 flex items-center gap-1.5">
+            <Badge
+              color={WS_PRIORITY_BADGE_COLORS[effectivePriority]}
+              title={boosted ? `${storedPriority} → ${effectivePriority}` : undefined}
+            >
+              {boosted ? '↑ ' : ''}
+              {effectivePriority}
+            </Badge>
+            <span
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded-full bg-status-human-wait-100 text-xs font-semibold text-status-human-wait-700 dark:bg-status-human-wait-900/50 dark:text-status-human-wait-200"
+              aria-label={assigneeLabel ? `Assigned to ${assigneeLabel}` : 'Unassigned'}
+            >
+              {assigneeInitial}
+            </span>
+          </div>
+          <WorkStreamPeekCard peek={peek} workStream={stream} anchor={card} agentMap={agentMap} />
+        </div>
+      </foreignObject>
+    </g>
   )
 }

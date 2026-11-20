@@ -2,6 +2,7 @@ import { StructuredInputActions } from './StructuredInputActions'
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
 import { workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
+import { WorkStreamNowLine } from './WorkStreamSummary'
 import { workStreamWaitBadge } from '../lib/workStreamStatusPresentation'
 export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workStreamGithub'
@@ -302,6 +303,8 @@ export function WorkStreamDetailModal({
       maxWidth="readable"
     >
       <div className="space-y-6 text-sm [&>details:not([open])+div:last-child]:mt-3!">
+        {/* What is happening now: under the title, above the waits. */}
+        <WorkStreamNowLine workStream={workStream} />
         {workStream.status !== 'done' && workStream.status !== 'canceled' && (
           <WorkStreamPauseControls stream={workStream} controls={pauseControls} />
         )}

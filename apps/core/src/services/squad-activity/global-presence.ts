@@ -9,6 +9,7 @@ import {
   type ActivityWorkStreamCard,
   type GlobalActivityPresence,
   type WorkStreamDeliveryPresentation,
+  workStreamDeliveryCiState,
 } from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -19,6 +20,7 @@ import { computeDerivedStates } from '../work-streams/derived-state'
 import { resolveGlobalActivityAccess, resolveSquadActivityAccess } from './access'
 import type { GlobalActivitySquadAccess } from './global-activity'
 import { loadWorkStreamSteps } from './row-context'
+import { presentWorkStreamSummary, streamSummariesEnabled } from '../stream-summaries/visibility'
 import { activityRetentionFloor } from '../squad/activity-cursor'
 
 /**
@@ -39,19 +41,8 @@ export async function projectSquadActivityPresence(
   return access ? projectActivityPresence(identity, [{ squadId, access }]) : null
 }
 
-type CiState = ActivityWorkStreamCard['ci']
-
-/** Aggregate CI from delivery tracking only: an individual successful run is not proof the PR is green. */
-export function deliveryCiState(delivery: WorkStreamDeliveryPresentation | undefined): CiState {
-  const checks = delivery?.explanation?.gates?.checksState
-  if (checks === 'success') return 'passing'
-  if (checks === 'failure') return 'failing'
-  if (checks === 'pending') return 'pending'
-  const reason = delivery?.explanation?.codeHostReason
-  if (reason === 'ci-failed') return 'failing'
-  if (reason === 'ci-pending') return 'pending'
-  return null
-}
+/** Aggregate CI from delivery tracking only (shared with clients as `workStreamDeliveryCiState`). */
+export const deliveryCiState = workStreamDeliveryCiState
 
 function deliveryLabel(delivery: WorkStreamDeliveryPresentation | undefined): string | null {
   if (!delivery) return null
@@ -195,18 +186,24 @@ async function buildWorkStreamCards(
     )
     .slice(0, ACTIVITY_WORK_STREAM_CARD_LIMIT)
   const steps = await loadWorkStreamSteps(shown)
+  const summariesEnabled = streamSummariesEnabled()
 
   return shown.map((stream): ActivityWorkStreamCard => {
     const presentation = derived.get(stream.id)
     const openWaits = presentation?.openWaits ?? []
     const delivery = presentation?.delivery
+    const step = steps.get(stream.id) ?? null
+    // The summary paraphrases participants' chat, so it needs agents:read like their Activity rows.
+    const summary = agentReadableSquads.has(stream.squadId)
+      ? presentWorkStreamSummary(stream.metadata, { status: stream.status, step }, summariesEnabled)
+      : undefined
     return {
       id: stream.id,
       number: stream.number,
       squadId: stream.squadId,
       title: stream.title,
       status: stream.status,
-      step: steps.get(stream.id) ?? null,
+      step,
       waits: openWaits.map((wait) => ({
         type: workStreamWaitDisplayType(wait),
         needsYou: workStreamWaitNeedsHuman(wait, { openWaits, delivery }),
@@ -217,6 +214,7 @@ async function buildWorkStreamCards(
       deliveryLabel: deliveryLabel(delivery),
       workingAgentIds: workingByStream.get(stream.id) ?? [],
       lastEventAt: lastEventAt(stream),
+      ...(summary ? { summary: summary.text, summaryGeneratedAt: summary.generatedAt } : {}),
     }
   })
 }

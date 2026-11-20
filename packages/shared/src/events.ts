@@ -175,6 +175,8 @@ export type EventMap = {
   // Absent/null means a user, the system, or an unknown caller — notify everyone.
   'workStream.created': { workStreamId: string; squadId: string }
   'workStream.updated': { workStreamId: string; squadId: string }
+  /** The stream's one-line summary changed. Content-free: clients refetch the stream. */
+  'workStream.summaryUpdated': { workStreamId: string; squadId: string }
   'workStream.assigned': { workStreamId: string; squadId: string; agentId: string; actorAgentId?: string | null }
   'workStream.agentAdded': { workStreamId: string; squadId: string; agentId: string }
   'workStream.agentRemoved': { workStreamId: string; squadId: string; agentId: string }

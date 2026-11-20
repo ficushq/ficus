@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Link } from 'react-router'
 import type { ActivityWorkStreamCard } from '@ficus/shared'
+import { GENERATED_SUMMARY_TITLE } from '../WorkStreamSummary'
 import {
   ACTIVE_WORK_VISIBLE_CARDS,
   activityCardDeliveryLabel,
@@ -89,7 +90,11 @@ export function ActivityWorkStrip({ cards, total, selectedId, onSelect, moreHref
                     )}
                   </span>
                 </span>
-                {card.summary && <span className="line-clamp-1 text-secondary">{card.summary}</span>}
+                {card.summary && (
+                  <span className="line-clamp-1 text-secondary" title={GENERATED_SUMMARY_TITLE}>
+                    {card.summary}
+                  </span>
+                )}
                 <span className="flex min-w-0 items-center gap-2 text-muted">
                   <span
                     className={clsx(

@@ -40,6 +40,7 @@ import {
   WORK_STREAM_ADMITTED_STATUSES,
   workStreamSourceLinkKindSchema,
   DEFAULT_ATTENTION,
+  withoutStoredWorkStreamSummary,
   workStreamWaitActor,
 } from '@ficus/shared'
 import type {
@@ -2726,7 +2727,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       dependedOnBy: this.dependedOnBy,
       handoffMessage: this.handoffMessage,
       files: this.files,
-      metadata: this.metadata,
+      // The stored one-line summary is served only as `summary`, after its visibility rules.
+      metadata: withoutStoredWorkStreamSummary(this.metadata),
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
       completedAt: this.completedAt,

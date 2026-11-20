@@ -50,6 +50,7 @@ export * from './maintenance-compatibility'
 
 export * from './live-activity'
 export * from './squad-activity'
+export * from './work-stream-summary'
 export * from './inbox-delivery'
 
 export * from './local-instance'

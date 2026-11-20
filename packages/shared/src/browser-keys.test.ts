@@ -14,6 +14,7 @@ test('browser storage keys use the ficus names', () => {
   expect(keys.THEME_PRESET_OWNER_ID_STORAGE_KEY).toBe('ficus-theme-preset-owner-id')
   expect(keys.LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY).toBe('ficus-theme-local-override')
   expect(keys.WORK_STREAM_VIEW_STORAGE_PREFIX).toBe('ficus.wsView.')
+  expect(keys.WORK_STREAM_SUMMARIES_STORAGE_PREFIX).toBe('ficus.wsSummaries.')
   expect(keys.LOADING_SHAPE_STORAGE_PREFIX).toBe('ficus.loadingShape.v1')
   expect(keys.DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY).toBe('ficus.devBackend.shapeScope')
   expect(keys.ASSISTANT_POSITION_STORAGE_KEY).toBe('ficus-assistant-position')
@@ -30,6 +31,7 @@ test('browser storage keys use the ficus names', () => {
 test('in-page event and message names use the ficus names', () => {
   expect(keys.REFERENCE_PREVIEW_OPEN_EVENT).toBe('ficus:reference-preview-open')
   expect(keys.WORK_STREAM_VIEW_CHANGED_EVENT).toBe('ficus:work-stream-view-changed')
+  expect(keys.WORK_STREAM_SUMMARIES_CHANGED_EVENT).toBe('ficus:work-stream-summaries-changed')
   expect(keys.VOICE_HOLD_KEYDOWN_MESSAGE).toBe('ficus:voice-hold-keydown')
   expect(keys.VOICE_HOLD_KEYUP_MESSAGE).toBe('ficus:voice-hold-keyup')
   expect(keys.PRESENTATION_HTML_HEIGHT_MESSAGE).toBe('ficus:presentation-html-height')

@@ -1,6 +1,7 @@
 import { manualInputRequestSchema } from './recovery-waits'
 import { requestMetadataSchema } from './request-metadata'
 import { boundedRecord } from './zod-helpers'
+import { WORK_STREAM_SUMMARY_METADATA_KEY } from './work-stream-summary'
 import { z } from 'zod'
 import { WORK_STREAM_INPUT_ASSET_LIMIT, workStreamAssetSourceSchema } from './workstream-asset-attachments'
 import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
@@ -117,6 +118,19 @@ export const squadPresetWorkflowsSchema = z.strictObject({
   choices: squadWorkflowSetupSchema.shape.choices.default([]),
 })
 export type SquadPresetWorkflows = z.infer<typeof squadPresetWorkflowsSchema>
+
+/**
+ * Work stream metadata a client may write. The stored one-line summary is Core's alone: a client
+ * that could write it could show any text as a stream's summary (even deletion patches are refused).
+ */
+export const workStreamMetadataSchema = requestMetadataSchema.superRefine((metadata, ctx) => {
+  if (Object.prototype.hasOwnProperty.call(metadata, WORK_STREAM_SUMMARY_METADATA_KEY))
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [WORK_STREAM_SUMMARY_METADATA_KEY],
+      message: `metadata.${WORK_STREAM_SUMMARY_METADATA_KEY} is written only by Ficus`,
+    })
+})
 
 /** Authority lives in dedicated tables, never in generic metadata (even deletion patches). */
 export function hasReservedGitHubAuthorityMetadata(value: unknown): boolean {
@@ -347,7 +361,7 @@ export const createWorkStreamSchema = z
     requestingUserId: z.uuid().nullable().optional(),
     dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
-    metadata: requestMetadataSchema.optional().default({}),
+    metadata: workStreamMetadataSchema.optional().default({}),
     /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
     integrationEventId: z.uuid().optional(),
     completionMode: workStreamCompletionModeSchema.optional(),
@@ -376,7 +390,7 @@ export const updateWorkStreamSchema = z.object({
   dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional(),
   handoffMessage: z.string().nullable().optional(),
   files: z.array(z.string()).max(1000).optional(),
-  metadata: requestMetadataSchema.optional(),
+  metadata: workStreamMetadataSchema.optional(),
   nextSteps: z.string().min(1).optional(),
   completionMode: workStreamCompletionModeSchema.optional(),
   repository: z.string().min(1).optional(),
