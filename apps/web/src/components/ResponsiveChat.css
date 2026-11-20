@@ -19,8 +19,9 @@
   /* Ficus Desktop draws the macOS window controls natively over the title bar, above any
      web content, so a dialog can never cover them. The scrim still dims the whole window
      (keeping the header unclickable), but panels sit below the title bar instead of under
-     the controls. */
-  :root[data-desktop-shell='inset'] :is(.ficus-modal-backdrop, .mobile-chat-options) {
+     the controls. Any other full-window overlay (a dialog that does not use Modal) opts in with
+     .ficus-titlebar-reserve; floating windows reserve the same height in script (lib/desktopTitleBar). */
+  :root[data-desktop-shell='inset'] :is(.ficus-modal-backdrop, .mobile-chat-options, .ficus-titlebar-reserve) {
     --modal-top-reserve: var(--desktop-titlebar-height);
     padding-top: var(--modal-top-reserve);
   }

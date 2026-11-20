@@ -15,6 +15,7 @@ import {
   type Snap,
 } from '../lib/assistantWindow'
 import { registerFloatingWindow } from '../lib/floatingWindowRegistry'
+import { onDesktopTitleBarChange } from '../lib/desktopTitleBar'
 import { ASSISTANT_WINDOW_KEY } from '../lib/chatWindows'
 import { ASSISTANT_GUTTER, currentViewport, dockAssistant } from './useAssistantPosition'
 import { useStableRef } from './useStableRef'
@@ -148,13 +149,14 @@ export function useAssistantWindow(
         setStyle({ left: viewport.left + spot.x, top: viewport.top + spot.y, right: 'auto', bottom: 'auto' })
         return
       }
-      // The default: a card centered on the screen (the compact voice bar keeps the upper-center anchor),
-      // capped above the bottom edge (and keyboard).
+      // The default: a card centered on the screen below any reserved title-bar band (the compact voice
+      // bar keeps the upper-center anchor), capped above the bottom edge (and keyboard).
+      const band = Math.max(0, viewport.reservedTop ?? 0)
       const dock = small
         ? dockAssistant('center', viewport, box.width, box.height)
         : {
             left: viewport.left + Math.max(ASSISTANT_GUTTER, (viewport.width - box.width) / 2),
-            top: viewport.top + Math.max(ASSISTANT_GUTTER, (viewport.height - box.height) / 2),
+            top: viewport.top + band + Math.max(ASSISTANT_GUTTER, (viewport.height - band - box.height) / 2),
           }
       setStyle({
         ...dock,
@@ -166,11 +168,14 @@ export function useAssistantWindow(
     update()
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : undefined
     observer?.observe(ref.current)
+    // Entering or leaving fullscreen adds or removes the title bar, sometimes after the resize event.
+    const unsubscribeTitleBar = onDesktopTitleBarChange(update)
     window.addEventListener('resize', update)
     window.visualViewport?.addEventListener('resize', update)
     window.visualViewport?.addEventListener('scroll', update)
     return () => {
       observer?.disconnect()
+      unsubscribeTitleBar()
       window.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('scroll', update)

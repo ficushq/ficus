@@ -5,11 +5,20 @@ import { useAssistantWindow } from './useAssistantWindow'
 
 const STORAGE_KEY = 'ficus-assistant-window'
 
-async function setup({ small = false, initial }: { small?: boolean; initial?: unknown } = {}) {
+async function setup({
+  small = false,
+  initial,
+  desktopInset = false,
+}: { small?: boolean; initial?: unknown; desktopInset?: boolean } = {}) {
   const dom = await acquireDomHarness({
     url: 'http://localhost/',
     windowOptions: { innerWidth: 1200, innerHeight: 900 },
   })
+  if (desktopInset) {
+    // What useDesktopShellChrome and index.css set in a windowed Ficus Desktop with the inset title bar.
+    dom.window.document.documentElement.style.setProperty('--desktop-titlebar-height', '56px')
+    dom.window.document.documentElement.dataset.desktopShell = 'inset'
+  }
   const viewport = Object.assign(new dom.window.EventTarget(), {
     offsetLeft: 0,
     offsetTop: 0,
@@ -76,7 +85,14 @@ async function setup({ small = false, initial }: { small?: boolean; initial?: un
     await dom.act(async () => viewport.dispatchEvent(new dom.window.Event('resize')))
   }
   return {
-    dom,
+    dom: {
+      ...dom,
+      cleanup: async () => {
+        delete dom.window.document.documentElement.dataset.desktopShell
+        dom.window.document.documentElement.style.removeProperty('--desktop-titlebar-height')
+        await dom.cleanup()
+      },
+    },
     root,
     panel,
     pointer,
@@ -94,6 +110,27 @@ test('by default it is a card centered on the screen with its CSS size', async (
     expect(panel.style.top).toBe(`${(900 - 640) / 2}px`)
     expect(panel.style.width).toBe('')
     expect(panel.style.maxHeight).toBe(`${900 - (900 - 640) / 2 - 8}px`)
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('in Ficus Desktop the default card, a saved place and every snap stay below the title bar', async () => {
+  // A short window, where the centered card would otherwise reach up under the window buttons.
+  const { dom, panel, box, resizeViewport, saved } = await setup({
+    desktopInset: true,
+    initial: { rect: { x: 0, y: 0, w: 600, h: 400 } },
+  })
+  try {
+    // Saved before the title bar was reserved: drawn below it, and the saved place is left alone.
+    expect(box()).toEqual({ left: 8, top: 64, width: 600, height: 400 })
+    expect(saved()).toEqual({ rect: { x: 0, y: 0, w: 600, h: 400 } })
+    await dom.act(async () => panel.querySelector<HTMLButtonElement>('header button')!.click())
+    expect(box()).toEqual({ left: 8, top: 64, width: 588, height: 828 })
+    await dom.act(async () => panel.querySelectorAll<HTMLButtonElement>('header button')[1]!.click())
+    await resizeViewport(1200, 700)
+    expect(panel.style.top).toBe(`${56 + Math.max(8, (700 - 56 - 640) / 2)}px`)
+    expect(panel.style.maxHeight).toBe(`${700 - 64 - 8}px`)
   } finally {
     await dom.cleanup()
   }

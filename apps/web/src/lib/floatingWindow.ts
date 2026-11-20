@@ -2,7 +2,10 @@
  * Geometry shared by every floating window (the assistant and agent chat windows): free rectangles,
  * snapping to parts of the screen, resizing from any edge, and the drag-to-snap targets. Coordinates
  * are relative to the visual viewport, so an on-screen keyboard shrinks and lifts a window instead of
- * covering it. Pure functions only; the hooks and components draw and drive them.
+ * covering it. A viewport may reserve a band at its top (Ficus Desktop's title bar, where macOS draws the
+ * window buttons above the page): windows treat the bottom of that band as the top of the screen, so
+ * clamping, resizing, every snap and the drag targets all keep out of it. Pure functions only; the hooks
+ * and components draw and drive them.
  */
 
 export interface Rect {
@@ -25,6 +28,11 @@ export interface Point {
 export interface ViewportSize {
   width: number
   height: number
+  /**
+   * A band (px) at the top that windows keep out of: Ficus Desktop's title bar, where the native window
+   * buttons draw over the page (lib/desktopTitleBar). 0 or absent everywhere else.
+   */
+  reservedTop?: number
 }
 
 /** Space kept between a window and the screen edge. */
@@ -32,41 +40,47 @@ export const WINDOW_MARGIN = 8
 /** Space between snapped regions, as between neighbouring farm windows. */
 const SNAP_GAP = 8
 
+/** The reserved band at the top of the screen, if any. */
+function reserved(viewport: ViewportSize) {
+  return Math.max(0, viewport.reservedTop ?? 0)
+}
+
+/** The highest a window's top edge may be: below the reserved band, and a margin from it. */
+export function windowTop(viewport: ViewportSize): number {
+  return reserved(viewport) + WINDOW_MARGIN
+}
+
+/** The tallest a window may be: the screen below the reserved band, less a margin at each end. */
+function usableHeight(viewport: ViewportSize) {
+  return Math.max(0, viewport.height - reserved(viewport) - WINDOW_MARGIN * 2)
+}
+
 /** Keeps a window on screen and at least its minimum size (shrinking below it only on a small screen). */
 export function clampRect(rect: Rect, viewport: ViewportSize, min: Size): Rect {
   const maxW = Math.max(0, viewport.width - WINDOW_MARGIN * 2)
-  const maxH = Math.max(0, viewport.height - WINDOW_MARGIN * 2)
+  const maxH = usableHeight(viewport)
   const w = Math.min(maxW, Math.max(min.w, rect.w))
   const h = Math.min(maxH, Math.max(min.h, rect.h))
-  return {
-    x: Math.round(
-      Math.min(Math.max(WINDOW_MARGIN, rect.x), Math.max(WINDOW_MARGIN, viewport.width - w - WINDOW_MARGIN))
-    ),
-    y: Math.round(
-      Math.min(Math.max(WINDOW_MARGIN, rect.y), Math.max(WINDOW_MARGIN, viewport.height - h - WINDOW_MARGIN))
-    ),
-    w: Math.round(w),
-    h: Math.round(h),
-  }
+  return { ...clampPosition({ x: rect.x, y: rect.y, w, h }, viewport), w: Math.round(w), h: Math.round(h) }
 }
 
 /** Keeps something of a fixed size (the live-voice command bar) on screen, moving but never resizing it. */
 export function clampPosition(rect: Rect, viewport: ViewportSize): Rect {
+  const top = windowTop(viewport)
   return {
     ...rect,
     x: Math.round(
       Math.min(Math.max(WINDOW_MARGIN, rect.x), Math.max(WINDOW_MARGIN, viewport.width - rect.w - WINDOW_MARGIN))
     ),
-    y: Math.round(
-      Math.min(Math.max(WINDOW_MARGIN, rect.y), Math.max(WINDOW_MARGIN, viewport.height - rect.h - WINDOW_MARGIN))
-    ),
+    y: Math.round(Math.min(Math.max(top, rect.y), Math.max(top, viewport.height - rect.h - WINDOW_MARGIN))),
   }
 }
 
-/** A free rectangle of the same size, centered on the screen. */
+/** A free rectangle of the same size, centered on the screen (below any reserved band). */
 export function centerRect(size: Size, viewport: ViewportSize, min: Size): Rect {
+  const band = reserved(viewport)
   return clampRect(
-    { x: (viewport.width - size.w) / 2, y: (viewport.height - size.h) / 2, w: size.w, h: size.h },
+    { x: (viewport.width - size.w) / 2, y: band + (viewport.height - band - size.h) / 2, w: size.w, h: size.h },
     viewport,
     min
   )
@@ -144,9 +158,9 @@ export const SNAP_FRACTIONS: Record<Snap, [number, number, number, number]> = {
 /** The part of the screen a snap fills. */
 export function snapRect(snap: Snap, viewport: ViewportSize): Rect {
   const left = WINDOW_MARGIN
-  const top = WINDOW_MARGIN
+  const top = windowTop(viewport)
   const width = Math.max(0, viewport.width - WINDOW_MARGIN * 2)
-  const height = Math.max(0, viewport.height - WINDOW_MARGIN * 2)
+  const height = usableHeight(viewport)
   const half = (size: number) => (size - SNAP_GAP) / 2
   const third = (width - SNAP_GAP * 2) / 3
   const box = (x: number, y: number, w: number, h: number) => ({
@@ -203,7 +217,7 @@ export function resizeRect(start: Rect, edge: ResizeEdge, dx: number, dy: number
     w = right - x
   }
   if (edge.includes('n')) {
-    y = Math.min(Math.max(WINDOW_MARGIN, start.y + dy), bottom - min.h)
+    y = Math.min(Math.max(windowTop(viewport), start.y + dy), bottom - min.h)
     h = bottom - y
   }
   return clampRect({ x, y, w, h }, viewport, min)
@@ -219,17 +233,19 @@ export const SNAP_CORNER = 96
 /**
  * The snap for a pointer at the screen's edge while dragging, as desktop operating systems do: the left
  * or right edge is that half, a corner is that quarter, the top edge fills the screen and the bottom
- * edge is the bottom half. Away from every edge, nothing.
+ * edge is the bottom half. Away from every edge, nothing. A reserved band at the top counts as the top
+ * edge (like a menu bar), so it is measured from the band's bottom and the band itself is part of it.
  */
 export function edgeSnapAt(point: Point, viewport: ViewportSize): Snap | null {
+  const top = reserved(viewport)
   const atLeft = point.x <= SNAP_EDGE
   const atRight = point.x >= viewport.width - SNAP_EDGE
-  const atTop = point.y <= SNAP_EDGE
+  const atTop = point.y <= top + SNAP_EDGE
   const atBottom = point.y >= viewport.height - SNAP_EDGE
   if (!atLeft && !atRight && !atTop && !atBottom) return null
   // On an edge and near a corner along it: that quarter.
   const side = point.x <= SNAP_CORNER ? 'left' : point.x >= viewport.width - SNAP_CORNER ? 'right' : null
-  const band = point.y <= SNAP_CORNER ? 'top' : point.y >= viewport.height - SNAP_CORNER ? 'bottom' : null
+  const band = point.y <= top + SNAP_CORNER ? 'top' : point.y >= viewport.height - SNAP_CORNER ? 'bottom' : null
   if (side && band) return `${band}-${side}`
   if (atLeft) return 'left'
   if (atRight) return 'right'
@@ -249,7 +265,7 @@ const ZONE_W = 52
 const ZONE_H = 34
 const ZONE_GAP = 8
 const ZONE_PAD = 8
-/** The picker's distance from the top of the screen: below the top edge, which fills the screen. */
+/** The picker's distance from the top of the screen (below any reserved band): below the top edge, which fills the screen. */
 const ZONE_TOP = 16
 /** Space between zones inside a layout. */
 const ZONE_INSET = 2
@@ -266,7 +282,7 @@ export function snapZoneLayout(viewport: ViewportSize): SnapZoneLayout {
   const count = SNAP_ZONE_GROUPS.length
   const width = ZONE_PAD * 2 + count * ZONE_W + (count - 1) * ZONE_GAP
   const height = ZONE_PAD * 2 + ZONE_H
-  const frame = { x: Math.round((viewport.width - width) / 2), y: ZONE_TOP, w: width, h: height }
+  const frame = { x: Math.round((viewport.width - width) / 2), y: reserved(viewport) + ZONE_TOP, w: width, h: height }
   const groups = SNAP_ZONE_GROUPS.map((snaps, index) => {
     const rect = { x: frame.x + ZONE_PAD + index * (ZONE_W + ZONE_GAP), y: frame.y + ZONE_PAD, w: ZONE_W, h: ZONE_H }
     return {

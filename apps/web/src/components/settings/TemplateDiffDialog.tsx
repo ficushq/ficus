@@ -80,7 +80,7 @@ export function TemplateDiffDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="ficus-titlebar-reserve fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-chrome-scrim/50" onClick={onClose} />
       <div className="ficus-overlay relative bg-surface rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
         {/* Header */}

@@ -89,7 +89,8 @@ async function setup(
     url = '/',
     stored,
     window: WindowComponent = Window,
-  }: { wide?: boolean; url?: string; stored?: unknown; window?: typeof Window } = {}
+    desktopInset = false,
+  }: { wide?: boolean; url?: string; stored?: unknown; window?: typeof Window; desktopInset?: boolean } = {}
 ) {
   const dom = await acquireDomHarness({
     url: `http://localhost${url}`,
@@ -110,6 +111,11 @@ async function setup(
     removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
   }
   Object.defineProperty(dom.window, 'matchMedia', { configurable: true, value: () => media })
+  if (desktopInset) {
+    // What useDesktopShellChrome and index.css set in a windowed Ficus Desktop with the inset title bar.
+    document.documentElement.style.setProperty('--desktop-titlebar-height', '56px')
+    document.documentElement.dataset.desktopShell = 'inset'
+  }
   dom.window.localStorage.clear()
   if (stored) dom.window.localStorage.setItem(chatWindowsStorageKey('user:u1'), JSON.stringify(stored))
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -190,6 +196,8 @@ async function setup(
       await dom.act(async () => listeners.forEach((listener) => listener()))
     },
     cleanup: async () => {
+      delete document.documentElement.dataset.desktopShell
+      document.documentElement.style.removeProperty('--desktop-titlebar-height')
       await dom.cleanup()
       cache.clear()
     },
@@ -676,6 +684,72 @@ test('dragging the title bar previews and snaps at screen edges and picker zones
     expect(t.stored().windows[0].snap).toBe('full')
     await t.dom.act(async () => title.dispatchEvent(new t.dom.window.MouseEvent('dblclick', { bubbles: true })))
     expect(t.stored().windows[0].snap).toBeUndefined()
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('in Ficus Desktop windows stay below the title bar: restored, snapped and dragged, until fullscreen hides it', async () => {
+  const t = await setup(null, {
+    desktopInset: true,
+    stored: {
+      assistantZ: 0,
+      windows: [
+        // Saved by an older build right under the native window buttons.
+        { agentId: A, rect: { x: 0, y: 0, w: 420, h: 500 }, z: 1 },
+        { agentId: B, rect: { x: 600, y: 100, w: 420, h: 500 }, snap: 'top-left', z: 2 },
+      ],
+      remembered: {},
+    },
+  })
+  try {
+    const box = (id: string) => {
+      const style = t.windowFor(id)!.style
+      return {
+        x: parseFloat(style.left),
+        y: parseFloat(style.top),
+        w: parseFloat(style.width),
+        h: parseFloat(style.height),
+      }
+    }
+    expect(box(A)).toEqual({ x: 8, y: 64, w: 420, h: 500 })
+    // The top-left quarter of the space below the 56px bar on a 1400x900 window.
+    expect(box(B)).toEqual({ x: 8, y: 64, w: 688, h: 410 })
+
+    // Dragged into the title bar: that is the top edge, so it fills the screen below the bar.
+    const frame = t.windowFor(A)!
+    Object.assign(frame, { setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {} })
+    const title = frame.querySelector('header')!
+    const pointer = async (target: Element, type: string, x: number, y: number) => {
+      const event = new t.dom.window.MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+      })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      await t.dom.act(async () => target.dispatchEvent(event))
+    }
+    await pointer(title, 'pointerdown', 200, 80)
+    await pointer(frame, 'pointermove', 400, 300)
+    const picker = document.querySelector<HTMLElement>('[data-snap-zone-picker]')!
+    expect(parseFloat(picker.style.top)).toBe(72)
+    // While dragging, the window itself never rises into the bar.
+    await pointer(frame, 'pointermove', 400, 30)
+    expect(box(A).y).toBe(64)
+    expect(document.querySelector('[data-snap-preview]')!.getAttribute('data-snap-preview')).toBe('full')
+    await pointer(frame, 'pointerup', 400, 30)
+    expect(t.stored().windows.find((w: { agentId: string }) => w.agentId === A).snap).toBe('full')
+    expect(box(A)).toEqual({ x: 8, y: 64, w: 1384, h: 828 })
+
+    // Fullscreen hides the window buttons: the title bar goes, and snapped windows take the whole screen.
+    await t.dom.act(async () => {
+      delete document.documentElement.dataset.desktopShell
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(box(A)).toEqual({ x: 8, y: 8, w: 1384, h: 884 })
+    expect(box(B)).toEqual({ x: 8, y: 8, w: 688, h: 438 })
   } finally {
     await t.cleanup()
   }

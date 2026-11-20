@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  centerRect,
+  clampPosition,
+  clampRect,
   dragSnapTarget,
   edgeSnapAt,
   resizeRect,
@@ -104,4 +107,74 @@ test('every snap region stays inside the screen margins', () => {
     expect(rect.x + rect.w).toBeLessThanOrEqual(1192)
     expect(rect.y + rect.h).toBeLessThanOrEqual(892)
   }
+})
+
+describe("with Ficus Desktop's title bar reserved at the top", () => {
+  // The inset title bar (56px) where macOS draws the window buttons above the page.
+  const desktop = { width: 1200, height: 900, reservedTop: 56 }
+
+  test('every snap starts below the title bar and still ends at the bottom margin', () => {
+    for (const snap of SNAPS as readonly Snap[]) {
+      const rect = snapRect(snap, desktop)
+      expect(rect.y).toBeGreaterThanOrEqual(64)
+      expect(rect.x).toBeGreaterThanOrEqual(8)
+      expect(rect.x + rect.w).toBeLessThanOrEqual(1192)
+      expect(rect.y + rect.h).toBeLessThanOrEqual(892)
+    }
+    expect(snapRect('full', desktop)).toEqual({ x: 8, y: 64, w: 1184, h: 828 })
+    expect(snapRect('left', desktop)).toEqual({ x: 8, y: 64, w: 588, h: 828 })
+    // Halves split the space below the bar, with the usual gap between them.
+    expect(snapRect('top-left', desktop)).toEqual({ x: 8, y: 64, w: 588, h: 410 })
+    expect(snapRect('bottom-left', desktop)).toEqual({ x: 8, y: 482, w: 588, h: 410 })
+  })
+
+  test('without the reserve every snap is unchanged', () => {
+    for (const snap of SNAPS as readonly Snap[])
+      expect(snapRect(snap, { ...screen, reservedTop: 0 })).toEqual(snapRect(snap, screen))
+    expect(snapRect('full', screen)).toEqual({ x: 8, y: 8, w: 1184, h: 884 })
+  })
+
+  test('a free window saved under the title bar comes back below it, shrinking only if it must', () => {
+    expect(clampRect({ x: 0, y: 0, w: 460, h: 620 }, desktop, min)).toEqual({ x: 8, y: 64, w: 460, h: 620 })
+    expect(clampRect({ x: 40, y: 10, w: 600, h: 2000 }, desktop, min)).toEqual({ x: 40, y: 64, w: 600, h: 828 })
+    // In a browser the same rect may sit at the top margin.
+    expect(clampRect({ x: 0, y: 0, w: 460, h: 620 }, screen, min)).toEqual({ x: 8, y: 8, w: 460, h: 620 })
+    expect(clampPosition({ x: 300, y: 0, w: 256, h: 60 }, desktop)).toEqual({ x: 300, y: 64, w: 256, h: 60 })
+    expect(clampPosition({ x: 300, y: 0, w: 256, h: 60 }, screen)).toEqual({ x: 300, y: 8, w: 256, h: 60 })
+  })
+
+  test('centering uses the space below the title bar', () => {
+    expect(centerRect({ w: 400, h: 400 }, desktop, min)).toEqual({ x: 400, y: 278, w: 400, h: 400 })
+    expect(centerRect({ w: 400, h: 400 }, screen, min)).toEqual({ x: 400, y: 250, w: 400, h: 400 })
+  })
+
+  test('dragging or resizing never takes a window into the title bar', () => {
+    const start = { x: 300, y: 200, w: 420, h: 500 }
+    // The top edge dragged far up stops below the bar; the bottom edge stays put.
+    expect(resizeRect(start, 'n', 0, -400, desktop, min)).toEqual({ x: 300, y: 64, w: 420, h: 636 })
+    expect(resizeRect(start, 'n', 0, -400, screen, min)).toEqual({ x: 300, y: 8, w: 420, h: 692 })
+    expect(clampRect({ ...start, y: start.y - 400 }, desktop, min).y).toBe(64)
+  })
+
+  test('the title bar counts as the top edge, so dragging into it fills the screen', () => {
+    expect(edgeSnapAt({ x: 600, y: 0 }, desktop)).toBe('full')
+    expect(edgeSnapAt({ x: 600, y: 40 }, desktop)).toBe('full')
+    expect(edgeSnapAt({ x: 600, y: 62 }, desktop)).toBe('full')
+    expect(edgeSnapAt({ x: 600, y: 70 }, desktop)).toBeNull()
+    // Corners are measured from the bottom of the bar.
+    expect(edgeSnapAt({ x: 0, y: 140 }, desktop)).toBe('top-left')
+    expect(edgeSnapAt({ x: 0, y: 140 }, screen)).toBe('left')
+    // In a browser a point that far down is not at the top edge.
+    expect(edgeSnapAt({ x: 600, y: 40 }, screen)).toBeNull()
+  })
+
+  test('the snap-zone picker opens below the title bar', () => {
+    const layout = snapZoneLayout(desktop)
+    expect(layout.frame.y).toBe(snapZoneLayout(screen).frame.y + 56)
+    const zone = layout.groups[0]!.zones[0]!
+    expect(dragSnapTarget({ x: zone.rect.x + 2, y: zone.rect.y + 2 }, desktop, layout)).toEqual({
+      snap: zone.snap,
+      source: 'zone',
+    })
+  })
 })
