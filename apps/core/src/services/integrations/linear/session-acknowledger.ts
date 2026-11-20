@@ -8,6 +8,8 @@ const log = createLogger('linear-session-ack')
 /** Linear marks a session unresponsive without an activity within 10 seconds of `created`. */
 export const LINEAR_ACK_BUDGET_MS = 9_000
 const ACK_ATTEMPT_TIMEOUT_MS = 4_000
+/** Acknowledgment calls one `acknowledgeLinearSession` makes at most: the first attempt and one retry. */
+export const LINEAR_ACK_MAX_ATTEMPTS = 2
 export const LINEAR_ACK_BODY = 'Received. Checking how to handle this request.'
 
 export type LinearSessionRow = typeof linearAgentSessions.$inferSelect
@@ -64,7 +66,7 @@ export async function acknowledgeLinearSession(
   const sentAt = typeof input.payload.webhookTimestamp === 'number' ? input.payload.webhookTimestamp : now()
   const deadline = Math.min(sentAt, now()) + LINEAR_ACK_BUDGET_MS
   let acknowledged = false
-  for (let attempt = 0; attempt < 2 && !acknowledged; attempt++) {
+  for (let attempt = 0; attempt < LINEAR_ACK_MAX_ATTEMPTS && !acknowledged; attempt++) {
     const remaining = deadline - now()
     // The first attempt always runs: a late acknowledgment still recovers an unresponsive session.
     if (attempt > 0 && remaining <= 0) break

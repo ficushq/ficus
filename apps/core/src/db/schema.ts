@@ -1431,6 +1431,10 @@ export const integrationOutputEvents = pgTable(
     index('idx_integration_output_events_unmatched')
       .on(table.integration, table.id)
       .where(sql`${table.matchedAt} IS NULL`),
+    // The Linear app's undelegation cross-check (webhook versus polled notification) reads one issue's events.
+    index('idx_integration_output_events_resource')
+      .on(table.integration, sql`(${table.fact}->>'resourceKey')`)
+      .concurrently(),
   ]
 )
 

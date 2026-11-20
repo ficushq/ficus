@@ -67,20 +67,40 @@ describe('sweepCompletedLinearRelayReceipts', () => {
     // Other Linear receipt families are not relay receipts and keep their own lifetime.
     const otherLinear = `poll:sweep-test:${crypto.randomUUID()}`
     const staleSlack = `linear:${crypto.randomUUID()}`
-    eventKeys.push(stale, fresh, uncompleted, otherLinear, staleSlack)
-    await db.insert(integrationEventPollingDispatches).values([
-      { providerKey: 'linear', eventKey: stale, completedAt: beforeCutoff },
-      { providerKey: 'linear', eventKey: fresh, completedAt: afterCutoff },
-      { providerKey: 'linear', eventKey: uncompleted, completedAt: null },
-      { providerKey: 'linear', eventKey: otherLinear, completedAt: beforeCutoff },
-      { providerKey: 'slack', eventKey: staleSlack, completedAt: afterCutoff },
-    ])
+    // The logical session, prompt and notification receipts the webhook and polling paths share.
+    const logical = [
+      `linear:session:${crypto.randomUUID()}:created`,
+      `linear:activity:${crypto.randomUUID()}`,
+      `linear:notification:${crypto.randomUUID()}`,
+    ]
+    eventKeys.push(stale, fresh, uncompleted, otherLinear, staleSlack, ...logical)
+    await db
+      .insert(integrationEventPollingDispatches)
+      .values([
+        { providerKey: 'linear', eventKey: stale, completedAt: beforeCutoff },
+        { providerKey: 'linear', eventKey: fresh, completedAt: afterCutoff },
+        { providerKey: 'linear', eventKey: uncompleted, completedAt: null },
+        { providerKey: 'linear', eventKey: otherLinear, completedAt: beforeCutoff },
+        { providerKey: 'slack', eventKey: staleSlack, completedAt: afterCutoff },
+        ...logical.map((eventKey) => ({ providerKey: 'linear', eventKey, completedAt: beforeCutoff })),
+      ])
     expect(await sweepCompletedLinearRelayReceipts(now)).toBe(1)
     const remaining = await db
       .select({ eventKey: integrationEventPollingDispatches.eventKey })
       .from(integrationEventPollingDispatches)
-      .where(inArray(integrationEventPollingDispatches.eventKey, [stale, fresh, uncompleted, otherLinear, staleSlack]))
-    expect(remaining.map((row) => row.eventKey).sort()).toEqual([fresh, uncompleted, otherLinear, staleSlack].sort())
+      .where(
+        inArray(integrationEventPollingDispatches.eventKey, [
+          stale,
+          fresh,
+          uncompleted,
+          otherLinear,
+          staleSlack,
+          ...logical,
+        ])
+      )
+    expect(remaining.map((row) => row.eventKey).sort()).toEqual(
+      [fresh, uncompleted, otherLinear, staleSlack, ...logical].sort()
+    )
   })
 })
 

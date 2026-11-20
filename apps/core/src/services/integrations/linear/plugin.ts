@@ -70,6 +70,23 @@ export function linearAuthorization(credential: LinearCredential): string {
   return credential.kind === 'oauth' ? `Bearer ${credential.bundle.accessToken}` : credential.key
 }
 
+/**
+ * Linear answered HTTP 429. The message stays `provider_unavailable`, the code every caller already
+ * handles; `retryAfterMs` carries Linear's `Retry-After` for callers that back off (the poller).
+ */
+export class LinearRateLimitedError extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super('provider_unavailable')
+  }
+}
+
+function retryAfterMs(value: string | null): number {
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 86_400) * 1_000
+  const at = value ? Date.parse(value) : NaN
+  return Number.isFinite(at) ? Math.min(Math.max(at - Date.now(), 1_000), 86_400_000) : 60_000
+}
+
 /** Sends one GraphQL request with an `Authorization` value from `linearAuthorization`. */
 export async function linearQuery<T>(
   authorization: string,
@@ -83,6 +100,7 @@ export async function linearQuery<T>(
     body: JSON.stringify({ query, variables }),
     signal: signal ?? AbortSignal.timeout(10_000),
   })
+  if (response.status === 429) throw new LinearRateLimitedError(retryAfterMs(response.headers.get('Retry-After')))
   if (!response.ok)
     throw new Error(response.status === 401 || response.status === 403 ? 'invalid_auth' : 'provider_unavailable')
   const result = (await response.json()) as { data?: T; errors?: unknown[] }
@@ -226,7 +244,14 @@ export function createLinearPlugin(dependencies: LinearPluginDependencies = {}):
             return { ok: false, code: error instanceof Error ? error.message : 'provider_unavailable' }
           }
         },
-        capabilities: {},
+        capabilities: {
+          // The agent app's polling fallback (5.7); it returns no events for API-key connections.
+          // Loaded lazily: the poller reaches the database and app ingress, which import this plugin.
+          event_polling: {
+            poll: async (connection, cursor, signal) =>
+              (await import('./polling-runtime')).linearAgentSessionPolling.poll(connection, cursor, signal),
+          },
+        },
       },
     },
     execution: {

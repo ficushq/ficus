@@ -1,5 +1,5 @@
 {
-  "id": "6a991a82-2c05-41ae-984b-84956db48192",
+  "id": "ad98d13b-f22f-409b-b172-0056aaedca5e",
   "prevId": "dd0c11f2-3de4-42bd-9c55-8e6df3f652f8",
   "version": "7",
   "dialect": "postgresql",
@@ -9185,18 +9185,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "relay_subscribe_error_code": {
-          "name": "relay_subscribe_error_code",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "relay_subscribe_error_revision": {
-          "name": "relay_subscribe_error_revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "uuid",
@@ -10378,6 +10366,27 @@
           "isUnique": false,
           "where": "\"integration_output_events\".\"matched_at\" IS NULL",
           "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_integration_output_events_resource": {
+          "name": "idx_integration_output_events_resource",
+          "columns": [
+            {
+              "expression": "integration",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"fact\"->>'resourceKey')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": true,
           "method": "btree",
           "with": {}
         }
