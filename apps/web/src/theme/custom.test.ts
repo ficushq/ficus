@@ -21,7 +21,7 @@ import { applyResolvedTheme } from './apply'
 import { findWebTheme } from './registry'
 import { createTokenReader } from './tokenReader'
 import { observeTerminalTheme, readTerminalTheme } from './terminal'
-import { generateThemeFlash } from '../../scripts/generate-theme-flash'
+import { generateThemeFlash, STALE_THEME_FLASH_MESSAGE } from '../../scripts/generate-theme-flash'
 import type { ThemeStorage } from './storage'
 
 // v2: a preset covers both light and dark. This fixture is dark-only (light
@@ -292,7 +292,8 @@ test('security contract: custom runtime never writes HTML/CSS text, inline boots
     expect(source).not.toMatch(/innerHTML|insertAdjacentHTML|cssText|textContent\s*=|createElement\(['"]style/)
   }
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
-  expect(html.match(/<script data-ficus-theme-flash>([\s\S]*?)<\/script>/)![1]).toBe(await generateThemeFlash())
+  const inline = html.match(/<script data-ficus-theme-flash>([\s\S]*?)<\/script>/)![1]
+  if (inline !== (await generateThemeFlash())) throw new Error(STALE_THEME_FLASH_MESSAGE)
 })
 
 test('shipped pre-paint custom matrix (v2 pair) and broken-document fallback run before React/CSS', async () => {
