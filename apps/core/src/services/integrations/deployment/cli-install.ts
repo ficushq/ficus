@@ -1,3 +1,4 @@
+import { npmGlobalInstallLines } from '../npm-global-install'
 import releases from './cli-releases.json'
 
 export type DeploymentBinary = keyof typeof releases
@@ -11,7 +12,7 @@ export function deploymentCliSetup(binary: DeploymentBinary): { id: string; scri
       `archive=$(npm pack --silent ${release.package}@${release.version})`,
       `actual=$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$archive")`,
       `test "$actual" = "${release.integrity}"`,
-      'npm install --global --prefix "$DEVBOX_PROJECT_ROOT/npm" --no-audit --no-fund "./$archive"'
+      ...npmGlobalInstallLines(release.package)
     )
   } else {
     lines.push(
