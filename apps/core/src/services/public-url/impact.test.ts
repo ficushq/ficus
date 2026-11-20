@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { computePublicAppUrlChangeImpact } from './impact'
+import { setLinearAppReadinessForTest } from '../integrations/linear/app-readiness'
 
 test('a base-path-only change keeps the origin, needs a reconnect and reports the new path', () => {
   expect(computePublicAppUrlChangeImpact('https://a.example', 'https://a.example/ficus', '')).toMatchObject({
@@ -80,8 +81,20 @@ test('a path that cannot be used for squad apps is reported, and their base does
   })
 })
 
-test('the Linear agent app callback and app webhook are listed for operators to update', () => {
+test('the Linear app callback and webhook are not listed while the app cannot be installed', () => {
   const impact = computePublicAppUrlChangeImpact('https://a.example', 'https://b.example/ficus', '')
+  expect(impact.oauthCallbacks.map((change) => change.label)).not.toContain('Linear app OAuth callback')
+  expect(impact.webhooks.map((change) => change.label)).toEqual(['GitHub webhook', 'Linear webhook'])
+})
+
+test('once the self-hosted Linear app is ready, its callback and app webhook are listed for operators to update', () => {
+  const restore = setLinearAppReadinessForTest({ local: true, platform_broker: false })
+  let impact: ReturnType<typeof computePublicAppUrlChangeImpact>
+  try {
+    impact = computePublicAppUrlChangeImpact('https://a.example', 'https://b.example/ficus', '')
+  } finally {
+    restore()
+  }
   expect(impact.oauthCallbacks).toContainEqual({
     label: 'Linear app OAuth callback',
     before: 'https://a.example/settings/integrations/oauth/callback/linear',
