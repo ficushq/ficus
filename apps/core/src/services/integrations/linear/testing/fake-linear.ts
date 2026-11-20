@@ -43,6 +43,8 @@ export interface FakeLinearCall {
   variables: Record<string, any>
   authorization: string
   at: number
+  /** The GraphQL document sent. */
+  query: string
 }
 export interface FakeLinearPrompt {
   id: string
@@ -107,6 +109,9 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
   const teams: string[] = []
   const calls: FakeLinearCall[] = []
   const failures: Array<{ operation?: string; failure: FakeLinearFailure }> = []
+
+  /** While set, the prompts query with session prompt ends is refused as a schema validation error. */
+  const refusePromptEnds = { value: false }
 
   function failNext(failure: FakeLinearFailure, operation?: string) {
     failures.push({ operation, failure })
@@ -290,6 +295,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
             agentSession: {
               id: prompt.sessionId,
               url: `https://linear.app/acme/agent-session/${prompt.sessionId}`,
+              createdAt: session?.createdAt ?? null,
               appUser: { id: session?.appUserId ?? app.id },
               issue: issue ? issueNode(issue) : null,
               firstPrompt: end(own.at(-1)),
@@ -323,7 +329,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? 'anonymous'
     const authorization = new Headers(init?.headers).get('Authorization') ?? ''
     if (options.latencyMs) options.advance?.(options.latencyMs)
-    calls.push({ operation, variables: body.variables ?? {}, authorization, at: clock() })
+    calls.push({ operation, variables: body.variables ?? {}, authorization, at: clock(), query })
     const index = failures.findIndex((entry) => !entry.operation || entry.operation === operation)
     if (index >= 0) {
       const failure = failures.splice(index, 1)[0]!.failure
@@ -354,6 +360,19 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         { status: failure, headers: failure === 429 ? { 'Retry-After': '30' } : {} }
       )
     }
+    // Linear answers a query its schema does not accept with HTTP 400 and a validation error.
+    if (refusePromptEnds.value && query.includes('firstPrompt:'))
+      return Response.json(
+        {
+          errors: [
+            {
+              message: 'Cannot query field "activities" on type "AgentSession".',
+              extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+            },
+          ],
+        },
+        { status: 400 }
+      )
     if (options.tokens?.length && !options.tokens.includes(authorization))
       return Response.json({ errors: [{ message: 'Authentication required' }] }, { status: 401 })
     return Response.json(respond(query, body.variables ?? {}))
@@ -372,6 +391,9 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     teams,
     calls,
     failNext,
+    refusePromptEnds(refuse = true) {
+      refusePromptEnds.value = refuse
+    },
     addUser(user: FakeLinearUser) {
       users.set(user.id, user)
       return user

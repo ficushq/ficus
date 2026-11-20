@@ -61,6 +61,10 @@ function classifyGraphQLErrors(errors: unknown[]): LinearWriteError {
   if (parts.some((part) => part.code === 'RATELIMITED')) return new LinearWriteError('rate_limited')
   if (parts.some((part) => part.code === 'AUTHENTICATION_ERROR' || part.message.includes('authentication required')))
     return new LinearWriteError('invalid_auth')
+  // Deliberate: any refusal worded as a duplicate ("conflict on insert", "already exists",
+  // "duplicate") or carrying a duplicate code counts as sent, for every outbox write: activities,
+  // session links and pull request attachments alike. Ficus sends deterministic activity IDs and
+  // idempotent requests, so such a refusal means an earlier attempt already made the change.
   if (isLinearDuplicateError(errors)) return new LinearWriteError('duplicate')
   if (
     parts.some(
