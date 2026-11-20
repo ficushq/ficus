@@ -39,9 +39,11 @@ export async function getStreamDemandClocks(routes: StreamDemandRoute[], now: Da
         admission.ready_at, progress.at) AS "unservedSince",
       progress.at AS "progressAt", COALESCE(execution.status IN ('running', 'stopping'), false) AS running,
       EXISTS (
-        -- Match loadSlotWaitingStreams attribution: the subscription must have
+        -- Match loadStreamSlotWaits attribution: the subscription must have
         -- been enqueued inside an execution of this still-current pinned attempt.
-        -- This bounds the alert exemption, not the actual durable subscription.
+        -- A queued attempt waits for capacity, which is not a stall at any age:
+        -- an abnormally long capacity wait is the separate slot_capacity_wait
+        -- incident (slot-capacity.ts), which names the pool and its queue.
         SELECT 1 FROM slot_waiters AS waiter
         JOIN slot_pools AS pool ON pool.id = waiter.pool_id
         JOIN agents AS owner ON owner.id = waiter.owner_agent_id AND owner.squad_id = pool.squad_id
@@ -58,7 +60,6 @@ export async function getStreamDemandClocks(routes: StreamDemandRoute[], now: Da
           AND pool.disabled_at IS NULL AND pool.unregistered_at IS NULL
           AND owner.status NOT IN ('dormant', 'terminated')
           AND waiter.queued_at <= ${now.toISOString()}::timestamptz
-          AND waiter.queued_at > ${now.toISOString()}::timestamptz - pool.claim_timeout_ms * interval '1 millisecond'
       ) AS "slotWaiting"
     FROM routes AS route
     LEFT JOIN LATERAL (

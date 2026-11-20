@@ -91,6 +91,21 @@ test('legacy streams render no flow controls; queued flows label the current ste
     await f.cleanup()
   }
 })
+test('the current step names the slot its participant is queued for, and reads Current again after the grant', async () => {
+  const f = await fixture(run())
+  try {
+    const slotWait = { poolKey: 'heavy-work', attemptId: 1, position: 1, queuedCount: 4, queuedAt: '', hostBusy: true }
+    await f.render(<WorkflowRunPanel stream={{ ...stream, hasActiveSlotWait: true, slotWait }} />)
+    await expandWorkflow(f)
+    const text = () => f.dom.window.document.body.textContent ?? ''
+    expect(text()).toContain('Waiting for heavy-work slot (position 1 of 4, host busy)')
+    await f.render(<WorkflowRunPanel stream={{ ...stream, hasActiveSlotWait: false }} />)
+    expect(text()).not.toContain('Waiting for heavy-work slot')
+    expect(text()).toContain('Current')
+  } finally {
+    await f.cleanup()
+  }
+})
 test('approving needs no notes; human outcomes send the displayed version and attempt; failures retain the draft', async () => {
   const f = await fixture(run(true), ['workstreams:review'])
   const advance = spyOn(client.workflows, 'advance').mockRejectedValue(new Error('The flow changed; reload'))

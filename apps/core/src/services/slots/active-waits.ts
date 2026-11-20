@@ -15,7 +15,9 @@ export async function listActiveSlotWaits(store: typeof db | DbTx, agentIds: str
       waiterId: slotWaiters.id,
       agentId: slotWaiters.ownerAgentId,
       squadId: slotPools.squadId,
+      poolId: slotPools.id,
       poolKey: slotPools.key,
+      hostShared: slotPools.hostShared,
       queuedAt: slotWaiters.queuedAt,
     })
     .from(slotWaiters)

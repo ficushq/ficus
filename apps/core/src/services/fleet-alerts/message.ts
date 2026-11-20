@@ -1,5 +1,6 @@
 import { providerLabel, type InboxPushPresentation } from '@ficus/shared'
 import type { ProviderHealthKind } from '@ficus/shared/provider-health'
+import { SLOT_KEY_PATTERN } from '../slots/types'
 import { SANDBOX_OVERLOAD_STALE_MS } from './audience-policy'
 import type { FleetIncidentNotificationClaim } from './store'
 
@@ -164,6 +165,33 @@ export function renderFleetIncidentMessage(
         `Waiting: ${count === 1 ? '1 work item' : `${count} work items`}` +
           (oldest ? `, the oldest for ${formatFleetDuration(now.getTime() - oldest.getTime())}` : '')
       )
+  } else if (claim.incidentKind === 'slot_capacity_wait') {
+    // "heavy-work slot", or plain "slot" if the stored key is not a valid pool key.
+    const slot =
+      typeof details.poolKey === 'string' && SLOT_KEY_PATTERN.test(details.poolKey) ? `${details.poolKey} slot` : 'slot'
+    const oldest = validDate(details.oldestQueuedAt)
+    const waited = oldest ? formatFleetDuration(now.getTime() - oldest.getTime()) : lasted
+    const queued = finiteNumber(details.queuedCount) ? details.queuedCount : undefined
+    const timeout = finiteNumber(details.claimTimeoutMs) ? formatFleetDuration(details.claimTimeoutMs) : undefined
+    if (alert) {
+      subject = capitalize(`${squad}: waiting ${waited} for ${slot}`)
+      headline =
+        `${queued === undefined ? 'Agents' : queued === 1 ? '1 agent' : `${queued} agents`} in ${squad} ${queued === 1 ? 'is' : 'are'} queued for the ${slot}; the oldest has waited ${waited}` +
+        (timeout ? `, longer than the pool's ${timeout} claim timeout.` : '.') +
+        ' Their work is waiting for capacity, not stalled.'
+      const host = finiteNumber(details.hostCapacity)
+        ? `Host budget: ${finiteNumber(details.hostActiveCount) ? details.hostActiveCount : '?'} of ${details.hostCapacity} units in use` +
+          (finiteNumber(details.hostHeldByOtherSquads) && details.hostHeldByOtherSquads > 0
+            ? `, ${details.hostHeldByOtherSquads} held by other squads`
+            : ', none by other squads')
+        : undefined
+      if (host) facts.push(host)
+      else if (finiteNumber(details.capacity) && finiteNumber(details.activeCount))
+        facts.push(`Pool: ${details.activeCount} of ${details.capacity} units held`)
+    } else {
+      subject = capitalize(`${squad}: ${slot} queue is moving again`)
+      headline = `The ${slot} queue in ${squad} is moving again after ${lasted}.`
+    }
   } else if (claim.incidentKind === 'sandbox_overloaded') {
     const title = capitalize(sandboxScope(claim, names))
     const reading = overloadReading(details)

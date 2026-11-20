@@ -22,7 +22,12 @@ import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from 
 import { Command, Option } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
-import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@ficus/shared'
+import {
+  WORK_STREAM_COMPLETION_MODES,
+  WORK_STREAM_PRIORITIES,
+  workStreamSlotWaitLabel,
+  type WorkStreamSlotWait,
+} from '@ficus/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
@@ -67,6 +72,8 @@ export interface WorkStream {
   /** Per-dependency unlock condition and state. Absent from servers that predate it. */
   dependencies?: WorkStreamDependencyEdge[]
   derivedState?: string
+  /** The participant is queued for a slot; absent from older servers. */
+  slotWait?: WorkStreamSlotWait
   openWaits?: WorkStreamWaitSummary[]
   reviewRounds?: number
   reviewHistory?: WorkStreamWaitSummary[]
@@ -131,7 +138,10 @@ function colorStatus(status: string): string {
 }
 
 /** Derived display + stored status when they differ (e.g. `in_review (active)`). */
-function formatState(ws: Pick<WorkStream, 'status' | 'derivedState'>): string {
+function formatState(ws: Pick<WorkStream, 'status' | 'derivedState' | 'slotWait'>): string {
+  // An idle stream whose participant is queued for capacity says what it waits for.
+  if (ws.derivedState === 'idle' && ws.slotWait)
+    return `\x1b[36m${workStreamSlotWaitLabel(ws.slotWait)}${reset} (${ws.status})`
   if (!ws.derivedState || ws.derivedState === ws.status) return colorStatus(ws.status)
   return `${colorStatus(ws.derivedState)} (${ws.status})`
 }

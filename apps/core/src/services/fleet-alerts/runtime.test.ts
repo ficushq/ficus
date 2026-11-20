@@ -19,6 +19,7 @@ describe('FleetAlertRuntime', () => {
       },
       reconcileDeadFleet: async () => {},
       reconcileSandboxOverload: async () => {},
+      reconcileSlotCapacity: async () => {},
       drainNotifications: async () => {},
       setIntervalFn: () => 1,
       clearIntervalFn: () => {},
@@ -59,6 +60,9 @@ describe('FleetAlertRuntime', () => {
       reconcileSandboxOverload: async () => {
         calls.push('overload')
       },
+      reconcileSlotCapacity: async () => {
+        calls.push('slots')
+      },
       drainNotifications: async () => {
         calls.push('notify')
       },
@@ -76,15 +80,15 @@ describe('FleetAlertRuntime', () => {
     await Bun.sleep(0)
     intervalCallback()
     await Bun.sleep(0)
-    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'overload'])
+    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'overload', 'slots'])
 
     release()
     await runtime.stop()
-    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'overload', 'notify'])
+    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'overload', 'slots', 'notify'])
     expect(cleared).toBe(42)
   })
 
-  it('still reconciles other alerts and delivers notifications when sandbox probing fails', async () => {
+  it('still reconciles other alerts and delivers notifications when sandbox probing or slot reading fails', async () => {
     const calls: string[] = []
     const runtime = new FleetAlertRuntime({
       now: () => new Date('2026-09-24T00:00:00Z'),
@@ -102,6 +106,10 @@ describe('FleetAlertRuntime', () => {
         calls.push(`overload@${now.toISOString()}`)
         throw new Error('box probe exploded')
       },
+      reconcileSlotCapacity: async () => {
+        calls.push('slots')
+        throw new Error('slot read exploded')
+      },
       drainNotifications: async () => {
         calls.push('notify')
       },
@@ -112,7 +120,7 @@ describe('FleetAlertRuntime', () => {
     runtime.start()
     await runtime.stop()
 
-    expect(calls).toEqual(['provider', 'dead', 'overload@2026-09-24T00:00:00.000Z', 'notify'])
+    expect(calls).toEqual(['provider', 'dead', 'overload@2026-09-24T00:00:00.000Z', 'slots', 'notify'])
   })
 
   it('maps enabled model chains to exact usable stored accounts and provider-wide runtime credentials', () => {

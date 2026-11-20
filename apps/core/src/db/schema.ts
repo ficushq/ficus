@@ -2301,7 +2301,13 @@ export const scheduleHealthNotifications = pgTable(
   ]
 )
 
-export type FleetIncidentKind = 'provider_unhealthy' | 'squad_dead_fleet' | 'sandbox_degraded' | 'sandbox_overloaded'
+export type FleetIncidentKind =
+  | 'provider_unhealthy'
+  | 'squad_dead_fleet'
+  | 'sandbox_degraded'
+  | 'sandbox_overloaded'
+  /** A slot pool's queue has waited far past its claim timeout (one episode per pool). */
+  | 'slot_capacity_wait'
 
 export const fleetIncidents = pgTable(
   'fleet_incidents',

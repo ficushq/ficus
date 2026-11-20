@@ -20,6 +20,7 @@ import {
   formatWorkflowUsage,
   workflowRevisionOperations,
   workflowDefinitionSchema,
+  workStreamSlotWaitLabel,
 } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
@@ -89,6 +90,8 @@ function WorkflowRunPanelContent({
     activeAttempts.some(
       (a) => a.stepId === stepId && waits.some((w) => w.flowAttemptId == null || w.flowAttemptId === a.id)
     )
+  // The participant queued for a slot: say so on its step instead of a bare "Current".
+  const slotWaitingStep = activeAttempts.find((entry) => entry.id === stream.slotWait?.attemptId)?.stepId
   function revise() {
     if (!draft || draft.kind !== 'inline') return
     const definition = workflowDefinitionSchema.parse(draft.definition)
@@ -208,7 +211,9 @@ function WorkflowRunPanelContent({
                           ? 'Queued'
                           : waiting(entry.id)
                             ? 'Waiting for input'
-                            : 'Current'
+                            : slotWaitingStep === entry.id && stream.slotWait
+                              ? workStreamSlotWaitLabel(stream.slotWait)
+                              : 'Current'
                         : run.state.pendingStarts?.some((pending) => pending.stepId === entry.id)
                           ? 'Queued for capacity'
                           : run.state.completedStepIds.includes(entry.id)

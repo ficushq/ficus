@@ -365,6 +365,38 @@ describe('workstream CLI commands', () => {
       )
     })
 
+    it('says which slot an idle stream is queued for, and plain idle once granted', async () => {
+      const slotWait = {
+        poolKey: 'heavy-work',
+        attemptId: 1,
+        position: 2,
+        queuedCount: 5,
+        queuedAt: '',
+        hostBusy: true,
+      }
+      const stream = {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Queued',
+        status: 'active',
+        derivedState: 'idle',
+        squadId: 'squad-1',
+        dependsOn: [],
+      }
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([{ ...stream, hasActiveSlotWait: true, slotWait }])
+      await run(['workstream', 'list'])
+      // Strip the terminal color codes around the state.
+      const status = () =>
+        ((outputTable as ReturnType<typeof mock>).mock.lastCall![0] as Array<{ Status: string }>)[0]!.Status.split(
+          String.fromCharCode(27)
+        )
+          .map((part) => part.replace(/^\[[0-9;]*m/, ''))
+          .join('')
+      expect(status()).toBe('Waiting for heavy-work slot (position 2 of 5, host busy) (active)')
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([stream])
+      await run(['workstream', 'list'])
+      expect(status()).toBe('idle (active)')
+    })
+
     it('preserves full titles in the table when --no-truncate is passed', async () => {
       const title = 'This is an exact long title that scripts can safely search for'
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([

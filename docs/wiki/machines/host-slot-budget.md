@@ -119,6 +119,23 @@ waiter never reached the front of a pool that higher-priority work kept busy.
 Within a level the order is still first come, so an aged waiter goes ahead of
 newer waiters of the level it has reached.
 
+## Waiting is visible, and is not a stall
+
+An agent that queues ends its turn and waits for the grant, so its work stream
+has no running execution for a while. That wait is shown and is never reported
+as a stall:
+
+- The work stream reads **Waiting for heavy-work slot (position 2 of 5, host
+  busy)** in lists, the Activity "Active work" rows, the flow panel's current
+  step and `ficus workstream list`/`get`, and returns to its ordinary state on
+  grant. See
+  [work-stream status presentation](../work-stream-status-presentation.md#resource-subscriptions-and-ordinary-idle).
+- The squad stall alert leaves a queued attempt out for as long as it stays
+  queued. An abnormally long queue raises its own alert instead: see
+  [long capacity waits](../fleet-stall-alerts.md#long-capacity-waits).
+
+Both report another squad only as a count of the host units it holds.
+
 ## The default pool
 
 Slot pools are opt-in, so a squad whose manager never registered one ran its

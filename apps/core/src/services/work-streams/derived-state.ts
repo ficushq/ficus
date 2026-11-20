@@ -8,6 +8,7 @@ import {
   selectWorkStreamPresentationState,
   type WorkStreamDeliveryPresentation,
   type WorkStreamDerivedState,
+  type WorkStreamSlotWait,
   type WorkStreamStatus,
   type WorkStreamTerminalFailure,
   type WorkStreamWait,
@@ -18,7 +19,7 @@ import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { collectWorkStreamAgentIds } from './agent-ids'
 import { listOpenWaitsForStreams, toWaitJson } from './waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
-import { loadSlotWaitingStreams } from './slot-waits'
+import { loadStreamSlotWaits } from './slot-waits'
 import { loadAgentsWithActiveMonitors } from './active-monitors'
 import { flowWaitReference } from '../workflows/wait-policy'
 
@@ -47,6 +48,8 @@ import { flowWaitReference } from '../workflows/wait-policy'
 
 export interface DerivedStreamInfo {
   hasActiveSlotWait: boolean
+  /** Pool, queue position and host state of the wait behind `hasActiveSlotWait`. */
+  slotWait?: WorkStreamSlotWait
   /**
    * An agent bound to the stream (or a direct subagent of one) has a live
    * monitor. Evaluated only for active, unpaused streams without open waits —
@@ -87,7 +90,7 @@ interface StreamShape {
 }
 
 export interface DerivedStateDeps {
-  loadSlotWaitingStreams?: (ids: string[]) => Promise<Set<string>>
+  loadSlotWaits?: (ids: string[]) => Promise<Map<string, WorkStreamSlotWait>>
   /** Bound agent ids with a live monitor of their own or of a direct subagent. */
   loadMonitoringAgentIds?: (agentIds: string[]) => Promise<Set<string>>
   loadDelivery?: (ids: string[]) => Promise<Map<string, WorkStreamDeliveryPresentation>>
@@ -163,10 +166,10 @@ export async function computeDerivedStates(
   if (streams.length === 0) return result
 
   const ids = streams.map((s) => s.id)
-  const [waitsByStream, deliveryByStream, slotWaitingStreams] = await Promise.all([
+  const [waitsByStream, deliveryByStream, slotWaits] = await Promise.all([
     listOpenWaitsForStreams(ids),
     (deps.loadDelivery ?? ((ids) => loadDeliveryPresentations(db, ids)))(ids),
-    (deps.loadSlotWaitingStreams ?? loadSlotWaitingStreams)(
+    (deps.loadSlotWaits ?? loadStreamSlotWaits)(
       streams.filter((s) => s.status === 'active' && !s.pause).map((s) => s.id)
     ),
   ])
@@ -269,8 +272,10 @@ export async function computeDerivedStates(
       presentation in deliveryStates
         ? deliveryStates[presentation as keyof typeof deliveryStates]
         : (presentation as WorkStreamDerivedState)
+    const slotWait = slotWaits.get(stream.id)
     result.set(stream.id, {
-      hasActiveSlotWait: slotWaitingStreams.has(stream.id),
+      hasActiveSlotWait: slotWait !== undefined,
+      ...(slotWait ? { slotWait } : {}),
       hasActiveMonitor:
         candidateIds.has(stream.id) && collectWorkStreamAgentIds(stream).some((id) => monitoringAgents.has(id)),
       derivedState,

@@ -3,6 +3,7 @@ import {
   ACTIVITY_WORK_STREAM_CARD_STATE_LABELS,
   activityStepLabel,
   activityWorkStreamCardState,
+  workStreamSlotWaitLabel,
   type ActivityWorkStreamCard,
   type SquadActivityItem,
   type SquadActivityKind,
@@ -140,7 +141,8 @@ export function activityExternalHref(value: string): string | undefined {
  */
 export function activityWorkStateLine(card: ActivityWorkStreamCard): { state: string; step: string | null } {
   const kind = activityWorkStreamCardState(card)
-  const waits = activityCardWaitLabel(card)
+  const waits =
+    activityCardWaitLabel(card) ?? (kind === 'waiting' && card.slotWait ? workStreamSlotWaitLabel(card.slotWait) : null)
   const state =
     (kind === 'needs-you' || kind === 'waiting') && waits ? waits : ACTIVITY_WORK_STREAM_CARD_STATE_LABELS[kind]
   const step = activityStepLabel(card.step)
