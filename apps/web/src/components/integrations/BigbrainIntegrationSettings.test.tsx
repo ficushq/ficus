@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent } from '@testing-library/dom'
+import { fireEvent, getByRole } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys } from '../../queryKeys'
 
@@ -104,6 +104,18 @@ async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+/** Opens a connection's More actions menu and picks one item. */
+async function chooseFromMenu(title: string, item: string) {
+  await harness.act(async () => {
+    fireEvent.click(getByRole(container, 'button', { name: `More actions for ${title}` }))
+    await settle()
+  })
+  await harness.act(async () => {
+    fireEvent.click(getByRole(document.body, 'menuitem', { name: item }))
+    await settle()
+  })
+}
+
 describe('BigbrainIntegrationSettings', () => {
   test('does not query or render without global read permission', async () => {
     await render(undefined, false, false)
@@ -114,8 +126,11 @@ describe('BigbrainIntegrationSettings', () => {
     await render([connection, secondConnection], true, false)
     expect(container.textContent).toContain('Core host')
     expect(container.textContent).toContain('/vault')
-    expect(container.textContent).toContain('Enabled · healthy')
-    expect(container.textContent).toContain('Configured · disabled')
+    expect(container.textContent).toContain('Healthy')
+    expect(container.textContent).toContain('Disabled')
+    // A reader sees each status but no row actions.
+    expect(button('Enable')).toBeUndefined()
+    expect(container.querySelector('[aria-label^="More actions for"]')).toBeNull()
     expect(container.querySelector('input[type=password]')).toBeNull()
     expect(container.textContent).not.toContain('Replace credential')
     expect(container.textContent).not.toContain('consent')
@@ -206,11 +221,11 @@ describe('BigbrainIntegrationSettings', () => {
   })
   test('reports validation failures instead of claiming success on a safe response', async () => {
     fetchHandler = async () => Response.json({ ...connection, lastErrorCode: 'invalid_auth' })
-    await render([connection])
-    await harness.act(async () => {
-      fireEvent.click(button('Validate'))
-      await settle()
-    })
+    await render([connection, secondConnection])
+    // Each row keeps only the fix for its status outside the menu: Enable on the disabled one.
+    expect(button('Enable')).toBeTruthy()
+    expect(button('Validate')).toBeUndefined()
+    await chooseFromMenu('Primary Brain', 'Validate')
     expect(container.textContent).not.toContain('Connection validated.')
     expect(container.textContent).toContain('invalid_auth')
   })
@@ -223,13 +238,20 @@ describe('BigbrainIntegrationSettings', () => {
           )
         : Response.json(connection)
     await render([connection])
+    await chooseFromMenu('Primary Brain', 'Disable…')
+    // Disable is confirmed in the row before anything is sent.
+    expect(requests.filter((r) => r.method === 'POST')).toHaveLength(0)
+    expect(container.textContent).toContain('Disable the Primary Brain connection?')
     await harness.act(async () => {
       fireEvent.click(button('Disable'))
       await settle()
     })
+    // The server knows of a squad this page did not: the row asks again, naming it.
+    expect(requests.filter((r) => r.method === 'POST').map((r) => r.body)).toEqual(['{}'])
+    expect(container.textContent).toContain('Disable the Primary Brain connection? 1 squad loses BigBrain access.')
     expect(container.textContent).toContain('Research')
     await harness.act(async () => {
-      fireEvent.click(button('Confirm impact'))
+      fireEvent.click(button('Disable'))
       await settle()
     })
     expect(requests.some((r) => r.body.includes('"confirmAssigned":true'))).toBe(true)

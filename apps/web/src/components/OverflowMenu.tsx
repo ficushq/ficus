@@ -42,7 +42,7 @@ export function OverflowMenu({
       >
         <div
           {...{ [itemsMarker]: '' }}
-          className="flex flex-col [&>button]:rounded-md [&>button]:px-3 [&>button]:py-2 [&>button]:text-left [&>button]:text-sm [&>button:hover]:bg-surface-hover"
+          className="flex flex-col [&>button]:rounded-md [&>button]:px-3 [&>button]:py-2 [&>button]:text-left [&>button]:text-sm [&>button:enabled:hover]:bg-surface-hover [&>button:disabled]:cursor-default [&>button:disabled]:opacity-50"
         >
           {children}
         </div>

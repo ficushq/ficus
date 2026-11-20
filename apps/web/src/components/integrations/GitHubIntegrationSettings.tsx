@@ -1,9 +1,10 @@
-import clsx from 'clsx'
 import { CheckIcon, ClipboardIcon } from '../icons'
 import { GitHubWebhookSettings } from './GitHubWebhookSettings'
 import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 import { GitHubCommitSigning } from './GitHubCommitSigning'
 import { ConnectionSquads } from './ConnectionSquads'
+import { ConnectionList, ConnectionRow } from './ConnectionRow'
+import { connectionConfirmQuestion, connectionStatus } from './connectionStatus'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@ficus/shared'
@@ -74,7 +75,7 @@ export function GitHubIntegrationSettings({
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
-  const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [confirmation, setConfirmation] = useState<{ id: string; action: 'disable' | 'remove' } | null>(null)
   const refresh = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: integrationQueryKeys.all }),
@@ -307,103 +308,108 @@ export function GitHubIntegrationSettings({
           Could not change the global default. Please try again.
         </p>
       )}
-      {sortedAccounts.map((connection) => (
-        <div
-          key={connection.id}
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-panel-border py-3"
-        >
-          <div>
-            <p className="text-sm font-medium">
-              {connection.displayName}
-              {connection.isGlobalDefault && <span className="ml-2 text-xs text-accent-light">Global default</span>}
-            </p>
-            <p className="text-xs text-muted">
-              @{connection.configuration.login} ·{' '}
-              {connection.enabled
-                ? connection.authState === 'authenticated'
-                  ? connection.healthState
-                  : 'Reconnect required'
-                : 'Disabled'}
-            </p>
-            {connection.enabled && connection.authState === 'authenticated' && (
-              <>
-                <GitHubRepositoryAccess
-                  connectionId={connection.id}
-                  login={connection.configuration.login ?? connection.displayName}
-                  usesFicusApp={usesFicusApp}
-                />
-                <GitHubCommitSigning
-                  connectionId={connection.id}
-                  login={connection.configuration.login ?? connection.displayName}
-                  canWrite={canWrite}
-                  onReconnect={() => authorize.mutate(connection.id)}
-                  reconnectPending={authorize.isPending || !!device}
-                />
-              </>
-            )}
-            <ConnectionSquads
-              provider="github"
-              providerLabel="GitHub"
-              connection={connection}
-              connections={sortedAccounts}
-              inherited={connection.isGlobalDefault}
-            />
-          </div>
-          {canWrite && (
-            <div className="flex flex-wrap gap-2">
-              {!connection.isGlobalDefault && connection.enabled && (
-                <button
-                  type="button"
-                  className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
-                  disabled={defaultMutation.isPending}
-                  onClick={() => defaultMutation.mutate(connection.id)}
-                >
-                  Make global default
-                </button>
-              )}
-              <button
-                type="button"
-                className="ficus-button ficus-button-secondary px-2.5 py-1 disabled:opacity-50 text-xs"
-                disabled={authorize.isPending || !!device}
-                onClick={() => authorize.mutate(connection.id)}
-              >
-                Reconnect
-              </button>
-              {(['toggle', 'remove'] as const).map((kind) => {
-                const action = kind === 'toggle' ? (connection.enabled ? 'disable' : 'enable') : 'remove'
-                const key = `${connection.id}:${action}`
-                const assigned = action !== 'enable' && connection.usage.squadCount > 0
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    className={clsx(
-                      'ficus-button px-2.5 py-1 text-xs disabled:opacity-50',
-                      kind === 'remove' ? 'ficus-button-danger' : 'ficus-button-secondary'
-                    )}
-                    disabled={lifecycle.isPending}
-                    onClick={() => {
-                      if (assigned && confirmation !== key) {
-                        setConfirmation(key)
-                        return
+      {sortedAccounts.length > 0 && (
+        <ConnectionList className="mt-3">
+          {sortedAccounts.map((connection) => {
+            const login = connection.configuration.login ?? connection.displayName
+            const reconnectPending = authorize.isPending || !!device
+            const needsReconnect =
+              connection.authState === 'reauthorization_required' || connection.authState === 'invalid'
+            // At most one action stays outside the menu: the one that fixes what the status reports.
+            const inline = !connection.enabled ? 'enable' : needsReconnect ? 'reconnect' : null
+            const squadCount = connection.usage.squadCount
+            const confirming = confirmation?.id === connection.id ? confirmation.action : null
+            return (
+              <ConnectionRow
+                key={connection.id}
+                title={connection.displayName}
+                meta={
+                  <p>
+                    @{connection.configuration.login}
+                    {connection.isGlobalDefault && ' · Global default'}
+                  </p>
+                }
+                status={connectionStatus(connection)}
+                inline={
+                  !canWrite || !inline
+                    ? null
+                    : inline === 'enable'
+                      ? {
+                          label: 'Enable',
+                          disabled: lifecycle.isPending,
+                          onClick: () => lifecycle.mutate({ id: connection.id, action: 'enable', assigned: false }),
+                        }
+                      : {
+                          label: 'Reconnect',
+                          disabled: reconnectPending,
+                          onClick: () => authorize.mutate(connection.id),
+                        }
+                }
+                menu={
+                  canWrite
+                    ? [
+                        !connection.isGlobalDefault &&
+                          connection.enabled && {
+                            label: 'Make global default',
+                            disabled: defaultMutation.isPending,
+                            onSelect: () => defaultMutation.mutate(connection.id),
+                          },
+                        inline !== 'reconnect' && {
+                          label: 'Reconnect',
+                          disabled: reconnectPending,
+                          onSelect: () => authorize.mutate(connection.id),
+                        },
+                        connection.enabled && {
+                          label: 'Disable…',
+                          disabled: lifecycle.isPending,
+                          onSelect: () => setConfirmation({ id: connection.id, action: 'disable' }),
+                        },
+                        {
+                          label: 'Remove…',
+                          danger: true,
+                          disabled: lifecycle.isPending,
+                          onSelect: () => setConfirmation({ id: connection.id, action: 'remove' }),
+                        },
+                      ]
+                    : []
+                }
+                confirmation={
+                  canWrite && confirming
+                    ? {
+                        message: connectionConfirmQuestion(confirming, connection.displayName, squadCount, 'GitHub'),
+                        confirmLabel: confirming === 'remove' ? 'Remove' : 'Disable',
+                        disabled: lifecycle.isPending,
+                        onConfirm: () =>
+                          lifecycle.mutate({ id: connection.id, action: confirming, assigned: squadCount > 0 }),
+                        onCancel: () => setConfirmation(null),
                       }
-                      lifecycle.mutate({ id: connection.id, action, assigned })
-                    }}
-                  >
-                    {confirmation === key
-                      ? `Confirm for ${connection.usage.squadCount} squads`
-                      : action === 'remove'
-                        ? 'Disconnect'
-                        : action === 'enable'
-                          ? 'Enable'
-                          : 'Disable'}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      ))}
+                    : null
+                }
+              >
+                {connection.enabled && connection.authState === 'authenticated' && (
+                  <>
+                    <GitHubRepositoryAccess connectionId={connection.id} login={login} usesFicusApp={usesFicusApp} />
+                    <GitHubCommitSigning
+                      connectionId={connection.id}
+                      login={login}
+                      canWrite={canWrite}
+                      onReconnect={() => authorize.mutate(connection.id)}
+                      reconnectPending={reconnectPending}
+                    />
+                  </>
+                )}
+                <ConnectionSquads
+                  provider="github"
+                  providerLabel="GitHub"
+                  connection={connection}
+                  connections={sortedAccounts}
+                  inherited={connection.isGlobalDefault}
+                />
+              </ConnectionRow>
+            )
+          })}
+        </ConnectionList>
+      )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {onboarding &&
           canWrite &&

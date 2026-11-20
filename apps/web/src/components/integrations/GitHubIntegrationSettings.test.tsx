@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { fireEvent, getByRole, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 import { GitHubIntegrationSettings } from './GitHubIntegrationSettings'
@@ -151,7 +151,10 @@ test.each(['local', 'platform_broker'] as const)(
       )
     )
     await harness.act(async () => {
-      fireEvent.click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Reconnect')!)
+      fireEvent.click(getByRole(container, 'button', { name: 'More actions for Example' }))
+    })
+    await harness.act(async () => {
+      fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Reconnect' }))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     expect(JSON.parse(body)).toEqual({ returnTo: '/settings', connectionId: 'selected-account' })
@@ -377,8 +380,11 @@ test('global default account is first and changing it preserves the other accoun
       </QueryClientProvider>
     )
   )
-  const displayed = () => [...container.querySelectorAll('p.text-sm.font-medium')].map((row) => row.textContent)
-  expect(displayed()).toEqual(['WorkGlobal default', 'Personal', 'Other'])
+  const displayed = () =>
+    [...container.querySelectorAll('li[aria-label]')].map(
+      (row) => `${row.getAttribute('aria-label')} ${row.querySelector('p.font-medium + div')?.textContent}`
+    )
+  expect(displayed()).toEqual(['Work @work · Global default', 'Personal @personal', 'Other @other'])
   expect(accounts.map((account) => account.id)).toEqual(['Personal', 'Work', 'Other'])
   await harness.act(async () => {
     client.setQueryData(
@@ -388,7 +394,9 @@ test('global default account is first and changing it preserves the other accoun
         isGlobalDefault: account.id === 'Other',
       }))
     )
-    await waitFor(() => expect(displayed()).toEqual(['OtherGlobal default', 'Personal', 'Work']))
+    await waitFor(() =>
+      expect(displayed()).toEqual(['Other @other · Global default', 'Personal @personal', 'Work @work'])
+    )
   })
 })
 
@@ -507,6 +515,13 @@ test('failed app settings and account changes report the server reason instead o
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('OAuth application configuration failed')
   )
   expect(button('Retry')).toBeUndefined()
+  await harness.act(async () => {
+    fireEvent.click(getByRole(container, 'button', { name: 'More actions for Example' }))
+  })
+  await harness.act(async () => {
+    fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Disable…' }))
+  })
+  expect(container.textContent).toContain('Disable the Example connection?')
   await harness.act(async () => {
     fireEvent.click(button('Disable'))
   })

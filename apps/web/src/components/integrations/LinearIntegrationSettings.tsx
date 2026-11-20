@@ -17,10 +17,10 @@ import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnP
 import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
 import { integrationErrorMessage } from '../../lib/integrationErrorMessage'
 import { ApiError } from '../../api/client'
-import { Badge, type BadgeColor } from '../Badge'
 import { ConfirmButton } from '../ConfirmButton'
-import { OverflowMenu } from '../OverflowMenu'
 import { ConnectionSquads } from './ConnectionSquads'
+import { ConnectionList, ConnectionRow } from './ConnectionRow'
+import { connectionConfirmQuestion, connectionStatus } from './connectionStatus'
 
 const field =
   'ficus-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-sm text-primary'
@@ -55,7 +55,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
             <h4 id="linear-connections" className="text-sm font-medium text-primary">
               Connections
             </h4>
-            <ul className="mt-1 divide-y divide-panel-border border-b border-panel-border">
+            <ConnectionList className="mt-1">
               {connections.map((connection) => (
                 <LinearConnection
                   key={connection.id}
@@ -67,7 +67,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
                   reconnecting={install.isPending}
                 />
               ))}
-            </ul>
+            </ConnectionList>
           </section>
         )
       )}
@@ -486,24 +486,6 @@ function LinearWebhookDelivery({ canWrite, refresh }: { canWrite: boolean; refre
   )
 }
 
-/** One status word for a connection, most urgent first. */
-function connectionStatus(
-  connection: IntegrationConnection,
-  needsPermissions: boolean,
-  claimed: boolean
-): { label: string; color: BadgeColor } {
-  if (!connection.enabled) return { label: 'Disabled', color: 'neutral' }
-  if (connection.authState === 'reauthorization_required') return { label: 'Reconnect required', color: 'attention' }
-  if (connection.authState === 'invalid') return { label: 'Invalid credentials', color: 'danger' }
-  if (connection.authState === 'pending') return { label: 'Pending', color: 'neutral' }
-  if (claimed) return { label: 'Not receiving events', color: 'attention' }
-  if (needsPermissions) return { label: 'Needs permissions', color: 'attention' }
-  if (connection.healthState === 'healthy') return { label: 'Healthy', color: 'success' }
-  if (connection.healthState === 'degraded') return { label: 'Degraded', color: 'attention' }
-  if (connection.healthState === 'unreachable') return { label: 'Unreachable', color: 'danger' }
-  return { label: 'Not checked yet', color: 'neutral' }
-}
-
 function LinearConnection({
   connection,
   connections,
@@ -549,7 +531,14 @@ function LinearConnection({
   const needsPermissions =
     app &&
     ((connection.configuration.missingScopes?.length ?? 0) > 0 || connection.lastErrorCode === 'insufficient_scope')
-  const status = connectionStatus(connection, needsPermissions, claimed)
+  const status = connectionStatus(
+    connection,
+    claimed
+      ? { label: 'Not receiving events', color: 'attention' }
+      : needsPermissions
+        ? { label: 'Needs permissions', color: 'attention' }
+        : null
+  )
   const needsReconnect =
     app &&
     (needsPermissions ||
@@ -559,63 +548,59 @@ function LinearConnection({
   // At most one action stays outside the menu: the one that fixes what the status reports.
   const inline: 'enable' | 'reconnect' | null = !connection.enabled ? 'enable' : needsReconnect ? 'reconnect' : null
   const squadCount = connection.usage.squadCount
-  const affected =
-    squadCount > 0 ? ` ${squadCount} ${squadCount === 1 ? 'squad loses' : 'squads lose'} Linear access.` : ''
   return (
-    <li className="py-4" aria-label={title}>
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0">
-          <p className="font-medium text-primary">{title}</p>
-          <p className="text-xs text-muted">
-            {app ? 'Agent app' : 'Personal API key'}
-            {app && organizationUrlKey && <> · linear.app/{organizationUrlKey}</>}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge color={status.color}>{status.label}</Badge>
-          {canWrite && inline === 'enable' && (
-            <button className={button} type="button" disabled={pending} onClick={() => action.mutate('enable')}>
-              Enable
-            </button>
-          )}
-          {canWrite && inline === 'reconnect' && (
-            <button className={button} type="button" disabled={pending || reconnecting} onClick={reconnect}>
-              Reconnect
-            </button>
-          )}
-          {canWrite && (
-            <OverflowMenu label={`More actions for ${title}`} itemsMarker="data-linear-connection-actions">
-              <button type="button" disabled={pending} onClick={() => action.mutate('validate')}>
-                Validate
-              </button>
-              {app ? (
-                inline !== 'reconnect' && (
-                  <button type="button" disabled={pending || reconnecting} onClick={reconnect}>
-                    Reconnect
-                  </button>
-                )
-              ) : (
-                <button type="button" disabled={pending} onClick={() => setReplacing(true)}>
-                  Replace API key
-                </button>
-              )}
-              {connection.enabled && (
-                <button type="button" disabled={pending} onClick={() => setConfirming('disable')}>
-                  Disable…
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={pending}
-                className="text-status-danger-600 dark:text-status-danger-400"
-                onClick={() => setConfirming('remove')}
-              >
-                Remove…
-              </button>
-            </OverflowMenu>
-          )}
-        </div>
-      </div>
+    <ConnectionRow
+      title={title}
+      meta={
+        <p>
+          {app ? 'Agent app' : 'Personal API key'}
+          {app && organizationUrlKey && <> · linear.app/{organizationUrlKey}</>}
+        </p>
+      }
+      status={status}
+      inline={
+        !canWrite || !inline
+          ? null
+          : inline === 'enable'
+            ? { label: 'Enable', disabled: pending, onClick: () => action.mutate('enable') }
+            : { label: 'Reconnect', disabled: pending || reconnecting, onClick: reconnect }
+      }
+      menu={
+        canWrite
+          ? [
+              { label: 'Validate', disabled: pending, onSelect: () => action.mutate('validate') },
+              app
+                ? inline !== 'reconnect' && {
+                    label: 'Reconnect',
+                    disabled: pending || reconnecting,
+                    onSelect: reconnect,
+                  }
+                : { label: 'Replace API key', disabled: pending, onSelect: () => setReplacing(true) },
+              connection.enabled && {
+                label: 'Disable…',
+                disabled: pending,
+                onSelect: () => setConfirming('disable'),
+              },
+              { label: 'Remove…', danger: true, disabled: pending, onSelect: () => setConfirming('remove') },
+            ]
+          : []
+      }
+      confirmation={
+        canWrite && confirming
+          ? {
+              message:
+                connectionConfirmQuestion(confirming, title, squadCount, 'Linear') +
+                (confirming === 'remove' && app
+                  ? ' To remove the app from the workspace too, uninstall it in Linear.'
+                  : ''),
+              confirmLabel: confirming === 'remove' ? 'Remove' : 'Disable',
+              disabled: pending,
+              onConfirm: () => (confirming === 'remove' ? remove.mutate() : action.mutate('disable')),
+              onCancel: () => setConfirming(null),
+            }
+          : null
+      }
+    >
       {claimed && (
         <p role="alert" className={`mt-2 ${danger}`}>
           This Linear workspace is already connected to another Ficus Cloud instance. Ficus does not receive its events
@@ -627,30 +612,6 @@ function LinearConnection({
           Ficus needs new Linear permissions to acknowledge agent sessions, post progress and attach pull requests. A
           Linear workspace admin should select Reconnect and approve the updated permissions.
         </p>
-      )}
-      {canWrite && confirming && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-status-danger-surface px-3 py-2 text-sm text-status-danger-fg">
-          <p className="min-w-0 flex-1">
-            {confirming === 'remove'
-              ? `Remove the ${title} connection?${affected}${app ? ' To remove the app from the workspace too, uninstall it in Linear.' : ''}`
-              : `Disable the ${title} connection?${affected}`}
-          </p>
-          <button
-            type="button"
-            className="ficus-button ficus-button-danger rounded-md px-3 py-1.5 text-sm disabled:opacity-50"
-            disabled={pending}
-            onClick={() => (confirming === 'remove' ? remove.mutate() : action.mutate('disable'))}
-          >
-            {confirming === 'remove' ? 'Remove' : 'Disable'}
-          </button>
-          <button
-            type="button"
-            className="ficus-button ficus-button-ghost rounded-md px-3 py-1.5 text-sm"
-            onClick={() => setConfirming(null)}
-          >
-            Cancel
-          </button>
-        </div>
       )}
       {canWrite && !app && replacing && (
         <div className="mt-3 space-y-2">
@@ -696,6 +657,6 @@ function LinearConnection({
         noun={app ? 'workspace' : 'account'}
         nextStep="Next, open each squad and choose the Linear teams whose issues it handles (Integrations → Linear)."
       />
-    </li>
+    </ConnectionRow>
   )
 }
