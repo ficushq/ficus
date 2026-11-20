@@ -328,8 +328,9 @@ export class WorkspaceWatcher {
     // Idempotent: core's reconcile re-issues startWatch every cycle. If we're already watching with
     // an identical (normalized) config, don't stop + full-rescan again — that repeated scan loads
     // every matched file into memory and was a periodic memory spike. Return the last scan's result.
+    // No log line here: the core's host runtime runs this watcher in process and
+    // calls start() on every sandbox ensure, so a line per call floods its logs.
     if (this.fsWatcher && this.config && this.lastResult && configsEqual(this.config, normalizedConfig)) {
-      log('Already watching with an identical config — skipping rescan')
       return this.lastResult
     }
 

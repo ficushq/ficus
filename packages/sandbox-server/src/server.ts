@@ -493,7 +493,10 @@ async function main(): Promise<void> {
             case '/browser/close':
               return handleBrowserProxy(pathname, body, AUTH_TOKEN)
             case '/watch': {
-              log(`Watch start requested: include=${JSON.stringify(body.include)}, squadId=${body.squadId}`)
+              // Counts only: a squad's include list can run to hundreds of globs.
+              log(
+                `Watch start requested: include=${Array.isArray(body.include) ? body.include.length : 0} patterns, exclude=${Array.isArray(body.exclude) ? body.exclude.length : 0} patterns, squadId=${body.squadId}`
+              )
               const result = await watcher.start(body)
               log(`Watch started: ${result.fileCount} files, ${result.skipped.length} skip diagnostics`)
               return Response.json({ ok: true, ...result })

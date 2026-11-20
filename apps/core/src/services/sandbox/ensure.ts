@@ -39,6 +39,7 @@ import { containerWorkspaceLayout, type WorkspaceLayoutContext } from './workspa
 import { resolveSandboxAssets, type AssetContext } from './asset-manifest'
 import { createLogger } from '../../lib/infra/logger'
 import { InflightDeduper } from '../../lib/infra/inflight'
+import { WatchStateTracker, summarizeWatchConfig } from './watch-status-log'
 import { ensureSandboxToolchain, type ToolchainSettleOutcome } from './toolchain/provision'
 import { assertMaintenanceAdmissionOpen } from '../maintenance/admission'
 import type { AdmissionScope, AdmissionWritePhase } from '../maintenance/admission-reservation'
@@ -790,6 +791,13 @@ export function normalizeWatchPatterns(patterns: string[]): string[] {
 /** Inflight watch configuration calls — prevents concurrent duplicate calls per squad */
 const watchInflight = new InflightDeduper<void>()
 
+/**
+ * Last logged watch state per squad. Ensure runs constantly, so the watch is
+ * logged at info only when its state changes; an unchanged check stays quiet
+ * apart from one short debug line.
+ */
+const watchLogState = new WatchStateTracker()
+
 async function configureWorkspaceWatch(squadId: string): Promise<void> {
   // Deduplicate concurrent calls for the same squad
   return watchInflight.run(squadId, () => _configureWorkspaceWatch(squadId))
@@ -812,12 +820,20 @@ async function _configureWorkspaceWatch(squadId: string): Promise<void> {
         // Host workspace dirs persist (no pod teardown), so a disabled config
         // must explicitly stop any live watcher.
         await manager.stopWatch?.(squadId)
+        watchLogState.forget(squadId)
         return
       }
       const desiredExclude = normalizeWatchPatterns(workspacePaths!.exclude || [])
       const result = await manager.configureWatch(squadId, { include: desiredInclude, exclude: desiredExclude })
-      if (result.owned) log.info(`Configured host workspace watch for squad ${squadId}`)
-      else log.debug(`Workspace watch for squad ${squadId} owned by a sibling core process`)
+      const desired = summarizeWatchConfig({ include: desiredInclude, exclude: desiredExclude, squadId })
+      const state = result.owned ? `owned ${desired}` : 'sibling'
+      if (!watchLogState.changed(squadId, state)) {
+        log.debug(`Host workspace watch for squad ${squadId} unchanged (${state})`)
+      } else if (result.owned) {
+        log.info(`Configured host workspace watch for squad ${squadId}: ${desired}`)
+      } else {
+        log.debug(`Workspace watch for squad ${squadId} owned by a sibling core process`)
+      }
       return
     }
 
@@ -833,11 +849,15 @@ async function _configureWorkspaceWatch(squadId: string): Promise<void> {
 
     const desiredInclude = normalizeWatchPatterns(memoryConfig.workspacePaths.include)
     const desiredExclude = normalizeWatchPatterns(memoryConfig.workspacePaths.exclude || [])
+    const desired = summarizeWatchConfig({ include: desiredInclude, exclude: desiredExclude, squadId })
 
     // Check if the sandbox is already watching with the same config
     try {
       const status = await client.getWatchStatus()
-      log.debug(`Watch status for squad ${squadId}: active=${status.active}, config=${JSON.stringify(status.config)}`)
+      // Counts and a short hash only: the include list alone can run to
+      // hundreds of globs, and this runs on every ensure.
+      const state = `active=${status.active} ${summarizeWatchConfig(status.config)}; desired ${desired}`
+      if (watchLogState.changed(squadId, state)) log.info(`Workspace watch status for squad ${squadId}: ${state}`)
       if (
         status.active &&
         status.config &&
@@ -858,7 +878,10 @@ async function _configureWorkspaceWatch(squadId: string): Promise<void> {
       squadId,
     })
 
-    log.info(`Configured workspace watch for squad ${squadId}`)
+    // The next status check should report exactly this; record it so that
+    // check does not log the expected transition a second time.
+    watchLogState.set(squadId, `active=true ${desired}; desired ${desired}`)
+    log.info(`Configured workspace watch for squad ${squadId}: ${desired}`)
   } catch (err) {
     log.error(`Failed to configure workspace watch for squad ${squadId}:`, err)
   }
