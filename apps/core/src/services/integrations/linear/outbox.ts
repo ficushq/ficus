@@ -62,15 +62,21 @@ export interface EnqueueLinearWritesInput {
 
 /**
  * Inserts the items that are not yet in the outbox; an existing projection key is never sent twice.
- * Items keep their order: each gets a creation time one millisecond after the previous one.
+ * Items keep their order: each gets a creation time one millisecond after the previous one, which only
+ * orders sending. Every item is due at once: a drain that runs right after the enqueue sends them all.
  * Returns the projection keys that were new.
  */
-export async function enqueueLinearWrites(input: EnqueueLinearWritesInput, store: Store = db): Promise<string[]> {
+export async function enqueueLinearWrites(
+  input: EnqueueLinearWritesInput,
+  store: Store = db,
+  now: () => Date = () => new Date()
+): Promise<string[]> {
   // A key that does not fit the column is never written, so one bad item cannot fail the whole batch.
   const items = input.items.filter((item) => item.projectionKey.length <= PROJECTION_KEY_MAX)
   if (items.length !== input.items.length) log.warn('A Linear write-back item with an over-long key was skipped')
   if (!items.length) return []
-  const base = Date.now()
+  const at = now()
+  const base = at.getTime()
   const rows = await store
     .insert(linearActivityOutbox)
     .values(
@@ -85,7 +91,7 @@ export async function enqueueLinearWrites(input: EnqueueLinearWritesInput, store
         payload: item.payload,
         collapsible: item.collapsible,
         createdAt: new Date(base + index),
-        nextAttemptAt: new Date(base + index),
+        nextAttemptAt: at,
       }))
     )
     .onConflictDoNothing({

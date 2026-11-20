@@ -28,6 +28,7 @@ import { ensureQueryIndex } from '../../../test-utils/message-query-indexes'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import {
   drainLinearOutbox,
+  enqueueLinearWrites,
   resetLinearOutboxStateForTest,
   LINEAR_OUTBOX_MAX_ATTEMPTS,
   LINEAR_SESSION_ACTIVITIES_PER_HOUR,
@@ -265,6 +266,26 @@ describe('progress projection', () => {
     await drainLinearOutbox()
     const [after] = await db.select().from(linearActivityOutbox).where(eq(linearActivityOutbox.id, row!.id))
     expect(after).toMatchObject({ status: 'sent', lastErrorCode: 'duplicate' })
+  })
+
+  test('every queued item is due at once, so a drain right after the enqueue sends them all', async () => {
+    const { sessionId } = await boundStream()
+    // One fixed instant for both the enqueue and the drain.
+    const at = new Date()
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      projectionKey: `test:${index}`,
+      kind: 'activity' as const,
+      payload: { content: { type: 'thought', body: `Item ${index}` } },
+      collapsible: false,
+    }))
+    await enqueueLinearWrites(
+      { connectionId: fixture.connectionId, scopeKey: sessionId, sessionId, items },
+      undefined,
+      () => at
+    )
+    // The same instant as the enqueue: nothing waits for a later clock tick.
+    await drainLinearOutbox({ now: () => at })
+    expect(bodies(sessionId).slice(-6)).toEqual(items.map((_, index) => ['thought', `Item ${index}`]))
   })
 
   test('HTTP 429 honors Retry-After for the whole connection', async () => {
