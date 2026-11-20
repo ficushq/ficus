@@ -1,3 +1,4 @@
+import { squadMetadataSchema } from '@ficus/shared'
 import { describe, expect, test } from 'bun:test'
 import {
   githubIdentityFromMetadata,
@@ -6,6 +7,8 @@ import {
   githubRoutingToMetadata,
   linearRoutingFromMetadata,
   linearRoutingToMetadata,
+  linearSettingsFromMetadata,
+  linearSettingsToMetadata,
 } from './integrationMetadata'
 
 describe('IntegrationSettings GitHub identity metadata', () => {
@@ -80,5 +83,31 @@ describe('IntegrationSettings Linear routing metadata', () => {
       github: [{ repo: 'ficus/app' }],
       linear: [{ teamId: 'team-a' }],
     })
+  })
+})
+
+describe('IntegrationSettings Linear pull request links', () => {
+  test('defaults to closes for the origin issue and links for other tracked issues', () => {
+    expect(linearSettingsFromMetadata({})).toEqual({ origin: 'closes', tracked: 'links' })
+    expect(
+      linearSettingsFromMetadata({
+        integrationSettings: { linear: { version: 1, pullRequestLinks: { tracked: 'contributes' } } },
+      })
+    ).toEqual({ origin: 'closes', tracked: 'contributes' })
+  })
+
+  test('writes integrationSettings.linear without touching team routes or other settings', () => {
+    const metadata = linearSettingsToMetadata(
+      { linear: [{ teamId: 'team-a' }], integrationSettings: { other: { keep: true } } },
+      { origin: 'contributes', tracked: 'closes' }
+    )
+    expect(metadata).toEqual({
+      linear: [{ teamId: 'team-a' }],
+      integrationSettings: {
+        other: { keep: true },
+        linear: { version: 1, pullRequestLinks: { origin: 'contributes', tracked: 'closes' } },
+      },
+    })
+    expect(squadMetadataSchema.safeParse(metadata).success).toBe(true)
   })
 })

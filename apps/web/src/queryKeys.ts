@@ -161,6 +161,8 @@ export const githubFeedbackQueryKeys = {
 
 /** The signed-in person's own verified GitHub account; refreshed by `githubIdentity.updated`. */
 export const githubIdentityQueryKeys = { all: ['github-identity'] as const }
+/** The signed-in person's own linked Linear accounts. */
+export const linearIdentityQueryKeys = { all: ['linear-identity'] as const }
 
 /** The server's canonical public address (runtime config + admin status). */
 export const publicUrlQueryKeys = {

@@ -443,7 +443,7 @@ function mapReceipt(
     !row ||
     (row.authority !== 'local' && row.authority !== 'platform_broker') ||
     (row.intent !== 'connect' && row.intent !== 'reconnect') ||
-    (row.purpose !== 'integration' && row.purpose !== 'github_identity')
+    (row.purpose !== 'integration' && row.purpose !== 'github_identity' && row.purpose !== 'linear_identity')
   ) {
     return null
   }

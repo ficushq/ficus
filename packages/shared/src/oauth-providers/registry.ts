@@ -1,7 +1,7 @@
 import { notionAdapter } from './notion/adapter'
 import { githubAdapter } from './github/adapter'
 import { slackAdapter } from './slack/adapter'
-import { linearAdapter } from './linear/adapter'
+import { linearAdapter, linearIdentityAdapter } from './linear/adapter'
 import type { OAuthProviderAdapter } from './types'
 
 const ADAPTERS = new Map<string, OAuthProviderAdapter>([
@@ -9,6 +9,7 @@ const ADAPTERS = new Map<string, OAuthProviderAdapter>([
   ['github', githubAdapter],
   ['slack', slackAdapter],
   ['linear', linearAdapter],
+  ['linear-identity', linearIdentityAdapter],
 ])
 
 export function getOAuthProviderAdapter(key: string): OAuthProviderAdapter | undefined {

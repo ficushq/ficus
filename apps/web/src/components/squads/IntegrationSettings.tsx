@@ -14,9 +14,18 @@ import {
   githubRoutingToMetadata,
   linearRoutingFromMetadata,
   linearRoutingToMetadata,
+  linearSettingsFromMetadata,
+  linearSettingsToMetadata,
   type GithubRoutingFormEntry,
+  type LinearPullRequestLinksForm,
   type LinearRoutingFormEntry,
 } from './integrationMetadata'
+
+const LINK_KIND_OPTIONS = [
+  { value: 'closes', label: 'Closes the issue' },
+  { value: 'contributes', label: 'Contributes to the issue' },
+  { value: 'links', label: 'Links to the issue' },
+] as const
 
 export function IntegrationSettings({ squadId }: { squadId: string }) {
   const catalog = useQuery(integrationQueries.catalog())
@@ -81,6 +90,7 @@ export function IntegrationSettings({ squadId }: { squadId: string }) {
 interface RoutingDraft {
   github: GithubRoutingFormEntry[]
   linear: LinearRoutingFormEntry[]
+  pullRequestLinks: LinearPullRequestLinksForm
   rules: SquadEventRule[]
 }
 
@@ -101,9 +111,10 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
   const config = draft ?? {
     github: existingGithub.length > 0 ? existingGithub : [{ repo: '', labelsText: '' }],
     linear: existingLinear.length > 0 ? existingLinear : [{ teamId: '' }],
+    pullRequestLinks: linearSettingsFromMetadata(squad?.metadata),
     rules: effectiveSquadEventRules(squad?.metadata, provider),
   }
-  const { github: githubEntries, linear: linearEntries, rules: eventRules } = config
+  const { github: githubEntries, linear: linearEntries, pullRequestLinks, rules: eventRules } = config
   const hasChanges = draft !== null
 
   const updateMutation = useMutation({
@@ -112,7 +123,10 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
       const metadata =
         provider === 'github'
           ? githubRoutingToMetadata(currentMetadata, nextConfig.github)
-          : linearRoutingToMetadata(currentMetadata, nextConfig.linear)
+          : linearSettingsToMetadata(
+              linearRoutingToMetadata(currentMetadata, nextConfig.linear),
+              nextConfig.pullRequestLinks
+            )
       return updateSquad(squadId, {
         metadata: {
           ...metadata,
@@ -278,6 +292,56 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
           >
             Add Linear team
           </button>
+
+          <section className="mt-5 space-y-3" aria-label="Pull request links">
+            <div>
+              <h3
+                data-setting-target="linear-pull-request-links"
+                data-setting-fallback="pull request links"
+                className="text-sm font-medium text-primary"
+              >
+                Pull request links
+              </h3>
+              <p className="text-xs text-muted mt-1">
+                How Ficus attaches a work stream&rsquo;s pull request to its Linear issues. With Closes, Linear&rsquo;s
+                GitHub integration completes the issue when the pull request merges. Ficus never changes issue status
+                itself.
+              </p>
+            </div>
+            {(
+              [
+                ['origin', 'Issue the work started from'],
+                ['tracked', 'Other tracked issues'],
+              ] as const
+            ).map(([field, label]) => (
+              <div key={field}>
+                <label htmlFor={`linear-pr-link-${field}`} className="block text-sm font-medium text-primary mb-1">
+                  {label}
+                </label>
+                <select
+                  id={`linear-pr-link-${field}`}
+                  value={pullRequestLinks[field]}
+                  disabled={!squadPermissions.can('squads:update')}
+                  onChange={(e) =>
+                    setDraft({
+                      ...config,
+                      pullRequestLinks: {
+                        ...pullRequestLinks,
+                        [field]: e.target.value as LinearPullRequestLinksForm[typeof field],
+                      },
+                    })
+                  }
+                  className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary focus:ring-1 focus:ring-accent/50"
+                >
+                  {LINK_KIND_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </section>
         </>
       )}
       <SquadEventRulesEditor

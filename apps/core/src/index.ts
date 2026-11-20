@@ -75,8 +75,10 @@ import {
   integrationRoutesService,
   managedVaultService,
   githubIdentityRoutesService,
+  linearIdentityRoutesService,
   squadIntegrationRoutesService,
 } from './services/integrations/runtime'
+import { createLinearIdentityRouter } from './routes/linear-identity'
 import { routingRouter } from './routes/routing'
 import { amtpRouter } from './routes/amtp'
 import { userPreferencesRouter } from './routes/user-preferences'
@@ -349,6 +351,7 @@ app.route('/api/squads', createSquadIntegrationsRouter(squadIntegrationRoutesSer
 app.route('/api', deploymentsRouter)
 app.route('/api/channel-links', channelLinksRouter)
 app.route('/api/github-identity', createGitHubIdentityRouter(githubIdentityRoutesService))
+app.route('/api/linear-identity', createLinearIdentityRouter(linearIdentityRoutesService))
 app.route('/api/channel-instances', channelInstancesRouter)
 app.route('/api/squad-relationships', squadRelationshipsRouter)
 app.route('/api/workstreams', workStreamsRouter)

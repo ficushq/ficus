@@ -7,7 +7,6 @@ import {
   resolveTrackedResources,
   trackedResourceUrl,
   type QuestionData,
-  type WorkflowRun,
 } from '@ficus/shared'
 import {
   agentQuestions,

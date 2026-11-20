@@ -259,6 +259,25 @@ describe('LinearOAuthClient', () => {
     expect(classifyLinearOAuthError(error).retryable).toBe(false)
   })
 
+  test('reads a person’s identity for account linking and refuses an app token', async () => {
+    const person = recordingClient(() =>
+      json({ data: { viewer: { id: 'person-1', app: false }, organization: { id: 'org-1' } } })
+    )
+    expect(await person.client.userIdentity({ accessToken: 'user-token' })).toEqual({
+      linearUserId: 'person-1',
+      organizationId: 'org-1',
+    })
+    expect(new Headers(person.requests[0]!.init?.headers).get('authorization')).toBe('Bearer user-token')
+    const app = recordingClient(() =>
+      json({ data: { viewer: { id: 'app-user', app: true }, organization: { id: 'org-1' } } })
+    )
+    const error = (await app.client
+      .userIdentity({ accessToken: 't' })
+      .catch((caught: unknown) => caught)) as LinearOAuthError
+    expect(error.code).toBe('not_user_actor')
+    expect(classifyLinearOAuthError(error).retryable).toBe(false)
+  })
+
   test('maps identity failures without provider text', async () => {
     const cases: [Response, string][] = [
       [json({ errors: [{ message: 'detail', extensions: { code: 'AUTHENTICATION_ERROR' } }] }), 'invalid_auth'],

@@ -1,5 +1,5 @@
 import { MIN_INTEGRATION_CREDENTIAL_LENGTH } from '../services/security/integration-credential-entries'
-import { boundedRecord } from '@ficus/shared'
+import { boundedRecord, effectiveLinearSettings } from '@ficus/shared'
 import { BigbrainError } from '../services/integrations/bigbrain/errors'
 import type { BigbrainLocalConnections } from '../services/integrations/bigbrain/local-connections'
 import { BigbrainSetupError, type BigbrainLocalSetup } from '../services/integrations/bigbrain/local-setup'
@@ -9,7 +9,8 @@ import type { readIntegrationCredentialFields } from '../services/integrations/c
 import type { GitHubWebhookSettings } from '../services/integrations/github/webhook-settings'
 import { integrationOutputRegistry } from '../services/integrations/outputs/registry'
 import { Hono, type Context } from 'hono'
-import { db } from '../db'
+import { db, squads } from '../db'
+import { eq } from 'drizzle-orm'
 import { GitHubFeedbackError, requireGitHubHuman } from '../services/integrations/github/feedback-trust'
 import type { OAuthAuthorizationPurpose } from '../services/integrations/authorization/state-repository'
 import { zValidator } from '../lib/zod-validator'
@@ -234,6 +235,20 @@ async function completionAccess(
     const denied = await authorize(c, `integrations:write:${provider}`)
     return denied ?? (await userSessionRequired(c, identity, `connect ${integrationLabel(provider)}`))
   }
+  // Linking one's own Linear account needs a signed-in person, not integrations:write.
+  if (provider === 'linear' && service.authorization?.resolvePurpose && source.kind !== 'device') {
+    try {
+      if (
+        (await service.authorization.resolvePurpose({ providerKey: provider, userId: identity.userId, source })) ===
+        'linear_identity'
+      ) {
+        c.set('authzChecked', true)
+        return { identity, personal: true }
+      }
+    } catch (error) {
+      return authorizationFailure(c, error, provider, source.kind)
+    }
+  }
   if (provider === 'github' && service.authorization?.resolvePurpose) {
     try {
       await requireGitHubHuman(db, identity)
@@ -252,6 +267,11 @@ async function completionAccess(
   }
   const denied = await authorize(c, `integrations:write:${provider}`)
   return denied ?? { identity, personal: false }
+}
+
+async function linearSquadSettings(squadId: string) {
+  const [squad] = await db.select({ metadata: squads.metadata }).from(squads).where(eq(squads.id, squadId))
+  return effectiveLinearSettings(squad?.metadata)
 }
 
 export function createIntegrationsRouter(service: IntegrationRoutesService): Hono {
@@ -912,6 +932,8 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
               ).inaccessibleLinearTeams(resolvedSquadId(c), selection.assignment.id),
             }
           : {}),
+        // The squad's Linear settings with defaults filled in, so clients never repeat the default logic.
+        ...(providerKey === 'linear' ? { settings: await linearSquadSettings(resolvedSquadId(c)) } : {}),
       })
     })
     .put(
