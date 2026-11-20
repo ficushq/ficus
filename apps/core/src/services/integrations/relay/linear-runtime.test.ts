@@ -473,7 +473,7 @@ describe('hosted relay end to end (fake Platform and fake Linear)', () => {
     expect(linear.calls.length).toBe(before)
   })
 
-  test("relayed sessions route by their live shape: delegation, mention, and the app's own session", async () => {
+  test('relayed sessions route by their live shape: delegation, mention, and an unattributed session', async () => {
     const fixture = await hosted()
     const teamId = randomUUID()
     await fixture.addSquad({ teamIds: [teamId] })
@@ -505,7 +505,7 @@ describe('hosted relay end to end (fake Platform and fake Linear)', () => {
     linear.addSession({ id: mention, issueId: mentionedIssue.id, creatorId: person.id, commentId })
     linear.addSession({ id: own, issueId: ownIssue.id })
     // The fake payloads carry the live shapes: Linear's authorless thread comment for the delegation,
-    // an authored comment for the mention, and no creator for the app's own session.
+    // an authored comment for the mention, and no creator for a session Ficus has no record of opening.
     let pending: LinearRelayDelivery[] = [
       relayDelivery(
         fixture,
@@ -568,15 +568,15 @@ describe('hosted relay end to end (fake Platform and fake Linear)', () => {
         .sort()
     expect(await routed(delegation)).toEqual(['agent_session.created', 'issue.delegated'])
     expect(await routed(mention)).toEqual(['agent_session.created', 'issue.mentioned'])
-    expect(await routed(own)).toEqual([])
+    // Not delegated to the app and not attributable: routed as a mention so the manager hears of it.
+    expect(await routed(own)).toEqual(['agent_session.created', 'issue.mentioned'])
     const trigger = async (sessionId: string) =>
       (await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId)))[0]?.trigger
     expect(await trigger(delegation)).toBe('delegation')
     expect(await trigger(mention)).toBe('mention')
-    expect(await trigger(own)).toBe('proactive')
-    // The app's own session gets no acknowledgment or disposition; the others get both.
-    expect(linear.activitiesFor(own)).toEqual([])
-    for (const sessionId of [delegation, mention])
+    expect(await trigger(own)).toBe('delegation')
+    // A missing creator alone never makes a session Ficus's own: every session is acknowledged.
+    for (const sessionId of [delegation, mention, own])
       expect(linear.activitiesFor(sessionId).map((activity) => activity.content.body)[0]).toBe(LINEAR_ACK_BODY)
   })
 

@@ -112,7 +112,11 @@ const linearExtraFields: Record<string, IntegrationOutputField> = {
   previousDelegate: { type: 'string', description: 'Linear user ID of the previous delegate, when there was one.' },
   'session.id': { type: 'string', description: 'Linear agent session ID.' },
   'session.url': { type: 'string', description: 'Linear agent session URL.' },
-  'session.trigger': { type: 'string', description: 'What opened the agent session: delegation or mention.' },
+  'session.trigger': {
+    type: 'string',
+    description:
+      'What opened the agent session: delegation, mention, or unknown when no person can be attributed and the issue is not delegated to the app.',
+  },
   'session.creator': { type: 'string', description: 'Linear user ID of the person who opened the session.' },
   'session.appUserId': { type: 'string', description: 'Linear user ID of the agent app the session belongs to.' },
   'comment.id': { type: 'string', description: 'Linear comment ID.' },
