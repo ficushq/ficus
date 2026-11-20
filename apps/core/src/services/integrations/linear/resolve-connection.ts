@@ -2,9 +2,10 @@ import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { getSecretStore } from '../../secrets'
 import { resolveOAuthAuthority } from '../authorization/authority'
 import { isFencedOAuthConnection } from '../oauth-plugin-view'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, sql } from 'drizzle-orm'
 import { db, integrationConnections } from '../../../db'
 import type { IntegrationConnectionRecord } from '../connection-repository'
+import { integrationEnabledPredicate } from '../provider-state'
 import {
   isLinearAppConfiguration,
   linearAuthorization,
@@ -96,4 +97,54 @@ export async function resolveLinearAssignment(squadId: string) {
   const connection = await new DbIntegrationConnectionRepository().getAssigned(squadId, 'linear')
   if (!connection?.enabled || connection.authState !== 'authenticated') return undefined
   return { id: connection.id }
+}
+
+/**
+ * Live, revision-fenced resolution of a hosted (`platform_broker`) Linear agent app connection for
+ * the event relay, modeled on `resolveManagedSlackConnection`: a token rotation, revocation or
+ * reconnect is visible on the very next read. Returns the bare access token for relay subscribe and
+ * pull, never the `Authorization` header value.
+ */
+export async function resolveManagedLinearConnection(connectionId: string, now = new Date()) {
+  const rows = await db
+    .select()
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.id, connectionId),
+        eq(integrationConnections.providerKey, 'linear'),
+        eq(integrationConnections.authorizationKind, 'oauth2'),
+        eq(integrationConnections.clientAuthority, 'platform_broker'),
+        eq(integrationConnections.enabled, true),
+        integrationEnabledPredicate(),
+        eq(integrationConnections.authState, 'authenticated'),
+        eq(integrationConnections.healthState, 'healthy'),
+        eq(integrationConnections.validatedRevision, integrationConnections.materialRevision),
+        gt(integrationConnections.validationExpiresAt, sql`clock_timestamp()`)
+      )
+    )
+    .limit(2)
+  if (rows.length !== 1) return undefined
+  const connection = rows[0]!
+  let configuration
+  try {
+    configuration = parseLinearConfiguration(connection.configuration)
+  } catch {
+    return undefined
+  }
+  if (!isLinearAppConfiguration(configuration)) return undefined
+  const store = getSecretStore()
+  await store.refreshKey(connection.credentialRef)
+  const raw = store.get(connection.credentialRef)
+  if (!raw) return undefined
+  let credential
+  try {
+    credential = linearCredentialCodec.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (credential.kind !== 'oauth') return undefined
+  const { bundle } = credential
+  if (bundle.expiresAt !== null && Date.parse(bundle.expiresAt) <= now.getTime()) return undefined
+  return { connection, configuration, credential: bundle }
 }

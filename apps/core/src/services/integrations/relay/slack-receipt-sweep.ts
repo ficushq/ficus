@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, isNotNull, like, lt } from 'drizzle-orm'
 import { db, integrationEventPollingDispatches } from '../../../db'
 import { createPeriodicRunner, type PeriodicRunner } from '../../../lib/infra/PeriodicRunner'
 import { createLogger } from '../../../lib/infra/logger'
@@ -43,7 +43,36 @@ export async function sweepCompletedSlackDispatchReceipts(now: Date = new Date()
   return deleted.length
 }
 
-/** Periodic sweep, registered alongside Core's other maintenance runners (see index.ts). */
+/**
+ * How long a completed hosted Linear relay receipt (`providerKey = 'linear'`, key
+ * `linear:<Linear-Delivery>`, see linear-runtime.ts) is kept. Platform retains a relayed delivery
+ * for 72 hours (`RELAY_EVENT_TTL_MS`), so a redelivery can never arrive after this horizon. Only
+ * relay receipts are swept; other Linear receipt keys are left alone.
+ */
+export const LINEAR_RELAY_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Deletes completed hosted Linear relay receipts older than the retention horizon. Returns the count deleted. */
+export async function sweepCompletedLinearRelayReceipts(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - LINEAR_RELAY_RECEIPT_RETENTION_MS)
+  const deleted = await db
+    .delete(integrationEventPollingDispatches)
+    .where(
+      and(
+        eq(integrationEventPollingDispatches.providerKey, 'linear'),
+        like(integrationEventPollingDispatches.eventKey, 'linear:%'),
+        isNotNull(integrationEventPollingDispatches.completedAt),
+        lt(integrationEventPollingDispatches.completedAt, cutoff)
+      )
+    )
+    .returning({ eventKey: integrationEventPollingDispatches.eventKey })
+  if (deleted.length) log.debug(`Swept ${deleted.length} completed Linear relay receipt(s)`)
+  return deleted.length
+}
+
+/**
+ * Periodic sweep of relay dispatch receipts (Slack and hosted Linear), registered alongside Core's
+ * other maintenance runners (see index.ts).
+ */
 export class SlackDispatchReceiptSweepWorker {
   #runner: PeriodicRunner | null = null
   constructor(private readonly now: () => Date = () => new Date()) {}
@@ -57,6 +86,7 @@ export class SlackDispatchReceiptSweepWorker {
       runImmediately: true,
       task: async () => {
         await sweepCompletedSlackDispatchReceipts(this.now())
+        await sweepCompletedLinearRelayReceipts(this.now())
       },
     })
     this.#runner.start()

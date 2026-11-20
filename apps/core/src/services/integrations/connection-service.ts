@@ -33,6 +33,8 @@ export interface SafeIntegrationConnection {
   validatedAt: Date | null
   validationExpiresAt: Date | null
   lastErrorCode: string | null
+  /** Set when the hosted event relay refused this connection revision for good. */
+  relaySubscribeErrorCode?: string
   usage: IntegrationConnectionUsage
 }
 
@@ -464,6 +466,7 @@ export class IntegrationConnectionService {
       validatedAt: connection.validatedAt,
       validationExpiresAt: connection.validationExpiresAt,
       lastErrorCode: connection.lastErrorCode,
+      ...(connection.relaySubscribeErrorCode ? { relaySubscribeErrorCode: connection.relaySubscribeErrorCode } : {}),
       usage: await this.#assignments.usage(connection.id),
     }
   }

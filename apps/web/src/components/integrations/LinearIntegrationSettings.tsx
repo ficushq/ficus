@@ -69,6 +69,7 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
             app={connection.configuration.mode === 'app'}
             enabled={connection.enabled}
             health={connection.authState === 'authenticated' ? connection.healthState : connection.authState}
+            relayError={connection.relaySubscribeErrorCode}
             canWrite={canWrite}
             refresh={refresh}
             reconnect={() => install.mutate(connection.id)}
@@ -368,6 +369,7 @@ function LinearAccount({
   app,
   enabled,
   health,
+  relayError,
   canWrite,
   refresh,
   reconnect,
@@ -378,6 +380,8 @@ function LinearAccount({
   app: boolean
   enabled: boolean
   health: string
+  /** The hosted event relay's refusal for this connection, if any. */
+  relayError?: string
   canWrite: boolean
   refresh: () => Promise<void>
   reconnect: () => void
@@ -409,6 +413,12 @@ function LinearAccount({
           {enabled ? 'Enabled' : 'Disabled'} · {health}
         </span>
       </div>
+      {relayError === 'linear_organization_claimed' && (
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
+          This Linear workspace is already connected to another Ficus Cloud instance. Ficus does not receive its events
+          here. Disconnect it from the other instance, then select Reconnect.
+        </p>
+      )}
       {canWrite && (
         <div className="flex flex-wrap gap-2">
           <button className={button} disabled={pending} onClick={() => action.mutate('validate')}>
