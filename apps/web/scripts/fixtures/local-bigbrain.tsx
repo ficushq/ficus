@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { IntegrationDirectoryCard } from '../../src/components/settings/IntegrationsSection'
 import type { IntegrationCatalogItem } from '../../src/api/integrations'
+import { queryKeys } from '../../src/queryKeys'
 import '../../src/index.css'
 
 const params = new URLSearchParams(location.search)
@@ -24,6 +25,9 @@ const entry: IntegrationCatalogItem = {
   authorization: { kind: 'manual' },
 }
 const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+// The connection's "used by squads" row: no squads yet, and nobody to offer them to.
+cache.setQueryData(queryKeys.squads.list(), [])
+cache.setQueryData(queryKeys.auth.permissions(), { permissions: ['*'] })
 
 function Fixture() {
   const [expanded, setExpanded] = useState(true)

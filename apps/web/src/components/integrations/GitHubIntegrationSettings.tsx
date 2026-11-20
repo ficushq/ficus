@@ -3,6 +3,7 @@ import { CheckIcon, ClipboardIcon } from '../icons'
 import { GitHubWebhookSettings } from './GitHubWebhookSettings'
 import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 import { GitHubCommitSigning } from './GitHubCommitSigning'
+import { ConnectionSquads } from './ConnectionSquads'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@ficus/shared'
@@ -322,8 +323,7 @@ export function GitHubIntegrationSettings({
                 ? connection.authState === 'authenticated'
                   ? connection.healthState
                   : 'Reconnect required'
-                : 'Disabled'}{' '}
-              · Used by {connection.usage.squadCount} squads
+                : 'Disabled'}
             </p>
             {connection.enabled && connection.authState === 'authenticated' && (
               <>
@@ -341,6 +341,13 @@ export function GitHubIntegrationSettings({
                 />
               </>
             )}
+            <ConnectionSquads
+              provider="github"
+              providerLabel="GitHub"
+              connection={connection}
+              connections={sortedAccounts}
+              inherited={connection.isGlobalDefault}
+            />
           </div>
           {canWrite && (
             <div className="flex flex-wrap gap-2">

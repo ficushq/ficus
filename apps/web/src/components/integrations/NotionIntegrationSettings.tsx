@@ -12,6 +12,7 @@ import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnP
 import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
 import { integrationQueryKeys } from '../../queryKeys'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
+import { ConnectionSquads } from './ConnectionSquads'
 
 export function NotionIntegrationSettings({
   canRead,
@@ -184,7 +185,6 @@ export function NotionIntegrationSettings({
                         ? 'Reconnect required'
                         : `${connection.enabled ? 'Enabled' : 'Disabled'} · ${connection.healthState}`}
                     </div>
-                    <div className="text-xs text-muted">Used by {connection.usage.squadCount} squads</div>
                   </div>
                 </div>
                 {canWrite && (
@@ -228,6 +228,13 @@ export function NotionIntegrationSettings({
                   </div>
                 )}
               </div>
+              <ConnectionSquads
+                provider="notion"
+                providerLabel="Notion"
+                connection={connection}
+                connections={pool.data ?? []}
+                noun="workspace"
+              />
             </div>
           )
         })}

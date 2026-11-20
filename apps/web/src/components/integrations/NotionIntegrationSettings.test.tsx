@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
-import { integrationQueryKeys } from '../../queryKeys'
+import { MemoryRouter } from 'react-router'
+import { integrationQueryKeys, queryKeys } from '../../queryKeys'
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
 let root: import('react-dom/client').Root
@@ -196,9 +197,18 @@ test('requires explicit second-click confirmation before removing an assigned wo
       validatedAt: null,
       validationExpiresAt: null,
       lastErrorCode: null,
-      usage: { squadCount: 2, squads: [] },
+      usage: {
+        squadCount: 2,
+        squads: [
+          { id: 'squad-1', name: 'Docs' },
+          { id: 'squad-2', name: 'Research' },
+        ],
+      },
     },
   ])
+  // The squads card lists who uses the workspace without fetching anything.
+  client.setQueryData(queryKeys.squads.list(), [])
+  client.setQueryData(queryKeys.auth.permissions(), { permissions: [] })
   client.setQueryData([...integrationQueryKeys.all, 'oauth-app', 'notion'], {
     authority: 'platform_broker',
     configured: true,
@@ -210,10 +220,17 @@ test('requires explicit second-click confirmation before removing an assigned wo
   await harness.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <NotionIntegrationSettings canRead canWrite />
+        <MemoryRouter>
+          <NotionIntegrationSettings canRead canWrite />
+        </MemoryRouter>
       </QueryClientProvider>
     )
   )
+  expect(container.textContent).toContain('Used by')
+  expect([...container.querySelectorAll('a')].map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+    ['Docs', '/squads/squad-1/settings?section=integrations'],
+    ['Research', '/squads/squad-2/settings?section=integrations'],
+  ])
   const remove = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent === 'Remove')!
   await harness.act(async () => fireEvent.click(remove))
   expect(requests).toEqual([])

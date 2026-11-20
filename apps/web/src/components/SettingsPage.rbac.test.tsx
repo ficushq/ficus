@@ -133,6 +133,8 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
   if (options.squadPermissions || options.integrations || options.squads) {
     const squads = options.squads ?? defaultSquads
     queryClient.setQueryData(queryKeys.squads.list('active'), squads)
+    // The global cards' "used by squads" rows read every squad the viewer can see.
+    queryClient.setQueryData(queryKeys.squads.list(), squads)
     for (const squad of squads) {
       const squadPermissions = Array.isArray(options.squadPermissions)
         ? options.squadPermissions
@@ -691,45 +693,54 @@ describe('SettingsPage global integration RBAC', () => {
     expect(container.textContent).not.toContain('You do not have permission to view global integrations.')
   })
 
-  test.each([true, false])('uses only instance permissions and the global pool (canWrite=%s)', async (canWrite) => {
-    const { SettingsPage } = await import('./SettingsPage')
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-    const permissions = ['integrations:read:bigbrain', ...(canWrite ? ['integrations:write:bigbrain'] : [])]
-    seedSettingsQueries(queryClient, permissions, {
-      integrationPool: [operationsConnection],
-      squads,
-      squadPermissions: { 'squad-1': [], 'squad-2': [] },
-    })
+  test.each([true, false])(
+    'uses instance permissions for the global pool and squad permissions only to offer squads (canWrite=%s)',
+    async (canWrite) => {
+      const { SettingsPage } = await import('./SettingsPage')
+      queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+      const permissions = ['integrations:read:bigbrain', ...(canWrite ? ['integrations:write:bigbrain'] : [])]
+      seedSettingsQueries(queryClient, permissions, {
+        integrationPool: [operationsConnection],
+        squads,
+        squadPermissions: { 'squad-1': [], 'squad-2': [] },
+      })
 
-    await dom.act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={['/settings?section=integrations']}>
-            <SettingsPage dependencies={dependencies} />
-          </MemoryRouter>
-        </QueryClientProvider>
+      await dom.act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter initialEntries={['/settings?section=integrations']}>
+              <SettingsPage dependencies={dependencies} />
+            </MemoryRouter>
+          </QueryClientProvider>
+        )
+      })
+
+      expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(0)
+      expect(observerCount(integrationQueryKeys.localSetup())).toBe(0)
+      await dom.act(async () => {
+        fireEvent.click(bigbrainCard().querySelector('button[aria-expanded]')!)
+      })
+      expect(bigbrainCard().textContent).toContain('Operations Brain')
+      expect(bigbrainCard().textContent).toContain(`Vault: ${operationsBinding.vaultPath}`)
+      expect(bigbrainCard().textContent).toContain(`Executable: ${operationsBinding.executablePath}`)
+      expect(bigbrainCard().textContent).toContain('Core host, not the browser')
+      expect(bigbrainCard().querySelector('input[aria-label="API base"]')).toBeNull()
+      expect(buttonTexts(bigbrainCard()).includes('Connect or repair a vault on this Mac')).toBe(canWrite)
+      expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(1)
+      expect(observerCount(integrationQueryKeys.localSetup())).toBe(canWrite ? 1 : 0)
+      for (const squad of squads) {
+        // Each squad's own permissions decide whether the card offers it; its selection stays in the squad tab.
+        expect(observerCount(queryKeys.auth.permissions(squad.id))).toBe(1)
+        expect(observerCount(integrationQueryKeys.squad(squad.id, 'bigbrain'))).toBe(0)
+      }
+      // No squad grants integrations:write here, so none is offered.
+      expect(bigbrainCard().querySelector('select[aria-label^="Squad to add"]')).toBeNull()
+      expect(bigbrainCard().textContent).toContain(
+        "Someone who manages a squad's integrations can add it in that squad's Integrations tab."
       )
-    })
-
-    expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(0)
-    expect(observerCount(integrationQueryKeys.localSetup())).toBe(0)
-    await dom.act(async () => {
-      fireEvent.click(bigbrainCard().querySelector('button[aria-expanded]')!)
-    })
-    expect(bigbrainCard().textContent).toContain('Operations Brain')
-    expect(bigbrainCard().textContent).toContain(`Vault: ${operationsBinding.vaultPath}`)
-    expect(bigbrainCard().textContent).toContain(`Executable: ${operationsBinding.executablePath}`)
-    expect(bigbrainCard().textContent).toContain('Core host, not the browser')
-    expect(bigbrainCard().querySelector('input[aria-label="API base"]')).toBeNull()
-    expect(buttonTexts(bigbrainCard()).includes('Connect or repair a vault on this Mac')).toBe(canWrite)
-    expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(1)
-    expect(observerCount(integrationQueryKeys.localSetup())).toBe(canWrite ? 1 : 0)
-    for (const squad of squads) {
-      expect(observerCount(queryKeys.auth.permissions(squad.id))).toBe(0)
-      expect(observerCount(integrationQueryKeys.squad(squad.id, 'bigbrain'))).toBe(0)
+      expect(requests).toEqual([])
     }
-    expect(requests).toEqual([])
-  })
+  )
 
   test.each([
     ['squad-only', []],
