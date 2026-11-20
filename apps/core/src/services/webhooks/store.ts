@@ -91,7 +91,7 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       : linear
         ? await linearOwners(tx, linear)
         : []
-    const [result] = await tx
+    const insert = tx
       .insert(webhookEvents)
       .values({
         provider: input.provider,
@@ -104,12 +104,15 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
         error: input.error ?? null,
         deliveryId: input.deliveryId ?? null,
       })
-      // A delivery ID seen before is a provider retry of a stored delivery: it is not stored or processed again.
-      .onConflictDoNothing({
-        target: [webhookEvents.provider, webhookEvents.deliveryId],
-        where: sql`${webhookEvents.deliveryId} IS NOT NULL`,
-      })
-      .returning({ id: webhookEvents.id })
+    // A delivery ID seen before is a provider retry of a stored delivery: it is not stored or processed again.
+    const [result] = input.deliveryId
+      ? await insert
+          .onConflictDoNothing({
+            target: [webhookEvents.provider, webhookEvents.deliveryId],
+            where: sql`${webhookEvents.deliveryId} IS NOT NULL`,
+          })
+          .returning({ id: webhookEvents.id })
+      : await insert.returning({ id: webhookEvents.id })
     if (!result) throw new DuplicateWebhookDeliveryError()
     return result.id
   })
