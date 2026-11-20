@@ -7,7 +7,7 @@
  *   fully inside the composer and never under another control (a busy turn wraps them to a new line);
  * - the trigger opens the shared menu (arrow keys, Escape and focus return) with every action as a
  *   labelled row, including the window's own "Open full page";
- * - the window title bar truncates a long agent name, keeps its four buttons whole, and links the
+ * - the window title bar truncates a long agent name in a narrow window, keeps its four buttons whole, and links the
  *   squad name to the squad's Home;
  * - on a phone-sized viewport the trigger still opens the bottom sheet.
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-composer-narrow.ts
@@ -83,7 +83,8 @@ function measure(page: Page, scope: string) {
       outside,
       rows: new Set(boxes.filter((b) => send.contains(controls[boxes.indexOf(b)]!)).map((b) => Math.round(b.top))).size,
       sendTop: box(send).top,
-      triggerTop: shown(trigger) ? box(trigger).top : null,
+      // The row's leading group (the trigger or actions, and the status); Send below it has wrapped.
+      leadBottom: box(send.previousElementSibling!).bottom,
     }
   }, scope)
 }
@@ -99,8 +100,10 @@ function measureHeader(page: Page) {
       return { label: el.getAttribute('aria-label'), width: r.width, inside: r.right <= headerBox.right + 0.5 }
     })
     const link = header.querySelector<HTMLAnchorElement>('a')
+    const firstButton = header.querySelector('button')!.getBoundingClientRect()
     return {
       titleTruncated: title.scrollWidth > title.clientWidth,
+      titleClear: title.getBoundingClientRect().right <= firstButton.left + 0.5,
       buttons,
       link: link && {
         text: link.textContent,
@@ -149,7 +152,7 @@ try {
           const scope = layout === 'window' ? '[data-floating-window]' : '[data-testid="side-panel"]'
           const m = await measure(page, scope)
           report.push(
-            `${label}: composer ${m.composerWidth.toFixed(0)}px, ${m.collapsed ? 'folded' : 'inline'}, send rows ${m.rows}, ${m.triggerTop !== null && m.sendTop > m.triggerTop + 1 ? 'send wrapped' : 'one line'}`
+            `${label}: composer ${m.composerWidth.toFixed(0)}px, ${m.collapsed ? 'folded' : 'inline'}, send rows ${m.rows}, ${m.sendTop >= m.leadBottom ? 'send wrapped' : 'one line'}`
           )
           const narrow = m.composerWidth < COMPOSER_COLLAPSE_WIDTH
           assert.equal(m.collapsed, narrow, `${label}: folded=${m.collapsed} at ${m.composerWidth}px`)
@@ -160,7 +163,9 @@ try {
           assert.deepEqual(m.outside, [], `${label}: controls spill outside the composer`)
           if (layout === 'window') {
             const header = await measureHeader(page)
-            assert.ok(header.titleTruncated, `${label}: the long agent name is not truncated`)
+            // The long agent name truncates in narrow windows, and never runs under the buttons.
+            if (width <= 420) assert.ok(header.titleTruncated, `${label}: the long agent name is not truncated`)
+            assert.ok(header.titleClear, `${label}: the agent name runs under the title bar buttons`)
             assert.equal(header.buttons.length, 4, `${label}: expected four title bar buttons`)
             for (const button of header.buttons) {
               assert.equal(button.width, 32, `${label}: ${button.label} is squeezed`)
