@@ -902,3 +902,73 @@ test('with more windows than stacking layers, the window in use is still drawn i
     await t.cleanup()
   }
 })
+
+test('dialogs open over floating windows and the Assistant, never under them', async () => {
+  const { UnifiedAssistant } = await import('./UnifiedAssistant')
+  const { TemplateDiffDialog } = await import('./settings/TemplateDiffDialog')
+  const { TemplateFieldActions } = await import('./settings/TemplateFieldActions')
+  const t = await setup(
+    <>
+      <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-assistant-conversation /> }} />
+      <TemplateFieldActions
+        field="model"
+        current={{ model: 'standard' }}
+        template={{ model: 'deep' }}
+        fieldOverrides={[]}
+        onRevert={() => undefined}
+      />
+      <TemplateDiffDialog
+        isOpen
+        onClose={() => undefined}
+        title="Template differences"
+        current={{ model: 'standard' }}
+        template={{ model: 'deep' }}
+        onRevert={() => undefined}
+      />
+    </>,
+    {
+      url: '/?chat=open',
+      stored: {
+        assistantZ: 3,
+        windows: [
+          { agentId: A, rect: { x: 40, y: 80, w: 420, h: 500 }, z: 1 },
+          { agentId: B, rect: { x: 300, y: 80, w: 420, h: 500 }, z: 2 },
+        ],
+        remembered: {},
+      },
+    }
+  )
+  try {
+    // The z-index a layer is painted at: inline (floating windows) or its Tailwind z-* class.
+    const z = (element: HTMLElement) =>
+      Number(element.style.zIndex || /(?:^|\s)z-(\d+)(?:\s|$)/.exec(element.className)?.[1] || Number.NaN)
+    // Every layer here is a positioned element whose ancestors start no stacking context, so the higher z-index
+    // is painted on top and a tie goes to the one later in the document.
+    const paintsAbove = (top: HTMLElement, below: HTMLElement) =>
+      z(top) > z(below) ||
+      (z(top) === z(below) && !!(below.compareDocumentPosition(top) & Node.DOCUMENT_POSITION_FOLLOWING))
+    const assistant = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Assistant"]')!
+    expect(assistant.hidden).toBe(false)
+    // The Assistant is one of the floating windows, here the front-most one.
+    const layers = t.windows()
+    expect(layers).toHaveLength(3)
+    expect(layers).toContain(assistant)
+    expect(z(assistant)).toBe(Math.max(...layers.map(z)))
+
+    const diff = document.querySelector<HTMLElement>('.ficus-modal-backdrop[aria-label="Template differences"]')!
+    for (const layer of layers) expect(paintsAbove(diff, layer)).toBe(true)
+
+    // A dialog opened later, from a field, lands above them too.
+    await t.click([...document.querySelectorAll('button')].find((button) => button.textContent === 'Diff')!)
+    const field = document.querySelector<HTMLElement>('.ficus-modal-backdrop[aria-label="Template Diff — model"]')!
+    for (const layer of layers) expect(paintsAbove(field, layer)).toBe(true)
+    // An open window pressed to the front afterwards still stays below the open dialogs.
+    await t.press(t.windowFor(A)!.querySelector('[data-transcript]')!)
+    for (const layer of layers) {
+      expect(paintsAbove(diff, layer)).toBe(true)
+      expect(paintsAbove(field, layer)).toBe(true)
+    }
+  } finally {
+    await t.cleanup()
+  }
+})

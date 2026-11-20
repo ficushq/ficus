@@ -9,6 +9,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useStableRef } from '../../hooks/useStableRef'
 import { FileIcon } from '../icons'
+import { Modal } from '../Modal'
 import { FolderIcon } from '../icons/FolderIcon'
 import type { WorkspaceSource } from './workspaceSource'
 
@@ -341,37 +342,39 @@ export function FileUpload({ source, targetDir = '', onUploadStart, onUploadComp
         )}
       </div>
 
-      {/* Overwrite confirmation dialog */}
-      {showOverwriteDialog && (
-        <div className="ficus-titlebar-reserve fixed inset-0 bg-chrome-scrim/50 flex items-center justify-center z-50">
-          <div className="ficus-overlay bg-surface rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-primary mb-2">Files already exist</h3>
-            <p className="text-sm text-muted mb-4">{skippedFiles.length} file(s) already exist at the destination:</p>
-            <ul className="text-sm text-secondary mb-4 max-h-32 overflow-y-auto">
-              {skippedFiles.slice(0, 5).map((path) => (
-                <li key={path} className="truncate">
-                  • {path}
-                </li>
-              ))}
-              {skippedFiles.length > 5 && <li className="text-muted">...and {skippedFiles.length - 5} more</li>}
-            </ul>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleOverwriteCancel}
-                className="ficus-button ficus-button-secondary px-4 py-2 text-sm rounded"
-              >
-                Skip
-              </button>
-              <button
-                onClick={handleOverwriteConfirm}
-                className="ficus-button ficus-button-primary px-4 py-2 text-sm rounded"
-              >
-                Overwrite
-              </button>
-            </div>
+      {/* Overwrite confirmation dialog. Dismissing it skips, the choice that keeps existing files. */}
+      <Modal
+        isOpen={showOverwriteDialog}
+        onClose={handleOverwriteCancel}
+        title="Files already exist"
+        closeOnEscape
+        footer={
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={handleOverwriteCancel}
+              className="ficus-button ficus-button-secondary px-4 py-2 text-sm rounded"
+            >
+              Skip
+            </button>
+            <button
+              onClick={handleOverwriteConfirm}
+              className="ficus-button ficus-button-primary px-4 py-2 text-sm rounded"
+            >
+              Overwrite
+            </button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <p className="text-sm text-muted mb-4">{skippedFiles.length} file(s) already exist at the destination:</p>
+        <ul className="text-sm text-secondary max-h-32 overflow-y-auto">
+          {skippedFiles.slice(0, 5).map((path) => (
+            <li key={path} className="truncate">
+              • {path}
+            </li>
+          ))}
+          {skippedFiles.length > 5 && <li className="text-muted">...and {skippedFiles.length - 5} more</li>}
+        </ul>
+      </Modal>
     </div>
   )
 }
