@@ -220,9 +220,19 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         : sorted.slice(0, variables.first ?? 50)
     }
     const since = (value: string) => !variables.after || Date.parse(value) >= Date.parse(variables.after)
-    if (asks(query, 'agentSessions', variables))
+    if (asks(query, 'agentSessions', variables)) {
+      // Relay paging, newest first: `cursor` is the previous page's `endCursor`, here the last session ID.
+      const ordered = [...sessions.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      if (variables.cursor && !ordered.some((session) => session.id === variables.cursor))
+        return { errors: [{ message: 'Invalid cursor' }], data: null }
+      const start = variables.cursor ? ordered.findIndex((session) => session.id === variables.cursor) + 1 : 0
+      const slice = ordered.slice(start, start + (variables.first ?? 50))
       data.agentSessions = {
-        nodes: page([...sessions.values()], (session) => session.updatedAt).map((session) => {
+        pageInfo: {
+          hasNextPage: start + slice.length < ordered.length,
+          endCursor: slice.at(-1)?.id ?? null,
+        },
+        nodes: slice.map((session) => {
           const issue = issues.get(session.issueId)
           return {
             id: session.id,
@@ -237,6 +247,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
           }
         }),
       }
+    }
     if (asks(query, 'agentActivities', variables))
       data.agentActivities = {
         nodes: page(
