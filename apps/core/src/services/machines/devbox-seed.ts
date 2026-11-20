@@ -66,6 +66,7 @@ import { createLogger } from '../../lib/infra/logger'
 import { boxUnixUser } from './box-manager'
 import { boxDotDir } from './box-paths'
 import type { BoxStepTimings } from './box-timing'
+import { withNixCacheMaintenance } from './nix-cache-maintenance'
 
 const log = createLogger('devbox-seed')
 
@@ -185,9 +186,7 @@ export function computeDevboxSeedHash(role: SeedBoxRole): string {
  * Older machine scripts are tolerated during rolling upgrades.
  */
 export function devboxInstallCommand(devboxDir: string): string {
-  const cleanup =
-    'if [ -f /opt/ficus/bin/box-provision.sh ]; then timeout 15s bash /opt/ficus/bin/box-provision.sh --unix-user "$(id -un)" --prepare-nix-cache >&2 || true; fi'
-  return `cd ${shellQuote(devboxDir)} && (trap ${shellQuote(cleanup)} EXIT; devbox install)`
+  return `cd ${shellQuote(devboxDir)} && ${withNixCacheMaintenance('devbox install')}`
 }
 
 export function computeDevboxInstallInvocationId(sandboxId: string, role: SeedBoxRole): string {
