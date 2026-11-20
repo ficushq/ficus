@@ -26,9 +26,20 @@ import {
   linearAgentSessionPollingRuntime,
   linearPollingResourceKey,
   listLinearPollingWatches,
+  receivedRecentWebhook,
+  recentLinearAppWebhookSql,
 } from './polling-runtime'
+import type { LinearRelayDelivery } from '@ficus/shared/integration-relay'
+import { processRelayedLinearDelivery } from '../relay/linear-runtime'
+import { ensureQueryIndex } from '../../../test-utils/message-query-indexes'
 import { createLinearAppFixture } from './testing/app-fixtures'
-import { LINEAR_POLL_PAGE_SIZE, LINEAR_POLL_REQUESTS_PER_TICK, LINEAR_SESSION_RETRY_REQUESTS } from './polling'
+import {
+  LINEAR_POLL_PAGE_SIZE,
+  LINEAR_POLL_REQUESTS_PER_TICK,
+  LINEAR_POLL_SLOW_MS,
+  LINEAR_POLL_WEBHOOK_RECENCY_MS,
+  LINEAR_SESSION_RETRY_REQUESTS,
+} from './polling'
 import { createEventPollingBudget } from '../event-polling-budget'
 import { retryLinearSession } from './session-retry'
 import { setLinearAppReadinessForTest } from './app-readiness'
@@ -593,5 +604,95 @@ describe('runner', () => {
     expect(
       linear.calls.filter((call, index) => index >= calls && call.operation.startsWith('FicusLinearPoll'))
     ).toEqual([])
+  })
+
+  test('a delivery relayed through Platform counts as a recent app webhook and moves the poll to the 5-minute cadence', async () => {
+    function relayed(organizationId: string): LinearRelayDelivery {
+      return {
+        id: randomUUID(),
+        leaseToken: randomUUID(),
+        connectionId: fixture.connectionId,
+        connectionRevision: fixture.revision,
+        deliveryId: randomUUID(),
+        resourceId: organizationId,
+        resourceKey: organizationId,
+        eventType: 'Issue',
+        payload: { type: 'Issue', action: 'update', organizationId },
+      }
+    }
+    const handled: string[] = []
+    const dispatch = async (context: { eventType: string }) => {
+      handled.push(context.eventType)
+    }
+    // Another workspace's relayed delivery does not relax this connection's cadence.
+    const other = relayed(randomUUID())
+    await processRelayedLinearDelivery(other, dispatch)
+    try {
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(false)
+      expect((await watch()).active).toBe(true)
+
+      await processRelayedLinearDelivery(relayed(fixture.organizationId), dispatch)
+      expect(handled).toEqual(['Issue', 'Issue'])
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(true)
+      expect((await watch()).active).toBe(false)
+      expect((await pollOnce()).suggestedIntervalMs).toBe(LINEAR_POLL_SLOW_MS)
+
+      await db
+        .delete(integrationEventPollingCursors)
+        .where(eq(integrationEventPollingCursors.resourceKey, linearPollingResourceKey(fixture.connectionId)))
+      await linearAgentSessionPollingRuntime.runOnce()
+      const [cursor] = await db
+        .select()
+        .from(integrationEventPollingCursors)
+        .where(eq(integrationEventPollingCursors.resourceKey, linearPollingResourceKey(fixture.connectionId)))
+      const delay = cursor!.nextPollAt.getTime() - Date.now()
+      expect(delay).toBeGreaterThan(LINEAR_POLL_SLOW_MS - 10_000)
+      expect(delay).toBeLessThanOrEqual(LINEAR_POLL_SLOW_MS)
+    } finally {
+      await db
+        .delete(webhookEvents)
+        .where(and(eq(webhookEvents.provider, 'linear-app'), eq(webhookEvents.deliveryId, other.deliveryId)))
+    }
+  })
+})
+
+describe('receivedRecentWebhook', () => {
+  test('answers from the organization index without reading other workspaces or older deliveries', async () => {
+    await ensureQueryIndex('idx_webhook_events_verified_organization_created')
+    const noisy = randomUUID()
+    try {
+      // A long history: many deliveries for another workspace, and old ones for this workspace.
+      await db.execute(sql`INSERT INTO webhook_events(provider,event_type,payload,headers,verified,created_at)
+        SELECT 'linear-app', 'Issue', jsonb_build_object('organizationId', ${noisy}::text), '{}', true,
+          now() - n * interval '1 second' FROM generate_series(1,12000) n`)
+      await db.execute(sql`INSERT INTO webhook_events(provider,event_type,payload,headers,verified,created_at)
+        SELECT 'linear-app', 'Issue', jsonb_build_object('organizationId', ${fixture.organizationId}::text), '{}', true,
+          now() - interval '1 hour' - n * interval '1 second' FROM generate_series(1,2000) n`)
+      await db.execute(sql`ANALYZE webhook_events`)
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(false)
+      expect(await receivedRecentWebhook(noisy, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(true)
+      // An unverified delivery does not count.
+      await db.insert(webhookEvents).values({
+        provider: 'linear-app',
+        eventType: 'Issue',
+        payload: { organizationId: fixture.organizationId },
+        headers: {},
+        verified: false,
+      })
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(false)
+
+      const [explained] = await db.execute(
+        sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${recentLinearAppWebhookSql(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)}`
+      )
+      const plan = (explained['QUERY PLAN'] as any)[0].Plan
+      expect(JSON.stringify(plan)).toContain('idx_webhook_events_verified_organization_created')
+      expect(plan['Shared Hit Blocks'] + plan['Shared Read Blocks']).toBeLessThan(20)
+    } finally {
+      await db
+        .delete(webhookEvents)
+        .where(
+          and(eq(webhookEvents.provider, 'linear-app'), sql`${webhookEvents.payload}->>'organizationId' = ${noisy}`)
+        )
+    }
   })
 })
