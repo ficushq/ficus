@@ -6,6 +6,11 @@
  * stores, so import the names from here rather than repeating the strings.
  *
  * There is no read of the pre-rename names: browser-local state resets once.
+ *
+ * The web app's inline theme script bundles this file, so any change here can
+ * change apps/web/index.html. After editing, run
+ * `bun scripts/generate-theme-flash.ts` in apps/web and commit index.html, or
+ * apps/web/src/theme/custom.test.ts fails.
  */
 
 // --- localStorage ---------------------------------------------------------
