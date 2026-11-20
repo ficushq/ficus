@@ -3,12 +3,13 @@ useEnabledIntegrationFixtures('linear')
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { createBlankWorkflow } from '@ficus/shared'
-import { and, eq, like, sql } from 'drizzle-orm'
+import { and, eq, inArray, like, sql } from 'drizzle-orm'
 import {
   agentTypes,
   db,
   inbox,
   integrationConnections,
+  integrationCredentialRetirements,
   integrationEventPollingCursors,
   integrationEventPollingDispatches,
   integrationOutputEvents,
@@ -17,6 +18,8 @@ import {
   workStreams,
 } from '../../../db'
 import { getSecretStore } from '../../secrets'
+import { SELF_HOSTED_OAUTH_APP_KEY } from '../authorization/client-credentials'
+import { linearDeliveryKey } from './delivery-receipts'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import { LINEAR_ACK_BODY } from './session-acknowledger'
 import { LINEAR_DISPOSITION_ACTIVITIES } from './session-disposition'
@@ -160,20 +163,8 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   globalThis.fetch = originalFetch
-  await db
-    .delete(integrationOutputEvents)
-    .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${fixture.connectionId}`)
-  await db
-    .delete(integrationEventPollingCursors)
-    .where(eq(integrationEventPollingCursors.resourceKey, linearPollingResourceKey(fixture.connectionId)))
-  await db
-    .delete(webhookEvents)
-    .where(
-      and(
-        eq(webhookEvents.provider, 'linear-app'),
-        sql`${webhookEvents.payload}->>'organizationId' = ${fixture.organizationId}`
-      )
-    )
+  // The fixture removes its connection's rows. Receipts are keyed by Linear's session, activity and
+  // notification IDs; the fake knows every one, including any that left no session row or output.
   for (const session of linear.sessions.keys())
     await db
       .delete(integrationEventPollingDispatches)
@@ -696,5 +687,66 @@ describe('receivedRecentWebhook', () => {
           and(eq(webhookEvents.provider, 'linear-app'), sql`${webhookEvents.payload}->>'organizationId' = ${noisy}`)
         )
     }
+  })
+})
+
+describe('fixture cleanup', () => {
+  test('a cleaned-up fixture leaves no rows behind for a later run against the same database', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    const activityId = randomUUID()
+    linear.addPrompt({ id: activityId, sessionId, userId: guest.id, body: 'Do this for me' })
+    issue.delegateId = null
+    linear.addNotification({ id: randomUUID(), type: 'issueUnassignedFromYou', issueId: issue.id, actorId: member.id })
+    await recordAppWebhook()
+    await linearAgentSessionPollingRuntime.runOnce()
+
+    const credentialKeys = [fixture.credentialRef, SELF_HOSTED_OAUTH_APP_KEY.linear]
+    const ownedReceipts = sql`${integrationEventPollingDispatches.eventKey} like ${`linear:session:${sessionId}:%`}
+      or ${integrationEventPollingDispatches.eventKey} = ${linearDeliveryKey.prompt(activityId)}`
+    const left = async () => ({
+      sessions: (await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))).length,
+      outputs: (
+        await db
+          .select()
+          .from(integrationOutputEvents)
+          .where(sql`${integrationOutputEvents.authority}->>'connectionId' = ${fixture.connectionId}`)
+      ).length,
+      receipts: (await db.select().from(integrationEventPollingDispatches).where(ownedReceipts)).length,
+      cursors: (
+        await db
+          .select()
+          .from(integrationEventPollingCursors)
+          .where(eq(integrationEventPollingCursors.resourceKey, linearPollingResourceKey(fixture.connectionId)))
+      ).length,
+      webhooks: (
+        await db
+          .select()
+          .from(webhookEvents)
+          .where(sql`${webhookEvents.payload}->>'organizationId' = ${fixture.organizationId}`)
+      ).length,
+      notices: (await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))).length,
+      retiredCredentials: (
+        await db
+          .select()
+          .from(integrationCredentialRetirements)
+          .where(inArray(integrationCredentialRetirements.credentialKey, credentialKeys))
+      ).length,
+    })
+    // Every kind of row is there before cleanup, so the check below cannot pass vacuously. Retired
+    // credentials are the exception: deleting the stored credentials during cleanup creates them.
+    const { retiredCredentials: _, ...before } = await left()
+    expect(Object.entries(before).filter(([, count]) => count === 0)).toEqual([])
+    await fixture.cleanup()
+    expect(await left()).toEqual({
+      sessions: 0,
+      outputs: 0,
+      receipts: 0,
+      cursors: 0,
+      webhooks: 0,
+      notices: 0,
+      retiredCredentials: 0,
+    })
   })
 })

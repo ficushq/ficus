@@ -3,7 +3,7 @@ useEnabledIntegrationFixtures('linear')
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db, webhookEvents } from '../../../db'
 import { webhooksRouter } from '../../../routes/webhooks'
 import { getSecretStore } from '../../secrets'
@@ -35,8 +35,17 @@ beforeAll(async () => {
     await gate
   })
 })
-afterAll(() => {
+afterAll(async () => {
   release()
+  // Every delivery here is for this file's workspace: none outlives the run.
+  await db
+    .delete(webhookEvents)
+    .where(
+      and(
+        eq(webhookEvents.provider, 'linear-app'),
+        sql`${webhookEvents.payload}->>'organizationId' = ${context.organizationId}`
+      )
+    )
 })
 beforeEach(async () => {
   handled = []
