@@ -136,13 +136,15 @@ async function runSandboxEffect<T>(
  * for package installation or setup.
  *
  * Agents, terminals and every other ensure caller must keep working while an
- * integration or toolchain change installs new tools. The ensure waits only
+ * integration or toolchain change installs new tools. The ensure always waits
  * for the cheap already-applied path, so an unchanged toolchain is active
- * before the first command; a real install continues in the background and
- * its result is recorded in the toolchain status. A failed install is logged
- * and reported there, never thrown: the box stays usable without the new
- * tools, and commands that need them fail clearly (see
- * services/integrations/execution-wrappers.ts).
+ * before the first command. A real install continues in the background only
+ * when the box still serves its previously activated toolchain; its result is
+ * recorded in the toolchain status, the squad manager is told once if it
+ * fails, and commands that need the new tools fail clearly meanwhile (see
+ * services/integrations/execution-wrappers.ts). A box with nothing to fall
+ * back to (new, recreated or reset, or a first declaration) waits for the
+ * install, and a failure fails the ensure as before.
  */
 async function settleSandboxToolchain(
   manager: ISandboxManager,

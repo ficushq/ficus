@@ -164,6 +164,17 @@ export function getDevboxShellEnv(): string {
   ].join('\n')
 }
 
+/**
+ * Whether commands currently run with an activated managed toolchain. Core
+ * reads this (through /healthz) to decide whether an ensure may return while a
+ * new toolchain installs: the cached environment keeps serving commands until
+ * the next successful activation replaces it, so agents still have the
+ * previous tools. A box without one has nothing to fall back to.
+ */
+export function isManagedToolchainActive(): boolean {
+  return cachedManagedToolchainEnv !== null
+}
+
 /** Clear only Ficus's managed toolchain activation, preserving the comfort/project cache. */
 export function clearManagedToolchainEnv(): void {
   cachedManagedToolchainEnv = null

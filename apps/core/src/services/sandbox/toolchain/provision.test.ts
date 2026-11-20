@@ -4,6 +4,7 @@ import { fingerprintToolchain } from './config'
 import {
   createToolchainProvisioner,
   ensureSandboxToolchain,
+  ToolchainAdapterError,
   ToolchainProvisioningError,
   type ToolchainProvisionDeps,
 } from './provision'
@@ -278,9 +279,18 @@ describe('settling the toolchain without blocking the sandbox', () => {
     return { gate, release }
   }
 
-  /** A runtime whose install (or applied-path check) waits on a gate the test controls. */
-  function slowRuntime(calls: string[], gate: Promise<void>, behaviour: 'install' | 'unchanged' | 'fail' = 'install') {
+  /**
+   * A runtime whose install (or applied-path check) waits on a gate the test
+   * controls. `previous` is whether the box still serves an activated toolchain.
+   */
+  function slowRuntime(
+    calls: string[],
+    gate: Promise<void>,
+    behaviour: 'install' | 'unchanged' | 'fail' = 'install',
+    previous = true
+  ) {
     return {
+      isManagedToolchainActive: async () => previous,
       reconcileToolchain: async (_id: string, _opts: SandboxOptions, request: ManagedToolchainRequest) => {
         calls.push('runtime')
         if (behaviour === 'unchanged') {
@@ -289,16 +299,28 @@ describe('settling the toolchain without blocking the sandbox', () => {
         }
         await request.reportStage('installing')
         await gate
-        if (behaviour === 'fail') {
-          const { ToolchainAdapterError } = await import('./provision')
-          throw new ToolchainAdapterError('setup_failed', 1)
-        }
+        if (behaviour === 'fail') throw new ToolchainAdapterError('setup_failed', 1)
         return 'applied' as const
       },
     } as ISandboxManager
   }
 
-  it('returns as soon as a slow install starts and finishes it in the background', async () => {
+  async function tracked<T>(promise: Promise<T>) {
+    const state = { done: false, value: undefined as T | undefined, error: undefined as unknown }
+    const settled = promise.then(
+      (value) => {
+        state.done = true
+        state.value = value
+      },
+      (error: unknown) => {
+        state.done = true
+        state.error = error
+      }
+    )
+    return { state, settled }
+  }
+
+  it('returns as soon as a slow install starts when the box keeps its previous toolchain', async () => {
     const h = harness({ config, provision: undefined, activation: undefined })
     const { gate, release } = gated()
     const provisioner = createToolchainProvisioner()
@@ -316,49 +338,108 @@ describe('settling the toolchain without blocking the sandbox', () => {
     expect(provisioner.isInstalling('squad_slow')).toBe(false)
   })
 
+  it('waits for a slow install on a fresh box with declared packages and nothing to fall back to', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    const provisioner = createToolchainProvisioner()
+    const settling = await tracked(
+      provisioner.settle(slowRuntime(h.calls, gate, 'install', false), 'squad_fresh', opts, squadId, {
+        deps: h.deps,
+        waitMs: 60_000,
+      })
+    )
+    while (!h.calls.includes('stage:installing')) await Bun.sleep(1)
+    await Bun.sleep(20)
+    expect(settling.state.done).toBe(false)
+
+    release()
+    await settling.settled
+    expect(settling.state.value).toBe('settled')
+    expect(h.calls).toContain('ready')
+  })
+
+  it('fails the ensure like before when a fresh box cannot install its toolchain', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    const { gate, release } = gated()
+    release()
+    const provisioner = createToolchainProvisioner()
+    await expect(
+      provisioner.settle(slowRuntime(h.calls, gate, 'fail', false), 'squad_fresh_fail', opts, squadId, {
+        deps: h.deps,
+        waitMs: 60_000,
+      })
+    ).rejects.toBeInstanceOf(ToolchainProvisioningError)
+    expect(h.calls).toContain('failed:setup_failed')
+
+    // A runtime that cannot say whether it has a previous toolchain counts as having none.
+    const noAdapter = harness({ config, provision: undefined, activation: undefined })
+    await expect(
+      provisioner.settle({} as ISandboxManager, 'squad_no_adapter', opts, squadId, { deps: noAdapter.deps })
+    ).rejects.toBeInstanceOf(ToolchainProvisioningError)
+    expect(noAdapter.calls).toContain('failed:devbox_unavailable')
+  })
+
   it('waits for an already-applied toolchain so the first command has it', async () => {
     const h = harness({ config, provision: undefined, activation: undefined })
     const { gate, release } = gated()
     const provisioner = createToolchainProvisioner()
-    let returned = false
-    const settling = provisioner
-      .settle(slowRuntime(h.calls, gate, 'unchanged'), 'squad_unchanged', opts, squadId, {
+    const settling = await tracked(
+      provisioner.settle(slowRuntime(h.calls, gate, 'unchanged'), 'squad_unchanged', opts, squadId, {
         deps: h.deps,
         waitMs: 60_000,
       })
-      .then((outcome) => {
-        returned = true
-        return outcome
-      })
+    )
     while (!h.calls.includes('runtime')) await Bun.sleep(1)
     await Bun.sleep(10)
-    expect(returned).toBe(false)
+    expect(settling.state.done).toBe(false)
     release()
-    expect(await settling).toBe('settled')
+    await settling.settled
+    expect(settling.state.value).toBe('settled')
   })
 
-  it('reports a failed install without throwing and records the readiness failure', async () => {
+  it('reports a background install failure without throwing when the box keeps its previous toolchain', async () => {
     const h = harness({ config, provision: undefined, activation: undefined })
+    const notices: unknown[] = []
+    h.deps.notifyFailure = async (input) => void notices.push(input)
     const { gate, release } = gated()
-    release()
     const provisioner = createToolchainProvisioner()
-    // The runtime reports install work first, so settle returns early; the
-    // failure lands in the recorded status rather than in the caller.
     expect(
       await provisioner.settle(slowRuntime(h.calls, gate, 'fail'), 'squad_fail', opts, squadId, {
         deps: h.deps,
         waitMs: 60_000,
       })
     ).toBe('installing')
+    release()
     while (!h.calls.includes('failed:setup_failed')) await Bun.sleep(1)
+    while (notices.length === 0) await Bun.sleep(1)
     expect(h.calls).not.toContain('ready')
+    expect(notices).toEqual([expect.objectContaining({ sandboxId: 'squad_fail', squadId, errorCode: 'setup_failed' })])
 
-    // A failure before any install work returns `failed`, still without throwing.
-    const noAdapter = harness({ config, provision: undefined, activation: undefined })
-    expect(
-      await provisioner.settle({} as ISandboxManager, 'squad_no_adapter', opts, squadId, { deps: noAdapter.deps })
-    ).toBe('failed')
-    expect(noAdapter.calls).toContain('failed:devbox_unavailable')
+    // A failure on the already-applied path also leaves the box on its previous toolchain.
+    const quick = harness({ config, provision: undefined, activation: undefined })
+    const failingCheck = {
+      isManagedToolchainActive: async () => true,
+      reconcileToolchain: async () => {
+        throw new ToolchainAdapterError('readiness_failed', 1)
+      },
+    } as unknown as ISandboxManager
+    expect(await provisioner.settle(failingCheck, 'squad_quick', opts, squadId, { deps: quick.deps })).toBe('failed')
+  })
+
+  it('never lets a failing notice mask the install failure', async () => {
+    const h = harness({ config, provision: undefined, activation: undefined })
+    h.deps.notifyFailure = async () => {
+      throw new Error('inbox unavailable')
+    }
+    const failing = {
+      reconcileToolchain: async () => {
+        throw new ToolchainAdapterError('install_failed', 1)
+      },
+    } as unknown as ISandboxManager
+    await expect(ensureSandboxToolchain(failing, 'squad_notice', opts, squadId, h.deps)).rejects.toMatchObject({
+      code: 'install_failed',
+    })
+    expect(h.calls).toContain('failed:install_failed')
   })
 
   it('lets every other ensure through while an attach-triggered install is running, without stacking reconciles', async () => {
@@ -430,5 +511,54 @@ describe('settling the toolchain without blocking the sandbox', () => {
     ).toBe('installing')
     expect(h.calls).not.toContain('runtime')
     release()
+  })
+
+  it('reinstalls after an install interrupted by a Core restart or maintenance drain', async () => {
+    // A drain or upgrade that stops Core mid-install releases the provisioning
+    // lease with the process, and the box terminates the install command when
+    // the connection drops. Nothing marks the row failed, so it is left
+    // `installing`, and the box keeps .ready absent and its previous
+    // environment (if any). A fresh Core process must reinstall, not trust it.
+    const interrupted: ToolchainReconcileSnapshot = {
+      config,
+      provision: {
+        sandboxId: 'squad_drained',
+        squadId,
+        desiredFingerprint: fingerprintToolchain(config),
+        status: 'installing',
+        updatedAt: new Date(Date.now() - 60_000),
+      },
+      activation: { sandboxId: 'squad_drained', squadId, updatedAt: new Date() },
+    }
+
+    // With a previous toolchain, the next ensure returns and the reinstall finishes in the background.
+    const kept = harness(interrupted)
+    const restarted = createToolchainProvisioner()
+    expect(
+      await restarted.settle(slowRuntime(kept.calls, Promise.resolve()), 'squad_drained', opts, squadId, {
+        deps: kept.deps,
+        waitMs: 60_000,
+      })
+    ).toBe('installing')
+    while (!kept.calls.includes('ready')) await Bun.sleep(1)
+    expect(kept.calls).toContain('runtime')
+
+    // Without one, the next ensure waits for the reinstall.
+    const fresh = harness(interrupted)
+    const restartedFresh = createToolchainProvisioner()
+    expect(
+      await restartedFresh.settle(
+        slowRuntime(fresh.calls, Promise.resolve(), 'install', false),
+        'squad_drained',
+        opts,
+        squadId,
+        {
+          deps: fresh.deps,
+          waitMs: 60_000,
+        }
+      )
+    ).toBe('settled')
+    expect(fresh.calls).toContain('runtime')
+    expect(fresh.calls).toContain('ready')
   })
 })

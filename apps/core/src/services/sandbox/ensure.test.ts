@@ -13,7 +13,7 @@ import * as localDeploymentHealth from '../deploy/local-deployment-health'
 import * as identityModule from '../amtp/agent-identity'
 import { db, agents, sandboxExposureCleanup } from '../../db'
 import { squads } from '../../db/schema'
-import { ToolchainAdapterError } from './toolchain/provision'
+import { ToolchainAdapterError, ToolchainProvisioningError } from './toolchain/provision'
 import { getProvisionState } from './toolchain/state'
 import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
@@ -1093,8 +1093,10 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     }
   }
 
-  function toolchainManager(calls: string[], reconcile?: (request: any) => Promise<any>) {
+  /** `previous`: whether the box still serves a previously activated managed toolchain. */
+  function toolchainManager(calls: string[], reconcile?: (request: any) => Promise<any>, previous = false) {
     return {
+      isManagedToolchainActive: async () => previous,
       ensureSandbox: async () => void calls.push('ensureSandbox'),
       reconcileToolchain: async (_id: string, _opts: any, request: any) => {
         calls.push(
@@ -1137,7 +1139,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     }
   })
 
-  it('keeps the sandbox usable and records the failure when the declaration cannot be provisioned', async () => {
+  it('fails the ensure when a fresh box cannot provision its declaration', async () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain gate fail ${randomUUID()}`,
@@ -1151,14 +1153,13 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
       throw new ToolchainAdapterError('install_failed', 1)
     })
     try {
-      // A broken toolchain used to fail every agent turn on this box. The
-      // failure is now reported through the toolchain status instead.
+      // Nothing to fall back to: agents would run without the declared packages.
       await expect(
         ensureWorkspaceSandbox(
           { sandboxId: `agent_${gateSandboxUuid}`, workspaceId: 'w', squadId: squad.id },
           toolchainDeps(manager, tmp)
         )
-      ).resolves.toBeString()
+      ).rejects.toBeInstanceOf(ToolchainProvisioningError)
       expect(await getProvisionState(`agent_${gateSandboxUuid}`)).toMatchObject({
         status: 'failed',
         errorCode: 'install_failed',
@@ -1169,7 +1170,53 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     }
   })
 
-  it('does not hold the ensure while new tools install, and finishes the install in the background', async () => {
+  it('keeps a box with a previous toolchain usable and records the failure when a new declaration fails', async () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+    const squad = await Squad.create({
+      name: `toolchain gate keep ${randomUUID()}`,
+      purpose: 'test',
+      metadata: { sandbox: { toolchain: { packages: ['python3@latest'] } } },
+    })
+    const sandboxId = `agent_${randomUUID()}`
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-gate-keep-'))
+    const calls: string[] = []
+    const manager = toolchainManager(
+      calls,
+      async () => {
+        throw new ToolchainAdapterError('install_failed', 1)
+      },
+      true
+    )
+    try {
+      await expect(
+        ensureWorkspaceSandbox({ sandboxId, workspaceId: 'w', squadId: squad.id }, toolchainDeps(manager, tmp))
+      ).resolves.toBeString()
+      expect(await getProvisionState(sandboxId)).toMatchObject({ status: 'failed', errorCode: 'install_failed' })
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+      await db.delete(squads).where(eq(squads.id, squad.id))
+    }
+  })
+
+  function slowInstall() {
+    let release!: () => void
+    const install = new Promise<void>((resolve) => (release = resolve))
+    const reconcile = async (request: any) => {
+      await request.reportStage('installing')
+      await install
+      return 'applied' as const
+    }
+    return { release, reconcile }
+  }
+
+  async function waitForProvisionStatus(sandboxId: string, status: string) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if ((await getProvisionState(sandboxId))?.status === status) return
+      await Bun.sleep(10)
+    }
+  }
+
+  it('does not hold the ensure while new tools install on a box with a previous toolchain', async () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain background ${randomUUID()}`,
@@ -1179,13 +1226,8 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
     const sandboxId = `agent_${randomUUID()}`
     const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-background-'))
     const calls: string[] = []
-    let release!: () => void
-    const install = new Promise<void>((resolve) => (release = resolve))
-    const manager = toolchainManager(calls, async (request) => {
-      await request.reportStage('installing')
-      await install
-      return 'applied' as const
-    })
+    const { release, reconcile } = slowInstall()
+    const manager = toolchainManager(calls, reconcile, true)
     try {
       await expect(
         ensureWorkspaceSandbox({ sandboxId, workspaceId: 'w', squadId: squad.id }, toolchainDeps(manager, tmp))
@@ -1193,10 +1235,42 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
       expect(await getProvisionState(sandboxId)).toMatchObject({ status: 'installing' })
 
       release()
-      for (let attempt = 0; attempt < 200; attempt += 1) {
-        if ((await getProvisionState(sandboxId))?.status === 'ready') break
-        await Bun.sleep(10)
-      }
+      await waitForProvisionStatus(sandboxId, 'ready')
+      expect(await getProvisionState(sandboxId)).toMatchObject({ status: 'ready' })
+    } finally {
+      release()
+      rmSync(tmp, { recursive: true, force: true })
+      await db.delete(squads).where(eq(squads.id, squad.id))
+    }
+  })
+
+  it('waits for a slow install on a fresh box with declared packages', async () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+    const squad = await Squad.create({
+      name: `toolchain fresh ${randomUUID()}`,
+      purpose: 'test',
+      metadata: { sandbox: { toolchain: { packages: ['python3@latest'], setupScript: 'echo ready' } } },
+    })
+    const sandboxId = `agent_${randomUUID()}`
+    const tmp = mkdtempSync(join(tmpdir(), 'ficus-toolchain-fresh-'))
+    const calls: string[] = []
+    const { release, reconcile } = slowInstall()
+    const manager = toolchainManager(calls, reconcile, false)
+    try {
+      let returned = false
+      const ensuring = ensureWorkspaceSandbox(
+        { sandboxId, workspaceId: 'w', squadId: squad.id },
+        toolchainDeps(manager, tmp)
+      ).then((path) => {
+        returned = true
+        return path
+      })
+      await waitForProvisionStatus(sandboxId, 'installing')
+      await Bun.sleep(50)
+      expect(returned).toBe(false)
+
+      release()
+      await expect(ensuring).resolves.toBeString()
       expect(await getProvisionState(sandboxId)).toMatchObject({ status: 'ready' })
     } finally {
       release()
