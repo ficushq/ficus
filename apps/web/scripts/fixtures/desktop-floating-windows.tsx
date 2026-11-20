@@ -5,6 +5,8 @@ import { useState } from 'react'
 import type { Agent } from '@ficus/shared'
 import { AppHeader } from '../../src/components/AppNav'
 import { InboxPopupProvider } from '../../src/components/InboxPopupProvider'
+import { InboxPopup } from '../../src/components/InboxPopup'
+import { ActionCenter } from '../../src/components/ActionCenter'
 import { ThemeProvider } from '../../src/providers/ThemeProvider'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { useDesktopShellChrome } from '../../src/hooks/useDesktopShellChrome'
@@ -78,6 +80,9 @@ export function Fixture() {
         </div>
       </main>
       <UnifiedAssistant dependencies={{ ConversationComponent: AssistantConversation as never }} />
+      {/* The header dropdowns, opened by their app events. */}
+      <InboxPopup />
+      <ActionCenter />
       <TemplateDiffDialog
         isOpen={diff}
         onClose={() => setDiff(false)}

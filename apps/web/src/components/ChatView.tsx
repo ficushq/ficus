@@ -37,7 +37,7 @@ import {
   MarkdownIcon,
   MicIcon,
   MinimizeIcon,
-  PlusIcon,
+  MoreIcon,
   SendIcon,
   SparklesIcon,
   SpeakerOffIcon,
@@ -52,7 +52,7 @@ import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
-import { Menu, popoverRowClass, usePopover } from './popover'
+import { Menu, popoverRowClass, useHoverOpen, usePopover } from './popover'
 import { ChatComposerOptionsContext, type ChatComposerOptionRow } from './chatComposerOptions'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
@@ -1140,6 +1140,8 @@ export function ChatView({
   const [attachSheetOpen, setAttachSheetOpen] = useState(false)
   const optionsAsSheet = useMediaQuery('(max-width: 767px)', true)
   const optionsMenu = usePopover({ kind: 'menu', open: attachSheetOpen, onOpenChange: setAttachSheetOpen })
+  // The menu opens on hover like the app's other hover menus; the phone sheet stays tap-only.
+  const optionsHover = useHoverOpen(optionsMenu, { enabled: !optionsAsSheet })
 
   // History search: a panel under the header that searches the whole conversation on the
   // server and jumps to a result through startFocus.
@@ -2888,13 +2890,14 @@ export function ChatView({
                     <button
                       type="button"
                       {...optionsMenu.triggerProps}
+                      {...optionsHover.triggerProps}
                       aria-haspopup={optionsAsSheet ? 'dialog' : 'menu'}
-                      onClick={() => (optionsAsSheet ? setAttachSheetOpen(true) : optionsMenu.toggle())}
+                      onClick={() => (optionsAsSheet ? setAttachSheetOpen(true) : optionsHover.triggerProps.onClick())}
                       className="ficus-button ficus-button-ghost chat-composer-attach p-2.5 md:p-2 rounded-md transition-colors shrink-0"
-                      aria-label="Attach or change controls"
-                      title="Attach or change controls"
+                      aria-label="More controls"
+                      title="More controls"
                     >
-                      <PlusIcon className="w-5 h-5" />
+                      <MoreIcon className="w-5 h-5" />
                     </button>
                     <div className="chat-composer-actions gap-1 items-center">
                       {/* Image button */}
@@ -3177,6 +3180,9 @@ export function ChatView({
                 </MobileChatOptionsSheet>
                 <Menu
                   {...optionsMenu.popoverProps}
+                  {...optionsHover.popoverProps}
+                  // A press inside pins a hover-opened menu, so it stays while that control is in use.
+                  onPointerDown={optionsHover.pin}
                   open={attachSheetOpen && !optionsAsSheet}
                   label="Chat options"
                   itemSelector="[data-chat-composer-options] button"

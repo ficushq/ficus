@@ -80,7 +80,8 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   hover-to-open for a click popover (`ActionPopup`'s and `SelectionPopup`'s `openOnHover`: the top nav's
   squad switcher, the squad tabs' More menu, the composer's delivery-mode chevron and context ring, the
   squad Chats "…" menu and the tablet Agent view dropdown; neither opens on hover while disabled; the
-  assistant's Arrange menu; the top nav's theme flyout, a `Panel`, where only the trigger pins it and
+  assistant's Arrange menu; the narrow chat composer's More controls menu, on wider screens only (the phone
+  sheet stays tap-only), where any press inside calls `pin()`; the top nav's theme flyout, a `Panel`, where only the trigger pins it and
   choosing a theme keeps hover mode; the work stream Filters panel, where likewise only the trigger pins it
   and toggling a filter keeps hover mode; and the squad notifications bell, where any press inside calls
   `pin()`). Spread its `triggerProps` on the trigger (its `onClick` replaces
@@ -92,9 +93,9 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   without moving focus, for a press inside a surface the user then works in. Opened by click, keyboard or
   touch, it behaves as before; touch and pen pointers never open it on hover. It takes any open state
   shaped like `usePopover`'s (`open`, `setOpen`, `toggle`, `triggerRef`, `id`): the inbox popup's
-  `InboxPopupProvider` drives the top nav's Inbox button and its hand-rolled sheet with it, dropping the
-  sheet's scrim while hover-opened so the trigger keeps the pointer. There only a press in the search field
-  calls `pin()`; other presses (Mark all read, a row's Mark read) keep hover mode, so leaving still closes it.
+  `InboxPopupProvider` drives the top nav's Inbox button and the inbox `Panel` with it. There only a press
+  in the search field calls `pin()`; other presses (Mark all read, a row's Mark read) keep hover mode, so
+  leaving still closes it.
 - **`ComboboxList`**: anchored to a text field (`input`), above it by default. The field keeps focus the
   whole time (option presses `preventDefault` their mousedown) and gets `aria-expanded`,
   `aria-controls` and `aria-activedescendant` while it is open. The caller's key handler owns the arrows,
@@ -119,13 +120,20 @@ before it `EntityReferencePreview`'s), with no positioning dependency:
 - A trigger hidden by a breakpoint closes its popover (`anchor`), except a non-dismissible one, which
   stays at its last placement.
 
+Header dropdowns (the inbox popup and the Action Center) are `Panel`s placed against the viewport's
+top-right corner rather than their trigger, with `HEADER_DROPDOWN_PLACEMENT` (`components/headerDropdown.ts`):
+the inbox also opens from its `I` shortcut while its nav button is hidden, and the Action Center has no
+button. A `Popover` whose `anchor` ref is empty hangs from that corner, `gap` below it and `alignOffset` in
+from it.
+
 ## Portal, layers and animation
 
 - It portals out of clipping (`overflow: hidden`) and stacking ancestors: into the enclosing
   `aria-modal` dialog when there is one (so assistive technology keeps it reachable), else
   `document.body`. `position: fixed` with the placement above.
-- `POPOVER_LAYERS`: `popover` = z-90 (above modals and the assistant window, both z-60), `companion` =
-  z-50 (a persistent floating panel that lives under modals: the voice companion). A popover opened
+- `POPOVER_LAYERS`: `popover` = z-90 (above modals and the assistant window, both z-60, and the floating
+  chat windows, z-51 to z-58), `companion` = z-50 (a persistent floating panel that lives under modals: the
+  voice companion). A popover opened
   from inside another adds its nesting depth, so nested popovers always stack above their parent.
 - It renders through `Presence`: the shared `ficus-presence` enter animation, and on close it stays
   mounted, `inert` and `aria-hidden`, for its 120ms exit animation (`data-state="closed"`). Tests that

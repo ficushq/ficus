@@ -181,6 +181,44 @@ describe('sandbox toolchain provision state', () => {
     expect(events).toEqual([sandboxId, sandboxId, sandboxId, sandboxId, sandboxId])
   })
 
+  it('keeps a ready toolchain ready when an ensure desires the same fingerprint again', async () => {
+    const steadyId = `squad_steady_${squadId}`
+    const key = { sandboxId: steadyId, squadId, desiredFingerprint: fingerprint }
+    await markDesired(key)
+    await markReady(key)
+
+    // Every sandbox ensure re-reconciles the toolchain. An unchanged one must
+    // not report `pending` (shown as degraded) while it is re-verified.
+    const events: string[] = []
+    const unsubscribe = eventEmitter.on('sandbox.status', ({ sandboxId: changed }) => events.push(changed))
+    await markDesired(key)
+    unsubscribe()
+
+    expect(await getProvisionState(steadyId, fingerprint)).toMatchObject({
+      status: 'ready',
+      appliedFingerprint: fingerprint,
+    })
+    expect(events).toEqual([])
+  })
+
+  it('still returns a failed toolchain to pending and clears its failure when desired again', async () => {
+    const retryId = `squad_retry_${squadId}`
+    const key = { sandboxId: retryId, squadId, desiredFingerprint: fingerprint }
+    await markDesired(key)
+    await markReady(key)
+    await markFailed({ ...key, errorCode: 'readiness_failed', exitCode: 1 })
+
+    const events: string[] = []
+    const unsubscribe = eventEmitter.on('sandbox.status', ({ sandboxId: changed }) => events.push(changed))
+    await markDesired(key)
+    unsubscribe()
+
+    const retried = await getProvisionState(retryId, fingerprint)
+    expect(retried).toMatchObject({ status: 'pending', appliedFingerprint: fingerprint })
+    expect(retried?.errorCode).toBeUndefined()
+    expect(events).toEqual([retryId])
+  })
+
   it('persists a safe failure code when failure is the first write', async () => {
     const firstFailureId = `agent_${squadId}`
     await markFailed({

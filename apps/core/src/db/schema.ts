@@ -1,4 +1,4 @@
-import type { StructuredManualWait } from '@ficus/shared'
+import type { AgentQuestionAnswerForward, StructuredManualWait } from '@ficus/shared'
 import type { RecoveryState } from '../services/recovery/policy'
 import { sql } from 'drizzle-orm'
 import {
@@ -2604,6 +2604,11 @@ export const agentQuestions = pgTable(
     squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'cascade' }),
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     executionId: uuid('execution_id').references(() => executions.id, { onDelete: 'set null' }),
+    // The workflow attempt the question was asked from, recorded at creation. The asking execution's
+    // flow context can later be rebound to another attempt, so an answer's target is read from here.
+    // Both are null for questions asked outside a flow and for rows created before this was recorded.
+    flowWorkStreamId: uuid('flow_work_stream_id').references(() => workStreams.id, { onDelete: 'set null' }),
+    flowAttemptId: integer('flow_attempt_id'),
     questionData: jsonb('question_data').notNull(),
     status: varchar('status', { length: 20 }).notNull().default('open'),
     answer: text('answer'),
@@ -2647,6 +2652,9 @@ export const agentQuestions = pgTable(
       onDelete: 'set null',
     }),
     answerDeliveredAt: timestamp('answer_delivered_at', { withTimezone: true }),
+    // Set when the answer was passed on because the asking attempt had already finished or been
+    // replaced: who received it and why (AgentQuestionAnswerForward).
+    answerDeliveryForward: jsonb('answer_delivery_forward').$type<AgentQuestionAnswerForward>(),
   },
   (table) => [
     index('idx_agent_questions_agent_status').on(table.agentId, table.status),

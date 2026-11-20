@@ -73,7 +73,6 @@ async function renderInbox() {
   const doc = dom.window.document
   const trigger = container.querySelector<HTMLButtonElement>('button[title="Inbox (I)"]')!
   const panel = () => doc.querySelector<HTMLElement>(`#${INBOX_POPUP_ID}[data-state="open"]`)
-  const scrim = () => doc.querySelector<HTMLElement>('.fixed.inset-0.z-40')
   const wait = (ms: number) => dom!.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
   /** A pointer arriving on (`over`, resting past the hover-open delay) or leaving (`out`) an element; React derives enter/leave from these. */
   const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
@@ -102,12 +101,12 @@ async function renderInbox() {
     [...doc.querySelectorAll<HTMLButtonElement>(`#${INBOX_POPUP_ID} button`)].find(
       (candidate) => candidate.textContent?.trim() === text
     )
-  return { doc, trigger, panel, scrim, wait, pointer, press, click, mouseClick, button, key }
+  return { doc, trigger, panel, wait, pointer, press, click, mouseClick, button, key }
 }
 
 describe('inbox nav button hover', () => {
-  test('a mouse hovering opens it without taking focus or a scrim; leaving closes it after a short delay', async () => {
-    const { doc, trigger, panel, scrim, wait, pointer } = await renderInbox()
+  test('a mouse hovering opens it without taking focus; leaving closes it after a short delay', async () => {
+    const { doc, trigger, panel, wait, pointer } = await renderInbox()
     const composer = doc.querySelector<HTMLInputElement>('input[aria-label="Composer"]')!
     await dom!.act(async () => composer.focus())
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
@@ -117,8 +116,6 @@ describe('inbox nav button hover', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     expect(panel()).not.toBeNull()
     expect(doc.activeElement).toBe(composer)
-    // No scrim over the trigger, so it keeps getting the pointer (leave closes, a click pins).
-    expect(scrim()).toBeNull()
 
     await pointer(trigger, 'out')
     await wait(50)
@@ -148,33 +145,31 @@ describe('inbox nav button hover', () => {
   })
 
   test('a click on the hover-opened trigger pins it open; it then behaves as a click-open', async () => {
-    const { trigger, panel, scrim, wait, pointer, click } = await renderInbox()
+    const { doc, trigger, panel, wait, pointer, press, click } = await renderInbox()
     await pointer(trigger, 'over')
     await click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true') // pinned, not toggled closed
-    expect(scrim()).not.toBeNull()
     await pointer(trigger, 'out')
     await wait(200)
     expect(panel()).not.toBeNull()
-    // The scrim closes it, as before.
-    await click(scrim()!)
+    // A press outside closes it.
+    await press(doc.querySelector('input[aria-label="Composer"]')!)
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
   test('a press in the search field of a hover-opened panel pins it, so a search survives the pointer leaving', async () => {
-    const { trigger, panel, scrim, wait, pointer, press } = await renderInbox()
+    const { trigger, panel, wait, pointer, press } = await renderInbox()
     await pointer(trigger, 'over')
     await pointer(trigger, 'out')
     await pointer(panel()!, 'over')
     await press(panel()!.querySelector('input[aria-label="Search inbox"]')!)
-    expect(scrim()).not.toBeNull() // pinned: it now behaves as a click-open
     await pointer(panel()!, 'out')
     await wait(200)
     expect(panel()).not.toBeNull()
   })
 
   test('Mark all read in a hover-opened panel does not pin it: leaving still closes it, focus not stranded', async () => {
-    const { doc, trigger, panel, scrim, wait, pointer, mouseClick, button } = await renderInbox()
+    const { doc, trigger, panel, wait, pointer, mouseClick, button } = await renderInbox()
     const composer = doc.querySelector<HTMLInputElement>('input[aria-label="Composer"]')!
     await dom!.act(async () => composer.focus())
     await pointer(trigger, 'over')
@@ -184,8 +179,7 @@ describe('inbox nav button hover', () => {
     await pointer(trigger, 'out')
     await pointer(panel()!, 'over')
     await dom!.act(async () => markAll.focus()) // a real mouse press focuses the button
-    await mouseClick(markAll)
-    expect(scrim()).toBeNull() // still hover mode
+    await mouseClick(markAll) // still hover mode
     await pointer(panel()!, 'out')
     await wait(50)
     expect(panel()).not.toBeNull() // the usual close delay
@@ -197,7 +191,7 @@ describe('inbox nav button hover', () => {
   })
 
   test('other presses in a hover-opened panel (a row, the header, empty space) do not pin it', async () => {
-    const { trigger, panel, scrim, wait, pointer, press, mouseClick, button } = await renderInbox()
+    const { trigger, panel, wait, pointer, press, mouseClick, button } = await renderInbox()
     await pointer(trigger, 'over')
     await wait(30)
     await pointer(trigger, 'out')
@@ -205,7 +199,6 @@ describe('inbox nav button hover', () => {
     await mouseClick(button('Read')!) // the row's compact Mark read
     await press(panel()!.querySelector('h2')!)
     await press(panel()!)
-    expect(scrim()).toBeNull()
     // Re-entering still cancels the close.
     await pointer(panel()!, 'out')
     await pointer(panel()!, 'over')
@@ -225,11 +218,10 @@ describe('inbox nav button hover', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
-  test('opened by click it stays open when the pointer leaves, with its scrim', async () => {
-    const { trigger, panel, scrim, wait, pointer, click } = await renderInbox()
+  test('opened by click it stays open when the pointer leaves', async () => {
+    const { trigger, panel, wait, pointer, click } = await renderInbox()
     await click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(scrim()).not.toBeNull()
     await pointer(trigger, 'out')
     await wait(200)
     expect(panel()).not.toBeNull()

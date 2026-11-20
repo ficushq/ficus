@@ -256,7 +256,7 @@ try {
   const phoneTrigger = page.locator('button.chat-composer-attach')
   assert.equal(await phoneTrigger.getAttribute('aria-haspopup'), 'dialog')
   await phoneTrigger.click()
-  await page.getByRole('dialog', { name: 'Attach or change controls' }).waitFor()
+  await page.getByRole('dialog', { name: 'More controls' }).waitFor()
   assert.equal(await page.getByRole('menu', { name: 'Chat options' }).count(), 0, 'phone: the menu opened')
   await page.waitForTimeout(300)
   await shot('phone-390-sheet-dark')

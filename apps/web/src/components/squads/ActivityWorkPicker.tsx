@@ -55,10 +55,11 @@ export interface ActivityWorkPickerProps {
 
 /**
  * Activity's Active work control (owner decision 2026-11-20: Activity is the agent stream, not a work
- * tracker). A pill in the presence line, "Active work 7", opens a searchable list of the active streams:
- * state marker, number and title, state and step with the PR, and the generated summary. Typing filters
- * it (number, title, state or summary), the arrows move through it, and choosing a stream filters the
- * feed to it and opens its details panel; "All activity" clears the filter.
+ * tracker). A pill in the presence line, "Active work 7", opens a searchable list of the active streams.
+ * Each row is only the state marker, number and title on one line (the full title on hover); the state,
+ * step, PR and CI and the summary live in the details card (owner decision 2026-11-20), but typing still
+ * matches them. The arrows move through the list, and choosing a stream filters the feed to it and opens
+ * its details card; "All activity" clears the filter.
  */
 export function ActivityWorkPicker({ cards, total, selectedId, onSelect, moreHref }: ActivityWorkPickerProps) {
   const navigate = useNavigate()
@@ -70,18 +71,19 @@ export function ActivityWorkPicker({ cards, total, selectedId, onSelect, moreHre
     ...cards.map((card): PickerOption<string> => {
       const state = activityWorkStreamCardState(card)
       const line = activityWorkStateLine(card)
-      const delivery = activityCardDeliveryLabel(card)
       return {
         value: card.id,
         label: `#${card.number} ${card.title}`,
-        description: [line.state, line.step, delivery].filter(Boolean).join(' · '),
-        detail: card.summary?.trim() || undefined,
+        singleLine: true,
         icon: (
           <span className="flex h-5 w-3 shrink-0 items-center justify-center">
             <ActivityWorkStateMarker state={state} />
           </span>
         ),
-        keywords: String(card.number),
+        // Shown in the details card, not the row, but still searchable.
+        keywords: [card.number, line.state, line.step, activityCardDeliveryLabel(card), card.summary?.trim()]
+          .filter(Boolean)
+          .join(' '),
       }
     }),
     ...(unlisted > 0

@@ -49,16 +49,44 @@ interface BadgeProps {
   color?: BadgeColor
   /** If provided, renders as a Link */
   to?: string
+  /** An external URL: renders as an anchor that opens in a new tab. */
+  href?: string
   /** Click handler (for non-link badges) */
   onClick?: (e: React.MouseEvent) => void
   className?: string
   title?: string
+  'aria-label'?: string
 }
 
 const BASE_CLASSES = 'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium leading-4'
 
-export function Badge({ children, color = 'neutral', to, onClick, className, title }: BadgeProps) {
+export function Badge({
+  children,
+  color = 'neutral',
+  to,
+  href,
+  onClick,
+  className,
+  title,
+  'aria-label': ariaLabel,
+}: BadgeProps) {
   const colorClasses = COLOR_CLASSES[color]
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onClick}
+        className={clsx(BASE_CLASSES, colorClasses, HOVER_CLASSES[color], 'transition-colors', className)}
+        title={title}
+        aria-label={ariaLabel}
+      >
+        {children}
+      </a>
+    )
+  }
 
   if (to) {
     return (
@@ -67,6 +95,7 @@ export function Badge({ children, color = 'neutral', to, onClick, className, tit
         onClick={onClick}
         className={clsx(BASE_CLASSES, colorClasses, HOVER_CLASSES[color], 'transition-colors', className)}
         title={title}
+        aria-label={ariaLabel}
       >
         {children}
       </Link>
@@ -80,6 +109,7 @@ export function Badge({ children, color = 'neutral', to, onClick, className, tit
         onClick={onClick}
         className={clsx(BASE_CLASSES, colorClasses, HOVER_CLASSES[color], 'transition-colors', className)}
         title={title}
+        aria-label={ariaLabel}
       >
         {children}
       </button>
@@ -87,7 +117,7 @@ export function Badge({ children, color = 'neutral', to, onClick, className, tit
   }
 
   return (
-    <span className={clsx(BASE_CLASSES, colorClasses, className)} title={title}>
+    <span className={clsx(BASE_CLASSES, colorClasses, className)} title={title} aria-label={ariaLabel}>
       {children}
     </span>
   )

@@ -298,14 +298,14 @@ describe('ChatView history search', () => {
       { hideComposer: false, innerWidth: 390 }
     )
     const panel = () => document.querySelector('[data-testid="chat-history-search"]')
-    const sheet = () => document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')
+    const sheet = () => document.querySelector('[role="dialog"][aria-label="More controls"]')
     const sheetSearch = () =>
       Array.from(sheet()?.querySelectorAll('button') ?? []).find((b) =>
         /^(Search this conversation|Close search)$/.test(b.textContent ?? '')
       )
 
     await dom.act(async () => {
-      document.querySelector<HTMLButtonElement>('button[aria-label="Attach or change controls"]')!.click()
+      document.querySelector<HTMLButtonElement>('button[aria-label="More controls"]')!.click()
     })
     expect(sheetSearch()?.textContent).toBe('Search this conversation')
     await dom.act(async () => {
@@ -316,7 +316,7 @@ describe('ChatView history search', () => {
     expect(document.activeElement).toBe(document.querySelector('input[aria-label="Search this conversation"]'))
 
     await dom.act(async () => {
-      document.querySelector<HTMLButtonElement>('button[aria-label="Attach or change controls"]')!.click()
+      document.querySelector<HTMLButtonElement>('button[aria-label="More controls"]')!.click()
     })
     expect(sheetSearch()?.textContent).toBe('Close search')
     expect(sheetSearch()!.className).toContain('bg-accent/10')

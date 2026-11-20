@@ -9,12 +9,12 @@ export interface PickerOption<T extends string> {
   value: T
   label: string
   description?: string
-  /** A second, quieter line under the description (a generated summary); searched like it. */
-  detail?: string
+  /** Keep the label on one line, clipped with an ellipsis; the full label shows on hover. */
+  singleLine?: boolean
   ariaLabel?: string
   disabled?: boolean
   icon?: ReactNode
-  /** Extra text a `search` matches besides the label and description (an ID, a short key). */
+  /** Extra text a `search` matches besides the label and description (an ID, a short key, unshown details). */
   keywords?: string
 }
 
@@ -65,9 +65,7 @@ const OPTION = '[role="option"]'
 
 function matches(option: PickerOption<string>, query: string) {
   if (!query) return true
-  return [option.label, option.description, option.detail, option.keywords].some((text) =>
-    text?.toLowerCase().includes(query)
-  )
+  return [option.label, option.description, option.keywords].some((text) => text?.toLowerCase().includes(query))
 }
 
 /**
@@ -147,7 +145,8 @@ export function Picker<T extends string>(props: PickerProps<T>) {
       disabled={option.disabled}
       aria-selected={selected(option.value)}
       aria-label={option.ariaLabel ?? option.label}
-      aria-describedby={option.description || option.detail ? `${id}-${index}-description` : undefined}
+      aria-describedby={option.description ? `${id}-${index}-description` : undefined}
+      title={option.singleLine ? option.label : undefined}
       onClick={() => select(option)}
       className={popoverRowClass(selected(option.value))}
     >
@@ -155,7 +154,7 @@ export function Picker<T extends string>(props: PickerProps<T>) {
         icon={option.icon}
         label={option.label}
         description={option.description}
-        detail={option.detail}
+        singleLine={option.singleLine}
         descriptionId={`${id}-${index}-description`}
         checked={selected(option.value)}
       />

@@ -18,7 +18,7 @@ export function ActionCenter() {
     return () => window.removeEventListener('open-action-center', handler)
   }, [])
 
-  // Keyboard shortcut: 'A' to toggle, Escape to close
+  // Keyboard shortcut: 'A' to toggle. Escape is the panel's own (Popover) dismissal.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.defaultPrevented) return
@@ -28,11 +28,6 @@ export function ActionCenter() {
       const inputFocused =
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable
 
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false)
-        return
-      }
-
       if ((e.key === 'a' || e.key === 'A') && !inputFocused) {
         e.preventDefault()
         setIsOpen((prev) => !prev)
@@ -41,7 +36,7 @@ export function ActionCenter() {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen])
+  }, [])
 
   return (
     <>

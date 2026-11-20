@@ -22,9 +22,6 @@ const ALLOWLIST: Record<string, string> = {
   'components/WorkStreamList.tsx': 'portals the Filters trigger into its header slot; the panel is a Popover',
   'components/FloatingWindowFrame.tsx':
     'the snap preview and zone picker shown only while a window is dragged (pointer captured), not an anchored popup',
-  // Follow-ups: scrim-dismissed header sheets opened by app events, not anchored to a trigger.
-  'components/InboxPopup.tsx': 'scrimmed header sheet opened by an app event (follow-up: move to Panel)',
-  'components/ActionCenterPanel.tsx': 'scrimmed header sheet, currently unused (follow-up: move to Panel)',
 }
 
 /** Popups that were migrated onto the module; each must keep rendering through it. */
@@ -42,6 +39,9 @@ const MIGRATED = [
   'components/AssistantConversations.tsx',
   'components/settings/SettingsNavigation.tsx',
   'voice/VoiceCompanionWidget.tsx',
+  // Header dropdowns that drew their own z-40 scrim and z-50 sheet, under floating windows and the Assistant.
+  'components/InboxPopup.tsx',
+  'components/ActionCenterPanel.tsx',
   // Found by this guard: hand-built menus with no dismissal at all.
   'components/ChatDrawer.tsx',
 ]

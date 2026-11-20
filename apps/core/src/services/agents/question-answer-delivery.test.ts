@@ -28,7 +28,11 @@ import {
   questionDeliveryFailureAlertContent,
   reconcileQuestionDeliveryFailureAlertsOnce,
 } from './question-delivery-failure-alert'
-import { FLOW_WAIT_STREAM_ENDED_MESSAGES, FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
+import {
+  ANSWER_NO_RECIPIENT_MESSAGE,
+  FLOW_WAIT_STREAM_ENDED_MESSAGES,
+  FLOW_WAIT_SUPERSEDED_MESSAGE,
+} from '../work-streams/wait-scope'
 import { prepareInboxDelivery } from '../inbox/inboxDelivery'
 import type { MessageMetadata, QuestionData } from '@ficus/shared'
 
@@ -258,11 +262,12 @@ describe('question answer delivery outbox', () => {
     expect(alerts.map((message) => (message.metadata as { questionId: string }).questionId).sort()).toEqual(ids)
   })
 
-  it('tells the operator why delivery failed, and that a retry cannot deliver a refused answer', () => {
+  it('tells the operator why delivery failed, and whether a retry can deliver a refused answer', () => {
     const agentId = 'agent-1'
+    // Refused before answers to replaced attempts were passed on: a retry now passes it on.
     const replaced = questionDeliveryFailureAlertContent({ agentId, lastError: FLOW_WAIT_SUPERSEDED_MESSAGE })
     expect(replaced).toBe(
-      "An accepted answer was not delivered to agent agent-1: the workflow attempt the question was asked from was replaced before the answer arrived. Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message."
+      'An accepted answer was not delivered to agent agent-1: the workflow attempt the question was asked from was replaced before the answer arrived. Retry from the Action Center to pass it to whoever now holds that work, with a note saying who asked.'
     )
 
     // After the stream ends this alert is the only notice, so it says plainly the answer went nowhere.
@@ -281,6 +286,12 @@ describe('question answer delivery outbox', () => {
       expect(content).not.toContain('Retry from the Action Center')
     }
     expect(replaced).not.toContain('work stream had already')
+
+    // Nobody live could take the answer: said plainly, with no retry offered.
+    const nobody = questionDeliveryFailureAlertContent({ agentId, lastError: ANSWER_NO_RECIPIENT_MESSAGE })
+    expect(nobody).toContain('so nobody was left to receive it')
+    expect(nobody).toContain('Retrying will not deliver it')
+    expect(nobody).not.toContain('Retry from the Action Center')
 
     expect(
       questionDeliveryFailureAlertContent({ agentId, lastError: 'Agent agent-1 is terminating.\n  at stack' })
