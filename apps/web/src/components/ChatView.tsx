@@ -1141,27 +1141,30 @@ export function ChatView({
   // screens as a menu anchored to the trigger. Without matchMedia it is the sheet.
   const [attachSheetOpen, setAttachSheetOpen] = useState(false)
   const optionsAsSheet = useMediaQuery('(max-width: 767px)', true)
+  const optionsMenu = usePopover({ kind: 'menu', open: attachSheetOpen, onOpenChange: setAttachSheetOpen })
   const composerRowRef = useRef<HTMLDivElement>(null)
   const composerLeadRef = useRef<HTMLDivElement>(null)
   const composerActionsRef = useRef<HTMLDivElement>(null)
   const composerStatusRef = useRef<HTMLDivElement>(null)
   const composerSendRef = useRef<HTMLDivElement>(null)
-  const actionsDontFit = useComposerFit(
+  const composerLayout = useComposerFit(
     {
       row: composerRowRef,
       lead: composerLeadRef,
+      trigger: optionsMenu.triggerRef,
       actions: composerActionsRef,
       status: composerStatusRef,
       send: composerSendRef,
     },
-    // The menu belongs to the folded row: once the actions are back inline its trigger is gone. A phone's
-    // sheet stays, as its row is always folded.
-    (folded) => {
-      if (!folded && !optionsAsSheet) setAttachSheetOpen(false)
+    {
+      floor: optionsAsSheet ? 'folded' : 'inline',
+      // The menu belongs to the folded row: once the actions are back inline its trigger is gone.
+      onChange: (layout) => {
+        if (layout.level === 'inline') setAttachSheetOpen(false)
+      },
     }
   )
-  const composerFolded = optionsAsSheet || actionsDontFit
-  const optionsMenu = usePopover({ kind: 'menu', open: attachSheetOpen, onOpenChange: setAttachSheetOpen })
+  const composerFolded = optionsAsSheet || composerLayout.level !== 'inline'
   // The menu opens on hover like the app's other hover menus; the phone sheet stays tap-only.
   const optionsHover = useHoverOpen(optionsMenu, { enabled: !optionsAsSheet })
 
@@ -2909,6 +2912,9 @@ export function ChatView({
                 <div
                   ref={composerRowRef}
                   data-folded={composerFolded ? '' : undefined}
+                  data-compact={composerLayout.level === 'compact' ? '' : undefined}
+                  data-terse={composerLayout.terse ? '' : undefined}
+                  data-wrap={composerLayout.wrap ? '' : undefined}
                   className="chat-composer-controls flex gap-2 items-center justify-between"
                 >
                   <div ref={composerLeadRef} className="flex items-center gap-1 min-w-0">
@@ -3093,7 +3099,7 @@ export function ChatView({
                           // One split button: the main part sends in the chosen mode, the chevron picks the mode.
                           // Shown only while a turn is active to interrupt or queue into; when idle a plain Send
                           // is shown and deliveryMode stays 'steer' (safe default).
-                          'chat-composer-delivery flex min-h-[44px] items-stretch overflow-hidden rounded-md md:min-h-0',
+                          'chat-composer-delivery relative flex min-h-[44px] items-stretch overflow-hidden rounded-md md:min-h-0',
                           deliveryMode === 'steer'
                             ? 'bg-accent text-on-accent'
                             : 'bg-status-attention-600 text-on-strong'

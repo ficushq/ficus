@@ -60,8 +60,10 @@
 
   /* The chat composer folds its action buttons behind one More controls trigger (data-folded) on a
      phone, and anywhere else as soon as they would not fit on one line beside the status and the
-     right-hand group as it is now: Send, or Stop with Interrupt / Follow up. useComposerFit measures
-     that; nothing here depends on a fixed width. */
+     right-hand group as it is now: Send, or Stop with Interrupt / Follow up. Where even that is too
+     wide it drops the Auto hint (data-compact), and then the status's text truncates, or goes once too
+     little of it would show (data-terse).
+     useComposerFit measures all of it; nothing here depends on a fixed width. */
   .chat-composer-actions {
     display: flex;
   }
@@ -94,10 +96,31 @@
     width: max-content;
   }
 
-  /* A last resort only: when even the trigger, the status and the right-hand group cannot share a
-     line (a composer narrower than about 300px while a turn runs), Send, Stop and the Interrupt /
-     Follow up split button wrap below and stay at the right edge, never under another control. */
+  /* Like the folded actions, the dropped hint stays measurable: out of the flow, unseen, and clipped
+     by its split button (relative, overflow hidden). */
+  .chat-composer-controls[data-compact] .chat-composer-auto {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* Status text too squeezed to read (data-terse) is hidden but still read out and measured: out of the
+     flow at its whole width, clipped away. */
+  .chat-composer-controls[data-terse] .chat-composer-status .truncate {
+    position: absolute;
+    clip-path: inset(50%);
+    pointer-events: none;
+  }
+
+  /* A last resort only (data-wrap): when even the trigger, the context indicator and the compact
+     right-hand group cannot share a line (a composer narrower than about 290px while a turn runs,
+     below the narrowest floating window), Send, Stop and the Interrupt / Follow up split button wrap
+     below and stay at the right edge, never under another control. */
   .chat-composer-controls {
+    flex-wrap: nowrap;
+  }
+
+  .chat-composer-controls[data-wrap] {
     flex-wrap: wrap;
   }
 

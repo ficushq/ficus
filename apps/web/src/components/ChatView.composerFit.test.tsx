@@ -22,16 +22,23 @@ const STATUS = 56
 const SEND = 60
 const STOP = 50
 const PICKER = 160
+const HINT = 40
+const TRIGGER = 36
 let rowWidth = 600
 
 function widthOf(element: Element): number {
   const classes = element.classList
+  const row = element.closest('.chat-composer-controls')
   if (classes.contains('chat-composer-controls')) return rowWidth
   if (classes.contains('chat-composer-actions')) return ACTIONS
   if (classes.contains('chat-composer-status')) return STATUS
+  // The trigger shows only while the actions are folded, and the hint takes room only while it is not compact.
+  if (classes.contains('chat-composer-attach')) return row?.hasAttribute('data-folded') ? TRIGGER : 0
+  if (classes.contains('chat-composer-auto')) return HINT
   if (classes.contains('chat-composer-send')) {
     const stop = element.querySelector('.chat-composer-stop') ? STOP : 0
-    return stop + (element.querySelector('.chat-composer-delivery') ? PICKER : SEND)
+    const hint = element.querySelector('.chat-composer-auto') && !row?.hasAttribute('data-compact') ? HINT : 0
+    return stop + (element.querySelector('.chat-composer-delivery') ? PICKER + hint : SEND)
   }
   return 0
 }
@@ -80,7 +87,8 @@ async function render(props: Props = {}) {
         return { x: 0, y: 0, top: 0, left: 0, bottom: 0, right: width, width, height: 0 } as DOMRect
       }
       prototype.getClientRects = function (this: HTMLElement) {
-        return [this.getBoundingClientRect()] as unknown as DOMRectList
+        const rect = this.getBoundingClientRect()
+        return (rect.width > 0 ? [rect] : []) as unknown as DOMRectList
       }
       restorePrototype = () => {
         prototype.getBoundingClientRect = original.rect
@@ -122,7 +130,9 @@ async function render(props: Props = {}) {
     })
   await resize()
   const folded = () => row().hasAttribute('data-folded')
-  return { dom, document, row, show, resize, folded }
+  const compact = () => row().hasAttribute('data-compact')
+  const wrapped = () => row().hasAttribute('data-wrap')
+  return { dom, document, row, show, resize, folded, compact, wrapped }
 }
 
 // Running: Stop and the Interrupt / Follow up split button instead of Send.
@@ -135,6 +145,10 @@ const running: Props = {
 
 const idleNeeds = ACTIONS + STATUS + SEND
 const runningNeeds = ACTIONS + STATUS + STOP + PICKER
+// Running with the Auto hint, actions folded: with the hint, and without it.
+const suggested: Props = { ...running, suggestedDelivery: { now: true } }
+const foldedNeeds = TRIGGER + STATUS + STOP + PICKER + HINT
+const compactNeeds = TRIGGER + STATUS + STOP + PICKER
 
 describe('ChatView composer fit', () => {
   test('watches the row, the actions, the status and the right-hand group', async () => {
@@ -210,6 +224,41 @@ describe('ChatView composer fit', () => {
     await resize()
     expect(folded()).toBe(false)
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('drops the Auto hint where the folded row still does not fit, and wraps only as a last resort', async () => {
+    rowWidth = foldedNeeds - 1
+    const { document, resize, folded, compact, wrapped } = await render(suggested)
+    // One observation folds the actions, measures again with the trigger shown, and drops the hint.
+    expect(folded()).toBe(true)
+    expect(compact()).toBe(true)
+    expect(wrapped()).toBe(false)
+    // The hint is still there, so screen readers and the next measurement still have it.
+    expect(document.querySelector('.chat-composer-auto')).not.toBeNull()
+    // Comes back once the row has the margin to spare, counting the hidden hint.
+    rowWidth = foldedNeeds + COMPOSER_UNFOLD_MARGIN - 1
+    await resize()
+    expect(compact()).toBe(true)
+    rowWidth = foldedNeeds + COMPOSER_UNFOLD_MARGIN
+    await resize()
+    expect(compact()).toBe(false)
+    expect(folded()).toBe(true)
+    // Narrower than even the compact row: it wraps.
+    rowWidth = compactNeeds - 1
+    await resize()
+    expect(compact()).toBe(true)
+    expect(wrapped()).toBe(true)
+    rowWidth = compactNeeds + COMPOSER_UNFOLD_MARGIN
+    await resize()
+    expect(wrapped()).toBe(false)
+  })
+
+  test('an idle composer never drops anything from Send', async () => {
+    rowWidth = TRIGGER + STATUS + SEND
+    const { folded, compact, wrapped } = await render()
+    expect(folded()).toBe(true)
+    expect(compact()).toBe(false)
+    expect(wrapped()).toBe(false)
   })
 
   test('a composer that is not laid out keeps its actions inline', async () => {

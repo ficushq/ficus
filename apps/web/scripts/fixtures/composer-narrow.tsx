@@ -4,13 +4,14 @@
 // - ?layout=panel&w=420 — the chat in a side panel of that width beside page content;
 // - ?layout=page — the chat across a wide page;
 // and &busy=1 for a running turn (Stop, the Interrupt / Follow up split button and its Auto hint).
+// &state=waiting-sandbox (or another execution state) shows its word beside the context ring.
 // window.composerFixture.setBusy(boolean) starts or ends the turn in place, without a reload.
 import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
-import type { Agent, Message, Squad } from '@ficus/shared'
+import type { Agent, ExecutionStatus, Message, Squad } from '@ficus/shared'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { queries } from '../../src/queryOptions'
 import { chatWindowsStorageKey } from '../../src/lib/chatWindows'
@@ -95,6 +96,7 @@ function FixtureChat({ agentId }: { agentId: string }) {
       onToggleRawText={() => undefined}
       composerStatus={
         <AgentComposerStatus
+          status={(params.get('state') as ExecutionStatus | null) ?? undefined}
           context={{ percent: 18.2, tokens: 36_400, contextWindow: 200_000 }}
           canManageSession={!busy}
           onCompact={() => undefined}

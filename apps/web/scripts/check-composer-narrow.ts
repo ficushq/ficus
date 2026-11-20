@@ -9,8 +9,11 @@
  *   the context indicator and the right-hand group cannot share a line, may wrap, and the check reports
  *   the widths at which that starts;
  * - a side panel resized a step at a time folds once on the way down and unfolds once on the way up,
- *   later by the unfold margin (no flicker at the boundary), idle and busy;
+ *   later by the unfold margin (no flicker at the boundary), idle and busy, and while busy drops and
+ *   restores the Auto hint once each where even the folded row does not fit;
  * - a turn starting and ending in place folds and unfolds the actions at the same width;
+ * - a busy narrow window's state word truncates, or is hidden once too little of it would show, and the
+ *   context ring stays;
  * - at every width, Send, Stop, the Interrupt / Follow up split button and the context indicator sit
  *   fully inside the composer and never under another control;
  * - the trigger opens the shared menu (arrow keys, Escape and focus return) with every action as a
@@ -86,17 +89,41 @@ function measure(page: Page, scope: string) {
     const lead = send.previousElementSibling!
     const status = form.querySelector('.chat-composer-status')!
     const gap = (el: Element) => parseFloat(getComputedStyle(el).columnGap) || 0
-    const statusPart = status.getClientRects().length > 0 ? gap(lead) + box(status).width : 0
-    // What one line needs with the actions inline, and with them folded behind the trigger.
-    const inlineNeeded = box(actions).width + statusPart + gap(row) + box(send).width
+    const statusShown = status.getClientRects().length > 0
+    // A state word that truncates counts at its whole width, and not at all in the minimum.
+    const label = status.querySelector<HTMLElement>('[role="status"]')
+    const terse = row.hasAttribute('data-terse')
+    // Hidden (terse), the word is out of the flow, clipped away, and its gap is gone.
+    const labelShown = !label ? 0 : terse ? -gap(label.parentElement!) : box(label).width
+    // Squeezed, the status's parts that cannot shrink overflow it; its content's extent is what it needs.
+    const statusExtent = Math.max(box(status).width, status.scrollWidth)
+    const statusWidth = statusShown ? statusExtent - labelShown + (label ? label.scrollWidth : 0) : 0
+    const statusMin = statusShown ? statusExtent - labelShown : 0
+    const statusPart = statusShown ? gap(lead) + statusWidth : 0
+    const statusMinPart = statusShown ? gap(lead) + statusMin : 0
+    // The Auto hint, and the right-hand group with it even while it is hidden (compact).
+    const hint = form.querySelector('.chat-composer-auto')
+    const hintWidth = hint ? box(hint).width + gap(hint.parentElement!) : 0
+    const hintShown = shown(hint)
+    const sendFull = box(send).width + (hint && !hintShown ? hintWidth : 0)
+    // What one line needs with the actions inline, folded behind the trigger, and without the hint.
+    const inlineNeeded = box(actions).width + statusPart + gap(row) + sendFull
     const triggerWidth = shown(trigger) ? box(trigger).width : 36
-    const foldedNeeded = triggerWidth + gap(lead) + statusPart + gap(row) + box(send).width
+    const foldedNeeded = triggerWidth + statusPart + gap(row) + sendFull
+    const minimumNeeded = triggerWidth + statusMinPart + gap(row) + sendFull - hintWidth
     return {
       composerWidth: formBox.width,
       rowWidth: box(row).width,
       inlineNeeded,
       foldedNeeded,
+      minimumNeeded,
       collapsed: shown(trigger),
+      compact: row.hasAttribute('data-compact'),
+      hasHint: !!hint,
+      hintShown,
+      terse,
+      labelTruncated: !!label && label.scrollWidth > label.clientWidth,
+      labelVisible: label && !terse ? box(label).width : 0,
       actionsShown: shown(actions),
       contextShown: shown(context),
       sendShown: shown(send),
@@ -172,7 +199,7 @@ try {
           const scope = layout === 'window' ? '[data-floating-window]' : '[data-testid="side-panel"]'
           const m = await measure(page, scope)
           report.push(
-            `${label}: composer ${m.composerWidth.toFixed(0)}px, inline needs ${m.inlineNeeded.toFixed(0)}px, ${m.collapsed ? 'folded' : 'inline'}, ${m.wrapped ? 'wrapped' : 'one line'}`
+            `${label}: composer ${m.composerWidth.toFixed(0)}px, inline needs ${m.inlineNeeded.toFixed(0)}px, ${m.compact ? 'folded, no Auto hint' : m.collapsed ? 'folded' : 'inline'}, ${m.wrapped ? 'wrapped' : 'one line'}`
           )
           // Freshly opened, so no unfold margin applies: folded exactly when the inline row would not fit.
           const tooWide = m.inlineNeeded > m.rowWidth + 0.5
@@ -182,8 +209,12 @@ try {
             `${label}: folded=${m.collapsed}, needs ${m.inlineNeeded} of ${m.rowWidth}`
           )
           assert.equal(m.actionsShown, !tooWide, `${label}: inline actions shown=${m.actionsShown}`)
+          // The Auto hint goes only where the folded row still does not fit.
+          const foldedTooWide = m.collapsed && m.foldedNeeded > m.rowWidth + 0.5
+          assert.equal(m.compact, foldedTooWide, `${label}: compact=${m.compact}, folded needs ${m.foldedNeeded}`)
+          if (m.hasHint) assert.equal(m.hintShown, !m.compact, `${label}: Auto hint shown=${m.hintShown}`)
           // Never wraps in normal use, the narrowest floating window included.
-          assert.equal(m.wrapped, false, `${label}: the row wrapped (folded needs ${m.foldedNeeded} of ${m.rowWidth})`)
+          assert.equal(m.wrapped, false, `${label}: the row wrapped (minimum ${m.minimumNeeded} of ${m.rowWidth})`)
           assert.equal(m.rows, 1, `${label}: the send controls split across lines`)
           assert.ok(m.contextShown, `${label}: the context indicator is hidden`)
           assert.ok(m.sendShown, `${label}: the send controls are hidden`)
@@ -232,6 +263,7 @@ try {
     await open(`layout=panel&w=760&appearance=dark${busy ? '&busy=1' : ''}`)
     const transitions: string[] = []
     let folded = false
+    let compact = false
     let foldedAt = 0
     let unfoldedAt = 0
     let wrapsBelow = 0
@@ -244,27 +276,33 @@ try {
       assert.deepEqual(m.overlaps, [], `${label}: controls overlap`)
       assert.deepEqual(m.outside, [], `${label}: controls spill outside the composer`)
       assert.equal(m.actionsShown, !m.collapsed, `${label}: actions and trigger shown together`)
-      // Inline only while the row fits; folded only while it does not fit with the margin to spare.
+      // Each level holds only while it fits, and gives way only where it does not fit with the margin to spare.
       if (!m.collapsed) assert.ok(m.inlineNeeded <= m.rowWidth + 0.5, `${label}: inline actions do not fit`)
       else assert.ok(m.inlineNeeded > m.rowWidth - UNFOLD_MARGIN, `${label}: folded with room to spare`)
-      // A wrap is only the fallback, where even the folded row cannot share a line.
+      if (m.collapsed && !m.compact) assert.ok(m.foldedNeeded <= m.rowWidth + 0.5, `${label}: folded row does not fit`)
+      if (m.compact) assert.ok(m.foldedNeeded > m.rowWidth - UNFOLD_MARGIN, `${label}: hint dropped with room to spare`)
+      // A wrap is only the fallback, where even the compact row cannot share a line.
       if (m.wrapped) {
-        assert.ok(m.collapsed && m.foldedNeeded > m.rowWidth + 0.5, `${label}: wrapped although the folded row fits`)
-        wrapsBelow = Math.max(wrapsBelow, width)
-      } else assert.ok(m.foldedNeeded <= m.rowWidth + 0.5 || !m.collapsed, `${label}: should have wrapped`)
+        assert.ok(m.compact && m.minimumNeeded > m.rowWidth - UNFOLD_MARGIN, `${label}: wrapped although it fits`)
+        wrapsBelow = Math.max(wrapsBelow, m.composerWidth)
+      } else assert.ok(m.minimumNeeded <= m.rowWidth + 0.5, `${label}: should have wrapped`)
       if (m.collapsed !== folded) {
         transitions.push(`${m.collapsed ? 'fold' : 'unfold'} at ${width} (composer ${m.composerWidth.toFixed(0)}px)`)
         folded = m.collapsed
         if (folded) foldedAt = width
         else unfoldedAt = width
       }
+      if (m.compact !== compact) {
+        transitions.push(`${m.compact ? 'hint off' : 'hint on'} at ${width} (composer ${m.composerWidth.toFixed(0)}px)`)
+        compact = m.compact
+      }
     }
     for (let width = 760; width >= 220; width -= 2) await step(width, 'down')
     for (let width = 222; width <= 760; width += 2) await step(width, 'up')
-    // One fold on the way down and one unfold on the way up: no flicker at the boundary.
+    // Each change once on the way down and once on the way up: no flicker at the boundaries.
     assert.deepEqual(
-      transitions.map((t) => t.split(' ')[0]),
-      ['fold', 'unfold'],
+      transitions.map((t) => t.split(' at ')[0]),
+      busy ? ['fold', 'hint off', 'hint on', 'unfold'] : ['fold', 'unfold'],
       `panel ${state}: ${transitions.join(', ')}`
     )
     assert.ok(
@@ -273,7 +311,7 @@ try {
     )
     foldWidths[state] = foldedAt
     report.push(
-      `panel sweep ${state}: ${transitions.join(', ')}; wraps (fallback) at panel width ${wrapsBelow} and below`
+      `panel sweep ${state}: ${transitions.join(', ')}; ${wrapsBelow ? `wraps (fallback) at a composer of ${wrapsBelow.toFixed(0)}px and below` : 'never wraps'}`
     )
   }
   // Stop and the picker need more room than Send, so a busy composer folds wider.
@@ -302,6 +340,30 @@ try {
     report.push(`${label}: ${m.collapsed ? 'folded' : 'inline'}, one line`)
     await page.mouse.move(1400, 700)
     await shot(`panel-${between}-${busy ? 'busy' : 'idle'}-in-place-dark`)
+  }
+
+  // Narrow floating windows, busy, with a state word: it truncates, or goes once too little of it would
+  // show, rather than wrap the row; the context ring always stays.
+  for (const [width, expected] of [
+    [340, 'hidden'],
+    [420, 'truncated'],
+    [720, 'whole'],
+  ] as const) {
+    for (const appearance of ['dark', 'light']) {
+      await open(`layout=window&w=${width}&busy=1&state=waiting-sandbox&appearance=${appearance}`)
+      const m = await measure(page, '[data-floating-window]')
+      const label = `window-${width}-busy-waiting-${appearance}`
+      const word = m.terse ? 'hidden' : m.labelTruncated ? 'truncated' : 'whole'
+      assert.equal(word, expected, `${label}: state word ${word}`)
+      if (word === 'truncated') assert.ok(m.labelVisible >= 47.5, `${label}: only ${m.labelVisible}px of the word show`)
+      assert.equal(m.wrapped, false, `${label}: the row wrapped`)
+      assert.ok(m.contextShown, `${label}: the context indicator is hidden`)
+      assert.deepEqual(m.overlaps, [], `${label}: controls overlap`)
+      assert.deepEqual(m.outside, [], `${label}: controls spill outside the composer`)
+      report.push(`${label}: one line, state word ${word}`)
+      await page.mouse.move(1400, 700)
+      await shot(label)
+    }
   }
 
   // The options menu in a narrow window: every action as a row, arrows, Escape and focus return.
