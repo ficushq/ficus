@@ -9,6 +9,7 @@ import { useIsDesktop } from '../hooks/useIsDesktop'
 import { useStableRef } from '../hooks/useStableRef'
 import { currentViewport } from '../hooks/useAssistantPosition'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { dismissPopupsContaining } from '../hooks/usePopupDismiss'
 import {
   EMPTY_CHAT_WINDOWS,
   chatWindowsReducer,
@@ -149,7 +150,10 @@ export function FloatingWindowsProvider({ children, dependencies }: FloatingWind
       const agentId = target(event)
       if (!agentId) return
       event.preventDefault()
+      // On purpose: the row's own handlers (navigate, open a modal, select it) must not run as well.
       event.stopPropagation()
+      // So the menu or popover holding the link never sees its item run: close it as running one would.
+      if (event.target instanceof Node) dismissPopupsContaining(event.target)
       open(agentId)
     }
     // Shift+press would otherwise extend the text selection to the link.

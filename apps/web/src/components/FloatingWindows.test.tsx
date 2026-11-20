@@ -1,13 +1,14 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { queries } from '../queryOptions'
 import { chatWindowsStorageKey } from '../lib/chatWindows'
 import { untilRendered } from '../test/untilRendered'
+import { webkitTap } from '../test/webkitTap'
 
 // Load the lazy in-place reference modal before installing the DOM's constructor globals.
 await import('./EntityReferenceModal')
@@ -19,6 +20,7 @@ const { WorkStreamList } = await import('./WorkStreamList')
 const { SquadAgentThreads } = await import('./squads/SquadAgentThreads')
 const { SquadAgentThreadsApiProvider } = await import('./squads/squadAgentThreadsApi')
 const { AgentConversation } = await import('./AgentConversationBody')
+const { HoverCard, Menu, MenuItem, Panel, useHoverCard, usePopover } = await import('./popover')
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -389,6 +391,112 @@ test('Shift-click on an agents sidebar row opens it in a floating window without
     expect(new URLSearchParams(t.location().split('?')[1]).get('agent')).toBe('manager-1')
     await t.click(row)
     expect(new URLSearchParams(t.location().split('?')[1]).get('agent')).toBe(A)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+/** A row menu and a panel holding agent links, inside a focusable section as on real pages (WebKit taps). */
+function PopupsWithAgentLinks({ ran }: { ran: string[] }) {
+  const menu = usePopover<HTMLButtonElement>({ kind: 'menu' })
+  const panel = usePopover<HTMLButtonElement>({ kind: 'dialog' })
+  return (
+    <section tabIndex={-1}>
+      <button {...menu.triggerProps} type="button" onClick={menu.toggle}>
+        Agents
+      </button>
+      <Menu {...menu.popoverProps} label="Agents">
+        <MenuItem data-agent-chat-id={A} onClick={() => ran.push('row')}>
+          Researcher
+        </MenuItem>
+      </Menu>
+      <button {...panel.triggerProps} type="button" onClick={panel.toggle}>
+        Details
+      </button>
+      <Panel {...panel.popoverProps} label="Details">
+        <a href={`/squads/ficus/agents?agent=${B}`}>Reviewer</a>
+      </Panel>
+    </section>
+  )
+}
+
+test('Shift- or Alt-click on an agent link inside an open menu or panel opens a window and closes the popup, without running the row', async () => {
+  const ran: string[] = []
+  const t = await setup(<PopupsWithAgentLinks ran={ran} />, { url: '/feed' })
+  try {
+    const trigger = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')].find((b) => b.textContent === name)!
+    const shown = (role: string) => document.querySelector(`[role="${role}"][data-popover]:not([data-state="closed"])`)
+    const item = () => document.querySelector<HTMLButtonElement>(`[role="menuitem"][data-agent-chat-id="${A}"]`)!
+
+    await t.click(trigger('Agents'))
+    expect(shown('menu')).not.toBeNull()
+    const shift = await t.click(item(), { shiftKey: true })
+    expect(shift.defaultPrevented).toBe(true)
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
+    expect(ran).toEqual([])
+    expect(shown('menu')).toBeNull()
+    expect(trigger('Agents').getAttribute('aria-expanded')).toBe('false')
+
+    // Safari: the press never focuses the item, and focus falls back to the section before the click.
+    await t.click(t.windowFor(A)!.querySelector('button[aria-label="Close window"]')!)
+    await t.click(trigger('Agents'))
+    expect(await webkitTap(item(), { modifiers: { altKey: true } })).toBe(true)
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
+    expect(ran).toEqual([])
+    expect(shown('menu')).toBeNull()
+
+    await t.click(trigger('Details'))
+    const link = document.querySelector<HTMLAnchorElement>('[role="dialog"][data-popover] a')!
+    await t.click(link, { shiftKey: true })
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A, B])
+    expect(shown('dialog')).toBeNull()
+    expect(t.location()).toBe('/feed')
+
+    // A plain click on the item still runs it, and the menu closes as before.
+    await t.click(trigger('Agents'))
+    await t.click(item())
+    expect(ran).toEqual(['row'])
+    expect(shown('menu')).toBeNull()
+    expect(t.windows()).toHaveLength(2)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+function PreviewWithAgentLink() {
+  const anchor = useRef<HTMLButtonElement>(null)
+  const hover = useHoverCard({ openDelay: 10, closeDelay: 10 })
+  return (
+    <>
+      <button ref={anchor} type="button" {...hover.anchorHandlers}>
+        Reference
+      </button>
+      <HoverCard hover={hover} anchor={anchor} label="Preview">
+        <a href={`/squads/ficus/agents?agent=${A}`}>Researcher</a>
+      </HoverCard>
+    </>
+  )
+}
+
+test('Shift-click on an agent link in a hover card the pointer is still over opens a window and closes the card', async () => {
+  const t = await setup(<PreviewWithAgentLink />, { url: '/feed' })
+  try {
+    const mouseover = (target: Element) =>
+      t.dom.act(async () => void target.dispatchEvent(new t.dom.window.MouseEvent('mouseover', { bubbles: true })))
+    const wait = (ms: number) => t.dom.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
+    const card = () => document.querySelector('[data-popover]:not([data-state="closed"])')
+    await mouseover(document.querySelector('button')!)
+    await wait(30)
+    expect(card()).not.toBeNull()
+    await mouseover(card()!)
+    await t.click(card()!.querySelector('a')!, { shiftKey: true })
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
+    // Closed at once, although the pointer still rests on the card.
+    expect(card()).toBeNull()
+    await wait(30)
+    expect(card()).toBeNull()
+    expect(t.location()).toBe('/feed')
   } finally {
     await t.cleanup()
   }
