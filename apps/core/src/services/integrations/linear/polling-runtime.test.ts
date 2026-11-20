@@ -112,6 +112,14 @@ async function ageSession(sessionId: string) {
     .set({ updatedAt: sql`now() - interval '2 minutes'` })
     .where(eq(linearAgentSessions.id, sessionId))
 }
+/**
+ * When a person's follow-up prompt is written: after its session opened, as live Linear records it
+ * (minutes later). A follow-up given its session's own millisecond would be indistinguishable by time
+ * from the opening prompt Linear creates with the session (`isLinearOpeningPrompt`).
+ */
+function followUpAt(sessionOpenedAt: number, minutes: number) {
+  return sessionOpenedAt + minutes * 60_000
+}
 async function recordAppWebhook() {
   await db.insert(webhookEvents).values({
     provider: 'linear-app',
@@ -455,7 +463,8 @@ describe('trusted authors and the connected account', () => {
   test('a polled prompt follows the rule for a member and is held for a guest', async () => {
     const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule('agent_session.prompted')] })
     const sessionId = randomUUID()
-    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id, status: 'active' })
+    const openedAt = Date.now()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id, status: 'active', at: openedAt })
     await db.insert(linearAgentSessions).values({
       id: sessionId,
       connectionId: fixture.connectionId,
@@ -466,10 +475,22 @@ describe('trusted authors and the connected account', () => {
       dispositionState: 'sent',
       disposition: 'notified',
     })
-    linear.addPrompt({ id: randomUUID(), sessionId, userId: guest.id, body: 'Do this for me' })
+    linear.addPrompt({
+      id: randomUUID(),
+      sessionId,
+      userId: guest.id,
+      body: 'Do this for me',
+      at: followUpAt(openedAt, 1),
+    })
     const first = await pollOnce()
     expect(await streams(squad.id)).toEqual([])
-    linear.addPrompt({ id: randomUUID(), sessionId, userId: member.id, body: 'Please take this' })
+    linear.addPrompt({
+      id: randomUUID(),
+      sessionId,
+      userId: member.id,
+      body: 'Please take this',
+      at: followUpAt(openedAt, 2),
+    })
     await pollOnce(first.nextCursor)
     expect(await streams(squad.id)).toHaveLength(1)
     const trust = (await authorities('agent_session.prompted')).map((authority) => [
@@ -577,7 +598,8 @@ describe('recovered prompts', () => {
   test('a prompt seen by webhook and poll is routed and answered once, in either order', async () => {
     await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()
-    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id, status: 'active' })
+    const openedAt = Date.now()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id, status: 'active', at: openedAt })
     await db.insert(linearAgentSessions).values({
       id: sessionId,
       connectionId: fixture.connectionId,
@@ -590,8 +612,8 @@ describe('recovered prompts', () => {
     })
     const viaWebhook = randomUUID()
     const viaPoll = randomUUID()
-    linear.addPrompt({ id: viaWebhook, sessionId, userId: member.id, body: 'Any news?' })
-    linear.addPrompt({ id: viaPoll, sessionId, userId: member.id, body: 'Still there?' })
+    linear.addPrompt({ id: viaWebhook, sessionId, userId: member.id, body: 'Any news?', at: followUpAt(openedAt, 1) })
+    linear.addPrompt({ id: viaPoll, sessionId, userId: member.id, body: 'Still there?', at: followUpAt(openedAt, 2) })
     const prompted = (activityId: string, body: string) =>
       processLinearAppEvent({
         type: 'AgentSessionEvent',
@@ -786,9 +808,16 @@ describe('fixture cleanup', () => {
   test('a cleaned-up fixture leaves no rows behind for a later run against the same database', async () => {
     const squad = await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()
-    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    const openedAt = Date.now()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id, at: openedAt })
     const activityId = randomUUID()
-    linear.addPrompt({ id: activityId, sessionId, userId: guest.id, body: 'Do this for me' })
+    linear.addPrompt({
+      id: activityId,
+      sessionId,
+      userId: guest.id,
+      body: 'Do this for me',
+      at: followUpAt(openedAt, 1),
+    })
     issue.delegateId = null
     linear.addNotification({ id: randomUUID(), type: 'issueUnassignedFromYou', issueId: issue.id, actorId: member.id })
     await recordAppWebhook()
