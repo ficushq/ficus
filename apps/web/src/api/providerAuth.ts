@@ -34,9 +34,15 @@ export interface ProviderAccountSubscription {
   needsChoice: boolean
 }
 
+/**
+ * One provider from GET /provider-auth: every provider with stored accounts, plus every provider
+ * authenticated only through the environment or runtime (`configured: true`, no accounts, no
+ * `type`). A provider absent from a loaded list is one nobody has signed in to.
+ */
 export interface ProviderAuthEntry {
   provider: string
-  type: 'api_key' | 'oauth'
+  /** Credential type of the first stored account; absent when there are no stored accounts. */
+  type?: 'api_key' | 'oauth'
   hasCredential: boolean
   configured: boolean
   disabled: boolean

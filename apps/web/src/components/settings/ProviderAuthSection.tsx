@@ -131,6 +131,9 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
   const [search, setSearch] = useState('')
   const [selectedProvider, setSelectedProvider] = useState('')
   const providerMap = new Map(providers.map((p) => [p.provider, p]))
+  // The list also holds providers authenticated only through the environment or runtime (no
+  // accounts). Those keep their registry or catalog card rather than becoming custom cards.
+  const storedProviders = providers.filter((p) => p.hasCredential || (p.accounts?.length ?? 0) > 0)
   const oauthSet = new Set(oauthProviders.map((p) => p.id))
 
   if (isLoading) {
@@ -161,7 +164,7 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
         rank: providerActivityRank([entry, oauthEntry]),
       }
     }),
-    ...providers
+    ...storedProviders
       .filter((provider) => provider.provider !== 'openrouter' && !knownProviderIds.has(provider.provider))
       .map((entry) => ({
         provider: {
@@ -177,7 +180,7 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
 
   const additionalProviderOptions = selectableProviders(
     catalog,
-    new Set([...knownProviderIds, 'openrouter', ...providers.map((provider) => provider.provider)])
+    new Set([...knownProviderIds, 'openrouter', ...storedProviders.map((provider) => provider.provider)])
   )
   const directoryCards = [
     ...providerCards,

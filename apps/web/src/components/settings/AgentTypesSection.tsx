@@ -58,7 +58,10 @@ export function TierFilterChip({ tierFilter, onClear }: { tierFilter?: string; o
 
 function AgentTypesTab({ tierFilter, onClearTierFilter }: { tierFilter?: string; onClearTierFilter?: () => void }) {
   const queryClient = useQueryClient()
-  const { data: providers = [] } = useQuery(queries.providerAuth.list())
+  const { data: providers } = useQuery(queries.providerAuth.list())
+  const { data: openRouterRouting } = useQuery(queries.providerAuth.openRouterRouting())
+  // Chain warnings judge authentication only once both are loaded (see modelChainWarnings).
+  const warningProviders = openRouterRouting ? providers : undefined
   const { data: agentTypes = [], isLoading } = useQuery({
     queryKey: queryKeys.agentTypes.list(),
     queryFn: getAgentTypes,
@@ -128,7 +131,9 @@ function AgentTypesTab({ tierFilter, onClearTierFilter }: { tierFilter?: string;
 
       {agentTypes
         .flatMap((type) =>
-          modelChainWarnings(type.resolvedChain ?? type.model, providers).map((warning) => `${type.name}: ${warning}`)
+          modelChainWarnings(type.resolvedChain ?? type.model, warningProviders, openRouterRouting).map(
+            (warning) => `${type.name}: ${warning}`
+          )
         )
         .map((warning) => (
           <p key={warning} role="alert" className="text-sm text-warning">
@@ -1250,7 +1255,10 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
   const [warning, setWarning] = useState('')
   const { can } = usePermissions()
   const { data: catalog = [], isError: catalogUnavailable } = useQuery(modelCatalogQuery())
-  const { data: providers = [] } = useQuery(queries.providerAuth.list())
+  const { data: providers } = useQuery(queries.providerAuth.list())
+  const { data: openRouterRouting } = useQuery(queries.providerAuth.openRouterRouting())
+  // Chain warnings judge authentication only once both are loaded (see modelChainWarnings).
+  const warningProviders = openRouterRouting ? providers : undefined
   const { data: tiers = [], isLoading, isSuccess } = useQuery({ queryKey: ['model-tiers'], queryFn: getModelTiers })
   const tierSkeletonCount = useLoadingShapeCount('settings:model-tiers', isSuccess ? tiers.length : undefined, {
     fallbackCount: 3,
@@ -1303,7 +1311,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
               </button>
             </span>
           </div>
-          {modelChainWarnings(tier.chain, providers).map((item) => (
+          {modelChainWarnings(tier.chain, warningProviders, openRouterRouting).map((item) => (
             <p key={item} role="alert" className="text-sm text-warning">
               {item}
             </p>
@@ -1312,8 +1320,8 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
             tier={tier}
             catalog={catalog}
             disabled={!can('agent-types:update') || mutation.isPending}
-            providers={providers.map((provider) => provider.provider)}
-            disabledProviders={disabledProviderIds(providers)}
+            providers={(providers ?? []).map((provider) => provider.provider)}
+            disabledProviders={disabledProviderIds(providers ?? [])}
             derivedFallbacks={tier.derivedOpenRouterFallbacks}
             onSave={(next) => mutation.mutate(next)}
           />

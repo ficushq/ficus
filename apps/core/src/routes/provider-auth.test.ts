@@ -168,8 +168,22 @@ describe('provider-auth routes', () => {
 
   // --- API Key routes ---
 
-  test('GET / returns empty list initially', async () => {
-    const res = await app.request('/', jsonReq())
+  /** Make the runtime report environment or runtime auth for exactly these providers. */
+  async function withRuntimeAuth<T>(providers: string[], run: () => Promise<T>): Promise<T> {
+    const runtime = await getModelRuntime()
+    const registered = [...new Set([...runtime.getRegisteredProviderIds(), ...providers])]
+    const ids = spyOn(runtime, 'getRegisteredProviderIds').mockImplementation(() => registered)
+    const auth = spyOn(runtime, 'hasConfiguredAuth').mockImplementation((provider) => providers.includes(provider))
+    try {
+      return await run()
+    } finally {
+      ids.mockRestore()
+      auth.mockRestore()
+    }
+  }
+
+  test('GET / returns empty list initially, omitting registered providers nobody has signed in to', async () => {
+    const res = await withRuntimeAuth([], () => app.request('/', jsonReq()))
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data).toEqual([])
@@ -201,6 +215,38 @@ describe('provider-auth routes', () => {
     expect(anthropic.accounts).toHaveLength(1)
     // Keys are never exposed in list
     expect(data.find((p: any) => p.key)).toBeUndefined()
+  })
+
+  test('GET / lists a provider authenticated only through the runtime as configured, with no accounts', async () => {
+    await app.request('/anthropic/enabled', jsonReq('PUT', { enabled: false }))
+    const data = await withRuntimeAuth(['openai', 'anthropic'], async () => (await app.request('/', jsonReq())).json())
+    expect(data.map((entry: any) => entry.provider).sort()).toEqual(['anthropic', 'openai'])
+    // Only "configured" is reported: no credential type, value or source.
+    expect(data.find((entry: any) => entry.provider === 'openai')).toEqual({
+      provider: 'openai',
+      hasCredential: false,
+      configured: true,
+      disabled: false,
+      health: 'available',
+      accounts: [],
+    })
+    expect(data.find((entry: any) => entry.provider === 'anthropic')).toMatchObject({
+      configured: true,
+      disabled: true,
+      accounts: [],
+    })
+  })
+
+  test('GET / lists a provider with stored accounts once, even when the runtime also authenticates it', async () => {
+    await app.request('/openai', jsonReq('PUT', { key: 'sk-openai-test' }))
+    const data = await withRuntimeAuth(['openai'], async () => (await app.request('/', jsonReq())).json())
+    expect(data.filter((entry: any) => entry.provider === 'openai')).toHaveLength(1)
+    expect(data.find((entry: any) => entry.provider === 'openai')).toMatchObject({
+      type: 'api_key',
+      hasCredential: true,
+      configured: true,
+    })
+    expect(data.find((entry: any) => entry.provider === 'openai').accounts).toHaveLength(1)
   })
 
   test('GET /:provider returns status without key', async () => {

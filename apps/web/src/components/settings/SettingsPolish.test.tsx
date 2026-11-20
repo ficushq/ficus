@@ -181,3 +181,24 @@ test('provider directory groups accounts separately and puts common disconnected
   expect(cards.slice(0, 3)).toEqual(['OpenAI', 'Anthropic', 'OpenRouter'])
   expect(cards.indexOf('aardvark')).toBeGreaterThan(cards.indexOf('deepseek'))
 })
+
+test('a provider authenticated only through the environment keeps its catalog card instead of a custom one', async () => {
+  client.setQueryData(queryKeys.providerAuth.list(), [
+    { provider: 'aardvark', hasCredential: false, configured: true, disabled: false, accounts: [] },
+  ])
+  client.setQueryData(queryKeys.providerAuth.oauthProviders(), [])
+  client.setQueryData(queryKeys.providerAuth.catalog(), [{ id: 'aardvark', label: 'Aardvark AI', modelCount: 1 }])
+  client.setQueryData(queryKeys.providerAuth.openRouterRouting(), {
+    enabled: false,
+    active: false,
+    configured: false,
+    tiers: [],
+    vendors: [],
+    health: 'available',
+  })
+  const page = await render(<ProviderAuthSection />)
+  const cards = [...page.querySelectorAll('article')].map((card) => card.querySelector('h4')?.textContent)
+  expect(cards.filter((name) => name === 'Aardvark AI')).toHaveLength(1)
+  expect(cards).not.toContain('aardvark')
+  expect(page.textContent).not.toContain('Custom provider')
+})

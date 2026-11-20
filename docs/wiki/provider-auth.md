@@ -98,6 +98,12 @@ Provider health (all require `provider-auth:write`):
 
 Both return the refreshed provider summary, and `404` for an unknown provider or account.
 
+`GET /` lists every provider with stored accounts, then every provider the model runtime can
+authenticate without one (for example through an environment variable). Those appear with
+`configured: true`, `hasCredential: false` and no accounts; the response never says where their
+auth comes from. A provider missing from the list is therefore one nobody has signed in to, which
+is how Settings flags a model chain with no usable provider.
+
 ### Resetting provider health
 
 When a provider returns a rate limit or plan-window exhaustion, Ficus records a cooldown and stops
