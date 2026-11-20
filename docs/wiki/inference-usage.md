@@ -85,6 +85,7 @@ A subscription account's calls bill $0. Its monthly fee shows as its own line it
   | `promax`  | ChatGPT Pro 500 | $500 a month  |
 
   `pro` was the only Pro plan before the tiers existed, and it has always been the $200 one, so accounts stored as `pro` keep their price with no migration. The `prolite` and `promax` mappings follow the Codex CLI's own status labels; OpenAI does not document the claim values.
+
 - **Detection**: the plan is detected where the provider says. The account shows "Detected" or "Set by you".
   - ChatGPT/Codex: the access token's `https://api.openai.com/auth.chatgpt_plan_type` claim, read when the account signs in and whenever the token refreshes (`team` maps to Business). The claim names the Pro tier (`prolite`, `pro` or `promax`), so the detected tier is used as is. A tier an admin picked is never replaced by a detected one. pi keeps no id_token, but the access token carries the same claim.
   - Claude Code: `subscriptionType` from `claude auth status`. `max` does not say whether it is 5x or 20x, so the admin picks one. Until then no fee is counted.
