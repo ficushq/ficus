@@ -16,6 +16,8 @@ const PRIMITIVE = 'hooks/usePopupDismiss.ts'
 const LISTENER_ALLOWLIST: Record<string, string> = {
   'lib/pwaUpdater.ts': 'records user activity to time an update reload; dismisses nothing',
   'components/PullToRefresh.tsx': 'a pull gesture on its own container; dismisses nothing',
+  'components/FloatingWindows.tsx':
+    'keeps a Shift-press on an agent link from extending the text selection before it opens a floating window; dismisses nothing',
 }
 
 /** Blur handlers that match the dismissal pattern but close no popup. Keep this small. */

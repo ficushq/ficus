@@ -94,6 +94,8 @@ interface AgentChatProps {
   focusInboxMessageId?: string
   /** Show teammates typing in this chat, and tell them when this person is. Off for a private Assistant conversation. */
   showTeammateTyping?: boolean
+  /** More controls at the end of the composer's bottom-left row (the floating-window button). */
+  composerControls?: React.ReactNode
 }
 
 /** Live conversation state exposed to a `header` render function. */
@@ -145,6 +147,7 @@ export function AgentChat({
   beforeConversation,
   afterConversation,
   renderMessageFooter,
+  composerControls,
 }: AgentChatProps) {
   const ChatViewComponent = dependencies?.ChatViewComponent ?? ChatView
   const api = useChatApi()
@@ -523,6 +526,7 @@ export function AgentChat({
       focusMessageId={focusMessageId}
       focusInboxMessageId={focusInboxMessageId}
       enableHistorySearch
+      composerControls={composerControls}
     />
   )
 }

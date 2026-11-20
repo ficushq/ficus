@@ -1,5 +1,6 @@
 import { ActivityPreview } from './ActivityPreview'
 import { ActivityWorkStrip } from './ActivityWorkStrip'
+import { agentChatTarget } from '../../lib/agentChatLinks'
 import clsx from 'clsx'
 import { useEffect, useMemo, useRef } from 'react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
@@ -522,6 +523,8 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                         <Link
                           className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
                           to={sourceHref}
+                          // Shift- or Alt/Option-click on an agent row opens its chat in a floating window.
+                          {...agentChatTarget(item.ref.type === 'agent' ? item.ref.agentId : undefined)}
                           onClick={interceptRowClick(item)}
                           aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
                         />

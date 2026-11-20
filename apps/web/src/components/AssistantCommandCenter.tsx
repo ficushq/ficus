@@ -30,6 +30,9 @@ import { AgentChat } from './AgentChat'
 import { ActionItem } from './ActionItem'
 import { MarkdownContent } from './MarkdownContent'
 import { OpenFullConversationLink } from './OpenFullConversationLink'
+import { FloatingChatButton } from './FloatingChatButton'
+import { useFloatingWindows } from './floatingWindowsContext'
+import { agentChatTarget } from '../lib/agentChatLinks'
 import { SparklesIcon, ChevronRightIcon } from './icons'
 import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@ficus/shared'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
@@ -100,6 +103,7 @@ export function AssistantCommandCenter({
   const searchInput = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const floating = useFloatingWindows()
   const { can, isLoading, isError } = usePermissions()
   const enabled = active && !isLoading && !isError
   const squads = useQuery({ ...queries.squads.list(), enabled })
@@ -182,6 +186,8 @@ export function AssistantCommandCenter({
           : undefined
   const destination = entry && label ? { ...entry, label } : entry
   const push = (next: CommandDestination | AssistantConversationDestination) => {
+    // An agent that already floats comes forward in its window instead of opening here.
+    if (next.kind === 'chat' && next.agentId && floating?.focusIfFloating(next.agentId)) return
     if (next.kind === 'chat')
       setOpenedChats((current) => (current.some((chat) => chat.id === next.id) ? current : [...current, next]))
     onPush(next)
@@ -394,6 +400,7 @@ export function AssistantCommandCenter({
                 <button
                   id={`command-result-${i}`}
                   data-result-index={i}
+                  {...agentChatTarget(result.destination?.kind === 'chat' ? result.destination.agentId : undefined)}
                   role="option"
                   aria-selected={i === index}
                   onClick={() => choose(result)}
@@ -494,6 +501,11 @@ export function AssistantCommandCenter({
         >
           <InlineCommandChat
             ChatComponent={dependencies?.ChatComponent}
+            agentId={chat.agentId ?? createdChats[chat.id]}
+            // Popped out into a floating window: the assistant steps back, so it never shows in both places.
+            onPoppedOut={() => {
+              if (destination?.kind === 'chat' && destination.id === chat.id) onBack()
+            }}
             chat={
               destination?.kind === 'chat' && destination.id === chat.id
                 ? { ...chat, readOnly: destination.readOnly }
@@ -602,6 +614,7 @@ function SquadPreview({
         <PreviewRow
           title="Manager"
           detail="Squad coordinator"
+          agentId={squad.managerAgentId}
           onClick={() =>
             onPush({
               kind: 'chat',
@@ -639,6 +652,7 @@ function SquadPreview({
             key={a.id}
             title={getAgentPrimaryLabel(a)}
             status={a.status}
+            agentId={a.id}
             detail={
               <span className="inline-flex items-center gap-2">
                 <CommandAgentType typeId={a.agentTypeId} />
@@ -727,15 +741,19 @@ function PreviewRow({
   title,
   detail,
   status,
+  agentId,
   onClick,
 }: {
   title: string
   detail: React.ReactNode
   status?: Agent['status']
+  /** The agent whose chat this row opens: Shift- or Alt/Option-click opens it in a floating window. */
+  agentId?: string
   onClick: () => void
 }) {
   return (
     <button
+      {...agentChatTarget(agentId)}
       onClick={onClick}
       className="ficus-button ficus-button-ghost flex w-full items-center gap-2 px-3 py-2.5 text-left rounded-xl hover:bg-selection focus:bg-selection"
     >
@@ -797,6 +815,7 @@ function WorkPreview({
             key={a.id}
             title={getAgentPrimaryLabel(a)}
             status={a.status}
+            agentId={a.id}
             detail={
               <span className="inline-flex items-center gap-2">
                 <CommandAgentType typeId={a.agentTypeId} />
@@ -824,6 +843,7 @@ function WorkPreview({
           <h3 className="text-xs text-muted mb-2">Started here</h3>
           <PreviewRow
             title={getAgentPrimaryLabel(origin)}
+            agentId={origin.id}
             detail={
               <span className="inline-flex items-center gap-2">
                 <CommandAgentType typeId={origin.agentTypeId} />
@@ -918,16 +938,21 @@ function CommandWorkStatus({ work }: { work: WorkStream }) {
 
 function InlineCommandChat({
   chat,
+  agentId,
   active,
   canSend,
   ChatComponent = AgentChat,
   onCreated,
+  onPoppedOut,
 }: {
   chat: ChatDestination
+  /** The chat's agent once it exists (a new consultant chat has none until its first message). */
+  agentId?: string
   active: boolean
   canSend: boolean
   ChatComponent?: typeof AgentChat
   onCreated?: (id: string) => void
+  onPoppedOut?: () => void
 }) {
   const client = useQueryClient()
   return (
@@ -945,6 +970,7 @@ function InlineCommandChat({
       keyboardShortcutsEnabled={active}
       squadId={chat.squadId}
       placeholder="Send a message…"
+      composerControls={<FloatingChatButton agentId={agentId} onPoppedOut={onPoppedOut} />}
       onAgentCreated={(id) => {
         onCreated?.(id)
         void client.invalidateQueries({ queryKey: queryKeys.agents.listPrefix() })

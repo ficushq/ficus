@@ -97,23 +97,30 @@ describe('work stream context guidance', () => {
     }
   })
 
-  test('manager, consultant, and work-stream skill require self-contained task context', async () => {
-    const [managerPrompt, consultantPrompt, workStreamSkill] = await Promise.all([
-      readRepoFile('config/agent-types/manager.yaml'),
-      readRepoFile('config/agent-types/consultant.yaml'),
-      readRepoFile('config/skills/work-stream-driven-development/SKILL.md'),
-    ])
+  test('the roles that create work streams load one description rule', async () => {
+    const guidance = (await readRepoFile('config/agent-types/shared/work-descriptions.md')).replace(/\s+/g, ' ')
+    expect(guidance).toContain('self-contained')
+    expect(guidance).toContain('"as discussed"')
+    expect(guidance).toContain('"the conversation above"')
+    // Exact words are kept selectively, with traceable authority, and never copied twice.
+    expect(guidance).toContain("Quote the user's exact words only where they carry a decision, an approval")
+    expect(guidance).toContain('who gave a quoted decision or approval, when, and its message or question ID')
+    expect(guidance).toContain('already quotes the user rather than copying it')
+    expect(guidance).toContain('only the user can drop one')
 
-    for (const guidance of [managerPrompt, consultantPrompt, workStreamSkill]) {
-      const normalizedGuidance = guidance.replace(/\s+/g, ' ')
-      expect(normalizedGuidance).toContain('self-contained')
-      expect(normalizedGuidance).toContain('do not rely on or merely reference prior chat conversations')
-      expect(normalizedGuidance).toContain('"as discussed"')
-      expect(normalizedGuidance).toContain('"the conversation above"')
-      expect(normalizedGuidance).toContain(
-        'goal, current behavior/problem, desired behavior, constraints, and important decisions'
-      )
+    for (const role of ['manager', 'consultant']) {
+      const config = Bun.YAML.parse(await readRepoFile(`config/agent-types/${role}.yaml`)) as {
+        includes: string[]
+        systemPrompt: string
+      }
+      expect({ role, included: config.includes.includes('work-descriptions') }).toEqual({ role, included: true })
+      // The old verbatim-copy rule is gone from the role text.
+      expect(config.systemPrompt).not.toContain('exact task text')
+      expect(config.systemPrompt.replace(/\s+/g, ' ')).toContain('"Writing Work Stream Descriptions"')
     }
+    const skill = (await readRepoFile('config/skills/work-stream-driven-development/SKILL.md')).replace(/\s+/g, ' ')
+    expect(skill).toContain('self-contained description')
+    expect(skill).toContain('"Writing Work Stream Descriptions"')
   })
 })
 
