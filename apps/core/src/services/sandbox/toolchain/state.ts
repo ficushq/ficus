@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@ficus/shared'
 import { db } from '../../../db'
 import {
@@ -115,13 +115,25 @@ export async function withProvisionLease<T>(sandboxId: string, reconcile: () => 
   })
 }
 
+/**
+ * Record the toolchain a sandbox should realize, as `pending` until a
+ * reconcile reports otherwise.
+ *
+ * A row that is already `ready` for this exact fingerprint is left alone.
+ * Every sandbox ensure reconciles the toolchain, so on a busy squad this runs
+ * many times a minute for a toolchain that has not changed. Resetting it to
+ * `pending` each time made the status flip to `pending` (shown as degraded)
+ * and back for as long as the re-verification took. A reconcile that finds
+ * work or fails still moves the row through markStage or markFailed.
+ */
 export async function markDesired(input: ProvisionKey): Promise<void> {
   const now = new Date()
-  await db
-    .insert(sandboxToolchainProvisions)
+  const row = sandboxToolchainProvisions
+  const changed = await db
+    .insert(row)
     .values({ ...input, status: 'pending', updatedAt: now })
     .onConflictDoUpdate({
-      target: sandboxToolchainProvisions.sandboxId,
+      target: row.sandboxId,
       set: {
         squadId: input.squadId,
         desiredFingerprint: input.desiredFingerprint,
@@ -131,8 +143,10 @@ export async function markDesired(input: ProvisionKey): Promise<void> {
         completedAt: null,
         updatedAt: now,
       },
+      setWhere: sql`not (${row.status} = 'ready' and ${row.squadId} = ${input.squadId} and ${row.desiredFingerprint} = ${input.desiredFingerprint} and ${row.appliedFingerprint} is not distinct from ${input.desiredFingerprint})`,
     })
-  emit(input.sandboxId)
+    .returning({ sandboxId: row.sandboxId })
+  if (changed.length > 0) emit(input.sandboxId)
 }
 
 async function updateCurrentDesired(
