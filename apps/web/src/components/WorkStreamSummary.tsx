@@ -1,7 +1,7 @@
 /**
  * One-line work stream summaries on the web (docs/wiki/work-stream-summaries.md): the peek card
  * shared by Feed, Home and Work list rows and graph nodes, the inline summary line, the detail
- * modal's "Now" line, and the per-surface "Show summaries" switch.
+ * modal's "Now" line, and the per-surface "Summaries" switch.
  */
 import clsx from 'clsx'
 import {
@@ -163,7 +163,7 @@ export function formatSummaryAge(value: string | Date, now: number = Date.now())
   return `${days} ${days === 1 ? 'day' : 'days'} ago`
 }
 
-/** One muted, truncated summary line under a list row ("Show summaries" on). */
+/** One muted, truncated summary line under a list row ("Summaries" on). */
 export function WorkStreamSummaryLine({ workStream, className }: { workStream: WorkStream; className?: string }) {
   const summary = workStreamSummaryFor(workStream)
   if (!summary) return null

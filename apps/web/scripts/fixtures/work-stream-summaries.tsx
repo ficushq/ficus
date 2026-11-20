@@ -1,7 +1,7 @@
 // Synthetic data only: every query is seeded or disabled, so this fixture never contacts a backend.
 // ?view=feed (Feed list, peek on hover), ?view=work (Work tab list), ?view=home (squad Home list),
 // ?view=board (Work tab board), ?view=modal (detail modal);
-// "Show summaries" is on by default; add &nosummaries to turn it off on every list, &dark for the dark appearance.
+// "Summaries" is on by default; add &nosummaries to turn it off on every list, &dark for the dark appearance.
 import { createRoot } from 'react-dom/client'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -157,7 +157,7 @@ for (const item of [...streams, done]) {
 }
 localStorage.clear()
 if (params.has('nosummaries'))
-  for (const surface of ['feed', 'home', 'work'] as const)
+  for (const surface of ['feed', 'home', 'work', 'activity'] as const)
     localStorage.setItem(workStreamSummariesStorageKey(surface), 'false')
 if (view === 'board') localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
 
@@ -197,6 +197,7 @@ function App() {
               compact={view === 'home'}
               activeOnly={view === 'home'}
               activeCollapsible={view === 'home'}
+              expandable={view === 'home'}
             />
           </div>
         )}

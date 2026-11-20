@@ -167,27 +167,28 @@ function SectionHeader({
     // One header row: the hover fill covers the whole row, view controls included, so they never
     // make the disclosure look narrower than the list below it.
     return (
-      <div className="flex items-center rounded-lg has-[[data-section-toggle]:hover]:bg-surface-hover">
+      <div className="flex flex-wrap items-center rounded-lg has-[[data-section-toggle]:hover]:bg-surface-hover">
         <button
           onClick={onToggle}
           aria-expanded={!collapsed}
           data-section-toggle=""
           className={clsx(
-            'ficus-button ficus-button-ghost min-w-0 flex-1 py-2 text-left hover:bg-transparent',
+            'ficus-button ficus-button-ghost min-w-fit flex-1 py-2 text-left hover:bg-transparent',
             feedLayout ? FEED_DISCLOSURE_HEADER_CLASS : 'px-3'
           )}
         >
           {content}
         </button>
-        {actions && <div className="flex shrink-0 items-center gap-2 px-2">{actions}</div>}
+        {actions && <div className="ml-auto flex shrink-0 items-center gap-2 px-2">{actions}</div>}
       </div>
     )
   }
 
   return (
-    <div className="flex items-center">
-      <div className="min-w-0 flex-1 px-3 py-2">{content}</div>
-      {actions && <div className="flex shrink-0 items-center gap-2 px-2">{actions}</div>}
+    // Narrow widths wrap the view controls under the title rather than squeezing it.
+    <div className="flex flex-wrap items-center">
+      <div className="min-w-fit flex-1 px-3 py-2">{content}</div>
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-2 px-2">{actions}</div>}
     </div>
   )
 }
@@ -957,6 +958,7 @@ export function WorkStreamList({
       activeLabel={activeFilterLabel}
       onClear={clearFilters}
       label={filterContainer === undefined ? 'Work filters' : 'Feed filters'}
+      align={filterContainer === undefined ? 'start' : undefined}
     >
       <div className="space-y-3" aria-label="Work stream filters">
         <WorkStreamFilterGroup title="Status">

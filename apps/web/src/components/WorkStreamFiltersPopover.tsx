@@ -13,6 +13,7 @@ export function WorkStreamFiltersPopover({
   activeLabel,
   onClear,
   label = 'Feed filters',
+  align,
   children,
 }: {
   count: number
@@ -22,6 +23,8 @@ export function WorkStreamFiltersPopover({
   onClear?: () => void
   /** The panel's accessible name. */
   label?: string
+  /** `start` when the trigger sits at the left of its row (the Work tab), so the panel opens rightward. */
+  align?: 'start' | 'end'
   children: ReactNode
 }) {
   const popover = usePopover({ kind: 'disclosure' })
@@ -66,6 +69,7 @@ export function WorkStreamFiltersPopover({
         initialFocus={hover.hoverOpened ? 'none' : (panel) => panel.querySelector('button')}
         role="region"
         label={label}
+        align={align}
         gap={8}
         // At most 32rem, and never more than 70% of the visible viewport.
         maxHeight={(viewport) => Math.min(512, 0.7 * (viewport.bottom - viewport.top))}

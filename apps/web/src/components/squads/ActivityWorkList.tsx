@@ -2,7 +2,6 @@ import clsx from 'clsx'
 import { useCallback, useId, useSyncExternalStore } from 'react'
 import { Link } from 'react-router'
 import {
-  ACTIVITY_WORK_STREAM_CARD_STATE_LABELS,
   activityWorkStreamCardState,
   type ActivityWorkStreamCard,
   type ActivityWorkStreamCardState,
@@ -279,9 +278,4 @@ export function ActivityWorkList({
       )}
     </section>
   )
-}
-
-/** The label a row state reads as in prose ("Paused"), for the details panel. */
-export function activityWorkStateLabel(state: ActivityWorkStreamCardState): string {
-  return ACTIVITY_WORK_STREAM_CARD_STATE_LABELS[state]
 }
