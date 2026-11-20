@@ -9,7 +9,9 @@ export async function dispatchVerifiedWebhookContext(
   ctx: WebhookContext,
   options: { skipOutputs?: boolean; handledSquadIds?: string[] } = {}
 ): Promise<void> {
-  if (firstPartyIntegrationPlugin(ctx.provider) && !(await isIntegrationEnabled(ctx.provider))) return
+  // The Linear agent app's webhook belongs to the `linear` integration.
+  const integration = ctx.provider === 'linear-app' ? 'linear' : ctx.provider
+  if (firstPartyIntegrationPlugin(integration) && !(await isIntegrationEnabled(integration))) return
   const { publishIntegrationOutputs } = await import('../integrations/outputs/runtime')
   if (options.skipOutputs) ctx.integrationHandledSquadIds = options.handledSquadIds ?? []
   else if (ctx.provider === 'github') {
@@ -21,8 +23,8 @@ export async function dispatchVerifiedWebhookContext(
         ? { kind: 'webhook', deliveryId: ctx.headers['x-github-delivery'] }
         : undefined,
     })
-  } else if (ctx.provider === 'linear') {
-    // Linear's event handler verifies connected-account issue access before publishing.
+  } else if (ctx.provider === 'linear' || ctx.provider === 'linear-app') {
+    // Linear's event handlers verify connected-account issue access before publishing.
     ctx.integrationHandledSquadIds = []
   } else
     ctx.integrationHandledSquadIds = await publishIntegrationOutputs(

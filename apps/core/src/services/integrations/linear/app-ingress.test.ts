@@ -1,0 +1,390 @@
+import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
+useEnabledIntegrationFixtures('linear')
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { getSecretStore } from '../../secrets'
+import { randomUUID } from 'node:crypto'
+import { createBlankWorkflow } from '@ficus/shared'
+import { and, eq, sql } from 'drizzle-orm'
+import {
+  agentTypes,
+  db,
+  inbox,
+  integrationConnections,
+  integrationOutputEvents,
+  integrationOutputTriggerRuns,
+  linearAgentSessions,
+  linearTeamAccess,
+  workStreams,
+} from '../../../db'
+import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
+import { LINEAR_ACK_BODY } from './session-acknowledger'
+import { LINEAR_DISPOSITION_ACTIVITIES } from './session-disposition'
+import { createLinearAppFixture } from './testing/app-fixtures'
+import {
+  agentSessionCreatedPayload,
+  agentSessionPromptedPayload,
+  createFakeLinear,
+  oauthAppRevokedPayload,
+  permissionChangePayload,
+  type FakeLinear,
+  type FakeLinearIssue,
+} from './testing/fake-linear'
+
+const originalFetch = globalThis.fetch
+const originalAppUrl = process.env.APP_URL
+let fixture: Awaited<ReturnType<typeof createLinearAppFixture>>
+let linear: FakeLinear
+let issue: FakeLinearIssue
+let now = 0
+const teamId = randomUUID()
+const member = { id: randomUUID(), name: 'Member', active: true }
+const guest = { id: randomUUID(), name: 'Guest', guest: true, active: true }
+
+function rule(id: string, output: string, action: Record<string, unknown>, audience = 'connected-account') {
+  return {
+    id,
+    enabled: true,
+    source: { integration: 'linear', output, version: 1 },
+    filters: { squadRouting: true, audience },
+    action,
+  }
+}
+// An inline workflow keeps the fixture independent of seeded presets.
+const workerType = `linear-app-worker-${randomUUID().slice(0, 8)}`
+function startAction() {
+  const definition = createBlankWorkflow()
+  definition.participants.worker!.agentTypeId = workerType
+  return { type: 'start-workstream', workflow: { kind: 'inline', definition } }
+}
+const startRule = (output = 'issue.delegated') => rule(`start-${output.replace(/[._]/g, '-')}`, output, startAction())
+
+function bodies(sessionId: string) {
+  return linear.activitiesFor(sessionId).map((activity) => [activity.content.type, activity.content.body])
+}
+async function created(sessionId: string, input: { creatorId?: string; commentId?: string; issue?: FakeLinearIssue | null } = {}) {
+  await processLinearAppEvent(
+    {
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, {
+        sessionId,
+        issue: input.issue === undefined ? issue : input.issue,
+        creatorId: input.creatorId ?? member.id,
+        commentId: input.commentId,
+        timestamp: now,
+      }),
+    },
+    { now: () => now }
+  )
+}
+
+beforeAll(async () => {
+  await getSecretStore().initialize()
+  await db.insert(agentTypes).values({
+    id: workerType,
+    name: 'Linear app fixture worker',
+    extraScopes: ['workstreams:respond'],
+    model: 'anthropic:claude-sonnet-4-5',
+    systemPrompt: 'Test worker',
+  })
+})
+afterAll(async () => {
+  await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
+})
+beforeEach(async () => {
+  now = Date.now()
+  clearLinearUserCacheForTest()
+  fixture = await createLinearAppFixture()
+  linear = createFakeLinear({
+    organization: { id: fixture.organizationId, name: 'Acme', urlKey: 'acme' },
+    app: { id: fixture.appUserId, name: 'Ficus', app: true, active: true },
+    clock: () => now,
+    advance: (ms) => (now += ms),
+    latencyMs: 700,
+  })
+  linear.addUser(member)
+  linear.addUser(guest)
+  issue = linear.addIssue({
+    id: randomUUID(),
+    number: 7,
+    identifier: 'ENG-7',
+    title: 'Fix the checkout',
+    url: 'https://linear.app/acme/issue/ENG-7',
+    team: { id: teamId, key: 'ENG' },
+    labels: ['bug'],
+    delegateId: fixture.appUserId,
+  })
+  globalThis.fetch = linear.fetch
+  delete process.env.APP_URL
+})
+afterEach(async () => {
+  globalThis.fetch = originalFetch
+  if (originalAppUrl === undefined) delete process.env.APP_URL
+  else process.env.APP_URL = originalAppUrl
+  await fixture.cleanup()
+})
+
+describe('acknowledgment', () => {
+  test('every created session is acknowledged once, before rules, within 10 seconds, with no squad assigned', async () => {
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    const sentAt = now
+    await created(sessionId)
+    const ack = linear.calls.find((call) => call.operation === 'FicusAgentActivity')!
+    // The acknowledgment is the first Linear call: no probe, rule or decision ran before it.
+    expect(linear.calls[0]).toBe(ack)
+    expect(ack.variables.input.content).toEqual({ type: 'thought', body: LINEAR_ACK_BODY })
+    expect(ack.at - sentAt).toBeLessThan(10_000)
+    expect(ack.authorization).toBe('Bearer linear-app-access-token')
+    // No squad is assigned: the session is acknowledged and closed as not set up.
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.ignored.body],
+    ])
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row).toMatchObject({ ackState: 'sent', disposition: 'unrouted', trigger: 'delegation', teamId })
+    // A redelivery (or the polling fallback) neither acknowledges nor disposes again.
+    await created(sessionId)
+    expect(bodies(sessionId)).toHaveLength(2)
+  })
+
+  test('a failed first attempt is retried once inside the deadline', async () => {
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    linear.failNext(500, 'FicusAgentActivity')
+    await created(sessionId)
+    expect(linear.activitiesFor(sessionId)[0]?.content.body).toBe(LINEAR_ACK_BODY)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row?.ackState).toBe('sent')
+  })
+
+  test('a session outside an issue is acknowledged and closed politely', async () => {
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await fixture.addSquad({ teamIds: [teamId] })
+    await created(sessionId, { issue: null })
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES['no-issue'].body],
+    ])
+    expect(linear.calls.some((call) => call.operation === 'FicusLinearAppProbe')).toBe(false)
+  })
+})
+
+describe('disposition and authority', () => {
+  test('default rules notify the manager and pass the request to the team', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+    const notices = await db
+      .select()
+      .from(inbox)
+      .where(and(eq(inbox.recipientId, squad.managerAgentId!), sql`${inbox.metadata}->>'source' = 'integration-notification'`))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.content).toContain('linear:issue.delegated')
+  })
+
+  test('one probe per event is shared by every squad; unrouted teams match nothing', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    await fixture.addSquad({ teamIds: [randomUUID()] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    expect(linear.calls.filter((call) => call.operation === 'FicusLinearAppProbe')).toHaveLength(1)
+    const facts = await db
+      .select({ output: sql<string>`${integrationOutputEvents.fact}->>'output'`, authority: integrationOutputEvents.authority })
+      .from(integrationOutputEvents)
+      .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`)
+    // Both squads record both facts under their own authority, bound to the app user and a trusted author.
+    expect(facts).toHaveLength(4)
+    for (const fact of facts)
+      expect(fact.authority).toMatchObject({ accountId: fixture.appUserId, actorTrust: 'trusted' })
+    expect(bodies(sessionId).at(-1)?.[0]).toBe('response')
+  })
+
+  test('ignore rules close the session as not set up', async () => {
+    await fixture.addSquad({ teamIds: [teamId], rules: [rule('quiet', 'issue.delegated', { type: 'ignore' })] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.ignored.body])
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row?.disposition).toBe('ignored')
+  })
+
+  test('an issue the app cannot read reaches no squad and shows an error', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const hidden: FakeLinearIssue = { ...issue, id: randomUUID() }
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: hidden.id })
+    await created(sessionId, { issue: hidden })
+    expect(bodies(sessionId).at(-1)).toEqual(['error', LINEAR_DISPOSITION_ACTIVITIES.inaccessible.body])
+    const recorded = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`)
+    expect(recorded).toEqual([])
+  })
+
+  test('a delegation the live probe does not confirm is not routed as a delegation', async () => {
+    await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    linear.issues.set(issue.id, { ...issue, delegateId: null })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    expect(await db.select().from(workStreams).where(sql`${workStreams.metadata}->'integrationSource'->>'resourceKey' = ${issue.id}`)).toEqual([])
+  })
+
+  test('a start-workstream rule queues work and binds the session to exactly one stream', async () => {
+    const first = await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    const second = await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    const streams = await db
+      .select()
+      .from(workStreams)
+      .where(sql`${workStreams.squadId} in (${first.id}, ${second.id})`)
+    expect(streams).toHaveLength(2)
+    const [session] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(session).toMatchObject({ disposition: 'bound', primary: true })
+    const winner = streams.find((stream) => stream.id === session!.workStreamId)!
+    expect(winner).toBeDefined()
+    const tracked = (winner.metadata as { tracked: Array<Record<string, unknown>> }).tracked
+    expect(tracked[0]).toMatchObject({ integration: 'linear', externalId: issue.id, agentSession: { id: sessionId } })
+    const receipts = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(sql`${integrationOutputTriggerRuns.squadId} in (${first.id}, ${second.id})`)
+    expect(receipts.map((receipt) => receipt.outcomeCode).sort()).toEqual(['session_already_bound', null].sort())
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['thought', 'Ficus started tracking this work.'],
+      ['thought', LINEAR_DISPOSITION_ACTIVITIES.queued.body],
+    ])
+    // Without an https public URL, Ficus adds no link to the session.
+    expect(linear.sessions.get(sessionId)?.externalUrls).toEqual([])
+  })
+
+  test('binding adds Open in Ficus only with an https public URL', async () => {
+    await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    process.env.APP_URL = 'https://ficus.example.com'
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    const [link] = linear.sessions.get(sessionId)!.externalUrls
+    expect(link?.label).toBe('Open in Ficus')
+    expect(link?.url).toMatch(/^https:\/\/ficus\.example\.com\/squads\/[0-9a-f-]+\/work\?ws=\d+$/)
+
+    process.env.APP_URL = 'http://ficus.internal:8080'
+    const plain = randomUUID()
+    const other = linear.addIssue({ ...issue, id: randomUUID(), number: 8, identifier: 'ENG-8' })
+    linear.addSession({ id: plain, issueId: other.id })
+    await created(plain, { issue: other })
+    expect(linear.sessions.get(plain)?.externalUrls).toEqual([])
+  })
+
+  test('a later session on an issue a stream already tracks binds to that stream', async () => {
+    await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    const firstSession = randomUUID()
+    linear.addSession({ id: firstSession, issueId: issue.id })
+    await created(firstSession)
+    const [first] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, firstSession))
+    const mention = randomUUID()
+    linear.addSession({ id: mention, issueId: issue.id })
+    await created(mention, { commentId: randomUUID() })
+    const [second] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, mention))
+    expect(second?.workStreamId).toBe(first!.workStreamId)
+    expect(second?.primary).toBe(true)
+    const [previous] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, firstSession))
+    expect(previous?.primary).toBe(false)
+  })
+})
+
+describe('trust', () => {
+  test('a guest’s delegation never starts work: the rule is held and the manager is told', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId, { creatorId: guest.id })
+    expect(await db.select().from(workStreams).where(eq(workStreams.squadId, squad.id))).toEqual([])
+    const notices = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.content).toContain('not a trusted member')
+    expect(notices[0]!.content).toContain('--from-event')
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+  })
+
+  test('an untrusted prompt only notifies the manager; a member’s prompt follows the rule', async () => {
+    const squad = await fixture.addSquad({
+      teamIds: [teamId],
+      rules: [rule('prompt-start', 'agent_session.prompted', startAction())],
+    })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    const prompt = (userId: string) =>
+      processLinearAppEvent({
+        type: 'AgentSessionEvent',
+        payload: agentSessionPromptedPayload(fixture.context, {
+          sessionId,
+          issue,
+          userId,
+          activityId: randomUUID(),
+          body: 'Please look at this',
+        }),
+      })
+    await prompt(guest.id)
+    expect(await db.select().from(workStreams).where(eq(workStreams.squadId, squad.id))).toEqual([])
+    await prompt(member.id)
+    expect(await db.select().from(workStreams).where(eq(workStreams.squadId, squad.id))).toHaveLength(1)
+  })
+})
+
+describe('connection lifecycle', () => {
+  test('PermissionChange records team access, pre-filters later events and marks removed teams inaccessible', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    await processLinearAppEvent({
+      type: 'PermissionChange',
+      payload: permissionChangePayload(fixture.context, { addedTeamIds: ['other-team'], removedTeamIds: [teamId] }),
+    })
+    const [access] = await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, fixture.connectionId))
+    expect(access).toMatchObject({ source: 'webhook', canAccessAllPublicTeams: false })
+    expect(access?.teamIds).toContain('other-team')
+    expect(access?.teamIds).not.toContain(teamId)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row?.disposition).toBe('inaccessible')
+    // The recorded access now rejects the team before any probe.
+    const later = randomUUID()
+    linear.addSession({ id: later, issueId: issue.id })
+    const probes = linear.calls.filter((call) => call.operation === 'FicusLinearAppProbe').length
+    await created(later)
+    expect(linear.calls.filter((call) => call.operation === 'FicusLinearAppProbe')).toHaveLength(probes)
+    expect(bodies(later).at(-1)).toEqual(['error', LINEAR_DISPOSITION_ACTIVITIES.inaccessible.body])
+  })
+
+  test('a PermissionChange for another app user is ignored', async () => {
+    await processLinearAppEvent({
+      type: 'PermissionChange',
+      payload: permissionChangePayload({ ...fixture.context, appUserId: randomUUID() }, { removedTeamIds: [teamId] }),
+    })
+    expect(await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, fixture.connectionId))).toEqual([])
+  })
+
+  test('OAuthApp revoked marks the connection for reauthorization and alerts operators', async () => {
+    await processLinearAppEvent({ type: 'OAuthApp', payload: oauthAppRevokedPayload(fixture.context) })
+    const [connection] = await db
+      .select()
+      .from(integrationConnections)
+      .where(eq(integrationConnections.id, fixture.connectionId))
+    expect(connection).toMatchObject({ authState: 'reauthorization_required', lastErrorCode: 'app_uninstalled' })
+    const alerts = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'connectionId' = ${fixture.connectionId}`)
+    expect(alerts.map((alert) => alert.subject)).toEqual(['OAuth app was uninstalled and requires attention'])
+  })
+})

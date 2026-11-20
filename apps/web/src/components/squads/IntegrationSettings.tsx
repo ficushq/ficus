@@ -88,6 +88,11 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
   const queryClient = useQueryClient()
   const squadPermissions = usePermissions(squadId)
   const { data: squad, isLoading } = useQuery(queries.squads.basic(squadId))
+  const linearSelection = useQuery({
+    ...integrationQueries.squad(squadId, 'linear'),
+    enabled: provider === 'linear',
+  })
+  const inaccessibleTeamIds = linearSelection.data?.inaccessibleTeamIds ?? []
   // Clean forms follow the query. Once edited, the entire form belongs to the
   // user until saved or closed; unrelated squad refreshes must not reinitialize it.
   const [draft, setDraft] = useState<RoutingDraft | null>(null)
@@ -227,6 +232,12 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
             </h3>
             <p className="text-xs text-muted mt-1">Route Linear assigned issues to this squad by team ID.</p>
           </div>
+          {inaccessibleTeamIds.length > 0 && (
+            <p role="alert" className="mb-3 text-sm text-status-warning-600">
+              The Ficus app in Linear cannot access {inaccessibleTeamIds.length === 1 ? 'team' : 'teams'}{' '}
+              {inaccessibleTeamIds.join(', ')}. A Linear admin can grant access in the Ficus app settings in Linear.
+            </p>
+          )}
 
           <div className="space-y-3">
             {linearEntries.map((entry, index) => (

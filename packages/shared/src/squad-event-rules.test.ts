@@ -1,7 +1,10 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { squadMetadataSchema } from './schemas'
 import {
   effectiveSquadEventRules,
+  isLinearSelfComment,
+  LINEAR_DEFAULT_RULE_IDS,
+  previewSquadEventRules,
   selectSquadEventRule,
   squadEventRulesSchema,
   squadEventRuleSchema,
@@ -522,4 +525,83 @@ test('a labels not-contains rule skips blocked issues and explains itself in the
       'labels not-contains: requires a present collection without that member; empty collections match, missing and null do not.',
   })
   expect(JSON.stringify(preview)).not.toContain('blocked')
+})
+
+describe('Linear rules', () => {
+  const app = 'app-user'
+  const linear = (output: string, data: Record<string, unknown>): IntegrationOutputFact => ({
+    output,
+    version: 1,
+    subject: 'Linear event',
+    body: '',
+    eventKey: output,
+    resourceKey: 'issue-uuid',
+    occurredAt: '2026-11-19T00:00:00Z',
+    data: { teamId: 'team', actor: 'person', actorType: 'user', ...data },
+  })
+  const routed = { linear: [{ teamId: 'team' }] }
+
+  test('defaults mirror GitHub: account-bound changes and mentions notify the manager', () => {
+    const rules = effectiveSquadEventRules({}, 'linear')
+    expect(rules.map((rule) => [rule.id, rule.source.output, rule.action.type, rule.filters.audience])).toEqual([
+      ['linear-issue-assigned', 'issue.assigned', 'notify-manager', 'connected-account'],
+      ['linear-issue-unassigned', 'issue.unassigned', 'notify-manager', 'connected-account'],
+      ['linear-issue-delegated', 'issue.delegated', 'notify-manager', 'connected-account'],
+      ['linear-issue-undelegated', 'issue.undelegated', 'notify-manager', 'connected-account'],
+      ['linear-issue-mentioned', 'issue.mentioned', 'notify-manager', 'assigned-or-mentioned'],
+      ['linear-issue-comment', 'issue.comment', 'notify-manager', 'assigned-or-mentioned'],
+      ['linear-agent-session-prompted', 'agent_session.prompted', 'notify-manager', 'connected-account'],
+    ])
+    expect(rules.every((rule) => rule.filters.squadRouting)).toBe(true)
+    expect(LINEAR_DEFAULT_RULE_IDS).toEqual(rules.map((rule) => rule.id))
+    // Stored rules stay authoritative: new defaults never appear in a squad that saved its own list.
+    expect(effectiveSquadEventRules({ integrationRules: { linear: [] } }, 'linear')).toEqual([])
+  })
+
+  test('connected-account binds the assignee, the delegate or the session app user', () => {
+    const select = (fact: IntegrationOutputFact) => selectSquadEventRule(routed, 'linear', fact, app)?.id
+    expect(select(linear('issue.assigned', { assignee: app }))).toBe('linear-issue-assigned')
+    expect(select(linear('issue.assigned', { assignee: 'someone' }))).toBeUndefined()
+    expect(select(linear('issue.delegated', { delegate: app }))).toBe('linear-issue-delegated')
+    expect(select(linear('issue.delegated', { delegate: 'other-agent' }))).toBeUndefined()
+    expect(select(linear('issue.undelegated', { delegate: app }))).toBe('linear-issue-undelegated')
+    expect(select(linear('agent_session.prompted', { session: { id: 's', appUserId: app } }))).toBe(
+      'linear-agent-session-prompted'
+    )
+    expect(select(linear('agent_session.prompted', { session: { id: 's', appUserId: 'other' } }))).toBeUndefined()
+    // Team routing still applies: an empty route list matches nothing.
+    expect(selectSquadEventRule({}, 'linear', linear('issue.delegated', { delegate: app }), app)).toBeUndefined()
+  })
+
+  test('assigned-or-mentioned matches mentions and the account’s issues, never its own or app authors', () => {
+    const select = (fact: IntegrationOutputFact) => selectSquadEventRule(routed, 'linear', fact, app)?.id
+    expect(select(linear('issue.mentioned', { session: { id: 's' } }))).toBe('linear-issue-mentioned')
+    expect(select(linear('issue.mentioned', { actorType: 'app' }))).toBeUndefined()
+    expect(select(linear('issue.comment', { assignee: app }))).toBe('linear-issue-comment')
+    expect(select(linear('issue.comment', { delegate: app }))).toBe('linear-issue-comment')
+    expect(select(linear('issue.comment', { assignee: 'someone' }))).toBeUndefined()
+    // A comment in the account's own session thread already arrives as a mention or a prompt.
+    expect(select(linear('issue.comment', { delegate: app, session: { id: 's' } }))).toBeUndefined()
+  })
+
+  test('comments authored by the connected account are suppressed as self-comments', () => {
+    const comment = linear('issue.comment', { actor: app, delegate: app })
+    expect(isLinearSelfComment(comment, app)).toBe(true)
+    expect(isLinearSelfComment(comment, '')).toBe(false)
+    const preview = previewSquadEventRules(routed, 'linear', comment, app)
+    expect(preview.suppression).toBe('self-comment')
+    expect(preview.selectedRuleId).toBeNull()
+  })
+
+  test('an event without a recorded account keeps the old unrestricted Linear audience', () => {
+    expect(selectSquadEventRule(routed, 'linear', linear('issue.assigned', { assignee: 'someone' }), '')?.id).toBe(
+      'linear-issue-assigned'
+    )
+    const preview = previewSquadEventRules(routed, 'linear', linear('issue.delegated', { delegate: app }), app)
+    expect(preview.rules.find((rule) => rule.id === 'linear-issue-delegated')?.checks).toContainEqual({
+      kind: 'audience',
+      passed: true,
+      description: 'Delegated or undelegated agent must be the connected account.',
+    })
+  })
 })

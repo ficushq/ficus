@@ -40,3 +40,19 @@ export async function authorized(
     )
   return !!row
 }
+
+/**
+ * The account rule audiences compare against: the probed account on the event's authority, else the
+ * connection's configured GitHub login or Linear app user.
+ */
+export function outputAccount(configuration: unknown, authority: IntegrationOutputAuthority): string {
+  if (authority.kind === 'connection' && authority.accountId) return authority.accountId
+  const config = (configuration ?? {}) as { login?: unknown; appUserId?: unknown }
+  if (typeof config.login === 'string') return config.login
+  return typeof config.appUserId === 'string' ? config.appUserId : ''
+}
+
+/** Linear agent app events whose author is not a trusted workspace member never start work on their own. */
+export function isUntrustedOutputActor(integration: string, authority: IntegrationOutputAuthority): boolean {
+  return integration === 'linear' && authority.kind === 'connection' && authority.actorTrust === 'untrusted'
+}

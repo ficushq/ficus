@@ -15,6 +15,7 @@ import { isIntegrationEnabled } from '../services/integrations/provider-state'
 
 import { Hono } from 'hono'
 import {
+  DuplicateWebhookDeliveryError,
   webhookRegistry,
   dispatchVerifiedWebhookContext,
   storeWebhookEvent,
@@ -344,24 +345,48 @@ webhooksRouter.post('/:provider', async (c) => {
     return c.json({ error: 'Invalid signature' }, 401)
   }
 
-  if (firstPartyIntegrationPlugin(provider) && !(await isIntegrationEnabled(provider)))
+  // Freshness, type agreement and sender identity, for processors that check more than the signature.
+  const rejected = processor.verifyDelivery?.(ctx)
+  if (rejected) {
+    await storeWebhookEvent({
+      provider,
+      eventType,
+      payload,
+      headers,
+      signature: headers['linear-signature'] || null,
+      verified: false,
+      error: rejected,
+    })
+    return c.json({ error: 'Webhook delivery rejected' }, 400)
+  }
+
+  const integration = processor.integration ?? provider
+  if (firstPartyIntegrationPlugin(integration) && !(await isIntegrationEnabled(integration)))
     return c.json({ received: true, ignored: 'integration_disabled' })
 
-  const eventId = await storeWebhookEvent({
-    provider,
-    eventType,
-    payload,
-    headers,
-    signature: headers['x-hub-signature-256'] || headers['x-signature'] || null,
-    verified: true,
-  })
+  let eventId: string
+  try {
+    eventId = await storeWebhookEvent({
+      provider,
+      eventType,
+      payload,
+      headers,
+      signature: headers['x-hub-signature-256'] || headers['x-signature'] || headers['linear-signature'] || null,
+      verified: true,
+      deliveryId: processor.getDeliveryId?.(ctx),
+    })
+  } catch (error) {
+    // A provider retry of a delivery already stored: acknowledge it without processing it again.
+    if (error instanceof DuplicateWebhookDeliveryError) return c.json({ received: true, duplicate: true })
+    throw error
+  }
 
   const materializeActivity = () => {
     // GitHub keeps its own named entry point; both project through one engine.
     const project =
       provider === 'github'
         ? () => materializeGitHubWebhook(eventId)
-        : provider === 'linear'
+        : provider === 'linear' || provider === 'linear-app'
           ? () => materializeWebhookActivity('linear', eventId)
           : null
     if (!project) return

@@ -7,7 +7,7 @@ import { isDeliveryApprovalWait } from '../../workflows/wait-policy'
 import { codeHostingRegistry } from '../code-hosting'
 import { isDeliveryFeedbackSubscription } from '../code-hosting/registry'
 import { isIntegrationEnabled } from '../provider-state'
-import { authorized } from './authority'
+import { authorized, isUntrustedOutputActor, outputAccount } from './authority'
 import { and, eq, gte, inArray, isNull, lte, ne, desc, sql, or, gt, asc } from 'drizzle-orm'
 import {
   integrationValueAt,
@@ -47,6 +47,7 @@ import {
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { outputSourceMatches as sourceMatches, findOutputTriggerRun, outputTriggerSourceKey } from './routing-plan'
 import { bindChangeRequestFromEvent } from './delivery-binding'
+import { announceLinearSessionBinding, bindLinearSession, linearSessionIdOf } from '../linear/session-binding'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
 import {
@@ -1356,7 +1357,7 @@ async function describeIdentityTarget(event: Event, squadId: string, decisions?:
     .select({ configuration: integrationConnections.configuration })
     .from(integrationConnections)
     .where(eq(integrationConnections.id, event.authority.connectionId))
-  const login = (connection?.configuration as { login?: string } | undefined)?.login ?? ''
+  const login = outputAccount(connection?.configuration, event.authority)
   if (!eventRuleTrigger(squad.metadata, event, login, decisions)) return null
   try {
     const { describeEventTrackedIdentity } = await import('../../work-streams/tracked-resources')
@@ -1373,7 +1374,7 @@ async function eventLogin(store: Store, event: Event) {
     .select({ configuration: integrationConnections.configuration })
     .from(integrationConnections)
     .where(eq(integrationConnections.id, event.authority.connectionId))
-  return (connection?.configuration as { login?: string } | undefined)?.login ?? ''
+  return outputAccount(connection?.configuration, event.authority)
 }
 
 /**
@@ -1399,6 +1400,8 @@ async function triggerDecisions(
 
 async function applyOutputTriggers(event: Event) {
   if (event.matchedAt || !(await isGitHubOutputAdmitted(db, event)) || !(await shouldNotifyEvent(db, event))) return
+  // Decision 9.4: an untrusted Linear author's start-workstream rule is held; the manager is told instead.
+  if (isUntrustedOutputActor(event.integration, event.authority)) return
   const matching = await githubMatchingEvent(db, event)
   const ruleEvent = event.fact.data.projection === 'status' ? event : matching
   const candidates = await db
@@ -1419,7 +1422,11 @@ async function applyOutputTriggers(event: Event) {
     try {
       const decisions = await triggerDecisions(event, ruleEvent, id)
       const identityTarget = await describeIdentityTarget(event, id, decisions)
+      // A Linear session this event came from binds to at most one stream; announced after commit.
+      const sessionId = linearSessionIdOf(event.integration, event.fact)
+      let boundSession: { sessionId: string; workStreamId: string } | undefined
       const created = await db.transaction(async (tx) => {
+        boundSession = undefined
         if (event.integration === 'github') await lockGitHubOutputAuthority(tx, event)
         if (!(await isGitHubOutputAdmitted(tx, event))) return []
         // Same squad → stream order as admission. Creation and resource identity commit together.
@@ -1512,6 +1519,8 @@ async function applyOutputTriggers(event: Event) {
             )
           })
           if (bound) {
+            const sessionBound = sessionId ? await bindLinearSession(tx, sessionId, bound.id) : false
+            if (sessionBound) boundSession = { sessionId: sessionId!, workStreamId: bound.id }
             await tx.insert(integrationOutputTriggerRuns).values({
               squadId: id,
               triggerId: trigger.id,
@@ -1519,6 +1528,7 @@ async function applyOutputTriggers(event: Event) {
               resourceKey: event.fact.resourceKey,
               eventId: event.id,
               workStreamId: bound.id,
+              ...(sessionId && !sessionBound ? { outcomeCode: 'session_already_bound' } : {}),
             })
             continue
           }
@@ -1604,6 +1614,9 @@ async function applyOutputTriggers(event: Event) {
             .returning()
           const { attachFlow } = await import('../../workflows/execution')
           await attachFlow(tx, stream!, trigger.create.workflow)
+          // The first committed binding wins; a later stream is created without the session.
+          const sessionBound = sessionId ? await bindLinearSession(tx, sessionId, stream!.id) : false
+          if (sessionBound) boundSession = { sessionId: sessionId!, workStreamId: stream!.id }
           await tx.insert(integrationOutputTriggerRuns).values({
             squadId: id,
             triggerId: trigger.id,
@@ -1611,11 +1624,13 @@ async function applyOutputTriggers(event: Event) {
             resourceKey: event.fact.resourceKey,
             eventId: event.id,
             workStreamId: stream!.id,
+            ...(sessionId && !sessionBound ? { outcomeCode: 'session_already_bound' } : {}),
           })
           streams.push(stream!.id)
         }
         return streams
       })
+      if (boundSession) await announceLinearSessionBinding(boundSession.sessionId, boundSession.workStreamId)
       for (const streamId of created) {
         const { eventEmitter } = await import('../../../lib/infra/event-emitter')
         eventEmitter.emit('workStream.created', { workStreamId: streamId, squadId: id })

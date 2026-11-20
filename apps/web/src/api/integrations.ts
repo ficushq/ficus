@@ -166,6 +166,8 @@ export interface SquadIntegrationSelection {
   attached?: (IntegrationConnectionSummary & { isDefault: boolean })[]
   /** GitHub only: which attached accounts sign this squad's commits. */
   commitSigning?: GitHubSquadCommitSigning
+  /** Linear only: routed team IDs the assigned agent app cannot access. */
+  inaccessibleTeamIds?: string[]
   projection?: {
     status: 'pending' | 'installing' | 'ready' | 'degraded' | 'reconnect_required'
     lastErrorCode: string | null

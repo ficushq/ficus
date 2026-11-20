@@ -829,9 +829,15 @@ export const webhookEvents = pgTable(
       .default(sql`ARRAY[]::uuid[]`),
     processedAt: timestamp('processed_at'),
     error: text('error'),
+    // Provider delivery ID for providers that deduplicate verified deliveries (Linear app: `Linear-Delivery`).
+    deliveryId: varchar('delivery_id', { length: 200 }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex('uq_webhook_events_provider_delivery')
+      .on(table.provider, table.deliveryId)
+      .where(sql`${table.deliveryId} IS NOT NULL`)
+      .concurrently(),
     index('idx_webhook_events_verified_repo_delivery')
       .on(table.provider, sql`lower(${table.payload}->'repository'->>'full_name')`, table.createdAt.desc())
       .where(sql`${table.verified} = true AND (${table.payload}->'repository'->>'full_name') IS NOT NULL`)
@@ -1772,6 +1778,9 @@ export const integrationOutputTriggerRuns = pgTable(
       .notNull()
       .references(() => integrationOutputEvents.id, { onDelete: 'cascade' }),
     workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'set null' }),
+    // Why the receipt differs from a plain creation, e.g. `session_already_bound` when another stream
+    // already owns the Linear agent session this event came from.
+    outcomeCode: varchar('outcome_code', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.squadId, table.triggerId, table.sourceKey, table.resourceKey] })]
@@ -4280,6 +4289,76 @@ export const integrationConnections = pgTable(
     ),
     check('integration_connections_authorization_kind_check', sql`${table.authorizationKind} in ('manual', 'oauth2')`),
   ]
+)
+
+/**
+ * One row per Linear agent session opened for the Ficus app (the Linear session ID is the key). Written
+ * by the acknowledger before any rule runs, so every session is acknowledged exactly once, and bound to
+ * at most one work stream: the first committed binding wins.
+ */
+export const linearAgentSessions = pgTable(
+  'linear_agent_sessions',
+  {
+    id: varchar('id', { length: 200 }).primaryKey(),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    organizationId: varchar('organization_id', { length: 200 }).notNull(),
+    issueId: varchar('issue_id', { length: 200 }),
+    issueIdentifier: varchar('issue_identifier', { length: 100 }),
+    teamId: varchar('team_id', { length: 200 }),
+    url: varchar('url', { length: 2000 }),
+    rootCommentId: varchar('root_comment_id', { length: 200 }),
+    creatorLinearUserId: varchar('creator_linear_user_id', { length: 200 }),
+    trigger: varchar('trigger', { length: 16 }).notNull(),
+    ackState: varchar('ack_state', { length: 16 }).notNull().default('pending'),
+    disposition: varchar('disposition', { length: 16 }).notNull().default('pending'),
+    // Whether the disposition activity reached Linear (`pending`, `sent`, `failed`).
+    dispositionState: varchar('disposition_state', { length: 16 }).notNull().default('pending'),
+    workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'set null' }),
+    primary: boolean('primary').notNull().default(false),
+    lastFlowVersion: integer('last_flow_version'),
+    lastProjectedAt: timestamp('last_projected_at', { withTimezone: true }),
+    lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_linear_agent_sessions_work_stream').on(table.workStreamId).where(sql`${table.workStreamId} IS NOT NULL`),
+    index('idx_linear_agent_sessions_connection_issue').on(table.connectionId, table.issueId),
+    index('idx_linear_agent_sessions_organization_created').on(table.organizationId, table.createdAt),
+    check('linear_agent_sessions_trigger_check', sql`${table.trigger} in ('delegation', 'mention', 'proactive')`),
+    check('linear_agent_sessions_ack_state_check', sql`${table.ackState} in ('pending', 'sent', 'failed')`),
+    check(
+      'linear_agent_sessions_disposition_check',
+      sql`${table.disposition} in ('pending', 'bound', 'notified', 'ignored', 'unrouted', 'inaccessible', 'closed')`
+    ),
+    check(
+      'linear_agent_sessions_disposition_state_check',
+      sql`${table.dispositionState} in ('pending', 'sent', 'failed')`
+    ),
+  ]
+)
+
+/**
+ * The Linear teams an app connection can access, from `PermissionChange` webhooks and connection
+ * validation. A fast pre-filter only: the live issue probe stays authoritative.
+ */
+export const linearTeamAccess = pgTable(
+  'linear_team_access',
+  {
+    connectionId: uuid('connection_id')
+      .primaryKey()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    canAccessAllPublicTeams: boolean('can_access_all_public_teams').notNull().default(false),
+    teamIds: text('team_ids')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+    source: varchar('source', { length: 16 }).notNull(),
+  },
+  (table) => [check('linear_team_access_source_check', sql`${table.source} in ('webhook', 'probe')`)]
 )
 
 /**

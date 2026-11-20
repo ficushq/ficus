@@ -74,6 +74,7 @@ test('assignment carries the full Linear issue identity', () => {
     teamId: 'team-uuid',
     teamKey: 'eng',
     assignee: 'user-1',
+    delegate: '',
     action: 'assigned',
     actor: '',
     state: 'started',
@@ -149,10 +150,12 @@ test('comments become issue facts keyed by the issue', () => {
     issue: { id: 'issue-uuid', title: 'Fix bug' },
     teamId: '',
     assignee: '',
+    delegate: '',
     action: 'create',
     actor: 'user-2',
     state: '',
     labels: [],
+    comment: { id: 'comment-uuid' },
   })
   expect(fact.subject).toBe('Linear issue comment: issue-uuid Fix bug')
   expect(fact.body).toBe(`${issueUrl}#comment-comment-uuid\n\nLooks good to me`)
@@ -190,7 +193,6 @@ test('a mutated Linear-Event header cannot re-type a signed body', () => {
 })
 
 test('unusable Linear events are ignored rather than thrown on', () => {
-  expect(linearOutputAdapter.normalize(issueEvent({ assigneeId: null }, {}, 'create'))).toEqual([])
   expect(linearOutputAdapter.normalize(issueEvent({ assigneeId: null }, {}, 'remove'))).toEqual([])
   expect(linearOutputAdapter.normalize(commentEvent({}, 'remove'))).toEqual([])
   expect(linearOutputAdapter.normalize({ type: 'Project', payload: { action: 'update', data: { id: 'p' } } })).toEqual(
@@ -226,6 +228,7 @@ test('older payloads without identifier, number, or team key still normalize', (
     issue: { id: 'issue-uuid', title: 'Fix bug' },
     teamId: 'team-uuid',
     assignee: 'user-1',
+    delegate: '',
     action: 'assigned',
     actor: '',
     state: 'started',
@@ -277,5 +280,140 @@ test('work stream bindings still expose the Linear issue and team', () => {
   expect(linearOutputAdapter.workStreamBindings?.(only(issueEvent({ assigneeId: null })))).toEqual({
     'linear.issueId': { event: 'issue.id' },
     'linear.teamId': { event: 'teamId' },
+  })
+})
+
+const app = 'app-user'
+function sessionEvent(action: 'created' | 'prompted', session: Record<string, unknown> = {}, extra = {}) {
+  return {
+    type: 'AgentSessionEvent',
+    payload: {
+      type: 'AgentSessionEvent',
+      action,
+      createdAt: '2026-11-19T10:00:00.000Z',
+      organizationId: 'org-uuid',
+      oauthClientId: 'client-id',
+      appUserId: app,
+      agentSession: {
+        id: 'session-uuid',
+        issueId: 'issue-uuid',
+        issue: {
+          id: 'issue-uuid',
+          identifier: 'ENG-123',
+          number: 123,
+          title: 'Fix bug',
+          url: issueUrl,
+          team: { id: 'team-uuid', key: 'ENG' },
+        },
+        creatorId: 'person',
+        url: 'https://linear.app/acme/issue/ENG-123#agent-session',
+        status: 'pending',
+        ...session,
+      },
+      promptContext: '<issue identifier="ENG-123"><title>Fix bug</title></issue>',
+      webhookTimestamp: Date.parse('2026-11-19T10:00:01.000Z'),
+      ...extra,
+    },
+  }
+}
+
+test('a delegation session yields the session fact and exactly one delegated fact', () => {
+  const facts = linearOutputAdapter.normalize(sessionEvent('created'))
+  expect(facts.map((fact) => fact.output)).toEqual(['agent_session.created', 'issue.delegated'])
+  const [created, delegated] = facts
+  expect(created!.data).toMatchObject({
+    issue: { id: 'issue-uuid', number: 123, identifier: 'ENG-123' },
+    teamId: 'team-uuid',
+    teamKey: 'eng',
+    actor: 'person',
+    session: { id: 'session-uuid', trigger: 'delegation', creator: 'person', appUserId: app },
+  })
+  expect(delegated!.data).toMatchObject({ delegate: app, session: { id: 'session-uuid' }, action: 'delegated' })
+  expect(delegated!.body).toContain('<issue identifier="ENG-123">')
+  expect(created!.resourceKey).toBe('issue-uuid')
+})
+
+test('a mention session yields the session fact and exactly one mentioned fact', () => {
+  const facts = linearOutputAdapter.normalize(sessionEvent('created', { commentId: 'comment-uuid' }))
+  expect(facts.map((fact) => fact.output)).toEqual(['agent_session.created', 'issue.mentioned'])
+  expect(facts[0]!.data).toMatchObject({ session: { trigger: 'mention' }, comment: { id: 'comment-uuid' } })
+  expect(facts[1]!.data).toMatchObject({ comment: { id: 'comment-uuid' }, session: { id: 'session-uuid' } })
+})
+
+test('a prompt yields one prompted fact keyed by its activity', () => {
+  const prompted = (activity: Record<string, unknown>) =>
+    linearOutputAdapter.normalize(sessionEvent('prompted', {}, { agentActivity: activity }))
+  const [fact] = prompted({ id: 'activity-uuid', body: 'Please also fix the footer', userId: 'person' })
+  expect(fact!.output).toBe('agent_session.prompted')
+  expect(fact!.data).toMatchObject({
+    actor: 'person',
+    session: { id: 'session-uuid', appUserId: app },
+    activity: { id: 'activity-uuid' },
+    prompt: { signal: '' },
+  })
+  expect(fact!.body).toBe(`${issueUrl}\n\nPlease also fix the footer`)
+  expect(prompted({ id: 'activity-uuid', content: { type: 'prompt', body: 'Stop' }, signal: 'stop' })[0]!.data).toMatchObject(
+    { prompt: { signal: 'stop' } }
+  )
+  expect(prompted({ id: 'activity-uuid', body: 'x' })[0]!.eventKey).toBe(fact!.eventKey)
+  expect(prompted({ id: 'other-activity', body: 'x' })[0]!.eventKey).not.toBe(fact!.eventKey)
+  expect(prompted({ body: 'no id' })).toEqual([])
+})
+
+test('session event keys depend only on stable Linear IDs, so webhook and polling agree', () => {
+  const keys = (event: ReturnType<typeof sessionEvent>) =>
+    linearOutputAdapter.normalize(event).map((fact) => fact.eventKey)
+  const first = keys(sessionEvent('created'))
+  const redelivered = keys(
+    sessionEvent('created', { status: 'active' }, { webhookTimestamp: Date.now(), createdAt: '2026-11-19T10:05:00Z' })
+  )
+  expect(redelivered).toEqual(first)
+  expect(keys(sessionEvent('created', { id: 'other-session' }))).not.toEqual(first)
+})
+
+test('sessions without an issue, or without a session or app user, produce no outputs', () => {
+  expect(linearOutputAdapter.normalize(sessionEvent('created', { issueId: undefined, issue: undefined }))).toEqual([])
+  expect(linearOutputAdapter.normalize(sessionEvent('created', { id: undefined }))).toEqual([])
+  expect(linearOutputAdapter.normalize(sessionEvent('created', {}, { appUserId: undefined }))).toEqual([])
+  expect(
+    linearOutputAdapter.normalize({ ...sessionEvent('created'), type: 'AppUserNotification' } as never)
+  ).toEqual([])
+})
+
+test('issue creation is its own fact with the delegate and assignee at creation', () => {
+  const fact = only(issueEvent({}, { delegateId: 'other-agent', creatorId: 'person' }, 'create'))
+  expect(fact.output).toBe('issue.created')
+  expect(fact.data).toMatchObject({ delegate: 'other-agent', assignee: 'user-1', actor: 'person', action: 'created' })
+  expect(fact.occurredAt).toBe('2026-09-01T10:00:00.000Z')
+  expect(fact.eventKey).toBe(only(issueEvent({}, { title: 'Renamed' }, 'create')).eventKey)
+})
+
+test('delegate changes become delegated and undelegated facts; a self-delegation comes from the session', () => {
+  const outputs = (event: ReturnType<typeof issueEvent>, metadata?: Record<string, unknown>) =>
+    linearOutputAdapter.normalize({ ...event, metadata }).map((fact) => [fact.output, fact.data.delegate])
+  expect(outputs(issueEvent({ delegateId: null }, { delegateId: 'other-agent' }))).toEqual([
+    ['issue.delegated', 'other-agent'],
+  ])
+  expect(outputs(issueEvent({ delegateId: 'other-agent' }, { delegateId: null }))).toEqual([
+    ['issue.undelegated', 'other-agent'],
+  ])
+  expect(outputs(issueEvent({ delegateId: 'other-agent' }, { delegateId: app }), { linearAppUserId: app })).toEqual([
+    ['issue.undelegated', 'other-agent'],
+  ])
+  // Delegations to the app on an API-key connection (no app context) still report the delegation.
+  expect(outputs(issueEvent({ delegateId: null }, { delegateId: app }))).toEqual([['issue.delegated', app]])
+  // A state change with a delegation reports both.
+  expect(outputs(issueEvent({ delegateId: null, stateId: 'old' }, { delegateId: 'other-agent' }))).toEqual([
+    ['issue.updated', 'other-agent'],
+    ['issue.delegated', 'other-agent'],
+  ])
+  const [delegated] = linearOutputAdapter.normalize(issueEvent({ delegateId: 'a' }, { delegateId: 'b' })).slice(1)
+  expect(delegated!.data.previousDelegate).toBe('a')
+})
+
+test('comments carry their own ID and parent', () => {
+  expect(only(commentEvent({ parentId: 'parent-uuid' })).data.comment).toEqual({
+    id: 'comment-uuid',
+    parentId: 'parent-uuid',
   })
 })

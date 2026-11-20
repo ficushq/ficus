@@ -904,6 +904,14 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
           : {}),
         ...(selection.commitSigning ? { commitSigning: redactCommitSigning(selection.commitSigning) } : {}),
         ...(selection.projection === undefined ? {} : { projection: selection.projection }),
+        // Routed Linear teams the assigned agent app cannot access (5.8), so the squad tab can name them.
+        ...(providerKey === 'linear' && selection.assignment
+          ? {
+              inaccessibleTeamIds: await (
+                await import('../services/integrations/linear/team-access')
+              ).inaccessibleLinearTeams(resolvedSquadId(c), selection.assignment.id),
+            }
+          : {}),
       })
     })
     .put(

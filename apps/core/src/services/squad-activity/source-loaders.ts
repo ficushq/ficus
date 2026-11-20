@@ -89,7 +89,7 @@ export type ReceiptActivityBase =
 const githubFactNumber = (fact: GitHubDispatchFact): number => ('prNumber' in fact ? fact.prNumber : fact.issueNumber)
 
 /** Each provider names its delivery id in its own header; a receipt carries exactly one. */
-const deliveryIdSql = sql`CASE WHEN provider='linear' THEN headers->>'linear-delivery' ELSE headers->>'x-github-delivery' END`
+const deliveryIdSql = sql`CASE WHEN provider IN ('linear','linear-app') THEN headers->>'linear-delivery' ELSE headers->>'x-github-delivery' END`
 
 /**
  * The receipt's family is decided by the provider that delivered it and by the
@@ -105,7 +105,7 @@ async function loadWebhookActivityBase(executor: Executor, sourceId: string): Pr
   if (prefix === 'hook') {
     const event = rows<any>(
       await executor.execute(sql`SELECT provider,event_type,payload,${deliveryIdSql} delivery_id FROM webhook_events
-        WHERE id=${activityId}::uuid AND provider IN ('github','linear') AND verified=true`)
+        WHERE id=${activityId}::uuid AND provider IN ('github','linear','linear-app') AND verified=true`)
     )[0]
     if (!event) return null
     const ingress: VerifiedIngressEvent = {
@@ -113,7 +113,8 @@ async function loadWebhookActivityBase(executor: Executor, sourceId: string): Pr
       payload: event.payload,
       metadata: { source: 'webhook', providerDeliveryId: event.delivery_id },
     }
-    if (event.provider === 'linear') {
+    // The agent app's webhook (`linear-app`) carries the same Issue and Comment deliveries.
+    if (event.provider === 'linear' || event.provider === 'linear-app') {
       const issue = extractLinearIssueDispatchFact('linear', ingress)
       return issue ? { sourceId, activityId, family: 'linear-issue', fact: issue } : null
     }
@@ -724,7 +725,7 @@ async function listReceiptSourcePage<F extends ReceiptDispatchFact>(
     if (pending.length === 0) {
       const candidates = rows<any>(
         await db.execute(sql`SELECT id::text id,event_type,payload,${deliveryIdSql} delivery_id,created_at FROM webhook_events
-          WHERE provider=${pager.provider} AND verified=true
+          WHERE provider IN ${pager.provider === 'linear' ? sql`('linear','linear-app')` : sql`(${pager.provider})`} AND verified=true
             AND created_at>=${fromIso}::timestamptz AND created_at<${scanTo.toISOString()}::timestamptz
             AND (created_at>${receiptAfter}::timestamptz OR (created_at=${receiptAfter}::timestamptz AND id::text>${eventAfter}))
           ORDER BY created_at,id LIMIT ${limit}`)

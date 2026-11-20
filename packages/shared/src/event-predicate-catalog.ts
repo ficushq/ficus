@@ -101,28 +101,75 @@ const linearFields: Record<string, IntegrationOutputField> = {
   action: { type: 'string', description: 'Native Linear event action.' },
   actor: { type: 'string', description: 'Acting Linear user ID.' },
   state: { type: 'string', description: 'Linear workflow state type (e.g. completed, canceled, started).' },
+  delegate: { type: 'string', description: 'Linear user ID of the agent the issue is delegated to.' },
+  actorType: {
+    type: 'string',
+    description: 'Acting Linear account type, from a live lookup: user, guest, app or unknown.',
+  },
 }
-const linearPredicateFields: Record<string, EventPredicateField> = {
-  ...linearFields,
-  labels: { type: 'string[]', normalize: 'lowercase', description: 'Issue labels.' },
+/** Fields only some Linear outputs carry; see `linearOutputExtras`. */
+const linearExtraFields: Record<string, IntegrationOutputField> = {
+  previousDelegate: { type: 'string', description: 'Linear user ID of the previous delegate, when there was one.' },
+  'session.id': { type: 'string', description: 'Linear agent session ID.' },
+  'session.url': { type: 'string', description: 'Linear agent session URL.' },
+  'session.trigger': { type: 'string', description: 'What opened the agent session: delegation or mention.' },
+  'session.creator': { type: 'string', description: 'Linear user ID of the person who opened the session.' },
+  'session.appUserId': { type: 'string', description: 'Linear user ID of the agent app the session belongs to.' },
+  'comment.id': { type: 'string', description: 'Linear comment ID.' },
+  'comment.parentId': { type: 'string', description: 'Linear ID of the comment this one replies to.' },
+  'activity.id': { type: 'string', description: 'Linear agent activity ID of the prompt.' },
+  'prompt.signal': { type: 'string', description: 'Signal sent with the prompt: stop, or empty.' },
 }
 const linearOutputs: Record<string, string> = {
   'issue.assigned': 'Issue assigned',
   'issue.unassigned': 'Issue unassigned',
   'issue.updated': 'Issue updated',
   'issue.comment': 'Issue comment',
+  'issue.delegated': 'Issue delegated',
+  'issue.undelegated': 'Issue undelegated',
+  'issue.mentioned': 'Agent mentioned',
+  'issue.created': 'Issue created',
+  'agent_session.created': 'Agent session created',
+  'agent_session.prompted': 'Agent session prompted',
 }
+const linearOutputExtras: Record<string, string[]> = {
+  'issue.comment': ['comment.id', 'comment.parentId', 'session.id'],
+  'issue.delegated': ['previousDelegate', 'session.id'],
+  'issue.mentioned': ['comment.id', 'session.id'],
+  'agent_session.created': [
+    'session.id',
+    'session.url',
+    'session.trigger',
+    'session.creator',
+    'session.appUserId',
+    'comment.id',
+  ],
+  'agent_session.prompted': ['session.id', 'session.appUserId', 'activity.id', 'prompt.signal', 'comment.id'],
+}
+/** Outputs only the Linear agent app's session webhooks produce (an `issue.delegated` can also come from an issue update). */
+const linearSessionOutputs = new Set(['issue.mentioned', 'agent_session.created', 'agent_session.prompted'])
 export const linearOutputCatalog: IntegrationOutputDescriptor[] = Object.entries(linearOutputs).map(
-  ([output, title]) => ({
-    integration: 'linear',
-    output,
-    version: 1,
-    title,
-    // Linear has no polling path: a missed or failed webhook delivery is not recovered.
-    description: title + ' from Linear webhooks.',
-    fields: linearFields,
-    predicateFields: linearPredicateFields,
-  })
+  ([output, title]) => {
+    const fields = {
+      ...linearFields,
+      ...Object.fromEntries((linearOutputExtras[output] ?? []).map((path) => [path, linearExtraFields[path]!])),
+    }
+    return {
+      integration: 'linear',
+      output,
+      version: 1,
+      title,
+      // No polling path yet: a missed or failed webhook delivery is not recovered.
+      description: linearSessionOutputs.has(output)
+        ? `${title} from Linear agent app webhooks.`
+        : `${title} from Linear webhooks.`,
+      fields,
+      predicateFields: {
+        ...fields,
+        labels: { type: 'string[]', normalize: 'lowercase', description: 'Issue labels.' },
+      },
+    }
+  }
 )
 export function eventPredicateFields(source: { integration: string; output: string; version: number }) {
   return [...githubOutputCatalog, ...linearOutputCatalog].find(

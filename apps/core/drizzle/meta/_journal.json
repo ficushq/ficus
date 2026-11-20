@@ -1772,6 +1772,20 @@
       "when": 1795134205989,
       "tag": "0252_integration_connection_authorization_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 253,
+      "version": "7",
+      "when": 1795139067472,
+      "tag": "0253_linear_agent_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 254,
+      "version": "7",
+      "when": 1795139074435,
+      "tag": "0254_webhook_events_delivery_id",
+      "breakpoints": true
     }
   ]
 }

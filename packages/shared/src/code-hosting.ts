@@ -184,12 +184,24 @@ export const trackedResourceObjectSchema = z.strictObject({
   externalId: z.string().min(1).max(200).optional(),
   // Only meaningful for kind 'pull_request'; flags a tracked PR as a delivery change request.
   delivery: z.literal(true).optional(),
+  /** Linear only: the agent session bound to this stream for the issue (a copy; Core's session table is authoritative). */
+  agentSession: z
+    .strictObject({
+      id: z.string().min(1).max(200),
+      url: z.url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
+    })
+    .optional(),
 })
-/** Same identity as {@link trackedResourceObjectSchema}, plus the cross-field delivery/kind constraint. */
-export const trackedResourceSchema = trackedResourceObjectSchema.refine(
-  (value) => !value.delivery || value.kind === 'pull_request',
-  { message: 'delivery is only valid for pull requests', path: ['delivery'] }
-)
+/** Same identity as {@link trackedResourceObjectSchema}, plus the cross-field delivery/kind constraints. */
+export const trackedResourceSchema = trackedResourceObjectSchema
+  .refine((value) => !value.delivery || value.kind === 'pull_request', {
+    message: 'delivery is only valid for pull requests',
+    path: ['delivery'],
+  })
+  .refine((value) => !value.agentSession || value.integration === 'linear', {
+    message: 'agentSession is only valid for Linear issues',
+    path: ['agentSession'],
+  })
 export type TrackedResource = z.infer<typeof trackedResourceSchema>
 export type TrackedResourceSource = 'delivery' | 'tracked'
 export interface ResolvedTrackedResource extends Omit<TrackedResource, 'delivery'> {

@@ -1,3 +1,4 @@
+import { bindLinearSessionForEvent } from '../services/integrations/linear/session-binding'
 import { publicErrorMessage } from '../db/errors'
 import {
   isObservingWorkStream,
@@ -995,6 +996,8 @@ export const workStreamsRouter = new Hono()
         { ...input, requestingUserId, creatorAgentId },
         prepared ? { inTransaction: (tx, created) => insertCreationAssets(tx, identity, created, prepared) } : {}
       )
+      // A stream started from a Linear agent session's event takes over that session, if it is still free.
+      if (input.integrationEventId) await bindLinearSessionForEvent(input.integrationEventId, stream.id)
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
       const { workflowSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
@@ -1275,8 +1278,11 @@ export const workStreamsRouter = new Hono()
       const stream = await WorkStream.find(await routeWorkStreamId(c))
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       try {
-        const resource = await resolveTrackedResourceRequest(stream.squadId, c.req.valid('json'))
+        const request = c.req.valid('json')
+        const resource = await resolveTrackedResourceRequest(stream.squadId, request)
         const { added, changed, view } = await addTrackedResources(stream.id, [resource])
+        // Tracking a Linear agent session's event binds that session to this stream, if it is still free.
+        if ('event' in request) await bindLinearSessionForEvent(request.event, stream.id)
         return c.json({ added, changed, ...view })
       } catch (error) {
         return trackedResourceFailure(c, error)
