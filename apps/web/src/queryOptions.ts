@@ -1305,7 +1305,7 @@ export const feedQueries = {
     }),
 }
 
-import { githubFeedbackQueryKeys, githubIdentityQueryKeys } from './queryKeys'
+import { githubFeedbackQueryKeys, githubIdentityQueryKeys, linearIdentityQueryKeys } from './queryKeys'
 import {
   getGitHubFeedbackDetail,
   getGitHubFeedbackSummary,
@@ -1313,6 +1313,7 @@ import {
   listGitHubTrustedAuthors,
 } from './api/githubFeedback'
 import { getGitHubIdentity } from './api/githubIdentity'
+import { getLinearIdentity } from './api/linearIdentity'
 
 /**
  * Moderation queries never retry 4xx (403 for agents/out-of-squad users must render as "no access",
@@ -1358,6 +1359,15 @@ export const githubIdentityQueries = {
     queryOptions({
       queryKey: githubIdentityQueryKeys.all,
       queryFn: () => getGitHubIdentity(),
+      retry: noRetryOnClientError,
+    }),
+}
+
+export const linearIdentityQueries = {
+  status: () =>
+    queryOptions({
+      queryKey: linearIdentityQueryKeys.all,
+      queryFn: () => getLinearIdentity(),
       retry: noRetryOnClientError,
     }),
 }

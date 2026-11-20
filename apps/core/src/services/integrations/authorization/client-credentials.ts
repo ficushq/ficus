@@ -1,3 +1,4 @@
+import { LINEAR_IDENTITY_ADAPTER_KEY } from '@ficus/shared/oauth-providers/linear/client'
 import { isPlatformManaged } from '../../secrets/managed'
 import type { OAuthAuthority } from './authority'
 import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
@@ -67,6 +68,8 @@ export function resolveOAuthClientCredentials(
   binding?: OAuthClientBinding
 ): ResolvedOAuthClientCredentials | undefined {
   if (providerKey === 'github') return isPlatformManaged() ? undefined : resolveGitHubAppCredentials(store, binding)
+  // Account linking is a user-actor authorization of the same self-hosted Linear app.
+  if (providerKey === LINEAR_IDENTITY_ADAPTER_KEY) providerKey = 'linear'
   const provider = requireSelfHostedProvider(providerKey)
   if (isPlatformManaged()) return undefined
   const configured = parseSelfHostedOAuthApp(provider, store.get(SELF_HOSTED_OAUTH_APP_KEY[provider]))
@@ -93,6 +96,7 @@ export async function resolveHistoricalLocalOAuthClientCredentials(
   store: HistoricalOAuthAppSecretStore,
   binding?: OAuthClientBinding
 ): Promise<ResolvedOAuthClientCredentials | undefined> {
+  if (providerKey === LINEAR_IDENTITY_ADAPTER_KEY) providerKey = 'linear'
   if (providerKey === 'github') {
     if (!binding) return undefined
     if (binding.credentialRef) await store.refreshKey(binding.credentialRef)

@@ -18,29 +18,39 @@ const linearIssue: TrackedResource = {
 const trackedId = (resource: TrackedResource, event: string) =>
   `tracked-${createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)}-${event}`
 
-test('a tracked Linear issue fans out to its four issue events, keyed by the provider issue id', () => {
+test('a tracked Linear issue fans out to its issue events and session prompts, keyed by the provider issue id', () => {
   const subscriptions = trackedResourceRegistry.subscriptions({ tracked: [linearIssue] })
   expect(subscriptions.map((sub) => sub.source.output)).toEqual([
     'issue.assigned',
     'issue.unassigned',
     'issue.updated',
     'issue.comment',
+    'issue.delegated',
+    'issue.undelegated',
+    'agent_session.prompted',
   ])
-  expect(subscriptions.map((sub) => sub.id)).toEqual(
-    ['assigned', 'unassigned', 'updated', 'comment'].map((event) => trackedId(linearIssue, event))
-  )
+  const events = ['assigned', 'unassigned', 'updated', 'comment', 'delegated', 'undelegated', 'prompted']
+  expect(subscriptions.map((sub) => sub.id)).toEqual(events.map((event) => trackedId(linearIssue, event)))
   for (const sub of subscriptions) {
     expect(integrationSubscriptionSchema.parse(sub).source.connectionId).toBe(connectionId)
-    expect(sub.match).toEqual({ 'issue.id': { value: linearIssue.externalId! } })
+    // A comment in an agent session thread arrives once, as the prompt.
+    expect(sub.match).toEqual({
+      'issue.id': { value: linearIssue.externalId! },
+      ...(sub.source.output === 'issue.comment' ? { 'comment.inSession': { value: false } } : {}),
+    })
     expect(sub.deliver).toEqual({ to: 'delivery-owner', whenInactive: 'retain' })
   }
   // Without a provider id the link still follows the issue by team key and number.
   const { externalId: _id, connectionId: _pinned, ...byNumber } = linearIssue
   const fallback = trackedResourceRegistry.subscriptions({ tracked: [byNumber] })
-  expect(fallback).toHaveLength(4)
+  expect(fallback).toHaveLength(7)
   for (const sub of fallback) {
     expect(integrationSubscriptionSchema.parse(sub).source.connectionId).toBeUndefined()
-    expect(sub.match).toEqual({ teamKey: { value: 'eng' }, 'issue.number': { value: 12 } })
+    expect(sub.match).toEqual({
+      teamKey: { value: 'eng' },
+      'issue.number': { value: 12 },
+      ...(sub.source.output === 'issue.comment' ? { 'comment.inSession': { value: false } } : {}),
+    })
   }
   // Identity-hashed ids ignore the provider id, so learning one never renumbers the subscriptions.
   expect(fallback.map((sub) => sub.id)).toEqual(subscriptions.map((sub) => sub.id))

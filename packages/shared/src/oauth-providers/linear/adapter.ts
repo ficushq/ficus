@@ -1,5 +1,7 @@
 import type { OAuthProviderAdapter, OAuthProviderFailure } from '../types'
-import { LinearOAuthClient, LinearOAuthError } from './client'
+import { LINEAR_IDENTITY_ADAPTER_KEY, LinearOAuthClient, LinearOAuthError } from './client'
+
+export { LINEAR_IDENTITY_ADAPTER_KEY }
 
 const RETRYABLE = new Set(['provider_timeout', 'provider_unavailable', 'provider_error'])
 const NON_RETRYABLE = new Set([
@@ -9,6 +11,7 @@ const NON_RETRYABLE = new Set([
   'invalid_request',
   'already_revoked',
   'not_app_actor',
+  'not_user_actor',
   'workspace_identity_mismatch',
   'capability_or_resource_denied',
   'invalid_response',
@@ -52,3 +55,18 @@ export function createLinearAdapter(client = new LinearOAuthClient()): OAuthProv
 }
 
 export const linearAdapter = createLinearAdapter()
+
+/**
+ * The same Linear OAuth app, authorized as a person (`actor=user`, `read`): Ficus reads the viewer
+ * and workspace once and discards the token. Token exchange and revocation match the app adapter.
+ */
+export function createLinearIdentityAdapter(client = new LinearOAuthClient()): OAuthProviderAdapter {
+  const app = createLinearAdapter(client)
+  return {
+    ...app,
+    key: LINEAR_IDENTITY_ADAPTER_KEY,
+    buildAuthorizationUrl: (input) => client.buildUserAuthorizationUrl(input),
+  }
+}
+
+export const linearIdentityAdapter = createLinearIdentityAdapter()

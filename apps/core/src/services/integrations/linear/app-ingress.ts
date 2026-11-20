@@ -42,6 +42,8 @@ import {
   recordLinearTeamReadable,
 } from './team-access'
 import { handleLinearAppRevoked } from './app-revocation'
+import { handleBoundSessionPrompt } from './session-prompts'
+import { isProactiveLinearSession } from './proactive-session'
 
 const log = createLogger('linear-app-ingress')
 
@@ -158,6 +160,15 @@ async function processSessionCreated(
   payload: Record<string, unknown>,
   dependencies: LinearAppIngressDependencies
 ) {
+  // Ficus's own `--linear-session` session is bound by the request that opened it: no rules run.
+  if (
+    await isProactiveLinearSession({
+      connectionId: resolved.connection.id,
+      sessionId,
+      issueId: text(session.issueId) || text(record(session.issue).id) || undefined,
+    })
+  )
+    return
   // Before any rule, decision predicate or squad fan-out.
   const row = await acknowledgeLinearSession(
     {
@@ -197,11 +208,20 @@ async function processSessionPrompted(
   activityId: string,
   payload: Record<string, unknown>
 ) {
+  const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+  if (row?.workStreamId && row.connectionId === resolved.connection.id) {
+    // A bound session's prompts belong to its stream (6.4): a stop request or a reply to an open
+    // question is handled here; anything else reaches the stream once, through its tracked issue.
+    const outcome = await handleBoundSessionPrompt({ authorization: resolved.authorization, session: row, payload })
+    if (outcome === 'consumed') return
+    if (outcome === 'deliver') {
+      await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
+      return
+    }
+    // The stream is done or canceled: the prompt goes through the rules like an unbound session's.
+  }
   const routed = await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
   if (!routed) return
-  const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
-  // A bound session's prompts belong to its stream; the session's projection answers them.
-  if (row?.workStreamId) return
   await postLinearSessionDisposition({
     sessionId,
     authorization: resolved.authorization,
@@ -387,7 +407,11 @@ function enrichFact(
     const owned = [probe.comment.agentSession, probe.comment.parent?.agentSession].find(
       (session) => session?.appUser?.id === appUserId
     )
-    if (owned) data.session = { id: owned.id }
+    if (owned) {
+      data.session = { id: owned.id }
+      // Delivered to a tracking stream once, as agent_session.prompted, never also as a comment (6.4).
+      data.comment = { ...record(data.comment), inSession: true }
+    }
   }
   return {
     ...fact,

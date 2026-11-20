@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { WORK_STREAM_INPUT_ASSET_LIMIT, workStreamAssetSourceSchema } from './workstream-asset-attachments'
 import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
 import { squadEventRulesSchema } from './squad-event-rules'
+import { squadLinearSettingsSchema } from './linear-settings'
 import { AGENT_STATUSES, WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from './types'
 import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from './image-attachments'
 import { reportableAssistantTaskStatusSchema } from './assistant-activity'
@@ -171,6 +172,7 @@ export const squadMetadataSchema = requestMetadataSchema.superRefine((metadata, 
   const schemas: Array<[string, z.ZodTypeAny]> = [
     ['githubIdentity', squadGithubIdentitySchema],
     ['sandbox.toolchain', squadToolchainSchema.nullable()],
+    ['integrationSettings.linear', squadLinearSettingsSchema],
   ]
 
   for (const [key, schema] of schemas) {

@@ -1,7 +1,7 @@
 import type { OAuthAuthority } from './authority'
 
 export type OAuthAuthorizationIntent = 'connect' | 'reconnect'
-export type OAuthAuthorizationPurpose = 'integration' | 'github_identity'
+export type OAuthAuthorizationPurpose = 'integration' | 'github_identity' | 'linear_identity'
 
 export interface OAuthStateRecord {
   stateHash: string

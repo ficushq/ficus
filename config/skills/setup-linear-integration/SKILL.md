@@ -51,6 +51,8 @@ Only a squad with an enabled, assigned Linear connection receives these events. 
 
 `ficus workstream track <ws-id> --issue KEY-123` (or `--url <linear issue url>`) links a work stream to a Linear issue through the squad's Linear connection — the same command used for GitHub issues and PRs. Linear has no pull requests, so `--pr` and `--delivery` are rejected for a Linear reference. A squad-level Linear notification (or `ficus workstream create --from-event <id>`) carries an `Event reference:` block naming the issue the same way GitHub notifications do — including comment notifications, which name the issue by its Linear id and are resolved through the squad's Linear connection when the link is made. See `docs/wiki/linear-integrations.md` (Tracked issues) for identity and linking details.
 
+Ficus attaches a stream's delivery pull request to its tracked Linear issues. The squad's **Pull request links** setting (Integrations tab, Linear section, or `ficus squad set-meta <squad> integrationSettings.linear '{"version":1,"pullRequestLinks":{"origin":"closes","tracked":"links"}}'`) picks the link kind: `closes`, `contributes` or `links` for the issue the work started from (default `closes`) and for other tracked issues (default `links`). With the Ficus app, a bound agent session also gets the stream's progress; `ficus workstream track <ws-id> --issue KEY-123 --linear-session` opens and binds one for a stream that was not started from Linear. See `docs/wiki/linear-integrations.md` (Progress write-back).
+
 For live issue search, enable the squad’s Linear connection. Memory grants may further restrict team keys, but cannot grant access beyond the connected account.
 
 ## Agent CLI

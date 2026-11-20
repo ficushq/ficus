@@ -60,6 +60,7 @@ export async function addLinearSessionExternalUrls(
 
 export interface LinearProbedUser {
   id: string
+  name?: string | null
   app?: boolean | null
   guest?: boolean | null
   active?: boolean | null
@@ -119,7 +120,7 @@ export async function probeLinearUser(
   try {
     const data = await linearQuery<{ user?: LinearProbedUser | null }>(
       authorization,
-      'query FicusLinearUser($userId: String!) { user(id: $userId) { id app guest active } }',
+      'query FicusLinearUser($userId: String!) { user(id: $userId) { id name app guest active } }',
       { userId },
       signal
     )

@@ -1,6 +1,7 @@
 import { createHash, randomBytes as cryptoRandomBytes, randomUUID as cryptoRandomUUID } from 'node:crypto'
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { getOAuthProviderAdapter } from '@ficus/shared/oauth-providers'
+import { LINEAR_IDENTITY_ADAPTER_KEY } from '@ficus/shared/oauth-providers/linear/client'
 import type { IntegrationAuditRecorder } from '../audit'
 import type { AuthorizationGrant, IntegrationPluginV1 } from '../plugin'
 import type { OAuthAuthorizationPurpose, OAuthStateRecord, OAuthStateRepository } from './state-repository'
@@ -75,7 +76,9 @@ export class IntegrationAuthorizationService {
           !Number.isSafeInteger(input.linkGeneration) ||
           input.linkGeneration! < 0)) ||
       ((input.purpose ?? 'integration') === 'integration' && input.linkGeneration !== undefined) ||
-      (input.purpose !== undefined && !['integration', 'github_identity'].includes(input.purpose))
+      (input.purpose === 'linear_identity' &&
+        (input.providerKey !== 'linear' || input.intent.kind !== 'connect' || input.linkGeneration !== undefined)) ||
+      (input.purpose !== undefined && !['integration', 'github_identity', 'linear_identity'].includes(input.purpose))
     )
       throw new AuthorizationFlowError('invalid_authorization_purpose')
     const plugin = this.#requireOAuthPlugin(input.providerKey)
@@ -107,6 +110,7 @@ export class IntegrationAuthorizationService {
       userId: input.userId,
       intent: input.intent.kind,
       ...(input.purpose === 'github_identity' ? { purpose: input.purpose, linkGeneration: input.linkGeneration } : {}),
+      ...(input.purpose === 'linear_identity' ? { purpose: input.purpose } : {}),
       connectionId: input.intent.kind === 'reconnect' ? input.intent.connectionId : null,
       expectedMaterialRevision: input.intent.kind === 'reconnect' ? input.intent.expectedMaterialRevision : null,
       redirectUri,
@@ -116,7 +120,7 @@ export class IntegrationAuthorizationService {
     let authorizationUrl: URL
     try {
       const result = await this.#dependencies.transport.authorizationUrl({
-        providerKey: plugin.authorization.adapter,
+        providerKey: adapterFor(plugin, input.purpose),
         localFlowId,
         intent: input.intent.kind,
         returnTo: input.returnTo,
@@ -138,7 +142,7 @@ export class IntegrationAuthorizationService {
         authorizationUrl.searchParams.get('state') !== localState) ||
       (this.#dependencies.transport.authority === 'platform_broker' &&
         (authorizationUrl.protocol !== 'https:' ||
-          !isAdapterAuthorizationHost(plugin.authorization.adapter, authorizationUrl)))
+          !isAdapterAuthorizationHost(adapterFor(plugin, input.purpose), authorizationUrl)))
     ) {
       throw new AuthorizationFlowError('authorization_url_failed')
     }
@@ -179,7 +183,7 @@ export class IntegrationAuthorizationService {
     const exchange = async (): Promise<AuthorizationGrant<unknown, unknown>> => {
       try {
         const grant = await this.#dependencies.transport.completeAuthorization({
-          providerKey: plugin.authorization.adapter,
+          providerKey: adapterFor(plugin, state.purpose),
           localFlowId: input.state,
           code: input.code!,
           redirectUri: state.redirectUri,
@@ -275,7 +279,7 @@ export class IntegrationAuthorizationService {
     const exchange = async (): Promise<AuthorizationGrant<unknown, unknown>> => {
       try {
         const grant = await this.#dependencies.transport.completeAuthorization({
-          providerKey: plugin.authorization.adapter,
+          providerKey: adapterFor(plugin, state.purpose),
           localFlowId: input.localFlowId,
           handle: input.handle,
         })
@@ -341,6 +345,12 @@ export class IntegrationAuthorizationService {
   async #installGrant(input: Parameters<AuthorizationServiceDependencies['installGrant']>[0]): Promise<void> {
     const purpose = input.state.purpose ?? 'integration'
     if (purpose === 'integration') return this.#dependencies.installGrant(input)
+    if (purpose === 'linear_identity') {
+      if (input.state.providerKey !== 'linear' || input.state.intent !== 'connect')
+        throw new AuthorizationFlowError('invalid_authorization_purpose')
+      if (!this.#dependencies.installIdentityGrant) throw new AuthorizationFlowError('identity_installer_unavailable')
+      return this.#dependencies.installIdentityGrant(input)
+    }
     if (
       purpose !== 'github_identity' ||
       input.state.providerKey !== 'github' ||
@@ -375,6 +385,15 @@ export class IntegrationAuthorizationService {
       at: this.#now(),
     })
   }
+}
+
+/**
+ * The OAuth adapter a flow uses. Linking a person's Linear account (`linear_identity`) is a
+ * user-actor `read` authorization of the same Linear app, through its own adapter key so it never
+ * shares the app installation's `actor=app` URL.
+ */
+function adapterFor(plugin: OAuthPluginView<unknown>, purpose: OAuthAuthorizationPurpose | undefined): string {
+  return purpose === 'linear_identity' ? LINEAR_IDENTITY_ADAPTER_KEY : plugin.authorization.adapter
 }
 
 function hashState(state: string): string {

@@ -218,7 +218,7 @@ function mapState(row: typeof integrationOauthStates.$inferSelect | undefined): 
   if (
     !row ||
     (row.intent !== 'connect' && row.intent !== 'reconnect') ||
-    (row.purpose !== 'integration' && row.purpose !== 'github_identity') ||
+    (row.purpose !== 'integration' && row.purpose !== 'github_identity' && row.purpose !== 'linear_identity') ||
     (row.authority !== 'local' && row.authority !== 'platform_broker')
   ) {
     return null

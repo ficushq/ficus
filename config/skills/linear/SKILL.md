@@ -68,6 +68,10 @@ Never pass `-y` to a destructive command to skip the CLI's own confirmation unle
 
 Do not change an issue's workflow state (`--state`, `issue start`, `issue create --start`) unless a person asked you to. This holds for the Ficus app too, even on issues delegated to it. Linear's own GitHub integration moves an issue through its states when a branch or pull request references the issue key. Put the key, for example `ENG-123`, in the branch name and in the pull request title or body, and let that integration update the state. Create pull requests with the squad's normal workflow rather than `linear issue pull-request`.
 
+### Ficus writes the agent session
+
+When the Ficus app works on an issue through an agent session, Ficus itself posts the session's progress, questions, pull request link and final result. Do not post those updates again as comments or session activities with the CLI. Ficus also attaches the delivery pull request to the stream's tracked issues; you only need to put the issue key in the branch and pull request text.
+
 ## Assignee and delegate
 
 An issue has one **assignee**: the person accountable for it. It can also have a **delegate**: an agent working on the issue on that person's behalf, while the assignee stays responsible. Assigning an issue to an agent app in Linear, including the Ficus app, sets it as the delegate, not the assignee; the app can never be an ordinary assignee. Use `--assignee` and `--unassign` for people, and `--delegate` and `--clear-delegate` for agents. Do not reassign or undelegate an issue that someone else owns unless asked.
