@@ -298,6 +298,7 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
                   comment: {
                     id: text(data.id, 200),
                     ...(text(data.parentId, 200) ? { parentId: text(data.parentId, 200) } : {}),
+                    ...(text(data.userId, 200) ? { author: text(data.userId, 200) } : {}),
                   },
                 }
               : {}),
