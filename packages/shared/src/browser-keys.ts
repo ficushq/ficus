@@ -42,6 +42,11 @@ export const SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY = 'ficus-squad-chat-sidebar-wi
 /** '1' when the squad chat sidebar's Recent chats (consultants) group is collapsed. */
 export const SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY = 'ficus-squad-chat-consultants-collapsed'
 export const ASSISTANT_WINDOW_STORAGE_KEY = 'ficus-assistant-window'
+/**
+ * Floating agent chat windows (open windows with their geometry, stacking and minimized state, plus
+ * each agent's last geometry), per signed-in identity: `${key}:${scope}`.
+ */
+export const CHAT_WINDOWS_STORAGE_KEY = 'ficus-chat-windows'
 export const VOICE_INPUT_MODE_STORAGE_KEY = 'ficus_voice_workspace_input_mode'
 export const PUSH_SUBSCRIPTION_ID_STORAGE_KEY = 'ficus_push_subscription_id'
 /** Unsent workflow drafts: `${prefix}${JSON.stringify([apiUrl, identityType, owner, draftId])}`. */
