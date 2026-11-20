@@ -178,7 +178,8 @@ export function StorageSection() {
           <p>
             Expand a squad to inspect its workspace and each agent&apos;s files, largest first. Folder sizes include
             their contents; they are not additional usage. Dormant agents keep their files until they are removed
-            automatically {retentionDays} days after becoming dormant.
+            automatically {retentionDays} days after becoming dormant. Channel agents (Slack, Discord and Telegram
+            conversations) are never removed: only their files are freed then, and a new channel message wakes them.
           </p>
           <p>
             Other disk usage includes shared tools, system files, and storage not attributed to a squad. Sizes are

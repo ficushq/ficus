@@ -35,8 +35,18 @@ export const LINEAR_POLL_WEBHOOK_RECENCY_MS = 15 * 60_000
 /** After downtime, the lookback is capped at the hosted relay's retention. */
 export const LINEAR_POLL_MAX_LOOKBACK_MS = 72 * 3_600_000
 export const LINEAR_POLL_PAGE_SIZE = 50
-/** Requests one poll makes at most: sessions, prompts and notifications. */
+/** Requests one poll makes in steady state: one page each of sessions, prompts and notifications. */
 export const LINEAR_POLL_REQUESTS_PER_TICK = 3
+/**
+ * Session pages one poll reads at most. `agentSessions` has no filter, so a backlog is read newest
+ * first, page by page, down to the watermark; what one poll cannot reach, the next one continues.
+ */
+export const LINEAR_POLL_MAX_SESSION_PAGES = 5
+/** Requests one poll makes at most while catching up on a session backlog. */
+export const LINEAR_POLL_MAX_REQUESTS_PER_TICK = LINEAR_POLL_REQUESTS_PER_TICK + LINEAR_POLL_MAX_SESSION_PAGES - 1
+/** The prompts and notifications queries that follow the session pages. */
+const REQUESTS_AFTER_SESSIONS = 2
+const MAX_PAGE_CURSOR_LENGTH = 1_000
 const MAX_BOUNDARY_IDS = 50
 const REQUEST_TIMEOUT_MS = 10_000
 
@@ -45,9 +55,19 @@ export interface LinearPollingWatermark {
   at: string
   boundaryIds: string[]
 }
+/**
+ * An unfinished walk down a session backlog: the next older page starts after `after` (Linear's
+ * `endCursor`), and once the walk reaches the watermark, the watermark moves to `updatedAfter` and
+ * `boundaryIds`, the newest position the walk saw.
+ */
+export interface LinearSessionsResume {
+  after: string
+  updatedAfter: string
+  boundaryIds: string[]
+}
 export interface LinearPollingCursor {
   version: 1
-  sessions: { updatedAfter: string; boundaryIds: string[] }
+  sessions: { updatedAfter: string; boundaryIds: string[]; resume?: LinearSessionsResume }
   prompts: { createdAfter: string; boundaryIds: string[] }
   notifications: { createdAfter: string; boundaryIds: string[] }
 }
@@ -73,6 +93,7 @@ function boundary(value: unknown): string[] {
 /**
  * Reads a stored cursor, starting at `initialAt` (the connection's install time) when there is none
  * or it is unreadable. Every watermark is raised to `now - 72 hours` at most, dropping its boundary.
+ * An unfinished session walk is kept only while it is readable and still above the sessions watermark.
  */
 export function parseLinearPollingCursor(value: unknown, initialAt: Date, now: Date): LinearPollingCursor {
   const floor = now.getTime() - LINEAR_POLL_MAX_LOOKBACK_MS
@@ -89,12 +110,21 @@ export function parseLinearPollingCursor(value: unknown, initialAt: Date, now: D
   const sessions = read(stored.sessions, 'updatedAfter')
   const prompts = read(stored.prompts, 'createdAfter')
   const notifications = read(stored.notifications, 'createdAfter')
+  const resume = readable ? readResume(record(stored.sessions).resume, Date.parse(sessions.at)) : undefined
   return {
     version: 1,
-    sessions: { updatedAfter: sessions.at, boundaryIds: sessions.boundaryIds },
+    sessions: { updatedAfter: sessions.at, boundaryIds: sessions.boundaryIds, ...(resume ? { resume } : {}) },
     prompts: { createdAfter: prompts.at, boundaryIds: prompts.boundaryIds },
     notifications: { createdAfter: notifications.at, boundaryIds: notifications.boundaryIds },
   }
+}
+
+function readResume(value: unknown, watermark: number): LinearSessionsResume | undefined {
+  const entry = record(value)
+  const after = typeof entry.after === 'string' ? entry.after : ''
+  const at = stamp(entry.updatedAfter)
+  if (!after || after.length > MAX_PAGE_CURSOR_LENGTH || !Number.isFinite(at) || at < watermark) return undefined
+  return { after, updatedAfter: new Date(at).toISOString(), boundaryIds: boundary(entry.boundaryIds) }
 }
 
 /**
@@ -125,10 +155,11 @@ export function advanceLinearWatermark<T extends { id: string; at: number }>(
 // enrichment probe reads them again for every routed event.
 const ISSUE_FIELDS = 'id number identifier title url team { id key } assignee { id } delegate { id } state { type }'
 
-/** Newest first; the page is read down to the watermark. */
-export const LINEAR_POLL_SESSIONS_QUERY = `query FicusLinearPollSessions($first: Int!) {
-  agentSessions(first: $first, orderBy: updatedAt) {
+/** Newest first; pages are read down to the watermark, each continuing after the previous `endCursor`. */
+export const LINEAR_POLL_SESSIONS_QUERY = `query FicusLinearPollSessions($first: Int!, $cursor: String) {
+  agentSessions(first: $first, after: $cursor, orderBy: updatedAt) {
     nodes { id status createdAt updatedAt url appUser { id } creator { id } comment { id } issue { ${ISSUE_FIELDS} } }
+    pageInfo { hasNextPage endCursor }
   }
 }`
 /** `last` returns the oldest first, so a full page is continued from its newest item on the next poll. */
@@ -267,21 +298,8 @@ export function createLinearAgentSessionPolling(
       const base = { organizationId: configuration.organizationId, appUserId }
       const events: VerifiedIngressEvent[] = []
 
-      // 1. Sessions, newest first, down to the watermark.
-      const sessionPage = await request<{ agentSessions?: { nodes?: unknown[] } }>(LINEAR_POLL_SESSIONS_QUERY, {
-        first: LINEAR_POLL_PAGE_SIZE,
-      })
-      const sessionNodes = (sessionPage.agentSessions?.nodes ?? []).map(record)
-      const sessions = advanceLinearWatermark(
-        { at: cursor.sessions.updatedAfter, boundaryIds: cursor.sessions.boundaryIds },
-        sessionNodes.map((node) => ({ id: text(node.id), at: stamp(node.updatedAt), node })).filter((item) => item.id)
-      )
-      if (
-        sessionNodes.length >= LINEAR_POLL_PAGE_SIZE &&
-        sessions.fresh.length >= LINEAR_POLL_PAGE_SIZE &&
-        Math.min(...sessions.fresh.map((item) => item.at)) > Date.parse(cursor.sessions.updatedAfter)
-      )
-        log.warn('More Linear agent sessions changed since the last poll than one page holds; older ones may be missed')
+      // 1. Sessions, newest first, down to the watermark (or on from where the last poll stopped).
+      const sessions = await readSessionPages(request, cursor.sessions, signal)
       const ownSessions = sessions.fresh.filter((item) => text(record(item.node.appUser).id) === appUserId)
       const known = await dependencies.knownSessions(ownSessions.map((item) => item.id))
       // Oldest first, so sessions are handled in the order they were opened.
@@ -398,12 +416,91 @@ export function createLinearAgentSessionPolling(
 
       const nextCursor: LinearPollingCursor = {
         version: 1,
-        sessions: { updatedAfter: sessions.next.at, boundaryIds: sessions.next.boundaryIds },
+        sessions: sessions.next,
         prompts: { createdAfter: prompts.next.at, boundaryIds: prompts.next.boundaryIds },
         notifications: { createdAfter: notifications.next.at, boundaryIds: notifications.next.boundaryIds },
       }
       const result: EventPollingResult = { events, nextCursor: { ...nextCursor }, suggestedIntervalMs }
       return result
+    },
+  }
+}
+
+type SessionItem = { id: string; at: number; node: Record<string, any> }
+
+/**
+ * Reads agent sessions newest first until a page reaches the watermark, Linear has no older page,
+ * or the poll's page limit or request budget (keeping room for the prompts and notifications
+ * queries) runs out. Everything read that is newer than the watermark is returned as fresh.
+ *
+ * When the walk stops short, the watermark stays where it was and the cursor records where to
+ * continue, so the next poll reads the older pages instead of skipping them. Sessions read twice
+ * (an earlier page of the same walk, or the newest page again after the walk) are left to
+ * `linearSessionNeedsHandling` and the delivery receipts, so none is acknowledged twice.
+ */
+async function readSessionPages(
+  request: <T>(document: string, variables: Record<string, unknown>) => Promise<T>,
+  stored: LinearPollingCursor['sessions'],
+  signal: EventPollingSignal | undefined
+): Promise<{ fresh: SessionItem[]; next: LinearPollingCursor['sessions'] }> {
+  const watermark: LinearPollingWatermark = { at: stored.updatedAfter, boundaryIds: stored.boundaryIds }
+  const watermarkAt = Date.parse(watermark.at)
+  let resume = stored.resume
+  let after = resume?.after
+  const fetched = new Map<string, SessionItem>()
+  let reached = false
+  let continueAfter = ''
+  for (let page = 0; page < LINEAR_POLL_MAX_SESSION_PAGES; page++) {
+    type Page = { agentSessions?: { nodes?: unknown[]; pageInfo?: unknown } }
+    let result: Page
+    try {
+      result = await request<Page>(LINEAR_POLL_SESSIONS_QUERY, {
+        first: LINEAR_POLL_PAGE_SIZE,
+        ...(after ? { cursor: after } : {}),
+      })
+    } catch (error) {
+      // Linear refused the saved position (for example the session it names is gone): start the
+      // walk again from the newest page. The watermark has not moved, so nothing is skipped.
+      if (after && after === resume?.after && error instanceof Error && error.message === 'provider_query_failed') {
+        log.info('Linear refused the saved agent session page position; reading from the newest page')
+        resume = undefined
+        after = undefined
+        continue
+      }
+      throw error
+    }
+    const items = (result.agentSessions?.nodes ?? [])
+      .map(record)
+      .map((node) => ({ id: text(node.id), at: stamp(node.updatedAt), node }))
+      .filter((item) => item.id)
+    for (const item of items) if (!fetched.has(item.id)) fetched.set(item.id, item)
+    const pageInfo = record(result.agentSessions?.pageInfo)
+    const endCursor = pageInfo.hasNextPage === true ? text(pageInfo.endCursor, MAX_PAGE_CURSOR_LENGTH) : ''
+    const stamps = items.map((item) => item.at).filter(Number.isFinite)
+    if (!endCursor || (stamps.length && Math.min(...stamps) < watermarkAt)) {
+      reached = true
+      break
+    }
+    continueAfter = endCursor
+    if (signal && signal.remainingBudgetUnits < 1 + REQUESTS_AFTER_SESSIONS) break
+    after = endCursor
+  }
+  const { fresh } = advanceLinearWatermark(watermark, [...fetched.values()])
+  // The position the watermark moves to once the walk is done: the newest session seen by a walk that
+  // began at the newest page. A resumed walk keeps the position recorded when it began, whatever it
+  // reads after the saved page position: sessions that changed since (an acknowledgment moves a session
+  // up) are read again from the newest page by the next poll, and recorded ones are left alone there.
+  const newest = resume
+    ? { at: resume.updatedAfter, boundaryIds: resume.boundaryIds }
+    : advanceLinearWatermark(watermark, fresh).next
+  if (reached) return { fresh, next: { updatedAfter: newest.at, boundaryIds: newest.boundaryIds } }
+  log.info('More Linear agent sessions changed than one poll reads; the next poll continues with older ones')
+  return {
+    fresh,
+    next: {
+      updatedAfter: watermark.at,
+      boundaryIds: watermark.boundaryIds,
+      resume: { after: continueAfter, updatedAfter: newest.at, boundaryIds: newest.boundaryIds },
     },
   }
 }

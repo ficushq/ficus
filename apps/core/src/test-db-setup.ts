@@ -140,6 +140,7 @@ export async function setupTestDatabase(ciDatabaseUrl: string | undefined): Prom
     // drizzle-kit also reports the executionId expression as null on re-introspection.
     'idx_messages_agent_execution',
     'idx_webhook_events_verified_repo_delivery',
+    'idx_webhook_events_verified_organization_created',
     'idx_inbox_work_stream_id',
     'idx_messages_chat_source_page',
     'idx_messages_agent_stream_group',

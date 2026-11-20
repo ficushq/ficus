@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm'
 import { formatAgentLabel, type StorageAgent, type StorageFolder, type StorageSnapshot } from '@ficus/shared'
 import { agents } from '../../db'
 import {
+  channelBoundAgentSql,
+  dormantStorageReclaimedSql,
   REMOVE_NOW_DORMANT_AT_KEY,
   REMOVE_NOW_FAILED_DORMANT_AT_KEY,
   REMOVE_NOW_FAILED_REASON_KEY,
@@ -17,6 +19,8 @@ export const storageAgentColumns = {
   removeNowDormantAt: sql<string | null>`${agents.metadata}->>${REMOVE_NOW_DORMANT_AT_KEY}`,
   removeNowFailedReason: sql<string | null>`${agents.metadata}->>${REMOVE_NOW_FAILED_REASON_KEY}`,
   removeNowFailedDormantAt: sql<string | null>`${agents.metadata}->>${REMOVE_NOW_FAILED_DORMANT_AT_KEY}`,
+  channelBound: sql<boolean>`${channelBoundAgentSql}`,
+  storageReclaimed: sql<boolean>`COALESCE(${dormantStorageReclaimedSql}, false)`,
   lastMessageAt: agents.lastMessageAt,
   dormantAt: agents.dormantAt,
   createdAt: agents.createdAt,
@@ -31,6 +35,8 @@ export type StorageAgentRow = Pick<
   removeNowDormantAt?: string | null
   removeNowFailedReason?: string | null
   removeNowFailedDormantAt?: string | null
+  channelBound?: boolean
+  storageReclaimed?: boolean
 }
 
 const iso = (value: Date | null | undefined) => (value ? value.toISOString() : null)
@@ -45,6 +51,8 @@ export function storageAgentInfo(row: StorageAgentRow): StorageAgent {
     lastMessageAt: iso(row.lastMessageAt),
     dormantAt: iso(row.dormantAt),
     createdAt: iso(row.createdAt),
+    ...(row.channelBound ? { channelBound: true } : {}),
+    ...(row.status === 'dormant' && row.channelBound && row.storageReclaimed ? { storageReclaimed: true } : {}),
     // The request applies only to the dormancy episode it was made for.
     ...(row.status === 'dormant' &&
     row.dormantAt &&

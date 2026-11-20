@@ -2,15 +2,19 @@ import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integ
 useEnabledIntegrationFixtures('linear')
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
+import { createBlankWorkflow } from '@ficus/shared'
 import { and, eq, like, sql } from 'drizzle-orm'
 import {
+  agentTypes,
   db,
+  inbox,
   integrationConnections,
   integrationEventPollingCursors,
   integrationEventPollingDispatches,
   integrationOutputEvents,
   linearAgentSessions,
   webhookEvents,
+  workStreams,
 } from '../../../db'
 import { getSecretStore } from '../../secrets'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
@@ -22,9 +26,21 @@ import {
   linearAgentSessionPollingRuntime,
   linearPollingResourceKey,
   listLinearPollingWatches,
+  receivedRecentWebhook,
+  recentLinearAppWebhookSql,
 } from './polling-runtime'
+import type { LinearRelayDelivery } from '@ficus/shared/integration-relay'
+import { processRelayedLinearDelivery } from '../relay/linear-runtime'
+import { ensureQueryIndex } from '../../../test-utils/message-query-indexes'
 import { createLinearAppFixture } from './testing/app-fixtures'
-import { LINEAR_SESSION_RETRY_REQUESTS } from './polling'
+import {
+  LINEAR_POLL_PAGE_SIZE,
+  LINEAR_POLL_REQUESTS_PER_TICK,
+  LINEAR_POLL_SLOW_MS,
+  LINEAR_POLL_WEBHOOK_RECENCY_MS,
+  LINEAR_SESSION_RETRY_REQUESTS,
+} from './polling'
+import { createEventPollingBudget } from '../event-polling-budget'
 import { retryLinearSession } from './session-retry'
 import { setLinearAppReadinessForTest } from './app-readiness'
 import {
@@ -42,6 +58,21 @@ let linear: FakeLinear
 let issue: FakeLinearIssue
 const teamId = randomUUID()
 const member = { id: randomUUID(), name: 'Member', active: true }
+const guest = { id: randomUUID(), name: 'Guest', guest: true, active: true }
+// An inline workflow keeps start-workstream rules independent of seeded presets.
+const workerType = `linear-poll-worker-${randomUUID().slice(0, 8)}`
+/** A rule bound to the connected account, the default audience for these outputs. */
+function startRule(output: string) {
+  const definition = createBlankWorkflow()
+  definition.participants.worker!.agentTypeId = workerType
+  return {
+    id: `start-${output.replace(/[._]/g, '-')}`,
+    enabled: true,
+    source: { integration: 'linear', output, version: 1 },
+    filters: { squadRouting: true, audience: 'connected-account' },
+    action: { type: 'start-workstream', workflow: { kind: 'inline', definition } },
+  }
+}
 
 function bodies(sessionId: string) {
   return linear.activitiesFor(sessionId).map((activity) => [activity.content.type, activity.content.body])
@@ -95,8 +126,18 @@ let restoreReadiness: () => void = () => {}
 beforeAll(async () => {
   restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: false })
   await getSecretStore().initialize()
+  await db.insert(agentTypes).values({
+    id: workerType,
+    name: 'Linear polling fixture worker',
+    extraScopes: ['workstreams:respond'],
+    model: 'anthropic:claude-sonnet-4-5',
+    systemPrompt: 'Test worker',
+  })
 })
-afterAll(() => restoreReadiness())
+afterAll(async () => {
+  restoreReadiness()
+  await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
+})
 beforeEach(async () => {
   clearLinearUserCacheForTest()
   fixture = await createLinearAppFixture()
@@ -105,6 +146,7 @@ beforeEach(async () => {
     app: { id: fixture.appUserId, name: 'Ficus', app: true, active: true },
   })
   linear.addUser(member)
+  linear.addUser(guest)
   issue = linear.addIssue({
     id: randomUUID(),
     number: 7,
@@ -310,6 +352,42 @@ describe('recovered sessions', () => {
     expect(await sessionRow(dispositionFailed)).toMatchObject({ dispositionState: 'sent', disposition: 'notified' })
   })
 
+  test('a backlog over a page is read across polls: every session acknowledged exactly once', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    // The first poll starts at the install time: an hour ago, before the backlog.
+    await db
+      .update(integrationConnections)
+      .set({ createdAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(integrationConnections.id, fixture.connectionId))
+    const start = Date.now() - 600_000
+    const ids = Array.from({ length: LINEAR_POLL_PAGE_SIZE + 10 }, (_, i) => {
+      const id = randomUUID()
+      linear.addSession({ id, issueId: issue.id, creatorId: member.id, at: start + i * 1_000 })
+      return id
+    })
+    // A budget with no room for a second session page: the first poll reads only the newest page.
+    const poll = async (cursor: Record<string, unknown> | null) => {
+      const budget = createEventPollingBudget(LINEAR_POLL_REQUESTS_PER_TICK)
+      const result = await linearAgentSessionPolling.poll((await watch()).connection, cursor, budget.signal)
+      for (const event of result.events) await dispatchPolledLinearEvent(event)
+      return result
+    }
+    const first = await poll(null)
+    expect(first.events).toHaveLength(LINEAR_POLL_PAGE_SIZE)
+    // The walk stopped after one page: the cursor says where the next poll continues.
+    expect(typeof (first.nextCursor.sessions as { resume?: { after?: unknown } }).resume?.after).toBe('string')
+    const second = await poll(first.nextCursor)
+    expect(second.events).toHaveLength(10)
+    expect(second.nextCursor.sessions).not.toHaveProperty('resume')
+    const third = await poll(second.nextCursor)
+    expect(third.events).toEqual([])
+    for (const id of ids) {
+      const acknowledgments = bodies(id).filter(([type, body]) => type === 'thought' && body === LINEAR_ACK_BODY)
+      expect(acknowledgments).toHaveLength(1)
+      expect(await sessionRow(id)).toMatchObject({ ackState: 'sent', dispositionState: 'sent' })
+    }
+  }, 60_000)
+
   test('a late webhook for a session polling already handled changes nothing', async () => {
     await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()
@@ -321,6 +399,95 @@ describe('recovered sessions', () => {
     expect(linear.calls.length).toBe(before)
     expect(bodies(sessionId)).toHaveLength(2)
     expect(await outputs('agent_session.created')).toHaveLength(1)
+  })
+})
+
+describe('trusted authors and the connected account', () => {
+  async function authorities(output: string) {
+    const rows = await db
+      .select({ authority: integrationOutputEvents.authority })
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          sql`${integrationOutputEvents.authority}->>'connectionId' = ${fixture.connectionId}`,
+          sql`${integrationOutputEvents.fact}->>'output' = ${output}`
+        )
+      )
+    return rows.map((row) => row.authority as Record<string, unknown>)
+  }
+  async function streams(squadId: string) {
+    return db.select().from(workStreams).where(eq(workStreams.squadId, squadId))
+  }
+
+  test('a member’s polled delegation runs the account-bound start-workstream rule', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule('issue.delegated')] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    await pollOnce()
+    expect(await authorities('issue.delegated')).toEqual([
+      expect.objectContaining({ squadId: squad.id, accountId: fixture.appUserId, actorTrust: 'trusted' }),
+    ])
+    const started = await streams(squad.id)
+    expect(started).toHaveLength(1)
+    expect((await sessionRow(sessionId))?.workStreamId).toBe(started[0]!.id)
+    expect(bodies(sessionId).at(-1)).toEqual(['thought', LINEAR_DISPOSITION_ACTIVITIES.queued.body])
+  })
+
+  test('a guest’s polled delegation is held: no stream, and the manager is told', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule('issue.delegated')] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: guest.id })
+    await pollOnce()
+    expect(await authorities('issue.delegated')).toEqual([
+      expect.objectContaining({ accountId: fixture.appUserId, actorTrust: 'untrusted' }),
+    ])
+    expect(await streams(squad.id)).toEqual([])
+    const notices = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.content).toContain('not a trusted member')
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+  })
+
+  test('a polled prompt follows the rule for a member and is held for a guest', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule('agent_session.prompted')] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id, status: 'active' })
+    await db.insert(linearAgentSessions).values({
+      id: sessionId,
+      connectionId: fixture.connectionId,
+      organizationId: fixture.organizationId,
+      issueId: issue.id,
+      trigger: 'delegation',
+      ackState: 'sent',
+      dispositionState: 'sent',
+      disposition: 'notified',
+    })
+    linear.addPrompt({ id: randomUUID(), sessionId, userId: guest.id, body: 'Do this for me' })
+    const first = await pollOnce()
+    expect(await streams(squad.id)).toEqual([])
+    linear.addPrompt({ id: randomUUID(), sessionId, userId: member.id, body: 'Please take this' })
+    await pollOnce(first.nextCursor)
+    expect(await streams(squad.id)).toHaveLength(1)
+    const trust = (await authorities('agent_session.prompted')).map((authority) => [
+      authority.accountId,
+      authority.actorTrust,
+    ])
+    expect(trust.sort()).toEqual(
+      [
+        [fixture.appUserId, 'trusted'],
+        [fixture.appUserId, 'untrusted'],
+      ].sort()
+    )
+  })
+
+  test('a polled undelegation is recorded under the account with the actor’s trust', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    issue.delegateId = null
+    linear.addNotification({ id: randomUUID(), type: 'issueUnassignedFromYou', issueId: issue.id, actorId: member.id })
+    await pollOnce()
+    expect(await authorities('issue.undelegated')).toEqual([
+      expect.objectContaining({ accountId: fixture.appUserId, actorTrust: 'trusted' }),
+    ])
   })
 })
 
@@ -437,5 +604,97 @@ describe('runner', () => {
     expect(
       linear.calls.filter((call, index) => index >= calls && call.operation.startsWith('FicusLinearPoll'))
     ).toEqual([])
+  })
+
+  test('a delivery relayed through Platform counts as a recent app webhook and moves the poll to the 5-minute cadence', async () => {
+    function relayed(organizationId: string): LinearRelayDelivery {
+      return {
+        id: randomUUID(),
+        leaseToken: randomUUID(),
+        connectionId: fixture.connectionId,
+        connectionRevision: fixture.revision,
+        deliveryId: randomUUID(),
+        resourceId: organizationId,
+        resourceKey: organizationId,
+        eventType: 'Issue',
+        payload: { type: 'Issue', action: 'update', organizationId },
+      }
+    }
+    // Schema push skips partial indexes; delivery deduplication needs the migration's unique index.
+    await ensureQueryIndex('uq_webhook_events_provider_delivery')
+    const handled: string[] = []
+    const dispatch = async (context: { eventType: string }) => {
+      handled.push(context.eventType)
+    }
+    // Another workspace's relayed delivery does not relax this connection's cadence.
+    const other = relayed(randomUUID())
+    await processRelayedLinearDelivery(other, dispatch)
+    try {
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(false)
+      expect((await watch()).active).toBe(true)
+
+      await processRelayedLinearDelivery(relayed(fixture.organizationId), dispatch)
+      expect(handled).toEqual(['Issue', 'Issue'])
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(true)
+      expect((await watch()).active).toBe(false)
+      expect((await pollOnce()).suggestedIntervalMs).toBe(LINEAR_POLL_SLOW_MS)
+
+      await db
+        .delete(integrationEventPollingCursors)
+        .where(eq(integrationEventPollingCursors.resourceKey, linearPollingResourceKey(fixture.connectionId)))
+      await linearAgentSessionPollingRuntime.runOnce()
+      const [cursor] = await db
+        .select()
+        .from(integrationEventPollingCursors)
+        .where(eq(integrationEventPollingCursors.resourceKey, linearPollingResourceKey(fixture.connectionId)))
+      const delay = cursor!.nextPollAt.getTime() - Date.now()
+      expect(delay).toBeGreaterThan(LINEAR_POLL_SLOW_MS - 10_000)
+      expect(delay).toBeLessThanOrEqual(LINEAR_POLL_SLOW_MS)
+    } finally {
+      await db
+        .delete(webhookEvents)
+        .where(and(eq(webhookEvents.provider, 'linear-app'), eq(webhookEvents.deliveryId, other.deliveryId)))
+    }
+  })
+})
+
+describe('receivedRecentWebhook', () => {
+  test('answers from the organization index without reading other workspaces or older deliveries', async () => {
+    await ensureQueryIndex('idx_webhook_events_verified_organization_created')
+    const noisy = randomUUID()
+    try {
+      // A long history: many deliveries for another workspace, and old ones for this workspace.
+      await db.execute(sql`INSERT INTO webhook_events(provider,event_type,payload,headers,verified,created_at)
+        SELECT 'linear-app', 'Issue', jsonb_build_object('organizationId', ${noisy}::text), '{}', true,
+          now() - n * interval '1 second' FROM generate_series(1,12000) n`)
+      await db.execute(sql`INSERT INTO webhook_events(provider,event_type,payload,headers,verified,created_at)
+        SELECT 'linear-app', 'Issue', jsonb_build_object('organizationId', ${fixture.organizationId}::text), '{}', true,
+          now() - interval '1 hour' - n * interval '1 second' FROM generate_series(1,2000) n`)
+      await db.execute(sql`ANALYZE webhook_events`)
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(false)
+      expect(await receivedRecentWebhook(noisy, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(true)
+      // An unverified delivery does not count.
+      await db.insert(webhookEvents).values({
+        provider: 'linear-app',
+        eventType: 'Issue',
+        payload: { organizationId: fixture.organizationId },
+        headers: {},
+        verified: false,
+      })
+      expect(await receivedRecentWebhook(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)).toBe(false)
+
+      const [explained] = await db.execute(
+        sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${recentLinearAppWebhookSql(fixture.organizationId, LINEAR_POLL_WEBHOOK_RECENCY_MS)}`
+      )
+      const plan = (explained['QUERY PLAN'] as any)[0].Plan
+      expect(JSON.stringify(plan)).toContain('idx_webhook_events_verified_organization_created')
+      expect(plan['Shared Hit Blocks'] + plan['Shared Read Blocks']).toBeLessThan(20)
+    } finally {
+      await db
+        .delete(webhookEvents)
+        .where(
+          and(eq(webhookEvents.provider, 'linear-app'), sql`${webhookEvents.payload}->>'organizationId' = ${noisy}`)
+        )
+    }
   })
 })

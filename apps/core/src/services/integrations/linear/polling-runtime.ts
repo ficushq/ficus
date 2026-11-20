@@ -8,6 +8,7 @@ import { processLinearAppEvent, processPolledLinearNotification } from './app-in
 import { isLinearAppConfiguration, linearPlugin, parseLinearConfiguration } from './plugin'
 import {
   createLinearAgentSessionPolling,
+  LINEAR_POLL_MAX_SESSION_PAGES,
   LINEAR_POLL_REQUESTS_PER_TICK,
   LINEAR_SESSION_RETRY_REQUESTS,
   LINEAR_POLL_WEBHOOK_RECENCY_MS,
@@ -23,21 +24,28 @@ export function linearPollingResourceKey(connectionId: string) {
   return `linear-app:${connectionId}`
 }
 
-async function receivedRecentWebhook(organizationId: string, withinMs: number): Promise<boolean> {
+/**
+ * Whether a verified `linear-app` webhook for the workspace was stored within `withinMs`. Direct and
+ * relayed (`processRelayedLinearDelivery`) deliveries store the same row, so both count. One bounded
+ * read of `idx_webhook_events_verified_organization_created`; `verified` and the `IS NOT NULL` guard
+ * are literal so a generic prepared plan still matches the index predicate.
+ */
+export function recentLinearAppWebhookSql(organizationId: string, withinMs: number) {
   // `created_at` is written by the database clock, so the window is measured on it too.
-  const [row] = await db
-    .select({ id: webhookEvents.id })
-    .from(webhookEvents)
-    .where(
-      and(
-        eq(webhookEvents.provider, 'linear-app'),
-        eq(webhookEvents.verified, true),
-        sql`${webhookEvents.createdAt} >= now() - (${withinMs} * interval '1 millisecond')`,
-        sql`${webhookEvents.payload}->>'organizationId' = ${organizationId}`
-      )
-    )
-    .limit(1)
-  return !!row
+  return sql`
+    SELECT 1 FROM ${webhookEvents}
+    WHERE ${webhookEvents.provider} = 'linear-app'
+      AND ${webhookEvents.verified} = true
+      AND (${webhookEvents.payload}->>'organizationId') IS NOT NULL
+      AND (${webhookEvents.payload}->>'organizationId') = ${organizationId}
+      AND ${webhookEvents.createdAt} >= now() - (${withinMs} * interval '1 millisecond')
+    LIMIT 1
+  `
+}
+
+export async function receivedRecentWebhook(organizationId: string, withinMs: number): Promise<boolean> {
+  const rows = await db.execute(recentLinearAppWebhookSql(organizationId, withinMs))
+  return rows.length > 0
 }
 
 export const linearPollingDependencies: LinearPollingDependencies = {
@@ -115,7 +123,12 @@ export async function listLinearPollingWatches(): Promise<EventPollingWatch[]> {
   return watches
 }
 
-/** Hands a polled event to the same processing as the direct webhook. */
+/**
+ * Hands a polled event to the same processing as the direct webhook. That path probes the actor and
+ * publishes under an authority carrying the app user as `accountId` and the 5.6 `actorTrust`, so a
+ * polled event is trusted, held or matched to the account exactly as its webhook would be. Polled
+ * events are never published under the runner's bare connection authority.
+ */
 export async function dispatchPolledLinearEvent(event: { type: string; payload: unknown }): Promise<void> {
   const payload =
     event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
@@ -129,7 +142,8 @@ export async function dispatchPolledLinearEvent(event: { type: string; payload: 
 /**
  * The Linear polling fallback's scheduler, separate from the GitHub poller so neither's budget or
  * cadence affects the other. Polls run every 60 seconds (5 minutes while app webhooks arrive), with
- * no jitter, and make at most three queries each: at most 180 queries per connection per hour. Retries
+ * no jitter, and make three queries each in steady state: 180 queries per connection per hour. After
+ * an outage, a session backlog adds up to four more session pages per poll until it is read. Retries
  * of unfinished sessions add at most three calls per session (two acknowledgment attempts and the
  * disposition), for at most five spaced-out sessions.
  */
@@ -145,9 +159,11 @@ export const linearAgentSessionPollingRuntime = new EventPollingRunner({
   },
   scanIntervalMs: 15_000,
   maxResourcesPerTick: 20,
-  // Room for every watch's queries plus one connection's full retry sweep.
+  // Room for every watch's queries, one connection's session backlog and one full retry sweep.
   maxBudgetUnitsPerTick:
-    20 * LINEAR_POLL_REQUESTS_PER_TICK + LINEAR_SESSION_RETRY_LIMIT * LINEAR_SESSION_RETRY_REQUESTS,
+    20 * LINEAR_POLL_REQUESTS_PER_TICK +
+    (LINEAR_POLL_MAX_SESSION_PAGES - 1) +
+    LINEAR_SESSION_RETRY_LIMIT * LINEAR_SESSION_RETRY_REQUESTS,
   // Routing a backlog (probe, rules, decision conditions) runs inside the poll's deadline.
   leaseMs: 300_000,
   pollTimeoutMs: 240_000,

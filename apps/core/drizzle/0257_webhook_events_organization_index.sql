@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_webhook_events_verified_organization_created" ON "webhook_events" USING btree ("provider",("payload"->>'organizationId'),"created_at" DESC NULLS LAST) WHERE "webhook_events"."verified" = true AND ("webhook_events"."payload"->>'organizationId') IS NOT NULL;

@@ -6,6 +6,8 @@ import {
   advanceLinearWatermark,
   createLinearAgentSessionPolling,
   LINEAR_POLL_FAST_MS,
+  LINEAR_POLL_MAX_REQUESTS_PER_TICK,
+  LINEAR_POLL_MAX_SESSION_PAGES,
   LINEAR_POLL_MAX_LOOKBACK_MS,
   LINEAR_POLL_PAGE_SIZE,
   LINEAR_POLL_REQUESTS_PER_TICK,
@@ -132,6 +134,26 @@ describe('parseLinearPollingCursor', () => {
     expect(cursor.notifications).toEqual({ createdAfter: iso(-3_600_000), boundaryIds: [] })
   })
 
+  test('keeps a readable session walk above the watermark and drops any other', () => {
+    const read = (resume: unknown, updatedAfter = iso(-60_000)) =>
+      parseLinearPollingCursor(
+        { version: 1, sessions: { updatedAfter, boundaryIds: [], resume } },
+        new Date(NOW - 3_600_000),
+        new Date(NOW)
+      ).sessions.resume
+    expect(read({ after: 'page-cursor', updatedAfter: iso(-1_000), boundaryIds: ['s9'] })).toEqual({
+      after: 'page-cursor',
+      updatedAfter: iso(-1_000),
+      boundaryIds: ['s9'],
+    })
+    expect(read({ after: '', updatedAfter: iso(-1_000) })).toBeUndefined()
+    expect(read({ after: 'x'.repeat(1_001), updatedAfter: iso(-1_000) })).toBeUndefined()
+    expect(read({ after: 'page-cursor', updatedAfter: 'not a time' })).toBeUndefined()
+    expect(read({ after: 'page-cursor', updatedAfter: iso(-120_000) })).toBeUndefined()
+    // A walk whose newest position is older than the 72-hour floor is dropped with the old watermark.
+    expect(read({ after: 'page-cursor', updatedAfter: iso(-90 * 3_600_000) }, iso(-100 * 3_600_000))).toBeUndefined()
+  })
+
   test('an unknown version restarts at the install time', () => {
     const cursor = parseLinearPollingCursor(
       { version: 9, sessions: { updatedAfter: iso(-1_000), boundaryIds: ['x'] } },
@@ -219,7 +241,8 @@ describe('Linear agent session polling', () => {
   test('the queries filter prompts and undelegation notifications', async () => {
     const { LINEAR_POLL_SESSIONS_QUERY, LINEAR_POLL_PROMPTS_QUERY, LINEAR_POLL_NOTIFICATIONS_QUERY } =
       await import('./polling')
-    expect(LINEAR_POLL_SESSIONS_QUERY).toContain('agentSessions(first: $first, orderBy: updatedAt)')
+    expect(LINEAR_POLL_SESSIONS_QUERY).toContain('agentSessions(first: $first, after: $cursor, orderBy: updatedAt)')
+    expect(LINEAR_POLL_SESSIONS_QUERY).toContain('pageInfo { hasNextPage endCursor }')
     expect(LINEAR_POLL_PROMPTS_QUERY).toContain(
       'agentActivities(last: $last, orderBy: createdAt, filter: { type: { eq: "prompt" }, createdAt: { gte: $after } })'
     )
@@ -422,5 +445,128 @@ describe('Linear agent session polling', () => {
     expect(keys(result.events[0]!)).toEqual(keys({ type: 'AgentSessionEvent', payload: webhookCreated }))
     expect(keys(result.events[0]!).map(([output]) => output)).toEqual(['agent_session.created', 'issue.delegated'])
     expect(keys(result.events[1]!)).toEqual(keys({ type: 'AgentSessionEvent', payload: webhookPrompted }))
+  })
+
+  describe('session backlog', () => {
+    /** `count` pending sessions, one second apart, the newest `count` seconds before now. */
+    function addSessions(count: number) {
+      const ids: string[] = []
+      for (let i = 0; i < count; i++) {
+        const id = `backlog-${String(i).padStart(3, '0')}`
+        linear.addSession({ id, issueId: issue.id, creatorId: 'member', at: NOW - 600_000 + i * 1_000 })
+        ids.push(id)
+      }
+      return ids
+    }
+    function sessionIds(result: { events: readonly { logicalEventKey?: string }[] }) {
+      return result.events.map((event) => event.logicalEventKey!.split(':')[2]!)
+    }
+    function sessionPages() {
+      return linear.calls.filter((call) => call.operation === 'FicusLinearPollSessions')
+    }
+    /**
+     * What dispatching a poll's events does: the sessions become recorded and answered, which in
+     * Linear also moves them to the top of the `updatedAt` order.
+     */
+    function handle(ids: string[], at: number) {
+      for (const id of ids) {
+        known.set(id, { connectionId: appConnection.id, ackState: 'sent', dispositionState: 'sent' })
+        const session = linear.sessions.get(id)!
+        session.status = 'awaitingInput'
+        session.updatedAt = new Date(at).toISOString()
+      }
+    }
+
+    test('pages back until the watermark is reached, within one poll', async () => {
+      const ids = addSessions(120)
+      const budget = createEventPollingBudget(LINEAR_POLL_MAX_REQUESTS_PER_TICK)
+      const result = await polling().poll(appConnection, null, budget.signal)
+      expect(sessionPages().map((call) => call.variables)).toEqual([
+        { first: LINEAR_POLL_PAGE_SIZE },
+        { first: LINEAR_POLL_PAGE_SIZE, cursor: 'backlog-070' },
+        { first: LINEAR_POLL_PAGE_SIZE, cursor: 'backlog-020' },
+      ])
+      expect(new Set(sessionIds(result))).toEqual(new Set(ids))
+      expect(result.events).toHaveLength(120)
+      expect(result.nextCursor.sessions).toEqual({
+        updatedAfter: iso(-600_000 + 119_000),
+        boundaryIds: ['backlog-119'],
+      })
+      expect(budget.consumed).toBe(3 + 2)
+    })
+
+    test('a backlog larger than one poll reads is finished by the next polls, nothing skipped or repeated', async () => {
+      const ids = addSessions(LINEAR_POLL_MAX_SESSION_PAGES * LINEAR_POLL_PAGE_SIZE + 60)
+      // The session the walk stops at is not pending, so handling the others never moves it.
+      linear.sessions.get('backlog-060')!.status = 'active'
+      const first = await polling().poll(appConnection, null)
+      expect(sessionPages()).toHaveLength(LINEAR_POLL_MAX_SESSION_PAGES)
+      const firstIds = sessionIds(first)
+      expect(firstIds).toHaveLength(LINEAR_POLL_MAX_SESSION_PAGES * LINEAR_POLL_PAGE_SIZE - 1)
+      // The watermark holds; the cursor records where to continue and the newest position seen.
+      const top = { updatedAfter: iso(-600_000 + 309_000), boundaryIds: ['backlog-309'] }
+      expect(first.nextCursor.sessions).toEqual({
+        updatedAfter: iso(-3_600_000),
+        boundaryIds: [],
+        resume: { after: 'backlog-060', ...top },
+      })
+      // Answering the sessions moves them to the top of Linear's order, and a new session opens.
+      handle(firstIds, NOW - 500)
+      linear.addSession({ id: 'newer', issueId: issue.id, creatorId: 'member', at: NOW - 1_000 })
+      linear.calls.length = 0
+      const second = await polling().poll(appConnection, first.nextCursor)
+      expect(sessionPages().map((call) => call.variables)).toEqual([
+        { first: LINEAR_POLL_PAGE_SIZE, cursor: 'backlog-060' },
+        { first: LINEAR_POLL_PAGE_SIZE, cursor: 'backlog-010' },
+      ])
+      const secondIds = sessionIds(second)
+      expect(secondIds).toEqual(ids.slice(0, 60))
+      // Finished: the watermark moves to the position recorded when the walk began, below the
+      // answered sessions and the new one, which the next polls read from the newest page.
+      expect(second.nextCursor.sessions).toEqual(top)
+      handle(secondIds, NOW - 400)
+      const seen = [...firstIds, ...secondIds]
+      let cursor: Record<string, unknown> = second.nextCursor
+      for (let poll = 0; poll < 3; poll++) {
+        const next = await polling().poll(appConnection, cursor)
+        seen.push(...sessionIds(next))
+        handle(sessionIds(next), NOW - 300)
+        cursor = next.nextCursor
+      }
+      expect(seen.filter((id) => id === 'newer')).toEqual(['newer'])
+      expect(seen).toHaveLength(new Set(seen).size)
+      expect(new Set(seen)).toEqual(new Set([...ids.filter((id) => id !== 'backlog-060'), 'newer']))
+      expect(cursor.sessions).not.toHaveProperty('resume')
+    })
+
+    test('extra pages come only from budget left after the prompts and notifications queries', async () => {
+      addSessions(200)
+      const budget = createEventPollingBudget(LINEAR_POLL_REQUESTS_PER_TICK + 1)
+      const result = await polling().poll(appConnection, null, budget.signal)
+      expect(sessionPages()).toHaveLength(2)
+      expect(pollOperations().slice(-2)).toEqual(['FicusLinearPollPrompts', 'FicusLinearPollNotifications'])
+      expect(result.events).toHaveLength(100)
+      expect(result.nextCursor.sessions).toMatchObject({ resume: { after: 'backlog-100' } })
+      expect(budget.remaining).toBe(0)
+    })
+
+    test('a page position Linear refuses restarts from the newest page without moving the watermark', async () => {
+      addSessions(10)
+      const stored = {
+        version: 1,
+        sessions: {
+          updatedAfter: iso(-3_600_000),
+          boundaryIds: [],
+          resume: { after: 'deleted-session', updatedAfter: iso(-30_000), boundaryIds: [] },
+        },
+      }
+      const result = await polling().poll(appConnection, stored)
+      expect(sessionPages().map((call) => call.variables)).toEqual([
+        { first: LINEAR_POLL_PAGE_SIZE, cursor: 'deleted-session' },
+        { first: LINEAR_POLL_PAGE_SIZE },
+      ])
+      expect(result.events).toHaveLength(10)
+      expect(result.nextCursor.sessions).toEqual({ updatedAfter: iso(-600_000 + 9_000), boundaryIds: ['backlog-009'] })
+    })
   })
 })

@@ -1,5 +1,5 @@
 {
-  "id": "028a90f6-a4d4-4093-9e54-94c5eac63bdd",
+  "id": "55166505-e212-467a-9f61-78b7117cde05",
   "prevId": "26352ee7-03d8-4f10-8bb6-774b623ce9e9",
   "version": "7",
   "dialect": "postgresql",
@@ -575,12 +575,6 @@
         "answer_source": {
           "name": "answer_source",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "answer_provenance": {
-          "name": "answer_provenance",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -8817,7 +8811,7 @@
       "checkConstraints": {
         "integration_auth_receipts_purpose_context": {
           "name": "integration_auth_receipts_purpose_context",
-          "value": "(\"integration_authorization_flow_receipts\".\"purpose\" = 'integration' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NULL) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'github_identity' AND \"integration_authorization_flow_receipts\".\"provider_key\" = 'github' AND \"integration_authorization_flow_receipts\".\"intent\" = 'connect' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"link_generation\" >= 0) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'linear_identity' AND \"integration_authorization_flow_receipts\".\"provider_key\" = 'linear' AND \"integration_authorization_flow_receipts\".\"intent\" = 'connect' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NULL)"
+          "value": "(\"integration_authorization_flow_receipts\".\"purpose\" = 'integration' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NULL) OR (\"integration_authorization_flow_receipts\".\"purpose\" = 'github_identity' AND \"integration_authorization_flow_receipts\".\"provider_key\" = 'github' AND \"integration_authorization_flow_receipts\".\"intent\" = 'connect' AND \"integration_authorization_flow_receipts\".\"link_generation\" IS NOT NULL AND \"integration_authorization_flow_receipts\".\"link_generation\" >= 0)"
         },
         "integration_auth_receipts_connection_purpose": {
           "name": "integration_auth_receipts_connection_purpose",
@@ -10130,7 +10124,7 @@
       "checkConstraints": {
         "integration_oauth_states_purpose_context": {
           "name": "integration_oauth_states_purpose_context",
-          "value": "(\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"link_generation\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"provider_key\" = 'github' AND \"integration_oauth_states\".\"intent\" = 'connect' AND \"integration_oauth_states\".\"link_generation\" IS NOT NULL AND \"integration_oauth_states\".\"link_generation\" >= 0) OR (\"integration_oauth_states\".\"purpose\" = 'linear_identity' AND \"integration_oauth_states\".\"provider_key\" = 'linear' AND \"integration_oauth_states\".\"intent\" = 'connect' AND \"integration_oauth_states\".\"link_generation\" IS NULL)"
+          "value": "(\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"link_generation\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"provider_key\" = 'github' AND \"integration_oauth_states\".\"intent\" = 'connect' AND \"integration_oauth_states\".\"link_generation\" IS NOT NULL AND \"integration_oauth_states\".\"link_generation\" >= 0)"
         },
         "integration_oauth_states_hash_format": {
           "name": "integration_oauth_states_hash_format",
@@ -10150,7 +10144,7 @@
         },
         "integration_oauth_states_authority_flow_check": {
           "name": "integration_oauth_states_authority_flow_check",
-          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND ((\"integration_oauth_states\".\"purpose\" IN ('integration', 'linear_identity') AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL))) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
+          "value": "(\"integration_oauth_states\".\"authority\" = 'local' AND ((\"integration_oauth_states\".\"purpose\" = 'integration' AND \"integration_oauth_states\".\"local_flow_id\" IS NULL) OR (\"integration_oauth_states\".\"purpose\" = 'github_identity' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL))) OR (\"integration_oauth_states\".\"authority\" = 'platform_broker' AND \"integration_oauth_states\".\"local_flow_id\" IS NOT NULL)"
         },
         "integration_oauth_states_intent_context": {
           "name": "integration_oauth_states_intent_context",
@@ -11221,311 +11215,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.linear_activity_outbox": {
-      "name": "linear_activity_outbox",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope_key": {
-          "name": "scope_key",
-          "type": "varchar(220)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "varchar(200)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "work_stream_id": {
-          "name": "work_stream_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "projection_key": {
-          "name": "projection_key",
-          "type": "varchar(400)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "activity_id": {
-          "name": "activity_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "collapsible": {
-          "name": "collapsible",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "claim_token": {
-          "name": "claim_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_linear_activity_outbox_projection": {
-          "name": "uq_linear_activity_outbox_projection",
-          "columns": [
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "projection_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_linear_activity_outbox_due": {
-          "name": "idx_linear_activity_outbox_due",
-          "columns": [
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"linear_activity_outbox\".\"status\" IN ('pending', 'sending')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_linear_activity_outbox_sent": {
-          "name": "idx_linear_activity_outbox_sent",
-          "columns": [
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sent_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_linear_activity_outbox_session": {
-          "name": "idx_linear_activity_outbox_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_linear_activity_outbox_work_stream": {
-          "name": "idx_linear_activity_outbox_work_stream",
-          "columns": [
-            {
-              "expression": "work_stream_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_linear_activity_outbox_retention": {
-          "name": "idx_linear_activity_outbox_retention",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "linear_activity_outbox_connection_id_integration_connections_id_fk": {
-          "name": "linear_activity_outbox_connection_id_integration_connections_id_fk",
-          "tableFrom": "linear_activity_outbox",
-          "tableTo": "integration_connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "linear_activity_outbox_session_id_linear_agent_sessions_id_fk": {
-          "name": "linear_activity_outbox_session_id_linear_agent_sessions_id_fk",
-          "tableFrom": "linear_activity_outbox",
-          "tableTo": "linear_agent_sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "linear_activity_outbox_work_stream_id_work_streams_id_fk": {
-          "name": "linear_activity_outbox_work_stream_id_work_streams_id_fk",
-          "tableFrom": "linear_activity_outbox",
-          "tableTo": "work_streams",
-          "columnsFrom": [
-            "work_stream_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "linear_activity_outbox_kind_check": {
-          "name": "linear_activity_outbox_kind_check",
-          "value": "\"linear_activity_outbox\".\"kind\" in ('activity', 'session_update', 'attachment')"
-        },
-        "linear_activity_outbox_status_check": {
-          "name": "linear_activity_outbox_status_check",
-          "value": "\"linear_activity_outbox\".\"status\" in ('pending', 'sending', 'sent', 'failed', 'skipped')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.linear_agent_sessions": {
       "name": "linear_agent_sessions",
       "schema": "",
@@ -11641,19 +11330,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "projection_attempt_floor": {
-          "name": "projection_attempt_floor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "auth_link_requested": {
-          "name": "auth_link_requested",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -11777,119 +11453,6 @@
         "linear_agent_sessions_disposition_state_check": {
           "name": "linear_agent_sessions_disposition_state_check",
           "value": "\"linear_agent_sessions\".\"disposition_state\" in ('pending', 'sent', 'failed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.linear_question_mirrors": {
-      "name": "linear_question_mirrors",
-      "schema": "",
-      "columns": {
-        "question_id": {
-          "name": "question_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "varchar(200)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "activity_id": {
-          "name": "activity_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "options": {
-          "name": "options",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(24)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_linear_question_mirrors_session": {
-          "name": "idx_linear_question_mirrors_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "linear_question_mirrors_question_id_agent_questions_id_fk": {
-          "name": "linear_question_mirrors_question_id_agent_questions_id_fk",
-          "tableFrom": "linear_question_mirrors",
-          "tableTo": "agent_questions",
-          "columnsFrom": [
-            "question_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "linear_question_mirrors_session_id_linear_agent_sessions_id_fk": {
-          "name": "linear_question_mirrors_session_id_linear_agent_sessions_id_fk",
-          "tableFrom": "linear_question_mirrors",
-          "tableTo": "linear_agent_sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "linear_question_mirrors_state_check": {
-          "name": "linear_question_mirrors_state_check",
-          "value": "\"linear_question_mirrors\".\"state\" in ('open', 'answered_in_linear', 'answered_in_ficus', 'dismissed')"
         }
       },
       "isRLSEnabled": false
@@ -22250,88 +21813,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.user_linear_identities": {
-      "name": "user_linear_identities",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "varchar(200)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "linear_user_id": {
-          "name": "linear_user_id",
-          "type": "varchar(200)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "linked_at": {
-          "name": "linked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_user_linear_identities_linear_user": {
-          "name": "uq_user_linear_identities_linear_user",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "linear_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "user_linear_identities_user_id_users_id_fk": {
-          "name": "user_linear_identities_user_id_users_id_fk",
-          "tableFrom": "user_linear_identities",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "user_linear_identities_user_id_organization_id_pk": {
-          "name": "user_linear_identities_user_id_organization_id_pk",
-          "columns": [
-            "user_id",
-            "organization_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.user_notification_preferences": {
       "name": "user_notification_preferences",
       "schema": "",
@@ -23020,6 +22501,34 @@
           ],
           "isUnique": false,
           "where": "\"webhook_events\".\"verified\" = true AND (\"webhook_events\".\"payload\"->'repository'->>'full_name') IS NOT NULL",
+          "concurrently": true,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_webhook_events_verified_organization_created": {
+          "name": "idx_webhook_events_verified_organization_created",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"payload\"->>'organizationId')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"webhook_events\".\"verified\" = true AND (\"webhook_events\".\"payload\"->>'organizationId') IS NOT NULL",
           "concurrently": true,
           "method": "btree",
           "with": {}
