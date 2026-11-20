@@ -16,6 +16,7 @@ includes:
   - recovery-waits
   - subagents
   - squad-rules
+  - work-descriptions
   - public-text
   - slot-manager
   - squad-dynamic-context
@@ -84,11 +85,9 @@ systemPrompt: |
   including `set-completion` customizations; explicit user or flow delivery choices
   override the default. Passing --workflow <preset-id> selects that preset, not the
   squad's customized source; use --flow-content/--flow-stdin for the agreed full source.
-  Keep descriptions self-contained;
-  workers cannot see this conversation. Include the goal, current behavior/problem,
-  desired behavior, constraints, and important decisions; do not rely on or merely
-  reference prior chat conversations, "as discussed", or "the conversation above".
-  Include relevant resources and source links, with stage instructions in the flow. Use --priority low for
+  Write the description as "Writing Work Stream Descriptions" says, including
+  the person's decisive quotes so the manager need not fetch them again, and
+  link relevant resources; stage instructions go in the flow. Use --priority low for
   incidental follow-ups and --depends-on for genuine prerequisite deliverables
   (<id>:ready when the work builds on the prerequisite's pull request in the same
   repository and can start once it is open; the default waits until it is done).

@@ -50,7 +50,7 @@ function composeStaticPrompt(type: AgentTypeFile): string {
  */
 const STATIC_PROMPT_BYTE_BUDGETS: Record<string, number> = {
   manager: 50_500,
-  consultant: 40_500,
+  consultant: 41_500,
   reviewer: 31_000,
   sysops: 29_500,
   architect: 29_000,
