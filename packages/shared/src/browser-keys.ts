@@ -39,7 +39,7 @@ export const LEGACY_THEME_LOCAL_OVERRIDE_STORAGE_KEY = 'ficus-theme-local-overri
 
 /** Work stream list/kanban/graph choice: `${prefix}${squadId}` and `${prefix}home.${squadId}`. */
 export const WORK_STREAM_VIEW_STORAGE_PREFIX = 'ficus.wsView.'
-/** "Show summaries" on a work list: `${prefix}${surface}` (feed, home, work), `'true'` when on. */
+/** "Show summaries" on a work list: `${prefix}${surface}` (feed, home, work), `'true'` or `'false'`; on when unset. */
 export const WORK_STREAM_SUMMARIES_STORAGE_PREFIX = 'ficus.wsSummaries.'
 /** Remembered skeleton counts: `${prefix}.${scope}.${surface}`. */
 export const LOADING_SHAPE_STORAGE_PREFIX = 'ficus.loadingShape.v1'

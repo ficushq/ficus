@@ -44,16 +44,21 @@ export function workStreamSummariesStorageKey(surface: WorkStreamSummarySurface)
   return `${WORK_STREAM_SUMMARIES_STORAGE_PREFIX}${surface}`
 }
 
+/** Lists show summary lines until the person turns them off. */
+const SHOW_SUMMARIES_DEFAULT = true
+
 function readShowSummaries(surface: WorkStreamSummarySurface): boolean {
-  if (typeof window === 'undefined') return false
+  if (typeof window === 'undefined') return SHOW_SUMMARIES_DEFAULT
   try {
-    return window.localStorage.getItem(workStreamSummariesStorageKey(surface)) === 'true'
+    const stored = window.localStorage.getItem(workStreamSummariesStorageKey(surface))
+    // Only an explicit 'false' turns them off; a missing or unreadable value keeps the default.
+    return stored === 'false' ? false : stored === 'true' ? true : SHOW_SUMMARIES_DEFAULT
   } catch {
-    return false
+    return SHOW_SUMMARIES_DEFAULT
   }
 }
 
-/** Whether a list shows each active row's summary line; off by default, remembered per surface. */
+/** Whether a list shows each active row's summary line; on by default, remembered per surface. */
 export function useShowWorkStreamSummaries(
   surface: WorkStreamSummarySurface
 ): readonly [boolean, (show: boolean) => void] {
@@ -78,14 +83,13 @@ export function useShowWorkStreamSummaries(
   const show = useSyncExternalStore(
     subscribe,
     () => readShowSummaries(surface),
-    () => false
+    () => SHOW_SUMMARIES_DEFAULT
   )
   const setShow = useCallback(
     (next: boolean) => {
       if (typeof window === 'undefined') return
       try {
-        if (next) window.localStorage.setItem(workStreamSummariesStorageKey(surface), 'true')
-        else window.localStorage.removeItem(workStreamSummariesStorageKey(surface))
+        window.localStorage.setItem(workStreamSummariesStorageKey(surface), next ? 'true' : 'false')
       } catch {
         // Storage can be unavailable in locked-down browser contexts; the list keeps its default.
       }

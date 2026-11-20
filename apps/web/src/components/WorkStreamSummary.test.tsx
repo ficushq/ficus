@@ -95,8 +95,10 @@ const agents: AgentSummary[] = [
   { id: 'agent-2', agentTypeId: 'reviewer', squadId: squad.id, parentAgentId: null, status: 'idle' },
 ]
 
-async function render(node: ReactNode) {
+/** Renders into a fresh window; `storage` is written to its localStorage before the first render. */
+async function render(node: ReactNode, storage: Record<string, string> = {}) {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
+  for (const [key, value] of Object.entries(storage)) dom.window.localStorage.setItem(key, value)
   const { root } = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(queryKeys.agentTypes.list(), [
@@ -215,27 +217,63 @@ test('touch never opens the peek on hover', async () => {
   expect(peekCard()).toBeNull()
 })
 
-test('"Show summaries" adds the line under active rows only, and is remembered per surface', async () => {
+test('"Show summaries" is on by default, shows the line under active rows only, and is remembered per surface', async () => {
   const done = workStream({ id: 'ws-2', title: 'Finished work', status: 'done', derivedState: 'done' })
   const { doc, draw } = await render(feedList([workStream(), done]))
-  expect(doc.querySelector('[data-testid="work-stream-summary-line"]')).toBeNull()
-  const toggle = await feedSwitch(doc)
-  expect(toggle.getAttribute('aria-checked')).toBe('false')
-
-  await dom!.act(async () => toggle.click())
-  expect(toggle.getAttribute('aria-checked')).toBe('true')
   const lines = [...doc.querySelectorAll('[data-testid="work-stream-summary-line"]')]
   expect(lines.map((line) => line.textContent)).toEqual([SUMMARY])
   expect(lines[0]!.getAttribute('title')).toContain('Generated summary')
-  expect(dom!.window.localStorage.getItem(workStreamSummariesStorageKey('feed'))).toBe('true')
+  const toggle = await feedSwitch(doc)
+  expect(toggle.getAttribute('aria-checked')).toBe('true')
 
-  // The Work tab remembers its own choice: still off there.
+  await dom!.act(async () => toggle.click())
+  expect(toggle.getAttribute('aria-checked')).toBe('false')
+  expect(doc.querySelector('[data-testid="work-stream-summary-line"]')).toBeNull()
+  expect(dom!.window.localStorage.getItem(workStreamSummariesStorageKey('feed'))).toBe('false')
+
+  // The Work tab remembers its own choice: still on there.
   await draw(<SquadWorkStreamList workStreams={[workStream()]} squadId={squad.id} squad={squad} />)
-  expect(doc.querySelector('[data-testid="show-summaries-work"]')?.getAttribute('aria-checked')).toBe('false')
+  expect(doc.querySelector('[data-testid="show-summaries-work"]')?.getAttribute('aria-checked')).toBe('true')
+  expect(doc.querySelector('[data-testid="work-stream-summary-line"]')?.textContent).toBe(SUMMARY)
+
+  // Back on the Feed, the choice is still off.
+  await draw(feedList([workStream()]))
+  expect(doc.querySelector('[data-testid="work-stream-summary-line"]')).toBeNull()
+})
+
+const homeList = () => (
+  <SquadWorkStreamList workStreams={[workStream()]} squadId={squad.id} squad={squad} compact activeOnly />
+)
+const homeSwitch = (doc: Document) => doc.querySelector<HTMLButtonElement>('[data-testid="show-summaries-home"]')!
+
+test('Home shows summaries by default and remembers turning them off across a remount', async () => {
+  const { doc, draw } = await render(homeList())
+  expect(homeSwitch(doc).getAttribute('aria-checked')).toBe('true')
+  expect(doc.querySelector('[data-testid="work-stream-summary-line"]')?.textContent).toBe(SUMMARY)
+
+  await dom!.act(async () => homeSwitch(doc).click())
+  expect(homeSwitch(doc).getAttribute('aria-checked')).toBe('false')
+  expect(dom!.window.localStorage.getItem(workStreamSummariesStorageKey('home'))).toBe('false')
+
+  // Unmount, then mount Home again: the choice comes back from storage.
+  await draw(null)
+  expect(homeSwitch(doc)).toBeNull()
+  await draw(homeList())
+  expect(homeSwitch(doc).getAttribute('aria-checked')).toBe('false')
   expect(doc.querySelector('[data-testid="work-stream-summary-line"]')).toBeNull()
 
-  // Back on the Feed, the choice is still on.
-  await draw(feedList([workStream()]))
+  // Turning it back on is remembered the same way.
+  await dom!.act(async () => homeSwitch(doc).click())
+  expect(dom!.window.localStorage.getItem(workStreamSummariesStorageKey('home'))).toBe('true')
+  await draw(null)
+  await draw(homeList())
+  expect(homeSwitch(doc).getAttribute('aria-checked')).toBe('true')
+  expect(doc.querySelector('[data-testid="work-stream-summary-line"]')?.textContent).toBe(SUMMARY)
+})
+
+test('a corrupt stored "Show summaries" value falls back to on', async () => {
+  const { doc } = await render(homeList(), { [workStreamSummariesStorageKey('home')]: '{not-a-boolean' })
+  expect(homeSwitch(doc).getAttribute('aria-checked')).toBe('true')
   expect(doc.querySelector('[data-testid="work-stream-summary-line"]')?.textContent).toBe(SUMMARY)
 })
 
@@ -243,7 +281,6 @@ test('a summary generated for an older step is not shown', async () => {
   const stale = workStream({ step: 'Code review' })
   const { doc } = await render(feedList([stale]))
   const toggle = await feedSwitch(doc)
-  await dom!.act(async () => toggle.click())
   expect(toggle.getAttribute('aria-checked')).toBe('true')
   expect(doc.querySelector('[data-testid="work-stream-summary-line"]')).toBeNull()
   const button = doc.querySelector<HTMLButtonElement>('[data-testid="feed-work-row"] button')!
