@@ -23,6 +23,7 @@ import {
 } from './account-store'
 import type { Credential } from '@earendil-works/pi-ai'
 import { AccountScopedCredentialStore } from './account-auth-backend'
+import type { AccountSubscription } from '../inference-usage/subscription-plan'
 
 describe('account-store', () => {
   const testKey = randomBytes(32).toString('hex')
@@ -275,6 +276,55 @@ describe('account-store', () => {
       await fresh.initialize()
       return JSON.parse(fresh.get(PROVIDER_AUTH_DATA_KEY)!) as AccountStoreV1
     }
+
+    test('a Codex account stored as business from a raw business claim reads as Enterprise; team stays Business', async () => {
+      const codexToken = (plan: string) =>
+        `h.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: plan } })).toString('base64url')}.sig`
+      const legacy: AccountSubscription = {
+        plan: 'business',
+        planSource: 'detected',
+        detectedPlan: 'business',
+        detectedAt: 7,
+      }
+      const oauth = (claim: string) => ({ type: 'oauth', refresh: 'r', access: codexToken(claim), expires: 1 })
+      // Written raw, as a store saved before a raw business claim meant Enterprise would be.
+      await store.set(
+        PROVIDER_AUTH_DATA_KEY,
+        JSON.stringify({
+          version: 1,
+          accounts: {
+            'openai-codex': [
+              { id: 'ent', enabled: true, credential: oauth('business'), subscription: legacy },
+              { id: 'seat', enabled: true, credential: oauth('team'), subscription: legacy },
+              {
+                id: 'chosen',
+                enabled: true,
+                credential: oauth('business'),
+                subscription: { ...legacy, planSource: 'manual' },
+              },
+            ],
+          },
+        }),
+        'admin'
+      )
+
+      const subscriptions = () =>
+        Object.fromEntries(listAccounts(readAccountStore(), 'openai-codex').map((a) => [a.id, a.subscription]))
+      expect(subscriptions()).toEqual({
+        ent: { plan: 'enterprise', planSource: 'detected', detectedPlan: 'enterprise', detectedAt: 7 },
+        seat: legacy,
+        chosen: { plan: 'business', planSource: 'manual', detectedPlan: 'enterprise', detectedAt: 7 },
+      })
+
+      // The next write stores the corrected plan.
+      await mutateAccountStore(() => undefined, 'system')
+      const final = await readFinalDbStore()
+      expect(final.accounts['openai-codex'].map((a) => a.subscription?.plan)).toEqual([
+        'enterprise',
+        'business',
+        'business',
+      ])
+    })
 
     test("a stale-cache mutate does not clobber another process's new account (oauth regression)", async () => {
       // Worker (the singleton) starts with one api_key account in its cache.

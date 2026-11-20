@@ -3,7 +3,12 @@ import { KeyedSerialQueue } from '../../lib/infra/inflight'
 import { getSecretStore } from '../secrets'
 import { notifyOnboardingChanged } from '../onboarding/events'
 import { subscriptionPlansFor } from '@ficus/shared'
-import { applyDetectedPlan, detectedPlanFor, type AccountSubscription } from '../inference-usage/subscription-plan'
+import {
+  applyDetectedPlan,
+  detectedPlanFor,
+  redetectStoredCodexBusinessPlan,
+  type AccountSubscription,
+} from '../inference-usage/subscription-plan'
 
 export interface Account {
   id: string
@@ -465,10 +470,11 @@ function normalizeAccountStore(store: AccountStoreV1, removed?: RemovedCredentia
         if (removed) removed.count++
         return false
       })
-      .map((account) => ({
-        ...account,
-        enabled: account.enabled !== false,
-      }))
+      .map((account) => {
+        const next = { ...account, enabled: account.enabled !== false }
+        redetectStoredCodexBusinessPlan(provider, next)
+        return next
+      })
   }
   salvageStrayCredentials(store, normalized, removed)
   return normalized

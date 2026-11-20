@@ -5,6 +5,7 @@ import {
   detectCodexPlan,
   detectedPlanFor,
   effectiveMonthlyPrice,
+  redetectStoredCodexBusinessPlan,
   subscriptionFee,
   type AccountSubscription,
 } from './subscription-plan'
@@ -23,6 +24,9 @@ describe('plan detection', () => {
     expect(detectCodexPlan(codexToken('go'))).toBe('go')
     // The Business Premium seat; a Standard seat is `team`.
     expect(detectCodexPlan(codexToken('self_serve_business_prolite'))).toBe('self_serve_business_prolite')
+    // A raw `business` claim is an Enterprise workspace (the Codex CLI labels it "Enterprise").
+    expect(detectCodexPlan(codexToken('business'))).toBe('enterprise')
+    expect(detectCodexPlan(codexToken('Business'))).toBe('enterprise')
     expect(detectCodexPlan(jwt({ sub: 'x' }))).toBeUndefined()
     expect(detectCodexPlan('not-a-jwt')).toBeUndefined()
     expect(detectCodexPlan('a.%%%.c')).toBeUndefined()
@@ -84,6 +88,75 @@ describe('plan detection', () => {
     expect(priced('self_serve_business_prolite')).toEqual({
       plan: 'self_serve_business_prolite',
       price: { monthlyUsd: 125, source: 'default' },
+    })
+  })
+
+  test('a raw business claim is Enterprise: no seat fee, it asks for the negotiated price', () => {
+    const account: { subscription?: AccountSubscription } = {}
+    const signIn = { credential: { type: 'oauth', access: codexToken('business') } }
+    expect(applyDetectedPlan(account, detectedPlanFor('openai-codex', signIn), 1)).toBe(true)
+    expect(account.subscription).toEqual({
+      plan: 'enterprise',
+      planSource: 'detected',
+      detectedPlan: 'enterprise',
+      detectedAt: 1,
+    })
+    expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: null, source: null })
+  })
+
+  describe('accounts stored as business before a raw business claim meant Enterprise', () => {
+    const stored = (claim: string, subscription: AccountSubscription) => ({
+      credential: { type: 'oauth', access: codexToken(claim) },
+      subscription: { ...subscription },
+    })
+    const legacy: AccountSubscription = {
+      plan: 'business',
+      planSource: 'detected',
+      detectedPlan: 'business',
+      detectedAt: 7,
+    }
+
+    test('one whose token holds a raw business claim becomes Enterprise, keeping its detection time', () => {
+      const account = stored('business', legacy)
+      expect(redetectStoredCodexBusinessPlan('openai-codex', account)).toBe(true)
+      expect(account.subscription).toEqual({
+        plan: 'enterprise',
+        planSource: 'detected',
+        detectedPlan: 'enterprise',
+        detectedAt: 7,
+      })
+      expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: null, source: null })
+      // Already corrected: nothing changes on the next read.
+      expect(redetectStoredCodexBusinessPlan('openai-codex', account)).toBe(false)
+    })
+
+    test('a Standard Business seat (team) stays a $25 seat', () => {
+      const account = stored('team', legacy)
+      expect(redetectStoredCodexBusinessPlan('openai-codex', account)).toBe(false)
+      expect(account.subscription).toEqual(legacy)
+      expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: 25, source: 'default' })
+    })
+
+    test('a plan an admin chose and a price an admin set are kept', () => {
+      const manual = stored('business', { ...legacy, planSource: 'manual' })
+      expect(redetectStoredCodexBusinessPlan('openai-codex', manual)).toBe(true)
+      expect(manual.subscription).toMatchObject({ plan: 'business', planSource: 'manual', detectedPlan: 'enterprise' })
+
+      const priced = stored('business', { ...legacy, monthlyPriceUsd: 60 })
+      expect(redetectStoredCodexBusinessPlan('openai-codex', priced)).toBe(true)
+      expect(priced.subscription).toMatchObject({ plan: 'enterprise', monthlyPriceUsd: 60 })
+      expect(effectiveMonthlyPrice('openai-codex', priced.subscription)).toEqual({ monthlyUsd: 60, source: 'custom' })
+    })
+
+    test('other providers, other plans and accounts without a readable token are left alone', () => {
+      const otherProvider = stored('business', legacy)
+      expect(redetectStoredCodexBusinessPlan('anthropic', otherProvider)).toBe(false)
+      const otherPlan = stored('business', { plan: 'plus', planSource: 'detected', detectedPlan: 'plus' })
+      expect(redetectStoredCodexBusinessPlan('openai-codex', otherPlan)).toBe(false)
+      expect(otherPlan.subscription.plan).toBe('plus')
+      const unreadable = { credential: { type: 'oauth', access: 'not-a-jwt' }, subscription: { ...legacy } }
+      expect(redetectStoredCodexBusinessPlan('openai-codex', unreadable)).toBe(false)
+      expect(unreadable.subscription).toEqual(legacy)
     })
   })
 
