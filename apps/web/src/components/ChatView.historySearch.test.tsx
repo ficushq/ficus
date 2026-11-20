@@ -110,12 +110,13 @@ let loadOlderCalls: Array<{ minimumMessages?: number } | undefined> = []
 async function render(
   targetDepth: number,
   response: MessageSearchResponse,
-  { hideComposer = true }: { hideComposer?: boolean } = {}
+  { hideComposer = true, innerWidth }: { hideComposer?: boolean; innerWidth?: number } = {}
 ) {
   loadOlderCalls = []
   const scrollIntoView = mock(() => undefined)
   const dom = await acquireDomHarness({
     url: 'http://localhost/chat',
+    windowOptions: innerWidth === undefined ? undefined : { innerWidth },
     configureWindow(window) {
       window.requestAnimationFrame = (callback: FrameRequestCallback) => window.setTimeout(callback, 0)
       window.cancelAnimationFrame = (id: number) => window.clearTimeout(id)
@@ -291,7 +292,11 @@ describe('ChatView history search', () => {
   })
 
   test('offers search in the phone options sheet', async () => {
-    const { dom, document } = await render(10, { results: [], nextCursor: null }, { hideComposer: false })
+    const { dom, document } = await render(
+      10,
+      { results: [], nextCursor: null },
+      { hideComposer: false, innerWidth: 390 }
+    )
     const panel = () => document.querySelector('[data-testid="chat-history-search"]')
     const sheet = () => document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')
     const sheetSearch = () =>

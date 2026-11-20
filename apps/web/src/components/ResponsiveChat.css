@@ -58,6 +58,53 @@
     max-width: min(80rem, calc(100vw - 2rem));
   }
 
+  /* The chat composer folds its action buttons behind one options trigger when it is narrow: on a
+     phone, and also wherever the composer itself is narrow on a wide screen (a floating agent window,
+     a side panel, the assistant). The decision follows the composer's own width, not the viewport's.
+     Keep the 30rem below in step with COMPOSER_COLLAPSE_WIDTH in scripts/check-composer-narrow.ts. */
+  .chat-composer {
+    container: chat-composer / inline-size;
+  }
+
+  .chat-composer-actions {
+    display: flex;
+  }
+
+  .chat-composer-attach {
+    display: none;
+  }
+
+  @media (max-width: 767px) {
+    .chat-composer-actions {
+      display: none;
+    }
+
+    .chat-composer-attach {
+      display: flex;
+    }
+  }
+
+  @container chat-composer (width < 30rem) {
+    .chat-composer-actions {
+      display: none;
+    }
+
+    .chat-composer-attach {
+      display: flex;
+    }
+  }
+
+  /* Send, Stop and the Interrupt / Follow up split button never sit under the actions: when a
+     composer is too narrow for both on one line (a busy turn in a narrow window), they wrap below and
+     stay at the right edge. */
+  .chat-composer-controls {
+    flex-wrap: wrap;
+  }
+
+  .chat-composer-send {
+    margin-left: auto;
+  }
+
   @media (max-width: 767px) {
     .mobile-chat-modal > [data-modal-size] {
       width: 100%;
@@ -100,11 +147,6 @@
 
     .chat-composer-controls {
       min-width: 0;
-      flex-wrap: wrap;
-    }
-
-    .chat-composer-send {
-      margin-left: auto;
     }
 
     .chat-composer .chat-composer-stop {
