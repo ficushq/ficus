@@ -42,13 +42,19 @@ export const LINEAR_POLL_REQUESTS_PER_TICK = 3
  * first, page by page, down to the watermark; what one poll cannot reach, the next one continues.
  */
 export const LINEAR_POLL_MAX_SESSION_PAGES = 5
-/** Requests one poll makes at most while catching up on a session backlog. */
+/**
+ * Requests one poll makes at most while catching up on a session backlog. A poll that finds the
+ * prompts query refused makes one more (the fallback), at most once per
+ * {@link LINEAR_POLL_PROMPT_ENDS_RETRY_MS} for a connection.
+ */
 export const LINEAR_POLL_MAX_REQUESTS_PER_TICK = LINEAR_POLL_REQUESTS_PER_TICK + LINEAR_POLL_MAX_SESSION_PAGES - 1
 /** The prompts and notifications queries that follow the session pages. */
 const REQUESTS_AFTER_SESSIONS = 2
 const MAX_PAGE_CURSOR_LENGTH = 1_000
 const MAX_BOUNDARY_IDS = 50
 const REQUEST_TIMEOUT_MS = 10_000
+/** `linearQuery` failures that can mean Linear refused the query itself (HTTP 400 or GraphQL errors). */
+const REFUSED_QUERY_ERRORS = new Set(['provider_query_failed', 'provider_unavailable'])
 
 /** One query's position: the newest timestamp seen and the IDs seen at exactly that timestamp. */
 export interface LinearPollingWatermark {
@@ -162,16 +168,74 @@ export const LINEAR_POLL_SESSIONS_QUERY = `query FicusLinearPollSessions($first:
     pageInfo { hasNextPage endCursor }
   }
 }`
-/** `last` returns the oldest first, so a full page is continued from its newest item on the next poll. */
-export const LINEAR_POLL_PROMPTS_QUERY = `query FicusLinearPollPrompts($last: Int!, $after: DateTimeOrDuration!) {
+/**
+ * Both ends of a session's prompts. Linear records the request that opened a session as the
+ * session's first prompt activity, so the older of the two ends is that opening prompt. Reading both
+ * ends keeps the answer right whichever way Linear orders the connection.
+ */
+const SESSION_PROMPT_ENDS = `firstPrompt: activities(first: 1, orderBy: createdAt, filter: { type: { eq: "prompt" } }) { nodes { id createdAt } }
+        lastPrompt: activities(last: 1, orderBy: createdAt, filter: { type: { eq: "prompt" } }) { nodes { id createdAt } }`
+function promptsQuery(withEnds: boolean) {
+  return `query FicusLinearPollPrompts($last: Int!, $after: DateTimeOrDuration!) {
   agentActivities(last: $last, orderBy: createdAt, filter: { type: { eq: "prompt" }, createdAt: { gte: $after } }) {
     nodes {
       id createdAt signal user { id } promptAuthor { id } sourceComment { id }
       content { ... on AgentActivityPromptContent { body } }
-      agentSession { id url appUser { id } issue { ${ISSUE_FIELDS} } }
+      agentSession {
+        id url createdAt appUser { id } issue { ${ISSUE_FIELDS} }${withEnds ? `\n        ${SESSION_PROMPT_ENDS}` : ''}
+      }
     }
   }
 }`
+}
+/** `last` returns the oldest first, so a full page is continued from its newest item on the next poll. */
+export const LINEAR_POLL_PROMPTS_QUERY = promptsQuery(true)
+/**
+ * The same query without the session's prompt ends, used while Linear refuses
+ * {@link LINEAR_POLL_PROMPTS_QUERY}. The opening prompt is then recognized by its time alone.
+ */
+export const LINEAR_POLL_PROMPTS_FALLBACK_QUERY = promptsQuery(false)
+/**
+ * How long a connection whose Linear refused the query with the session ends keeps using the
+ * fallback before the full query is tried again, so the refused query is not sent on every poll.
+ */
+export const LINEAR_POLL_PROMPT_ENDS_RETRY_MS = 6 * 3_600_000
+
+/**
+ * How close to its session's creation a prompt must be to count as the session's opening request.
+ * Live, Linear created the opening prompt in the same instant as the session (0 ms apart) for a
+ * delegation, an @mention, a `--linear-session` session and an app-opened session alike; a person's
+ * first follow-up needs the session to exist and a reply to be written, and came minutes later.
+ * Five seconds leaves room for clock rounding without reaching a real follow-up.
+ */
+export const LINEAR_OPENING_PROMPT_TOLERANCE_MS = 5_000
+
+/**
+ * Whether a polled prompt is the request its session was opened with. That prompt is handled as the
+ * session's `created` event (by webhook or poll) and never as `prompted`.
+ *
+ * With the session's prompt ends, it is the oldest of the session's prompts, and only when it was
+ * created within {@link LINEAR_OPENING_PROMPT_TOLERANCE_MS} of the session: a session opened
+ * without an opening prompt keeps its first real follow-up. Without the ends (the fallback query),
+ * the time alone decides. Without a readable session time, no prompt is skipped: a repeated notice
+ * is better than a lost message.
+ */
+export function isLinearOpeningPrompt(session: Record<string, any>, prompt: { id: string; at: number }): boolean {
+  const sessionAt = stamp(session.createdAt)
+  if (!Number.isFinite(sessionAt) || !Number.isFinite(prompt.at)) return false
+  const near = (at: number) => Math.abs(at - sessionAt) <= LINEAR_OPENING_PROMPT_TOLERANCE_MS
+  const ends = [session.firstPrompt, session.lastPrompt]
+    .flatMap((connection) => {
+      const nodes = record(connection).nodes
+      return Array.isArray(nodes) ? nodes : []
+    })
+    .map(record)
+    .map((node) => ({ id: text(node.id), at: stamp(node.createdAt) }))
+    .filter((node) => node.id && Number.isFinite(node.at))
+  if (!ends.length) return near(prompt.at)
+  const oldest = ends.reduce((first, node) => (node.at < first.at ? node : first))
+  return oldest.id === prompt.id && near(oldest.at)
+}
 export const LINEAR_POLL_NOTIFICATIONS_QUERY = `query FicusLinearPollNotifications($last: Int!, $after: DateTimeOrDuration!) {
   notifications(last: $last, orderBy: createdAt, filter: { createdAt: { gte: $after }, type: { in: ["issueUnassignedFromYou"] } }) {
     nodes { id type createdAt ... on IssueNotification { actor { id } issue { ${ISSUE_FIELDS} } } }
@@ -254,6 +318,32 @@ export function createLinearAgentSessionPolling(
 ): EventPollingCapability<unknown> {
   const query = dependencies.query ?? linearQuery
   const clock = dependencies.now ?? (() => new Date())
+  /** Connections whose Linear refused the prompts query with session ends, until when. */
+  const promptEndsRefused = new Map<string, number>()
+
+  type Request = <T>(document: string, variables: Record<string, unknown>) => Promise<T>
+  type PromptPage = { agentActivities?: { nodes?: unknown[] } }
+  /**
+   * The prompts page. When Linear refuses the query with the session's prompt ends (for example a
+   * schema validation error), the previous query without them is sent instead, and the connection
+   * keeps using it for {@link LINEAR_POLL_PROMPT_ENDS_RETRY_MS}. Rate limits and missing scopes are
+   * not refusals of the query and fail the poll as before; so does a failing fallback.
+   */
+  async function readPrompts(request: Request, connectionId: string, after: string): Promise<PromptPage> {
+    const variables = { last: LINEAR_POLL_PAGE_SIZE, after }
+    const now = clock().getTime()
+    if ((promptEndsRefused.get(connectionId) ?? 0) > now)
+      return request<PromptPage>(LINEAR_POLL_PROMPTS_FALLBACK_QUERY, variables)
+    try {
+      return await request<PromptPage>(LINEAR_POLL_PROMPTS_QUERY, variables)
+    } catch (error) {
+      if (!(error instanceof Error) || !REFUSED_QUERY_ERRORS.has(error.message)) throw error
+      const page = await request<PromptPage>(LINEAR_POLL_PROMPTS_FALLBACK_QUERY, variables)
+      promptEndsRefused.set(connectionId, now + LINEAR_POLL_PROMPT_ENDS_RETRY_MS)
+      log.warn('Linear refused the prompts query with session prompt ends; using the query without them for 6 hours')
+      return page
+    }
+  }
 
   return {
     async poll(connection: RuntimeConnection<unknown>, storedCursor, signal?: EventPollingSignal) {
@@ -340,10 +430,7 @@ export function createLinearAgentSessionPolling(
       }
 
       // 2. Prompts, oldest first, from the watermark.
-      const promptPage = await request<{ agentActivities?: { nodes?: unknown[] } }>(LINEAR_POLL_PROMPTS_QUERY, {
-        last: LINEAR_POLL_PAGE_SIZE,
-        after: cursor.prompts.createdAfter,
-      })
+      const promptPage = await readPrompts(request, connection.id, cursor.prompts.createdAfter)
       const prompts = advanceLinearWatermark(
         { at: cursor.prompts.createdAfter, boundaryIds: cursor.prompts.boundaryIds },
         (promptPage.agentActivities?.nodes ?? [])
@@ -354,6 +441,10 @@ export function createLinearAgentSessionPolling(
       for (const { id, node } of [...prompts.fresh].sort((a, b) => a.at - b.at)) {
         const session = record(node.agentSession)
         if (!text(session.id) || text(record(session.appUser).id) !== appUserId) continue
+        // The session's opening request is not a follow-up. Delivered as `prompted`, it would answer
+        // an unbound session a second time, give a bound stream its own request as a candidate answer
+        // and repeat the manager notice.
+        if (isLinearOpeningPrompt(session, { id, at: stamp(node.createdAt) })) continue
         const issue = record(session.issue)
         const sourceCommentId = text(record(node.sourceComment).id)
         events.push({

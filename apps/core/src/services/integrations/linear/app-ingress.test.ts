@@ -18,6 +18,8 @@ import {
 } from '../../../db'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import { LINEAR_ACK_BODY } from './session-acknowledger'
+import { linearActivityId } from './app-api'
+import { announceLinearSessionBinding } from './session-binding'
 import { inaccessibleLinearTeams, linearTeamAccessSetupIssues } from './team-access'
 import { isUntrustedOutputActor } from '../outputs/authority'
 import { setEventRuleDecideForTests } from '../outputs/event-rule-decisions'
@@ -163,6 +165,44 @@ describe('acknowledgment', () => {
     expect(linear.activitiesFor(sessionId)[0]?.content.body).toBe(LINEAR_ACK_BODY)
     const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
     expect(row?.ackState).toBe('sent')
+  })
+
+  // Live, Linear answers a repeated activity ID with HTTP 200 and "conflict on insert of AgentActivity".
+  test('an acknowledgment stored by Linear but answered too late counts as sent, and the disposition follows', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    linear.failNext('stored-then-timeout', 'FicusAgentActivity')
+    await created(sessionId)
+    const acks = linear.calls.filter(
+      (call) => call.operation === 'FicusAgentActivity' && call.variables.input?.content?.body === LINEAR_ACK_BODY
+    )
+    // The retry reused the activity ID and met the conflict.
+    expect(acks).toHaveLength(2)
+    expect(acks[1]!.variables.input.id).toBe(acks[0]!.variables.input.id)
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body],
+    ])
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row).toMatchObject({ ackState: 'sent', dispositionState: 'sent', disposition: 'notified' })
+  })
+
+  test('a disposition Linear already holds counts as sent', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    // An earlier attempt stored it and its answer was lost.
+    linear.activities.push({
+      id: linearActivityId(sessionId, 'disposition'),
+      agentSessionId: sessionId,
+      content: LINEAR_DISPOSITION_ACTIVITIES.notified,
+      at: now,
+    })
+    await created(sessionId)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row).toMatchObject({ ackState: 'sent', dispositionState: 'sent', disposition: 'notified' })
+    expect(bodies(sessionId).filter(([type]) => type === 'response')).toHaveLength(1)
   })
 
   test('an app without the write scope is not retried and is marked for reconnect', async () => {
@@ -381,6 +421,20 @@ describe('disposition and authority', () => {
     linear.addSession({ id: plain, issueId: other.id })
     await created(plain, { issue: other })
     expect(linear.sessions.get(plain)?.externalUrls).toEqual([])
+  })
+
+  test('a binding thought Linear already holds still adds Open in Ficus', async () => {
+    await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    process.env.APP_URL = 'https://ficus.example.com'
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    // As if the link had failed after the thought was stored: announcing again meets the conflict.
+    linear.sessions.get(sessionId)!.externalUrls = []
+    await announceLinearSessionBinding(sessionId, row!.workStreamId!)
+    expect(linear.sessions.get(sessionId)!.externalUrls.map((link) => link.label)).toEqual(['Open in Ficus'])
+    expect(bodies(sessionId).filter(([, body]) => body === 'Ficus started tracking this work.')).toHaveLength(1)
   })
 
   test('a later session on an issue a stream already tracks binds to that stream', async () => {

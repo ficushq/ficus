@@ -5,7 +5,9 @@
  * It answers `viewer`, `organization`, `issue`, `comment`, `user`, `teams`, `agentSessions`,
  * `agentActivities`, `notifications`, `agentActivityCreate`, `agentSessionUpdate`,
  * `agentSessionCreateOnIssue` and `attachmentLinkGitHubPR`; records every call with the fake clock's
- * time; rejects a duplicate client-supplied activity ID; keeps attachment URLs idempotent per issue;
+ * time; records each session's opening request as its first prompt (also for a session the app
+ * opens), as Linear does; rejects a duplicate
+ * client-supplied activity ID with Linear's live answer; keeps attachment URLs idempotent per issue;
  * and can be told to fail the next call with 401, 403, 429, a GraphQL error or a timeout.
  */
 import { createHmac, randomUUID } from 'node:crypto'
@@ -41,6 +43,8 @@ export interface FakeLinearCall {
   variables: Record<string, any>
   authorization: string
   at: number
+  /** The GraphQL document sent. */
+  query: string
 }
 export interface FakeLinearPrompt {
   id: string
@@ -58,7 +62,11 @@ export interface FakeLinearNotification {
   createdAt: string
 }
 /** `scope` is Linear's answer to a token without a required scope, as recorded live (HTTP 400). */
-export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'scope' | 'timeout'
+/**
+ * `stored-then-timeout` processes the call (an activity is stored) and then never answers, as when
+ * Linear stores a write whose response is lost: a retry with the same activity ID meets the duplicate.
+ */
+export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'scope' | 'timeout' | 'stored-then-timeout'
 
 export interface FakeLinearOptions {
   organization?: { id: string; name: string; urlKey: string }
@@ -102,6 +110,9 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
   const teams: string[] = []
   const calls: FakeLinearCall[] = []
   const failures: Array<{ operation?: string; failure: FakeLinearFailure }> = []
+
+  /** While set, the prompts query with session prompt ends is refused as a schema validation error. */
+  const refusePromptEnds = { value: false }
 
   function failNext(failure: FakeLinearFailure, operation?: string) {
     failures.push({ operation, failure })
@@ -162,7 +173,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         const input = variables.input ?? {}
         if (!sessions.has(input.agentSessionId)) return { errors: [{ message: 'Entity not found: AgentSession' }] }
         if (input.id && activities.some((activity) => activity.id === input.id))
-          return { errors: [{ message: 'Agent activity with this id already exists' }] }
+          return { errors: [{ message: 'conflict on insert of AgentActivity' }] }
         activities.push({
           id: input.id ?? randomUUID(),
           agentSessionId: input.agentSessionId,
@@ -194,6 +205,14 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
           updatedAt: new Date(clock()).toISOString(),
           createdAt: new Date(clock()).toISOString(),
           status: 'pending',
+        })
+        // Live, Linear records an opening prompt for a session the app opens too, authored by the app.
+        prompts.push({
+          id: randomUUID(),
+          sessionId: id,
+          userId: app.id,
+          body: `Work on ${issues.get(issueId)!.identifier}`,
+          createdAt: new Date(clock()).toISOString(),
         })
         data.agentSessionCreateOnIssue = { success: true, agentSession: { id } }
       }
@@ -273,6 +292,14 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         ).map((prompt) => {
           const session = sessions.get(prompt.sessionId)
           const issue = session ? issues.get(session.issueId) : undefined
+          // The session's own prompts, as `activities(first: 1)` (newest) and `activities(last: 1)`
+          // (oldest) return them; the oldest is the prompt that opened the session.
+          const own = prompts
+            .filter((other) => other.sessionId === prompt.sessionId)
+            .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+          const end = (entry: FakeLinearPrompt | undefined) => ({
+            nodes: entry ? [{ id: entry.id, createdAt: entry.createdAt }] : [],
+          })
           return {
             id: prompt.id,
             createdAt: prompt.createdAt,
@@ -284,8 +311,11 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
             agentSession: {
               id: prompt.sessionId,
               url: `https://linear.app/acme/agent-session/${prompt.sessionId}`,
+              createdAt: session?.createdAt ?? null,
               appUser: { id: session?.appUserId ?? app.id },
               issue: issue ? issueNode(issue) : null,
+              firstPrompt: end(own.at(-1)),
+              lastPrompt: end(own[0]),
             },
           }
         }),
@@ -315,11 +345,12 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? 'anonymous'
     const authorization = new Headers(init?.headers).get('Authorization') ?? ''
     if (options.latencyMs) options.advance?.(options.latencyMs)
-    calls.push({ operation, variables: body.variables ?? {}, authorization, at: clock() })
+    calls.push({ operation, variables: body.variables ?? {}, authorization, at: clock(), query })
     const index = failures.findIndex((entry) => !entry.operation || entry.operation === operation)
     if (index >= 0) {
       const failure = failures.splice(index, 1)[0]!.failure
-      if (failure === 'timeout') {
+      if (failure === 'stored-then-timeout') respond(query, body.variables ?? {})
+      if (failure === 'timeout' || failure === 'stored-then-timeout') {
         const signal = init?.signal
         return new Promise<Response>((_, reject) => {
           const abort = () => reject(signal?.reason ?? new DOMException('The operation timed out.', 'TimeoutError'))
@@ -345,6 +376,19 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         { status: failure, headers: failure === 429 ? { 'Retry-After': '30' } : {} }
       )
     }
+    // Linear answers a query its schema does not accept with HTTP 400 and a validation error.
+    if (refusePromptEnds.value && query.includes('firstPrompt:'))
+      return Response.json(
+        {
+          errors: [
+            {
+              message: 'Cannot query field "activities" on type "AgentSession".',
+              extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+            },
+          ],
+        },
+        { status: 400 }
+      )
     if (options.tokens?.length && !options.tokens.includes(authorization))
       return Response.json({ errors: [{ message: 'Authentication required' }] }, { status: 401 })
     return Response.json(respond(query, body.variables ?? {}))
@@ -363,6 +407,9 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     teams,
     calls,
     failNext,
+    refusePromptEnds(refuse = true) {
+      refusePromptEnds.value = refuse
+    },
     addUser(user: FakeLinearUser) {
       users.set(user.id, user)
       return user
@@ -383,16 +430,32 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       /** False for a session without Linear's system thread comment (older payloads). */
       rootComment?: boolean
       at?: number
+      /**
+       * Linear records the request that opened a session as its first prompt activity. The ID
+       * defaults to a random one; `false` leaves the session without one.
+       */
+      openingPrompt?: { id?: string; body?: string } | false
     }) {
+      const { openingPrompt, ...fields } = session
       const at = new Date(session.at ?? clock()).toISOString()
       sessions.set(session.id, {
-        ...session,
+        ...fields,
         appUserId: session.appUserId ?? app.id,
         externalUrls: [],
         updatedAt: at,
         createdAt: at,
         status: session.status ?? 'pending',
       })
+      if (openingPrompt === false) return { openingPromptId: undefined }
+      const opening: FakeLinearPrompt = {
+        id: openingPrompt?.id ?? randomUUID(),
+        sessionId: session.id,
+        userId: session.creatorId ?? 'member',
+        body: openingPrompt?.body ?? 'Please take this issue',
+        createdAt: at,
+      }
+      prompts.push(opening)
+      return { openingPromptId: opening.id }
     },
     addPrompt(prompt: Omit<FakeLinearPrompt, 'createdAt'> & { at?: number }) {
       const { at, ...rest } = prompt
@@ -460,6 +523,8 @@ export function agentSessionCreatedPayload(
     /** False to leave out the root comment object (an older payload); a delegation then has none at all. */
     rootComment?: boolean
     timestamp?: number
+    /** The opening prompt activity, when the delivery names it. */
+    activityId?: string
   }
 ) {
   // Linear gives a delegation a root comment too: its authorless thread comment.
@@ -499,6 +564,7 @@ export function agentSessionCreatedPayload(
     promptContext: input.issue
       ? `<issue identifier="${input.issue.identifier}"><title>${input.issue.title}</title></issue>`
       : '',
+    ...(input.activityId ? { agentActivity: { id: input.activityId, userId: input.creatorId, body: '' } } : {}),
     webhookTimestamp: input.timestamp ?? Date.now(),
   }
 }

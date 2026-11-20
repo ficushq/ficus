@@ -14,6 +14,9 @@ import {
   LINEAR_POLL_SLOW_MS,
   LINEAR_SESSION_RETRY_REQUESTS,
   LINEAR_POLL_WEBHOOK_RECENCY_MS,
+  isLinearOpeningPrompt,
+  LINEAR_OPENING_PROMPT_TOLERANCE_MS,
+  LINEAR_POLL_PROMPT_ENDS_RETRY_MS,
   linearSessionNeedsHandling,
   parseLinearPollingCursor,
   type KnownLinearSession,
@@ -366,7 +369,8 @@ describe('Linear agent session polling', () => {
   })
 
   test('prompts on the app’s sessions become prompted events, oldest first', async () => {
-    linear.addSession({ id: 'session-1', issueId: issue.id, status: 'active', at: NOW - 60_000 })
+    // Opened before the install time, like its oldest follow-up, which is still older than the poll reads.
+    linear.addSession({ id: 'session-1', issueId: issue.id, status: 'active', at: NOW - 7_300_000 })
     linear.addSession({ id: 'foreign', issueId: issue.id, appUserId: 'another-app', at: NOW - 60_000 })
     linear.addPrompt({
       id: 'prompt-2',
@@ -407,6 +411,197 @@ describe('Linear agent session polling', () => {
     const prompts = result.nextCursor.prompts as { createdAfter: string; boundaryIds: string[] }
     expect(prompts.createdAfter).toBe(iso(-1_000))
     expect([...prompts.boundaryIds].sort()).toEqual(['foreign-prompt', 'stop'])
+  })
+
+  describe('a session’s opening prompt', () => {
+    // Live: about four minutes after a session opened, polling delivered the prompt Linear records
+    // for the opening request as `prompted`, so the session was answered or notified twice.
+    test('is not delivered as a prompt; a later prompt on the same session is', async () => {
+      const { openingPromptId } = linear.addSession({
+        id: 'session-1',
+        issueId: issue.id,
+        creatorId: 'member',
+        at: NOW - 240_000,
+      })
+      known.set('session-1', { connectionId: appConnection.id, ackState: 'sent', dispositionState: 'sent' })
+      const first = await polling().poll(appConnection, null)
+      expect(first.events).toEqual([])
+      // The opening prompt still moves the watermark, so it is not read again.
+      expect(first.nextCursor.prompts).toEqual({ createdAfter: iso(-240_000), boundaryIds: [openingPromptId] })
+      linear.addPrompt({
+        id: 'follow-up',
+        sessionId: 'session-1',
+        userId: 'member',
+        body: 'Any news?',
+        at: NOW - 1_000,
+      })
+      const second = await polling().poll(appConnection, first.nextCursor)
+      expect(second.events.map((event) => event.logicalEventKey)).toEqual(['linear:activity:follow-up'])
+    })
+
+    test('is recognized however Linear orders the session’s prompts', async () => {
+      linear.addSession({ id: 'session-1', issueId: issue.id, creatorId: 'member', at: NOW - 240_000 })
+      linear.addPrompt({
+        id: 'follow-up',
+        sessionId: 'session-1',
+        userId: 'member',
+        body: 'Any news?',
+        at: NOW - 1_000,
+      })
+      // The same answers with the two ends swapped, as if `first` returned the oldest.
+      const swapped: LinearPollingDependencies['query'] = async (auth, document, variables, signal) => {
+        const { linearQuery } = await import('./plugin')
+        const data = (await linearQuery(auth, document, variables, signal)) as any
+        for (const node of data.agentActivities?.nodes ?? []) {
+          const { firstPrompt, lastPrompt } = node.agentSession
+          node.agentSession.firstPrompt = lastPrompt
+          node.agentSession.lastPrompt = firstPrompt
+        }
+        return data
+      }
+      const result = await polling({ query: swapped }).poll(appConnection, null)
+      expect(result.events.map((event) => event.logicalEventKey)).toEqual([
+        'linear:session:session-1:created',
+        'linear:activity:follow-up',
+      ])
+    })
+
+    test('only the oldest prompt created with its session counts; without ends, the time alone decides', () => {
+      const session = (ends: Record<string, unknown>) => ({ createdAt: iso(-60_000), ...ends })
+      const end = (id: string, offsetMs: number) => ({ nodes: [{ id, createdAt: iso(offsetMs) }] })
+      const opening = { id: 'opening', at: NOW - 60_000 }
+      // Whichever end Linear returns first.
+      expect(
+        isLinearOpeningPrompt(
+          session({ firstPrompt: end('newest', -1_000), lastPrompt: end('opening', -60_000) }),
+          opening
+        )
+      ).toBe(true)
+      expect(
+        isLinearOpeningPrompt(
+          session({ firstPrompt: end('opening', -60_000), lastPrompt: end('newest', -1_000) }),
+          opening
+        )
+      ).toBe(true)
+      expect(
+        isLinearOpeningPrompt(session({ firstPrompt: end('newest', -1_000), lastPrompt: end('opening', -60_000) }), {
+          id: 'newest',
+          at: NOW - 1_000,
+        })
+      ).toBe(false)
+      // Within the tolerance, and just outside it.
+      const edge = -60_000 + LINEAR_OPENING_PROMPT_TOLERANCE_MS
+      expect(
+        isLinearOpeningPrompt(session({ firstPrompt: end('p', edge), lastPrompt: end('p', edge) }), {
+          id: 'p',
+          at: NOW + edge,
+        })
+      ).toBe(true)
+      expect(
+        isLinearOpeningPrompt(session({ firstPrompt: end('p', edge + 1), lastPrompt: end('p', edge + 1) }), {
+          id: 'p',
+          at: NOW + edge + 1,
+        })
+      ).toBe(false)
+      // The fallback query has no ends.
+      expect(isLinearOpeningPrompt(session({}), opening)).toBe(true)
+      expect(isLinearOpeningPrompt(session({}), { id: 'later', at: NOW - 1_000 })).toBe(false)
+      // No readable session time: nothing is skipped.
+      expect(isLinearOpeningPrompt({ firstPrompt: end('opening', -60_000) }, opening)).toBe(false)
+    })
+
+    test('a session opened without an opening prompt keeps its first follow-up', async () => {
+      linear.addSession({
+        id: 'session-1',
+        issueId: issue.id,
+        status: 'active',
+        at: NOW - 240_000,
+        openingPrompt: false,
+      })
+      known.set('session-1', { connectionId: appConnection.id, ackState: 'sent', dispositionState: 'sent' })
+      linear.addPrompt({
+        id: 'first-reply',
+        sessionId: 'session-1',
+        userId: 'member',
+        body: 'Any news?',
+        at: NOW - 60_000,
+      })
+      const result = await polling().poll(appConnection, null)
+      expect(result.events.map((event) => event.logicalEventKey)).toEqual(['linear:activity:first-reply'])
+    })
+
+    describe('when Linear refuses the query with the session ends', () => {
+      beforeEach(() => {
+        linear.refusePromptEnds()
+        linear.addSession({ id: 'session-1', issueId: issue.id, status: 'active', at: NOW - 240_000 })
+        known.set('session-1', { connectionId: appConnection.id, ackState: 'sent', dispositionState: 'sent' })
+        linear.addPrompt({
+          id: 'follow-up',
+          sessionId: 'session-1',
+          userId: 'member',
+          body: 'Any news?',
+          at: NOW - 1_000,
+        })
+      })
+      const promptQueries = () =>
+        linear.calls
+          .filter((call) => call.operation === 'FicusLinearPollPrompts')
+          .map((call) => (call.query.includes('firstPrompt:') ? 'with ends' : 'without'))
+
+      test('the poll falls back to the query without them, still skipping the opening prompt by its time', async () => {
+        const budget = createEventPollingBudget(10)
+        const result = await polling().poll(appConnection, null, budget.signal)
+        expect(result.events.map((event) => event.logicalEventKey)).toEqual(['linear:activity:follow-up'])
+        expect(promptQueries()).toEqual(['with ends', 'without'])
+        expect(budget.consumed).toBe(LINEAR_POLL_REQUESTS_PER_TICK + 1)
+        expect(pollOperations().at(-1)).toBe('FicusLinearPollNotifications')
+      })
+
+      test('the connection keeps the fallback for six hours, then tries the full query again', async () => {
+        let now = NOW
+        const capability = polling({ now: () => new Date(now) })
+        const first = await capability.poll(appConnection, null)
+        await capability.poll(appConnection, first.nextCursor)
+        expect(promptQueries()).toEqual(['with ends', 'without', 'without'])
+        linear.refusePromptEnds(false)
+        now += LINEAR_POLL_PROMPT_ENDS_RETRY_MS + 1
+        await capability.poll(appConnection, first.nextCursor)
+        expect(promptQueries()).toEqual(['with ends', 'without', 'without', 'with ends'])
+      })
+
+      test('a failing fallback fails the poll and remembers nothing', async () => {
+        linear.failNext(500, 'FicusLinearPollPrompts')
+        linear.failNext(500, 'FicusLinearPollPrompts')
+        const capability = polling()
+        await expect(capability.poll(appConnection, null)).rejects.toThrow('provider_unavailable')
+        linear.refusePromptEnds(false)
+        await capability.poll(appConnection, null)
+        expect(promptQueries().at(-1)).toBe('with ends')
+      })
+
+      test('a rate limit is not taken for a refusal', async () => {
+        linear.refusePromptEnds(false)
+        linear.failNext(429, 'FicusLinearPollPrompts')
+        await expect(polling().poll(appConnection, null)).rejects.toBeInstanceOf(EventPollingRetryError)
+        expect(promptQueries()).toEqual(['with ends'])
+      })
+    })
+
+    test('the prompts query asks for both ends of each session’s prompts and the session’s time', async () => {
+      const { LINEAR_POLL_PROMPTS_QUERY, LINEAR_POLL_PROMPTS_FALLBACK_QUERY } = await import('./polling')
+      expect(LINEAR_POLL_PROMPTS_QUERY).toContain('agentSession {\n        id url createdAt')
+      expect(LINEAR_POLL_PROMPTS_FALLBACK_QUERY).toContain('agentSession {\n        id url createdAt')
+      expect(LINEAR_POLL_PROMPTS_FALLBACK_QUERY).not.toContain('activities(')
+      expect(LINEAR_POLL_PROMPTS_FALLBACK_QUERY).toBe(
+        LINEAR_POLL_PROMPTS_QUERY.replace(/\n\s*firstPrompt:[^\n]*\n\s*lastPrompt:[^\n]*/, '')
+      )
+      expect(LINEAR_POLL_PROMPTS_QUERY).toContain(
+        'firstPrompt: activities(first: 1, orderBy: createdAt, filter: { type: { eq: "prompt" } }) { nodes { id createdAt } }'
+      )
+      expect(LINEAR_POLL_PROMPTS_QUERY).toContain(
+        'lastPrompt: activities(last: 1, orderBy: createdAt, filter: { type: { eq: "prompt" } }) { nodes { id createdAt } }'
+      )
+    })
   })
 
   test('undelegation notifications become notification events', async () => {

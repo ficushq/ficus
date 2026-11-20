@@ -33,6 +33,7 @@ import {
   LINEAR_OUTBOX_MAX_ATTEMPTS,
   LINEAR_SESSION_ACTIVITIES_PER_HOUR,
 } from './outbox'
+import { dispatchPolledLinearEvent, linearAgentSessionPolling, listLinearPollingWatches } from './polling-runtime'
 import { openLinearSessionForStream } from './proactive-session'
 import { projectLinearWriteBack, streamPullRequest } from './session-projector'
 import { LINEAR_PROMPT_TEXT, LINEAR_STOP_TEXT, matchLinearSelectReply } from './session-prompts'
@@ -720,6 +721,35 @@ describe('questions as elicitations', () => {
     expect(bodies(sessionId).some(([, body]) => String(body).startsWith('Answered in Ficus'))).toBe(false)
   })
 
+  // Live: a poll delivered a bound session's opening request back to its stream as a candidate answer.
+  test('a poll never hands the bound stream its own opening request, as a candidate answer or a prompt', async () => {
+    const owner = await addUser()
+    const { sessionId, stream } = await boundStream()
+    const { agentId, questionId } = await askQuestion(stream.id, owner, selectQuestion)
+    await project(stream.id)
+    const [watch] = (await listLinearPollingWatches()).filter((entry) => entry.connection.id === fixture.connectionId)
+    const result = await linearAgentSessionPolling.poll(watch!.connection, null)
+    for (const event of result.events) await dispatchPolledLinearEvent(event)
+    expect(result.events).toEqual([])
+    const messages = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    expect(messages.filter((message) => message.subject === 'Candidate answer from Linear')).toEqual([])
+    const [mirror] = await db
+      .select()
+      .from(linearQuestionMirrors)
+      .where(eq(linearQuestionMirrors.questionId, questionId))
+    expect(mirror!.state).toBe('open')
+    const prompted = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          sql`${integrationOutputEvents.fact}->>'output' = 'agent_session.prompted'`,
+          sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`
+        )
+      )
+    expect(prompted).toEqual([])
+  })
+
   test('candidates: unlinked authors may be resolved by the agent, linked users without permission may not', async () => {
     const owner = await addUser()
     const stranger = await addUser()
@@ -834,6 +864,56 @@ describe('questions as elicitations', () => {
 })
 
 describe('--linear-session', () => {
+  // Live (FIC-7, stream 1368): Linear records an app-authored opening prompt ('Work on FIC-7') for a
+  // session Ficus opens, and a poll handed it back to the stream as an untrusted candidate answer.
+  test('a poll never hands a stream its own session’s app-authored opening prompt', async () => {
+    const owner = await addUser()
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    const target = {
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 7,
+      externalId: issue.id,
+    } as const
+    const [stream] = await db
+      .insert(workStreams)
+      .values({
+        squadId: squad.id,
+        title: 'Manual stream',
+        status: 'active',
+        metadata: { tracked: [{ ...target, connectionId: fixture.connectionId }] },
+      })
+      .returning()
+    const { sessionId } = await openLinearSessionForStream(stream!.id, target)
+    expect(linear.prompts.filter((entry) => entry.sessionId === sessionId)).toEqual([
+      expect.objectContaining({ userId: fixture.appUserId, body: 'Work on ENG-7' }),
+    ])
+    const { agentId, questionId } = await askQuestion(stream!.id, owner, selectQuestion)
+    await project(stream!.id)
+    const [watch] = (await listLinearPollingWatches()).filter((entry) => entry.connection.id === fixture.connectionId)
+    const result = await linearAgentSessionPolling.poll(watch!.connection, null)
+    for (const event of result.events) await dispatchPolledLinearEvent(event)
+    expect(result.events.filter((event) => (event.payload as any).action === 'prompted')).toEqual([])
+    const messages = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    expect(messages.filter((message) => message.subject === 'Candidate answer from Linear')).toEqual([])
+    const [mirror] = await db
+      .select()
+      .from(linearQuestionMirrors)
+      .where(eq(linearQuestionMirrors.questionId, questionId))
+    expect(mirror!.state).toBe('open')
+    const prompted = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          sql`${integrationOutputEvents.fact}->>'output' = 'agent_session.prompted'`,
+          sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`
+        )
+      )
+    expect(prompted).toEqual([])
+  })
+
   test('opens a session on the tracked issue, binds it and announces the binding', async () => {
     const squad = await fixture.addSquad({ teamIds: [teamId] })
     const [stream] = await db
