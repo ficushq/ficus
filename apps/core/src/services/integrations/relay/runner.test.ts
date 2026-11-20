@@ -6,7 +6,7 @@ import { PlatformRequestError, type platformRequest } from '../../platform/insta
 import { linearRelayProvider, type LinearRelayInterest } from './linear-runtime'
 import type { LinearRelayDelivery, RelayDelivery, SlackRelayDelivery } from '@ficus/shared/integration-relay'
 
-function fixture() {
+function fixture(options: { prepare?: (deliveries: RelayDelivery[]) => Promise<void> } = {}) {
   const id = crypto.randomUUID(),
     revision = crypto.randomUUID()
   const state = {
@@ -58,6 +58,7 @@ function fixture() {
       if (state.failDispatch) throw new Error('relay_authorization_unavailable')
       state.dispatched.push(...interests.map((interest) => `${event.id}:${interest.squadId}`))
     },
+    ...(options.prepare ? { prepare: options.prepare } : {}),
     now: () => state.now,
     onError: (code) => state.errors.push(code),
   })
@@ -159,6 +160,35 @@ describe('managed relay consumer', () => {
     state.interests.push({ ...state.interests[0]!, squadId: 's2' })
     await runner.tick()
     expect(state.dispatched).toEqual([`${delivery.id}:s1`, `${delivery.id}:s2`])
+    expect(state.calls.at(-1)!.path).toBe('ack')
+  })
+  test('prepare sees the whole current batch before any delivery is dispatched; its failure does not stop dispatch', async () => {
+    const order: string[] = []
+    let fail = false
+    const { state, runner, delivery } = fixture({
+      prepare: async (deliveries) => {
+        order.push(`prepare:${deliveries.map((item) => item.id).join(',')}`)
+        if (fail) throw new Error('slow provider')
+      },
+    })
+    const second = { ...delivery, id: crypto.randomUUID(), leaseToken: crypto.randomUUID() }
+    const stale = { ...delivery, id: crypto.randomUUID(), connectionRevision: crypto.randomUUID() }
+    state.deliveries = [delivery, second]
+    const dispatched = state.dispatched
+    dispatched.push = (...items: string[]) => (order.push(...items), Array.prototype.push.apply(dispatched, items))
+    await runner.tick()
+    expect(order).toEqual([`prepare:${delivery.id},${second.id}`, `${delivery.id}:s1`, `${second.id}:s1`])
+    // A delivery for another revision is never prepared (dispatch then rejects the batch as before).
+    order.length = 0
+    state.deliveries = [stale]
+    await runner.tick()
+    expect(order).toEqual([])
+    order.length = 0
+    fail = true
+    state.now += 120_000
+    state.deliveries = [delivery]
+    await runner.tick()
+    expect(order).toEqual([`prepare:${delivery.id}`, `${delivery.id}:s1`])
     expect(state.calls.at(-1)!.path).toBe('ack')
   })
   test('detach or reconnect during the HTTP request cannot dispatch old content', async () => {

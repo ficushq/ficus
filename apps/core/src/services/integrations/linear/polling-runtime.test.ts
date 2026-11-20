@@ -226,6 +226,24 @@ describe('recovered sessions', () => {
     expect(bodies(sessionId)).toHaveLength(2)
   })
 
+  test("a polled delegation (Linear's authorless thread comment) routes as issue.delegated, a polled mention as issue.mentioned", async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const delegation = randomUUID()
+    const mention = randomUUID()
+    const commentId = randomUUID()
+    // The fake gives the delegation Linear's system root comment, as the live API does.
+    linear.addSession({ id: delegation, issueId: issue.id, creatorId: member.id })
+    linear.addSession({ id: mention, issueId: issue.id, creatorId: member.id, commentId })
+    await pollOnce()
+    expect(await sessionRow(delegation)).toMatchObject({ trigger: 'delegation', disposition: 'notified' })
+    expect(await sessionRow(mention)).toMatchObject({ trigger: 'mention', rootCommentId: commentId })
+    const delegated = await outputs('issue.delegated')
+    expect(delegated.map((row) => (row.fact.data as any).session.id)).toEqual([delegation])
+    const mentioned = await outputs('issue.mentioned')
+    expect(mentioned.map((row) => (row.fact.data as any).session.id)).toEqual([mention])
+    expect((mentioned[0]!.fact.data as any).comment).toEqual({ id: commentId })
+  })
+
   test('a session the webhook fully handled is not handled again by polling', async () => {
     await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()

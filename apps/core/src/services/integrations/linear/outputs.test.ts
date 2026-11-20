@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { IntegrationOutputFact } from '@ficus/shared'
-import { linearOutputAdapter } from './outputs'
+import { linearOutputAdapter, linearSessionTrigger } from './outputs'
 
 const issueUrl = 'https://linear.app/acme/issue/ENG-123'
 function issueData(changes: Record<string, unknown> = {}) {
@@ -338,6 +338,62 @@ test('a mention session yields the session fact and exactly one mentioned fact',
   expect(facts.map((fact) => fact.output)).toEqual(['agent_session.created', 'issue.mentioned'])
   expect(facts[0]!.data).toMatchObject({ session: { trigger: 'mention' }, comment: { id: 'comment-uuid' } })
   expect(facts[1]!.data).toMatchObject({ comment: { id: 'comment-uuid' }, session: { id: 'session-uuid' } })
+})
+
+// Live shapes (stream 1368): Linear gives a delegation session an authorless system root comment too.
+const systemComment = {
+  commentId: 'system-comment',
+  comment: { id: 'system-comment', body: 'This thread is for an agent session with ficus.' },
+}
+const humanComment = {
+  commentId: 'comment-uuid',
+  comment: { id: 'comment-uuid', body: 'test @ficus mention', userId: 'person' },
+}
+
+test("a delegation session with Linear's system root comment is a delegation, not a mention", () => {
+  const facts = linearOutputAdapter.normalize(sessionEvent('created', systemComment))
+  expect(facts.map((fact) => fact.output)).toEqual(['agent_session.created', 'issue.delegated'])
+  expect(facts[0]!.data).toMatchObject({ session: { trigger: 'delegation' }, comment: { id: 'system-comment' } })
+  expect(facts[1]!.data).toMatchObject({ action: 'delegated', delegate: app, session: { id: 'session-uuid' } })
+  expect(facts[1]!.eventKey).toBe(linearOutputAdapter.normalize(sessionEvent('created'))[1]!.eventKey)
+})
+
+test('a session whose root comment has a human author is a mention', () => {
+  const facts = linearOutputAdapter.normalize(sessionEvent('created', humanComment))
+  expect(facts.map((fact) => fact.output)).toEqual(['agent_session.created', 'issue.mentioned'])
+  expect(facts[0]!.data).toMatchObject({ session: { trigger: 'mention' } })
+  expect(facts[1]!.data).toMatchObject({ action: 'mentioned', actor: 'person', comment: { id: 'comment-uuid' } })
+})
+
+test('linearSessionTrigger reads the root comment author, then the creator, then the system comment or the delegate', () => {
+  const issue = { id: 'issue-uuid' }
+  const person = { creatorId: 'person' }
+  expect(linearSessionTrigger({ ...person, issue }, app)).toBe('delegation')
+  expect(linearSessionTrigger({ ...person, ...systemComment, issue }, app)).toBe('delegation')
+  expect(linearSessionTrigger({ ...person, ...humanComment, issue }, app)).toBe('mention')
+  // The poller's shape: `comment.user.id` instead of `comment.userId`.
+  expect(linearSessionTrigger({ commentId: 'c', comment: { id: 'c', user: { id: 'person' } } }, app)).toBe('mention')
+  // A mention needs no creator: its comment has an author.
+  expect(linearSessionTrigger({ ...humanComment, issue }, app)).toBe('mention')
+  // An authorless comment that is not Linear's thread comment counts as a delegation only on an issue delegated to the app.
+  const synced = { ...person, commentId: 'c', comment: { id: 'c', body: '@ficus from Slack' } }
+  expect(linearSessionTrigger({ ...synced, issue }, app)).toBe('mention')
+  expect(linearSessionTrigger({ ...synced, issue: { id: 'issue-uuid', delegateId: app } }, app)).toBe('delegation')
+  // A payload without the comment object carries no author: read as a mention, as before.
+  expect(linearSessionTrigger({ ...person, commentId: 'c', issue }, app)).toBe('mention')
+  expect(linearSessionTrigger({ commentId: 'c', issue }, app)).toBe('mention')
+  // Linear leaves `creator` unset for a session an agent user started: the app's own session (live 53becf37).
+  expect(linearSessionTrigger({ ...systemComment, issue }, app)).toBe('proactive')
+  expect(linearSessionTrigger({ issue }, app)).toBe('proactive')
+  expect(linearSessionTrigger({ ...systemComment, creatorId: app }, app)).toBe('proactive')
+  // A polled session with no creator on an issue delegated to the app is still a delegation.
+  expect(linearSessionTrigger({ ...systemComment, issue: { id: 'issue-uuid', delegate: { id: app } } }, app)).toBe(
+    'delegation'
+  )
+})
+
+test("a session the app opened on itself (no creator, Linear's thread comment) produces no outputs", () => {
+  expect(linearOutputAdapter.normalize(sessionEvent('created', { ...systemComment, creatorId: undefined }))).toEqual([])
 })
 
 test('a prompt yields one prompted fact keyed by its activity', () => {

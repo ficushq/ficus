@@ -64,6 +64,13 @@ export interface HostedRelayDependencies<
   resolve(connectionId: string): Promise<RelayConnection | undefined>
   request: typeof platformRequest
   dispatch(delivery: Delivery, interests: Interest[]): Promise<void>
+  /**
+   * Runs once per pulled batch, before its deliveries are dispatched one after another, with the
+   * deliveries that will be dispatched. For work with a deadline that must not wait behind the
+   * batch's earlier deliveries (Linear's 10-second session acknowledgment). A failure is reported
+   * and the batch is still dispatched.
+   */
+  prepare?(deliveries: Delivery[], interests: Interest[]): Promise<void>
   /** Durably records a terminal subscribe answer so the revision stays parked across restarts. */
   onSubscribeRejected?(rejection: { connectionId: string; connectionRevision: string; code: string }): Promise<void>
   now?(): number
@@ -238,6 +245,16 @@ export class HostedIntegrationRelayRunner<
       this.provider.pullResponseSchema,
       60_000
     )
+    if (this.deps.prepare && result.deliveries.length && !this.controller.signal.aborted) {
+      const interests = (await this.deps.interests()).filter((interest) => interest.connectionId === id)
+      const ready = result.deliveries.filter(
+        (delivery) =>
+          delivery.connectionId === id &&
+          delivery.connectionRevision === connection.revision &&
+          interests.some((interest) => this.provider.matchesDelivery(interest, delivery))
+      )
+      if (ready.length) await this.deps.prepare(ready, interests).catch((error) => this.report(error))
+    }
     const acknowledgments: { id: string; leaseToken: string }[] = []
     for (const delivery of result.deliveries) {
       if (this.controller.signal.aborted) break

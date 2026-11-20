@@ -158,7 +158,7 @@ const ISSUE_FIELDS = 'id number identifier title url team { id key } assignee { 
 /** Newest first; pages are read down to the watermark, each continuing after the previous `endCursor`. */
 export const LINEAR_POLL_SESSIONS_QUERY = `query FicusLinearPollSessions($first: Int!, $cursor: String) {
   agentSessions(first: $first, after: $cursor, orderBy: updatedAt) {
-    nodes { id status createdAt updatedAt url appUser { id } creator { id } comment { id } issue { ${ISSUE_FIELDS} } }
+    nodes { id status createdAt updatedAt url appUser { id } creator { id } comment { id body user { id } } issue { ${ISSUE_FIELDS} } }
     pageInfo { hasNextPage endCursor }
   }
 }`
@@ -306,7 +306,9 @@ export function createLinearAgentSessionPolling(
       for (const { id, node } of [...ownSessions].sort((a, b) => stamp(a.node.createdAt) - stamp(b.node.createdAt))) {
         if (!linearSessionNeedsHandling(text(node.status, 32), known.get(id), connection.id)) continue
         const issue = record(node.issue)
-        const commentId = text(record(node.comment).id)
+        const comment = record(node.comment)
+        const commentId = text(comment.id)
+        const commentAuthor = text(record(comment.user).id)
         events.push({
           type: 'AgentSessionEvent',
           logicalEventKey: linearDeliveryKey.sessionCreated(id),
@@ -318,7 +320,17 @@ export function createLinearAgentSessionPolling(
             agentSession: {
               id,
               ...(text(issue.id) ? { issueId: text(issue.id), issue: issuePayload(issue) } : {}),
-              ...(commentId ? { commentId } : {}),
+              // The root comment's author tells a mention from a delegation's system comment (linearSessionTrigger).
+              ...(commentId
+                ? {
+                    commentId,
+                    comment: {
+                      id: commentId,
+                      body: text(comment.body, 200),
+                      ...(commentAuthor ? { userId: commentAuthor } : {}),
+                    },
+                  }
+                : {}),
               creatorId: text(record(node.creator).id),
               url: text(node.url, 2000),
               status: text(node.status, 32),
