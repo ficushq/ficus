@@ -1,0 +1,2 @@
+ALTER TABLE "integration_connections" ADD COLUMN "relay_subscribe_error_code" varchar(64);--> statement-breakpoint
+ALTER TABLE "integration_connections" ADD COLUMN "relay_subscribe_error_revision" uuid;

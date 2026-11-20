@@ -24,7 +24,13 @@ export const CLIENT_ID = 'linear-client-id'
  * and event rules, plus the self-hosted app settings the direct webhook verifies against.
  */
 export async function createLinearAppFixture(
-  input: { organizationId?: string; appUserId?: string; appSettings?: boolean } = {}
+  input: {
+    organizationId?: string
+    appUserId?: string
+    appSettings?: boolean
+    /** `platform_broker` for a hosted (relayed) app connection. */
+    clientAuthority?: 'local' | 'platform_broker'
+  } = {}
 ) {
   const store = getSecretStore()
   const organizationId = input.organizationId ?? randomUUID()
@@ -60,7 +66,7 @@ export async function createLinearAppFixture(
     id: connectionId,
     providerKey: 'linear',
     adapterVersion: 1,
-    clientAuthority: 'local',
+    clientAuthority: input.clientAuthority ?? 'local',
     authorizationKind: 'oauth2',
     displayName: `Acme ${connectionId} (Ficus app)`,
     configuration: {
@@ -132,6 +138,8 @@ export async function createLinearAppFixture(
     organizationId,
     appUserId,
     connectionId,
+    revision,
+    credentialRef,
     context: { organizationId, oauthClientId: CLIENT_ID, appUserId },
     addSquad,
     cleanup,

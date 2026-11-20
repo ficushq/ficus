@@ -9,7 +9,9 @@ import type { OAuthAuthority } from '../authorization/authority'
  * - `local` (self-hosted): turned on by the stream that adds the direct app
  *   webhook at `/api/webhooks/linear-app` and session acknowledgment.
  * - `platform_broker` (Ficus Cloud): turned on once the Platform OAuth broker
- *   knows `linear` and the hosted event relay delivers app webhooks.
+ *   knows `linear` and the hosted event relay delivers app webhooks. Core's
+ *   relay consumer (`relay/linear-runtime.ts`) exists; Platform's `/linear/*`
+ *   relay routes do not yet.
  *
  * While an authority is off, the Linear plugin offers no managed driver under
  * it (so `authorization/start` refuses with `unsupported_provider`), the OAuth

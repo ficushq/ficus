@@ -63,6 +63,8 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
   validatedAt: string | null
   validationExpiresAt: string | null
   lastErrorCode: string | null
+  /** Set when the hosted event relay refused this connection revision for good. */
+  relaySubscribeErrorCode?: string
   usage: {
     squadCount: number
     squads: { id: string; name: string }[]

@@ -26,6 +26,11 @@ export interface IntegrationConnectionRecord<C = unknown> {
   validatedAt: Date | null
   validationExpiresAt: Date | null
   lastErrorCode: string | null
+  /**
+   * A hosted event relay subscribe refusal recorded for the current material revision (for example
+   * `linear_organization_claimed`); absent or null when there is none.
+   */
+  relaySubscribeErrorCode?: string | null
   updatedAt: Date
 }
 

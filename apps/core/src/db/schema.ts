@@ -4273,6 +4273,11 @@ export const integrationConnections = pgTable(
     nextValidationAt: timestamp('next_validation_at', { withTimezone: true }),
     validationFailureCount: integer('validation_failure_count').notNull().default(0),
     lastErrorCode: varchar('last_error_code', { length: 64 }),
+    // A hosted event relay subscribe answer that retrying cannot change (for example
+    // `linear_organization_claimed`), for the material revision it was given for. A new
+    // revision (reconnect) makes it stale; credential lifecycle updates never touch it.
+    relaySubscribeErrorCode: varchar('relay_subscribe_error_code', { length: 64 }),
+    relaySubscribeErrorRevision: uuid('relay_subscribe_error_revision'),
     createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     updatedByUserId: uuid('updated_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
