@@ -5,12 +5,13 @@ import { integrationAction, removeIntegration, type IntegrationConnection } from
 import { ApiError } from '../../api/client'
 import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
-import { ConfirmButton } from '../ConfirmButton'
 import { useStableRef } from '../../hooks/useStableRef'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { BigbrainLocalSetupPanel } from './BigbrainLocalSetupPanel'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 import { ConnectionSquads } from './ConnectionSquads'
+import { ConnectionList, ConnectionRow } from './ConnectionRow'
+import { connectionConfirmQuestion, connectionStatus } from './connectionStatus'
 
 function boundedError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message.slice(0, 200) : fallback
@@ -48,16 +49,6 @@ function usageFrom(error: unknown): Usage | null {
     .slice(0, 100)
     .map((squad) => ({ id: squad.id, name: squad.name.slice(0, 200) }))
   return { squadCount: value.squadCount, squads }
-}
-
-function lifecycleLabel(connection: IntegrationConnection, validating: boolean): string {
-  if (validating) return 'Validating…'
-  if (connection.authState === 'invalid') return 'Invalid'
-  if (!connection.enabled) return 'Configured · disabled'
-  if (connection.healthState === 'healthy') return 'Enabled · healthy'
-  if (connection.healthState === 'degraded') return 'Enabled · degraded'
-  if (connection.healthState === 'unreachable') return 'Enabled · unreachable'
-  return 'Enabled · health unknown'
 }
 
 export function BigbrainIntegrationSettings({
@@ -231,100 +222,107 @@ export function BigbrainIntegrationSettings({
         not the browser. The connector exposes tools, not file mounts; trusted host runtime has no filesystem isolation
         from agent shells. Desktop attached to Cloud cannot access a vault on your Mac.
       </p>
-      <div className="mt-4 space-y-4">
-        {connections.map((connection) => {
-          const actionPending = action.isPending && action.variables?.connectionId === connection.id
-          const pending = (pendingTargets[connection.id] ?? 0) > 0
-          const confirming = confirmation?.connectionId === connection.id ? confirmation : null
-          return (
-            <article key={connection.id} className="border-b border-panel-border py-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="font-medium text-primary">{connection.displayName}</div>
-                  <div className="text-xs text-muted break-all">
-                    Vault: {connection.configuration.vaultPath}
-                    <br />
-                    Executable: {connection.configuration.executablePath}
-                  </div>
-                </div>
-                <div className="rounded-full border border-th-border px-2 py-1 text-xs text-muted">
-                  {lifecycleLabel(connection, actionPending && action.variables?.action === 'validate')}
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-muted">
-                {connection.credentialConfigured ? 'Local connection selected' : 'Local connection unavailable'} ·
-                Validation expires: {connection.validationExpiresAt ?? 'not validated'}
-              </div>
-              {connection.lastErrorCode && <div role="alert">{connection.lastErrorCode}</div>}
-              {canWrite && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    disabled={pending}
-                    onClick={() => action.mutate({ connectionId: connection.id, action: 'validate' })}
-                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 disabled:opacity-50"
-                  >
-                    {actionPending && action.variables?.action === 'validate' ? 'Validating…' : 'Validate'}
-                  </button>
-                  <button
-                    disabled={pending}
-                    onClick={() =>
-                      action.mutate({ connectionId: connection.id, action: connection.enabled ? 'disable' : 'enable' })
-                    }
-                    className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 disabled:opacity-50"
-                  >
-                    {actionPending && action.variables?.action !== 'validate'
-                      ? connection.enabled
-                        ? 'Disabling…'
-                        : 'Enabling…'
-                      : connection.enabled
-                        ? 'Disable'
-                        : 'Enable'}
-                  </button>
-                  <ConfirmButton
-                    className="rounded-md px-3 py-1.5"
-                    key={`${connectionIds}:${connection.id}`}
-                    label="Remove"
-                    confirmLabel="Confirm remove"
-                    disabled={pending}
-                    onConfirm={() => remove.mutate({ connectionId: connection.id })}
-                  />
-                </div>
-              )}
-              {confirming && (
-                <div
-                  role="alert"
-                  className="mt-3 rounded-md border border-status-attention-500/50 bg-status-attention-500/10 p-3 text-sm"
-                >
-                  <p>
-                    This connection is used by {confirming.usage.squadCount} squad
-                    {confirming.usage.squadCount === 1 ? '' : 's'}.
+      {connections.length > 0 && (
+        <ConnectionList className="mt-3">
+          {connections.map((connection) => {
+            const actionPending = action.isPending && action.variables?.connectionId === connection.id
+            const validating = actionPending && action.variables?.action === 'validate'
+            const pending = (pendingTargets[connection.id] ?? 0) > 0
+            const confirming = confirmation?.connectionId === connection.id ? confirmation : null
+            const confirm = (operation: Confirmation['operation']) =>
+              setConfirmation({ operation, connectionId: connection.id, usage: connection.usage })
+            return (
+              <ConnectionRow
+                key={connection.id}
+                title={connection.displayName}
+                meta={
+                  <>
+                    <p className="break-all">Vault: {connection.configuration.vaultPath}</p>
+                    <p className="break-all">Executable: {connection.configuration.executablePath}</p>
+                    <p>
+                      {connection.credentialConfigured ? 'Local connection selected' : 'Local connection unavailable'} ·
+                      Validation expires: {connection.validationExpiresAt ?? 'not validated'}
+                    </p>
+                  </>
+                }
+                status={validating ? { label: 'Validating…', color: 'neutral' } : connectionStatus(connection)}
+                // A local vault has no reconnect: an invalid one is repaired from the setup panel below.
+                inline={
+                  canWrite && !connection.enabled
+                    ? {
+                        label: actionPending ? 'Enabling…' : 'Enable',
+                        disabled: pending,
+                        onClick: () => action.mutate({ connectionId: connection.id, action: 'enable' }),
+                      }
+                    : null
+                }
+                menu={
+                  canWrite
+                    ? [
+                        {
+                          label: 'Validate',
+                          disabled: pending,
+                          onSelect: () => action.mutate({ connectionId: connection.id, action: 'validate' }),
+                        },
+                        connection.enabled && {
+                          label: 'Disable…',
+                          disabled: pending,
+                          onSelect: () => confirm('disable'),
+                        },
+                        { label: 'Remove…', danger: true, disabled: pending, onSelect: () => confirm('remove') },
+                      ]
+                    : []
+                }
+                confirmation={
+                  canWrite && confirming
+                    ? {
+                        message: (
+                          <>
+                            <p>
+                              {connectionConfirmQuestion(
+                                confirming.operation,
+                                connection.displayName,
+                                confirming.usage.squadCount,
+                                'BigBrain'
+                              )}
+                            </p>
+                            {confirming.usage.squads.length > 0 && (
+                              <p className="mt-1 text-xs">
+                                {confirming.usage.squads.map((squad) => squad.name).join(', ')}
+                              </p>
+                            )}
+                          </>
+                        ),
+                        confirmLabel: confirming.operation === 'remove' ? 'Remove' : 'Disable',
+                        disabled: pending,
+                        onConfirm: () => {
+                          const confirmAssigned = confirming.usage.squadCount > 0
+                          if (confirming.operation === 'disable')
+                            action.mutate({ connectionId: connection.id, action: 'disable', confirmAssigned })
+                          else remove.mutate({ connectionId: connection.id, confirmAssigned })
+                        },
+                        onCancel: () => setConfirmation(null),
+                      }
+                    : null
+                }
+              >
+                {connection.lastErrorCode && (
+                  <p role="alert" className="mt-2 text-sm text-status-danger-600 dark:text-status-danger-400">
+                    {connection.lastErrorCode}
                   </p>
-                  {confirming.usage.squads.length > 0 && (
-                    <p className="mt-1 text-xs">{confirming.usage.squads.map((squad) => squad.name).join(', ')}</p>
-                  )}
-                  <button
-                    className="ficus-button ficus-button-secondary mt-2 rounded-md border border-status-attention-600 px-3 py-1.5"
-                    onClick={() => {
-                      if (confirming.operation === 'disable')
-                        action.mutate({ connectionId: connection.id, action: 'disable', confirmAssigned: true })
-                      else remove.mutate({ connectionId: connection.id, confirmAssigned: true })
-                    }}
-                  >
-                    Confirm impact
-                  </button>
-                </div>
-              )}
-              <ConnectionSquads
-                provider="bigbrain"
-                providerLabel="BigBrain"
-                connection={connection}
-                connections={connections}
-                noun="vault"
-              />
-            </article>
-          )
-        })}
-      </div>
+                )}
+                <ConnectionSquads
+                  provider="bigbrain"
+                  providerLabel="BigBrain"
+                  connection={connection}
+                  connections={connections}
+                  noun="vault"
+                />
+              </ConnectionRow>
+            )
+          })}
+        </ConnectionList>
+      )}
       {canWrite && <BigbrainLocalSetupPanel hasConnections={connections.length > 0} />}
       {connections.length === 0 && !canWrite && (
         <p className="text-xs text-muted mt-2">No BigBrain connections configured.</p>
