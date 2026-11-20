@@ -1143,6 +1143,7 @@ import {
   getChannelIntegrationSettings,
   getServiceIntegrationSettings,
   getSquadIntegrationSelection,
+  getSquadLinearTeams,
   listIntegrationCatalog,
   listIntegrationPool,
   listManagedBigbrainMembers,
@@ -1231,6 +1232,14 @@ export const integrationQueries = {
     queryOptions({
       queryKey: integrationQueryKeys.squad(squadId, provider),
       queryFn: () => getSquadIntegrationSelection(squadId, provider),
+    }),
+  /** Core caches each connection's listing for a minute; reuse it as long while routing is edited. */
+  squadLinearTeams: (squadId: string) =>
+    queryOptions({
+      queryKey: integrationQueryKeys.squadLinearTeams(squadId),
+      queryFn: () => getSquadLinearTeams(squadId),
+      staleTime: 60_000,
+      retry: false,
     }),
 }
 

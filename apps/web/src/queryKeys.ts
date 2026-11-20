@@ -103,6 +103,7 @@ export const integrationQueryKeys = {
     [...integrationQueryKeys.all, 'github-commit-signing', connectionId] as const,
   oauthApp: (provider: string) => [...integrationQueryKeys.all, 'oauth-app', provider] as const,
   squad: (squadId: string, provider: string) => [...integrationQueryKeys.all, 'squad', squadId, provider] as const,
+  squadLinearTeams: (squadId: string) => [...integrationQueryKeys.all, 'squad', squadId, 'linear', 'teams'] as const,
 }
 
 export const modelCatalogQueryKeys = {

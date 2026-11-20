@@ -4,6 +4,7 @@ import type {
   GitHubCommitSigningStatus,
   GitHubSquadCommitSigning,
   GitHubRepositoryAccess,
+  LinearTeamDirectory,
 } from '@ficus/shared'
 import { apiFetch } from './client'
 
@@ -424,6 +425,10 @@ export const replaceIntegrationCredential = (
 
 export const getSquadIntegrationSelection = (squadId: string, provider: string, fetcher: ApiFetcher = apiFetch) =>
   fetcher<SquadIntegrationSelection>(`/squads/${squadId}/integrations/${provider}`)
+
+/** The Linear teams the squad's attached connections can see; Core calls Linear, never the browser. */
+export const getSquadLinearTeams = (squadId: string, fetcher: ApiFetcher = apiFetch) =>
+  fetcher<LinearTeamDirectory>(`/squads/${squadId}/integrations/linear/teams`)
 
 export const assignIntegration = (
   squadId: string,

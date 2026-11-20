@@ -203,8 +203,8 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
   {
     section: 'integrations',
     id: 'team-id',
-    label: 'Team ID',
-    keywords: 'linear team',
+    label: 'Linear teams',
+    keywords: 'linear team id key picker',
   },
   {
     section: 'notifications',

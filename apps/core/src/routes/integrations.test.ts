@@ -16,6 +16,7 @@ import type { SafeOAuthAppSettings } from '../services/integrations/authorizatio
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
 import type { OAuthAuthorizationPurpose } from '../services/integrations/authorization/state-repository'
 import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
+import type { LinearTeamDirectory } from '@ficus/shared'
 import {
   GitHubSignRefused,
   GitHubSigningError,
@@ -94,6 +95,10 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
   const unassign = mock(async () => true)
   const executionEnvironment = mock(async () => ({ GH_TOKEN: 'execution-only-token' }))
   const retryProjection = mock(async () => ({ status: 'pending' as const, lastErrorCode: null }))
+  const linearTeams = mock(async (_squadId: string): Promise<LinearTeamDirectory> => ({
+    teams: [{ id: 'team-eng', key: 'ENG', name: 'Engineering', connectionIds: [summary.id] }],
+    connections: [{ id: summary.id, displayName: 'Linear', isDefault: true, status: 'ok' }],
+  }))
   const githubCommitSigning = mock(async () => ({ state: 'off' as const }))
   const setGitHubCommitSigning = mock(async (_id: string, enabled: boolean, _actor: string) =>
     enabled ? { state: 'on' as const, fingerprint: 'SHA256:abc', registeredOnGitHub: true } : { state: 'off' as const }
@@ -157,6 +162,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       executionEnvironment,
       executionVariableNames: () => ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
       signGitObject,
+      linearTeams,
     })
   )
   return {
@@ -196,6 +202,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       assign,
       retryProjection,
       executionEnvironment,
+      linearTeams,
       githubCommitSigning,
       setGitHubCommitSigning,
       signGitObject,
@@ -938,6 +945,35 @@ describe('integration routes', () => {
     })
     expect(response.status).toBe(404)
     expect(calls.disable).not.toHaveBeenCalled()
+  })
+
+  test('Linear team listing needs squad integration read access and returns the directory uncached', async () => {
+    for (const [scopes, expected] of [
+      [['integrations:read'], 200],
+      [['squads:read'], 403],
+      [['integrations:use'], 403],
+    ] as const) {
+      const { app, calls } = createApp({
+        type: 'system',
+        systemTokenId: 'linear-teams',
+        name: 'test',
+        scopes: [...scopes],
+      })
+      const response = await app.request(`/api/squads/${squadId}/integrations/linear/teams`)
+      expect(response.status).toBe(expected)
+      expect(calls.linearTeams).toHaveBeenCalledTimes(expected === 200 ? 1 : 0)
+      if (expected !== 200) continue
+      expect(calls.linearTeams).toHaveBeenCalledWith(squadId)
+      expect(calls.selection).not.toHaveBeenCalled()
+      expect(response.headers.get('cache-control')).toBe('private, no-store')
+      expect(await response.json()).toEqual({
+        teams: [{ id: 'team-eng', key: 'ENG', name: 'Engineering', connectionIds: [summary.id] }],
+        connections: [{ id: summary.id, displayName: 'Linear', isDefault: true, status: 'ok' }],
+      })
+    }
+    const anonymous = createApp()
+    expect((await anonymous.app.request(`/api/squads/${squadId}/integrations/linear/teams`)).status).toBe(401)
+    expect(anonymous.calls.linearTeams).not.toHaveBeenCalled()
   })
 
   test('picker response contains only redacted summaries', async () => {

@@ -69,7 +69,7 @@ export async function resolveLinearConnectionById(connectionId: string, now = ne
 }
 
 /** The `Authorization` value for a connection that is enabled, validated, unfenced and unexpired. */
-async function usableLinearConnection(connection: IntegrationConnectionRecord, now: Date) {
+export async function usableLinearConnection(connection: IntegrationConnectionRecord, now: Date) {
   if (
     !connection.enabled ||
     connection.authState !== 'authenticated' ||
