@@ -168,6 +168,13 @@ export interface ISandboxManager {
     request: ManagedToolchainRequest
   ): Promise<'unchanged' | 'applied' | 'cleared'>
   /**
+   * Whether the box's commands still run with a previously activated managed
+   * toolchain, so an ensure may let agents work while a new one installs.
+   * Runtimes without this (or a box that cannot answer) have nothing to fall
+   * back to, and ensures wait for the install as they always did.
+   */
+  isManagedToolchainActive?(sandboxId: string): Promise<boolean>
+  /**
    * `undefined` means an intentional unfenced/manual stop. `null` fences the
    * stop to an unstamped legacy resource; a string fences an exact generation.
    */

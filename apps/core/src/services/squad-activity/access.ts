@@ -4,6 +4,7 @@ import { db } from '../../db'
 import { agents, squads, systemTokens, users } from '../../db/schema'
 import { permissionMatches, resolvePermissions, type Identity } from '../rbac'
 import type { SquadActivityAccess } from '../squad/activity'
+import { redactActivityRowFacts, type ActivityRowFacts } from './row-context'
 
 const holds = (permissions: readonly string[], permission: string) =>
   permissions.some((held) => permissionMatches(held, permission))
@@ -127,10 +128,18 @@ export function activityEventVisible(
   return access.workstreamsRead && inboxVisible
 }
 
+/**
+ * One subscriber's copy of a live row: the agent type is withheld without agents:read,
+ * and read-time row context (loaded once per event by the broadcaster) is reduced to
+ * what this viewer may see, exactly as the REST projections do.
+ */
 export function redactActivityEvent(
   access: SquadActivityAccess,
-  data: SquadActivityProjectionEventData
+  data: SquadActivityProjectionEventData,
+  facts?: ActivityRowFacts
 ): SquadActivityProjectionEventData {
-  if (!data.agentTypeRequiresAgentsRead || access.agentsRead) return data
-  return { ...data, item: { ...data.item, agentTypeId: null } }
+  const extra = redactActivityRowFacts(facts, access)
+  const hideType = data.agentTypeRequiresAgentsRead && !access.agentsRead
+  if (!hideType && !extra.context && !extra.senderActivityId) return data
+  return { ...data, item: { ...data.item, ...(hideType ? { agentTypeId: null } : {}), ...extra } }
 }

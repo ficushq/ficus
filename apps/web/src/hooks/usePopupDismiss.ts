@@ -1,7 +1,8 @@
 import { useLayoutEffect, type RefObject } from 'react'
 import { useStableRef } from './useStableRef'
 
-export type PopupDismissReason = 'pointer' | 'escape' | 'focus'
+/** `select`: an item inside it ran through a handler outside the popup (`dismissPopupsContaining`). */
+export type PopupDismissReason = 'pointer' | 'escape' | 'focus' | 'select'
 
 export interface PopupDismissOptions {
   /** Listeners exist only while this is true, so a page of closed popups costs nothing. */
@@ -24,6 +25,9 @@ export interface PopupDismissOptions {
 interface StackEntry {
   regions: () => HTMLElement[]
   escape: () => boolean
+  /** The node is in this popup's regions or in a popup opened on top of it. */
+  contains: (node: Node) => boolean
+  dismiss: (reason: PopupDismissReason) => void
 }
 
 // Every open popup, in opening order. A popup opened while another stays open is nested in it
@@ -37,13 +41,26 @@ const stack: StackEntry[] = []
 const PRESS_GRACE_MS = 600
 
 /**
+ * Closes every open popup that `node` sits in (its surface, its trigger, an `inside` region, or a popup
+ * opened on top of it), innermost first, with the reason `select`. For an item action that a document
+ * capture handler runs instead of the item's own handler, so the popup's own "item ran, close" path never
+ * sees it: a Shift- or Alt-click on an agent link opening a floating window (`FloatingWindows.tsx`).
+ * Returns whether any popup was closed.
+ */
+export function dismissPopupsContaining(node: Node): boolean {
+  const containing = stack.filter((entry) => entry.contains(node)).reverse()
+  for (const entry of containing) entry.dismiss('select')
+  return containing.length > 0
+}
+
+/**
  * The ONE way a popup (menu, popover, disclosure panel, preview card) dismisses itself. Every
  * popup in `apps/web` uses it; `components/popupDismissal.guard.test.ts` fails the build on a
  * component that closes a popup from its own onBlur/focusout handler, reads `relatedTarget`, or adds
  * its own outside-press listener (with a tiny, reasoned allowlist for non-popup uses). Tap tests use
  * `test/webkitTap.ts`, which delivers a tap the way WebKit does.
  *
- * It closes on exactly three things:
+ * It closes on exactly three things (plus an explicit `dismissPopupsContaining`, above):
  *
  * 1. A pointer press outside the popup, its trigger, the `inside` regions, and any popup opened
  *    on top of it. Insideness is read from `event.composedPath()`, so portaled content counts when
@@ -100,8 +117,6 @@ export function usePopupDismiss({
       const { popup, trigger, inside = [] } = latest.current
       return [popup, trigger, ...inside].flatMap((ref) => (ref?.current ? [ref.current] : []))
     }
-    const entry: StackEntry = { regions, escape: () => latest.current.escape }
-    stack.push(entry)
     // Own regions plus every popup opened on top of this one.
     const insideRegions = () => {
       const index = stack.indexOf(entry)
@@ -109,6 +124,13 @@ export function usePopupDismiss({
     }
     const isInsideNode = (node: unknown) =>
       node instanceof Node && insideRegions().some((region) => region.contains(node))
+    const entry: StackEntry = {
+      regions,
+      escape: () => latest.current.escape,
+      contains: isInsideNode,
+      dismiss: (reason) => latest.current.onDismiss(reason),
+    }
+    stack.push(entry)
     const isInsideEvent = (event: Event) => {
       const path = typeof event.composedPath === 'function' ? event.composedPath() : []
       if (path.length) {

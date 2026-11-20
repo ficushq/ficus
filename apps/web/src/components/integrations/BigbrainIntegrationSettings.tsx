@@ -10,6 +10,7 @@ import { useStableRef } from '../../hooks/useStableRef'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { BigbrainLocalSetupPanel } from './BigbrainLocalSetupPanel'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
+import { ConnectionSquads } from './ConnectionSquads'
 
 function boundedError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message.slice(0, 200) : fallback
@@ -313,6 +314,13 @@ export function BigbrainIntegrationSettings({
                   </button>
                 </div>
               )}
+              <ConnectionSquads
+                provider="bigbrain"
+                providerLabel="BigBrain"
+                connection={connection}
+                connections={connections}
+                noun="vault"
+              />
             </article>
           )
         })}

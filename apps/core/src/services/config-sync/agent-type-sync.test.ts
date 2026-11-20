@@ -179,19 +179,21 @@ describe('AgentTypeSync', () => {
     }
   })
 
-  test('original-request preservation and precedence reach every engineering role', async () => {
+  test('user-requirement precedence reaches every engineering role', async () => {
     const parsed = await loadComposed()
     const promptFor = (id: string) => parsed.find((p) => p.id === id)!.systemPrompt.replace(/\s+/g, ' ')
-    expect(promptFor('manager')).toContain('Preserve the original user request separately from your derived scope')
-    expect(promptFor('manager')).toContain('Verify all assigned roles can read that source before dispatch')
+    expect(promptFor('manager')).toContain('Verify every assigned role can read any linked source before dispatch')
     expect(promptFor('manager')).toContain('Keep secrets and unrelated private conversation out')
+    for (const id of ['manager', 'consultant']) {
+      expect(promptFor(id).split('## Writing Work Stream Descriptions')).toHaveLength(2)
+    }
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
       const prompt = promptFor(id)
-      expect(prompt.split('## Original Request and Derived Scope')).toHaveLength(2)
-      expect(prompt).toContain('read its preserved original request')
+      expect(prompt.split('## User Requirements and Derived Scope')).toHaveLength(2)
+      expect(prompt).toContain('If a source is missing or inaccessible, ask the owner for it')
       expect(prompt).toContain('explicit user amendments take precedence over derived plans and summaries')
       expect(prompt).toContain('Assigned scope divides responsibility; it does not waive product requirements')
-      expect(prompt).toContain('trace implementation and validation back to the applicable original requirements')
+      expect(prompt).toContain("trace implementation and validation back to the user's requirements")
     }
     expect(promptFor('reviewer')).toContain('even when the implementation faithfully follows the plan')
   })

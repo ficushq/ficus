@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { agentChatTarget } from '../../lib/agentChatLinks'
 import {
   type ComponentProps,
   type ComponentType,
@@ -737,6 +738,8 @@ export function SquadAgentThreads({
           type="button"
           aria-pressed={isSelected}
           aria-label={rowLabel}
+          // Shift- or Alt/Option-click opens this agent in a floating window instead of selecting it.
+          {...agentChatTarget(agent.id)}
           onClick={() => handleAgentRowSelect(agent.id)}
           title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}${openQuestionLabel ? ` · ${openQuestionLabel}` : ''}`}
           className="ficus-button ficus-button-ghost squad-chat-agent-select absolute inset-0 block w-full rounded-lg text-left"
@@ -1009,6 +1012,7 @@ export function SquadAgentThreads({
                 <button
                   type="button"
                   key={agent.id}
+                  {...agentChatTarget(agent.id)}
                   className={clsx(
                     'ficus-button ficus-button-ghost',
                     'squad-chat-agent block w-full rounded-lg px-2 py-2 text-left',

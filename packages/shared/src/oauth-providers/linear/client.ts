@@ -9,22 +9,27 @@ const DEFAULT_TIMEOUT_MS = 10_000
 const MAX_TOKEN_LENGTH = 16_384
 const MAX_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60
 
-/**
- * What the Ficus agent app asks for when it is installed with `actor=app`.
- * `read` is always granted; `issues:create` and `comments:create` cover the
- * writes Ficus makes; the two `app:` scopes make the app delegable and
- * mentionable. `admin` is not allowed for app actors.
- */
 /** The adapter key for linking a person's Linear account to their Ficus user (`linear_identity`). */
 export const LINEAR_IDENTITY_ADAPTER_KEY = 'linear-identity'
 
-export const LINEAR_APP_SCOPES = [
-  'read',
-  'issues:create',
-  'comments:create',
-  'app:assignable',
-  'app:mentionable',
-] as const
+/**
+ * What the Ficus agent app asks for when it is installed with `actor=app`.
+ * `read` is always granted. `write` is required by the agent mutations Ficus
+ * sends (`agentActivityCreate`, `agentSessionUpdate`,
+ * `agentSessionCreateOnIssue`, `attachmentLinkGitHubPR`): Linear refuses them
+ * under `issues:create` and `comments:create` with "Invalid scope: `write`
+ * required". The two `app:` scopes make the app delegable and mentionable.
+ * `admin` is not allowed for app actors.
+ */
+export const LINEAR_APP_SCOPES = ['read', 'write', 'app:assignable', 'app:mentionable'] as const
+
+/**
+ * The app scopes a grant lacks. `read` is always present on a Linear token, so
+ * it is never reported missing even when Linear leaves it out of the scope list.
+ */
+export function missingLinearAppScopes(granted: readonly string[]): string[] {
+  return LINEAR_APP_SCOPES.filter((scope) => scope !== 'read' && !granted.includes(scope))
+}
 
 const PROVIDER_ERROR_CODES: Readonly<Record<string, string>> = {
   invalid_grant: 'invalid_grant',
@@ -90,8 +95,17 @@ export class LinearOAuthClient {
     this.#now = options.now ?? (() => new Date())
   }
 
-  /** Installs the app for the whole workspace (`actor=app`, needs a workspace admin). */
-  buildAuthorizationUrl(input: { clientId: string; redirectUri: string; state: string }): URL {
+  /**
+   * Installs the app for the whole workspace (`actor=app`, needs a workspace admin). A reconnect
+   * also sends `update_scopes_on_existing_token=true`: without it Linear leaves an existing
+   * installation's scopes unchanged, so a connection could never gain a scope added later.
+   */
+  buildAuthorizationUrl(input: {
+    clientId: string
+    redirectUri: string
+    state: string
+    intent?: 'connect' | 'reconnect'
+  }): URL {
     const url = new URL(AUTHORIZE_URL)
     url.searchParams.set('client_id', input.clientId)
     url.searchParams.set('redirect_uri', input.redirectUri)
@@ -100,6 +114,7 @@ export class LinearOAuthClient {
     url.searchParams.set('state', input.state)
     url.searchParams.set('actor', 'app')
     url.searchParams.set('prompt', 'consent')
+    if (input.intent === 'reconnect') url.searchParams.set('update_scopes_on_existing_token', 'true')
     return url
   }
 

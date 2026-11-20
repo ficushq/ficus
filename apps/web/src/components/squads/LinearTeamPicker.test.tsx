@@ -116,19 +116,24 @@ test('a team saved by its key is shown as that team, flagged, and can be switche
 })
 
 test('a failing connection is named beside the teams the others listed', async () => {
-  const { doc, button } = await render(() => <Routing initial={[]} />, {
+  const { doc, button } = await render(() => <Routing initial={['team-elsewhere']} />, {
     teams: [DIRECTORY.teams[0]!],
     connections: [
       { id: 'app', displayName: 'Acme app', isDefault: true, status: 'ok' },
       { id: 'key', displayName: 'Ops key', isDefault: false, status: 'error', error: 'invalid_auth' },
       { id: 'big', displayName: 'Big workspace', isDefault: false, status: 'ok', truncated: true },
+      { id: 'old', displayName: 'Old install', isDefault: false, status: 'error', error: 'insufficient_scope' },
     ],
   })
   const alert = doc.querySelector('[role="alert"]')!.textContent!
   expect(alert).toContain('Could not list teams for Ops key: Linear refused its credential')
   expect(alert).toContain('Big workspace has more teams than Ficus lists')
+  expect(alert).toContain('Could not list teams for Old install: the Ficus app is missing a Linear permission')
   expect(button('Choose teams')).toBeDefined()
-  expect(doc.body.textContent).toContain('No teams selected')
+  // The team may belong to the connection that failed, so it is not called missing from the squad.
+  const saved = doc.querySelector('li[data-team-match="unknown"]')!.textContent!
+  expect(saved).toContain('not among the teams Ficus could list (a connection that failed to list may have it)')
+  expect(saved).not.toContain('not found in this squad’s Linear connections')
 })
 
 test('with no attached connection, routing says so and still accepts a team ID by hand', async () => {

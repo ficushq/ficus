@@ -12,6 +12,9 @@ import { ChevronDownIcon, CloseIcon } from '../icons'
 
 const LISTING_ERRORS: Record<LinearTeamListingError, string> = {
   connection_unusable: 'the connection needs attention in Settings → Integrations',
+  insufficient_scope:
+    'the Ficus app is missing a Linear permission Ficus now needs; Reconnect it on the Linear card in Settings → Integrations',
+  reconnect_required: 'it needs Reconnect on the Linear card in Settings → Integrations',
   invalid_auth: 'Linear refused its credential; reconnect it in Settings → Integrations',
   rate_limited: 'Linear is rate-limiting requests; try again in a minute',
   provider_unavailable: 'Linear could not be reached; try again shortly',
@@ -48,11 +51,19 @@ function teamOption(team: LinearTeamSummary, directory: LinearTeamDirectory): Pi
 }
 
 /** A saved value that is not a listed team ID keeps its own option, so it is shown and can be cleared. */
-function savedOption(value: string, teams: readonly LinearTeamSummary[]): PickerOption<string> {
+/** Why a saved team is not listed. With a connection that failed to list, the team may belong to it. */
+function unknownTeamText(directory: LinearTeamDirectory) {
+  return directory.connections.some((connection) => connection.status === 'error')
+    ? 'Unknown team: not among the teams Ficus could list (a connection that failed to list may have it)'
+    : 'Unknown team: not found in this squad’s Linear connections'
+}
+
+function savedOption(value: string, directory: LinearTeamDirectory): PickerOption<string> {
+  const teams = directory.teams
   const match = matchLinearTeamValue(value, teams)
   return match.kind === 'key'
     ? { value, label: `${match.team.name} (saved by key ${value})`, description: 'Routing matches team IDs only' }
-    : { value, label: value, description: 'Unknown team: not found in this squad’s Linear connections' }
+    : { value, label: value, description: unknownTeamText(directory) }
 }
 
 /** Loading, no-connection, error and truncation notes for the listing. */
@@ -159,14 +170,15 @@ export function LinearTeamRoutingPicker({
   const popover = usePopover({ kind: 'dialog' })
   const listed = new Set(teams.map((team) => team.id))
   const options = [
-    ...value.filter((teamId) => !listed.has(teamId)).map((teamId) => savedOption(teamId, teams)),
+    ...value.filter((teamId) => !listed.has(teamId)).map((teamId) => savedOption(teamId, directory)),
     ...teams.map((team) => teamOption(team, directory)),
   ]
   const remove = (teamId: string) => onChange(value.filter((item) => item !== teamId))
   const canList = teams.length > 0
 
   return (
-    <div className="space-y-3">
+    // The settings search's "Linear teams" entry lands here.
+    <div className="space-y-3" data-setting-target="team-id">
       {value.length === 0 ? (
         <p className="text-sm text-muted">No teams selected. Linear issues are not routed to this squad by team.</p>
       ) : (
@@ -211,7 +223,7 @@ export function LinearTeamRoutingPicker({
                   )}
                   {match.kind === 'unknown' && canList && (
                     <p className="mt-1 text-xs text-status-attention-600 dark:text-status-attention-400">
-                      Unknown team: not found in this squad’s Linear connections. It stays saved until you remove it.
+                      {unknownTeamText(directory)}. It stays saved until you remove it.
                     </p>
                   )}
                 </div>
@@ -285,7 +297,7 @@ export function LinearTeamFilterPicker({
   const match = current ? matchLinearTeamValue(current, teams) : null
   const options: PickerOption<string>[] = [
     { value: '', label: 'Any connected team' },
-    ...(current && match?.kind !== 'id' ? [savedOption(current, teams)] : []),
+    ...(current && match?.kind !== 'id' ? [savedOption(current, directory)] : []),
     ...teams.map((team) => teamOption(team, directory)),
   ]
   const shown = !match

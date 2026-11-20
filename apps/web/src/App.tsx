@@ -21,6 +21,7 @@ import { AddPasskeyPage } from './components/auth/AddPasskeyPage'
 import { FinishAdminSetupPage } from './components/auth/FinishAdminSetupPage'
 import { InboxPopup } from './components/InboxPopup'
 import { InboxPopupProvider } from './components/InboxPopupProvider'
+import { FloatingWindowsProvider } from './components/FloatingWindows'
 import { WorkflowReviewDeepLink, WorkflowReviewRoute } from './components/WorkflowReviewModal'
 import { ActionsPage } from './components/ActionsPage'
 import { InboxPage } from './components/InboxPage'
@@ -36,6 +37,13 @@ import { useVisualViewportShell } from './hooks/useVisualViewportShell'
 import { DesktopNotifications } from './components/DesktopNotifications'
 import { ScreenshotFiling } from './components/ScreenshotFiling'
 import { useDesktopShellChrome } from './hooks/useDesktopShellChrome'
+
+/** Integration OAuth callbacks: a focused standalone screen, never inside the app shell. */
+const OAUTH_CALLBACK_PATHS = new Set([
+  '/settings/integrations/oauth/callback',
+  '/settings/integrations/oauth/callback/github',
+  '/settings/integrations/oauth/callback/linear',
+])
 
 export default function App() {
   // Fit the fixed shell to the visible area while a software keyboard is open (see the hook).
@@ -99,6 +107,10 @@ export default function App() {
   // The farm's sign-in link: the gate above has shown login if needed; go back to the farm.
   if (location.pathname === FARM_SIGN_IN_PATH) return <ReturnToFarm />
 
+  // Returning from a provider's authorization: after the gate above, so the completion runs signed in,
+  // but without the header, banners and footer, which only distract from the connection's outcome.
+  if (OAUTH_CALLBACK_PATHS.has(location.pathname.replace(/(.)\/$/, '$1'))) return <OAuthCallbackPage />
+
   if (location.pathname === '/voice') {
     return (
       <>
@@ -114,74 +126,74 @@ export default function App() {
   return (
     // The inbox popup's open state, shared by its trigger in the header and the popup below.
     <InboxPopupProvider>
-      <div
-        ref={shellRef}
-        data-testid="app-shell"
-        className="h-full max-h-full overflow-hidden overscroll-none flex flex-col bg-page text-primary"
-      >
-        <AppHeader />
-        <DesktopNotifications />
+      {/* Floating agent chat windows, stacked with the assistant over every page. */}
+      <FloatingWindowsProvider>
+        <div
+          ref={shellRef}
+          data-testid="app-shell"
+          className="h-full max-h-full overflow-hidden overscroll-none flex flex-col bg-page text-primary"
+        >
+          <AppHeader />
+          <DesktopNotifications />
 
-        {/* PWA status banners — in flow so they can never half-hide under the notch */}
-        <UpdateBanner />
-        <OfflineBanner />
-        <MaintenanceBanner />
-        <StorageBanner />
-        <OnboardingBanner />
+          {/* PWA status banners — in flow so they can never half-hide under the notch */}
+          <UpdateBanner />
+          <OfflineBanner />
+          <MaintenanceBanner />
+          <StorageBanner />
+          <OnboardingBanner />
 
-        <div className="grow min-h-0 flex flex-col overflow-hidden overscroll-none">
-          <main
-            data-testid="app-scroll-container"
-            className="grow min-h-0 flex flex-col overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] max-w-7xl w-full mx-auto p-4 md:pt-6 md:px-6"
-          >
-            <Routes>
-              <Route path="/" element={<FeedPage />} />
-              <Route path="/feed" element={<Navigate to="/" replace />} />
-              <Route path="/chat" element={<ChatPage />} />
-              <Route path="/chat/:agentId" element={<ChatPage />} />
-              <Route path="/activity" element={<ActivityPage />} />
-              <Route path="/squads" element={<SquadsPage />} />
-              <Route path="/squads/:squadId/manager" element={<SquadManagerChatPage />} />
-              <Route path="/squads/:squadId/consultant" element={<SquadConsultantChatPage />} />
-              <Route path="/squads/:squadId/:tab?" element={<SquadDetailPage />} />
-              <Route path="/actions" element={<ActionsPage />} />
-              <Route path="/actions/:actionId" element={<ActionsPage />} />
-              <Route path="/work-streams/:workStreamId/review" element={<WorkflowReviewRoute />} />
-              <Route path="/inbox" element={<InboxPage />} />
-              <Route path="/settings/integrations/oauth/callback" element={<OAuthCallbackPage />} />
-              <Route path="/settings/integrations/oauth/callback/github" element={<OAuthCallbackPage />} />
-              <Route path="/settings/integrations/oauth/callback/linear" element={<OAuthCallbackPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/schedules" element={<SchedulesPage />} />
-              <Route path="/recommendations" element={<Navigate to="/settings?section=ops-insights" replace />} />
-              <Route path="/voice" element={<VoiceWorkspacePage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-            <DesktopFooter />
-          </main>
+          <div className="grow min-h-0 flex flex-col overflow-hidden overscroll-none">
+            <main
+              data-testid="app-scroll-container"
+              className="grow min-h-0 flex flex-col overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] max-w-7xl w-full mx-auto p-4 md:pt-6 md:px-6"
+            >
+              <Routes>
+                <Route path="/" element={<FeedPage />} />
+                <Route path="/feed" element={<Navigate to="/" replace />} />
+                <Route path="/chat" element={<ChatPage />} />
+                <Route path="/chat/:agentId" element={<ChatPage />} />
+                <Route path="/activity" element={<ActivityPage />} />
+                <Route path="/squads" element={<SquadsPage />} />
+                <Route path="/squads/:squadId/manager" element={<SquadManagerChatPage />} />
+                <Route path="/squads/:squadId/consultant" element={<SquadConsultantChatPage />} />
+                <Route path="/squads/:squadId/:tab?" element={<SquadDetailPage />} />
+                <Route path="/actions" element={<ActionsPage />} />
+                <Route path="/actions/:actionId" element={<ActionsPage />} />
+                <Route path="/work-streams/:workStreamId/review" element={<WorkflowReviewRoute />} />
+                <Route path="/inbox" element={<InboxPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/onboarding" element={<OnboardingPage />} />
+                <Route path="/schedules" element={<SchedulesPage />} />
+                <Route path="/recommendations" element={<Navigate to="/settings?section=ops-insights" replace />} />
+                <Route path="/voice" element={<VoiceWorkspacePage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+              <DesktopFooter />
+            </main>
+          </div>
+
+          <MobileBottomNav />
+
+          {/* Action Center panel */}
+          {/* <ActionCenter /> */}
+
+          {/* Inbox popup - triggered from header (desktop) */}
+          <InboxPopup />
+
+          {/* ?review=<work stream> opens a workflow gate's review over any page (notifications, links) */}
+          <WorkflowReviewDeepLink />
+
+          {/* Drop or paste a screenshot anywhere to have the Assistant file it */}
+          <ScreenshotFiling />
+
+          {/* Floating chat button - desktop only, hidden on chat page */}
+          <Routes>
+            <Route path="/chat/*" element={null} />
+            <Route path="*" element={<ChatDrawer />} />
+          </Routes>
         </div>
-
-        <MobileBottomNav />
-
-        {/* Action Center panel */}
-        {/* <ActionCenter /> */}
-
-        {/* Inbox popup - triggered from header (desktop) */}
-        <InboxPopup />
-
-        {/* ?review=<work stream> opens a workflow gate's review over any page (notifications, links) */}
-        <WorkflowReviewDeepLink />
-
-        {/* Drop or paste a screenshot anywhere to have the Assistant file it */}
-        <ScreenshotFiling />
-
-        {/* Floating chat button - desktop only, hidden on chat page */}
-        <Routes>
-          <Route path="/chat/*" element={null} />
-          <Route path="*" element={<ChatDrawer />} />
-        </Routes>
-      </div>
+      </FloatingWindowsProvider>
     </InboxPopupProvider>
   )
 }

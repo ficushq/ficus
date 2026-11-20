@@ -131,6 +131,26 @@ describe('Linear team directory', () => {
     expect(result.teams.map((team) => team.id)).toEqual(['team-eng'])
   })
 
+  test('names a connection that needs Reconnect, a missing scope included, without calling Linear', async () => {
+    const authorize = mock(async () => ({ authorization: 'never-used' }))
+    const query = fakeLinear({})
+    const directory = createLinearTeamDirectory({
+      listAttached: async () => [
+        connection('scope', { authState: 'reauthorization_required', lastErrorCode: 'insufficient_scope' }),
+        connection('revoked', { authState: 'reauthorization_required', lastErrorCode: 'invalid_grant' }),
+      ],
+      authorize,
+      query,
+    })
+    const result = await directory.list('squad-1')
+    expect(result.connections.map(({ id, error }) => ({ id, error }))).toEqual([
+      { id: 'scope', error: 'insufficient_scope' },
+      { id: 'revoked', error: 'reconnect_required' },
+    ])
+    expect(authorize).not.toHaveBeenCalled()
+    expect(query).not.toHaveBeenCalled()
+  })
+
   test('maps Linear failures per connection and keeps the teams others listed', async () => {
     const query = fakeLinear({
       good: [{ nodes: [ENG] }],

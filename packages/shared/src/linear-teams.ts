@@ -11,6 +11,10 @@ export interface LinearTeamSummary {
 export type LinearTeamListingError =
   /** The connection is disabled, unvalidated, expired or fenced, so Ficus does not call Linear with it. */
   | 'connection_unusable'
+  /** The app lacks a Linear scope Ficus now needs; Reconnect asks Linear to update the installation. */
+  | 'insufficient_scope'
+  /** The connection is marked Reconnect required for another reason. */
+  | 'reconnect_required'
   /** Linear refused the credential. */
   | 'invalid_auth'
   /** Linear rate-limited the request. */

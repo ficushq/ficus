@@ -215,6 +215,33 @@ describe('App auth gate', () => {
     })
   })
 
+  describe('the integration OAuth callback', () => {
+    for (const path of [
+      '/settings/integrations/oauth/callback',
+      '/settings/integrations/oauth/callback/github',
+      '/settings/integrations/oauth/callback/linear/',
+    ]) {
+      test(`signed in, ${path} is a standalone screen without the app shell`, async () => {
+        status = { ...baseStatus, mode: 'passkey', hasUsers: true, hasAdminUser: true }
+        validSession = true
+        await render(path)
+
+        expect(container.querySelector('[data-testid="app-shell"]')).toBeNull()
+        expect(container.querySelector('main h1')?.textContent).toBe("Couldn't finish the connection")
+        expect(container.textContent).toContain('Go to Ficus home')
+      })
+    }
+
+    test('signed out, the callback still asks the visitor to sign in first', async () => {
+      status = { ...baseStatus, mode: 'passkey', hasUsers: true, hasAdminUser: true }
+      validSession = false
+      await render('/settings/integrations/oauth/callback')
+
+      expect(container.textContent).toContain('Sign in with passkey')
+      expect(container.textContent).not.toContain('Go to Ficus home')
+    })
+  })
+
   test('an already-signed-in visitor opening an invite still gets the ceremony', async () => {
     // The link may be for a DIFFERENT account than the current session.
     status = { ...baseStatus, mode: 'passkey', hasUsers: true, hasAdminUser: true }

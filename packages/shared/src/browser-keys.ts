@@ -6,6 +6,11 @@
  * stores, so import the names from here rather than repeating the strings.
  *
  * There is no read of the pre-rename names: browser-local state resets once.
+ *
+ * The web app's inline theme script bundles this file, so any change here can
+ * change apps/web/index.html. After editing, run
+ * `bun scripts/generate-theme-flash.ts` in apps/web and commit index.html, or
+ * apps/web/src/theme/custom.test.ts fails.
  */
 
 // --- localStorage ---------------------------------------------------------
@@ -42,6 +47,11 @@ export const SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY = 'ficus-squad-chat-sidebar-wi
 /** '1' when the squad chat sidebar's Recent chats (consultants) group is collapsed. */
 export const SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY = 'ficus-squad-chat-consultants-collapsed'
 export const ASSISTANT_WINDOW_STORAGE_KEY = 'ficus-assistant-window'
+/**
+ * Floating agent chat windows (open windows with their geometry, stacking and minimized state, plus
+ * each agent's last geometry), per signed-in identity: `${key}:${scope}`.
+ */
+export const CHAT_WINDOWS_STORAGE_KEY = 'ficus-chat-windows'
 export const VOICE_INPUT_MODE_STORAGE_KEY = 'ficus_voice_workspace_input_mode'
 export const PUSH_SUBSCRIPTION_ID_STORAGE_KEY = 'ficus_push_subscription_id'
 /** Unsent workflow drafts: `${prefix}${JSON.stringify([apiUrl, identityType, owner, draftId])}`. */
@@ -58,7 +68,10 @@ export const PWA_JUST_APPLIED_STORAGE_KEY = 'ficus-pwa-just-applied'
 
 /** `${fromVersion}->${toVersion}` of the last automatic PWA update, to stop reload loops. */
 export const PWA_AUTO_APPLY_TRANSITION_STORAGE_KEY = 'ficus-pwa-auto-apply-transition'
-/** Provider an OAuth flow started with, consumed once by the callback page. */
+/**
+ * Provider an OAuth flow started with, consumed once by the callback page. Only labels a cancelled or
+ * failed callback; a completion always uses the provider Core stored for the flow.
+ */
 export const OAUTH_PROVIDER_HINT_SESSION_KEY = 'ficusOAuthProviderHint'
 
 // --- history.state (OAuth callback page) ----------------------------------
@@ -68,6 +81,7 @@ export const OAUTH_COMPLETION_STATE_KEY = 'ficusOAuthCompletion'
 export const OAUTH_LOCAL_CALLBACK_STATE_KEY = 'ficusOAuthLocalCallback'
 export const OAUTH_CALLBACK_OUTCOME_STATE_KEY = 'ficusOAuthCallbackOutcome'
 export const OAUTH_CALLBACK_PROVIDER_STATE_KEY = 'ficusOAuthCallbackProvider'
+export const OAUTH_CALLBACK_REASON_STATE_KEY = 'ficusOAuthCallbackReason'
 
 // --- in-page events (window) and postMessage types ------------------------
 

@@ -46,6 +46,7 @@ describe('SharedPromptSync', () => {
       'squad-dynamic-context',
       'squad-rules',
       'subagents',
+      'work-descriptions',
     ])
   })
 

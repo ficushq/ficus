@@ -33,7 +33,12 @@ import { captureCorrection as defaultCaptureCorrection } from './decisions/evals
 import { findVisibleSquad, listVisibleSquads } from './entity-search'
 import { hasPermission, resolveActingUser, type Identity, type UserIdentity } from './rbac'
 import { createLogger } from '../lib/infra/logger'
-import { splitModelPriorityList, supportsImageInput } from '../lib/utils/model-spec'
+import {
+  isKnownModelSpec,
+  splitModelPriorityList,
+  supportsImageInput,
+  tryImageInputSupport,
+} from '../lib/utils/model-spec'
 import { primeClaudeCodeStatus } from './agent/claude-code/availability'
 import { selectModelSpecForCurrentEnv } from './model-selection'
 import { resolveAgentTypeChain } from './model-selection/model-tier-resolution'
@@ -637,7 +642,9 @@ async function assistantReadsImages(userId: string, conversationId: string): Pro
   const resolved = await sessionModelReadsImages(() => resolveAgentTypeChain(type))
   if (resolved !== undefined) return resolved
   const model = type.model?.trim()
-  return model ? supportsImageInput(splitModelPriorityList(model)[0]!) : undefined
+  if (!model) return undefined
+  const candidates = splitModelPriorityList(model)
+  return tryImageInputSupport(candidates.find(isKnownModelSpec) ?? candidates[0]!).supportsImages
 }
 
 /**

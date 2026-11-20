@@ -10,6 +10,7 @@ import {
 import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 import { createLogger } from '../../../lib/infra/logger'
 import { addLinearSessionExternalUrls, createLinearAgentActivity } from './app-api'
+import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
 import { resolveLinearAppConnection } from './resolve-connection'
 import { projectionAttemptFloor } from './session-projection'
 
@@ -144,5 +145,6 @@ export async function announceLinearSessionBinding(sessionId: string, workStream
     log.warn(
       `Linear session ${sessionId} binding announcement failed: ${error instanceof Error ? error.message : 'error'}`
     )
+    if (isLinearInsufficientScope(error)) await markLinearScopeMissing(session.connectionId)
   }
 }

@@ -1,4 +1,5 @@
 import { addWorkReferences } from './work-references'
+import { addActivityRowContext } from './row-context'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { coerceSquadActivityRef } from '@ficus/shared'
@@ -20,6 +21,8 @@ export interface ProjectGlobalActivityInput {
   verbose: boolean
   agentIds: string[]
   kinds: readonly SquadActivityKind[]
+  /** Only this work stream: its rows plus its bound participants' rows (workstreams:read squads only). */
+  workStreamId?: string
   cursor?: string | null
   /** Every squad the caller may see rows from, with that squad's own resolved access. */
   squadAccess: GlobalActivitySquadAccess[]
@@ -61,6 +64,7 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     verbose: input.verbose,
     agentIds: input.agentIds,
     kinds: input.kinds,
+    ...(input.workStreamId ? { workStreamId: input.workStreamId } : {}),
   }
   // Cursor validation always runs, even with zero accessible squads — an
   // invalid/malformed cursor is a client error regardless of what the caller
@@ -115,6 +119,12 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
               )})`
         }
         AND ${
+          !input.workStreamId
+            ? sql`TRUE`
+            : sql`(squad_access.workstreams_read AND (squad_activity.work_stream_id=${input.workStreamId}::uuid
+                OR squad_activity.agent_id IN (SELECT agent_id FROM workflow_bindings WHERE work_stream_id=${input.workStreamId}::uuid)))`
+        }
+        AND ${
           !cursor
             ? sql`TRUE`
             : sql`(at<${cursor.at.toISOString()}::timestamptz OR (at=${cursor.at.toISOString()}::timestamptz AND (squad_activity.squad_id<${cursor.squadId}::uuid OR (squad_activity.squad_id=${cursor.squadId}::uuid AND (lane<${cursor.lane} OR (lane=${cursor.lane} AND row_id<${cursor.rowId}::uuid))))))`
@@ -138,9 +148,14 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     ref: coerceSquadActivityRef(row.ref),
     squadId: row.squad_id as string,
   }))
+  const accessBySquad = new Map(input.squadAccess.map((entry) => [entry.squadId, entry.access]))
   const last = selected.at(-1)
   return {
-    items: await addWorkReferences(items),
+    items: await addActivityRowContext(
+      await addWorkReferences(items),
+      (item) => item.squadId,
+      (squadId) => accessBySquad.get(squadId)
+    ),
     hasMore,
     nextCursor:
       hasMore && last

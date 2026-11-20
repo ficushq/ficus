@@ -57,11 +57,33 @@ async function flushEffects() {
   })
 }
 
+const RESOLVE_PATH = 'http://localhost/api/integrations/authorization/provider'
+type Call = { url: string; body: string }
+
+/**
+ * Core for the callback page: the provider lookup answers from the flow it is given (or fails as an
+ * unknown flow), and every other request goes to `respond`.
+ */
+function mockCore(provider: string | null, respond: (call: Call) => Response | Promise<Response>, calls: Call[] = []) {
+  globalThis.fetch = (async (input, init) => {
+    const call = { url: String(input), body: String(init?.body) }
+    calls.push(call)
+    if (call.url === RESOLVE_PATH)
+      return provider
+        ? Response.json({ provider })
+        : Response.json({ error: 'invalid_or_expired_state', code: 'invalid_or_expired_state' }, { status: 400 })
+    return respond(call)
+  }) as typeof fetch
+  return calls
+}
+
+const pending = () => new Promise<Response>(() => {})
+
 for (const provider of ['github', 'notion'] as const) {
   test(`${provider} callback upgrades a legacy settings return to the expanded provider card`, async () => {
     if (provider === 'github')
       window.history.replaceState(null, '', CALLBACK.replace('/callback?', '/callback/github?'))
-    globalThis.fetch = (async () => Response.json({ returnTo: '/settings' })) as typeof fetch
+    mockCore(provider, () => Response.json({ returnTo: '/settings' }))
     const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
     try {
       await renderPage()
@@ -73,28 +95,88 @@ for (const provider of ['github', 'notion'] as const) {
   })
 }
 
-test('slack callback (hinted via sessionStorage at authorization start) completes against the slack provider', async () => {
-  window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
-  let path = ''
-  globalThis.fetch = (async (input) => {
-    path = String(input)
-    return Response.json({ returnTo: '/settings' })
-  }) as typeof fetch
+for (const provider of ['linear', 'notion', 'slack'] as const) {
+  test(`a ${provider} completion with no hint (started in the Desktop app) completes against the provider Core names`, async () => {
+    const calls = mockCore(provider, () => Response.json({ returnTo: '/settings' }))
+    const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
+    try {
+      await renderPage()
+      await flushEffects()
+      expect(calls).toEqual([
+        { url: RESOLVE_PATH, body: JSON.stringify({ localFlowId: FLOW }) },
+        {
+          url: `http://localhost/api/integrations/providers/${provider}/authorization/complete`,
+          body: JSON.stringify({ localFlowId: FLOW, handle: HANDLE }),
+        },
+      ])
+      expect(redirect).toHaveBeenCalledWith(`/settings?section=integrations&setting=integration-${provider}`)
+    } finally {
+      redirect.mockRestore()
+    }
+  })
+}
+
+test('a stale hint from another flow never steers completion; the provider Core names wins', async () => {
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'notion')
+  const calls = mockCore('linear', () => pending())
+
+  await renderPage()
+  await flushEffects()
+
+  expect(calls.map((call) => call.url)).toEqual([
+    RESOLVE_PATH,
+    'http://localhost/api/integrations/providers/linear/authorization/complete',
+  ])
+  expect(container.textContent).toContain('Connecting Linear')
+  expect(container.textContent).not.toContain('Notion')
+  expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
+})
+
+test('a Linear account-linking callback (no hint is ever set) completes against linear and returns to the account', async () => {
+  const calls = mockCore('linear', () => Response.json({ returnTo: '/settings/linear-identity' }))
   const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
   try {
     await renderPage()
     await flushEffects()
-    expect(path).toContain('/integrations/providers/slack/authorization/complete')
-    expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-slack')
-    expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
+    expect(calls.at(-1)?.url).toBe('http://localhost/api/integrations/providers/linear/authorization/complete')
+    expect(redirect).toHaveBeenCalledWith('/settings?section=account&setting=linear-account')
   } finally {
     redirect.mockRestore()
   }
 })
 
+test('while Core is naming the provider the page names no provider, never Notion', async () => {
+  globalThis.fetch = (async () => pending()) as typeof fetch
+
+  await renderPage()
+
+  expect(container.querySelector('h1')?.textContent).toBe('Finishing the connection')
+})
+
+test('a flow Core does not know for this person is a terminal failure and nothing is completed', async () => {
+  const calls = mockCore(null, () => Response.json({ returnTo: '/settings' }))
+
+  await renderPage()
+  await flushEffects()
+
+  expect(calls.map((call) => call.url)).toEqual([RESOLVE_PATH])
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Return to Settings and start again')
+  expect(container.querySelector('h1')?.textContent).toBe("Couldn't finish the connection")
+  expect(window.history.state).toBeNull()
+})
+
+test('a provider answer that is not a provider key never becomes part of a request path', async () => {
+  const calls = mockCore('../../auth/logout', () => Response.json({ returnTo: '/settings' }))
+
+  await renderPage()
+  await flushEffects()
+
+  expect(calls.map((call) => call.url)).toEqual([RESOLVE_PATH])
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Return to Settings and start again')
+})
+
 test('a self-hosted Linear app callback posts the code to the linear provider', async () => {
   window.history.replaceState(null, '', `/settings/integrations/oauth/callback/linear?state=${HANDLE}&code=linear-code`)
-  window.sessionStorage.setItem('ficusOAuthProviderHint', 'linear')
   let request: { url: string; body: string } | undefined
   globalThis.fetch = (async (input, init) => {
     request = { url: String(input), body: String(init?.body) }
@@ -108,25 +190,8 @@ test('a self-hosted Linear app callback posts the code to the linear provider', 
       url: 'http://localhost/api/integrations/providers/linear/authorization/callback',
       body: JSON.stringify({ state: HANDLE, code: 'linear-code' }),
     })
-    expect(container.textContent).toContain('Connecting Linear')
+    expect(container.querySelector('h1')?.textContent).toBe('Linear connected')
     expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-linear')
-  } finally {
-    redirect.mockRestore()
-  }
-})
-
-test('a hosted Linear app callback (hinted at install start) completes against the linear provider', async () => {
-  window.sessionStorage.setItem('ficusOAuthProviderHint', 'linear')
-  let path = ''
-  globalThis.fetch = (async (input) => {
-    path = String(input)
-    return Response.json({ returnTo: '/settings' })
-  }) as typeof fetch
-  const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
-  try {
-    await renderPage()
-    await flushEffects()
-    expect(path).toContain('/integrations/providers/linear/authorization/complete')
   } finally {
     redirect.mockRestore()
   }
@@ -146,6 +211,7 @@ test('a github-suffixed path wins over a stale provider hint left by an abandone
     await flushEffects()
     expect(path).toContain('/integrations/providers/github/authorization/complete')
     expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-github')
+    expect(path).not.toBe(RESOLVE_PATH)
   } finally {
     redirect.mockRestore()
   }
@@ -159,13 +225,13 @@ test('strips the completion handle from the URL before any network call', async 
     replaceState(data, unused, url)
   }) as typeof window.history.replaceState
   globalThis.fetch = (async () => {
-    order.push('complete')
+    order.push('fetch')
     return new Promise<Response>(() => {})
   }) as typeof fetch
 
   await renderPage()
 
-  expect(order).toEqual(['replaceState', 'complete'])
+  expect(order).toEqual(['replaceState', 'fetch'])
   expect(window.location.search).toBe('')
   expect(container.querySelector('[role="status"][aria-live="polite"]')?.textContent).toContain(
     'Finishing the secure connection'
@@ -178,13 +244,11 @@ test('strips the completion handle from the URL before any network call', async 
 
 test('reload recovers the same completion payload after a retryable failure', async () => {
   const bodies: string[] = []
-  globalThis.fetch = (async (_input, init) => {
-    bodies.push(String(init?.body))
-    if (bodies.length === 1) {
-      return Response.json({ error: 'broker_unavailable' }, { status: 503 })
-    }
-    return new Promise<Response>(() => {})
-  }) as typeof fetch
+  mockCore('notion', (call) => {
+    bodies.push(call.body)
+    if (bodies.length === 1) return Response.json({ error: 'broker_unavailable' }, { status: 503 })
+    return pending()
+  })
 
   await renderPage()
   await flushEffects()
@@ -194,6 +258,7 @@ test('reload recovers the same completion payload after a retryable failure', as
   await harness.act(async () => root.unmount())
   ;({ root, container } = harness.createRoot())
   await renderPage()
+  await flushEffects()
 
   expect(bodies).toEqual([
     JSON.stringify({ localFlowId: FLOW, handle: HANDLE }),
@@ -201,30 +266,56 @@ test('reload recovers the same completion payload after a retryable failure', as
   ])
 })
 
-test('a reload after a retryable failure keeps completing against the hinted provider (slack), not the notion default', async () => {
-  window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
-  const paths: string[] = []
-  globalThis.fetch = (async (input) => {
-    paths.push(String(input))
-    if (paths.length === 1) return Response.json({ error: 'broker_unavailable' }, { status: 503 })
-    return new Promise<Response>(() => {})
-  }) as typeof fetch
+test('a reload after a retryable failure asks Core again and keeps completing against slack, not a default', async () => {
+  const calls = mockCore('slack', () =>
+    calls.filter((c) => c.url !== RESOLVE_PATH).length === 1
+      ? Response.json({ error: 'broker_unavailable' }, { status: 503 })
+      : pending()
+  )
 
   await renderPage()
   await flushEffects()
   expect(container.textContent).toContain('try again')
-  // The one-shot sessionStorage hint is gone after the first render...
-  expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
+  expect(container.querySelector('h1')?.textContent).toBe('Slack is not connected yet')
 
-  // ...but a reload (fresh mount, same persisted history state) must still
-  // know this is the slack flow, not silently fall back to notion.
   await harness.act(async () => root.unmount())
   ;({ root, container } = harness.createRoot())
   await renderPage()
   await flushEffects()
 
-  expect(paths.every((path) => path.includes('/integrations/providers/slack/authorization/complete'))).toBe(true)
+  const completions = calls.filter((call) => call.url !== RESOLVE_PATH)
+  expect(completions).toHaveLength(2)
+  expect(completions.every((call) => call.url.includes('/integrations/providers/slack/authorization/complete'))).toBe(
+    true
+  )
   expect(container.textContent).toContain('Connecting Slack')
+})
+
+test('a provider lookup that cannot reach Core is retryable and the retry asks again', async () => {
+  let lookups = 0
+  const calls: Call[] = []
+  globalThis.fetch = (async (input, init) => {
+    calls.push({ url: String(input), body: String(init?.body) })
+    if (String(input) === RESOLVE_PATH) {
+      lookups += 1
+      return lookups === 1
+        ? Response.json({ error: 'unavailable' }, { status: 503 })
+        : Response.json({ provider: 'linear' })
+    }
+    return pending()
+  }) as typeof fetch
+
+  await renderPage()
+  await flushEffects()
+  const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
+  await harness.act(async () => fireEvent.click(retry))
+  await flushEffects()
+
+  expect(calls.map((call) => call.url)).toEqual([
+    RESOLVE_PATH,
+    RESOLVE_PATH,
+    'http://localhost/api/integrations/providers/linear/authorization/complete',
+  ])
 })
 
 test('BrowserRouter reload metadata preserves and resends the exact hosted completion payload', async () => {
@@ -234,12 +325,13 @@ test('BrowserRouter reload metadata preserves and resends the exact hosted compl
     '/settings/integrations/oauth/callback'
   )
   let body = ''
-  globalThis.fetch = (async (_input, init) => {
-    body = String(init?.body)
-    return new Promise<Response>(() => {})
-  }) as typeof fetch
+  mockCore('notion', (call) => {
+    body = call.body
+    return pending()
+  })
 
   await renderPageInBrowserRouter()
+  await flushEffects()
 
   expect(window.history.state.idx).toBeNumber()
   expect(body).toBe(JSON.stringify({ localFlowId: FLOW, handle: HANDLE }))
@@ -247,17 +339,18 @@ test('BrowserRouter reload metadata preserves and resends the exact hosted compl
 
 test('retry resends the exact retained flow and handle body', async () => {
   const bodies: string[] = []
-  globalThis.fetch = (async (_input, init) => {
-    bodies.push(String(init?.body))
+  mockCore('notion', (call) => {
+    bodies.push(call.body)
     if (bodies.length === 1) return Response.json({ error: 'broker_timeout' }, { status: 503 })
-    return new Promise<Response>(() => {})
-  }) as typeof fetch
+    return pending()
+  })
 
   await renderPage()
   await flushEffects()
   const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
-  expect(retry.className).toContain('focus-visible:ring-2')
+  expect(retry.className).toContain('ficus-button-primary')
   await harness.act(async () => fireEvent.click(retry))
+  await flushEffects()
 
   expect(bodies).toEqual([
     JSON.stringify({ localFlowId: FLOW, handle: HANDLE }),
@@ -267,7 +360,7 @@ test('retry resends the exact retained flow and handle body', async () => {
 })
 
 test('durable Core success clears the transient history payload', async () => {
-  globalThis.fetch = (async () => Response.json({ returnTo: '/settings' })) as typeof fetch
+  mockCore('notion', () => Response.json({ returnTo: '/settings' }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.invalidateQueries = (() => new Promise(() => {})) as typeof client.invalidateQueries
 
@@ -279,7 +372,7 @@ test('durable Core success clears the transient history payload', async () => {
 
 for (const terminalCode of ['completion_not_found', 'flow_expired']) {
   test(`explicitly terminal ${terminalCode} clears the transient history payload`, async () => {
-    globalThis.fetch = (async () => Response.json({ error: terminalCode }, { status: 400 })) as typeof fetch
+    mockCore('notion', () => Response.json({ error: terminalCode }, { status: 400 }))
 
     await renderPage()
     await flushEffects()
@@ -298,15 +391,22 @@ test('self-hosted success strips query material before posting the local callbac
     order.push('replaceState')
     replaceState(data, unused, url)
   }) as typeof window.history.replaceState
-  globalThis.fetch = (async (input, init) => {
-    order.push('callback')
-    request = { url: String(input), body: String(init?.body) }
-    return new Promise<Response>(() => {})
+  const calls = mockCore('notion', (call) => {
+    request = call
+    return pending()
+  })
+  const fetchCore = globalThis.fetch
+  globalThis.fetch = ((input, init) => {
+    order.push('fetch')
+    return fetchCore(input, init)
   }) as typeof fetch
 
   await renderPage()
+  await flushEffects()
 
-  expect(order).toEqual(['replaceState', 'replaceState', 'callback'])
+  expect(order).toEqual(['replaceState', 'replaceState', 'fetch', 'fetch'])
+  // The shared path names no provider, so Core names it from the state before the code is posted.
+  expect(calls[0]).toEqual({ url: RESOLVE_PATH, body: JSON.stringify({ state: HANDLE }) })
   expect(request).toEqual({
     url: 'http://localhost/api/integrations/providers/notion/authorization/callback',
     body: JSON.stringify({ state: HANDLE, code: 'local-code' }),
@@ -321,10 +421,10 @@ test('self-hosted denial is normalized without forwarding provider-controlled te
     `/settings/integrations/oauth/callback?state=${HANDLE}&error=RAW_ERROR&error_description=RAW_DESCRIPTION`
   )
   let body = ''
-  globalThis.fetch = (async (_input, init) => {
-    body = String(init?.body)
+  mockCore('slack', (call) => {
+    body = call.body
     return Response.json({ error: 'provider_denied' }, { status: 400 })
-  }) as typeof fetch
+  })
 
   await renderPage()
   await flushEffects()
@@ -353,6 +453,52 @@ test('status=denied shows a cancelled message and never calls complete', async (
   expect(window.history.state).toBeNull()
   expect(container.querySelector('[role="status"][aria-live="polite"]')?.textContent).toContain(
     'Authorization cancelled'
+  )
+})
+
+for (const provider of ['linear', 'notion', 'slack'] as const) {
+  const label = { linear: 'Linear', notion: 'Notion', slack: 'Slack' }[provider]
+
+  test(`a cancelled ${provider} callback names ${label}`, async () => {
+    window.sessionStorage.setItem('ficusOAuthProviderHint', provider)
+    window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+    globalThis.fetch = (async () => new Response()) as typeof fetch
+
+    await renderPage()
+
+    expect(container.querySelector('h1')?.textContent).toBe(`${label} connection cancelled`)
+    expect(container.textContent).toContain('Authorization cancelled')
+  })
+
+  test(`a failed ${provider} broker callback names ${label} and shows the safe reason`, async () => {
+    window.sessionStorage.setItem('ficusOAuthProviderHint', provider)
+    window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=error&code=rate_limited')
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      return new Response()
+    }) as typeof fetch
+
+    await renderPage()
+
+    expect(calls).toBe(0)
+    expect(container.querySelector('h1')?.textContent).toBe(`Couldn't connect ${label}`)
+    const alert = container.querySelector('[role="alert"]')?.textContent
+    expect(alert).toContain('Return to Settings and start again')
+    expect(alert).toContain('The provider is limiting requests.')
+    expect(alert).toContain('(Code: rate_limited)')
+  })
+}
+
+test('a failed callback with an unlisted safe code shows the code, and without a hint names no provider', async () => {
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=error&code=provider_mismatch')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  expect(container.querySelector('h1')?.textContent).toBe("Couldn't finish the connection")
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    'The provider reported an error. (Code: provider_mismatch)'
   )
 })
 
@@ -412,6 +558,84 @@ test('malformed and provider-controlled callback material stays out of observabl
   expect(window.history.state).toBeNull()
   expect(container.textContent).not.toContain('RAW_HANDLE')
   expect(container.textContent).not.toContain('RAW_PROVIDER_ERROR')
+})
+
+function links(): Array<[string, string | null]> {
+  return [...container.querySelectorAll('a')].map((link) => [link.textContent ?? '', link.getAttribute('href')])
+}
+
+test('a saved connection says so before the redirect and links to the same destination', async () => {
+  mockCore('notion', () => Response.json({ returnTo: '/settings' }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.invalidateQueries = (() => new Promise(() => {})) as typeof client.invalidateQueries
+
+  await renderPage(client)
+  await flushEffects()
+
+  expect(container.querySelector('h1')?.textContent).toBe('Notion connected')
+  expect(container.querySelector('[role="status"][aria-live="polite"]')?.textContent).toContain(
+    'The connection is saved'
+  )
+  expect(links()).toEqual([['Continue', '/settings?section=integrations&setting=integration-notion']])
+})
+
+test('a terminal failure links back to the provider settings and to the app home', async () => {
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'notion')
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=error&code=provider_error')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  expect(links()).toEqual([
+    ['Back to Notion settings', '/settings?section=integrations&setting=integration-notion'],
+    ['Go to Ficus home', '/'],
+  ])
+  expect(container.querySelector('a')?.className).toContain('ficus-button-primary')
+})
+
+test('a cancelled callback with no provider links to the integrations page and the app home', async () => {
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  expect(container.querySelector('h1')?.textContent).toBe('Connection cancelled')
+  expect(links()).toEqual([
+    ['Back to Settings', '/settings?section=integrations'],
+    ['Go to Ficus home', '/'],
+  ])
+})
+
+test('a retryable failure offers Try again and both ways back, and a retry keeps focus on the page', async () => {
+  mockCore('slack', () => Response.json({ error: 'broker_unavailable' }, { status: 503 }))
+
+  await renderPage()
+  await flushEffects()
+
+  expect(links()).toEqual([
+    ['Back to Slack settings', '/settings?section=integrations&setting=integration-slack'],
+    ['Go to Ficus home', '/'],
+  ])
+  const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
+  retry.focus()
+  await harness.act(async () => fireEvent.click(retry))
+  await flushEffects()
+
+  // The focused button is gone; focus lands on the heading of the state that replaced it.
+  expect(container.querySelector('h1')?.textContent).toBe('Slack is not connected yet')
+  expect(document.activeElement).toBe(container.querySelector('h1'))
+})
+
+test('the screen stands alone: no app navigation, one main landmark named by its heading', async () => {
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  const main = container.querySelectorAll('main')
+  expect(main).toHaveLength(1)
+  expect(main[0]?.getAttribute('aria-labelledby')).toBe(container.querySelector('h1')?.id)
+  expect(container.querySelector('nav, header, footer')).toBeNull()
 })
 
 function storageValues(storage: Storage): string[] {

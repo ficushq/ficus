@@ -16,7 +16,7 @@ const REQUIRED_CAPABILITIES: Readonly<Record<SelfHostedOAuthProvider, readonly s
   // What the operator's Linear OAuth application needs for the agent app.
   linear: [
     'Webhooks: Agent session events, Inbox notifications, Permission changes, Issues, Comments',
-    'Scopes requested at install: read, issues:create, comments:create, app:assignable, app:mentionable',
+    'Scopes requested at install: read, write, app:assignable, app:mentionable',
   ],
 }
 

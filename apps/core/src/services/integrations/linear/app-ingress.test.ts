@@ -163,6 +163,25 @@ describe('acknowledgment', () => {
     expect(row?.ackState).toBe('sent')
   })
 
+  test('an app without the write scope is not retried and is marked for reconnect', async () => {
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    linear.failNext('scope', 'FicusAgentActivity')
+    await created(sessionId)
+    // One acknowledgment attempt only: a retry is refused the same way.
+    const acks = linear.calls.filter(
+      (call) => call.operation === 'FicusAgentActivity' && call.variables.input?.content?.body === LINEAR_ACK_BODY
+    )
+    expect(acks).toHaveLength(1)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row?.ackState).toBe('failed')
+    const [connection] = await db
+      .select()
+      .from(integrationConnections)
+      .where(eq(integrationConnections.id, fixture.connectionId))
+    expect(connection).toMatchObject({ authState: 'reauthorization_required', lastErrorCode: 'insufficient_scope' })
+  })
+
   test('a session outside an issue is acknowledged and closed politely', async () => {
     const sessionId = randomUUID()
     linear.addSession({ id: sessionId, issueId: issue.id })

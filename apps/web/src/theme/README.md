@@ -32,9 +32,11 @@ complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../..
   40% and 50% opacity); with xterm 5.5 `auto` meant the browser's native
   scrollbar, which xterm 6 no longer offers. A theme that supplies RGB channels
   colors the slider; Iris’s hover/active tokens alias the normal thumb, so a
-  partial override of just that thumb also stays valid. Log viewers have no
-  `--log-scrollbar-*` tokens and always keep the default slider, as they kept
-  the native scrollbar before. xterm writes the slider colors into an unscoped style element, so when
+  partial override of just that thumb also stays valid. The sandbox log viewer
+  has no `--log-scrollbar-*` tokens and always keeps the default slider, as it
+  kept the native scrollbar before. Settings → Logs is not an xterm: it draws
+  the same `--log-*` palette through CSS (`components/settings/SystemLogView.css`) and
+  uses a native scrollbar tinted from `--log-fg`. xterm writes the slider colors into an unscoped style element, so when
   two terminals with different slider colors share a page, the one later in the
   document colors both sliders (an upstream limitation).
 - `--term-*` and `--ansi-*` use the same sixteen slot **names**, not identical

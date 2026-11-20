@@ -3,6 +3,7 @@ import { QueryClientContext } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { EntityReference } from '../lib/entityReference'
+import { agentChatTarget } from '../lib/agentChatLinks'
 import { REFERENCE_PREVIEW_OPEN_EVENT } from '@ficus/shared/browser-keys'
 import { useHoverCard } from './popover/useHoverCard'
 import {
@@ -66,6 +67,8 @@ export function EntityReferenceLink({
         ref={button}
         type="button"
         aria-busy={loading}
+        // Shift- or Alt/Option-click opens a referenced agent in a floating window instead.
+        {...agentChatTarget(reference.kind === 'agent' ? reference.id : undefined)}
         aria-haspopup={client ? 'dialog' : undefined}
         aria-expanded={client ? preview && !open : undefined}
         aria-controls={preview && client ? previewId : undefined}

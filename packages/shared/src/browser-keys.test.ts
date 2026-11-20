@@ -43,6 +43,7 @@ test('OAuth callback history-state keys use the ficus names', () => {
   expect(keys.OAUTH_LOCAL_CALLBACK_STATE_KEY).toBe('ficusOAuthLocalCallback')
   expect(keys.OAUTH_CALLBACK_OUTCOME_STATE_KEY).toBe('ficusOAuthCallbackOutcome')
   expect(keys.OAUTH_CALLBACK_PROVIDER_STATE_KEY).toBe('ficusOAuthCallbackProvider')
+  expect(keys.OAUTH_CALLBACK_REASON_STATE_KEY).toBe('ficusOAuthCallbackReason')
 })
 
 test('service-worker runtime cache prefixes are exactly the two ficus prefixes', () => {

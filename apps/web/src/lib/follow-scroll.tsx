@@ -32,8 +32,13 @@ function distanceFromBottom(el: HTMLElement) {
  * calling `resume` (the Follow button), picks it up again. Following is only a
  * streaming behaviour: when `follow` is off the box is never scrolled for the
  * user, so a finished call opened later behaves like any other box.
+ *
+ * `FollowScrollBox` wraps this for small boxes; larger views (Settings → Logs)
+ * use the hook directly to draw their own resume control or to `pause` before
+ * scrolling to something themselves.
  */
-function useFollowScroll<T extends HTMLElement>(follow: boolean) {
+// eslint-disable-next-line react-refresh/only-export-components -- the hook is shared with views that draw their own controls.
+export function useFollowScroll<T extends HTMLElement>(follow: boolean) {
   const ref = useRef<T>(null)
   const [paused, setPausedState] = useState(false)
   const pausedRef = useRef(false)
@@ -123,11 +128,15 @@ function useFollowScroll<T extends HTMLElement>(follow: boolean) {
     pin()
   }, [pin])
 
+  /** Stop following before scrolling the box elsewhere programmatically (for example to a search match). */
+  const pause = useCallback(() => setPaused(true), [setPaused])
+
   return {
     ref,
     /** True while following is on but the user has scrolled away from the bottom. */
     paused: follow && paused,
     resume,
+    pause,
     handlers: { onScroll, onWheel, onTouchStart, onTouchMove },
   }
 }

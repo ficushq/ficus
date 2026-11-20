@@ -206,7 +206,11 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
 
       {/* Content */}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <SettingsSearchDestination section={activeSection} target={searchParams.get('setting') ?? undefined}>
+        <SettingsSearchDestination
+          section={activeSection}
+          target={searchParams.get('setting') ?? undefined}
+          fill={activeSection === 'system-logs'}
+        >
           {activeSection === 'memory' && <AssistantMemorySection />}
           {activeSection === 'skills' && <SkillsSection />}
           {activeSection === 'agent-types' && <AgentTypesSection />}

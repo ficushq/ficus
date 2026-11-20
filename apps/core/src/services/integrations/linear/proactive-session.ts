@@ -8,6 +8,7 @@ import { announceLinearSessionBinding, bindLinearSession } from './session-bindi
 import { projectLinearWriteBack } from './session-projector'
 import { drainLinearOutboxSoon } from './write-back-runtime'
 import { createLinearSessionOnIssue } from './write-api'
+import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
 
 /** Issues with a `--linear-session` request in flight in this process, by connection. */
 const pendingProactiveSessions = new Set<string>()
@@ -83,8 +84,15 @@ export async function openLinearSessionForStream(
   pendingProactiveSessions.add(pendingKey)
   try {
     session = await createLinearSessionOnIssue(resolved.authorization, resource.externalId)
-  } catch {
+  } catch (error) {
     pendingProactiveSessions.delete(pendingKey)
+    if (isLinearInsufficientScope(error)) {
+      await markLinearScopeMissing(resolved.connection.id)
+      throw new TrackedResourceError(
+        'The Ficus Linear app lacks the permissions to open agent sessions; a Linear workspace admin must reconnect it in Settings, Integrations, Linear',
+        409
+      )
+    }
     // Provider text is never relayed; the stream keeps tracking the issue either way.
     throw new TrackedResourceError('Linear did not open an agent session on this issue', 409)
   }

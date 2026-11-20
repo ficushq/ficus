@@ -7,6 +7,7 @@ import type {
 import { createLogger } from '../../../lib/infra/logger'
 import type { IntegrationConnectionRecord } from '../connection-repository'
 import { LinearRateLimitedError, linearQuery } from './plugin'
+import { LINEAR_INSUFFICIENT_SCOPE_CODE } from './scope-health'
 
 const log = createLogger('linear-team-directory')
 
@@ -105,6 +106,16 @@ export function createLinearTeamDirectory(deps: LinearTeamDirectoryDependencies)
       const connections = await Promise.all(
         attached.map(async (connection): Promise<LinearTeamListingConnection> => {
           const base = { id: connection.id, displayName: connection.displayName, isDefault: connection.isDefault }
+          // Reconnect required (for example a missing scope) is a state an admin can fix: name it.
+          if (connection.enabled && connection.authState === 'reauthorization_required')
+            return {
+              ...base,
+              status: 'error',
+              error:
+                connection.lastErrorCode === LINEAR_INSUFFICIENT_SCOPE_CODE
+                  ? 'insufficient_scope'
+                  : 'reconnect_required',
+            }
           const usable = connection.enabled ? await deps.authorize(connection) : null
           if (!usable) return { ...base, status: 'error', error: 'connection_unusable' }
           try {

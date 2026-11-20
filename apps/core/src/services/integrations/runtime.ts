@@ -71,6 +71,7 @@ import {
 } from './authorization/db-device-repository'
 import { GitHubOAuthClient } from '@ficus/shared/oauth-providers/github/client'
 import { resolveGitHubAppCredentials } from './authorization/github-app'
+import { resolveAuthorizationFlowProvider } from './authorization/flow-provider'
 import { resolveInstanceGitHubConnection } from './github/resolve-connection'
 import { checkGitHubRepositoryAccess } from './github/repository-access'
 import { parseGitHubConfiguration } from '@ficus/shared/oauth-providers/github/config'
@@ -831,6 +832,7 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
       })
     },
     ...githubIdentityAuthorization.common,
+    resolveProvider: resolveAuthorizationFlowProvider,
     // A Linear account-linking flow finishes through its own finalizer and never installs a connection.
     async resolvePurpose(input: Parameters<NonNullable<typeof githubIdentityAuthorization.common.resolvePurpose>>[0]) {
       if (input.providerKey === 'linear') return resolveStoredLinearPurpose(input)

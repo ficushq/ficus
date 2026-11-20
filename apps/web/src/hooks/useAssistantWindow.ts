@@ -1,53 +1,54 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from 'react'
 import {
   ASSISTANT_DEFAULT_H,
   ASSISTANT_DEFAULT_W,
+  ASSISTANT_MIN,
   clampPosition,
   clampRect,
-  isDefaultPlacementKey,
   placedRect,
   readAssistantWindow,
   saveAssistantWindow,
-  snapForKey,
   snapRect,
   type AssistantWindowPlacement,
   type Rect,
   type Snap,
 } from '../lib/assistantWindow'
+import { registerFloatingWindow } from '../lib/floatingWindowRegistry'
+import { ASSISTANT_WINDOW_KEY } from '../lib/chatWindows'
 import { ASSISTANT_GUTTER, currentViewport, dockAssistant } from './useAssistantPosition'
 import { useStableRef } from './useStableRef'
 import { useAdjustOnChange } from './useAdjustOnChange'
+import { useFloatingWindowGesture } from './useFloatingWindowGesture'
 
 const KEY_STEP = 16
-/** Pointer travel before a press on the header becomes a drag (so clicks stay clicks). */
-const DRAG_THRESHOLD = 4
-
-type Gesture = { kind: 'move' | 'resize'; pointer: number; x: number; y: number; start: Rect; moved: boolean }
 
 /**
- * The assistant command center as a floating window, like the farm's chat windows. Until the
- * user moves it, it sits at the default upper-center command-center anchor with its CSS size.
- * Dragging its header places it anywhere, the corner handle resizes it, and the layout menu (or
- * Ctrl+Option shortcuts) snaps it to fill part of the screen. The latest placement is remembered
- * in the browser. `small` is the live-voice command bar: it follows a free placement's position
- * but keeps its own size, and ignores snaps.
+ * The assistant command center as a floating window, sharing its gestures with agent chat windows. Until
+ * the user moves it, it sits at the default centered card with its CSS size. Dragging its header places
+ * it anywhere (or snaps it at a screen edge or the zone picker), its edges and corner resize it, and the
+ * layout menu (or Ctrl+Option shortcuts, when it is the window in use) snaps it to fill part of the
+ * screen. The latest placement is remembered in the browser. `small` is the live-voice command bar: it
+ * follows a free placement's position but keeps its own size, and ignores snaps.
  */
 export function useAssistantWindow(
   ref: RefObject<HTMLDivElement | null>,
-  { visible, small, layoutKey }: { visible: boolean; small: boolean; layoutKey?: string }
+  {
+    visible,
+    small,
+    layoutKey,
+    z = 0,
+  }: {
+    visible: boolean
+    small: boolean
+    layoutKey?: string
+    /** Its place in the shared window stack, for keyboard shortcuts aimed at the frontmost window. */
+    z?: number
+  }
 ) {
   const [placement, setPlacementState] = useState<AssistantWindowPlacement>(() => readAssistantWindow())
   // Gestures read the placement from this ref; setPlacement also writes it at once, before React renders.
   const placementRef = useStableRef(placement)
-  const gesture = useRef<Gesture | null>(null)
-  const [live, setLiveState] = useState<Rect>()
-  // The gesture's latest rect, for committing on release without waiting for a render.
-  const liveRef = useRef<Rect | undefined>(undefined)
-  const setLive = (next: Rect | undefined) => {
-    liveRef.current = next
-    setLiveState(next)
-  }
   const [style, setStyle] = useState<CSSProperties>({})
 
   const setPlacement = useCallback(
@@ -75,6 +76,51 @@ export function useAssistantWindow(
     const viewport = currentViewport()
     return { x: box.left - viewport.left, y: box.top - viewport.top, w: box.width, h: box.height }
   }, [ref])
+
+  const snap = useCallback(
+    (next: Snap, free?: Rect) => {
+      const current = placementRef.current
+      // The free rectangle it returns to when dragged out of the snap (none for the default card).
+      const restore = free ?? (current.snap ? current.restore : current.rect)
+      setPlacement({ snap: next, rect: snapRect(next, currentViewport()), ...(restore ? { restore } : {}) })
+    },
+    [placementRef, setPlacement]
+  )
+  const reset = useCallback(() => setPlacement({}), [setPlacement])
+  /** Double-click on the header: fill the screen, and back to where it was. */
+  const toggleFull = useCallback(() => {
+    const current = placementRef.current
+    if (current.snap !== 'full') snap('full')
+    else setPlacement(current.restore ? { rect: current.restore } : {})
+  }, [placementRef, setPlacement, snap])
+
+  const gesture = useFloatingWindowGesture({
+    currentRect,
+    min: ASSISTANT_MIN,
+    snapOnDrag: !small,
+    restoreSize: () => {
+      const current = placementRef.current
+      return current.snap && current.restore && !small ? current.restore : undefined
+    },
+    // The command bar moves as itself; clampRect's minimum window size would otherwise stretch it.
+    clampMove: small ? clampPosition : undefined,
+    onTitleDoubleClick: small ? undefined : toggleFull,
+    onCommit: ({ kind, rect, snap: to }) => {
+      if (to && kind === 'move' && !small) {
+        snap(to, rect)
+        return
+      }
+      // Dragging or resizing unsnaps it, keeping where it was left. A dragged command bar keeps the
+      // window's remembered size (or the default) for when it expands.
+      const previous = placementRef.current.rect
+      setPlacement({
+        rect: small
+          ? { x: rect.x, y: rect.y, w: previous?.w ?? ASSISTANT_DEFAULT_W, h: previous?.h ?? ASSISTANT_DEFAULT_H }
+          : rect,
+      })
+    },
+  })
+  const live = gesture.live
 
   useLayoutEffect(() => {
     if (!visible || !ref.current) return
@@ -131,80 +177,20 @@ export function useAssistantWindow(
     }
   }, [ref, visible, small, layoutKey, placement, live, placementRef])
 
-  const snap = useCallback(
-    (next: Snap) => setPlacement({ snap: next, rect: snapRect(next, currentViewport()) }),
-    [setPlacement]
+  // Rectangle-style shortcuts, as in the farm: Ctrl+Option with arrows, U I J K, D F G, Enter, and C for the
+  // default card. They reach the assistant only when it holds focus or is the frontmost window.
+  const shortcutState = useStableRef({ visible: visible && !small, z, snap, reset })
+  useEffect(
+    () =>
+      registerFloatingWindow(ASSISTANT_WINDOW_KEY, {
+        element: () => ref.current,
+        z: () => shortcutState.current.z,
+        visible: () => shortcutState.current.visible,
+        snap: (to) => shortcutState.current.snap(to),
+        center: () => shortcutState.current.reset(),
+      }),
+    [ref, shortcutState]
   )
-  const reset = useCallback(() => setPlacement({}), [setPlacement])
-
-  // Rectangle-style shortcuts, as in the farm: Ctrl+Option with arrows, U I J K, D F G, Enter.
-  useEffect(() => {
-    if (!visible || small) return
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (isDefaultPlacementKey(event)) {
-        event.preventDefault()
-        reset()
-        return
-      }
-      const next = snapForKey(event)
-      if (!next) return
-      event.preventDefault()
-      snap(next)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [visible, small, snap, reset])
-
-  const begin = (kind: Gesture['kind'], event: PointerEvent<HTMLElement>) => {
-    const start = currentRect()
-    if (!start) return
-    gesture.current = { kind, pointer: event.pointerId, x: event.clientX, y: event.clientY, start, moved: false }
-    event.currentTarget.setPointerCapture(event.pointerId)
-    event.preventDefault()
-  }
-  const move = (event: PointerEvent<HTMLElement>) => {
-    const g = gesture.current
-    if (!g || g.pointer !== event.pointerId) return
-    const dx = event.clientX - g.x
-    const dy = event.clientY - g.y
-    if (!g.moved && g.kind === 'move' && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
-    g.moved = true
-    const viewport = currentViewport()
-    if (g.kind === 'move') {
-      const moved = { ...g.start, x: g.start.x + dx, y: g.start.y + dy }
-      // The command bar moves as itself; clampRect's minimum window size would otherwise stretch it.
-      setLive(small ? clampPosition(moved, viewport) : clampRect(moved, viewport))
-    } else setLive(clampRect({ ...g.start, w: g.start.w + dx, h: g.start.h + dy }, viewport))
-  }
-  const end = (event: PointerEvent<HTMLElement>) => {
-    const g = gesture.current
-    if (!g || g.pointer !== event.pointerId) return
-    gesture.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    const final = liveRef.current
-    setLive(undefined)
-    if (!g.moved || !final) return
-    // Dragging or resizing unsnaps it, keeping where it was left. A dragged command bar keeps the
-    // window's remembered size (or the default) for when it expands.
-    const previous = placementRef.current.rect
-    setPlacement({
-      rect: small
-        ? { x: final.x, y: final.y, w: previous?.w ?? ASSISTANT_DEFAULT_W, h: previous?.h ?? ASSISTANT_DEFAULT_H }
-        : final,
-    })
-  }
-
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement
-    if (
-      event.button !== 0 ||
-      !target.closest('[data-assistant-drag-handle]') ||
-      target.closest('button, input, select, label, a, textarea, [data-assistant-snap-menu]')
-    )
-      return
-    begin('move', event)
-  }
 
   const onResizeKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const step =
@@ -219,19 +205,18 @@ export function useAssistantWindow(
 
   return {
     placement,
-    snap,
+    snap: useCallback((next: Snap) => snap(next), [snap]),
     reset,
+    toggleFull,
     style: live ? { ...style, transition: 'none' } : style,
     moving: live !== undefined,
-    panelHandlers: { onPointerDown, onPointerMove: move, onPointerUp: end, onPointerCancel: end },
+    /** What a drag would snap to if released now (for the preview and zone picker). */
+    dragSnap: gesture.dragSnap,
+    dragging: gesture.dragging,
+    beginResize: gesture.beginResize,
+    panelHandlers: gesture.handlers,
     resizeHandle: {
-      onPointerDown: (event: PointerEvent<HTMLElement>) => {
-        event.stopPropagation()
-        if (event.button === 0) begin('resize', event)
-      },
-      onPointerMove: move,
-      onPointerUp: end,
-      onPointerCancel: end,
+      onPointerDown: (event: PointerEvent<HTMLElement>) => gesture.beginResize('se', event),
       onKeyDown: onResizeKeyDown,
       onDoubleClick: reset,
     },

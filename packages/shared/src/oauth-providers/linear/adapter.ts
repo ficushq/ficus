@@ -1,5 +1,6 @@
 import type { OAuthProviderAdapter, OAuthProviderFailure } from '../types'
-import { LINEAR_IDENTITY_ADAPTER_KEY, LinearOAuthClient, LinearOAuthError } from './client'
+import { LINEAR_IDENTITY_ADAPTER_KEY, LinearOAuthClient, LinearOAuthError, type LinearTokenResponse } from './client'
+import type { LinearGrantScopes } from './config'
 
 export { LINEAR_IDENTITY_ADAPTER_KEY }
 
@@ -34,11 +35,15 @@ export function classifyLinearOAuthError(error: unknown): OAuthProviderFailure {
 }
 
 export function createLinearAdapter(client = new LinearOAuthClient()): OAuthProviderAdapter {
-  const grant = (tokens: { accessToken: string; refreshToken: string | null; expiresAt: string | null }) => ({
+  const grant = (tokens: LinearTokenResponse) => ({
     tokens: { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, expiresAt: tokens.expiresAt },
-    // Linear's token response carries no identity. Core persists the pair
-    // first, then reads the app user and workspace (resolveGrantIdentity).
-    configuration: null,
+    // Linear's token response carries no identity, only the granted scopes. Core persists the
+    // pair first, then reads the app user and workspace (resolveGrantIdentity) and stores the
+    // scopes with them. No reported scopes leaves Core to fall back to the requested set.
+    configuration:
+      tokens.scopes.length > 0
+        ? ({ version: 'linear-grant', scopes: tokens.scopes } satisfies LinearGrantScopes)
+        : null,
     displayName: 'Linear',
   })
   return {
@@ -65,7 +70,8 @@ export function createLinearIdentityAdapter(client = new LinearOAuthClient()): O
   return {
     ...app,
     key: LINEAR_IDENTITY_ADAPTER_KEY,
-    buildAuthorizationUrl: (input) => client.buildUserAuthorizationUrl(input),
+    buildAuthorizationUrl: ({ clientId, redirectUri, state }) =>
+      client.buildUserAuthorizationUrl({ clientId, redirectUri, state }),
   }
 }
 

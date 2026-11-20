@@ -63,7 +63,7 @@ export type Executor = Pick<typeof db, 'execute'>
  * `i.metadata ->> ('workStreamId'::uuid)`, which casts the *key* and fails to
  * plan at all -- every call raises, not just the malformed rows.
  */
-const uuidJoinKey = (expr: SQL) =>
+export const uuidJoinKey = (expr: SQL) =>
   sql`(CASE WHEN (${expr}) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN (${expr})::uuid END)`
 const rows = <T>(result: Awaited<ReturnType<Executor['execute']>>) => result as unknown as T[]
 

@@ -1,4 +1,5 @@
 import { LINEAR_GRAPHQL_ENDPOINT } from './cli'
+import { isLinearScopeError, readGraphQLErrors } from './scope-error'
 
 /**
  * Linear writes made by the write-back outbox, with failures classified so the outbox can decide
@@ -6,8 +7,21 @@ import { LINEAR_GRAPHQL_ENDPOINT } from './cli'
  * is ever logged or returned; error codes are fixed strings.
  */
 
+/**
+ * `insufficient_scope` is Linear's `Invalid scope` refusal: the app token lacks a scope (for
+ * example `write`). It is not permanent: the outbox marks the connection for reconnect and the
+ * item waits for a usable connection.
+ */
 export type LinearWriteErrorCode =
-  'rate_limited' | 'invalid_auth' | 'forbidden' | 'not_found' | 'duplicate' | 'rejected' | 'unavailable' | 'timeout'
+  | 'rate_limited'
+  | 'invalid_auth'
+  | 'insufficient_scope'
+  | 'forbidden'
+  | 'not_found'
+  | 'duplicate'
+  | 'rejected'
+  | 'unavailable'
+  | 'timeout'
 
 export class LinearWriteError extends Error {
   constructor(
@@ -34,6 +48,9 @@ function retryAfterMs(header: string | null): number | undefined {
 }
 
 function classifyGraphQLErrors(errors: unknown[]): LinearWriteError {
+  // Checked before FORBIDDEN: Linear sends the scope refusal with that code, but it is about the
+  // installation's scopes, not access to this session or issue.
+  if (isLinearScopeError(errors)) return new LinearWriteError('insufficient_scope')
   const parts = errors.map((error) => {
     const entry = error && typeof error === 'object' ? (error as Record<string, any>) : {}
     const code = typeof entry.extensions?.code === 'string' ? entry.extensions.code.toUpperCase() : ''
@@ -83,7 +100,10 @@ export async function linearWrite<T>(
   if (response.status === 429)
     throw new LinearWriteError('rate_limited', retryAfterMs(response.headers.get('Retry-After')))
   if (response.status === 401) throw new LinearWriteError('invalid_auth')
-  if (response.status === 403) throw new LinearWriteError('forbidden')
+  if (response.status === 403)
+    throw new LinearWriteError(
+      isLinearScopeError(await readGraphQLErrors(response)) ? 'insufficient_scope' : 'forbidden'
+    )
   // A server error is transient whatever its body says.
   if (response.status >= 500) throw new LinearWriteError('unavailable')
   let result: { data?: T | null; errors?: unknown[] }
