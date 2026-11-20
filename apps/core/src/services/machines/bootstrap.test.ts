@@ -3048,7 +3048,7 @@ describe('shared machine Nix cache', () => {
     try {
       const maintenance = join(dir, 'maintenance.sh')
       const marker = join(dir, 'cleaned')
-      writeFileSync(maintenance, '#!/bin/bash\nprintf cleaned > "$CACHE_TEST_MARKER"\nexit 23\n')
+      writeFileSync(maintenance, '#!/bin/bash\nprintf "cleaned %s" "$*" > "$CACHE_TEST_MARKER"\nexit 23\n')
       // Portable timeout stand-in: the Linux fixture separately exercises a
       // timed-out maintenance pass. These commands have no external work.
       writeFileSync(join(dir, 'timeout'), '#!/bin/bash\nshift\nexec "$@"\n', { mode: 0o755 })
@@ -3068,7 +3068,11 @@ describe('shared machine Nix cache', () => {
           proc.exited,
         ])
         expect({ code, stderr }).toEqual({ code: status, stderr: '' })
-        expect(readFileSync(marker, 'utf8')).toBe('cleaned')
+        // In-session maintenance must never reset private objects: other box
+        // commands may be importing into the same cache.
+        expect(readFileSync(marker, 'utf8')).toMatch(
+          /^cleaned --unix-user \S+ --prepare-nix-cache --keep-private-nix-objects$/
+        )
       }
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -3087,7 +3091,7 @@ describe('shared machine Nix cache', () => {
       proc.exited,
     ])
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
-    expect(stdout).toContain('6 cache integration checks passed')
+    expect(stdout).toContain('11 cache integration checks passed')
   })
 })
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Real Git-object cache regression, Linux (flock + GNU timeout required).
+# Variables set here are read by the eval'ed box-provision.sh functions.
+# shellcheck disable=SC2034
 set -euo pipefail
 TARGET="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/box-provision.sh"
 eval "$(awk '/^NIX_CACHE_ROOT=/ {copy=1} /^ensure_dirs\(\)/ {exit} copy' "${TARGET}")"
@@ -81,4 +83,64 @@ echo 'PASS recreated loose objects are cleaned and bounded cleanup safely retrie
 SANDBOX_ID=agent-ordinary
 if publish_nix_cache 2>/dev/null; then echo 'FAIL ordinary box published' >&2; exit 1; fi
 echo 'PASS ordinary agent publication refused'
-echo '6 cache integration checks passed'
+
+# Service start drops the box's private download objects (loose and packed),
+# keeps fetcher metadata, and re-attaches the shared objects.
+box_home="${TMP}/reset-box"
+box_cache="${box_home}/.cache/nix/tarball-cache"
+git init --bare --quiet "${box_cache}"
+loose="$(printf 'private nixpkgs tip' | git --git-dir="${box_cache}" hash-object -w --stdin)"
+packed="$(printf 'private packed source' | git --git-dir="${box_cache}" hash-object -w --stdin)"
+printf '%s\n' "${packed}" | git --git-dir="${box_cache}" pack-objects --quiet "${box_cache}/objects/pack/pack" >/dev/null
+rm -f "${box_cache}/objects/${packed:0:2}/${packed:2}"
+printf 'public default toolchain' | git --git-dir="${box_cache}" hash-object -w --stdin >/dev/null
+printf 'fetcher metadata' >"${box_home}/.cache/nix/fetcher-cache-v2.sqlite"
+user_home() { printf '%s' "${box_home}"; }
+UNIX_USER="$(id -un)"
+KEEP_PRIVATE_NIX_OBJECTS=true
+prepare_nix_cache
+[ "$(git --git-dir="${box_cache}" cat-file -p "${loose}")" = 'private nixpkgs tip' ]
+[ "$(git --git-dir="${box_cache}" cat-file -p "${packed}")" = 'private packed source' ]
+[ ! -f "${box_cache}/objects/${public:0:2}/${public:2}" ]
+echo 'PASS in-session maintenance keeps private objects and only prunes shared duplicates'
+
+KEEP_PRIVATE_NIX_OBJECTS=false
+prepare_nix_cache
+# set -e ignores a negated command, so absence is asserted explicitly.
+for oid in "${loose}" "${packed}"; do
+  if git --git-dir="${box_cache}" cat-file -e "${oid}" 2>/dev/null; then echo "FAIL ${oid} survived reset" >&2; exit 1; fi
+done
+[ -z "$(find "${box_cache}/objects" -mindepth 2 -maxdepth 2 -type f \( -path '*/objects/[0-9a-f][0-9a-f]/*' -o -name '*.pack' \))" ]
+[ "$(git --git-dir="${box_cache}" cat-file -p "${public}")" = 'public default toolchain' ]
+[ "$(cat "${box_home}/.cache/nix/fetcher-cache-v2.sqlite")" = 'fetcher metadata' ]
+[ -z "$(find "${box_home}/.cache/nix" -maxdepth 1 -name '.tarball-cache*.reset.*')" ]
+echo 'PASS service start drops private loose and packed objects and keeps shared access'
+
+# A cache holding only alternates is left in place (no churn on every start).
+before="$(stat -c %i "${box_cache}")"
+reset_private_nix_objects "${box_cache}"
+[ "$(stat -c %i "${box_cache}")" = "${before}" ]
+echo 'PASS a cache without private objects is not reset'
+
+# The swap is atomic; a removal that times out is finished on the next start.
+printf 'interrupted' | git --git-dir="${box_cache}" hash-object -w --stdin >/dev/null
+timeout() { return 124; }
+reset_private_nix_objects "${box_cache}"
+[ ! -e "${box_cache}" ]
+[ -n "$(find "${box_home}/.cache/nix" -maxdepth 1 -name '.tarball-cache.reset.*')" ]
+unset -f timeout
+reset_private_nix_objects "${box_cache}"
+[ -z "$(find "${box_home}/.cache/nix" -maxdepth 1 -name '.tarball-cache.reset.*')" ]
+echo 'PASS an interrupted reset leaves no partial repository and finishes on the next start'
+
+# A symlinked cache is never followed into another directory.
+victim="${TMP}/victim"
+git init --bare --quiet "${victim}"
+kept="$(printf 'not this box' | git --git-dir="${victim}" hash-object -w --stdin)"
+mkdir -p "${TMP}/link-box"
+ln -s "${victim}" "${TMP}/link-box/tarball-cache"
+reset_private_nix_objects "${TMP}/link-box/tarball-cache"
+[ -L "${TMP}/link-box/tarball-cache" ]
+[ "$(git --git-dir="${victim}" cat-file -p "${kept}")" = 'not this box' ]
+echo 'PASS a symlinked cache is left alone'
+echo '11 cache integration checks passed'
