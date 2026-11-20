@@ -42,6 +42,8 @@ import {
 } from './google-cloud/settings'
 import { importLegacyDeploymentCredentials } from './deployment/legacy-import'
 import { importLegacyLinearCredential } from './linear/legacy-import'
+import { createLinearTeamDirectory } from './linear/team-directory'
+import { usableLinearConnection } from './linear/resolve-connection'
 import {
   isChannelIntegration,
   getChannelIntegrationSettings,
@@ -868,7 +870,13 @@ function hasSandboxProjection(providerKey: string): boolean {
   ].some((entries) => entries.length > 0)
 }
 
+const linearTeamDirectory = createLinearTeamDirectory({
+  listAttached: (squadId) => integrationConnectionRepository.listAssigned(squadId, 'linear'),
+  authorize: (connection) => usableLinearConnection(connection, new Date()),
+})
+
 export const squadIntegrationRoutesService = {
+  linearTeams: (squadId: string) => linearTeamDirectory.list(squadId),
   signGitObject: (squadId: string, agentId: string, payload: Buffer) =>
     githubCommitSigning.sign({ squadId, agentId, payload }),
   async configureScope(squadId: string, providerKey: string, input: { enabled?: boolean; inheritDefault?: boolean }) {

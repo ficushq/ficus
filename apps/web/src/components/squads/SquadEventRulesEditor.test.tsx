@@ -669,6 +669,7 @@ test('Linear rules show account involvement, offer missing recommended rules and
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, linearOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'linear').queryKey, { connections: [], attached: [] })
+  client.setQueryData(integrationQueries.squadLinearTeams('test').queryKey, { teams: [], connections: [] })
   client.setQueryData(queries.workflows.list().queryKey, [])
   let value: SquadEventRule[] = []
   function Editor() {

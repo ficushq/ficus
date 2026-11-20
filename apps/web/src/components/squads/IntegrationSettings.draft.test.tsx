@@ -120,6 +120,15 @@ beforeEach(async () => {
       })
       client.setQueryData(integrationQueries.pool(provider).queryKey, [])
     }
+    client.setQueryData(integrationQueries.squadLinearTeams(id).queryKey, {
+      teams: ['one', 'two', 'draft', 'external'].map((name) => ({
+        id: `team-${name}`,
+        key: name.toUpperCase(),
+        name: `Team ${name}`,
+        connectionIds: ['linear-connection'],
+      })),
+      connections: [{ id: 'linear-connection', displayName: 'Linear', isDefault: true, status: 'ok' }],
+    })
   }
   client.setQueryData(integrationQueries.catalog().queryKey, {
     integrations: ['github', 'linear'].map((key) => ({
@@ -283,12 +292,23 @@ test('providers keep independent drafts and save against the latest unrelated me
   const linearCard = document.querySelectorAll('article')[1]!
   const linearSettings = [...linearCard.querySelectorAll('button')].find((item) => item.textContent === 'Settings')!
   await dom.act(async () => linearSettings.click())
-  const team = () => linearCard.querySelector<HTMLInputElement>('input[placeholder="team-uuid"]')!
-  expect(team().value).toBe('team-one')
-  await input(team(), 'team-draft')
+  const routed = () =>
+    [...linearCard.querySelectorAll('button[aria-label^="Remove "]')].map((item) =>
+      item.getAttribute('aria-label')!.replace('Remove ', '')
+    )
+  const option = (name: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (item) => item.getAttribute('aria-label') === name
+    )!
+  expect(routed()).toEqual(['Team one'])
+  const choose = [...linearCard.querySelectorAll('button')].find((item) => item.textContent === 'Choose teams')!
+  await dom.act(async () => choose.click())
+  await dom.act(async () => option('Team draft').click())
+  await dom.act(async () => option('Team one').click())
+  expect(routed()).toEqual(['Team draft'])
   server.metadata.linear = [{ teamId: 'team-external' }]
   await refresh()
-  expect(team().value).toBe('team-draft')
+  expect(routed()).toEqual(['Team draft'])
   expect(context().value).toBe('GitHub draft')
   pendingSave = deferred<Response>()
   await click('Save settings') // First card: GitHub
@@ -297,7 +317,7 @@ test('providers keep independent drafts and save against the latest unrelated me
   server = { ...server, metadata: submitted! }
   await dom.act(async () => pendingSave!.resolve(response(server)))
   await flush()
-  expect(team().value).toBe('team-draft')
+  expect(routed()).toEqual(['Team draft'])
   expect([...linearCard.querySelectorAll('button')].find((item) => item.textContent === 'Save settings')).toBeDefined()
 })
 

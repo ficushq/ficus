@@ -8,6 +8,7 @@ import {
   configureIntegrationOAuthApp,
   getIntegrationOAuthApp,
   getSquadIntegrationSelection,
+  getSquadLinearTeams,
   listIntegrationPool,
   removeIntegration,
   startIntegrationAuthorization,
@@ -27,6 +28,10 @@ describe('integration pool API', () => {
     fetcher.mockResolvedValueOnce({ providerKey: 'bigbrain', assignment: null, connections: [] })
     await getSquadIntegrationSelection('squad-1', 'bigbrain', fetcher)
     expect(fetcher).toHaveBeenLastCalledWith('/squads/squad-1/integrations/bigbrain')
+
+    fetcher.mockResolvedValueOnce({ teams: [], connections: [] })
+    await getSquadLinearTeams('squad-1', fetcher)
+    expect(fetcher).toHaveBeenLastCalledWith('/squads/squad-1/integrations/linear/teams')
 
     fetcher.mockResolvedValueOnce({})
     await assignIntegration('squad-1', 'bigbrain', 'connection-1', fetcher)

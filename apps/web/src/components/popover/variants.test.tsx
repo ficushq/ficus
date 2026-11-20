@@ -207,6 +207,79 @@ test('Picker: a WebKit tap on an option selects it', async () => {
   expect(values).toEqual(['one'])
 })
 
+function SearchableMulti({ values }: { values: string[][] }) {
+  const popover = usePopover({ kind: 'dialog' })
+  const [value, setValue] = useState<string[]>(['eng'])
+  return (
+    <>
+      <button {...popover.triggerProps} type="button" onClick={popover.toggle}>
+        Teams
+      </button>
+      <Picker
+        {...popover.popoverProps}
+        multiple
+        label="Teams"
+        search={{ label: 'Search teams', empty: 'No teams match' }}
+        value={value}
+        options={[
+          { value: 'eng', label: 'Engineering', description: 'ENG' },
+          { value: 'des', label: 'Design', description: 'DES' },
+          { value: 'ops', label: 'Operations', keywords: 'OPS team-ops' },
+        ]}
+        onChange={(next) => {
+          values.push(next)
+          setValue(next)
+        }}
+      />
+    </>
+  )
+}
+
+test('Picker search + multiple: the field takes focus and filters, options toggle and the list stays open', async () => {
+  const values: string[][] = []
+  const { doc, button, key } = await render(<SearchableMulti values={values} />)
+  const trigger = button('Teams')
+  expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
+  await dom!.act(async () => trigger.click())
+  const field = doc.querySelector<HTMLInputElement>('input[aria-label="Search teams"]')!
+  expect(doc.activeElement).toBe(field)
+  const listbox = doc.querySelector('[role="listbox"]')!
+  expect(listbox.getAttribute('aria-multiselectable')).toBe('true')
+  const labels = () => [...doc.querySelectorAll('[role="option"]')].map((option) => option.getAttribute('aria-label'))
+  expect(labels()).toEqual(['Engineering', 'Design', 'Operations'])
+
+  // Matches the label, the description and the hidden keywords, case-insensitively.
+  await dom!.act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(dom!.window.HTMLInputElement.prototype, 'value')!.set!
+    setter.call(field, 'team-OPS')
+    field.dispatchEvent(new dom!.window.Event('input', { bubbles: true }))
+  })
+  expect(labels()).toEqual(['Operations'])
+  await key('Enter') // Enter in the field picks the first match.
+  expect(values).toEqual([['eng', 'ops']])
+  expect(field.value).toBe('')
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+  await key('ArrowDown')
+  expect(doc.activeElement?.getAttribute('aria-label')).toBe('Engineering')
+  await key(' ')
+  expect(values.at(-1)).toEqual(['ops'])
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  expect([...doc.querySelectorAll('[role="option"]')].map((option) => option.getAttribute('aria-selected'))).toEqual([
+    'false',
+    'false',
+    'true',
+  ])
+
+  await dom!.act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(dom!.window.HTMLInputElement.prototype, 'value')!.set!
+    setter.call(field, 'zzz')
+    field.dispatchEvent(new dom!.window.Event('input', { bubbles: true }))
+  })
+  expect(labels()).toEqual([])
+  expect(doc.querySelector('[role="status"]')?.textContent).toBe('No teams match')
+})
+
 function Filters() {
   const popover = usePopover({ kind: 'dialog' })
   const [on, setOn] = useState(false)
