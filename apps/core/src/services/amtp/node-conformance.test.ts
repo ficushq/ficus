@@ -95,7 +95,7 @@ import {
 } from './node-conformance-process'
 import { fetchInProtocolPhase, waitForProtocolReady } from './node-conformance-readiness'
 import { establishNodeMailbox, inspectNodeRegistration } from './node-conformance-registration'
-import { runScopedCliProcess } from './node-conformance-cli'
+import { parseAmtpCliJson, runScopedCliProcess } from './node-conformance-cli'
 import { openNodeConformanceDb } from './node-conformance-sqlite'
 import {
   isCompleteWhoamiJson,
@@ -339,11 +339,11 @@ async function auditedWhoami(
 }
 
 async function cli<T = unknown>(args: string[], timeoutMs = CLI_TIMEOUT_MS, signal?: AbortSignal): Promise<T> {
-  const { stdout, stderr, exitCode } = await runCli(args, timeoutMs, signal)
-  if (exitCode !== 0) {
-    throw new Error(`amtp ${args.join(' ')} failed (exit ${exitCode}): ${stderr || stdout}`)
+  const result = await runCli(args, timeoutMs, signal)
+  if (result.exitCode !== 0) {
+    throw new Error(`amtp ${args.join(' ')} failed (exit ${result.exitCode}): ${result.stderr || result.stdout}`)
   }
-  return JSON.parse(stdout) as T
+  return parseAmtpCliJson<T>(args, result)
 }
 
 interface NodeRegisterResult {
@@ -360,11 +360,11 @@ async function registerNodeHandle(handle: string, opts: { open: boolean }): Prom
     now: Date.now,
     operationId: randomUUID,
     runRegister: async ({ operationId, timeoutMs }) => {
-      const { stdout, stderr, exitCode } = await runCli(args, timeoutMs, undefined, operationId)
-      if (exitCode !== 0) {
-        throw new Error(`amtp ${args.join(' ')} failed (exit ${exitCode}): ${stderr || stdout}`)
+      const result = await runCli(args, timeoutMs, undefined, operationId)
+      if (result.exitCode !== 0) {
+        throw new Error(`amtp ${args.join(' ')} failed (exit ${result.exitCode}): ${result.stderr || result.stdout}`)
       }
-      return JSON.parse(stdout) as NodeRegisterResult
+      return parseAmtpCliJson<NodeRegisterResult>(args, result)
     },
     inspectRegistration: () => inspectNodeRegistration(nodeHome!, handle),
     waitForServerKey: async ({ registration, timeoutMs }) => {
@@ -657,7 +657,7 @@ beforeAll(async () => {
   nodeHome = await mkdtemp(join(tmpdir(), 'amtp-matrix-node-'))
   const init = await runCli(['init'])
   if (init.exitCode !== 0) throw new Error(`amtp init failed: ${init.stderr || init.stdout}`)
-  const identity = JSON.parse(init.stdout) as { instanceId: string; publicKeyPem: string }
+  const identity = parseAmtpCliJson<{ instanceId: string; publicKeyPem: string }>(['init'], init)
   nodeInstanceId = identity.instanceId
   nodePublicKeyPem = identity.publicKeyPem
 
