@@ -877,8 +877,20 @@ const linearTeamDirectory = createLinearTeamDirectory({
   authorize: (connection) => usableLinearConnection(connection, new Date()),
 })
 
+const listLinearTeams = (squadId: string) => linearTeamDirectory.list(squadId)
+
+/** A squad metadata write's `linear` routes with every team key or ID resolved to the team ID. */
+export async function resolveSquadLinearRoutes(squadId: string, routes: unknown): Promise<unknown> {
+  const { resolveSquadLinearTeamRoutes } = await import('./linear/team-route-store')
+  return resolveSquadLinearTeamRoutes(squadId, routes, listLinearTeams)
+}
+
 export const squadIntegrationRoutesService = {
-  linearTeams: (squadId: string) => linearTeamDirectory.list(squadId),
+  linearTeams: listLinearTeams,
+  async reconcileLinearTeamRoutes(squadId: string) {
+    const { reconcileSquadLinearTeamRoutes } = await import('./linear/team-route-store')
+    return reconcileSquadLinearTeamRoutes(squadId, listLinearTeams)
+  },
   signGitObject: (squadId: string, agentId: string, payload: Buffer) =>
     githubCommitSigning.sign({ squadId, agentId, payload }),
   async configureScope(squadId: string, providerKey: string, input: { enabled?: boolean; inheritDefault?: boolean }) {

@@ -49,11 +49,6 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         description: 'Agent expertise, model tiers, tools, skills, and permissions.',
       },
       {
-        id: 'work-features',
-        label: 'Work features',
-        description: 'Instance-wide work features, such as one-line work stream summaries.',
-      },
-      {
         id: 'voices',
         label: 'Voices',
         description: 'Public writing voice profiles and squad assignments.',
@@ -67,6 +62,11 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         id: 'integrations',
         label: 'Integrations',
         description: 'Apps, accounts, credentials and services.',
+      },
+      {
+        id: 'work-features',
+        label: 'Features',
+        description: 'Instance-wide work features, such as one-line work stream summaries.',
       },
     ],
   },

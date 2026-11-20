@@ -9,7 +9,7 @@ import { SettingsApiProvider } from './settingsApi'
 import { STREAM_SUMMARIES_SETTING, StreamSummariesSetting } from './StreamSummariesSetting'
 import { WorkFeaturesSection } from './WorkFeaturesSection'
 import { modelTierQueryKeys } from '../../queryKeys'
-import { isSectionAllowed } from './settingsSections'
+import { isSectionAllowed, SECTION_GROUPS } from './settingsSections'
 import { SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
@@ -91,7 +91,7 @@ test('is read-only without settings:write', async () => {
   expect(toggle().disabled).toBe(true)
 })
 
-test('lives on the Work features page, which warns when no Lite model is signed in', async () => {
+test('lives on the Features page, which warns when no Lite model is signed in', async () => {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
   const { root, container } = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -116,8 +116,20 @@ test('lives on the Work features page, which warns when no Lite model is signed 
       </QueryClientProvider>
     )
   )
+  expect(container.querySelector('h2')?.textContent).toBe('Features')
   expect(container.querySelector('[data-setting-target="stream-summaries"]')).not.toBeNull()
   expect(container.textContent).toContain(NO_MODEL)
+  // The page is Features, last in the Work group, under the unchanged work-features id.
+  const work = SECTION_GROUPS.find((group) => group.label === 'Work')?.items ?? []
+  expect(work.map((item) => item.label)).toEqual([
+    'Workflows',
+    'Agents',
+    'Voices',
+    'Skills',
+    'Integrations',
+    'Features',
+  ])
+  expect(work.at(-1)?.id).toBe('work-features')
   // Settings search lands on the switch, and the page needs settings:read.
   expect(SETTINGS_SEARCH_ENTRIES).toContainEqual(
     expect.objectContaining({ section: 'work-features', id: 'stream-summaries' })

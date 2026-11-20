@@ -185,6 +185,8 @@ export interface SquadIntegrationSelection {
   commitSigning?: GitHubSquadCommitSigning
   /** Linear only: routed team IDs the assigned agent app cannot access. */
   inaccessibleTeamIds?: string[]
+  /** Linear only: present when this read rewrote routes saved by team key to team IDs. */
+  teamRoutesUpdated?: true
   projection?: {
     status: 'pending' | 'installing' | 'ready' | 'degraded' | 'reconnect_required'
     lastErrorCode: string | null

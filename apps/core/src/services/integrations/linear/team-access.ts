@@ -9,6 +9,7 @@ import {
 } from '../../../db'
 import { InboxMessage } from '../../../entities/InboxMessage'
 import { linearQuery } from './plugin'
+import { isLinearTeamId, linearRouteTeamValues } from './team-routes'
 
 function strings(value: unknown): string[] {
   return Array.isArray(value)
@@ -120,40 +121,71 @@ export async function recordLinearTeamAccessProbe(connectionId: string, authoriz
     .onConflictDoNothing({ target: linearTeamAccess.connectionId })
 }
 
+async function squadLinearRoutes(squadId: string): Promise<unknown> {
+  const [squad] = await db.select({ metadata: squads.metadata }).from(squads).where(eq(squads.id, squadId))
+  return (squad?.metadata as Record<string, unknown> | null)?.linear
+}
+
 /**
- * Routed Linear teams the squad's app connection is known not to reach, for the squad Integrations
- * tab. Empty for API-key connections and when access has not been recorded.
+ * Routed Linear team IDs the squad's app connection is known not to reach, for the squad Integrations
+ * tab. Only real team IDs are judged: a value saved by team key never matches any team, so it is
+ * reported as a key instead of as a team the app cannot access. Empty for API-key connections and when
+ * access has not been recorded.
  */
 export async function inaccessibleLinearTeams(squadId: string, connectionId: string): Promise<string[]> {
   const [access] = await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, connectionId))
   if (!access || access.canAccessAllPublicTeams) return []
-  const [squad] = await db.select({ metadata: squads.metadata }).from(squads).where(eq(squads.id, squadId))
-  const routes = (squad?.metadata as Record<string, unknown> | null)?.linear
-  const teamIds = (Array.isArray(routes) ? routes : [routes])
-    .map((route) => (route && typeof route === 'object' ? (route as Record<string, unknown>).teamId : undefined))
-    .filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0)
-  return [...new Set(teamIds)].filter((teamId) => !access.teamIds.includes(teamId))
+  return linearRouteTeamValues(await squadLinearRoutes(squadId))
+    .filter(isLinearTeamId)
+    .filter((teamId) => !access.teamIds.includes(teamId))
 }
 
 /**
- * One setup issue per squad that routes Linear teams its assigned agent app cannot access (5.8),
- * naming the squad and the team IDs. API-key connections and unrecorded access report nothing.
+ * Squad setup issues for Linear routing, naming the squad: routes saved by team key rather than team ID
+ * (they route nothing), and routed team IDs the assigned agent app cannot access (5.8). API-key
+ * connections and unrecorded access report no access issue.
  */
 export async function linearTeamAccessSetupIssues(): Promise<string[]> {
-  const rows = await db
-    .select({ squadId: squads.id, squadName: squads.name, connectionId: linearTeamAccess.connectionId })
-    .from(linearTeamAccess)
-    .innerJoin(
-      integrationConnectionAssignments,
-      and(
-        eq(integrationConnectionAssignments.connectionId, linearTeamAccess.connectionId),
-        eq(integrationConnectionAssignments.providerKey, 'linear')
-      )
-    )
+  const assigned = await db
+    .select({
+      squadId: squads.id,
+      squadName: squads.name,
+      metadata: squads.metadata,
+      connectionId: integrationConnectionAssignments.connectionId,
+    })
+    .from(integrationConnectionAssignments)
     .innerJoin(squads, eq(squads.id, integrationConnectionAssignments.squadId))
-    .where(eq(squads.status, 'active'))
+    .where(and(eq(integrationConnectionAssignments.providerKey, 'linear'), eq(squads.status, 'active')))
+  const recorded = new Set(
+    assigned.length
+      ? (
+          await db
+            .select({ connectionId: linearTeamAccess.connectionId })
+            .from(linearTeamAccess)
+            .where(
+              inArray(
+                linearTeamAccess.connectionId,
+                assigned.map((row) => row.connectionId)
+              )
+            )
+        ).map((row) => row.connectionId)
+      : []
+  )
   const issues: string[] = []
-  for (const row of rows) {
+  // A squad with several attached Linear connections names its key routes once.
+  const keyChecked = new Set<string>()
+  for (const row of assigned) {
+    const keys = keyChecked.has(row.squadId)
+      ? []
+      : linearRouteTeamValues((row.metadata as Record<string, unknown> | null)?.linear).filter(
+          (value) => !isLinearTeamId(value)
+        )
+    keyChecked.add(row.squadId)
+    if (keys.length)
+      issues.push(
+        `Squad ${row.squadName} routes Linear ${keys.length === 1 ? 'team key' : 'team keys'} ${keys.join(', ')}, which ${keys.length === 1 ? 'is not a team ID' : 'are not team IDs'}, so ${keys.length === 1 ? 'it routes' : 'they route'} no Linear events. Open the squad's Linear settings and choose the ${keys.length === 1 ? 'team' : 'teams'} so Ficus stores the team ID.`
+      )
+    if (!recorded.has(row.connectionId)) continue
     const teams = await inaccessibleLinearTeams(row.squadId, row.connectionId)
     if (teams.length)
       issues.push(
