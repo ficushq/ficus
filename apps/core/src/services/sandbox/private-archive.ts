@@ -68,17 +68,18 @@ const ARCHIVE_BEARING_SWEEP_BUDGET = 5
 const IDLE_CONSULTANT_DORMANCY_BUDGET = 10
 const IDLE_WORKER_DORMANCY_BUDGET = 10
 
+/** AGENT_PRIVATE_ARCHIVE_RETENTION_DAYS, or 7 when unset or invalid. */
+export function getPrivateArchiveRetentionDays(): number {
+  const value = Number(getSettingsStore().getTyped('AGENT_PRIVATE_ARCHIVE_RETENTION_DAYS'))
+  return Number.isFinite(value) && value > 0 ? value : 7
+}
+
 /** Purge once using the configured retention. Injectable for tests; never throws. */
 export function runArchivePurgeOnce(
   deps: { getRetentionDays?: () => number; purge?: (days: number) => number } = {}
 ): void {
   try {
-    const getRetentionDays =
-      deps.getRetentionDays ??
-      (() => {
-        const value = Number(getSettingsStore().getTyped('AGENT_PRIVATE_ARCHIVE_RETENTION_DAYS'))
-        return Number.isFinite(value) && value > 0 ? value : 7
-      })
+    const getRetentionDays = deps.getRetentionDays ?? getPrivateArchiveRetentionDays
     const purge = deps.purge ?? purgeExpiredAgentPrivateArchives
     const removed = purge(getRetentionDays())
     if (removed > 0) log.info(`Purged ${removed} expired agent private archive(s)`)
