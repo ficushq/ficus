@@ -213,7 +213,7 @@ it('cancels one identical queued message and switches modes without losing FIFO 
   const run = session.prompt('start', { deliveryId: 'initial' })
   try {
     await fixture.waitForRequest(1)
-    // Pi 1.5.2 normalizes queued images at delivery like idle prompts, so this must be a decodable PNG.
+    // Pi (since 1.5.2) normalizes queued images at delivery like idle prompts, so this must be a decodable PNG.
     const image = {
       type: 'image' as const,
       mimeType: 'image/png',

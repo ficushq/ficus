@@ -576,7 +576,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * candidate. Pi retries transient errors (`maxRetries: 5`) internally, so for
  * those this only acts once the error settles. Hard plan limits (`limit
  * exhausted` / `limit will reset`) are made non-retryable in the SDK by the Ficus
- * patch (patches/@earendil-works%2Fpi-ai@1.5.2.patch, extending both
+ * patch (patches/@earendil-works%2Fpi-ai@1.6.0.patch, extending both
  * `retry.js`'s NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN and
  * `openai-codex-responses.js`'s isTerminalRateLimitError; guarded by
  * AgentSession.retry-patch.test.ts), so they settle on attempt 1 and fail over

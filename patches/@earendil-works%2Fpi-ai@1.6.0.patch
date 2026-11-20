@@ -1,8 +1,8 @@
 diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
-index 4f7052d2bb80b14c00ac3a1ef0684bbcac166a5b..6f829be4bd73185bc521cdbb8bbc91ecd8dc03fc 100644
+index 5b9ef8eb316345a5af018d6d65d69a97b814b23c..c3af70061ab50ce5690a585935f1ef54d034ab8e 100644
 --- a/dist/api/anthropic-messages.js
 +++ b/dist/api/anthropic-messages.js
-@@ -961,8 +961,10 @@ export const streamSimple = (model, context, options) => {
+@@ -960,8 +960,10 @@ export const streamSimple = (model, context, options) => {
          thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
      });
  };
@@ -16,7 +16,7 @@ index 4f7052d2bb80b14c00ac3a1ef0684bbcac166a5b..6f829be4bd73185bc521cdbb8bbc91ec
  function createClient(model, apiKey, optionsHeaders, fetch, dynamicHeaders, sessionId, federation, identity) {
      // Copilot: Bearer auth.
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index e64cc029276fdb45c8ebf6d16a7d9573df223798..02f63938bfd04ac15d9d8543f68cd9d70a2c901c 100644
+index 532ea262fa273964aebb3889770672e1193e23f7..1fc2c252f772fc5818e85d3f52eb6e843a7cd603 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -1,3 +1,4 @@
@@ -24,7 +24,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..02f63938bfd04ac15d9d8543f68cd9d7
  import { clampThinkingLevel } from "../models.js";
  import { registerSessionResourceCleanup } from "../session-resources.js";
  import { combineAbortSignals } from "../utils/abort-signals.js";
-@@ -50,9 +51,10 @@ function assertSuccessfulOutput(output) {
+@@ -53,9 +54,10 @@ function assertSuccessfulOutput(output) {
  // Retry Helpers
  // ============================================================================
  function isTerminalRateLimitError(errorText) {
@@ -36,7 +36,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..02f63938bfd04ac15d9d8543f68cd9d7
      if (status === 429 && isTerminalRateLimitError(errorText)) {
          return false;
      }
-@@ -318,6 +320,7 @@ export const stream = (model, context, options) => {
+@@ -323,6 +325,7 @@ export const stream = (model, context, options) => {
                      // Network errors are retryable
                      if (attempt < maxRetries &&
                          !(lastError instanceof RetryDelayExceededError) &&
@@ -45,7 +45,7 @@ index e64cc029276fdb45c8ebf6d16a7d9573df223798..02f63938bfd04ac15d9d8543f68cd9d7
                          const delayMs = BASE_DELAY_MS * 2 ** attempt;
                          await sleep(delayMs, options?.signal);
 diff --git a/dist/env-api-keys.js b/dist/env-api-keys.js
-index 24339a5a4fbd3f02a2a17aa176c82e6c8705484e..d3bec7ca4edd5846d5a91d260e4d29cbf2950530 100644
+index cf5c45f435e643c5487c90509ce8938fc1bbec18..a4edeaf0be53fef1c0bc76a4ad3f42576de5a549 100644
 --- a/dist/env-api-keys.js
 +++ b/dist/env-api-keys.js
 @@ -72,7 +72,8 @@ function getApiKeyEnvVars(provider) {
@@ -56,8 +56,8 @@ index 24339a5a4fbd3f02a2a17aa176c82e6c8705484e..d3bec7ca4edd5846d5a91d260e4d29cb
 +        // Ficus: ANTHROPIC_OAUTH_TOKEN (a Claude subscription token) is not an Anthropic credential here.
 +        return [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV];
      }
+     // Qwen Token Plan: the per-plan variable first, then the region variable both plans used to share.
      const envMap = {
-         "ant-ling": "ANT_LING_API_KEY",
 diff --git a/dist/providers/anthropic.js b/dist/providers/anthropic.js
 index 320e78ada2c1fbd8a24ce74e0c26116925077b57..5321cdbde7dd350716dcbe494de358c7e6c45a45 100644
 --- a/dist/providers/anthropic.js
@@ -127,7 +127,7 @@ index f59c2eca472e81072afe7eddf87c5823cffe50eb..78a6bb0413e32f9ce77dd4047281668f
  /**
   * Retry policy: bounded attempts with exponential backoff (`baseDelayMs * 2^(attempt-1)`).
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index dae863cfd9f141d27f781754ef0ada914dd45c5f..3c626377ab89a3dd0ed13b353d47ad025e1af950 100644
+index a5ade342625bef6c0c871a752f218b9cb0e5818f..1aa2d173cd9f8b8f5a5c7cfc707824a75e718d4d 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,13 @@
@@ -160,7 +160,7 @@ index dae863cfd9f141d27f781754ef0ada914dd45c5f..3c626377ab89a3dd0ed13b353d47ad02
      // Sign in with ChatGPT on a ChatGPT Business plan: a usage limit set by the
      // workspace admin. Only the admin can raise it.
      "subscription_sharing_workplace_individual_usage_limit_exceeded",
-@@ -209,7 +228,7 @@ export function isRetryableAssistantError(message) {
+@@ -220,7 +239,7 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;
