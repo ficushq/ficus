@@ -129,6 +129,10 @@ export class IntegrationAuthorizationService {
       authorizationUrl = new URL(result.authorizationUrl)
     } catch (error) {
       if (error instanceof BrokerUnconfiguredError) throw new AuthorizationFlowError(error.code)
+      // Platform answers 503 broker_unconfigured when it has no OAuth application for this provider.
+      if (error instanceof PlatformRequestError && error.code === 'broker_unconfigured') {
+        throw new AuthorizationFlowError(error.code)
+      }
       if (error instanceof OAuthTransportError && error.code === 'oauth_app_unconfigured') {
         throw new AuthorizationFlowError(error.code)
       }

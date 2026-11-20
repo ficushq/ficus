@@ -13,6 +13,8 @@ import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
 import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
 import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
+import { integrationErrorMessage } from '../../lib/integrationErrorMessage'
+import { ApiError } from '../../api/client'
 import { ConfirmButton } from '../ConfirmButton'
 
 const field =
@@ -44,18 +46,13 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
     },
   })
   const install = useLinearAppInstall()
-  // The agent app stays hidden until the server reports it can be installed here.
-  const oauthApp = useQuery(integrationQueries.oauthApp('linear'))
-  const appAvailable = oauthApp.data?.available === true
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        {appAvailable
-          ? 'Install Ficus in Linear as an agent app, or connect an account with a personal API key, then choose which squads can use it.'
-          : 'Connect a Linear account using a personal API key, then choose which squads can use it.'}{' '}
-        Team routing is configured in each squad’s Integrations tab.
+        Install Ficus in Linear as an agent app, or connect an account with a personal API key, then choose which squads
+        can use it. Team routing is configured in each squad’s Integrations tab.
       </p>
-      {appAvailable && <LinearAgentApp canWrite={canWrite} install={install} refresh={refresh} />}
+      <LinearAgentApp canWrite={canWrite} install={install} refresh={refresh} />
       {pool.isPending ? (
         <p>Loading connections…</p>
       ) : pool.isError ? (
@@ -185,6 +182,25 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
   )
 }
 
+/** Linear-specific text for the codes an install or settings save can fail with. */
+const LINEAR_APP_ERRORS: Record<string, string> = {
+  broker_unconfigured:
+    "Ficus's hosted Linear app isn't set up for this instance yet. Try again later, or connect with a personal API key.",
+  oauth_app_unconfigured: 'Save the Linear application settings before installing the app.',
+}
+
+function linearAppErrorMessage(error: unknown): string {
+  const payload =
+    error instanceof ApiError && error.payload && typeof error.payload === 'object'
+      ? (error.payload as Record<string, unknown>)
+      : {}
+  const code = typeof payload.code === 'string' ? payload.code : typeof payload.error === 'string' ? payload.error : ''
+  return (
+    (Object.hasOwn(LINEAR_APP_ERRORS, code) ? LINEAR_APP_ERRORS[code] : undefined) ??
+    integrationErrorMessage(error, 'Linear app operation failed. Please try again.')
+  )
+}
+
 /** Starts the Linear app install (or reconnects an app connection) and leaves for Linear's consent page. */
 function useLinearAppInstall() {
   return useMutation({
@@ -280,6 +296,11 @@ function LinearAgentApp({
           )}
         </div>
       ) : null}
+      {!canWrite && settings?.authority === 'local' && !settings.configured && (
+        <p className="text-sm text-muted">
+          An administrator must save the Linear application settings before the app can be installed.
+        </p>
+      )}
       {showForm && (
         <form
           className="space-y-2"
@@ -356,7 +377,7 @@ function LinearAgentApp({
       )}
       {(configure.isError || install.isError) && (
         <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
-          Linear app operation failed. Please try again.
+          {linearAppErrorMessage(configure.error ?? install.error)}
         </p>
       )}
     </section>

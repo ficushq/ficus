@@ -1,6 +1,6 @@
 ---
 title: Linear agent app integration design (phases 2 to 4)
-status: design with product decisions recorded, not implemented
+status: implemented; the agent app is installable under both client authorities (the per-authority readiness switch was removed on 2026-11-20)
 created: 2026-11-19
 base: Core main at 72451143, Platform main at 348bf808
 ---

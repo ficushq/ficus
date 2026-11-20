@@ -1,5 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { setLinearAppReadinessForTest } from './linear/app-readiness'
+import { describe, expect, test } from 'bun:test'
 import { IntegrationExecutionService, executionVariableNames } from './execution'
 import { linearPlugin } from './linear/plugin'
 import { notionPlugin } from './notion/plugin'
@@ -227,12 +226,6 @@ test('Notion keeps explicit attached workspaces separate from the default and ne
 })
 
 describe('Linear app connections', () => {
-  let restoreReadiness: () => void
-  beforeEach(() => {
-    restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: true })
-  })
-  afterEach(() => restoreReadiness())
-
   const app = {
     ...row,
     authorizationKind: 'oauth2' as const,

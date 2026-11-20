@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { setLinearAppReadinessForTest } from '../linear/app-readiness'
 import {
   configureOAuthApp,
   getOAuthAppSettings,
@@ -194,12 +193,6 @@ describe('OAuth application credentials', () => {
   })
 
   describe('Linear agent app', () => {
-    let restoreReadiness: () => void
-    beforeEach(() => {
-      restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: true })
-    })
-    afterEach(() => restoreReadiness())
-
     const callbackUrl = 'https://ficus.example/base/settings/integrations/oauth/callback/linear'
     const input = {
       clientId: 'linear-client-id',
@@ -215,7 +208,6 @@ describe('OAuth application credentials', () => {
         clientId: null,
         callbackUrl,
         webhookUrl: 'https://ficus.example/base/api/webhooks/linear-app',
-        available: true,
         requiredCapabilities: [
           'Webhooks: Agent session events, Inbox notifications, Permission changes, Issues, Comments',
           'Scopes requested at install: read, issues:create, comments:create, app:assignable, app:mentionable',
@@ -265,7 +257,6 @@ describe('OAuth application credentials', () => {
         authority: 'platform_broker',
         configured: true,
         clientId: null,
-        available: true,
       })
       expect(getOAuthAppSettings('linear', store, callbackUrl)).not.toHaveProperty('webhookUrl')
       expect(resolveOAuthClientCredentials('linear', store)).toBeUndefined()
@@ -276,25 +267,26 @@ describe('OAuth application credentials', () => {
     })
   })
 
-  test('until the Linear app is ready, settings report it unavailable and refuse to save', async () => {
+  test('the Linear app settings carry no availability switch under either authority', async () => {
     const callbackUrl = 'https://ficus.example/settings/integrations/oauth/callback/linear'
-    expect(getOAuthAppSettings('linear', store, callbackUrl)).toMatchObject({ authority: 'local', available: false })
-    await expect(
-      configureOAuthApp(
-        'linear',
-        { clientId: 'id', clientSecret: 'secret', webhookSecret: 'hook', capabilitiesAcknowledged: true },
-        store,
-        'user:operator',
-        callbackUrl
-      )
-    ).rejects.toThrow('Linear agent app is not available yet')
-    expect(store.writes).toBe(0)
-    process.env.FICUS_MANAGED = '1'
+    // Self-hosted: offered from the start, but not configured until the operator saves the application.
     expect(getOAuthAppSettings('linear', store, callbackUrl)).toMatchObject({
-      authority: 'platform_broker',
-      available: false,
+      authority: 'local',
+      configured: false,
+      clientId: null,
     })
-    // Notion is not gated.
-    expect(getOAuthAppSettings('notion', store, 'https://ficus.example/callback')).not.toHaveProperty('available')
+    expect(getOAuthAppSettings('linear', store, callbackUrl)).not.toHaveProperty('available')
+    expect(resolveOAuthClientCredentials('linear', store)).toBeUndefined()
+    await configureOAuthApp(
+      'linear',
+      { clientId: 'id', clientSecret: 'secret', webhookSecret: 'hook', capabilitiesAcknowledged: true },
+      store,
+      'user:operator',
+      callbackUrl
+    )
+    expect(store.writes).toBe(1)
+    expect(getOAuthAppSettings('linear', store, callbackUrl)).toMatchObject({ authority: 'local', configured: true })
+    process.env.FICUS_MANAGED = '1'
+    expect(getOAuthAppSettings('linear', store, callbackUrl)).not.toHaveProperty('available')
   })
 })

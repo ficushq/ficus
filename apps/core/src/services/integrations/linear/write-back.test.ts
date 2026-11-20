@@ -37,7 +37,6 @@ import { openLinearSessionForStream } from './proactive-session'
 import { projectLinearWriteBack, streamPullRequest } from './session-projector'
 import { LINEAR_STOP_TEXT, matchLinearSelectReply } from './session-prompts'
 import { createLinearAppFixture } from './testing/app-fixtures'
-import { setLinearAppReadinessForTest } from './app-readiness'
 import {
   agentSessionCreatedPayload,
   agentSessionPromptedPayload,
@@ -159,10 +158,8 @@ const selectQuestion = {
   ],
 }
 
-let restoreReadiness: () => void = () => {}
 beforeAll(async () => {
   await getSecretStore().initialize()
-  restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: false })
   await ensureQueryIndex('uq_linear_activity_outbox_projection')
   await ensureQueryIndex('uq_user_linear_identities_linear_user')
   await db.insert(agentTypes).values({
@@ -174,7 +171,6 @@ beforeAll(async () => {
   })
 })
 afterAll(async () => {
-  restoreReadiness()
   await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
 })
 beforeEach(async () => {
