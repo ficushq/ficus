@@ -55,7 +55,7 @@
 #                      --codec <gzip|zstd> --state-dirs "<dirs>"
 #
 #   Cache maintenance (port unused):
-#     box-provision.sh --unix-user <user> --prepare-nix-cache
+#     box-provision.sh --unix-user <user> --prepare-nix-cache [--keep-private-nix-objects]
 #     box-provision.sh --sandbox-id devbox-prewarm-<role>-<machine> \
 #                      --unix-user <user> --publish-nix-cache
 #
@@ -176,6 +176,7 @@ PRINT_SLICE_LIMITS=false
 PRINT_UNITS=false
 PRINT_PORT_GUARD=false
 PREPARE_NIX_CACHE=false
+KEEP_PRIVATE_NIX_OBJECTS=false
 PUBLISH_NIX_CACHE=false
 MEMTOTAL_KB_OVERRIDE=""
 SWAPTOTAL_KB_OVERRIDE=""
@@ -254,6 +255,12 @@ while [ "$#" -gt 0 ]; do
       ;;
     --prepare-nix-cache)
       PREPARE_NIX_CACHE=true
+      shift
+      ;;
+    --keep-private-nix-objects)
+      # Set by in-session callers (after a Devbox install): other box commands
+      # may be running Nix, so only the concurrency-safe prune-packed runs.
+      KEEP_PRIVATE_NIX_OBJECTS=true
       shift
       ;;
     --publish-nix-cache)
@@ -1898,17 +1905,58 @@ attach_nix_cache() (
   timeout 5s nice -n 19 git --git-dir="${cache}" prune-packed || exit 0
 )
 
+# Drop the box's PRIVATE Nix download objects. Runs entirely as the box user.
+#
+# Nix keeps fetched source trees (mostly nixpkgs, ~400 MB loose per revision)
+# as Git objects in ~/.cache/nix/tarball-cache, and never removes them. Devbox
+# resolves unpinned packages (the managed toolchain) against the moving
+# nixpkgs-unstable tip, so every box downloads a revision the shared cache does
+# not hold yet. The objects are a pure download cache: realized sources live in
+# /nix/store, and Nix 2.24 refetches any tree whose root object is missing
+# ("has disappeared from the cache, refetching").
+#
+# Only safe when no Nix process of this box can be importing: ExecStartPre,
+# before the box server (and every command it runs) starts. The repository is
+# renamed away in ONE step, so Nix never sees a tree root without its
+# children; a bounded removal that times out is finished on the next start.
+# Fetcher metadata (~/.cache/nix/*.sqlite) and shared objects are untouched.
+reset_private_nix_objects() (
+  set -euo pipefail
+  local cache="$1" parent base stale
+  parent="$(dirname "${cache}")"
+  base="$(basename "${cache}")"
+  [ -d "${parent}" ] || exit 0
+  for stale in "${parent}/.${base}.reset."*; do
+    if [ -e "${stale}" ] || [ -L "${stale}" ]; then
+      timeout 30s nice -n 19 rm -rf -- "${stale}" || exit 0
+    fi
+  done
+  [ -d "${cache}/objects" ] && [ ! -L "${cache}" ] || exit 0
+  # Loose objects or private packs; alternates alone are not worth a reset.
+  if [ -z "$(find "${cache}/objects" -mindepth 2 -maxdepth 2 -type f \( -path "${cache}/objects/[0-9a-f][0-9a-f]/*" -o -name '*.pack' \) -print -quit)" ]; then
+    exit 0
+  fi
+  stale="$(mktemp -d "${parent}/.${base}.reset.XXXXXX")"
+  mv -- "${cache}" "${stale}/repo"
+  timeout 30s nice -n 19 rm -rf -- "${stale}" || exit 0
+)
+
 prepare_nix_cache() {
   local home name
+  local -a keep=()
   home="$(user_home)"
   [ -n "${home}" ] || return 1
+  if [ "${KEEP_PRIVATE_NIX_OBJECTS}" = true ]; then keep=(--keep-private-nix-objects); fi
   # ExecStartPre runs unprivileged. Operator invocations drop privileges too,
   # so poisoned cache paths cannot escape the box UID.
   if [ "$(id -un)" != "${UNIX_USER}" ]; then
-    run_as_box bash "${FICUS_ROOT}/bin/box-provision.sh" --unix-user "${UNIX_USER}" --prepare-nix-cache
+    run_as_box bash "${FICUS_ROOT}/bin/box-provision.sh" --unix-user "${UNIX_USER}" --prepare-nix-cache "${keep[@]}"
     return
   fi
   for name in tarball-cache tarball-cache-v2; do
+    if [ "${KEEP_PRIVATE_NIX_OBJECTS}" != true ]; then
+      reset_private_nix_objects "${home}/.cache/nix/${name}" || true
+    fi
     attach_nix_cache "${home}/.cache/nix/${name}" "${NIX_CACHE_ROOT}/${name}"
   done
 }

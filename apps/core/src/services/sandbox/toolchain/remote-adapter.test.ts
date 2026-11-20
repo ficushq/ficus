@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { SandboxHttpError, SandboxTransportError } from '../client/http-client'
 import { reconcileRemoteToolchain } from './remote-adapter'
+import { withNixCacheMaintenance } from '../../machines/nix-cache-maintenance'
 
 function clientHarness(marker = '', activationFails: boolean | Error = false, activationGate?: Promise<void>) {
   const calls: string[] = []
@@ -196,5 +197,26 @@ describe('remote managed toolchain adapter', () => {
     await expect(reconcileRemoteToolchain(client, '/toolchain', '/workspace', unchangedRequest)).rejects.toMatchObject({
       code: 'activation_failed',
     })
+  })
+
+  // An unpinned toolchain downloads a whole nixpkgs source tree into the box's
+  // private Nix cache; the install must trigger the same compaction as seeding.
+  it('runs Nix cache maintenance after the toolchain install', async () => {
+    const { client } = clientHarness()
+    const commands: string[] = []
+    const bash = client.bash
+    client.bash = (request: { command: string }) => {
+      commands.push(request.command)
+      return bash(request)
+    }
+    await reconcileRemoteToolchain(client, '/toolchain', '/workspace', {
+      config: { packages: ['bun'] },
+      fingerprint: 'fingerprint',
+      devboxJson: '{}',
+      reportStage: async () => {},
+    })
+    const install = commands.filter((command) => command.includes('devbox install'))
+    expect(install).toEqual([withNixCacheMaintenance("devbox install -c '/toolchain'")])
+    expect(install[0]).toContain('--prepare-nix-cache --keep-private-nix-objects')
   })
 })

@@ -1,6 +1,7 @@
 import type { ManagedToolchainRequest } from '../types'
 import { type BashResponse, SandboxClient, SandboxHttpError, SandboxTransportError } from '../client/http-client'
 import { ToolchainAdapterError } from './provision'
+import { withNixCacheMaintenance } from '../../machines/nix-cache-maintenance'
 
 function quote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
@@ -102,7 +103,9 @@ export async function reconcileRemoteToolchain(
     else await run(client, `rm -f ${quote(`${dir}/setup.sh`)}`, workRoot, 'activation_failed')
 
     await request.reportStage('installing')
-    await run(client, `devbox install -c ${quote(dir)}`, workRoot, 'install_failed')
+    // An unpinned toolchain resolves the current nixpkgs-unstable tip, so this
+    // install downloads a full nixpkgs source tree into the box's Nix cache.
+    await run(client, withNixCacheMaintenance(`devbox install -c ${quote(dir)}`), workRoot, 'install_failed')
     if (config.setupScript) {
       await request.reportStage('running_setup')
       await run(client, `devbox run -c ${quote(dir)} -- bash ${quote(`${dir}/setup.sh`)}`, workRoot, 'setup_failed')
