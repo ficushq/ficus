@@ -28,6 +28,7 @@ import { requirePermission, requireSquadPermission } from '../middleware'
 import { resolvedSquadId } from '../middleware/require-permission'
 import { getAccessibleSquadIds, type Identity } from '../services/rbac'
 import { resolveSquadActivityAccess } from '../services/squad-activity/access'
+import { projectSquadActivityPresence } from '../services/squad-activity/global-presence'
 import { filterToAccessibleSquads } from '../middleware/require-entity-permission'
 import {
   subscribeToSquad,
@@ -331,6 +332,14 @@ export const squadsRouter = new Hono()
       return c.json(await makeIdleConsultantsDormant(squad.id, days, { agentIds, reason: 'user request' }))
     }
   )
+  // Active work strip and counts for one squad's Activity tab; same shape as GET /api/activity/presence.
+  .get('/:id/activity/presence', requireSquadPermission('squads:read'), async (c) => {
+    const squad = await Squad.find(c.req.param('id'))
+    if (!squad || squad.isArchived) return c.json({ error: 'Squad not found' }, 404)
+    const presence = await projectSquadActivityPresence(c.get('identity') as Identity, squad.id)
+    if (!presence) return c.json({ error: 'Forbidden' }, 403)
+    return c.json(presence)
+  })
   .get('/:id/activity', requireSquadPermission('squads:read'), async (c) => {
     const squad = await Squad.find(c.req.param('id'))
     if (!squad || squad.isArchived) return c.json({ error: 'Squad not found' }, 404)
@@ -340,6 +349,7 @@ export const squadsRouter = new Hono()
     const rawVerbose = c.req.query('verbose')
     const agentIds = [...new Set(c.req.queries('agentId') ?? [])].sort()
     const kinds = [...new Set(c.req.queries('kind') ?? [])].sort()
+    const workStreamId = c.req.query('workStreamId') || undefined
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     if (
       !Number.isInteger(limit) ||
@@ -347,6 +357,7 @@ export const squadsRouter = new Hono()
       limit > 100 ||
       (rawVerbose !== undefined && rawVerbose !== 'true' && rawVerbose !== 'false') ||
       agentIds.some((id) => !uuid.test(id)) ||
+      (workStreamId !== undefined && !uuid.test(workStreamId)) ||
       kinds.some((kind) => !SQUAD_ACTIVITY_KINDS.includes(kind as SquadActivityKind))
     )
       return c.json({ error: 'Invalid activity query' }, 400)
@@ -362,6 +373,7 @@ export const squadsRouter = new Hono()
           verbose: rawVerbose === 'true',
           agentIds,
           kinds: kinds as SquadActivityKind[],
+          workStreamId,
           access,
         })
       )

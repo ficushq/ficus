@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
+import type { GlobalActivityPresence } from '@ficus/shared'
 import { activityRouter } from './activity'
 import { materializeActivityFixtures } from '../test-utils/activity-fixtures'
 import { identityMiddleware } from '../middleware/identity'
@@ -347,17 +348,30 @@ describe('GET /api/activity/presence', () => {
 
     const response = await activityRequest('/api/activity/presence', { headers: authHeaders(reader.token) })
     expect(response.status).toBe(200)
-    const body = (await response.json()) as {
-      workingAgentIds: string[]
-      workingCount: number
-      needsYouCount: number
-      streamCount: number
-    }
-    expect(body).toEqual({
+    const body = (await response.json()) as GlobalActivityPresence
+    const { streams, ...counts } = body
+    expect(counts).toEqual({
       workingAgentIds: [fullWorking.id, agentOnlyWorking.id].sort(),
       workingCount: 2,
       needsYouCount: 2,
       streamCount: 3,
+    })
+    // Active work cards cover exactly the counted streams, the ones needing the caller first.
+    expect(
+      streams
+        ?.map((card) => card.id)
+        .slice(0, 2)
+        .sort()
+    ).toEqual([fullReview.id, streamOnlyManual.id].sort())
+    expect(streams?.[2]).toMatchObject({
+      id: fullDependency.id,
+      status: 'queued',
+      needsYou: false,
+      waits: [{ type: 'dependency', needsYou: false }],
+    })
+    expect(streams?.find((card) => card.id === fullReview.id)).toMatchObject({
+      needsYou: true,
+      waits: [{ type: 'review', needsYou: true }],
     })
     expect(body.workingAgentIds).not.toContain(fullIdle.id)
     expect(body.workingAgentIds).not.toContain(streamOnlyWorking.id)
@@ -385,7 +399,7 @@ describe('GET /api/activity/presence', () => {
 
     await subscribeToSquad(muteSquad.id, muter.id, { decisions: 'mute', progress: 'mute' })
 
-    expect(await readPresence(muter.token)).toMatchObject({ needsYouCount: 0, streamCount: 0 })
+    expect(await readPresence(muter.token)).toMatchObject({ needsYouCount: 0, streamCount: 0, streams: [] })
     expect(await readPresence(other.token)).toMatchObject({ needsYouCount: 1, streamCount: 1 })
   })
 })

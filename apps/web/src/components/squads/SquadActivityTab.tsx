@@ -9,6 +9,7 @@ import {
   type SquadActivityKind,
 } from '@ficus/shared'
 import { queries } from '../../queryOptions'
+import { queryKeys } from '../../queryKeys'
 import { listSquadActivity } from '../../api/squads'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useStableRef } from '../../hooks/useStableRef'
@@ -54,15 +55,22 @@ export function SquadActivityTab({
   const AgentConversationBody = dependencies?.AgentConversationComponent ?? AgentConversation
   const WorkStreamModal = dependencies?.WorkStreamViewModalComponent ?? WorkStreamViewModal
   const AgentViewModalBody = dependencies?.AgentViewModalComponent ?? AgentViewModal
-  // Verbose toggle retired (2026-08-27 operator audit): the ONLY rows it
-  // gated were non-first chat messages within an execution — near-invisible
-  // in practice, and full transcripts are one click away in the agent modal.
   const [kinds, setKinds] = useState<SquadActivityKind[]>([])
+  // "Show everything" (2026-11-20) brings verbose back as the cleanup switch: folded
+  // CI/auto-merge notices from the server, and no client-side sender-row hiding.
+  const [showEverything, setShowEverything] = useState(false)
+  // Active work card filter: one stream's rows and its bound participants' rows.
+  const [workStreamFilter, setWorkStreamFilter] = useState<string | null>(null)
   const filters = useMemo<NormalizedSquadActivityFilters>(
     // agentIds stays in the wire filter shape (server capability kept); the
     // pill UI for it was removed 2026-08-27 — always unfiltered now.
-    () => ({ verbose: false, agentIds: [], kinds: [...kinds].sort() }),
-    [kinds]
+    () => ({
+      verbose: showEverything,
+      agentIds: [],
+      kinds: [...kinds].sort(),
+      ...(workStreamFilter ? { workStreamId: workStreamFilter } : {}),
+    }),
+    [kinds, showEverything, workStreamFilter]
   )
   const queryClient = useQueryClient()
   const { subscribe, isConnected } = useWebSocket()
@@ -85,6 +93,18 @@ export function SquadActivityTab({
     [agents]
   )
   const needsYouCount = useMemo(() => presenceStreams.filter(workStreamNeedsHumanAttention).length, [presenceStreams])
+  // Active work cards come from the server (step, waits, PR/CI, working participants, last event).
+  const { data: squadPresence } = useQuery(
+    queries.activity.squadPresence(squadId, activityEnabled && canReadWorkStreams)
+  )
+  const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshPresenceSoon = useCallback(() => {
+    if (presenceTimerRef.current) clearTimeout(presenceTimerRef.current)
+    presenceTimerRef.current = setTimeout(
+      () => void queryClient.invalidateQueries({ queryKey: queryKeys.activity.squadPresence(squadId) }),
+      400
+    )
+  }, [queryClient, squadId])
   const previousAccessSignatureRef = useRef(accessSignature)
   const expiredRestartRef = useRef<string | null>(null)
   const [liveHead, setLiveHead] = useState<{ contextKey: string; items: SquadActivityItem[] }>({
@@ -163,6 +183,7 @@ export function SquadActivityTab({
     await queryClient.cancelQueries({ queryKey: ['squads', 'activity', 'infinite', squadId] })
     queryClient.removeQueries({ queryKey: ['squads', 'activity', 'infinite', squadId] })
     setKinds([])
+    setWorkStreamFilter(null)
     setLiveOverlay({ contextKey: '', items: new Map(), overflowed: false })
     setLiveHead({ contextKey: '', items: [] })
   }, [queryClient, squadId])
@@ -279,6 +300,13 @@ export function SquadActivityTab({
         return
       }
       if (event !== 'squadActivity.projected') return
+      refreshPresenceSoon()
+      // Whether a row belongs to a stream is decided server-side (bindings, PR rows); with the
+      // stream filter on, refetch the head instead of guessing from the pushed row.
+      if (filters.workStreamId) {
+        reconcileSoon()
+        return
+      }
       if (overflowReconcileRef.current) overflowDirtyRef.current = true
       const contextKey = `${squadId}:${filterKey}:${accessSignature}`
       setLiveOverlay((current) => {
@@ -286,13 +314,27 @@ export function SquadActivityTab({
           current.contextKey === contextKey ? new Map(current.items) : new Map<string, SquadActivityItem | null>()
         const item = data.item
         const matches =
-          data.operation === 'upsert' && data.quietEligible && (kinds.length === 0 || kinds.includes(item.kind))
+          data.operation === 'upsert' &&
+          (filters.verbose || data.quietEligible) &&
+          (kinds.length === 0 || kinds.includes(item.kind))
         next.set(item.id, matches ? item : null)
         if (next.size > 200) return { contextKey, items: new Map(), overflowed: true }
         return { contextKey, items: next, overflowed: current.contextKey === contextKey && current.overflowed }
       })
     })
-  }, [activityEnabled, accessSignature, filterKey, kinds, refreshActivityAccess, queryClient, squadId, subscribe])
+  }, [
+    activityEnabled,
+    accessSignature,
+    filterKey,
+    filters,
+    kinds,
+    reconcileSoon,
+    refreshActivityAccess,
+    refreshPresenceSoon,
+    queryClient,
+    squadId,
+    subscribe,
+  ])
 
   useEffect(() => {
     const contextKey = `${squadId}:${filterKey}:${accessSignature}`
@@ -314,6 +356,7 @@ export function SquadActivityTab({
       abortRef.current?.abort()
       if (timerRef.current) clearTimeout(timerRef.current)
       if (overflowRetryTimerRef.current) clearTimeout(overflowRetryTimerRef.current)
+      if (presenceTimerRef.current) clearTimeout(presenceTimerRef.current)
     }
   }, [])
 
@@ -385,7 +428,17 @@ export function SquadActivityTab({
       <ActivityFeedView
         kinds={kinds}
         onKindsChange={setKinds}
-        presence={{ workingCount: workingAgentIds.size, needsYouCount, streamCount: presenceStreams.length }}
+        presence={{
+          workingCount: workingAgentIds.size,
+          needsYouCount,
+          streamCount: presenceStreams.length,
+          streams: squadPresence?.streams,
+        }}
+        workStreamFilter={workStreamFilter}
+        onWorkStreamFilterChange={setWorkStreamFilter}
+        workListHref={`/squads/${squadSlug}/work`}
+        showEverything={showEverything}
+        onShowEverythingChange={setShowEverything}
         isLoading={!squadId || permissionsLoading || (activityEnabled && query.isPending)}
         presenceLoading={agentsLoading || permissionsLoading || presenceLoading}
         filtersPending={query.isPlaceholderData && query.isFetching}

@@ -2,8 +2,10 @@ import type { Transport } from '../transport'
 import type {
   Agent,
   Attention,
+  GlobalActivityPresence,
   GlobalSquadActivityPage,
   Squad,
+  SquadActivityPresence,
   SquadActivityKind,
   SquadActivityPage,
   ResolveWorkStreamWaitInput,
@@ -44,27 +46,32 @@ export interface ListSquadActivityOptions {
   kinds?: SquadActivityKind[]
   limit?: number
   cursor?: string | null
+  /** "Show everything": include rows the default view folds away (CI and auto-merge notices). */
+  verbose?: boolean
+  /** Only this work stream's rows and its bound participants' rows (the Active work card filter). */
+  workStreamId?: string
+}
+
+function activityQuery(opts: ListSquadActivityOptions): string {
+  const params = new URLSearchParams()
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  if (opts.cursor) params.set('cursor', opts.cursor)
+  if (opts.verbose) params.set('verbose', 'true')
+  if (opts.workStreamId) params.set('workStreamId', opts.workStreamId)
+  for (const kind of [...new Set(opts.kinds ?? [])].sort()) params.append('kind', kind)
+  const query = params.toString()
+  return query ? `?${query}` : ''
 }
 
 // Mobile is the operator's own device, so the web client's RBAC-redaction
 // cache-keying (accessSignature) is unnecessary here — this is a plain cursor fetch.
 function squadActivityPath(squadId: string, opts: ListSquadActivityOptions): string {
-  const params = new URLSearchParams()
-  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
-  if (opts.cursor) params.set('cursor', opts.cursor)
-  for (const kind of [...new Set(opts.kinds ?? [])].sort()) params.append('kind', kind)
-  const query = params.toString()
-  return `/squads/${squadId}/activity${query ? `?${query}` : ''}`
+  return `/squads/${squadId}/activity${activityQuery(opts)}`
 }
 
 /** Cross-squad sibling of squadActivityPath — GET /api/activity, no squadId in the path. */
 function globalActivityPath(opts: ListSquadActivityOptions): string {
-  const params = new URLSearchParams()
-  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
-  if (opts.cursor) params.set('cursor', opts.cursor)
-  for (const kind of [...new Set(opts.kinds ?? [])].sort()) params.append('kind', kind)
-  const query = params.toString()
-  return `/activity${query ? `?${query}` : ''}`
+  return `/activity${activityQuery(opts)}`
 }
 
 /** Live sandbox pod status for a squad (mirrors the web SandboxStatusIndicator). */
@@ -144,6 +151,11 @@ export function squadsResource(t: Transport) {
     /** Cross-squad activity feed (every squad the caller can see, merged and RBAC-redacted per squad). */
     listGlobalActivity: (opts: ListSquadActivityOptions = {}): Promise<GlobalSquadActivityPage> =>
       t.request(globalActivityPath(opts)),
+    /** Counts and Active work cards across every squad the caller can see. */
+    getGlobalActivityPresence: (): Promise<GlobalActivityPresence> => t.request('/activity/presence'),
+    /** Counts and Active work cards for one squad's Activity tab. */
+    getSquadActivityPresence: (squadId: string): Promise<SquadActivityPresence> =>
+      t.request(`/squads/${squadId}/activity/presence`),
     countActiveWorkStreams: (squadId: string): Promise<{ totalCount: number }> =>
       t.request(`${workStreamsPagePath({ squadId, statuses: WS_ACTIVE_STATUSES, limit: 1 })}&countOnly=true`),
     listActiveWorkStreamsPage: (squadId?: string, opts: WorkStreamsPageOptions = {}): Promise<WorkStreamsPage> =>

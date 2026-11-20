@@ -1,9 +1,17 @@
 import { ActivityPreview } from './ActivityPreview'
+import { ActivityWorkStrip } from './ActivityWorkStrip'
 import clsx from 'clsx'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
 import { Link, useNavigate } from 'react-router'
-import type { Agent, SquadActivityItem, SquadActivityKind } from '@ficus/shared'
+import {
+  activityRowContextLabel,
+  hideRelayedSenderRows,
+  type ActivityWorkStreamCard,
+  type Agent,
+  type SquadActivityItem,
+  type SquadActivityKind,
+} from '@ficus/shared'
 import { useStableRef } from '../../hooks/useStableRef'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { agentTypeColor } from '../../lib/agentTypeColor'
@@ -21,9 +29,23 @@ import {
 export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivityItem> {
   kinds: SquadActivityKind[]
   onKindsChange: Dispatch<SetStateAction<SquadActivityKind[]>>
-  /** Presence strip data — omitted entirely when undefined. */
-  presence?: { workingCount: number; needsYouCount: number; streamCount: number }
+  /**
+   * Presence strip data — omitted entirely when undefined. With `streams` (newer servers)
+   * the Active work strip replaces the plain "N active streams" count.
+   */
+  presence?: { workingCount: number; needsYouCount: number; streamCount: number; streams?: ActivityWorkStreamCard[] }
   presenceLoading?: boolean
+  /** The Active work card filter: only this stream's rows. */
+  workStreamFilter?: string | null
+  onWorkStreamFilterChange?: (workStreamId: string | null) => void
+  /** "+N more" destination: the full work list. */
+  workListHref?: string
+  /**
+   * "Show everything": rows the default view cleans up (relayed sender rows here, and
+   * CI/auto-merge notices the server folds unless the query is verbose) are shown.
+   */
+  showEverything?: boolean
+  onShowEverythingChange?: (showEverything: boolean) => void
   isLoading: boolean
   /** A new server-filtered kind selection is loading while current rows remain visible. */
   filtersPending?: boolean
@@ -35,7 +57,10 @@ export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivi
   /** Hover-tooltip detail for the label column (purpose/name); undefined renders no title. */
   agentDetailFor: (item: T) => string | undefined
   hrefFor: (item: T) => string
-  /** Renders a separate squad identity column when provided (global feed only). */
+  /**
+   * Squad identity for the global feed. The squad column renders only while the shown
+   * rows span more than one squad; with one squad visible every chip would say the same.
+   */
   squadChipFor?: (item: T) => { label: string; href: string } | null
   /** Called for a plain (unmodified) click on a non-PR row; modified clicks keep navigation. */
   onOpen: (item: T) => void
@@ -61,6 +86,11 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   onKindsChange,
   presence,
   presenceLoading = false,
+  workStreamFilter = null,
+  onWorkStreamFilterChange,
+  workListHref = '/',
+  showEverything = false,
+  onShowEverythingChange,
   isLoading,
   filtersPending = false,
   isError,
@@ -76,13 +106,30 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   isFetchingNextPage,
   onLoadMore,
 }: ActivityFeedViewProps<T>) {
-  const rowClassName = clsx(
-    'relative flex flex-col gap-y-1 rounded-lg px-2 py-2.5 hover:bg-surface-hover lg:grid lg:gap-x-3',
-    activityGridClass(squadChipFor !== undefined)
-  )
   const navigate = useNavigate()
   const isGlobalFeed = squadChipFor !== undefined
-  const loadingRowCount = useLoadingShapeCount(loadingShapeKey, isLoading ? undefined : items.length, {
+  // Default-view cleanup: a sender's own row hides while a received row for the same
+  // message is among the rows shown (already server-filtered and permission-redacted).
+  const shownItems = useMemo(() => (showEverything ? items : hideRelayedSenderRows(items)), [items, showEverything])
+  const showSquadColumn = useMemo(() => {
+    if (!squadChipFor) return false
+    const squads = new Set<string>()
+    for (const item of shownItems) {
+      const chip = squadChipFor(item)
+      if (chip) squads.add(chip.href)
+      if (squads.size > 1) return true
+    }
+    return false
+  }, [shownItems, squadChipFor])
+  const rowClassName = clsx(
+    'relative flex flex-col gap-y-1 rounded-lg px-2 py-2.5 hover:bg-surface-hover lg:grid lg:gap-x-3',
+    activityGridClass(showSquadColumn)
+  )
+  const streamCards = presence?.streams
+  const filteredCard = workStreamFilter ? streamCards?.find((card) => card.id === workStreamFilter) : undefined
+  const openStreamOf = (item: T, stream: { id: string; number: number }) =>
+    ({ ...item, ref: { type: 'workstream', workStreamId: stream.id, workStreamNumber: stream.number } }) as T
+  const loadingRowCount = useLoadingShapeCount(loadingShapeKey, isLoading ? undefined : shownItems.length, {
     fallbackCount: 8,
     maxCount: 12,
   })
@@ -122,7 +169,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
           below it and the pills never scroll away (2026-08-27 audit). */}
       <div
         className={clsx(
-          'flex shrink-0 items-center gap-1.5 overflow-x-auto ficus-section mb-2',
+          'flex shrink-0 flex-wrap items-center gap-1.5 ficus-section mb-2',
           isGlobalFeed ? 'px-3 py-3' : 'px-1 pb-1',
           filtersPending && 'animate-pulse'
         )}
@@ -168,6 +215,30 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
             </button>
           )
         })}
+        {onShowEverythingChange && (
+          <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap pl-2 text-xs text-secondary">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showEverything}
+              onClick={() => onShowEverythingChange(!showEverything)}
+              className={clsx(
+                'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
+                showEverything ? 'bg-accent' : 'bg-th-border'
+              )}
+              data-testid="activity-show-everything"
+            >
+              <span
+                aria-hidden
+                className={clsx(
+                  'inline-block h-4 w-4 transform rounded-full bg-surface transition-transform',
+                  showEverything ? 'translate-x-4' : 'translate-x-0'
+                )}
+              />
+            </button>
+            Show everything
+          </label>
+        )}
       </div>
 
       {/* Presence strip: background work at a glance even while no rows
@@ -195,16 +266,44 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
           >
             {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.needsYouCount} waiting on you
           </span>
-          <span aria-hidden>·</span>
-          <span>
-            {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.streamCount} active{' '}
-            {presence.streamCount === 1 ? 'stream' : 'streams'}
-          </span>
+          {/* Older servers send no cards: keep the plain count there. */}
+          {!streamCards && (
+            <>
+              <span aria-hidden>·</span>
+              <span>
+                {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.streamCount} active{' '}
+                {presence.streamCount === 1 ? 'stream' : 'streams'}
+              </span>
+            </>
+          )}
+          {workStreamFilter && onWorkStreamFilterChange && (
+            <span className="ml-auto flex min-w-0 items-center gap-1.5" data-testid="activity-work-stream-filter">
+              <span className="min-w-0 truncate">
+                Showing {filteredCard ? `#${filteredCard.number} ${filteredCard.title}` : 'one work stream'}
+              </span>
+              <button
+                type="button"
+                className="ficus-button ficus-button-ghost shrink-0 rounded-lg px-2 py-0.5 text-xs"
+                onClick={() => onWorkStreamFilterChange(null)}
+              >
+                Clear
+              </button>
+            </span>
+          )}
         </div>
+      )}
+      {presence && streamCards && onWorkStreamFilterChange && (
+        <ActivityWorkStrip
+          cards={streamCards}
+          total={Math.max(presence.streamCount, streamCards.length)}
+          selectedId={workStreamFilter}
+          onSelect={onWorkStreamFilterChange}
+          moreHref={workListHref}
+        />
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading && items.length === 0 && (
+        {isLoading && shownItems.length === 0 && (
           <LoadingSurface label="Loading activity">
             <ol className="space-y-1 text-[13px]">
               <SkeletonRows count={Math.max(1, loadingRowCount)}>
@@ -214,24 +313,24 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                       <div
                         className={clsx(
                           'pointer-events-none min-w-0 items-center lg:contents',
-                          isGlobalFeed ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
+                          showSquadColumn ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
                         )}
                       >
                         <span
                           className={clsx(
                             'flex h-5 items-center lg:col-start-1',
-                            isGlobalFeed
+                            showSquadColumn
                               ? 'col-start-3 row-start-1 lg:col-start-1'
                               : 'order-last ml-auto lg:order-0 lg:ml-0'
                           )}
                         >
                           <SkeletonLine className="w-10" />
                         </span>
-                        {isGlobalFeed && <SkeletonBlock className="col-start-2 row-start-1 h-5 w-20 rounded" />}
+                        {showSquadColumn && <SkeletonBlock className="col-start-2 row-start-1 h-5 w-20 rounded" />}
                         <span
                           className={clsx(
                             'flex h-5 items-center',
-                            isGlobalFeed ? 'col-start-1 row-start-1 lg:col-start-3' : 'lg:col-start-2'
+                            showSquadColumn ? 'col-start-1 row-start-1 lg:col-start-3' : 'lg:col-start-2'
                           )}
                         >
                           <SkeletonLine className="w-20" />
@@ -247,9 +346,9 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
             </ol>
           </LoadingSurface>
         )}
-        {!isLoading && squadActivityStatusMessage(isLoading, isError, items.length) && (
+        {!isLoading && squadActivityStatusMessage(isLoading, isError, shownItems.length) && (
           <p className={clsx('text-sm py-8 text-center', isError ? 'text-status-danger-600' : 'text-muted')}>
-            {squadActivityStatusMessage(isLoading, isError, items.length)}
+            {squadActivityStatusMessage(isLoading, isError, shownItems.length)}
           </p>
         )}
         <ol className="space-y-1 text-[13px]">
@@ -257,12 +356,15 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
             // Top-most row per WORKING agent gets a pulsing live dot. Items
             // render newest-first, so first-seen wins; recomputed per render.
             const liveDotted = new Set<string>()
-            return items.map((item) => {
+            return shownItems.map((item) => {
               const subjectAgentId = item.ref.type === 'agent' ? item.ref.agentId : null
               const showLiveDot =
                 !!subjectAgentId && workingAgentIds.has(subjectAgentId) && !liveDotted.has(subjectAgentId)
               if (showLiveDot) liveDotted.add(subjectAgentId!)
-              const chip = squadChipFor?.(item)
+              const chip = showSquadColumn ? squadChipFor?.(item) : null
+              const contextLabel = activityRowContextLabel(item)
+              const contextStream = item.ref.type === 'agent' ? item.context?.workStream : undefined
+              const contextStreamItem = contextStream ? openStreamOf(item, contextStream) : null
               // Issue rows point at the code host; when the server resolved the
               // stream they also offer an in-app jump to it. Reusing `hrefFor`
               // with a work-stream ref keeps the spread's squadId, so the global
@@ -289,16 +391,16 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                   <div
                     className={clsx(
                       'pointer-events-none min-w-0 items-center lg:contents',
-                      isGlobalFeed ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
+                      showSquadColumn ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
                     )}
-                    data-activity-mobile-header={isGlobalFeed ? 'global' : 'squad'}
+                    data-activity-mobile-header={showSquadColumn ? 'global' : 'squad'}
                   >
                     <time
                       dateTime={item.at}
                       dir="ltr"
                       className={clsx(
                         'tabular-nums whitespace-nowrap lg:col-start-1',
-                        isGlobalFeed
+                        showSquadColumn
                           ? 'col-start-3 row-start-1 lg:col-start-1'
                           : 'order-last ml-auto lg:order-0 lg:ml-0',
                         ACTIVITY_SMALL_TEXT_CLASS
@@ -325,7 +427,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                     <span
                       className={clsx(
                         'min-w-0 truncate',
-                        isGlobalFeed
+                        showSquadColumn
                           ? 'col-start-1 row-start-1 justify-self-start text-left lg:col-start-3'
                           : 'lg:col-start-2',
                         agentTypeColor(item.ref.type === 'agent' ? item.agentTypeId : null)
@@ -347,11 +449,37 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                   <span
                     className={clsx(
                       'pointer-events-none relative z-10 min-w-0 wrap-break-word lg:col-span-1',
-                      isGlobalFeed ? 'lg:col-start-4' : 'lg:col-start-3',
+                      showSquadColumn ? 'lg:col-start-4' : 'lg:col-start-3',
                       item.kind !== 'message' && ACTIVITY_SMALL_TEXT_CLASS
                     )}
                     data-activity-column="summary"
                   >
+                    {/* Agent rows say what the agent works on: its bound work stream (number,
+                        title, step; opens the stream in place) or else its purpose. */}
+                    {contextLabel && (
+                      <span
+                        className="block truncate text-xs text-muted"
+                        data-activity-context={contextStream ? 'work-stream' : 'purpose'}
+                        title={contextLabel}
+                      >
+                        {contextStream && contextStreamItem ? (
+                          <a
+                            href={hrefFor(contextStreamItem)}
+                            className="pointer-events-auto relative z-10 hover:text-link-hover hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+                            aria-label={`Open work stream #${contextStream.number} ${contextStream.title}`}
+                            onClick={(event) => {
+                              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+                              event.preventDefault()
+                              onOpen(contextStreamItem)
+                            }}
+                          >
+                            {contextLabel}
+                          </a>
+                        ) : (
+                          contextLabel
+                        )}
+                      </span>
+                    )}
                     {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
                       <span>By {activityAgentLabel(item.agentTypeId)} · </span>
                     )}
@@ -378,7 +506,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                 item.ref.type === 'pr' || item.ref.type === 'issue' ? activityExternalHref(item.ref.url) : hrefFor(item)
               return (
                 <li key={item.id}>
-                  <div className={rowClassName} data-activity-layout={isGlobalFeed ? 'global' : 'squad'}>
+                  <div className={rowClassName} data-activity-layout={showSquadColumn ? 'global' : 'squad'}>
                     {/* A sibling stretched anchor owns the non-interactive row area.
                         Inline links/chips sit above it, never inside another control. */}
                     {sourceHref &&

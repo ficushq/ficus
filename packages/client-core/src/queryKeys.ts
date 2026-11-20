@@ -210,6 +210,8 @@ export const queryKeys = {
   activity: {
     all: ['activity'] as const,
     presence: () => [...queryKeys.activity.all, 'presence'] as const,
+    /** One squad's presence; under `presence()` so invalidating that prefix refreshes both. */
+    squadPresence: (squadId: string) => [...queryKeys.activity.all, 'presence', 'squad', squadId] as const,
     globalInfinite: (filters: NormalizedSquadActivityFilters) =>
       [...queryKeys.activity.all, 'global', 'infinite', filters] as const,
   },

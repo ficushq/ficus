@@ -72,6 +72,8 @@ Use quiet hover and visible keyboard focus states. Keep status colors meaningful
 
 Keep compact, useful filters visible: Feed status/squad pills and Work status pills do not need a separate Filters dropdown. Long filter sets can wrap; ensure they remain reachable on narrow screens.
 
+The Activity feed (global page and squad tab) shares one body, `ActivityFeedView`. Agent rows add a quiet context line (the bound work stream with its step, else the agent's purpose); the Active work strip sits above the feed as compact inset cards that filter the feed, scrolling horizontally on narrow widths and in a three-column grid from `lg` (six columns from `2xl`), with "+N more" below them; "Show everything" is a switch at the trailing end of the filter toolbar, which wraps rather than scrolls so the switch stays visible; and the squad column appears only while rows from more than one squad are shown. The data contract and cleanup rules are in [Activity work context](activity-work-context.md).
+
 The primary action sits at the trailing side of its heading/toolbar. Avoid competing filled actions. Secondary and overflow actions are quieter. Keep actions in a group aligned in height; the desktop chat search and activity toggle are both 26px high.
 
 ## Conversations and squad Home

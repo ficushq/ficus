@@ -3,7 +3,12 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, useLocation } from 'react-router'
-import type { GlobalSquadActivityItem, NormalizedSquadActivityFilters, Squad } from '@ficus/shared'
+import type {
+  GlobalActivityPresence,
+  GlobalSquadActivityItem,
+  NormalizedSquadActivityFilters,
+  Squad,
+} from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { ActivityPage } from './ActivityPage'
@@ -176,8 +181,16 @@ describe('ActivityPage rendering', () => {
     expect(html).toContain('/squads/squad-bravo?agent=00000000-0000-4000-8000-000000000002&amp;view=inbox')
   })
 
+  test('shows no squad column while every visible row comes from one squad', () => {
+    const html = staticRender([messageItem])
+    expect(html).not.toContain('data-activity-column="squad"')
+    expect(html).not.toContain('Squad Bravo')
+    expect(html).toContain('data-activity-layout="squad"')
+    expect(html).toContain('lg:grid-cols-[4rem_8rem_1fr]')
+  })
+
   test('keeps a long squad name in an accessible column separate from the agent on mobile and desktop', () => {
-    const html = staticRender([messageItem], false, {
+    const html = staticRender([messageItem, { ...workItem, at: '2026-08-27T11:00:00.000Z' }], false, {
       [squadAId]: { name: 'Squad Alpha' },
       [squadBId]: { name: longSquadName },
     })
@@ -203,7 +216,7 @@ describe('ActivityPage rendering', () => {
   })
 
   test('the squad chip hugs the top-left of its cell instead of stretching to a multi-line row', () => {
-    const html = staticRender([messageItem])
+    const html = staticRender([messageItem, { ...workItem, at: '2026-08-27T11:00:00.000Z' }])
     const squadColumn = html.indexOf('data-activity-column="squad"')
     const chip = html.slice(html.lastIndexOf('<button', squadColumn), squadColumn)
     expect(chip).toContain('self-start')
@@ -304,7 +317,7 @@ describe('ActivityPage squad chip', () => {
   test("clicking the chip navigates to that squad's Activity tab and does NOT open the row modal", async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const rendered = dom.createRoot()
-    const client = seedClient([workItem])
+    const client = seedClient([workItem, messageItem])
     const originalFetch = globalThis.fetch
     globalThis.fetch = mock(async () => {
       return new dom.window.Response(JSON.stringify({}), {
@@ -659,6 +672,105 @@ describe('ActivityPage live updates', () => {
       await dom.act(async () => rendered.root.unmount())
       await dom.cleanup()
       client.clear()
+    }
+  })
+})
+
+describe('ActivityPage Active work strip and Show everything', () => {
+  test('a card click filters the query to that stream; Show everything asks for verbose rows', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const client = seedClient([workItem, messageItem])
+    const streamId = '00000000-0000-4000-8000-000000000010'
+    client.setQueryData(queryKeys.activity.presence(), {
+      workingAgentIds: [agentId],
+      workingCount: 1,
+      needsYouCount: 0,
+      streamCount: 1,
+      streams: [
+        {
+          id: streamId,
+          number: 12,
+          squadId: squadAId,
+          title: 'Cross-squad work',
+          status: 'active',
+          step: 'Implement',
+          waits: [],
+          needsYou: false,
+          pullRequest: null,
+          ci: null,
+          deliveryLabel: null,
+          workingAgentIds: [agentId],
+          lastEventAt: '2026-08-27T12:00:00.000Z',
+        },
+      ],
+    } satisfies GlobalActivityPresence)
+    const originalFetch = globalThis.fetch
+    const requested: string[] = []
+    globalThis.fetch = mock(async (input) => {
+      const url = String(input)
+      if (url.includes('/api/activity?') || url.endsWith('/api/activity')) requested.push(url)
+      const body = url.includes('/api/activity')
+        ? { items: [workItem], hasMore: false, nextCursor: null, squads: { [squadAId]: { name: 'Squad Alpha' } } }
+        : {}
+      return new dom.window.Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as unknown as Response
+    }) as typeof fetch
+
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={client}>
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage />
+              </WebSocketContext.Provider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+      const document = dom.window.document
+      // Every card is from one squad: "+N more" would open that squad's Work tab (none needed here).
+      const cardButton = document.querySelector<HTMLButtonElement>('button[data-work-stream-card="12"]')!
+      expect(cardButton.textContent).toContain('#12 Cross-squad work')
+      await dom.act(async () => {
+        cardButton.click()
+        await Bun.sleep(0)
+      })
+      await dom.act(async () => {
+        await waitFor(() => expect(requested.some((url) => url.includes(`workStreamId=${streamId}`))).toBe(true))
+      })
+      expect(cardButton.getAttribute('aria-pressed')).toBe('true')
+
+      await dom.act(async () => {
+        document.querySelector<HTMLButtonElement>('[data-testid="activity-show-everything"]')!.click()
+        await Bun.sleep(0)
+      })
+      await dom.act(async () => {
+        await waitFor(() =>
+          expect(
+            requested.some((url) => url.includes('verbose=true') && url.includes(`workStreamId=${streamId}`))
+          ).toBe(true)
+        )
+      })
+
+      // Clicking the selected card again drops the filter but keeps Show everything.
+      await dom.act(async () => {
+        cardButton.click()
+        await Bun.sleep(0)
+      })
+      await dom.act(async () => {
+        await waitFor(() =>
+          expect(requested.at(-1)).toSatisfy(
+            (url: string | undefined) => !!url && url.includes('verbose=true') && !url.includes('workStreamId')
+          )
+        )
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
     }
   })
 })
