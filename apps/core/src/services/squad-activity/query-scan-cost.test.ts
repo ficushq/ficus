@@ -6,6 +6,7 @@ import { ensureQueryIndex } from '../../test-utils/message-query-indexes'
 import { relatedInboxPageSql } from './event-handlers'
 import { chatSourcePageSql, listChatSourcePage } from './source-loaders'
 import { workStreamRuntimesSql } from '../../entities/WorkStream'
+import { workStreamLastEventsSql } from './global-presence'
 
 const squadIds: string[] = []
 const recipientIds: string[] = []
@@ -115,4 +116,59 @@ test('runtime aggregation reads a covering index rather than wide execution rows
   expect(JSON.stringify(plan)).toContain('idx_executions_agent_runtime')
   expect(JSON.stringify(plan)).toContain('Index Only Scan')
   expect(buffers(plan)).toBeLessThan(buffers(old) / 3)
+})
+
+test('Active work last events probe each participant once instead of scanning its history', async () => {
+  await ensureQueryIndex('idx_squad_activity_agent')
+  const [squad] = await db
+    .insert(squads)
+    .values({ name: `scan-cost-${crypto.randomUUID()}`, purpose: 'test' })
+    .returning()
+  squadIds.push(squad.id)
+  // 40 active streams, one bound participant each, 600 retained rows per participant.
+  const streams = 40
+  const rowsPerAgent = 600
+  const streamIds = (
+    await db.execute<{ id: string }>(sql`
+      WITH agent_rows AS (
+        INSERT INTO agents(squad_id,agent_type_id) SELECT ${squad.id}::uuid,'engineer' FROM generate_series(1,${streams})
+        RETURNING id
+      ), numbered AS (SELECT id,row_number() OVER (ORDER BY id) n FROM agent_rows),
+      stream_rows AS (
+        INSERT INTO work_streams(squad_id,title) SELECT ${squad.id}::uuid,'Stream ' || n FROM numbered RETURNING id,title
+      ), bound AS (
+        INSERT INTO workflow_bindings(agent_id,work_stream_id,participant_id,binding_key,agent_snapshot)
+        SELECT numbered.id,stream_rows.id,'engineer','engineer','{}'::jsonb
+        FROM numbered JOIN stream_rows ON stream_rows.title='Stream ' || numbered.n
+        RETURNING work_stream_id
+      )
+      SELECT work_stream_id id FROM bound`)
+  ).map((row) => row.id)
+  await db.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
+      agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
+    SELECT ${squad.id}::uuid,10,gen_random_uuid(),'chat',gen_random_uuid()::text,
+      now() - (n * interval '1 minute'),b.agent_id,'engineer','message',repeat(md5(n::text),8),'[]'::jsonb,
+      jsonb_build_object('type','agent','agentId',b.agent_id,'view','chat'),true,'agents',md5(n::text) || md5(b.agent_id::text)
+    FROM workflow_bindings b CROSS JOIN generate_series(1,${rowsPerAgent}) n
+    WHERE b.work_stream_id IN (${sql.join(
+      streamIds.map((id) => sql`${id}::uuid`),
+      sql`,`
+    )})`)
+  await db.execute(sql`VACUUM (ANALYZE) squad_activity`)
+
+  const floor = new Date(Date.now() - 30 * 24 * 60 * 60_000)
+  const query = workStreamLastEventsSql(streamIds, floor)
+  const result = await db.execute<{ work_stream_id: string; last_at: Date | string }>(query)
+  expect(result).toHaveLength(streams)
+  // The newest row per participant is one minute old.
+  for (const row of result) expect(Date.now() - new Date(row.last_at).getTime()).toBeLessThan(5 * 60_000)
+
+  const plan = await explain(query)
+  const old = await withoutIndex('idx_squad_activity_agent', query)
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('last event plans', JSON.stringify({ plan, old }))
+  expect(JSON.stringify(plan)).toContain('idx_squad_activity_agent')
+  // A few index pages per participant, never a sort of its 600-row history.
+  expect(JSON.stringify(plan)).not.toContain('"Sort"')
+  expect(buffers(plan)).toBeLessThan(streams * 6)
+  expect(buffers(plan)).toBeLessThan(buffers(old) / 50)
 })

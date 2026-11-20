@@ -210,7 +210,7 @@ export interface ActivityWorkStreamCard {
   deliveryLabel: string | null
   /** Bound participants running right now. Empty unless the viewer may read agents. */
   workingAgentIds: string[]
-  /** Newest Activity row for this stream (ISO), else the stream's last update. */
+  /** Newest of the bound participants' latest Activity row and the stream's last update (ISO). */
   lastEventAt: string
   /** Reserved for the one-line stream summary a later change adds; absent today. */
   summary?: string | null
@@ -233,8 +233,25 @@ export interface GlobalActivityPresence {
 /** Per-squad presence (GET /api/squads/:id/activity/presence) has the same shape. */
 export type SquadActivityPresence = GlobalActivityPresence
 
-/** Upper bound on `streams` in one presence response; clients show fewer plus "+N more". */
-export const ACTIVITY_WORK_STREAM_CARD_LIMIT = 50
+/**
+ * Row kinds that can change an Active work card (step, waits, handoff, PR state). Clients
+ * refetch presence on these live rows only; agent status changes refresh it through the
+ * agents topic, and everything else waits for the 30-second poll.
+ */
+export const ACTIVITY_PRESENCE_ROW_KINDS: readonly SquadActivityKind[] = [
+  'workstream',
+  'wait',
+  'handoff',
+  'pr',
+  'issue',
+]
+
+/**
+ * Upper bound on `streams` in one presence response: twice what the strip shows, so a
+ * selected card just past the visible six usually stays available. Clients show fewer
+ * plus "+N more" (from `streamCount`).
+ */
+export const ACTIVITY_WORK_STREAM_CARD_LIMIT = 12
 
 export interface SquadActivityFilters {
   verbose?: boolean

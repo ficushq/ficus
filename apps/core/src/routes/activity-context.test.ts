@@ -377,3 +377,37 @@ describe('live Activity events', () => {
     expect(redactActivityEvent(full, data)).toBe(data)
   })
 })
+
+describe('flow step cache', () => {
+  test("reads a run's stored state only when its version changes", async () => {
+    const { loadWorkStreamSteps, clearWorkStreamStepCache } = await import('../services/squad-activity/row-context')
+    clearWorkStreamStepCache()
+    const statements: string[] = []
+    let version = 3
+    const executor = {
+      execute: async (query: { queryChunks?: unknown[] }) => {
+        const text = JSON.stringify(query)
+        statements.push(text.includes("state->>'status'") ? 'state' : 'version')
+        if (!text.includes("state->>'status'")) return [{ work_stream_id: 'ws', version, activated: true }] as never
+        return [
+          {
+            work_stream_id: 'ws',
+            version,
+            activated: true,
+            run_status: 'running',
+            running_steps: ['implement'],
+            step_names: { implement: 'Implement' },
+          },
+        ] as never
+      },
+    }
+    const stream = [{ id: 'ws', status: 'active' as const }]
+    expect((await loadWorkStreamSteps(stream, executor as never)).get('ws')).toBe('Implement')
+    expect((await loadWorkStreamSteps(stream, executor as never)).get('ws')).toBe('Implement')
+    expect(statements).toEqual(['version', 'state', 'version'])
+    version = 4
+    await loadWorkStreamSteps(stream, executor as never)
+    expect(statements).toEqual(['version', 'state', 'version', 'version', 'state'])
+    clearWorkStreamStepCache()
+  })
+})

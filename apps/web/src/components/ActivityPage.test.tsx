@@ -660,14 +660,24 @@ describe('ActivityPage live updates', () => {
         )
       })
       expect(listeners.has('squadActivity:sq-1')).toBe(true)
-      const feed = () => client.getQueryCache().findAll({ queryKey: queryKeys.activity.all })
+      const feed = () => client.getQueryCache().findAll({ queryKey: queryKeys.activity.globalInfinitePrefix() })
+      const presence = () => client.getQueryCache().find({ queryKey: queryKeys.activity.presence(), exact: true })!
       expect(feed().some((query) => query.state.isInvalidated)).toBe(false)
 
-      listeners.get('squadActivity:sq-1')!({ event: 'squadActivity.projected', data: {} })
+      // A chat step refreshes the feed but not the heavier presence request.
+      listeners.get('squadActivity:sq-1')!({ event: 'squadActivity.projected', data: { item: { kind: 'message' } } })
       await dom.act(async () => {
         await Bun.sleep(450)
       })
       expect(feed().some((query) => query.state.isInvalidated)).toBe(true)
+      expect(presence().state.isInvalidated).toBe(false)
+
+      // A wait row can change an Active work card, so presence refreshes too.
+      listeners.get('squadActivity:sq-1')!({ event: 'squadActivity.projected', data: { item: { kind: 'wait' } } })
+      await dom.act(async () => {
+        await Bun.sleep(450)
+      })
+      expect(presence().state.isInvalidated).toBe(true)
     } finally {
       await dom.act(async () => rendered.root.unmount())
       await dom.cleanup()

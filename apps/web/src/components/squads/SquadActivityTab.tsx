@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ACTIVITY_PRESENCE_ROW_KINDS,
   compareSquadActivityItems,
   workStreamNeedsHumanAttention,
   type Agent,
@@ -300,7 +301,9 @@ export function SquadActivityTab({
         return
       }
       if (event !== 'squadActivity.projected') return
-      refreshPresenceSoon()
+      // Most rows (chat steps, messages) cannot change a card; refetching presence on each one
+      // would repeat a multi-query request on every agent step.
+      if (ACTIVITY_PRESENCE_ROW_KINDS.includes(data.item.kind)) refreshPresenceSoon()
       // Whether a row belongs to a stream is decided server-side (bindings, PR rows); with the
       // stream filter on, refetch the head instead of guessing from the pushed row.
       if (filters.workStreamId) {

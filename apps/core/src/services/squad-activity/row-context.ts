@@ -53,9 +53,26 @@ export function workStreamStepLabel(facts: WorkStreamStepFacts): string | null {
   return null
 }
 
+type RunStepFacts = Pick<WorkStreamStepFacts, 'runStatus' | 'runningStepIds' | 'stepNames'>
+
 /**
- * Current step label per stream, read from the flow run without loading its (large)
- * attempt evidence: only running step ids and definition step names leave the database.
+ * Run step facts keyed by `workStreamId:version:activated`. Every flow-run write stores the
+ * new version, so a cached entry is exact. Reading a run's step means reading its whole stored
+ * state (attempt evidence included); the Activity feed and presence ask for the same handful
+ * of streams on every refresh, so only changed runs are read again.
+ */
+const runStepCache = new Map<string, RunStepFacts>()
+const RUN_STEP_CACHE_LIMIT = 1000
+
+/** Test seam: forget cached run steps. */
+export function clearWorkStreamStepCache() {
+  runStepCache.clear()
+}
+
+/**
+ * Current step label per stream. One cheap query reads each run's version; only runs whose
+ * version is not cached have their state read, and then only running step ids and
+ * definition step names leave the database.
  */
 export async function loadWorkStreamSteps(
   streams: Array<{ id: string; status: WorkStreamStatus }>,
@@ -63,36 +80,65 @@ export async function loadWorkStreamSteps(
 ): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>()
   if (!streams.length) return result
-  const runRows = rows<{
-    work_stream_id: string
-    run_status: string | null
-    running_steps: string[] | null
-    step_names: Record<string, string> | null
-  }>(
+  const idList = (ids: string[]) =>
+    sql.join(
+      ids.map((id) => sql`${id}::uuid`),
+      sql`,`
+    )
+  const versions = rows<{ work_stream_id: string; version: number; activated: boolean }>(
     await executor.execute(sql`
-      SELECT r.work_stream_id,
-        CASE WHEN r.activated THEN r.state->>'status' END run_status,
-        (SELECT jsonb_agg(a->>'stepId') FROM jsonb_array_elements(COALESCE(r.state->'attempts','[]'::jsonb)) a
-          WHERE a->>'status'='running') running_steps,
-        (SELECT jsonb_object_agg(s->>'id',s->>'name') FROM jsonb_array_elements(COALESCE(r.state->'definition'->'steps','[]'::jsonb)) s
-          WHERE jsonb_typeof(s->'name')='string' AND jsonb_typeof(s->'id')='string') step_names
-      FROM work_stream_flow_runs r
-      WHERE r.work_stream_id IN (${sql.join(
-        streams.map((stream) => sql`${stream.id}::uuid`),
-        sql`,`
-      )})
+      SELECT work_stream_id,version,activated FROM work_stream_flow_runs
+      WHERE work_stream_id IN (${idList(streams.map((stream) => stream.id))})
     `)
   )
-  const runs = new Map(runRows.map((row) => [row.work_stream_id, row]))
+  const keyOf = (row: { work_stream_id: string; version: number; activated: boolean }) =>
+    `${row.work_stream_id}:${row.version}:${row.activated}`
+  const missing = versions.filter((row) => !runStepCache.has(keyOf(row)))
+  const fresh = new Map<string, RunStepFacts>()
+  if (missing.length) {
+    const loaded = rows<{
+      work_stream_id: string
+      version: number
+      activated: boolean
+      run_status: string | null
+      running_steps: string[] | null
+      step_names: Record<string, string> | null
+    }>(
+      await executor.execute(sql`
+        SELECT r.work_stream_id,r.version,r.activated,
+          CASE WHEN r.activated THEN r.state->>'status' END run_status,
+          (SELECT jsonb_agg(a->>'stepId') FROM jsonb_array_elements(COALESCE(r.state->'attempts','[]'::jsonb)) a
+            WHERE a->>'status'='running') running_steps,
+          (SELECT jsonb_object_agg(s->>'id',s->>'name') FROM jsonb_array_elements(COALESCE(r.state->'definition'->'steps','[]'::jsonb)) s
+            WHERE jsonb_typeof(s->'name')='string' AND jsonb_typeof(s->'id')='string') step_names
+        FROM work_stream_flow_runs r
+        WHERE r.work_stream_id IN (${idList(missing.map((row) => row.work_stream_id))})
+      `)
+    )
+    for (const row of loaded) {
+      const facts: RunStepFacts = {
+        runStatus: row.run_status ?? null,
+        runningStepIds: (row.running_steps ?? []).filter((id): id is string => typeof id === 'string'),
+        stepNames: row.step_names ?? {},
+      }
+      fresh.set(row.work_stream_id, facts)
+      if (runStepCache.size >= RUN_STEP_CACHE_LIMIT) runStepCache.delete(runStepCache.keys().next().value!)
+      runStepCache.set(keyOf(row), facts)
+    }
+  }
+  // A run that changed between the two reads uses the state just read.
+  const runs = new Map(
+    versions.map((row) => [row.work_stream_id, runStepCache.get(keyOf(row)) ?? fresh.get(row.work_stream_id)])
+  )
   for (const stream of streams) {
     const run = runs.get(stream.id)
     result.set(
       stream.id,
       workStreamStepLabel({
         status: stream.status,
-        runStatus: run?.run_status ?? null,
-        runningStepIds: (run?.running_steps ?? []).filter((id): id is string => typeof id === 'string'),
-        stepNames: run?.step_names ?? {},
+        runStatus: run?.runStatus ?? null,
+        runningStepIds: run?.runningStepIds ?? [],
+        stepNames: run?.stepNames ?? {},
       })
     )
   }

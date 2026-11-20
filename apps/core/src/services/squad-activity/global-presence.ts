@@ -19,6 +19,7 @@ import { computeDerivedStates } from '../work-streams/derived-state'
 import { resolveGlobalActivityAccess, resolveSquadActivityAccess } from './access'
 import type { GlobalActivitySquadAccess } from './global-activity'
 import { loadWorkStreamSteps } from './row-context'
+import { activityRetentionFloor } from '../squad/activity-cursor'
 
 /**
  * Build the global activity presence strip from only the squads and resource
@@ -158,43 +159,16 @@ async function buildWorkStreamCards(
   agentReadableSquads: Set<string>
 ): Promise<ActivityWorkStreamCard[]> {
   if (!streams.length) return []
-  const ids = streams.map((stream) => stream.id)
-  const idList = sql.join(
-    ids.map((id) => sql`${id}::uuid`),
-    sql`,`
-  )
   const agentStreamIds = streams.filter((stream) => agentReadableSquads.has(stream.squadId)).map((stream) => stream.id)
-  const agentIdList = sql.join(
-    agentStreamIds.map((id) => sql`${id}::uuid`),
-    sql`,`
-  )
-  const [steps, working, lastEvents] = await Promise.all([
-    loadWorkStreamSteps(streams),
+  const [working, lastEvents] = await Promise.all([
     agentStreamIds.length
       ? db.execute<{ work_stream_id: string; agent_id: string }>(sql`
           SELECT b.work_stream_id,a.id agent_id FROM workflow_bindings b JOIN agents a ON a.id=b.agent_id
-          WHERE b.work_stream_id IN (${agentIdList}) AND a.status='active' ORDER BY a.id`)
+          WHERE b.work_stream_id IN (${uuidList(agentStreamIds)}) AND a.status='active' ORDER BY a.id`)
       : [],
-    // Newest Activity row per stream inside retention: its own rows, plus its bound participants'
-    // rows when the viewer may read that squad's agents. One indexed lookup per stream and agent.
-    db.execute<{ work_stream_id: string; last_at: Date | string }>(sql`
-      WITH retention AS (
-        SELECT date_trunc('day',clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' - interval '30 days' AS floor_at
-      )
-      SELECT events.work_stream_id,max(events.event_at) AS last_at FROM (
-        SELECT sa.work_stream_id,sa.at AS event_at FROM squad_activity sa CROSS JOIN retention
-        WHERE sa.work_stream_id IN (${idList}) AND sa.at>=retention.floor_at
-        ${
-          agentStreamIds.length
-            ? sql`UNION ALL
-        SELECT b.work_stream_id,sa.at AS event_at FROM workflow_bindings b
-        JOIN work_streams ws ON ws.id=b.work_stream_id
-        JOIN squad_activity sa ON sa.squad_id=ws.squad_id AND sa.agent_id=b.agent_id
-        CROSS JOIN retention
-        WHERE b.work_stream_id IN (${agentIdList}) AND sa.at>=retention.floor_at`
-            : sql``
-        }
-      ) events GROUP BY events.work_stream_id`),
+    agentStreamIds.length
+      ? db.execute(workStreamLastEventsSql(agentStreamIds, activityRetentionFloor(new Date())))
+      : [],
   ])
   const workingByStream = new Map<string, string[]>()
   for (const row of working as Array<{ work_stream_id: string; agent_id: string }>)
@@ -205,8 +179,24 @@ async function buildWorkStreamCards(
       new Date(row.last_at).toISOString(),
     ])
   )
+  const lastEventAt = (stream: (typeof streams)[number]) => {
+    const updatedAt = new Date(stream.updatedAt).toISOString()
+    const event = lastEventByStream.get(stream.id)
+    return event && event > updatedAt ? event : updatedAt
+  }
 
-  const cards = streams.map((stream): ActivityWorkStreamCard => {
+  // Order and cap first: only the returned cards pay for reading their flow step.
+  const shown = [...streams]
+    .sort(
+      (a, b) =>
+        Number(needsYou.has(b.id)) - Number(needsYou.has(a.id)) ||
+        lastEventAt(b).localeCompare(lastEventAt(a)) ||
+        b.number - a.number
+    )
+    .slice(0, ACTIVITY_WORK_STREAM_CARD_LIMIT)
+  const steps = await loadWorkStreamSteps(shown)
+
+  return shown.map((stream): ActivityWorkStreamCard => {
     const presentation = derived.get(stream.id)
     const openWaits = presentation?.openWaits ?? []
     const delivery = presentation?.delivery
@@ -226,13 +216,35 @@ async function buildWorkStreamCards(
       ci: deliveryCiState(delivery),
       deliveryLabel: deliveryLabel(delivery),
       workingAgentIds: workingByStream.get(stream.id) ?? [],
-      lastEventAt: lastEventByStream.get(stream.id) ?? new Date(stream.updatedAt).toISOString(),
+      lastEventAt: lastEventAt(stream),
     }
   })
-  return cards
-    .sort(
-      (a, b) =>
-        Number(b.needsYou) - Number(a.needsYou) || b.lastEventAt.localeCompare(a.lastEventAt) || b.number - a.number
-    )
-    .slice(0, ACTIVITY_WORK_STREAM_CARD_LIMIT)
+}
+
+const uuidList = (ids: string[]) =>
+  sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`,`
+  )
+
+/**
+ * Newest retained Activity row of each stream's bound participants: one `LIMIT 1` probe of
+ * `idx_squad_activity_agent` (squad, agent, at DESC NULLS LAST; the ORDER BY must match it or
+ * Postgres sorts the participant's whole history) per participant, never a scan of their
+ * history. A stream's own rows (creation, waits, handoffs, PR events) have no index ordered by
+ * time, so they are not read; the stream's `updatedAt` stands in for them, and the events that
+ * matter to a participant (PR and CI notices, handoffs) reach its inbox and so its rows anyway.
+ */
+export function workStreamLastEventsSql(streamIds: string[], retentionFloor: Date) {
+  return sql`
+    SELECT b.work_stream_id,max(latest.at) AS last_at
+    FROM workflow_bindings b
+    JOIN work_streams ws ON ws.id=b.work_stream_id
+    CROSS JOIN LATERAL (
+      SELECT sa.at FROM squad_activity sa
+      WHERE sa.squad_id=ws.squad_id AND sa.agent_id=b.agent_id AND sa.at>=${retentionFloor.toISOString()}::timestamptz
+      ORDER BY sa.at DESC NULLS LAST LIMIT 1
+    ) latest
+    WHERE b.work_stream_id IN (${uuidList(streamIds)})
+    GROUP BY b.work_stream_id`
 }
