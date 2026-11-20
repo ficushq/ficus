@@ -1,4 +1,4 @@
-import { requireTestDbCapacity } from '@ficus/shared/testDbCapacity'
+import { requireTestDbCapacity } from '../packages/shared/src/testDbCapacity'
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { discoverTests, runTests } from './test-runner'
