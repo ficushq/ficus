@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createFakeLinear } from './testing/fake-linear'
+import { createLinearAgentActivity } from './app-api'
+import { linearQuery } from './plugin'
 import { LinearWriteError, writeLinearActivity } from './write-api'
 
 const originalFetch = globalThis.fetch
@@ -53,11 +55,13 @@ describe('a repeated activity ID', () => {
     expect(linear.activitiesFor('session-1')).toHaveLength(1)
   })
 
-  test('a conflict or duplicate error code counts whatever the message says', async () => {
-    for (const code of ['CONFLICT', 'duplicate', 'ALREADY_EXISTS']) {
+  test('a duplicate error code counts whatever the message says; a bare conflict code does not', async () => {
+    for (const code of ['duplicate', 'ALREADY_EXISTS', 'UNIQUE_VIOLATION']) {
       answer([{ message: 'Something went wrong', extensions: { code } }])
       expect((await failure()).code).toBe('duplicate')
     }
+    answer([{ message: 'Something went wrong', extensions: { code: 'CONFLICT' } }])
+    expect((await failure()).code).toBe('rejected')
   })
 
   test('the earlier messages still count', async () => {
@@ -74,5 +78,29 @@ describe('a repeated activity ID', () => {
     expect((await failure()).code).toBe('not_found')
     answer([{ message: 'conflict', extensions: { code: 'RATELIMITED' } }])
     expect((await failure()).code).toBe('rate_limited')
+  })
+})
+
+describe('session acknowledgment, disposition and binding posts', () => {
+  const post = () =>
+    createLinearAgentActivity('Bearer token', {
+      sessionId: 'session-1',
+      projectionKey: 'ack',
+      content: { type: 'thought', body: 'Received' },
+    })
+
+  test('Linear’s duplicate answer counts as posted', async () => {
+    answer([{ message: 'conflict on insert of AgentActivity', extensions: { code: 'INVALID_INPUT' } }])
+    await expect(post()).resolves.toBeUndefined()
+  })
+
+  test('any other refusal still fails as before', async () => {
+    answer([{ message: 'Entity not found: AgentSession' }])
+    await expect(post()).rejects.toThrow('provider_query_failed')
+  })
+
+  test('a read that Linear refuses with the same text fails as before for other callers', async () => {
+    answer([{ message: 'conflict on insert of AgentActivity' }])
+    await expect(linearQuery('Bearer token', 'query { viewer { id } }')).rejects.toThrow('provider_query_failed')
   })
 })

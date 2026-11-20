@@ -17,6 +17,7 @@ import {
 import { linearOutputAdapter } from './outputs'
 import type { OAuthAuthority } from '../authorization/authority'
 import { isLinearScopeError, LinearInsufficientScopeError, readGraphQLErrors } from './scope-error'
+import { isLinearDuplicateError, LinearDuplicateError } from './duplicate-error'
 import { LINEAR_CLI_PACKAGES, LINEAR_CLI_RELEASE, LINEAR_GRAPHQL_ENDPOINT, linearCliSetupStep } from './cli'
 
 export type { LinearAppConfiguration } from '@ficus/shared/oauth-providers/linear/config'
@@ -110,6 +111,8 @@ export async function linearQuery<T>(
   }
   const result = (await response.json()) as { data?: T; errors?: unknown[] }
   if (isLinearScopeError(result.errors)) throw new LinearInsufficientScopeError()
+  // A create under an ID Linear already holds; `createLinearAgentActivity` counts it as sent.
+  if (result.errors?.length && isLinearDuplicateError(result.errors)) throw new LinearDuplicateError()
   if (result.errors?.length || !result.data) throw new Error('provider_query_failed')
   return result.data
 }

@@ -5,7 +5,8 @@
  * It answers `viewer`, `organization`, `issue`, `comment`, `user`, `teams`, `agentSessions`,
  * `agentActivities`, `notifications`, `agentActivityCreate`, `agentSessionUpdate`,
  * `agentSessionCreateOnIssue` and `attachmentLinkGitHubPR`; records every call with the fake clock's
- * time; records each session's opening request as its first prompt, as Linear does; rejects a duplicate
+ * time; records each session's opening request as its first prompt (also for a session the app
+ * opens), as Linear does; rejects a duplicate
  * client-supplied activity ID with Linear's live answer; keeps attachment URLs idempotent per issue;
  * and can be told to fail the next call with 401, 403, 429, a GraphQL error or a timeout.
  */
@@ -59,7 +60,11 @@ export interface FakeLinearNotification {
   createdAt: string
 }
 /** `scope` is Linear's answer to a token without a required scope, as recorded live (HTTP 400). */
-export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'scope' | 'timeout'
+/**
+ * `stored-then-timeout` processes the call (an activity is stored) and then never answers, as when
+ * Linear stores a write whose response is lost: a retry with the same activity ID meets the duplicate.
+ */
+export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'scope' | 'timeout' | 'stored-then-timeout'
 
 export interface FakeLinearOptions {
   organization?: { id: string; name: string; urlKey: string }
@@ -179,6 +184,14 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
           updatedAt: new Date(clock()).toISOString(),
           createdAt: new Date(clock()).toISOString(),
           status: 'pending',
+        })
+        // Live, Linear records an opening prompt for a session the app opens too, authored by the app.
+        prompts.push({
+          id: randomUUID(),
+          sessionId: id,
+          userId: app.id,
+          body: `Work on ${issues.get(issueId)!.identifier}`,
+          createdAt: new Date(clock()).toISOString(),
         })
         data.agentSessionCreateOnIssue = { success: true, agentSession: { id } }
       }
@@ -314,7 +327,8 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     const index = failures.findIndex((entry) => !entry.operation || entry.operation === operation)
     if (index >= 0) {
       const failure = failures.splice(index, 1)[0]!.failure
-      if (failure === 'timeout') {
+      if (failure === 'stored-then-timeout') respond(query, body.variables ?? {})
+      if (failure === 'timeout' || failure === 'stored-then-timeout') {
         const signal = init?.signal
         return new Promise<Response>((_, reject) => {
           const abort = () => reject(signal?.reason ?? new DOMException('The operation timed out.', 'TimeoutError'))
