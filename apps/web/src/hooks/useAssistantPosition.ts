@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, RefObject } from 'react'
 import { ASSISTANT_POSITION_STORAGE_KEY } from '@ficus/shared/browser-keys'
 import { useAdjustOnChange } from './useAdjustOnChange'
+import { desktopTitleBarReserve, onDesktopTitleBarChange } from '../lib/desktopTitleBar'
 
 export type AssistantCorner =
   'center' | 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
@@ -25,12 +26,22 @@ function savedCorner(): AssistantCorner | undefined {
   }
 }
 
-export type Viewport = { left: number; top: number; width: number; height: number }
+export type Viewport = {
+  left: number
+  top: number
+  width: number
+  height: number
+  /** A band at the top kept clear for Ficus Desktop's title bar (lib/desktopTitleBar); 0 or absent elsewhere. */
+  reservedTop?: number
+}
 export const ASSISTANT_GUTTER = 8
 const gutter = ASSISTANT_GUTTER
+const reserved = (viewport: Viewport) => Math.max(0, viewport.reservedTop ?? 0)
+/** The tallest a docked panel may be: the viewport below any reserved band, less a gutter at each end. */
+const dockedMaxHeight = (viewport: Viewport) => Math.max(0, viewport.height - reserved(viewport) - 2 * gutter)
 export function dockAssistant(corner: AssistantCorner, viewport: Viewport, width: number, height: number) {
   const left = viewport.left + gutter
-  const top = viewport.top + gutter
+  const top = viewport.top + reserved(viewport) + gutter
   return {
     left: corner.endsWith('right')
       ? Math.max(left, viewport.left + viewport.width - width - gutter)
@@ -62,6 +73,7 @@ export function snapAssistant(
   )
 }
 
+/** The visual viewport, and the band at its top that Ficus Desktop's title bar keeps clear. */
 export function currentViewport(): Viewport {
   const viewport = window.visualViewport
   return {
@@ -69,6 +81,7 @@ export function currentViewport(): Viewport {
     top: viewport?.offsetTop ?? 0,
     width: viewport?.width ?? window.innerWidth,
     height: viewport?.height ?? window.innerHeight,
+    reservedTop: desktopTitleBarReserve(),
   }
 }
 
@@ -112,11 +125,12 @@ export function useAssistantPosition(
         // current measured height, so they can grow again after keyboard close.
         maxHeight: Math.max(
           0,
-          corner === 'center' ? viewport.top + viewport.height - dock.top - gutter : viewport.height - 2 * gutter
+          corner === 'center' ? viewport.top + viewport.height - dock.top - gutter : dockedMaxHeight(viewport)
         ),
       })
     }
     update()
+    const unsubscribeTitleBar = onDesktopTitleBarChange(update)
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : undefined
     observer?.observe(ref.current)
     window.addEventListener('resize', update)
@@ -124,6 +138,7 @@ export function useAssistantPosition(
     window.visualViewport?.addEventListener('scroll', update)
     return () => {
       observer?.disconnect()
+      unsubscribeTitleBar()
       window.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('scroll', update)
@@ -159,7 +174,7 @@ export function useAssistantPosition(
     const viewport = currentViewport(),
       rect = event.currentTarget.getBoundingClientRect()
     const top = Math.max(
-      viewport.top + gutter,
+      viewport.top + reserved(viewport) + gutter,
       Math.min(viewport.top + viewport.height - rect.height - gutter, start.top + event.clientY - start.y)
     )
     setPoint({
@@ -188,7 +203,7 @@ export function useAssistantPosition(
       ...dock,
       maxHeight: Math.max(
         0,
-        next === 'center' ? viewport.top + viewport.height - dock.top - gutter : viewport.height - 2 * gutter
+        next === 'center' ? viewport.top + viewport.height - dock.top - gutter : dockedMaxHeight(viewport)
       ),
     })
   }

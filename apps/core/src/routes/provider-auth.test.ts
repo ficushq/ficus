@@ -362,6 +362,26 @@ describe('provider-auth routes', () => {
         monthlyPriceUsd: 20,
       })
 
+      // Each ChatGPT Pro tier can be picked and carries its own label and default price.
+      for (const [plan, planLabel, monthlyPriceUsd] of [
+        ['prolite', 'ChatGPT Pro 100', 100],
+        ['pro', 'ChatGPT Pro 200', 200],
+        ['promax', 'ChatGPT Pro 500', 500],
+      ] as const) {
+        const tier = await app.request(
+          `/openai-codex/accounts/${accountId}`,
+          jsonReq('PUT', { subscription: { plan } })
+        )
+        expect((await tier.json()).subscription).toMatchObject({
+          plan,
+          planLabel,
+          planSource: 'manual',
+          monthlyPriceUsd,
+          priceSource: 'default',
+        })
+      }
+      await app.request(`/openai-codex/accounts/${accountId}`, jsonReq('PUT', { subscription: { plan: null } }))
+
       const unknownPlan = await app.request(
         `/openai-codex/accounts/${accountId}`,
         jsonReq('PUT', { subscription: { plan: 'max-20x' } })

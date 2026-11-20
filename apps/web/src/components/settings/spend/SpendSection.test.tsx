@@ -48,7 +48,7 @@ const summary: SpendSummary = {
       accountId: 'acc_1',
       label: 'OpenAI Codex · Work',
       plan: 'pro',
-      planLabel: 'ChatGPT Pro',
+      planLabel: 'ChatGPT Pro 200',
       planSource: 'detected',
       detectedPlan: 'pro',
       monthlyPriceUsd: 200,
@@ -118,7 +118,7 @@ describe('SpendTotals', () => {
     )
     expect(html).toContain('$241.50')
     expect(html).toContain('$41.50')
-    expect(html).toContain('OpenAI Codex · Work: ChatGPT Pro')
+    expect(html).toContain('OpenAI Codex · Work: ChatGPT Pro 200')
     expect(html).toContain('$200.00/month')
     expect(html).toContain('Anthropic · Claude Code: subscription, plan unknown')
     expect(html).toContain('Choose its plan or price to count its fee')

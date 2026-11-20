@@ -16,7 +16,12 @@ import { publishIntegrationOutput } from '../outputs/runtime'
 import { resolveEventRuleDecisions } from '../outputs/default-routing'
 import type { IntegrationOutputAuthority } from '../outputs/types'
 import { isLinearAppConfiguration, parseLinearConfiguration, type LinearAppConfiguration } from './plugin'
-import { LINEAR_APP_USER_METADATA_KEY, linearOutputAdapter, normalizeLinearUndelegationNotification } from './outputs'
+import {
+  LINEAR_APP_USER_METADATA_KEY,
+  linearOutputAdapter,
+  normalizeLinearUndelegationNotification,
+  resolveUnattributedLinearSession,
+} from './outputs'
 import { linearDeliveryKey, withLinearDeliveryReceipt } from './delivery-receipts'
 import {
   isTrustedLinearUser,
@@ -206,7 +211,7 @@ async function acknowledgeSessionCreated(
     },
     dependencies
   )
-  // No row, or a session the app opened on itself: there is no request to route.
+  // No row, or Ficus's own session recorded meanwhile by `--linear-session`: nothing to route.
   return row && row.trigger !== 'proactive' ? row : null
 }
 
@@ -278,7 +283,7 @@ export async function routeLinearAppEvent(
   normalized?: IntegrationOutputFact[]
 ): Promise<{ accessible: boolean; outcomes: LinearSquadOutcome[]; authorizedSquadIds: string[] } | undefined> {
   const appUserId = resolved.configuration.appUserId
-  const facts = await withoutRepeatedUndelegations(
+  let facts = await withoutRepeatedUndelegations(
     resolved.connection.id,
     normalized ??
       linearOutputAdapter.normalize({
@@ -307,6 +312,18 @@ export async function routeLinearAppEvent(
   if (!probe.issue || probe.issue.id !== issueId) return { accessible: false, outcomes: [], authorizedSquadIds: [] }
   await recordLinearTeamAccessProbe(resolved.connection.id, resolved.authorization).catch(() => undefined)
   if (probe.issue.team?.id) await recordLinearTeamReadable(resolved.connection.id, probe.issue.team.id)
+  // A session with no person to attribute it to is settled by the live delegate, never dropped.
+  const unattributed =
+    event.type === 'AgentSessionEvent'
+      ? resolveUnattributedLinearSession(facts, probe.issue.delegate?.id ?? '', appUserId)
+      : null
+  if (unattributed) {
+    facts = unattributed.facts
+    if (unattributed.resolution === 'unknown')
+      log.warn(
+        `linear_session_unattributed_routed session=${text(record(event.payload.agentSession).id)} issue=${issueId} delegate=${probe.issue.delegate?.id ? 'other' : 'none'}: routed as issue.mentioned so the manager is told`
+      )
+  }
   let user: LinearProbedUser | null = null
   if (commentId) user = probe.comment?.user ?? null
   else if (actorId) {

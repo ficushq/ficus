@@ -1634,7 +1634,8 @@
      the title bar: exactly 56px tall, a window drag region, with history arrows 24px after
      the window controls followed by the compact logo. Browsers and mobile never get the attribute. */
   :root[data-desktop-shell='inset'] {
-    /* Also reserved above dialogs (ResponsiveChat.css) so panels never sit under the window controls. */
+    /* Also reserved above dialogs (ResponsiveChat.css) and floating windows (lib/desktopTitleBar.ts), so
+       neither ever sits under the window controls. */
     --desktop-titlebar-height: 56px;
   }
 
@@ -1650,7 +1651,7 @@
   .ficus-desktop-drag-strip {
     position: fixed;
     inset: 0 0 auto 0;
-    height: 56px;
+    height: var(--desktop-titlebar-height, 56px);
     pointer-events: none;
     -webkit-app-region: drag;
   }

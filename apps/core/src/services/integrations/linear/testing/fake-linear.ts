@@ -522,6 +522,8 @@ export function agentSessionCreatedPayload(
     commentId?: string
     /** False to leave out the root comment object (an older payload); a delegation then has none at all. */
     rootComment?: boolean
+    /** The authorless root comment's text, to simulate Linear rewording its thread comment. */
+    rootCommentBody?: string
     timestamp?: number
     /** The opening prompt activity, when the delivery names it. */
     activityId?: string
@@ -532,7 +534,7 @@ export function agentSessionCreatedPayload(
     ? { id: input.commentId, body: FAKE_MENTION_BODY, userId: input.creatorId }
     : input.rootComment === false
       ? undefined
-      : { id: linearSystemCommentId(input.sessionId), body: LINEAR_SYSTEM_THREAD_BODY }
+      : { id: linearSystemCommentId(input.sessionId), body: input.rootCommentBody ?? LINEAR_SYSTEM_THREAD_BODY }
   return {
     type: 'AgentSessionEvent',
     action: 'created',

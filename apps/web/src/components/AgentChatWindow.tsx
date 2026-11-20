@@ -10,6 +10,7 @@ import { useFloatingWindowGesture } from '../hooks/useFloatingWindowGesture'
 import { currentViewport } from '../hooks/useAssistantPosition'
 import { CHAT_WINDOW_MIN, windowRect, type AgentWindow } from '../lib/chatWindows'
 import { registerFloatingWindow } from '../lib/floatingWindowRegistry'
+import { onDesktopTitleBarChange } from '../lib/desktopTitleBar'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import type { AgentChatController } from './AgentChat'
 import { AgentActivityDot } from './AgentActivityDot'
@@ -27,7 +28,10 @@ interface AgentChatWindowDependencies {
   loadAgent?: (agentId: string) => Promise<Agent>
 }
 
-/** Keeps windows on this screen as the browser window or an on-screen keyboard resizes it. */
+/**
+ * Keeps windows on this screen as the browser window or an on-screen keyboard resizes it, and below
+ * Ficus Desktop's title bar as it comes and goes with fullscreen.
+ */
 function useViewport() {
   const [viewport, setViewport] = useState(currentViewport)
   useEffect(() => {
@@ -37,14 +41,17 @@ function useViewport() {
         return next.left === current.left &&
           next.top === current.top &&
           next.width === current.width &&
-          next.height === current.height
+          next.height === current.height &&
+          next.reservedTop === current.reservedTop
           ? current
           : next
       })
+    const unsubscribeTitleBar = onDesktopTitleBarChange(update)
     window.addEventListener('resize', update)
     window.visualViewport?.addEventListener('resize', update)
     window.visualViewport?.addEventListener('scroll', update)
     return () => {
+      unsubscribeTitleBar()
       window.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('scroll', update)

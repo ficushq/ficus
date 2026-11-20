@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { diffLines } from 'diff'
 import clsx from 'clsx'
+import { Modal } from '../Modal'
 
 interface TemplateFieldActionsProps {
   field: string
@@ -92,57 +93,49 @@ export function TemplateFieldActions({
           Revert
         </button>
       )}
-      {isDiffOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-chrome-scrim/50" onClick={() => setIsDiffOpen(false)} />
-          <div className="ficus-overlay relative bg-surface rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[75vh] flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
-              <h3 className="text-base font-semibold text-primary">Template Diff — {field}</h3>
+      <Modal
+        isOpen={isDiffOpen}
+        onClose={() => setIsDiffOpen(false)}
+        title={`Template Diff — ${field}`}
+        maxWidth="chat"
+        closeOnEscape
+        footer={
+          <div className="flex items-center justify-end gap-3">
+            {isOverridden && (
               <button
-                onClick={() => setIsDiffOpen(false)}
-                className="ficus-button ficus-button-ghost text-xl leading-none"
+                onClick={handleRevert}
+                disabled={isReverting}
+                className="ficus-button ficus-button-primary text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
               >
-                ✕
+                Revert Field
               </button>
-            </div>
-            <div className="overflow-auto p-4">
-              <pre className="text-xs font-mono bg-surface-secondary rounded border border-th-border p-3 leading-relaxed whitespace-pre-wrap">
-                {diffParts.map((part, index) => (
-                  <span
-                    key={index}
-                    className={clsx(
-                      part.removed &&
-                        'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300',
-                      part.added &&
-                        'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300',
-                      !part.added && !part.removed && 'text-primary'
-                    )}
-                  >
-                    {part.value}
-                  </span>
-                ))}
-              </pre>
-            </div>
-            <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-th-border">
-              {isOverridden && (
-                <button
-                  onClick={handleRevert}
-                  disabled={isReverting}
-                  className="ficus-button ficus-button-primary text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
-                >
-                  Revert Field
-                </button>
-              )}
-              <button
-                onClick={() => setIsDiffOpen(false)}
-                className="ficus-button ficus-button-secondary text-sm px-3 py-1.5"
-              >
-                Close
-              </button>
-            </div>
+            )}
+            <button
+              onClick={() => setIsDiffOpen(false)}
+              className="ficus-button ficus-button-secondary text-sm px-3 py-1.5"
+            >
+              Close
+            </button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <pre className="text-xs font-mono bg-surface-secondary rounded border border-th-border p-3 leading-relaxed whitespace-pre-wrap">
+          {diffParts.map((part, index) => (
+            <span
+              key={index}
+              className={clsx(
+                part.removed &&
+                  'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300',
+                part.added &&
+                  'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300',
+                !part.added && !part.removed && 'text-primary'
+              )}
+            >
+              {part.value}
+            </span>
+          ))}
+        </pre>
+      </Modal>
     </span>
   )
 }

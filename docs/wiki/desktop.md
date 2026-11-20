@@ -41,7 +41,7 @@ The web app detects the desktop preload bridge (`window.ficusDesktopApp`, `versi
 
 - `updates` replaces the git updater on Settings → Updates with the app's native update status and **Restart to update**.
 - `setNotificationsEnabled` adds the **Desktop notifications** switch to Settings → Notification Rules (see [Desktop notifications](desktop-notifications.md)).
-- `shell.insetTitleBar` marks the document `data-desktop-shell="inset"` while the window is not fullscreen. The app header then becomes the title bar: 56px tall, a window drag region with interactive controls and overlays excluded, and the logo kept clear of the window controls. Browsers never receive the mark.
+- `shell.insetTitleBar` marks the document `data-desktop-shell="inset"` while the window is not fullscreen. The app header then becomes the title bar: 56px tall, a window drag region with interactive controls and overlays excluded, and the logo kept clear of the window controls. Browsers never receive the mark. macOS draws the window buttons above every web layer, so nothing the page draws can cover them; instead every overlay keeps out of that 56px band (`--desktop-titlebar-height`). Modals and the narrow-window chat options sheet pad their panels below it, and floating windows (agent chat windows and Assistant) treat its bottom as the top of the screen for placement, dragging, resizing, every snap and the snap-zone picker (`apps/web/src/lib/desktopTitleBar.ts`). A window saved under the band is drawn below it. Fullscreen removes the mark, and the band with it.
 - `instance` reports which kind of Ficus Desktop window this is: `{ kind: 'local' | 'attached' | 'remote', name, disconnect? }`. `local` is the bundled runtime Desktop manages itself; `attached` is a local install Desktop points at without managing; `remote` is a paired instance reached over the network. `disconnect()` is only present when the window can unpair itself from that instance.
 - `setAppIcon(icon)` lets the Dock icon follow the window's theme. After each real theme repaint (never a preview), the web app sends `{ themeId, appearance: 'light' | 'dark' | 'constant', custom, colors: { tile, leaf, pot, sideLeaves } }`, once per change. Desktop draws a built-in theme from the icon it ships for that theme and appearance, and anything else (a custom theme, or a built-in theme newer than the Desktop build) live from `colors`. The colors come from the same mapping as the generated icons (see `brand/README.md`, Theme icons); the method accepts no markup or images.
 - `notificationsPolledByShell` tells the web app the shell already delivers notifications on its own (see [Desktop notifications](desktop-notifications.md)), so the web app must not also poll.
@@ -83,3 +83,13 @@ and `CHROMIUM_PATH=/path/to/chromium bun scripts/check-desktop-history.ts`.
 The latter exercises the real header, stylesheet, Router, and Chromium history
 without a backend. It simulates the desktop bridge; actual macOS traffic lights,
 window dragging, and native keyboard delivery still require a Desktop check.
+
+## Real-Mac checks after a Desktop release
+
+The browser checks in `apps/web/scripts` load the real stylesheet and components in Chromium with a simulated bridge, but cannot see the native macOS window buttons or move a native window. After a Desktop release that ships web changes to the title bar, check on a Mac, windowed and then fullscreen:
+
+1. Snap an agent chat window and Assistant to each top layout (top half, top-left, top-right, left and right halves, thirds, fill) and drag one into the title bar: the red, yellow and green buttons never draw over a window's title or controls, and the windows return to the very top in fullscreen.
+2. Open a modal, the template diff in Settings, and the chat options sheet in a narrow window: the panels sit below the buttons, the buttons still work, and the band to their right still drags the window.
+3. Drag the window by the app header, and use Go back, Go forward, Cmd+[ and Cmd+].
+
+From `apps/web`, the matching browser checks are `CHROMIUM_PATH=/path/to/chromium bun scripts/check-desktop-floating-windows.ts`, `check-desktop-modal.ts` and `check-desktop-history.ts`.

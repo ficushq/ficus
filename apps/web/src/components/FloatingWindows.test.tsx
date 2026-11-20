@@ -90,7 +90,8 @@ async function setup(
     url = '/',
     stored,
     window: WindowComponent = Window,
-  }: { wide?: boolean; url?: string; stored?: unknown; window?: typeof Window } = {}
+    desktopInset = false,
+  }: { wide?: boolean; url?: string; stored?: unknown; window?: typeof Window; desktopInset?: boolean } = {}
 ) {
   const dom = await acquireDomHarness({
     url: `http://localhost${url}`,
@@ -111,6 +112,11 @@ async function setup(
     removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
   }
   Object.defineProperty(dom.window, 'matchMedia', { configurable: true, value: () => media })
+  if (desktopInset) {
+    // What useDesktopShellChrome and index.css set in a windowed Ficus Desktop with the inset title bar.
+    document.documentElement.style.setProperty('--desktop-titlebar-height', '56px')
+    document.documentElement.dataset.desktopShell = 'inset'
+  }
   dom.window.localStorage.clear()
   if (stored) dom.window.localStorage.setItem(chatWindowsStorageKey('user:u1'), JSON.stringify(stored))
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -191,6 +197,8 @@ async function setup(
       await dom.act(async () => listeners.forEach((listener) => listener()))
     },
     cleanup: async () => {
+      delete document.documentElement.dataset.desktopShell
+      document.documentElement.style.removeProperty('--desktop-titlebar-height')
       await dom.cleanup()
       cache.clear()
     },
@@ -739,6 +747,72 @@ test('dragging the title bar previews and snaps at screen edges and picker zones
   }
 })
 
+test('in Ficus Desktop windows stay below the title bar: restored, snapped and dragged, until fullscreen hides it', async () => {
+  const t = await setup(null, {
+    desktopInset: true,
+    stored: {
+      assistantZ: 0,
+      windows: [
+        // Saved by an older build right under the native window buttons.
+        { agentId: A, rect: { x: 0, y: 0, w: 420, h: 500 }, z: 1 },
+        { agentId: B, rect: { x: 600, y: 100, w: 420, h: 500 }, snap: 'top-left', z: 2 },
+      ],
+      remembered: {},
+    },
+  })
+  try {
+    const box = (id: string) => {
+      const style = t.windowFor(id)!.style
+      return {
+        x: parseFloat(style.left),
+        y: parseFloat(style.top),
+        w: parseFloat(style.width),
+        h: parseFloat(style.height),
+      }
+    }
+    expect(box(A)).toEqual({ x: 8, y: 64, w: 420, h: 500 })
+    // The top-left quarter of the space below the 56px bar on a 1400x900 window.
+    expect(box(B)).toEqual({ x: 8, y: 64, w: 688, h: 410 })
+
+    // Dragged into the title bar: that is the top edge, so it fills the screen below the bar.
+    const frame = t.windowFor(A)!
+    Object.assign(frame, { setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {} })
+    const title = frame.querySelector('header')!
+    const pointer = async (target: Element, type: string, x: number, y: number) => {
+      const event = new t.dom.window.MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+      })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      await t.dom.act(async () => target.dispatchEvent(event))
+    }
+    await pointer(title, 'pointerdown', 200, 80)
+    await pointer(frame, 'pointermove', 400, 300)
+    const picker = document.querySelector<HTMLElement>('[data-snap-zone-picker]')!
+    expect(parseFloat(picker.style.top)).toBe(72)
+    // While dragging, the window itself never rises into the bar.
+    await pointer(frame, 'pointermove', 400, 30)
+    expect(box(A).y).toBe(64)
+    expect(document.querySelector('[data-snap-preview]')!.getAttribute('data-snap-preview')).toBe('full')
+    await pointer(frame, 'pointerup', 400, 30)
+    expect(t.stored().windows.find((w: { agentId: string }) => w.agentId === A).snap).toBe('full')
+    expect(box(A)).toEqual({ x: 8, y: 64, w: 1384, h: 828 })
+
+    // Fullscreen hides the window buttons: the title bar goes, and snapped windows take the whole screen.
+    await t.dom.act(async () => {
+      delete document.documentElement.dataset.desktopShell
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(box(A)).toEqual({ x: 8, y: 8, w: 1384, h: 884 })
+    expect(box(B)).toEqual({ x: 8, y: 8, w: 688, h: 438 })
+  } finally {
+    await t.cleanup()
+  }
+})
+
 test('resizing from an edge keeps the opposite edge put', async () => {
   const t = await setup(null, {
     stored: {
@@ -881,6 +955,76 @@ test('with more windows than stacking layers, the window in use is still drawn i
     for (const id of ids) {
       expect(z(id)).toBeGreaterThanOrEqual(51)
       expect(z(id)).toBeLessThan(60)
+    }
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('dialogs open over floating windows and the Assistant, never under them', async () => {
+  const { UnifiedAssistant } = await import('./UnifiedAssistant')
+  const { TemplateDiffDialog } = await import('./settings/TemplateDiffDialog')
+  const { TemplateFieldActions } = await import('./settings/TemplateFieldActions')
+  const t = await setup(
+    <>
+      <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-assistant-conversation /> }} />
+      <TemplateFieldActions
+        field="model"
+        current={{ model: 'standard' }}
+        template={{ model: 'deep' }}
+        fieldOverrides={[]}
+        onRevert={() => undefined}
+      />
+      <TemplateDiffDialog
+        isOpen
+        onClose={() => undefined}
+        title="Template differences"
+        current={{ model: 'standard' }}
+        template={{ model: 'deep' }}
+        onRevert={() => undefined}
+      />
+    </>,
+    {
+      url: '/?chat=open',
+      stored: {
+        assistantZ: 3,
+        windows: [
+          { agentId: A, rect: { x: 40, y: 80, w: 420, h: 500 }, z: 1 },
+          { agentId: B, rect: { x: 300, y: 80, w: 420, h: 500 }, z: 2 },
+        ],
+        remembered: {},
+      },
+    }
+  )
+  try {
+    // The z-index a layer is painted at: inline (floating windows) or its Tailwind z-* class.
+    const z = (element: HTMLElement) =>
+      Number(element.style.zIndex || /(?:^|\s)z-(\d+)(?:\s|$)/.exec(element.className)?.[1] || Number.NaN)
+    // Every layer here is a positioned element whose ancestors start no stacking context, so the higher z-index
+    // is painted on top and a tie goes to the one later in the document.
+    const paintsAbove = (top: HTMLElement, below: HTMLElement) =>
+      z(top) > z(below) ||
+      (z(top) === z(below) && !!(below.compareDocumentPosition(top) & Node.DOCUMENT_POSITION_FOLLOWING))
+    const assistant = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Assistant"]')!
+    expect(assistant.hidden).toBe(false)
+    // The Assistant is one of the floating windows, here the front-most one.
+    const layers = t.windows()
+    expect(layers).toHaveLength(3)
+    expect(layers).toContain(assistant)
+    expect(z(assistant)).toBe(Math.max(...layers.map(z)))
+
+    const diff = document.querySelector<HTMLElement>('.ficus-modal-backdrop[aria-label="Template differences"]')!
+    for (const layer of layers) expect(paintsAbove(diff, layer)).toBe(true)
+
+    // A dialog opened later, from a field, lands above them too.
+    await t.click([...document.querySelectorAll('button')].find((button) => button.textContent === 'Diff')!)
+    const field = document.querySelector<HTMLElement>('.ficus-modal-backdrop[aria-label="Template Diff — model"]')!
+    for (const layer of layers) expect(paintsAbove(field, layer)).toBe(true)
+    // An open window pressed to the front afterwards still stays below the open dialogs.
+    await t.press(t.windowFor(A)!.querySelector('[data-transcript]')!)
+    for (const layer of layers) {
+      expect(paintsAbove(diff, layer)).toBe(true)
+      expect(paintsAbove(field, layer)).toBe(true)
     }
   } finally {
     await t.cleanup()
