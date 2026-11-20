@@ -221,7 +221,9 @@ API surface, each gated by its own permission on the work stream's squad:
   `workstreams:respond` for an agent bound to the stream.
 - `DELETE /api/workstreams/:id/tracked` accepts `{ "url": ... }` or `{ "resource": ... }`.
   Untracking the delivery PR is rejected with `409 { code: "delivery_change_request" }`
-  — edit `metadata.codeHost.changeRequest` instead. Same permission as the `POST` above.
+  — edit `metadata.codeHost.changeRequest` instead. Untracking a Linear issue also
+  releases the Linear agent session on it bound to the stream and posts the final
+  response "Ficus stopped tracking this work." to it. Same permission as the `POST` above.
 - Writing `metadata.tracked` directly through `PATCH`/`set-meta` is schema-validated
   shape-for-shape, and any newly introduced entry is authorized exactly like an
   explicit track request. Same permission as the `POST`/`DELETE` above (the

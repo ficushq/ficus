@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import {
   db,
   integrationOutputEvents,
+  linearActivityOutbox,
   linearAgentSessions,
   workStreamFlowRuns,
   workStreams,
@@ -10,7 +11,8 @@ import {
 import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 import { createLogger } from '../../../lib/infra/logger'
 import { addLinearSessionExternalUrls, createLinearAgentActivity } from './app-api'
-import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
+import { enqueueLinearWrites } from './outbox'
+import { isLinearInsufficientScope, LINEAR_INSUFFICIENT_SCOPE_CODE, markLinearScopeMissing } from './scope-health'
 import { resolveLinearAppConnection } from './resolve-connection'
 import { projectionAttemptFloor } from './session-projection'
 
@@ -82,6 +84,105 @@ export async function bindLinearSession(tx: Store, sessionId: string, workStream
       .where(eq(workStreams.id, workStreamId))
   }
   return true
+}
+
+/** The final response a session gets when its stream stops tracking the session's issue. */
+export const LINEAR_UNTRACKED_TEXT = 'Ficus stopped tracking this work.'
+
+/** The Linear issue a stream stopped tracking: matched by its ID when known, else by its `KEY-12` identifier. */
+export interface UntrackedLinearIssue {
+  externalId?: string
+  identifier: string
+  connectionId?: string
+}
+
+/**
+ * Untracking a Linear issue releases the sessions on that issue bound to the stream: each loses its
+ * stream and its `primary` flag, so write-back no longer targets it and a later prompt goes through
+ * the rules like any unbound session's, and gets the final response `LINEAR_UNTRACKED_TEXT` so
+ * Linear shows it complete. The response goes through the outbox, after anything already queued for
+ * the session. Releasing is conditional on the session still being bound to this stream, so a
+ * repeated or concurrent untrack releases and posts once. A session Linear refused access to gets no
+ * write; neither does one whose connection is marked for reconnect because it lacks a scope: its
+ * response is recorded as `skipped` with `insufficient_scope`. Returns the released session IDs and
+ * whether anything was queued to send.
+ */
+export async function releaseLinearSessionsForIssue(
+  tx: Store,
+  workStreamId: string,
+  issue: UntrackedLinearIssue,
+  now = new Date()
+): Promise<{ released: string[]; queued: boolean }> {
+  // The issue ID is stable; an identifier changes when the issue moves to another team.
+  const matchesIssue = issue.externalId
+    ? eq(linearAgentSessions.issueId, issue.externalId)
+    : sql`upper(${linearAgentSessions.issueIdentifier}) = upper(${issue.identifier})`
+  const sessions = await tx
+    .update(linearAgentSessions)
+    .set({ workStreamId: null, primary: false, updatedAt: now })
+    .where(
+      and(
+        eq(linearAgentSessions.workStreamId, workStreamId),
+        matchesIssue,
+        issue.connectionId ? eq(linearAgentSessions.connectionId, issue.connectionId) : undefined
+      )
+    )
+    .returning()
+  let queued = false
+  for (const session of sessions) {
+    if (session.disposition === 'inaccessible') continue
+    // Unique per release: a session bound again later and untracked again gets its own response.
+    const projectionKey = `untracked:${workStreamId}:${now.getTime()}`
+    const [key] = await enqueueLinearWrites(
+      {
+        connectionId: session.connectionId,
+        scopeKey: session.id,
+        sessionId: session.id,
+        workStreamId,
+        items: [
+          {
+            projectionKey,
+            kind: 'activity',
+            payload: { content: { type: 'response', body: LINEAR_UNTRACKED_TEXT } },
+            collapsible: false,
+          },
+        ],
+      },
+      tx,
+      () => now
+    )
+    if (!key) continue
+    if (await linearConnectionLacksScope(session.connectionId)) {
+      await tx
+        .update(linearActivityOutbox)
+        .set({ status: 'skipped', lastErrorCode: LINEAR_INSUFFICIENT_SCOPE_CODE, updatedAt: now })
+        .where(
+          and(
+            eq(linearActivityOutbox.connectionId, session.connectionId),
+            eq(linearActivityOutbox.scopeKey, session.id),
+            eq(linearActivityOutbox.projectionKey, projectionKey)
+          )
+        )
+      log.warn(`Linear session ${session.id} was released without a final response: its connection lacks a scope`)
+      continue
+    }
+    queued = true
+  }
+  return { released: sessions.map((session) => session.id), queued }
+}
+
+/** Whether a connection is marked for reconnect because Linear refused it for a missing scope. */
+async function linearConnectionLacksScope(connectionId: string): Promise<boolean> {
+  try {
+    const { integrationConnectionRepository } = await import('../runtime')
+    const connection = await integrationConnectionRepository.get(connectionId)
+    return (
+      connection?.authState === 'reauthorization_required' &&
+      connection.lastErrorCode === LINEAR_INSUFFICIENT_SCOPE_CODE
+    )
+  } catch {
+    return false
+  }
 }
 
 /**

@@ -37,6 +37,8 @@ import { dispatchPolledLinearEvent, linearAgentSessionPolling, listLinearPolling
 import { openLinearSessionForStream } from './proactive-session'
 import { projectLinearWriteBack, streamPullRequest } from './session-projector'
 import { LINEAR_PROMPT_TEXT, LINEAR_STOP_TEXT, matchLinearSelectReply } from './session-prompts'
+import { LINEAR_UNTRACKED_TEXT } from './session-binding'
+import { addTrackedResources, removeTrackedResource } from '../../work-streams/tracked-resources'
 import { createLinearAppFixture } from './testing/app-fixtures'
 import {
   agentSessionCreatedPayload,
@@ -897,6 +899,112 @@ describe('questions as elicitations', () => {
     expect(matchLinearSelectReply(multi, 'pg\nRedis\npg')).toBe('pg, redis')
     expect(matchLinearSelectReply(multi, 'pg, mysql')).toBeNull()
     expect(matchLinearSelectReply({ id: 'q', type: 'text', question: 'Why?' }, 'pg')).toBeNull()
+  })
+})
+
+describe('untracking the issue of a bound session', () => {
+  const eng7 = { integration: 'linear', repository: 'eng', kind: 'issue', number: 7 } as const
+  const sessionRow = async (sessionId: string) =>
+    (await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId)))[0]!
+
+  test('releases the session, posts one final response and stops write-back to it', async () => {
+    const { squad, sessionId, stream } = await boundStream()
+    const worker = await workOn(stream.id, squad.id)
+    await project(stream.id)
+    // A rule-started stream tracks the issue its session came from.
+    expect((stream.metadata as { tracked?: unknown[] }).tracked).toContainEqual(
+      expect.objectContaining({ integration: 'linear', externalId: issue.id })
+    )
+    const { removed } = await removeTrackedResource(stream.id, eng7)
+    expect(removed).toBe(true)
+    for (let pass = 0; pass < 4; pass++) await drainLinearOutbox()
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_UNTRACKED_TEXT])
+    expect(await sessionRow(sessionId)).toMatchObject({ workStreamId: null, primary: false })
+
+    // Progress after the untrack never reaches the released session.
+    const sent = linear.activitiesFor(sessionId).length
+    await setRun(stream.id, [
+      { id: 1, stepId: 'work', status: 'completed' },
+      { id: 2, stepId: 'work', status: 'running' },
+    ])
+    await project(stream.id)
+    expect(linear.activitiesFor(sessionId)).toHaveLength(sent)
+
+    // Untracking again is a no-op: nothing is released or posted twice.
+    expect((await removeTrackedResource(stream.id, eng7)).removed).toBe(false)
+    for (let pass = 0; pass < 4; pass++) await drainLinearOutbox()
+    expect(bodies(sessionId).filter(([, body]) => body === LINEAR_UNTRACKED_TEXT)).toHaveLength(1)
+
+    // A later prompt is the released session's own, not the stream's.
+    await prompt(sessionId, member.id, 'Please also cover the refund path')
+    const messages = await db.select().from(inbox).where(eq(inbox.recipientId, worker))
+    expect(messages.filter((message) => message.subject === 'Message from Linear')).toHaveLength(0)
+    await drainLinearOutbox()
+    expect(bodies(sessionId).some(([, body]) => body === LINEAR_PROMPT_TEXT.passed)).toBe(false)
+  })
+
+  test('the response follows progress already queued for the session', async () => {
+    const { sessionId, stream } = await boundStream()
+    await setRun(stream.id, [{ id: 1, stepId: 'work', status: 'running' }])
+    await projectLinearWriteBack(stream.id)
+    await removeTrackedResource(stream.id, eng7)
+    for (let pass = 0; pass < 4; pass++) await drainLinearOutbox()
+    const sent = bodies(sessionId)
+    expect(sent).toContainEqual(['thought', 'Started work.'])
+    expect(sent.at(-1)).toEqual(['response', LINEAR_UNTRACKED_TEXT])
+  })
+
+  test('a connection that lacks a scope gets no write, and the outbox records why', async () => {
+    const { sessionId, stream } = await boundStream()
+    await project(stream.id)
+    const sent = linear.activitiesFor(sessionId).length
+    await db
+      .update(integrationConnections)
+      .set({ authState: 'reauthorization_required', lastErrorCode: 'insufficient_scope' })
+      .where(eq(integrationConnections.id, fixture.connectionId))
+    expect((await removeTrackedResource(stream.id, eng7)).removed).toBe(true)
+    for (let pass = 0; pass < 4; pass++) await drainLinearOutbox()
+    expect(linear.activitiesFor(sessionId)).toHaveLength(sent)
+    expect(await sessionRow(sessionId)).toMatchObject({ workStreamId: null, primary: false })
+    const rows = await db
+      .select()
+      .from(linearActivityOutbox)
+      .where(
+        and(
+          eq(linearActivityOutbox.sessionId, sessionId),
+          sql`${linearActivityOutbox.projectionKey} LIKE 'untracked:%'`
+        )
+      )
+    expect(rows).toEqual([expect.objectContaining({ status: 'skipped', lastErrorCode: 'insufficient_scope' })])
+  })
+
+  test('untracking another issue leaves the bound session alone', async () => {
+    const { sessionId, stream } = await boundStream()
+    const other = { integration: 'linear', repository: 'eng', kind: 'issue', number: 8, externalId: randomUUID() }
+    await addTrackedResources(stream.id, [{ ...other, connectionId: fixture.connectionId }])
+    expect((await removeTrackedResource(stream.id, other)).removed).toBe(true)
+    for (let pass = 0; pass < 4; pass++) await drainLinearOutbox()
+    expect(await sessionRow(sessionId)).toMatchObject({ workStreamId: stream.id, primary: true })
+    expect(bodies(sessionId).some(([, body]) => body === LINEAR_UNTRACKED_TEXT)).toBe(false)
+  })
+
+  test('a session opened with --linear-session is released when its issue is untracked', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    const target = { ...eng7, externalId: issue.id }
+    const [stream] = await db
+      .insert(workStreams)
+      .values({
+        squadId: squad.id,
+        title: 'Manual stream',
+        status: 'active',
+        metadata: { tracked: [{ ...target, connectionId: fixture.connectionId }] },
+      })
+      .returning()
+    const { sessionId } = await openLinearSessionForStream(stream!.id, target)
+    await removeTrackedResource(stream!.id, eng7)
+    for (let pass = 0; pass < 4; pass++) await drainLinearOutbox()
+    expect(await sessionRow(sessionId)).toMatchObject({ workStreamId: null, primary: false })
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_UNTRACKED_TEXT])
   })
 })
 

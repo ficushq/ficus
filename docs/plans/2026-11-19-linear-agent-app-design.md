@@ -404,6 +404,7 @@ Step names, step IDs and participant names are squad-authored and can carry inte
 | Stream done with a merged or delivered pull request            | `response`: "Done. Pull request: <url>."                                                                                                     |
 | Stream done without a pull request                             | `response`: "Done." plus the stream link when the instance has a public URL (decision 9.5)                                                   |
 | Stream canceled                                                | `response`: "Ficus stopped working on this request."                                                                                         |
+| Session's issue untracked from the stream                      | `response`: "Ficus stopped tracking this work." The session is released from the stream and receives nothing more from it.                   |
 | Unrecoverable failure (recovery exhausted or execution failed) | `error`: "Ficus hit a problem and a person on the team is looking at it."                                                                    |
 
 Optional, behind a setting until Linear's plan API leaves technology preview: `agentSessionUpdate(plan)` mirroring flow steps (`pending`, `inProgress`, `completed`, `canceled`), with each entry's content set to its fixed step label.
