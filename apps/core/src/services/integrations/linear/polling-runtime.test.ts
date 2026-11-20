@@ -620,6 +620,8 @@ describe('runner', () => {
         payload: { type: 'Issue', action: 'update', organizationId },
       }
     }
+    // Schema push skips partial indexes; delivery deduplication needs the migration's unique index.
+    await ensureQueryIndex('uq_webhook_events_provider_delivery')
     const handled: string[] = []
     const dispatch = async (context: { eventType: string }) => {
       handled.push(context.eventType)
