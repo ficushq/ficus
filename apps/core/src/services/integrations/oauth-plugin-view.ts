@@ -1,6 +1,5 @@
-import type { IntegrationPluginV1, OAuth2Authorization } from './plugin'
+import type { IntegrationAuthorizationKind, IntegrationPluginV1, OAuth2Authorization } from './plugin'
 import type { OAuthAuthority } from './authorization/authority'
-import type { IntegrationConnectionRecord } from './connection-repository'
 import {
   parseOAuthCredential,
   serializeOAuthCredential,
@@ -41,8 +40,11 @@ export function oauthPluginView<C>(
   }
 }
 
-/** The connection fields that decide whether it gets the OAuth lifecycle. */
-export type OAuthConnectionFacts = Pick<IntegrationConnectionRecord, 'authorizationKind' | 'clientAuthority'>
+/** The connection fields that decide whether it gets the OAuth lifecycle (a subset of `IntegrationConnectionRecord`). */
+export interface OAuthConnectionFacts {
+  readonly authorizationKind: IntegrationAuthorizationKind
+  readonly clientAuthority: OAuthAuthority
+}
 
 /**
  * The OAuth view for one existing connection. Only `oauth2` connections have
@@ -67,7 +69,7 @@ export function connectionOAuthView<C>(
  */
 export function connectionRequiresRemoteRevocation<C>(
   plugin: OAuthPluginSource<C> | undefined,
-  connection: OAuthConnectionFacts & Pick<IntegrationConnectionRecord, 'adapterVersion'>
+  connection: OAuthConnectionFacts & { readonly adapterVersion: number }
 ): boolean {
   if (!plugin || plugin.adapterVersion !== connection.adapterVersion) return false
   return connectionOAuthView(plugin, connection) !== undefined
@@ -97,7 +99,7 @@ export function refreshableOAuthProviderKeys(
  * OAuth client.
  */
 export function oauthFencingAuthority(
-  connection: Pick<IntegrationConnectionRecord, 'authorizationKind'>,
+  connection: Pick<OAuthConnectionFacts, 'authorizationKind'>,
   currentAuthority: OAuthAuthority
 ): OAuthAuthority | undefined {
   return connection.authorizationKind === 'oauth2' ? currentAuthority : undefined

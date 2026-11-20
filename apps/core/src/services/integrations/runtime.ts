@@ -299,7 +299,10 @@ export const integrationRefreshService = new IntegrationRefreshService({
     refreshKey: (key) => getSecretStore().refreshKey(key),
     mutateSecret: (key, mutate, actor) => getSecretStore().mutateSecret(key, mutate, actor),
   },
-  resolvePlugin: (providerKey) => integrationRegistry.plugin(providerKey),
+  resolvePlugin: (providerKey, connection) => {
+    const plugin = integrationRegistry.plugin(providerKey)
+    return plugin && connectionOAuthView(plugin, connection)
+  },
   transport: oauthTransport,
   lease: connectionAuthorizationLease,
   invalidateAssignments: async (connectionId) => {
