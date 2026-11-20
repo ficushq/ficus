@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { isHttpResponseError } from '@ficus/client-core'
 import type { Agent } from '@ficus/shared'
 import { queries } from '../queryOptions'
@@ -77,8 +77,8 @@ function latestActivity(conversation: AgentChatController): string | undefined {
 /**
  * One agent's chat in a floating window: dragged by its title bar (snapping at screen edges or on the
  * zone picker), resized from every edge, brought to the front by any press inside it. Its title bar
- * names the agent, its type and squad, shows live activity and unread state, and offers layout, open
- * full page, minimize and close. It never closes on Escape.
+ * names the agent, its type and squad (a link to the squad's Home), shows live activity and unread state,
+ * and offers layout, open full page, minimize and close. It never closes on Escape.
  */
 export function AgentChatWindow({
   win,
@@ -169,8 +169,7 @@ export function AgentChatWindow({
   const typeName = data
     ? (types.data?.find((type) => type.id === data.agentTypeId)?.name ?? humanize(data.agentTypeId))
     : undefined
-  const squadName = data?.squadId ? squads.data?.find((squad) => squad.id === data.squadId)?.name : undefined
-  const caption = [typeName, squadName].filter(Boolean).join(' · ')
+  const squad = data?.squadId ? squads.data?.find((candidate) => candidate.id === data.squadId) : undefined
   const unread = windows.unread.has(agentId)
 
   const openFullPage = () => {
@@ -232,7 +231,22 @@ export function AgentChatWindow({
               <span role="img" aria-label="Unread activity" className="h-2 w-2 shrink-0 rounded-full bg-badge" />
             )}
           </span>
-          {caption && <span className="truncate text-xs text-muted">{caption}</span>}
+          {(typeName || squad) && (
+            <span className="truncate text-xs text-muted">
+              {typeName}
+              {typeName && squad && ' · '}
+              {squad && (
+                // Takes the main app to the squad's Home; the window stays open. Links never start a drag.
+                <Link
+                  to={`/squads/${slugFor(squad.id)}`}
+                  className="ficus-button ficus-button-link"
+                  title={`Open ${squad.name}`}
+                >
+                  {squad.name}
+                </Link>
+              )}
+            </span>
+          )}
         </span>
         <WindowSnapMenu
           label="Arrange window"
@@ -244,7 +258,7 @@ export function AgentChatWindow({
         />
         <button
           type="button"
-          className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg"
+          className="ficus-button ficus-button-ghost flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
           aria-label="Open full page"
           title="Open full page"
           onClick={openFullPage}
@@ -253,7 +267,7 @@ export function AgentChatWindow({
         </button>
         <button
           type="button"
-          className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg"
+          className="ficus-button ficus-button-ghost flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
           aria-label="Minimize"
           title="Minimize"
           onClick={() => dispatch({ type: 'minimize', agentId })}
@@ -262,7 +276,7 @@ export function AgentChatWindow({
         </button>
         <button
           type="button"
-          className="ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg"
+          className="ficus-button ficus-button-ghost flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
           aria-label="Close window"
           title="Close window"
           onClick={() => dispatch({ type: 'close', agentId })}

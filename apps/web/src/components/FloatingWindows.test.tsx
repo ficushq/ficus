@@ -20,6 +20,7 @@ const { WorkStreamList } = await import('./WorkStreamList')
 const { SquadAgentThreads } = await import('./squads/SquadAgentThreads')
 const { SquadAgentThreadsApiProvider } = await import('./squads/squadAgentThreadsApi')
 const { AgentConversation } = await import('./AgentConversationBody')
+const { ChatComposerOptionsContext } = await import('./chatComposerOptions')
 const { HoverCard, Menu, MenuItem, Panel, useHoverCard, usePopover } = await import('./popover')
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -222,6 +223,63 @@ test('the pop-out button opens one floating window per agent, and inside it open
     await t.click(fullPage)
     expect(t.location()).toBe(`/squads/ficus/agents?agent=${A}`)
     expect(t.windows()).toHaveLength(0)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test("a window's title bar links the squad name to the squad's Home, which opens in the app and keeps the window", async () => {
+  const t = await setup(<FloatingChatButton agentId={A} />, { url: '/feed' })
+  try {
+    await t.click(document.querySelector<HTMLButtonElement>('button[aria-label="Open in floating window"]')!)
+    const header = t.windowFor(A)!.querySelector('header')!
+    const link = header.querySelector<HTMLAnchorElement>('a')!
+    expect(link.textContent).toBe('Ficus')
+    expect(link.getAttribute('href')).toBe('/squads/ficus')
+    expect(link.className).toContain('ficus-button-link')
+    expect(link.title).toBe('Open Ficus')
+    // The agent type stays plain text before it.
+    expect(link.parentElement!.textContent).toBe('Consultant · Ficus')
+
+    // Pressing the link and moving never drags the window by its title bar.
+    const frame = t.windowFor(A)!
+    Object.assign(frame, { setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {} })
+    const pointer = async (target: Element, type: string, x: number, y: number) => {
+      const event = new t.dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      await t.dom.act(async () => target.dispatchEvent(event))
+    }
+    const before = { left: frame.style.left, top: frame.style.top }
+    await pointer(link, 'pointerdown', 400, 210)
+    await pointer(frame, 'pointermove', 200, 300)
+    expect(document.querySelector('[data-snap-zone-picker]')).toBeNull()
+    await pointer(frame, 'pointerup', 200, 300)
+    expect({ left: frame.style.left, top: frame.style.top }).toEqual(before)
+
+    await t.click(link)
+    expect(t.location()).toBe('/squads/ficus')
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
+    expect(t.windowFor(A)!.style.display).not.toBe('none')
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test("in a narrow composer's options popup, the pop-out and open-full-page controls are labelled rows", async () => {
+  const row = { rowClass: 'ficus-button ficus-button-ghost option-row', iconClass: 'option-icon' }
+  const t = await setup(
+    <ChatComposerOptionsContext value={row}>
+      <FloatingChatButton agentId={A} />
+    </ChatComposerOptionsContext>,
+    { url: '/feed' }
+  )
+  try {
+    const popOut = document.querySelector<HTMLButtonElement>('button[aria-label="Open in floating window"]')!
+    expect(popOut.className).toBe(row.rowClass)
+    expect(popOut.textContent).toBe('Open in floating window')
+    expect(popOut.querySelector('svg')!.getAttribute('class')).toContain('option-icon')
+    await t.click(popOut)
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
   } finally {
     await t.cleanup()
   }

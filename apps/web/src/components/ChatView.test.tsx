@@ -67,6 +67,7 @@ const chatViewDependencies = {
 }
 
 const { ChatView } = await import('./ChatView')
+const { useChatComposerOptionRow } = await import('./chatComposerOptions')
 const { ToolInlineActionModal } = await import('./ToolInlineActionModal')
 const { getImageAttachState } = await import('../lib/imageAttach')
 
@@ -94,9 +95,11 @@ function trackingFileReader(Base: typeof FileReader): typeof FileReader {
   }
 }
 
-async function installDom() {
+/** `innerWidth` sets the viewport media queries see (Happy DOM's default is a desktop width). */
+async function installDom({ innerWidth }: { innerWidth?: number } = {}) {
   return (activeDom = await acquireDomHarness({
     url: 'http://localhost/chat',
+    windowOptions: innerWidth === undefined ? undefined : { innerWidth },
     configureWindow(window) {
       // A read left unfinished by an earlier test belongs to its closed window and never ends.
       pendingFileReads.clear()
@@ -169,13 +172,14 @@ function deferred<T>() {
 
 async function renderChatView(
   element: React.ReactElement,
-  entry = '/chat/agent-1?scope=all'
+  entry = '/chat/agent-1?scope=all',
+  { innerWidth }: { innerWidth?: number } = {}
 ): Promise<{
   dom: Awaited<ReturnType<typeof acquireDomHarness>>
   root: ReturnType<Awaited<ReturnType<typeof acquireDomHarness>>['createRoot']>['root']
   window: Awaited<ReturnType<typeof acquireDomHarness>>['window']
 }> {
-  const dom = await installDom()
+  const dom = await installDom({ innerWidth })
   const { window } = dom
   const { root } = dom.createRoot()
 
@@ -1555,6 +1559,9 @@ describe('ChatView microphone gating', () => {
   })
 })
 
+/** A phone-sized viewport, where a narrow composer's options open as a bottom sheet. */
+const PHONE = { innerWidth: 390 }
+
 describe('ChatView mobile options overlay', () => {
   test('lets mobile users choose delivery without sending a message', async () => {
     const onSend = mock(() => {})
@@ -1710,7 +1717,11 @@ describe('ChatView mobile options overlay', () => {
 
   for (const fullscreen of [false, true]) {
     test(`escapes chat stacking contexts and closes before ${fullscreen ? 'fullscreen' : 'page'} navigation`, async () => {
-      const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} enableFullscreen />)
+      const { dom, window } = await renderChatView(
+        <ChatView items={[]} onSend={() => {}} enableFullscreen />,
+        undefined,
+        PHONE
+      )
       if (fullscreen) {
         await dom.act(async () => fireEvent.click(window.document.querySelector('[aria-label="Fullscreen"]')!))
       }
@@ -1740,7 +1751,7 @@ describe('ChatView mobile options overlay', () => {
   }
 
   test('keeps options in the visual viewport and restores focus after an option or backdrop dismissal', async () => {
-    const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />)
+    const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />, undefined, PHONE)
     const viewport = new window.EventTarget()
     Object.assign(viewport, { height: 340, offsetTop: 24 })
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
@@ -1771,6 +1782,104 @@ describe('ChatView mobile options overlay', () => {
     await dom.act(async () => fireEvent.click(layer))
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(window.document.activeElement).toBe(trigger)
+  })
+})
+
+/** A caller's composer control, drawn as a labelled row while the composer options popup renders it. */
+function ProbeComposerControl({ onClick }: { onClick: () => void }) {
+  const row = useChatComposerOptionRow()
+  return (
+    <button type="button" className={row?.rowClass} onClick={onClick} aria-label="Probe control">
+      {row ? 'Probe row' : 'Probe icon'}
+    </button>
+  )
+}
+
+describe('ChatView narrow composer options on a wide screen', () => {
+  // On a wide viewport the action buttons fold behind the trigger only while the composer itself is narrow
+  // (a container query in ResponsiveChat.css, checked in a real browser by scripts/check-composer-narrow.ts).
+  // Here: what the trigger opens on a wide viewport, the shared menu rather than the phone sheet.
+  test('opens the options as a menu anchored to the trigger, with arrow keys, Escape and focus return', async () => {
+    const onToggleRawText = mock(() => {})
+    const onProbe = mock(() => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={() => {}}
+        onToggleRawText={onToggleRawText}
+        composerControls={<ProbeComposerControl onClick={onProbe} />}
+      />
+    )
+    const document = window.document
+    const form = document.querySelector('form')!
+    expect(form.classList.contains('chat-composer')).toBe(true)
+    const actions = form.querySelector('.chat-composer-actions')!
+    // The inline action row still holds every action, the caller's control as its icon.
+    expect(actions.querySelector('[aria-label="Probe control"]')!.textContent).toBe('Probe icon')
+    const trigger = form.querySelector<HTMLButtonElement>('button.chat-composer-attach')!
+    expect(trigger.getAttribute('aria-label')).toBe('Attach or change controls')
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    trigger.focus()
+    await dom.act(async () => fireEvent.click(trigger))
+    // The menu takes focus once its first placement is in the DOM.
+    await dom.act(flushReact)
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Chat options"]')!
+    expect(menu).not.toBeNull()
+    expect(form.contains(menu)).toBe(false)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(trigger.getAttribute('aria-controls')).toBe(menu.id)
+    // Never the phone sheet on a wide screen.
+    expect(document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')).toBeNull()
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Attach image',
+      'Attach file',
+      'Voice message',
+      'Auto-scroll on',
+      'Show raw text',
+      'Probe row',
+    ])
+    expect(items.every((item) => item.className.includes('ficus-button-ghost'))).toBe(true)
+    expect(document.activeElement === items[0]).toBe(true)
+    // Arrows skip the disabled Attach file (no agent here).
+    expect(items[1]!.disabled).toBe(true)
+    await dom.act(async () => fireEvent.keyDown(items[0]!, { key: 'ArrowDown' }))
+    expect(document.activeElement === items[2]).toBe(true)
+
+    await dom.act(async () => fireEvent.keyDown(items[2]!, { key: 'Escape' }))
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement === trigger).toBe(true)
+
+    // Choosing a row runs it, closes the menu and returns focus to the trigger.
+    await dom.act(async () => fireEvent.click(trigger))
+    await dom.act(flushReact)
+    const rawText = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+      (item) => item.textContent === 'Show raw text'
+    )!
+    await dom.act(async () => fireEvent.click(rawText))
+    expect(onToggleRawText).toHaveBeenCalledTimes(1)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement === trigger).toBe(true)
+
+    // The caller's control runs from its row too.
+    await dom.act(async () => fireEvent.click(trigger))
+    const probe = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+      (item) => item.textContent === 'Probe row'
+    )!
+    await dom.act(async () => fireEvent.click(probe))
+    expect(onProbe).toHaveBeenCalledTimes(1)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('the trigger opens the phone sheet, not the menu, on a phone-sized viewport', async () => {
+    const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />, undefined, PHONE)
+    const trigger = window.document.querySelector<HTMLButtonElement>('button.chat-composer-attach')!
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
+    await dom.act(async () => fireEvent.click(trigger))
+    expect(window.document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')).not.toBeNull()
+    expect(window.document.querySelector('[role="menu"][aria-label="Chat options"]')).toBeNull()
   })
 })
 

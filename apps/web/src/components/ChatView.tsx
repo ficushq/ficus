@@ -52,6 +52,9 @@ import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
+import { Menu, popoverRowClass, usePopover } from './popover'
+import { ChatComposerOptionsContext, type ChatComposerOptionRow } from './chatComposerOptions'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
   InlineActionNotice,
   InlineActionRow,
@@ -106,6 +109,19 @@ interface PendingImage {
   progress: number // 0-100
   uploadedId?: string // ID from server after upload
   error?: string
+}
+
+/** A row of the narrow composer's options sheet on phones: a large touch target with a label. */
+const SHEET_OPTION_ROW: ChatComposerOptionRow = {
+  rowClass:
+    'ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50 disabled:hover:bg-transparent',
+  iconClass: 'w-5 h-5 shrink-0',
+}
+
+/** A row of the narrow composer's options menu on wider screens: the shared menu row. */
+const MENU_OPTION_ROW: ChatComposerOptionRow = {
+  rowClass: popoverRowClass(false),
+  iconClass: 'w-4 h-4 shrink-0',
 }
 
 /** Older pages a deep-link focus may load when the target's position is unknown. */
@@ -1117,9 +1133,13 @@ export function ChatView({
     return cancel
   }, [focusMessageId, focusInboxMessageId, startFocus])
 
-  // The phone composer's options sheet (attach, voice, auto-scroll, raw text, history search).
+  // A narrow composer's options (attach, voice, auto-scroll, raw text, history search and the caller's
+  // composer controls): its actions fold behind one trigger when the composer itself is narrow (a phone,
+  // or a floating window or side panel on a wide screen; see ResponsiveChat.css). Phones open them as a
+  // bottom sheet, wider screens as a menu anchored to the trigger. Without matchMedia it is the sheet.
   const [attachSheetOpen, setAttachSheetOpen] = useState(false)
-  const attachSheetTriggerRef = useRef<HTMLButtonElement>(null)
+  const optionsAsSheet = useMediaQuery('(max-width: 767px)', true)
+  const optionsMenu = usePopover({ kind: 'menu', open: attachSheetOpen, onOpenChange: setAttachSheetOpen })
 
   // History search: a panel under the header that searches the whole conversation on the
   // server and jumps to a result through startFocus.
@@ -1133,12 +1153,13 @@ export function ChatView({
     requestAnimationFrame(() => {
       const button = historySearchButtonRef.current
       button?.focus({ preventScroll: true })
-      // On phones the composer's search button is hidden and lives in the options sheet; its trigger takes focus.
+      // In a narrow composer (a phone, or a narrow window) the search button is hidden and lives in the
+      // options popup; its trigger takes focus.
       if (button && button.ownerDocument.activeElement !== button) {
-        attachSheetTriggerRef.current?.focus({ preventScroll: true })
+        optionsMenu.triggerRef.current?.focus({ preventScroll: true })
       }
     })
-  }, [])
+  }, [optionsMenu.triggerRef])
   const jumpToSearchResult = useCallback(
     (result: MessageSearchResult) => {
       historyJumpRef.current?.cancel()
@@ -2056,6 +2077,124 @@ export function ChatView({
     )
   const headerHistorySearchButton = historySearchButton('header')
 
+  // The narrow composer's options as rows: in the phone sheet or the menu (see attachSheetOpen). Rows close
+  // the sheet themselves; the menu also closes after any row runs.
+  const composerOptionRows = (row: ChatComposerOptionRow) => (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          if (!imageAttachState.allowed) return
+          fileInputRef.current?.click()
+          setAttachSheetOpen(false)
+        }}
+        disabled={!imageAttachState.allowed || disabled || isUploading}
+        title={imageAttachState.title}
+        className={row.rowClass}
+      >
+        <ImageIcon className={clsx(row.iconClass, 'text-muted')} />
+        Attach image
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (textareaRef.current) {
+            agentFileSelectionRef.current = {
+              start: textareaRef.current.selectionStart,
+              end: textareaRef.current.selectionEnd,
+            }
+          }
+          agentFileInputRef.current?.click()
+          setAttachSheetOpen(false)
+        }}
+        disabled={!agentId || disabled}
+        className={row.rowClass}
+      >
+        <FileIcon className={clsx(row.iconClass, 'text-muted')} />
+        Attach file
+      </button>
+      {voiceSupported && (
+        <button
+          type="button"
+          onClick={() => {
+            if (voiceState === 'recording') {
+              endPress()
+            } else {
+              beginPress()
+            }
+            setAttachSheetOpen(false)
+          }}
+          disabled={disabled || voiceState === 'transcribing'}
+          className={row.rowClass}
+        >
+          <MicIcon className={clsx(row.iconClass, 'text-muted')} />
+          {voiceState === 'recording' ? 'Stop voice recording' : 'Voice message'}
+        </button>
+      )}
+      {tts && (
+        <button
+          type="button"
+          onClick={() => {
+            tts.toggle()
+            setAttachSheetOpen(false)
+          }}
+          className={row.rowClass}
+        >
+          {tts.enabled ? (
+            <SpeakerOnIcon className={clsx(row.iconClass, 'text-muted')} />
+          ) : (
+            <SpeakerOffIcon className={clsx(row.iconClass, 'text-muted')} />
+          )}
+          {tts.enabled ? 'Auto-speak on' : 'Auto-speak off'}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          const next = !autoScroll
+          updateAutoScroll(next)
+          if (next) pinTranscriptToBottom()
+          setAttachSheetOpen(false)
+        }}
+        className={row.rowClass}
+      >
+        <AutoScrollIcon className={clsx(row.iconClass, 'text-muted')} />
+        {autoScroll ? 'Auto-scroll on' : 'Auto-scroll off'}
+      </button>
+      {onToggleRawText && (
+        <button
+          type="button"
+          onClick={() => {
+            onToggleRawText()
+            setAttachSheetOpen(false)
+          }}
+          className={row.rowClass}
+        >
+          {showRawText ? (
+            <MarkdownIcon className={clsx(row.iconClass, 'text-muted')} />
+          ) : (
+            <CodeIcon className={clsx(row.iconClass, 'text-muted')} />
+          )}
+          {showRawText ? 'Show rendered markdown' : 'Show raw text'}
+        </button>
+      )}
+      {historySearchAvailable && (
+        <button
+          type="button"
+          onClick={() => {
+            setAttachSheetOpen(false)
+            toggleHistorySearch()
+          }}
+          className={clsx(row.rowClass, historySearchOpen && 'bg-accent/10 hover:bg-accent/20')}
+        >
+          <SearchIcon className={clsx(row.iconClass, historySearchOpen ? 'text-accent-light' : 'text-muted')} />
+          {historySearchOpen ? 'Close search' : 'Search this conversation'}
+        </button>
+      )}
+      {composerControls && <ChatComposerOptionsContext value={row}>{composerControls}</ChatComposerOptionsContext>}
+    </>
+  )
+
   const chatContent = (
     <div
       // The whole chat is one drop and paste scope; clicking its messages focuses it (see handleSurfacePaste).
@@ -2745,18 +2884,19 @@ export function ChatView({
                 </p>
                 <div className="chat-composer-controls flex gap-2 items-center justify-between">
                   <div className="flex items-center gap-1 min-w-0">
+                    {/* Shown instead of the action buttons while the composer is narrow (ResponsiveChat.css). */}
                     <button
                       type="button"
-                      ref={attachSheetTriggerRef}
-                      onClick={() => setAttachSheetOpen(true)}
-                      aria-haspopup="dialog"
-                      aria-expanded={attachSheetOpen}
-                      className="ficus-button ficus-button-ghost chat-composer-attach md:hidden p-2.5 rounded-md transition-colors shrink-0"
+                      {...optionsMenu.triggerProps}
+                      aria-haspopup={optionsAsSheet ? 'dialog' : 'menu'}
+                      onClick={() => (optionsAsSheet ? setAttachSheetOpen(true) : optionsMenu.toggle())}
+                      className="ficus-button ficus-button-ghost chat-composer-attach p-2.5 md:p-2 rounded-md transition-colors shrink-0"
                       aria-label="Attach or change controls"
+                      title="Attach or change controls"
                     >
                       <PlusIcon className="w-5 h-5" />
                     </button>
-                    <div className="hidden md:flex gap-1 items-center">
+                    <div className="chat-composer-actions gap-1 items-center">
                       {/* Image button */}
                       <button
                         type="button"
@@ -2898,7 +3038,7 @@ export function ChatView({
                     </div>
                     {composerStatus}
                   </div>
-                  <div className="chat-composer-send flex items-center gap-2 md:gap-1">
+                  <div className="chat-composer-send flex shrink-0 items-center gap-2 md:gap-1">
                     {/* Any active turn, not only a streaming one: a queued or sandbox-waiting run stops too. */}
                     {onStop && (isStreaming || agentBusy) && (
                       <button
@@ -3029,124 +3169,26 @@ export function ChatView({
                   </div>
                 </div>
                 <MobileChatOptionsSheet
-                  open={attachSheetOpen}
+                  open={attachSheetOpen && optionsAsSheet}
                   onClose={() => setAttachSheetOpen(false)}
-                  triggerRef={attachSheetTriggerRef}
+                  triggerRef={optionsMenu.triggerRef}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!imageAttachState.allowed) return
-                      fileInputRef.current?.click()
-                      setAttachSheetOpen(false)
-                    }}
-                    disabled={!imageAttachState.allowed || disabled || isUploading}
-                    title={imageAttachState.title}
-                    className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50 disabled:hover:bg-transparent"
-                  >
-                    <ImageIcon className="w-5 h-5 text-muted" />
-                    Attach image
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (textareaRef.current) {
-                        agentFileSelectionRef.current = {
-                          start: textareaRef.current.selectionStart,
-                          end: textareaRef.current.selectionEnd,
-                        }
-                      }
-                      agentFileInputRef.current?.click()
-                      setAttachSheetOpen(false)
-                    }}
-                    disabled={!agentId || disabled}
-                    className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50"
-                  >
-                    <FileIcon className="w-5 h-5 text-muted" />
-                    Attach file
-                  </button>
-                  {voiceSupported && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (voiceState === 'recording') {
-                          endPress()
-                        } else {
-                          beginPress()
-                        }
-                        setAttachSheetOpen(false)
-                      }}
-                      disabled={disabled || voiceState === 'transcribing'}
-                      className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary disabled:opacity-50"
-                    >
-                      <MicIcon className="w-5 h-5 text-muted" />
-                      {voiceState === 'recording' ? 'Stop voice recording' : 'Voice message'}
-                    </button>
-                  )}
-                  {tts && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        tts.toggle()
-                        setAttachSheetOpen(false)
-                      }}
-                      className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary"
-                    >
-                      {tts.enabled ? (
-                        <SpeakerOnIcon className="w-5 h-5 text-muted" />
-                      ) : (
-                        <SpeakerOffIcon className="w-5 h-5 text-muted" />
-                      )}
-                      {tts.enabled ? 'Auto-speak on' : 'Auto-speak off'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = !autoScroll
-                      updateAutoScroll(next)
-                      if (next) pinTranscriptToBottom()
-                      setAttachSheetOpen(false)
-                    }}
-                    className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary"
-                  >
-                    <AutoScrollIcon className="w-5 h-5 text-muted" />
-                    {autoScroll ? 'Auto-scroll on' : 'Auto-scroll off'}
-                  </button>
-                  {onToggleRawText && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onToggleRawText()
-                        setAttachSheetOpen(false)
-                      }}
-                      className="ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary"
-                    >
-                      {showRawText ? (
-                        <MarkdownIcon className="w-5 h-5 text-muted" />
-                      ) : (
-                        <CodeIcon className="w-5 h-5 text-muted" />
-                      )}
-                      {showRawText ? 'Show rendered markdown' : 'Show raw text'}
-                    </button>
-                  )}
-                  {historySearchAvailable && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAttachSheetOpen(false)
-                        toggleHistorySearch()
-                      }}
-                      className={clsx(
-                        'ficus-button ficus-button-ghost w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm text-primary',
-                        historySearchOpen && 'bg-accent/10 hover:bg-accent/20'
-                      )}
-                    >
-                      <SearchIcon className={clsx('w-5 h-5', historySearchOpen ? 'text-accent-light' : 'text-muted')} />
-                      {historySearchOpen ? 'Close search' : 'Search this conversation'}
-                    </button>
-                  )}
+                  {composerOptionRows(SHEET_OPTION_ROW)}
                 </MobileChatOptionsSheet>
+                <Menu
+                  {...optionsMenu.popoverProps}
+                  open={attachSheetOpen && !optionsAsSheet}
+                  label="Chat options"
+                  itemSelector="[data-chat-composer-options] button"
+                  side="above"
+                  align="start"
+                  width={240}
+                  className="ficus-overlay scroll-py-1.5 p-1.5"
+                >
+                  <div data-chat-composer-options="" className="flex flex-col">
+                    {composerOptionRows(MENU_OPTION_ROW)}
+                  </div>
+                </Menu>
               </form>
             </div>
           </div>
