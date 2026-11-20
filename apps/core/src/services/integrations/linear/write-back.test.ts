@@ -916,13 +916,18 @@ describe('--linear-session', () => {
     })
     await processLinearAppEvent({
       type: 'AgentSessionEvent',
-      payload: agentSessionCreatedPayload(fixture.context, {
-        sessionId: result.sessionId,
-        issue,
-        creatorId: member.id,
-      }),
+      // Live shape of the app's own session: no creator and Linear's authorless thread comment. Its
+      // local `proactive` record, not the missing creator, is what marks it as Ficus's own.
+      payload: agentSessionCreatedPayload(fixture.context, { sessionId: result.sessionId, issue }),
     })
     expect(await db.select().from(workStreams).where(eq(workStreams.squadId, squad.id))).toHaveLength(1)
+    const [session] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, result.sessionId))
+    expect(session).toMatchObject({ trigger: 'proactive', disposition: 'bound' })
+    const routed = await db
+      .select({ id: integrationOutputEvents.id })
+      .from(integrationOutputEvents)
+      .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${result.sessionId}`)
+    expect(routed).toEqual([])
     expect(bodies(result.sessionId).some(([, body]) => body === 'Received. Checking how to handle this request.')).toBe(
       false
     )

@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('linear')
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { getSecretStore } from '../../secrets'
 import { randomUUID } from 'node:crypto'
 import { createBlankWorkflow } from '@ficus/shared'
@@ -17,7 +17,7 @@ import {
   workStreams,
 } from '../../../db'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
-import { LINEAR_ACK_BODY } from './session-acknowledger'
+import { LINEAR_ACK_BODY, LINEAR_ACK_MAX_ATTEMPTS } from './session-acknowledger'
 import { inaccessibleLinearTeams, linearTeamAccessSetupIssues } from './team-access'
 import { isUntrustedOutputActor } from '../outputs/authority'
 import { setEventRuleDecideForTests } from '../outputs/event-rule-decisions'
@@ -261,18 +261,118 @@ describe('disposition and authority', () => {
     ])
   })
 
-  test('a session the app opened on itself is recorded as its own and never acknowledged or routed', async () => {
-    const squad = await fixture.addSquad({ teamIds: [teamId] })
+  describe('a session without a creator is never dropped', () => {
+    const notices = (managerAgentId: string) =>
+      db
+        .select({ content: inbox.content })
+        .from(inbox)
+        .where(
+          and(eq(inbox.recipientId, managerAgentId), sql`${inbox.metadata}->>'source' = 'integration-notification'`)
+        )
+    const routed = async (sessionId: string) =>
+      (
+        await db
+          .select({
+            output: sql<string>`${integrationOutputEvents.fact}->>'output'`,
+            trigger: sql<string>`${integrationOutputEvents.fact}->'data'->'session'->>'trigger'`,
+          })
+          .from(integrationOutputEvents)
+          .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`)
+      )
+        .map((row) => `${row.output}${row.trigger ? `:${row.trigger}` : ''}`)
+        .sort()
+
+    test('on an issue delegated to the app it is acknowledged and routed as a delegation', async () => {
+      // An automation or another agent user delegating to Ficus: no creator, Linear's thread comment.
+      const squad = await fixture.addSquad({ teamIds: [teamId] })
+      const sessionId = randomUUID()
+      linear.addSession({ id: sessionId, issueId: issue.id })
+      await created(sessionId, { creatorId: null })
+      expect(bodies(sessionId)[0]).toEqual(['thought', LINEAR_ACK_BODY])
+      expect(await routed(sessionId)).toEqual(['agent_session.created:delegation', 'issue.delegated'])
+      const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+      expect(row).toMatchObject({ trigger: 'delegation', ackState: 'sent', disposition: 'notified' })
+      const [notice] = await notices(squad.managerAgentId!)
+      expect(notice?.content).toContain('linear:issue.delegated')
+    })
+
+    for (const [label, delegateId] of [
+      ['delegated to another agent user', 'other'],
+      ['not delegated at all (a session opened with the app token outside Ficus)', null],
+    ] as const)
+      test(`${label}: it is acknowledged, logged and routed as unknown so the manager is told`, async () => {
+        const squad = await fixture.addSquad({ teamIds: [teamId] })
+        const other = { id: randomUUID(), name: 'Other agent', app: true, active: true }
+        linear.addUser(other)
+        const target = linear.addIssue({
+          ...issue,
+          id: randomUUID(),
+          number: 9,
+          identifier: 'ENG-9',
+          delegateId: delegateId === 'other' ? other.id : null,
+        })
+        const sessionId = randomUUID()
+        linear.addSession({ id: sessionId, issueId: target.id })
+        const warn = spyOn(console, 'warn')
+        try {
+          await created(sessionId, { creatorId: null, issue: target })
+          const warnings = warn.mock.calls.map((call) => call.join(' '))
+          expect(warnings.some((line) => line.includes(`linear_session_unattributed session=${sessionId}`))).toBe(true)
+          expect(
+            warnings.some((line) => line.includes(`linear_session_unattributed_routed session=${sessionId}`))
+          ).toBe(true)
+        } finally {
+          warn.mockRestore()
+        }
+        expect(bodies(sessionId)[0]).toEqual(['thought', LINEAR_ACK_BODY])
+        expect(await routed(sessionId)).toEqual(['agent_session.created:unknown', 'issue.mentioned'])
+        const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+        // Left for the normal disposition, never stored as already handled.
+        expect(row).toMatchObject({ ackState: 'sent', dispositionState: 'sent', disposition: 'notified' })
+        expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+        const [notice] = await notices(squad.managerAgentId!)
+        expect(notice?.content).toContain('linear:issue.mentioned')
+      })
+
+    test('a failed acknowledgment leaves it pending for the polling retry', async () => {
+      await fixture.addSquad({ teamIds: [teamId] })
+      const target = linear.addIssue({ ...issue, id: randomUUID(), number: 10, identifier: 'ENG-10', delegateId: null })
+      const sessionId = randomUUID()
+      linear.addSession({ id: sessionId, issueId: target.id })
+      for (let attempt = 0; attempt < LINEAR_ACK_MAX_ATTEMPTS; attempt++) linear.failNext(500, 'FicusAgentActivity')
+      await created(sessionId, { creatorId: null, issue: target })
+      const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+      expect(row?.ackState).toBe('failed')
+    })
+  })
+
+  test("an authorless root comment that is not Linear's thread comment is logged by IDs, never by its text", async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
     const sessionId = randomUUID()
-    // Live shape (session 53becf37): no creator, Linear's authorless thread comment, issue not delegated.
-    const own = linear.addIssue({ ...issue, id: randomUUID(), number: 9, identifier: 'ENG-9', delegateId: null })
-    linear.addSession({ id: sessionId, issueId: own.id })
-    await created(sessionId, { creatorId: null, issue: own })
-    expect(bodies(sessionId)).toEqual([])
-    expect(linear.calls).toEqual([])
-    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
-    expect(row).toMatchObject({ trigger: 'proactive', ackState: 'sent', dispositionState: 'sent' })
-    expect(await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))).toEqual([])
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    const warn = spyOn(console, 'warn')
+    try {
+      await processLinearAppEvent(
+        {
+          type: 'AgentSessionEvent',
+          payload: agentSessionCreatedPayload(fixture.context, {
+            sessionId,
+            issue,
+            creatorId: member.id,
+            rootCommentBody: 'A reworded thread comment for secret-body-text',
+            timestamp: now,
+          }),
+        },
+        { now: () => now }
+      )
+      const lines = warn.mock.calls.map((call) => call.join(' ')).filter((line) => line.includes('root_comment'))
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain(`linear_session_root_comment_unrecognised session=${sessionId}`)
+      expect(lines[0]).toContain(`comment=${linearSystemCommentId(sessionId)}`)
+      expect(lines[0]).not.toContain('secret-body-text')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test('one probe per event is shared by every squad; unrouted teams match nothing', async () => {
