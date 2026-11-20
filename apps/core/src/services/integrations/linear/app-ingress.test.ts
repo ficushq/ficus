@@ -406,6 +406,26 @@ describe('connection lifecycle', () => {
     expect(access?.teamIds).toContain(teamId)
   })
 
+  test('a PermissionChange on a fresh connection starts from the full team listing, not just its delta', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    // An admin grants one more team before any event has been routed.
+    await processLinearAppEvent({
+      type: 'PermissionChange',
+      payload: permissionChangePayload(fixture.context, { addedTeamIds: ['other-team'] }),
+    })
+    const [access] = await db
+      .select()
+      .from(linearTeamAccess)
+      .where(eq(linearTeamAccess.connectionId, fixture.connectionId))
+    expect(access?.teamIds).toEqual(expect.arrayContaining([teamId, 'other-team']))
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    expect(linear.calls.some((call) => call.operation === 'FicusLinearAppProbe')).toBe(true)
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+    expect((await linearTeamAccessSetupIssues()).some((text) => text.includes(squad.name))).toBe(false)
+  })
+
   test('setup status names a squad that routes a team the app cannot access', async () => {
     const squad = await fixture.addSquad({ teamIds: [teamId] })
     await processLinearAppEvent({

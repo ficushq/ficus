@@ -35,15 +35,10 @@ export function canReceiveLinearEvent(access: LinearIssueAccess, event: LinearEv
 
 /** A valid signature proves origin; each connected account must also be able to read the issue. */
 export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (squadId: string) => Promise<void>) {
-  const [fact] = linearOutputAdapter.normalize(event)
+  const facts = linearOutputAdapter.normalize(event)
+  const [fact] = facts
   if (!fact) return
-  const data = fact.data as { issue: { id: string }; teamId?: string; assignee?: string }
-  const identity: LinearEventIdentity = {
-    output: fact.output,
-    issueId: data.issue.id,
-    teamId: typeof data.teamId === 'string' ? data.teamId : '',
-    assignee: typeof data.assignee === 'string' ? data.assignee : '',
-  }
+  const identity = factIdentity(fact)
   const assignments = await db
     .select({ squadId: integrationConnectionAssignments.squadId })
     .from(integrationConnectionAssignments)
@@ -68,7 +63,10 @@ export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (s
     } catch {
       continue
     }
-    if (!canReceiveLinearEvent(access, identity)) continue
+    // Each fact of the delivery is checked on its own: a squad that may not see the assignment can
+    // still receive a delegation change from the same update.
+    const receivable = (item: IntegrationOutputFact) => canReceiveLinearEvent(access, factIdentity(item))
+    if (!facts.some(receivable)) continue
     const handled = await publishIntegrationOutputs(
       'linear',
       event,
@@ -80,10 +78,10 @@ export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (s
         // Rule audiences and self-comment suppression bind to the probed viewer, never to payload claims.
         accountId: access.viewer.id,
       },
-      (facts) => facts.map((fact) => withIssueInvolvement(fact, access))
+      (normalized) => normalized.filter(receivable).map((item) => withIssueInvolvement(item, access))
     )
     // Only assignments carry the legacy team-metadata path; other outputs are subscription-only.
-    if (identity.output === 'issue.assigned' && !handled.includes(squadId)) await fallback(squadId)
+    if (identity.output === 'issue.assigned' && receivable(fact) && !handled.includes(squadId)) await fallback(squadId)
   }
 }
 
@@ -101,5 +99,15 @@ function withIssueInvolvement(fact: IntegrationOutputFact, access: LinearIssueAc
       assignee: (fact.data.assignee as string) || access.issue.assignee?.id || '',
       delegate: (fact.data.delegate as string) || access.issue.delegate?.id || '',
     },
+  }
+}
+
+function factIdentity(fact: IntegrationOutputFact): LinearEventIdentity {
+  const data = fact.data as { issue: { id: string }; teamId?: string; assignee?: string }
+  return {
+    output: fact.output,
+    issueId: data.issue.id,
+    teamId: typeof data.teamId === 'string' ? data.teamId : '',
+    assignee: typeof data.assignee === 'string' ? data.assignee : '',
   }
 }

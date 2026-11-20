@@ -200,6 +200,26 @@ test('a squad whose account cannot read the issue receives nothing', async () =>
   expect(await publishedFor(second)).toEqual([])
 })
 
+test('each fact of one update is checked on its own: a delegation change still reaches squads not assigned', async () => {
+  stubLinear({ [keyA]: readable('user-a', 'user-a'), [keyB]: readable('user-b', 'user-a') })
+  const event = issueEvent({ assigneeId: null, delegateId: null }, { delegateId: 'other-agent' })
+  await routeLinearEvent(event, async () => {})
+  const facts = linearOutputAdapter.normalize(event)
+  expect(facts.map((fact) => fact.output)).toEqual(['issue.assigned', 'issue.delegated'])
+  eventKeys.push(...facts.map((fact) => fact.eventKey))
+  const squadsFor = async (eventKey: string) =>
+    (
+      await db
+        .select({ authority: integrationOutputEvents.authority })
+        .from(integrationOutputEvents)
+        .where(and(eq(integrationOutputEvents.integration, 'linear'), eq(integrationOutputEvents.eventKey, eventKey)))
+    )
+      .map((row) => (row.authority.kind === 'connection' ? row.authority.squadId : 'instance'))
+      .sort()
+  expect(await squadsFor(facts[0]!.eventKey)).toEqual([squadA])
+  expect(await squadsFor(facts[1]!.eventKey)).toEqual([squadA, squadB].sort())
+})
+
 test('events that normalize to nothing never probe a connection', async () => {
   const probed = stubLinear({ [keyA]: readable('user-a', 'user-a') })
   await routeLinearEvent({ type: 'Issue', payload: { action: 'create', data: { id: 'issue-uuid' } } }, async () => {})

@@ -20,17 +20,28 @@ function strings(value: unknown): string[] {
  * `PermissionChange` `teamAccessChanged` (5.8): record which teams the app can access, mark sessions
  * on removed teams `inaccessible`, and tell each bound stream's owner once.
  */
-export async function applyLinearPermissionChange(connectionId: string, payload: Record<string, unknown>) {
+export async function applyLinearPermissionChange(
+  connectionId: string,
+  payload: Record<string, unknown>,
+  authorization: string
+) {
   const added = strings(payload.addedTeamIds)
   const removed = strings(payload.removedTeamIds)
   const canAccessAllPublicTeams = payload.canAccessAllPublicTeams === true
+  // A change is a delta: with nothing recorded yet, start from the full listing (taken after the
+  // change), or the record would hold only the delta and rule out every other readable team.
+  const [existing] = await db
+    .select({ connectionId: linearTeamAccess.connectionId })
+    .from(linearTeamAccess)
+    .where(eq(linearTeamAccess.connectionId, connectionId))
+  const listed = existing ? [] : await listLinearTeamIds(authorization)
   await db.transaction(async (tx) => {
     const [current] = await tx
       .select()
       .from(linearTeamAccess)
       .where(eq(linearTeamAccess.connectionId, connectionId))
       .for('update')
-    const teamIds = [...new Set([...(current?.teamIds ?? []), ...added])].filter((id) => !removed.includes(id))
+    const teamIds = [...new Set([...(current?.teamIds ?? listed), ...added])].filter((id) => !removed.includes(id))
     const values = { canAccessAllPublicTeams, teamIds, observedAt: new Date(), source: 'webhook' as const }
     await tx
       .insert(linearTeamAccess)
@@ -102,21 +113,7 @@ export async function recordLinearTeamAccessProbe(connectionId: string, authoriz
     .from(linearTeamAccess)
     .where(eq(linearTeamAccess.connectionId, connectionId))
   if (existing) return
-  const teamIds: string[] = []
-  let after: string | null = null
-  // Every page, bounded: a workspace with more teams than one page must not look partly inaccessible.
-  for (let page = 0; page < 20; page++) {
-    const data: {
-      teams?: { nodes?: Array<{ id?: string }>; pageInfo?: { hasNextPage?: boolean; endCursor?: string } }
-    } = await linearQuery(
-      authorization,
-      'query FicusLinearTeams($after: String) { teams(first: 250, after: $after) { nodes { id } pageInfo { hasNextPage endCursor } } }',
-      { after }
-    )
-    teamIds.push(...strings((data.teams?.nodes ?? []).map((team) => team.id)))
-    if (!data.teams?.pageInfo?.hasNextPage || !data.teams.pageInfo.endCursor) break
-    after = data.teams.pageInfo.endCursor
-  }
+  const teamIds = await listLinearTeamIds(authorization)
   await db
     .insert(linearTeamAccess)
     .values({ connectionId, canAccessAllPublicTeams: false, teamIds, source: 'probe' })
@@ -164,4 +161,23 @@ export async function linearTeamAccessSetupIssues(): Promise<string[]> {
       )
   }
   return issues
+}
+
+/** Every team the app can list, page by page (bounded), so a large workspace never looks partly inaccessible. */
+async function listLinearTeamIds(authorization: string): Promise<string[]> {
+  const teamIds: string[] = []
+  let after: string | null = null
+  for (let page = 0; page < 20; page++) {
+    const data: {
+      teams?: { nodes?: Array<{ id?: string }>; pageInfo?: { hasNextPage?: boolean; endCursor?: string } }
+    } = await linearQuery(
+      authorization,
+      'query FicusLinearTeams($after: String) { teams(first: 250, after: $after) { nodes { id } pageInfo { hasNextPage endCursor } } }',
+      { after }
+    )
+    teamIds.push(...strings((data.teams?.nodes ?? []).map((team) => team.id)))
+    if (!data.teams?.pageInfo?.hasNextPage || !data.teams.pageInfo.endCursor) break
+    after = data.teams.pageInfo.endCursor
+  }
+  return teamIds
 }

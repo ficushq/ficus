@@ -90,7 +90,7 @@ export async function processLinearAppEvent(
   if (APP_USER_EVENTS.has(event.type) && text(event.payload.appUserId) !== resolved.configuration.appUserId) return
   if (event.type === 'PermissionChange') {
     if (event.payload.action === 'teamAccessChanged')
-      await applyLinearPermissionChange(resolved.connection.id, event.payload)
+      await applyLinearPermissionChange(resolved.connection.id, event.payload, resolved.authorization)
     return
   }
   // Inbox notifications feed Activity only in this phase; mentions and delegations come from sessions.
