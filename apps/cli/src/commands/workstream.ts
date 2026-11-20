@@ -1497,11 +1497,21 @@ only when a human actually answered elsewhere, never an inferred answer.
       '--delivery',
       'Count this pull request toward delivery: ficus workstream finish then also requires it to be merged (pull requests only)'
     )
+    .option(
+      '--linear-session',
+      "Also open a Linear agent session on the tracked Linear issue and bind it, so Ficus posts this stream's progress there (needs the Ficus Linear app connection)"
+    )
     .action(async (id, options) => {
       try {
         const body = buildTrackRequestBody(options)
-        const result = await apiPost<{ added: unknown[] }>(`/api/workstreams/${encodeURIComponent(id)}/tracked`, body)
-        output(result, `Tracked ${result.added.length} resource(s) on work stream ${id.slice(0, 8)}`)
+        const result = await apiPost<{ added: unknown[]; linearSession?: { id: string; url: string | null } }>(
+          `/api/workstreams/${encodeURIComponent(id)}/tracked`,
+          body
+        )
+        const session = result.linearSession
+          ? `; Linear agent session ${result.linearSession.url ?? result.linearSession.id} is bound`
+          : ''
+        output(result, `Tracked ${result.added.length} resource(s) on work stream ${id.slice(0, 8)}${session}`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -1640,9 +1650,21 @@ interface TrackSelectorOptions {
   pr?: string
   connection?: string
   delivery?: boolean
+  linearSession?: boolean
 }
 
 function buildTrackRequestBody(options: TrackSelectorOptions): Record<string, unknown> {
+  if (!options.linearSession) return buildTrackSelectorBody(options)
+  // Agent sessions exist only on Linear issues, named by reference or URL.
+  const linearIssue =
+    (options.issue !== undefined && parseTrackedResourceReference(options.issue)?.integration === 'linear') ||
+    (options.url !== undefined && parseTrackedResourceUrl(options.url)?.integration === 'linear')
+  if (!linearIssue)
+    throw new Error('--linear-session applies to a Linear issue (--issue KEY-123 or a Linear issue --url)')
+  return { ...buildTrackSelectorBody(options), linearSession: true }
+}
+
+function buildTrackSelectorBody(options: TrackSelectorOptions): Record<string, unknown> {
   const selected = [options.event, options.url, options.issue, options.pr].filter((v) => v !== undefined)
   if (selected.length !== 1) throw new Error('Choose exactly one of --event, --url, --issue, --pr')
   // An event can carry an issue and an issue is never a delivery change request; a URL is checked by the server.

@@ -607,6 +607,7 @@ maybeMountWebUi(app, log)
 let unregisterSquadActivity: (() => void) | null = null
 let unregisterAgentActivity: (() => void) | null = null
 let liveActivityFanout: LiveActivityFanout | null = null
+let linearWriteBack: import('./services/integrations/linear/write-back-runtime').LinearWriteBackRuntime | null = null
 
 let managedBigbrainCapabilityRunner: import('./lib/infra/PeriodicRunner').PeriodicRunner | null = null
 const subsystems: Subsystem[] = [
@@ -647,6 +648,17 @@ const subsystems: Subsystem[] = [
     () => {
       liveActivityFanout?.stop()
       liveActivityFanout = null
+    }
+  ),
+  subsystem(
+    'linear-write-back',
+    async () => {
+      const { registerLinearWriteBack } = await import('./services/integrations/linear/write-back-runtime')
+      linearWriteBack = registerLinearWriteBack(eventEmitter)
+    },
+    () => {
+      linearWriteBack?.stop()
+      linearWriteBack = null
     }
   ),
   subsystem(

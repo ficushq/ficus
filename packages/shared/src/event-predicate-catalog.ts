@@ -117,6 +117,11 @@ const linearExtraFields: Record<string, IntegrationOutputField> = {
   'session.appUserId': { type: 'string', description: 'Linear user ID of the agent app the session belongs to.' },
   'comment.id': { type: 'string', description: 'Linear comment ID.' },
   'comment.parentId': { type: 'string', description: 'Linear ID of the comment this one replies to.' },
+  'comment.inSession': {
+    type: 'boolean',
+    description:
+      'Whether the comment is in a thread of one of this app\u2019s agent sessions; such comments also arrive as agent_session.prompted.',
+  },
   'activity.id': { type: 'string', description: 'Linear agent activity ID of the prompt.' },
   'prompt.signal': { type: 'string', description: 'Signal sent with the prompt: stop, or empty.' },
 }
@@ -133,7 +138,7 @@ const linearOutputs: Record<string, string> = {
   'agent_session.prompted': 'Agent session prompted',
 }
 const linearOutputExtras: Record<string, string[]> = {
-  'issue.comment': ['comment.id', 'comment.parentId', 'session.id'],
+  'issue.comment': ['comment.id', 'comment.parentId', 'comment.inSession', 'session.id'],
   'issue.delegated': ['previousDelegate', 'session.id'],
   'issue.mentioned': ['comment.id', 'session.id'],
   'agent_session.created': [

@@ -39,7 +39,7 @@ describe('linear output catalog', () => {
     'issue.updated': [],
     'issue.created': [],
     'issue.undelegated': [],
-    'issue.comment': ['comment.id', 'comment.parentId', 'session.id'],
+    'issue.comment': ['comment.id', 'comment.parentId', 'comment.inSession', 'session.id'],
     'issue.delegated': ['previousDelegate', 'session.id'],
     'issue.mentioned': ['comment.id', 'session.id'],
     'agent_session.created': [

@@ -40,6 +40,7 @@ import {
   recordLinearTeamReadable,
 } from './team-access'
 import { handleLinearAppRevoked } from './app-revocation'
+import { handleBoundSessionPrompt } from './session-prompts'
 
 const log = createLogger('linear-app-ingress')
 
@@ -142,11 +143,20 @@ async function processSessionEvent(
     return
   }
   if (payload.action !== 'prompted') return
+  const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+  if (row?.workStreamId && row.connectionId === resolved.connection.id) {
+    // A bound session's prompts belong to its stream (6.4): a stop request or a reply to an open
+    // question is handled here; anything else reaches the stream once, through its tracked issue.
+    const outcome = await handleBoundSessionPrompt({ authorization: resolved.authorization, session: row, payload })
+    if (outcome === 'consumed') return
+    if (outcome === 'deliver') {
+      await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
+      return
+    }
+    // The stream is done or canceled: the prompt goes through the rules like an unbound session's.
+  }
   const routed = await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
   if (!routed) return
-  const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
-  // A bound session's prompts belong to its stream; the session's projection answers them.
-  if (row?.workStreamId) return
   const activityId = text(record(payload.agentActivity).id)
   if (!activityId) return
   await postLinearSessionDisposition({
@@ -281,7 +291,11 @@ function enrichFact(
     const owned = [probe.comment.agentSession, probe.comment.parent?.agentSession].find(
       (session) => session?.appUser?.id === appUserId
     )
-    if (owned) data.session = { id: owned.id }
+    if (owned) {
+      data.session = { id: owned.id }
+      // Delivered to a tracking stream once, as agent_session.prompted, never also as a comment (6.4).
+      data.comment = { ...record(data.comment), inSession: true }
+    }
   }
   return {
     ...fact,

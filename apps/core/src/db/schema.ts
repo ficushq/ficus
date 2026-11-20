@@ -2595,6 +2595,10 @@ export const agentQuestions = pgTable(
     // A relayed answer has no answered_by_user_id and is never delivered back to the agent.
     answerRelayedByAgentId: uuid('answer_relayed_by_agent_id').references(() => agents.id, { onDelete: 'set null' }),
     answerSource: text('answer_source'),
+    // Where a direct answer came from when it was not given in Ficus, e.g. a Linear elicitation reply:
+    // `{ integration: 'linear', connectionId, linearUserId, sessionId, activityId }`. The answer is still
+    // recorded as `answered_by_user_id`'s, the linked Ficus user who passed the same answer check.
+    answerProvenance: jsonb('answer_provenance').$type<Record<string, string>>(),
     audienceResolution: varchar('audience_resolution', { length: 32 }).$type<
       'pending' | 'resolved' | 'unroutable' | 'legacy-unresolved'
     >(),
@@ -4320,6 +4324,10 @@ export const linearAgentSessions = pgTable(
     lastFlowVersion: integer('last_flow_version'),
     lastProjectedAt: timestamp('last_projected_at', { withTimezone: true }),
     lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
+    // Projector baseline: flow attempts below this ID ran before the session was bound and are not shown.
+    projectionAttemptFloor: integer('projection_attempt_floor'),
+    // An unlinked Linear user replied to an elicitation: the next one carries Linear's `auth` signal.
+    authLinkRequested: boolean('auth_link_requested').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -4339,6 +4347,99 @@ export const linearAgentSessions = pgTable(
       'linear_agent_sessions_disposition_state_check',
       sql`${table.dispositionState} in ('pending', 'sent', 'failed')`
     ),
+  ]
+)
+
+/**
+ * Linear write-back outbox: every activity, session update and pull request attachment Ficus sends to
+ * Linear, keyed by a stable projection key so re-running the projector never sends anything twice.
+ * `scope_key` is the session ID for session writes and `issue:<issueId>` for attachments, which also
+ * apply to streams without a session and to API-key connections. Payloads hold no secrets.
+ */
+export const linearActivityOutbox = pgTable(
+  'linear_activity_outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    scopeKey: varchar('scope_key', { length: 220 }).notNull(),
+    sessionId: varchar('session_id', { length: 200 }).references(() => linearAgentSessions.id, {
+      onDelete: 'cascade',
+    }),
+    workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'set null' }),
+    projectionKey: varchar('projection_key', { length: 400 }).notNull(),
+    activityId: uuid('activity_id').notNull(),
+    kind: varchar('kind', { length: 16 }).notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    // Ephemeral and progress items may collapse to the newest one when a rate bucket is empty.
+    collapsible: boolean('collapsible').notNull().default(false),
+    status: varchar('status', { length: 16 }).notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    claimToken: uuid('claim_token'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    lastErrorCode: varchar('last_error_code', { length: 64 }),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_linear_activity_outbox_projection').on(table.connectionId, table.scopeKey, table.projectionKey),
+    index('idx_linear_activity_outbox_due')
+      .on(table.nextAttemptAt)
+      .where(sql`${table.status} IN ('pending', 'sending')`),
+    index('idx_linear_activity_outbox_sent').on(table.connectionId, table.sentAt),
+    check('linear_activity_outbox_kind_check', sql`${table.kind} in ('activity', 'session_update', 'attachment')`),
+    check(
+      'linear_activity_outbox_status_check',
+      sql`${table.status} in ('pending', 'sending', 'sent', 'failed', 'skipped')`
+    ),
+  ]
+)
+
+/** A Ficus question mirrored into a Linear agent session as an elicitation. */
+export const linearQuestionMirrors = pgTable(
+  'linear_question_mirrors',
+  {
+    questionId: uuid('question_id')
+      .primaryKey()
+      .references(() => agentQuestions.id, { onDelete: 'cascade' }),
+    sessionId: varchar('session_id', { length: 200 })
+      .notNull()
+      .references(() => linearAgentSessions.id, { onDelete: 'cascade' }),
+    activityId: uuid('activity_id').notNull(),
+    options: jsonb('options').$type<Array<{ value: string; label: string }>>().notNull().default([]),
+    state: varchar('state', { length: 24 }).notNull().default('open'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_linear_question_mirrors_session').on(table.sessionId, table.state),
+    check(
+      'linear_question_mirrors_state_check',
+      sql`${table.state} in ('open', 'answered_in_linear', 'answered_in_ficus', 'dismissed')`
+    ),
+  ]
+)
+
+/**
+ * A Ficus user's linked Linear account in one workspace, from a user-actor `read` authorization.
+ * Ficus keeps no token: the row only lets a Linear reply count as that Ficus user's answer.
+ */
+export const userLinearIdentities = pgTable(
+  'user_linear_identities',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    organizationId: varchar('organization_id', { length: 200 }).notNull(),
+    linearUserId: varchar('linear_user_id', { length: 200 }).notNull(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.organizationId] }),
+    uniqueIndex('uq_user_linear_identities_linear_user').on(table.organizationId, table.linearUserId),
   ]
 )
 
@@ -4531,7 +4632,7 @@ export const integrationOauthStates = pgTable(
       .where(sql`${table.localFlowId} is not null`),
     check(
       'integration_oauth_states_purpose_context',
-      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0)`
+      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0) OR (${table.purpose} = 'linear_identity' AND ${table.providerKey} = 'linear' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NULL)`
     ),
     check('integration_oauth_states_hash_format', sql`${table.stateHash} ~ '^[0-9a-f]{64}$'`),
     check('integration_oauth_states_authority_check', sql`${table.authority} in ('local', 'platform_broker')`),
@@ -4545,7 +4646,7 @@ export const integrationOauthStates = pgTable(
     ),
     check(
       'integration_oauth_states_authority_flow_check',
-      sql`(${table.authority} = 'local' AND ((${table.purpose} = 'integration' AND ${table.localFlowId} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.localFlowId} IS NOT NULL))) OR (${table.authority} = 'platform_broker' AND ${table.localFlowId} IS NOT NULL)`
+      sql`(${table.authority} = 'local' AND ((${table.purpose} IN ('integration', 'linear_identity') AND ${table.localFlowId} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.localFlowId} IS NOT NULL))) OR (${table.authority} = 'platform_broker' AND ${table.localFlowId} IS NOT NULL)`
     ),
     check(
       'integration_oauth_states_intent_context',
@@ -4601,7 +4702,7 @@ export const integrationAuthorizationFlowReceipts = pgTable(
     index('idx_integration_auth_receipts_retention').on(table.retainUntil, table.localFlowId),
     check(
       'integration_auth_receipts_purpose_context',
-      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0)`
+      sql`(${table.purpose} = 'integration' AND ${table.linkGeneration} IS NULL) OR (${table.purpose} = 'github_identity' AND ${table.providerKey} = 'github' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NOT NULL AND ${table.linkGeneration} >= 0) OR (${table.purpose} = 'linear_identity' AND ${table.providerKey} = 'linear' AND ${table.intent} = 'connect' AND ${table.linkGeneration} IS NULL)`
     ),
     check(
       'integration_auth_receipts_connection_purpose',

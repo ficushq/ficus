@@ -298,6 +298,8 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
                   comment: {
                     id: text(data.id, 200),
                     ...(text(data.parentId, 200) ? { parentId: text(data.parentId, 200) } : {}),
+                    // Set from the app's live probe when the comment is in one of its session threads.
+                    inSession: false,
                   },
                 }
               : {}),

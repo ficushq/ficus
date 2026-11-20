@@ -58,6 +58,25 @@ export const trackedResourceRequestSchema = z.union([
 ])
 export type TrackedResourceRequest = z.infer<typeof trackedResourceRequestSchema>
 
+/**
+ * Adding a link accepts the same identities plus `linearSession: true`, which opens a Linear agent
+ * session on the tracked issue and binds it to the stream (`ficus workstream track --linear-session`).
+ */
+const linearSession = { linearSession: z.literal(true).optional() }
+export const trackedResourceAddRequestSchema = z.union([
+  z.strictObject({ event: z.uuid() }),
+  z.strictObject({ url: z.url(), delivery: z.literal(true).optional(), ...linearSession }),
+  z.strictObject({
+    reference: z.string().trim().min(1).max(500),
+    kind: trackedResourceObjectSchema.shape.kind.optional(),
+    connectionId: trackedResourceObjectSchema.shape.connectionId,
+    delivery: z.literal(true).optional(),
+    ...linearSession,
+  }),
+  z.strictObject({ resource: trackedResourceInputSchema, delivery: z.literal(true).optional(), ...linearSession }),
+])
+export type TrackedResourceAddRequest = z.infer<typeof trackedResourceAddRequestSchema> & { linearSession?: true }
+
 export interface TrackedResourceTarget {
   integration: string
   repository: string

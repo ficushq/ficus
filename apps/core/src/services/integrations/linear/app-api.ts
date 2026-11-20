@@ -60,6 +60,7 @@ export async function addLinearSessionExternalUrls(
 
 export interface LinearProbedUser {
   id: string
+  name?: string | null
   app?: boolean | null
   guest?: boolean | null
   active?: boolean | null
@@ -88,7 +89,7 @@ export interface LinearAppProbe {
 const PROBE_QUERY = `query FicusLinearAppProbe($issueId: String!, $commentId: String!, $userId: String!, $withComment: Boolean!, $withUser: Boolean!) {
   issue(id: $issueId) { id number identifier url team { id key } labels { nodes { name } } assignee { id } delegate { id } }
   comment(id: $commentId) @include(if: $withComment) { id parentId user { id app guest active } agentSession { id appUser { id } } parent { agentSession { id appUser { id } } } }
-  user(id: $userId) @include(if: $withUser) { id app guest active }
+  user(id: $userId) @include(if: $withUser) { id name app guest active }
 }`
 
 /**
