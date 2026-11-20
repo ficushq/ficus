@@ -291,12 +291,25 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
         ...(metadata.workStreamReadmission ? { readmission: true } : {}),
       })
     if (metadata?.source === 'agent-question-answer' && metadata.questionId) {
+      // The attempt recorded on the question when it was asked; older rows fall back to the asking
+      // execution's flow context, which a later inline handoff may have rebound.
       const [origin] = await store
-        .select({ flowContext: executions.flowContext })
+        .select({
+          workStreamId: agentQuestions.flowWorkStreamId,
+          attemptId: agentQuestions.flowAttemptId,
+          flowContext: executions.flowContext,
+        })
         .from(agentQuestions)
-        .innerJoin(executions, eq(executions.id, agentQuestions.executionId))
+        .leftJoin(executions, eq(executions.id, agentQuestions.executionId))
         .where(eq(agentQuestions.id, metadata.questionId))
-      if (origin?.flowContext) targets.push({ ...origin.flowContext, assignment: false, answer: true })
+      if (origin?.workStreamId && origin.attemptId != null)
+        targets.push({
+          workStreamId: origin.workStreamId,
+          attemptId: origin.attemptId,
+          assignment: false,
+          answer: true,
+        })
+      else if (origin?.flowContext) targets.push({ ...origin.flowContext, assignment: false, answer: true })
       else {
         const waits = await store
           .select()

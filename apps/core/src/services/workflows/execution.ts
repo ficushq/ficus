@@ -401,6 +401,10 @@ async function dispatchFlowAttempt(
     earlier.briefContext.sessionResets === briefContext.sessionResets
       ? earlier.id
       : undefined
+  // Answers to this agent's questions from an earlier attempt here that were passed on to whoever
+  // held the work after its step ended; a reused agent sees them once, in this assignment.
+  const { lateAnswersNotice } = await import('../agents/question-answer-routing')
+  const lateAnswers = await lateAnswersNotice(tx, stream.id, binding!.agentId, attempt.id)
   // dispatchFlow reloads the run between parallel siblings; update that current state.
   run.state.attempts.find((entry) => entry.id === attempt.id)!.briefContext = briefContext
   await tx
@@ -458,7 +462,8 @@ async function dispatchFlowAttempt(
           String(attempt.id)
         ],
         briefSeenInAttempt,
-        await assignmentAssets(tx, stream.id, run.state, attempt)
+        await assignmentAssets(tx, stream.id, run.state, attempt),
+        lateAnswers
       ),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
@@ -478,7 +483,8 @@ async function dispatchFlowAttempt(
           String(attempt.id)
         ],
         briefSeenInAttempt,
-        await assignmentAssets(tx, stream.id, run.state, attempt)
+        await assignmentAssets(tx, stream.id, run.state, attempt),
+        lateAnswers
       ),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,

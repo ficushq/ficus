@@ -258,11 +258,12 @@ describe('question answer delivery outbox', () => {
     expect(alerts.map((message) => (message.metadata as { questionId: string }).questionId).sort()).toEqual(ids)
   })
 
-  it('tells the operator why delivery failed, and that a retry cannot deliver a refused answer', () => {
+  it('tells the operator why delivery failed, and whether a retry can deliver a refused answer', () => {
     const agentId = 'agent-1'
+    // Refused before answers to replaced attempts were passed on: a retry now passes it on.
     const replaced = questionDeliveryFailureAlertContent({ agentId, lastError: FLOW_WAIT_SUPERSEDED_MESSAGE })
     expect(replaced).toBe(
-      "An accepted answer was not delivered to agent agent-1: the workflow attempt the question was asked from was replaced before the answer arrived. Retrying will not deliver it. The answer is kept in the question's history; if it still applies, send it to the agent as a message."
+      'An accepted answer was not delivered to agent agent-1: the workflow attempt the question was asked from was replaced before the answer arrived. Retry from the Action Center to pass it to whoever now holds that work, with a note saying who asked.'
     )
 
     // After the stream ends this alert is the only notice, so it says plainly the answer went nowhere.

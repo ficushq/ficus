@@ -1,12 +1,15 @@
-import { FlowWaitSupersededError } from '../work-streams/wait-scope'
+import { FlowWaitStreamEndedError, FlowWaitSupersededError } from '../work-streams/wait-scope'
+import { forwardedAnswerNote, resolveQuestionAnswerRoute, type ForwardRoute } from './question-answer-routing'
 import {
   formatQuestionAnswerChoices,
+  QUESTION_ANSWER_FORWARD_INBOX_SOURCE,
   QUESTION_ANSWER_INBOX_SOURCE,
+  type AgentQuestionAnswerForward,
   resolveQuestionAnswers,
   type QuestionAnswerCardData,
   type QuestionData,
 } from '@ficus/shared'
-import { and, asc, eq, gt, isNotNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestions, agents, chatSendReceipts, executions, inbox, messages } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
@@ -79,7 +82,7 @@ function legacyAnswerContent(row: AgentQuestionRow): string {
  * question/answer pair per question. Falls back to the legacy body when the stored answer cannot
  * be attributed to the questions. Deterministic in the immutable question row.
  */
-function answerContent(row: AgentQuestionRow): string {
+export function answerContent(row: AgentQuestionRow): string {
   const resolved = resolveQuestionAnswers(row.questionData as QuestionData | null, row.answer)
   if (!resolved) return legacyAnswerContent(row)
   if (resolved.length === 1) {
@@ -215,6 +218,10 @@ async function deliverClaim(
     return 'failed'
   }
 
+  const route = await resolveQuestionAnswerRoute(db, row)
+  if (route.kind === 'refuse') return refuseClaim(claim, row, route.error, now)
+  if (route.kind === 'forward') return forwardClaim(claim, row, route.forward, now)
+
   const inboxKey = `agent-question-answer:v1:${row.id}`
   const clientId = `${inboxKey}:inbox`
   const cardData = answerCardData(row)
@@ -289,15 +296,124 @@ async function deliverClaim(
     return authoritative?.status === 'delivered' ? 'delivered' : 'retry'
   } catch (error) {
     if (error instanceof FlowWaitSupersededError) {
-      await settleFailure(claim, error, now, true)
+      // The attempt stopped running between routing and acceptance: route again, so the answer is
+      // passed on rather than dropped. Only an ended stream refuses it.
+      if (!(error instanceof FlowWaitStreamEndedError)) {
+        const rerouted = await resolveQuestionAnswerRoute(db, row)
+        if (rerouted.kind === 'forward') return forwardClaim(claim, row, rerouted.forward, now)
+        if (rerouted.kind === 'refuse') return refuseClaim(claim, row, rerouted.error, now)
+      }
+      return refuseClaim(claim, row, error, now)
+    }
+    log.warn(`Answer delivery for question ${claim.id.slice(0, 8)} will be retried:`, error)
+    const failed = await settleFailure(claim, error, now)
+    if (failed) {
       eventEmitter.emit('agent-question.delivery-failed', {
         questionId: row.id,
         agentId: row.agentId,
         squadId: row.squadId,
       })
-      return 'failed'
+      await alertTerminalFailure(row.id)
     }
-    log.warn(`Answer delivery for question ${claim.id.slice(0, 8)} will be retried:`, error)
+    return failed ? 'failed' : 'retry'
+  }
+}
+
+/** A refused answer fails the same way on every retry, so it is terminal at once. */
+async function refuseClaim(
+  claim: { id: string; generation: number; token: string },
+  row: AgentQuestionRow,
+  error: FlowWaitSupersededError,
+  now: Date
+): Promise<'failed'> {
+  await settleFailure(claim, error, now, true)
+  eventEmitter.emit('agent-question.delivery-failed', {
+    questionId: row.id,
+    agentId: row.agentId,
+    squadId: row.squadId,
+  })
+  return 'failed'
+}
+
+/**
+ * Pass the answer to the recipients chosen by resolveQuestionAnswerRoute, each as an ordinary inbox
+ * message that says who asked and why it came to them, then settle the question as delivered with
+ * the forward recorded. The asking attempt is never reopened or re-run. Each message has a stable
+ * idempotency key, so a retry after a crash adopts the messages already written.
+ */
+async function forwardClaim(
+  claim: { id: string; generation: number; token: string },
+  row: AgentQuestionRow,
+  route: ForwardRoute,
+  now: Date
+): Promise<'delivered' | 'failed' | 'retry'> {
+  const { askerLabel, ...planned } = route
+  const forward: AgentQuestionAnswerForward = { ...planned, forwardedAt: now.toISOString() }
+  try {
+    const sent: string[] = []
+    for (const recipient of forward.recipients) {
+      const { message } = await InboxMessage.sendOnce(
+        {
+          recipientType: 'agent',
+          recipientId: recipient.agentId,
+          senderType: 'user',
+          senderId: row.answeredByUserId ?? undefined,
+          subject: recipient.role === 'asker' ? 'Answer to your question' : `Answer to a question ${askerLabel} asked`,
+          content: `${forwardedAnswerNote(forward, askerLabel, recipient)}\n\n${answerContent(row)}`,
+          // The asker is told when it is next free; current work is steered like any answer.
+          deliveryMode: recipient.role === 'asker' ? 'follow-up' : 'steer',
+          metadata: {
+            source: QUESTION_ANSWER_FORWARD_INBOX_SOURCE,
+            questionId: row.id,
+            askingAgentId: row.agentId,
+            workStreamId: forward.workStreamId,
+            originAttemptId: forward.originAttemptId,
+            forwardReason: forward.reason,
+          },
+        },
+        `agent-question-answer:v1:${row.id}:forward:${recipient.agentId}`
+      )
+      sent.push(message.id)
+    }
+    const settled = await db.transaction(async (tx) => {
+      const [question] = await tx
+        .update(agentQuestions)
+        .set({
+          answerDeliveryStatus: 'delivered',
+          answerDeliveryClaimToken: null,
+          answerDeliveryClaimedAt: null,
+          answerDeliveryNextAttemptAt: null,
+          answerDeliveryLastError: null,
+          answerDeliveryInboxMessageId: sent[0] ?? null,
+          answerDeliveryForward: forward,
+          answerDeliveredAt: now,
+        })
+        .where(
+          and(
+            eq(agentQuestions.id, claim.id),
+            eq(agentQuestions.answerDeliveryGeneration, claim.generation),
+            eq(agentQuestions.answerDeliveryStatus, 'delivering'),
+            eq(agentQuestions.answerDeliveryClaimToken, claim.token)
+          )
+        )
+        .returning({ id: agentQuestions.id })
+      if (!question) return false
+      // A copy addressed to the asking attempt before it stopped running is never delivered (the
+      // attempt is not current); close it so it does not linger unread.
+      await tx
+        .update(inbox)
+        .set({ readAt: now })
+        .where(and(eq(inbox.idempotencyKey, `agent-question-answer:v1:${row.id}`), isNull(inbox.readAt)))
+      return true
+    })
+    if (settled) return 'delivered'
+    const [authoritative] = await db
+      .select({ status: agentQuestions.answerDeliveryStatus })
+      .from(agentQuestions)
+      .where(eq(agentQuestions.id, claim.id))
+    return authoritative?.status === 'delivered' ? 'delivered' : 'retry'
+  } catch (error) {
+    log.warn(`Forwarding the answer to question ${claim.id.slice(0, 8)} will be retried:`, error)
     const failed = await settleFailure(claim, error, now)
     if (failed) {
       eventEmitter.emit('agent-question.delivery-failed', {

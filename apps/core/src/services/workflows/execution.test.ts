@@ -1485,7 +1485,7 @@ describe('attempt-scoped waits', () => {
   })
 })
 
-test('blocking questions pin their origin attempt and late answers cannot wake its replacement', async () => {
+test('blocking questions pin their origin attempt and a late answer goes to the attempt that replaced it', async () => {
   const { createAgentQuestion, answerAgentQuestion, setQuestionBlocking } = await import('../agents/questions')
   const { waitForQuestionAnswerDeliveryDrains } = await import('../agents/question-answer-delivery')
   const id = await create('active', parallelDefinition())
@@ -1546,16 +1546,279 @@ test('blocking questions pin their origin attempt and late answers cannot wake i
     actor
   )
   await expect(setQuestionBlocking(question.id, true)).rejects.toThrow('superseded')
+  const restarted = (await getFlow(id))!
+  const replacement = activeWorkflowAttempts(restarted.state).find((a) => a.stepId === 'security')!
+  const replacementAgent = restarted.attemptAgents[String(replacement.id)]!
+  expect(replacement.id).not.toBe(attempt.id)
   const user = await createTestUser({ prefix })
   await answerAgentQuestion(question.id, 'Use the documented threat model', user.id)
   await waitForQuestionAnswerDeliveryDrains()
-  const replies = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
-  const answer = replies.find((m) => (m.metadata as any)?.questionId === question.id)!
-  expect(answer).toBeDefined()
-  expect(await isCurrentFlowMessage(answer)).toBe(false)
-  await expect(
-    agent.queueExecution({ message: answer.content, metadata: { inboxMessageIds: [answer.id] } })
-  ).rejects.toThrow('superseded')
+  const { agentQuestions } = await import('../../db/schema')
+  const [settled] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+  // Not a reply bound to the replaced attempt, which could never be accepted: the answer goes to the
+  // attempt of the same step that took the work over, with a note saying who asked and why.
+  expect(settled!.answerDeliveryStatus).toBe('delivered')
+  expect(settled!.answerDeliveryForward).toMatchObject({
+    reason: 'attempt-replaced',
+    originAttemptId: attempt.id,
+    originStepId: 'security',
+    recipients: [{ role: 'current-work', agentId: replacementAgent, attemptId: replacement.id, stepId: 'security' }],
+  })
+  const bound = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}`))
+  expect(bound).toHaveLength(0)
+  const [forwarded] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}:forward:${replacementAgent}`))
+  expect(forwarded!.recipientId).toBe(replacementAgent)
+  expect(forwarded!.content).toContain('had been replaced when the answer arrived')
+  expect(forwarded!.content).toContain(`you are running step security (attempt ${replacement.id})`)
+  expect(forwarded!.content).toContain('Use the documented threat model')
+  expect(await isCurrentFlowMessage(forwarded!)).toBe(true)
+})
+
+/** A builder execution that consumed its assignment, so its questions have a trusted origin. */
+async function runAssignment(id: string, attemptId: number) {
+  const run = (await getFlow(id))!
+  const agentId = run.attemptAgents[String(attemptId)]!
+  const execution = await (await Agent.mustFind(agentId)).queueExecution({ message: 'Do the step' })
+  const [handoff] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `flow:${id}:${attemptId}`))
+  await db.insert(chatMessages).values({
+    agentId,
+    role: 'human',
+    content: 'Do the step',
+    pending: false,
+    metadata: {
+      source: 'inbox',
+      inboxMessageIds: [handoff!.id],
+      executionId: execution.id,
+      consumedAt: execution.startedAt.toISOString(),
+    },
+  })
+  return { agentId, execution }
+}
+
+describe('answers to a question whose asking attempt has finished', () => {
+  // The reported case: a non-blocking question asked during design, answered after design completed
+  // and implementation started with another agent. The answer was refused as "replaced" and dropped.
+  test('are passed to the step that took over the work, and shown to the asker when it is reused', async () => {
+    const { createAgentQuestion, answerAgentQuestion, getAgentQuestion } = await import('../agents/questions')
+    const { waitForQuestionAnswerDeliveryDrains } = await import('../agents/question-answer-delivery')
+    const { agentQuestions } = await import('../../db/schema')
+    const id = await create()
+    const { agentId: builder, execution } = await runAssignment(id, 1)
+    const question = await createAgentQuestion(
+      { agentId: builder, executionId: execution.id },
+      {
+        questions: [
+          {
+            id: 'store',
+            type: 'select',
+            question: 'Which store should the cache use?',
+            options: [
+              { value: 'redis', label: 'Redis' },
+              { value: 'memory', label: 'In memory' },
+            ],
+          },
+        ],
+      }
+    )
+    // The asking attempt is recorded on the question, not inferred later.
+    expect(question.flowAttempt).toEqual({ workStreamId: id, attemptId: 1 })
+    await execution.stop()
+    await advance(id, 'completed')
+    const reviewer = (await getFlow(id))!.attemptAgents['2']!
+    expect(reviewer).not.toBe(builder)
+
+    const user = await createTestUser({ prefix })
+    await answerAgentQuestion(question.id, 'redis', user.id)
+    await waitForQuestionAnswerDeliveryDrains()
+
+    const [settled] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(settled!.answerDeliveryStatus).toBe('delivered')
+    expect(settled!.answerDeliveryLastError).toBeNull()
+    expect(settled!.answerDeliveryForward).toMatchObject({
+      reason: 'attempt-finished',
+      workStreamId: id,
+      originAttemptId: 1,
+      originStepId: 'build',
+      recipients: [{ role: 'current-work', agentId: reviewer, attemptId: 2, stepId: 'review' }],
+    })
+    const [forwarded] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}:forward:${reviewer}`))
+    expect(forwarded).toMatchObject({ recipientId: reviewer, senderType: 'user', senderId: user.id })
+    expect(forwarded!.content).toContain('asked this question during step build (attempt 1)')
+    expect(forwarded!.content).toContain('That step had already finished when the answer arrived')
+    expect(forwarded!.content).toContain('you are running step review (attempt 2)')
+    expect(forwarded!.content).toContain('Redis (redis)')
+    expect(await isCurrentFlowMessage(forwarded!)).toBe(true)
+    // The idle asker is not woken: nothing was addressed to it.
+    const toBuilder = await db.select().from(inbox).where(eq(inbox.recipientId, builder))
+    expect(toBuilder.filter((message) => (message.metadata as any)?.questionId === question.id)).toEqual([])
+    // The question's history says where the answer went, and no failure is shown.
+    const json = await getAgentQuestion(question.id)
+    expect(json!.answerDelivery).toMatchObject({ status: 'delivered', refusal: null, canRetry: false })
+    expect(json!.answerDelivery!.forwarded?.recipients[0]?.agentId).toBe(reviewer)
+
+    // The builder is reused for the rework: its assignment carries the answer, once.
+    await advance(id, 'changes-requested')
+    const [rework] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `flow:${id}:3`))
+    expect(rework!.recipientId).toBe(builder)
+    expect(rework!.content).toContain('Answers to your earlier questions')
+    expect(rework!.content).toContain('From your attempt 1 (step build), passed to')
+    expect(rework!.content).toContain('Redis (redis)')
+    const [shown] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(shown!.answerDeliveryForward?.askerShownInAttemptId).toBe(3)
+    await advance(id, 'completed')
+    await advance(id, 'changes-requested')
+    const [again] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `flow:${id}:5`))
+    expect(again!.recipientId).toBe(builder)
+    expect(again!.content).not.toContain('Answers to your earlier questions')
+  })
+
+  test('go to the delivery participant at completion-ready', async () => {
+    const { createAgentQuestion, answerAgentQuestion } = await import('../agents/questions')
+    const { waitForQuestionAnswerDeliveryDrains } = await import('../agents/question-answer-delivery')
+    const { agentQuestions } = await import('../../db/schema')
+    const id = await create()
+    const { agentId: builder, execution } = await runAssignment(id, 1)
+    const question = await createAgentQuestion(
+      { agentId: builder, executionId: execution.id },
+      { questions: [{ id: 'docs', type: 'text', question: 'Should the README mention the flag?' }] }
+    )
+    await execution.stop()
+    await advance(id, 'completed')
+    await advance(id, 'approved')
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+    const reviewer = (await getFlow(id))!.attemptAgents['2']!
+    await answerAgentQuestion(question.id, 'Yes, one line', (await createTestUser({ prefix })).id)
+    await waitForQuestionAnswerDeliveryDrains()
+    const [settled] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(settled!.answerDeliveryStatus).toBe('delivered')
+    expect(settled!.answerDeliveryForward?.recipients).toMatchObject([{ role: 'delivery', agentId: reviewer }])
+    const [forwarded] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}:forward:${reviewer}`))
+    expect(forwarded!.content).toContain('because you are delivering the work stream')
+  })
+
+  test('go to the stream owner when no agent holds the work, and to the asker when there is no owner', async () => {
+    const { createAgentQuestion, answerAgentQuestion } = await import('../agents/questions')
+    const { waitForQuestionAnswerDeliveryDrains } = await import('../agents/question-answer-delivery')
+    const { agentQuestions } = await import('../../db/schema')
+    const id = await create()
+    const { agentId: builder, execution } = await runAssignment(id, 1)
+    const ask = (text: string) =>
+      createAgentQuestion(
+        { agentId: builder, executionId: execution.id },
+        { questions: [{ id: 'q', type: 'text', question: text }] }
+      )
+    const first = await ask('First question?')
+    const second = await ask('Second question?')
+    await execution.stop()
+    await advance(id, 'completed')
+    // The review attempt's agent is gone, so no running attempt has a live agent.
+    const reviewer = (await getFlow(id))!.attemptAgents['2']!
+    await db.update(agents).set({ status: 'terminated' }).where(eq(agents.id, reviewer))
+    const [owner] = await db
+      .insert(agents)
+      .values({ squadId, agentTypeId, status: 'idle', metadata: { name: 'stream-owner' } })
+      .returning()
+    await db.update(workStreams).set({ ownerAgentId: owner!.id }).where(eq(workStreams.id, id))
+    const user = await createTestUser({ prefix })
+
+    await answerAgentQuestion(first.id, 'First answer', user.id)
+    await waitForQuestionAnswerDeliveryDrains()
+    const [toOwner] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, first.id))
+    expect(toOwner!.answerDeliveryForward?.recipients).toMatchObject([
+      { role: 'owner', agentId: owner!.id, label: 'stream-owner' },
+    ])
+    const [ownerMessage] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${first.id}:forward:${owner!.id}`))
+    expect(ownerMessage!.content).toContain('as the work stream owner')
+
+    await db.update(workStreams).set({ ownerAgentId: null }).where(eq(workStreams.id, id))
+    await answerAgentQuestion(second.id, 'Second answer', user.id)
+    await waitForQuestionAnswerDeliveryDrains()
+    const [toAsker] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, second.id))
+    expect(toAsker!.answerDeliveryStatus).toBe('delivered')
+    expect(toAsker!.answerDeliveryForward?.recipients).toMatchObject([{ role: 'asker', agentId: builder }])
+    const [askerMessage] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${second.id}:forward:${builder}`))
+    expect(askerMessage).toMatchObject({ subject: 'Answer to your question', deliveryMode: 'follow-up' })
+    expect(askerMessage!.content).toContain('You asked this question during step build (attempt 1)')
+    expect(askerMessage!.content).toContain('No flow step is assigned to you by it')
+  })
+
+  test('are still refused once the stream has finished', async () => {
+    const { createAgentQuestion, answerAgentQuestion } = await import('../agents/questions')
+    const { waitForQuestionAnswerDeliveryDrains } = await import('../agents/question-answer-delivery')
+    const { FLOW_WAIT_STREAM_ENDED_MESSAGES } = await import('../work-streams/wait-scope')
+    const { agentQuestions } = await import('../../db/schema')
+    const id = await create()
+    const { agentId: builder, execution } = await runAssignment(id, 1)
+    const question = await createAgentQuestion(
+      { agentId: builder, executionId: execution.id },
+      { questions: [{ id: 'q', type: 'text', question: 'Still needed?' }] }
+    )
+    await execution.stop()
+    await advance(id, 'completed')
+    await advance(id, 'approved')
+    const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+    try {
+      expect((await finishFlow(id, 2, actor)).status).toBe('done')
+    } finally {
+      stop.mockRestore()
+    }
+    await answerAgentQuestion(question.id, 'Too late', (await createTestUser({ prefix })).id)
+    await waitForQuestionAnswerDeliveryDrains()
+    const [settled] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, question.id))
+    expect(settled!.answerDeliveryStatus).toBe('failed')
+    expect(settled!.answerDeliveryLastError).toBe(FLOW_WAIT_STREAM_ENDED_MESSAGES.done)
+    expect(settled!.answerDeliveryForward).toBeNull()
+    const forwards = await db
+      .select()
+      .from(inbox)
+      .where(like(inbox.idempotencyKey, `agent-question-answer:v1:${question.id}:forward:%`))
+    expect(forwards).toEqual([])
+  })
+})
+
+test('an agent cannot complete its step while its own blocking question is open', async () => {
+  const { createAgentQuestion, answerAgentQuestion } = await import('../agents/questions')
+  const id = await create()
+  const { agentId: builder, execution } = await runAssignment(id, 1)
+  const question = await createAgentQuestion(
+    { agentId: builder, executionId: execution.id },
+    { questions: [{ id: 'q', type: 'text', question: 'Which API version?' }] },
+    { blocking: true }
+  )
+  expect(question.openedWaitWorkStreamIds).toEqual([id])
+  await expect(advance(id, 'completed')).rejects.toThrow('Resolve the waits blocking this attempt')
+  expect((await getFlow(id))!.state.activeAttemptId).toBe(1)
+  await answerAgentQuestion(question.id, 'v2', (await createTestUser({ prefix })).id)
+  await execution.stop()
+  await advance(id, 'completed')
+  expect((await getFlow(id))!.state.attempts[0]!.status).toBe('completed')
 })
 
 // Regression: approving makes the reviewer the delivery participant, and its attempt is then

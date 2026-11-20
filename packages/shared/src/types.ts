@@ -766,9 +766,45 @@ export type AgentQuestionAnswerDeliveryStatus = 'pending' | 'delivering' | 'deli
 /**
  * Why a failed answer was refused rather than lost in transit: the workflow attempt it was asked
  * from was replaced, or its work stream had already finished or been canceled. The agent certainly
- * did not receive it, and a retry cannot deliver it.
+ * did not receive it, and a retry cannot deliver it. Current servers pass an answer to a replaced or
+ * finished attempt on instead (AgentQuestionAnswerForward); `attempt-replaced` remains for answers
+ * refused before that.
  */
 export type AgentQuestionAnswerRefusal = 'attempt-replaced' | 'stream-done' | 'stream-canceled'
+
+/** Who received an answer that was passed on instead of going to the asking agent's own attempt. */
+export interface AgentQuestionAnswerForwardRecipient {
+  /**
+   * `current-work`: an agent running the stream's active work. `delivery`: the stream's delivery
+   * participant at completion-ready. `owner`: the stream's owner agent, when nothing was running.
+   * `asker`: the asking agent itself, as a plain message, when nobody else could take it on (for a
+   * replaced attempt: no running attempt of the same step or agent).
+   */
+  role: 'current-work' | 'delivery' | 'owner' | 'asker'
+  agentId: string
+  /** The agent's display label when the answer was passed on. */
+  label: string
+  /** The attempt the recipient was running, for `current-work`. */
+  attemptId?: number
+  stepId?: string
+}
+
+/**
+ * An answer passed on because the attempt it was asked from was no longer running: it had finished
+ * normally (`attempt-finished`) or been replaced (`attempt-replaced`). The answer was delivered to
+ * the recipients, not dropped.
+ */
+export interface AgentQuestionAnswerForward {
+  reason: 'attempt-finished' | 'attempt-replaced'
+  workStreamId: string
+  /** The attempt the question was asked from. */
+  originAttemptId: number
+  originStepId?: string
+  recipients: AgentQuestionAnswerForwardRecipient[]
+  forwardedAt: string
+  /** Set once the asking agent was shown the answer in a later assignment in the same stream. */
+  askerShownInAttemptId?: number
+}
 
 export interface AgentQuestionAnswerDelivery {
   status: AgentQuestionAnswerDeliveryStatus
@@ -780,6 +816,8 @@ export interface AgentQuestionAnswerDelivery {
   canRetry: boolean
   /** Set only on a failed delivery that was refused; absent from older servers. */
   refusal?: AgentQuestionAnswerRefusal | null
+  /** Set on a delivered answer that was passed on to someone other than the asking attempt. */
+  forwarded?: AgentQuestionAnswerForward | null
 }
 
 export interface AgentQuestion {
@@ -806,6 +844,8 @@ export interface AgentQuestion {
   dismissedByUserId?: string | null
   dismissedByAgentId?: string | null
   answerDelivery?: AgentQuestionAnswerDelivery
+  /** The workflow attempt the question was asked from; null outside a flow and on older rows. */
+  flowAttempt?: { workStreamId: string; attemptId: number } | null
 }
 
 export interface QuestionActionData {

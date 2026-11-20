@@ -377,7 +377,7 @@ describe('ActionItem refused answer delivery', () => {
   test.each([
     ['stream-done', 'the work stream had already finished when it arrived'],
     ['stream-canceled', 'the work stream had already been canceled when it arrived'],
-    ['attempt-replaced', 'was replaced before it arrived'],
+    ['attempt-replaced', 'was no longer running when it arrived'],
   ] as const)('says a %s answer was not delivered and offers no retry', async (refusal, cause) => {
     const base = failedDeliveryAction()
     const data = base.data as AgentQuestionActionData
@@ -404,6 +404,36 @@ describe('ActionItem refused answer delivery', () => {
       expect(text).not.toContain('may already have received it')
       expect(text).not.toContain('Retry delivery')
       expect(text).toContain('Dismiss notice')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('offers to pass on an answer refused because its step was replaced', async () => {
+    const base = failedDeliveryAction()
+    const data = base.data as AgentQuestionActionData
+    const item = {
+      ...base,
+      data: { ...data, answerDelivery: { ...data.answerDelivery!, canRetry: true, refusal: 'attempt-replaced' } },
+    } satisfies PendingAction
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={item} defaultExpanded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const text = document.body.textContent ?? ''
+      expect(text).toContain('Answer not delivered')
+      expect(text).toContain('was no longer running when it arrived')
+      expect(text).toContain('Retry delivery to pass it to whoever now holds that work')
+      expect(text).not.toContain('send it to the agent as a message')
+      expect(text).toContain('Retry delivery')
     } finally {
       await dom.cleanup()
     }

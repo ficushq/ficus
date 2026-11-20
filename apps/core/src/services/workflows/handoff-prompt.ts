@@ -81,7 +81,9 @@ export function flowMessage(
   stackNotice?: string,
   reviewContexts?: WorkflowProducerReviewContext[],
   briefSeenInAttempt?: number,
-  assets?: AssignmentAssets
+  assets?: AssignmentAssets,
+  /** Answers to this agent's earlier questions in the stream that were passed on after its step ended. */
+  lateAnswers?: string
 ) {
   const seen = briefSeenInAttempt !== undefined
   const step = effectiveWorkflowStep(run.state, attempt)
@@ -146,6 +148,7 @@ export function flowMessage(
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
     stackNotice ?? '',
     attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
+    lateAnswers ?? '',
     results.length ? `Incoming results:\n\n${results.join('\n\n')}` : '',
     assetSection(stream.id, assets),
     attempt.sourceAttemptIds === undefined
