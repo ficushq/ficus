@@ -286,6 +286,20 @@ export interface InboxSnapshot {
     managerAgentId: string | null
   } | null
 }
+/**
+ * System notices the default (quiet) feed folds away: CI results and pull request
+ * auto-merge changes, which the Active work card shows as the stream's PR and CI state,
+ * and PR merged/closed notices, which the PR's own row already carries. They stay
+ * materialized and reappear with "Show everything" (verbose). Matched on the fixed
+ * subjects Core writes for integration notices (outputs/github.ts, github/feedback-*.ts).
+ */
+const FOLDED_SYSTEM_NOTICE =
+  /^(?:Parked work stream event: )?(?:CI [a-z_]+: |GitHub pull request auto merge (?:enabled|disabled): |Pull request (?:merged|closed): )/
+
+export function isFoldedSystemNotice(subject: string | null | undefined): boolean {
+  return !!subject && FOLDED_SYSTEM_NOTICE.test(subject)
+}
+
 export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActivity[] {
   if (snapshot.recipientType !== 'agent' || !snapshot.recipientSquadId) return []
   const base = {
@@ -353,6 +367,7 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
           'Received system notification:'
         ),
         ref: { type: 'agent', agentId: snapshot.recipientId, view: 'inbox', messageId: snapshot.id },
+        quietEligible: !isFoldedSystemNotice(snapshot.subject),
         workStreamId: null,
         accessScope: 'inbox',
         agentTypeRequiresAgentsRead: true,

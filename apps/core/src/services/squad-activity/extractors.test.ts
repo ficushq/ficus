@@ -423,3 +423,47 @@ describe('GitHub issue row copy', () => {
     expect(rows[0].summary).toBe(rows[1].summary)
   })
 })
+
+describe('folded system notices (operator request 2026-11-20)', () => {
+  const notice = (subject: string) =>
+    extractInboxMessage({
+      id: 'c1a2b3d4-0000-4000-8000-000000000002',
+      createdAt: new Date('2026-11-20T08:00:00Z'),
+      recipientType: 'agent',
+      recipientId: 'aeb03ca8-9290-4d2f-9878-79561bd931ce',
+      recipientSquadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
+      recipientAgentTypeId: 'engineer',
+      senderType: 'system',
+      senderId: null,
+      subject,
+      content: 'body',
+      metadata: { source: 'integration-output', workStreamId: '542cce4b-09d4-48a2-bb61-210885965230' },
+      workStream: null,
+    })[0]
+
+  test('CI results, auto-merge changes and PR merged/closed notices stay materialized but leave the quiet feed', () => {
+    for (const subject of [
+      'CI success: ficushq/ficus#996 · CI / Core',
+      'CI failure: ficushq/ficus · Workflow 355460212',
+      'GitHub pull request auto merge enabled: ficushq/ficus 996',
+      'GitHub pull request auto merge disabled: ficushq/ficus 996',
+      'Pull request merged: ficushq/ficus#996',
+      'Pull request closed: ficushq/ficus 996',
+      'Parked work stream event: CI success: ficushq/ficus#996 · Lint',
+    ]) {
+      const row = notice(subject)
+      expect(row.lane).toBe(21)
+      expect(row.quietEligible).toBe(false)
+    }
+  })
+
+  test('other system notices stay in the default feed', () => {
+    for (const subject of [
+      'Review requested: ficushq/ficus#996',
+      'Delivery pull request ready: ficushq/ficus PR 996',
+      'Schedule fired: nightly report',
+      'Notes on CI success: not an integration subject',
+    ])
+      expect(notice(subject).quietEligible).toBe(true)
+  })
+})

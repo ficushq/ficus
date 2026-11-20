@@ -1127,6 +1127,79 @@ describe('agent image input model capability validation', () => {
   })
 })
 
+describe('agents whose stored model spec the catalog no longer knows', () => {
+  const STALE = 'openai-codex:gpt-5.4-mini'
+  let agentTypeId: string
+  const created: string[] = []
+
+  beforeEach(async () => {
+    agentTypeId = `stale-model-${crypto.randomUUID()}`
+    await AgentType.create({
+      id: agentTypeId,
+      model: 'anthropic:claude-sonnet-4-5',
+      name: 'Stale',
+      systemPrompt: 'Test',
+    })
+  })
+
+  afterEach(async () => {
+    for (const id of created.splice(0).reverse()) await db.delete(agents).where(eq(agents.id, id))
+    await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
+  })
+
+  async function makeAgent(input: { parentAgentId?: string } = {}) {
+    const agent = await Agent.create({ agentTypeId, squadId: null, persist: !input.parentAgentId, ...input })
+    created.push(agent.id)
+    return agent
+  }
+
+  it('GET /api/agents?parentAgentId lists a child whose stored selected model is unknown', async () => {
+    const parent = await makeAgent()
+    const stale = await makeAgent({ parentAgentId: parent.id })
+    const healthy = await makeAgent({ parentAgentId: parent.id })
+    await setAgentSelectedModel(stale.id, `${STALE}:high`)
+
+    const res = await app.request(`/api/agents?parentAgentId=${parent.id}`, { headers: authHeaders(admin.token) })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Array<Record<string, unknown>>
+    const staleJson = body.find((agent) => agent.id === stale.id)!
+    expect(staleJson.selectedModel).toBe(`${STALE}:high`)
+    expect(staleJson.selectedModelSupportsImages).toBeUndefined()
+    expect(staleJson.modelSpecWarning).toBe("Unknown model 'gpt-5.4-mini' for provider 'openai-codex'")
+    const healthyJson = body.find((agent) => agent.id === healthy.id)!
+    expect(healthyJson.selectedModelSupportsImages).toBe(true)
+    expect(healthyJson.modelSpecWarning).toBeUndefined()
+  })
+
+  it('GET /api/agents/:id serializes an agent whose stored override names only unknown models', async () => {
+    const agent = await makeAgent()
+    await db.update(agents).set({ modelOverride: STALE }).where(eq(agents.id, agent.id))
+
+    const res = await app.request(`/api/agents/${agent.id}`, { headers: authHeaders(admin.token) })
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.selectedModelSupportsImages).toBeUndefined()
+    expect(body.modelSpecWarning).toContain("Unknown model 'gpt-5.4-mini'")
+  })
+
+  it('skips an unknown configured candidate and judges the first known one, as selection does', async () => {
+    const agent = await makeAgent()
+    await db
+      .update(agents)
+      .set({ modelOverride: `${STALE},anthropic:claude-sonnet-4-5` })
+      .where(eq(agents.id, agent.id))
+
+    const res = await app.request(`/api/agents/${agent.id}`, { headers: authHeaders(admin.token) })
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.selectedModelSupportsImages).toBe(true)
+    expect(body.modelSpecWarning).toBeUndefined()
+  })
+})
+
 // ── PATCH /api/agents/:id modelOverride ──────────────────────────────────────
 
 describe('PATCH /api/agents/:id modelOverride', () => {

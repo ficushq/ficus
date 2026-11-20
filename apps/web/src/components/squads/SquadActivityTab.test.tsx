@@ -121,7 +121,12 @@ const permissionHook =
 function staticRender(
   items?: SquadActivityItem[],
   hasMore = false,
-  options: { agents?: (typeof agent)[]; activeStreams?: Array<Record<string, unknown>>; permissions?: string[] } = {}
+  options: {
+    agents?: (typeof agent)[]
+    activeStreams?: Array<Record<string, unknown>>
+    permissions?: string[]
+    presence?: Record<string, unknown>
+  } = {}
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const permissions = new Set(options.permissions ?? [])
@@ -131,6 +136,7 @@ function staticRender(
       pageParams: [null],
     })
   if (options.activeStreams) client.setQueryData(queryKeys.squads.activeWorkStreams(squadId), options.activeStreams)
+  if (options.presence) client.setQueryData(queryKeys.activity.squadPresence(squadId), options.presence)
   return renderToStaticMarkup(
     <MemoryRouter>
       <QueryClientProvider client={client}>
@@ -775,6 +781,41 @@ describe('background presence (operator decisions 2026-08-27)', () => {
     expect(html.split('Working now').length - 1).toBe(1)
     expect(html).toContain('bg-current')
     expect(html.indexOf('Working now')).toBeLessThan(html.indexOf('Newest row'))
+
+    // The squad's presence endpoint supplies Active work cards; they replace the plain count.
+    const withCards = staticRender(rows, false, {
+      agents: [workingAgent],
+      permissions: ['workstreams:read'],
+      activeStreams: [{ id: 'ws-a', status: 'active', derivedState: 'in_progress' }],
+      presence: {
+        workingAgentIds: [],
+        workingCount: 0,
+        needsYouCount: 0,
+        streamCount: 1,
+        streams: [
+          {
+            id: 'ws-a',
+            number: 7,
+            squadId,
+            title: 'Squad stream',
+            status: 'active',
+            step: 'Review',
+            waits: [{ type: 'review', needsYou: true }],
+            needsYou: true,
+            pullRequest: { number: 5, repository: 'acme/app', state: 'open' },
+            ci: 'passing',
+            deliveryLabel: null,
+            workingAgentIds: [],
+            lastEventAt: '2026-08-27T12:00:00.000Z',
+          },
+        ],
+      },
+    })
+    expect(withCards).toContain('data-testid="activity-work-strip"')
+    expect(withCards).toContain('#7 Squad stream')
+    expect(withCards).toContain('Waiting on you: review')
+    expect(withCards).toContain('PR #5 · CI passing')
+    expect(withCards).not.toContain('active streams')
 
     // Idle roster: gray dot, zero counts, no live dots.
     const quiet = staticRender([], false, { agents: [agent] })

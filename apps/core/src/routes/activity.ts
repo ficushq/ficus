@@ -40,12 +40,14 @@ export const activityRouter = new Hono()
     const rawVerbose = c.req.query('verbose')
     const agentIds = [...new Set(c.req.queries('agentId') ?? [])].sort()
     const kinds = [...new Set(c.req.queries('kind') ?? [])].sort()
+    const workStreamId = c.req.query('workStreamId') || undefined
     if (
       !Number.isInteger(limit) ||
       limit < 1 ||
       limit > 100 ||
       (rawVerbose !== undefined && rawVerbose !== 'true' && rawVerbose !== 'false') ||
       agentIds.some((id) => !UUID.test(id)) ||
+      (workStreamId !== undefined && !UUID.test(workStreamId)) ||
       kinds.some((kind) => !SQUAD_ACTIVITY_KINDS.includes(kind as SquadActivityKind))
     )
       return c.json({ error: 'Invalid activity query' }, 400)
@@ -57,6 +59,7 @@ export const activityRouter = new Hono()
         verbose: rawVerbose === 'true',
         agentIds,
         kinds: kinds as SquadActivityKind[],
+        workStreamId,
         cursor: c.req.query('cursor'),
         squadAccess: squadAccess.map(({ squadId, access }) => ({ squadId, access })),
       })

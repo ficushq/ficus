@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { webkitTap } from '../test/webkitTap'
 import { Presence } from '../components/Presence'
-import { usePopupDismiss, type PopupDismissReason } from './usePopupDismiss'
+import { dismissPopupsContaining, usePopupDismiss, type PopupDismissReason } from './usePopupDismiss'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -293,5 +293,29 @@ test('a popup opened inside another counts as inside it: presses, focus and Esca
   expect(doc.activeElement).toBe(button('Inner'))
   await key(doc.activeElement!, 'Escape')
   expect(log).toEqual(['Inner dismissed by escape', 'Outer dismissed by escape'])
+  expect(expanded('Outer')).toBe(false)
+})
+
+test('dismissPopupsContaining closes the popups a node sits in, innermost first, and nothing else', async () => {
+  const { button, open, expanded, doc } = await render(
+    <Menu name="Outer">
+      <Menu name="Inner" portal />
+    </Menu>
+  )
+  await open('Outer')
+  await open('Inner')
+  expect(dismissPopupsContaining(doc.body)).toBe(false)
+  expect(log).toEqual([])
+
+  // The inner surface is portaled out of the outer one; it still counts as inside it.
+  await dom!.act(async () => void expect(dismissPopupsContaining(button('Inner item'))).toBe(true))
+  expect(log).toEqual(['Inner dismissed by select', 'Outer dismissed by select'])
+  expect(expanded('Outer')).toBe(false)
+  expect(expanded('Inner')).toBe(false)
+
+  log.length = 0
+  await open('Outer')
+  await dom!.act(async () => void dismissPopupsContaining(button('Outer item')))
+  expect(log).toEqual(['Outer dismissed by select'])
   expect(expanded('Outer')).toBe(false)
 })

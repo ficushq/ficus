@@ -47,8 +47,8 @@ export interface ActivityPageProps {
 
 /**
  * Cross-squad activity feed at /activity: every non-archived squad's Activity
- * tab merged into one newest-first timeline, each row tagged with a squad
- * chip. Reuses SquadActivityTab's shared feed body (ActivityFeedView) and row
+ * tab merged into one newest-first timeline, with a squad chip on each row
+ * while more than one squad is visible, and the Active work strip above it. Reuses SquadActivityTab's shared feed body (ActivityFeedView) and row
  * helpers (squadActivityView.ts) — the only NEW logic here is sourcing rows
  * from the global endpoint and resolving click-through targets per-row
  * (each row carries its own squadId, unlike the per-squad wire shape).
@@ -62,9 +62,18 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const WorkStreamModal = dependencies?.WorkStreamViewModalComponent ?? WorkStreamViewModal
   const AgentViewModalBody = dependencies?.AgentViewModalComponent ?? AgentViewModal
   const [kinds, setKinds] = useState<SquadActivityKind[]>([])
+  // "Show everything" turns the cleanup off: verbose rows from the server, no sender-row hiding.
+  const [showEverything, setShowEverything] = useState(false)
+  // Active work card filter (one stream's rows and its participants' rows).
+  const [workStreamFilter, setWorkStreamFilter] = useState<string | null>(null)
   const filters = useMemo<NormalizedSquadActivityFilters>(
-    () => ({ verbose: false, agentIds: [], kinds: [...kinds].sort() }),
-    [kinds]
+    () => ({
+      verbose: showEverything,
+      agentIds: [],
+      kinds: [...kinds].sort(),
+      ...(workStreamFilter ? { workStreamId: workStreamFilter } : {}),
+    }),
+    [kinds, showEverything, workStreamFilter]
   )
   const query = useInfiniteQuery(queries.activity.global(filters))
   useGlobalActivityLive()
@@ -116,6 +125,11 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   )
   // No roster to source a purpose/name tooltip from without an N-query per squad — omitted (see module doc).
   const agentDetailFor = useCallback(() => undefined, [])
+  // "+N more": one squad's Work tab when every card is from it, else the Feed's cross-squad work list.
+  const workListHref = useMemo(() => {
+    const squadIds = new Set((presence.streams ?? []).map((card) => card.squadId))
+    return squadIds.size === 1 ? `/squads/${slugFor([...squadIds][0])}/work` : '/'
+  }, [presence.streams, slugFor])
 
   // Source rows have no preloaded roster, so fetch their agent directly with a
   // plain-conversation modal while loading. Inline references already resolved
@@ -135,6 +149,11 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         onKindsChange={setKinds}
         presence={presence}
         presenceLoading={presenceLoading}
+        workStreamFilter={workStreamFilter}
+        onWorkStreamFilterChange={setWorkStreamFilter}
+        workListHref={workListHref}
+        showEverything={showEverything}
+        onShowEverythingChange={setShowEverything}
         isLoading={query.isLoading}
         filtersPending={query.isPlaceholderData && query.isFetching}
         isError={query.isError}

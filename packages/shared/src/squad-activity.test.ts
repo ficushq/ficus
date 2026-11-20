@@ -6,6 +6,9 @@ import {
   compareSquadActivityItems,
   makeSquadActivityId,
   parseSquadActivityId,
+  activityRowContextLabel,
+  hideRelayedSenderRows,
+  RELAYED_SENDER_ROW_SLACK_MS,
   type SquadActivityItem,
 } from './squad-activity'
 
@@ -147,5 +150,74 @@ describe('activity subject identity', () => {
     expect(activitySubjectLabel({ ...item('70:a'), ref: { type: 'future' } as never })).toBe('Activity')
     expect(activitySubjectLabel({ ...item('70:a'), ref: null as never })).toBe('Activity')
     expect(activitySubjectLabel({ ...item('30:a'), ref: { type: 'workstream' } as never })).toBe('Work stream')
+  })
+})
+
+describe('activityRowContextLabel', () => {
+  const agentRef = { type: 'agent' as const, agentId: 'a', view: 'chat' as const }
+  const stream = {
+    id: 'ws',
+    number: 1352,
+    title: 'Floating agent windows',
+    squadId: 's',
+    status: 'active' as const,
+    step: 'Implement',
+  }
+
+  it('names a bound participant stream as number, title and step', () => {
+    expect(activityRowContextLabel({ ref: agentRef, context: { workStream: stream, purpose: 'ignored' } })).toBe(
+      '#1352 Floating agent windows · Implement'
+    )
+    expect(activityRowContextLabel({ ref: agentRef, context: { workStream: { ...stream, step: null } } })).toBe(
+      '#1352 Floating agent windows'
+    )
+  })
+
+  it('falls back to the purpose, then to nothing (the type label alone)', () => {
+    expect(activityRowContextLabel({ ref: agentRef, context: { purpose: ' Squad coordination ' } })).toBe(
+      'Squad coordination'
+    )
+    expect(activityRowContextLabel({ ref: agentRef })).toBeNull()
+    expect(activityRowContextLabel({ ref: agentRef, context: { purpose: '  ' } })).toBeNull()
+  })
+
+  it('never labels a row whose subject is not an agent', () => {
+    expect(
+      activityRowContextLabel({ ref: { type: 'workstream', workStreamId: 'ws' }, context: { workStream: stream } })
+    ).toBeNull()
+  })
+})
+
+describe('hideRelayedSenderRows', () => {
+  const sender = { id: '10:exec', at: '2026-11-20T08:00:00.000Z' }
+  const received = (id: string, at = '2026-11-20T08:00:05.000Z') => ({ id, at, senderActivityId: '10:exec' })
+  const other = { id: '10:other', at: '2026-11-20T07:59:00.000Z' }
+
+  it('hides the sender row while a matching received row is shown', () => {
+    expect(hideRelayedSenderRows([received('20:a'), sender, other]).map((row) => row.id)).toEqual(['20:a', '10:other'])
+  })
+
+  it('keeps the sender row when the received row is filtered out or in a squad the viewer cannot see', () => {
+    // The caller passes only shown rows, so an absent received row is exactly this case.
+    expect(hideRelayedSenderRows([sender, other]).map((row) => row.id)).toEqual(['10:exec', '10:other'])
+  })
+
+  it('hides the sender row when any one of several recipients is shown', () => {
+    expect(hideRelayedSenderRows([received('20:a'), received('20:b'), sender]).map((row) => row.id)).toEqual([
+      '20:a',
+      '20:b',
+    ])
+    expect(hideRelayedSenderRows([received('20:b'), sender]).map((row) => row.id)).toEqual(['20:b'])
+  })
+
+  it('keeps a sender row that moved on well after sending', () => {
+    const later = {
+      ...sender,
+      at: new Date(Date.parse(received('x').at) + RELAYED_SENDER_ROW_SLACK_MS + 1).toISOString(),
+    }
+    expect(hideRelayedSenderRows([later, received('20:a')]).map((row) => row.id)).toEqual(['10:exec', '20:a'])
+    // A step's message row lands after its tool calls, so a slightly later sender row is still the send.
+    const justAfter = { ...sender, at: '2026-11-20T08:00:30.000Z' }
+    expect(hideRelayedSenderRows([justAfter, received('20:a')]).map((row) => row.id)).toEqual(['20:a'])
   })
 })
