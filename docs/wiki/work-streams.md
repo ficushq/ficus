@@ -174,7 +174,12 @@ path, and its `number` is the issue's team-scoped number. `externalId` is what
 subscriptions actually match on — a Linear comment fact carries only the issue
 UUID — so it takes priority over team key + number whenever it is known. The
 human-readable label for a Linear entry is `KEY-123` (`trackedResourceLabel`),
-not `owner/repo#12`.
+not `owner/repo#12`. When a Linear agent session is bound to the stream for that
+issue, the entry also carries `agentSession: { "id": "...", "url": "..." }`, a
+copy for `ficus workstream get`, the web view and agents (Core's session table
+stays authoritative; the field is valid only on Linear entries). Ficus then
+reports the stream's progress into that session; see
+[Linear integrations: Progress write-back](linear-integrations.md#progress-write-back).
 
 Never hand-write `github.*`/`codeHost` metadata, or a raw `tracked[]` entry, to
 attach a resource. Use the CLI/API paths below; they resolve identity, check
@@ -187,6 +192,7 @@ ficus workstream create "<title>" --squad <squad-id> --from-event <event-id>   #
 ficus workstream track <ws-id> --event <event-id>                             # attach to an existing stream
 ficus workstream track <ws-id> --issue owner/repo#12
 ficus workstream track <ws-id> --issue KEY-123                                 # Linear issue
+ficus workstream track <ws-id> --issue KEY-123 --linear-session                # also open and bind a Linear agent session
 ficus workstream track <ws-id> --pr owner/repo#34
 ficus workstream track <ws-id> --pr owner/repo#35 --delivery
 ficus workstream track <ws-id> --url https://github.com/owner/repo/pull/34
@@ -207,6 +213,10 @@ API surface, each gated by its own permission on the work stream's squad:
 - `POST /api/workstreams/:id/tracked` accepts exactly one of `{ "event": "<uuid>" }`,
   `{ "url": "<resource url>", "delivery"?: true }`, or
   `{ "resource": { integration, repository, kind, number, connectionId? }, "delivery"?: true }`.
+  The `url`, `reference` and `resource` forms also accept `"linearSession": true` for a
+  Linear issue: Ficus opens a Linear agent session on it with the squad's Linear app
+  connection, binds it to the stream and returns `linearSession: { id, url }` (`400` for
+  anything but a Linear issue or for an API-key connection; `409` when Linear refuses).
   The response includes `changed`. Requires `workstreams:update`, or
   `workstreams:respond` for an agent bound to the stream.
 - `DELETE /api/workstreams/:id/tracked` accepts `{ "url": ... }` or `{ "resource": ... }`.
