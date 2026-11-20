@@ -71,11 +71,31 @@ function subject(output: string, identifier: string, id: string, title: string) 
   )
 }
 
-/** What opened an agent session: `proactive` is a session the app user opened on itself. */
-export type LinearSessionTrigger = 'delegation' | 'mention' | 'proactive'
+/**
+ * What opened an agent session, as far as its payload tells. `unknown` is a session with no person
+ * to attribute it to (no creator, or the app user itself) that was not opened by a comment: a
+ * delegation by an automation or another agent user, or a session opened with the app's token
+ * outside Ficus. Routing settles it with the live delegate (`resolveUnattributedLinearSession`).
+ *
+ * Ficus's own `--linear-session` sessions are never classified here: they are recognised by their
+ * local record (`linear_agent_sessions.trigger = 'proactive'`, `isProactiveLinearSession`).
+ */
+export type LinearSessionTrigger = 'delegation' | 'mention' | 'unknown'
 
 /** The root comment Linear writes, without an author, when a session starts without a comment. */
 const SYSTEM_THREAD_COMMENT = /^This thread is for an agent session with /
+
+/**
+ * Whether the session's root comment has no author and is not Linear's thread comment. Such a
+ * comment reads as a mention (a mention synced from another tool), so if Linear rewords its thread
+ * comment, delegations would silently turn into mentions; the acknowledger logs every one.
+ */
+export function hasUnrecognisedLinearRootComment(session: Record<string, any>): boolean {
+  const comment = record(session.comment)
+  if (!comment || !(text(session.commentId, 200) || text(comment.id, 200))) return false
+  if (text(comment.userId, 200) || text(record(comment.user)?.id, 200)) return false
+  return !SYSTEM_THREAD_COMMENT.test(text(comment.body))
+}
 
 /**
  * What opened a session, from an `AgentSessionEvent` `agentSession` (or the poller's equivalent).
@@ -87,18 +107,18 @@ const SYSTEM_THREAD_COMMENT = /^This thread is for an agent session with /
  * 1. A root comment with an author (`comment.userId`, or `comment.user.id` when polled) is a mention.
  * 2. Linear's webhook schema always carries `comment` with `commentId`; a payload with only the ID
  *    has no author information and is read as before, as a mention.
- * 3. A session without a creator is one the app opened on itself (`proactive`). Linear sets `creator`
- *    to the responsible person for a delegation or mention, also when an automation delegates, and
- *    leaves it unset for a session an agent user started (live: the app's own session had none). A
- *    polled session whose issue is delegated to the app is still a delegation. A webhook issue has
- *    no delegate field, so an agent user delegating to Ficus would read as proactive.
- * 4. Otherwise an authorless root comment, or none, is a delegation when it is Linear's thread
- *    comment or the issue is delegated to the app; any other authorless comment (a mention synced
- *    from another tool, for example) stays a mention.
+ * 3. A session whose issue is delegated to the app (only a polled issue carries its delegate) is a
+ *    delegation.
+ * 4. Any other authorless root comment that is not Linear's thread comment (a mention synced from
+ *    another tool, for example) stays a mention.
+ * 5. Linear's thread comment, or no root comment: a delegation when a person created the session.
+ *    Linear sets `creator` to the responsible person for a delegation, documented also when an
+ *    automation delegates. Without a creator (or with the app user as creator) it is `unknown`:
+ *    the session is acknowledged, and routing reads the issue's live delegate to decide between a
+ *    delegation and telling the manager. A missing creator never makes a session the app's own.
  */
 export function linearSessionTrigger(session: Record<string, any>, appUserId: string): LinearSessionTrigger {
   const creator = text(session.creatorId, 200) || text(record(session.creator)?.id, 200)
-  if (appUserId && creator === appUserId) return 'proactive'
   const comment = record(session.comment)
   const commentId = text(session.commentId, 200) || text(comment?.id, 200)
   if (comment && (text(comment.userId, 200) || text(record(comment.user)?.id, 200))) return 'mention'
@@ -106,9 +126,54 @@ export function linearSessionTrigger(session: Record<string, any>, appUserId: st
   const issue = record(session.issue) ?? {}
   const delegatedToApp =
     !!appUserId && (text(issue.delegateId, 200) || text(record(issue.delegate)?.id, 200)) === appUserId
+  if (delegatedToApp) return 'delegation'
   const systemComment = !commentId || SYSTEM_THREAD_COMMENT.test(text(comment?.body))
-  if (!creator && systemComment && !delegatedToApp) return 'proactive'
-  return systemComment || delegatedToApp ? 'delegation' : 'mention'
+  if (!systemComment) return 'mention'
+  return creator && creator !== appUserId ? 'delegation' : 'unknown'
+}
+
+/**
+ * Settles an `unknown` session's facts with the issue's live delegate, read by the routing probe.
+ * Delegated to the app: a delegation (`issue.delegated`, trigger `delegation`). Otherwise the
+ * request cannot be attributed, and it is routed as `issue.mentioned` (trigger kept `unknown`) so
+ * the default rule tells the manager; it is never dropped. Other facts pass through unchanged.
+ */
+export function resolveUnattributedLinearSession(
+  facts: IntegrationOutputFact[],
+  liveDelegate: string,
+  appUserId: string
+): { facts: IntegrationOutputFact[]; resolution: 'delegation' | 'unknown' } | null {
+  const created = facts.find(
+    (fact) => fact.output === 'agent_session.created' && record(fact.data.session)?.trigger === 'unknown'
+  )
+  if (!created) return null
+  const sessionId = text(record(created.data.session)?.id, 200)
+  const delegated = !!appUserId && liveDelegate === appUserId
+  const next = facts.map((fact): IntegrationOutputFact => {
+    if (fact === created)
+      return delegated
+        ? { ...fact, data: { ...fact.data, session: { ...record(fact.data.session), trigger: 'delegation' } } }
+        : fact
+    if (delegated || fact.output !== 'issue.delegated' || text(record(fact.data.session)?.id, 200) !== sessionId)
+      return fact
+    const commentId = text(record(created.data.comment)?.id, 200)
+    const output = 'issue.mentioned'
+    const issue = record(fact.data.issue) ?? {}
+    return {
+      ...fact,
+      output,
+      eventKey: key([output, sessionId]),
+      data: {
+        ...fact.data,
+        action: 'mentioned',
+        delegate: '',
+        ...(commentId ? { comment: { id: commentId } } : {}),
+        session: { id: sessionId },
+      },
+      subject: subject(output, text(issue.identifier, 100), fact.resourceKey, text(issue.title)),
+    }
+  })
+  return { facts: next, resolution: delegated ? 'delegation' : 'unknown' }
 }
 
 /** `AgentSessionEvent`: the session facts plus exactly one delegated or mentioned fact for `created`. */
@@ -174,17 +239,20 @@ function normalizeSessionEvent(payload: Record<string, any>): IntegrationOutputF
     ]
   }
   const trigger = linearSessionTrigger(session, appUserId)
-  // A session the app opened on itself is its own work, not a request to route (it has no human creator).
-  if (trigger === 'proactive') return []
   const mention = trigger === 'mention'
   const creator = text(session.creatorId, 200) || text(record(session.creator)?.id, 200)
+  // An `unknown` session has no person to attribute it to: no actor, so no account check or trust
+  // lookup treats the app user (or nobody) as the requester. It is emitted as a provisional
+  // delegation that routing settles with the live delegate (`resolveUnattributedLinearSession`).
+  // The app user as creator is never the requester either, whatever the trigger.
+  const actor = trigger === 'unknown' || creator === appUserId ? '' : creator
   const context = text(payload.promptContext, 30000)
   const created = fact(
     'agent_session.created',
     key(['agent_session.created', sessionId]),
     {
       action: 'created',
-      actor: creator,
+      actor,
       session: {
         id: sessionId,
         ...(sessionUrl ? { url: sessionUrl } : {}),
@@ -200,14 +268,14 @@ function normalizeSessionEvent(payload: Record<string, any>): IntegrationOutputF
     ? fact(
         'issue.mentioned',
         key(['issue.mentioned', sessionId]),
-        { action: 'mentioned', actor: creator, comment: { id: commentId }, session: { id: sessionId } },
+        { action: 'mentioned', actor, comment: { id: commentId }, session: { id: sessionId } },
         context
       )
     : fact(
         'issue.delegated',
         key(['issue.delegated', 'session', sessionId]),
         // The live probe confirms the issue's delegate is this app before any squad receives it.
-        { action: 'delegated', actor: creator, delegate: appUserId, session: { id: sessionId } },
+        { action: 'delegated', actor, delegate: appUserId, session: { id: sessionId } },
         context
       )
   return [created, routed]

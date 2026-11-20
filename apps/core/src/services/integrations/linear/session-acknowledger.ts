@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity } from './app-api'
-import { linearSessionTrigger } from './outputs'
+import { hasUnrecognisedLinearRootComment, linearSessionTrigger } from './outputs'
 import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
 
 const log = createLogger('linear-session-ack')
@@ -52,10 +52,13 @@ export async function acknowledgeLinearSession(
   const issue = record(session.issue)
   const commentId = text(session.commentId) ?? text(record(session.comment).id)
   const trigger = linearSessionTrigger(session, text(input.payload.appUserId) ?? text(session.appUserId) ?? '')
-  // A session the app opened on itself (outside `--linear-session`) is recorded as already handled:
-  // whoever opened it reports in it, and it is never acknowledged or routed as a request.
-  const own = trigger === 'proactive'
-  await db
+  // Ficus's own `--linear-session` sessions are recorded as `proactive` by the request that opened
+  // them and never reach this point. Every other session is acknowledged and left pending for its
+  // disposition, a session without a creator included, so the polling retry can still recover it.
+  // The column has no `unknown` (it only has to tell Ficus's own sessions apart): an unattributed
+  // session is stored as a delegation, and its routed facts carry `session.trigger` `unknown` unless
+  // the live delegate makes it a delegation.
+  const inserted = await db
     .insert(linearAgentSessions)
     .values({
       id: sessionId,
@@ -67,10 +70,19 @@ export async function acknowledgeLinearSession(
       url: text(session.url, 2000),
       rootCommentId: commentId,
       creatorLinearUserId: text(session.creatorId) ?? text(record(session.creator).id),
-      trigger,
-      ...(own ? { ackState: 'sent', dispositionState: 'sent' } : {}),
+      trigger: trigger === 'mention' ? 'mention' : 'delegation',
     })
     .onConflictDoNothing({ target: linearAgentSessions.id })
+    .returning({ id: linearAgentSessions.id })
+  // Codes and IDs only, never the comment body.
+  if (inserted.length && hasUnrecognisedLinearRootComment(session))
+    log.warn(
+      `linear_session_root_comment_unrecognised session=${sessionId} comment=${commentId ?? ''}: an authorless root comment that is not Linear's thread comment is read as a mention`
+    )
+  if (inserted.length && trigger === 'unknown')
+    log.warn(
+      `linear_session_unattributed session=${sessionId} issue=${text(session.issueId) ?? text(issue.id) ?? ''}: no creator; routing reads the issue's delegate`
+    )
   const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
   // A session ID is unique in Linear; one recorded under another connection is never written to here.
   if (!row || row.connectionId !== input.connectionId) return null
