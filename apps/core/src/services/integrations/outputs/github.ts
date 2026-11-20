@@ -4,6 +4,7 @@ import { normalizeGitHubFeedback, safeGitHubPath, githubNativeId, githubContentH
 import { createHash } from 'node:crypto'
 import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
+import { isFicusGitHubAppClientId } from '../github/ficus-app'
 
 const outputTitles = Object.fromEntries(githubOutputCatalog.map((event) => [event.output, event.title]))
 
@@ -346,6 +347,12 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         requestedReviewer: String(payload!.requested_reviewer?.login ?? ''),
         requestedTeam: String(payload!.requested_team?.slug ?? ''),
         actorType: String(contentObject ? (item!.user?.type ?? '') : (payload!.sender?.type ?? item!.user?.type ?? '')),
+        // Which app wrote an issue or pull request comment. Ficus writes as the connected account, so this,
+        // not the login, separates its own comments from the account owner's. GitHub sends the field (null
+        // for a person) on these comments only; when it is absent the attribution is unknown.
+        ...(event.type === 'issue_comment' && 'performed_via_github_app' in item!
+          ? { viaFicusApp: isFicusGitHubAppClientId(record(item!.performed_via_github_app)?.client_id) }
+          : {}),
         labels: Array.isArray(native?.labels)
           ? native.labels.map((label: any) => String(label?.name ?? label)).slice(0, 100)
           : [],

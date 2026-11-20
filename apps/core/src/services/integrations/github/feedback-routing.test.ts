@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test, setSystemTime } from 'bun:test'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, GITHUB_SELF_COMMENT_APP_REASON } from '@ficus/shared'
+import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/oauth-providers/github/app'
 import {
   db,
   squads,
@@ -399,6 +400,53 @@ test('an outage during the current-version witness defers a second version; afte
     await h.close()
   }
 }, 120_000)
+
+test('the connected account owner commenting as themselves routes; a Ficus-app comment by it is skipped visibly', async () => {
+  const h = await fixture()
+  try {
+    // The connection authenticates as the same account the person comments with.
+    await db
+      .update(integrationConnections)
+      .set({ configuration: { version: 1, userId: 2, login: 'author' } })
+      .where(eq(integrationConnections.id, h.authority.connectionId))
+    const streamId = await h.stream(true)
+    await h.trust()
+    const streamDeliveries = () =>
+      db.select().from(integrationOutputDeliveries).where(eq(integrationOutputDeliveries.workStreamId, streamId))
+    Object.assign(h.native, { performed_via_github_app: null })
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const delivered = await streamDeliveries()
+    expect(delivered).toHaveLength(1)
+    // Routed to the tracked stream (this fixture stream has no running worker, so it waits for one).
+    expect(delivered[0]!.status).toBe('pending')
+
+    // Ficus writes through its GitHub App as the same account: suppressed before any provider read.
+    Object.assign(h.native, {
+      id: 31,
+      html_url: 'https://github.com/acme/project/pull/3#issuecomment-31',
+      performed_via_github_app: { id: 4857568, slug: 'ficus-integration', client_id: FICUS_GITHUB_APP_CLIENT_ID },
+    })
+    h.read.mockClear()
+    const echoId = (await publishIntegrationOutput('github', h.fact(), h.authority))!
+    expect(h.read).not.toHaveBeenCalled()
+    const [echo] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, echoId))
+    expect(echo!.matchedAt).not.toBeNull()
+    expect(echo!.lastErrorCode).toBe('github_suppressed')
+    const skipped = (await streamDeliveries()).filter((row) => row.eventId === echoId)
+    expect(skipped).toEqual([
+      expect.objectContaining({ status: 'superseded', reason: GITHUB_SELF_COMMENT_APP_REASON, targets: [] }),
+    ])
+    // The stream's history lists the skip with its reason, but never the unreviewed prose.
+    const history = await outputDeliveryHistory(streamId)
+    const listed = history.find((item) => item.id === skipped[0]!.id)
+    expect(listed).toMatchObject({ status: 'superseded', reason: GITHUB_SELF_COMMENT_APP_REASON })
+    expect(listed!.fact).toMatchObject({ output: 'pull_request.comment', body: '' })
+    expect(JSON.stringify(listed)).not.toContain('HELD_SENTINEL')
+    expect(JSON.stringify(listed)).not.toContain('UNREVIEWED_PARENT')
+  } finally {
+    await h.close()
+  }
+})
 
 test('irrelevant feedback is recorded but never captured or queried from GitHub', async () => {
   const h = await fixture()

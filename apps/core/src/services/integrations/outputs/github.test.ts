@@ -1,5 +1,7 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
+import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/oauth-providers/github/app'
 import { githubOutputAdapter } from './github'
+import { setConfiguredGitHubAppClientId } from '../github/ficus-app'
 import { integrationOutputRegistry } from './registry'
 import { createHash } from 'node:crypto'
 
@@ -492,4 +494,94 @@ test('missing or malformed PR authors never fall back to actor or untrusted pros
   expect(fact!.data.pullRequest).toMatchObject({ author: 'human' })
   expect(fact!.github!.content!.delivery!.data.pullRequest).toMatchObject({ author: 'human' })
   expect(fact!.data.pullRequest).not.toHaveProperty('authorType')
+})
+
+describe('comments by the connected account', () => {
+  const FICUS_APP = { id: 4857568, slug: 'ficus-integration', client_id: FICUS_GITHUB_APP_CLIENT_ID }
+  const OTHER_APP = { id: 15368, slug: 'github-actions', client_id: 'Iv1.05c79e9ad1f6bdfa' }
+  const user = { login: 'owner-account', type: 'User' }
+  const configuration = { version: 1, userId: 7, login: 'Owner-Account' }
+  const comment = (performedVia: unknown, issue: Record<string, unknown> = { number: 3, pull_request: {} }) =>
+    githubOutputAdapter.normalize({
+      type: 'issue_comment',
+      payload: {
+        action: 'created',
+        repository,
+        issue,
+        sender: user,
+        comment: {
+          id: 9,
+          body: 'Please also cover the empty case.',
+          created_at: date,
+          user,
+          ...(performedVia === undefined ? {} : { performed_via_github_app: performedVia }),
+        },
+      },
+    })[0]!
+
+  test('a comment the account owner writes on GitHub is delivered', () => {
+    for (const issue of [{ number: 3, pull_request: {} }, { number: 3 }]) {
+      const fact = comment(null, issue)
+      expect(fact.data.viaFicusApp).toBe(false)
+      expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(true)
+    }
+    // Another GitHub App acting for the same account is not Ficus either.
+    expect(comment(OTHER_APP).data.viaFicusApp).toBe(false)
+    expect(githubOutputAdapter.shouldNotify!(comment(OTHER_APP), configuration)).toBe(true)
+  })
+
+  test('a comment Ficus writes through its GitHub App is suppressed', () => {
+    const fact = comment(FICUS_APP)
+    expect(fact.data.viaFicusApp).toBe(true)
+    expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
+    // The same app comment by anyone else's account is not an echo of this connection.
+    expect(githubOutputAdapter.shouldNotify!(fact, { ...configuration, login: 'someone-else' })).toBe(true)
+  })
+
+  test("an instance's own configured GitHub App counts as Ficus too", () => {
+    const custom = { id: 99, slug: 'acme-ficus', client_id: 'Iv23custom' }
+    expect(comment(custom).data.viaFicusApp).toBe(false)
+    setConfiguredGitHubAppClientId(() => 'Iv23custom')
+    try {
+      expect(comment(custom).data.viaFicusApp).toBe(true)
+      expect(comment(OTHER_APP).data.viaFicusApp).toBe(false)
+      expect(comment(FICUS_APP).data.viaFicusApp).toBe(true)
+    } finally {
+      setConfiguredGitHubAppClientId(() => undefined)
+    }
+  })
+
+  test('a comment without app attribution keeps login-based loop protection', () => {
+    const fact = comment(undefined)
+    expect(fact.data).not.toHaveProperty('viaFicusApp')
+    expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
+  })
+
+  test('reviews and review comments carry no app attribution, so the connected login still suppresses them', () => {
+    const review = githubOutputAdapter.normalize({
+      type: 'pull_request_review',
+      payload: {
+        action: 'submitted',
+        repository,
+        pull_request: pr,
+        sender: user,
+        review: { id: 20, submitted_at: date, state: 'commented', body: 'Looks fine', user },
+      },
+    })[0]!
+    const inline = githubOutputAdapter.normalize({
+      type: 'pull_request_review_comment',
+      payload: {
+        action: 'created',
+        repository,
+        pull_request: pr,
+        sender: user,
+        comment: { id: 23, created_at: date, path: 'src/main.ts', line: 1, body: 'Rename this', user },
+      },
+    })[0]!
+    for (const fact of [review, inline]) {
+      expect(fact.data).not.toHaveProperty('viaFicusApp')
+      expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
+      expect(githubOutputAdapter.shouldNotify!(fact, { ...configuration, login: 'someone-else' })).toBe(true)
+    }
+  })
 })

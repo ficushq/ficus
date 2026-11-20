@@ -144,6 +144,8 @@ export type GitHubOutputPreparation =
   { kind: 'ready'; event: Event } | { kind: 'settle'; reason: string } | { kind: 'defer' }
 
 const DEFER: GitHubOutputPreparation = { kind: 'defer' }
+/** Settle code of a raw event its integration's notification policy suppresses. */
+export const GITHUB_OUTPUT_SUPPRESSED = 'github_suppressed'
 
 async function prepareUnfilteredGitHubOutput(
   input: Event,
@@ -285,7 +287,10 @@ async function prepareGitHubOutputInPass(
   )
   // Nobody tracks this resource and no rule selects it. Before the filter this event was routed
   // nowhere and marked matched; settling it keeps the unmatched queue from re-planning it for ever.
-  if (!plan.relevant && !prior && !input.fact.github?.revisionId) return settle('github_irrelevant')
+  // A suppressed event (Ficus's own comment) is settled under its own code: the caller still records a
+  // skipped delivery for each tracked work stream it would have reached, so the skip stays visible.
+  if (!plan.relevant && !prior && !input.fact.github?.revisionId)
+    return settle(plan.suppressed ? GITHUB_OUTPUT_SUPPRESSED : 'github_irrelevant')
   if (!factual && !input.fact.github?.revisionId) {
     const [known] = await db
       .select({ decision: githubFeedbackRevisions.decision, releaseState: githubFeedbackRevisions.releaseState })
