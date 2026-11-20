@@ -377,7 +377,7 @@ test('global default account is first and changing it preserves the other accoun
       </QueryClientProvider>
     )
   )
-  const displayed = () => [...container.querySelectorAll('p.font-medium')].map((row) => row.textContent)
+  const displayed = () => [...container.querySelectorAll('p.text-sm.font-medium')].map((row) => row.textContent)
   expect(displayed()).toEqual(['WorkGlobal default', 'Personal', 'Other'])
   expect(accounts.map((account) => account.id)).toEqual(['Personal', 'Work', 'Other'])
   await harness.act(async () => {

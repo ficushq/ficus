@@ -42,7 +42,7 @@ export function BigbrainLocalSetupPanel({ hasConnections }: { hasConnections: bo
         data.enabled
           ? {
               kind: 'success',
-              text: `${data.connectionOutcome === 'reused' ? 'BigBrain is already connected' : 'BigBrain connected'}: ${data.connection.displayName}. Assign it to a squad in that squad’s integration settings.`,
+              text: `${data.connectionOutcome === 'reused' ? 'BigBrain is already connected' : 'BigBrain connected'}: ${data.connection.displayName}. Add it to a squad on its connection above.`,
             }
           : {
               kind: 'error',

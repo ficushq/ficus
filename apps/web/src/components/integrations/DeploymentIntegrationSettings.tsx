@@ -12,6 +12,7 @@ import {
 import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
 import { ConfirmButton } from '../ConfirmButton'
+import { ConnectionSquads } from './ConnectionSquads'
 
 const field =
   'ficus-field w-full rounded-md border border-panel-border bg-surface-secondary px-3 py-2 text-sm text-primary'
@@ -52,8 +53,9 @@ export function DeploymentIntegrationSettings({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
-        Connect a {label} account, validate and enable it, then assign it in each squad’s Integrations tab. You can
-        attach multiple accounts and choose a default. Imported accounts are unassigned until you choose squads.
+        Connect a {label} account, then add it to the squads that deploy with it, here or in each squad’s Integrations
+        tab. A squad can hold several accounts and uses its default one unless a flow picks another. Imported accounts
+        are unassigned until you choose squads.
       </p>
       {provider === 'railway' && (
         <p className="text-sm text-muted">Use an account or workspace API token, not a project token.</p>
@@ -69,7 +71,11 @@ export function DeploymentIntegrationSettings({
         <p role="alert">Unable to load {label} connections.</p>
       ) : (
         pool.data?.map((connection) => (
-          <DeploymentAccount key={connection.id} {...{ provider, connection, canWrite, refresh }} />
+          <DeploymentAccount
+            key={connection.id}
+            {...{ provider, label, connection, canWrite, refresh }}
+            connections={pool.data}
+          />
         ))
       )}
       {canWrite && (
@@ -128,12 +134,16 @@ export function DeploymentIntegrationSettings({
 
 function DeploymentAccount({
   provider,
+  label,
   connection,
+  connections,
   canWrite,
   refresh,
 }: {
   provider: string
+  label: string
   connection: IntegrationConnection
+  connections: readonly IntegrationConnection[]
   canWrite: boolean
   refresh: () => Promise<void>
 }) {
@@ -233,6 +243,7 @@ function DeploymentAccount({
       {(action.error || remove.error || replace.error || setDefault.error) && (
         <p role="alert">{(action.error || remove.error || replace.error || setDefault.error)?.message}</p>
       )}
+      <ConnectionSquads provider={provider} providerLabel={label} connection={connection} connections={connections} />
     </article>
   )
 }
