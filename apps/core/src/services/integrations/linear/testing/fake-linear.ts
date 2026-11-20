@@ -5,7 +5,8 @@
  * It answers `viewer`, `organization`, `issue`, `comment`, `user`, `teams`, `agentSessions`,
  * `agentActivities`, `notifications`, `agentActivityCreate`, `agentSessionUpdate`,
  * `agentSessionCreateOnIssue` and `attachmentLinkGitHubPR`; records every call with the fake clock's
- * time; rejects a duplicate client-supplied activity ID; keeps attachment URLs idempotent per issue;
+ * time; records each session's opening request as its first prompt, as Linear does; rejects a duplicate
+ * client-supplied activity ID with Linear's live answer; keeps attachment URLs idempotent per issue;
  * and can be told to fail the next call with 401, 403, 429, a GraphQL error or a timeout.
  */
 import { createHmac, randomUUID } from 'node:crypto'
@@ -146,7 +147,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         const input = variables.input ?? {}
         if (!sessions.has(input.agentSessionId)) return { errors: [{ message: 'Entity not found: AgentSession' }] }
         if (input.id && activities.some((activity) => activity.id === input.id))
-          return { errors: [{ message: 'Agent activity with this id already exists' }] }
+          return { errors: [{ message: 'conflict on insert of AgentActivity' }] }
         activities.push({
           id: input.id ?? randomUUID(),
           agentSessionId: input.agentSessionId,
@@ -257,6 +258,14 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         ).map((prompt) => {
           const session = sessions.get(prompt.sessionId)
           const issue = session ? issues.get(session.issueId) : undefined
+          // The session's own prompts, as `activities(first: 1)` (newest) and `activities(last: 1)`
+          // (oldest) return them; the oldest is the prompt that opened the session.
+          const own = prompts
+            .filter((other) => other.sessionId === prompt.sessionId)
+            .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+          const end = (entry: FakeLinearPrompt | undefined) => ({
+            nodes: entry ? [{ id: entry.id, createdAt: entry.createdAt }] : [],
+          })
           return {
             id: prompt.id,
             createdAt: prompt.createdAt,
@@ -270,6 +279,8 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
               url: `https://linear.app/acme/agent-session/${prompt.sessionId}`,
               appUser: { id: session?.appUserId ?? app.id },
               issue: issue ? issueNode(issue) : null,
+              firstPrompt: end(own.at(-1)),
+              lastPrompt: end(own[0]),
             },
           }
         }),
@@ -364,16 +375,32 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       creatorId?: string
       commentId?: string
       at?: number
+      /**
+       * Linear records the request that opened a session as its first prompt activity. The ID
+       * defaults to a random one; `false` leaves the session without one.
+       */
+      openingPrompt?: { id?: string; body?: string } | false
     }) {
+      const { openingPrompt, ...fields } = session
       const at = new Date(session.at ?? clock()).toISOString()
       sessions.set(session.id, {
-        ...session,
+        ...fields,
         appUserId: session.appUserId ?? app.id,
         externalUrls: [],
         updatedAt: at,
         createdAt: at,
         status: session.status ?? 'pending',
       })
+      if (openingPrompt === false) return { openingPromptId: undefined }
+      const opening: FakeLinearPrompt = {
+        id: openingPrompt?.id ?? randomUUID(),
+        sessionId: session.id,
+        userId: session.creatorId ?? 'member',
+        body: openingPrompt?.body ?? 'Please take this issue',
+        createdAt: at,
+      }
+      prompts.push(opening)
+      return { openingPromptId: opening.id }
     },
     addPrompt(prompt: Omit<FakeLinearPrompt, 'createdAt'> & { at?: number }) {
       const { at, ...rest } = prompt
@@ -429,6 +456,8 @@ export function agentSessionCreatedPayload(
     creatorId: string
     commentId?: string
     timestamp?: number
+    /** The opening prompt activity, when the delivery names it. */
+    activityId?: string
   }
 ) {
   return {
@@ -462,6 +491,7 @@ export function agentSessionCreatedPayload(
     promptContext: input.issue
       ? `<issue identifier="${input.issue.identifier}"><title>${input.issue.title}</title></issue>`
       : '',
+    ...(input.activityId ? { agentActivity: { id: input.activityId, userId: input.creatorId, body: '' } } : {}),
     webhookTimestamp: input.timestamp ?? Date.now(),
   }
 }

@@ -162,16 +162,44 @@ export const LINEAR_POLL_SESSIONS_QUERY = `query FicusLinearPollSessions($first:
     pageInfo { hasNextPage endCursor }
   }
 }`
+/**
+ * Both ends of a session's prompts. Linear records the request that opened a session as the
+ * session's first prompt activity, so the older of the two ends is that opening prompt. Reading both
+ * ends keeps the answer right whichever way Linear orders the connection.
+ */
+const SESSION_PROMPT_ENDS = `firstPrompt: activities(first: 1, orderBy: createdAt, filter: { type: { eq: "prompt" } }) { nodes { id createdAt } }
+        lastPrompt: activities(last: 1, orderBy: createdAt, filter: { type: { eq: "prompt" } }) { nodes { id createdAt } }`
 /** `last` returns the oldest first, so a full page is continued from its newest item on the next poll. */
 export const LINEAR_POLL_PROMPTS_QUERY = `query FicusLinearPollPrompts($last: Int!, $after: DateTimeOrDuration!) {
   agentActivities(last: $last, orderBy: createdAt, filter: { type: { eq: "prompt" }, createdAt: { gte: $after } }) {
     nodes {
       id createdAt signal user { id } promptAuthor { id } sourceComment { id }
       content { ... on AgentActivityPromptContent { body } }
-      agentSession { id url appUser { id } issue { ${ISSUE_FIELDS} } }
+      agentSession {
+        id url appUser { id } issue { ${ISSUE_FIELDS} }
+        ${SESSION_PROMPT_ENDS}
+      }
     }
   }
 }`
+
+/**
+ * The ID of the prompt that opened a polled prompt's session: the oldest of the session's prompts
+ * Linear returned, or '' when it returned none. That prompt is the request the session was created
+ * for, handled as the session's `created` event (by webhook or poll) and never as `prompted`.
+ */
+export function linearOpeningPromptId(session: Record<string, any>): string {
+  const ends = [session.firstPrompt, session.lastPrompt]
+    .flatMap((connection) => {
+      const nodes = record(connection).nodes
+      return Array.isArray(nodes) ? nodes : []
+    })
+    .map(record)
+    .map((node) => ({ id: text(node.id), at: stamp(node.createdAt) }))
+    .filter((node) => node.id && Number.isFinite(node.at))
+  if (!ends.length) return ''
+  return ends.reduce((oldest, node) => (node.at < oldest.at ? node : oldest)).id
+}
 export const LINEAR_POLL_NOTIFICATIONS_QUERY = `query FicusLinearPollNotifications($last: Int!, $after: DateTimeOrDuration!) {
   notifications(last: $last, orderBy: createdAt, filter: { createdAt: { gte: $after }, type: { in: ["issueUnassignedFromYou"] } }) {
     nodes { id type createdAt ... on IssueNotification { actor { id } issue { ${ISSUE_FIELDS} } } }
@@ -342,6 +370,10 @@ export function createLinearAgentSessionPolling(
       for (const { id, node } of [...prompts.fresh].sort((a, b) => a.at - b.at)) {
         const session = record(node.agentSession)
         if (!text(session.id) || text(record(session.appUser).id) !== appUserId) continue
+        // The session's opening request is not a follow-up. Delivered as `prompted`, it would answer
+        // an unbound session a second time, give a bound stream its own request as a candidate answer
+        // and repeat the manager notice.
+        if (linearOpeningPromptId(session) === id) continue
         const issue = record(session.issue)
         const sourceCommentId = text(record(node.sourceComment).id)
         events.push({

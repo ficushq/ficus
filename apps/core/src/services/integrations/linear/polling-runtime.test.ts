@@ -477,6 +477,84 @@ describe('trusted authors and the connected account', () => {
   })
 })
 
+describe('a session’s opening prompt', () => {
+  async function streams(squadId: string) {
+    return db.select().from(workStreams).where(eq(workStreams.squadId, squadId))
+  }
+  /** A guest's delegation is held and the manager told; a prompt from anyone would also start a stream. */
+  const rules = [startRule('issue.delegated'), startRule('agent_session.prompted')]
+
+  // Live (FIC-6): about four minutes after an unbound session opened, the poll delivered Linear's
+  // prompt for the opening request as a follow-up, and the session got a second response.
+  test('a later poll does not answer the session again, record a prompt or notify the manager again', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: guest.id })
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, { sessionId, issue, creatorId: guest.id }),
+    })
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body],
+    ])
+    const notices = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+    expect(notices).toHaveLength(1)
+    await ageSession(sessionId)
+    const result = await pollOnce()
+    expect(result.events).toEqual([])
+    expect(bodies(sessionId)).toHaveLength(2)
+    expect(await outputs('agent_session.prompted')).toEqual([])
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))).toHaveLength(1)
+    expect(await streams(squad.id)).toEqual([])
+  })
+
+  test('a session found only by polling is answered once, for its created event alone', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: guest.id })
+    const first = await pollOnce()
+    expect(first.events.map((event) => event.logicalEventKey)).toEqual([linearDeliveryKey.sessionCreated(sessionId)])
+    await ageSession(sessionId)
+    await pollOnce(first.nextCursor)
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body],
+    ])
+    expect(await outputs('agent_session.prompted')).toEqual([])
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))).toHaveLength(1)
+  })
+
+  test('a created webhook that names its opening prompt settles that prompt for later deliveries', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule('agent_session.prompted')] })
+    const sessionId = randomUUID()
+    const { openingPromptId } = linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, {
+        sessionId,
+        issue,
+        creatorId: member.id,
+        activityId: openingPromptId,
+      }),
+    })
+    const startedBefore = (await streams(squad.id)).length
+    // A prompted delivery for the same activity, however it arrives, changes nothing.
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionPromptedPayload(fixture.context, {
+        sessionId,
+        issue,
+        userId: member.id,
+        activityId: openingPromptId!,
+        body: 'Please take this issue',
+      }),
+    })
+    expect(await outputs('agent_session.prompted')).toEqual([])
+    expect(await streams(squad.id)).toHaveLength(startedBefore)
+  })
+})
+
 describe('recovered prompts', () => {
   test('a prompt seen by webhook and poll is routed and answered once, in either order', async () => {
     await fixture.addSquad({ teamIds: [teamId] })
@@ -568,7 +646,7 @@ describe('recovered undelegation', () => {
 describe('runner', () => {
   test('a tick polls the connection, saves the version 1 cursor and waits for the cadence', async () => {
     const sessionId = randomUUID()
-    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    const { openingPromptId } = linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
     await linearAgentSessionPollingRuntime.runOnce()
     expect(bodies(sessionId)[0]).toEqual(['thought', LINEAR_ACK_BODY])
     const [cursor] = await db
@@ -578,7 +656,8 @@ describe('runner', () => {
     expect(cursor!.cursor).toMatchObject({
       version: 1,
       sessions: { boundaryIds: [sessionId] },
-      prompts: { boundaryIds: [] },
+      // The session's opening prompt is read and passed over, never delivered as a prompt.
+      prompts: { boundaryIds: [openingPromptId] },
       notifications: { boundaryIds: [] },
     })
     const delay = cursor!.nextPollAt.getTime() - Date.now()

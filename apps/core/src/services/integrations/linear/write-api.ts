@@ -1,3 +1,4 @@
+import { createLogger } from '../../../lib/infra/logger'
 import { LINEAR_GRAPHQL_ENDPOINT } from './cli'
 import { isLinearScopeError, readGraphQLErrors } from './scope-error'
 
@@ -37,7 +38,27 @@ export class LinearWriteError extends Error {
   }
 }
 
+const log = createLogger('linear-write-api')
+
 const MAX_RETRY_AFTER_MS = 3_600_000
+
+/**
+ * Error codes that mean the record Ficus asked Linear to create already exists. Linear has not been
+ * seen sending one for agent activities (its refusal carries a generic code such as `INVALID_INPUT`,
+ * which says nothing about duplicates); they are matched so that such a code is recognized whatever
+ * the message says. The code Linear did send is logged with each duplicate, to confirm or add one.
+ */
+const DUPLICATE_CODES = new Set(['CONFLICT', 'DUPLICATE', 'ALREADY_EXISTS', 'DUPLICATE_ENTITY', 'UNIQUE_VIOLATION'])
+/**
+ * Message text Linear sends for a create under an ID it already holds. Live, a repeated
+ * `agentActivityCreate` is answered HTTP 200 with "conflict on insert of AgentActivity".
+ */
+const DUPLICATE_MESSAGES = ['already exists', 'duplicate', 'conflict on insert']
+
+/** A provider code reduced to a bounded token that is safe to log. */
+function loggableCode(value: unknown) {
+  return typeof value === 'string' ? value.replace(/[^A-Za-z0-9_ -]/g, '').slice(0, 64) || 'none' : 'none'
+}
 
 function retryAfterMs(header: string | null): number | undefined {
   if (!header) return undefined
@@ -55,13 +76,21 @@ function classifyGraphQLErrors(errors: unknown[]): LinearWriteError {
     const entry = error && typeof error === 'object' ? (error as Record<string, any>) : {}
     const code = typeof entry.extensions?.code === 'string' ? entry.extensions.code.toUpperCase() : ''
     const message = typeof entry.message === 'string' ? entry.message.toLowerCase() : ''
-    return { code, message }
+    return { code, message, rawCode: entry.extensions?.code, rawType: entry.extensions?.type }
   })
   if (parts.some((part) => part.code === 'RATELIMITED')) return new LinearWriteError('rate_limited')
   if (parts.some((part) => part.code === 'AUTHENTICATION_ERROR' || part.message.includes('authentication required')))
     return new LinearWriteError('invalid_auth')
-  if (parts.some((part) => part.message.includes('already exists') || part.message.includes('duplicate')))
+  const duplicate = parts.find(
+    (part) => DUPLICATE_CODES.has(part.code) || DUPLICATE_MESSAGES.some((text) => part.message.includes(text))
+  )
+  if (duplicate) {
+    // Only Linear's code and type are logged, never its message text.
+    log.info(
+      `Linear reported the record already exists (code ${loggableCode(duplicate.rawCode)}, type ${loggableCode(duplicate.rawType)})`
+    )
     return new LinearWriteError('duplicate')
+  }
   if (
     parts.some(
       (part) =>

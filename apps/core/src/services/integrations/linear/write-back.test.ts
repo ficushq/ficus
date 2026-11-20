@@ -33,6 +33,7 @@ import {
   LINEAR_OUTBOX_MAX_ATTEMPTS,
   LINEAR_SESSION_ACTIVITIES_PER_HOUR,
 } from './outbox'
+import { dispatchPolledLinearEvent, linearAgentSessionPolling, listLinearPollingWatches } from './polling-runtime'
 import { openLinearSessionForStream } from './proactive-session'
 import { projectLinearWriteBack, streamPullRequest } from './session-projector'
 import { LINEAR_STOP_TEXT, matchLinearSelectReply } from './session-prompts'
@@ -607,6 +608,35 @@ describe('questions as elicitations', () => {
     // An answer from Linear posts no "answered in Ficus" thought.
     await project(stream.id)
     expect(bodies(sessionId).some(([, body]) => String(body).startsWith('Answered in Ficus'))).toBe(false)
+  })
+
+  // Live: a poll delivered a bound session's opening request back to its stream as a candidate answer.
+  test('a poll never hands the bound stream its own opening request, as a candidate answer or a prompt', async () => {
+    const owner = await addUser()
+    const { sessionId, stream } = await boundStream()
+    const { agentId, questionId } = await askQuestion(stream.id, owner, selectQuestion)
+    await project(stream.id)
+    const [watch] = (await listLinearPollingWatches()).filter((entry) => entry.connection.id === fixture.connectionId)
+    const result = await linearAgentSessionPolling.poll(watch!.connection, null)
+    for (const event of result.events) await dispatchPolledLinearEvent(event)
+    expect(result.events).toEqual([])
+    const messages = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    expect(messages.filter((message) => message.subject === 'Candidate answer from Linear')).toEqual([])
+    const [mirror] = await db
+      .select()
+      .from(linearQuestionMirrors)
+      .where(eq(linearQuestionMirrors.questionId, questionId))
+    expect(mirror!.state).toBe('open')
+    const prompted = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          sql`${integrationOutputEvents.fact}->>'output' = 'agent_session.prompted'`,
+          sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`
+        )
+      )
+    expect(prompted).toEqual([])
   })
 
   test('candidates: unlinked authors may be resolved by the agent, linked users without permission may not', async () => {
