@@ -36,5 +36,6 @@ export async function ensureConsultantSandbox(
     squadId: owner.id,
     boxLiveness: resolveBoxLiveness?.(sandboxId),
   })
-  await (deps.pruneScratch ?? maybePruneConsultantScratch)(owner.id)
+  // Not awaited: warmup and recovery must not wait on archive I/O. It never throws.
+  void (deps.pruneScratch ?? maybePruneConsultantScratch)(owner.id)
 }

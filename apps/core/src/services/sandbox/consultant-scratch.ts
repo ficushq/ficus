@@ -12,6 +12,12 @@ export const CONSULTANT_SCRATCH_ARCHIVE_DIR = '.conversations-archive'
 /** At most once per runtime per process: two small commands, not worth more often. */
 export const CONSULTANT_SCRATCH_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000
 
+/**
+ * Retired ids per exec. Some runtimes join argv into one `bash -c` string, and
+ * Linux caps one argument at 128 KiB (about 3,300 quoted UUIDs); 500 is ~20 KB.
+ */
+export const CONSULTANT_SCRATCH_ARCHIVE_BATCH = 500
+
 const AGENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -25,7 +31,8 @@ done`
 // $1 private root, $2 now (epoch ms), $3 purge cutoff (epoch ms), $4... agent ids.
 // Moves each listed scratch dir to the archive as <id>-<now>, removing the
 // per-agent secrets file first like the personal /private archive, then
-// deletes archive entries whose trailing epoch is older than the cutoff.
+// deletes archive entries whose trailing epoch is older than the cutoff (a
+// cutoff of 0 purges nothing, for every batch but the last).
 const ARCHIVE_SCRIPT = `root=$1; now=$2; cutoff=$3; shift 3
 archive="$root/${CONSULTANT_SCRATCH_ARCHIVE_DIR}"
 if [ -L "$archive" ]; then echo "archive dir is a symlink" >&2; exit 1; fi
@@ -96,24 +103,32 @@ export async function pruneConsultantScratch(
   const now = deps.now ?? new Date()
   const retentionDays = (deps.getRetentionDays ?? getPrivateArchiveRetentionDays)()
   const cutoff = now.getTime() - retentionDays * DAY_MS
-  const output = (
-    await manager.exec(sandboxId, [
-      'sh',
-      '-c',
-      ARCHIVE_SCRIPT,
-      'sh',
-      root,
-      String(now.getTime()),
-      String(cutoff),
-      ...retired,
-    ])
-  ).toString()
-  const match = output.match(/archived=(\d+) purged=(\d+)/)
-  return {
-    kept: listed.length - retired.length,
-    archived: match ? Number(match[1]) : 0,
-    purged: match ? Number(match[2]) : 0,
+  // Batches keep the argv bounded however long the backlog; only the last one purges.
+  const batches: string[][] = []
+  for (let i = 0; i < retired.length; i += CONSULTANT_SCRATCH_ARCHIVE_BATCH)
+    batches.push(retired.slice(i, i + CONSULTANT_SCRATCH_ARCHIVE_BATCH))
+  if (!batches.length) batches.push([])
+  let archived = 0
+  let purged = 0
+  for (const [index, batch] of batches.entries()) {
+    const batchCutoff = index === batches.length - 1 ? cutoff : 0
+    const output = (
+      await manager.exec(sandboxId, [
+        'sh',
+        '-c',
+        ARCHIVE_SCRIPT,
+        'sh',
+        root,
+        String(now.getTime()),
+        String(batchCutoff),
+        ...batch,
+      ])
+    ).toString()
+    const match = output.match(/archived=(\d+) purged=(\d+)/)
+    archived += match ? Number(match[1]) : 0
+    purged += match ? Number(match[2]) : 0
   }
+  return { kept: listed.length - retired.length, archived, purged }
 }
 
 const lastPrunedAt = new Map<string, number>()

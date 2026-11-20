@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
+  CONSULTANT_SCRATCH_ARCHIVE_BATCH,
   CONSULTANT_SCRATCH_ARCHIVE_DIR,
   CONSULTANT_SCRATCH_PRUNE_INTERVAL_MS,
   maybePruneConsultantScratch,
@@ -90,6 +91,36 @@ describe('consultant scratch pruning', () => {
     expect(existsSync(oldEntry)).toBe(false)
     expect(existsSync(recentEntry)).toBe(true)
     expect(existsSync(unrelated)).toBe(true)
+  })
+
+  it('archives a backlog larger than one batch in bounded execs and purges once', async () => {
+    const ids = Array.from({ length: CONSULTANT_SCRATCH_ARCHIVE_BATCH * 2 + 1 }, () => randomUUID())
+    for (const id of ids) mkdirSync(join(root, 'conversations', id), { recursive: true })
+    const expired = join(archiveRoot(), `${randomUUID()}-${NOW.getTime() - 8 * DAY}`)
+    mkdirSync(expired, { recursive: true })
+    const calls: string[][] = []
+    const result = await pruneConsultantScratch('squad-1', {
+      getManager: () => ({
+        exec: async (sandboxId, args) => {
+          calls.push(args)
+          return localManager.exec(sandboxId, args)
+        },
+      }),
+      privateRoot: root,
+      loadStatuses: async () => new Map(),
+      getRetentionDays: () => 7,
+      now: NOW,
+    })
+
+    expect(result).toEqual({ kept: 0, archived: ids.length, purged: 1 })
+    // One listing, then three archive batches, each within the batch size.
+    const archiveCalls = calls.slice(1)
+    expect(archiveCalls).toHaveLength(3)
+    for (const args of archiveCalls) expect(args.length - 7).toBeLessThanOrEqual(CONSULTANT_SCRATCH_ARCHIVE_BATCH)
+    // Only the last batch carries the retention cutoff.
+    expect(archiveCalls.map((args) => args[6] === '0')).toEqual([true, true, false])
+    expect(readdirSync(join(root, 'conversations'))).toEqual([])
+    expect(existsSync(expired)).toBe(false)
   })
 
   it('never follows a symlinked scratch dir', async () => {

@@ -559,12 +559,13 @@ runtime. Archiving the squad removes it.
 Scratch of finished conversations is pruned inside the runtime
 (`services/sandbox/consultant-scratch.ts`). After the runtime is ensured
 (`ensureConsultantSandbox`, which squad warmup calls), at most once per six hours
-per squad and process, Core lists `<private-root>/conversations/` and moves each
+per squad and process and without delaying warmup, Core lists `<private-root>/conversations/` and moves each
 directory whose agent (a consultant or one of its subagents) is `terminated` or
 no longer exists to `<private-root>/.conversations-archive/<agent-id>-<epoch-ms>`.
 As with the personal `/private` archive, `.ficus/agent-secrets.env` is removed
 first, and archive entries older than `AGENT_PRIVATE_ARCHIVE_RETENTION_DAYS` are
-deleted in the same pass. Live and dormant agents keep their scratch in place,
+deleted in the same pass. Directories are archived in batches of 500 per command,
+so a long backlog never exceeds the runtime's argument-length limit. Live and dormant agents keep their scratch in place,
 including channel agents whose storage was reclaimed. Waking them therefore needs
 no restore. Directories not named for an agent, and symlinks, are left alone. The
 prune never starts a stopped runtime: a squad whose runtime stays down is pruned
