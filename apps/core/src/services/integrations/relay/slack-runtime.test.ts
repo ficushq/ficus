@@ -588,6 +588,7 @@ describe('managed connection revocation falls back the live ChannelConnections t
       }),
       actor: 'test',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'platform_broker',
     })
     await service.enable(created.id, 'test')

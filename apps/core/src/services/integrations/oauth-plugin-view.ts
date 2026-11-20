@@ -40,6 +40,16 @@ export function oauthPluginView<C>(
   }
 }
 
+/**
+ * Whether a plugin can hold OAuth-granted connections at all: a true OAuth2
+ * plugin, or a manual plugin with a managed OAuth driver under any authority.
+ * For these the plugin alone does not say a grant's kind is `manual`, so a
+ * connection created from an authorization grant must state its kind.
+ */
+export function pluginOffersOAuth(plugin: Pick<OAuthPluginSource<unknown>, 'authorization'>): boolean {
+  return plugin.authorization.kind === 'oauth2' || plugin.authorization.managed !== undefined
+}
+
 /** The connection fields that decide whether it gets the OAuth lifecycle (a subset of `IntegrationConnectionRecord`). */
 export interface OAuthConnectionFacts {
   readonly authorizationKind: IntegrationAuthorizationKind
