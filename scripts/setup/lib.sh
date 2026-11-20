@@ -5043,8 +5043,8 @@ envfile_read() { # VAR FILE KEY
 # A generic way to change this host's root-owned config files — <dest>/.env,
 # managed.env, backup.env, the config yaml, the core units and their drop-ins,
 # the backup units, the installed backup script — as part of moving it to a
-# release, with a way back. No one-shot migration is registered by this
-# release, but the journal resolver remains for an interrupted older run.
+# release, with a way back. This release registers one: log_level_default
+# (below). The journal resolver also settles an interrupted older run.
 #
 # A migration NAME ([a-z0-9_]+) is three functions:
 #   host_migration_NAME_needed RELEASE_DIR  0 when this host needs it for that
@@ -5108,7 +5108,57 @@ envfile_read() { # VAR FILE KEY
 # spans, where bash suppresses errexit for the whole dynamic extent.
 
 # The registered migrations, in the order they run.
-HOST_MIGRATIONS=()
+HOST_MIGRATIONS=(log_level_default)
+
+# log_level_default: give a host set up before setup-host.sh rendered
+# LOG_LEVEL=info that same default. Core logs at debug when neither LOG_LEVEL
+# nor NODE_ENV=production is set, the units set neither, and an upgrade never
+# re-renders <dest>/.env, so without this such a host keeps logging at debug.
+# It appends LOG_LEVEL=info only when <dest>/.env has no LOG_LEVEL assignment
+# at all: an explicit value, debug included, is never touched. The framework's
+# backup set puts the file back if the run fails or rolls back; to keep debug
+# afterwards, set LOG_LEVEL=debug in <dest>/.env (an explicit value stays).
+#
+# Not needed on a non-root run: host migrations are root-only, and refusing a
+# non-root upgrade only to add a log-level default would cost more than the
+# default is worth. The next root run of the toolkit adds it.
+
+# Does FILE assign LOG_LEVEL? Leading whitespace, `export ` and spaces before
+# the `=` count too, so a hand-written assignment is never doubled. A comment
+# does not count. Returns 2 when FILE cannot be read.
+_log_level_assigned() { # FILE
+  local rc=0
+  [[ -r $1 ]] || return 2
+  grep -Eq '^[[:space:]]*(export[[:space:]]+)?LOG_LEVEL[[:space:]]*=' -- "$1" || rc=$?
+  return "${rc}"
+}
+
+host_migration_log_level_default_needed() { # RELEASE_DIR (read-only)
+  local env_file rc=0
+  _hm_is_root || return 1
+  [[ -n ${SRC_DEST:-} ]] || return 1
+  _hm_resolve "${SRC_DEST}/.env" env_file || return 1
+  _log_level_assigned "${env_file}" || rc=$?
+  # 1: no assignment (needed). 0: one exists. 2: unreadable — leave it to the
+  # preflight that reads this file.
+  [[ ${rc} -eq 1 ]]
+}
+
+host_migration_log_level_default_apply() { # RELEASE_DIR
+  local env_file rc=0
+  _hm_resolve "${SRC_DEST}/.env" env_file || die "log_level_default: ${SRC_DEST}/.env is not a regular file"
+  _log_level_assigned "${env_file}" || rc=$?
+  case ${rc} in
+    0) return 0 ;;
+    1) ;;
+    *) die "log_level_default: could not read ${env_file}" ;;
+  esac
+  # envfile_set appends the line and replaces the file atomically, keeping its
+  # mode, owner and every other line. The resolved path keeps a symlinked
+  # .env a symlink.
+  envfile_set "${env_file}" LOG_LEVEL info
+  log_info "log_level_default: added LOG_LEVEL=info to ${env_file} (it had no LOG_LEVEL)"
+}
 
 # Where backup sets and the PENDING journal live. Read at CALL time, so a test
 # (or an operator) can point it elsewhere after sourcing this file.

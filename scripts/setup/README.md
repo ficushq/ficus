@@ -210,8 +210,18 @@ When a release needs this host's config files changed (`<dest>/.env`,
 the backup service and timer, the installed backup script), `lib.sh`'s
 journaled host-migration framework
 does it: right before the `current` symlink moves (artifact mode) or before
-the restart (git mode). This release registers no new one-shot migration.
-The journal resolver remains so an interrupted older run is not ignored.
+the restart (git mode). The journal resolver also settles an interrupted
+older run. This release registers one migration:
+
+- **`log_level_default`** appends `LOG_LEVEL=info` to `<dest>/.env` when that
+  file has no `LOG_LEVEL` line, so a host set up before `setup-host.sh`
+  rendered that default stops logging at `debug`. A file with any `LOG_LEVEL`
+  assignment (`debug` included, with or without `export`) is left alone, and a
+  commented-out line does not count. It runs only as root; a non-root run
+  skips it rather than refusing the upgrade, and the next root run adds the
+  line. To keep `debug`, set `LOG_LEVEL=debug` in `<dest>/.env` and restart
+  the core units; deleting the line only brings it back on the next upgrade.
+  See [Log level](../../docs/wiki/setup.md#log-level).
 
 - **Backup sets.** Before the first change, every host config file is copied
   byte for byte (`cp -p`, verified with `cmp`, sha256 recorded in a

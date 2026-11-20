@@ -684,11 +684,27 @@ start at `info`:
 To see debug output while diagnosing a problem, set `LOG_LEVEL=debug` in the
 server environment and restart. On a `setup-host.sh` host, set
 `core.env.LOG_LEVEL` in the setup config; it replaces the rendered default.
-An upgrade does not rewrite `<dest>/.env`, so a host set up before this default
-existed keeps logging at `debug` until `LOG_LEVEL=info` is added to that file
-and `ficus-api` and `ficus-worker` are restarted. Do not set
-`NODE_ENV=production` only to change the log level: it also changes other
-behaviour, such as which development origins the API accepts.
+
+An upgrade does not re-render `<dest>/.env`. A host set up before this default
+existed gets it from the `log_level_default` host migration instead: the first
+`upgrade-host.sh` run as root onto a release that has it appends
+`LOG_LEVEL=info` to `<dest>/.env` (a `setup-host.sh` re-run renders the whole
+file, default included), but only when the file has no `LOG_LEVEL` line at
+all. An explicit value, `debug` included, is never changed, and a run that is
+not root skips the migration until the next root run. The upgrade restarts `ficus-api` and `ficus-worker` itself, so the new
+level applies as soon as it finishes. To roll back:
+
+- To keep `debug`, set `LOG_LEVEL=debug` in `<dest>/.env` (or
+  `core.env.LOG_LEVEL: debug` in the setup config) and restart both units.
+  Deleting the line is not enough: the next upgrade adds it again.
+- To put the whole file back as it was, restore the backup set the migration
+  took with `upgrade-host.sh --restore-host-backup` (see
+  [Host migrations](../../scripts/setup/README.md#host-migrations)). That also
+  reverts any other change made to the file since.
+- A failed or rolled-back upgrade restores the file automatically.
+
+Do not set `NODE_ENV=production` only to change the log level: it also changes
+other behaviour, such as which development origins the API accepts.
 
 ### Browser tools
 

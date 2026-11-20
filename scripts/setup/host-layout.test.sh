@@ -11,7 +11,7 @@ PASS=0 FAIL=0
 check() { if "$@"; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); printf 'FAIL: %s\n' "$*" >&2; fi; }
 check test "$HL_DEST" = "$R/opt/ficus-core"
 check test "$HL_UNIT_API:$HL_UNIT_WORKER" = 'ficus-api:ficus-worker'
-check test "${#HOST_MIGRATIONS[@]}" = 0
+check test "${HOST_MIGRATIONS[*]}" = log_level_default
 check test "$(host_migrate_needed "$R/release")" = ''
 check test "$(host_layout_detect)" = fresh
 mkdir -p "$FICUS_SYSTEMD_UNIT_DIR" "$R/release"

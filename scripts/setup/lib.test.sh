@@ -7667,6 +7667,86 @@ expect_match 'host_migrate_reconcile (non-root): a journaled migration is refuse
   "$( (_hm_is_root() { return 1; }; host_migrate_reconcile) 2>&1; echo "rc=$?")" 'reconciling it is root-only.*rc=1'
 rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
 
+# --- log_level_default: LOG_LEVEL=info for a host set up without it ----------
+HOST_MIGRATIONS=(log_level_default)
+hm_lld_count() { grep -c '^LOG_LEVEL=' "${SRC_DEST}/.env" || true; }
+
+# A .env with no LOG_LEVEL line gains LOG_LEVEL=info, through a journaled set.
+hm_host lld-add
+hm_env_before=$(cat "${SRC_DEST}/.env")
+expect_eq 'log_level_default: needed when <dest>/.env has no LOG_LEVEL line' \
+  "$(host_migrate_needed "${SRC_DEST}/releases/new")" 'log_level_default'
+host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'log_level_default: appends LOG_LEVEL=info after every existing line, unchanged' \
+  "$(cat "${SRC_DEST}/.env")" "${hm_env_before}"$'\n''LOG_LEVEL=info'
+expect_eq 'log_level_default: the .env keeps its 0600 mode' "$(hm_mode "${SRC_DEST}/.env")" '600'
+expect_eq 'log_level_default: the run is journaled under its name' \
+  "${HOST_MIGRATE_PENDING}:$(cut -f2 "${HOST_MIGRATE_BACKUP_ROOT}/PENDING")" '1:log_level_default'
+ln -sfn "${SRC_DEST}/releases/new" "${SRC_DEST}/current"
+host_migrate_settle_pending 2>/dev/null
+expect_eq 'log_level_default: once the release serves, the line is kept and the run committed' \
+  "$(hm_lld_count):$(hm_pending)" '1:none'
+
+# Idempotent: a second upgrade needs nothing, and a repeated apply adds nothing.
+hm_env_after=$(cat "${SRC_DEST}/.env")
+expect_eq 'log_level_default: not needed again once the line is there' \
+  "$(host_migrate_needed "${SRC_DEST}/releases/new")" ''
+host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+host_migration_log_level_default_apply "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'log_level_default: a rerun leaves the .env byte for byte and journals nothing' \
+  "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_after}" ]] && echo same):$(hm_lld_count):${HOST_MIGRATE_PENDING}:$(hm_pending)" 'same:1:0:none'
+
+# An explicit value is never touched, debug included, however it is written.
+for hm_lld_line in 'LOG_LEVEL=debug' 'LOG_LEVEL=warn' 'export LOG_LEVEL=debug' '  LOG_LEVEL = error' 'LOG_LEVEL='; do
+  hm_host lld-keep
+  printf 'FICUS_ENCRYPTION_KEY=k\n%s\nFICUS_SANDBOX_RUNTIME=host\n' "${hm_lld_line}" >"${SRC_DEST}/.env"
+  hm_env_before=$(cat "${SRC_DEST}/.env")
+  host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+  expect_eq "log_level_default: an existing '${hm_lld_line}' line is left untouched, nothing journaled" \
+    "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):${HOST_MIGRATE_PENDING}:$(hm_pending)" 'same:0:none'
+done
+host_migration_log_level_default_apply "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'log_level_default: apply on a .env that has a LOG_LEVEL line changes nothing' \
+  "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same)" 'same'
+
+# A commented-out LOG_LEVEL is no assignment: the default is still added.
+hm_host lld-comment
+printf '# LOG_LEVEL=debug\nFICUS_SANDBOX_RUNTIME=host\n' >"${SRC_DEST}/.env"
+host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'log_level_default: a commented-out LOG_LEVEL does not count as a value' \
+  "$(cat "${SRC_DEST}/.env")" $'# LOG_LEVEL=debug\nFICUS_SANDBOX_RUNTIME=host\nLOG_LEVEL=info'
+rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+
+# Rollback: a run whose release never serves puts the .env back without it.
+hm_host lld-rollback
+hm_env_before=$(cat "${SRC_DEST}/.env")
+host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+host_migrate_restore_pending 2>/dev/null
+expect_eq 'log_level_default: a rolled-back run restores the .env byte for byte' \
+  "$([[ $(cat "${SRC_DEST}/.env") == "${hm_env_before}" ]] && echo same):$(hm_lld_count):$(hm_pending)" 'same:0:none'
+
+# A symlinked .env stays a symlink; its target gains the line.
+hm_host lld-symlink
+mv "${SRC_DEST}/.env" "${HM_H}/etc/core.env"
+ln -s "${HM_H}/etc/core.env" "${SRC_DEST}/.env"
+host_migrate "${SRC_DEST}/releases/new" 2>/dev/null
+expect_eq 'log_level_default: a symlinked .env stays a symlink and its target gains the line' \
+  "$([[ -L ${SRC_DEST}/.env ]] && echo link):$(grep -c '^LOG_LEVEL=info$' "${HM_H}/etc/core.env")" 'link:1'
+rm -f "${HOST_MIGRATE_BACKUP_ROOT}/PENDING"
+
+# No .env (a fresh host, setup renders it): nothing is needed.
+hm_host lld-noenv
+rm -f "${SRC_DEST}/.env"
+expect_eq 'log_level_default: not needed when there is no <dest>/.env' \
+  "$(host_migrate_needed "${SRC_DEST}/releases/new")" ''
+
+# A non-root run does not need it, so it is never refused for it; the .env waits for a root run.
+hm_host lld-nonroot
+expect_eq 'log_level_default: not needed on a non-root run, which goes on unrefused' \
+  "$( (_hm_is_root() { return 1; }; host_migrate_needed "${SRC_DEST}/releases/new"; host_migrate_require_privilege "${SRC_DEST}/releases/new") 2>&1; echo "rc=$?"):$(hm_lld_count)" 'rc=0:0'
+HOST_MIGRATIONS=(testmark)
+unset -f hm_lld_count
+
 # The entry points refuse a host whose settings predate the Ficus naming in
 # preflight, before they write anything (upgrade-host.sh, both modes' shared
 # preflight; its --restore-host-backup path is root-only).
