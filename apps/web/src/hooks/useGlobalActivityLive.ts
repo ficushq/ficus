@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ACTIVITY_PRESENCE_ROW_KINDS, type SquadActivityProjectionEventData } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { useWebSocket } from './useWebSocket'
@@ -28,15 +29,28 @@ export function useGlobalActivityLive(enabled = true): void {
 
   useEffect(() => {
     if (!enabled || !squadIds) return
-    const refresh = () => {
+    // The feed refreshes on every row. Presence (counts and Active work cards) is a heavier
+    // request and only rows that can change a card refresh it; agent status changes reach it
+    // through the agents topic, and its 30s poll covers the rest.
+    let presenceToo = false
+    const refresh = (presence: boolean) => {
+      presenceToo ||= presence
       clearTimeout(timer.current)
       timer.current = setTimeout(() => {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.activity.all })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.activity.globalInfinitePrefix() })
+        if (presenceToo) void queryClient.invalidateQueries({ queryKey: queryKeys.activity.presence() })
+        presenceToo = false
       }, REFRESH_DEBOUNCE_MS)
     }
     const unsubscribes = squadIds.split(',').map((id) =>
-      subscribe(`squadActivity:${id}`, ({ event }) => {
-        if (event === 'squadActivity.projected' || event === 'squadActivity.accessRevoked') refresh()
+      subscribe(`squadActivity:${id}`, ({ event, data }) => {
+        if (event === 'squadActivity.accessRevoked') refresh(true)
+        else if (event === 'squadActivity.projected')
+          refresh(
+            ACTIVITY_PRESENCE_ROW_KINDS.includes(
+              (data as Partial<SquadActivityProjectionEventData> | undefined)?.item?.kind as never
+            )
+          )
       })
     )
     return () => {

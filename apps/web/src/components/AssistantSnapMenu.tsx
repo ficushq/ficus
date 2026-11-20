@@ -1,13 +1,13 @@
 import clsx from 'clsx'
-import { DEFAULT_PLACEMENT_KEY, SNAPS, SNAP_INFO, type Snap } from '../lib/assistantWindow'
+import { DEFAULT_PLACEMENT_KEY, SNAPS, SNAP_INFO, type Snap } from '../lib/floatingWindow'
 import { WindowLayoutIcon } from './icons'
 import { Menu, MenuItem, useHoverOpen, usePopover } from './popover'
 
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-const MODIFIERS = MAC ? '⌃⌥' : 'Ctrl+Alt+'
+const SNAP_MODIFIERS = MAC ? '⌃⌥' : 'Ctrl+Alt+'
 
 /** The part of the screen a snap fills (or the default centered card), as a tiny picture (in a 30×20 box). */
-function SnapDiagram({ snap }: { snap: Snap | 'default' }) {
+export function SnapDiagram({ snap }: { snap: Snap | 'default' }) {
   const [x, y, w, h] = {
     default: [7.5, 4, 15, 12],
     left: [0, 0, 14.5, 20],
@@ -32,29 +32,37 @@ function SnapDiagram({ snap }: { snap: Snap | 'default' }) {
 }
 
 /**
- * The assistant's layout button and its menu of screen regions to fill, like the farm's chat
+ * A floating window's layout button and its menu of screen regions to fill, like the farm's chat
  * windows. Dragging and resizing stay free; a snap holds until the window is dragged or resized.
  */
-export function AssistantSnapMenu({
+export function WindowSnapMenu({
+  label,
   snap,
   isDefault = false,
+  resetLabel,
+  resetTitle,
   onSnap,
   onReset,
 }: {
+  /** The button's and menu's accessible name, such as "Arrange assistant". */
+  label: string
   snap?: Snap
-  /** Neither snapped nor moved: the default centered card. */
+  /** Neither snapped nor moved: the default placement. */
   isDefault?: boolean
+  /** The first row, which Ctrl+Option+C also chooses. */
+  resetLabel: string
+  resetTitle: string
   onSnap: (snap: Snap) => void
   onReset: () => void
 }) {
   const popover = usePopover({ kind: 'menu' })
   // Resting the mouse on the button opens it (never focusing a row, so typing carries on); the open delay
-  // and the held-button guard keep it shut while the pointer crosses to Mic/Close or drags the header.
+  // and the held-button guard keep it shut while the pointer crosses to other controls or drags the header.
   const hover = useHoverOpen(popover, { enabled: true, initialFocus: 'selected' })
-  // The menu floats over the page (the assistant would clip it), right-aligned below its button; Escape
-  // closes the menu, not the assistant (whose Escape is a document listener).
+  // The menu floats over the page (the window would clip it), right-aligned below its button; Escape
+  // closes the menu, not the window.
   return (
-    <div data-assistant-snap-menu className="shrink-0">
+    <div data-assistant-snap-menu data-window-no-drag className="shrink-0">
       <button
         {...popover.triggerProps}
         type="button"
@@ -62,8 +70,8 @@ export function AssistantSnapMenu({
           'ficus-button ficus-button-ghost flex h-8 w-8 items-center justify-center rounded-lg',
           popover.open && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
         )}
-        aria-label="Arrange assistant"
-        title="Arrange assistant"
+        aria-label={label}
+        title={label}
         {...hover.triggerProps}
       >
         <WindowLayoutIcon className="h-4 w-4" />
@@ -71,7 +79,7 @@ export function AssistantSnapMenu({
       <Menu
         {...popover.popoverProps}
         {...hover.popoverProps}
-        label="Arrange assistant"
+        label={label}
         gap={8}
         data-assistant-snap-menu
         className="ficus-overlay w-60 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"
@@ -79,7 +87,7 @@ export function AssistantSnapMenu({
         <MenuItem
           role="menuitemradio"
           checked={isDefault}
-          title={`Default size and position, centered (${MODIFIERS}${DEFAULT_PLACEMENT_KEY.key})`}
+          title={`${resetTitle} (${SNAP_MODIFIERS}${DEFAULT_PLACEMENT_KEY.key})`}
           className={clsx(
             'ficus-button ficus-button-ghost flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm',
             isDefault && 'text-accent-light hover:text-accent-light'
@@ -87,9 +95,9 @@ export function AssistantSnapMenu({
           onClick={onReset}
         >
           <SnapDiagram snap="default" />
-          <span className="min-w-0 flex-1 truncate">Default (centered)</span>
+          <span className="min-w-0 flex-1 truncate">{resetLabel}</span>
           <kbd className="shrink-0 font-sans text-xs text-muted">
-            {MODIFIERS}
+            {SNAP_MODIFIERS}
             {DEFAULT_PLACEMENT_KEY.key}
           </kbd>
         </MenuItem>
@@ -99,7 +107,7 @@ export function AssistantSnapMenu({
             key={item}
             role="menuitemradio"
             checked={snap === item}
-            title={`${SNAP_INFO[item].label} (${MODIFIERS}${SNAP_INFO[item].key})`}
+            title={`${SNAP_INFO[item].label} (${SNAP_MODIFIERS}${SNAP_INFO[item].key})`}
             className={clsx(
               'ficus-button ficus-button-ghost flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm',
               snap === item && 'text-accent-light hover:text-accent-light'
@@ -109,12 +117,29 @@ export function AssistantSnapMenu({
             <SnapDiagram snap={item} />
             <span className="min-w-0 flex-1 truncate">{SNAP_INFO[item].label}</span>
             <kbd className="shrink-0 font-sans text-xs text-muted">
-              {MODIFIERS}
+              {SNAP_MODIFIERS}
               {SNAP_INFO[item].key}
             </kbd>
           </MenuItem>
         ))}
       </Menu>
     </div>
+  )
+}
+
+/** The assistant's layout button: its default is the centered card. */
+export function AssistantSnapMenu(props: {
+  snap?: Snap
+  isDefault?: boolean
+  onSnap: (snap: Snap) => void
+  onReset: () => void
+}) {
+  return (
+    <WindowSnapMenu
+      label="Arrange assistant"
+      resetLabel="Default (centered)"
+      resetTitle="Default size and position, centered"
+      {...props}
+    />
   )
 }

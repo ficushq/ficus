@@ -3,6 +3,7 @@ import { classifyLinearOAuthError } from '@ficus/shared/oauth-providers'
 import { LINEAR_APP_SCOPES, LinearOAuthClient } from '@ficus/shared/oauth-providers/linear/client'
 import {
   parseLinearAppConfiguration,
+  parseLinearGrantScopes,
   safeLinearAppConfiguration,
   type LinearAppConfiguration,
 } from '@ficus/shared/oauth-providers/linear/config'
@@ -15,9 +16,11 @@ import {
 } from '../authorization/credential-bundle'
 import { linearOutputAdapter } from './outputs'
 import type { OAuthAuthority } from '../authorization/authority'
+import { isLinearScopeError, LinearInsufficientScopeError, readGraphQLErrors } from './scope-error'
 import { LINEAR_CLI_PACKAGES, LINEAR_CLI_RELEASE, LINEAR_GRAPHQL_ENDPOINT, linearCliSetupStep } from './cli'
 
 export type { LinearAppConfiguration } from '@ficus/shared/oauth-providers/linear/config'
+export { isLinearScopeError, LinearInsufficientScopeError } from './scope-error'
 
 /** `{ version: 1 }` is a personal API-key connection; version 2 is the Ficus agent app in one workspace. */
 export type LinearConfiguration = { version: 1 } | LinearAppConfiguration
@@ -100,9 +103,13 @@ export async function linearQuery<T>(
     signal: signal ?? AbortSignal.timeout(10_000),
   })
   if (response.status === 429) throw new LinearRateLimitedError(retryAfterMs(response.headers.get('Retry-After')))
-  if (!response.ok)
+  if (!response.ok) {
+    if ((response.status === 400 || response.status === 403) && isLinearScopeError(await readGraphQLErrors(response)))
+      throw new LinearInsufficientScopeError()
     throw new Error(response.status === 401 || response.status === 403 ? 'invalid_auth' : 'provider_unavailable')
+  }
   const result = (await response.json()) as { data?: T; errors?: unknown[] }
+  if (isLinearScopeError(result.errors)) throw new LinearInsufficientScopeError()
   if (result.errors?.length || !result.data) throw new Error('provider_query_failed')
   return result.data
 }
@@ -170,13 +177,17 @@ export function createLinearPlugin(dependencies: LinearPluginDependencies = {}):
     }),
     // Linear rotates the pair on every refresh; persist before validating.
     refreshInvalidatesPreviousTokens: true,
-    async resolveGrantIdentity(credential) {
+    // The adapter's grant configuration carries only the granted scopes; the identity is read here.
+    grantNeedsIdentity: (grantConfiguration) => parseLinearGrantScopes(grantConfiguration) !== null,
+    async resolveGrantIdentity(credential, grantConfiguration) {
       const identity = await client.identity({ accessToken: credential.accessToken })
       const configuration = parseLinearAppConfiguration({
         version: 2,
         mode: 'app',
         ...identity,
-        scopes: [...LINEAR_APP_SCOPES],
+        // What Linear granted. A broker that does not report scopes leaves the requested set; a
+        // scope Linear then refuses at use time marks the connection for reconnect.
+        scopes: parseLinearGrantScopes(grantConfiguration) ?? [...LINEAR_APP_SCOPES],
       })
       return { configuration, displayName: `${identity.organizationName.trim().slice(0, 180)} (Ficus app)` }
     },

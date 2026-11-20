@@ -1,7 +1,8 @@
 # Inline Activity previews
 
 Core generates compact previews from original source Markdown during Activity extraction,
-not from stored truncated summaries. Global and squad pages and live upserts carry the
+not from stored truncated summaries. Row work stream context, the Active work strip and the
+default cleanup rules are described in [Activity work context](activity-work-context.md). Global and squad pages and live upserts carry the
 same required `SquadActivityItem.preview` field (also inherited by `GlobalSquadActivityItem`).
 
 ## Client contract

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
-import { callbackIntegrationAuthorization, completeIntegrationAuthorization } from '../../api/integrations'
+import {
+  callbackIntegrationAuthorization,
+  completeIntegrationAuthorization,
+  resolveIntegrationAuthorizationProvider,
+} from '../../api/integrations'
 import {
   clearPreparedOAuthCallback,
   readPreparedOAuthCallback,
@@ -22,7 +26,26 @@ const TERMINAL_COMPLETION_CODES = new Set([
   'operation_key_conflict',
 ])
 
-const PROVIDER_LABELS = { github: 'GitHub', linear: 'Linear', notion: 'Notion', slack: 'Slack' } as const
+const PROVIDER_LABELS: Record<string, string> = { github: 'GitHub', linear: 'Linear', notion: 'Notion', slack: 'Slack' }
+
+/** Safe broker failure codes a person can act on; any other safe code is shown as it is. */
+const FAILURE_REASONS: Record<string, string> = {
+  broker_unconfigured: 'This provider is not set up for this Ficus instance yet.',
+  invalid_grant: 'The provider did not accept the authorization.',
+  provider_error: 'The provider returned an error.',
+  provider_timeout: 'The provider did not respond in time.',
+  provider_unavailable: 'The provider is unavailable right now.',
+  rate_limited: 'The provider is limiting requests. Wait a minute before starting again.',
+}
+
+const PROVIDER_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+/** Only GitHub broker callbacks and self-hosted Linear callbacks name their provider in the path. */
+function providerFromPath(): 'github' | 'linear' | undefined {
+  if (window.location.pathname.endsWith('/oauth/callback/github')) return 'github'
+  if (window.location.pathname.endsWith('/oauth/callback/linear')) return 'linear'
+  return undefined
+}
 
 type CompletionRequest =
   { kind: 'broker'; body: BrokerCompletionPayload } | { kind: 'local'; body: LocalCallbackPayload }
@@ -35,20 +58,20 @@ function isTerminalCompletionFailure(error: unknown): boolean {
 }
 
 export function OAuthCallbackPage() {
-  // Only GitHub's callback URL carries a path suffix; every other broker/local
-  // flow shares this path, so `prepareOAuthCallbackHistory` carries the
-  // initiating component's provider hint in the same reload-surviving history
-  // state as the completion payload (see oauthCallbackBootstrap.ts) — reading
-  // it here, rather than consuming a one-shot sessionStorage value, means a
-  // reload after a retryable failure still knows the right provider.
+  // Every flow other than GitHub's broker and self-hosted Linear returns to this one path, often in a
+  // tab that never saw the start (a flow started in the Desktop app opens the system browser). So a
+  // completion asks Core which provider started the flow it names, and never guesses. A cancelled or
+  // failed callback names no flow; the initiating tab's hint, when present, only labels it.
   //
   // What the callback carries is read once, when the page opens.
   const [prepared] = useState(readPreparedOAuthCallback)
-  const [provider] = useState<'github' | 'linear' | 'notion' | 'slack'>(() => {
-    if (window.location.pathname.endsWith('/oauth/callback/github')) return 'github'
-    if (window.location.pathname.endsWith('/oauth/callback/linear')) return 'linear'
-    return prepared?.kind === 'broker' && prepared.provider ? prepared.provider : 'notion'
-  })
+  const [provider, setProvider] = useState<string | undefined>(
+    () =>
+      providerFromPath() ??
+      (prepared?.kind === 'cancelled' || prepared?.kind === 'terminal' ? prepared.provider : undefined)
+  )
+  const resolvedProvider = useRef<string | undefined>(providerFromPath())
+  const reason = prepared?.kind === 'terminal' ? prepared.reason : undefined
   const queryClient = useQueryClient()
   const initialized = useRef(false)
   const request = useRef<CompletionRequest | undefined>(undefined)
@@ -66,16 +89,29 @@ export function OAuthCallbackPage() {
     if (!request.current || inFlight.current) return
     inFlight.current = true
     setPageState('working')
-    const completion =
-      request.current.kind === 'broker'
-        ? completeIntegrationAuthorization(provider, request.current.body)
-        : callbackIntegrationAuthorization(provider, request.current.body)
-    void completion
-      .then(async ({ returnTo }) => {
+    const current = request.current
+    const resolve = async (): Promise<string> => {
+      if (resolvedProvider.current) return resolvedProvider.current
+      const { provider: resolved } = await resolveIntegrationAuthorizationProvider(
+        current.kind === 'broker' ? { localFlowId: current.body.localFlowId } : { state: current.body.state }
+      )
+      // Core answers with a provider key; anything else must never become part of a request path.
+      if (typeof resolved !== 'string' || !PROVIDER_KEY_PATTERN.test(resolved))
+        throw new ApiError(400, 'Unexpected provider', { error: 'invalid_or_expired_state' })
+      resolvedProvider.current = resolved
+      setProvider(resolved)
+      return resolved
+    }
+    void resolve()
+      .then(async (completionProvider) => {
+        const { returnTo } =
+          current.kind === 'broker'
+            ? await completeIntegrationAuthorization(completionProvider, current.body)
+            : await callbackIntegrationAuthorization(completionProvider, current.body)
         clearPreparedOAuthCallback()
         request.current = undefined
         await queryClient.invalidateQueries({ queryKey: integrationQueryKeys.all })
-        window.location.replace(integrationReturnPath(returnTo, provider))
+        window.location.replace(integrationReturnPath(returnTo, completionProvider))
       })
       .catch((error: unknown) => {
         inFlight.current = false
@@ -93,7 +129,7 @@ export function OAuthCallbackPage() {
         }
         setPageState('retryable_failure')
       })
-  }, [queryClient, provider])
+  }, [queryClient])
 
   useEffect(() => {
     if (initialized.current) return
@@ -109,15 +145,22 @@ export function OAuthCallbackPage() {
 
   return (
     <section className="mx-auto max-w-lg rounded-lg border border-th-border bg-surface p-6 text-center">
-      <h1 className="text-lg font-semibold">Connecting {PROVIDER_LABELS[provider]}</h1>
+      <h1 className="text-lg font-semibold">
+        {provider && PROVIDER_LABELS[provider] ? `Connecting ${PROVIDER_LABELS[provider]}` : 'Finishing the connection'}
+      </h1>
       {pageState === 'cancelled' ? (
         <p role="status" aria-live="polite" className="mt-2 text-sm text-muted">
           Authorization cancelled. You can return to Settings.
         </p>
       ) : pageState === 'terminal_failure' ? (
-        <p role="alert" className="mt-2 text-sm text-status-danger-600">
-          Authorization could not be completed. Return to Settings and start again.
-        </p>
+        <div role="alert" className="mt-2 text-sm text-status-danger-600">
+          <p>Authorization could not be completed. Return to Settings and start again.</p>
+          {reason ? (
+            <p className="mt-1">
+              {FAILURE_REASONS[reason] ?? 'The provider reported an error.'} (Code: {reason})
+            </p>
+          ) : null}
+        </div>
       ) : pageState === 'retryable_failure' ? (
         <div className="mt-2 text-sm text-status-danger-600">
           <p role="alert">Authorization could not be completed. Please try again.</p>

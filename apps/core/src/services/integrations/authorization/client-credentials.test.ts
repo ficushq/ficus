@@ -210,7 +210,7 @@ describe('OAuth application credentials', () => {
         webhookUrl: 'https://ficus.example/base/api/webhooks/linear-app',
         requiredCapabilities: [
           'Webhooks: Agent session events, Inbox notifications, Permission changes, Issues, Comments',
-          'Scopes requested at install: read, issues:create, comments:create, app:assignable, app:mentionable',
+          'Scopes requested at install: read, write, app:assignable, app:mentionable',
         ],
       })
     })

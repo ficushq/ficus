@@ -9,6 +9,8 @@ export interface ActivityCursorContext {
   verbose: boolean
   agentIds: string[]
   kinds: readonly (SquadActivityKind | string)[]
+  /** Optional work stream filter; part of the digest only when set, so older cursors stay valid. */
+  workStreamId?: string
 }
 export interface ActivityCursorKeyset {
   at: Date
@@ -35,6 +37,7 @@ const digest = (context: ActivityCursorContext, floor: Date) =>
         verbose: context.verbose,
         agentIds: unique(context.agentIds),
         kinds: unique(context.kinds),
+        ...(context.workStreamId ? { workStreamId: context.workStreamId } : {}),
         retentionFloor: floor.toISOString(),
       })
     )
@@ -65,6 +68,7 @@ export interface GlobalActivityCursorContext {
   verbose: boolean
   agentIds: string[]
   kinds: readonly (SquadActivityKind | string)[]
+  workStreamId?: string
 }
 export interface GlobalActivityCursorKeyset {
   at: Date
@@ -81,6 +85,7 @@ const globalDigest = (context: GlobalActivityCursorContext, floor: Date) =>
         verbose: context.verbose,
         agentIds: unique(context.agentIds),
         kinds: unique(context.kinds),
+        ...(context.workStreamId ? { workStreamId: context.workStreamId } : {}),
         retentionFloor: floor.toISOString(),
       })
     )

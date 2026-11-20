@@ -380,6 +380,12 @@ export class K8sSandboxManager implements ISandboxManager {
     )
   }
 
+  async isManagedToolchainActive(sandboxId: string): Promise<boolean> {
+    const state = this.sandboxes.get(sandboxId)
+    if (!state) return false
+    return (await state.client.health()).managedToolchainActive === true
+  }
+
   /**
    * Stop a sandbox (close HTTP client but keep pod running).
    * The pod may continue running for other connections or be cleaned up by idle timeout.

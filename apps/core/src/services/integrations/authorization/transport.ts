@@ -85,6 +85,7 @@ export function createLocalTransport(deps: {
         clientId: credentials.clientId,
         redirectUri: input.redirectUri ?? callbackUrl(),
         state: input.localFlowId,
+        intent: input.intent,
       })
       return {
         authorizationUrl: authorizationUrl.toString(),

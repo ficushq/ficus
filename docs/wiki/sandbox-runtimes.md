@@ -487,6 +487,63 @@ This managed toolchain is separate from repository `devbox.json`, legacy
 mechanisms remain unchanged. It is not available on the `host` runtime (see the
 comparison table above).
 
+### Installing in the background
+
+Changing the toolchain, including attaching an integration that contributes
+packages or setup steps (the Linear CLI, for example), never restarts, drains or
+recreates the sandbox. Whether agents wait for the install depends on whether the
+box has a toolchain to fall back to:
+
+- Every sandbox ensure (agent turns, terminals, deployments) first waits for the
+  cheap already-applied path: readiness checks and activating the cached
+  environment, at most 30 seconds. That keeps an unchanged toolchain active
+  before the first command after a box wakes.
+- When real install work starts, another reconcile of the box is already
+  installing (in this Core process, or under the provisioning lease in another
+  one), or that 30-second budget runs out, Core asks the box server whether its
+  commands still run with a previously activated managed toolchain
+  (`managedToolchainActive` in its health response).
+  - **Yes** (for example, an integration added to a working box): the ensure
+    returns and the install continues in the background. Commands keep the
+    previous toolchain until the new one passes setup and readiness. Integration
+    wrappers whose real binary is not on `PATH` yet say the tool is still being
+    installed, rather than a bare "not found".
+  - **No** (a new or recreated box, a box whose server restarted, a box after a
+    cache or lock reset, a squad's first declaration, a box server too old to
+    report it, or any runtime that cannot tell, including Docker): the ensure
+    waits for the install, and a failed install fails the ensure, as it did
+    before. Agents never start work without the squad's declared packages.
+- Concurrent ensures share one follow-up reconcile instead of queuing one each.
+- A failed install is recorded in the toolchain status (`sandbox_status` reports
+  `toolchain failed (<reason>)`), and the squad manager receives one system
+  notice per squad and toolchain declaration, naming the failure and how to retry
+  (`ficus squad toolchain apply <squad-id>`). Integration setup steps still fail
+  closed (each runs in its own `set -eu` subshell, and a failed integrity check
+  installs nothing), and the projection still reports `toolchain_readiness_failed`
+  and retries with backoff.
+- The integration projection worker, which awaits the full install, renews its
+  lease every 20 seconds while it runs, so an install longer than the 60-second
+  lease is not claimed and started again.
+
+#### Installs interrupted by a drain or Core restart
+
+A background install is not covered by the ensure's maintenance admission
+effect, which ends when the ensure returns (the integration projection worker's
+installs never were). A maintenance drain or Core upgrade can therefore stop Core
+while an install runs. The provisioning lease is a Postgres session lock, so it
+is released with the process; the box server terminates the install command when
+Core's connection drops. The provision row stays `installing`, the box's
+`.ready` marker stays absent, and a box that had a previous toolchain keeps
+serving it. The next ensure or projection pass sees the marker does not match
+and reinstalls from the start, so setup scripts and integration setup steps must
+stay safe to rerun. Nothing is half-activated: the new environment is only
+swapped in after setup and readiness pass.
+
+The install itself still uses the box's CPU, memory and network, so a large
+fresh resolution can slow other commands on a busy box. A genuine box restart
+(Recovery → Restart, a spec change or a runtime update) keeps its existing
+drain, notice and recovery behavior; a toolchain change does not cause one.
+
 ### Pinned toolchain resolution
 
 On VM and Kubernetes sandboxes, the first sandbox that installs a squad's toolchain

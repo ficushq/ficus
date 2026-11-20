@@ -20,6 +20,7 @@ import type { ClientMessage, ServerMessage } from './types'
 import { isValidTopic } from './types'
 import { agentChatTypingScope, agentTopicScope, eventSquadId, topicScope, type TopicScope } from './topic-scope'
 import { AgentChatTypingRegistry } from './agent-chat-typing'
+import { loadActivityRowFacts, type ActivityRowFacts } from '../squad-activity/row-context'
 import {
   PresenceRegistry,
   forgetPresenceProfile,
@@ -486,6 +487,20 @@ export class WebSocketManager {
 
   async broadcastActivity(data: SquadActivityProjectionEventData): Promise<void> {
     const topic = `squadActivity:${data.squadId}` as Topic
+    // Read-time row context for agent rows, loaded once per event alongside the access checks
+    // and reduced per subscriber below. Presentation only: a failed load still delivers the row.
+    const needsFacts =
+      data.operation === 'upsert' &&
+      data.item.ref?.type === 'agent' &&
+      [...this.clients.values()].some((client) => this.isActiveSubscriber(client, topic))
+    const factsPromise: Promise<ActivityRowFacts | undefined> = needsFacts
+      ? loadActivityRowFacts([{ squadId: data.squadId, item: data.item }])
+          .then((loaded) => loaded.get(`${data.squadId}|${data.item.id}`))
+          .catch((error) => {
+            console.error('[ws] Activity row context failed:', error)
+            return undefined
+          })
+      : Promise.resolve(undefined)
     await Promise.all(
       [...this.clients.values()].map(async (client) => {
         if (!this.isActiveSubscriber(client, topic)) return
@@ -521,11 +536,18 @@ export class WebSocketManager {
           if (data.operation === 'delete') return
         }
         if (!activityEventVisible(access, data) || !this.isActiveSubscriber(client, topic)) return
+        const facts = needsFacts ? await factsPromise : undefined
+        if (
+          needsFacts &&
+          (!this.isActiveSubscriber(client, topic) ||
+            !this.isCurrentActivityGeneration(client, topic, generation, epoch))
+        )
+          return
         this.send(client.ws, {
           type: 'event',
           topic,
           event: 'squadActivity.projected',
-          data: redactActivityEvent(access, data),
+          data: redactActivityEvent(access, data, facts),
         })
       })
     )

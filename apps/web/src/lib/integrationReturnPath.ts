@@ -25,7 +25,7 @@ export function linearIdentityAuthorizationReturnPath(baseUrl = appBasePath()) {
 }
 
 /** Older authorization flows saved only /settings, which opens the personal account page. */
-export function integrationReturnPath(returnTo: string, provider: OAuthProvider, baseUrl = appBasePath()) {
+export function integrationReturnPath(returnTo: string, provider: string, baseUrl = appBasePath()) {
   const settingsPath = `${baseUrl.replace(/\/$/, '')}/settings`
   const pathname = returnTo.split(/[?#]/, 1)[0]?.replace(/\/$/, '')
   if (provider === 'github' && pathname === githubIdentityAuthorizationReturnPath(baseUrl))

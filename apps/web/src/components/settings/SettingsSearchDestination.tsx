@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 
@@ -5,10 +6,13 @@ import type { ReactNode } from 'react'
 export function SettingsSearchDestination({
   section,
   target,
+  fill = false,
   children,
 }: {
   section: string
   target?: string
+  /** Use the whole content area (width and height) instead of the readable form column, for tools such as Logs. */
+  fill?: boolean
   children: ReactNode
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -61,7 +65,13 @@ export function SettingsSearchDestination({
     }
   }, [section, target])
   return (
-    <div ref={containerRef} className="min-w-0 w-full max-w-3xl mx-auto py-4 px-1 md:py-2 md:px-4">
+    <div
+      ref={containerRef}
+      className={clsx(
+        'min-w-0 w-full mx-auto py-4 px-1 md:py-2 md:px-4',
+        fill ? 'flex min-h-full flex-col' : 'max-w-3xl'
+      )}
+    >
       {children}
     </div>
   )

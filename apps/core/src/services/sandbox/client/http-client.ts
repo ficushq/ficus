@@ -379,6 +379,11 @@ export interface HealthResponse {
   bunVersion?: string
   healthy: boolean
   devboxReady: boolean
+  /**
+   * Whether commands still run with an activated managed toolchain. Absent on
+   * older servers, which Core treats as no toolchain to fall back to.
+   */
+  managedToolchainActive?: boolean
   version: string
   uptimeSeconds: number
   /** Load and memory; absent from servers that predate it or off Linux. */

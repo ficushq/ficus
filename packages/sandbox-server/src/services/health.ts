@@ -3,6 +3,7 @@
 const startTime = Date.now()
 import { readExecutorCommandIdentity, type ExecutorCommandIdentity } from './command-identity'
 import type { SandboxContainers, SandboxRuntimeHealth } from '@ficus/shared'
+import { isManagedToolchainActive } from './devbox-env'
 import { DOCKER_HEALTH_TIMEOUT_MS, probeBoxDocker, boxPressureSampler, staleRuncExecReason } from './processes'
 
 interface RuntimeHealthDependencies {
@@ -141,6 +142,7 @@ export function getHealthResponse(env: NodeJS.ProcessEnv = process.env, runtime 
     healthy: true,
     runtimeHealth: runtime.snapshot(),
     devboxReady,
+    managedToolchainActive: isManagedToolchainActive(),
     // Host and box pressure only (no process detail): health is unauthenticated.
     ...(pressure ? { pressure } : {}),
     version: VERSION,

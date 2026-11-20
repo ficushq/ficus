@@ -4,12 +4,29 @@ import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { IntegrationProjectionFailure } from './reconciler'
 
 const LEASE_MS = 60_000
+/**
+ * A projection can install tools in every target sandbox, which can take far
+ * longer than the lease. Without renewal the next pass re-claimed the same
+ * projection while the first install was still running, started it again on
+ * every target, and dropped the first result at the stale-lease fence, so the
+ * projection could stay `installing` for as long as installs outlasted the
+ * lease.
+ */
+const LEASE_RENEW_MS = 20_000
 const MAX_BACKOFF_MS = 15 * 60_000
 
 export interface IntegrationProjectionWorkerDependencies {
   repository: {
     sweepMissing?(now: Date): Promise<void>
     claim(now: Date, leaseExpiresAt: Date, leaseToken: string): Promise<ClaimedIntegrationProjection | null>
+    renew?(input: {
+      squadId: string
+      providerKey: string
+      generation: bigint
+      leaseToken: string
+      leaseExpiresAt: Date
+      now: Date
+    }): Promise<boolean>
     complete(input: {
       squadId: string
       providerKey: string
@@ -33,6 +50,8 @@ export interface IntegrationProjectionWorkerDependencies {
   discoverDrift?(now: Date): Promise<void>
   now?: () => Date
   uuid?: () => string
+  /** How often a running reconcile extends its lease; tests shorten it. */
+  leaseRenewMs?: number
 }
 
 /**
@@ -92,8 +111,10 @@ export class IntegrationProjectionWorker {
     const now = this.#now()
     const claim = await this.#dependencies.repository.claim(now, new Date(now.getTime() + LEASE_MS), this.#uuid())
     if (!claim) return false
+    const stopRenewing = this.#renewWhileRunning(claim)
     try {
       const result = await this.#dependencies.reconcile(claim)
+      stopRenewing()
       await this.#dependencies.repository.complete({
         squadId: claim.squadId,
         providerKey: claim.providerKey,
@@ -104,6 +125,7 @@ export class IntegrationProjectionWorker {
         now: this.#now(),
       })
     } catch (error) {
+      stopRenewing()
       const attempts = claim.attempts + 1
       const backoff = Math.min(1_000 * 2 ** Math.min(attempts - 1, 20), MAX_BACKOFF_MS)
       const failedAt = this.#now()
@@ -118,6 +140,41 @@ export class IntegrationProjectionWorker {
       })
     }
     return true
+  }
+
+  #renewWhileRunning(claim: ClaimedIntegrationProjection): () => void {
+    const renew = this.#dependencies.repository.renew
+    if (!renew) return () => {}
+    let stopped = false
+    let inFlight = false
+    const timer = setInterval(() => {
+      if (stopped || inFlight) return
+      inFlight = true
+      const now = this.#now()
+      renew
+        .call(this.#dependencies.repository, {
+          squadId: claim.squadId,
+          providerKey: claim.providerKey,
+          generation: claim.generation,
+          leaseToken: claim.leaseToken,
+          leaseExpiresAt: new Date(now.getTime() + LEASE_MS),
+          now,
+        })
+        // A lost claim (newer generation, or a peer took over) is fenced at
+        // complete/fail; renewal stops being useful but is harmless.
+        .then((held) => {
+          if (!held) stop()
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false
+        })
+    }, this.#dependencies.leaseRenewMs ?? LEASE_RENEW_MS)
+    const stop = () => {
+      stopped = true
+      clearInterval(timer)
+    }
+    return stop
   }
 
   async runBatch(limit = 20): Promise<number> {

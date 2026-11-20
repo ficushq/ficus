@@ -46,7 +46,7 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   - `portal` (default true; `false` renders in place, still `position: fixed`), `layer`, `scroll`.
 - Dismiss reasons: `pointer`, `escape`, `focus` (from `usePopupDismiss`), `anchor` (the anchor stopped
   rendering, or for a hover card scrolled out of view), `tab` (Tab out of a menu) and `select` (a menu
-  item or option ran).
+  item or option ran, or `dismissPopupsContaining` closed it).
 
 ### Variants
 
@@ -133,6 +133,12 @@ region and the trigger (plus any `inside` regions) inside. It is mandatory for a
 WebKit rule it documents applies to every popover: in Safari and every iOS browser a tapped button never
 takes focus — WebKit focuses its nearest focusable ancestor or blurs to nothing before the click — so a
 popover never closes on its own blur. Escape is consumed by the most recently opened popup.
+
+A document-level handler that runs an item's action in place of the item's own handler (and so stops the
+click before the popover sees it) closes the popover with `dismissPopupsContaining(node)` from the same
+module: every open popup the node sits in, nested ones included, closes innermost first with reason
+`select`, a hover card at once. The Shift- or Alt-click that opens an agent link in a floating window
+(`components/FloatingWindows.tsx`) is the one such handler.
 
 ## Guards
 

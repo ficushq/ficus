@@ -84,7 +84,7 @@ export async function createLinearAppFixture(
       organizationUrlKey: 'acme',
       appUserId,
       appUserName: 'Ficus',
-      scopes: ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'],
+      scopes: ['read', 'write', 'app:assignable', 'app:mentionable'],
     },
     credentialRef,
     materialRevision: revision,

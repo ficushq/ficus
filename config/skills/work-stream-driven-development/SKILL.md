@@ -205,7 +205,5 @@ the owner when its routing or delivery is unclear.
 See `docs/wiki/workflows.md` and the user documentation's workflow definition
 reference for complete schemas, commands, examples, and integration bindings.
 
-Task descriptions must be self-contained: include the goal, current behavior/problem,
-desired behavior, constraints, and important decisions. Workers do not share the
-requester's transcript; do not rely on or merely reference prior chat conversations,
-"as discussed", or "the conversation above".
+"Writing Work Stream Descriptions" in your prompt covers what a description
+contains and when to quote the user's exact words.

@@ -25,7 +25,7 @@ const TERMINAL_TOKENS = {
   brightCyan: '--term-bright-cyan',
   brightWhite: '--term-bright-white',
   // xterm 6 draws its own scrollbar slider. The log palette defines no
-  // `--log-scrollbar-*` tokens, so log viewers keep xterm's default slider.
+  // `--log-scrollbar-*` tokens, so the xterm log viewer keeps the default slider.
   scrollbarSliderBackground: '--term-scrollbar-thumb',
   scrollbarSliderHoverBackground: '--term-scrollbar-thumb-hover',
   scrollbarSliderActiveBackground: '--term-scrollbar-thumb-active',

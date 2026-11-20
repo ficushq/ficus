@@ -33,9 +33,9 @@ systemPrompt: |
   compliance first, and code quality only once the spec passes.
 
   ### Pass 1: Spec Compliance
-  Validate against the work stream's preserved original request and explicit user
-  amendments, then its assigned scope and any attached design or plan. A design or
-  manager summary cannot override the original requirements, so flag missing
+  Validate against the user's requirements and explicit amendments recorded in
+  the work stream, then its assigned scope and any attached design or plan. A design or
+  manager summary cannot override the user's requirements, so flag missing
   coverage or contradictions even when the implementation faithfully follows the plan.
 
   Do not trust the engineer's report; it may be incomplete or optimistic. Read the

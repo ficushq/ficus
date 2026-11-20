@@ -20,13 +20,21 @@ import { act } from 'react'
  * `touch: true` uses iOS's touch order instead: `pointerup` fires at touchend, BEFORE the
  * compatibility mouse events that carry the focus change and the click.
  *
+ * `modifiers` holds keys down for every event of the tap (a Shift- or Option-click in Safari).
+ *
  * Returns whether the click was delivered.
  */
-export async function webkitTap(element: Element, { touch = false }: { touch?: boolean } = {}): Promise<boolean> {
+export async function webkitTap(
+  element: Element,
+  {
+    touch = false,
+    modifiers = {},
+  }: { touch?: boolean; modifiers?: Pick<MouseEventInit, 'shiftKey' | 'altKey' | 'metaKey' | 'ctrlKey'> } = {}
+): Promise<boolean> {
   const document = element.ownerDocument
   const window = document.defaultView as unknown as typeof globalThis
   const PointerCtor = (window.PointerEvent ?? window.MouseEvent) as typeof MouseEvent
-  const init = { bubbles: true, cancelable: true, composed: true, button: 0, detail: 1 }
+  const init = { bubbles: true, cancelable: true, composed: true, button: 0, detail: 1, ...modifiers }
   const pointer = (type: string) =>
     act(async () => {
       element.dispatchEvent(

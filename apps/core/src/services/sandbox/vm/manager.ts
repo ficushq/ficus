@@ -1591,6 +1591,12 @@ export class VmSandboxManager implements ISandboxManager {
     )
   }
 
+  async isManagedToolchainActive(sandboxId: string): Promise<boolean> {
+    const client = this.sandboxes.get(sandboxId)?.client ?? (await this.getOrAttachClient(sandboxId))
+    if (!client) return false
+    return (await client.health()).managedToolchainActive === true
+  }
+
   /** Host-side recovery remains usable when the sandbox HTTP/exec server is wedged. */
   async restartSandbox(sandboxId: string): Promise<void> {
     // Reject immediately: queueing behind ensure/recovery would restart a box

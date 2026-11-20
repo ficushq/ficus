@@ -7,6 +7,7 @@ import type { ExecutionStatus } from '@ficus/shared'
 import { AgentComposerStatus } from './AgentComposerStatus'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
+import { FloatingChatButton } from './FloatingChatButton'
 
 interface AgentConversationDependencies {
   AgentChatComponent?: typeof AgentChat
@@ -33,6 +34,15 @@ interface AgentConversationProps {
   sendOptions?: ComponentProps<typeof AgentChat>['sendOptions']
   /** Placeholder for the composer. */
   placeholder?: string
+  /**
+   * The composer's draft key, when this chat may show twice at once: a floating window keeps its own
+   * draft so it never overwrites the page's. Defaults to the agent's page draft.
+   */
+  draftKey?: string
+  /** Called with the live conversation as it changes (a floating window watches it for unread activity). */
+  onConversation?: ComponentProps<typeof AgentChat>['onConversation']
+  /** Offer the floating-window button in the composer (default: unless embedded). */
+  floatingWindowButton?: boolean
 }
 
 export function AgentConversation({
@@ -47,6 +57,9 @@ export function AgentConversation({
   dependencies,
   sendOptions,
   placeholder,
+  draftKey,
+  onConversation,
+  floatingWindowButton = !embedded,
 }: AgentConversationProps) {
   const AgentChatComponent = dependencies?.AgentChatComponent ?? AgentChat
   const api = useChatApi()
@@ -126,7 +139,7 @@ export function AgentConversation({
       isReview={isReview}
       onReviewFeedback={onReviewFeedback}
       composerStatus={composerStatus}
-      inputStorageKey={`agent:${agentId}`}
+      inputStorageKey={draftKey ?? `agent:${agentId}`}
       squadId={agent?.squadId ?? undefined}
       viewingUserId={viewingUserId}
       focusMessageId={focusMessageId}
@@ -136,6 +149,8 @@ export function AgentConversation({
       onToggleRawText={() => setShowRawText((showRaw) => !showRaw)}
       sendOptions={sendOptions}
       placeholder={placeholder}
+      onConversation={onConversation}
+      composerControls={floatingWindowButton ? <FloatingChatButton agentId={agentId} /> : undefined}
     />
   )
 }

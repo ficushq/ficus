@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity } from './app-api'
+import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
 
 const log = createLogger('linear-session-ack')
 
@@ -81,6 +82,11 @@ export async function acknowledgeLinearSession(
       acknowledged = true
     } catch (error) {
       log.warn(`Linear session ${sessionId} acknowledgment attempt ${attempt + 1} failed: ${errorCode(error)}`)
+      // The app lacks a scope: a retry is refused the same way, and only a reconnect fixes it.
+      if (isLinearInsufficientScope(error)) {
+        await markLinearScopeMissing(input.connectionId)
+        break
+      }
     }
   }
   const [updated] = await db

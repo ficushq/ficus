@@ -5,6 +5,7 @@ import { InboxMessage } from '../../../entities/InboxMessage'
 import { createLogger } from '../../../lib/infra/logger'
 import { linearActivityId } from './app-api'
 import { resolveLinearConnectionById } from './resolve-connection'
+import { markLinearScopeMissing } from './scope-health'
 import type { LinearProjectionItem } from './session-projection'
 import {
   LinearWriteError,
@@ -387,6 +388,17 @@ async function drainRow(row: OutboxRow, at: Date, result: DrainLinearOutboxResul
       connectionCooldown.set(row.connectionId, until)
       await defer(row, new Date(until), 'rate_limited')
       result.deferred++
+      return
+    }
+    if (failure.code === 'insufficient_scope') {
+      // The app lacks a scope (Linear's "Invalid scope"). The connection is marked for reconnect and
+      // the item waits for it, as for any unusable connection; an API-key connection cannot gain
+      // the scope by reconnecting, so its item fails.
+      if (await markLinearScopeMissing(row.connectionId)) await retry(row, at, failure.code, result)
+      else {
+        await finish(row, 'failed', failure.code)
+        result.failed++
+      }
       return
     }
     if (failure.code === 'forbidden' && row.sessionId) {

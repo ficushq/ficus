@@ -122,4 +122,27 @@ describe('squadsResource', () => {
     await squadsResource(t).listGlobalActivity({ limit: 50, cursor: 'act-9', kinds: ['pr', 'message', 'pr'] })
     expect(calls[0].path).toBe('/activity?limit=50&cursor=act-9&kind=message&kind=pr')
   })
+
+  test('activity lists forward Show everything and the work stream filter', async () => {
+    const { t, calls } = mockTransport(() => ({ items: [], hasMore: false, nextCursor: null, squads: {} }))
+    const streamId = '0f8d1f0e-6c1a-4f5e-9d2b-1a2b3c4d5e6f'
+    await squadsResource(t).listGlobalActivity({ verbose: true, workStreamId: streamId })
+    await squadsResource(t).listSquadActivity('sq-1', { verbose: false, workStreamId: streamId, kinds: ['message'] })
+    expect(calls.map((call) => call.path)).toEqual([
+      `/activity?verbose=true&workStreamId=${streamId}`,
+      `/squads/sq-1/activity?workStreamId=${streamId}&kind=message`,
+    ])
+  })
+
+  test('presence calls hit the global and squad presence routes', async () => {
+    const { t, calls } = mockTransport(() => ({
+      workingAgentIds: [],
+      workingCount: 0,
+      needsYouCount: 0,
+      streamCount: 0,
+    }))
+    await squadsResource(t).getGlobalActivityPresence()
+    await squadsResource(t).getSquadActivityPresence('sq-1')
+    expect(calls.map((call) => call.path)).toEqual(['/activity/presence', '/squads/sq-1/activity/presence'])
+  })
 })

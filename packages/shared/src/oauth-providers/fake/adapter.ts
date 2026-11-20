@@ -119,7 +119,7 @@ export function fakeLinearGrant(
             organizationUrlKey: overrides.organizationUrlKey ?? 'fake-linear',
             appUserId: overrides.appUserId ?? 'fake-linear-app-user-id',
             appUserName: 'Ficus',
-            scopes: ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'],
+            scopes: ['read', 'write', 'app:assignable', 'app:mentionable'],
           },
     displayName: overrides.configuration === null ? 'Linear' : `${organizationName} (Ficus app)`,
   }

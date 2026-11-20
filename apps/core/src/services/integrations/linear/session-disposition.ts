@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db, linearAgentSessions } from '../../../db'
 import { createLogger } from '../../../lib/infra/logger'
 import { createLinearAgentActivity, type LinearActivityContent } from './app-api'
+import { isLinearInsufficientScope, markLinearScopeMissing } from './scope-health'
 
 const log = createLogger('linear-session-disposition')
 
@@ -129,6 +130,13 @@ export async function postLinearSessionDisposition(input: {
     log.warn(
       `Linear session ${input.sessionId} disposition failed: ${error instanceof Error ? error.message.slice(0, 64) : 'error'}`
     )
+    if (isLinearInsufficientScope(error)) {
+      const [session] = await db
+        .select({ connectionId: linearAgentSessions.connectionId })
+        .from(linearAgentSessions)
+        .where(eq(linearAgentSessions.id, input.sessionId))
+      if (session) await markLinearScopeMissing(session.connectionId)
+    }
     if (projectionKey === 'disposition')
       await db
         .update(linearAgentSessions)

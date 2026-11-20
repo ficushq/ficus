@@ -42,6 +42,7 @@ export async function listSquadActivity(
   if (options.limit !== undefined) params.set('limit', String(options.limit))
   if (options.cursor) params.set('cursor', options.cursor)
   if (options.verbose) params.set('verbose', 'true')
+  if (options.workStreamId) params.set('workStreamId', options.workStreamId)
   for (const agentId of [...new Set(options.agentIds ?? [])].sort()) params.append('agentId', agentId)
   for (const kind of [...new Set<SquadActivityKind>(options.kinds ?? [])].sort()) params.append('kind', kind)
   const query = params.toString()

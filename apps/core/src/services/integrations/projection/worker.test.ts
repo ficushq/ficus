@@ -208,3 +208,85 @@ test('the projection-invalidated event still drives an immediate reconcile', asy
     await worker.stop()
   }
 })
+
+test('a projection whose install outlasts the lease keeps renewing it instead of being claimed again', async () => {
+  const renewals: { leaseToken: string; leaseExpiresAt: Date }[] = []
+  const completed: unknown[] = []
+  let claims = 0
+  let release!: () => void
+  const install = new Promise<void>((resolve) => (release = resolve))
+  const worker = new IntegrationProjectionWorker({
+    leaseRenewMs: 5,
+    repository: {
+      claim: async (_now, leaseExpiresAt, leaseToken) =>
+        claims++ === 0
+          ? ({
+              squadId: 'squad',
+              providerKey: 'linear',
+              generation: 4n,
+              attempts: 0,
+              leaseToken,
+              leaseExpiresAt,
+            } as any)
+          : null,
+      renew: async (input) => {
+        renewals.push({ leaseToken: input.leaseToken, leaseExpiresAt: input.leaseExpiresAt })
+        return true
+      },
+      complete: async (input) => {
+        completed.push(input)
+        return true
+      },
+      fail: async () => true,
+    },
+    reconcile: async () => {
+      await install
+      return { fingerprint: 'b'.repeat(64), credentialRevision: null }
+    },
+    uuid: () => 'lease-1',
+  })
+  const running = worker.runOnce()
+  while (renewals.length < 3) await Bun.sleep(2)
+  release()
+  expect(await running).toBe(true)
+  const afterCompletion = renewals.length
+  await Bun.sleep(30)
+  // Renewal stops with the reconcile, and every renewal used the claim's own lease.
+  expect(renewals.length).toBe(afterCompletion)
+  expect(new Set(renewals.map((renewal) => renewal.leaseToken))).toEqual(new Set(['lease-1']))
+  expect(completed).toEqual([expect.objectContaining({ leaseToken: 'lease-1', generation: 4n })])
+})
+
+test('renewal stops once the claim is lost and a failed reconcile still records its failure', async () => {
+  let renewals = 0
+  const failed: unknown[] = []
+  let release!: () => void
+  const install = new Promise<void>((resolve) => (release = resolve))
+  const worker = new IntegrationProjectionWorker({
+    leaseRenewMs: 5,
+    repository: {
+      claim: async (_now, leaseExpiresAt, leaseToken) =>
+        ({ squadId: 'squad', providerKey: 'linear', generation: 1n, attempts: 0, leaseToken, leaseExpiresAt }) as any,
+      renew: async () => {
+        renewals += 1
+        return false
+      },
+      complete: async () => true,
+      fail: async (input) => {
+        failed.push(input)
+        return true
+      },
+    },
+    reconcile: async () => {
+      await install
+      throw new IntegrationProjectionFailure('toolchain_readiness_failed')
+    },
+  })
+  const running = worker.runOnce()
+  while (renewals < 1) await Bun.sleep(2)
+  await Bun.sleep(30)
+  expect(renewals).toBe(1)
+  release()
+  await running
+  expect(failed).toEqual([expect.objectContaining({ code: 'toolchain_readiness_failed' })])
+})

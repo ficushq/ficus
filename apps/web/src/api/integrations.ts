@@ -55,6 +55,8 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
     organizationUrlKey?: string
     appUserId?: string
     appUserName?: string
+    /** App scopes the connection lacks; non-empty means an admin must reconnect to grant them. */
+    missingScopes?: string[]
   }
   credentialConfigured: boolean
   refreshAvailable?: boolean
@@ -144,6 +146,20 @@ export const callbackIntegrationAuthorization = (
   fetcher: ApiFetcher = apiFetch
 ) =>
   fetcher<{ returnTo: string }>(`/integrations/providers/${provider}/authorization/callback`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+/**
+ * The provider that started this callback's flow, from Core's stored flow state. The shared
+ * callback page cannot know it locally: a flow started in the Desktop app or another tab returns in
+ * a tab that never saw the start.
+ */
+export const resolveIntegrationAuthorizationProvider = (
+  body: { localFlowId: string } | { state: string },
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<{ provider: string }>('/integrations/authorization/provider', {
     method: 'POST',
     body: JSON.stringify(body),
   })
