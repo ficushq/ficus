@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('linear')
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db, userLinearIdentities, users } from '../../../db'
@@ -9,7 +9,6 @@ import { DbOAuthStateRepository } from '../authorization/db-state-repository'
 import { AuthorizationFlowError } from '../authorization/service'
 import type { OAuthTransport } from '../authorization/transport'
 import { linearPlugin } from './plugin'
-import { setLinearAppReadinessForTest } from './app-readiness'
 import { LinearIdentityAuthorization, recordLinearIdentity, resolveStoredLinearPurpose } from './identity-authorization'
 
 const userIds: string[] = []
@@ -66,13 +65,9 @@ function linking(transport: OAuthTransport, identity = { linearUserId: 'linear-p
   })
 }
 
-let restoreReadiness: () => void = () => {}
 beforeAll(async () => {
   await ensureQueryIndex('uq_user_linear_identities_linear_user')
-  // Linking uses the Ficus Linear app, so it is offered only where the app can be installed.
-  restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: true })
 })
-afterAll(() => restoreReadiness())
 afterEach(async () => {
   if (userIds.length) {
     await db.delete(userLinearIdentities).where(inArray(userLinearIdentities.userId, userIds))

@@ -15,7 +15,6 @@ const localApp = {
   clientId: null,
   callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback/linear',
   webhookUrl: 'https://ficus.example/api/webhooks/linear-app',
-  available: true,
   requiredCapabilities: [],
 }
 
@@ -133,7 +132,6 @@ test('hosted instances offer the install without local application settings', as
     configured: true,
     clientId: null,
     callbackUrl: 'x',
-    available: true,
     requiredCapabilities: [],
   })
   expect(buttonNamed('Install Ficus in Linear')).toBeDefined()
@@ -188,14 +186,36 @@ test('a workspace another Ficus Cloud instance holds is explained on its app con
 })
 
 for (const authority of ['local', 'platform_broker'] as const) {
-  test(`the agent app stays hidden while the server reports it unavailable (${authority}); API keys are unaffected`, async () => {
+  test(`the agent app section is always shown (${authority}), next to the API-key connections`, async () => {
     globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch
-    await render({ ...localApp, authority, configured: true, available: false }, [connection({})])
-    expect(container.querySelector('#linear-agent-app')).toBeNull()
-    expect(buttonNamed('Install Ficus in Linear')).toBeUndefined()
-    expect(container.querySelector('[data-testid="linear-app-callback-url"]')).toBeNull()
-    expect(container.textContent).toContain('personal API key')
+    await render({ ...localApp, authority, configured: true }, [connection({})])
+    expect(container.querySelector('#linear-agent-app')).not.toBeNull()
+    expect(buttonNamed('Install Ficus in Linear')).toBeDefined()
+    expect(container.textContent).toContain('Install Ficus in Linear as an agent app')
     expect(container.textContent).toContain('Replace API key')
     expect(buttonNamed('Create and validate')).toBeDefined()
+  })
+}
+
+for (const [authority, status, code, message] of [
+  [
+    'platform_broker',
+    503,
+    'broker_unconfigured',
+    "Ficus's hosted Linear app isn't set up for this instance yet. Try again later, or connect with a personal API key.",
+  ],
+  ['local', 400, 'oauth_app_unconfigured', 'Save the Linear application settings before installing the app.'],
+] as const) {
+  test(`a failed install explains ${code} instead of a generic error`, async () => {
+    globalThis.fetch = (async (input) =>
+      String(input).endsWith('/authorization/start')
+        ? Response.json({ error: code, code }, { status })
+        : new Promise<Response>(() => {})) as typeof fetch
+    await render({ ...localApp, authority, configured: true, clientId: 'linear-client' })
+    await harness.act(async () => {
+      fireEvent.click(buttonNamed('Install Ficus in Linear')!)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.querySelector('#linear-agent-app ~ [role="alert"]')?.textContent).toBe(message)
   })
 }

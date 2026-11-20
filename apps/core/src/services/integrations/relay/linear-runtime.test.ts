@@ -12,7 +12,6 @@ import { getSecretStore } from '../../secrets'
 import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { DbEventPollingDispatchStore } from '../db-event-polling-dispatch-store'
 import { serializeOAuthCredential } from '../authorization/credential-bundle'
-import { setLinearAppReadinessForTest } from '../linear/app-readiness'
 import { clearLinearUserCacheForTest } from '../linear/app-ingress'
 import { handleLinearAppEvent } from '../linear/app-webhook'
 import { resolveManagedLinearConnection } from '../linear/resolve-connection'
@@ -400,13 +399,10 @@ describe('processRelayedLinearDelivery redelivery', () => {
 
 describe('hosted relay end to end (fake Platform and fake Linear)', () => {
   let linear: FakeLinear
-  let restoreReadiness: () => void = () => {}
   beforeEach(() => {
     process.env.FICUS_MANAGED = '1'
-    restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: true })
     clearLinearUserCacheForTest()
   })
-  afterEach(() => restoreReadiness())
 
   test('a relayed session is acknowledged through the direct path processing, stored once and acknowledged to Platform', async () => {
     const fixture = await hosted()

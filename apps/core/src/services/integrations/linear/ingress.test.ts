@@ -16,7 +16,6 @@ import { getSecretStore } from '../../secrets'
 import { linearOutputAdapter } from './outputs'
 import { canReceiveLinearEvent, routeLinearEvent } from './ingress'
 import { createLinearAppFixture } from './testing/app-fixtures'
-import { setLinearAppReadinessForTest } from './app-readiness'
 
 const store = getSecretStore()
 const connectionIds: string[] = []
@@ -312,8 +311,7 @@ describe('API-key rule audiences bind to the probed viewer', () => {
 })
 
 test('the organization webhook never routes to squads on an agent app connection', async () => {
-  // With the app usable, the connection is skipped because it is an app connection, not because it is fenced.
-  const restore = setLinearAppReadinessForTest({ local: true, platform_broker: false })
+  // The connection is skipped because it is an app connection.
   const app = await createLinearAppFixture({ appSettings: false })
   try {
     const appSquad = await app.addSquad({ teamIds: ['team-uuid'] })
@@ -332,7 +330,6 @@ test('the organization webhook never routes to squads on an agent app connection
       .limit(1)
     expect(recorded?.authority).toMatchObject({ accountId: 'user-a', actorTrust: 'trusted' })
   } finally {
-    restore()
     await app.cleanup()
   }
 })

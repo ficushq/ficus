@@ -14,7 +14,7 @@ Linear offers two kinds of connection, and a squad uses one of them:
 
 ## Installing the agent app
 
-The agent app is not installable yet on every instance. If the Linear card shows no **Agent app** section, it is not available on this instance: use a personal API key for now, and do not create a Linear OAuth application or point a Linear webhook at Ficus.
+The **Agent app** section is always shown in the Linear card. If a Ficus Cloud install reports that the hosted Linear app is not set up for the instance yet, the Platform side has no Linear application configured: use a personal API key until it is. On a self-hosted instance, the install button appears only after the Linear application settings are saved.
 
 1. Enable Linear globally.
 2. On Ficus Cloud, open **Agent app** in the Linear card and choose **Install Ficus in Linear**. Self-hosted instances first need their own Linear OAuth application:

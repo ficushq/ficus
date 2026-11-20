@@ -263,6 +263,7 @@ describe('public url routes', () => {
     expect(preview.impact.webhooks.map((w) => w.after)).toEqual([
       'https://ficus.example.com/api/webhooks/github',
       'https://ficus.example.com/api/webhooks/linear',
+      'https://ficus.example.com/api/webhooks/linear-app',
     ])
     expect(getSettingsStore().getStoredValue(KEY)).toBeUndefined()
     expect((await app.request('/api/public-url/preview', json(admin.token, 'POST', { url: 'ftp://x' }))).status).toBe(

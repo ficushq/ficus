@@ -42,7 +42,6 @@ import {
 } from './polling'
 import { createEventPollingBudget } from '../event-polling-budget'
 import { retryLinearSession } from './session-retry'
-import { setLinearAppReadinessForTest } from './app-readiness'
 import {
   agentSessionCreatedPayload,
   agentSessionPromptedPayload,
@@ -121,10 +120,7 @@ async function recordAppWebhook() {
   })
 }
 
-// The app stays uninstallable in production until write-back ships; these tests exercise its event path.
-let restoreReadiness: () => void = () => {}
 beforeAll(async () => {
-  restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: false })
   await getSecretStore().initialize()
   await db.insert(agentTypes).values({
     id: workerType,
@@ -135,7 +131,6 @@ beforeAll(async () => {
   })
 })
 afterAll(async () => {
-  restoreReadiness()
   await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
 })
 beforeEach(async () => {

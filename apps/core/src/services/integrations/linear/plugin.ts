@@ -14,7 +14,6 @@ import {
   type OAuthCredentialBundleV1,
 } from '../authorization/credential-bundle'
 import { linearOutputAdapter } from './outputs'
-import { isLinearAppReady } from './app-readiness'
 import type { OAuthAuthority } from '../authorization/authority'
 import { LINEAR_CLI_PACKAGES, LINEAR_CLI_RELEASE, LINEAR_GRAPHQL_ENDPOINT, linearCliSetupStep } from './cli'
 
@@ -121,7 +120,7 @@ function appCapabilities(configuration: LinearAppConfiguration): string[] {
   ]
 }
 
-/** Every authority the app driver supports; `isLinearAppReady` decides which are offered now. */
+/** The app installs under both authorities: self-hosted with the operator's OAuth application, hosted through the Platform broker. */
 const LINEAR_APP_AUTHORITIES: readonly OAuthAuthority[] = ['platform_broker', 'local']
 
 export interface LinearPluginDependencies {
@@ -164,10 +163,7 @@ export function createLinearPlugin(dependencies: LinearPluginDependencies = {}):
   const linearAppDriver: ManagedOAuthDriver<LinearConfiguration> = {
     kind: 'oauth2',
     adapter: 'linear',
-    // Offered under an authority only once the side that receives an install exists (see app-readiness.ts).
-    get authorities(): readonly OAuthAuthority[] {
-      return LINEAR_APP_AUTHORITIES.filter(isLinearAppReady)
-    },
+    authorities: LINEAR_APP_AUTHORITIES,
     // One app connection per Linear workspace: reconnecting the same workspace updates it.
     identity: (configuration) => ({
       organizationId: isLinearAppConfiguration(configuration) ? configuration.organizationId : '',
