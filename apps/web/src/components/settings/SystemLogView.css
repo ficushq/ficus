@@ -1,0 +1,136 @@
+/* Settings → Logs (SystemLogView): a DOM log pane drawn with the log palette, the same --log-*
+   tokens the xterm log viewers use, so it keeps the terminal look in every theme. Translucent
+   fills use color-mix so a custom theme's token alpha still composes.
+
+   Like ResponsiveChat.css, these rules live in the utilities layer ahead of the generated
+   utilities; the order statement keeps the layer order although this file is bundled before
+   index.css. */
+@layer properties, theme, base, components, utilities;
+
+@layer utilities {
+  .ficus-log-view {
+    background-color: rgb(var(--log-bg));
+    color: rgb(var(--log-fg));
+    font-size: 12px;
+    line-height: 1.5;
+    tab-size: 8;
+    padding: 8px 0;
+    scrollbar-color: color-mix(in srgb, rgb(var(--log-fg)) 35%, transparent) transparent;
+  }
+  .ficus-log-view ::selection {
+    background-color: rgb(var(--log-selection-background));
+  }
+  .ficus-log-empty {
+    padding: 4px 12px;
+    color: color-mix(in srgb, rgb(var(--log-fg)) 80%, transparent);
+    font-style: italic;
+  }
+  /* A 2px level bar on the left; continuation rows of a wrapped line hang 2ch to the right of it. */
+  .ficus-log-line {
+    border-left: 2px solid transparent;
+    padding: 0 12px 0 calc(10px + 2ch);
+    text-indent: -2ch;
+  }
+  .ficus-log-wrap .ficus-log-line {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .ficus-log-nowrap .ficus-log-lines {
+    width: max-content;
+    min-width: 100%;
+  }
+  .ficus-log-nowrap .ficus-log-line {
+    white-space: pre;
+  }
+  .ficus-log-line-error {
+    border-left-color: rgb(var(--log-bright-red));
+    background-color: color-mix(in srgb, rgb(var(--log-red)) 13%, transparent);
+  }
+  .ficus-log-line-warn {
+    border-left-color: rgb(var(--log-bright-yellow));
+    background-color: color-mix(in srgb, rgb(var(--log-yellow)) 10%, transparent);
+  }
+  .ficus-log-line-debug {
+    color: color-mix(in srgb, rgb(var(--log-fg)) 80%, transparent);
+  }
+  .ficus-log-line-control {
+    color: rgb(var(--log-bright-yellow));
+    font-style: italic;
+  }
+  .ficus-log-line-control.ficus-log-line-error {
+    color: rgb(var(--log-bright-red));
+  }
+  .ficus-log-component {
+    display: inline-block;
+    min-width: 9ch;
+    text-indent: 0;
+    font-weight: 600;
+  }
+  .ficus-log-component-api {
+    color: rgb(var(--log-bright-cyan));
+  }
+  .ficus-log-component-worker {
+    color: rgb(var(--log-bright-magenta));
+  }
+  .ficus-log-timestamp {
+    color: color-mix(in srgb, rgb(var(--log-fg)) 80%, transparent);
+  }
+  .ficus-log-match {
+    background-color: color-mix(in srgb, rgb(var(--log-yellow)) 40%, transparent);
+    color: inherit;
+    border-radius: 2px;
+  }
+  .ficus-log-match-active {
+    background-color: rgb(var(--log-bright-yellow));
+    color: rgb(var(--log-bg));
+    outline: 1px solid rgb(var(--log-bright-yellow));
+  }
+  .log-ansi-black {
+    color: rgb(var(--log-black));
+  }
+  .log-ansi-red {
+    color: rgb(var(--log-red));
+  }
+  .log-ansi-green {
+    color: rgb(var(--log-green));
+  }
+  .log-ansi-yellow {
+    color: rgb(var(--log-yellow));
+  }
+  .log-ansi-blue {
+    color: rgb(var(--log-blue));
+  }
+  .log-ansi-magenta {
+    color: rgb(var(--log-magenta));
+  }
+  .log-ansi-cyan {
+    color: rgb(var(--log-cyan));
+  }
+  .log-ansi-white {
+    color: rgb(var(--log-white));
+  }
+  .log-ansi-bright-black {
+    color: rgb(var(--log-bright-black));
+  }
+  .log-ansi-bright-red {
+    color: rgb(var(--log-bright-red));
+  }
+  .log-ansi-bright-green {
+    color: rgb(var(--log-bright-green));
+  }
+  .log-ansi-bright-yellow {
+    color: rgb(var(--log-bright-yellow));
+  }
+  .log-ansi-bright-blue {
+    color: rgb(var(--log-bright-blue));
+  }
+  .log-ansi-bright-magenta {
+    color: rgb(var(--log-bright-magenta));
+  }
+  .log-ansi-bright-cyan {
+    color: rgb(var(--log-bright-cyan));
+  }
+  .log-ansi-bright-white {
+    color: rgb(var(--log-bright-white));
+  }
+}

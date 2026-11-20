@@ -118,13 +118,14 @@ test('read-only logs retain their distinct palette and repaint from log tokens',
   }
 })
 
-test('all log scopes preserve the pre-migration xterm 5.5 palette and both viewers own their observer', async () => {
+test('all log scopes preserve the pre-migration xterm 5.5 palette and the xterm log viewer owns its observer', async () => {
   const { default: legacy } = await import('./fixtures/legacy-log-colors.json')
   const { palettes } = await import('./test/builtins')
   for (const palette of palettes) {
     for (const [token, channels] of Object.entries(legacy)) expect(palette.tokens[token]).toBe(channels)
   }
-  for (const file of ['settings/SystemLogsSection.tsx', 'squads/SandboxLogs.tsx']) {
+  // Settings → Logs draws the same --log-* palette through CSS (SystemLogView.css), not xterm.
+  for (const file of ['squads/SandboxLogs.tsx']) {
     const source = readFileSync(new URL(`../components/${file}`, import.meta.url), 'utf8')
     expect(source).toContain("theme: readTerminalTheme(window.getComputedStyle(document.documentElement), 'log')")
     expect(source.indexOf("observeTerminalTheme(term, containerRef.current, 'log')")).toBeLessThan(
