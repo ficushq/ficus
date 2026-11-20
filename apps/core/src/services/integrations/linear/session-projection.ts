@@ -34,7 +34,10 @@ export interface ProjectionQuestion {
   id: string
   status: string
   data: QuestionData
-  /** The option label (or text) the answer maps to, for "Answered in Ficus: <label>". */
+  /**
+   * The option labels the answer maps to, for "Answered in Ficus: <label>". Absent for free text and
+   * for a question with several items, which post "Answered in Ficus." instead.
+   */
   answerLabel?: string
   /** The mirror's state when the question was already posted to this session. */
   mirrorState?: 'open' | 'answered_in_linear' | 'answered_in_ficus' | 'dismissed'
@@ -89,6 +92,7 @@ export const LINEAR_PROJECTION_TEXT = {
   started: 'Started work.',
   approval: 'Waiting for approval in Ficus.',
   paused: 'Paused.',
+  answered: 'Answered in Ficus.',
   withdrawn: 'Question withdrawn.',
   canceled: 'Ficus stopped working on this request.',
   failed: 'Ficus hit a problem and a person on the team is looking at it.',
@@ -254,7 +258,9 @@ export function projectLinearSession(snapshot: LinearProjectionSnapshot): Linear
             type: 'thought',
             body:
               question.status === 'answered'
-                ? `Answered in Ficus: ${bounded(question.answerLabel?.trim() || 'answered', 500)}`
+                ? question.answerLabel?.trim()
+                  ? `Answered in Ficus: ${bounded(question.answerLabel.trim(), 500)}`
+                  : LINEAR_PROJECTION_TEXT.answered
                 : LINEAR_PROJECTION_TEXT.withdrawn,
           },
           { collapsible: true }

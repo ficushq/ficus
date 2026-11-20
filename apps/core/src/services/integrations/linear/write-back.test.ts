@@ -166,11 +166,16 @@ async function addUser() {
 }
 
 /** An open question asked by a private agent of `ownerUserId`, from the stream. */
-async function askQuestion(streamId: string, ownerUserId: string, item: Record<string, unknown>) {
+async function askQuestion(
+  streamId: string,
+  ownerUserId: string,
+  item: Record<string, unknown> | Array<Record<string, unknown>>
+) {
   const [agent] = await db.insert(agents).values({ agentTypeId: 'manager', ownerUserId }).returning()
+  const questions = Array.isArray(item) ? item : [{ id: 'q', ...item }]
   const [question] = await db
     .insert(agentQuestions)
-    .values({ agentId: agent!.id, ownerUserId, questionData: { questions: [{ id: 'q', ...item }] }, status: 'open' })
+    .values({ agentId: agent!.id, ownerUserId, questionData: { questions }, status: 'open' })
     .returning()
   await db.insert(agentQuestionWorkStreamOrigins).values({ questionId: question!.id, workStreamId: streamId })
   return { agentId: agent!.id, questionId: question!.id }
@@ -573,7 +578,9 @@ describe('prompts on a bound session', () => {
       const managerAfter = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
       expect(managerAfter.length).toBe(managerBefore)
       await drainLinearOutbox()
-      expect(bodies(sessionId)).toContainEqual(['response', LINEAR_PROMPT_TEXT.passed])
+      // A thought, not a response: Linear would show a working session as complete after a response.
+      expect(bodies(sessionId).at(-1)).toEqual(['thought', LINEAR_PROMPT_TEXT.passed])
+      expect(bodies(sessionId).some(([type]) => type === 'response')).toBe(false)
       // The same activity redelivered (webhook retry or poll) neither repeats the message nor the reply.
       await processLinearAppEvent({
         type: 'AgentSessionEvent',
@@ -598,7 +605,7 @@ describe('prompts on a bound session', () => {
     expect(message!.content).toContain('Nobody is working the stream right now')
     expect(message!.content).toContain('Any news?')
     await drainLinearOutbox()
-    expect(bodies(sessionId)).toContainEqual(['response', LINEAR_PROMPT_TEXT.passed])
+    expect(bodies(sessionId)).toContainEqual(['thought', LINEAR_PROMPT_TEXT.passed])
   })
 
   test('with nobody to receive it, the prompt is not claimed as passed on', async () => {
@@ -607,7 +614,8 @@ describe('prompts on a bound session', () => {
     await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, squad.id))
     await prompt(sessionId, member.id, 'Is anyone there?')
     await drainLinearOutbox()
-    expect(bodies(sessionId)).toContainEqual(['response', LINEAR_PROMPT_TEXT.unreachable])
+    // Nobody will act on it, so it is the final word on this message.
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_PROMPT_TEXT.unreachable])
     expect(bodies(sessionId).some(([, body]) => body === LINEAR_PROMPT_TEXT.passed)).toBe(false)
   })
 
@@ -638,7 +646,7 @@ describe('prompts on a bound session', () => {
     expect(message!.deliveryMode).toBe('follow-up')
     expect(await promptEvents(sessionId)).toHaveLength(0)
     await drainLinearOutbox()
-    expect(bodies(sessionId)).toContainEqual(['response', LINEAR_PROMPT_TEXT.passed])
+    expect(bodies(sessionId)).toContainEqual(['thought', LINEAR_PROMPT_TEXT.passed])
   })
 
   test('a member’s stop pauses the stream at once, tells the owner and posts the stopped response', async () => {
@@ -715,7 +723,7 @@ describe('questions as elicitations', () => {
       .where(eq(linearQuestionMirrors.questionId, questionId))
     expect(mirror!.state).toBe('answered_in_linear')
     await drainLinearOutbox()
-    expect(bodies(sessionId)).toContainEqual(['response', LINEAR_PROMPT_TEXT.answered])
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_PROMPT_TEXT.answered])
     // An answer from Linear posts no "answered in Ficus" thought.
     await project(stream.id)
     expect(bodies(sessionId).some(([, body]) => String(body).startsWith('Answered in Ficus'))).toBe(false)
@@ -768,7 +776,9 @@ describe('questions as elicitations', () => {
     expect(toA!.content).toContain('Una Unlinked')
     expect(toA!.content).toContain(`ficus agent-question resolve ${a.questionId}`)
     await drainLinearOutbox()
-    expect(bodies(first.sessionId)).toContainEqual(['response', LINEAR_PROMPT_TEXT.candidate])
+    // The question stays open and the stream keeps working, so the reply is a thought, not a response.
+    expect(bodies(first.sessionId).at(-1)).toEqual(['thought', LINEAR_PROMPT_TEXT.candidate])
+    expect(bodies(first.sessionId).some(([type]) => type === 'response')).toBe(false)
     // A candidate is not also delivered as an ordinary message.
     expect(
       (await db.select().from(inbox).where(eq(inbox.recipientId, first.squad.managerAgentId!))).some(
@@ -830,6 +840,33 @@ describe('questions as elicitations', () => {
       .from(linearQuestionMirrors)
       .where(eq(linearQuestionMirrors.questionId, questionId))
     expect(mirror!.state).toBe('answered_in_ficus')
+  })
+
+  // Live: a multi-question answer in Ficus posted "Answered in Ficus: answered".
+  test('an answer in Ficus to several questions posts no summary', async () => {
+    const owner = await addUser()
+    const items = [
+      { id: 'db', ...selectQuestion },
+      { id: 'region', type: 'select', question: 'Which region?', options: [{ value: 'eu', label: 'Europe' }] },
+    ]
+    for (const answer of [
+      { db: 'pg', region: 'eu' },
+      { db: 'redis', region: 'Somewhere near Lisbon' },
+    ]) {
+      const { sessionId, stream } = await boundStream()
+      const { questionId } = await askQuestion(stream.id, owner, [
+        items[0]!,
+        answer.region === 'eu' ? items[1]! : { id: 'region', type: 'text', question: 'Which region?' },
+      ])
+      await project(stream.id)
+      await db
+        .update(agentQuestions)
+        .set({ status: 'answered', answer: JSON.stringify(answer), answeredByUserId: owner, answeredAt: new Date() })
+        .where(eq(agentQuestions.id, questionId))
+      await project(stream.id)
+      const answered = bodies(sessionId).filter(([, body]) => String(body).startsWith('Answered in Ficus'))
+      expect(answered).toEqual([['thought', 'Answered in Ficus.']])
+    }
   })
 
   test('an unlinked member gets the account link on the next elicitation, only with a public URL', async () => {

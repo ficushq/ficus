@@ -32,8 +32,8 @@ export const LINEAR_STOP_TEXT = {
 } as const
 
 /**
- * The fixed reply to every other prompt on a bound session, so the session never stays on
- * "thinking". Public text: it never names agents, squads or internal state.
+ * The fixed reply to every other prompt on a bound session, so the prompt never goes unanswered.
+ * Public text: it never names agents, squads or internal state.
  */
 export const LINEAR_PROMPT_TEXT = {
   passed: 'Ficus passed your message to the team working on this.',
@@ -41,6 +41,19 @@ export const LINEAR_PROMPT_TEXT = {
   candidate: 'Ficus passed your reply to the team. The question stays open until it is answered.',
   unreachable: 'Ficus could not pass your message on: nobody in Ficus is responsible for this work right now.',
 } as const
+
+/**
+ * The activity type of each prompt reply. A `response` ends the agent's turn and Linear shows the
+ * session as complete, so a reply after which the stream keeps working is a `thought`: Linear then
+ * shows the session active until the next progress activity. A recorded answer and a message nobody
+ * could receive stay `response`s (design 6.4).
+ */
+export const LINEAR_PROMPT_REPLY_TYPE: Record<keyof typeof LINEAR_PROMPT_TEXT, 'thought' | 'response'> = {
+  passed: 'thought',
+  answered: 'response',
+  candidate: 'thought',
+  unreachable: 'response',
+}
 
 /** The author's display name as a labelled field: text the author controls, never part of the prose. */
 function authorField(name: string) {
@@ -174,7 +187,7 @@ export async function handleBoundSessionPrompt(input: {
       activityId,
     })
     // Never claim the message was passed on when nobody received it.
-    await replyInLinear(session, activityId, delivered ? LINEAR_PROMPT_TEXT.passed : LINEAR_PROMPT_TEXT.unreachable)
+    await replyInLinear(session, activityId, delivered ? 'passed' : 'unreachable')
     return 'consumed'
   }
 
@@ -183,13 +196,13 @@ export async function handleBoundSessionPrompt(input: {
   if (trusted && linkedUserId) {
     const result = await answerDirectly({ session, question, reply, linkedUserId, activityId, linearUserId: userId })
     if (result === 'answered') {
-      await replyInLinear(session, activityId, LINEAR_PROMPT_TEXT.answered)
+      await replyInLinear(session, activityId, 'answered')
       return 'consumed'
     }
     standing = result === 'refused' ? 'refused' : 'permitted'
   }
   await deliverCandidateAnswer({ session, question, reply, standing, name: authorName(author, userId), activityId })
-  await replyInLinear(session, activityId, LINEAR_PROMPT_TEXT.candidate)
+  await replyInLinear(session, activityId, 'candidate')
   // An unlinked author learns how to link on the next elicitation, when Ficus has a public URL.
   if (!linkedUserId && trusted && linearAccountLinkUrl())
     await db
@@ -200,7 +213,7 @@ export async function handleBoundSessionPrompt(input: {
 }
 
 /** The one fixed reply to a prompt, keyed by its activity so a redelivered prompt never posts it twice. */
-async function replyInLinear(session: SessionRow, activityId: string, body: string) {
+async function replyInLinear(session: SessionRow, activityId: string, reply: keyof typeof LINEAR_PROMPT_TEXT) {
   await enqueueLinearWrites({
     connectionId: session.connectionId,
     scopeKey: session.id,
@@ -210,7 +223,8 @@ async function replyInLinear(session: SessionRow, activityId: string, body: stri
       {
         projectionKey: `prompt:${activityId}`,
         kind: 'activity',
-        payload: { content: { type: 'response', body } },
+        payload: { content: { type: LINEAR_PROMPT_REPLY_TYPE[reply], body: LINEAR_PROMPT_TEXT[reply] } },
+        // Never dropped, even as a thought: it is the one acknowledgment the author gets.
         collapsible: false,
       },
     ],
@@ -350,6 +364,7 @@ async function handleStop(input: {
       },
       `linear-stop:${session.id}:${activityId}`
     ).catch((error) => log.warn(`Linear stop notice failed: ${error instanceof Error ? error.message : 'error'}`))
+  // Linear's stop signal asks for a final `response` (or `error`), so both stop replies stay responses.
   await enqueueLinearWrites({
     connectionId: session.connectionId,
     scopeKey: session.id,
