@@ -19,8 +19,11 @@ import {
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import { LINEAR_ACK_BODY } from './session-acknowledger'
 import { linearTeamAccessSetupIssues } from './team-access'
+import { isUntrustedOutputActor } from '../outputs/authority'
+import { setEventRuleDecideForTests } from '../outputs/event-rule-decisions'
 import { LINEAR_DISPOSITION_ACTIVITIES } from './session-disposition'
 import { createLinearAppFixture } from './testing/app-fixtures'
+import { setLinearAppReadinessForTest } from './app-readiness'
 import {
   agentSessionCreatedPayload,
   agentSessionPromptedPayload,
@@ -81,7 +84,10 @@ async function created(
   )
 }
 
+// The app stays uninstallable in production until write-back ships; these tests exercise its event path.
+let restoreReadiness: () => void = () => {}
 beforeAll(async () => {
+  restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: false })
   await getSecretStore().initialize()
   await db.insert(agentTypes).values({
     id: workerType,
@@ -92,6 +98,7 @@ beforeAll(async () => {
   })
 })
 afterAll(async () => {
+  restoreReadiness()
   await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
 })
 beforeEach(async () => {
@@ -330,6 +337,60 @@ describe('trust', () => {
     expect(notices).toHaveLength(1)
     expect(notices[0]!.content).toContain('not a trusted member')
     expect(notices[0]!.content).toContain('--from-event')
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+  })
+
+  test('a held start-workstream rule with a decision condition still tells the manager', async () => {
+    const restore = setEventRuleDecideForTests(async (_purpose, request) => ({
+      ok: true,
+      result: {
+        answers: Object.fromEntries(
+          Object.keys(request.questions).map((name) => [name, { type: 'yesno', probability: 1 }])
+        ),
+        providerId: 'stub',
+        model: 'stub',
+        latencyMs: 1,
+      },
+    }))
+    try {
+      const squad = await fixture.addSquad({
+        teamIds: [teamId],
+        rules: [
+          {
+            ...startRule(),
+            predicates: [{ kind: 'decision', question: { type: 'yesno', instructions: 'This is a real request.' } }],
+          },
+        ],
+      })
+      const sessionId = randomUUID()
+      linear.addSession({ id: sessionId, issueId: issue.id })
+      await created(sessionId, { creatorId: guest.id })
+      expect(await db.select().from(workStreams).where(eq(workStreams.squadId, squad.id))).toEqual([])
+      const notices = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+      expect(notices).toHaveLength(1)
+      expect(notices[0]!.content).toContain('not a trusted member')
+      expect(notices[0]!.content).toContain('--from-event')
+      expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+    } finally {
+      restore()
+    }
+  })
+
+  test('an untrusted actor fails closed: a Linear authority without trust is never trusted', () => {
+    const base = { kind: 'connection' as const, connectionId: 'c', squadId: 's' }
+    expect(isUntrustedOutputActor('linear', base)).toBe(true)
+    expect(isUntrustedOutputActor('linear', { ...base, actorTrust: 'untrusted' })).toBe(true)
+    expect(isUntrustedOutputActor('linear', { ...base, actorTrust: 'trusted' })).toBe(false)
+    expect(isUntrustedOutputActor('github', base)).toBe(false)
+  })
+
+  test('a user lookup that fails leaves the actor untrusted without hiding the issue', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    linear.failNext('graphql', 'FicusLinearUser')
+    await created(sessionId)
+    expect(await db.select().from(workStreams).where(eq(workStreams.squadId, squad.id))).toEqual([])
     expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
   })
 

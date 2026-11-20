@@ -1275,7 +1275,7 @@ test('Linear uses the same start-workstream action and attaches its own resource
     expect(
       previewSquadEventRules({ integrationRules: { linear: [rule] } }, 'linear', assigned, '', connectionId).action
     ).toBe('start-workstream')
-    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const authority = { kind: 'connection' as const, connectionId, squadId, actorTrust: 'trusted' as const }
     eventIds.push(
       ...(await Promise.all([
         publishIntegrationOutput('linear', assigned, authority),
@@ -2904,6 +2904,8 @@ test('a Linear comment rule completes the issue through the connection before re
     try {
       const eventId = (await publishIntegrationOutput('linear', linearComment(issueId), {
         kind: 'connection',
+        // Linear authorities say who acted; API-key ingress records every author as trusted.
+        actorTrust: 'trusted',
         connectionId,
         squadId,
       }))!
@@ -2945,6 +2947,8 @@ test('a Linear comment rule still starts work when the issue cannot be described
     // No usable credential: the squad keeps its assignment but nothing may be read with it.
     const eventId = (await publishIntegrationOutput('linear', linearComment(issueId), {
       kind: 'connection',
+      // Linear authorities say who acted; API-key ingress records every author as trusted.
+      actorTrust: 'trusted',
       connectionId,
       squadId,
     }))!
@@ -3023,6 +3027,8 @@ test('only the squad whose connection observed a comment asks Linear about it', 
       eventIds.push(
         (await publishIntegrationOutput('linear', linearComment(issueId), {
           kind: 'connection',
+          // Linear authorities say who acted; API-key ingress records every author as trusted.
+          actorTrust: 'trusted',
           connectionId,
           squadId,
         }))!
@@ -3064,7 +3070,7 @@ test('a Linear rule records the issue it observed, and a replay reuses that work
         action: 'assigned',
       },
     })
-    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const authority = { kind: 'connection' as const, connectionId, squadId, actorTrust: 'trusted' as const }
     const eventId = (await publishIntegrationOutput('linear', assigned, authority))!
     eventIds.push(eventId)
     const runs = await db

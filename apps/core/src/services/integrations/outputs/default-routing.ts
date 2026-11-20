@@ -236,7 +236,9 @@ export async function routeDefaultNotifications(
     event.fact.data.projection === 'status' ? event : matching,
     squad,
     login,
-    event.fact.output === 'pull_request.review_requested'
+    // A held start-workstream rule (untrusted Linear author) becomes a manager notice, so its decision
+    // conditions matter here too.
+    event.fact.output === 'pull_request.review_requested' || isUntrustedOutputActor(event.integration, event.authority)
       ? ['notify-manager', 'notify-consultant', 'start-workstream']
       : ['notify-manager', 'notify-consultant']
   )

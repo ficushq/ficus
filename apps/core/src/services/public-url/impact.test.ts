@@ -82,13 +82,7 @@ test('a path that cannot be used for squad apps is reported, and their base does
 })
 
 test('the Linear app callback and webhook are not listed while the app cannot be installed', () => {
-  const restore = setLinearAppReadinessForTest({ local: false, platform_broker: false })
-  let impact: ReturnType<typeof computePublicAppUrlChangeImpact>
-  try {
-    impact = computePublicAppUrlChangeImpact('https://a.example', 'https://b.example/ficus', '')
-  } finally {
-    restore()
-  }
+  const impact = computePublicAppUrlChangeImpact('https://a.example', 'https://b.example/ficus', '')
   expect(impact.oauthCallbacks.map((change) => change.label)).not.toContain('Linear app OAuth callback')
   expect(impact.webhooks.map((change) => change.label)).toEqual(['GitHub webhook', 'Linear webhook'])
 })

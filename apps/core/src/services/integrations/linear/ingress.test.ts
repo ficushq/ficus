@@ -15,6 +15,8 @@ import {
 import { getSecretStore } from '../../secrets'
 import { linearOutputAdapter } from './outputs'
 import { canReceiveLinearEvent, routeLinearEvent } from './ingress'
+import { createLinearAppFixture } from './testing/app-fixtures'
+import { setLinearAppReadinessForTest } from './app-readiness'
 
 const store = getSecretStore()
 const connectionIds: string[] = []
@@ -307,4 +309,30 @@ describe('API-key rule audiences bind to the probed viewer', () => {
     const { notices } = await routeWithDefaults(delegated)
     expect(notices).toEqual([])
   })
+})
+
+test('the organization webhook never routes to squads on an agent app connection', async () => {
+  // With the app usable, the connection is skipped because it is an app connection, not because it is fenced.
+  const restore = setLinearAppReadinessForTest({ local: true, platform_broker: false })
+  const app = await createLinearAppFixture({ appSettings: false })
+  try {
+    const appSquad = await app.addSquad({ teamIds: ['team-uuid'] })
+    const probed = stubLinear({ [keyA]: readable('user-a', 'user-a'), [keyB]: readable('user-b', 'user-a') })
+    const comment = commentEvent()
+    await routeLinearEvent(comment, async () => {})
+    // The app's token is never used on this path, and only the API-key squads record the comment.
+    expect(probed.some((value) => value.startsWith('Bearer'))).toBe(false)
+    const published = await publishedFor(comment)
+    expect(published).toEqual([squadA, squadB].sort())
+    expect(published).not.toContain(appSquad.id)
+    const [recorded] = await db
+      .select({ authority: integrationOutputEvents.authority })
+      .from(integrationOutputEvents)
+      .where(sql`${integrationOutputEvents.authority}->>'squadId' = ${squadA}`)
+      .limit(1)
+    expect(recorded?.authority).toMatchObject({ accountId: 'user-a', actorTrust: 'trusted' })
+  } finally {
+    restore()
+    await app.cleanup()
+  }
 })

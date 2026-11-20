@@ -180,7 +180,9 @@ export const LINEAR_DEFAULT_RULE_IDS = LINEAR_DEFAULT_RULES.map(
  * through the CLI, so a comment authored by the connected account must never start another turn.
  */
 export function isLinearSelfComment(fact: IntegrationOutputFact, account: string): boolean {
-  return !!account && fact.output === 'issue.comment' && fact.data.actor === account
+  if (!account || fact.output !== 'issue.comment') return false
+  // The author (who wrote it) or the actor (who triggered this delivery, e.g. an edit) being the account.
+  return fact.data.actor === account || record(fact.data.comment).author === account
 }
 
 /** Comment/review echoes from the connected account must not start another agent turn. */
@@ -508,12 +510,16 @@ const LINEAR_ASSIGNMENT_OUTPUTS = ['issue.assigned', 'issue.unassigned']
  * recorded on the event's authority. An event recorded without one (before account binding existed) keeps the
  * old Linear behavior of no account restriction; ingress already bound the account for those.
  */
+/** Outputs that existed before account binding; events of these without an account keep the old behavior. */
+const LINEAR_LEGACY_OUTPUTS = ['issue.assigned', 'issue.unassigned', 'issue.updated', 'issue.comment']
+
 function matchesLinearAudience(
   fact: IntegrationOutputFact,
   account: string,
   audience: 'connected-account' | 'assigned-or-mentioned'
 ) {
-  if (!account) return true
+  // Fail closed for the newer outputs: an ingress that forgot the account must not match everything.
+  if (!account) return LINEAR_LEGACY_OUTPUTS.includes(fact.output)
   const data = record(fact.data)
   if (audience === 'connected-account') {
     if (LINEAR_ASSIGNMENT_OUTPUTS.includes(fact.output)) return data.assignee === account
@@ -527,7 +533,10 @@ function matchesLinearAudience(
 }
 
 function linearAudienceDescription(output: string, audience: string, account: string) {
-  if (!account) return 'No connected account recorded for this event: no account-involvement restriction.'
+  if (!account)
+    return LINEAR_LEGACY_OUTPUTS.includes(output)
+      ? 'No connected account recorded for this event: no account-involvement restriction.'
+      : 'No connected account recorded for this event, so account involvement cannot match.'
   if (audience === 'connected-account') {
     if (LINEAR_ASSIGNMENT_OUTPUTS.includes(output)) return 'Assigned or unassigned user must be the connected account.'
     if (LINEAR_DELEGATION_OUTPUTS.includes(output))

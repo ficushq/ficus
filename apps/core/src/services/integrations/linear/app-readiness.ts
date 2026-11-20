@@ -6,8 +6,8 @@ import type { OAuthAuthority } from '../authorization/authority'
  * An install creates a delegable, mentionable member in a Linear workspace and
  * points Linear's app webhook at Ficus, so it stays off until the side that
  * receives what it creates exists:
- * - `local` (self-hosted): on, now that the direct app webhook at
- *   `/api/webhooks/linear-app` acknowledges sessions.
+ * - `local` (self-hosted): turned on by the stream that adds the direct app
+ *   webhook at `/api/webhooks/linear-app` and session acknowledgment.
  * - `platform_broker` (Ficus Cloud): turned on once the Platform OAuth broker
  *   knows `linear` and the hosted event relay delivers app webhooks. Core's
  *   relay consumer (`relay/linear-runtime.ts`) exists; Platform's `/linear/*`
@@ -19,8 +19,7 @@ import type { OAuthAuthority } from '../authorization/authority'
  * card hides the Agent app section. API-key connections are unaffected.
  */
 const LINEAR_APP_READY: Readonly<Record<OAuthAuthority, boolean>> = {
-  // The direct app webhook and session acknowledgment exist (stream D).
-  local: true,
+  local: false,
   platform_broker: false,
 }
 

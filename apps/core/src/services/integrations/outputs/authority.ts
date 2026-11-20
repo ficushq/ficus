@@ -52,7 +52,11 @@ export function outputAccount(configuration: unknown, authority: IntegrationOutp
   return typeof config.appUserId === 'string' ? config.appUserId : ''
 }
 
-/** Linear agent app events whose author is not a trusted workspace member never start work on their own. */
+/**
+ * Linear events whose author is not a trusted workspace member never start work on their own. Fails
+ * closed: a Linear connection authority without an explicit `trusted` (an ingress that forgot to
+ * record it, or an event stored before trust existed) is treated as untrusted.
+ */
 export function isUntrustedOutputActor(integration: string, authority: IntegrationOutputAuthority): boolean {
-  return integration === 'linear' && authority.kind === 'connection' && authority.actorTrust === 'untrusted'
+  return integration === 'linear' && authority.kind === 'connection' && authority.actorTrust !== 'trusted'
 }
