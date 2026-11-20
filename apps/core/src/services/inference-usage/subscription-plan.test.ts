@@ -17,6 +17,9 @@ describe('plan detection', () => {
     expect(detectCodexPlan(codexToken('pro'))).toBe('pro')
     expect(detectCodexPlan(codexToken('Plus'))).toBe('plus')
     expect(detectCodexPlan(codexToken('team'))).toBe('business')
+    // The claim names the Pro tier: prolite is Pro 100, pro is Pro 200, promax is Pro 500.
+    expect(detectCodexPlan(codexToken('prolite'))).toBe('prolite')
+    expect(detectCodexPlan(codexToken('promax'))).toBe('promax')
     expect(detectCodexPlan(jwt({ sub: 'x' }))).toBeUndefined()
     expect(detectCodexPlan('not-a-jwt')).toBeUndefined()
     expect(detectCodexPlan('a.%%%.c')).toBeUndefined()
@@ -51,6 +54,20 @@ describe('plan detection', () => {
     expect(applyDetectedPlan(account, { plan: 'pro', detectedPlan: 'pro' }, 4)).toBe(true)
     expect(account.subscription).toMatchObject({ plan: 'max-20x', planSource: 'manual', detectedPlan: 'pro' })
   })
+
+  test('a detected Pro tier is priced, and never replaces a Pro tier an admin chose', () => {
+    const account: { subscription?: AccountSubscription } = {}
+    const signIn = { credential: { type: 'oauth', access: codexToken('prolite') } }
+    expect(applyDetectedPlan(account, detectedPlanFor('openai-codex', signIn), 1)).toBe(true)
+    expect(account.subscription).toMatchObject({ plan: 'prolite', planSource: 'detected' })
+    expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: 100, source: 'default' })
+
+    account.subscription = { plan: 'promax', planSource: 'manual', detectedPlan: 'pro' }
+    const refreshed = { credential: { type: 'oauth', access: codexToken('pro') } }
+    expect(applyDetectedPlan(account, detectedPlanFor('openai-codex', refreshed), 2)).toBe(false)
+    expect(account.subscription).toMatchObject({ plan: 'promax', planSource: 'manual' })
+    expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: 500, source: 'default' })
+  })
 })
 
 describe('monthly price', () => {
@@ -61,6 +78,10 @@ describe('monthly price', () => {
     })
     expect(effectiveMonthlyPrice('anthropic', { plan: 'max-20x' })).toEqual({ monthlyUsd: 200, source: 'default' })
     expect(effectiveMonthlyPrice('openai-codex', { plan: 'enterprise' })).toEqual({ monthlyUsd: null, source: null })
+    expect(effectiveMonthlyPrice('openai-codex', { plan: 'prolite' })).toEqual({ monthlyUsd: 100, source: 'default' })
+    // An account stored as pro before the tiers existed keeps the $200 price with no migration.
+    expect(effectiveMonthlyPrice('openai-codex', { plan: 'pro' })).toEqual({ monthlyUsd: 200, source: 'default' })
+    expect(effectiveMonthlyPrice('openai-codex', { plan: 'promax' })).toEqual({ monthlyUsd: 500, source: 'default' })
     expect(effectiveMonthlyPrice('anthropic', { detectedPlan: 'max' })).toEqual({ monthlyUsd: null, source: null })
     expect(effectiveMonthlyPrice('anthropic', undefined)).toEqual({ monthlyUsd: null, source: null })
   })
