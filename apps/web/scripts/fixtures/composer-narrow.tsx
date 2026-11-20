@@ -4,11 +4,14 @@
 // - ?layout=panel&w=420 — the chat in a side panel of that width beside page content;
 // - ?layout=page — the chat across a wide page;
 // and &busy=1 for a running turn (Stop, the Interrupt / Follow up split button and its Auto hint).
+// &state=waiting-sandbox (or another execution state) shows its word beside the context ring.
+// window.composerFixture.setBusy(boolean) starts or ends the turn in place, without a reload.
+import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RenderItem } from '@ficus/client-react'
-import type { Agent, Message, Squad } from '@ficus/shared'
+import type { Agent, ExecutionStatus, Message, Squad } from '@ficus/shared'
 import { PermissionsProvider } from '../../src/hooks/usePermissions'
 import { queries } from '../../src/queryOptions'
 import { chatWindowsStorageKey } from '../../src/lib/chatWindows'
@@ -24,14 +27,25 @@ const params = new URLSearchParams(location.search)
 if (params.get('appearance') === 'dark') document.documentElement.classList.add('dark')
 const layout = params.get('layout') ?? 'window'
 const width = Number(params.get('w') ?? 340)
-const busy = params.get('busy') === '1'
+let fixtureBusy = params.get('busy') === '1'
+const busyListeners = new Set<() => void>()
+;(window as unknown as { composerFixture: { setBusy(next: boolean): void } }).composerFixture = {
+  setBusy(next) {
+    fixtureBusy = next
+    for (const listener of busyListeners) listener()
+  },
+}
+const subscribeBusy = (listener: () => void) => {
+  busyListeners.add(listener)
+  return () => busyListeners.delete(listener)
+}
 
 const now = new Date('2026-11-20T09:00:00Z')
 const agent = {
   id: AGENT,
   squadId: 'squad-1',
   agentTypeId: 'engineer',
-  status: busy ? 'active' : 'idle',
+  status: fixtureBusy ? 'active' : 'idle',
   metadata: { purpose: 'Linear null-creator handling in the polling runtime' },
   createdAt: now,
 } as unknown as Agent
@@ -68,6 +82,7 @@ const items: RenderItem[] = lines.map(([role, content], index) => {
 
 /** The composer the way an agent chat fills it: every action, the context ring and the pop-out control. */
 function FixtureChat({ agentId }: { agentId: string }) {
+  const busy = useSyncExternalStore(subscribeBusy, () => fixtureBusy)
   return (
     <ChatView
       items={items}
@@ -81,6 +96,7 @@ function FixtureChat({ agentId }: { agentId: string }) {
       onToggleRawText={() => undefined}
       composerStatus={
         <AgentComposerStatus
+          status={(params.get('state') as ExecutionStatus | null) ?? undefined}
           context={{ percent: 18.2, tokens: 36_400, contextWindow: 200_000 }}
           canManageSession={!busy}
           onCompact={() => undefined}

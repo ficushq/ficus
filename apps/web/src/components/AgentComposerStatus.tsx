@@ -106,7 +106,7 @@ export function AgentComposerStatus({
           title={summary}
           heading={summary}
           width={260}
-          className="ficus-button ficus-button-ghost flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs tabular-nums md:min-h-0 md:py-1.5"
+          className="ficus-button ficus-button-ghost flex min-h-[44px] shrink-0 items-center gap-1 rounded-md px-2 text-xs tabular-nums md:min-h-0 md:py-1.5"
           items={[
             {
               id: 'compact',
