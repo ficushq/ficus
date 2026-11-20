@@ -172,7 +172,7 @@ test('hovering a Feed row opens the peek card after about half a second', async 
   const card = peekCard()!
   expect(card.getAttribute('aria-label')).toBe('#1354 · Work stream summaries at a glance')
   expect(card.textContent).toContain(SUMMARY)
-  expect(card.textContent).toContain('Updated 4 min ago')
+  expect(card.textContent).toContain('Generated summary · updated 4 min ago')
   expect(card.textContent).toContain('Implement · Waiting on you: question')
   expect(card.textContent).toContain('Engineer')
   expect(card.textContent).toContain('Reviewer')
@@ -186,7 +186,7 @@ test('keyboard focus opens the peek at once; Escape and blur dismiss it; the row
   const { doc, peekCard, key, keyboardFocus, wait } = await render(feedList([workStream()]))
   const button = doc.querySelector<HTMLButtonElement>('[data-testid="feed-work-row"] button')!
   const description = doc.getElementById(button.getAttribute('aria-describedby')!)!
-  expect(description.textContent).toContain(SUMMARY)
+  expect(description.textContent).toContain(`Generated summary: ${SUMMARY}`)
   expect(description.textContent).toContain('Step: Implement')
 
   await keyboardFocus(button)
@@ -226,6 +226,7 @@ test('"Show summaries" adds the line under active rows only, and is remembered p
   expect(toggle.getAttribute('aria-checked')).toBe('true')
   const lines = [...doc.querySelectorAll('[data-testid="work-stream-summary-line"]')]
   expect(lines.map((line) => line.textContent)).toEqual([SUMMARY])
+  expect(lines[0]!.getAttribute('title')).toContain('Generated summary')
   expect(dom!.window.localStorage.getItem(workStreamSummariesStorageKey('feed'))).toBe('true')
 
   // The Work tab remembers its own choice: still off there.
@@ -309,5 +310,5 @@ test('the detail modal shows the summary as "Now" under the title', async () => 
   const now = doc.querySelector('[data-testid="work-stream-now"]')!
   expect(now.textContent).toContain('Now')
   expect(now.textContent).toContain(SUMMARY)
-  expect(now.textContent).toContain('updated 4 min ago')
+  expect(now.textContent).toContain('Generated summary · updated 4 min ago')
 })

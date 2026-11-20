@@ -14,7 +14,7 @@ import { WorkStreamDetailModal, getWsDisplayState } from '../WorkStreamDetailMod
 import { WorkStreamGraph } from '../WorkStreamGraph'
 import { WorkStreamViewToggle, useWorkStreamViewMode } from '../WorkStreamViewToggle'
 import { WorkStreamList as GenericWorkStreamList, WS_ACTIVE_STATUSES } from '../WorkStreamList'
-import { workStreamSummaryFor } from '../WorkStreamSummary'
+import { GENERATED_SUMMARY_TITLE, workStreamSummaryFor } from '../WorkStreamSummary'
 import { GraphIcon } from '../icons'
 import { Modal } from '../Modal'
 import {
@@ -498,7 +498,11 @@ function WorkStreamCard({
     >
       <h4 className="font-medium text-sm text-primary">{workStreamTitle(workStream)}</h4>
       {summary && (
-        <p className="mt-1 line-clamp-2 text-xs text-secondary" data-testid="work-stream-card-summary">
+        <p
+          className="mt-1 line-clamp-2 text-xs text-secondary"
+          title={GENERATED_SUMMARY_TITLE}
+          data-testid="work-stream-card-summary"
+        >
           {summary.text}
         </p>
       )}

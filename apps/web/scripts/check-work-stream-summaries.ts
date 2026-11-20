@@ -106,7 +106,10 @@ try {
     await page.goto(`${base}?view=modal${theme}`)
     const now = page.locator('[data-testid="work-stream-now"]')
     await now.waitFor()
-    assert.ok((await now.textContent())?.includes('updated 4 min ago'), 'the Now line lacks its age')
+    assert.ok(
+      (await now.textContent())?.includes('Generated summary · updated 4 min ago'),
+      'the Now line is not marked as generated, or lacks its age'
+    )
     await shot(`modal-${appearance}`)
   }
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`)

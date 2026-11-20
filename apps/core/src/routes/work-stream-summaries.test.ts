@@ -16,12 +16,21 @@ import {
 } from '../db/schema'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { identityMiddleware } from '../middleware/identity'
+import { invalidatePermissionCache } from '../services/rbac/permissions'
 import { getSettingsStore } from '../services/settings'
 import { clearWorkStreamStepCache } from '../services/squad-activity/row-context'
 import { refreshStreamSummary } from '../services/stream-summaries/service'
 import { saveStreamSummary, streamSummaryRuntimeDeps } from '../services/stream-summaries/runtime'
 import { materializeActivityFixtures } from '../test-utils/activity-fixtures'
-import { authHeaders, cleanupTestRbac, createTestAdmin, type TestUser } from '../test-utils'
+import {
+  assignRole,
+  authHeaders,
+  cleanupTestRbac,
+  createTestAdmin,
+  createTestRole,
+  createTestUser,
+  type TestUser,
+} from '../test-utils'
 import { activityRouter } from './activity'
 import { workStreamsRouter } from './work-streams'
 
@@ -169,23 +178,23 @@ afterAll(async () => {
   await cleanupTestRbac(prefix)
 })
 
-async function detail(): Promise<WorkStreamJson> {
-  const response = await app.request(`/api/workstreams/${fixture.streamId}`, { headers: authHeaders(admin.token) })
+async function detail(user: TestUser = admin): Promise<WorkStreamJson> {
+  const response = await app.request(`/api/workstreams/${fixture.streamId}`, { headers: authHeaders(user.token) })
   expect(response.status).toBe(200)
   return (await response.json()) as WorkStreamJson
 }
 
-async function listed(): Promise<WorkStreamJson | undefined> {
+async function listed(user: TestUser = admin): Promise<WorkStreamJson | undefined> {
   const response = await app.request(`/api/workstreams?squadId=${fixture.squadId}&statuses=active`, {
-    headers: authHeaders(admin.token),
+    headers: authHeaders(user.token),
   })
   expect(response.status).toBe(200)
   const body = (await response.json()) as WorkStreamJson[] | { items: WorkStreamJson[] }
   return (Array.isArray(body) ? body : body.items).find((stream) => stream.id === fixture.streamId)
 }
 
-async function card() {
-  const response = await app.request('/api/activity/presence', { headers: authHeaders(admin.token) })
+async function card(user: TestUser = admin) {
+  const response = await app.request('/api/activity/presence', { headers: authHeaders(user.token) })
   expect(response.status).toBe(200)
   return ((await response.json()) as GlobalActivityPresence).streams?.find((entry) => entry.id === fixture.streamId)
 }
@@ -250,6 +259,45 @@ describe('work stream summaries', () => {
         null
       )
     ).toBe(false)
+  })
+
+  test('a viewer who can read the stream but not agents gets the step without the summary', async () => {
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['squads:read', 'workstreams:read'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: fixture.squadId })
+    const shown = await detail(user)
+    expect(shown.step).toBe('Implement')
+    expect(shown.summary).toBeUndefined()
+    expect(shown.metadata).not.toHaveProperty('streamSummary')
+    const row = await listed(user)
+    expect(row?.step).toBe('Implement')
+    expect(row?.summary).toBeUndefined()
+    const shownCard = await card(user)
+    expect(shownCard?.step).toBe('Implement')
+    expect(shownCard?.summary).toBeUndefined()
+    expect(shownCard?.summaryGeneratedAt).toBeUndefined()
+
+    // With agents:read as well, the same viewer sees it.
+    const reader = await createTestRole({ prefix, permissions: ['agents:read'] })
+    await assignRole({ userId: user.id, roleId: reader.id, scope: 'squad', squadId: fixture.squadId })
+    invalidatePermissionCache()
+    expect((await detail(user)).summary?.text).toBe('Wiring the peek card and checking the throttle')
+    expect((await card(user))?.summary).toBe('Wiring the peek card and checking the throttle')
+  })
+
+  test('clients cannot write or delete the stored summary through metadata', async () => {
+    for (const metadata of [
+      { streamSummary: { text: 'Forged', generatedAt: new Date().toISOString(), step: 'Implement', through: null } },
+      { streamSummary: null },
+    ]) {
+      const response = await app.request(`/api/workstreams/${fixture.streamId}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata }),
+      })
+      expect(response.status).toBe(400)
+    }
+    expect((await detail()).summary?.text).toBe('Wiring the peek card and checking the throttle')
   })
 
   test('hides the summary when the switch is off', async () => {

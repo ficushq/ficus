@@ -31,6 +31,9 @@ import { HoverCard } from './popover/HoverCard'
 import { useHoverCard, type HoverCardState } from './popover/useHoverCard'
 import { activityCardDeliveryLabel, activityCardWaitLabel } from './squads/squadActivityView'
 
+/** Hover text wherever the line appears: it is model output, not status. */
+export const GENERATED_SUMMARY_TITLE = "Generated summary of the participants' recent messages; it may be wrong"
+
 /** Hovering a row this long opens its peek card ("about half a second"). */
 export const WORK_STREAM_PEEK_OPEN_DELAY_MS = 500
 
@@ -149,7 +152,11 @@ export function WorkStreamSummaryLine({ workStream, className }: { workStream: W
   const summary = workStreamSummaryFor(workStream)
   if (!summary) return null
   return (
-    <p className={clsx('truncate text-xs text-muted', className)} data-testid="work-stream-summary-line">
+    <p
+      className={clsx('truncate text-xs text-muted', className)}
+      title={GENERATED_SUMMARY_TITLE}
+      data-testid="work-stream-summary-line"
+    >
       {summary.text}
     </p>
   )
@@ -162,14 +169,15 @@ export function WorkStreamNowLine({ workStream }: { workStream: WorkStream }) {
   return (
     <p className="flex flex-wrap items-baseline gap-x-2 text-sm text-primary" data-testid="work-stream-now">
       <span className="text-xs font-medium uppercase tracking-wide text-secondary">Now</span>
-      <span className="min-w-0 wrap-break-word">{summary.text}</span>
-      <time
-        dateTime={summary.generatedAt}
-        title={new Date(summary.generatedAt).toLocaleString()}
-        className="text-xs text-muted"
-      >
-        updated {formatSummaryAge(summary.generatedAt)}
-      </time>
+      <span className="min-w-0 wrap-break-word" title={GENERATED_SUMMARY_TITLE}>
+        {summary.text}
+      </span>
+      <span className="text-xs text-muted">
+        Generated summary ·{' '}
+        <time dateTime={summary.generatedAt} title={new Date(summary.generatedAt).toLocaleString()}>
+          updated {formatSummaryAge(summary.generatedAt)}
+        </time>
+      </span>
     </p>
   )
 }
@@ -286,7 +294,12 @@ export function WorkStreamPeekCard({
     const agent = agentMap?.get(id)
     return agent ? [agent] : []
   })
-  const description = [summary?.text, step && `Step: ${step}`, facts.waitLabel, facts.deliveryLabel]
+  const description = [
+    summary && `Generated summary: ${summary.text}`,
+    step && `Step: ${step}`,
+    facts.waitLabel,
+    facts.deliveryLabel,
+  ]
     .filter(Boolean)
     .join('. ')
   return (
@@ -302,13 +315,16 @@ export function WorkStreamPeekCard({
       >
         <div data-testid="work-stream-peek">
           {summary ? (
-            <p className="wrap-break-word text-primary">{summary.text}</p>
+            <p className="wrap-break-word text-primary" title={GENERATED_SUMMARY_TITLE}>
+              {summary.text}
+            </p>
           ) : (
             <p className="text-muted">No summary yet.</p>
           )}
           {summary && (
             <p className="text-xs text-muted">
-              <time dateTime={summary.generatedAt}>Updated {formatSummaryAge(summary.generatedAt)}</time>
+              Generated summary ·{' '}
+              <time dateTime={summary.generatedAt}>updated {formatSummaryAge(summary.generatedAt)}</time>
             </p>
           )}
         </div>

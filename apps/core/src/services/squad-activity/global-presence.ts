@@ -193,7 +193,10 @@ async function buildWorkStreamCards(
     const openWaits = presentation?.openWaits ?? []
     const delivery = presentation?.delivery
     const step = steps.get(stream.id) ?? null
-    const summary = presentWorkStreamSummary(stream.metadata, { status: stream.status, step }, summariesEnabled)
+    // The summary paraphrases participants' chat, so it needs agents:read like their Activity rows.
+    const summary = agentReadableSquads.has(stream.squadId)
+      ? presentWorkStreamSummary(stream.metadata, { status: stream.status, step }, summariesEnabled)
+      : undefined
     return {
       id: stream.id,
       number: stream.number,
