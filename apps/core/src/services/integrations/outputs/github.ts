@@ -2,7 +2,12 @@ import { githubPullRequestAuthor, githubWorkflowPullRequestAuthor } from '../git
 import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
 import { normalizeGitHubFeedback, safeGitHubPath, githubNativeId, githubContentHash } from '../github/feedback-envelope'
 import { createHash } from 'node:crypto'
-import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
+import {
+  githubOutputCatalog,
+  isGitHubSelfComment,
+  type GitHubCommentApp,
+  type IntegrationOutputFact,
+} from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
 import { isFicusGitHubAppClientId } from '../github/ficus-app'
 
@@ -38,6 +43,11 @@ function changesRequestedReReviewGuidance(fact: IntegrationOutputFact): string {
   // The REST endpoint, not `gh pr edit --add-reviewer`: older gh releases fail that command on
   // GitHub's Projects (classic) deprecation and request nobody.
   return `Ficus guidance (not part of the GitHub review): once your fixes for this review are pushed and ready for re-review, re-request review from ${known ? login : 'the reviewer who requested changes'} so GitHub notifies them: \`gh api -X POST repos/${repository || '<owner>/<repo>'}/pulls/${number}/requested_reviewers -f 'reviewers[]=${login}'\`.`
+}
+
+function githubCommentApp(app: unknown): GitHubCommentApp {
+  if (app === null) return 'none'
+  return isFicusGitHubAppClientId(record(app)?.client_id) ? 'ficus' : 'other'
 }
 
 function digest(value: unknown) {
@@ -347,11 +357,11 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         requestedReviewer: String(payload!.requested_reviewer?.login ?? ''),
         requestedTeam: String(payload!.requested_team?.slug ?? ''),
         actorType: String(contentObject ? (item!.user?.type ?? '') : (payload!.sender?.type ?? item!.user?.type ?? '')),
-        // Which app wrote an issue or pull request comment. Ficus writes as the connected account, so this,
-        // not the login, separates its own comments from the account owner's. GitHub sends the field (null
-        // for a person) on these comments only; when it is absent the attribution is unknown.
+        // Which app wrote an issue or pull request comment: `none` (a person), `ficus`, or `other`. Ficus writes
+        // as the connected account, so this, not the login, separates its own comments from the account
+        // owner's. GitHub sends the field (null for a person) on these comments only; absent means unknown.
         ...(event.type === 'issue_comment' && 'performed_via_github_app' in item!
-          ? { viaFicusApp: isFicusGitHubAppClientId(record(item!.performed_via_github_app)?.client_id) }
+          ? { viaApp: githubCommentApp(item!.performed_via_github_app) }
           : {}),
         labels: Array.isArray(native?.labels)
           ? native.labels.map((label: any) => String(label?.name ?? label)).slice(0, 100)

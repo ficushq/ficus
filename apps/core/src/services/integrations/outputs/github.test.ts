@@ -522,30 +522,35 @@ describe('comments by the connected account', () => {
   test('a comment the account owner writes on GitHub is delivered', () => {
     for (const issue of [{ number: 3, pull_request: {} }, { number: 3 }]) {
       const fact = comment(null, issue)
-      expect(fact.data.viaFicusApp).toBe(false)
+      expect(fact.data.viaApp).toBe('none')
       expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(true)
     }
-    // Another GitHub App acting for the same account is not Ficus either.
-    expect(comment(OTHER_APP).data.viaFicusApp).toBe(false)
-    expect(githubOutputAdapter.shouldNotify!(comment(OTHER_APP), configuration)).toBe(true)
   })
 
   test('a comment Ficus writes through its GitHub App is suppressed', () => {
     const fact = comment(FICUS_APP)
-    expect(fact.data.viaFicusApp).toBe(true)
+    expect(fact.data.viaApp).toBe('ficus')
     expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
     // The same app comment by anyone else's account is not an echo of this connection.
     expect(githubOutputAdapter.shouldNotify!(fact, { ...configuration, login: 'someone-else' })).toBe(true)
   })
 
+  test('a comment through an app Ficus does not recognize keeps the echo guard for the connected account', () => {
+    // It may be Ficus's own write through an app the instance no longer has configured.
+    const fact = comment(OTHER_APP)
+    expect(fact.data.viaApp).toBe('other')
+    expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
+    expect(githubOutputAdapter.shouldNotify!(fact, { ...configuration, login: 'someone-else' })).toBe(true)
+  })
+
   test("an instance's own configured GitHub App counts as Ficus too", () => {
     const custom = { id: 99, slug: 'acme-ficus', client_id: 'Iv23custom' }
-    expect(comment(custom).data.viaFicusApp).toBe(false)
+    expect(comment(custom).data.viaApp).toBe('other')
     setConfiguredGitHubAppClientId(() => 'Iv23custom')
     try {
-      expect(comment(custom).data.viaFicusApp).toBe(true)
-      expect(comment(OTHER_APP).data.viaFicusApp).toBe(false)
-      expect(comment(FICUS_APP).data.viaFicusApp).toBe(true)
+      expect(comment(custom).data.viaApp).toBe('ficus')
+      expect(comment(OTHER_APP).data.viaApp).toBe('other')
+      expect(comment(FICUS_APP).data.viaApp).toBe('ficus')
     } finally {
       setConfiguredGitHubAppClientId(() => undefined)
     }
@@ -553,7 +558,7 @@ describe('comments by the connected account', () => {
 
   test('a comment without app attribution keeps login-based loop protection', () => {
     const fact = comment(undefined)
-    expect(fact.data).not.toHaveProperty('viaFicusApp')
+    expect(fact.data).not.toHaveProperty('viaApp')
     expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
   })
 
@@ -579,7 +584,7 @@ describe('comments by the connected account', () => {
       },
     })[0]!
     for (const fact of [review, inline]) {
-      expect(fact.data).not.toHaveProperty('viaFicusApp')
+      expect(fact.data).not.toHaveProperty('viaApp')
       expect(githubOutputAdapter.shouldNotify!(fact, configuration)).toBe(false)
       expect(githubOutputAdapter.shouldNotify!(fact, { ...configuration, login: 'someone-else' })).toBe(true)
     }

@@ -2017,7 +2017,7 @@ test('the connected account commenting as itself is delivered; Ficus echoes leav
     const authority = { kind: 'connection' as const, connectionId, squadId }
     const id = await create(107, { codeHost: true })
     // The connection authenticates as `ficus-bot`; the person who owns that account comments too.
-    const by = (output: string, actor: string, attribution: { viaFicusApp?: boolean } = {}) =>
+    const by = (output: string, actor: string, attribution: { viaApp?: 'none' | 'ficus' | 'other' } = {}) =>
       fact(107, {
         output,
         data: { repository: `${prefix}/repo`, pullRequest: { number: 107 }, actor, ...attribution },
@@ -2027,11 +2027,13 @@ test('the connected account commenting as itself is delivered; Ficus echoes leav
       eventIds.push(eventId)
       return eventId
     }
-    const person = await publishAs(by('pull_request.comment', 'ficus-bot', { viaFicusApp: false }))
-    const ficus = await publishAs(by('pull_request.comment', 'ficus-bot', { viaFicusApp: true }))
+    const person = await publishAs(by('pull_request.comment', 'ficus-bot', { viaApp: 'none' }))
+    const ficus = await publishAs(by('pull_request.comment', 'ficus-bot', { viaApp: 'ficus' }))
+    // Another GitHub App acting as the connected account may be Ficus through an app it no longer knows.
+    const otherApp = await publishAs(by('pull_request.comment', 'ficus-bot', { viaApp: 'other' }))
     const review = await publishAs(by('pull_request.reviewed', 'ficus-bot'))
     const inline = await publishAs(by('pull_request.review_comment', 'ficus-bot'))
-    const other = await publishAs(by('pull_request.comment', 'reviewer', { viaFicusApp: false }))
+    const other = await publishAs(by('pull_request.comment', 'reviewer', { viaApp: 'other' }))
     const rows = await deliveries(id)
     const row = (eventId: string) => rows.find((delivery) => delivery.eventId === eventId)
     for (const eventId of [person, other]) {
@@ -2041,6 +2043,11 @@ test('the connected account commenting as itself is delivered; Ficus echoes leav
     expect(row(ficus)).toMatchObject({
       status: 'superseded',
       reason: 'Skipped: written by Ficus through its GitHub App',
+      targets: [],
+    })
+    expect(row(otherApp)).toMatchObject({
+      status: 'superseded',
+      reason: 'Skipped: written by the connected GitHub account through another GitHub App',
       targets: [],
     })
     for (const eventId of [review, inline])
@@ -2056,9 +2063,9 @@ test('the connected account commenting as itself is delivered; Ficus echoes leav
         .filter((item) => item.status === 'superseded')
         .map((item) => item.reason)
         .sort()
-    ).toEqual([row(ficus)!.reason, row(review)!.reason, row(inline)!.reason].sort())
+    ).toEqual([row(ficus)!.reason, row(otherApp)!.reason, row(review)!.reason, row(inline)!.reason].sort())
     // Retries stay idempotent: one skipped delivery per subscription, never a dispatch.
-    await publishAs(by('pull_request.comment', 'ficus-bot', { viaFicusApp: true }))
+    await publishAs(by('pull_request.comment', 'ficus-bot', { viaApp: 'ficus' }))
     expect((await deliveries(id)).filter((delivery) => delivery.eventId === ficus)).toHaveLength(1)
   })
 })

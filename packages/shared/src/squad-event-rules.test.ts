@@ -4,6 +4,7 @@ import {
   effectiveSquadEventRules,
   GITHUB_SELF_COMMENT_ACCOUNT_REASON,
   GITHUB_SELF_COMMENT_APP_REASON,
+  GITHUB_SELF_COMMENT_OTHER_APP_REASON,
   githubSelfCommentReason,
   isGitHubSelfComment,
   isLinearSelfComment,
@@ -625,15 +626,19 @@ describe('GitHub self-comment suppression', () => {
     data: { repository: 'acme/repo', pullRequest: { number: 1 }, ...data },
   })
 
-  test('only a comment written through the Ficus app is suppressed when the app is known', () => {
+  test('with app attribution, only a comment the account owner typed as themselves is delivered', () => {
     for (const output of ['issue.comment', 'pull_request.comment']) {
-      const person = github(output, { actor: 'Owner', viaFicusApp: false })
+      const person = github(output, { actor: 'Owner', viaApp: 'none' })
       expect(githubSelfCommentReason(person, 'owner')).toBeUndefined()
       expect(isGitHubSelfComment(person, 'owner')).toBe(false)
-      const ficus = github(output, { actor: 'Owner', viaFicusApp: true })
+      const ficus = github(output, { actor: 'Owner', viaApp: 'ficus' })
       expect(githubSelfCommentReason(ficus, 'owner')).toBe(GITHUB_SELF_COMMENT_APP_REASON)
-      // Another account's comment through the Ficus app is not this connection's echo.
+      // An app Ficus does not recognize may still be Ficus (an earlier custom app): keep the echo guard.
+      const other = github(output, { actor: 'Owner', viaApp: 'other' })
+      expect(githubSelfCommentReason(other, 'owner')).toBe(GITHUB_SELF_COMMENT_OTHER_APP_REASON)
+      // Any app comment by another account is not this connection's echo.
       expect(githubSelfCommentReason(ficus, 'someone-else')).toBeUndefined()
+      expect(githubSelfCommentReason(other, 'someone-else')).toBeUndefined()
     }
   })
 
@@ -649,9 +654,9 @@ describe('GitHub self-comment suppression', () => {
 
   test('rule preview does not suppress the account owner commenting as themselves', () => {
     const metadata = { integrationRules: { github: [rule('comments')] } }
-    const person = github('issue.comment', { actor: 'owner', viaFicusApp: false })
+    const person = github('issue.comment', { actor: 'owner', viaApp: 'none' })
     expect(previewSquadEventRules(metadata, 'github', person, 'owner').suppression).toBeNull()
-    const ficus = github('issue.comment', { actor: 'owner', viaFicusApp: true })
+    const ficus = github('issue.comment', { actor: 'owner', viaApp: 'ficus' })
     expect(previewSquadEventRules(metadata, 'github', ficus, 'owner').suppression).toBe('self-comment')
   })
 })

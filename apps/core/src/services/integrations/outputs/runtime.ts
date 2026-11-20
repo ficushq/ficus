@@ -14,6 +14,7 @@ import {
   integrationSubscriptionMatches,
   githubSelfCommentReason,
   GITHUB_SELF_COMMENT_APP_REASON,
+  GITHUB_SELF_COMMENT_OTHER_APP_REASON,
   GITHUB_SELF_COMMENT_ACCOUNT_REASON,
   type IntegrationSubscription,
   type IntegrationOutputFact,
@@ -105,6 +106,7 @@ const SUPPRESSED_DELIVERY_REASON = 'Event suppressed by integration notification
 /** Reasons of deliveries recorded only to show that a tracked event was received and skipped. */
 const SKIPPED_DELIVERY_REASONS = [
   GITHUB_SELF_COMMENT_APP_REASON,
+  GITHUB_SELF_COMMENT_OTHER_APP_REASON,
   GITHUB_SELF_COMMENT_ACCOUNT_REASON,
   SUPPRESSED_DELIVERY_REASON,
 ]

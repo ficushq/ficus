@@ -188,18 +188,29 @@ export function isLinearSelfComment(fact: IntegrationOutputFact, account: string
 /** Delivery reason for a comment GitHub attributes to Ficus's GitHub App acting as the connected account. */
 export const GITHUB_SELF_COMMENT_APP_REASON = 'Skipped: written by Ficus through its GitHub App'
 /**
+ * Delivery reason for a comment GitHub attributes to another GitHub App acting as the connected account.
+ * Ficus cannot rule out its own write through an app it no longer recognizes (for example a connection
+ * still bound to an earlier custom app), so it keeps the echo guard.
+ */
+export const GITHUB_SELF_COMMENT_OTHER_APP_REASON =
+  'Skipped: written by the connected GitHub account through another GitHub App'
+/**
  * Delivery reason for a review or review comment by the connected account. GitHub does not say which app
  * wrote these, so Ficus cannot tell its own from the person's and treats them as its own.
  */
 export const GITHUB_SELF_COMMENT_ACCOUNT_REASON =
   'Skipped: written by the connected GitHub account, and GitHub does not say whether Ficus wrote it'
 
+/** Which GitHub App wrote a comment, as normalization records it in `viaApp`. */
+export type GitHubCommentApp = 'none' | 'ficus' | 'other'
+
 /**
  * Why a comment or review is an echo of Ficus's own write, or undefined when it is not one.
  *
  * Ficus writes as the connected account through its GitHub App, but the person who owns that account
  * can also comment as themselves. Issue and pull request comments carry the app that wrote them, which
- * normalization records as `viaFicusApp`; only a comment written through Ficus's app is an echo there.
+ * normalization records as `viaApp`: `none` (a person typing as themselves) is delivered, `ficus` and
+ * `other` are skipped, the latter because it may be Ficus's own write through an app it no longer knows.
  * Reviews and review comments carry no such attribution (and facts stored before it existed lack the
  * field), so for those the login alone still decides: loop protection outranks delivery.
  */
@@ -213,8 +224,10 @@ export function githubSelfCommentReason(fact: IntegrationOutputFact, login: stri
     fact.data.actor.toLowerCase() !== login.toLowerCase()
   )
     return undefined
-  const viaFicusApp = record(fact.data).viaFicusApp
-  if (typeof viaFicusApp === 'boolean') return viaFicusApp ? GITHUB_SELF_COMMENT_APP_REASON : undefined
+  const viaApp = record(fact.data).viaApp
+  if (viaApp === 'none') return undefined
+  if (viaApp === 'ficus') return GITHUB_SELF_COMMENT_APP_REASON
+  if (viaApp === 'other') return GITHUB_SELF_COMMENT_OTHER_APP_REASON
   return GITHUB_SELF_COMMENT_ACCOUNT_REASON
 }
 
