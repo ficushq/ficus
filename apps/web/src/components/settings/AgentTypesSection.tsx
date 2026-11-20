@@ -30,7 +30,7 @@ import { TemplateDiffDialog } from './TemplateDiffDialog'
 import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { PlusIcon, TrashIcon } from '../icons'
-import { formatResolvedModel, modelChainWarnings } from './modelTierUi'
+import { disabledProviderIds, formatResolvedModel, modelChainWarnings } from './modelTierUi'
 import { ReplySuggestionsSetting } from './ReplySuggestionsSetting'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
@@ -1044,6 +1044,7 @@ export function TierChainEditor({
   derivedFallbacks = [],
   catalog = [],
   disabled = false,
+  disabledProviders = [],
 }: {
   tier: ModelTierConfig
   providers: string[]
@@ -1051,6 +1052,8 @@ export function TierChainEditor({
   derivedFallbacks?: string[]
   catalog?: ModelCatalogEntry[]
   disabled?: boolean
+  /** Providers turned off globally: their entries stay editable but are shown muted. */
+  disabledProviders?: string[]
 }) {
   const [entries, setEntries] = useState(() => tier.chain.split(',').filter(Boolean))
   const [customRows, setCustomRows] = useState<Set<number>>(() => new Set())
@@ -1080,6 +1083,7 @@ export function TierChainEditor({
         const models = catalog.filter((model) => model.provider === parsed.provider)
         const metadata = models.find((model) => model.id === parsed.model)
         const custom = customRows.has(index) || !metadata
+        const providerDisabled = disabledProviders.includes(parsed.provider)
         const move = (to: number) => {
           const next = [...entries]
           const [item] = next.splice(index, 1)
@@ -1102,11 +1106,19 @@ export function TierChainEditor({
               setDragged(null)
               commit(next)
             }}
-            className="rounded-xl bg-surface-secondary/60 p-3 space-y-3"
+            className={`rounded-xl bg-surface-secondary/60 p-3 space-y-3${providerDisabled ? ' opacity-60' : ''}`}
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-muted">
                 {index === 0 ? 'Primary model' : `Fallback ${index}`}
+                {providerDisabled && (
+                  <span
+                    title="This provider is disabled in provider settings, so this entry is skipped."
+                    className="ml-2 rounded bg-surface px-1.5 py-0.5 text-xs text-muted"
+                  >
+                    Disabled
+                  </span>
+                )}
               </span>
               <div className="flex gap-1">
                 <button
@@ -1301,6 +1313,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
             catalog={catalog}
             disabled={!can('agent-types:update') || mutation.isPending}
             providers={providers.map((provider) => provider.provider)}
+            disabledProviders={disabledProviderIds(providers)}
             derivedFallbacks={tier.derivedOpenRouterFallbacks}
             onSave={(next) => mutation.mutate(next)}
           />
