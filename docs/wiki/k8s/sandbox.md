@@ -357,7 +357,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ## First-class squad toolchains
 
-Squads may declare a Ficus-managed package set and inline setup script with `ficus squad toolchain set`. Ficus realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, installs it from the squad's pinned `devbox.lock` for the current fingerprint when one exists (see [Pinned toolchain resolution](../sandbox-runtimes.md#pinned-toolchain-resolution)), and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.ficus/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
+Squads may declare a Ficus-managed package set and inline setup script with `ficus squad toolchain set`. Ficus realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, installs it from the squad's verified `devbox.lock` pin for the current fingerprint when one exists (see [Pinned toolchain resolution](../sandbox-runtimes.md#pinned-toolchain-resolution)), and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.ficus/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
 
 Before each turn Core confirms the toolchain is active in the sandbox server. The server reuses its cached environment when the fingerprint is unchanged, and otherwise resolves it with a 20-second limit, below Core's 30-second request budget. A sandbox too loaded to answer in time reports "Toolchain provisioning timed out; the sandbox may be overloaded" rather than "Toolchain provisioning failed", and Core logs the underlying error for every toolchain failure.
 

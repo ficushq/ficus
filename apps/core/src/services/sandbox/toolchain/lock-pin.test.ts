@@ -48,7 +48,7 @@ describe('managed toolchain lock pin validation', () => {
     expect(checkToolchainLock(lock(valid), ['bun'])).toMatchObject({ ok: false, reason: 'undeclared entry jq@latest' })
   })
 
-  it('rejects references that are not an exact official nixpkgs commit', () => {
+  it('rejects references not shaped like a pinned nixpkgs commit', () => {
     for (const resolved of [
       'github:attacker/nixpkgs/c7def046b9a883d46974757852106483d741586f#bun',
       'github:NixOS/nixpkgs/nixpkgs-unstable#bun',

@@ -40,6 +40,7 @@ function harness(initial: ToolchainReconcileSnapshot) {
     },
     readLockPin: async () => null,
     storeLockPin: async () => {},
+    verifyLock: async () => ({ ok: false, reason: 'not verified in this test' }),
   }
   return { manager, deps, calls, setSnapshot: (next: ToolchainReconcileSnapshot) => (snapshot = next) }
 }
@@ -155,6 +156,7 @@ describe('sandbox toolchain provisioning orchestration', () => {
       },
       readLockPin: async () => null,
       storeLockPin: async () => {},
+      verifyLock: async () => ({ ok: false, reason: 'not verified in this test' }),
     }
     const provision = createToolchainProvisioner()
     const applying = provision(manager, 'squad_race', opts, squadId, deps)
@@ -174,6 +176,7 @@ describe('sandbox toolchain provisioning orchestration', () => {
       const h = harness({ config, provision: undefined, activation: undefined })
       const reads: Array<[string, string]> = []
       const stores: Array<{ fingerprint: string; lock: string; replacing?: string }> = []
+      const verified: string[] = []
       let loaded: string | undefined
       h.deps.readLockPin = async (squad, fingerprint) => {
         reads.push([squad, fingerprint])
@@ -181,6 +184,13 @@ describe('sandbox toolchain provisioning orchestration', () => {
       }
       h.deps.storeLockPin = async (_squad, fingerprint, lock, replacing) =>
         void stores.push({ fingerprint, lock, replacing })
+      // Stands in for upstream verification: Core stores what it built, never the captured bytes.
+      h.deps.verifyLock = async (captured) => {
+        verified.push(captured)
+        return captured.includes('attacker')
+          ? { ok: false, reason: 'not upstream' }
+          : { ok: true, lock: `verified:${captured}` }
+      }
       const manager = {
         reconcileToolchain: async (_id: string, _opts: SandboxOptions, request: ManagedToolchainRequest) => {
           loaded = await request.loadPinnedLock?.()
@@ -188,7 +198,7 @@ describe('sandbox toolchain provisioning orchestration', () => {
           return 'applied' as const
         },
       } as ISandboxManager
-      return { ...h, manager, reads, stores, loaded: () => loaded }
+      return { ...h, manager, reads, stores, verified, loaded: () => loaded }
     }
 
     it('hands the runtime the squad pin for the current fingerprint', async () => {
@@ -199,36 +209,48 @@ describe('sandbox toolchain provisioning orchestration', () => {
       expect(h.stores).toEqual([])
     })
 
-    it('records the first fresh resolution without replacing anything', async () => {
+    it('stores the verified pin Core built from the first fresh resolution', async () => {
       const h = pinHarness(null, { lock: devboxLock(), unrealizable: false })
       await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
       expect(h.loaded()).toBeUndefined()
+      expect(h.verified).toEqual([devboxLock()])
       expect(h.stores).toEqual([
-        { fingerprint: fingerprintToolchain(config), lock: devboxLock(), replacing: undefined },
+        { fingerprint: fingerprintToolchain(config), lock: `verified:${devboxLock()}`, replacing: undefined },
       ])
     })
 
-    it('treats a corrupt pin as missing and lets the fresh resolution replace it', async () => {
+    it('treats a corrupt pin as missing and lets a verified resolution replace it', async () => {
       const h = pinHarness('{not json', { lock: devboxLock(), unrealizable: false })
       await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
       expect(h.loaded()).toBeUndefined()
       expect(h.stores).toEqual([
-        { fingerprint: fingerprintToolchain(config), lock: devboxLock(), replacing: '{not json' },
+        { fingerprint: fingerprintToolchain(config), lock: `verified:${devboxLock()}`, replacing: '{not json' },
       ])
     })
 
-    it('replaces only the pin that failed to install', async () => {
+    it('does not reuse a stored pin with a content-hashed package entry', async () => {
+      const hashed = devboxLock().replace('#python3', '?narHash=sha256-AAAA#python3')
+      const h = pinHarness(hashed, undefined)
+      await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
+      expect(h.loaded()).toBeUndefined()
+    })
+
+    // A box can make its own pinned install fail; that must not let it move the pin.
+    it('never replaces a pin because a pinned install failed', async () => {
       const fresh = devboxLock('346dd96ad74dc4457a9db9de4f4f57dab2e5731d')
       const h = pinHarness(devboxLock(), { lock: fresh, unrealizable: true })
       await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
-      expect(h.stores).toEqual([{ fingerprint: fingerprintToolchain(config), lock: fresh, replacing: devboxLock() }])
+      expect(h.verified).toEqual([])
+      expect(h.stores).toEqual([])
+      expect(h.calls).toContain('ready')
     })
 
-    it('never stores a resolved lock that fails validation', async () => {
+    it('never stores a resolved lock that fails verification', async () => {
       const poisoned = devboxLock().replace('NixOS/nixpkgs', 'attacker/nixpkgs')
       const h = pinHarness(null, { lock: poisoned, unrealizable: false })
       await ensureSandboxToolchain(h.manager, 'squad_one', opts, squadId, h.deps)
       expect(h.stores).toEqual([])
+      expect(h.calls).toContain('ready')
     })
 
     it('resolves afresh when the pin cannot be read', async () => {

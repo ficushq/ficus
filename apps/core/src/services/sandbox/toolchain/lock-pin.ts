@@ -8,12 +8,13 @@
  * writes it into later boxes before `devbox install`, so they reuse a nixpkgs
  * commit the machine's `/nix/store` already holds.
  *
- * The lock is read back from a box an agent can write to, so it is accepted
- * only in the narrow shape Devbox produces for this exact configuration: one
- * entry per declared package (plus Devbox's own nixpkgs entry), every source
- * reference pinned to an exact `github:NixOS/nixpkgs` commit and every output a
- * plain `/nix/store` path. Anything else is ignored and the box resolves as it
- * did before pinning existed.
+ * This module only checks the SHAPE: one entry per declared package (plus
+ * Devbox's own nixpkgs entry), every source reference shaped like a
+ * `github:NixOS/nixpkgs/<sha>` commit and every output a plain `/nix/store`
+ * path. The shape proves nothing about provenance (GitHub serves fork commits
+ * under the NixOS/nixpkgs path, and any store path can be added locally); the
+ * lock is read back from an agent-writable box, so lock-verify.ts checks it
+ * against upstream before Core stores a pin.
  */
 
 /** Devbox's lock key for the nixpkgs revision its generated flake uses. */
@@ -51,8 +52,8 @@ function checkSystems(name: string, systems: unknown): string | undefined {
 
 /**
  * Accept `content` only when it is a Devbox lock for exactly `packages` (the
- * normalized toolchain package list) whose every reference is an exact
- * official nixpkgs commit or a `/nix/store` path.
+ * normalized toolchain package list) whose every reference is shaped like a
+ * nixpkgs commit or a `/nix/store` path. Not a provenance check.
  */
 export function checkToolchainLock(content: string, packages: readonly string[]): ToolchainLockCheck {
   if (Buffer.byteLength(content, 'utf8') > MAX_TOOLCHAIN_LOCK_BYTES) return { ok: false, reason: 'too large' }

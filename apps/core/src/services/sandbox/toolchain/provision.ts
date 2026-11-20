@@ -4,7 +4,9 @@ import { createLogger } from '../../../lib/infra/logger'
 import type { ISandboxManager, SandboxOptions } from '../types'
 import { ManagedToolchainLockPin } from '../../../entities/ManagedToolchainLockPin'
 import { fingerprintToolchain, isEmptyToolchain, normalizeToolchain, renderManagedDevbox } from './config'
-import { checkToolchainLock } from './lock-pin'
+import { TOOLCHAIN_STDENV_LOCK_KEY } from './lock-pin'
+import { buildVerifiedPin, checkStoredPin } from './lock-verify'
+import { DevboxLockCache } from '../../../entities/DevboxLockCache'
 import {
   clearCurrentToolchainState,
   markActivationRequired,
@@ -65,6 +67,44 @@ export interface ToolchainProvisionDeps {
   readLockPin(squadId: string, fingerprint: string): Promise<string | null>
   /** First write wins; `replacing` swaps only a pin still equal to that value. */
   storeLockPin(squadId: string, fingerprint: string, lockContent: string, replacing?: string): Promise<void>
+  /**
+   * Turn a lock captured on a box into the pin Core stores, verified against
+   * upstream nixpkgs and the official binary cache (see lock-verify.ts).
+   */
+  verifyLock(captured: string, packages: readonly string[]): ReturnType<typeof buildVerifiedPin>
+}
+
+/**
+ * The stdenv `resolved` value from Core's comfort-set lock cache (squad set,
+ * then agent set): the nixpkgs every box's comfort shell already uses.
+ */
+async function readTrustedStdenv(): Promise<string | undefined> {
+  // Loaded lazily: devbox-seed pulls in the VM box manager, which the Docker
+  // and Kubernetes runtimes that import this module never need.
+  const { computeDevboxSeedHash } = await import('../../machines/devbox-seed')
+  for (const role of ['squad', 'agent'] as const) {
+    const lock = await DevboxLockCache.get(computeDevboxSeedHash(role))
+    if (!lock) continue
+    try {
+      const resolved = (JSON.parse(lock) as { packages?: Record<string, { resolved?: unknown }> }).packages?.[
+        TOOLCHAIN_STDENV_LOCK_KEY
+      ]?.resolved
+      if (typeof resolved === 'string') return resolved
+    } catch {
+      // An unreadable seed lock just means no trusted stdenv.
+    }
+  }
+  return undefined
+}
+
+async function verifyLockWithTrustedStdenv(captured: string, packages: readonly string[]) {
+  let stdenv: string | undefined
+  try {
+    stdenv = await readTrustedStdenv()
+  } catch (error) {
+    log.warn('Reading the comfort-set stdenv failed; pinning without a stdenv entry', error)
+  }
+  return buildVerifiedPin(captured, packages, stdenv)
 }
 
 const defaultDeps: ToolchainProvisionDeps = {
@@ -78,6 +118,7 @@ const defaultDeps: ToolchainProvisionDeps = {
   withLease: withProvisionLease,
   readLockPin: ManagedToolchainLockPin.get,
   storeLockPin: ManagedToolchainLockPin.store,
+  verifyLock: verifyLockWithTrustedStdenv,
 }
 
 /**
@@ -99,7 +140,7 @@ async function loadLockPin(
     return {}
   }
   if (stored === null) return {}
-  const check = checkToolchainLock(stored, packages)
+  const check = checkStoredPin(stored, packages)
   if (check.ok) return { pinned: stored }
   log.warn(`Ignoring invalid toolchain lock pin for squad ${squadId} (${check.reason})`)
   return { stale: stored }
@@ -145,15 +186,20 @@ async function reconcileLocked(
   }
   const recordResolvedLock = async (lockContent: string, outcome: { unrealizable: boolean }) => {
     if (!fingerprint) return
-    const check = checkToolchainLock(lockContent, packages)
-    if (!check.ok) {
-      log.warn(`Not pinning the toolchain lock from ${sandboxId} (${check.reason})`)
+    // A box can make any install fail, so a failed pinned install never moves
+    // a verified pin: that box resolved afresh and the pin stays. An operator
+    // refreshes a pin that is genuinely unrealizable by deleting its row.
+    if (outcome.unrealizable) {
+      log.warn(`Pinned toolchain lock for squad ${squadId} did not install in ${sandboxId}; keeping the pin`)
       return
     }
-    // A failed pin or an invalid stored value may be replaced; otherwise the
-    // first resolution recorded for this fingerprint stays the pin.
-    const replacing = outcome.unrealizable ? pin.pinned : pin.stale
-    await deps.storeLockPin(squadId, fingerprint, lockContent, replacing)
+    const verified = await deps.verifyLock(lockContent, packages)
+    if (!verified.ok) {
+      log.warn(`Not pinning the toolchain lock from ${sandboxId} (${verified.reason})`)
+      return
+    }
+    // First write wins; only a stored value that failed the reuse check may be replaced.
+    await deps.storeLockPin(squadId, fingerprint, verified.lock, pin.stale)
   }
 
   try {
