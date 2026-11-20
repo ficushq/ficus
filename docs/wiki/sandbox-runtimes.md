@@ -292,19 +292,39 @@ ordinary agents cannot publish private repositories into this cache.
 
 Each box keeps its own Nix fetcher databases, credentials, custom sources and
 writable objects. Its Git-backed tarball cache reads shared objects through
-Git alternates. Nix can still write duplicate loose objects, so Ficus runs bounded,
-low-priority `git prune-packed` maintenance at box startup and after Devbox
-seeding (including failed installs). This removes only loose objects already
-available in packs, preserving private objects and fetcher metadata. A timed-out
-pass retries at the next startup or install; it never runs Git garbage collection
-because Nix's roots live outside Git refs.
+Git alternates. Nix can still write duplicate loose objects, so after every
+Devbox install (box seeding and the squad's managed toolchain, including failed
+installs) Ficus runs bounded, low-priority `git prune-packed`. That removes only
+loose objects already available in packs, so it is safe while other box commands
+run Nix. It never runs Git garbage collection because Nix's roots live outside
+Git refs.
+
+The private objects are still large: the managed toolchain is unpinned, so Devbox
+resolves it against the current `nixpkgs-unstable` commit and downloads that full
+nixpkgs source tree (measured 2026-11-20 on an agent box: 94,806 loose objects,
+408 MB; prune-packed leaves 19,425 objects, 96 MB). The shared cache cannot hold
+a commit that did not exist when it was prewarmed. So at every box service start
+(`ExecStartPre`, before the box server or any box command runs), Ficus also
+drops the box's private download objects: the repository is renamed away in one
+step and removed with a bounded, low-priority delete, then re-attached to the
+shared objects. The same box measured 1 MB afterwards. Fetcher metadata and
+shared packs are untouched. This is safe because the objects are only a download
+cache: realized sources stay in `/nix/store`, `devbox run`, `devbox shellenv`
+and already-installed toolchains do not read them, and Nix 2.24 refetches a tree
+whose objects are missing. The cost is a re-download (about a minute for
+nixpkgs) the next time a box installs a package that needs an evaluated nixpkgs
+source. A removal that times out is finished on the next start; the in-session
+maintenance passes `--keep-private-nix-objects` and never resets.
 
 Existing machines obtain the updated provisioning script through normal
-bootstrap reconciliation. Prewarming populates the shared cache, and boxes attach
-and compact on their next start after reprovisioning. Existing packed private
-caches are not rewritten; custom dependency caches remain per box. Shared packs
-are append-only and must not be manually removed while boxes reference them.
-This is a VM optimization; it does not change Docker or Kubernetes sandboxes.
+bootstrap reconciliation; the service unit already calls
+`--prepare-nix-cache` at start, so existing boxes shed their private copy on
+their next start with no reprovisioning. Prewarming populates the shared cache.
+Shared packs are append-only and must not be manually removed while boxes
+reference them. This is a VM optimization. Kubernetes pods keep `~/.cache` in
+the container's writable layer, which is discarded with the pod, and the guarded
+maintenance command is a no-op there because the machine script is absent;
+Docker sandboxes are unchanged.
 
 Deep docs: [lifecycle](machines/runtime-lifecycle.md), [placement](machines/runtime-placement.md),
 [troubleshooting](machines/runtime-operations.md#troubleshooting) and [machines/exe-provider.md](machines/exe-provider.md)
