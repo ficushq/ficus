@@ -502,9 +502,14 @@ whatever is newest today. The pin lasts until either of these happens:
    so it never keeps versions from the previous configuration. Pins for old
    fingerprints are kept, so reverting to an earlier configuration reuses its
    earlier pin.
-2. An operator deletes the squad's row for that fingerprint to pick up newer
-   versions without changing the configuration. There is no user-facing refresh
-   command yet.
+2. An operator deletes the pin to pick up newer versions without changing the
+   configuration. There is no CLI command for this yet; delete the squad's rows
+   in the Core database with
+   `DELETE FROM managed_toolchain_lock_pins WHERE squad_id = '<squad-id>';`
+   (add `AND fingerprint = '<fingerprint>'` to keep pins for other
+   configurations). The next sandbox that installs the toolchain resolves afresh
+   and records a new verified pin. Sandboxes that already installed keep their
+   toolchain until their configuration changes.
 
 Pinning never breaks a sandbox. A stored pin that cannot be read or fails its
 reuse check is ignored, and the next verified fresh resolution replaces it. If
@@ -544,10 +549,17 @@ on any doubt:
 Content-hashed package entries are refused because Nix uses any store path with
 that hash without fetching. A lock could otherwise name a tree an agent added to
 the store under an upstream commit. Devbox writes such entries only for bare
-package names (`bun`), so toolchains with a bare package are never pinned. Within
-these checks, an agent that controls the sandbox doing the first install of a new
-configuration can choose only among upstream commits and official cache builds of
-the declared packages (for example an older version satisfying `@latest`). Pins
+package names (`bun`), so toolchains with a bare package are never pinned.
+
+The checks prove that everything a pin installs is official: built from upstream
+nixpkgs and served by the official cache. They do not prove it is the package or
+version that was declared. An agent that controls the sandbox doing the first
+install of a new configuration could offer a lock whose `bun@latest` entry names
+an old upstream commit, or another official package's store path, and hold the
+squad's toolchain on it until the pin is refreshed. Agents of a squad already
+share its workspace, so this is not a new trust boundary. Ficus does not compare
+entry attributes with package names, because Devbox legitimately maps some names
+to other attributes (`gcc@latest` resolves to `gcc16`). Pins
 are never shared between squads and are deleted with the squad. Before reusing a
 stored pin, Core rechecks its shape and that no package entry has a content hash.
 Only Core writes pins.
