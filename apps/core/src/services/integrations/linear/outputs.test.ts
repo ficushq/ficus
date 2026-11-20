@@ -391,23 +391,32 @@ test('issue creation is its own fact with the delegate and assignee at creation'
 test('delegate changes become delegated and undelegated facts; a self-delegation comes from the session', () => {
   const outputs = (event: ReturnType<typeof issueEvent>, metadata?: Record<string, unknown>) =>
     linearOutputAdapter.normalize({ ...event, metadata }).map((fact) => [fact.output, fact.data.delegate])
+  // Existing issue.updated rules and subscriptions still see a delegate change as an update.
   expect(outputs(issueEvent({ delegateId: null }, { delegateId: 'other-agent' }))).toEqual([
+    ['issue.updated', 'other-agent'],
     ['issue.delegated', 'other-agent'],
   ])
   expect(outputs(issueEvent({ delegateId: 'other-agent' }, { delegateId: null }))).toEqual([
+    ['issue.updated', ''],
     ['issue.undelegated', 'other-agent'],
   ])
   expect(outputs(issueEvent({ delegateId: 'other-agent' }, { delegateId: app }), { linearAppUserId: app })).toEqual([
+    ['issue.updated', app],
     ['issue.undelegated', 'other-agent'],
   ])
   // Delegations to the app on an API-key connection (no app context) still report the delegation.
-  expect(outputs(issueEvent({ delegateId: null }, { delegateId: app }))).toEqual([['issue.delegated', app]])
+  expect(outputs(issueEvent({ delegateId: null }, { delegateId: app }))).toEqual([
+    ['issue.updated', app],
+    ['issue.delegated', app],
+  ])
   // A state change with a delegation reports both.
   expect(outputs(issueEvent({ delegateId: null, stateId: 'old' }, { delegateId: 'other-agent' }))).toEqual([
     ['issue.updated', 'other-agent'],
     ['issue.delegated', 'other-agent'],
   ])
-  const [delegated] = linearOutputAdapter.normalize(issueEvent({ delegateId: 'a' }, { delegateId: 'b' })).slice(1)
+  const delegated = linearOutputAdapter
+    .normalize(issueEvent({ delegateId: 'a' }, { delegateId: 'b' }))
+    .find((fact) => fact.output === 'issue.delegated')
   expect(delegated!.data.previousDelegate).toBe('a')
 })
 

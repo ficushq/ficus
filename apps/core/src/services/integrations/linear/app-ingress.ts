@@ -33,7 +33,12 @@ import {
   type LinearSquadOutcome,
 } from './session-disposition'
 import { announceLinearSessionBinding, bindLinearSession } from './session-binding'
-import { applyLinearPermissionChange, isTeamKnownInaccessible, recordLinearTeamAccessProbe } from './team-access'
+import {
+  applyLinearPermissionChange,
+  isTeamKnownInaccessible,
+  recordLinearTeamAccessProbe,
+  recordLinearTeamReadable,
+} from './team-access'
 import { handleLinearAppRevoked } from './app-revocation'
 
 const log = createLogger('linear-app-ingress')
@@ -193,6 +198,7 @@ export async function routeLinearAppEvent(
   }
   if (!probe.issue || probe.issue.id !== issueId) return { accessible: false, outcomes: [], authorizedSquadIds: [] }
   await recordLinearTeamAccessProbe(resolved.connection.id, resolved.authorization).catch(() => undefined)
+  if (probe.issue.team?.id) await recordLinearTeamReadable(resolved.connection.id, probe.issue.team.id)
   let user: LinearProbedUser | null = null
   if (commentId) user = probe.comment?.user ?? null
   else if (actorId) {

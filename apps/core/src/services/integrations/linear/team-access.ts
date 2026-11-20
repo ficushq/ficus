@@ -1,5 +1,12 @@
-import { and, eq, inArray, ne } from 'drizzle-orm'
-import { db, linearAgentSessions, linearTeamAccess, squads, workStreams } from '../../../db'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
+import {
+  db,
+  integrationConnectionAssignments,
+  linearAgentSessions,
+  linearTeamAccess,
+  squads,
+  workStreams,
+} from '../../../db'
 import { InboxMessage } from '../../../entities/InboxMessage'
 import { linearQuery } from './plugin'
 
@@ -63,10 +70,26 @@ export async function applyLinearPermissionChange(connectionId: string, payload:
   }
 }
 
-/** Fast pre-filter only: true when recorded access excludes the team. The live probe stays authoritative. */
+/**
+ * Fast pre-filter only: true when a `PermissionChange` from Linear says the app has no access to the
+ * team. A record seeded by Ficus's own team listing never rejects on its own; the live probe decides.
+ */
 export async function isTeamKnownInaccessible(connectionId: string, teamId: string): Promise<boolean> {
   const [access] = await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, connectionId))
-  return !!access && !access.canAccessAllPublicTeams && !access.teamIds.includes(teamId)
+  return !!access && access.source === 'webhook' && !access.canAccessAllPublicTeams && !access.teamIds.includes(teamId)
+}
+
+/** The live probe read an issue on this team, so the app can access it: keep the record in step. */
+export async function recordLinearTeamReadable(connectionId: string, teamId: string) {
+  await db
+    .update(linearTeamAccess)
+    .set({ teamIds: sql`array_append(${linearTeamAccess.teamIds}, ${teamId}::text)`, observedAt: new Date() })
+    .where(
+      and(
+        eq(linearTeamAccess.connectionId, connectionId),
+        sql`NOT (${teamId}::text = ANY(${linearTeamAccess.teamIds}))`
+      )
+    )
 }
 
 /**
@@ -79,11 +102,21 @@ export async function recordLinearTeamAccessProbe(connectionId: string, authoriz
     .from(linearTeamAccess)
     .where(eq(linearTeamAccess.connectionId, connectionId))
   if (existing) return
-  const data = await linearQuery<{ teams?: { nodes?: Array<{ id?: string }> } }>(
-    authorization,
-    'query FicusLinearTeams { teams(first: 250) { nodes { id } } }'
-  )
-  const teamIds = strings((data.teams?.nodes ?? []).map((team) => team.id))
+  const teamIds: string[] = []
+  let after: string | null = null
+  // Every page, bounded: a workspace with more teams than one page must not look partly inaccessible.
+  for (let page = 0; page < 20; page++) {
+    const data: {
+      teams?: { nodes?: Array<{ id?: string }>; pageInfo?: { hasNextPage?: boolean; endCursor?: string } }
+    } = await linearQuery(
+      authorization,
+      'query FicusLinearTeams($after: String) { teams(first: 250, after: $after) { nodes { id } pageInfo { hasNextPage endCursor } } }',
+      { after }
+    )
+    teamIds.push(...strings((data.teams?.nodes ?? []).map((team) => team.id)))
+    if (!data.teams?.pageInfo?.hasNextPage || !data.teams.pageInfo.endCursor) break
+    after = data.teams.pageInfo.endCursor
+  }
   await db
     .insert(linearTeamAccess)
     .values({ connectionId, canAccessAllPublicTeams: false, teamIds, source: 'probe' })
@@ -103,4 +136,32 @@ export async function inaccessibleLinearTeams(squadId: string, connectionId: str
     .map((route) => (route && typeof route === 'object' ? (route as Record<string, unknown>).teamId : undefined))
     .filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0)
   return [...new Set(teamIds)].filter((teamId) => !access.teamIds.includes(teamId))
+}
+
+/**
+ * One setup issue per squad that routes Linear teams its assigned agent app cannot access (5.8),
+ * naming the squad and the team IDs. API-key connections and unrecorded access report nothing.
+ */
+export async function linearTeamAccessSetupIssues(): Promise<string[]> {
+  const rows = await db
+    .select({ squadId: squads.id, squadName: squads.name, connectionId: linearTeamAccess.connectionId })
+    .from(linearTeamAccess)
+    .innerJoin(
+      integrationConnectionAssignments,
+      and(
+        eq(integrationConnectionAssignments.connectionId, linearTeamAccess.connectionId),
+        eq(integrationConnectionAssignments.providerKey, 'linear')
+      )
+    )
+    .innerJoin(squads, eq(squads.id, integrationConnectionAssignments.squadId))
+    .where(eq(squads.status, 'active'))
+  const issues: string[] = []
+  for (const row of rows) {
+    const teams = await inaccessibleLinearTeams(row.squadId, row.connectionId)
+    if (teams.length)
+      issues.push(
+        `Squad ${row.squadName} routes Linear ${teams.length === 1 ? 'team' : 'teams'} ${teams.join(', ')}, which the Ficus app cannot access. A Linear admin can grant access in the Ficus app settings in Linear.`
+      )
+  }
+  return issues
 }

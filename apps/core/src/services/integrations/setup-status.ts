@@ -32,3 +32,15 @@ export function connectionSetupStatus(
     return { state: 'needs_attention', issues: ['No connected account is healthy. Check account settings.'] }
   return { state: 'configured', issues: [] }
 }
+
+/**
+ * Routing problems the connection status alone cannot show (Linear: a squad routes a team its agent
+ * app cannot access). A configured integration with such problems needs attention; the issues name them.
+ */
+export function withRoutingIssues(status: IntegrationSetupStatus, issues: readonly string[]): IntegrationSetupStatus {
+  if (!issues.length) return status
+  return {
+    state: status.state === 'configured' ? 'needs_attention' : status.state,
+    issues: [...status.issues, ...issues],
+  }
+}

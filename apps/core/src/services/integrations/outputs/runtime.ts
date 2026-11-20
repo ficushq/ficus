@@ -144,13 +144,16 @@ async function recipientBlocked(
 export async function publishIntegrationOutputs(
   integration: string,
   input: VerifiedIngressEvent,
-  authority: IntegrationOutputAuthority
+  authority: IntegrationOutputAuthority,
+  /** Ingress-owned refinement of the normalized facts from its own live probe (never payload claims). */
+  refine?: (facts: IntegrationOutputFact[]) => IntegrationOutputFact[]
 ) {
   if (!(await isIntegrationEnabled(integration))) return []
   const adapter = integrationOutputRegistry.adapter(integration)
   if (!adapter) return []
   const eventIds: string[] = []
-  for (const fact of adapter.normalize(input))
+  const normalized = adapter.normalize(input)
+  for (const fact of refine ? refine(normalized) : normalized)
     eventIds.push((await publishIntegrationOutput(integration, fact, authority))!)
   if (!eventIds.length) return []
   const deliveries = await db

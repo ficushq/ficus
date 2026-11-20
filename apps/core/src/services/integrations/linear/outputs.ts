@@ -238,10 +238,8 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
               : 'labelIds' in updatedFrom
                 ? 'labels'
                 : 'updated'
+        // A delegation change is also reported as its own fact; `issue.updated` keeps firing for it as before.
         assignee = assigned
-        // A delegation change is reported as its own fact; it is an update only when something else moved too.
-        if (delegateChanged && !Object.keys(updatedFrom).some((field) => !['delegateId', 'updatedAt'].includes(field)))
-          primary = false
       }
     } else assignee = text(source.assigneeId, 200)
     const at = comment

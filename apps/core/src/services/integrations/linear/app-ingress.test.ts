@@ -18,6 +18,7 @@ import {
 } from '../../../db'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import { LINEAR_ACK_BODY } from './session-acknowledger'
+import { linearTeamAccessSetupIssues } from './team-access'
 import { LINEAR_DISPOSITION_ACTIVITIES } from './session-disposition'
 import { createLinearAppFixture } from './testing/app-fixtures'
 import {
@@ -383,6 +384,36 @@ describe('connection lifecycle', () => {
     await created(later)
     expect(linear.calls.filter((call) => call.operation === 'FicusLinearAppProbe')).toHaveLength(probes)
     expect(bodies(later).at(-1)).toEqual(['error', LINEAR_DISPOSITION_ACTIVITIES.inaccessible.body])
+  })
+
+  test('a team missing from Ficus’s own team listing is still routed when the probe can read it', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    // Seeded by the team listing before this team existed; only a PermissionChange can rule a team out.
+    await db.insert(linearTeamAccess).values({
+      connectionId: fixture.connectionId,
+      canAccessAllPublicTeams: false,
+      teamIds: ['other-team'],
+      source: 'probe',
+    })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    expect(bodies(sessionId).at(-1)).toEqual(['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body])
+    const [access] = await db
+      .select()
+      .from(linearTeamAccess)
+      .where(eq(linearTeamAccess.connectionId, fixture.connectionId))
+    expect(access?.teamIds).toContain(teamId)
+  })
+
+  test('setup status names a squad that routes a team the app cannot access', async () => {
+    const squad = await fixture.addSquad({ teamIds: [teamId] })
+    await processLinearAppEvent({
+      type: 'PermissionChange',
+      payload: permissionChangePayload(fixture.context, { removedTeamIds: [teamId] }),
+    })
+    const issues = await linearTeamAccessSetupIssues()
+    expect(issues.some((issue) => issue.includes(squad.name) && issue.includes(teamId))).toBe(true)
   })
 
   test('a PermissionChange for another app user is ignored', async () => {

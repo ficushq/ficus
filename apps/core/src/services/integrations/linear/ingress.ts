@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm'
+import type { IntegrationOutputFact } from '@ficus/shared'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
 import { integrationEnabledPredicate } from '../provider-state'
 import { publishIntegrationOutputs } from '../outputs/runtime'
@@ -9,7 +10,12 @@ import { resolveLinearConnection } from './resolve-connection'
 
 export interface LinearIssueAccess {
   viewer: { id: string }
-  issue: { id: string; team: { id: string }; assignee: { id: string } | null } | null
+  issue: {
+    id: string
+    team: { id: string }
+    assignee: { id: string } | null
+    delegate?: { id: string } | null
+  } | null
 }
 export interface LinearEventIdentity {
   output: string
@@ -56,20 +62,44 @@ export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (s
     try {
       access = await linearQuery<LinearIssueAccess>(
         resolved.authorization,
-        'query IssueAccess($id: String!) { viewer { id } issue(id: $id) { id team { id } assignee { id } } }',
+        'query IssueAccess($id: String!) { viewer { id } issue(id: $id) { id team { id } assignee { id } delegate { id } } }',
         { id: identity.issueId }
       )
     } catch {
       continue
     }
     if (!canReceiveLinearEvent(access, identity)) continue
-    const handled = await publishIntegrationOutputs('linear', event, {
-      kind: 'connection',
-      squadId,
-      connectionId: resolved.connection.id,
-      connectionRevision: resolved.connection.materialRevision,
-    })
+    const handled = await publishIntegrationOutputs(
+      'linear',
+      event,
+      {
+        kind: 'connection',
+        squadId,
+        connectionId: resolved.connection.id,
+        connectionRevision: resolved.connection.materialRevision,
+        // Rule audiences and self-comment suppression bind to the probed viewer, never to payload claims.
+        accountId: access.viewer.id,
+      },
+      (facts) => facts.map((fact) => withIssueInvolvement(fact, access))
+    )
     // Only assignments carry the legacy team-metadata path; other outputs are subscription-only.
     if (identity.output === 'issue.assigned' && !handled.includes(squadId)) await fallback(squadId)
+  }
+}
+
+/**
+ * A comment payload names only the issue, so the probed team, assignee and delegate complete it for
+ * team routing and `assigned-or-mentioned` audiences. Assignment and delegation facts keep the user who changed.
+ */
+function withIssueInvolvement(fact: IntegrationOutputFact, access: LinearIssueAccess): IntegrationOutputFact {
+  if (fact.output !== 'issue.comment' || !access.issue) return fact
+  return {
+    ...fact,
+    data: {
+      ...fact.data,
+      teamId: (fact.data.teamId as string) || access.issue.team?.id || '',
+      assignee: (fact.data.assignee as string) || access.issue.assignee?.id || '',
+      delegate: (fact.data.delegate as string) || access.issue.delegate?.id || '',
+    },
   }
 }

@@ -182,7 +182,8 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       if (!user) return { errors: [{ message: 'Entity not found: User' }], data: null }
       data.user = user
     }
-    if (asks(query, 'teams', variables)) data.teams = { nodes: teams.map((id) => ({ id })) }
+    if (asks(query, 'teams', variables))
+      data.teams = { nodes: teams.map((id) => ({ id })), pageInfo: { hasNextPage: false, endCursor: null } }
     if (asks(query, 'agentSessions', variables))
       data.agentSessions = {
         nodes: [...sessions.values()].map((session) => ({ id: session.id, updatedAt: session.updatedAt })),
