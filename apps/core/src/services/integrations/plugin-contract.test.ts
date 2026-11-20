@@ -73,7 +73,10 @@ describe('first-party integration plugin contract', () => {
       expect(() =>
         assertIntegrationPluginContract(linearPlugin, {
           validConfiguration,
-          invalidConfigurations: [{ version: 1, extra: true }, { ...appConfiguration, mode: 'key' }],
+          invalidConfigurations: [
+            { version: 1, extra: true },
+            { ...appConfiguration, mode: 'key' },
+          ],
           credential,
           secretSentinels,
         })

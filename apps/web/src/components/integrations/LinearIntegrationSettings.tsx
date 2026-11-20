@@ -47,8 +47,8 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        Install Ficus in Linear as an agent app, or connect an account with a personal API key, then choose which
-        squads can use it. Team routing is configured in each squad’s Integrations tab.
+        Install Ficus in Linear as an agent app, or connect an account with a personal API key, then choose which squads
+        can use it. Team routing is configured in each squad’s Integrations tab.
       </p>
       <LinearAgentApp canWrite={canWrite} install={install} refresh={refresh} />
       {pool.isPending ? (

@@ -79,7 +79,9 @@ export function resolveLinearAppWebhookSettings(
 ): { clientId: string; webhookSecret: string } | undefined {
   if (isPlatformManaged()) return undefined
   const configured = parseSelfHostedOAuthApp('linear', store.get(SELF_HOSTED_OAUTH_APP_KEY.linear))
-  return configured?.webhookSecret ? { clientId: configured.clientId, webhookSecret: configured.webhookSecret } : undefined
+  return configured?.webhookSecret
+    ? { clientId: configured.clientId, webhookSecret: configured.webhookSecret }
+    : undefined
 }
 
 /** Job-gated resolver for historical local revocation only. */
@@ -148,7 +150,8 @@ export function getOAuthAppSettings(
 /** Same origin and base path as the OAuth callback, so reverse-proxy prefixes carry over. */
 function linearAppWebhookUrl(callbackUrl: string): string {
   const url = new URL(callbackUrl)
-  url.pathname = url.pathname.replace(/\/settings\/integrations\/oauth\/callback(?:\/[a-z-]+)?\/?$/, '') + LINEAR_APP_WEBHOOK_PATH
+  url.pathname =
+    url.pathname.replace(/\/settings\/integrations\/oauth\/callback(?:\/[a-z-]+)?\/?$/, '') + LINEAR_APP_WEBHOOK_PATH
   return url.toString()
 }
 

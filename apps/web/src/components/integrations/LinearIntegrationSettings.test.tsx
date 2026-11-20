@@ -127,7 +127,13 @@ test('a configured app installs through Linear with the safe return path', async
 
 test('hosted instances offer the install without local application settings', async () => {
   globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch
-  await render({ authority: 'platform_broker', configured: true, clientId: null, callbackUrl: 'x', requiredCapabilities: [] })
+  await render({
+    authority: 'platform_broker',
+    configured: true,
+    clientId: null,
+    callbackUrl: 'x',
+    requiredCapabilities: [],
+  })
   expect(buttonNamed('Install Ficus in Linear')).toBeDefined()
   expect(container.querySelector('[data-testid="linear-app-callback-url"]')).toBeNull()
   expect(buttonNamed('Replace application settings')).toBeUndefined()

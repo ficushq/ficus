@@ -15,7 +15,13 @@ const MAX_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60
  * writes Ficus makes; the two `app:` scopes make the app delegable and
  * mentionable. `admin` is not allowed for app actors.
  */
-export const LINEAR_APP_SCOPES = ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'] as const
+export const LINEAR_APP_SCOPES = [
+  'read',
+  'issues:create',
+  'comments:create',
+  'app:assignable',
+  'app:mentionable',
+] as const
 
 const PROVIDER_ERROR_CODES: Readonly<Record<string, string>> = {
   invalid_grant: 'invalid_grant',
@@ -94,10 +100,7 @@ export class LinearOAuthClient {
     clientSecret: string
     signal?: AbortSignal
   }): Promise<LinearTokenResponse> {
-    return this.#token(
-      { grant_type: 'authorization_code', code: input.code, redirect_uri: input.redirectUri },
-      input
-    )
+    return this.#token({ grant_type: 'authorization_code', code: input.code, redirect_uri: input.redirectUri }, input)
   }
 
   /** Linear rotates the pair on every refresh: the old refresh token stops working. */
@@ -118,7 +121,10 @@ export class LinearOAuthClient {
   async revoke(input: { token: string; clientId: string; clientSecret: string; signal?: AbortSignal }): Promise<void> {
     const response = await this.#send(REVOKE_URL, {
       method: 'POST',
-      headers: { ...basicAuth(input.clientId, input.clientSecret), 'content-type': 'application/x-www-form-urlencoded' },
+      headers: {
+        ...basicAuth(input.clientId, input.clientSecret),
+        'content-type': 'application/x-www-form-urlencoded',
+      },
       body: new URLSearchParams({ token: input.token, token_type_hint: 'access_token' }).toString(),
       signal: input.signal,
     })
@@ -244,7 +250,9 @@ function parseTokenResponse(value: unknown, now: Date): LinearTokenResponse {
   if (
     !isBoundedString(row.access_token, MAX_TOKEN_LENGTH) ||
     (typeof row.token_type === 'string' && row.token_type.toLowerCase() !== 'bearer') ||
-    (row.refresh_token !== undefined && row.refresh_token !== null && !isBoundedString(row.refresh_token, MAX_TOKEN_LENGTH))
+    (row.refresh_token !== undefined &&
+      row.refresh_token !== null &&
+      !isBoundedString(row.refresh_token, MAX_TOKEN_LENGTH))
   ) {
     throw new LinearOAuthError('invalid_response')
   }

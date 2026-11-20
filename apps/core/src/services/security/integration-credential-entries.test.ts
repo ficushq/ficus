@@ -69,7 +69,10 @@ test('the self-hosted Linear app registers its client secret and webhook signing
   })
   expect(isIntegrationCredentialKey(key)).toBe(true)
   expect(integrationCredentialEntries(key, raw)).toEqual([
-    { key: '__integration-credential:integration-oauth-app:linear.clientSecret', value: 'synthetic-linear-client-secret' },
+    {
+      key: '__integration-credential:integration-oauth-app:linear.clientSecret',
+      value: 'synthetic-linear-client-secret',
+    },
     {
       key: '__integration-credential:integration-oauth-app:linear.webhookSecret',
       value: 'synthetic-linear-webhook-secret',

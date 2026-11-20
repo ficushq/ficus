@@ -156,7 +156,11 @@ describe('LinearOAuthClient', () => {
     const unhinted = (await noHint
       .refresh({ refreshToken: 'r', clientId: 'i', clientSecret: 's' })
       .catch((caught: unknown) => caught)) as LinearOAuthError
-    expect(classifyLinearOAuthError(unhinted)).toEqual({ code: 'rate_limited', retryable: true, providerRateLimited: true })
+    expect(classifyLinearOAuthError(unhinted)).toEqual({
+      code: 'rate_limited',
+      retryable: true,
+      providerRateLimited: true,
+    })
   })
 
   test('bounds response bodies', async () => {

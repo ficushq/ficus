@@ -109,9 +109,7 @@ export function OAuthCallbackPage() {
 
   return (
     <section className="mx-auto max-w-lg rounded-lg border border-th-border bg-surface p-6 text-center">
-      <h1 className="text-lg font-semibold">
-        Connecting {PROVIDER_LABELS[provider]}
-      </h1>
+      <h1 className="text-lg font-semibold">Connecting {PROVIDER_LABELS[provider]}</h1>
       {pageState === 'cancelled' ? (
         <p role="status" aria-live="polite" className="mt-2 text-sm text-muted">
           Authorization cancelled. You can return to Settings.

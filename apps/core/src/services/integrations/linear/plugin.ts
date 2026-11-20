@@ -106,9 +106,10 @@ export interface LinearPluginDependencies {
   client?: Pick<LinearOAuthClient, 'identity'>
 }
 
-export function createLinearPlugin(
-  dependencies: LinearPluginDependencies = {}
-): IntegrationPluginV1<LinearConfiguration, LinearCredential> & {
+export function createLinearPlugin(dependencies: LinearPluginDependencies = {}): IntegrationPluginV1<
+  LinearConfiguration,
+  LinearCredential
+> & {
   authorization: { kind: 'manual'; managed: ManagedOAuthDriver<LinearConfiguration> }
 } {
   const client = dependencies.client ?? new LinearOAuthClient()
@@ -191,7 +192,8 @@ export function createLinearPlugin(
           let configuration: LinearConfiguration
           try {
             parsed = linearCredentialCodec.parse(credential)
-            configuration = parseLinearConfiguration(connection.configuration)
+            // A caller without a connection record validates a bare key, as before the app existed.
+            configuration = parseLinearConfiguration(connection?.configuration ?? { version: 1 })
           } catch {
             return { ok: false, code: 'invalid_auth' }
           }

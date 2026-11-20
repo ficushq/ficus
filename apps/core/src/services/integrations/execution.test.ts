@@ -37,7 +37,10 @@ function fixture(
     ...linearPlugin,
     key: 'example',
     // An opaque string credential: Linear's own codec parses a key/OAuth union.
-    connection: { ...linearPlugin.connection, credential: { parse: (value: unknown) => String(value), serialize: String } },
+    connection: {
+      ...linearPlugin.connection,
+      credential: { parse: (value: unknown) => String(value), serialize: String },
+    },
     execution: {
       binaries: ['example'],
       environment: { EXAMPLE_TOKEN: ({ credential }: { credential: string }) => credential },
