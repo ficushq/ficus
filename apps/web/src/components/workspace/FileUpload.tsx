@@ -343,7 +343,7 @@ export function FileUpload({ source, targetDir = '', onUploadStart, onUploadComp
 
       {/* Overwrite confirmation dialog */}
       {showOverwriteDialog && (
-        <div className="fixed inset-0 bg-chrome-scrim/50 flex items-center justify-center z-50">
+        <div className="ficus-titlebar-reserve fixed inset-0 bg-chrome-scrim/50 flex items-center justify-center z-50">
           <div className="ficus-overlay bg-surface rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-primary mb-2">Files already exist</h3>
             <p className="text-sm text-muted mb-4">{skippedFiles.length} file(s) already exist at the destination:</p>

@@ -30,6 +30,18 @@ test('docked assistant stays inside a resized visual viewport', () => {
   })
 })
 
+test('in Ficus Desktop the docked assistant stays below the title bar', () => {
+  const desktop = { left: 0, top: 0, width: 1200, height: 900, reservedTop: 56 }
+  expect(dockAssistant('top-left', desktop, 374, 284)).toEqual({ left: 8, top: 64 })
+  expect(dockAssistant('top-center', desktop, 256, 60)).toEqual({ left: 472, top: 64 })
+  // The bottom docks and the roomy center anchor are unchanged.
+  expect(dockAssistant('bottom-right', desktop, 256, 60)).toEqual({ left: 936, top: 832 })
+  expect(dockAssistant('center', desktop, 672, 500)).toEqual({ left: 264, top: 160 })
+  // A short window would have put the center anchor under the window buttons.
+  expect(dockAssistant('center', { ...desktop, height: 280 }, 374, 200)).toEqual({ left: 413, top: 64 })
+  expect(dockAssistant('center', { left: 0, top: 0, width: 1200, height: 280 }, 374, 200).top).toBeCloseTo(50.4)
+})
+
 test('command-center anchor does not move as results or inline conversations change height', () => {
   const viewport = { left: 0, top: 0, width: 1200, height: 900 }
   expect(dockAssistant('center', viewport, 672, 200)).toEqual(dockAssistant('center', viewport, 672, 700))

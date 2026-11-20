@@ -93,7 +93,7 @@ export function TemplateFieldActions({
         </button>
       )}
       {isDiffOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="ficus-titlebar-reserve fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-chrome-scrim/50" onClick={() => setIsDiffOpen(false)} />
           <div className="ficus-overlay relative bg-surface rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[75vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">

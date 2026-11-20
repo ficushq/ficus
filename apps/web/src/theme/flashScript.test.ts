@@ -383,6 +383,12 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
   })
 })
 
+test('index.html carries the inline script generated from the current sources', async () => {
+  const { generateThemeFlash, STALE_THEME_FLASH_MESSAGE } = await import('../../scripts/generate-theme-flash')
+  // The snapshot tests below compare against the built-in CSS fingerprint; a stale script fails them too.
+  if (flashScript !== (await generateThemeFlash())) throw new Error(STALE_THEME_FLASH_MESSAGE)
+})
+
 describe('pre-paint flash script: persisted resolved snapshot (palette presets paint their derived look, not the base theme)', () => {
   test('a matching resolved snapshot paints its derived (non-explicit) values before paint', async () => {
     const { hashCustomThemeDocument } = await import('./custom')
