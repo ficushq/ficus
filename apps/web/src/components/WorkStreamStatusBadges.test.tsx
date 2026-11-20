@@ -94,3 +94,45 @@ test('Parked preserves pause and omitted-waits compatibility without reviving ex
     'Parked'
   )
 })
+
+test('pill rows color the delivery label by its role or leave it to the pull request badge', () => {
+  const ciFailed = {
+    status: 'active' as const,
+    derivedState: 'in_progress' as const,
+    openWaits: [],
+    delivery: { kind: 'failure' as const, explanation: { codeHostReason: 'ci-failed' as const } },
+  }
+  const text = renderToStaticMarkup(<WorkStreamStatusBadges workStream={ciFailed} />)
+  expect(text).toContain('<span class="text-xs text-secondary" title="Delivery: CI failed">')
+  const pill = renderToStaticMarkup(<WorkStreamStatusBadges workStream={ciFailed} deliveryLabel="pill" />)
+  expect(pill).not.toContain('text-xs text-secondary')
+  expect(pill).toMatch(/<span class="[^"]*text-status-danger-badge-fg[^"]*" title="Delivery: CI failed">/)
+  expect(pill).toContain('<span class="sr-only">Delivery: </span>CI failed')
+  const external = renderToStaticMarkup(
+    <WorkStreamStatusBadges
+      workStream={{ ...ciFailed, delivery: { kind: 'external', explanation: { codeHostReason: 'ci-pending' } } }}
+      deliveryLabel="pill"
+    />
+  )
+  expect(external).toMatch(/text-status-external-wait-badge-fg[^"]*" title="Delivery: Awaiting CI"/)
+  const none = renderToStaticMarkup(<WorkStreamStatusBadges workStream={ciFailed} deliveryLabel="none" />)
+  expect(none).toContain('In Progress')
+  expect(none).not.toContain('CI failed')
+  // Board cards hide the primary pill: with nothing else to show, they render nothing.
+  expect(
+    renderToStaticMarkup(<WorkStreamStatusBadges workStream={ciFailed} showPrimary={false} deliveryLabel="none" />)
+  ).toBe('')
+})
+
+test('"Review queued" stays on text surfaces and leaves pill rows', () => {
+  const gate = { id: 'gate', type: 'manual' as const, flowAttemptId: 2, workflowHumanGate: true }
+  const question = { id: 'question', type: 'question' as const, flowAttemptId: 2 }
+  const facts = { status: 'active' as const, openWaits: [question, gate] }
+  expect(renderToStaticMarkup(<WorkStreamStatusBadges workStream={facts} />)).toContain('Review queued')
+  expect(renderToStaticMarkup(<WorkStreamStatusBadges workStream={facts} showPrimary={false} />)).toContain(
+    'Review queued'
+  )
+  const row = renderToStaticMarkup(<WorkStreamStatusBadges workStream={facts} showQueuedReview={false} />)
+  expect(row).toContain('Waiting on Answer')
+  expect(row).not.toContain('Review queued')
+})

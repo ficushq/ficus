@@ -1,34 +1,43 @@
-import {
-  workStreamQueuedReviewLabel,
-  workStreamSecondaryDeliveryLabel,
-  type WorkStreamPresentationFacts,
-} from '@ficus/shared'
+import { workStreamQueuedReviewLabel, type WorkStreamPresentationFacts } from '@ficus/shared'
 import clsx from 'clsx'
 import { Badge } from './Badge'
 import {
   getWsDisplayState,
   isWorkStreamParked,
+  workStreamDeliveryTag,
   workStreamStatusLabel,
   WS_STATUS_BADGE_COLORS,
 } from '../lib/workStreamStatusPresentation'
+
+/**
+ * How the secondary delivery label renders: muted `text` where the surrounding line is text
+ * (board cards, the mobile details line), a colored `pill` among other pills, or `none` when
+ * the caller attaches it to the delivery pull request instead.
+ */
+export type WorkStreamDeliveryLabelMode = 'text' | 'pill' | 'none'
 
 /** The reason for waiting and admission state are independent facts. */
 export function WorkStreamStatusBadges({
   workStream,
   showPrimary = true,
   showQueuePosition = false,
+  deliveryLabel = 'text',
+  showQueuedReview = true,
   className,
 }: {
   workStream: WorkStreamPresentationFacts & { queuePosition?: number | null }
   showPrimary?: boolean
   showQueuePosition?: boolean
+  deliveryLabel?: WorkStreamDeliveryLabelMode
+  /** Pill rows leave "Review queued" to the peek card; text surfaces keep it. */
+  showQueuedReview?: boolean
   className?: string
 }) {
   const state = getWsDisplayState(workStream)
   const parked = isWorkStreamParked(workStream)
-  const secondaryDelivery = workStreamSecondaryDeliveryLabel(workStream)
-  const queuedReview = workStreamQueuedReviewLabel(workStream)
-  if (!showPrimary && !parked && !secondaryDelivery && !queuedReview) return null
+  const deliveryTag = deliveryLabel === 'none' ? null : workStreamDeliveryTag(workStream)
+  const queuedReview = showQueuedReview ? workStreamQueuedReviewLabel(workStream) : null
+  if (!showPrimary && !parked && !deliveryTag && !queuedReview) return null
   const label =
     showQueuePosition && state === 'queued' && workStream.queuePosition != null
       ? `${workStreamStatusLabel(workStream)} — position ${workStream.queuePosition}`
@@ -45,12 +54,18 @@ export function WorkStreamStatusBadges({
         </Badge>
       )}
       {queuedReview && <span className="text-xs text-secondary">{queuedReview}</span>}
-      {secondaryDelivery && (
-        <span className="text-xs text-secondary" title={`Delivery: ${secondaryDelivery}`}>
-          <span className="sr-only">Delivery: </span>
-          {secondaryDelivery}
-        </span>
-      )}
+      {deliveryTag &&
+        (deliveryLabel === 'pill' ? (
+          <Badge color={deliveryTag.color} title={`Delivery: ${deliveryTag.label}`}>
+            <span className="sr-only">Delivery: </span>
+            {deliveryTag.label}
+          </Badge>
+        ) : (
+          <span className="text-xs text-secondary" title={`Delivery: ${deliveryTag.label}`}>
+            <span className="sr-only">Delivery: </span>
+            {deliveryTag.label}
+          </span>
+        ))}
       {parked && (
         <Badge
           color="neutral"

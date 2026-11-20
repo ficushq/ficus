@@ -4,6 +4,7 @@ import {
   MANUAL_WAIT_ACTOR_STATE,
   selectWorkStreamPresentationState,
   workStreamWaitActor,
+  workStreamSecondaryDeliveryLabel,
   workStreamWaitDisplayType,
   WORK_STREAM_STATUS_ROLE,
   type WorkStreamWaitActor,
@@ -205,4 +206,35 @@ export function isWorkStreamParked(workStream: WorkStreamPresentationFacts): boo
     // Admission state follows retained waits/pause, independently of delivery's primary label.
     getWsDisplayState({ ...workStream, delivery: undefined })
   )
+}
+
+/**
+ * The delivery state a row attaches to its delivery pull request while execution owns the
+ * primary pill: "CI failed" in the failure color, "Awaiting CI" in the external-wait color.
+ * Null whenever the primary pill already presents delivery, so the two never repeat.
+ */
+export function workStreamDeliveryTag(
+  workStream: WorkStreamPresentationFacts
+): { label: string; color: StatusRole; textClass: string } | null {
+  const label = workStreamSecondaryDeliveryLabel(workStream)
+  if (!label || !workStream.delivery) return null
+  const treatment = webStatus(WORK_STREAM_STATUS_ROLE[`delivery_${workStream.delivery.kind}`] ?? 'neutral')
+  return { label, color: treatment.badgeColor, textClass: treatment.textClass }
+}
+
+/**
+ * Which rendered pull request carries the delivery tag: the first of Core's designated
+ * delivery pull requests (primary first) that the row shows, else the first delivery pull
+ * request the row shows, else the first one. Null when the row shows no pull request link.
+ */
+export function deliveryTagPullRequestKey(
+  delivery: WorkStreamPresentationFacts['delivery'],
+  pullRequests: ReadonlyArray<{ key: string; number?: number; url?: string; delivery?: boolean }>
+): string | null {
+  const shown = pullRequests.filter((pullRequest) => pullRequest.url)
+  for (const designated of delivery?.explanation?.pullRequests ?? []) {
+    const match = shown.find((pullRequest) => pullRequest.number === designated.number)
+    if (match) return match.key
+  }
+  return (shown.find((pullRequest) => pullRequest.delivery) ?? shown[0])?.key ?? null
 }

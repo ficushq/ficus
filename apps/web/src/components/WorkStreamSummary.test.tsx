@@ -16,7 +16,7 @@ import { WorkStreamList } from './WorkStreamList'
 import { WorkStreamGraph } from './WorkStreamGraph'
 import { WorkStreamDetailModal } from './WorkStreamDetailModal'
 import { WorkStreamList as SquadWorkStreamList } from './squads/WorkStreamList'
-import { WORK_STREAM_PEEK_OPEN_DELAY_MS, workStreamSummariesStorageKey } from './WorkStreamSummary'
+import { WORK_STREAM_PEEK_OPEN_DELAY_MS, workStreamPeekFacts, workStreamSummariesStorageKey } from './WorkStreamSummary'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -189,6 +189,29 @@ test('hovering a Feed row opens the peek card after about half a second', async 
   await mouse(row, 'mouseout')
   await wait(200)
   expect(peekCard()).toBeNull()
+})
+
+test('the peek card names a review gate queued behind other waits as next, and Feed rows leave it out', async () => {
+  const question = workStream().openWaits![0]!
+  const gate = {
+    ...question,
+    id: 'wait-gate',
+    type: 'manual' as const,
+    flowAttemptId: 3,
+    resolutionHandler: 'workflow' as const,
+    workflowHumanGate: true,
+  }
+  const queued = workStream({ openWaits: [{ ...question, flowAttemptId: 3 }, gate] })
+  expect(workStreamPeekFacts(queued).waitLabel).toBe('Waiting on you: question · review next')
+  // A gate nothing blocks is the person's review now, not a queued one.
+  expect(workStreamPeekFacts(workStream({ openWaits: [gate] })).waitLabel).toBe('Waiting on you: review')
+
+  const { doc, wait, peekCard, mouse } = await render(feedList([queued]))
+  const row = doc.querySelector('[data-testid="feed-work-row"]')!
+  expect(row.textContent).not.toContain('Review queued')
+  await mouse(row, 'mouseover')
+  await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
+  expect(peekCard()!.textContent).toContain('Waiting on you: question · review next')
 })
 
 test('keyboard focus opens the peek at once; Escape and blur dismiss it; the row is described by it', async () => {

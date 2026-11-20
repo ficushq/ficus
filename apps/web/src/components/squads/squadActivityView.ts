@@ -154,12 +154,20 @@ const WAIT_LABELS: Record<WorkStreamWaitType, string> = {
   manual: 'blocker',
 }
 
-/** "Waiting on you: review" when a person must act, else "Waiting: dependency". */
+/**
+ * "Waiting on you: review" when a person must act, else "Waiting: dependency". A review the
+ * person cannot act on yet is a workflow gate queued behind the other waits, so it trails as
+ * "· review next" ("Waiting on you: question · review next") instead of reading as current.
+ */
 export function activityCardWaitLabel(card: Pick<ActivityWorkStreamCard, 'waits'>): string | null {
-  const mine = [...new Set(card.waits.filter((wait) => wait.needsYou).map((wait) => WAIT_LABELS[wait.type]))]
-  if (mine.length) return `Waiting on you: ${mine.join(', ')}`
-  const other = [...new Set(card.waits.map((wait) => WAIT_LABELS[wait.type]))]
-  return other.length ? `Waiting: ${other.join(', ')}` : null
+  const queuedReview = card.waits.some((wait) => wait.type === 'review' && !wait.needsYou)
+  const current = queuedReview ? card.waits.filter((wait) => wait.type !== 'review' || wait.needsYou) : card.waits
+  const suffix = queuedReview ? ' · review next' : ''
+  const mine = [...new Set(current.filter((wait) => wait.needsYou).map((wait) => WAIT_LABELS[wait.type]))]
+  if (mine.length) return `Waiting on you: ${mine.join(', ')}${suffix}`
+  const other = [...new Set(current.map((wait) => WAIT_LABELS[wait.type]))]
+  if (other.length) return `Waiting: ${other.join(', ')}${suffix}`
+  return queuedReview ? 'Waiting: review' : null
 }
 
 const CI_LABELS: Record<NonNullable<ActivityWorkStreamCard['ci']>, string> = {
