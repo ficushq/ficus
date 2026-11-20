@@ -21,6 +21,7 @@ import {
   isTrustedLinearUser,
   linearActorType,
   probeLinearAppEvent,
+  probeLinearUser,
   type LinearAppProbe,
   type LinearProbedUser,
 } from './app-api'
@@ -191,15 +192,9 @@ export async function routeLinearAppEvent(
     return { accessible: false, outcomes: [], authorizedSquadIds: [] }
   const actorId = text(first.data.actor)
   const commentId = event.type === 'Comment' ? text(record(first.data.comment).id) : ''
-  const cacheKey = `${resolved.connection.id}:${actorId}`
-  const cached = actorId && !commentId ? userCache.get(cacheKey) : undefined
   let probe: LinearAppProbe
   try {
-    probe = await probeLinearAppEvent(resolved.authorization, {
-      issueId,
-      ...(commentId ? { commentId } : {}),
-      ...(actorId && !commentId && !(cached && cached.expiresAt > Date.now()) ? { userId: actorId } : {}),
-    })
+    probe = await probeLinearAppEvent(resolved.authorization, { issueId, ...(commentId ? { commentId } : {}) })
   } catch (error) {
     // A GraphQL error is Linear refusing the read: the app cannot see this issue.
     if (error instanceof Error && error.message === 'provider_query_failed')
@@ -212,8 +207,14 @@ export async function routeLinearAppEvent(
   let user: LinearProbedUser | null = null
   if (commentId) user = probe.comment?.user ?? null
   else if (actorId) {
-    user = probe.user !== undefined ? (probe.user ?? null) : (cached?.user ?? null)
-    if (probe.user !== undefined) userCache.set(cacheKey, { user, expiresAt: Date.now() + USER_CACHE_MS })
+    const cacheKey = `${resolved.connection.id}:${actorId}`
+    const cached = userCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) user = cached.user
+    else {
+      user = await probeLinearUser(resolved.authorization, actorId)
+      // Only a definite answer is cached; a failed lookup is asked again next time.
+      if (user) userCache.set(cacheKey, { user, expiresAt: Date.now() + USER_CACHE_MS })
+    }
   }
   const enriched = facts.flatMap((fact) => {
     const next = enrichFact(fact, probe, user, appUserId, event.type === 'AgentSessionEvent')
@@ -287,6 +288,8 @@ function enrichFact(
   if (!['issue.assigned', 'issue.unassigned'].includes(fact.output)) data.assignee = issue.assignee?.id ?? ''
   if (!['issue.delegated', 'issue.undelegated'].includes(fact.output)) data.delegate = delegate
   data.actorType = linearActorType(user)
+  if (fact.output === 'issue.comment' && probe.comment?.user?.id)
+    data.comment = { ...record(data.comment), author: probe.comment.user.id }
   if (fact.output === 'issue.comment' && probe.comment) {
     const owned = [probe.comment.agentSession, probe.comment.parent?.agentSession].find(
       (session) => session?.appUser?.id === appUserId

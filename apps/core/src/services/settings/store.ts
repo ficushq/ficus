@@ -131,6 +131,11 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
     default: '',
     description: 'When the one-time APP_URL/PUBLIC_URL to public address seed ran (internal).',
   },
+  LINEAR_RULE_AUDIENCES_MIGRATED: {
+    type: 'string',
+    default: '',
+    description: 'When the one-time upgrade that keeps stored Linear rule audiences behaving as before ran (internal).',
+  },
   LOCAL_APPS_BASE_PATH: {
     type: 'string',
     default: '',

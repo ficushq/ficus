@@ -83,37 +83,51 @@ export interface LinearAppProbe {
     agentSession?: { id: string; appUser?: { id: string } | null } | null
     parent?: { agentSession?: { id: string; appUser?: { id: string } | null } | null } | null
   } | null
-  user?: LinearProbedUser | null
 }
 
-const PROBE_QUERY = `query FicusLinearAppProbe($issueId: String!, $commentId: String!, $userId: String!, $withComment: Boolean!, $withUser: Boolean!) {
+const PROBE_QUERY = `query FicusLinearAppProbe($issueId: String!, $commentId: String!, $withComment: Boolean!) {
   issue(id: $issueId) { id number identifier url team { id key } labels { nodes { name } } assignee { id } delegate { id } }
   comment(id: $commentId) @include(if: $withComment) { id parentId user { id app guest active } agentSession { id appUser { id } } parent { agentSession { id appUser { id } } } }
-  user(id: $userId) @include(if: $withUser) { id name app guest active }
 }`
 
 /**
  * One live probe per connection and event, shared by every squad on the connection: the issue (with
- * its team, labels, assignee and delegate), the comment for comment events, and the acting user.
- * A GraphQL error (the app cannot read the issue) rejects with `provider_query_failed`.
+ * its team, labels, assignee and delegate) and the comment for comment events. A GraphQL error (the
+ * app cannot read the issue) rejects with `provider_query_failed`.
  */
 export async function probeLinearAppEvent(
   authorization: string,
-  input: { issueId: string; commentId?: string; userId?: string },
+  input: { issueId: string; commentId?: string },
   signal?: AbortSignal
 ): Promise<LinearAppProbe> {
   return linearQuery<LinearAppProbe>(
     authorization,
     PROBE_QUERY,
-    {
-      issueId: input.issueId,
-      commentId: input.commentId ?? '',
-      userId: input.userId ?? '',
-      withComment: !!input.commentId,
-      withUser: !!input.userId,
-    },
+    { issueId: input.issueId, commentId: input.commentId ?? '', withComment: !!input.commentId },
     signal
   )
+}
+
+/**
+ * The acting user, in its own request so an actor Linear will not describe (an integration rather
+ * than a user) never makes the issue look unreadable. Any failure is an unknown, untrusted actor.
+ */
+export async function probeLinearUser(
+  authorization: string,
+  userId: string,
+  signal?: AbortSignal
+): Promise<LinearProbedUser | null> {
+  try {
+    const data = await linearQuery<{ user?: LinearProbedUser | null }>(
+      authorization,
+      'query FicusLinearUser($userId: String!) { user(id: $userId) { id name app guest active } }',
+      { userId },
+      signal
+    )
+    return data.user?.id === userId ? data.user : null
+  } catch {
+    return null
+  }
 }
 
 /** The account type rule conditions and audiences see, from a probed user. */

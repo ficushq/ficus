@@ -16,7 +16,7 @@ import { createLogger } from '../../../lib/infra/logger'
 import { answerAgentQuestion } from '../../agents/questions'
 import { canAnswerAgentQuestion } from '../../agents/question-authorization'
 import { pauseWorkStream } from '../../work-streams/pause'
-import { isTrustedLinearUser, probeLinearAppEvent, type LinearProbedUser } from './app-api'
+import { isTrustedLinearUser, probeLinearUser, type LinearProbedUser } from './app-api'
 import { enqueueLinearWrites } from './outbox'
 import { linearAccountLinkUrl } from './session-projector'
 import { selectableQuestion } from './session-projection'
@@ -88,13 +88,8 @@ async function streamOwnerAgent(stream: { ownerAgentId: string | null; squadId: 
   return squad?.managerAgentId ?? null
 }
 
-async function probeAuthor(authorization: string, session: SessionRow, userId: string) {
-  if (!userId || !session.issueId) return null
-  try {
-    return (await probeLinearAppEvent(authorization, { issueId: session.issueId, userId })).user ?? null
-  } catch {
-    return null
-  }
+async function probeAuthor(authorization: string, userId: string) {
+  return userId ? probeLinearUser(authorization, userId) : null
 }
 
 function authorName(user: LinearProbedUser | null, userId: string) {
@@ -122,7 +117,7 @@ export async function handleBoundSessionPrompt(input: {
   if (!activityId) return 'consumed'
   const userId = text(activity.userId) || text(record(activity.user).id)
   const reply = text(activity.body, 30_000) || text(record(activity.content).body, 30_000)
-  const author = await probeAuthor(input.authorization, session, userId)
+  const author = await probeAuthor(input.authorization, userId)
   const trusted = isTrustedLinearUser(author)
 
   if (activity.signal === 'stop') {

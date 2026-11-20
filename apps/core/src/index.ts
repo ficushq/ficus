@@ -895,6 +895,11 @@ if (import.meta.main) {
       await seedPublicAppUrlFromEnvironment().catch((error) =>
         log.error('Failed to seed the public address setting from the environment:', error)
       )
+      // One-time upgrade: stored Linear rules keep their old (unenforced) account involvement.
+      const { migrateLinearRuleAudiences } = await import('./services/integrations/linear/rule-audience-migration')
+      await migrateLinearRuleAudiences().catch((error) =>
+        log.error('Failed to keep stored Linear rule audiences behaving as before:', error)
+      )
       const { initializeChannelIntegrationStates } = await import('./services/integrations/channels/settings')
       await initializeChannelIntegrationStates()
       const { importLegacyDeploymentCredentials } = await import('./services/integrations/deployment/legacy-import')
