@@ -416,6 +416,19 @@ test('a session without a creator is routed provisionally as a delegation with n
   expect(facts[1]!.data).toMatchObject({ actor: '', action: 'delegated', delegate: app })
 })
 
+test('the app user as creator is never the actor, even on a polled issue delegated to the app', () => {
+  const facts = linearOutputAdapter.normalize(
+    sessionEvent('created', {
+      ...systemComment,
+      creatorId: app,
+      issue: { id: 'issue-uuid', delegate: { id: app } },
+    })
+  )
+  expect(facts.map((fact) => fact.output)).toEqual(['agent_session.created', 'issue.delegated'])
+  expect(facts[0]!.data).toMatchObject({ actor: '', session: { trigger: 'delegation', creator: app } })
+  expect(facts[1]!.data).toMatchObject({ actor: '' })
+})
+
 test('resolveUnattributedLinearSession: delegated to the app is a delegation, anything else is routed as a mention', () => {
   const facts = linearOutputAdapter.normalize(sessionEvent('created', { ...systemComment, creatorId: undefined }))
   const delegated = resolveUnattributedLinearSession(facts, app, app)!

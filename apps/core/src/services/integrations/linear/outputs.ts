@@ -244,7 +244,8 @@ function normalizeSessionEvent(payload: Record<string, any>): IntegrationOutputF
   // An `unknown` session has no person to attribute it to: no actor, so no account check or trust
   // lookup treats the app user (or nobody) as the requester. It is emitted as a provisional
   // delegation that routing settles with the live delegate (`resolveUnattributedLinearSession`).
-  const actor = trigger === 'unknown' ? '' : creator
+  // The app user as creator is never the requester either, whatever the trigger.
+  const actor = trigger === 'unknown' || creator === appUserId ? '' : creator
   const context = text(payload.promptContext, 30000)
   const created = fact(
     'agent_session.created',
