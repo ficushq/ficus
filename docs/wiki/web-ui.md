@@ -128,6 +128,8 @@ Search includes page titles, section names, field labels, and aliases. Results s
 
 Search only indexes available pages; permission and runtime gates remain authoritative. Do not index secret values or generate a result for an arbitrary user/provider record.
 
+The integration OAuth callback (`/settings/integrations/oauth/callback` and its `/github` and `/linear` variants, `OAuthCallbackPage`) is a standalone screen. `App` renders it after the sign-in gate but outside the app shell, so it has no header, banners, footer or floating tools. The content is centered on the canvas, not in a card: the Ficus mark and the provider's logo joined by a state badge (blue while working, green once saved, red on failure, neutral when cancelled), a heading that names the outcome, and plain links back to the app. A saved connection offers Continue while the redirect runs. A retryable failure offers Try again, the provider's settings and the app home. A terminal failure or a cancellation offers the provider's settings and the app home. When the state changes, focus moves to the new heading.
+
 ## Responsive web behavior
 
 This is a responsive webapp, including installed web experiences. Preserve browser navigation, deep links, safe areas, draft state, and keyboard behavior.
