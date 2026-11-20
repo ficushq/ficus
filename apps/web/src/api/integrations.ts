@@ -100,6 +100,8 @@ export interface OAuthAppSettings {
   callbackUrl: string
   /** Linear on a self-hosted instance: the URL for the OAuth application's webhook. */
   webhookUrl?: string
+  /** Linear only: whether the agent app can be installed on this instance yet. */
+  available?: boolean
   requiredCapabilities: string[]
 }
 

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { afterEach, beforeEach, describe, test, expect } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
@@ -13,7 +13,10 @@ import {
   parseLinearConfiguration,
 } from './plugin'
 import { LinearOAuthError } from '@ficus/shared/oauth-providers/linear/client'
-import { connectionOAuthView, refreshableOAuthProviderKeys } from '../oauth-plugin-view'
+import { connectionOAuthView, oauthPluginView, refreshableOAuthProviderKeys } from '../oauth-plugin-view'
+import { setLinearAppReadinessForTest } from './app-readiness'
+import { IntegrationAuthorizationService } from '../authorization/service'
+import type { OAuthTransport } from '../authorization/transport'
 
 const bundle = {
   version: 1 as const,
@@ -78,7 +81,6 @@ describe('linearPlugin CLI projection', () => {
     expect(linearPlugin.authorization.managed).toMatchObject({
       kind: 'oauth2',
       adapter: 'linear',
-      authorities: ['platform_broker', 'local'],
       refreshInvalidatesPreviousTokens: true,
     })
     // Refresh and revocation act only on app (`oauth2`) connections.
@@ -227,7 +229,103 @@ describe('Linear configuration', () => {
   })
 })
 
+describe('Linear app readiness', () => {
+  function startService(authority: 'local' | 'platform_broker') {
+    const urls: string[] = []
+    const transport = {
+      authority,
+      requireConfigured() {},
+      async authorizationUrl(input: { localFlowId: string }) {
+        urls.push(input.localFlowId)
+        return {
+          authorizationUrl: `https://linear.app/oauth/authorize?state=${input.localFlowId}`,
+          expiresAt: '2030-01-01T00:10:00.000Z',
+        }
+      },
+      async completeAuthorization() {
+        throw new Error('unused')
+      },
+      async refresh() {
+        throw new Error('unused')
+      },
+      async revoke() {},
+    } as unknown as OAuthTransport
+    const service = new IntegrationAuthorizationService({
+      states: { create: async () => {} } as never,
+      resolvePlugin: (key) => (key === 'linear' ? linearPlugin : undefined),
+      transport,
+      callbackUrl: () => 'https://ficus.example/settings/integrations/oauth/callback/linear',
+      installGrant: async () => {
+        throw new Error('unused')
+      },
+      randomBytes: () => Buffer.alloc(32, 7),
+    })
+    const start = () =>
+      service.start({ providerKey: 'linear', userId: 'user-1', returnTo: '/settings', intent: { kind: 'connect' } })
+    return { start, urls }
+  }
+
+  test('is off under both authorities by default, so no install can start', async () => {
+    expect(linearPlugin.authorization.managed.authorities).toEqual([])
+    for (const authority of ['local', 'platform_broker'] as const) {
+      expect(oauthPluginView(linearPlugin, authority)).toBeUndefined()
+      const { start, urls } = startService(authority)
+      const error = await start().catch((caught: unknown) => caught)
+      expect((error as { code?: string }).code).toBe('unsupported_provider')
+      expect(urls).toEqual([])
+    }
+  })
+
+  test('turning one authority on offers the driver under that authority only', async () => {
+    const restore = setLinearAppReadinessForTest({ local: true, platform_broker: false })
+    try {
+      expect(linearPlugin.authorization.managed.authorities).toEqual(['local'])
+      expect(oauthPluginView(linearPlugin, 'platform_broker')).toBeUndefined()
+      const local = startService('local')
+      expect((await local.start()).authorizationUrl).toStartWith('https://linear.app/oauth/authorize')
+      expect(local.urls).toHaveLength(1)
+      const hosted = startService('platform_broker')
+      expect(((await hosted.start().catch((caught: unknown) => caught)) as { code?: string }).code).toBe(
+        'unsupported_provider'
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  test('API-key connections work the same whatever the readiness', async () => {
+    const old = globalThis.fetch
+    try {
+      globalThis.fetch = (async () => Response.json({ data: { viewer: { id: 'viewer' } } })) as unknown as typeof fetch
+      const validate = () =>
+        linearPlugin.runtime.provider.validate({
+          connection: { id: 'c', providerKey: 'linear', adapterVersion: 1, configuration: { version: 1 } },
+          credential: 'lin_api_synthetic',
+        } as never)
+      expect(await validate()).toEqual({ ok: true, grantedScopes: ['issues:read'] })
+      const restore = setLinearAppReadinessForTest({ local: true, platform_broker: true })
+      try {
+        expect(await validate()).toEqual({ ok: true, grantedScopes: ['issues:read'] })
+      } finally {
+        restore()
+      }
+    } finally {
+      globalThis.fetch = old
+    }
+  })
+})
+
 describe('Linear app driver', () => {
+  let restoreReadiness: () => void
+  beforeEach(() => {
+    restoreReadiness = setLinearAppReadinessForTest({ local: true, platform_broker: true })
+  })
+  afterEach(() => restoreReadiness())
+
+  test('is offered under both authorities once both are ready', () => {
+    expect(linearPlugin.authorization.managed.authorities).toEqual(['platform_broker', 'local'])
+  })
+
   const fakeClient = (result: typeof identity | Error) => {
     const calls: string[] = []
     return {

@@ -15,6 +15,7 @@ const localApp = {
   clientId: null,
   callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback/linear',
   webhookUrl: 'https://ficus.example/api/webhooks/linear-app',
+  available: true,
   requiredCapabilities: [],
 }
 
@@ -132,6 +133,7 @@ test('hosted instances offer the install without local application settings', as
     configured: true,
     clientId: null,
     callbackUrl: 'x',
+    available: true,
     requiredCapabilities: [],
   })
   expect(buttonNamed('Install Ficus in Linear')).toBeDefined()
@@ -165,3 +167,16 @@ test('app connections reconnect through Linear; API-key connections keep key rep
   })
   expect(JSON.parse(body)).toEqual({ returnTo: '/settings', connectionId: 'app-connection' })
 })
+
+for (const authority of ['local', 'platform_broker'] as const) {
+  test(`the agent app stays hidden while the server reports it unavailable (${authority}); API keys are unaffected`, async () => {
+    globalThis.fetch = (async () => new Promise<Response>(() => {})) as typeof fetch
+    await render({ ...localApp, authority, configured: true, available: false }, [connection({})])
+    expect(container.querySelector('#linear-agent-app')).toBeNull()
+    expect(buttonNamed('Install Ficus in Linear')).toBeUndefined()
+    expect(container.querySelector('[data-testid="linear-app-callback-url"]')).toBeNull()
+    expect(container.textContent).toContain('personal API key')
+    expect(container.textContent).toContain('Replace API key')
+    expect(buttonNamed('Create and validate')).toBeDefined()
+  })
+}

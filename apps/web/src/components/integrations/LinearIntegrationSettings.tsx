@@ -44,13 +44,18 @@ export function LinearIntegrationSettings({ canWrite }: { canWrite: boolean }) {
     },
   })
   const install = useLinearAppInstall()
+  // The agent app stays hidden until the server reports it can be installed here.
+  const oauthApp = useQuery(integrationQueries.oauthApp('linear'))
+  const appAvailable = oauthApp.data?.available === true
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        Install Ficus in Linear as an agent app, or connect an account with a personal API key, then choose which squads
-        can use it. Team routing is configured in each squad’s Integrations tab.
+        {appAvailable
+          ? 'Install Ficus in Linear as an agent app, or connect an account with a personal API key, then choose which squads can use it.'
+          : 'Connect a Linear account using a personal API key, then choose which squads can use it.'}{' '}
+        Team routing is configured in each squad’s Integrations tab.
       </p>
-      <LinearAgentApp canWrite={canWrite} install={install} refresh={refresh} />
+      {appAvailable && <LinearAgentApp canWrite={canWrite} install={install} refresh={refresh} />}
       {pool.isPending ? (
         <p>Loading connections…</p>
       ) : pool.isError ? (

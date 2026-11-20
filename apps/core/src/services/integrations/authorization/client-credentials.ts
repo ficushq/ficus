@@ -2,6 +2,7 @@ import { isPlatformManaged } from '../../secrets/managed'
 import type { OAuthAuthority } from './authority'
 import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
 import { configureGitHubApp, resolveGitHubAppCredentials } from './github-app'
+import { isLinearAppReady } from '../linear/app-readiness'
 
 export const SELF_HOSTED_OAUTH_APP_KEY = {
   notion: '__integration-oauth-app:notion',
@@ -54,6 +55,8 @@ export interface SafeOAuthAppSettings {
   callbackUrl: string
   /** Linear on a self-hosted instance: where the OAuth application's webhook must point. */
   webhookUrl?: string
+  /** Linear only: false until the agent app can be installed under this authority. */
+  available?: boolean
   requiredCapabilities: readonly string[]
   authorizationMode?: 'device' | 'browser'
 }
@@ -133,6 +136,7 @@ export function getOAuthAppSettings(
       configured: true,
       clientId: null,
       callbackUrl,
+      ...(provider === 'linear' ? { available: isLinearAppReady('platform_broker') } : {}),
       requiredCapabilities: [...REQUIRED_CAPABILITIES[provider]],
     }
   }
@@ -142,7 +146,9 @@ export function getOAuthAppSettings(
     configured: credentials !== undefined,
     clientId: credentials?.clientId ?? null,
     callbackUrl,
-    ...(provider === 'linear' ? { webhookUrl: linearAppWebhookUrl(callbackUrl) } : {}),
+    ...(provider === 'linear'
+      ? { webhookUrl: linearAppWebhookUrl(callbackUrl), available: isLinearAppReady('local') }
+      : {}),
     requiredCapabilities: [...REQUIRED_CAPABILITIES[provider]],
   }
 }
@@ -169,6 +175,8 @@ export async function configureOAuthApp(
   }
   const provider = requireSelfHostedProvider(providerKey)
   if (isPlatformManaged()) throw new Error('OAuth application credentials are platform-managed')
+  // An operator must not point a Linear webhook at Ficus before it can receive one.
+  if (provider === 'linear' && !isLinearAppReady('local')) throw new Error('Linear agent app is not available yet')
   const bundle = parseSelfHostedOAuthAppInput(provider, input)
   await store.set(SELF_HOSTED_OAUTH_APP_KEY[provider], JSON.stringify(bundle), actor)
   return getOAuthAppSettings(providerKey, store, callbackUrl)
