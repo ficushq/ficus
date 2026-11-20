@@ -1821,6 +1821,13 @@
       "when": 1795156199824,
       "tag": "0259_linear_write_back",
       "breakpoints": true
+    },
+    {
+      "idx": 260,
+      "version": "7",
+      "when": 1795159057714,
+      "tag": "0260_managed_toolchain_lock_pins",
+      "breakpoints": true
     }
   ]
 }

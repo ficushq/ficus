@@ -299,10 +299,12 @@ loose objects already available in packs, so it is safe while other box commands
 run Nix. It never runs Git garbage collection because Nix's roots live outside
 Git refs.
 
-The private objects are still large: the managed toolchain is unpinned, so Devbox
-resolves it against the current `nixpkgs-unstable` commit and downloads that full
-nixpkgs source tree (measured 2026-11-20 on an agent box: 94,806 loose objects,
-408 MB; prune-packed leaves 19,425 objects, 96 MB). The shared cache cannot hold
+The private objects are still large when a managed toolchain resolves afresh:
+Devbox resolves it against the current `nixpkgs-unstable` commit and downloads that
+full nixpkgs source tree. When the toolchain declares only versioned packages, later
+boxes of the squad install from a verified pin instead; see
+[Pinned toolchain resolution](#pinned-toolchain-resolution). (Measured 2026-11-20 on an agent box: 94,806 loose objects,
+408 MB; prune-packed leaves 19,425 objects, 96 MB.) The shared cache cannot hold
 a commit that did not exist when it was prewarmed. So at every box service start
 (`ExecStartPre`, before the box server or any box command runs), Ficus also
 drops the box's private download objects: the repository is renamed away in one
@@ -484,6 +486,96 @@ This managed toolchain is separate from repository `devbox.json`, legacy
 `.ficus/setup.sh`, custom images, and ad hoc `devbox add` workflows. Those existing
 mechanisms remain unchanged. It is not available on the `host` runtime (see the
 comparison table above).
+
+### Pinned toolchain resolution
+
+On VM and Kubernetes sandboxes, the first sandbox that installs a squad's toolchain
+configuration resolves it afresh. Ficus verifies the resulting `devbox.lock` and
+keeps a pin built from it for that squad and toolchain fingerprint
+(`managed_toolchain_lock_pins`). Every later sandbox of the squad installs from
+the pin, so `@latest` means the version the first verified install resolved, not
+whatever is newest today. The pin lasts until either of these happens:
+
+1. The configuration changes (packages, setup script, init hooks, readiness
+   checks or integration contributions). The new fingerprint has no pin, so its
+   first install resolves afresh. A fresh resolution always starts without a lock,
+   so it never keeps versions from the previous configuration. Pins for old
+   fingerprints are kept, so reverting to an earlier configuration reuses its
+   earlier pin.
+2. An operator deletes the pin to pick up newer versions without changing the
+   configuration. There is no CLI command for this yet; delete the squad's rows
+   in the Core database with
+   `DELETE FROM managed_toolchain_lock_pins WHERE squad_id = '<squad-id>';`
+   (add `AND fingerprint = '<fingerprint>'` to keep pins for other
+   configurations). The next sandbox that installs the toolchain resolves afresh
+   and records a new verified pin. Sandboxes that already installed keep their
+   toolchain until their configuration changes.
+
+Pinning never breaks a sandbox. A stored pin that cannot be read or fails its
+reuse check is ignored, and the next verified fresh resolution replaces it. If
+installing from a pin fails, that sandbox removes the lock and resolves afresh,
+but the pin stays: a sandbox can make any install fail, so a failure never moves a
+pin. An operator replaces a pin that is genuinely unrealizable by deleting its
+row. A pinned install that times out fails like any other install timeout. The
+first verified pin for a fingerprint wins.
+
+#### What Ficus verifies before it stores a pin
+
+The lock is read back from the sandbox right after `devbox install`, before the
+setup script runs, and considered only after setup, readiness and activation
+succeed. An agent can write to its sandbox, so Core trusts nothing in it and
+builds the pin itself, failing closed (no pin, so sandboxes keep resolving afresh)
+on any doubt:
+
+- The lock must have exactly one entry per declared package, each referencing
+  `github:NixOS/nixpkgs/<commit>#<attribute>` with no content hash.
+- Every commit must be identical to or behind `nixpkgs-unstable` according to the
+  GitHub compare API. GitHub serves commits from every fork under the
+  `NixOS/nixpkgs` path, so the reference alone proves nothing.
+- Every store path the lock names, for every system, must have a narinfo on
+  `cache.nixos.org`, so it is a path the official cache serves rather than one
+  built or added locally.
+- The sandbox's own nixpkgs entry for the shell environment is discarded.
+  Instead, Core uses the one from its comfort-set lock cache (see
+  `devbox_lock_cache`). That is the nixpkgs every VM box's comfort shell already
+  uses, so its source is normally already in the machine's `/nix/store`. Its
+  commit is checked against upstream too. Its content hash comes from that cache,
+  which already decides every box's comfort shell. When Core has no such entry,
+  the pin has no stdenv entry and Devbox resolves it at install time.
+- A GitHub refusal (including the unauthenticated rate limit), a missing narinfo
+  or a network error means the lock is not pinned. Positive results are
+  remembered in-process, so repeated pins do not spend the rate limit.
+
+Content-hashed package entries are refused because Nix uses any store path with
+that hash without fetching. A lock could otherwise name a tree an agent added to
+the store under an upstream commit. Devbox writes such entries only for bare
+package names (`bun`), so toolchains with a bare package are never pinned.
+
+The checks prove that everything a pin installs is official: built from upstream
+nixpkgs and served by the official cache. They do not prove it is the package or
+version that was declared. An agent that controls the sandbox doing the first
+install of a new configuration could offer a lock whose `bun@latest` entry names
+an old upstream commit, or another official package's store path, and hold the
+squad's toolchain on it until the pin is refreshed. Agents of a squad already
+share its workspace, so this is not a new trust boundary. Ficus does not compare
+entry attributes with package names, because Devbox legitimately maps some names
+to other attributes (`gcc@latest` resolves to `gcc16`). Pins
+are never shared between squads and are deleted with the squad. Before reusing a
+stored pin, Core rechecks its shape and that no package entry has a content hash.
+Only Core writes pins.
+
+Measured on a VM box with an empty per-user Nix cache (2026-11-20, Devbox 0.14.0,
+Nix 2.24.9):
+
+- `bun@latest` and `jq@latest`: the first install took 50 to 82 seconds and wrote
+  409 MB of Nix download cache. Verification took about one second. Installing
+  from the verified pin took 3.8 seconds and wrote 1 MB.
+- Bare `bun`: about 80 seconds and 400 MB in every new sandbox, pinned or not.
+  Devbox evaluates a bare package from a nixpkgs input without a content hash, so
+  Nix downloads that commit's source each time.
+
+Pinning only helps versioned packages (`name@latest`, `name@1.2`), so declare
+packages with a version. Docker sandboxes do not pin.
 
 ## Switching runtimes on an existing install
 
