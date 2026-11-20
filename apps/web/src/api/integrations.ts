@@ -55,6 +55,8 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
     organizationUrlKey?: string
     appUserId?: string
     appUserName?: string
+    /** App scopes the connection lacks; non-empty means an admin must reconnect to grant them. */
+    missingScopes?: string[]
   }
   credentialConfigured: boolean
   refreshAvailable?: boolean

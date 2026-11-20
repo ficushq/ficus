@@ -4,11 +4,13 @@ import { join } from 'node:path'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
 import { projectIntegrationAssignments } from '../projection/projector'
 import { LINEAR_CLI_RELEASE } from './cli'
+import { linearWrite, type LinearWriteError } from './write-api'
 import {
   createLinearPlugin,
   linearAuthorization,
   linearCredentialCodec,
   linearPlugin,
+  LinearInsufficientScopeError,
   linearQuery,
   parseLinearConfiguration,
 } from './plugin'
@@ -35,7 +37,7 @@ const appConfiguration = {
   organizationUrlKey: 'acme',
   appUserId: 'app-user',
   appUserName: 'Ficus',
-  scopes: ['read', 'issues:create', 'comments:create', 'app:assignable', 'app:mentionable'],
+  scopes: ['read', 'write', 'app:assignable', 'app:mentionable'],
 }
 const identity = {
   appUserId: 'app-user',
@@ -208,6 +210,109 @@ describe('Linear credential codec', () => {
   })
 })
 
+describe('Linear scope refusals', () => {
+  // Linear's answer when the app token lacks `write`, as recorded live: FORBIDDEN, sent with HTTP 400.
+  const refusal = {
+    errors: [
+      {
+        message: 'Invalid scope: `write` required',
+        extensions: { type: 'forbidden', code: 'FORBIDDEN', statusCode: 403, userError: true },
+      },
+    ],
+  }
+
+  test('linearQuery reports insufficient_scope for the refusal at HTTP 400, 403 or 200', async () => {
+    const old = globalThis.fetch
+    try {
+      for (const status of [400, 403, 200]) {
+        globalThis.fetch = (async () => Response.json(refusal, { status })) as unknown as typeof fetch
+        const error = await linearQuery('Bearer t', 'mutation { x }').catch((caught: unknown) => caught)
+        expect(error).toBeInstanceOf(LinearInsufficientScopeError)
+        expect((error as Error).message).toBe('insufficient_scope')
+      }
+      // Other refusals keep their codes.
+      globalThis.fetch = (async () =>
+        Response.json({ errors: [{ message: 'no' }] }, { status: 403 })) as unknown as typeof fetch
+      await expect(linearQuery('Bearer t', '{}')).rejects.toThrow('invalid_auth')
+      globalThis.fetch = (async () =>
+        Response.json({ errors: [{ message: 'no' }] }, { status: 400 })) as unknown as typeof fetch
+      await expect(linearQuery('Bearer t', '{}')).rejects.toThrow('provider_unavailable')
+    } finally {
+      globalThis.fetch = old
+    }
+  })
+
+  test('linearWrite classifies the refusal as insufficient_scope, not a lost session', async () => {
+    const old = globalThis.fetch
+    try {
+      for (const status of [400, 403, 200]) {
+        globalThis.fetch = (async () => Response.json(refusal, { status })) as unknown as typeof fetch
+        const error = (await linearWrite('Bearer t', 'mutation { x }', {}).catch(
+          (caught: unknown) => caught
+        )) as LinearWriteError
+        expect(error.code).toBe('insufficient_scope')
+        expect(error.permanent).toBe(false)
+      }
+      globalThis.fetch = (async () =>
+        Response.json(
+          { errors: [{ message: 'Forbidden', extensions: { code: 'FORBIDDEN' } }] },
+          { status: 403 }
+        )) as unknown as typeof fetch
+      expect(
+        ((await linearWrite('Bearer t', 'mutation { x }', {}).catch((caught: unknown) => caught)) as LinearWriteError)
+          .code
+      ).toBe('forbidden')
+    } finally {
+      globalThis.fetch = old
+    }
+  })
+
+  test('marks only an app connection for reconnect, at its current revision', async () => {
+    const { markLinearScopeMissing } = await import('./scope-health')
+    const marks: unknown[] = []
+    const repository = (connection: Record<string, unknown> | null) => ({
+      get: async () => connection as never,
+      markReauthorizationRequired: async (input: unknown) => {
+        marks.push(input)
+        return true
+      },
+    })
+    const app = {
+      id: 'app',
+      providerKey: 'linear',
+      authorizationKind: 'oauth2',
+      authState: 'authenticated',
+      materialRevision: 'rev-2',
+    }
+    expect(await markLinearScopeMissing('app', { repository: repository(app) })).toBe(true)
+    expect(marks).toEqual([{ id: 'app', materialRevision: 'rev-2', code: 'insufficient_scope' }])
+    // Already waiting for reconnect: nothing more to record.
+    expect(
+      await markLinearScopeMissing('app', { repository: repository({ ...app, authState: 'reauthorization_required' }) })
+    ).toBe(true)
+    // A personal API key cannot gain a scope by reconnecting; a missing or foreign connection is ignored.
+    expect(
+      await markLinearScopeMissing('key', { repository: repository({ ...app, authorizationKind: 'manual' }) })
+    ).toBe(false)
+    expect(await markLinearScopeMissing('gone', { repository: repository(null) })).toBe(false)
+    expect(await markLinearScopeMissing('gh', { repository: repository({ ...app, providerKey: 'github' }) })).toBe(
+      false
+    )
+    expect(marks).toHaveLength(1)
+    // A repository failure never escapes into the caller's write path.
+    expect(
+      await markLinearScopeMissing('app', {
+        repository: {
+          get: async () => {
+            throw new Error('db down')
+          },
+          markReauthorizationRequired: async () => true,
+        },
+      })
+    ).toBe(false)
+  })
+})
+
 describe('Linear configuration', () => {
   test('accepts the unchanged API-key shape and the app shape, and hides app scopes', () => {
     expect(parseLinearConfiguration({ version: 1 })).toEqual({ version: 1 })
@@ -331,11 +436,25 @@ describe('Linear app driver', () => {
     const { client, calls } = fakeClient(identity)
     const driver = createLinearPlugin({ client }).authorization.managed
     expect(driver.identity!(appConfiguration)).toEqual({ organizationId: 'org-1' })
+    // No scopes reported (a broker that does not pass them on): the requested set is recorded.
     expect(await driver.resolveGrantIdentity!(bundle)).toEqual({
       configuration: appConfiguration,
       displayName: 'Acme (Ficus app)',
     })
     expect(calls).toEqual(['synthetic-oauth-token'])
+  })
+
+  test('records the scopes Linear granted, so an install without write shows up as missing it', async () => {
+    const driver = createLinearPlugin({ client: fakeClient(identity).client }).authorization.managed
+    const granted = { version: 'linear-grant', scopes: ['read', 'issues:create', 'app:assignable', 'app:mentionable'] }
+    expect(driver.grantNeedsIdentity!(granted)).toBe(true)
+    expect(driver.grantNeedsIdentity!(appConfiguration)).toBe(false)
+    const resolved = await driver.resolveGrantIdentity!(bundle, granted)
+    expect(resolved.configuration).toEqual({ ...appConfiguration, scopes: granted.scopes })
+    expect(linearPlugin.connection.safeConfiguration(resolved.configuration)).toMatchObject({
+      missingScopes: ['write'],
+    })
+    expect(linearPlugin.connection.safeConfiguration(appConfiguration)).toMatchObject({ missingScopes: [] })
   })
 
   test('validates the app user, the app flag and the organization', async () => {

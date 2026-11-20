@@ -353,13 +353,17 @@ export class OAuthConnectionAuthorizer<C> {
       this.#dependencies.plugin.connection.credential.serialize(grant.credential as OAuthCredentialBundleV1)
     )
     const authorization = this.#dependencies.plugin.authorization
-    if (grant.configuration === null && authorization.kind === 'oauth2' && authorization.resolveGrantIdentity) {
+    if (
+      authorization.kind === 'oauth2' &&
+      authorization.resolveGrantIdentity &&
+      (grant.configuration === null || authorization.grantNeedsIdentity?.(grant.configuration) === true)
+    ) {
       // The app code has already been consumed. Give cleanup durable ownership
       // before making another provider request, including on a failed callback.
       if (authorizationFlowId) await this.#stageGrant({ credential }, authorizationFlowId)
       else if (stagedCredentialRef) await this.#stageLocalRevocationArtifact(stagedCredentialRef, { credential })
       else throw new Error('Authorization artifact unavailable')
-      const identity = await authorization.resolveGrantIdentity(credential)
+      const identity = await authorization.resolveGrantIdentity(credential, grant.configuration)
       return { ...identity, credential }
     }
     return {

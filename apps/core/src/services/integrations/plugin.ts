@@ -30,8 +30,18 @@ export interface OAuth2Authorization<C, Credential> {
   identity?(configuration: C): Readonly<Record<string, string | number>>
   /** Providers that invalidate the previous pair on refresh need persistence before API validation. */
   readonly refreshInvalidatesPreviousTokens?: boolean
-  /** Resolve identity after the raw credential is durably staged. */
-  resolveGrantIdentity?(credential: Credential): Promise<{ configuration: C; displayName: string }>
+  /**
+   * Resolve identity after the raw credential is durably staged. Called when the provider grant has
+   * no configuration, or when `grantNeedsIdentity` says its configuration is provider detail rather
+   * than the connection's; `grantConfiguration` is what the adapter reported (for Linear, the
+   * granted scopes), or `null`.
+   */
+  resolveGrantIdentity?(
+    credential: Credential,
+    grantConfiguration?: unknown
+  ): Promise<{ configuration: C; displayName: string }>
+  /** A non-null grant configuration that is provider detail, not the connection configuration. */
+  grantNeedsIdentity?(grantConfiguration: unknown): boolean
   /** Bearer-only validation stays with Core, which owns the connection identity. */
   validate(input: { configuration: C; credential: Credential; signal?: AbortSignal }): Promise<ProviderValidation>
 }

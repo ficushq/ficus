@@ -65,6 +65,52 @@ describe('local OAuth transport', () => {
     expect(new URL(result.authorizationUrl).searchParams.get('redirect_uri')).toBe('https://persisted.example/callback')
   })
 
+  test('passes the reconnect intent to the adapter, so Linear can update an existing installation', async () => {
+    const intents: unknown[] = []
+    registerAdapter({
+      buildAuthorizationUrl: ({ state, intent }) => {
+        intents.push(intent)
+        return new URL(`https://provider.example/authorize?state=${state}`)
+      },
+    })
+    const transport = createLocalTransport({
+      resolveClientCredentials: () => ({ clientId: 'client-id', clientSecret: 'client-secret' }),
+      callbackUrl: () => 'https://ficus.example/callback',
+    })
+    for (const intent of ['connect', 'reconnect'] as const)
+      await transport.authorizationUrl({
+        providerKey: 'transport-test',
+        localFlowId: 'flow',
+        intent,
+        returnTo: '/settings',
+      })
+    expect(intents).toEqual(['connect', 'reconnect'])
+  })
+
+  test('a local Linear reconnect URL carries update_scopes_on_existing_token with the full scope set', async () => {
+    const transport = createLocalTransport({
+      resolveClientCredentials: () => ({ clientId: 'client-id', clientSecret: 'client-secret' }),
+      callbackUrl: () => 'https://ficus.example/callback',
+    })
+    const connect = new URL(
+      (await transport.authorizationUrl({ providerKey: 'linear', localFlowId: 'f', intent: 'connect', returnTo: '/' }))
+        .authorizationUrl
+    )
+    const reconnect = new URL(
+      (
+        await transport.authorizationUrl({
+          providerKey: 'linear',
+          localFlowId: 'f',
+          intent: 'reconnect',
+          returnTo: '/',
+        })
+      ).authorizationUrl
+    )
+    expect(connect.searchParams.has('update_scopes_on_existing_token')).toBe(false)
+    expect(reconnect.searchParams.get('update_scopes_on_existing_token')).toBe('true')
+    expect(reconnect.searchParams.get('scope')).toBe('read,write,app:assignable,app:mentionable')
+  })
+
   test('passes the configured client credentials to the adapter', async () => {
     const seen: unknown[] = []
     registerAdapter({

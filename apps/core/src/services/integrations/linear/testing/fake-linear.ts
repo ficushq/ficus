@@ -57,7 +57,8 @@ export interface FakeLinearNotification {
   actorId?: string
   createdAt: string
 }
-export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'timeout'
+/** `scope` is Linear's answer to a token without a required scope, as recorded live (HTTP 400). */
+export type FakeLinearFailure = 401 | 403 | 429 | 500 | 'graphql' | 'scope' | 'timeout'
 
 export interface FakeLinearOptions {
   organization?: { id: string; name: string; urlKey: string }
@@ -311,6 +312,18 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         })
       }
       if (failure === 'graphql') return Response.json({ errors: [{ message: 'Forbidden' }], data: null })
+      if (failure === 'scope')
+        return Response.json(
+          {
+            errors: [
+              {
+                message: 'Invalid scope: `write` required',
+                extensions: { type: 'forbidden', code: 'FORBIDDEN', statusCode: 403, userError: true },
+              },
+            ],
+          },
+          { status: 400 }
+        )
       return Response.json(
         { errors: [{ message: 'failure', extensions: { code: failure === 429 ? 'RATELIMITED' : 'FAILED' } }] },
         { status: failure, headers: failure === 429 ? { 'Retry-After': '30' } : {} }

@@ -33,7 +33,16 @@ export interface OAuthProviderAdapter {
   readonly key: string
   /** Hosts the authorization URL may point at. Both the platform and Core check against this. */
   readonly authorizeHosts: readonly string[]
-  buildAuthorizationUrl(input: { clientId: string; redirectUri: string; state: string }): URL
+  /**
+   * `intent` is `reconnect` when an existing connection is authorized again; an adapter may use it
+   * to ask the provider to update the existing grant (Linear's `update_scopes_on_existing_token`).
+   */
+  buildAuthorizationUrl(input: {
+    clientId: string
+    redirectUri: string
+    state: string
+    intent?: 'connect' | 'reconnect'
+  }): URL
   exchangeCode(input: {
     code: string
     redirectUri: string
