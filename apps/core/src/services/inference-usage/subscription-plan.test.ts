@@ -20,6 +20,9 @@ describe('plan detection', () => {
     // The claim names the Pro tier: prolite is Pro 100, pro is Pro 200, promax is Pro 500.
     expect(detectCodexPlan(codexToken('prolite'))).toBe('prolite')
     expect(detectCodexPlan(codexToken('promax'))).toBe('promax')
+    expect(detectCodexPlan(codexToken('go'))).toBe('go')
+    // The Business Premium seat; a Standard seat is `team`.
+    expect(detectCodexPlan(codexToken('self_serve_business_prolite'))).toBe('self_serve_business_prolite')
     expect(detectCodexPlan(jwt({ sub: 'x' }))).toBeUndefined()
     expect(detectCodexPlan('not-a-jwt')).toBeUndefined()
     expect(detectCodexPlan('a.%%%.c')).toBeUndefined()
@@ -67,6 +70,42 @@ describe('plan detection', () => {
     expect(applyDetectedPlan(account, detectedPlanFor('openai-codex', refreshed), 2)).toBe(false)
     expect(account.subscription).toMatchObject({ plan: 'promax', planSource: 'manual' })
     expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: 500, source: 'default' })
+  })
+
+  test('a ChatGPT Go or Business seat sign-in is priced from its claim', () => {
+    const priced = (claim: string) => {
+      const account: { subscription?: AccountSubscription } = {}
+      const signIn = { credential: { type: 'oauth', access: codexToken(claim) } }
+      applyDetectedPlan(account, detectedPlanFor('openai-codex', signIn), 1)
+      return { plan: account.subscription?.plan, price: effectiveMonthlyPrice('openai-codex', account.subscription) }
+    }
+    expect(priced('go')).toEqual({ plan: 'go', price: { monthlyUsd: 8, source: 'default' } })
+    expect(priced('team')).toEqual({ plan: 'business', price: { monthlyUsd: 25, source: 'default' } })
+    expect(priced('self_serve_business_prolite')).toEqual({
+      plan: 'self_serve_business_prolite',
+      price: { monthlyUsd: 125, source: 'default' },
+    })
+  })
+
+  test('an account stored with the Business Premium claim before it was priced is priced with no migration', () => {
+    const stored: AccountSubscription = {
+      plan: 'self_serve_business_prolite',
+      planSource: 'detected',
+      detectedPlan: 'self_serve_business_prolite',
+    }
+    expect(effectiveMonthlyPrice('openai-codex', stored)).toEqual({ monthlyUsd: 125, source: 'default' })
+  })
+
+  test('a claim the plan table does not know keeps its id and counts no fee until a price is chosen', () => {
+    const account: { subscription?: AccountSubscription } = {}
+    const signIn = { credential: { type: 'oauth', access: codexToken('self_serve_business_usage_based') } }
+    expect(applyDetectedPlan(account, detectedPlanFor('openai-codex', signIn), 1)).toBe(true)
+    expect(account.subscription).toMatchObject({
+      plan: 'self_serve_business_usage_based',
+      detectedPlan: 'self_serve_business_usage_based',
+    })
+    // Unknown, not $0: the account asks for a price rather than looking free.
+    expect(effectiveMonthlyPrice('openai-codex', account.subscription)).toEqual({ monthlyUsd: null, source: null })
   })
 })
 

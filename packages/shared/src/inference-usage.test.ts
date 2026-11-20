@@ -44,8 +44,31 @@ describe('inference usage registry', () => {
       ['pro', { label: 'ChatGPT Pro 200', monthlyUsd: 200 }],
       ['promax', { label: 'ChatGPT Pro 500', monthlyUsd: 500 }],
     ])
-    // Picker order is the table's order: the tiers sit together, cheapest first, after Plus.
-    expect(Object.keys(plans)).toEqual(['free', 'plus', 'prolite', 'pro', 'promax', 'business', 'enterprise', 'edu'])
+    // Picker order is the table's order: individual plans cheapest first, then the Business seats.
+    expect(Object.keys(plans)).toEqual([
+      'free',
+      'go',
+      'plus',
+      'prolite',
+      'pro',
+      'promax',
+      'business',
+      'self_serve_business_prolite',
+      'enterprise',
+      'edu',
+    ])
+  })
+
+  test('ChatGPT Go and both Business seats are priced, keyed by the Codex plan claim', () => {
+    const plans = subscriptionPlansFor('openai-codex')!
+    expect(plans.go).toEqual({ label: 'ChatGPT Go', monthlyUsd: 8 })
+    // A Standard Business seat signs in as `team`, which detection maps to `business`.
+    expect(plans.business).toEqual({ label: 'ChatGPT Business', monthlyUsd: 25 })
+    expect(plans.self_serve_business_prolite).toEqual({ label: 'ChatGPT Business Premium', monthlyUsd: 125 })
+    expect(planLabel('openai-codex', 'self_serve_business_prolite')).toBe('ChatGPT Business Premium')
+    // A claim value the table does not know is shown by its id, never as a free plan.
+    expect(planLabel('openai-codex', 'self_serve_business_usage_based')).toBe('self_serve_business_usage_based')
+    expect(plans.self_serve_business_usage_based).toBeUndefined()
   })
 
   test('every spend dimension has a filter', () => {
