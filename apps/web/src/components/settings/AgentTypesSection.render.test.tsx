@@ -32,6 +32,25 @@ describe('Agents rendered model controls', () => {
     expect(html).toContain('<option selected="">off</option>')
   })
 
+  test('marks entries of a disabled provider as Disabled, muted, without touching enabled entries', () => {
+    const tier = {
+      slug: 'deep',
+      label: 'Deep',
+      description: null,
+      chain: 'zai:glm-5.3:high,openai:gpt:high',
+      sortOrder: 1,
+      usedByCount: 1,
+    }
+    const html = renderToStaticMarkup(
+      <TierChainEditor tier={tier} providers={['zai', 'openai']} disabledProviders={['zai']} onSave={() => {}} />
+    )
+    expect(html.match(/>Disabled<\/span>/g)).toHaveLength(1)
+    expect(html.match(/opacity-60/g)).toHaveLength(1)
+    expect(html).toContain('title="This provider is disabled in provider settings, so this entry is skipped."')
+    const none = renderToStaticMarkup(<TierChainEditor tier={tier} providers={['zai', 'openai']} onSave={() => {}} />)
+    expect(none).not.toContain('>Disabled</span>')
+  })
+
   test('renders separate provider, model and effort controls for every position', () => {
     const html = renderToStaticMarkup(
       <TierChainEditor
