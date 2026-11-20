@@ -77,25 +77,85 @@ test('GitHub callbacks also remove token exchange material before bootstrap', ()
   expect(readPreparedOAuthCallback()).toEqual({ kind: 'local', body: { state: HANDLE, code: 'github-code' } })
 })
 
-test('a broker callback carries the sessionStorage provider hint into the persisted (reload-surviving) history state', () => {
+test('a broker completion never carries the per-tab hint, and the hint is cleared so it cannot go stale', () => {
   window.sessionStorage.setItem('ficusOAuthProviderHint', 'slack')
 
   prepareOAuthCallbackHistory()
 
-  expect(readPreparedOAuthCallback()).toEqual({
-    kind: 'broker',
-    body: { localFlowId: FLOW, handle: HANDLE },
-    provider: 'slack',
-  })
-  // Consumed once, same as before: an abandoned later flow cannot inherit it.
+  // Core resolves the provider from the flow; a hint left by another flow must not steer completion.
+  expect(readPreparedOAuthCallback()).toEqual({ kind: 'broker', body: { localFlowId: FLOW, handle: HANDLE } })
+  expect(window.history.state).toEqual({ ficusOAuthCompletion: { localFlowId: FLOW, handle: HANDLE } })
   expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
 })
 
-test('a broker callback with no provider hint carries none (defaults are unaffected)', () => {
+test('a broker completion with no hint (a flow started in the Desktop app) is prepared the same way', () => {
   prepareOAuthCallbackHistory()
 
-  expect(readPreparedOAuthCallback()).toEqual({
-    kind: 'broker',
-    body: { localFlowId: FLOW, handle: HANDLE },
+  expect(readPreparedOAuthCallback()).toEqual({ kind: 'broker', body: { localFlowId: FLOW, handle: HANDLE } })
+})
+
+test('a completion saved with a hint by an earlier release still reloads, and the hint is ignored', () => {
+  window.history.replaceState(
+    { ficusOAuthCompletion: { localFlowId: FLOW, handle: HANDLE }, ficusOAuthCallbackProvider: 'notion' },
+    '',
+    '/settings/integrations/oauth/callback'
+  )
+
+  expect(readPreparedOAuthCallback()).toEqual({ kind: 'broker', body: { localFlowId: FLOW, handle: HANDLE } })
+})
+
+for (const provider of ['linear', 'notion', 'slack'] as const) {
+  test(`a cancelled ${provider} broker callback keeps the hint to name the provider`, () => {
+    window.sessionStorage.setItem('ficusOAuthProviderHint', provider)
+    window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+
+    prepareOAuthCallbackHistory()
+
+    expect(window.location.search).toBe('')
+    expect(readPreparedOAuthCallback()).toEqual({ kind: 'cancelled', provider })
+    expect(window.sessionStorage.getItem('ficusOAuthProviderHint')).toBeNull()
   })
+
+  test(`a failed ${provider} broker callback keeps the hint and the broker's safe failure code`, () => {
+    window.sessionStorage.setItem('ficusOAuthProviderHint', provider)
+    window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=error&code=invalid_grant')
+
+    prepareOAuthCallbackHistory()
+
+    expect(window.location.search).toBe('')
+    expect(readPreparedOAuthCallback()).toEqual({ kind: 'terminal', provider, reason: 'invalid_grant' })
+  })
+}
+
+test('a failure code that is not a short safe code is dropped', () => {
+  window.history.replaceState(
+    null,
+    '',
+    '/settings/integrations/oauth/callback?status=error&code=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
+  )
+
+  prepareOAuthCallbackHistory()
+
+  expect(readPreparedOAuthCallback()).toEqual({ kind: 'terminal' })
+})
+
+test('settled outcomes without a hint name no provider rather than a default', () => {
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+  prepareOAuthCallbackHistory()
+  expect(readPreparedOAuthCallback()).toEqual({ kind: 'cancelled' })
+})
+
+test('a failure reason is only accepted beside a terminal outcome', () => {
+  window.history.replaceState(
+    { ficusOAuthCallbackOutcome: 'cancelled', ficusOAuthCallbackReason: 'invalid_grant' },
+    '',
+    '/settings/integrations/oauth/callback'
+  )
+  expect(readPreparedOAuthCallback()).toBeUndefined()
+  window.history.replaceState(
+    { ficusOAuthCompletion: { localFlowId: FLOW, handle: HANDLE }, ficusOAuthCallbackReason: 'invalid_grant' },
+    '',
+    '/settings/integrations/oauth/callback'
+  )
+  expect(readPreparedOAuthCallback()).toBeUndefined()
 })

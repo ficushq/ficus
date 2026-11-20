@@ -94,6 +94,10 @@ const authorizationCompleteSchema = z.strictObject({
   localFlowId: z.uuid(),
   handle: z.string().regex(BROKER_COMPLETION_HANDLE_PATTERN),
 })
+const authorizationProviderSchema = z.union([
+  z.strictObject({ localFlowId: z.uuid() }),
+  z.strictObject({ state: z.string().regex(BROKER_COMPLETION_HANDLE_PATTERN) }),
+])
 
 export interface IntegrationRoutesService extends Pick<
   IntegrationConnectionService,
@@ -145,6 +149,14 @@ export interface IntegrationRoutesService extends Pick<
       source:
         { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string } | { kind: 'device'; id: string }
     }): Promise<OAuthAuthorizationPurpose | null>
+    /**
+     * The provider that started the caller's own callback or broker flow, from stored flow state.
+     * The shared callback page uses it instead of anything the browser remembers.
+     */
+    resolveProvider?(input: {
+      userId: string
+      source: { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string }
+    }): Promise<string | null>
     start(input: {
       providerKey: string
       userId: string
@@ -376,7 +388,10 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!service.setEnabled || !entry) return c.json({ error: 'Unknown integration' }, 404)
       if (c.req.valid('json').enabled && entry.availability?.available === false)
         return c.json(
-          { error: entry.availability.reason ?? 'Integration unavailable on this instance.', code: 'unsupported_host' },
+          {
+            error: entry.availability.reason ?? 'Integration unavailable on this instance.',
+            code: 'unsupported_host',
+          },
           400
         )
       const identity = c.get('identity') as Identity
@@ -517,6 +532,31 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       } catch {
         return c.json({ error: 'OAuth application configuration failed' }, 400)
       }
+    })
+    .post('/authorization/provider', zValidator('json', authorizationProviderSchema), async (c) => {
+      // Which provider started this callback's flow. A flow started in the Desktop app or another tab
+      // returns in a tab that never saw the start, so the shared callback page asks Core instead of
+      // trusting anything the browser remembered. It answers only for the caller's own flows; the
+      // provider's completion route still checks the permission and the provider binding.
+      const identity = c.get('identity') as Identity | undefined
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'finish connecting an integration')
+      c.set('authzChecked', true)
+      c.header('Cache-Control', 'no-store')
+      if (!service.authorization?.resolveProvider) return c.json({ error: 'Authorization unavailable' }, 503)
+      const body = c.req.valid('json')
+      const provider = await service.authorization.resolveProvider({
+        userId: identity.userId,
+        source:
+          'state' in body
+            ? { kind: 'callback', state: body.state }
+            : { kind: 'complete', localFlowId: body.localFlowId },
+      })
+      const providerKey = provider ? parseProviderParam(provider) : null
+      if (!providerKey) {
+        log.warn('Authorization callback provider lookup found no flow for the signed-in person')
+        return c.json({ error: 'invalid_or_expired_state', code: 'invalid_or_expired_state' }, 400)
+      }
+      return c.json({ provider: providerKey })
     })
     .post('/providers/:provider/authorization/start', zValidator('json', authorizationStartSchema), async (c) => {
       const providerKey = parseProviderParam(c.req.param('provider'))
