@@ -14,6 +14,7 @@ function integrationRecord(overrides: Partial<IntegrationConnectionRecord> = {})
     providerKey: 'notion',
     adapterVersion: 1,
     clientAuthority: 'platform_broker',
+    authorizationKind: 'oauth2',
     authorizationFlowId: null,
     displayName: 'Workspace',
     configuration: {

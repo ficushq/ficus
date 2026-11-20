@@ -3,6 +3,12 @@ import type { OAuthAuthority } from './authorization/authority'
 
 export type ConnectionAuthState = 'pending' | 'authenticated' | 'invalid' | 'reauthorization_required'
 export type ConnectionHealthState = 'unknown' | 'healthy' | 'degraded' | 'unreachable'
+/**
+ * How a connection's material was obtained. `oauth2` connections get the OAuth lifecycle (refresh,
+ * revocation, execution expiry and authority fencing) even when their plugin is manual and offers a
+ * managed OAuth driver; `manual` connections never do.
+ */
+export type IntegrationAuthorizationKind = 'manual' | 'oauth2'
 
 /** Persisted provider material. Connections belong to the instance-global pool. */
 export interface IntegrationConnectionRecord<C = unknown> {
@@ -10,6 +16,7 @@ export interface IntegrationConnectionRecord<C = unknown> {
   providerKey: string
   adapterVersion: number
   clientAuthority: OAuthAuthority
+  authorizationKind: IntegrationAuthorizationKind
   authorizationFlowId: string | null
   displayName: string
   configuration: C
@@ -49,6 +56,8 @@ export interface CreatePendingConnection<C> {
   providerKey: string
   adapterVersion: number
   clientAuthority?: OAuthAuthority
+  /** Defaults to `manual`; only OAuth grant installs write `oauth2`. */
+  authorizationKind?: IntegrationAuthorizationKind
   authorizationFlowId?: string
   displayName: string
   configuration: C
@@ -132,6 +141,7 @@ export interface IntegrationConnectionRepository {
     code: string
     invalidateAuthentication?: boolean
   }): Promise<boolean>
+  /** Installs an OAuth grant on an existing connection, which becomes `oauth2`. */
   installAuthorizedMaterial?(input: {
     id: string
     expectedMaterialRevision: string
@@ -147,6 +157,7 @@ export interface IntegrationConnectionRepository {
     authorizationFlowId?: string
     adoptStagedRevocationRef?: string
   }): Promise<{ status: 'updated' | 'changed' | 'not_found' }>
+  /** Writes entered material, so the connection becomes `manual`. OAuth grants use `installAuthorizedMaterial`. */
   rotateMaterial(input: {
     id: string
     materialRevision: string

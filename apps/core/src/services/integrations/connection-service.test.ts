@@ -17,7 +17,7 @@ function setup(
   options: {
     allowsManualCredential?: (providerKey: string) => boolean
     safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
-    refreshAvailable?: (providerKey: string, credential: string | undefined) => boolean
+    refreshAvailable?: (connection: IntegrationConnectionRecord, credential: string | undefined) => boolean
     refreshAuthenticationFailure?: () => Promise<{
       status: 'refreshed' | 'unchanged' | 'reauthorization_required' | 'degraded'
     }>
@@ -27,8 +27,8 @@ function setup(
     recordValidationCommitsThenThrows?: boolean
     postCreateReadFails?: boolean
     deleteCommitsThenThrows?: boolean
-    currentOAuthAuthority?: (providerKey: string) => 'local' | 'platform_broker' | undefined
-    requiresRemoteRevocation?: (providerKey: string, adapterVersion: number, clientAuthority: string) => boolean
+    currentOAuthAuthority?: (connection: IntegrationConnectionRecord) => 'local' | 'platform_broker' | undefined
+    requiresRemoteRevocation?: (connection: IntegrationConnectionRecord) => boolean
     operatorAlertFails?: boolean
     authorityCasLoses?: boolean
     prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
@@ -194,7 +194,7 @@ function setup(
       },
       capabilities: {},
     }),
-    requiresRemoteRevocation: options.requiresRemoteRevocation ?? ((providerKey) => providerKey === 'notion'),
+    requiresRemoteRevocation: options.requiresRemoteRevocation ?? ((connection) => connection.providerKey === 'notion'),
     allowsManualCredential: options.allowsManualCredential,
     refreshAuthenticationFailure: options.refreshAuthenticationFailure,
     safeConfiguration: options.safeConfiguration,
@@ -376,7 +376,7 @@ describe('IntegrationConnectionService', () => {
   })
 
   test('public safe views expose only refresh availability, never refresh material', async () => {
-    const { service } = setup({ refreshAvailable: (_provider, credential) => credential === 'fixture-bearer' })
+    const { service } = setup({ refreshAvailable: (_connection, credential) => credential === 'fixture-bearer' })
     const view = await create(service)
     expect(view.refreshAvailable).toBe(true)
     expect(view).not.toHaveProperty('refreshToken')
@@ -425,7 +425,7 @@ describe('IntegrationConnectionService', () => {
   test('historical local OAuth validation reconciles authority before provider access', async () => {
     let authority: 'local' | 'platform_broker' = 'local'
     const harness = setup({
-      currentOAuthAuthority: (providerKey) => (providerKey === 'notion' ? authority : undefined),
+      currentOAuthAuthority: (connection) => (connection.providerKey === 'notion' ? authority : undefined),
     })
     const created = await harness.service.create({
       providerKey: 'notion',
@@ -495,7 +495,7 @@ describe('IntegrationConnectionService', () => {
   test('historical local OAuth explicit enable fails closed before live validation', async () => {
     let authority: 'local' | 'platform_broker' = 'local'
     const harness = setup({
-      currentOAuthAuthority: (providerKey) => (providerKey === 'notion' ? authority : undefined),
+      currentOAuthAuthority: (connection) => (connection.providerKey === 'notion' ? authority : undefined),
     })
     const created = await harness.service.create({
       providerKey: 'notion',
@@ -665,11 +665,10 @@ describe('IntegrationConnectionService', () => {
   })
 
   test('a manual+managed provider (Slack-shaped) schedules revocation only for its broker-authority row', async () => {
-    // Mirrors the real wiring: manual+managed plugins require remote revocation
-    // only when the row's own clientAuthority is the broker's — a manual
-    // (`local`) row for the same provider key must never schedule it.
-    const requiresRemoteRevocation = (providerKey: string, _version: number, clientAuthority: string) =>
-      providerKey === 'slack' && clientAuthority === 'platform_broker'
+    // Mirrors the real wiring: only `oauth2` connections require remote
+    // revocation, so a manual row for the same provider key never schedules it.
+    const requiresRemoteRevocation = (connection: IntegrationConnectionRecord) =>
+      connection.authorizationKind === 'oauth2'
 
     const managed = setup({ requiresRemoteRevocation })
     const managedConnection = await managed.service.create({
@@ -680,8 +679,10 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-bundle',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'platform_broker',
     })
+    expect(managed.getRow()!.authorizationKind).toBe('oauth2')
     const managedCredentialRef = managed.getRow()!.credentialRef
     await managed.service.remove(managedConnection.id)
     expect(managed.getRow()).toBeNull()
@@ -699,6 +700,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'manual-bot-token',
       actor: 'user:user-1',
     })
+    expect(manual.getRow()!.authorizationKind).toBe('manual')
     const manualCredentialRef = manual.getRow()!.credentialRef
     await manual.service.remove(manualConnection.id)
     expect(manual.getRow()).toBeNull()
@@ -708,13 +710,13 @@ describe('IntegrationConnectionService', () => {
   })
 
   test('a manual+managed provider (Slack-shaped) is never reconciled for authority mismatch: it stays manual', async () => {
-    // currentOAuthAuthority mirrors the real wiring too: it only ever returns
-    // an authority for `kind: 'oauth2'` plugins. Slack's authorization.kind
-    // stays 'manual' even with a managed driver, so this must return
-    // undefined for it — meaning #reconcileAuthority is always a no-op here,
+    // currentOAuthAuthority mirrors the real wiring too: it only returns an
+    // authority for `oauth2` connections. A manually entered Slack app is a
+    // `manual` connection, so #reconcileAuthority is always a no-op for it,
     // regardless of the deployment's current OAuth authority.
     const { service, getRow } = setup({
-      currentOAuthAuthority: (providerKey) => (providerKey === 'notion' ? 'platform_broker' : undefined),
+      currentOAuthAuthority: (connection) =>
+        connection.authorizationKind === 'oauth2' ? 'platform_broker' : undefined,
     })
     const connection = await service.create({
       providerKey: 'slack',

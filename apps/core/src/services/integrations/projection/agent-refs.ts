@@ -2,6 +2,7 @@ import { integrationEnabledPredicate } from '../provider-state'
 import { and, eq, gt } from 'drizzle-orm'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
 import { resolveOAuthAuthority } from '../authorization/authority'
+import { isFencedOAuthConnection, type OAuthConnectionFacts } from '../oauth-plugin-view'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
 
 export interface AgentIntegrationRefs {
@@ -20,6 +21,7 @@ export async function resolveAssignedIntegrationRefs(
       providerKey: integrationConnections.providerKey,
       adapterVersion: integrationConnections.adapterVersion,
       clientAuthority: integrationConnections.clientAuthority,
+      authorizationKind: integrationConnections.authorizationKind,
     })
     .from(integrationConnectionAssignments)
     .innerJoin(integrationConnections, eq(integrationConnectionAssignments.connectionId, integrationConnections.id))
@@ -38,7 +40,7 @@ export async function resolveAssignedIntegrationRefs(
   for (const row of rows.sort((left, right) => left.providerKey.localeCompare(right.providerKey))) {
     const plugin = firstPartyIntegrationPlugin(row.providerKey)
     if (!plugin || plugin.adapterVersion !== row.adapterVersion) continue
-    if (plugin.authorization.kind === 'oauth2' && row.clientAuthority !== resolveOAuthAuthority()) continue
+    if (isFencedOAuthConnection(plugin, row as OAuthConnectionFacts, resolveOAuthAuthority())) continue
     for (const skill of plugin.sandbox.skills) skills.add(skill)
     for (const extension of plugin.sandbox.extensions) extensions.add(extension)
   }

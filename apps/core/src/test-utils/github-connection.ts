@@ -45,6 +45,7 @@ export async function createTestGitHubConnection(
       providerKey: 'github',
       adapterVersion: 1,
       clientAuthority: resolveOAuthAuthority(),
+      authorizationKind: 'oauth2',
       displayName: options.login ?? 'testbot',
       configuration: { version: 1, userId: 123, login: options.login ?? 'testbot' },
       credentialRef,

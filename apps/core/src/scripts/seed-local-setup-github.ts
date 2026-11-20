@@ -45,6 +45,7 @@ async function seed(): Promise<void> {
     providerKey: 'github',
     adapterVersion: 1,
     clientAuthority: 'local',
+    authorizationKind: 'oauth2',
     displayName: 'Local setup CI updater',
     configuration: { version: 1, userId: 1, login: 'local-setup-ci' },
     credentialRef,

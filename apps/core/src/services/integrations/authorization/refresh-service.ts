@@ -1,6 +1,6 @@
 import type { IntegrationAuditRecorder } from '../audit'
 import type { IntegrationConnectionRecord } from '../connection-repository'
-import type { IntegrationPluginV1 } from '../plugin'
+import { connectionOAuthView, type OAuthPluginSource } from '../oauth-plugin-view'
 import type { ConnectionAuthorizationLease } from './connection-lease'
 import { OAuthTransportError, type OAuthTransport } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
@@ -15,11 +15,9 @@ import {
   type OAuthCredentialBundleV1,
 } from './credential-bundle'
 
-// Refresh uses only these capabilities; it never invokes command execution resolvers.
-type OAuthPlugin = Pick<
-  IntegrationPluginV1<unknown, OAuthCredentialBundleV1>,
-  'connection' | 'authorization' | 'classifyError'
->
+// Refresh never invokes command execution resolvers. The plugin is narrowed per connection with
+// `connectionOAuthView`, so a manual plugin's managed-driver connections refresh through that driver.
+type RefreshPluginSource = OAuthPluginSource<any>
 export type RefreshReason = 'proactive' | 'explicit' | 'authentication_failure'
 export type RefreshResult = {
   status: 'refreshed' | 'unchanged' | 'reauthorization_required' | 'degraded'
@@ -53,7 +51,7 @@ export interface IntegrationRefreshDependencies {
       actor?: string
     ): Promise<void>
   }
-  resolvePlugin(providerKey: string): OAuthPlugin | undefined
+  resolvePlugin(providerKey: string): RefreshPluginSource | undefined
   transport: Pick<OAuthTransport, 'authority' | 'refresh'>
   lease: ConnectionAuthorizationLease
   invalidateAssignments(connectionId: string): Promise<void>
@@ -82,6 +80,8 @@ export class IntegrationRefreshService {
   async refresh(connectionId: string, reason: RefreshReason): Promise<RefreshResult> {
     const connection = await this.#dependencies.connections.get(connectionId)
     if (!connection) return { status: 'unchanged', code: 'connection_not_found' }
+    // Manually entered material has no refresh token and no client authority to reconcile.
+    if (connection.authorizationKind !== 'oauth2') return { status: 'unchanged', code: 'manual_connection' }
     if (connection.clientAuthority !== this.#dependencies.transport.authority) {
       return this.#dependencies.lease.runExclusive(connection.id, async () => {
         const currentConnection = await this.#dependencies.connections.get(connection.id)
@@ -113,10 +113,9 @@ export class IntegrationRefreshService {
         }
         return result
       }
-      const plugin = this.#dependencies.resolvePlugin(currentConnection.providerKey)
-      if (!plugin || plugin.authorization.kind !== 'oauth2') {
-        return { status: 'unchanged', code: 'unsupported_provider' }
-      }
+      const source = this.#dependencies.resolvePlugin(currentConnection.providerKey)
+      const plugin = source && connectionOAuthView(source, currentConnection)
+      if (!plugin) return { status: 'unchanged', code: 'unsupported_provider' }
       let configuration: unknown
       try {
         configuration = plugin.connection.parseConfiguration(currentConnection.configuration)

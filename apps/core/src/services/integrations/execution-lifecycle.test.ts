@@ -43,6 +43,7 @@ test('all migrated providers stay out of generated files and generic exec follow
       providerKey: 'notion',
       adapterVersion: 1,
       clientAuthority: 'local',
+      authorizationKind: 'oauth2',
       displayName: 'Notion fixture',
       configuration: {
         version: 1,

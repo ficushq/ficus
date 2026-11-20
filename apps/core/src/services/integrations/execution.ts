@@ -2,6 +2,7 @@ import type { IntegrationPluginV1 } from './plugin'
 import type { AssignedConnectionResolver } from './connection-repository'
 import type { OAuthAuthority } from './authorization/authority'
 import { parseOAuthCredential } from './authorization/credential-bundle'
+import { connectionOAuthView, isFencedOAuthConnection } from './oauth-plugin-view'
 
 type ExecutionPlugin = IntegrationPluginV1<any, any, any>
 
@@ -46,14 +47,14 @@ export class IntegrationExecutionService {
       connection.validatedRevision !== connection.materialRevision ||
       !connection.validationExpiresAt ||
       connection.validationExpiresAt.getTime() <= now ||
-      (plugin.authorization.kind === 'oauth2' && connection.clientAuthority !== deps.authority())
+      isFencedOAuthConnection(plugin, connection, deps.authority())
     )
       return null
     const raw = await deps.readCredential(connection.credentialRef)
     try {
       const configuration = plugin.connection.parseConfiguration(connection.configuration)
       const credential = plugin.connection.credential.parse(raw)
-      if (plugin.authorization.kind === 'oauth2') {
+      if (connectionOAuthView(plugin, connection)) {
         const oauth = parseOAuthCredential(raw)
         if (oauth.expiresAt !== null && Date.parse(oauth.expiresAt) <= now) return null
       }
