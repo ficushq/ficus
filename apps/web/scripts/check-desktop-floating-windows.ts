@@ -1,7 +1,8 @@
 /** DB-free Chromium layout regression for Ficus Desktop's inset title bar, not native macOS verification.
  * Floating agent chat windows, the assistant window and dialogs must keep out of the band where macOS
- * draws the window buttons, while windowed; fullscreen and browsers keep the whole screen. Dialogs must
- * draw over open floating windows and the Assistant, in browsers and in Desktop.
+ * draws the window buttons, while windowed; fullscreen and browsers keep the whole screen. Dialogs and the
+ * header dropdowns (the inbox and the Action Center) must draw over open floating windows and the Assistant,
+ * in browsers and in Desktop.
  * CHROMIUM_PATH=/path/to/chromium bun apps/web/scripts/check-desktop-floating-windows.ts
  * SCREENSHOT_DIR optionally saves the Desktop, fullscreen and browser views.
  */
@@ -40,11 +41,15 @@ try {
       console.error(message.text())
     }
   })
-  await page.route('**/api/**', (route) =>
-    new URL(route.request().url()).pathname.startsWith('/api/')
-      ? route.fulfill({ json: route.request().url().includes('permissions') ? { permissions: [] } : [] })
-      : route.continue()
-  )
+  await page.route('**/api/**', (route) => {
+    const { pathname } = new URL(route.request().url())
+    if (!pathname.startsWith('/api/')) return route.continue()
+    if (pathname.includes('permissions')) return route.fulfill({ json: { permissions: [] } })
+    // The inbox dropdown loads pages and counts: every inbox is empty.
+    if (pathname.startsWith('/api/inbox/'))
+      return route.fulfill({ json: { items: [], hasMore: false, nextCursor: null, totalCount: 0, count: 0 } })
+    return route.fulfill({ json: [] })
+  })
   await page.addInitScript(
     ({ a, b }) => {
       if (!sessionStorage.getItem('seeded')) {
@@ -241,6 +246,78 @@ try {
   }
   await dialogsOnTop('browser')
 
+  // The header dropdowns open over the Assistant (snapped to the right half, over the top-right corner) and
+  // a chat window moved there: nothing covers them or their buttons, and a press on the Assistant closes them.
+  const DROPDOWNS = [
+    {
+      name: 'Inbox',
+      event: 'open-inbox-popup',
+      panel: () => page.locator('#inbox-popup[data-state="open"]'),
+      shot: 'inbox',
+    },
+    {
+      name: 'Action Center',
+      event: 'open-action-center',
+      panel: () => page.locator('[role="dialog"][aria-label="Action Center"][data-state="open"]'),
+      shot: 'action-center',
+    },
+  ]
+  const dropdownsOnTop = async (view: string) => {
+    for (const { name, event, panel, shot } of DROPDOWNS) {
+      await page.evaluate((type) => window.dispatchEvent(new CustomEvent(type)), event)
+      await panel().waitFor()
+      await page.waitForTimeout(200)
+      await screenshot(`${view}-${shot}-over-windows`)
+      const hits = await panel().evaluate((surface) => {
+        const box = surface.getBoundingClientRect()
+        const covered: string[] = []
+        for (let fx = 0.02; fx < 1; fx += 0.08)
+          for (let fy = 0.02; fy < 1; fy += 0.08) {
+            const [x, y] = [box.left + box.width * fx, box.top + box.height * fy]
+            const hit = document.elementFromPoint(x, y)
+            if (!hit || !surface.contains(hit)) covered.push(`${Math.round(x)},${Math.round(y)}`)
+          }
+        const buttons = [...surface.querySelectorAll('button')]
+          .filter((button) => {
+            const r = button.getBoundingClientRect()
+            return !button.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+          })
+          .map((button) => button.textContent || button.getAttribute('aria-label'))
+        const under = [...document.querySelectorAll<HTMLElement>('[data-floating-window]')]
+          .filter((w) => {
+            const r = w.getBoundingClientRect()
+            return r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom
+          })
+          .map((w) => w.dataset.floatingWindow)
+        return { covered, buttons, under, right: innerWidth - box.right, top: box.top }
+      })
+      assert.deepEqual(hits.under.sort(), [A, 'assistant'].sort(), `${name} opens over a window and the Assistant`)
+      assert.deepEqual(hits.covered, [], `${view}: nothing covers the ${name} dropdown`)
+      assert.deepEqual(hits.buttons, [], `${view}: every button of the ${name} dropdown is uncovered`)
+      assert.equal(hits.top, 56, `${name} opens under the header`)
+      assert.equal(hits.right, 12, `${name} keeps 12px from the right edge`)
+      // A press on the Assistant beside it is outside the dropdown: it closes it.
+      const assistant = (await windows.assistant.boundingBox())!
+      await page.mouse.click(assistant.x + 40, assistant.y + assistant.height - 40)
+      await panel().waitFor({ state: 'detached' })
+    }
+  }
+  // Drags chat window A by its title bar so its top-left corner lands at x, y (clear of the snap zones).
+  const dragWindowA = async (x: number, y: number) => {
+    const box = (await windows[A].boundingBox())!
+    const grab = { x: box.x + 120, y: box.y + 16 }
+    await page.mouse.move(grab.x, grab.y)
+    await page.mouse.down()
+    await page.mouse.move(grab.x + 40, grab.y + 40, { steps: 4 })
+    await page.mouse.move(grab.x + x - box.x, grab.y + y - box.y, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForTimeout(400)
+  }
+  // Window A goes under the top-right corner too, above the Assistant, for the dropdowns; then back.
+  await dragWindowA(860, 120)
+  await dropdownsOnTop('browser')
+  await dragWindowA(8, 120)
+
   // In Desktop, with the same window and Assistant open behind them.
   await page.evaluate(() => sessionStorage.removeItem('browser-only'))
   await page.reload()
@@ -248,6 +325,8 @@ try {
   await page.waitForTimeout(400)
   assert.equal(await page.evaluate(() => document.documentElement.dataset.desktopShell), 'inset')
   await dialogsOnTop('desktop')
+  await dragWindowA(860, 120)
+  await dropdownsOnTop('desktop')
 
   // A dialog keeps below the band even in a short window.
   await page.setViewportSize({ width: 1280, height: 360 })
@@ -259,7 +338,7 @@ try {
 
   assert.deepEqual(errors, [])
   console.log(
-    'PASS Desktop floating windows: saved and snapped windows, the assistant and dialogs stay below the inset title bar; drag preview, picker and drag stay below it; fullscreen and browsers use the whole screen; the template diff, field diff and upload conflict dialogs draw over open windows and the Assistant in browsers and Desktop. Native macOS window buttons are not tested.'
+    'PASS Desktop floating windows: saved and snapped windows, the assistant and dialogs stay below the inset title bar; drag preview, picker and drag stay below it; fullscreen and browsers use the whole screen; the template diff, field diff and upload conflict dialogs and the inbox and Action Center dropdowns draw over open windows and the Assistant in browsers and Desktop, and a press on the Assistant closes the dropdowns. Native macOS window buttons are not tested.'
   )
 } finally {
   await browser?.close()

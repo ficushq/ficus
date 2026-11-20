@@ -972,3 +972,73 @@ test('dialogs open over floating windows and the Assistant, never under them', a
     await t.cleanup()
   }
 })
+
+test('the inbox and Action Center dropdowns open over floating windows and the Assistant, and a press on a window closes them', async () => {
+  const { UnifiedAssistant } = await import('./UnifiedAssistant')
+  const { InboxPopup } = await import('./InboxPopup')
+  const { InboxPopupProvider } = await import('./InboxPopupProvider')
+  const { ActionCenterPanel } = await import('./ActionCenterPanel')
+  const { useState } = await import('react')
+  function ActionCenter() {
+    const [open, setOpen] = useState(true)
+    return <ActionCenterPanel isOpen={open} onClose={() => setOpen(false)} actions={[]} isLoading={false} />
+  }
+  const t = await setup(
+    <>
+      <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-assistant-conversation /> }} />
+      <InboxPopupProvider>
+        <InboxPopup />
+      </InboxPopupProvider>
+      <ActionCenter />
+    </>,
+    {
+      url: '/?chat=open',
+      stored: {
+        assistantZ: 3,
+        windows: [
+          // Both placed over the top-right corner, where the dropdowns open.
+          { agentId: A, rect: { x: 800, y: 20, w: 420, h: 500 }, z: 1 },
+          { agentId: B, rect: { x: 960, y: 0, w: 440, h: 600 }, z: 2 },
+        ],
+        remembered: {},
+      },
+    }
+  )
+  // The inbox loads its pages when it opens: every inbox is empty.
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () =>
+    new t.dom.window.Response(JSON.stringify({ items: [], hasMore: false, nextCursor: null, totalCount: 0 }), {
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch
+  try {
+    await t.dom.act(async () => window.dispatchEvent(new CustomEvent('open-inbox-popup')))
+    // The z-index a layer is painted at: inline (floating windows, popovers) or its Tailwind z-* class.
+    const z = (element: HTMLElement) =>
+      Number(element.style.zIndex || /(?:^|\s)z-(\d+)(?:\s|$)/.exec(element.className)?.[1] || Number.NaN)
+    const paintsAbove = (top: HTMLElement, below: HTMLElement) =>
+      z(top) > z(below) ||
+      (z(top) === z(below) && !!(below.compareDocumentPosition(top) & Node.DOCUMENT_POSITION_FOLLOWING))
+    const inbox = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Inbox"][data-state="open"]')
+    const actionCenter = () =>
+      document.querySelector<HTMLElement>('[role="dialog"][aria-label="Action Center"][data-state="open"]')
+    const layers = t.windows()
+    expect(layers).toHaveLength(3)
+    expect(layers).toContain(document.querySelector<HTMLElement>('[role="dialog"][aria-label="Assistant"]')!)
+    for (const dropdown of [inbox()!, actionCenter()!]) {
+      // Drawn at the document level, not inside some stacking context a window could cover.
+      expect(dropdown.parentElement).toBe(document.body)
+      for (const layer of layers) expect(paintsAbove(dropdown, layer)).toBe(true)
+    }
+    // Under the header, 12px in from the right edge of the 1400px window.
+    expect(inbox()!.style.top).toBe('56px')
+    expect(Number.parseFloat(inbox()!.style.left) + inbox()!.offsetWidth).toBe(1400 - 12)
+
+    // A press on a window is outside both: it closes them instead of being swallowed under them.
+    await t.press(t.windowFor(B)!.querySelector('[data-transcript]')!)
+    expect(inbox()).toBeNull()
+    expect(actionCenter()).toBeNull()
+  } finally {
+    globalThis.fetch = originalFetch
+    await t.cleanup()
+  }
+})
