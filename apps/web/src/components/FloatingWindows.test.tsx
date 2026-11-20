@@ -7,6 +7,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { queries } from '../queryOptions'
 import { chatWindowsStorageKey } from '../lib/chatWindows'
+import { untilRendered } from '../test/untilRendered'
 
 // Load the lazy in-place reference modal before installing the DOM's constructor globals.
 await import('./EntityReferenceModal')
@@ -478,8 +479,7 @@ test('windows for agents that no longer exist or are not accessible close themse
       }),
   })
   try {
-    await t.dom.act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
-    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
+    await untilRendered(t.dom, () => expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A]))
     expect(t.stored().windows.map((w: { agentId: string }) => w.agentId)).toEqual([A])
     expect(t.stored().remembered[gone]).toBeUndefined()
   } finally {
@@ -679,6 +679,37 @@ test('agent chats offer the pop-out in their composer controls, except embedded 
     expect(document.querySelector('[data-chat="true"] button[aria-label="Open in floating window"]')).toBeNull()
     // The page keeps its own draft key.
     expect(seen.find((props) => props.agentId === A)!.inputStorageKey).toBe(`agent:${A}`)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('with more windows than stacking layers, the window in use is still drawn in front of every other', async () => {
+  const ids = Array.from({ length: 10 }, (_, index) => `${String(index).padStart(8, '0')}-0000-4000-8000-000000000000`)
+  const t = await setup(null, {
+    stored: {
+      assistantZ: 0,
+      windows: ids.map((agentId, index) => ({
+        agentId,
+        rect: { x: 40 + index * 20, y: 80, w: 420, h: 500 },
+        z: index + 1,
+      })),
+      remembered: {},
+    },
+  })
+  try {
+    const z = (id: string) => Number(t.windowFor(id)!.style.zIndex)
+    const others = (id: string) => ids.filter((other) => other !== id).map(z)
+    expect(z(ids[9]!)).toBeGreaterThan(Math.max(...others(ids[9]!)))
+    // The window opened first, furthest back, comes to the very front when pressed.
+    await t.press(t.windowFor(ids[0]!)!.querySelector('[data-transcript]')!)
+    expect(z(ids[0]!)).toBeGreaterThan(Math.max(...others(ids[0]!)))
+    // The one just behind it is next, and all stay between the page and modals.
+    expect(z(ids[9]!)).toBeGreaterThan(Math.max(...others(ids[9]!).filter((value) => value !== z(ids[0]!))))
+    for (const id of ids) {
+      expect(z(id)).toBeGreaterThanOrEqual(51)
+      expect(z(id)).toBeLessThan(60)
+    }
   } finally {
     await t.cleanup()
   }

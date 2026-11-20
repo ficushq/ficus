@@ -95,7 +95,12 @@ export function AgentChatWindow({
   const windowsRef = useStableRef(windows)
   const { slugFor } = useSquadSlugs()
 
-  const agent = useQuery({ ...queries.agents.detail(agentId), retry: (count, error) => !isGone(error) && count < 2 })
+  // A missing agent closes at once; a 403 is retried first, so a permission change still settling
+  // (a role update in flight) does not close the window for good.
+  const agent = useQuery({
+    ...queries.agents.detail(agentId),
+    retry: (count, error) => (isHttpResponseError(error, 403) || !isGone(error)) && count < 2,
+  })
   const types = useQuery(queries.agentTypes.list())
   const squads = useQuery(queries.squads.list())
   // An agent that no longer exists, or that this account cannot see, closes its window quietly.

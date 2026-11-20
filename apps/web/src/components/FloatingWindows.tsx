@@ -178,7 +178,9 @@ export function FloatingWindowsProvider({ children, dependencies }: FloatingWind
         if (front !== key) dispatch({ type: 'focus', key })
       },
       rankOf: (key) => order.get(key) ?? -1,
-      zIndexFor: (key) => Math.min(WINDOW_Z_TOP, WINDOW_Z_BASE + (order.get(key) ?? 0)),
+      // Counted down from the front, so the window in use always has the highest z-index; past the
+      // available layers, only the windows furthest back share the lowest one.
+      zIndexFor: (key) => Math.max(WINDOW_Z_BASE, WINDOW_Z_TOP - (order.size - 1 - (order.get(key) ?? 0))),
       isFront: (key) => front === key,
       setAssistantShown,
       dispatch,
