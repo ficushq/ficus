@@ -15,6 +15,7 @@ import {
 } from '../db'
 import { ChannelInstance } from '../entities/ChannelInstance'
 import { InboxMessage } from '../entities/InboxMessage'
+import { isChannelBoundAgent } from '../entities/agent-queries'
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac, type TestUser } from '../test-utils'
 import { startChannelLink, claimChannelLink, confirmChannelLink } from '../services/channel-access'
 import { requireAllowedChannelReply } from '../services/channel-policy'
@@ -113,6 +114,9 @@ describe('private squad conversations', () => {
     const first = await resolve()
     expect(first.agent?.squadId).toBe(scope[0]!.id)
     expect(first.agent?.context).toMatchObject({ origin: 'channel', directMessage: true })
+    // Idle dormancy applies, and dormant retention reclaims storage instead of terminating it.
+    expect(first.agent?.persist).toBe(false)
+    expect(isChannelBoundAgent(first.agent!)).toBe(true)
     await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, first.agent!.id))
     await resolve({ command: 'squad', text: slugs.idToSlug[scope[1]!.id]! })
     const second = await resolve()
