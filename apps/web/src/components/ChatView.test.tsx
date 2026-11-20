@@ -2,6 +2,8 @@ import { PermissionsProvider } from '../hooks/usePermissions'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { restPointerOn } from '../test/hoverTimer'
+import { expectHoverMenuContract } from '../test/hoverMenuContract'
+import { webkitTap } from '../test/webkitTap'
 import { useEffect, useState } from 'react'
 import { fireEvent } from '@testing-library/dom'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
@@ -1725,16 +1727,12 @@ describe('ChatView mobile options overlay', () => {
       if (fullscreen) {
         await dom.act(async () => fireEvent.click(window.document.querySelector('[aria-label="Fullscreen"]')!))
       }
-      const trigger = window.document.querySelector(
-        'button[aria-label="Attach or change controls"]'
-      ) as HTMLButtonElement
+      const trigger = window.document.querySelector('button[aria-label="More controls"]') as HTMLButtonElement
       const composer = trigger.closest('form')!
       composer.style.transform = 'translateZ(0)'
       composer.style.overflow = 'hidden'
       await dom.act(async () => fireEvent.click(trigger))
-      const dialog = window.document.querySelector(
-        '[role="dialog"][aria-label="Attach or change controls"]'
-      ) as HTMLElement
+      const dialog = window.document.querySelector('[role="dialog"][aria-label="More controls"]') as HTMLElement
       const layer = dialog.parentElement!
       expect(layer.parentElement).toBe(window.document.body)
       expect(composer.contains(dialog)).toBe(false)
@@ -1755,11 +1753,9 @@ describe('ChatView mobile options overlay', () => {
     const viewport = new window.EventTarget()
     Object.assign(viewport, { height: 340, offsetTop: 24 })
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
-    const trigger = window.document.querySelector('button[aria-label="Attach or change controls"]') as HTMLButtonElement
+    const trigger = window.document.querySelector('button[aria-label="More controls"]') as HTMLButtonElement
     await dom.act(async () => fireEvent.click(trigger))
-    const dialog = window.document.querySelector(
-      '[role="dialog"][aria-label="Attach or change controls"]'
-    ) as HTMLElement
+    const dialog = window.document.querySelector('[role="dialog"][aria-label="More controls"]') as HTMLElement
     const layer = dialog.parentElement!
     expect(layer.style.getPropertyValue('--chat-options-height')).toBe('340px')
     expect(layer.style.getPropertyValue('--chat-options-top')).toBe('24px')
@@ -1817,7 +1813,7 @@ describe('ChatView narrow composer options on a wide screen', () => {
     // The inline action row still holds every action, the caller's control as its icon.
     expect(actions.querySelector('[aria-label="Probe control"]')!.textContent).toBe('Probe icon')
     const trigger = form.querySelector<HTMLButtonElement>('button.chat-composer-attach')!
-    expect(trigger.getAttribute('aria-label')).toBe('Attach or change controls')
+    expect(trigger.getAttribute('aria-label')).toBe('More controls')
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
 
@@ -1831,7 +1827,7 @@ describe('ChatView narrow composer options on a wide screen', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     expect(trigger.getAttribute('aria-controls')).toBe(menu.id)
     // Never the phone sheet on a wide screen.
-    expect(document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')).toBeNull()
+    expect(document.querySelector('[role="dialog"][aria-label="More controls"]')).toBeNull()
     const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
     expect(items.map((item) => item.textContent)).toEqual([
       'Attach image',
@@ -1873,12 +1869,61 @@ describe('ChatView narrow composer options on a wide screen', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
+  test('opens on hover like the other hover menus, and a press inside pins it open', async () => {
+    const { window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />)
+    const trigger = window.document.querySelector<HTMLButtonElement>('button[aria-label="More controls"]')!
+    expect(trigger.getAttribute('title')).toBe('More controls')
+    const menu = () => window.document.querySelector<HTMLElement>('[role="menu"][aria-label="Chat options"]')
+    // A press inside (a row's control in use, or the padding) pins it, so leaving does not close it under the user.
+    await expectHoverMenuContract({ trigger, pressInside: { target: () => menu()!, pins: true } })
+  })
+
+  test('a hover-opened menu keeps focus in the composer, runs a tapped row, and the keyboard still opens it', async () => {
+    const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />)
+    const document = window.document
+    const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="More controls"]')!
+    const textarea = document.querySelector('textarea')!
+    textarea.focus()
+    await restPointerOn(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement === textarea).toBe(true)
+    const item = (label: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+        (row) => row.textContent === label
+      )!
+    expect(await webkitTap(item('Auto-scroll on'))).toBe(true)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    // Keyboard: ArrowDown on the trigger opens it with focus on the first row; Escape closes it back to the trigger.
+    trigger.focus()
+    await dom.act(async () => fireEvent.keyDown(trigger, { key: 'ArrowDown' }))
+    await dom.act(flushReact)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement === item('Attach image')).toBe(true)
+    expect(item('Auto-scroll off')).toBeDefined()
+    await dom.act(async () => fireEvent.keyDown(document.activeElement!, { key: 'Escape' }))
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement === trigger).toBe(true)
+  })
+
+  test('the phone sheet never opens on hover, and a tap still opens it', async () => {
+    const { window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />, undefined, PHONE)
+    const trigger = window.document.querySelector<HTMLButtonElement>('button[aria-label="More controls"]')!
+    const sheet = () => window.document.querySelector('[role="dialog"][aria-label="More controls"]')
+    await restPointerOn(trigger)
+    await restPointerOn(trigger, 'touch')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(await webkitTap(trigger, { touch: true })).toBe(true)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(sheet()).not.toBeNull()
+  })
+
   test('the trigger opens the phone sheet, not the menu, on a phone-sized viewport', async () => {
     const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} />, undefined, PHONE)
     const trigger = window.document.querySelector<HTMLButtonElement>('button.chat-composer-attach')!
     expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
     await dom.act(async () => fireEvent.click(trigger))
-    expect(window.document.querySelector('[role="dialog"][aria-label="Attach or change controls"]')).not.toBeNull()
+    expect(window.document.querySelector('[role="dialog"][aria-label="More controls"]')).not.toBeNull()
     expect(window.document.querySelector('[role="menu"][aria-label="Chat options"]')).toBeNull()
   })
 })
