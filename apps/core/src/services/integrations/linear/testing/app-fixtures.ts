@@ -112,7 +112,9 @@ export async function createLinearAppFixture(
     await db.delete(linearTeamAccess).where(eq(linearTeamAccess.connectionId, connectionId))
     if (squadIds.length) {
       await db.delete(workStreams).where(inArray(workStreams.squadId, squadIds))
-      await db.delete(integrationConnectionAssignments).where(inArray(integrationConnectionAssignments.squadId, squadIds))
+      await db
+        .delete(integrationConnectionAssignments)
+        .where(inArray(integrationConnectionAssignments.squadId, squadIds))
       await db.update(squads).set({ managerAgentId: null }).where(inArray(squads.id, squadIds))
       await db.delete(agents).where(inArray(agents.squadId, squadIds))
       await db.delete(squads).where(inArray(squads.id, squadIds))

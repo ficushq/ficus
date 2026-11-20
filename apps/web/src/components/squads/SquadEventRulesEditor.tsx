@@ -2,7 +2,7 @@ import { EventRulePredicates } from './EventRulePredicates'
 import { EventRulePreview } from './EventRulePreview'
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { effectiveSquadEventRules, type SquadEventRule } from '@ficus/shared'
+import { effectiveSquadEventRules, LINEAR_DEFAULT_RULE_IDS, type SquadEventRule } from '@ficus/shared'
 import { integrationQueries } from '../../queryOptions'
 import { WorkflowPicker } from './WorkflowPicker'
 import { ConfirmButton } from '../ConfirmButton'
@@ -142,14 +142,7 @@ export function SquadEventRulesEditor({
                     },
                     match: undefined,
                     predicates: undefined,
-                    filters: {
-                      ...rule.filters,
-                      audience: ['issue.assigned', 'issue.unassigned', 'pull_request.review_requested'].includes(output)
-                        ? 'connected-account'
-                        : output.includes('comment') || output === 'pull_request.reviewed'
-                          ? 'assigned-or-mentioned'
-                          : 'any',
-                    },
+                    filters: { ...rule.filters, audience: defaultAudience(output) },
                   })
                 }}
               >
@@ -233,37 +226,6 @@ export function SquadEventRulesEditor({
                     }}
                   />
                 </label>
-                <label className="text-sm sm:col-span-2">
-                  Account involvement
-                  <select
-                    className={field}
-                    value={rule.filters.audience}
-                    onChange={(event) =>
-                      update(index, {
-                        filters: {
-                          ...rule.filters,
-                          audience: event.target.value as SquadEventRule['filters']['audience'],
-                        },
-                      })
-                    }
-                  >
-                    <option value="connected-account">Assigned account or requested reviewer</option>
-                    <option value="assigned-or-mentioned">Account is assigned or @mentioned</option>
-                    <option value="any">Any matching event</option>
-                  </select>
-                  <span className="mt-1 block text-xs text-muted">
-                    {rule.filters.audience === 'any'
-                      ? 'No assignment or mention is required. Bot events can match. Comments and reviews authored by the selected account are always ignored. The other filters still apply.'
-                      : rule.filters.audience === 'connected-account' &&
-                          rule.source.output === 'pull_request.review_requested'
-                        ? 'Match a review requested from the selected account, or a team review request delivered to that connection.'
-                        : rule.filters.audience === 'connected-account' &&
-                            ['issue.assigned', 'issue.unassigned'].includes(rule.source.output)
-                          ? 'Match only when the selected account is the person being assigned or unassigned.'
-                          : 'Match when the selected account is an assignee on the issue or PR, or is @mentioned in the event text. Ignore events authored by that account or a bot.'}{' '}
-                    With “Any account,” one attached account matching is enough.
-                  </span>
-                </label>
               </>
             )}
             {provider === 'linear' && (
@@ -277,6 +239,50 @@ export function SquadEventRulesEditor({
                     update(index, { filters: { ...rule.filters, teamId: event.target.value || undefined } })
                   }
                 />
+              </label>
+            )}
+            {(provider === 'github' || provider === 'linear') && (
+              <label className="text-sm sm:col-span-2">
+                Account involvement
+                <select
+                  className={field}
+                  value={rule.filters.audience}
+                  onChange={(event) =>
+                    update(index, {
+                      filters: {
+                        ...rule.filters,
+                        audience: event.target.value as SquadEventRule['filters']['audience'],
+                      },
+                    })
+                  }
+                >
+                  {provider === 'linear' ? (
+                    <>
+                      <option value="connected-account">Delegated or assigned to this account</option>
+                      <option value="assigned-or-mentioned">This account is assigned, delegated or @mentioned</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="connected-account">Assigned account or requested reviewer</option>
+                      <option value="assigned-or-mentioned">Account is assigned or @mentioned</option>
+                    </>
+                  )}
+                  <option value="any">Any matching event</option>
+                </select>
+                <span className="mt-1 block text-xs text-muted">
+                  {provider === 'linear'
+                    ? linearAudienceHelp(rule)
+                    : rule.filters.audience === 'any'
+                      ? 'No assignment or mention is required. Bot events can match. Comments and reviews authored by the selected account are always ignored. The other filters still apply.'
+                      : rule.filters.audience === 'connected-account' &&
+                          rule.source.output === 'pull_request.review_requested'
+                        ? 'Match a review requested from the selected account, or a team review request delivered to that connection.'
+                        : rule.filters.audience === 'connected-account' &&
+                            ['issue.assigned', 'issue.unassigned'].includes(rule.source.output)
+                          ? 'Match only when the selected account is the person being assigned or unassigned.'
+                          : 'Match when the selected account is an assignee on the issue or PR, or is @mentioned in the event text. Ignore events authored by that account or a bot.'}{' '}
+                  With “Any account,” one attached account matching is enough.
+                </span>
               </label>
             )}
           </div>
@@ -369,6 +375,21 @@ export function SquadEventRulesEditor({
           No squad actions. Existing work streams still receive their subscribed events.
         </p>
       )}
+      {provider === 'linear' && (
+        <p className="text-xs text-muted">
+          Every new Linear agent session is acknowledged automatically, whatever these rules do.
+        </p>
+      )}
+      {provider === 'linear' && missingLinearDefaults(value).length > 0 && (
+        <button
+          type="button"
+          disabled={disabled || value.length + missingLinearDefaults(value).length > 32}
+          className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm disabled:opacity-40"
+          onClick={() => onChange([...value, ...missingLinearDefaults(value)])}
+        >
+          Add recommended Linear rules
+        </button>
+      )}
       <ConfirmButton
         label="Reset to default rules"
         confirmLabel="Replace all rules with defaults?"
@@ -379,4 +400,45 @@ export function SquadEventRulesEditor({
       <EventRulePreview provider={provider} rules={value} metadata={metadata} events={events} accounts={accounts} />
     </section>
   )
+}
+
+/** The audience a rule gets when its event changes: account-bound events bind the account, comments and mentions need involvement. */
+function defaultAudience(output: string): SquadEventRule['filters']['audience'] {
+  if (
+    [
+      'issue.assigned',
+      'issue.unassigned',
+      'pull_request.review_requested',
+      'issue.delegated',
+      'issue.undelegated',
+      'agent_session.created',
+      'agent_session.prompted',
+    ].includes(output)
+  )
+    return 'connected-account'
+  if (output.includes('comment') || output === 'pull_request.reviewed' || output === 'issue.mentioned')
+    return 'assigned-or-mentioned'
+  return 'any'
+}
+
+/** Recommended Linear rules a squad's stored list predates (its stored rules otherwise stay authoritative). */
+function missingLinearDefaults(rules: SquadEventRule[]): SquadEventRule[] {
+  const ids = new Set(rules.map((rule) => rule.id))
+  return effectiveSquadEventRules({}, 'linear').filter(
+    (rule) => LINEAR_DEFAULT_RULE_IDS.includes(rule.id) && !ids.has(rule.id)
+  )
+}
+
+function linearAudienceHelp(rule: SquadEventRule) {
+  if (rule.filters.audience === 'any')
+    return 'No delegation, assignment or mention is required. Comments authored by the connected account are always ignored. The other filters still apply.'
+  if (rule.filters.audience === 'connected-account') {
+    if (['issue.assigned', 'issue.unassigned'].includes(rule.source.output))
+      return 'Match only when the connected account is the user being assigned or unassigned.'
+    if (['issue.delegated', 'issue.undelegated'].includes(rule.source.output))
+      return 'Match only when the issue is delegated to, or taken from, the connected Ficus app.'
+    if (rule.source.output.startsWith('agent_session.'))
+      return 'Match only sessions that belong to the connected Ficus app.'
+  }
+  return 'Match when the connected account is @mentioned, or is the issue’s assignee or delegate. Ignore events authored by that account or another app.'
 }

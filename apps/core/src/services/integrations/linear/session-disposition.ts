@@ -65,7 +65,9 @@ export async function postLinearSessionDisposition(input: {
 }): Promise<boolean> {
   const projectionKey = input.projectionKey ?? 'disposition'
   const disposition =
-    input.disposition.kind === 'ignored' && input.disposition.unrouted ? 'unrouted' : SESSION_DISPOSITION[input.disposition.kind]
+    input.disposition.kind === 'ignored' && input.disposition.unrouted
+      ? 'unrouted'
+      : SESSION_DISPOSITION[input.disposition.kind]
   if (projectionKey === 'disposition') {
     // Claim the one disposition for this session: only the first caller posts it.
     const [claimed] = await db

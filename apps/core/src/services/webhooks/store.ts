@@ -91,19 +91,17 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       : linear
         ? await linearOwners(tx, linear)
         : []
-    const insert = tx
-      .insert(webhookEvents)
-      .values({
-        provider: input.provider,
-        eventType: input.eventType,
-        payload: input.payload,
-        headers: input.headers,
-        signature: input.signature,
-        verified: input.verified,
-        activitySquadIds: owners.map((owner) => owner.squadId),
-        error: input.error ?? null,
-        deliveryId: input.deliveryId ?? null,
-      })
+    const insert = tx.insert(webhookEvents).values({
+      provider: input.provider,
+      eventType: input.eventType,
+      payload: input.payload,
+      headers: input.headers,
+      signature: input.signature,
+      verified: input.verified,
+      activitySquadIds: owners.map((owner) => owner.squadId),
+      error: input.error ?? null,
+      deliveryId: input.deliveryId ?? null,
+    })
     // A delivery ID seen before is a provider retry of a stored delivery: it is not stored or processed again.
     const [result] = input.deliveryId
       ? await insert

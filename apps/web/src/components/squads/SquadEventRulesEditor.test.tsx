@@ -662,3 +662,87 @@ test('collection fields offer does not contain, which saves, reloads and preview
     await dom.cleanup()
   }
 })
+
+test('Linear rules show account involvement, offer missing recommended rules and preview with a connected account ID', async () => {
+  const { linearOutputCatalog } = await import('@ficus/shared')
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, linearOutputCatalog)
+  client.setQueryData(integrationQueries.squad('test', 'linear').queryKey, { connections: [], attached: [] })
+  client.setQueryData(queries.workflows.list().queryKey, [])
+  let value: SquadEventRule[] = []
+  function Editor() {
+    // A squad that saved its rules before the agent app defaults existed.
+    const [rules, setRules] = useState(effectiveSquadEventRules({}, 'linear').slice(0, 1))
+    value = rules
+    return (
+      <SquadEventRulesEditor
+        squadId="test"
+        provider="linear"
+        value={rules}
+        onChange={setRules}
+        disabled={false}
+        metadata={{ linear: [{ teamId: 'team' }] }}
+      />
+    )
+  }
+  const root = dom.createRoot()
+  const label = (text: string) =>
+    Array.from(document.querySelectorAll('label')).find((element) => element.firstChild?.textContent === text)!
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <Editor />
+        </QueryClientProvider>
+      )
+    )
+    expect(Array.from(label('Account involvement').querySelector('select')!.options).map((o) => o.textContent)).toEqual(
+      [
+        'Delegated or assigned to this account',
+        'This account is assigned, delegated or @mentioned',
+        'Any matching event',
+      ]
+    )
+    expect(document.body.textContent).toContain(
+      'Every new Linear agent session is acknowledged automatically, whatever these rules do.'
+    )
+    await dom.act(async () => {
+      Array.from(document.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Add recommended Linear rules')!
+        .click()
+    })
+    expect(value.map((rule) => rule.id)).toEqual(effectiveSquadEventRules({}, 'linear').map((rule) => rule.id))
+    expect(
+      Array.from(document.querySelectorAll('button')).some((b) => b.textContent === 'Add recommended Linear rules')
+    ).toBe(false)
+    // Changing a rule to a delegation binds it to the connected account by default.
+    await dom.act(async () => {
+      const select = label('When').querySelector('select')!
+      select.value = 'issue.delegated'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(value[0]!.filters.audience).toBe('connected-account')
+    // The preview takes a hypothetical Linear account ID and shows the self-comment suppression.
+    expect(document.querySelector('[aria-label="Sample connected account ID"]')).not.toBeNull()
+    await dom.act(async () => {
+      const sample = document.querySelector<HTMLSelectElement>('[aria-label="Sample event"]')!
+      sample.value = 'issue.comment@1'
+      sample.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await dom.act(async () =>
+      fireEvent.input(document.querySelector('[aria-label="Sample connected account ID"]')!, {
+        target: { value: 'app-user' },
+      })
+    )
+    await dom.act(async () =>
+      fireEvent.input(document.querySelector('[aria-label="Sample fields (JSON)"]')!, {
+        target: { value: '{"teamId":"team","actor":"app-user","delegate":"app-user"}' },
+      })
+    )
+    expect(document.body.textContent).toContain('comments authored by the connected account')
+  } finally {
+    client.clear()
+    await dom.cleanup()
+  }
+})

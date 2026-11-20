@@ -17,7 +17,13 @@ import { resolveEventRuleDecisions } from '../outputs/default-routing'
 import type { IntegrationOutputAuthority } from '../outputs/types'
 import { isLinearAppConfiguration, parseLinearConfiguration, type LinearAppConfiguration } from './plugin'
 import { LINEAR_APP_USER_METADATA_KEY, linearOutputAdapter } from './outputs'
-import { isTrustedLinearUser, linearActorType, probeLinearAppEvent, type LinearAppProbe, type LinearProbedUser } from './app-api'
+import {
+  isTrustedLinearUser,
+  linearActorType,
+  probeLinearAppEvent,
+  type LinearAppProbe,
+  type LinearProbedUser,
+} from './app-api'
 import { resolveLinearAppConnection } from './resolve-connection'
 import { acknowledgeLinearSession, type AcknowledgeDependencies } from './session-acknowledger'
 import {
@@ -54,7 +60,7 @@ export function clearLinearUserCacheForTest() {
   userCache.clear()
 }
 
-export interface LinearAppIngressDependencies extends AcknowledgeDependencies {}
+export type LinearAppIngressDependencies = AcknowledgeDependencies
 
 /**
  * Processes one verified Linear agent app delivery (direct webhook today, the hosted relay later),
@@ -230,7 +236,7 @@ export async function routeLinearAppEvent(
         if (fact === routedOutput) routedEventId = eventId
       }
     } catch (error) {
-      log.warn(`Linear app event not published for a squad: ${error instanceof Error ? error.message : "error"}`)
+      log.warn(`Linear app event not published for a squad: ${error instanceof Error ? error.message : 'error'}`)
       continue
     }
     authorizedSquadIds.push(squadId)

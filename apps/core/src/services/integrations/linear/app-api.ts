@@ -8,9 +8,7 @@ import { linearQuery } from './plugin'
  */
 
 export type LinearActivityContent =
-  | { type: 'thought'; body: string }
-  | { type: 'response'; body: string }
-  | { type: 'error'; body: string }
+  { type: 'thought'; body: string } | { type: 'response'; body: string } | { type: 'error'; body: string }
 
 /**
  * The activity ID Ficus sends to Linear for one projection of a session: a UUID v4 derived from the

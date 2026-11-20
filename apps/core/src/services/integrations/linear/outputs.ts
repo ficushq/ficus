@@ -219,7 +219,7 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
     const delegateChanged = !comment && 'delegateId' in updatedFrom
     let output = 'issue.comment'
     let verb = action
-    let assignee = ''
+    let assignee: string
     let primary = true
     if (!comment) {
       if ('assigneeId' in updatedFrom) {
@@ -281,7 +281,16 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
           output,
           // The comment id separates two comments on one issue that share a timestamp.
           // Comment keys never included the issue's assignee; keep them stable.
-          key([output, id, verb, actor, at, fields.state, comment ? '' : assignee, ...(comment ? [text(data.id, 200)] : [])]),
+          key([
+            output,
+            id,
+            verb,
+            actor,
+            at,
+            fields.state,
+            comment ? '' : assignee,
+            ...(comment ? [text(data.id, 200)] : []),
+          ]),
           {
             assignee,
             delegate,

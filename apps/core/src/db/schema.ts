@@ -4324,7 +4324,9 @@ export const linearAgentSessions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index('idx_linear_agent_sessions_work_stream').on(table.workStreamId).where(sql`${table.workStreamId} IS NOT NULL`),
+    index('idx_linear_agent_sessions_work_stream')
+      .on(table.workStreamId)
+      .where(sql`${table.workStreamId} IS NOT NULL`),
     index('idx_linear_agent_sessions_connection_issue').on(table.connectionId, table.issueId),
     index('idx_linear_agent_sessions_organization_created').on(table.organizationId, table.createdAt),
     check('linear_agent_sessions_trigger_check', sql`${table.trigger} in ('delegation', 'mention', 'proactive')`),

@@ -352,9 +352,9 @@ test('a prompt yields one prompted fact keyed by its activity', () => {
     prompt: { signal: '' },
   })
   expect(fact!.body).toBe(`${issueUrl}\n\nPlease also fix the footer`)
-  expect(prompted({ id: 'activity-uuid', content: { type: 'prompt', body: 'Stop' }, signal: 'stop' })[0]!.data).toMatchObject(
-    { prompt: { signal: 'stop' } }
-  )
+  expect(
+    prompted({ id: 'activity-uuid', content: { type: 'prompt', body: 'Stop' }, signal: 'stop' })[0]!.data
+  ).toMatchObject({ prompt: { signal: 'stop' } })
   expect(prompted({ id: 'activity-uuid', body: 'x' })[0]!.eventKey).toBe(fact!.eventKey)
   expect(prompted({ id: 'other-activity', body: 'x' })[0]!.eventKey).not.toBe(fact!.eventKey)
   expect(prompted({ body: 'no id' })).toEqual([])
@@ -375,9 +375,9 @@ test('sessions without an issue, or without a session or app user, produce no ou
   expect(linearOutputAdapter.normalize(sessionEvent('created', { issueId: undefined, issue: undefined }))).toEqual([])
   expect(linearOutputAdapter.normalize(sessionEvent('created', { id: undefined }))).toEqual([])
   expect(linearOutputAdapter.normalize(sessionEvent('created', {}, { appUserId: undefined }))).toEqual([])
-  expect(
-    linearOutputAdapter.normalize({ ...sessionEvent('created'), type: 'AppUserNotification' } as never)
-  ).toEqual([])
+  expect(linearOutputAdapter.normalize({ ...sessionEvent('created'), type: 'AppUserNotification' } as never)).toEqual(
+    []
+  )
 })
 
 test('issue creation is its own fact with the delegate and assignee at creation', () => {

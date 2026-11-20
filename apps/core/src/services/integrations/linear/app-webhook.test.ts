@@ -137,6 +137,10 @@ test('delivery checks: freshness window, header and body type, client ID, delive
   expect(verifyLinearAppDelivery(ctx({}, { 'linear-delivery': '' }), CLIENT_ID, now)).toContain('delivery')
   // Data-change events carry no client ID; the signature and organization still bind them.
   expect(
-    verifyLinearAppDelivery(ctx({ type: 'Issue', oauthClientId: undefined }, { 'linear-event': 'Issue' }), CLIENT_ID, now)
+    verifyLinearAppDelivery(
+      ctx({ type: 'Issue', oauthClientId: undefined }, { 'linear-event': 'Issue' }),
+      CLIENT_ID,
+      now
+    )
   ).toBeNull()
 })

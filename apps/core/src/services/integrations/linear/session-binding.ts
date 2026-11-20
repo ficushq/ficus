@@ -42,7 +42,10 @@ export async function bindLinearSession(tx: Store, sessionId: string, workStream
         eq(linearAgentSessions.primary, true)
       )
     )
-  const [stream] = await tx.select({ metadata: workStreams.metadata }).from(workStreams).where(eq(workStreams.id, workStreamId))
+  const [stream] = await tx
+    .select({ metadata: workStreams.metadata })
+    .from(workStreams)
+    .where(eq(workStreams.id, workStreamId))
   const metadata = (stream?.metadata as Record<string, unknown> | null) ?? {}
   if (Array.isArray(metadata.tracked) && session.issueId) {
     const tracked = metadata.tracked.map((entry) =>
@@ -119,6 +122,8 @@ export async function announceLinearSessionBinding(sessionId: string, workStream
       .set({ lastActivityAt: new Date(), updatedAt: new Date() })
       .where(eq(linearAgentSessions.id, sessionId))
   } catch (error) {
-    log.warn(`Linear session ${sessionId} binding announcement failed: ${error instanceof Error ? error.message : 'error'}`)
+    log.warn(
+      `Linear session ${sessionId} binding announcement failed: ${error instanceof Error ? error.message : 'error'}`
+    )
   }
 }

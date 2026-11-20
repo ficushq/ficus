@@ -61,7 +61,10 @@ const startRule = (output = 'issue.delegated') => rule(`start-${output.replace(/
 function bodies(sessionId: string) {
   return linear.activitiesFor(sessionId).map((activity) => [activity.content.type, activity.content.body])
 }
-async function created(sessionId: string, input: { creatorId?: string; commentId?: string; issue?: FakeLinearIssue | null } = {}) {
+async function created(
+  sessionId: string,
+  input: { creatorId?: string; commentId?: string; issue?: FakeLinearIssue | null } = {}
+) {
   await processLinearAppEvent(
     {
       type: 'AgentSessionEvent',
@@ -180,7 +183,12 @@ describe('disposition and authority', () => {
     const notices = await db
       .select()
       .from(inbox)
-      .where(and(eq(inbox.recipientId, squad.managerAgentId!), sql`${inbox.metadata}->>'source' = 'integration-notification'`))
+      .where(
+        and(
+          eq(inbox.recipientId, squad.managerAgentId!),
+          sql`${inbox.metadata}->>'source' = 'integration-notification'`
+        )
+      )
     expect(notices).toHaveLength(1)
     expect(notices[0]!.content).toContain('linear:issue.delegated')
   })
@@ -193,7 +201,10 @@ describe('disposition and authority', () => {
     await created(sessionId)
     expect(linear.calls.filter((call) => call.operation === 'FicusLinearAppProbe')).toHaveLength(1)
     const facts = await db
-      .select({ output: sql<string>`${integrationOutputEvents.fact}->>'output'`, authority: integrationOutputEvents.authority })
+      .select({
+        output: sql<string>`${integrationOutputEvents.fact}->>'output'`,
+        authority: integrationOutputEvents.authority,
+      })
       .from(integrationOutputEvents)
       .where(sql`${integrationOutputEvents.fact}->'data'->'session'->>'id' = ${sessionId}`)
     // Both squads record both facts under their own authority, bound to the app user and a trusted author.
@@ -233,7 +244,12 @@ describe('disposition and authority', () => {
     const sessionId = randomUUID()
     linear.addSession({ id: sessionId, issueId: issue.id })
     await created(sessionId)
-    expect(await db.select().from(workStreams).where(sql`${workStreams.metadata}->'integrationSource'->>'resourceKey' = ${issue.id}`)).toEqual([])
+    expect(
+      await db
+        .select()
+        .from(workStreams)
+        .where(sql`${workStreams.metadata}->'integrationSource'->>'resourceKey' = ${issue.id}`)
+    ).toEqual([])
   })
 
   test('a start-workstream rule queues work and binds the session to exactly one stream', async () => {
@@ -351,7 +367,10 @@ describe('connection lifecycle', () => {
       type: 'PermissionChange',
       payload: permissionChangePayload(fixture.context, { addedTeamIds: ['other-team'], removedTeamIds: [teamId] }),
     })
-    const [access] = await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, fixture.connectionId))
+    const [access] = await db
+      .select()
+      .from(linearTeamAccess)
+      .where(eq(linearTeamAccess.connectionId, fixture.connectionId))
     expect(access).toMatchObject({ source: 'webhook', canAccessAllPublicTeams: false })
     expect(access?.teamIds).toContain('other-team')
     expect(access?.teamIds).not.toContain(teamId)
@@ -371,7 +390,9 @@ describe('connection lifecycle', () => {
       type: 'PermissionChange',
       payload: permissionChangePayload({ ...fixture.context, appUserId: randomUUID() }, { removedTeamIds: [teamId] }),
     })
-    expect(await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, fixture.connectionId))).toEqual([])
+    expect(
+      await db.select().from(linearTeamAccess).where(eq(linearTeamAccess.connectionId, fixture.connectionId))
+    ).toEqual([])
   })
 
   test('OAuthApp revoked marks the connection for reauthorization and alerts operators', async () => {

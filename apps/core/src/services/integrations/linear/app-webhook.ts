@@ -16,7 +16,11 @@ export function verifyLinearAppDelivery(
   now = Date.now()
 ): string | null {
   const timestamp = ctx.payload.webhookTimestamp
-  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || Math.abs(now - timestamp) > LINEAR_WEBHOOK_MAX_AGE_MS)
+  if (
+    typeof timestamp !== 'number' ||
+    !Number.isFinite(timestamp) ||
+    Math.abs(now - timestamp) > LINEAR_WEBHOOK_MAX_AGE_MS
+  )
     return 'Stale or missing webhook timestamp'
   const eventType = ctx.headers['linear-event']
   if (!eventType || ctx.payload.type !== eventType) return 'Event type does not match the signed body'

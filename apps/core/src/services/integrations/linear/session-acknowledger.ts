@@ -72,7 +72,9 @@ export async function acknowledgeLinearSession(
       await createLinearAgentActivity(
         input.authorization,
         { sessionId, projectionKey: 'ack', content: { type: 'thought', body: LINEAR_ACK_BODY } },
-        AbortSignal.timeout(Math.max(1, Math.min(ACK_ATTEMPT_TIMEOUT_MS, attempt === 0 ? ACK_ATTEMPT_TIMEOUT_MS : remaining)))
+        AbortSignal.timeout(
+          Math.max(1, Math.min(ACK_ATTEMPT_TIMEOUT_MS, attempt === 0 ? ACK_ATTEMPT_TIMEOUT_MS : remaining))
+        )
       )
       acknowledged = true
     } catch (error) {

@@ -63,7 +63,16 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
   const users = new Map<string, FakeLinearUser>([[app.id, app]])
   const issues = new Map<string, FakeLinearIssue>()
   const comments = new Map<string, FakeLinearComment>()
-  const sessions = new Map<string, { id: string; issueId: string; appUserId: string; externalUrls: Array<{ label: string; url: string }>; updatedAt: string }>()
+  const sessions = new Map<
+    string,
+    {
+      id: string
+      issueId: string
+      appUserId: string
+      externalUrls: Array<{ label: string; url: string }>
+      updatedAt: string
+    }
+  >()
   const activities: Array<{ id: string; agentSessionId: string; content: Record<string, any>; at: number }> = []
   const attachments = new Map<string, { issueId: string; url: string; linkKind?: string }>()
   const teams: string[] = []
@@ -115,7 +124,12 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         if (!sessions.has(input.agentSessionId)) return { errors: [{ message: 'Entity not found: AgentSession' }] }
         if (input.id && activities.some((activity) => activity.id === input.id))
           return { errors: [{ message: 'Agent activity with this id already exists' }] }
-        activities.push({ id: input.id ?? randomUUID(), agentSessionId: input.agentSessionId, content: input.content, at: clock() })
+        activities.push({
+          id: input.id ?? randomUUID(),
+          agentSessionId: input.agentSessionId,
+          content: input.content,
+          at: clock(),
+        })
         data.agentActivityCreate = { success: true }
       }
       if (query.includes('agentSessionUpdate')) {
@@ -129,7 +143,13 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
         const issueId = variables.input?.issueId ?? variables.issueId
         if (!issues.has(issueId)) return { errors: [{ message: 'Entity not found: Issue' }] }
         const id = randomUUID()
-        sessions.set(id, { id, issueId, appUserId: app.id, externalUrls: [], updatedAt: new Date(clock()).toISOString() })
+        sessions.set(id, {
+          id,
+          issueId,
+          appUserId: app.id,
+          externalUrls: [],
+          updatedAt: new Date(clock()).toISOString(),
+        })
         data.agentSessionCreateOnIssue = { success: true, agentSession: { id } }
       }
       if (query.includes('attachmentLinkGitHubPR')) {
@@ -164,7 +184,9 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     }
     if (asks(query, 'teams', variables)) data.teams = { nodes: teams.map((id) => ({ id })) }
     if (asks(query, 'agentSessions', variables))
-      data.agentSessions = { nodes: [...sessions.values()].map((session) => ({ id: session.id, updatedAt: session.updatedAt })) }
+      data.agentSessions = {
+        nodes: [...sessions.values()].map((session) => ({ id: session.id, updatedAt: session.updatedAt })),
+      }
     if (asks(query, 'agentActivities', variables)) data.agentActivities = { nodes: [] }
     if (asks(query, 'notifications', variables)) data.notifications = { nodes: [] }
     return { data }
@@ -179,7 +201,7 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
     calls.push({ operation, variables: body.variables ?? {}, authorization, at: clock() })
     const index = failures.findIndex((entry) => !entry.operation || entry.operation === operation)
     if (index >= 0) {
-      const [{ failure }] = failures.splice(index, 1)
+      const failure = failures.splice(index, 1)[0]!.failure
       if (failure === 'timeout') {
         const signal = init?.signal
         return new Promise<Response>((_, reject) => {
@@ -222,7 +244,12 @@ export function createFakeLinear(options: FakeLinearOptions = {}) {
       return issue
     },
     addSession(session: { id: string; issueId: string }) {
-      sessions.set(session.id, { ...session, appUserId: app.id, externalUrls: [], updatedAt: new Date(clock()).toISOString() })
+      sessions.set(session.id, {
+        ...session,
+        appUserId: app.id,
+        externalUrls: [],
+        updatedAt: new Date(clock()).toISOString(),
+      })
     },
     activitiesFor(sessionId: string) {
       return activities.filter((activity) => activity.agentSessionId === sessionId)
@@ -262,7 +289,13 @@ interface AppContext {
 
 export function agentSessionCreatedPayload(
   context: AppContext,
-  input: { sessionId: string; issue?: FakeLinearIssue | null; creatorId: string; commentId?: string; timestamp?: number }
+  input: {
+    sessionId: string
+    issue?: FakeLinearIssue | null
+    creatorId: string
+    commentId?: string
+    timestamp?: number
+  }
 ) {
   return {
     type: 'AgentSessionEvent',
@@ -292,16 +325,29 @@ export function agentSessionCreatedPayload(
       url: `https://linear.app/acme/agent-session/${input.sessionId}`,
       status: 'pending',
     },
-    promptContext: input.issue ? `<issue identifier="${input.issue.identifier}"><title>${input.issue.title}</title></issue>` : '',
+    promptContext: input.issue
+      ? `<issue identifier="${input.issue.identifier}"><title>${input.issue.title}</title></issue>`
+      : '',
     webhookTimestamp: input.timestamp ?? Date.now(),
   }
 }
 
 export function agentSessionPromptedPayload(
   context: AppContext,
-  input: { sessionId: string; issue: FakeLinearIssue; userId: string; activityId: string; body: string; signal?: 'stop' }
+  input: {
+    sessionId: string
+    issue: FakeLinearIssue
+    userId: string
+    activityId: string
+    body: string
+    signal?: 'stop'
+  }
 ) {
-  const created = agentSessionCreatedPayload(context, { sessionId: input.sessionId, issue: input.issue, creatorId: input.userId })
+  const created = agentSessionCreatedPayload(context, {
+    sessionId: input.sessionId,
+    issue: input.issue,
+    creatorId: input.userId,
+  })
   return {
     ...created,
     action: 'prompted',

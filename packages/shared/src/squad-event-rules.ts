@@ -418,12 +418,12 @@ export function evaluateSquadEventRules(
       integration === 'linear' && filters.audience !== 'any'
         ? linearAudienceDescription(fact.output, filters.audience, login)
         : integration !== 'github' || filters.audience === 'any'
-        ? 'No account-involvement restriction.'
-        : filters.audience === 'connected-account' && fact.output === 'pull_request.review_requested'
-          ? 'Review requested from this account or a team delivered to this connection.'
-          : filters.audience === 'connected-account' && ['issue.assigned', 'issue.unassigned'].includes(fact.output)
-            ? 'Assigned or unassigned login must be the connected account.'
-            : 'Connected account must be assigned or @mentioned; self and bot authors do not match.'
+          ? 'No account-involvement restriction.'
+          : filters.audience === 'connected-account' && fact.output === 'pull_request.review_requested'
+            ? 'Review requested from this account or a team delivered to this connection.'
+            : filters.audience === 'connected-account' && ['issue.assigned', 'issue.unassigned'].includes(fact.output)
+              ? 'Assigned or unassigned login must be the connected account.'
+              : 'Connected account must be assigned or @mentioned; self and bot authors do not match.'
     )
     // Decision conditions cost a model call: asked last, only once every other check has passed.
     const decisionPredicates = (rule.predicates ?? []).filter(isEventDecisionPredicate)
@@ -530,7 +530,8 @@ function linearAudienceDescription(output: string, audience: string, account: st
   if (!account) return 'No connected account recorded for this event: no account-involvement restriction.'
   if (audience === 'connected-account') {
     if (LINEAR_ASSIGNMENT_OUTPUTS.includes(output)) return 'Assigned or unassigned user must be the connected account.'
-    if (LINEAR_DELEGATION_OUTPUTS.includes(output)) return 'Delegated or undelegated agent must be the connected account.'
+    if (LINEAR_DELEGATION_OUTPUTS.includes(output))
+      return 'Delegated or undelegated agent must be the connected account.'
     if (LINEAR_SESSION_OUTPUTS.includes(output)) return 'Agent session must belong to the connected account.'
   }
   return 'Connected account must be @mentioned, or the issue’s assignee or delegate; self and app authors do not match.'
