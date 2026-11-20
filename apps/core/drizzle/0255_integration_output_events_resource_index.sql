@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_integration_output_events_resource" ON "integration_output_events" USING btree ("integration",("fact"->>'resourceKey'));

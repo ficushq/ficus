@@ -692,6 +692,17 @@ const subsystems: Subsystem[] = [
     }
   ),
   subsystem(
+    'linear-agent-session-polling',
+    async () => {
+      const { linearAgentSessionPollingRuntime } = await import('./services/integrations/linear/polling-runtime')
+      linearAgentSessionPollingRuntime.start()
+    },
+    async () => {
+      const { linearAgentSessionPollingRuntime } = await import('./services/integrations/linear/polling-runtime')
+      await linearAgentSessionPollingRuntime.stop()
+    }
+  ),
+  subsystem(
     'hosted-integration-relay',
     async () => {
       const { hostedIntegrationRelayRuntime } = await import('./services/integrations/relay/runtime')

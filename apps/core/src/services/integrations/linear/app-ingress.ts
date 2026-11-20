@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
 import type { IntegrationOutputFact } from '@ficus/shared'
 import {
   db,
@@ -16,7 +16,8 @@ import { publishIntegrationOutput } from '../outputs/runtime'
 import { resolveEventRuleDecisions } from '../outputs/default-routing'
 import type { IntegrationOutputAuthority } from '../outputs/types'
 import { isLinearAppConfiguration, parseLinearConfiguration, type LinearAppConfiguration } from './plugin'
-import { LINEAR_APP_USER_METADATA_KEY, linearOutputAdapter } from './outputs'
+import { LINEAR_APP_USER_METADATA_KEY, linearOutputAdapter, normalizeLinearUndelegationNotification } from './outputs'
+import { linearDeliveryKey, withLinearDeliveryReceipt } from './delivery-receipts'
 import {
   isTrustedLinearUser,
   linearActorType,
@@ -65,7 +66,10 @@ export function clearLinearUserCacheForTest() {
   userCache.clear()
 }
 
-export type LinearAppIngressDependencies = AcknowledgeDependencies
+export interface LinearAppIngressDependencies extends AcknowledgeDependencies {
+  /** Set by the polling fallback (5.7): a delivery being processed elsewhere fails the poll for a retry. */
+  polled?: boolean
+}
 
 /**
  * Processes one verified Linear agent app delivery (direct webhook today, the hosted relay later),
@@ -107,48 +111,96 @@ async function processSessionEvent(
   const session = record(payload.agentSession)
   const sessionId = text(session.id)
   if (!sessionId) return
-  if (payload.action === 'created') {
-    // Before any rule, decision predicate or squad fan-out.
-    const row = await acknowledgeLinearSession(
-      {
-        connectionId: resolved.connection.id,
-        organizationId: resolved.configuration.organizationId,
-        authorization: resolved.authorization,
-        payload,
-      },
-      dependencies
-    )
-    if (!row) return
-    const dispose = (disposition: LinearSessionDisposition) =>
-      postLinearSessionDisposition({ sessionId, authorization: resolved.authorization, disposition })
-    if (!text(session.issueId) && !text(record(session.issue).id)) return void (await dispose({ kind: 'no-issue' }))
-    const [recent] = await db
-      .select({ value: count() })
-      .from(linearAgentSessions)
-      .where(
-        and(
-          eq(linearAgentSessions.organizationId, resolved.configuration.organizationId),
-          gte(linearAgentSessions.createdAt, new Date(Date.now() - 3_600_000)),
-          sql`${linearAgentSessions.id} <> ${sessionId}`
-        )
-      )
-    if ((recent?.value ?? 0) >= LINEAR_SESSIONS_PER_HOUR) return void (await dispose({ kind: 'busy' }))
-    const routed = await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
-    if (!routed) return
-    if (!routed.accessible) return void (await dispose({ kind: 'inaccessible' }))
-    const outcomes = [...routed.outcomes]
-    if (await bindTrackingStream(resolved, sessionId, routed.authorizedSquadIds)) outcomes.push('started')
-    await dispose(reduceLinearSessionOutcomes(outcomes))
-    return
-  }
+  const options = { retryWhenBusy: dependencies.polled === true }
+  // Webhook and poll claim the same receipt, so a session or prompt seen both ways is handled once.
+  if (payload.action === 'created')
+    return void (await withLinearDeliveryReceipt(
+      linearDeliveryKey.sessionCreated(sessionId),
+      () => processSessionCreated(resolved, sessionId, session, payload, dependencies),
+      options
+    ))
   if (payload.action !== 'prompted') return
+  const activityId = text(record(payload.agentActivity).id)
+  if (!activityId) return
+  await withLinearDeliveryReceipt(
+    linearDeliveryKey.prompt(activityId),
+    () => processSessionPrompted(resolved, sessionId, activityId, payload),
+    options
+  )
+}
+
+/**
+ * A polled `issueUnassignedFromYou` notification (5.7): the app's own undelegation, recovered when
+ * the `Issue` webhook that normally reports it never arrived. Webhook notifications still produce
+ * no outputs (5.2); the `Issue` webhook's `issue.undelegated` for the same change is recognized by
+ * `withoutRepeatedUndelegations`, so the change is recorded once whichever path reports it first.
+ */
+export async function processPolledLinearNotification(payload: Record<string, unknown>): Promise<void> {
+  const organizationId = text(payload.organizationId)
+  const notificationId = text(record(payload.notification).id)
+  if (!organizationId || !notificationId) return
+  const resolved = await resolveLinearAppConnection(organizationId)
+  if (!resolved || text(payload.appUserId) !== resolved.configuration.appUserId) return
+  const facts = normalizeLinearUndelegationNotification(payload, resolved.configuration.appUserId)
+  if (!facts.length) return
+  await withLinearDeliveryReceipt(
+    linearDeliveryKey.notification(notificationId),
+    async () => void (await routeLinearAppEvent(resolved, { type: 'AppUserNotification', payload }, facts)),
+    { retryWhenBusy: true }
+  )
+}
+
+async function processSessionCreated(
+  resolved: Resolved,
+  sessionId: string,
+  session: Record<string, any>,
+  payload: Record<string, unknown>,
+  dependencies: LinearAppIngressDependencies
+) {
+  // Before any rule, decision predicate or squad fan-out.
+  const row = await acknowledgeLinearSession(
+    {
+      connectionId: resolved.connection.id,
+      organizationId: resolved.configuration.organizationId,
+      authorization: resolved.authorization,
+      payload,
+    },
+    dependencies
+  )
+  if (!row) return
+  const dispose = (disposition: LinearSessionDisposition) =>
+    postLinearSessionDisposition({ sessionId, authorization: resolved.authorization, disposition })
+  if (!text(session.issueId) && !text(record(session.issue).id)) return void (await dispose({ kind: 'no-issue' }))
+  const [recent] = await db
+    .select({ value: count() })
+    .from(linearAgentSessions)
+    .where(
+      and(
+        eq(linearAgentSessions.organizationId, resolved.configuration.organizationId),
+        gte(linearAgentSessions.createdAt, new Date(Date.now() - 3_600_000)),
+        sql`${linearAgentSessions.id} <> ${sessionId}`
+      )
+    )
+  if ((recent?.value ?? 0) >= LINEAR_SESSIONS_PER_HOUR) return void (await dispose({ kind: 'busy' }))
+  const routed = await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
+  if (!routed) return
+  if (!routed.accessible) return void (await dispose({ kind: 'inaccessible' }))
+  const outcomes = [...routed.outcomes]
+  if (await bindTrackingStream(resolved, sessionId, routed.authorizedSquadIds)) outcomes.push('started')
+  await dispose(reduceLinearSessionOutcomes(outcomes))
+}
+
+async function processSessionPrompted(
+  resolved: Resolved,
+  sessionId: string,
+  activityId: string,
+  payload: Record<string, unknown>
+) {
   const routed = await routeLinearAppEvent(resolved, { type: 'AgentSessionEvent', payload })
   if (!routed) return
   const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
   // A bound session's prompts belong to its stream; the session's projection answers them.
   if (row?.workStreamId) return
-  const activityId = text(record(payload.agentActivity).id)
-  if (!activityId) return
   await postLinearSessionDisposition({
     sessionId,
     authorization: resolved.authorization,
@@ -165,14 +217,19 @@ async function processSessionEvent(
  */
 export async function routeLinearAppEvent(
   resolved: Resolved,
-  event: { type: string; payload: Record<string, unknown> }
+  event: { type: string; payload: Record<string, unknown> },
+  normalized?: IntegrationOutputFact[]
 ): Promise<{ accessible: boolean; outcomes: LinearSquadOutcome[]; authorizedSquadIds: string[] } | undefined> {
   const appUserId = resolved.configuration.appUserId
-  const facts = linearOutputAdapter.normalize({
-    type: event.type,
-    payload: event.payload,
-    metadata: { [LINEAR_APP_USER_METADATA_KEY]: appUserId },
-  })
+  const facts = await withoutRepeatedUndelegations(
+    resolved.connection.id,
+    normalized ??
+      linearOutputAdapter.normalize({
+        type: event.type,
+        payload: event.payload,
+        metadata: { [LINEAR_APP_USER_METADATA_KEY]: appUserId },
+      })
+  )
   if (!facts.length) return undefined
   const first = facts[0]!
   const issueId = first.resourceKey
@@ -249,6 +306,48 @@ export async function routeLinearAppEvent(
     if (routedEventId) outcomes.push(await squadOutcome(routedEventId, squadId, appUserId))
   }
   return { accessible: true, outcomes, authorizedSquadIds }
+}
+
+/** How far apart an `Issue` webhook's undelegation and the polled notification for it may be timed. */
+export const LINEAR_UNDELEGATION_MATCH_MS = 2 * 60_000
+
+/**
+ * Drops an `issue.undelegated` fact when this connection already recorded the same undelegation
+ * (issue and removed delegate, within two minutes) under another event key. The `Issue` webhook keys
+ * it by the issue's `updatedAt` and the polled notification by its own `createdAt`, so the two paths
+ * cannot share a key; this keeps the change recorded once in either order.
+ */
+async function withoutRepeatedUndelegations(
+  connectionId: string,
+  facts: IntegrationOutputFact[]
+): Promise<IntegrationOutputFact[]> {
+  const kept: IntegrationOutputFact[] = []
+  for (const fact of facts) {
+    const at = Date.parse(fact.occurredAt)
+    if (fact.output !== 'issue.undelegated' || !Number.isFinite(at)) {
+      kept.push(fact)
+      continue
+    }
+    const earlier = await db
+      .select({ occurredAt: sql<string>`${integrationOutputEvents.fact}->>'occurredAt'` })
+      .from(integrationOutputEvents)
+      .where(
+        and(
+          eq(integrationOutputEvents.integration, 'linear'),
+          sql`${integrationOutputEvents.fact}->>'resourceKey' = ${fact.resourceKey}`,
+          sql`${integrationOutputEvents.fact}->>'output' = 'issue.undelegated'`,
+          sql`${integrationOutputEvents.fact}->'data'->>'delegate' = ${text(fact.data.delegate)}`,
+          sql`${integrationOutputEvents.eventKey} <> ${fact.eventKey}`,
+          sql`${integrationOutputEvents.authority}->>'connectionId' = ${connectionId}`
+        )
+      )
+      .orderBy(desc(integrationOutputEvents.createdAt))
+      .limit(50)
+    // Times are compared here: Postgres does not parse every timestamp form Linear payloads may use.
+    if (!earlier.some((row) => Math.abs(Date.parse(row.occurredAt) - at) <= LINEAR_UNDELEGATION_MATCH_MS))
+      kept.push(fact)
+  }
+  return kept
 }
 
 /** Facts gain the probed issue details and actor type; a session delegation must be confirmed live. */
