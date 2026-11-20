@@ -291,6 +291,57 @@ describe('StorageSection agents', () => {
     expect(interval({ state: { data: { ...data, scanning: true } } })).toBe(2000)
   })
 
+  test('channel agents are never offered removal: retention and Free storage now only free their storage', () => {
+    const queryClient = client()
+    const data = snapshot()
+    data.machines[0]!.squads[0]!.folders[0]!.agent!.channelBound = true
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs', 'system:cleanup']))
+      const removal = new Date(Date.parse(data.machines[0]!.squads[0]!.folders[1]!.agent!.dormantAt!) + 7 * 86_400_000)
+      expect(html).toContain(
+        `2 dormant · 3.0 GiB · removed automatically from ${removal.toLocaleDateString()} · 1 channel agent: storage freed after 7 days, never removed`
+      )
+      expect(html).toContain('channel consultant · dormant')
+      expect(count(html, '>Free storage now<')).toBe(1)
+      expect(count(html, '>Remove now<')).toBe(1)
+      expect(html).toContain('Remove all 2 now')
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('a channel agent being freed shows Freeing…, and one already freed is not offered again', () => {
+    const queryClient = client()
+    const data = snapshot()
+    const [first, second] = data.machines[0]!.squads[0]!.folders
+    Object.assign(first!.agent!, { channelBound: true, removalPending: true })
+    Object.assign(second!.agent!, { channelBound: true, storageReclaimed: true })
+    queryClient.setQueryData(queryKeys.system.storage(), data)
+    try {
+      const html = renderToStaticMarkup(element(queryClient, ['system:logs', 'system:cleanup']))
+      expect(html).toContain('2 dormant · 3.0 GiB · storage freed after 7 days, never removed')
+      expect(html).not.toContain('removed automatically from')
+      expect(count(html, 'Freeing…')).toBe(1)
+      expect(count(html, 'Storage freed')).toBe(1)
+      expect(html).not.toContain('Removing…')
+      expect(html).not.toContain('>Free storage now<')
+      expect(html).not.toContain('>Remove now<')
+      expect(html).not.toContain('Remove all')
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('the removal summary says channel agents are only freed and stay wakeable', () => {
+    expect(removalSummary({ accepted: ['c'], skipped: [] }, new Set(['c']))).toBe(
+      'Freeing the storage of 1 channel agent in the background; it stays dormant and can be woken.'
+    )
+    expect(removalSummary({ accepted: ['a', 'c', 'd'], skipped: [] }, new Set(['c', 'd']))).toBe(
+      'Removing 1 dormant agent in the background. Freeing the storage of 2 channel agents in the background; they stay dormant and can be woken.'
+    )
+  })
+
   test('the idle-consultant summary states the real reason for each agent left alone', () => {
     expect(
       idleDormancySummary({
@@ -327,10 +378,16 @@ describe('StorageSection agents', () => {
   })
 })
 
-async function interact(granted: string[]) {
+async function interact(granted: string[], mutate?: (data: StorageSnapshot) => void) {
   const dom = await acquireDomHarness({ url: 'http://localhost/settings/storage' })
   const rendered = dom.createRoot()
   const queryClient = client()
+  const storage = () => {
+    const data = snapshot()
+    mutate?.(data)
+    return data
+  }
+  queryClient.setQueryData(queryKeys.system.storage(), storage())
   const calls: Array<{ url: string; method: string; body?: unknown }> = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -340,7 +397,7 @@ async function interact(granted: string[]) {
     const body = url.includes('/storage/files')
       ? storedFiles
       : url.endsWith('/system/storage')
-        ? snapshot()
+        ? storage()
         : url.includes('dormant-agents/remove')
           ? { accepted: ['d1'], skipped: [] }
           : url.includes('/admin/nix-gc')
@@ -441,6 +498,35 @@ describe('StorageSection cleanup dialogs', () => {
       expect(ui.calls.find((call) => call.url.includes('dormant-agents/remove'))?.body).toEqual({ agentIds: ['d1'] })
       await ui.settle(() =>
         (ui.document.body.textContent ?? '').includes('Removing 1 dormant agent in the background.')
+      )
+    } finally {
+      await ui.restore()
+    }
+  })
+
+  test('Free storage now on a channel agent says it is kept and wakeable, not removed', async () => {
+    const ui = await interact(['system:logs', 'system:cleanup'], (data) => {
+      data.machines[0]!.squads[0]!.folders[0]!.agent!.channelBound = true
+    })
+    try {
+      const row = [...ui.document.querySelectorAll('[data-storage-agent]')].find(
+        (item) => item.getAttribute('data-storage-agent') === 'd1'
+      )!
+      await ui.dom.act(async () => ui.button('Free storage now', row)!.click())
+      const text = ui.dialog()?.textContent ?? ''
+      expect(text).toContain('Frees the storage of')
+      expect(text).toContain('Old research')
+      expect(text).toContain('archived and removed from the machine')
+      expect(text).toContain('The agent is not removed')
+      expect(text).toContain('a new channel message wakes it')
+      expect(text).not.toContain('can no longer be woken')
+      expect(text).toContain('2.0 GiB')
+
+      await ui.dom.act(async () => ui.button('Free storage now', ui.dialog()!)!.click())
+      await ui.settle(() => ui.calls.some((call) => call.url.includes('dormant-agents/remove')))
+      expect(ui.calls.find((call) => call.url.includes('dormant-agents/remove'))?.body).toEqual({ agentIds: ['d1'] })
+      await ui.settle(() =>
+        (ui.document.body.textContent ?? '').includes('Freeing the storage of 1 channel agent in the background')
       )
     } finally {
       await ui.restore()

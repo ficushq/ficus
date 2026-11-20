@@ -40,7 +40,8 @@ export function DormantRetentionSettings({ days }: { days: number }) {
       </label>
       <p className="text-xs text-secondary">
         A dormant agent keeps its files and can be woken by a new message until then. Removal archives and deletes its
-        home, frees its space, and cannot be undone.
+        home, frees its space, and cannot be undone. Channel agents (Slack, Discord and Telegram conversations) are
+        never removed: only their home is freed, and a new channel message still wakes them.
       </p>
       <button className="ficus-button ficus-button-primary px-3 py-2 text-sm" disabled={save.isPending}>
         {save.isPending ? 'Saving…' : 'Save retention'}

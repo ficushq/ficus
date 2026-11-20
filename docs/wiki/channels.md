@@ -126,7 +126,8 @@ registered for immediate availability; a DM-only global copy propagates separate
 squad. `channel_direct_agents` stores a consultant binding per `(chat_id, squad_id)`.
 The chat row lock serializes selection and first-agent creation across replicas.
 All work under the lock uses the transaction executor; agent events emit after
-commit. Dormant consultants resume, terminated consultants are replaced, and
+commit. Dormant consultants resume (dormant retention never terminates them),
+consultants terminated before that rule are replaced, and
 creation rolls back with its binding on failure. No provider-wide DM transcript
 is imported, since it may mix multiple squads' conversations.
 
@@ -258,6 +259,13 @@ New channel conversations use `agentTypeId: consultant`, scoped to the resolved
 squad. The regular consultant runner adds `channel_respond`, `channel_send`, and
 `channel_edit` when the agent has channel-instance context, and omits `ask_human`.
 Its added instructions ask clarification questions and send updates in the channel.
+
+Channel consultants are created with `persist: false`. They go dormant through
+the squad's idle-consultant setting and are never terminated: once dormant retention
+expires, it only reclaims their leftover personal box and archives its `/private`.
+A later message in the thread or private chat therefore always wakes the same agent
+with its history, in the squad's shared consultant runtime. See
+[Channel-bound agents](agents-and-executions.md#channel-bound-agents-dormant-never-terminated).
 
 Startup migration converts all existing concierge agents to consultants in place,
 including dormant and terminated agents. IDs, histories, lifecycle state, channel

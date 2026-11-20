@@ -1,8 +1,12 @@
 import { Agent } from '../../entities/Agent'
 import { isAutoDormancyExempt } from './crew-dormancy'
 import {
+  channelBoundAgentSql,
   claimAgentLifecycleSweepCandidates,
+  DORMANT_STORAGE_RECLAIMED_AT_KEY,
   dormantAtEpochMsSql,
+  dormantStorageReclaimedSql,
+  isChannelBoundAgent,
   REMOVE_NOW_DORMANT_AT_KEY,
   REMOVE_NOW_FAILED_DORMANT_AT_KEY,
   REMOVE_NOW_FAILED_REASON_KEY,
@@ -207,11 +211,34 @@ export async function stopPersonalSandbox(
 type DormantFinalizeDeps = {
   completePending?: (agentId: string) => Promise<boolean>
   finalize?: (agent: Agent, expectedDormantAt?: Date) => Promise<void>
+  /** Channel-bound agents: reclaim storage instead of finalizing. False means retry later. */
+  reclaimStorage?: (agentId: string) => Promise<boolean>
+}
+
+/**
+ * Record that this dormancy episode's storage is reclaimed, and settle any
+ * operator "remove now" request for it. Only while the agent is still dormant
+ * in the same episode: a wake or a later dormancy is left untouched.
+ */
+async function markDormantStorageReclaimed(agentId: string, dormantAt: Date): Promise<boolean> {
+  const [row] = await db
+    .update(agents)
+    .set({
+      metadata: sql`(COALESCE(${agents.metadata}, '{}'::jsonb) - ${REMOVE_NOW_DORMANT_AT_KEY}::text - ${REMOVE_NOW_FAILURES_KEY}::text - ${REMOVE_NOW_LAST_ERROR_KEY}::text - ${REMOVE_NOW_FAILED_REASON_KEY}::text - ${REMOVE_NOW_FAILED_DORMANT_AT_KEY}::text) || jsonb_build_object(${DORMANT_STORAGE_RECLAIMED_AT_KEY}::text, ${dormantAtEpochMsSql})`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(agents.id, agentId), eq(agents.status, 'dormant'), sql`${dormantAtEpochMsSql} = ${dormantAt.getTime()}`)
+    )
+    .returning({ id: agents.id })
+  return Boolean(row)
 }
 
 /**
  * Finalize one dormant agent: settle any pending dormancy completion, then
- * terminate it (archiving /private and reclaiming its personal box). `cutoff`
+ * terminate it (archiving /private and reclaiming its personal box). A
+ * channel-bound agent is never terminated: the same storage is reclaimed and
+ * the agent stays dormant, so a later channel message still wakes it. `cutoff`
  * (epoch ms) refuses agents that became dormant after it, unless an operator
  * asked to remove this exact dormancy episode now; null finalizes now.
  */
@@ -219,7 +246,7 @@ async function finalizeDormantAgent(
   agentId: string,
   cutoff: number | null,
   deps: DormantFinalizeDeps
-): Promise<'finalized' | 'completion-pending' | 'not-finalized' | 'changed'> {
+): Promise<'finalized' | 'reclaimed' | 'completion-pending' | 'not-finalized' | 'not-reclaimed' | 'changed'> {
   const completed = await (
     deps.completePending ??
     ((id) =>
@@ -235,6 +262,13 @@ async function finalizeDormantAgent(
   const removeNow =
     (agent.metadata as Record<string, unknown> | null)?.[REMOVE_NOW_DORMANT_AT_KEY] === agent.dormantAt.getTime()
   if (cutoff !== null && agent.dormantAt.getTime() > cutoff && !removeNow) return 'changed'
+  if (isChannelBoundAgent(agent)) {
+    // Never terminated: a channel message must always wake this same agent. It
+    // runs in its squad's shared consultant runtime, so the personal box left
+    // from before is removed and its /private archived, as at termination.
+    if (!(await (deps.reclaimStorage ?? stopAndArchivePersonalSandbox)(agent.id))) return 'not-reclaimed'
+    return (await markDormantStorageReclaimed(agent.id, agent.dormantAt)) ? 'reclaimed' : 'changed'
+  }
   await (
     deps.finalize ??
     ((candidate, expectedDormantAt) =>
@@ -243,6 +277,12 @@ async function finalizeDormantAgent(
   return (await Agent.find(agent.id, { eager: false }))?.status === 'terminated' ? 'finalized' : 'not-finalized'
 }
 
+/**
+ * Dormant retention: agents dormant past AGENT_DORMANT_RETENTION_DAYS (or
+ * queued by an operator's "remove now") are terminated, except channel-bound
+ * agents, whose storage is reclaimed once per dormancy episode instead.
+ * @returns how many agents were terminated or had their storage reclaimed.
+ */
 export async function runDormantAgentSweep(
   deps: {
     now?: Date
@@ -274,6 +314,11 @@ export async function runDormantAgentSweep(
     try {
       const outcome = await finalizeDormantAgent(listedAgent.id, cutoff, deps)
       if (outcome === 'finalized') finalized++
+      else if (outcome === 'reclaimed') {
+        finalized++
+        log.info(`Reclaimed storage of dormant channel agent ${listedAgent.id}; it stays dormant and wakeable`)
+      } else if (outcome === 'not-reclaimed')
+        await recordRemoveNowFailure(listedAgent.id, "The agent's storage could not be freed.")
       // 'completion-pending' (stopping the agent has not finished) is still in progress, not a
       // failure: the next tick retries it without spending one of the remove-now attempts.
       else if (outcome === 'not-finalized')
@@ -320,7 +365,8 @@ async function recordRemoveNowFailure(agentId: string, reason: string): Promise<
  * sweep ticks finalize them (archive and remove their homes) without waiting
  * for AGENT_DORMANT_RETENTION_DAYS. Nothing slow happens here; the sweep stays
  * bounded per tick. Irreversible once the sweep runs. Live agents and the
- * types the storage view never offers are refused.
+ * types the storage view never offers are refused. For a channel-bound agent
+ * this only frees its storage now; it stays dormant and wakeable.
  */
 export async function requestDormantRemoval(agentIds: string[]): Promise<RemoveDormantAgentsResult> {
   const ids = [...new Set(agentIds)]
@@ -336,7 +382,9 @@ export async function requestDormantRemoval(agentIds: string[]): Promise<RemoveD
         inArray(agents.id, ids),
         eq(agents.status, 'dormant'),
         isNotNull(agents.dormantAt),
-        notInArray(agents.agentTypeId, [...STORAGE_DORMANCY_EXEMPT_AGENT_TYPES])
+        notInArray(agents.agentTypeId, [...STORAGE_DORMANCY_EXEMPT_AGENT_TYPES]),
+        // A channel agent is only ever freed, never removed: nothing is left once that is done.
+        sql`NOT (${channelBoundAgentSql} AND COALESCE(${dormantStorageReclaimedSql}, false))`
       )
     )
     .returning({ id: agents.id })
@@ -344,7 +392,12 @@ export async function requestDormantRemoval(agentIds: string[]): Promise<RemoveD
   const others = ids.filter((id) => !accepted.has(id))
   const rows = others.length
     ? await db
-        .select({ id: agents.id, status: agents.status, agentTypeId: agents.agentTypeId })
+        .select({
+          id: agents.id,
+          status: agents.status,
+          agentTypeId: agents.agentTypeId,
+          reclaimed: sql<boolean>`${channelBoundAgentSql} AND COALESCE(${dormantStorageReclaimedSql}, false)`,
+        })
         .from(agents)
         .where(inArray(agents.id, others))
     : []
@@ -358,7 +411,9 @@ export async function requestDormantRemoval(agentIds: string[]): Promise<RemoveD
         ? 'Agent not found.'
         : STORAGE_DORMANCY_EXEMPT_AGENT_TYPES.includes(row.agentTypeId)
           ? `${row.agentTypeId} agents are not removed from here.`
-          : 'Only dormant agents can be removed now.',
+          : row.status === 'dormant' && row.reclaimed
+            ? 'Its storage is already freed; channel agents stay dormant so a new message can wake them.'
+            : 'Only dormant agents can be removed now.',
     })
   }
   if (result.accepted.length)

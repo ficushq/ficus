@@ -119,6 +119,28 @@ export const REMOVE_NOW_FAILED_DORMANT_AT_KEY = 'removeNowFailedDormantAt'
 export const dormantAtEpochMsSql = sql`round(extract(epoch from ${agents.dormantAt}) * 1000)::bigint`
 export const removeNowRequestedSql = sql`(${agents.metadata}->>${REMOVE_NOW_DORMANT_AT_KEY}) = (${dormantAtEpochMsSql})::text`
 
+/**
+ * Channel-bound agents back a Slack, Discord or Telegram conversation: top-level
+ * consultants whose context names the channel instance they answer. A channel
+ * thread or direct message keeps routing to the same agent, so dormant retention
+ * never terminates them; it reclaims their storage instead (see runDormantAgentSweep).
+ */
+export const channelBoundAgentSql = sql`(${agents.agentTypeId} = 'consultant' AND ${agents.parentAgentId} IS NULL AND ${agents.context}->'channelInstance'->>'id' IS NOT NULL)`
+
+export function isChannelBoundAgent(agent: {
+  agentTypeId: string
+  parentAgentId: string | null
+  context: unknown
+}): boolean {
+  if (agent.agentTypeId !== 'consultant' || agent.parentAgentId) return false
+  const instance = (agent.context as { channelInstance?: { id?: unknown } } | null)?.channelInstance
+  return typeof instance?.id === 'string' && instance.id.length > 0
+}
+
+/** The dormancy episode (dormant_at, epoch ms) whose storage was reclaimed while the agent stayed dormant. */
+export const DORMANT_STORAGE_RECLAIMED_AT_KEY = 'dormantStorageReclaimedAt'
+export const dormantStorageReclaimedSql = sql`(${agents.metadata}->>${DORMANT_STORAGE_RECLAIMED_AT_KEY}) = (${dormantAtEpochMsSql})::text`
+
 type LifecycleSweepClaimInput = {
   kind: AgentLifecycleSweepKind
   maxCandidates: number
@@ -152,7 +174,9 @@ async function claimAgentLifecycleSweepCandidatesScoped(
             ? and(
                 eq(agents.status, 'dormant'),
                 // Retention elapsed, or an operator asked to remove this dormancy episode now.
-                or(lte(agents.dormantAt, input.dormantCutoff ?? new Date(0)), removeNowRequestedSql)
+                or(lte(agents.dormantAt, input.dormantCutoff ?? new Date(0)), removeNowRequestedSql),
+                // Channel-bound agents are never terminated: once this episode's storage is reclaimed they are done.
+                sql`NOT (${channelBoundAgentSql} AND COALESCE(${dormantStorageReclaimedSql}, false))`
               )!
             : sql`${agents.status} = 'terminated' AND ${agents.metadata}->>'finalCleanupPending' = 'true'`
   const scopedPredicate = input.agentIds ? and(predicate, inArray(agents.id, [...input.agentIds]))! : predicate

@@ -88,7 +88,8 @@ export function IdleConsultantsDialog({ squad, retentionDays, onClose, onDone }:
           <p>
             These {consultants.length} consultants stop and release their compute; a new message wakes one again. No
             space is freed now: their files ({total} measured) stay on disk until they are removed automatically{' '}
-            {retentionDays} days after becoming dormant.
+            {retentionDays} days after becoming dormant. Channel consultants are never removed: only their storage is
+            freed then, and a new channel message wakes them with their history.
           </p>
         </>
       )}
