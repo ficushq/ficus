@@ -1,6 +1,6 @@
 ---
 title: Linear agent app integration design (phases 2 to 4)
-status: proposed design, not implemented
+status: design with product decisions recorded, not implemented
 created: 2026-11-19
 base: Core main at 72451143, Platform main at 348bf808
 ---
@@ -19,12 +19,12 @@ Ficus becomes a Linear agent app. People delegate Linear issues to "Ficus" or @m
 6. [Phase 4: progress write-back](#6-phase-4-progress-write-back)
 7. [Cross-cutting concerns](#7-cross-cutting-concerns)
 8. [Implementation streams](#8-implementation-streams)
-9. [Open questions](#9-open-questions)
+9. [Recorded design decisions](#9-recorded-design-decisions)
 10. [Unverified assumptions](#10-unverified-assumptions)
 
 ## 1. Decisions already made
 
-These were settled by the product owner on 2026-11-19 and are not reopened here.
+These were settled by the product owner on 2026-11-19 before this design was written and are not reopened here. The product owner's answers to the questions this design raised are recorded in section 9 and applied throughout.
 
 1. **Identity.** Ficus is a Linear OAuth agent app installed with `actor=app` and the scopes `app:assignable` and `app:mentionable`. It appears in the workspace as its own member, "Ficus". Personal API-key connections stay supported, mainly for self-hosted instances.
 2. **Write-back.** Ficus posts progress and attaches the pull request to the Linear issue. Ficus never moves issue workflow states; Linear's GitHub integration does that. This deliberately departs from Linear's best-practice recommendation that an agent moves a delegated issue to the first `started` state ([best practices](https://linear.app/developers/agent-best-practices)).
@@ -220,7 +220,7 @@ Activity materialization maps `linear-app` rows to the existing `linear` Activit
   - `verifyWebhook(headers, raw)`: size limit `RELAY_MAX_PAYLOAD_BYTES`, signature over the raw bytes before decoding, 60-second timestamp window, header and body type agreement, `oauthClientId` match where present. Returns `{ providerKey: 'linear', deliveryId: Linear-Delivery, eventType, installationId: organizationId, resource: { id: organizationId, key: organizationId }, rawBody }`. A signed but unknown event type is acknowledged and ignored.
   - `verifyAccount(accessToken)`: one Linear call, `viewer { id app } organization { id }`; refuses unless `viewer.app` is true. Returns `{ organizationId, appUserId }`.
 - Platform routes in `routes/integration-relay.ts`, mirroring Slack: public `POST /linear/webhook` registered before tenant authentication; `POST /linear/{status,subscribe,unsubscribe,pull,ack}` behind `requireInstanceAuth` and the `integrations.events:*` scopes.
-  - `subscribe`: reserve 1 provider request, `verifyAccount`, then `store.subscribe(authority, appUserId, [{ id: organizationId, key: organizationId }], { tokenHash })`. Rejects with `409 linear_organization_claimed` while another tenant holds an unexpired subscription for the same organization (open question 1).
+  - `subscribe`: reserve 1 provider request, `verifyAccount`, then `store.subscribe(authority, appUserId, [{ id: organizationId, key: organizationId }], { tokenHash })`. Rejects with `409 linear_organization_claimed` while another tenant holds an unexpired subscription for the same organization (decision 9.1: one hosted instance per Linear workspace). The check runs in the same transaction as the subscription insert, so two tenants racing to subscribe cannot both win. A tenant's own renewal or re-subscription after token rotation, under the same `connectionId`, is not a conflict. The claim ends when that tenant unsubscribes, its subscription expires (`RELAY_SUBSCRIPTION_TTL_MS`, 24 hours without renewal), or the organization sends `OAuthApp` `revoked`. Core shows `linear_organization_claimed` on the connection as "This Linear workspace is already connected to another Ficus Cloud instance"; a team that needs a second instance uses a self-hosted app with its own identity.
   - `pull`: no Linear call (Core pulls every 2 seconds); compare the token hash with the one captured at subscribe, like Slack, and refuse `422 linear_authorization_required` on mismatch.
   - On a verified `OAuthApp` `revoked`: ingest (so the tenant learns of it) then `store.revokeResourceSubscriptions('linear', organizationId)`.
 - Retention and acknowledgment: the store's existing 72-hour event TTL, 120-second leases, batches of 10, tombstone-only storage when nobody subscribes, and `delivery_conflict` handling. Platform answers Linear `200` right after the durable ingest commit, well inside the 5-second budget.
@@ -327,7 +327,7 @@ Preview (`EventRulePreview.tsx`): Linear sample facts for every new output; a "H
 
 ### 5.6 Trusted authors
 
-Anyone who can see an issue in the workspace can delegate to or mention Ficus. Linear workspace membership is an authentication boundary that public GitHub repositories lack, but guests, other apps and synced external users still need a policy. Proposed default (open question 4):
+Anyone who can see an issue in the workspace can delegate to or mention Ficus. Linear workspace membership is an authentication boundary that public GitHub repositories lack, but guests, other apps and synced external users still need a policy. Policy (decision 9.4):
 
 - Trusted: active, non-guest, non-app users of the connected organization (from the 5.4 actor probe, cached 10 minutes per user).
 - Untrusted actors' `issue.delegated`, `issue.mentioned` and `agent_session.prompted` still notify the manager, but a `start-workstream` action is held, not executed: the manager notice says the author is untrusted and offers `ficus workstream create --from-event <id>`. This mirrors GitHub's `hold` handling in `github/feedback-trust.ts` without adopting its per-author trust lists.
@@ -376,7 +376,7 @@ Write-back applies to work streams bound to a Linear agent session of an app con
 - `linear_agent_sessions` (Core): `id` (Linear session ID, primary key), `connection_id`, `organization_id`, `issue_id`, `issue_identifier`, `root_comment_id`, `creator_linear_user_id`, `trigger` (`delegation`, `mention`, `proactive`), `ack_state`, `disposition` (`pending`, `bound`, `notified`, `ignored`, `unrouted`, `inaccessible`, `closed`), `work_stream_id` (nullable), `primary` (boolean), `last_flow_version`, `last_projected_at`, `last_activity_at`, `created_at`, `updated_at`. A stream may have several sessions over time (a later mention on the same issue); exactly one is `primary` and receives progress.
 - Tracked resource metadata: `trackedResourceObjectSchema` (`packages/shared/src/code-hosting.ts`) gains optional `agentSession: { id: string, url?: string }`, valid only for `integration: 'linear'`. The table is the source of truth; the metadata copy is what `ficus workstream get`, the web stream view and agents read.
 - A session binds when: a `start-workstream` rule creates a stream from a session-derived fact (in the same transaction as the trigger receipt in `applyOutputTriggers`); `ficus workstream create --from-event <id>` or `ficus workstream track --event <id>` uses a session-derived fact; or a session is created on an issue that an active stream of the same squad already tracks under the same connection (a later mention of an issue Ficus is working on).
-- Binding posts `thought`: "Ficus started tracking this work." and, subject to open question 5, `agentSessionUpdate(addedExternalUrls: [{ label: 'Open in Ficus', url: <stream URL> }])`.
+- Binding posts `thought`: "Ficus started tracking this work." When the instance has a public URL configured (decision 9.5: `resolvePublicAppUrl()` in `apps/core/src/lib/public-app-url.ts` returns an `https:` URL), binding also calls `agentSessionUpdate(addedExternalUrls: [{ label: 'Open in Ficus', url: <stream URL> }])`. Without one, no Ficus link is added, and the session links only to the pull request (6.7). The check runs at binding time; a session bound before a public URL was configured gets the link on the next projector pass.
 
 ### 6.3 The session projector
 
@@ -401,7 +401,7 @@ Step names, step IDs and participant names are squad-authored and can carry inte
 | Stream paused or parked                                        | `thought`: "Paused."                                                                                                                         |
 | Long-running active stream                                     | ephemeral `thought` heartbeat every 25 minutes ("Still working: <step label>.") so the session does not go `stale` after Linear's 30 minutes |
 | Stream done with a merged or delivered pull request            | `response`: "Done. Pull request: <url>."                                                                                                     |
-| Stream done without a pull request                             | `response`: "Done." plus the stream link if open question 5 allows it                                                                        |
+| Stream done without a pull request                             | `response`: "Done." plus the stream link when the instance has a public URL (decision 9.5)                                                   |
 | Stream canceled                                                | `response`: "Ficus stopped working on this request."                                                                                         |
 | Unrecoverable failure (recovery exhausted or execution failed) | `error`: "Ficus hit a problem and a person on the team is looking at it."                                                                    |
 
@@ -412,7 +412,7 @@ Optional, behind a setting until Linear's plan API leaves technology preview: `a
 - `tracked-resources/linear.ts` adds `issue.delegated`, `issue.undelegated` and `agent_session.prompted` to `ISSUE_EVENTS`, so a stream tracking the issue receives prompts on any session for it through the existing `deliver: { to: 'delivery-owner', whenInactive: 'retain' }` subscription.
 - Comments in an agent session thread are delivered once, as `agent_session.prompted`; the tracked `issue.comment` subscription skips facts with `session.id` set (5.5), so the same message is not delivered twice.
 - A prompt that resolves an open mirrored question directly (6.6) is not also delivered as a message. Every other prompt sent while a question is open is delivered to the asking agent as a candidate answer.
-- `stop` signal (open question 3, recommended behavior): Core pauses the bound stream through the existing pause mechanism when the author is trusted, delivers the request to the owner, and posts `response`: "Stopped. Work is paused in Ficus." For untrusted authors the request is only delivered.
+- `stop` signal (decision 9.3): when the author is trusted (5.6), Core pauses the bound stream at once through the existing pause mechanism (the same one `ficus workstream pause` uses, recorded with a reason naming the Linear stop request), sends the stream owner an inbox notice that says who stopped it and that it can be resumed in Ficus, and posts `response`: "Stopped. Work is paused in Ficus." Resuming happens only in Ficus, by the owner; a later Linear prompt never resumes a paused stream. For untrusted authors the request is only delivered to the owner, and the session gets `response`: "Your stop request was passed to the team."
 - Prompts on a session whose stream is done or canceled, and prompts on unbound sessions, go through the `linear-agent-session-prompted` rule (default `notify-manager`) and get the acknowledgment plus disposition from 5.3.
 
 ### 6.5 Outbox, deduplication and rate limits
@@ -434,13 +434,13 @@ Optional, behind a setting until Linear's plan API leaves technology preview: `a
 - When all three hold, Core calls `answerAgentQuestion(id, answer, linkedUserId, { expectedAgentScope })`, the same function the Ficus answer route uses, so the answer is recorded as that Ficus user's answer. A new optional `answerSource` jsonb column on `agent_questions` records the provenance (`{ integration: 'linear', connectionId, linearUserId, sessionId, activityId }`). The question mirror becomes `answered_in_linear`.
 - Every other reply while a question is open is delivered to the asking agent, labeled as a candidate answer from the named Linear user. This covers free text (for any question type), replies that do not match an option, and replies from unlinked users or users without answer permission. The agent decides whether the reply really answers the question. If it does, the agent closes it with the existing `resolveAgentQuestionWithRelayedAnswer` path, using the Linear activity URL as the source, under the same rules as any relayed answer; if it does not, the reply is an ordinary follow-up and the question stays open.
 - Default: direct resolution is available only to linked users with answer permission. No squad setting is needed, because a Linear workspace member without a linked Ficus account, or with a Ficus account that may not answer that agent, can never close a wait from Linear. Untrusted authors (5.6) only ever produce candidate answers. A Linear answer never satisfies a workflow approval gate.
-- Linking a Linear user to a Ficus user: a signed-in Ficus user runs a user-actor Linear authorization (`actor=user`, `scope=read`) with a new authorization purpose `linear_identity`, modeled on `github_identity` in `authorization/service.ts`. Core stores `viewer.id` and `organization.id` in a new `user_linear_identities` table (`user_id`, `organization_id`, `linear_user_id`, `linked_at`; unique on `organization_id` and `linear_user_id`) and keeps no token. Linear's best-practice guide describes this two-authorization pattern (personal plus app installation). When an unlinked user replies to an elicitation, the next elicitation for that session may carry Linear's `auth` signal with the Ficus link URL (subject to open question 5).
+- Linking a Linear user to a Ficus user: a signed-in Ficus user runs a user-actor Linear authorization (`actor=user`, `scope=read`) with a new authorization purpose `linear_identity`, modeled on `github_identity` in `authorization/service.ts`. Core stores `viewer.id` and `organization.id` in a new `user_linear_identities` table (`user_id`, `organization_id`, `linear_user_id`, `linked_at`; unique on `organization_id` and `linear_user_id`) and keeps no token. Linear's best-practice guide describes this two-authorization pattern (personal plus app installation). When an unlinked user replies to an elicitation and the instance has a public URL (decision 9.5), the next elicitation for that session carries Linear's `auth` signal with the Ficus link URL; without a public URL it carries no link.
 - An answer in Ficus first marks the mirror `answered_in_ficus` and posts the `thought` from 6.3; a later Linear reply is delivered as an ordinary prompt.
 
 ### 6.7 Attaching the delivery pull request
 
 - When `metadata.codeHost.changeRequest.url` is set on a stream, Core calls `attachmentLinkGitHubPR(issueId, url, linkKind)` for every Linear issue the stream tracks under a Linear connection of the squad, through the outbox with projection key `pr:<url>` per issue. Linear treats an attachment URL as idempotent per issue.
-- `linkKind` is open question 2 (recommended: `closes` for the issue the stream was started from, `links` for other tracked issues). Whatever it is, Ficus itself changes no state; any state change comes from Linear's GitHub integration.
+- `linkKind` comes from the squad's pull request link setting (6.9, decision 9.2): by default `closes` for the issue the stream was started from and `links` for every other tracked issue. Whatever it is, Ficus itself changes no state; any state change comes from Linear's GitHub integration.
 - For a bound session, also `agentSessionUpdate(addedExternalUrls: [{ label: 'Pull request', url }])`, which Linear documents as the way to tell it the agent opened a pull request.
 - Attachments also apply to API-key connections (created as the key's owner), because they add no noise and keep the issue linked. Progress activities and comments do not.
 - Agents still put the issue key in branch names and pull request text (the phase 1 skill), so Linear's GitHub integration recognizes the pull request even when the attachment fails.
@@ -450,6 +450,36 @@ Optional, behind a setting until Linear's plan API leaves technology preview: `a
 - App connection, stream tracks a Linear issue but has no session (created manually or from an `issue.*` fact): the pull request is attached (6.7); no progress is posted. An owner who wants the full experience runs `ficus workstream track <ws> --issue KEY-123 --linear-session`, which calls `agentSessionCreateOnIssue` and binds the new session.
 - API-key connection: pull request attachment only. Agents may comment through the CLI under the skill's rules.
 - No tracked Linear issue: nothing is written to Linear.
+
+### 6.9 Squad pull request link setting
+
+Decision 9.2 makes the link kind a squad setting in the squad's Linear integration settings.
+
+**Stored value.** A new squad metadata key, `integrationSettings.linear`, beside the existing `metadata.linear` team routes (which stay an array of routes and are not reshaped):
+
+```json
+{
+  "integrationSettings": { "linear": { "version": 1, "pullRequestLinks": { "origin": "closes", "tracked": "links" } } }
+}
+```
+
+- `origin`: the link kind for the stream's origin issue. `tracked`: the link kind for every other Linear issue the stream tracks.
+- Allowed values for both are Linear's `GitLinkKind` values: `closes`, `contributes`, `links`.
+- Defaults when the key, `pullRequestLinks` or either field is absent: `origin: closes`, `tracked: links`. No migration is needed; existing squads get the default.
+
+**Schema and validation.** New `packages/shared/src/linear-settings.ts` exports `LINEAR_PULL_REQUEST_LINK_KINDS = ['closes', 'contributes', 'links'] as const`, `squadLinearSettingsSchema` (a `z.strictObject` with `version: z.literal(1)` and optional `pullRequestLinks: z.strictObject({ origin: z.enum(...).optional(), tracked: z.enum(...).optional() })`), and `effectiveLinearSettings(metadata)`, which returns the parsed value with defaults filled in. `squadMetadataSchema` in `packages/shared/src/schemas.ts` validates `integrationSettings.linear` through its existing per-key `schemas` list, so any squad metadata write with an unknown key or value is rejected with a path-qualified error, like `integrationRules` today. Runtime reads go through `effectiveLinearSettings`, which falls back to the defaults for a stored value that no longer parses, so a bad value can never block attachment.
+
+**Which issue is the origin.** The tracked Linear issue whose `origin.eventId` equals `metadata.integrationSource.eventId` (the fact that created the stream through a rule), or else the issue of the stream's primary agent session (6.2). A stream with neither (for example one created by hand that later tracked an issue) has no origin issue, and all its tracked Linear issues use `tracked`. At most one issue is the origin.
+
+**When it applies.** The projector reads the setting when it enqueues each `pr:<url>` attachment and stores the resolved `linkKind` in the outbox payload, so a retry sends the same value. Changing the setting affects attachments created afterwards; existing attachments are not rewritten. The setting applies to both connection modes, because API-key connections also attach pull requests (6.7). Agents cannot override it per stream.
+
+**Surfaces.**
+
+- Web: the squad Integrations tab, Linear section (`apps/web/src/components/squads/IntegrationSettings.tsx`), gains a "Pull request links" group with two selects, "Issue the work started from" and "Other tracked issues", each offering "Closes the issue", "Contributes to the issue" and "Links to the issue". Help text: "With Closes, Linear's GitHub integration completes the issue when the pull request merges. Ficus never changes issue status itself." It saves through the same squad update as team routes and event rules (`updateSquad`, which needs `squads:update`), with helpers `linearSettingsFromMetadata` and `linearSettingsToMetadata` in `apps/web/src/components/squads/integrationMetadata.ts`.
+- API and CLI: no new endpoint. The existing squad update API (`PATCH` squad metadata) and `ficus squad set-meta <squad> integrationSettings.linear '<json>'` write it, both validated by `squadMetadataSchema`. `ficus squad get <squad> --json` shows the stored value; `GET /api/squads/:squadId/integrations/linear` adds the effective value as `settings` so clients do not repeat the default logic.
+- Docs: `docs/wiki/linear-integrations.md` (write-back section) and the `setup-linear-integration` skill describe the setting and its default.
+
+**Owner.** Stream H implements the schema, the runtime use, the web control, the `settings` field on the squad integration response, tests and docs. The setting has no effect before stream H, so it ships with it.
 
 ## 7. Cross-cutting concerns
 
@@ -535,9 +565,11 @@ Dependencies say which streams must be merged first ("done") or can start now ("
   3. Every `created` session gets the acknowledgment `thought` before rule evaluation, within 10 seconds in a fake-clock test, exactly once, even with no squad assigned.
   4. Disposition activities follow the 5.3 table.
   5. Authority follows 5.4: one probe per connection and event, team routing, at most one binding per session.
-  6. Default rules, audiences, self-comment suppression, trust policy, rules UI and preview follow 5.5 and 5.6.
-  7. `PermissionChange` and `OAuthApp` revocation follow 5.8.
-  8. Docs: `linear-integrations.md` outputs, rules and sessions sections.
+  6. Default rules, audiences, self-comment suppression, rules UI and preview follow 5.5.
+  7. The trust policy follows 5.6 (decision 9.4): active, non-guest, non-app members of the connected workspace may start work and prompt; anyone else's delegation, mention or prompt only notifies the manager, and a `start-workstream` rule is held for them.
+  8. Binding a session (6.2) adds "Open in Ficus" only when the instance has an `https:` public URL (decision 9.5).
+  9. `PermissionChange` and `OAuthApp` revocation follow 5.8.
+  10. Docs: `linear-integrations.md` outputs, rules and sessions sections.
 
 ### Stream E: hosted Linear event relay, Core side
 
@@ -547,19 +579,21 @@ Dependencies say which streams must be merged first ("done") or can start now ("
 - Acceptance criteria:
   1. `linear` relay schemas exist with protocol tests.
   2. The runtime subscribes enabled `platform_broker` app connections, pulls every 2 seconds, re-subscribes after token rotation and on `linear_authorization_required`, and dispatches through the same processing as the direct path with durable receipts.
-  3. Tests use a fake Platform.
+  3. A `409 linear_organization_claimed` subscribe answer (decision 9.1) stops subscribe retries for that connection revision, records the code on the connection, and shows "This Linear workspace is already connected to another Ficus Cloud instance" in Integrations.
+  4. Tests use a fake Platform.
 
 ### Stream F: hosted Linear event relay, Platform side
 
 - Repository: Platform.
 - Depends on: Stream E (done, and vendored), Stream C (done).
-- Scope: `linear-provider.ts`, the `/linear/*` relay routes, one tenant per organization (pending open question 1).
+- Scope: `linear-provider.ts`, the `/linear/*` relay routes, one hosted tenant per Linear organization (decision 9.1).
 - Acceptance criteria:
   1. Signed Linear webhooks are verified and ingested before `200`; unsigned, stale or mismatched ones are rejected or ignored as specified.
   2. Subscribe proves an app token and binds organization and app user; pull compares the token hash; ack and leases follow the existing store.
   3. `OAuthApp` `revoked` revokes the organization's subscriptions after fan-out.
-  4. Provider and route tests mirror the GitHub and Slack ones.
-  5. A live check with the hosted app shows a session acknowledged within 10 seconds on a hosted tenant.
+  4. Subscribe enforces one tenant per organization (5.1, decision 9.1): a second tenant gets `409 linear_organization_claimed` while the first holds an unexpired subscription, two concurrent subscribes cannot both succeed, and the claiming tenant's own renewal and re-subscription succeed.
+  5. Provider and route tests mirror the GitHub and Slack ones.
+  6. A live check with the hosted app shows a session acknowledged within 10 seconds on a hosted tenant.
 
 ### Stream G: Linear agent session polling fallback
 
@@ -572,15 +606,16 @@ Dependencies say which streams must be merged first ("done") or can start now ("
 
 - Repository: Core.
 - Depends on: Stream D (done). Hosted end-to-end checks also need Stream F, but the code does not.
-- Scope: sections 6.2 to 6.8.
+- Scope: sections 6.2 to 6.9.
 - Acceptance criteria:
   1. The projector maps stream changes to the 6.3 activities through the outbox, idempotently, within the 6.5 rate limits.
-  2. The delivery pull request is attached to every tracked Linear issue and added to the session's external URLs.
-  3. Prompts reach the bound stream once; `stop` follows the answer to open question 3.
-  4. Questions mirror as elicitations. Only an exact `select` or `multi-select` reply from a linked Ficus user with answer permission resolves a question directly, through `answerAgentQuestion`; every other reply reaches the asking agent as a candidate answer (6.6). Linear identity linking (`linear_identity` purpose, `user_linear_identities`) works on local and hosted instances.
-  5. `--linear-session` creates and binds a session.
-  6. The fake-provider end-to-end test passes; a live check in a test Linear workspace (human prerequisite: a test workspace with the self-hosted or hosted app installed) shows the full lifecycle.
-  7. Docs: `linear-integrations.md` write-back section, `work-streams.md`.
+  2. The delivery pull request is attached to every tracked Linear issue, with the link kind from the squad's pull request link setting (6.9): `closes` for the origin issue and `links` for other tracked issues by default, changeable in the squad Integrations tab and through squad metadata, validated by `squadMetadataSchema`. It is also added to the session's external URLs.
+  3. Prompts reach the bound stream once. A trusted `stop` pauses the bound stream at once, notifies the owner and posts the stopped response; an untrusted one only notifies the owner (6.4, decision 9.3).
+  4. "Open in Ficus" external URLs and Linear `auth` link signals are added only when the instance has an `https:` public URL (6.2, decision 9.5).
+  5. Questions mirror as elicitations. Only an exact `select` or `multi-select` reply from a linked Ficus user with answer permission resolves a question directly, through `answerAgentQuestion`; every other reply reaches the asking agent as a candidate answer (6.6). Linear identity linking (`linear_identity` purpose, `user_linear_identities`) works on local and hosted instances.
+  6. `--linear-session` creates and binds a session.
+  7. The fake-provider end-to-end test passes; a live check in a test Linear workspace (human prerequisite: a test workspace with the self-hosted or hosted app installed) shows the full lifecycle.
+  8. Docs: `linear-integrations.md` write-back section, `work-streams.md`.
 
 ```mermaid
 flowchart LR
@@ -595,42 +630,36 @@ flowchart LR
   D --> H[H: write-back]
 ```
 
-## 9. Open questions
+## 9. Recorded design decisions
 
-1. **Can more than one hosted Ficus instance connect the same Linear workspace?** The hosted app has one app user per workspace, and every connected instance would receive and acknowledge the same sessions.
-   - Options: (a) one hosted instance per Linear workspace, enforced by Platform at subscribe time; (b) allow several and let each instance's rules decide, accepting duplicate acknowledgments and possible duplicate work.
-   - Recommendation: (a). It keeps one owner per session. A company that needs two instances can install a self-hosted app with its own identity.
-2. **How should Ficus link the delivery pull request to the issue?** `attachmentLinkGitHubPR` takes `linkKind` `closes`, `contributes` or `links`. With `closes`, Linear's GitHub integration completes the issue when the pull request merges.
-   - Options: (a) `closes` for the issue the work started from, `links` for other tracked issues; (b) always `links` and leave closing to magic words in the pull request text; (c) omit `linkKind` and let Linear decide.
-   - Recommendation: (a). It matches how people expect delegated work to finish, and the state change is still made by Linear's GitHub integration, not by Ficus.
-3. **What should Linear's "Stop" request do?** Linear expects the agent to stop immediately.
-   - Options: (a) pause the bound work stream at once when the requester is trusted, and tell the owner; (b) only notify the owner and let them decide.
-   - Recommendation: (a). It honors Linear's contract; the owner can resume in Ficus.
-4. **Which Linear users does Ficus trust to start work and to prompt a running stream?** Answering Ficus questions is not part of this question: 6.6 settles it by Ficus permissions (only a Linear user linked to a Ficus user who may answer that question can resolve it; everyone else's reply becomes a candidate answer for the agent).
-   - Options: (a) active, non-guest members of the connected workspace; (b) only the person who started the session may prompt it, plus (a) for starting work; (c) everyone who can see the issue, including guests.
-   - Recommendation: (a). Workspace membership is already an authentication boundary, prompts are evidence rather than instructions, and they cannot close waits on their own.
-5. **Should the Linear session link to the Ficus work stream?** Linear shows an "Open" button for a session URL. The URL reveals the Ficus instance address to everyone in the Linear workspace; people without a Ficus account see the sign-in page.
-   - Options: (a) always add "Open in Ficus"; (b) add it only when the instance has a public URL configured; (c) never, link only the pull request.
-   - Recommendation: (b).
+The product owner answered the questions this design raised on 2026-11-19. Each answer is binding and is applied in the sections named.
+
+1. **One hosted Ficus instance per Linear workspace.** Platform enforces it at relay subscribe time; a team that needs two instances uses a self-hosted app with its own identity. Applied in 5.1 (subscribe check and its lifetime) and stream F.
+2. **The pull request link kind is a squad setting.** It lives in the squad's Linear integration settings and defaults to `closes` for the issue the work started from and `links` for other tracked issues. Applied in 6.7, designed in 6.9, owned by stream H.
+3. **Linear's Stop request pauses the bound work stream at once when the requester is trusted, and tells the owner.** The owner resumes in Ficus. Applied in 6.4 and stream H.
+4. **Active, non-guest members of the connected workspace may start work and prompt a running stream.** Applied in 5.6 and stream D. Answering Ficus questions from Linear is governed separately by Ficus permissions (6.6).
+5. **"Open in Ficus" is added to a Linear session only when the instance has a public URL configured.** Applied in 6.2, 6.3, 6.6 (the `auth` link signal) and stream H.
+
+No product questions remain open. The Linear platform behaviors in section 10 are verified during implementation, not decided here.
 
 ## 10. Unverified assumptions
 
 Each item needs confirmation with a live Linear workspace or Linear support during the named stream, with the stated fallback.
 
-| Assumption                                                                                                                                                                               | Verify in | Fallback                                                                                                                              |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| schpet/linear-cli works with `LINEAR_API_KEY=Bearer <token>`.                                                                                                                            | B         | Inject the bare token for app connections if the CLI adds `Bearer` itself.                                                            |
-| `read,issues:create,comments:create,app:assignable,app:mentionable` is enough for `agentActivityCreate`, `agentSessionUpdate`, `agentSessionCreateOnIssue` and `attachmentLinkGitHubPR`. | B, D      | Request `write` instead of the two targeted scopes; a scope change uses `update_scopes_on_existing_token=true`.                       |
-| A delegation session's `created` payload has no `commentId`, and a mention session's has one.                                                                                            | D         | Classify by probing `issue.delegate.id` against `appUserId` and whether the session's comment mentions the app.                       |
-| Comments that Linear creates from Ficus activities are authored by the app user.                                                                                                         | D         | Also suppress comments whose `agentSession.appUser` is the app and that Ficus's outbox recorded.                                      |
-| Retried webhooks carry a fresh `webhookTimestamp`.                                                                                                                                       | D, F      | Accept stale timestamps for previously unseen `Linear-Delivery` IDs within 7 hours, relying on signature plus delivery deduplication. |
-| `agentActivityCreate` rejects a duplicate client-supplied `id` without creating a second activity.                                                                                       | H         | Keep the outbox's `sent` state authoritative and read back the session's activities before retrying an unknown outcome.               |
-| `agentSessions` with an app token returns the app's own sessions in that workspace.                                                                                                      | G         | Poll `notifications` only and fetch sessions by ID.                                                                                   |
-| A response activity on a completed session reactivates it when a later stream binds.                                                                                                     | H         | Create a new session with `agentSessionCreateOnIssue` and bind that.                                                                  |
-| An ephemeral `thought` resets Linear's 30-minute stale timer.                                                                                                                            | H         | Send the heartbeat as a non-ephemeral `thought`, at most twice per hour.                                                              |
-| A user-actor `read` authorization of the Ficus app, for identity linking, leaves the workspace's app installation and its tokens untouched.                                              | H         | Use a separate small OAuth client for identity linking.                                                                               |
-| Revoking an app access token uninstalls the app from the workspace.                                                                                                                      | B         | Document that uninstalling is done in Linear's settings, and treat revocation as token cleanup only.                                  |
-| The hosted app can be installed by other workspaces without an integration-directory listing.                                                                                            | C         | List the app in Linear's integration directory before hosted launch.                                                                  |
-| A second installation of the same app in a workspace replaces or invalidates the first installation's tokens.                                                                            | F         | Enforce open question 1 (a) regardless.                                                                                               |
+| Assumption                                                                                                                                                                                                                            | Verify in | Fallback                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| schpet/linear-cli works with `LINEAR_API_KEY=Bearer <token>`.                                                                                                                                                                         | B         | Inject the bare token for app connections if the CLI adds `Bearer` itself.                                                            |
+| `read,issues:create,comments:create,app:assignable,app:mentionable` is enough for `agentActivityCreate`, `agentSessionUpdate`, `agentSessionCreateOnIssue` and `attachmentLinkGitHubPR`.                                              | B, D      | Request `write` instead of the two targeted scopes; a scope change uses `update_scopes_on_existing_token=true`.                       |
+| A delegation session's `created` payload has no `commentId`, and a mention session's has one.                                                                                                                                         | D         | Classify by probing `issue.delegate.id` against `appUserId` and whether the session's comment mentions the app.                       |
+| Comments that Linear creates from Ficus activities are authored by the app user.                                                                                                                                                      | D         | Also suppress comments whose `agentSession.appUser` is the app and that Ficus's outbox recorded.                                      |
+| Retried webhooks carry a fresh `webhookTimestamp`.                                                                                                                                                                                    | D, F      | Accept stale timestamps for previously unseen `Linear-Delivery` IDs within 7 hours, relying on signature plus delivery deduplication. |
+| `agentActivityCreate` rejects a duplicate client-supplied `id` without creating a second activity.                                                                                                                                    | H         | Keep the outbox's `sent` state authoritative and read back the session's activities before retrying an unknown outcome.               |
+| `agentSessions` with an app token returns the app's own sessions in that workspace.                                                                                                                                                   | G         | Poll `notifications` only and fetch sessions by ID.                                                                                   |
+| A response activity on a completed session reactivates it when a later stream binds.                                                                                                                                                  | H         | Create a new session with `agentSessionCreateOnIssue` and bind that.                                                                  |
+| An ephemeral `thought` resets Linear's 30-minute stale timer.                                                                                                                                                                         | H         | Send the heartbeat as a non-ephemeral `thought`, at most twice per hour.                                                              |
+| A user-actor `read` authorization of the Ficus app, for identity linking, leaves the workspace's app installation and its tokens untouched.                                                                                           | H         | Use a separate small OAuth client for identity linking.                                                                               |
+| Revoking an app access token uninstalls the app from the workspace.                                                                                                                                                                   | B         | Document that uninstalling is done in Linear's settings, and treat revocation as token cleanup only.                                  |
+| The hosted app can be installed by other workspaces without an integration-directory listing.                                                                                                                                         | C         | List the app in Linear's integration directory before hosted launch.                                                                  |
+| A second installation of the same app in a workspace replaces or invalidates the first installation's tokens. (Decision 9.1 already allows only one hosted instance per workspace; this row is about a reinstall by the same tenant.) | F         | Treat a reinstall as a reconnect of the same connection (identity `organizationId`, 4.4).                                             |
 
 Follow-ups outside this design: mention detection for personal API-key accounts in comments on issues not assigned to them, and Activity rows for agent sessions beyond the existing Linear family.
