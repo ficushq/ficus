@@ -32,8 +32,11 @@ export type PopoverLayer = keyof typeof POPOVER_LAYERS
 
 const PopoverDepth = createContext(0)
 
-/** Why a popover closed: `usePopupDismiss`'s reasons, its anchor disappearing, Tab leaving a menu, or an item chosen. */
-export type PopoverDismissReason = PopupDismissReason | 'anchor' | 'tab' | 'select'
+/**
+ * Why a popover closed: `usePopupDismiss`'s reasons (`select` among them, for an item run by a handler
+ * outside the popover), its anchor disappearing, Tab leaving a menu, or an item chosen.
+ */
+export type PopoverDismissReason = PopupDismissReason | 'anchor' | 'tab'
 
 /** What gets focus when a popover opens: the first focusable element, the selected one, nothing, or a pick. */
 export type PopoverInitialFocus =

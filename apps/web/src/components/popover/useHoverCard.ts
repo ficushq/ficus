@@ -117,7 +117,7 @@ export function useHoverCard({
         },
       },
       onCardDismiss: (reason) => {
-        if (reason === 'escape' || reason === 'anchor') return hide()
+        if (reason === 'escape' || reason === 'anchor' || reason === 'select') return hide()
         focused.current = false
         release()
       },
