@@ -42,6 +42,13 @@ const cards: ActivityWorkStreamCard[] = [
     {
       workingAgentIds: ['eng-1'],
       lastEventAt: minutesAgo(1),
+      pullRequest: {
+        number: 1031,
+        repository: 'ficushq/ficus',
+        url: 'https://github.com/ficushq/ficus/pull/1031',
+        state: 'open',
+      },
+      ci: 'passing',
       summary: "Writing tests for holding human PR comments from the GitHub connection account's author filter.",
       summaryGeneratedAt: minutesAgo(4),
       derivedState: 'in_progress',

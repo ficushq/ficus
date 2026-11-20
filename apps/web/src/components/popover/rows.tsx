@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import { CheckIcon } from '../icons'
 
@@ -6,15 +7,15 @@ export function PopoverRowContent({
   icon,
   label,
   description,
-  detail,
+  singleLine,
   descriptionId,
   checked,
 }: {
   icon?: ReactNode
   label: string
   description?: string
-  /** A quieter second line under the description, part of the same accessible description. */
-  detail?: string
+  /** Keep the label on one line, clipped with an ellipsis (the row carries the full label as its `title`). */
+  singleLine?: boolean
   descriptionId?: string
   checked?: boolean
 }) {
@@ -22,11 +23,10 @@ export function PopoverRowContent({
     <>
       {icon}
       <span className="min-w-0 flex-1 wrap-break-word">
-        <span>{label}</span>
-        {(description || detail) && (
+        <span className={clsx(singleLine && 'block truncate')}>{label}</span>
+        {description && (
           <span id={descriptionId} className="mt-1 block text-xs font-normal text-secondary">
             {description}
-            {detail && <span className="mt-0.5 block text-muted">{detail}</span>}
           </span>
         )}
       </span>

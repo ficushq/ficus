@@ -35,4 +35,17 @@ describe('Badge token treatments', () => {
     expect(link).toContain('href="/inbox"')
     expect(button).toContain('type="button"')
   })
+
+  test('an external href opens in a new tab with the same hover treatment', () => {
+    const html = renderToStaticMarkup(
+      <Badge href="https://github.com/ficushq/ficus/pull/1" aria-label="Pull request 1">
+        PR #1
+      </Badge>
+    )
+    expect(html).toContain('href="https://github.com/ficushq/ficus/pull/1"')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain('rel="noopener noreferrer"')
+    expect(html).toContain('aria-label="Pull request 1"')
+    expect(html).toContain('hover:bg-status-neutral-badge-hover')
+  })
 })
