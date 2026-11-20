@@ -6,6 +6,7 @@ import type { InboxMessageResponse, InboxMessagesPage } from '../api/inbox'
 import { INBOX_SEARCH_DEBOUNCE_MS } from '../hooks/useInboxFeed'
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
+import { webkitTap } from '../test/webkitTap'
 import { InboxPopup } from './InboxPopup'
 import { InboxPopupProvider } from './InboxPopupProvider'
 
@@ -84,7 +85,9 @@ async function renderPopup() {
     identity: { type: 'user', userId: 'test' },
   })
   client.setQueryData(queryKeys.squads.list(), [])
-  const { container, root } = dom.createRoot()
+  const { root } = dom.createRoot()
+  // The popup is portaled to the end of the document, out of the render container.
+  const container = dom.window.document.body
   await dom.act(async () =>
     root.render(
       <QueryClientProvider client={client!}>
@@ -191,6 +194,23 @@ test('searches the whole archive on the server, across personal and system inbox
   expect(button('Read messages')!.textContent).toBe('Read messages (131)')
 })
 
+test('taps inside it run in Safari and on iOS, where a tapped button never takes focus', async () => {
+  const { container, requests, settle, subjects, button } = await renderPopup()
+  const panel = () => container.querySelector<HTMLElement>('#inbox-popup[data-state="open"]')
+  // Focus in the search field, as after a search; WebKit blurs it to nothing on a tap in the portaled panel.
+  await dom!.act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Search inbox"]')!.focus())
+
+  expect(await webkitTap(button('Read messages')!, { touch: true })).toBe(true)
+  expect(subjects().length).toBeGreaterThan(2)
+  expect(await webkitTap(button('Mark all read')!)).toBe(true)
+  await settle()
+  expect(requests.map((url) => url.pathname)).toContain('/api/inbox/user/me/read-all')
+  expect(panel()).not.toBeNull()
+
+  expect(await webkitTap(container.querySelector('[aria-label="Close inbox"]')!, { touch: true })).toBe(true)
+  expect(panel()).toBeNull()
+})
+
 test('does not mount a popup or skeleton until requested, and hides it immediately on dismissal', async () => {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
   globalThis.fetch = mock(
@@ -202,7 +222,8 @@ test('does not mount a popup or skeleton until requested, and hides it immediate
   ) as unknown as typeof fetch
   client = new QueryClient({ defaultOptions: { queries: { enabled: false, retry: false } } })
   client.setQueryData(queryKeys.auth.permissions(), { permissions: [], identity: { type: 'user', userId: 'test' } })
-  const { container, root } = dom.createRoot()
+  const { root } = dom.createRoot()
+  const container = dom.window.document.body
   await dom.act(async () =>
     root.render(
       <MemoryRouter>

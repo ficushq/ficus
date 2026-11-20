@@ -76,7 +76,8 @@ test('page and popup share rounded, spaced cards for personal/system and unread/
   )
   await dom.act(async () => window.dispatchEvent(new CustomEvent('open-inbox-popup')))
   const page = container.querySelector('[data-surface="page"]')!
-  const popup = container.querySelector('[data-surface="popup"]')!
+  // The popup is portaled out of its host to the end of the document.
+  const popup = document.querySelector('#inbox-popup')!
   const readToggle = [...popup.querySelectorAll('button')].find((button) =>
     button.textContent?.includes('Read messages')
   )!

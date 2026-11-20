@@ -9,14 +9,19 @@ import { CloseIcon, ChevronDownIcon, ChevronRightIcon } from './icons'
 import { MessageList, MessageRow } from './InboxMessageRow'
 import { InboxLoadMore } from './InboxLoadMore'
 import { InboxSearchInput } from './InboxSearchInput'
-import { Presence } from './Presence'
+import { Panel } from './popover'
+import { HEADER_DROPDOWN_PLACEMENT } from './headerDropdown'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
 import { INBOX_POPUP_ID, useInboxPopup } from './InboxPopupProvider'
 
-/** The inbox sheet under the top nav's Inbox button; its open state lives in `InboxPopupProvider`. */
+/**
+ * The inbox dropdown under the header; its open state lives in `InboxPopupProvider`. A `Panel` on the popover
+ * layer, so it draws above floating windows and the Assistant. An outside press, Escape, its close button or
+ * the `I` shortcut closes it; opening it never moves focus.
+ */
 export function InboxPopup() {
-  const { open: isOpen, setOpen: setIsOpen, hover } = useInboxPopup()
+  const { open: isOpen, setOpen: setIsOpen, triggerRef, hover } = useInboxPopup()
   const [showRead, setShowRead] = useState(false)
   const queryClient = useQueryClient()
   const { can } = usePermissions()
@@ -54,7 +59,7 @@ export function InboxPopup() {
     return () => window.removeEventListener('open-inbox-popup', handler)
   }, [setIsOpen])
 
-  // Keyboard shortcut: 'I' to toggle, Escape to close
+  // Keyboard shortcut: 'I' to toggle. Escape is the panel's own (Popover) dismissal.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.defaultPrevented) return
@@ -64,11 +69,6 @@ export function InboxPopup() {
       const inputFocused =
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable
 
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false)
-        return
-      }
-
       if ((e.key === 'i' || e.key === 'I') && !inputFocused) {
         e.preventDefault()
         setIsOpen((prev) => !prev)
@@ -77,7 +77,7 @@ export function InboxPopup() {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, setIsOpen])
+  }, [setIsOpen])
 
   const unreadMessages = unread.messages
   const loadingRowCount = useLoadingShapeCount(
@@ -106,19 +106,20 @@ export function InboxPopup() {
 
   return (
     <>
-      {/* Backdrop. None while hover-opened: it would cover the nav trigger, which must keep receiving the
-          pointer (leaving it closes the popup, a click pins it). Once pinned it returns. */}
-      {isOpen && !hover.hoverOpened && (
-        <div className="fixed inset-0 bg-chrome-scrim/20 z-40" onClick={() => setIsOpen(false)} />
-      )}
-
-      {/* Popover dropdown */}
-      <Presence
+      {/* The nav button is its trigger (a press on it toggles or pins, never dismisses); it is placed against the
+          viewport corner instead, so the I shortcut opens it in the same place while that button is hidden. */}
+      <Panel
+        {...HEADER_DROPDOWN_PLACEMENT}
+        {...hover.popoverProps}
         id={INBOX_POPUP_ID}
+        label="Inbox"
         open={isOpen}
-        onPointerEnter={hover.popoverProps.onPointerEnter}
-        onPointerLeave={hover.popoverProps.onPointerLeave}
-        className="ficus-overlay fixed top-14 right-3 w-96 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-5rem)] z-50 flex flex-col origin-top-right"
+        onDismiss={() => setIsOpen(false)}
+        trigger={triggerRef}
+        // Escape leaves focus where it was (in the composer, say); with focus inside, closing returns it to the trigger.
+        restoreFocus={false}
+        scroll={false}
+        className="ficus-overlay w-[min(24rem,calc(100vw-1.5rem))] flex flex-col origin-top-right"
       >
         <div className="flex items-center justify-between px-4 py-3 ">
           <div className="flex items-center gap-2">
@@ -228,7 +229,7 @@ export function InboxPopup() {
             </>
           )}
         </div>
-      </Presence>
+      </Panel>
     </>
   )
 }
