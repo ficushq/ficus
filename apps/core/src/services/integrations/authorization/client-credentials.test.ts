@@ -277,25 +277,6 @@ describe('OAuth application credentials', () => {
   })
 
   test('until the Linear app is ready, settings report it unavailable and refuse to save', async () => {
-    const restore = setLinearAppReadinessForTest({ local: false, platform_broker: false })
-    try {
-      await expectUnavailable()
-    } finally {
-      restore()
-    }
-  })
-
-  test('self-hosted instances can configure the Linear app by default; hosted ones wait for the relay', () => {
-    const callbackUrl = 'https://ficus.example/settings/integrations/oauth/callback/linear'
-    expect(getOAuthAppSettings('linear', store, callbackUrl)).toMatchObject({ authority: 'local', available: true })
-    process.env.FICUS_MANAGED = '1'
-    expect(getOAuthAppSettings('linear', store, callbackUrl)).toMatchObject({
-      authority: 'platform_broker',
-      available: false,
-    })
-  })
-
-  async function expectUnavailable() {
     const callbackUrl = 'https://ficus.example/settings/integrations/oauth/callback/linear'
     expect(getOAuthAppSettings('linear', store, callbackUrl)).toMatchObject({ authority: 'local', available: false })
     await expect(
@@ -315,5 +296,5 @@ describe('OAuth application credentials', () => {
     })
     // Notion is not gated.
     expect(getOAuthAppSettings('notion', store, 'https://ficus.example/callback')).not.toHaveProperty('available')
-  }
+  })
 })

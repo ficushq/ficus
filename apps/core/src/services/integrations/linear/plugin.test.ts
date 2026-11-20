@@ -265,27 +265,14 @@ describe('Linear app readiness', () => {
     return { start, urls }
   }
 
-  test('is on for self-hosted (local) installs by default and off for hosted ones until the relay exists', async () => {
-    expect(linearPlugin.authorization.managed.authorities).toEqual(['local'])
-    const { start, urls } = startService('platform_broker')
-    const error = await start().catch((caught: unknown) => caught)
-    expect((error as { code?: string }).code).toBe('unsupported_provider')
-    expect(urls).toEqual([])
-  })
-
-  test('is off under both authorities when readiness is withdrawn, so no install can start', async () => {
-    const restore = setLinearAppReadinessForTest({ local: false, platform_broker: false })
-    try {
-      expect(linearPlugin.authorization.managed.authorities).toEqual([])
-      for (const authority of ['local', 'platform_broker'] as const) {
-        expect(oauthPluginView(linearPlugin, authority)).toBeUndefined()
-        const { start, urls } = startService(authority)
-        const error = await start().catch((caught: unknown) => caught)
-        expect((error as { code?: string }).code).toBe('unsupported_provider')
-        expect(urls).toEqual([])
-      }
-    } finally {
-      restore()
+  test('is off under both authorities by default, so no install can start', async () => {
+    expect(linearPlugin.authorization.managed.authorities).toEqual([])
+    for (const authority of ['local', 'platform_broker'] as const) {
+      expect(oauthPluginView(linearPlugin, authority)).toBeUndefined()
+      const { start, urls } = startService(authority)
+      const error = await start().catch((caught: unknown) => caught)
+      expect((error as { code?: string }).code).toBe('unsupported_provider')
+      expect(urls).toEqual([])
     }
   })
 

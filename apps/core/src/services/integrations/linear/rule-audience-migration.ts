@@ -31,8 +31,10 @@ export function legacyLinearRulesKeepingBehavior(rules: unknown): unknown[] | nu
 }
 
 /**
- * One-time upgrade step (API startup), run before any Linear event is routed under the new audience
- * semantics. Rules saved afterwards keep the audience they are saved with.
+ * One-time upgrade step, run at startup by both the api and the worker process (whichever starts
+ * first), before either routes a Linear event under the new audience semantics. Each squad is
+ * rewritten under its row lock and only non-`any` audiences change, so running it from both
+ * processes is safe. Rules saved afterwards keep the audience they are saved with.
  */
 export async function migrateLinearRuleAudiences(store: SettingsStore = getSettingsStore()): Promise<number> {
   if (store.getStoredValue(LINEAR_RULE_AUDIENCES_MIGRATED_SETTING_KEY)) return 0

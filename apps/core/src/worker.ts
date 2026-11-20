@@ -884,6 +884,13 @@ async function startup(): Promise<void> {
   // refresh above stays the guarantee.
   await settingsStore.startCrossProcessInvalidation()
 
+  // One-time upgrade, also run here because this process can route Linear events (the unmatched
+  // sweep) before the api process starts: stored Linear rules keep their old account involvement.
+  const { migrateLinearRuleAudiences } = await import('./services/integrations/linear/rule-audience-migration')
+  await migrateLinearRuleAudiences().catch((error) =>
+    log.error('Failed to keep stored Linear rule audiences behaving as before:', error)
+  )
+
   // Notifications go out through the channel transports from this process too;
   // they read the same connection snapshot the api keeps, refreshed here on a timer.
   const { channelConnections } = await import('./services/integrations/channels/connections')
