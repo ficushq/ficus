@@ -693,6 +693,12 @@ FICUS_SANDBOX_RUNTIME=${SANDBOX_RUNTIME_ENV}
 FICUS_SYSTEM_LOG_PROVIDER=systemd
 FICUS_SERVE_WEB=${CORE_SERVE_WEB}
 EOF
+  # Core logs at debug unless LOG_LEVEL is set or NODE_ENV=production, and these
+  # units set neither, so without this line every host logged at debug. Set
+  # core.env.LOG_LEVEL to override it; the passthrough then replaces this line.
+  if [[ $'\n'${CORE_ENV_PAIRS} != *$'\n'LOG_LEVEL=* ]]; then
+    printf '# Core log level (debug, info, warn or error). Override with core.env.LOG_LEVEL.\nLOG_LEVEL=info\n'
+  fi
   if [[ ${HL_LAYOUT} == 2 && -z ${CORE_ENV_HOME_DIR} ]]; then
     [[ -n ${LAYOUT_HOME_DIR} ]] ||
       die "could not resolve core.run_user '${RUN_USER}''s home directory to write HOME_DIR — set it explicitly via core.env.HOME_DIR"

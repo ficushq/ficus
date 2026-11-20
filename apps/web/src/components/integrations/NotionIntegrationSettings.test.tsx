@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent } from '@testing-library/dom'
+import { fireEvent, getByRole, queryByRole } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { MemoryRouter } from 'react-router'
 import { integrationQueryKeys, queryKeys } from '../../queryKeys'
@@ -164,7 +164,7 @@ test('self-hosted mode still shows the OAuth application fields', async () => {
   expect(container.textContent).toContain('Notion Developer Portal')
 })
 
-test('requires explicit second-click confirmation before removing an assigned workspace', async () => {
+test('confirms in the row, naming the squads that lose access, before removing an assigned workspace', async () => {
   const requests: string[] = []
   globalThis.fetch = (async (input) => {
     const url = String(input)
@@ -231,13 +231,16 @@ test('requires explicit second-click confirmation before removing an assigned wo
     ['Docs', '/squads/squad-1/settings?section=integrations'],
     ['Research', '/squads/squad-2/settings?section=integrations'],
   ])
+  await harness.act(async () => fireEvent.click(getByRole(container, 'button', { name: /^More actions for / })))
+  // A connection that needs no reconnect keeps Reconnect in the menu; without a refresh token there is no Refresh.
+  expect(queryByRole(document.body, 'menuitem', { name: 'Reconnect' })).not.toBeNull()
+  expect(queryByRole(document.body, 'menuitem', { name: 'Refresh' })).toBeNull()
+  await harness.act(async () => fireEvent.click(getByRole(document.body, 'menuitem', { name: 'Remove…' })))
+  expect(requests).toEqual([])
+  expect(container.textContent).toContain('2 squads lose Notion access.')
   const remove = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent === 'Remove')!
   await harness.act(async () => fireEvent.click(remove))
-  expect(requests).toEqual([])
-  expect(remove.textContent).toContain('Confirm remove from 2 squads')
-  await harness.act(async () => fireEvent.click(remove))
   expect(requests[0]).toBe('http://localhost/api/integrations/connections/connection-1?confirmAssigned=true')
-  expect(container.textContent).not.toContain('Refresh')
 })
 
 test('requires explicit capability acknowledgement and clears the client-secret draft after setup', async () => {

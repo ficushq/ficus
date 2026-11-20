@@ -13,6 +13,8 @@ import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
 import { integrationQueryKeys } from '../../queryKeys'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 import { ConnectionSquads } from './ConnectionSquads'
+import { ConnectionList, ConnectionRow } from './ConnectionRow'
+import { connectionConfirmQuestion, connectionStatus } from './connectionStatus'
 
 export function NotionIntegrationSettings({
   canRead,
@@ -149,96 +151,100 @@ export function NotionIntegrationSettings({
         <p className="mt-2 text-xs text-muted">OAuth application configured.</p>
       )}
       {pool.isError && <p role="alert">Unable to load Notion connections.</p>}
-      <div className="mt-3 space-y-2">
-        {(pool.data ?? []).map((connection) => {
-          const reconnect = connection.authState === 'reauthorization_required'
-          const runLifecycle = (action: 'enable' | 'disable' | 'refresh' | 'remove') => {
-            const destructive = action === 'disable' || action === 'remove'
-            if (
-              destructive &&
-              connection.usage.squadCount > 0 &&
-              (confirmation?.id !== connection.id || confirmation.action !== action)
-            ) {
-              setConfirmation({ id: connection.id, action })
-              return
-            }
-            lifecycle.mutate({ id: connection.id, action, assigned: destructive && connection.usage.squadCount > 0 })
-          }
-          return (
-            <div key={connection.id} className="border-b border-panel-border py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {connection.configuration.workspaceIcon && (
+      {(pool.data?.length ?? 0) > 0 && (
+        <ConnectionList className="mt-3">
+          {(pool.data ?? []).map((connection) => {
+            const title = connection.configuration.workspaceName ?? connection.displayName
+            const reconnect = connection.authState === 'reauthorization_required'
+            // At most one action stays outside the menu: the one that fixes what the status reports.
+            const inline = !connection.enabled ? 'enable' : reconnect ? 'reconnect' : null
+            const squadCount = connection.usage.squadCount
+            const confirming = confirmation?.id === connection.id ? confirmation.action : null
+            const run = (action: 'enable' | 'disable' | 'refresh' | 'remove') =>
+              lifecycle.mutate({
+                id: connection.id,
+                action,
+                assigned: (action === 'disable' || action === 'remove') && squadCount > 0,
+              })
+            return (
+              <ConnectionRow
+                key={connection.id}
+                title={title}
+                leading={
+                  connection.configuration.workspaceIcon && (
                     <img
                       src={connection.configuration.workspaceIcon}
                       alt=""
-                      className="h-6 w-6 rounded"
+                      className="mt-0.5 h-6 w-6 shrink-0 rounded"
                       referrerPolicy="no-referrer"
                     />
-                  )}
-                  <div>
-                    <div className="text-sm font-medium">
-                      {connection.configuration.workspaceName ?? connection.displayName}
-                    </div>
-                    <div className="text-xs text-muted">
-                      {reconnect
-                        ? 'Reconnect required'
-                        : `${connection.enabled ? 'Enabled' : 'Disabled'} · ${connection.healthState}`}
-                    </div>
-                  </div>
-                </div>
-                {canWrite && (
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      className="ficus-button ficus-button-secondary px-2.5 py-1 text-xs"
-                      type="button"
-                      onClick={() => authorize.mutate(connection.id)}
-                    >
-                      Reconnect
-                    </button>
-                    {!reconnect && connection.enabled && connection.refreshAvailable && (
-                      <button
-                        className="ficus-button ficus-button-secondary px-2.5 py-1 text-xs"
-                        type="button"
-                        onClick={() => runLifecycle('refresh')}
-                      >
-                        Refresh
-                      </button>
-                    )}
-                    <button
-                      className="ficus-button ficus-button-secondary px-2.5 py-1 text-xs"
-                      type="button"
-                      onClick={() => runLifecycle(connection.enabled ? 'disable' : 'enable')}
-                    >
-                      {confirmation?.id === connection.id && confirmation.action === 'disable'
-                        ? `Confirm disable for ${connection.usage.squadCount} squads`
-                        : connection.enabled
-                          ? 'Disable'
-                          : 'Enable'}
-                    </button>
-                    <button
-                      className="ficus-button ficus-button-danger px-2.5 py-1 text-xs"
-                      type="button"
-                      onClick={() => runLifecycle('remove')}
-                    >
-                      {confirmation?.id === connection.id && confirmation.action === 'remove'
-                        ? `Confirm remove from ${connection.usage.squadCount} squads`
-                        : 'Remove'}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <ConnectionSquads
-                provider="notion"
-                providerLabel="Notion"
-                connection={connection}
-                connections={pool.data ?? []}
-                noun="workspace"
-              />
-            </div>
-          )
-        })}
-      </div>
+                  )
+                }
+                status={connectionStatus(connection)}
+                inline={
+                  !canWrite || !inline
+                    ? null
+                    : inline === 'enable'
+                      ? { label: 'Enable', disabled: lifecycle.isPending, onClick: () => run('enable') }
+                      : {
+                          label: 'Reconnect',
+                          disabled: authorize.isPending,
+                          onClick: () => authorize.mutate(connection.id),
+                        }
+                }
+                menu={
+                  canWrite
+                    ? [
+                        inline !== 'reconnect' && {
+                          label: 'Reconnect',
+                          disabled: authorize.isPending,
+                          onSelect: () => authorize.mutate(connection.id),
+                        },
+                        !reconnect &&
+                          connection.enabled &&
+                          connection.refreshAvailable && {
+                            label: 'Refresh',
+                            disabled: lifecycle.isPending,
+                            onSelect: () => run('refresh'),
+                          },
+                        connection.enabled && {
+                          label: 'Disable…',
+                          disabled: lifecycle.isPending,
+                          onSelect: () => setConfirmation({ id: connection.id, action: 'disable' }),
+                        },
+                        {
+                          label: 'Remove…',
+                          danger: true,
+                          disabled: lifecycle.isPending,
+                          onSelect: () => setConfirmation({ id: connection.id, action: 'remove' }),
+                        },
+                      ]
+                    : []
+                }
+                confirmation={
+                  canWrite && confirming
+                    ? {
+                        message: connectionConfirmQuestion(confirming, title, squadCount, 'Notion'),
+                        confirmLabel: confirming === 'remove' ? 'Remove' : 'Disable',
+                        disabled: lifecycle.isPending,
+                        onConfirm: () => run(confirming),
+                        onCancel: () => setConfirmation(null),
+                      }
+                    : null
+                }
+              >
+                <ConnectionSquads
+                  provider="notion"
+                  providerLabel="Notion"
+                  connection={connection}
+                  connections={pool.data ?? []}
+                  noun="workspace"
+                />
+              </ConnectionRow>
+            )
+          })}
+        </ConnectionList>
+      )}
       {canWrite && settings?.configured && (
         <button
           type="button"

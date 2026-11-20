@@ -7,6 +7,7 @@ import { integrationQueries, queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'
 import { SquadIntegrationCard } from './SquadIntegrationCard'
+import { LinearTeamRoutingPicker } from './LinearTeamPicker'
 import { FormSkeleton } from '../loading/Skeleton'
 import { GitHubFeedbackSettings } from '../integrations/GitHubFeedbackSettings'
 import {
@@ -110,7 +111,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
   const existingLinear = linearRoutingFromMetadata(squad?.metadata)
   const config = draft ?? {
     github: existingGithub.length > 0 ? existingGithub : [{ repo: '', labelsText: '' }],
-    linear: existingLinear.length > 0 ? existingLinear : [{ teamId: '' }],
+    linear: existingLinear,
     pullRequestLinks: linearSettingsFromMetadata(squad?.metadata),
     rules: effectiveSquadEventRules(squad?.metadata, provider),
   }
@@ -153,10 +154,6 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
 
   const updateGithubEntry = (index: number, patch: Partial<GithubRoutingFormEntry>) => {
     setDraft({ ...config, github: githubEntries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)) })
-  }
-
-  const updateLinearEntry = (index: number, patch: Partial<LinearRoutingFormEntry>) => {
-    setDraft({ ...config, linear: linearEntries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)) })
   }
 
   return (
@@ -244,54 +241,25 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
             >
               Linear Routing
             </h3>
-            <p className="text-xs text-muted mt-1">Route Linear assigned issues to this squad by team ID.</p>
+            <p className="text-xs text-muted mt-1">
+              Route Linear assigned issues to this squad from these teams, listed from the squad’s Linear connections.
+            </p>
           </div>
           {inaccessibleTeamIds.length > 0 && (
-            <p role="alert" className="mb-3 text-sm text-status-warning-600">
+            <p role="alert" className="mb-3 text-sm text-status-attention-600 dark:text-status-attention-400">
               The Ficus app in Linear cannot access {inaccessibleTeamIds.length === 1 ? 'team' : 'teams'}{' '}
               {inaccessibleTeamIds.join(', ')}. A Linear admin can grant access in the Ficus app settings in Linear.
             </p>
           )}
 
-          <div className="space-y-3">
-            {linearEntries.map((entry, index) => (
-              <div key={index} className="rounded-lg border border-panel-border p-3 space-y-3">
-                <div>
-                  <label data-setting-target="team-id" className="block text-sm font-medium text-primary mb-1">
-                    Team ID
-                  </label>
-                  <input
-                    type="text"
-                    value={entry.teamId}
-                    onChange={(e) => updateLinearEntry(index, { teamId: e.target.value })}
-                    placeholder="team-uuid"
-                    className="ficus-field w-full px-3 py-1.5 text-sm rounded border border-th-border bg-surface text-primary  focus:ring-1 focus:ring-accent/50"
-                  />
-                </div>
-                {linearEntries.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDraft({ ...config, linear: linearEntries.filter((_, i) => i !== index) })
-                    }}
-                    className="ficus-button ficus-button-danger px-2 py-1 text-xs"
-                  >
-                    Remove team
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setDraft({ ...config, linear: [...linearEntries, { teamId: '' }] })
-            }}
-            className="ficus-button ficus-button-secondary mt-3 px-3 py-1.5 text-sm rounded-md"
-          >
-            Add Linear team
-          </button>
+          <LinearTeamRoutingPicker
+            squadId={squadId}
+            value={[
+              ...new Set(linearEntries.map((entry) => entry.teamId.trim()).filter((teamId) => teamId.length > 0)),
+            ]}
+            onChange={(teamIds) => setDraft({ ...config, linear: teamIds.map((teamId) => ({ teamId })) })}
+            disabled={!squadPermissions.can('squads:update')}
+          />
 
           <section className="mt-5 space-y-3" aria-label="Pull request links">
             <div>

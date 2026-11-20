@@ -2787,6 +2787,28 @@ EOF
   # then matches no isVmRuntime() comparison.
   expect_eq 'setup-host: the padded value lands trimmed in the rendered .env' \
     "$(printf '%s\n' "${sh_padded_out}" | sed -n 's/.*FICUS_SANDBOX_RUNTIME=//p' | tail -1)" 'vm'
+  # Core logs at debug when neither LOG_LEVEL nor NODE_ENV=production is set,
+  # and the units set neither: the rendered .env must default to info.
+  expect_eq 'setup-host: the rendered .env defaults LOG_LEVEL to info' \
+    "$(printf '%s\n' "${sh_padded_out}" | grep -c '^ *| LOG_LEVEL=info$' || true)" '1'
+  # core.env.LOG_LEVEL replaces the default instead of adding a second line.
+  cat >"${PROV_TMP}/sh-log-level.yaml" <<EOF
+core:
+  origin: https://acme.example:3000
+  env:
+    LOG_LEVEL: debug
+source:
+  mode: git-https
+  repo: https://github.com/example/ficus.git
+runtime:
+  sandbox: vm
+ai:
+  provider: openai-codex
+  model: gpt-5
+EOF
+  sh_log_level_out=$(bash "${SCRIPT_DIR}/setup-host.sh" --config "${PROV_TMP}/sh-log-level.yaml" --dry-run 2>&1) || true
+  expect_eq 'setup-host: core.env.LOG_LEVEL replaces the default (exactly one LOG_LEVEL line)' \
+    "$(printf '%s\n' "${sh_log_level_out}" | grep -E '^ *\| LOG_LEVEL=' | sed 's/^ *| //')" 'LOG_LEVEL=debug'
   expect_match 'setup-host: the retired `docker` spelling dies naming the five values' \
     "${sh_legacy_sandbox_err}" "runtime.sandbox must be one of docker-sysbox, docker-socket, k8s, vm, host \(got 'docker'\)"
 

@@ -60,7 +60,12 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
 - **`Picker`** (`role="listbox"`, trigger `role="combobox"`): the selected option gets focus; arrows,
   Home and End move focus only and never change the value; Enter, Space or a click commits, closes and
   returns focus (`initialFocus` `first` or `none` instead, as for a hover-open). Options take `label`,
-  `description`, `ariaLabel`, `icon`, `disabled`.
+  `description`, `ariaLabel`, `icon`, `disabled`, and `keywords` (extra text `search` matches). Two
+  opt-ins: `multiple` (`value` and `onChange` take arrays; activation toggles and the list stays open;
+  `aria-multiselectable`) and `search` (`{ label, placeholder?, empty? }`): a filter field leads the list
+  and takes focus on open, ArrowDown moves into the options, Enter in the field picks the first match,
+  and typing on an option returns to the field. With `search` the surface is a `dialog` holding the field
+  and the `listbox`, so its trigger uses `usePopover({ kind: 'dialog' })` (the Linear team pickers).
 - **`Panel`** (`role="dialog"` by default; `region`/`group` for a disclosure): arbitrary content. Focus
   moves to its first control on open (or per `initialFocus`) and is trapped loosely: Tab on the open
   trigger enters the panel, Tab past its last control continues the page after the trigger, Shift+Tab

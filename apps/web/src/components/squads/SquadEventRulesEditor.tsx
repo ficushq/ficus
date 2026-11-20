@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { effectiveSquadEventRules, LINEAR_DEFAULT_RULE_IDS, type SquadEventRule } from '@ficus/shared'
 import { integrationQueries } from '../../queryOptions'
 import { WorkflowPicker } from './WorkflowPicker'
+import { LinearTeamFilterPicker } from './LinearTeamPicker'
 import { ConfirmButton } from '../ConfirmButton'
 
 export function SquadEventRulesEditor({
@@ -229,17 +230,16 @@ export function SquadEventRulesEditor({
               </>
             )}
             {provider === 'linear' && (
-              <label className="text-sm">
-                Team filter
-                <input
+              <div className="text-sm">
+                <span aria-hidden="true">Team filter</span>
+                <LinearTeamFilterPicker
+                  squadId={squadId}
                   className={field}
-                  value={rule.filters.teamId ?? ''}
-                  placeholder="Any connected team"
-                  onChange={(event) =>
-                    update(index, { filters: { ...rule.filters, teamId: event.target.value || undefined } })
-                  }
+                  value={rule.filters.teamId}
+                  disabled={disabled}
+                  onChange={(teamId) => update(index, { filters: { ...rule.filters, teamId } })}
                 />
-              </label>
+              </div>
             )}
             {(provider === 'github' || provider === 'linear') && (
               <label className="text-sm sm:col-span-2">

@@ -84,9 +84,12 @@ core:
   #                                 _ENV suffix and takes $ENV_VAR's content:
   #                                    SECRET_KEY=<contents of $ENV_VAR>
   #                                 Setup dies if $ENV_VAR is unset.
+  # LOG_LEVEL is a default, not a built-in: setup renders LOG_LEVEL=info, and
+  # a LOG_LEVEL in this map replaces that line.
   # Example:
   #   env:
   #     FICUS_MAX_MACHINES: '10'
+  #     LOG_LEVEL: debug
   #     FICUS_PLATFORM_INGEST_URL: https://ingest.ficus.sh
   #     FICUS_PLATFORM_USAGE_TOKEN_ENV: PLATFORM_USAGE_TOKEN
   env: {}

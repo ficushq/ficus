@@ -60,6 +60,7 @@ import type {
   GitHubSquadCommitSigning,
   GitHubSignResponse,
   GitHubRepositoryAccess,
+  LinearTeamDirectory,
 } from '@ficus/shared'
 
 const log = createLogger('integration-routes')
@@ -188,6 +189,8 @@ export interface IntegrationRoutesService extends Pick<
 }
 
 export interface SquadIntegrationRoutesService {
+  /** The Linear teams the squad's attached connections can see, for the team picker. Never credentials. */
+  linearTeams?(squadId: string): Promise<LinearTeamDirectory>
   /** Sign a git commit or tag object for the squad, or decide it stays unsigned (agents only). */
   signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<GitHubSignResult>
   configureScope?(
@@ -853,6 +856,12 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         return c.json(await resolveDefaultGitHubIdentity(resolvedSquadId(c)))
       }
     )
+    .get('/:squadId/integrations/linear/teams', requireSquadPermission('integrations:read', 'squadId'), async (c) => {
+      if (!service.linearTeams) return c.json({ error: 'Unsupported integration' }, 404)
+      // Team names are workspace data: never kept by a shared cache. Core caches each connection briefly.
+      c.header('Cache-Control', 'private, no-store')
+      return c.json(await service.linearTeams(resolvedSquadId(c)))
+    })
     .put(
       '/:squadId/integrations/:provider/scope',
       requireSquadPermission('integrations:write', 'squadId'),

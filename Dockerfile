@@ -102,6 +102,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Core logs at debug unless LOG_LEVEL is set or NODE_ENV=production. Default
+# containers to info; override with -e LOG_LEVEL=debug when diagnosing.
+ENV LOG_LEVEL=info
+
 # OCI image metadata
 LABEL org.opencontainers.image.title="Ficus" \
       org.opencontainers.image.source="https://github.com/ficushq/ficus" \
