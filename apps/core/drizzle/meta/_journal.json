@@ -1793,6 +1793,13 @@
       "when": 1795148649207,
       "tag": "0255_integration_output_events_resource_index",
       "breakpoints": true
+    },
+    {
+      "idx": 256,
+      "version": "7",
+      "when": 1795152197971,
+      "tag": "0256_linear_write_back",
+      "breakpoints": true
     }
   ]
 }
