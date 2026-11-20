@@ -13,6 +13,10 @@ import { FloatingWindowsProvider } from '../../src/components/FloatingWindows'
 import { AgentChatWindow } from '../../src/components/AgentChatWindow'
 import { UnifiedAssistant } from '../../src/components/UnifiedAssistant'
 import { TemplateDiffDialog } from '../../src/components/settings/TemplateDiffDialog'
+import { TemplateFieldActions } from '../../src/components/settings/TemplateFieldActions'
+import { FileUpload } from '../../src/components/workspace/FileUpload'
+import type { WorkspaceSource } from '../../src/components/workspace/workspaceSource'
+import type { UploadResponse } from '../../src/api/workspace'
 import '../../src/index.css'
 
 /** The agents whose chat windows check-desktop-floating-windows stores before the page loads. */
@@ -32,6 +36,22 @@ function Window(props: { win: Parameters<typeof AgentChatWindow>[0]['win'] }) {
   return <AgentChatWindow {...props} dependencies={{ ConversationComponent: StubConversation as never }} />
 }
 
+const TEMPLATE = { name: 'Researcher', model: 'deep', instructions: 'Read the brief and the history first.' }
+const CURRENT = { name: 'Researcher', model: 'standard', instructions: 'Read the brief first.' }
+
+/** A workspace where every file already exists, so an upload always asks whether to overwrite. */
+const workspace = {
+  id: 'squad:squad-1',
+  treeQueryPrefix: ['fixture-workspace'],
+  canWrite: true,
+  upload: async (files, { overwrite }) => {
+    await new Promise((done) => setTimeout(done, 50))
+    return {
+      results: files.map((file) => ({ path: file.relativePath, status: overwrite ? 'uploaded' : 'skipped' })),
+    } as UploadResponse
+  },
+} as Pick<WorkspaceSource, 'id' | 'treeQueryPrefix' | 'canWrite' | 'upload'> as WorkspaceSource
+
 function AssistantConversation() {
   return <div className="p-3 text-sm text-secondary">Assistant conversation</div>
 }
@@ -42,18 +62,28 @@ export function Fixture() {
   return (
     <>
       <AppHeader usePendingActions={() => ({ data: [] })} />
-      <main className="p-4">
+      <main className="flex items-center gap-3 p-4">
         <button className="ficus-button ficus-button-secondary" onClick={() => setDiff(true)}>
           Open template diff
         </button>
+        <TemplateFieldActions
+          field="model"
+          current={CURRENT}
+          template={TEMPLATE}
+          fieldOverrides={['model']}
+          onRevert={() => undefined}
+        />
+        <div className="relative">
+          <FileUpload source={workspace} />
+        </div>
       </main>
       <UnifiedAssistant dependencies={{ ConversationComponent: AssistantConversation as never }} />
       <TemplateDiffDialog
         isOpen={diff}
         onClose={() => setDiff(false)}
         title="Template differences"
-        current={{ name: 'Researcher', model: 'standard', instructions: 'Read the brief first.' }}
-        template={{ name: 'Researcher', model: 'deep', instructions: 'Read the brief and the history first.' }}
+        current={CURRENT}
+        template={TEMPLATE}
         onRevert={() => setDiff(false)}
       />
     </>

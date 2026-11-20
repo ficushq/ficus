@@ -1,6 +1,7 @@
 /** DB-free Chromium layout regression for Ficus Desktop's inset title bar, not native macOS verification.
- * Floating agent chat windows, the assistant window and a hand-rolled dialog must keep out of the band
- * where macOS draws the window buttons, while windowed; fullscreen and browsers keep the whole screen.
+ * Floating agent chat windows, the assistant window and dialogs must keep out of the band where macOS
+ * draws the window buttons, while windowed; fullscreen and browsers keep the whole screen. Dialogs must
+ * draw over open floating windows and the Assistant, in browsers and in Desktop.
  * CHROMIUM_PATH=/path/to/chromium bun apps/web/scripts/check-desktop-floating-windows.ts
  * SCREENSHOT_DIR optionally saves the Desktop, fullscreen and browser views.
  */
@@ -173,28 +174,92 @@ try {
   assert.equal((await windows.assistant.boundingBox())!.y, 8)
   await screenshot('browser-floating-windows')
 
-  // A dialog that does not use Modal reserves the same band, even in a short window. On a clean Desktop
-  // page: floating windows stack above these older z-50 dialogs.
-  await page.evaluate(() => {
-    sessionStorage.removeItem('browser-only')
-    localStorage.removeItem('ficus-chat-windows:user:u1')
-    localStorage.removeItem('ficus-assistant-window')
-  })
-  await page.goto(server.resolvedUrls!.local[0]!)
-  await page.setViewportSize({ width: 1280, height: 360 })
+  // Dialogs open over the floating windows and the Assistant: nothing they draw covers any part of a
+  // dialog, its buttons included. Checked in this browser view, then in Desktop.
+  const DIALOGS = [
+    {
+      name: 'Template differences',
+      open: () => page.getByRole('button', { name: 'Open template diff' }).evaluate((el: HTMLElement) => el.click()),
+      shot: 'template-diff',
+    },
+    {
+      name: 'Template Diff — model',
+      open: () => page.getByRole('button', { name: 'Diff', exact: true }).evaluate((el: HTMLElement) => el.click()),
+      shot: 'template-field-diff',
+    },
+    {
+      name: 'Files already exist',
+      open: () =>
+        page
+          .locator('input[type="file"]')
+          .first()
+          .setInputFiles({ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from('# Notes') }),
+      shot: 'upload-conflict',
+    },
+  ]
+  const dialogsOnTop = async (view: string) => {
+    for (const { name, open, shot } of DIALOGS) {
+      await open()
+      const dialog = page.getByRole('dialog', { name, exact: true })
+      await dialog.waitFor()
+      const panel = dialog.locator('.ficus-overlay').first()
+      const hits = await panel.evaluate((surface) => {
+        const box = surface.getBoundingClientRect()
+        const covered: string[] = []
+        for (let fx = 0.02; fx < 1; fx += 0.08)
+          for (let fy = 0.02; fy < 1; fy += 0.08) {
+            const [x, y] = [box.left + box.width * fx, box.top + box.height * fy]
+            const hit = document.elementFromPoint(x, y)
+            if (!hit || !surface.contains(hit))
+              covered.push(
+                `${Math.round(x)},${Math.round(y)} ${hit?.closest('[data-floating-window]')?.outerHTML.slice(0, 60)}`
+              )
+          }
+        const buttons = [...surface.querySelectorAll('button')]
+          .filter((button) => {
+            const r = button.getBoundingClientRect()
+            return !button.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+          })
+          .map((button) => button.textContent || button.getAttribute('aria-label'))
+        const under = [...document.querySelectorAll<HTMLElement>('[data-floating-window]')]
+          .filter((w) => {
+            const r = w.getBoundingClientRect()
+            return r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom
+          })
+          .map((w) => w.dataset.floatingWindow)
+        return { covered, buttons, under, top: box.top }
+      })
+      assert.deepEqual(hits.under.sort(), [A, 'assistant'].sort(), `${name} opens over a window and the Assistant`)
+      assert.deepEqual(hits.covered, [], `${view}: nothing covers ${name}`)
+      assert.deepEqual(hits.buttons, [], `${view}: every button of ${name} is uncovered`)
+      if (view === 'desktop') assert.ok(hits.top >= TITLE_BAR, `${name} stays below the title bar`)
+      await screenshot(`${view}-${shot}-over-windows`)
+      // Its own close button works, above the windows.
+      await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+      await dialog.waitFor({ state: 'detached' })
+    }
+  }
+  await dialogsOnTop('browser')
+
+  // In Desktop, with the same window and Assistant open behind them.
+  await page.evaluate(() => sessionStorage.removeItem('browser-only'))
+  await page.reload()
+  await windows[A].waitFor()
+  await page.waitForTimeout(400)
   assert.equal(await page.evaluate(() => document.documentElement.dataset.desktopShell), 'inset')
-  await page.getByRole('button', { name: 'Open template diff' }).click()
-  const dialogPanel = page.locator('.ficus-titlebar-reserve > .ficus-overlay')
+  await dialogsOnTop('desktop')
+
+  // A dialog keeps below the band even in a short window.
+  await page.setViewportSize({ width: 1280, height: 360 })
+  await DIALOGS[0]!.open()
+  const dialogPanel = page.getByRole('dialog', { name: DIALOGS[0]!.name }).locator('.ficus-overlay').first()
   await dialogPanel.waitFor()
   assert.ok((await dialogPanel.boundingBox())!.y >= TITLE_BAR, 'Template diff panel stays below the bar')
   await screenshot('desktop-template-diff-short-window')
-  // Its header controls stay clickable.
-  await dialogPanel.locator('button').first().click()
-  await dialogPanel.waitFor({ state: 'detached' })
 
   assert.deepEqual(errors, [])
   console.log(
-    'PASS Desktop floating windows: saved and snapped windows, the assistant and a hand-rolled dialog stay below the inset title bar; drag preview, picker and drag stay below it; fullscreen and browsers use the whole screen. Native macOS window buttons are not tested.'
+    'PASS Desktop floating windows: saved and snapped windows, the assistant and dialogs stay below the inset title bar; drag preview, picker and drag stay below it; fullscreen and browsers use the whole screen; the template diff, field diff and upload conflict dialogs draw over open windows and the Assistant in browsers and Desktop. Native macOS window buttons are not tested.'
   )
 } finally {
   await browser?.close()
