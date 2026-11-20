@@ -38,6 +38,13 @@ import { DesktopNotifications } from './components/DesktopNotifications'
 import { ScreenshotFiling } from './components/ScreenshotFiling'
 import { useDesktopShellChrome } from './hooks/useDesktopShellChrome'
 
+/** Integration OAuth callbacks: a focused standalone screen, never inside the app shell. */
+const OAUTH_CALLBACK_PATHS = new Set([
+  '/settings/integrations/oauth/callback',
+  '/settings/integrations/oauth/callback/github',
+  '/settings/integrations/oauth/callback/linear',
+])
+
 export default function App() {
   // Fit the fixed shell to the visible area while a software keyboard is open (see the hook).
   const shellRef = useRef<HTMLDivElement>(null)
@@ -100,6 +107,10 @@ export default function App() {
   // The farm's sign-in link: the gate above has shown login if needed; go back to the farm.
   if (location.pathname === FARM_SIGN_IN_PATH) return <ReturnToFarm />
 
+  // Returning from a provider's authorization: after the gate above, so the completion runs signed in,
+  // but without the header, banners and footer, which only distract from the connection's outcome.
+  if (OAUTH_CALLBACK_PATHS.has(location.pathname.replace(/(.)\/$/, '$1'))) return <OAuthCallbackPage />
+
   if (location.pathname === '/voice') {
     return (
       <>
@@ -151,9 +162,6 @@ export default function App() {
                 <Route path="/actions/:actionId" element={<ActionsPage />} />
                 <Route path="/work-streams/:workStreamId/review" element={<WorkflowReviewRoute />} />
                 <Route path="/inbox" element={<InboxPage />} />
-                <Route path="/settings/integrations/oauth/callback" element={<OAuthCallbackPage />} />
-                <Route path="/settings/integrations/oauth/callback/github" element={<OAuthCallbackPage />} />
-                <Route path="/settings/integrations/oauth/callback/linear" element={<OAuthCallbackPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />
                 <Route path="/schedules" element={<SchedulesPage />} />

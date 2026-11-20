@@ -161,7 +161,7 @@ test('a flow Core does not know for this person is a terminal failure and nothin
 
   expect(calls.map((call) => call.url)).toEqual([RESOLVE_PATH])
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('Return to Settings and start again')
-  expect(container.querySelector('h1')?.textContent).toBe('Finishing the connection')
+  expect(container.querySelector('h1')?.textContent).toBe("Couldn't finish the connection")
   expect(window.history.state).toBeNull()
 })
 
@@ -190,7 +190,7 @@ test('a self-hosted Linear app callback posts the code to the linear provider', 
       url: 'http://localhost/api/integrations/providers/linear/authorization/callback',
       body: JSON.stringify({ state: HANDLE, code: 'linear-code' }),
     })
-    expect(container.textContent).toContain('Connecting Linear')
+    expect(container.querySelector('h1')?.textContent).toBe('Linear connected')
     expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-linear')
   } finally {
     redirect.mockRestore()
@@ -276,7 +276,7 @@ test('a reload after a retryable failure asks Core again and keeps completing ag
   await renderPage()
   await flushEffects()
   expect(container.textContent).toContain('try again')
-  expect(container.textContent).toContain('Connecting Slack')
+  expect(container.querySelector('h1')?.textContent).toBe('Slack is not connected yet')
 
   await harness.act(async () => root.unmount())
   ;({ root, container } = harness.createRoot())
@@ -348,7 +348,7 @@ test('retry resends the exact retained flow and handle body', async () => {
   await renderPage()
   await flushEffects()
   const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
-  expect(retry.className).toContain('focus-visible:ring-2')
+  expect(retry.className).toContain('ficus-button-primary')
   await harness.act(async () => fireEvent.click(retry))
   await flushEffects()
 
@@ -466,7 +466,7 @@ for (const provider of ['linear', 'notion', 'slack'] as const) {
 
     await renderPage()
 
-    expect(container.querySelector('h1')?.textContent).toBe(`Connecting ${label}`)
+    expect(container.querySelector('h1')?.textContent).toBe(`${label} connection cancelled`)
     expect(container.textContent).toContain('Authorization cancelled')
   })
 
@@ -482,7 +482,7 @@ for (const provider of ['linear', 'notion', 'slack'] as const) {
     await renderPage()
 
     expect(calls).toBe(0)
-    expect(container.querySelector('h1')?.textContent).toBe(`Connecting ${label}`)
+    expect(container.querySelector('h1')?.textContent).toBe(`Couldn't connect ${label}`)
     const alert = container.querySelector('[role="alert"]')?.textContent
     expect(alert).toContain('Return to Settings and start again')
     expect(alert).toContain('The provider is limiting requests.')
@@ -496,7 +496,7 @@ test('a failed callback with an unlisted safe code shows the code, and without a
 
   await renderPage()
 
-  expect(container.querySelector('h1')?.textContent).toBe('Finishing the connection')
+  expect(container.querySelector('h1')?.textContent).toBe("Couldn't finish the connection")
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     'The provider reported an error. (Code: provider_mismatch)'
   )
@@ -558,6 +558,84 @@ test('malformed and provider-controlled callback material stays out of observabl
   expect(window.history.state).toBeNull()
   expect(container.textContent).not.toContain('RAW_HANDLE')
   expect(container.textContent).not.toContain('RAW_PROVIDER_ERROR')
+})
+
+function links(): Array<[string, string | null]> {
+  return [...container.querySelectorAll('a')].map((link) => [link.textContent ?? '', link.getAttribute('href')])
+}
+
+test('a saved connection says so before the redirect and links to the same destination', async () => {
+  mockCore('notion', () => Response.json({ returnTo: '/settings' }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.invalidateQueries = (() => new Promise(() => {})) as typeof client.invalidateQueries
+
+  await renderPage(client)
+  await flushEffects()
+
+  expect(container.querySelector('h1')?.textContent).toBe('Notion connected')
+  expect(container.querySelector('[role="status"][aria-live="polite"]')?.textContent).toContain(
+    'The connection is saved'
+  )
+  expect(links()).toEqual([['Continue', '/settings?section=integrations&setting=integration-notion']])
+})
+
+test('a terminal failure links back to the provider settings and to the app home', async () => {
+  window.sessionStorage.setItem('ficusOAuthProviderHint', 'notion')
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=error&code=provider_error')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  expect(links()).toEqual([
+    ['Back to Notion settings', '/settings?section=integrations&setting=integration-notion'],
+    ['Go to Ficus home', '/'],
+  ])
+  expect(container.querySelector('a')?.className).toContain('ficus-button-primary')
+})
+
+test('a cancelled callback with no provider links to the integrations page and the app home', async () => {
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  expect(container.querySelector('h1')?.textContent).toBe('Connection cancelled')
+  expect(links()).toEqual([
+    ['Back to Settings', '/settings?section=integrations'],
+    ['Go to Ficus home', '/'],
+  ])
+})
+
+test('a retryable failure offers Try again and both ways back, and a retry keeps focus on the page', async () => {
+  mockCore('slack', () => Response.json({ error: 'broker_unavailable' }, { status: 503 }))
+
+  await renderPage()
+  await flushEffects()
+
+  expect(links()).toEqual([
+    ['Back to Slack settings', '/settings?section=integrations&setting=integration-slack'],
+    ['Go to Ficus home', '/'],
+  ])
+  const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Try again')!
+  retry.focus()
+  await harness.act(async () => fireEvent.click(retry))
+  await flushEffects()
+
+  // The focused button is gone; focus lands on the heading of the state that replaced it.
+  expect(container.querySelector('h1')?.textContent).toBe('Slack is not connected yet')
+  expect(document.activeElement).toBe(container.querySelector('h1'))
+})
+
+test('the screen stands alone: no app navigation, one main landmark named by its heading', async () => {
+  window.history.replaceState(null, '', '/settings/integrations/oauth/callback?status=denied')
+  globalThis.fetch = (async () => new Response()) as typeof fetch
+
+  await renderPage()
+
+  const main = container.querySelectorAll('main')
+  expect(main).toHaveLength(1)
+  expect(main[0]?.getAttribute('aria-labelledby')).toBe(container.querySelector('h1')?.id)
+  expect(container.querySelector('nav, header, footer')).toBeNull()
 })
 
 function storageValues(storage: Storage): string[] {
