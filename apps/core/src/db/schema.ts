@@ -787,6 +787,9 @@ export const squadActivity = pgTable(
       table.lane.desc(),
       table.rowId.desc()
     ),
+    // Active work's last-event probe (workStreamLastEventsSql) needs this exact ordering; the cost
+    // test in services/squad-activity/query-scan-cost.test.ts builds its fixture index from this
+    // index's generated migration DDL, so regenerate the migration with any change here.
     index('idx_squad_activity_agent')
       .on(table.squadId, table.agentId, table.at.desc(), table.lane.desc(), table.rowId.desc())
       .where(sql`${table.agentId} IS NOT NULL`),

@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { eq, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, squadActivity, squads, inbox } from '../../db/schema'
-import { ensureQueryIndex } from '../../test-utils/message-query-indexes'
+import { ensureQueryIndex, generatedIndexStatement } from '../../test-utils/message-query-indexes'
 import { relatedInboxPageSql } from './event-handlers'
 import { chatSourcePageSql, listChatSourcePage } from './source-loaders'
 import { workStreamRuntimesSql } from '../../entities/WorkStream'
@@ -155,7 +155,11 @@ test('Active work last events probe each participant once instead of scanning it
   // The 24,000 activity rows live in a temporary squad_activity that shadows the shared table
   // for this transaction only (pg_temp is searched first) and disappears on rollback. Inserting
   // and deleting them in the shared table would leave dead entries in its agent index and skew
-  // later plan tests (schema.test.ts) toward the feed index.
+  // later plan tests (schema.test.ts) toward the feed index. Its agent index is the generated
+  // production DDL retargeted at the temporary table, so a change to the real index fails here.
+  const agentIndex = generatedIndexStatement('idx_squad_activity_agent')
+  const tempAgentIndex = agentIndex.replace(' ON "squad_activity" ', ' ON pg_temp."squad_activity" ')
+  expect(tempAgentIndex).not.toBe(agentIndex)
   const rollback = new Error('discard fixture')
   let result: Array<{ last_at: Date | string }> = []
   let plan: any
@@ -164,9 +168,7 @@ test('Active work last events probe each participant once instead of scanning it
       await tx.execute(
         sql`CREATE TEMP TABLE squad_activity (LIKE public.squad_activity INCLUDING DEFAULTS) ON COMMIT DROP`
       )
-      await tx.execute(
-        sql`CREATE INDEX idx_squad_activity_agent ON pg_temp.squad_activity (squad_id,agent_id,at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST) WHERE agent_id IS NOT NULL`
-      )
+      await tx.execute(sql.raw(tempAgentIndex))
       await tx.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
           agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
         SELECT ${squad.id}::uuid,10,gen_random_uuid(),'chat',gen_random_uuid()::text,
