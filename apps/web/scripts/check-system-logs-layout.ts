@@ -3,6 +3,9 @@
  * Checks that the pane fills the page height and the content width, that wrapping and the no-wrap horizontal
  * scroll work, that following pauses on scroll-up and Jump to latest resumes it, that search keeps the active
  * match in view, and that full screen covers the window and Escape returns, at desktop and phone widths.
+ * A second pass fills the 10,000-line buffer, whose off-screen 200-line blocks the browser skips drawing,
+ * and checks that following, Jump to latest, search jumps across the whole buffer and wrap toggling still
+ * land where they should.
  * Optional SCREENSHOT_DIR saves light/dark, desktop/narrow screenshots of each state.
  */
 import assert from 'node:assert/strict'
@@ -43,6 +46,147 @@ const geometry = (page: Page) =>
       wrap: (box as HTMLElement).dataset.wrap,
     }
   })
+
+/** Two frames, so blocks the browser was skipping and that came into view have been laid out. */
+const settle = (page: Page) =>
+  page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
+
+const emit = (page: Page, text: string) =>
+  page.evaluate((value) => (window as unknown as { emitSystemLog: (text: string) => void }).emitSystemLog(value), text)
+
+/** True, or where the active match and the pane are, for the failure message. */
+const activeMatchInView = (page: Page) =>
+  page.evaluate(() => {
+    const pane = document.querySelector('[role="log"]')!.getBoundingClientRect()
+    const mark = document.querySelector('[data-active-match]')?.getBoundingClientRect()
+    if (
+      mark &&
+      mark.top >= pane.top &&
+      mark.bottom <= pane.bottom &&
+      mark.left >= pane.left &&
+      mark.right <= pane.right
+    )
+      return true
+    const edges = (rect?: DOMRect) => (rect ? [rect.top, rect.bottom, rect.left, rect.right].map(Math.round) : null)
+    return JSON.stringify({ mark: edges(mark), pane: edges(pane) })
+  })
+
+/** A full buffer: the same checks that matter for long sessions, where most rows are never drawn. */
+async function checkFullBuffer(browser: Browser, viewport: (typeof VIEWPORTS)[number]) {
+  const label = `full-buffer-${viewport.name}`
+  const page = await browser.newPage({ viewport })
+  page.setDefaultTimeout(60000)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('**/api/**', (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    if (path === '/api/auth/ws-ticket') return route.fulfill({ json: { ticket: 'fixture-ticket' } })
+    errors.push(`Unexpected API request: ${path}`)
+    return route.abort()
+  })
+  // 7,600 sample entries are about 10,100 lines, so the buffer is full and already trimming.
+  await page.goto(`${server.resolvedUrls!.local[0]!}system-logs-fixture?lines=7600`)
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.ficus-log-line').length === 10000)
+  await settle(page)
+  const log = page.getByRole('log', { name: 'System log output' })
+  const jump = page.getByRole('button', { name: /Jump to latest/ })
+
+  // Rows live in 200-line blocks the browser may skip while they are off screen (the oldest block is
+  // partly trimmed, so 10,000 lines can span 51 blocks).
+  const blocks = await log.locator('.ficus-log-block').evaluateAll((all) => ({
+    count: all.length,
+    visibility: [...new Set(all.map((block) => getComputedStyle(block).contentVisibility))],
+  }))
+  assert.ok(blocks.count === 50 || blocks.count === 51, `${label}: 200-line blocks (${blocks.count})`)
+  assert.deepEqual(blocks.visibility, ['auto'], `${label}: blocks are drawn only near the pane`)
+  assert.ok((await geometry(page)).distanceFromBottom <= 2, `${label}: following starts pinned to the newest line`)
+
+  // Following through a burst that fills a new block and trims the oldest lines.
+  await emit(page, '[worker] 2026-11-20T09:09:00.500Z [queue]                  burst line\n'.repeat(299))
+  await emit(page, '[worker] end of burst\n')
+  await log.getByText('end of burst').waitFor()
+  await settle(page)
+  assert.equal(await log.locator('.ficus-log-line').count(), 10000, `${label}: the buffer stays at 10,000 lines`)
+  assert.ok((await geometry(page)).distanceFromBottom <= 2, `${label}: still pinned after a 300-line burst`)
+
+  // Paused in the middle of the buffer, the line at the top of the pane stays put while lines arrive.
+  await log.hover()
+  await page.mouse.wheel(0, -600)
+  await jump.waitFor()
+  await log.evaluate((box) => {
+    box.scrollTop = box.scrollHeight / 2
+  })
+  await settle(page)
+  const topRow = () =>
+    log.evaluate((box) => {
+      const rect = box.getBoundingClientRect()
+      const row = document.elementFromPoint(rect.left + 40, rect.top + 20)?.closest('.ficus-log-line')
+      return row ? { text: row.textContent, top: Math.round(row.getBoundingClientRect().top) } : null
+    })
+  const before = await topRow()
+  assert.ok(before, `${label}: a row at the top of the pane`)
+  await emit(page, '[api] 2026-11-20T09:09:01.500Z [http]                   --> GET /api/health 200 1ms\n'.repeat(5))
+  await jump.getByText('5 new').waitFor()
+  await settle(page)
+  assert.deepEqual(await topRow(), before, `${label}: a paused view does not move while the buffer trims`)
+  await jump.click()
+  await jump.waitFor({ state: 'detached' })
+  await settle(page)
+  assert.ok((await geometry(page)).distanceFromBottom <= 2, `${label}: Jump to latest lands on the newest line`)
+  await emit(page, '[worker] after resume\n')
+  await log.getByText('after resume').waitFor()
+  await settle(page)
+  assert.ok((await geometry(page)).distanceFromBottom <= 2, `${label}: following again after resuming`)
+
+  // Search: sample entries 1,000 to 6,000 (every 1,000th) are the only lines with a .000Z timestamp, so
+  // each step jumps about 1,300 lines into blocks that have not been drawn yet, and Next from the newest
+  // wraps to the oldest.
+  const search = page.getByLabel('Search logs')
+  await search.fill('.000Z')
+  const counter = page.getByText(/^(–|\d+) \/ \d+$/)
+  const total = Number((await counter.innerText()).split(' / ')[1])
+  assert.equal(total, 6, `${label}: matches spread through the buffer`)
+  await search.press('Enter')
+  const steps = ['enter', 'Next', ...Array<string>(total).fill('Previous')]
+  const seen: number[] = []
+  for (const step of steps) {
+    if (step !== 'enter') await page.getByRole('button', { name: step, exact: true }).click()
+    await settle(page)
+    assert.equal(
+      await activeMatchInView(page),
+      true,
+      `${label}: active match is visible after ${step} (${seen.length + 1})`
+    )
+    seen.push(Number((await counter.innerText()).split(' / ')[0]))
+  }
+  assert.deepEqual(
+    seen,
+    [total, 1, total, ...Array.from({ length: total - 1 }, (_, index) => total - 1 - index)],
+    `${label}: Enter, Next and Previous visit every match in order`
+  )
+  // Switching wrap re-centers the active match, near the top of the buffer.
+  await page.getByLabel('Wrap lines').uncheck()
+  await settle(page)
+  assert.equal(await activeMatchInView(page), true, `${label}: active match is visible without wrapping`)
+  const box = await geometry(page)
+  assert.ok(box.scrollWidth > box.clientWidth + 40, `${label}: long lines scroll sideways when not wrapped`)
+  await page.getByLabel('Wrap lines').check()
+  await settle(page)
+  assert.equal(await activeMatchInView(page), true, `${label}: active match is visible with wrapping again`)
+  await search.fill('')
+  await jump.click()
+  await jump.waitFor({ state: 'detached' })
+  await settle(page)
+  assert.ok((await geometry(page)).distanceFromBottom <= 2, `${label}: Jump to latest after searching`)
+
+  assert.deepEqual(errors, [], `${label}: no browser errors or unexpected API requests`)
+  console.log(`PASS ${label}: 10,000 lines, following, paused view, Jump to latest, search across the buffer, wrap`)
+  await page.close()
+}
 
 let browser: Browser | undefined
 try {
@@ -213,6 +357,7 @@ try {
       await page.close()
     }
   }
+  for (const viewport of VIEWPORTS) await checkFullBuffer(browser, viewport)
 } finally {
   await browser?.close()
   await server.close()

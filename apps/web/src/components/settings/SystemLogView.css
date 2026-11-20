@@ -25,6 +25,17 @@
     color: color-mix(in srgb, rgb(var(--log-fg)) 80%, transparent);
     font-style: italic;
   }
+  /* Up to 10,000 lines are real rows, so the browser skips style and layout for the 200-line
+     blocks well outside the pane. A block that has never been drawn counts as 200 single-row
+     lines; once drawn, its real size is remembered. */
+  .ficus-log-block {
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 3600px;
+  }
+  /* Around the active search match, so jumping there never lands on estimated heights. */
+  .ficus-log-block-drawn {
+    content-visibility: visible;
+  }
   /* A 2px level bar on the left; continuation rows of a wrapped line hang 2ch to the right of it. */
   .ficus-log-line {
     border-left: 2px solid transparent;

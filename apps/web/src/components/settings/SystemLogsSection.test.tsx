@@ -217,6 +217,32 @@ test('search highlights every match and Enter, Previous and Next move the active
   }
 })
 
+test('rows sit in 200-line blocks, and the active match keeps its block and both neighbours drawn', async () => {
+  const ui = await setup()
+  try {
+    const socket = await ui.connect()
+    await ui.stream(socket, Array.from({ length: 1000 }, (_, i) => `[api] entry-${i}-end\n`).join(''))
+    const blocks = () => [...ui.view().querySelectorAll<HTMLElement>('.ficus-log-block')]
+    const drawn = () => blocks().map((block) => block.classList.contains('ficus-log-block-drawn'))
+    expect(blocks().map((block) => block.querySelectorAll('.ficus-log-line').length)).toEqual([200, 200, 200, 200, 200])
+    expect(drawn()).toEqual([false, false, false, false, false])
+
+    await ui.typeSearch('entry-450-end')
+    await ui.pressSearchKey('Enter')
+    expect(ui.view().querySelector('[data-active-match]')?.closest('.ficus-log-block')).toBe(blocks()[2])
+    expect(drawn()).toEqual([false, true, true, true, false])
+
+    await ui.typeSearch('entry-0-end')
+    await ui.pressSearchKey('Enter')
+    expect(drawn()).toEqual([true, true, false, false, false])
+
+    await ui.typeSearch('')
+    expect(drawn()).toEqual([false, false, false, false, false])
+  } finally {
+    await ui.dom.cleanup()
+  }
+})
+
 test('scrolling up pauses following and Jump to latest counts new lines and resumes', async () => {
   const ui = await setup()
   try {

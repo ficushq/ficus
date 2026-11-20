@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { memo, useLayoutEffect, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useFollowScroll } from '../../lib/follow-scroll'
 import { ChevronDownIcon } from '../icons'
 import { findMatchesInLine, type SystemLogBlock, type SystemLogLine, type SystemLogMatch } from './systemLogBuffer'
@@ -35,7 +35,8 @@ export function SystemLogView({
   emptyText,
   className,
 }: SystemLogViewProps) {
-  const { ref, paused, resume, pause, handlers } = useFollowScroll<HTMLDivElement>(true)
+  const { ref, paused, resume, pause, pin, handlers } = useFollowScroll<HTMLDivElement>(true)
+  const linesRef = useRef<HTMLDivElement>(null)
   // Remember how many lines had arrived when following paused, to say how many are waiting below.
   const [pausedAt, setPausedAt] = useState<number | null>(null)
   if (paused && pausedAt === null) setPausedAt(appended)
@@ -44,6 +45,7 @@ export function SystemLogView({
 
   const needle = query.toLowerCase()
   const activeKey = activeMatch ? matchKey(activeMatch.lineId, activeMatch.start) : null
+  const activeBlock = activeMatch ? blocks.findIndex((block) => blockContains(block, activeMatch.lineId)) : -1
 
   // Center the active search match. Following pauses first, so new lines cannot pull it out of view.
   useLayoutEffect(() => {
@@ -59,7 +61,18 @@ export function SystemLogView({
     }
   }, [activeKey, wrap, pause, ref])
 
+  // Off-screen blocks are sized by estimate until the browser draws them (see the CSS), so the rows
+  // can grow after a commit, for example when the newest block first wraps at a narrow width.
+  // Re-pin whenever they change size, so following stays on the newest line.
   const empty = blocks.length === 0 && !partial
+  useEffect(() => {
+    const lines = linesRef.current
+    if (!lines || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => pin())
+    observer.observe(lines)
+    return () => observer.disconnect()
+  }, [empty, pin])
+
   return (
     <div className={clsx('relative min-h-0', className)}>
       <div
@@ -79,13 +92,14 @@ export function SystemLogView({
         {empty ? (
           <p className="ficus-log-empty">{emptyText}</p>
         ) : (
-          <div className="ficus-log-lines">
-            {blocks.map((block) => (
+          <div ref={linesRef} className="ficus-log-lines">
+            {blocks.map((block, index) => (
               <LogBlockRows
                 key={block.key}
                 block={block}
                 needle={needle}
-                activeKey={activeMatch && blockContains(block, activeMatch.lineId) ? activeKey : null}
+                activeKey={index === activeBlock ? activeKey : null}
+                drawn={activeBlock !== -1 && Math.abs(index - activeBlock) <= 1}
               />
             ))}
             {partial && <LogRow line={partial} needle={needle} activeKey={activeKey} />}
@@ -113,20 +127,47 @@ function blockContains(block: SystemLogBlock, lineId: number): boolean {
   return !!first && !!last && first.id <= lineId && lineId <= last.id
 }
 
-// A full block never changes, so streaming re-renders only the newest block.
+// A full block never changes, so streaming re-renders only the newest block. Each block is its own
+// element so the browser can skip styling and laying out the blocks outside the pane (see the CSS).
+// The active match's block and its neighbours are always drawn: a block the browser skipped only
+// has an estimated height, and if it took its real height after the jump to the match, the
+// browser's scroll anchoring could carry the match out of the pane.
+// A row only sees the search text when it contains it, so typing in the search box re-renders
+// the rows that match the old or new text rather than all 10,000.
 const LogBlockRows = memo(function LogBlockRows({
   block,
   needle,
   activeKey,
+  drawn,
 }: {
   block: SystemLogBlock
   needle: string
   activeKey: string | null
+  drawn: boolean
 }) {
-  return block.lines.map((line) => <LogRow key={line.id} line={line} needle={needle} activeKey={activeKey} />)
+  return (
+    <div className={clsx('ficus-log-block', drawn && 'ficus-log-block-drawn')}>
+      {block.lines.map((line) => (
+        <LogRow
+          key={line.id}
+          line={line}
+          needle={needle && line.text.toLowerCase().includes(needle) ? needle : ''}
+          activeKey={activeKey?.startsWith(`${line.id}:`) ? activeKey : null}
+        />
+      ))}
+    </div>
+  )
 })
 
-function LogRow({ line, needle, activeKey }: { line: SystemLogLine; needle: string; activeKey: string | null }) {
+const LogRow = memo(function LogRow({
+  line,
+  needle,
+  activeKey,
+}: {
+  line: SystemLogLine
+  needle: string
+  activeKey: string | null
+}) {
   return (
     <div
       className={clsx(
@@ -138,7 +179,7 @@ function LogRow({ line, needle, activeKey }: { line: SystemLogLine; needle: stri
       {renderSpans(line, findMatchesInLine(line, needle), activeKey)}
     </div>
   )
-}
+})
 
 /** The line's styled spans, with search matches wrapped in marks (a match may cross span boundaries). */
 function renderSpans(line: SystemLogLine, matches: readonly SystemLogMatch[], activeKey: string | null): ReactNode[] {

@@ -137,6 +137,8 @@ export function useFollowScroll<T extends HTMLElement>(follow: boolean) {
     paused: follow && paused,
     resume,
     pause,
+    /** Re-pin to the bottom if following, for content that changes size without a commit or mutation. */
+    pin,
     handlers: { onScroll, onWheel, onTouchStart, onTouchMove },
   }
 }

@@ -260,7 +260,11 @@ Configuration catalogs—Workflows, Agents, Squad Presets, and Skills—use a sh
 
 ### System logs
 
-Settings → Logs is a tool, not a form: it opts out of the readable settings column (`SettingsSearchDestination fill`) and its log pane takes the remaining width and height, with an 18rem minimum on short windows. Full screen uses the shared `Modal` (`size="viewport"`, `mobileFullscreen`, Escape closes) rather than a hand-made overlay. The pane follows new lines through `useFollowScroll` (`lib/follow-scroll.tsx`), the same pause/resume rule as streaming tool output. Behaviour is described in [system logs](system-logs.md#web-viewer). The DB-free browser check is `CHROMIUM_PATH=/path/to/chromium bun scripts/check-system-logs-layout.ts` from `apps/web`; `SCREENSHOT_DIR` saves light/dark, desktop/phone screenshots of each state.
+Settings → Logs is a tool, not a form: it opts out of the readable settings column (`SettingsSearchDestination fill`) and its log pane takes the remaining width and height, with an 18rem minimum on short windows. Full screen uses the shared `Modal` (`size="viewport"`, `mobileFullscreen`, Escape closes) rather than a hand-made overlay. The pane follows new lines through `useFollowScroll` (`lib/follow-scroll.tsx`), the same pause/resume rule as streaming tool output. Behaviour is described in [system logs](system-logs.md#web-viewer).
+
+The up to 10,000 lines are real DOM rows, so `SystemLogView` keeps them cheap: rows sit in the buffer's 200-line blocks, each block has `content-visibility: auto` with a remembered size (an undrawn block counts as 200 single-row lines), and a row re-renders on a search edit only when it contains the old or new text. Two rules keep scrolling exact over estimated heights: following re-pins when the rows change size (a `ResizeObserver` calling the hook's `pin`), and the active search match's block and both neighbours are always drawn, so the browser's scroll anchoring cannot carry the match out of the pane after the jump. With a full buffer in headless Chromium this took search keystrokes from roughly 180–650 ms to 30–300 ms, wrap toggles from about 1.3 s to under 0.4 s and window resizes from 1.4–5.6 s to under 0.3 s.
+
+The DB-free browser check is `CHROMIUM_PATH=/path/to/chromium bun scripts/check-system-logs-layout.ts` from `apps/web`; it also runs a 10,000-line pass (following, a paused view while the buffer trims, Jump to latest, search jumps across the buffer, wrap). `SCREENSHOT_DIR` saves light/dark, desktop/phone screenshots of each state.
 
 ### Storage inspection
 
