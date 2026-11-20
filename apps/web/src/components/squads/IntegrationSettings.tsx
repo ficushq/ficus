@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { effectiveSquadEventRules, squadEventRulesSchema, type SquadEventRule } from '@ficus/shared'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -104,6 +104,11 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
     enabled: provider === 'linear',
   })
   const inaccessibleTeamIds = linearSelection.data?.inaccessibleTeamIds ?? []
+  // Opening the tab rewrites routes saved by team key to team IDs; reload the squad to show them.
+  const teamRoutesUpdated = linearSelection.data?.teamRoutesUpdated === true
+  useEffect(() => {
+    if (teamRoutesUpdated) void queryClient.invalidateQueries({ queryKey: queryKeys.squads.basic(squadId) })
+  }, [teamRoutesUpdated, queryClient, squadId])
   // Clean forms follow the query. Once edited, the entire form belongs to the
   // user until saved or closed; unrelated squad refreshes must not reinitialize it.
   const [draft, setDraft] = useState<RoutingDraft | null>(null)

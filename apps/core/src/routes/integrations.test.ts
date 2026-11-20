@@ -99,6 +99,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
     teams: [{ id: 'team-eng', key: 'ENG', name: 'Engineering', connectionIds: [summary.id] }],
     connections: [{ id: summary.id, displayName: 'Linear', isDefault: true, status: 'ok' }],
   }))
+  const reconcileLinearTeamRoutes = mock(async (_squadId: string) => true)
   const githubCommitSigning = mock(async () => ({ state: 'off' as const }))
   const setGitHubCommitSigning = mock(async (_id: string, enabled: boolean, _actor: string) =>
     enabled ? { state: 'on' as const, fingerprint: 'SHA256:abc', registeredOnGitHub: true } : { state: 'off' as const }
@@ -163,6 +164,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       executionVariableNames: () => ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
       signGitObject,
       linearTeams,
+      reconcileLinearTeamRoutes,
     })
   )
   return {
@@ -203,6 +205,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       retryProjection,
       executionEnvironment,
       linearTeams,
+      reconcileLinearTeamRoutes,
       githubCommitSigning,
       setGitHubCommitSigning,
       signGitObject,
@@ -974,6 +977,25 @@ describe('integration routes', () => {
     const anonymous = createApp()
     expect((await anonymous.app.request(`/api/squads/${squadId}/integrations/linear/teams`)).status).toBe(401)
     expect(anonymous.calls.linearTeams).not.toHaveBeenCalled()
+  })
+
+  test('reading Linear settings rewrites routes saved by team key and survives a Linear failure', async () => {
+    const identity = { type: 'system', systemTokenId: 'linear-routes', name: 'test', scopes: ['integrations:read'] }
+    const { app, calls } = createApp(identity as Identity)
+    const updated = await app.request(`/api/squads/${squadId}/integrations/linear`)
+    expect(updated.status).toBe(200)
+    expect(calls.reconcileLinearTeamRoutes).toHaveBeenCalledWith(squadId)
+    expect((await updated.json()).teamRoutesUpdated).toBe(true)
+
+    calls.reconcileLinearTeamRoutes.mockImplementationOnce(async () => {
+      throw new Error('provider_unavailable')
+    })
+    const failed = await app.request(`/api/squads/${squadId}/integrations/linear`)
+    expect(failed.status).toBe(200)
+    expect((await failed.json()).teamRoutesUpdated).toBeUndefined()
+
+    await app.request(`/api/squads/${squadId}/integrations/github`)
+    expect(calls.reconcileLinearTeamRoutes).toHaveBeenCalledTimes(2)
   })
 
   test('picker response contains only redacted summaries', async () => {

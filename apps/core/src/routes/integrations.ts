@@ -191,6 +191,8 @@ export interface IntegrationRoutesService extends Pick<
 export interface SquadIntegrationRoutesService {
   /** The Linear teams the squad's attached connections can see, for the team picker. Never credentials. */
   linearTeams?(squadId: string): Promise<LinearTeamDirectory>
+  /** Rewrites routes stored by Linear team key to team IDs; true when the stored routes changed. */
+  reconcileLinearTeamRoutes?(squadId: string): Promise<boolean>
   /** Sign a git commit or tag object for the squad, or decide it stays unsigned (agents only). */
   signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<GitHubSignResult>
   configureScope?(
@@ -962,8 +964,15 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
           ? ('manager' as const)
           : ('assigned' as const)
         : undefined
+      // Routes saved by team key before the team picker are rewritten to team IDs when the tab opens.
+      // A Linear failure here must never hide the squad's integration settings.
+      const teamRoutesUpdated =
+        providerKey === 'linear' && service.reconcileLinearTeamRoutes
+          ? await service.reconcileLinearTeamRoutes(resolvedSquadId(c)).catch(() => false)
+          : false
       const selection = await service.selection(resolvedSquadId(c), providerKey, audience ? { audience } : {})
       return c.json({
+        ...(teamRoutesUpdated ? { teamRoutesUpdated: true } : {}),
         providerKey,
         ...(selection.scope ? { scope: selection.scope } : {}),
         assignment: selection.assignment ? redactSummary(selection.assignment) : null,

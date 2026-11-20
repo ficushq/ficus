@@ -18,7 +18,7 @@ import {
 } from '../../../db'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import { LINEAR_ACK_BODY } from './session-acknowledger'
-import { linearTeamAccessSetupIssues } from './team-access'
+import { inaccessibleLinearTeams, linearTeamAccessSetupIssues } from './team-access'
 import { isUntrustedOutputActor } from '../outputs/authority'
 import { setEventRuleDecideForTests } from '../outputs/event-rule-decisions'
 import { LINEAR_DISPOSITION_ACTIVITIES } from './session-disposition'
@@ -509,6 +509,19 @@ describe('connection lifecycle', () => {
     })
     const issues = await linearTeamAccessSetupIssues()
     expect(issues.some((issue) => issue.includes(squad.name) && issue.includes(teamId))).toBe(true)
+  })
+
+  test('setup status names a routed team key as a key, never as a team the app cannot access', async () => {
+    const squad = await fixture.addSquad({ teamIds: ['FIC'] })
+    await processLinearAppEvent({
+      type: 'PermissionChange',
+      payload: permissionChangePayload(fixture.context, { removedTeamIds: [teamId] }),
+    })
+    const issues = (await linearTeamAccessSetupIssues()).filter((issue) => issue.includes(squad.name))
+    expect(issues).toEqual([
+      `Squad ${squad.name} routes Linear team key FIC, which is not a team ID, so it routes no Linear events. Open the squad's Linear settings and choose the team so Ficus stores the team ID.`,
+    ])
+    expect(await inaccessibleLinearTeams(squad.id, fixture.connectionId)).toEqual([])
   })
 
   test('a PermissionChange for another app user is ignored', async () => {

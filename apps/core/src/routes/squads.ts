@@ -483,6 +483,19 @@ export const squadsRouter = new Hono()
       }
     }
 
+    // Linear team routes are stored as team IDs: a key or ID is resolved through the squad's Linear
+    // connections, and an unknown team is rejected here instead of silently routing nothing.
+    if (input.metadata && Object.hasOwn(input.metadata, 'linear')) {
+      const { LinearTeamRouteError } = await import('../services/integrations/linear/team-routes')
+      try {
+        const { resolveSquadLinearRoutes } = await import('../services/integrations/runtime')
+        input.metadata.linear = await resolveSquadLinearRoutes(squad.id, input.metadata.linear)
+      } catch (error) {
+        if (error instanceof LinearTeamRouteError) return c.json({ error: error.message }, 400)
+        throw error
+      }
+    }
+
     let preparedWorkspace: PreparedHostWorkspacePath | undefined
     if (input.hostWorkspacePath) {
       try {

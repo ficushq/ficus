@@ -710,6 +710,33 @@ describe('squads routes', () => {
       expect(updated.metadata).toEqual({ ...metadata, memory: { enabled: true } })
     })
 
+    it('rejects a Linear team key it cannot resolve and keeps stored team IDs without asking Linear', async () => {
+      const teamId = '7e0f6b52-3c1d-4f7a-8b9e-1d2c3b4a5f60'
+      const created = await Squad.create({
+        name: `${testPrefix} Linear routes`,
+        purpose: 'Testing',
+        metadata: { linear: [{ teamId }] },
+      })
+      const patch = (metadata: Record<string, unknown>) =>
+        app.request(`/api/squads/${created.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+          body: JSON.stringify({ metadata }),
+        })
+
+      // The squad has no Linear connection, so the key cannot be resolved to a team ID.
+      const rejected = await patch({ linear: [{ teamId: 'FIC' }] })
+      expect(rejected.status).toBe(400)
+      expect((await rejected.json()).error).toBe(
+        "Ficus could not resolve Linear team key FIC to a team ID: the squad has no Linear connection to look it up with. Use a team key or ID the squad's Linear connection can see."
+      )
+
+      // An unrelated save that resends the stored routes needs no lookup.
+      const kept = await patch({ custom: { saved: true }, linear: [{ teamId }] })
+      expect(kept.status).toBe(200)
+      expect((await kept.json()).metadata).toMatchObject({ custom: { saved: true }, linear: [{ teamId }] })
+    })
+
     it('rejects plaintext github token metadata and invalid identity values', async () => {
       const created = await Squad.create({
         name: `${testPrefix} Bad GitHub Identity`,
