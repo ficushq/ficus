@@ -1,4 +1,5 @@
 import { addWorkReferences } from '../squad-activity/work-references'
+import { addActivityRowContext } from '../squad-activity/row-context'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { coerceSquadActivityRef } from '@ficus/shared'
@@ -109,6 +110,12 @@ export async function projectSquadActivity(input: ProjectSquadActivityInput): Pr
                 sql`,`
               )})`
         }
+        AND ${
+          !input.workStreamId
+            ? sql`TRUE`
+            : sql`(${input.access.workstreamsRead}::boolean AND (work_stream_id=${input.workStreamId}::uuid
+                OR agent_id IN (SELECT agent_id FROM workflow_bindings WHERE work_stream_id=${input.workStreamId}::uuid)))`
+        }
         AND ${!cursor ? sql`TRUE` : sql`(at<${cursor.at.toISOString()}::timestamptz OR (at=${cursor.at.toISOString()}::timestamptz AND (lane<${cursor.lane} OR (lane=${cursor.lane} AND row_id<${cursor.rowId}::uuid))))`}
       ORDER BY at DESC NULLS LAST,lane DESC NULLS LAST,row_id DESC NULLS LAST LIMIT ${input.limit + 1}
     )
@@ -128,7 +135,11 @@ export async function projectSquadActivity(input: ProjectSquadActivityInput): Pr
   }))
   const last = selected.at(-1)
   return {
-    items: await addWorkReferences(items),
+    items: await addActivityRowContext(
+      await addWorkReferences(items),
+      () => input.squadId,
+      () => input.access
+    ),
     hasMore,
     nextCursor:
       hasMore && last

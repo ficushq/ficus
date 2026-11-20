@@ -29,7 +29,7 @@ import {
   getSystemPause,
   getSystemPauseDetails,
 } from './api/system'
-import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
+import { getGlobalActivityPresence, getSquadActivityPresence, listGlobalActivity } from './api/activity'
 
 // API functions
 import {
@@ -712,6 +712,14 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.activity.presence(),
         queryFn: () => getGlobalActivityPresence(),
+        refetchInterval: 30_000,
+      }),
+    /** One squad's counts and Active work cards; refreshed by its squadActivity topic and this poll. */
+    squadPresence: (squadId: string, enabled = true) =>
+      queryOptions({
+        queryKey: queryKeys.activity.squadPresence(squadId),
+        queryFn: () => getSquadActivityPresence(squadId),
+        enabled: enabled && !!squadId,
         refetchInterval: 30_000,
       }),
     global: (filters: NormalizedSquadActivityFilters, enabled = true) =>

@@ -55,6 +55,40 @@ export interface ActivityPreviewSpan {
   href?: string
 }
 
+/**
+ * The work stream an agent row's agent works on: set only when the agent is a
+ * workflow-bound participant of that stream (`workflow_bindings`). The stream
+ * owner, the squad manager and consultants are never bound, so their rows never
+ * carry one. Present only when the viewer may read work streams in the row's squad.
+ */
+export interface ActivityWorkStreamContext {
+  id: string
+  /** Instance-wide work stream number (`#1352`). */
+  number: number
+  title: string
+  squadId: string
+  status: import('./types').WorkStreamStatus
+  /**
+   * Display name of the stream's current workflow step, for example "Implement".
+   * Several running steps are joined with " + ". `Completion-ready` or `Paused` when
+   * no step runs, `Done` or `Canceled` for a finished stream, null without a flow.
+   */
+  step: string | null
+}
+
+/**
+ * Server-resolved context for a row whose subject is an agent (`ref.type === 'agent'`),
+ * so clients never fetch per row. Both fields are optional and independent: a bound
+ * participant carries `workStream`; an agent with a purpose (`set_agent_purpose`)
+ * carries `purpose`. Clients show the stream when present, otherwise the purpose,
+ * otherwise only the agent type label (`activityRowContextLabel`).
+ */
+export interface ActivityRowContext {
+  workStream?: ActivityWorkStreamContext
+  /** The agent's purpose. Present only when the viewer may read agents in the row's squad. */
+  purpose?: string
+}
+
 export interface SquadActivityItem {
   id: string
   at: string
@@ -64,6 +98,16 @@ export interface SquadActivityItem {
   summary: string
   preview: ActivityPreviewSpan[]
   ref: SquadActivityRef
+  /** Agent rows only. Absent from older servers and when there is nothing the viewer may see. */
+  context?: ActivityRowContext
+  /**
+   * Received-message rows only ("Received message from …" and subagent reports): the
+   * activity id (`10:<executionId>`) of the sender's own chat row for the run that sent
+   * this inbox message. Clients use it to hide that sender row while this received row
+   * is shown (`hideRelayedSenderRows`). Same-squad agent senders only, and only for
+   * viewers who may read agents in the row's squad.
+   */
+  senderActivityId?: string
 }
 
 /** Agent identity only; a missing/redacted type is not evidence of a system sender. */
@@ -126,24 +170,146 @@ export interface GlobalSquadActivityPage {
   squads: Record<string, GlobalSquadActivitySquadInfo>
 }
 
+/** One open wait on an Active work card. */
+export interface ActivityWorkStreamCardWait {
+  /** Display type: `review`, `question`, `dependency` or `manual`. */
+  type: import('./types').WorkStreamWaitType
+  /** A person must act (rather than an agent, the owner or the manager). */
+  needsYou: boolean
+}
+
+/** The stream's primary pull request, when its code-host binding names one. */
+export interface ActivityWorkStreamCardPullRequest {
+  number: number
+  url?: string
+  repository: string
+  /** Open unless delivery tracking observed a merge or close. */
+  state: 'open' | 'merged' | 'closed'
+}
+
+/**
+ * One queued or active work stream on the Activity view's Active work strip.
+ * Everything comes from the server; clients render it without further requests.
+ */
+export interface ActivityWorkStreamCard {
+  id: string
+  number: number
+  squadId: string
+  title: string
+  status: import('./types').WorkStreamStatus
+  /** Same meaning as `ActivityWorkStreamContext.step`. */
+  step: string | null
+  /** Open waits, display precedence first. */
+  waits: ActivityWorkStreamCardWait[]
+  /** The stream needs the viewer (the same rule as `needsYouCount`). */
+  needsYou: boolean
+  pullRequest: ActivityWorkStreamCardPullRequest | null
+  /** Aggregate CI state of the delivery pull request when delivery tracking knows it. */
+  ci: 'passing' | 'failing' | 'pending' | null
+  /** Delivery label such as "Awaiting CI" or "Review Pull Request", when there is one. */
+  deliveryLabel: string | null
+  /** Bound participants running right now. Empty unless the viewer may read agents. */
+  workingAgentIds: string[]
+  /** Newest of the bound participants' latest Activity row and the stream's last update (ISO). */
+  lastEventAt: string
+  /** Reserved for the one-line stream summary a later change adds; absent today. */
+  summary?: string | null
+}
+
 /** Permission-filtered presence summary for the cross-squad activity feed. */
 export interface GlobalActivityPresence {
   workingAgentIds: string[]
   workingCount: number
   needsYouCount: number
   streamCount: number
+  /**
+   * Active work cards: streams needing you first, then newest event first. The same
+   * streams `streamCount` counts (muted progress excluded), capped at
+   * `ACTIVITY_WORK_STREAM_CARD_LIMIT`. Absent from older servers.
+   */
+  streams?: ActivityWorkStreamCard[]
 }
+
+/** Per-squad presence (GET /api/squads/:id/activity/presence) has the same shape. */
+export type SquadActivityPresence = GlobalActivityPresence
+
+/**
+ * Row kinds that can change an Active work card (step, waits, handoff, PR state). Clients
+ * refetch presence on these live rows only; agent status changes refresh it through the
+ * agents topic, and everything else waits for the 30-second poll.
+ */
+export const ACTIVITY_PRESENCE_ROW_KINDS: readonly SquadActivityKind[] = [
+  'workstream',
+  'wait',
+  'handoff',
+  'pr',
+  'issue',
+]
+
+/**
+ * Upper bound on `streams` in one presence response: twice what the strip shows, so a
+ * selected card just past the visible six usually stays available. Clients show fewer
+ * plus "+N more" (from `streamCount`).
+ */
+export const ACTIVITY_WORK_STREAM_CARD_LIMIT = 12
 
 export interface SquadActivityFilters {
   verbose?: boolean
   agentIds?: string[]
   kinds?: SquadActivityKind[]
+  /** Only this work stream: its own rows plus rows of its bound participants. */
+  workStreamId?: string
 }
 
 export interface NormalizedSquadActivityFilters {
   verbose: boolean
   agentIds: string[]
   kinds: SquadActivityKind[]
+  /** Omitted means every stream. */
+  workStreamId?: string
+}
+
+/**
+ * The context line for an agent row: "#1352 Floating agent windows · Implement" for a
+ * bound participant, else the agent's purpose, else null (show only the type label).
+ */
+export function activityRowContextLabel(item: Pick<SquadActivityItem, 'ref' | 'context'>): string | null {
+  if (!item.ref || typeof item.ref !== 'object' || item.ref.type !== 'agent') return null
+  const stream = item.context?.workStream
+  if (stream) return [`#${stream.number} ${stream.title}`, stream.step].filter(Boolean).join(' · ')
+  const purpose = item.context?.purpose?.trim()
+  return purpose || null
+}
+
+/**
+ * How much later than the received row a sender row may be and still be the run's
+ * lead-up to the message: a step's message row lands after its tool calls finish.
+ * A sender row newer than this says something new and stays.
+ */
+export const RELAYED_SENDER_ROW_SLACK_MS = 60_000
+
+/**
+ * Default-view cleanup for relayed messages: hide a sender's own chat row while at least
+ * one received row naming it (`senderActivityId`) is in `items`. Pass exactly the rows
+ * the view shows after every filter, so a received row that is filtered out, or belongs
+ * to a squad the viewer cannot see, never hides the sender row and a message never
+ * disappears. With several recipients, any shown received row hides it. Order is kept.
+ */
+export function hideRelayedSenderRows<T extends Pick<SquadActivityItem, 'id' | 'at' | 'senderActivityId'>>(
+  items: readonly T[]
+): T[] {
+  const latestReceivedAt = new Map<string, number>()
+  for (const item of items) {
+    if (!item.senderActivityId) continue
+    const at = Date.parse(item.at)
+    if (!(at <= (latestReceivedAt.get(item.senderActivityId) ?? -Infinity)))
+      latestReceivedAt.set(item.senderActivityId, at)
+  }
+  if (latestReceivedAt.size === 0) return [...items]
+  return items.filter((item) => {
+    const receivedAt = latestReceivedAt.get(item.id)
+    return receivedAt === undefined || Date.parse(item.at) > receivedAt + RELAYED_SENDER_ROW_SLACK_MS
+  })
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/

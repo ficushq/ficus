@@ -373,23 +373,31 @@ export function workStreamSecondaryDeliveryLabel(workStream: WorkStreamPresentat
   return codeHostDeliveryLabel(workStream.delivery) ?? DELIVERY_STATUS_LABELS[state] ?? null
 }
 
+/**
+ * Whether this one open wait asks a person to act: a question, an actionable review,
+ * or a human-actor manual blocker other than the delivery approval wait. Ignores pause
+ * and terminal state; `workStreamNeedsHumanAttention` applies those.
+ */
+export function workStreamWaitNeedsHuman(
+  wait: WorkStreamWaitDisplayFacts & { id?: string },
+  workStream: Pick<WorkStreamPresentationFacts, 'openWaits' | 'delivery'>
+): boolean {
+  return (
+    wait.type === 'question' ||
+    (!isWorkflowHumanGateWait(wait) &&
+      wait.type === 'manual' &&
+      workStreamWaitActor(wait) === 'human' &&
+      !(workStream.delivery?.kind === 'approval' && wait.id === workStream.delivery.approvalWaitId)) ||
+    (workStreamWaitDisplayType(wait) === 'review' &&
+      !workflowReviewBlockingWaits(wait, workStream.openWaits ?? [wait]).length)
+  )
+}
+
 /** Whether a stream contributes to a user-attention aggregate, independently of its primary bucket. */
 export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentationFacts): boolean {
   const state = selectWorkStreamPresentationState(workStream)
   if (['done', 'canceled', 'paused'].includes(state)) return false
-  if (
-    workStream.openWaits?.some(
-      (wait) =>
-        wait.type === 'question' ||
-        (!isWorkflowHumanGateWait(wait) &&
-          wait.type === 'manual' &&
-          workStreamWaitActor(wait) === 'human' &&
-          !(workStream.delivery?.kind === 'approval' && wait.id === workStream.delivery.approvalWaitId)) ||
-        (workStreamWaitDisplayType(wait) === 'review' &&
-          !workflowReviewBlockingWaits(wait, workStream.openWaits!).length)
-    )
-  )
-    return true
+  if (workStream.openWaits?.some((wait) => workStreamWaitNeedsHuman(wait, workStream))) return true
   if (state === 'delivery_approval' || state === 'delivery_review' || state === 'delivery_merge') return true
   if (state === 'in_progress' && ['approval', 'review', 'merge'].includes(String(workStream.delivery?.kind)))
     return true

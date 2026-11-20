@@ -1,5 +1,5 @@
 import type { AuthIdentity } from '@ficus/client-core'
-import type { SquadActivityItem, SquadActivityKind } from '@ficus/shared'
+import type { ActivityWorkStreamCard, SquadActivityItem, SquadActivityKind, WorkStreamWaitType } from '@ficus/shared'
 
 /**
  * Kind toggles as the user sees them (2026-08-27 audit): the three
@@ -121,4 +121,43 @@ export function activityExternalHref(value: string): string | undefined {
   } catch {
     /* Unknown and unsafe destinations render as text. */
   }
+}
+
+/* Active work strip labels (ActivityWorkStrip.tsx). */
+
+/** Cards shown before "+N more" (operator request 2026-11-20: "about six"). */
+export const ACTIVE_WORK_VISIBLE_CARDS = 6
+
+const WAIT_LABELS: Record<WorkStreamWaitType, string> = {
+  review: 'review',
+  question: 'question',
+  dependency: 'dependency',
+  manual: 'blocker',
+}
+
+/** "Waiting on you: review" when a person must act, else "Waiting: dependency". */
+export function activityCardWaitLabel(card: Pick<ActivityWorkStreamCard, 'waits'>): string | null {
+  const mine = [...new Set(card.waits.filter((wait) => wait.needsYou).map((wait) => WAIT_LABELS[wait.type]))]
+  if (mine.length) return `Waiting on you: ${mine.join(', ')}`
+  const other = [...new Set(card.waits.map((wait) => WAIT_LABELS[wait.type]))]
+  return other.length ? `Waiting: ${other.join(', ')}` : null
+}
+
+const CI_LABELS: Record<NonNullable<ActivityWorkStreamCard['ci']>, string> = {
+  passing: 'CI passing',
+  failing: 'CI failing',
+  pending: 'CI running',
+}
+
+/** "PR #12 · CI failing · Review Pull Request", omitting anything not known. */
+export function activityCardDeliveryLabel(
+  card: Pick<ActivityWorkStreamCard, 'pullRequest' | 'ci' | 'deliveryLabel'>
+): string | null {
+  const parts: string[] = []
+  if (card.pullRequest)
+    parts.push(`PR #${card.pullRequest.number}${card.pullRequest.state === 'open' ? '' : ` ${card.pullRequest.state}`}`)
+  if (card.ci) parts.push(CI_LABELS[card.ci])
+  // The CI part already says what a CI delivery label would.
+  if (card.deliveryLabel && !(card.ci && /\bCI\b/.test(card.deliveryLabel))) parts.push(card.deliveryLabel)
+  return parts.length ? parts.join(' · ') : null
 }
