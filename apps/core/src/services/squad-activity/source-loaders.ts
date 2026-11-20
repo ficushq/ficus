@@ -723,12 +723,19 @@ async function listReceiptSourcePage<F extends ReceiptDispatchFact>(
     const eventAfter = after?.scanId ?? ''
     let hasMoreCandidates = after?.hasMoreCandidates ?? true
     if (pending.length === 0) {
-      const candidates = rows<any>(
-        await db.execute(sql`SELECT id::text id,event_type,payload,${deliveryIdSql} delivery_id,created_at FROM webhook_events
-          WHERE provider IN ${pager.provider === 'linear' ? sql`('linear','linear-app')` : sql`(${pager.provider})`} AND verified=true
+      // One index-ordered scan per delivering provider (the Linear family also reads the agent app's
+      // `linear-app` webhook), merged and cut to the page: each branch stops after `limit` rows.
+      const providers = pager.provider === 'linear' ? ['linear', 'linear-app'] : [pager.provider]
+      const branches = providers.map(
+        (provider) => sql`(SELECT id,event_type,payload,${deliveryIdSql} delivery_id,created_at FROM webhook_events
+          WHERE provider=${provider} AND verified=true
             AND created_at>=${fromIso}::timestamptz AND created_at<${scanTo.toISOString()}::timestamptz
             AND (created_at>${receiptAfter}::timestamptz OR (created_at=${receiptAfter}::timestamptz AND id::text>${eventAfter}))
-          ORDER BY created_at,id LIMIT ${limit}`)
+          ORDER BY created_at,id LIMIT ${limit})`
+      )
+      const candidates = rows<any>(
+        await db.execute(sql`SELECT id::text id,event_type,payload,delivery_id,created_at
+          FROM (${sql.join(branches, sql` UNION ALL `)}) candidates ORDER BY created_at,id LIMIT ${limit}`)
       )
       if (candidates.length === 0) return { groupIds: [], next: null }
       pending = candidates.flatMap((candidate) => {
