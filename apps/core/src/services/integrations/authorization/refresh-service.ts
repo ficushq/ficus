@@ -1,6 +1,7 @@
 import type { IntegrationAuditRecorder } from '../audit'
 import type { IntegrationConnectionRecord } from '../connection-repository'
-import { connectionOAuthView, type OAuthPluginSource } from '../oauth-plugin-view'
+import type { IntegrationPluginV1 } from '../plugin'
+import type { OAuthConnectionFacts } from '../oauth-plugin-view'
 import type { ConnectionAuthorizationLease } from './connection-lease'
 import { OAuthTransportError, type OAuthTransport } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
@@ -15,9 +16,11 @@ import {
   type OAuthCredentialBundleV1,
 } from './credential-bundle'
 
-// Refresh never invokes command execution resolvers. The plugin is narrowed per connection with
-// `connectionOAuthView`, so a manual plugin's managed-driver connections refresh through that driver.
-type RefreshPluginSource = OAuthPluginSource<any>
+// Refresh uses only these capabilities; it never invokes command execution resolvers.
+type OAuthPlugin = Pick<
+  IntegrationPluginV1<unknown, OAuthCredentialBundleV1>,
+  'connection' | 'authorization' | 'classifyError'
+>
 export type RefreshReason = 'proactive' | 'explicit' | 'authentication_failure'
 export type RefreshResult = {
   status: 'refreshed' | 'unchanged' | 'reauthorization_required' | 'degraded'
@@ -51,7 +54,11 @@ export interface IntegrationRefreshDependencies {
       actor?: string
     ): Promise<void>
   }
-  resolvePlugin(providerKey: string): RefreshPluginSource | undefined
+  /**
+   * The OAuth view for this connection (`connectionOAuthView`), so a manual plugin's managed-driver
+   * connections refresh through that driver. Undefined when the connection has no OAuth view.
+   */
+  resolvePlugin(providerKey: string, connection: OAuthConnectionFacts): OAuthPlugin | undefined
   transport: Pick<OAuthTransport, 'authority' | 'refresh'>
   lease: ConnectionAuthorizationLease
   invalidateAssignments(connectionId: string): Promise<void>
@@ -113,9 +120,10 @@ export class IntegrationRefreshService {
         }
         return result
       }
-      const source = this.#dependencies.resolvePlugin(currentConnection.providerKey)
-      const plugin = source && connectionOAuthView(source, currentConnection)
-      if (!plugin) return { status: 'unchanged', code: 'unsupported_provider' }
+      const plugin = this.#dependencies.resolvePlugin(currentConnection.providerKey, currentConnection)
+      if (!plugin || plugin.authorization.kind !== 'oauth2') {
+        return { status: 'unchanged', code: 'unsupported_provider' }
+      }
       let configuration: unknown
       try {
         configuration = plugin.connection.parseConfiguration(currentConnection.configuration)

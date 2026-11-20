@@ -33,7 +33,7 @@ test('concrete execution plugins fit OAuth-only boundaries without widening reso
   const fixture = resolve(root, '.github/integration-execution-types.fixture.ts')
   const text = `
     import type { IntegrationPluginV1, IntegrationExecutionDeclaration } from ${JSON.stringify(resolve(integration, 'plugin'))}
-    import { oauthPluginView } from ${JSON.stringify(resolve(integration, 'oauth-plugin-view'))}
+    import { connectionOAuthView, oauthPluginView, type OAuthConnectionFacts } from ${JSON.stringify(resolve(integration, 'oauth-plugin-view'))}
     import type { OAuthCredentialBundleV1 } from ${JSON.stringify(resolve(integration, 'authorization/credential-bundle'))}
     ${alias(refresh, 'OAuthPlugin')}
     interface RefreshBoundary { ${resolvePlugin!.getText(refresh)} }
@@ -55,7 +55,11 @@ test('concrete execution plugins fit OAuth-only boundaries without widening reso
     managedView.execution
     const refreshBoundary: RefreshBoundary = { resolvePlugin: () => oauth }
     const refreshFromView: RefreshBoundary = { resolvePlugin: () => trueView }
-    void refreshBoundary; void refreshFromView
+    // A manual plugin's managed-driver connection reaches refresh only as its per-connection OAuth view.
+    const refreshFromConnection: RefreshBoundary = {
+      resolvePlugin: (_provider: string, connection: OAuthConnectionFacts) => connectionOAuthView(manual, connection),
+    }
+    void refreshBoundary; void refreshFromView; void refreshFromConnection
 
     const execution: IntegrationExecutionDeclaration<Config, OAuthCredentialBundleV1> = {
       binaries: ['fake'],

@@ -3,12 +3,8 @@ import type { OAuthAuthority } from './authorization/authority'
 
 export type ConnectionAuthState = 'pending' | 'authenticated' | 'invalid' | 'reauthorization_required'
 export type ConnectionHealthState = 'unknown' | 'healthy' | 'degraded' | 'unreachable'
-/**
- * How a connection's material was obtained. `oauth2` connections get the OAuth lifecycle (refresh,
- * revocation, execution expiry and authority fencing) even when their plugin is manual and offers a
- * managed OAuth driver; `manual` connections never do.
- */
-export type IntegrationAuthorizationKind = 'manual' | 'oauth2'
+import type { IntegrationAuthorizationKind } from './plugin'
+export type { IntegrationAuthorizationKind } from './plugin'
 
 /** Persisted provider material. Connections belong to the instance-global pool. */
 export interface IntegrationConnectionRecord<C = unknown> {

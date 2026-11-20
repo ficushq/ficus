@@ -266,7 +266,9 @@ describe('refresh for a manual+managed plugin', () => {
           stored = mutate(stored) ?? stored
         },
       },
-      resolvePlugin: (key) => (key === dualPlugin.key ? dualPlugin : undefined),
+      // Mirrors the runtime wiring: the refresh service only ever sees the connection's OAuth view.
+      resolvePlugin: (key, candidate) =>
+        key === dualPlugin.key ? connectionOAuthView(dualPlugin, candidate) : undefined,
       transport: {
         authority,
         refresh: async (input) => {
