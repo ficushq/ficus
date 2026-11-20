@@ -1,4 +1,4 @@
-import { FlowWaitStreamEndedError, FlowWaitSupersededError } from '../work-streams/wait-scope'
+import { AnswerNoRecipientError, FlowWaitStreamEndedError, FlowWaitSupersededError } from '../work-streams/wait-scope'
 import { forwardedAnswerNote, resolveQuestionAnswerRoute, type ForwardRoute } from './question-answer-routing'
 import {
   formatQuestionAnswerChoices,
@@ -200,6 +200,11 @@ async function deliverClaim(
     .select({ status: agents.status, pendingDormancyAt: agents.pendingDormancyAt })
     .from(agents)
     .where(eq(agents.id, row.agentId))
+  // Route first: when the asking attempt has ended, a stopped asker does not stop the answer from
+  // reaching whoever holds the work now (or being refused with its own cause).
+  const route = await resolveQuestionAnswerRoute(db, row)
+  if (route.kind === 'refuse') return refuseClaim(claim, row, route.error, now)
+  if (route.kind === 'forward') return forwardClaim(claim, row, route.forward, now)
   if (!target || target.status === 'terminated' || target.pendingDormancyAt) {
     const failed = await settleFailure(
       claim,
@@ -217,10 +222,6 @@ async function deliverClaim(
     }
     return 'failed'
   }
-
-  const route = await resolveQuestionAnswerRoute(db, row)
-  if (route.kind === 'refuse') return refuseClaim(claim, row, route.error, now)
-  if (route.kind === 'forward') return forwardClaim(claim, row, route.forward, now)
 
   const inboxKey = `agent-question-answer:v1:${row.id}`
   const clientId = `${inboxKey}:inbox`
@@ -319,19 +320,24 @@ async function deliverClaim(
   }
 }
 
-/** A refused answer fails the same way on every retry, so it is terminal at once. */
+/**
+ * A refused answer fails the same way on every retry, so it is terminal at once. An ended stream's
+ * refusal keeps its existing behavior (the Action Center card is the notice); an answer nobody can
+ * receive also raises the operator alert, as the asker-stopped failure did before it was routed.
+ */
 async function refuseClaim(
   claim: { id: string; generation: number; token: string },
   row: AgentQuestionRow,
-  error: FlowWaitSupersededError,
+  error: FlowWaitSupersededError | AnswerNoRecipientError,
   now: Date
 ): Promise<'failed'> {
-  await settleFailure(claim, error, now, true)
+  const failed = await settleFailure(claim, error, now, true)
   eventEmitter.emit('agent-question.delivery-failed', {
     questionId: row.id,
     agentId: row.agentId,
     squadId: row.squadId,
   })
+  if (failed && error instanceof AnswerNoRecipientError) await alertTerminalFailure(row.id)
   return 'failed'
 }
 

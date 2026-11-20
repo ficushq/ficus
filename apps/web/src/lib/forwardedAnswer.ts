@@ -9,7 +9,11 @@ export function forwardedAnswerText(forward: AgentQuestionAnswerForward): string
   const others = forward.recipients.filter((recipient) => recipient.role !== 'asker')
   if (!others.length) return `${cause}; the answer was sent to the agent as a message.`
   const names = others.map((recipient) =>
-    recipient.role === 'owner' ? `${recipient.label} (work stream owner)` : recipient.label
+    recipient.role === 'owner'
+      ? `${recipient.label} (work stream owner)`
+      : recipient.role === 'manager'
+        ? `${recipient.label} (squad manager)`
+        : recipient.label
   )
   return `${cause}; the answer was passed to ${names.join(', ')}.`
 }

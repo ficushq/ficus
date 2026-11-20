@@ -28,7 +28,11 @@ import {
   questionDeliveryFailureAlertContent,
   reconcileQuestionDeliveryFailureAlertsOnce,
 } from './question-delivery-failure-alert'
-import { FLOW_WAIT_STREAM_ENDED_MESSAGES, FLOW_WAIT_SUPERSEDED_MESSAGE } from '../work-streams/wait-scope'
+import {
+  ANSWER_NO_RECIPIENT_MESSAGE,
+  FLOW_WAIT_STREAM_ENDED_MESSAGES,
+  FLOW_WAIT_SUPERSEDED_MESSAGE,
+} from '../work-streams/wait-scope'
 import { prepareInboxDelivery } from '../inbox/inboxDelivery'
 import type { MessageMetadata, QuestionData } from '@ficus/shared'
 
@@ -282,6 +286,12 @@ describe('question answer delivery outbox', () => {
       expect(content).not.toContain('Retry from the Action Center')
     }
     expect(replaced).not.toContain('work stream had already')
+
+    // Nobody live could take the answer: said plainly, with no retry offered.
+    const nobody = questionDeliveryFailureAlertContent({ agentId, lastError: ANSWER_NO_RECIPIENT_MESSAGE })
+    expect(nobody).toContain('so nobody was left to receive it')
+    expect(nobody).toContain('Retrying will not deliver it')
+    expect(nobody).not.toContain('Retry from the Action Center')
 
     expect(
       questionDeliveryFailureAlertContent({ agentId, lastError: 'Agent agent-1 is terminating.\n  at stack' })

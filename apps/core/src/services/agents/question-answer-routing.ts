@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
   formatAgentLabel,
@@ -8,10 +8,19 @@ import {
   type WorkflowAttempt,
   type WorkflowRun,
 } from '@ficus/shared'
-import { agentQuestions, agents, executions, workStreamFlowRuns, workStreamWaits, workStreams } from '../../db/schema'
+import {
+  agentQuestions,
+  agents,
+  executions,
+  squads,
+  workStreamFlowRuns,
+  workStreamWaits,
+  workStreams,
+} from '../../db/schema'
 import type { db, DbTx } from '../../db'
 import type { DbHandle } from '../work-streams/waits'
 import {
+  AnswerNoRecipientError,
   FlowWaitStreamEndedError,
   isCurrentQuestionAttempt,
   type EndedWorkStreamStatus,
@@ -59,8 +68,11 @@ export type QuestionAnswerRoute =
   | { kind: 'asker' }
   /** The asking attempt is no longer running: pass the answer on to these recipients. */
   | { kind: 'forward'; forward: ForwardRoute }
-  /** The stream finished or was canceled: nothing may be woken for its work. */
-  | { kind: 'refuse'; error: FlowWaitStreamEndedError }
+  /**
+   * The stream finished or was canceled, so nothing may be woken for its work; or nobody live was
+   * left to receive the answer.
+   */
+  | { kind: 'refuse'; error: FlowWaitStreamEndedError | AnswerNoRecipientError }
 
 /** Attempts started, directly or through later handoffs, by the origin attempt's result. */
 function descendants(state: WorkflowRun, originId: number): Set<number> {
@@ -78,26 +90,47 @@ function descendants(state: WorkflowRun, originId: number): Set<number> {
   return found
 }
 
-async function liveAgentLabels(store: DbHandle, ids: string[]) {
+/** Display labels for the given agents, and which of them can still receive mail. */
+async function agentLabels(store: DbHandle, ids: string[]) {
+  const unique = [...new Set(ids)]
+  const rows = unique.length
+    ? await store
+        .select({
+          id: agents.id,
+          agentTypeId: agents.agentTypeId,
+          status: agents.status,
+          metadata: agents.metadata,
+          pendingDormancyAt: agents.pendingDormancyAt,
+        })
+        .from(agents)
+        .where(inArray(agents.id, unique))
+    : []
   const labels = new Map<string, string>()
-  for (const id of new Set(ids)) {
-    const [agent] = await store
-      .select({
-        agentTypeId: agents.agentTypeId,
-        status: agents.status,
-        metadata: agents.metadata,
-        pendingDormancyAt: agents.pendingDormancyAt,
-      })
-      .from(agents)
-      .where(eq(agents.id, id))
-    if (!agent || agent.status === 'terminated' || agent.pendingDormancyAt) continue
+  const live = new Set<string>()
+  for (const agent of rows) {
     const metadata = agent.metadata as AgentMetadata | null
     labels.set(
-      id,
+      agent.id,
       formatAgentLabel({ name: metadata?.name, purpose: metadata?.purpose, agentTypeId: agent.agentTypeId })
     )
+    if (agent.status !== 'terminated' && !agent.pendingDormancyAt) live.add(agent.id)
   }
-  return labels
+  return { labels, live }
+}
+
+/** The squad's designated manager agent, if the squad has one. */
+async function squadManagerId(store: DbHandle, squadId: string | null): Promise<string | null> {
+  if (!squadId) return null
+  const [squad] = await store
+    .select({ managerAgentId: squads.managerAgentId })
+    .from(squads)
+    .where(eq(squads.id, squadId))
+  if (!squad?.managerAgentId) return null
+  const [manager] = await store
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.id, squad.managerAgentId), eq(agents.squadId, squadId), eq(agents.agentTypeId, 'manager')))
+  return manager?.id ?? null
 }
 
 /**
@@ -115,8 +148,10 @@ async function liveAgentLabels(store: DbHandle, ids: string[]) {
  * - Replaced (a rework, restart or revision canceled it): a running attempt of the same step or the
  *   same agent took the work over, so its agent receives it.
  *
- * Either way, when nobody else can take it the asker receives it as an ordinary message. Only a
- * finished or canceled stream refuses the answer: nothing may wake an agent into ended work.
+ * Either way, when nobody else can take it the asker receives it as an ordinary message, and when
+ * the asker has stopped too, the squad's manager does. Only a finished or canceled stream refuses
+ * the answer outright (nothing may wake an agent into ended work), and an answer that no live agent
+ * can receive is refused as `no-recipient` rather than recorded as delivered to a stopped agent.
  */
 export async function resolveQuestionAnswerRoute(store: DbHandle, row: QuestionRow): Promise<QuestionAnswerRoute> {
   const origin = await questionOrigin(store, row)
@@ -124,7 +159,7 @@ export async function resolveQuestionAnswerRoute(store: DbHandle, row: QuestionR
   if (await isCurrentQuestionAttempt(store, origin.workStreamId, origin.attemptId, row.agentId))
     return { kind: 'asker' }
   const [stream] = await store
-    .select({ status: workStreams.status, ownerAgentId: workStreams.ownerAgentId })
+    .select({ status: workStreams.status, ownerAgentId: workStreams.ownerAgentId, squadId: workStreams.squadId })
     .from(workStreams)
     .where(eq(workStreams.id, origin.workStreamId))
   if (!stream) return { kind: 'asker' }
@@ -152,27 +187,39 @@ export async function resolveQuestionAnswerRoute(store: DbHandle, row: QuestionR
       (attempt) => (originAttempt && attempt.stepId === originAttempt.stepId) || agentOf(attempt) === row.agentId
     )
   const owner = run?.activated && reason === 'attempt-finished' ? completionDeliveryOwner(run) : undefined
-  const labels = await liveAgentLabels(store, [
+  const managerId = await squadManagerId(store, stream.squadId ?? row.squadId)
+  const { labels, live } = await agentLabels(store, [
     ...candidates.flatMap((attempt) => agentOf(attempt) ?? []),
     ...(owner ? [owner.agentId] : []),
     ...(stream.ownerAgentId ? [stream.ownerAgentId] : []),
+    ...(managerId ? [managerId] : []),
     row.agentId,
   ])
   const recipients: AgentQuestionAnswerForwardRecipient[] = []
   for (const attempt of candidates) {
     const agentId = agentOf(attempt)
-    const label = agentId && labels.get(agentId)
-    if (!label || recipients.some((entry) => entry.agentId === agentId)) continue
-    recipients.push({ role: 'current-work', agentId, label, attemptId: attempt.id, stepId: attempt.stepId })
+    if (!agentId || !live.has(agentId) || recipients.some((entry) => entry.agentId === agentId)) continue
+    recipients.push({
+      role: 'current-work',
+      agentId,
+      label: labels.get(agentId)!,
+      attemptId: attempt.id,
+      stepId: attempt.stepId,
+    })
   }
   if (!recipients.length && reason === 'attempt-finished') {
-    if (owner && labels.has(owner.agentId))
+    if (owner && live.has(owner.agentId))
       recipients.push({ role: 'delivery', agentId: owner.agentId, label: labels.get(owner.agentId)! })
-    else if (stream.ownerAgentId && labels.has(stream.ownerAgentId))
+    else if (stream.ownerAgentId && live.has(stream.ownerAgentId))
       recipients.push({ role: 'owner', agentId: stream.ownerAgentId, label: labels.get(stream.ownerAgentId)! })
   }
-  if (!recipients.length)
-    recipients.push({ role: 'asker', agentId: row.agentId, label: labels.get(row.agentId) ?? row.agentId })
+  // An inbox message to a stopped agent is never read: only a live asker, then a live manager, can
+  // take the answer. With neither, the answer is refused so the person and the operator are told.
+  if (!recipients.length && live.has(row.agentId))
+    recipients.push({ role: 'asker', agentId: row.agentId, label: labels.get(row.agentId)! })
+  if (!recipients.length && managerId && live.has(managerId))
+    recipients.push({ role: 'manager', agentId: managerId, label: labels.get(managerId)! })
+  if (!recipients.length) return { kind: 'refuse', error: new AnswerNoRecipientError() }
   return {
     kind: 'forward',
     forward: {
@@ -207,9 +254,15 @@ export function forwardedAnswerNote(
         ? `It is passed to you because you are running step ${recipient.stepId} (attempt ${recipient.attemptId}), which now holds that work.`
         : recipient.role === 'delivery'
           ? 'It is passed to you because you are delivering the work stream.'
-          : 'It is passed to you as the work stream owner because no step is running.'
+          : recipient.role === 'manager'
+            ? 'It is passed to you as the squad manager because the asking agent has stopped and no live agent holds that work. Route it to whoever should act on it, if anyone.'
+            : 'It is passed to you as the work stream owner because no step is running.'
   const who = recipient.role === 'asker' ? 'You asked this question' : `${asker} asked this question`
-  return `${who} during ${where}. ${cause} ${why} Use the answer if it still applies to the work.`
+  const apply =
+    recipient.role === 'asker'
+      ? 'Use the answer if it still applies to the work.'
+      : 'You did not ask it: first decide whether the answer still applies to your current work, and change course only if it does.'
+  return `${who} during ${where}. ${cause} ${why} ${apply}`
 }
 
 /**

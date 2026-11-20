@@ -378,6 +378,7 @@ describe('ActionItem refused answer delivery', () => {
     ['stream-done', 'the work stream had already finished when it arrived'],
     ['stream-canceled', 'the work stream had already been canceled when it arrived'],
     ['attempt-replaced', 'was no longer running when it arrived'],
+    ['no-recipient', 'nobody was left working on it to receive the answer'],
   ] as const)('says a %s answer was not delivered and offers no retry', async (refusal, cause) => {
     const base = failedDeliveryAction()
     const data = base.data as AgentQuestionActionData

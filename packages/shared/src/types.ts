@@ -768,9 +768,11 @@ export type AgentQuestionAnswerDeliveryStatus = 'pending' | 'delivering' | 'deli
  * from was replaced, or its work stream had already finished or been canceled. The agent certainly
  * did not receive it, and a retry cannot deliver it. Current servers pass an answer to a replaced or
  * finished attempt on instead (AgentQuestionAnswerForward); `attempt-replaced` remains for answers
- * refused before that.
+ * refused before that. `no-recipient`: the attempt was no longer running and nobody was left to take
+ * the answer on (the asker had stopped, no live agent held the work, and the squad had no live
+ * manager).
  */
-export type AgentQuestionAnswerRefusal = 'attempt-replaced' | 'stream-done' | 'stream-canceled'
+export type AgentQuestionAnswerRefusal = 'attempt-replaced' | 'no-recipient' | 'stream-done' | 'stream-canceled'
 
 /** Who received an answer that was passed on instead of going to the asking agent's own attempt. */
 export interface AgentQuestionAnswerForwardRecipient {
@@ -778,9 +780,10 @@ export interface AgentQuestionAnswerForwardRecipient {
    * `current-work`: an agent running the stream's active work. `delivery`: the stream's delivery
    * participant at completion-ready. `owner`: the stream's owner agent, when nothing was running.
    * `asker`: the asking agent itself, as a plain message, when nobody else could take it on (for a
-   * replaced attempt: no running attempt of the same step or agent).
+   * replaced attempt: no running attempt of the same step or agent). `manager`: the squad's manager,
+   * when the asker had stopped too.
    */
-  role: 'current-work' | 'delivery' | 'owner' | 'asker'
+  role: 'current-work' | 'delivery' | 'owner' | 'asker' | 'manager'
   agentId: string
   /** The agent's display label when the answer was passed on. */
   label: string

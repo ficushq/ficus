@@ -633,6 +633,8 @@ function SquadQuestionActionContent({
 const ANSWER_REFUSAL_TEXT: Record<AgentQuestionAnswerRefusal, string> = {
   'attempt-replaced':
     'Your answer was saved but not delivered: the step the agent asked from was no longer running when it arrived.',
+  'no-recipient':
+    'Your answer was saved but went nowhere: the step the agent asked from had ended, the agent had stopped, and nobody was left working on it to receive the answer.',
   'stream-done':
     'Your answer was saved but went nowhere: the work stream had already finished when it arrived, so it was not delivered to the agent.',
   'stream-canceled':

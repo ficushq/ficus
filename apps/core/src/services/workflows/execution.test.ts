@@ -1658,6 +1658,7 @@ describe('answers to a question whose asking attempt has finished', () => {
     expect(forwarded!.content).toContain('asked this question during step build (attempt 1)')
     expect(forwarded!.content).toContain('That step had already finished when the answer arrived')
     expect(forwarded!.content).toContain('you are running step review (attempt 2)')
+    expect(forwarded!.content).toContain('You did not ask it: first decide whether the answer still applies')
     expect(forwarded!.content).toContain('Redis (redis)')
     expect(await isCurrentFlowMessage(forwarded!)).toBe(true)
     // The idle asker is not woken: nothing was addressed to it.
@@ -1767,6 +1768,93 @@ describe('answers to a question whose asking attempt has finished', () => {
     expect(askerMessage).toMatchObject({ subject: 'Answer to your question', deliveryMode: 'follow-up' })
     expect(askerMessage!.content).toContain('You asked this question during step build (attempt 1)')
     expect(askerMessage!.content).toContain('No flow step is assigned to you by it')
+  })
+
+  // Regression (review of the first pass): when the asker had stopped too, the last fallback sent the
+  // answer to the stopped asker and recorded it as delivered, so nobody saw it and nothing alerted.
+  test('go to the squad manager when the asker has stopped, and are refused when nobody is left', async () => {
+    const { reconcileQuestionAnswerDeliveriesOnce } = await import('../agents/question-answer-delivery')
+    const { getAgentQuestion } = await import('../agents/questions')
+    const { questionDeliveryFailureAlertContent } = await import('../agents/question-delivery-failure-alert')
+    const { ANSWER_NO_RECIPIENT_MESSAGE } = await import('../work-streams/wait-scope')
+    const { agentQuestions } = await import('../../db/schema')
+    const id = await create()
+    const builder = (await getFlow(id))!.attemptAgents['1']!
+    await advance(id, 'completed')
+    const reviewer = (await getFlow(id))!.attemptAgents['2']!
+    const user = await createTestUser({ prefix })
+    const now = new Date()
+    const answered = async (text: string) => {
+      const [row] = await db
+        .insert(agentQuestions)
+        .values({
+          agentId: builder,
+          squadId,
+          flowWorkStreamId: id,
+          flowAttemptId: 1,
+          questionData: { questions: [{ id: 'q', type: 'text', question: text }] },
+          status: 'answered',
+          answer: 'An answer',
+          answeredByUserId: user.id,
+          answeredAt: now,
+          answerDeliveryStatus: 'pending',
+          answerDeliveryNextAttemptAt: now,
+        })
+        .returning()
+      return row!
+    }
+    const nobody = await answered('Nobody left?')
+    const managed = await answered('Manager left?')
+    // The asker and the agent running the work have both stopped, and the stream has no owner.
+    await db
+      .update(agents)
+      .set({ status: 'terminated' })
+      .where(inArray(agents.id, [builder, reviewer]))
+
+    // No squad manager either: refused with its own cause, not recorded as delivered.
+    expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: nobody.id })).toMatchObject({ failed: 1 })
+    const [refused] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, nobody.id))
+    expect(refused!.answerDeliveryStatus).toBe('failed')
+    expect(refused!.answerDeliveryLastError).toBe(ANSWER_NO_RECIPIENT_MESSAGE)
+    expect(refused!.answerDeliveryForward).toBeNull()
+    expect(
+      await db
+        .select()
+        .from(inbox)
+        .where(like(inbox.idempotencyKey, `agent-question-answer:v1:${nobody.id}%`))
+    ).toEqual([])
+    expect((await getAgentQuestion(nobody.id))!.answerDelivery).toMatchObject({
+      status: 'failed',
+      refusal: 'no-recipient',
+      canRetry: false,
+    })
+    expect(
+      questionDeliveryFailureAlertContent({ agentId: builder, lastError: refused!.answerDeliveryLastError })
+    ).toContain('nobody was left to receive it')
+
+    // With a live squad manager, the manager receives it.
+    const [manager] = await db
+      .insert(agents)
+      .values({ squadId, agentTypeId: 'manager', status: 'idle', metadata: { name: 'squad-manager' } })
+      .returning()
+    await db.update(squads).set({ managerAgentId: manager!.id }).where(eq(squads.id, squadId))
+    try {
+      expect(await reconcileQuestionAnswerDeliveriesOnce({ now, questionId: managed.id })).toMatchObject({
+        delivered: 1,
+      })
+      const [toManager] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, managed.id))
+      expect(toManager!.answerDeliveryForward?.recipients).toMatchObject([
+        { role: 'manager', agentId: manager!.id, label: 'squad-manager' },
+      ])
+      const [message] = await db
+        .select()
+        .from(inbox)
+        .where(eq(inbox.idempotencyKey, `agent-question-answer:v1:${managed.id}:forward:${manager!.id}`))
+      expect(message!.content).toContain('as the squad manager because the asking agent has stopped')
+      expect(message!.content).toContain('first decide whether the answer still applies')
+    } finally {
+      await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, squadId))
+    }
   })
 
   test('are still refused once the stream has finished', async () => {
