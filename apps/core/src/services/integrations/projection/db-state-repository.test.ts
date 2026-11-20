@@ -99,3 +99,38 @@ test('projection generations and leases are token fenced with expired lease reco
     await db.delete(squads).where(eq(squads.id, squad.id))
   }
 })
+
+test('a held projection lease can be renewed only by its own token and generation', async () => {
+  const repository = new DbIntegrationProjectionStateRepository()
+  const [squad] = await db
+    .insert(squads)
+    .values({ name: `Projection renew ${crypto.randomUUID()}`, purpose: 'test' })
+    .returning()
+  const now = new Date('2026-08-29T03:00:00.000Z')
+  try {
+    await repository.invalidate({ squadId: squad.id, providerKey: 'linear', now })
+    const token = crypto.randomUUID()
+    const claim = await repository.claim(now, new Date(now.getTime() + 60_000), token)
+    expect(claim).toMatchObject({ squadId: squad.id, providerKey: 'linear', leaseToken: token })
+    const key = { squadId: squad.id, providerKey: 'linear', generation: claim!.generation }
+    const renewedUntil = new Date(now.getTime() + 180_000)
+
+    expect(await repository.renew({ ...key, leaseToken: crypto.randomUUID(), leaseExpiresAt: renewedUntil, now })).toBe(
+      false
+    )
+    expect(await repository.renew({ ...key, leaseToken: token, leaseExpiresAt: renewedUntil, now })).toBe(true)
+    expect((await repository.get(squad.id, 'linear'))?.leaseExpiresAt?.getTime()).toBe(renewedUntil.getTime())
+
+    // Past the original lease but within the renewed one, nobody else can take it.
+    const later = new Date(now.getTime() + 120_000)
+    const competing = await repository.claim(later, new Date(later.getTime() + 60_000), crypto.randomUUID())
+    expect(competing?.squadId).not.toBe(squad.id)
+
+    // A newer generation supersedes the claim; renewal then reports it lost.
+    await repository.invalidate({ squadId: squad.id, providerKey: 'linear', now: later })
+    expect(await repository.renew({ ...key, leaseToken: token, leaseExpiresAt: renewedUntil, now: later })).toBe(false)
+  } finally {
+    await db.delete(integrationProjectionStates).where(eq(integrationProjectionStates.squadId, squad.id))
+    await db.delete(squads).where(eq(squads.id, squad.id))
+  }
+})

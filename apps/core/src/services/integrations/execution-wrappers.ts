@@ -62,7 +62,15 @@ while :; do
   [ "$__ficus_wrapper_more" = yes ] || break
 done
 if [ -z "$__ficus_wrapper_real_binary" ]; then
-  printf '%s\\n' ${quote(`Cannot find real ${binary} on PATH (Ficus integration wrapper).`)} >&2
+  # Integration tools install in the background without taking the sandbox
+  # down. Every runtime adapter removes the managed toolchain's .ready marker
+  # before installing and writes it back only after setup and readiness pass,
+  # so a declared toolchain without the marker is installing or has failed.
+  if [ -n "\${FICUS_TOOLCHAIN_DIR:-}" ] && [ -f "$FICUS_TOOLCHAIN_DIR/devbox.json" ] && ! [ -f "$FICUS_TOOLCHAIN_DIR/.ready" ]; then
+    printf '%s\\n' ${quote(`${binary} is not installed yet: Ficus is installing this squad's integration tools in the background. Run the command again in a minute; if it keeps failing, sandbox_status shows whether the toolchain install failed.`)} >&2
+    exit 127
+  fi
+  printf '%s\\n' ${quote(`Cannot find real ${binary} on PATH (Ficus integration wrapper). If its integration was just attached, run the command again in a new shell.`)} >&2
   exit 127
 fi
 if [ -z "\${FICUS_TOKEN:-}" ]; then

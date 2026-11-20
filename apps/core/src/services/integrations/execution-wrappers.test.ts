@@ -168,6 +168,29 @@ test('missing real binary fails clearly without recursion', async () => {
   expect(result.stderr).toContain('Cannot find real absent on PATH')
 })
 
+test('a command that needs an integration tool still being installed says so instead of a bare not-found', async () => {
+  const f = fixture()
+  writeExecutionWrappers(f.wrappers, [{ binary: 'absent', providerKey: 'example' }], 'squad')
+  const toolchain = join(f.root, '.ficus', 'toolchain')
+  mkdirSync(toolchain, { recursive: true })
+  // The adapter has written the new declaration and removed .ready; the install is running.
+  writeFileSync(join(toolchain, 'devbox.json'), '{"packages":[]}')
+  const env = { ...f.env, FICUS_TOOLCHAIN_DIR: toolchain }
+  const installing = await runCapturedProcess(['absent'], { env, timeoutMs: 3000 })
+  expect(installing).toMatchObject({ kind: 'exited', code: 127 })
+  expect(installing.stderr).toContain('absent is not installed yet')
+  expect(installing.stderr).toContain('installing this squad')
+  expect(installing.stderr).not.toContain('Cannot find real absent')
+
+  // Once the install is applied (.ready written) a still-missing binary is a
+  // different problem and keeps the plain message.
+  writeFileSync(join(toolchain, '.ready'), 'fingerprint\n')
+  const applied = await runCapturedProcess(['absent'], { env, timeoutMs: 3000 })
+  expect(applied).toMatchObject({ kind: 'exited', code: 127 })
+  expect(applied.stderr).toContain('Cannot find real absent on PATH')
+  expect(applied.stderr).not.toContain('not installed yet')
+})
+
 test('projection removes unassigned/disabled wrappers and rejects unsafe or conflicting declarations', () => {
   const f = fixture()
   writeExecutionWrappers(f.wrappers, [{ binary: 'example', providerKey: 'example' }], 'squad')

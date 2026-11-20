@@ -1,6 +1,10 @@
 import { describe, it, expect, spyOn } from 'bun:test'
 import { boxPressureSampler } from './processes'
 import { BoxRuntimeHealth, getHealthResponse } from './health'
+import { cacheManagedToolchainEnv, clearManagedToolchainEnv } from './devbox-env'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 describe('runtime Docker diagnostics', () => {
   it('shares Docker failure reasons, caches checks, and recovers on a later healthy check', async () => {
@@ -160,4 +164,26 @@ it('health forwards the same per-box fields without awaiting sampling or changin
     snapshot.mockRestore()
     refresh.mockRestore()
   }
+})
+
+describe('managed toolchain activation in health', () => {
+  it('reports whether commands still have an activated managed toolchain to fall back to', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'health-toolchain-'))
+    const previous = process.env.FICUS_TOOLCHAIN_DIR
+    process.env.FICUS_TOOLCHAIN_DIR = dir
+    writeFileSync(join(dir, 'devbox.json'), '{"packages":["bun@latest"]}')
+    try {
+      clearManagedToolchainEnv()
+      expect(getHealthResponse({}, new BoxRuntimeHealth()).managedToolchainActive).toBe(false)
+      await cacheManagedToolchainEnv(true, 'fingerprint-a', async () => 'export PATH=/managed/bin:$PATH')
+      expect(getHealthResponse({}, new BoxRuntimeHealth()).managedToolchainActive).toBe(true)
+      clearManagedToolchainEnv()
+      expect(getHealthResponse({}, new BoxRuntimeHealth()).managedToolchainActive).toBe(false)
+    } finally {
+      clearManagedToolchainEnv()
+      if (previous === undefined) delete process.env.FICUS_TOOLCHAIN_DIR
+      else process.env.FICUS_TOOLCHAIN_DIR = previous
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

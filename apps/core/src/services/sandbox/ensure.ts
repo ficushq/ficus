@@ -39,7 +39,7 @@ import { containerWorkspaceLayout, type WorkspaceLayoutContext } from './workspa
 import { resolveSandboxAssets, type AssetContext } from './asset-manifest'
 import { createLogger } from '../../lib/infra/logger'
 import { InflightDeduper } from '../../lib/infra/inflight'
-import { ensureSandboxToolchain } from './toolchain/provision'
+import { ensureSandboxToolchain, type ToolchainSettleOutcome } from './toolchain/provision'
 import { assertMaintenanceAdmissionOpen } from '../maintenance/admission'
 import type { AdmissionScope, AdmissionWritePhase } from '../maintenance/admission-reservation'
 import { observeSandboxSetupProgress, type SandboxSetupProgressListener } from './setup-progress'
@@ -129,6 +129,32 @@ async function runSandboxEffect<T>(
 ): Promise<T> {
   if (!scope) return operation()
   return scope.runEffect({ phase, resourceKey: `sandbox:${sandboxId}` }, ({ signal }) => operation(signal))
+}
+
+/**
+ * Reconcile the squad's managed toolchain without holding the sandbox ensure
+ * for package installation or setup.
+ *
+ * Agents, terminals and every other ensure caller must keep working while an
+ * integration or toolchain change installs new tools. The ensure always waits
+ * for the cheap already-applied path, so an unchanged toolchain is active
+ * before the first command. A real install continues in the background only
+ * when the box still serves its previously activated toolchain; its result is
+ * recorded in the toolchain status, the squad manager is told once if it
+ * fails, and commands that need the new tools fail clearly meanwhile (see
+ * services/integrations/execution-wrappers.ts). A box with nothing to fall
+ * back to (new, recreated or reset, or a first declaration) waits for the
+ * install, and a failure fails the ensure as before.
+ */
+async function settleSandboxToolchain(
+  manager: ISandboxManager,
+  sandboxId: string,
+  opts: SandboxManagerOptions,
+  squadId: string
+): Promise<ToolchainSettleOutcome> {
+  const outcome = await ensureSandboxToolchain.settle(manager, sandboxId, opts, squadId)
+  if (outcome === 'installing') log.info(`Managed toolchain for ${sandboxId} is installing in the background`)
+  return outcome
 }
 
 /**
@@ -493,7 +519,7 @@ export async function ensureWorkspaceSandbox(
               const squad = await Squad.find(squadId)
               if (squad)
                 await runSandboxEffect(admissionScope, 'toolchain-reconcile', sandboxId, () =>
-                  ensureSandboxToolchain(manager, sandboxId, sandboxOpts, squadId)
+                  settleSandboxToolchain(manager, sandboxId, sandboxOpts, squadId)
                 )
             }
             return sandboxWorkRoot(manager, { squadId, sandboxId })
@@ -509,7 +535,7 @@ export async function ensureWorkspaceSandbox(
         const squad = await Squad.find(squadId)
         if (squad)
           await runSandboxEffect(admissionScope, 'toolchain-reconcile', sandboxId, () =>
-            ensureSandboxToolchain(manager, sandboxId, sandboxOpts, squadId)
+            settleSandboxToolchain(manager, sandboxId, sandboxOpts, squadId)
           )
       }
       return sandboxWorkRoot(manager, { squadId, sandboxId })
@@ -583,7 +609,7 @@ export async function ensureWorkspaceSandbox(
       const squad = await Squad.find(squadId)
       if (squad)
         await runSandboxEffect(admissionScope, 'toolchain-reconcile', sandboxId, () =>
-          ensureSandboxToolchain(manager, sandboxId, sandboxOpts, squadId)
+          settleSandboxToolchain(manager, sandboxId, sandboxOpts, squadId)
         )
     }
 
@@ -714,7 +740,7 @@ export async function ensureSquadSandbox(
     if (toolchainSquad && !sandboxFactory.isHostRuntime()) {
       const toolchainOpts = buildSquadK8sSandboxOptions(toolchainSquad)
       await runSandboxEffect(options.admissionScope, 'toolchain-reconcile', sandboxId, () =>
-        ensureSandboxToolchain(manager, sandboxId, toolchainOpts, squadId)
+        settleSandboxToolchain(manager, sandboxId, toolchainOpts, squadId)
       )
     } else if (toolchainSquad?.toolchainConfig) {
       log.warn(`Squad ${squadId} declares a managed toolchain but the host runtime has no devbox; ignoring it`)
