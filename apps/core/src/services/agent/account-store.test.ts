@@ -23,6 +23,7 @@ import {
 } from './account-store'
 import type { Credential } from '@earendil-works/pi-ai'
 import { AccountScopedCredentialStore } from './account-auth-backend'
+import type { AccountSubscription } from '../inference-usage/subscription-plan'
 
 describe('account-store', () => {
   const testKey = randomBytes(32).toString('hex')
@@ -279,7 +280,12 @@ describe('account-store', () => {
     test('a Codex account stored as business from a raw business claim reads as Enterprise; team stays Business', async () => {
       const codexToken = (plan: string) =>
         `h.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: plan } })).toString('base64url')}.sig`
-      const legacy = { plan: 'business', planSource: 'detected', detectedPlan: 'business', detectedAt: 7 }
+      const legacy: AccountSubscription = {
+        plan: 'business',
+        planSource: 'detected',
+        detectedPlan: 'business',
+        detectedAt: 7,
+      }
       const oauth = (claim: string) => ({ type: 'oauth', refresh: 'r', access: codexToken(claim), expires: 1 })
       // Written raw, as a store saved before a raw business claim meant Enterprise would be.
       await store.set(
