@@ -407,6 +407,11 @@ export interface Agent {
   selectedModel?: string
   /** Whether the selected/effective model accepts image input according to the Pi registry. */
   selectedModelSupportsImages?: boolean
+  /**
+   * Set when the selected or configured model spec is not in the current model catalog (for example
+   * a stored spec a catalog update removed). Image support is then unknown and left unset.
+   */
+  modelSpecWarning?: string
   metadata: AgentMetadata | null
   context: AgentContext
   questionData: QuestionData | null

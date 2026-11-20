@@ -167,6 +167,29 @@ export function supportsImageInput(modelSpec: string): boolean {
 }
 
 /**
+ * Like {@link supportsImageInput}, but never throws. A stored spec can name a model the current
+ * catalog no longer knows (a catalog update removed it after it was saved); its image support is
+ * then unknown, and `error` says why so callers can surface it instead of failing.
+ */
+export function tryImageInputSupport(modelSpec: string): { supportsImages?: boolean; error?: string } {
+  try {
+    return { supportsImages: supportsImageInput(modelSpec) }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** Whether the current catalog knows a single model spec. Never throws. */
+export function isKnownModelSpec(modelSpec: string): boolean {
+  try {
+    validateModelSpec(modelSpec)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Split a comma-separated model priority list into trimmed, non-empty specs.
  * A single spec is returned as a one-element list (backward compatible).
  * @throws if the list contains no non-empty specs.

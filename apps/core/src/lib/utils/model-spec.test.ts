@@ -9,6 +9,8 @@ import {
   resolveModelSpec,
   splitModelPriorityList,
   supportsImageInput,
+  tryImageInputSupport,
+  isKnownModelSpec,
   validateModelSpec,
   validateModelSpecList,
 } from './model-spec'
@@ -120,6 +122,28 @@ describe('model-spec', () => {
 
     it('uses the selected single model spec rather than other priority-list fallbacks', () => {
       expect(supportsImageInput('zai:glm-5.2:high')).toBe(false)
+    })
+  })
+
+  describe('tryImageInputSupport', () => {
+    it('reports known models like supportsImageInput', () => {
+      expect(tryImageInputSupport('anthropic:claude-sonnet-4-5')).toEqual({ supportsImages: true })
+      expect(tryImageInputSupport('zai:glm-5.2:high')).toEqual({ supportsImages: false })
+    })
+
+    it('returns unknown support with the reason instead of throwing for a model the catalog no longer has', () => {
+      expect(tryImageInputSupport('openai-codex:gpt-5.4-mini')).toEqual({
+        error: "Unknown model 'gpt-5.4-mini' for provider 'openai-codex'",
+      })
+      expect(tryImageInputSupport('fake:model').error).toContain("Unknown provider 'fake'")
+    })
+  })
+
+  describe('isKnownModelSpec', () => {
+    it('is true only for specs the current catalog knows', () => {
+      expect(isKnownModelSpec('anthropic:claude-sonnet-4-5:high')).toBe(true)
+      expect(isKnownModelSpec('openai-codex:gpt-5.4-mini')).toBe(false)
+      expect(isKnownModelSpec('not a spec')).toBe(false)
     })
   })
 
