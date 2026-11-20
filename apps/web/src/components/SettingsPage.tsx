@@ -5,6 +5,7 @@ import { AddPasskeyElsewhere } from './settings/AddPasskeyElsewhere'
 import { SETTINGS_SEARCH_ENTRIES } from './settings/settingsSearch'
 import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
 import { LinkedGitHubAccount } from './settings/LinkedGitHubAccount'
+import { LinkedLinearAccount } from './settings/LinkedLinearAccount'
 import { SECTION_GROUPS, isSectionAllowed, isValidSection, type SectionId } from './settings/settingsSections'
 import { SettingsSearchDestination } from './settings/SettingsSearchDestination'
 import { useState, useCallback, type FormEvent } from 'react'
@@ -727,6 +728,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
 
       {user && <LinkedChatAccounts />}
       {user && <LinkedGitHubAccount />}
+      {user && <LinkedLinearAccount />}
 
       {/* Passkeys */}
       {isPasskeyMode && (

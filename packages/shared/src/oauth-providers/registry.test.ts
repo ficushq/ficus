@@ -6,7 +6,7 @@ describe('oauth provider registry', () => {
   test('resolves first-party OAuth providers', () => {
     expect(getOAuthProviderAdapter('notion')?.key).toBe('notion')
     expect(getOAuthProviderAdapter('nope')).toBeUndefined()
-    expect(oauthProviderKeys()).toEqual(['github', 'linear', 'notion', 'slack'])
+    expect(oauthProviderKeys()).toEqual(['github', 'linear', 'linear-identity', 'notion', 'slack'])
   })
 
   test('prototype keys do not resolve an adapter', () => {
@@ -20,7 +20,7 @@ describe('oauth provider registry', () => {
     const restore = registerOAuthProviderAdapterForTest(fake)
     try {
       expect(getOAuthProviderAdapter('fake')).toBe(fake)
-      expect(oauthProviderKeys()).toEqual(['fake', 'github', 'linear', 'notion', 'slack'])
+      expect(oauthProviderKeys()).toEqual(['fake', 'github', 'linear', 'linear-identity', 'notion', 'slack'])
     } finally {
       restore()
     }
@@ -33,7 +33,7 @@ describe('oauth provider registry', () => {
     expect(getOAuthProviderAdapter('constructor')).toBe(fake)
     restore()
     expect(getOAuthProviderAdapter('constructor')).toBeUndefined()
-    expect(oauthProviderKeys()).toEqual(['github', 'linear', 'notion', 'slack'])
+    expect(oauthProviderKeys()).toEqual(['github', 'linear', 'linear-identity', 'notion', 'slack'])
   })
 
   test('notion declares its authorize host and builds a url only on that host', () => {
@@ -62,6 +62,19 @@ describe('oauth provider registry', () => {
     expect(url.searchParams.get('actor')).toBe('app')
     expect(url.searchParams.get('state')).toBe('S'.repeat(43))
     expect(url.toString()).not.toContain('client_secret')
+  })
+
+  test('linear-identity links a person with a read-only user-actor authorization', () => {
+    const adapter = getOAuthProviderAdapter('linear-identity')!
+    expect(adapter.authorizeHosts).toEqual(['linear.app'])
+    const url = adapter.buildAuthorizationUrl({
+      clientId: 'cid',
+      redirectUri: 'https://app.example/cb',
+      state: 'S'.repeat(43),
+    })
+    expect(url.searchParams.get('actor')).toBe('user')
+    expect(url.searchParams.get('scope')).toBe('read')
+    expect(url.searchParams.get('prompt')).toBe('consent')
   })
 
   test('slack declares its authorize host and builds a url only on that host', () => {

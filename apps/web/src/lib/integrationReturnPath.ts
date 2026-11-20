@@ -19,12 +19,19 @@ export function githubIdentityAuthorizationReturnPath(baseUrl = appBasePath()) {
   return `${baseUrl.replace(/\/$/, '')}/settings/github-identity`
 }
 
+/** Linked Linear account flows return here; mapped back to the account page's Linear setting. */
+export function linearIdentityAuthorizationReturnPath(baseUrl = appBasePath()) {
+  return `${baseUrl.replace(/\/$/, '')}/settings/linear-identity`
+}
+
 /** Older authorization flows saved only /settings, which opens the personal account page. */
 export function integrationReturnPath(returnTo: string, provider: OAuthProvider, baseUrl = appBasePath()) {
   const settingsPath = `${baseUrl.replace(/\/$/, '')}/settings`
   const pathname = returnTo.split(/[?#]/, 1)[0]?.replace(/\/$/, '')
   if (provider === 'github' && pathname === githubIdentityAuthorizationReturnPath(baseUrl))
     return `${settingsPath}?section=account&setting=github-identity`
+  if (provider === 'linear' && pathname === linearIdentityAuthorizationReturnPath(baseUrl))
+    return `${settingsPath}?section=account&setting=linear-account`
   if (
     provider === 'github' &&
     (pathname === '/onboarding' || pathname === `${baseUrl.replace(/\/$/, '')}/onboarding`)

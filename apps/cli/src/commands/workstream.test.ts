@@ -894,6 +894,20 @@ describe('workstream CLI commands', () => {
       })
     })
 
+    it('opens and binds a Linear agent session with --linear-session', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'ENG-12', '--linear-session'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        reference: 'ENG-12',
+        linearSession: true,
+      })
+    })
+
+    it('refuses --linear-session for anything but a Linear issue', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'acme/widgets#12', '--linear-session'])
+      await run(['workstream', 'track', 'stream-1', '--pr', 'acme/widgets#7', '--linear-session'])
+      expect(apiPost).not.toHaveBeenCalled()
+    })
+
     it('tracks by url', async () => {
       await run(['workstream', 'track', 'stream-1', '--url', 'https://github.com/acme/widgets/pull/7'])
       expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {

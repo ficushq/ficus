@@ -15,6 +15,9 @@ const MAX_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60
  * writes Ficus makes; the two `app:` scopes make the app delegable and
  * mentionable. `admin` is not allowed for app actors.
  */
+/** The adapter key for linking a person's Linear account to their Ficus user (`linear_identity`). */
+export const LINEAR_IDENTITY_ADAPTER_KEY = 'linear-identity'
+
 export const LINEAR_APP_SCOPES = [
   'read',
   'issues:create',
@@ -66,6 +69,12 @@ export interface LinearOAuthClientOptions {
   now?: () => Date
 }
 
+export interface LinearUserIdentity {
+  linearUserId: string
+  organizationId: string
+}
+
+const USER_IDENTITY_QUERY = 'query FicusLinearUserIdentity { viewer { id app } organization { id } }'
 const IDENTITY_QUERY = 'query FicusLinearIdentity { viewer { id name app } organization { id name urlKey } }'
 
 export class LinearOAuthClient {
@@ -90,6 +99,22 @@ export class LinearOAuthClient {
     url.searchParams.set('scope', LINEAR_APP_SCOPES.join(','))
     url.searchParams.set('state', input.state)
     url.searchParams.set('actor', 'app')
+    url.searchParams.set('prompt', 'consent')
+    return url
+  }
+
+  /**
+   * Links a person's Linear account (`actor=user`, `read` only). Ficus reads who the person is and
+   * keeps no token; the workspace's app installation is a separate, `actor=app` authorization.
+   */
+  buildUserAuthorizationUrl(input: { clientId: string; redirectUri: string; state: string }): URL {
+    const url = new URL(AUTHORIZE_URL)
+    url.searchParams.set('client_id', input.clientId)
+    url.searchParams.set('redirect_uri', input.redirectUri)
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('scope', 'read')
+    url.searchParams.set('state', input.state)
+    url.searchParams.set('actor', 'user')
     url.searchParams.set('prompt', 'consent')
     return url
   }
@@ -177,6 +202,32 @@ export class LinearOAuthClient {
       organizationName: organization.name,
       organizationUrlKey: organization.urlKey,
     }
+  }
+
+  /** The person a user-actor token belongs to, and their workspace. An app token is refused. */
+  async userIdentity(input: { accessToken: string; signal?: AbortSignal }): Promise<LinearUserIdentity> {
+    const response = await this.#send(GRAPHQL_URL, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${input.accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ query: USER_IDENTITY_QUERY }),
+      signal: input.signal,
+    })
+    const value = await this.#json(response)
+    if (!response.ok) {
+      throw new LinearOAuthError(
+        response.status === 401 || response.status === 403 ? 'invalid_auth' : providerStatusCode(response.status),
+        response.status
+      )
+    }
+    const row = requireRecord(value)
+    if (Array.isArray(row.errors) && row.errors.length > 0) throw new LinearOAuthError(graphqlErrorCode(row.errors))
+    const data = requireRecord(row.data)
+    const viewer = requireRecord(data.viewer)
+    const organization = requireRecord(data.organization)
+    if (viewer.app === true) throw new LinearOAuthError('not_user_actor')
+    if (!isBoundedString(viewer.id, 256) || !isBoundedString(organization.id, 256))
+      throw new LinearOAuthError('invalid_response')
+    return { linearUserId: viewer.id, organizationId: organization.id }
   }
 
   async #token(

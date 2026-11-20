@@ -58,6 +58,16 @@ export async function resolveLinearAppConnection(organizationId: string, now = n
   return usable ? { ...usable, configuration } : null
 }
 
+/**
+ * A Linear connection by ID in either mode, with its `Authorization` value, when it is usable now. The
+ * write-back outbox uses it: an item is sent under the connection it was projected for, or not at all.
+ */
+export async function resolveLinearConnectionById(connectionId: string, now = new Date()) {
+  const connection = await new DbIntegrationConnectionRepository().get(connectionId)
+  if (!connection || connection.providerKey !== 'linear') return null
+  return usableLinearConnection(connection, now)
+}
+
 /** The `Authorization` value for a connection that is enabled, validated, unfenced and unexpired. */
 async function usableLinearConnection(connection: IntegrationConnectionRecord, now: Date) {
   if (

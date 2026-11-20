@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { randomUUID } from 'crypto'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db, agents, executions, inbox, messages, squads } from '../../db'
 import { Agent } from '../../entities/Agent'
@@ -11,6 +14,7 @@ import {
 import { Squad } from '../../entities/Squad'
 import { makeDormant } from '../agent/lifecycle'
 import { consultantSandboxId } from '../sandbox/consultant-sandbox'
+import { CONSULTANT_SCRATCH_ARCHIVE_DIR, pruneConsultantScratch } from '../sandbox/consultant-scratch'
 import { storageAgentColumns, storageAgentInfo } from '../storage/agents'
 import { requestDormantRemoval, runDormantAgentSweep, stopAndArchivePersonalSandbox } from './cleanup'
 import { makeIdleConsultantsDormant, resetIdleConsultantBackoffForTest } from './idle-consultants'
@@ -275,6 +279,59 @@ describe('channel-bound agent lifecycle', () => {
     } finally {
       ensure.mockRestore()
       mint.mockRestore()
+    }
+  })
+
+  it("keeps a channel agent's shared-runtime scratch through reclamation and wake, and archives a terminated consultant's", async () => {
+    const agentWarmup = await import('../sandbox/agent-warmup')
+    const ensure = spyOn(agentWarmup, 'ensureAgentSandbox').mockResolvedValue('ensured')
+    const mint = spyOn(Agent.prototype, 'getOrCreateToken').mockResolvedValue('ficus_agent_test')
+    const root = mkdtempSync(join(tmpdir(), 'consultant-runtime-'))
+    // The shared runtime's exec, run locally against a temporary private root.
+    const manager = {
+      exec: async (_sandboxId: string, args: string[]) => {
+        const result = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+        return Buffer.from(result.stdout)
+      },
+    }
+    const prune = () =>
+      pruneConsultantScratch(squad.id, { getManager: () => manager, privateRoot: root, getRetentionDays: () => 7 })
+    const scratch = (id: string) => {
+      mkdirSync(join(root, 'conversations', id, '.ficus'), { recursive: true })
+      writeFileSync(join(root, 'conversations', id, 'notes.md'), 'scratch')
+      writeFileSync(join(root, 'conversations', id, '.ficus', 'agent-secrets.env'), 'TOKEN=secret')
+    }
+    try {
+      const channel = await channelAgent()
+      const web = await plainAgent()
+      const deleted = randomUUID()
+      for (const id of [channel.id, web.id, deleted]) scratch(id)
+
+      await dormantPastRetention(channel)
+      await dormantPastRetention(web)
+      await sweep(async () => true)
+      expect(await info(channel.id)).toMatchObject({ storageReclaimed: true })
+      expect((await fresh(web.id)).status).toBe('terminated')
+
+      expect(await prune()).toEqual({ kept: 1, archived: 2, purged: 0 })
+      expect(readdirSync(join(root, 'conversations'))).toEqual([channel.id])
+      const archived = readdirSync(join(root, CONSULTANT_SCRATCH_ARCHIVE_DIR))
+      const webArchive = archived.find((name) => name.startsWith(`${web.id}-`))!
+      expect(archived.some((name) => name.startsWith(`${deleted}-`))).toBe(true)
+      expect(existsSync(join(root, CONSULTANT_SCRATCH_ARCHIVE_DIR, webArchive, 'notes.md'))).toBe(true)
+      expect(existsSync(join(root, CONSULTANT_SCRATCH_ARCHIVE_DIR, webArchive, '.ficus', 'agent-secrets.env'))).toBe(
+        false
+      )
+
+      // Waking needs no restore: the scratch never left the shared runtime.
+      expect(await (await fresh(channel.id)).wake()).toBe(true)
+      expect(await prune()).toMatchObject({ kept: 1, archived: 0 })
+      expect(existsSync(join(root, 'conversations', channel.id, 'notes.md'))).toBe(true)
+    } finally {
+      ensure.mockRestore()
+      mint.mockRestore()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

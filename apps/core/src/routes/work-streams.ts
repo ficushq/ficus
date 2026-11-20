@@ -73,6 +73,8 @@ import {
   resolveTrackedResourceRequest,
   trackedResourceRequestIdentity,
   trackedResourceRequestSchema,
+  trackedResourceAddRequestSchema,
+  type TrackedResourceAddRequest,
 } from '../services/work-streams/tracked-resources'
 import { Squad } from '../entities/Squad'
 import { Agent } from '../entities/Agent'
@@ -1273,16 +1275,23 @@ export const workStreamsRouter = new Hono()
   .post(
     '/:id/tracked',
     requireWorkStreamUpdatePermission,
-    zValidator('json', trackedResourceRequestSchema),
+    zValidator('json', trackedResourceAddRequestSchema),
     async (c) => {
       const stream = await WorkStream.find(await routeWorkStreamId(c))
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       try {
-        const request = c.req.valid('json')
+        const { linearSession, ...request } = c.req.valid('json') as TrackedResourceAddRequest
         const resource = await resolveTrackedResourceRequest(stream.squadId, request)
+        if (linearSession && (resource.integration !== 'linear' || resource.kind !== 'issue'))
+          return c.json({ error: '--linear-session needs a Linear issue' }, 400)
         const { added, changed, view } = await addTrackedResources(stream.id, [resource])
         // Tracking a Linear agent session's event binds that session to this stream, if it is still free.
         if ('event' in request) await bindLinearSessionForEvent(request.event, stream.id)
+        if (linearSession) {
+          const { openLinearSessionForStream } = await import('../services/integrations/linear/proactive-session')
+          const session = await openLinearSessionForStream(stream.id, resource)
+          return c.json({ added, changed, ...view, linearSession: { id: session.sessionId, url: session.url ?? null } })
+        }
         return c.json({ added, changed, ...view })
       } catch (error) {
         return trackedResourceFailure(c, error)

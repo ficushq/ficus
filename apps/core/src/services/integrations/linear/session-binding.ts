@@ -1,9 +1,17 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
-import { db, integrationOutputEvents, linearAgentSessions, workStreams, type DbTx } from '../../../db'
+import {
+  db,
+  integrationOutputEvents,
+  linearAgentSessions,
+  workStreamFlowRuns,
+  workStreams,
+  type DbTx,
+} from '../../../db'
 import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 import { createLogger } from '../../../lib/infra/logger'
 import { addLinearSessionExternalUrls, createLinearAgentActivity } from './app-api'
 import { resolveLinearAppConnection } from './resolve-connection'
+import { projectionAttemptFloor } from './session-projection'
 
 const log = createLogger('linear-session-binding')
 
@@ -25,9 +33,20 @@ export function linearSessionIdOf(integration: string, fact: FactLike): string |
  * stays the source of truth.
  */
 export async function bindLinearSession(tx: Store, sessionId: string, workStreamId: string): Promise<boolean> {
+  // Flow attempts that finished before the binding are history the session never shows.
+  const [run] = await tx
+    .select({ state: workStreamFlowRuns.state })
+    .from(workStreamFlowRuns)
+    .where(eq(workStreamFlowRuns.workStreamId, workStreamId))
   const [session] = await tx
     .update(linearAgentSessions)
-    .set({ workStreamId, primary: true, disposition: 'bound', updatedAt: new Date() })
+    .set({
+      workStreamId,
+      primary: true,
+      disposition: 'bound',
+      projectionAttemptFloor: projectionAttemptFloor(run?.state),
+      updatedAt: new Date(),
+    })
     .where(and(eq(linearAgentSessions.id, sessionId), isNull(linearAgentSessions.workStreamId)))
     .returning()
   if (!session) return false

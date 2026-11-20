@@ -1,3 +1,5 @@
+import { effectiveLinearSettings, type LinearPullRequestLinkKind } from '@ficus/shared'
+
 export interface GithubIdentityForm {
   gitUserName: string
   gitUserEmail: string
@@ -99,5 +101,28 @@ export function linearRoutingToMetadata(
   return {
     ...(currentMetadata ?? {}),
     linear: entries.map((entry) => ({ teamId: entry.teamId.trim() })).filter((entry) => entry.teamId.length > 0),
+  }
+}
+
+export type LinearPullRequestLinksForm = { origin: LinearPullRequestLinkKind; tracked: LinearPullRequestLinkKind }
+
+/** The squad's pull request link kinds for Linear, with the defaults filled in. */
+export function linearSettingsFromMetadata(metadata: unknown): LinearPullRequestLinksForm {
+  return effectiveLinearSettings(metadata).pullRequestLinks
+}
+
+/** Writes `integrationSettings.linear`, keeping any other integration settings unchanged. */
+export function linearSettingsToMetadata(
+  currentMetadata: Record<string, unknown> | null | undefined,
+  links: LinearPullRequestLinksForm
+): Record<string, unknown> {
+  const current = currentMetadata ?? {}
+  const settings =
+    current.integrationSettings && typeof current.integrationSettings === 'object'
+      ? (current.integrationSettings as Record<string, unknown>)
+      : {}
+  return {
+    ...current,
+    integrationSettings: { ...settings, linear: { version: 1, pullRequestLinks: { ...links } } },
   }
 }

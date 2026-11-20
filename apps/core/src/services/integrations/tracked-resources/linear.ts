@@ -5,7 +5,20 @@ import { linearQuery } from '../linear/plugin'
 import { TrackedResourceError } from '../../work-streams/tracked-resource-error'
 import type { TrackedResourceAdapter } from './registry'
 
-const ISSUE_EVENTS = ['assigned', 'unassigned', 'updated', 'comment']
+/**
+ * Outputs a tracked issue subscribes to, keyed by the subscription ID suffix. Prompts on any agent
+ * session for the issue reach the tracking stream (6.4); comments in a session thread arrive once,
+ * as the prompt, so the comment subscription skips them.
+ */
+const ISSUE_OUTPUTS: Record<string, string> = {
+  assigned: 'issue.assigned',
+  unassigned: 'issue.unassigned',
+  updated: 'issue.updated',
+  comment: 'issue.comment',
+  delegated: 'issue.delegated',
+  undelegated: 'issue.undelegated',
+  prompted: 'agent_session.prompted',
+}
 /** A Linear team key is a short alphanumeric code such as `ENG`, never an `owner/repo` path. */
 const TEAM_KEY = /^[a-z][a-z0-9]{0,9}$/i
 const ISSUE_QUERY = 'query Issue($id: String!) { issue(id: $id) { id url number team { key } } }'
@@ -28,21 +41,24 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
     // Linear tracks issues only; a pull request lives on the code host, not here.
     if (resource.kind !== 'issue') return []
     const hash = createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)
-    return ISSUE_EVENTS.map((event): IntegrationSubscription => ({
+    return Object.entries(ISSUE_OUTPUTS).map(([event, output]): IntegrationSubscription => ({
       id: `tracked-${hash}-${event}`,
       source: {
         integration: 'linear',
-        output: `issue.${event}`,
+        output,
         version: 1,
         ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
       },
       // The provider id identifies the issue on its own; a comment fact carries nothing else.
-      match: resource.externalId
-        ? { 'issue.id': { value: resource.externalId } }
-        : {
-            teamKey: { value: resource.repository.trim().toLowerCase() },
-            'issue.number': { value: resource.number },
-          },
+      match: {
+        ...(resource.externalId
+          ? { 'issue.id': { value: resource.externalId } }
+          : {
+              teamKey: { value: resource.repository.trim().toLowerCase() },
+              'issue.number': { value: resource.number },
+            }),
+        ...(event === 'comment' ? { 'comment.inSession': { value: false } } : {}),
+      },
       deliver: { to: 'delivery-owner', whenInactive: 'retain' },
     }))
   },

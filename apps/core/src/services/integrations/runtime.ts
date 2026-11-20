@@ -11,6 +11,11 @@ import { BigbrainLocalConnections } from './bigbrain/local-connections'
 import { BigbrainLocalSetup } from './bigbrain/local-setup'
 import { GitHubIdentityAuthorization } from './github/identity-authorization'
 import { GitHubPersonalOAuthFinalizer } from './github/personal-oauth-finalizer'
+import {
+  LinearIdentityAuthorization,
+  resolveStoredLinearPurpose,
+  type LinearIdentitySource,
+} from './linear/identity-authorization'
 import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
 import { credentialSetupStatus, connectionSetupStatus, withRoutingIssues } from './setup-status'
 import {
@@ -482,6 +487,18 @@ const githubIdentityAuthorization = new GitHubIdentityAuthorization({
   },
   initializeIntegrationDefaults,
 })
+const linearIdentityAuthorization = new LinearIdentityAuthorization({
+  authorization: browserAuthorizationDependencies,
+  transport: oauthTransport,
+})
+/** Linking a person's Linear account; the routes call it for signed-in users only. */
+export const linearIdentityRoutesService = {
+  get: (userId: string) => linearIdentityAuthorization.get(userId),
+  start: (userId: string, returnTo: string) => linearIdentityAuthorization.start({ userId, returnTo }),
+  unlink: (userId: string, organizationId?: string) => linearIdentityAuthorization.unlink(userId, organizationId),
+}
+const isLinearIdentityFlow = async (userId: string, source: LinearIdentitySource) =>
+  (await resolveStoredLinearPurpose({ userId, source })) === 'linear_identity'
 export const integrationAuthorizationService = githubIdentityAuthorization.integrationAuthorization
 export const integrationDeviceAuthorizationService = githubIdentityAuthorization.integrationDevice
 export const githubIdentityRoutesService = githubIdentityAuthorization.personal
@@ -812,6 +829,27 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
       })
     },
     ...githubIdentityAuthorization.common,
+    // A Linear account-linking flow finishes through its own finalizer and never installs a connection.
+    async resolvePurpose(input: Parameters<NonNullable<typeof githubIdentityAuthorization.common.resolvePurpose>>[0]) {
+      if (input.providerKey === 'linear') return resolveStoredLinearPurpose(input)
+      return githubIdentityAuthorization.common.resolvePurpose!(input)
+    },
+    async callback(input: Parameters<typeof githubIdentityAuthorization.common.callback>[0]) {
+      if (
+        input.providerKey === 'linear' &&
+        (await isLinearIdentityFlow(input.userId, { kind: 'callback', state: input.state }))
+      )
+        return linearIdentityAuthorization.callback(input)
+      return githubIdentityAuthorization.common.callback(input)
+    },
+    async complete(input: Parameters<typeof githubIdentityAuthorization.common.complete>[0]) {
+      if (
+        input.providerKey === 'linear' &&
+        (await isLinearIdentityFlow(input.userId, { kind: 'complete', localFlowId: input.localFlowId }))
+      )
+        return linearIdentityAuthorization.complete(input)
+      return githubIdentityAuthorization.common.complete(input)
+    },
   },
 })
 
