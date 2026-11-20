@@ -49,3 +49,17 @@ test('ntn setup step installs an archive whose digest matches and cleans tempora
   expect(sandbox.installedBinary()).toBe(INSTALLED_BINARY)
   expect(sandbox.leftovers()).toEqual({ temp: [], work: [] })
 })
+
+test('ntn setup step installs over the copy an interrupted install left behind', async () => {
+  const archive = 'genuine ntn archive'
+  sandbox = createFakeNpmSetupSandbox('ntn', archive)
+  // npm renames the installed package aside before replacing it. Killed at that
+  // point, it leaves the renamed copy, and the bundled npm then refuses every
+  // later install of the package.
+  sandbox.plantInterruptedInstall('ntn')
+
+  expectCleanExit(await sandbox.run(notionCliSetupScript('9.9.9', sha512Base64(archive))))
+
+  expect(sandbox.installedBinary()).toBe(INSTALLED_BINARY)
+  expect(sandbox.globalModules()).toEqual(['ntn'])
+})

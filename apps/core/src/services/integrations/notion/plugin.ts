@@ -1,5 +1,6 @@
 import type { IntegrationPluginV1, OAuth2Authorization } from '../plugin'
 import type { ProviderValidation } from '../types'
+import { npmGlobalInstallLines } from '../npm-global-install'
 import {
   parseOAuthCredential,
   serializeOAuthCredential,
@@ -31,7 +32,7 @@ export function notionCliSetupScript(version: string, integrity: string): string
     `archive=$(npm pack --silent ntn@${version})`,
     `actual=$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$archive")`,
     `test "$actual" = "${integrity}"`,
-    'npm install --global --prefix "$DEVBOX_PROJECT_ROOT/npm" --no-audit --no-fund "./$archive"',
+    ...npmGlobalInstallLines('ntn'),
     ')',
   ].join('\n')
 }

@@ -12,6 +12,10 @@ import { runCapturedProcess, type ProcessOutcome } from './captured-process'
  * `npm install` records its arguments and replaces the installed binary. A
  * pre-existing binary is planted first, so a test can prove a rejected archive
  * left it untouched.
+ *
+ * Like the npm bundled with the pinned Node.js, `npm install` fails with
+ * ENOTEMPTY while the global modules directory holds a package copy that an
+ * interrupted install left behind (see `plantInterruptedInstall`).
  */
 export interface FakeNpmSetupSandbox {
   /** Run `script` with bash, as the toolchain adapters run setup.sh. */
@@ -20,6 +24,10 @@ export interface FakeNpmSetupSandbox {
   installs(): string[]
   /** Content of `$DEVBOX_PROJECT_ROOT/npm/bin/<binary>`. */
   installedBinary(): string
+  /** Leave what an install killed midway leaves: the previous copy, renamed and never deleted. */
+  plantInterruptedInstall(packageName: string): void
+  /** Entries of `$DEVBOX_PROJECT_ROOT/npm/lib/node_modules`, hidden ones included. */
+  globalModules(): string[]
   /** Entries left in TMPDIR and in the working directory after the run. */
   leftovers(): { temp: string[]; work: string[] }
   /** Absolute path of a file in the sandbox root, for marker files written by a script. */
@@ -52,7 +60,12 @@ export function createFakeNpmSetupSandbox(binary: string, tarball: string): Fake
       '#!/bin/sh',
       'case "$1" in',
       `  pack) cp '${join(root, 'tarball')}' fixture.tgz; printf 'fixture.tgz\\n' ;;`,
-      `  install) printf '%s\\n' "$*" >> '${installLog}'; printf '${INSTALLED_BINARY}' > "$DEVBOX_PROJECT_ROOT/npm/bin/${binary}" ;;`,
+      '  install)',
+      `    printf '%s\\n' "$*" >> '${installLog}'`,
+      '    for retired in "$DEVBOX_PROJECT_ROOT/npm/lib/node_modules"/.*-????????; do',
+      '      if [ -d "$retired" ]; then echo "npm error code ENOTEMPTY" >&2; exit 217; fi',
+      '    done',
+      `    printf '${INSTALLED_BINARY}' > "$DEVBOX_PROJECT_ROOT/npm/bin/${binary}" ;;`,
       '  *) exit 99 ;;',
       'esac',
       '',
@@ -69,6 +82,14 @@ export function createFakeNpmSetupSandbox(binary: string, tarball: string): Fake
       }),
     installs: () => (existsSync(installLog) ? readFileSync(installLog, 'utf8').trim().split('\n') : []),
     installedBinary: () => readFileSync(join(project, 'npm/bin', binary), 'utf8'),
+    plantInterruptedInstall: (packageName) => {
+      const modules = join(project, 'npm/lib/node_modules')
+      for (const directory of [packageName, `.${packageName}-YlvI7LY8`]) {
+        mkdirSync(join(modules, directory, 'dist'), { recursive: true })
+        writeFileSync(join(modules, directory, 'dist/cli.js'), 'previous copy')
+      }
+    },
+    globalModules: () => readdirSync(join(project, 'npm/lib/node_modules')).sort(),
     leftovers: () => ({ temp: readdirSync(temp), work: readdirSync(work) }),
     path: (name) => join(root, name),
     exists: (name) => existsSync(join(root, name)),
