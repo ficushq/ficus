@@ -885,12 +885,34 @@ export async function resolveSquadLinearRoutes(squadId: string, routes: unknown)
   return resolveSquadLinearTeamRoutes(squadId, routes, listLinearTeams)
 }
 
+/** A squad metadata write's Linear event rules with every team filter key or ID resolved to the team ID. */
+export async function resolveSquadLinearEventRules(squadId: string, rules: unknown): Promise<unknown> {
+  const { resolveSquadLinearEventRuleTeams } = await import('./linear/team-route-store')
+  return resolveSquadLinearEventRuleTeams(squadId, rules, listLinearTeams)
+}
+
+/**
+ * Rewrites Linear team keys still stored in squad routes and event-rule team filters to team IDs.
+ * Run once per api start, after the integration runtime is ready; failures are logged per squad.
+ */
+export async function reconcileStoredLinearTeamKeys(): Promise<number> {
+  const { reconcileStoredLinearTeamKeys: reconcile } = await import('./linear/team-route-store')
+  return reconcile(listLinearTeams, (squadId, error) =>
+    log.warn(`Could not resolve stored Linear team keys for squad ${squadId}:`, error)
+  )
+}
+
+/** After a Linear connection is attached, team keys the squad stored without one can be resolved. */
+async function reconcileLinearTeamKeysAfterAttach(squadId: string): Promise<void> {
+  const { reconcileSquadLinearTeamRoutes } = await import('./linear/team-route-store')
+  // The attachment already succeeded; a Linear failure leaves the keys for setup status to name.
+  await reconcileSquadLinearTeamRoutes(squadId, listLinearTeams).catch((error) =>
+    log.warn(`Could not resolve stored Linear team keys for squad ${squadId}:`, error)
+  )
+}
+
 export const squadIntegrationRoutesService = {
   linearTeams: listLinearTeams,
-  async reconcileLinearTeamRoutes(squadId: string) {
-    const { reconcileSquadLinearTeamRoutes } = await import('./linear/team-route-store')
-    return reconcileSquadLinearTeamRoutes(squadId, listLinearTeams)
-  },
   signGitObject: (squadId: string, agentId: string, payload: Buffer) =>
     githubCommitSigning.sign({ squadId, agentId, payload }),
   async configureScope(squadId: string, providerKey: string, input: { enabled?: boolean; inheritDefault?: boolean }) {
@@ -986,6 +1008,7 @@ export const squadIntegrationRoutesService = {
     })
     await regenerateEnvFileForSquad(squadId)
     eventEmitter.emit('integration.projection-invalidated', { squadId, providerKey })
+    if (providerKey === 'linear') await reconcileLinearTeamKeysAfterAttach(squadId)
     return assignment
   },
   async retryProjection(squadId: string, providerKey: string) {

@@ -14,10 +14,14 @@ import {
   integrationOutputTriggerRuns,
   linearAgentSessions,
   linearTeamAccess,
+  settings,
+  squads,
   workStreams,
 } from '../../../db'
 import { clearLinearUserCacheForTest, processLinearAppEvent } from './app-ingress'
 import { LINEAR_ACK_BODY, LINEAR_ACK_MAX_ATTEMPTS } from './session-acknowledger'
+import { linearActivityId } from './app-api'
+import { announceLinearSessionBinding } from './session-binding'
 import { inaccessibleLinearTeams, linearTeamAccessSetupIssues } from './team-access'
 import { isUntrustedOutputActor } from '../outputs/authority'
 import { setEventRuleDecideForTests } from '../outputs/event-rule-decisions'
@@ -163,6 +167,44 @@ describe('acknowledgment', () => {
     expect(linear.activitiesFor(sessionId)[0]?.content.body).toBe(LINEAR_ACK_BODY)
     const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
     expect(row?.ackState).toBe('sent')
+  })
+
+  // Live, Linear answers a repeated activity ID with HTTP 200 and "conflict on insert of AgentActivity".
+  test('an acknowledgment stored by Linear but answered too late counts as sent, and the disposition follows', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    linear.failNext('stored-then-timeout', 'FicusAgentActivity')
+    await created(sessionId)
+    const acks = linear.calls.filter(
+      (call) => call.operation === 'FicusAgentActivity' && call.variables.input?.content?.body === LINEAR_ACK_BODY
+    )
+    // The retry reused the activity ID and met the conflict.
+    expect(acks).toHaveLength(2)
+    expect(acks[1]!.variables.input.id).toBe(acks[0]!.variables.input.id)
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body],
+    ])
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row).toMatchObject({ ackState: 'sent', dispositionState: 'sent', disposition: 'notified' })
+  })
+
+  test('a disposition Linear already holds counts as sent', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    // An earlier attempt stored it and its answer was lost.
+    linear.activities.push({
+      id: linearActivityId(sessionId, 'disposition'),
+      agentSessionId: sessionId,
+      content: LINEAR_DISPOSITION_ACTIVITIES.notified,
+      at: now,
+    })
+    await created(sessionId)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    expect(row).toMatchObject({ ackState: 'sent', dispositionState: 'sent', disposition: 'notified' })
+    expect(bodies(sessionId).filter(([type]) => type === 'response')).toHaveLength(1)
   })
 
   test('an app without the write scope is not retried and is marked for reconnect', async () => {
@@ -483,6 +525,20 @@ describe('disposition and authority', () => {
     expect(linear.sessions.get(plain)?.externalUrls).toEqual([])
   })
 
+  test('a binding thought Linear already holds still adds Open in Ficus', async () => {
+    await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
+    process.env.APP_URL = 'https://ficus.example.com'
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id })
+    await created(sessionId)
+    const [row] = await db.select().from(linearAgentSessions).where(eq(linearAgentSessions.id, sessionId))
+    // As if the link had failed after the thought was stored: announcing again meets the conflict.
+    linear.sessions.get(sessionId)!.externalUrls = []
+    await announceLinearSessionBinding(sessionId, row!.workStreamId!)
+    expect(linear.sessions.get(sessionId)!.externalUrls.map((link) => link.label)).toEqual(['Open in Ficus'])
+    expect(bodies(sessionId).filter(([, body]) => body === 'Ficus started tracking this work.')).toHaveLength(1)
+  })
+
   test('a later session on an issue a stream already tracks binds to that stream', async () => {
     await fixture.addSquad({ teamIds: [teamId], rules: [startRule()] })
     const firstSession = randomUUID()
@@ -682,6 +738,59 @@ describe('connection lifecycle', () => {
       `Squad ${squad.name} routes Linear team key FIC, which is not a team ID, so it routes no Linear events. Open the squad's Linear settings and choose the team so Ficus stores the team ID.`,
     ])
     expect(await inaccessibleLinearTeams(squad.id, fixture.connectionId)).toEqual([])
+  })
+
+  test('setup status names an event rule whose stored team filter is a team key', async () => {
+    const keyed = rule('keyed', 'issue.assigned', { type: 'notify-manager' })
+    const squad = await fixture.addSquad({
+      teamIds: [teamId],
+      rules: [
+        { ...keyed, filters: { ...keyed.filters, teamId: 'FIC' } },
+        { ...rule('by-id', 'issue.unassigned', { type: 'notify-manager' }), filters: { teamId, audience: 'any' } },
+      ],
+    })
+    const issues = (await linearTeamAccessSetupIssues()).filter((issue) => issue.includes(squad.name))
+    expect(issues).toEqual([
+      `Squad ${squad.name} has a Linear event rule whose team filter is not a team ID, so it matches no Linear events: rule keyed (team key FIC is not a team ID). Open the squad's Linear event rules and choose the team in each Team filter so Ficus stores the team ID.`,
+    ])
+  })
+
+  test('attaching a Linear connection resolves team keys the squad stored before it had one', async () => {
+    const { squadIntegrationRoutesService } = await import('../runtime')
+    const store = await import('./team-route-store')
+    const realReconcile = store.reconcileSquadLinearTeamRoutes
+    // The real reconcile, answered by a listing instead of Linear.
+    const reconcile = spyOn(store, 'reconcileSquadLinearTeamRoutes').mockImplementation((squadId) =>
+      realReconcile(squadId, async () => ({
+        teams: [{ id: teamId, key: 'FIC', name: 'Ficus', connectionIds: [fixture.connectionId] }],
+        connections: [{ id: fixture.connectionId, displayName: 'Linear', isDefault: true, status: 'ok' }],
+      }))
+    )
+    const keyed = rule('keyed', 'issue.assigned', { type: 'notify-manager' })
+    const [squad] = await db
+      .insert(squads)
+      .values({
+        name: `linear-attach-${randomUUID()}`,
+        purpose: 'Linear attach fixture',
+        metadata: {
+          linear: [{ teamId: 'FIC' }],
+          integrationRules: { linear: [{ ...keyed, filters: { ...keyed.filters, teamId: 'fic' } }] },
+        },
+      })
+      .returning()
+    try {
+      await squadIntegrationRoutesService.assign(squad!.id, 'linear', fixture.connectionId)
+      expect(reconcile).toHaveBeenCalledTimes(1)
+      const [stored] = await db.select({ metadata: squads.metadata }).from(squads).where(eq(squads.id, squad!.id))
+      expect(stored!.metadata).toEqual({
+        linear: [{ teamId }],
+        integrationRules: { linear: [{ ...keyed, filters: { ...keyed.filters, teamId } }] },
+      })
+    } finally {
+      reconcile.mockRestore()
+      await db.delete(settings).where(sql`${settings.key} like ${`%:linear:${squad!.id}`}`)
+      await db.delete(squads).where(eq(squads.id, squad!.id))
+    }
   })
 
   test('a PermissionChange for another app user is ignored', async () => {

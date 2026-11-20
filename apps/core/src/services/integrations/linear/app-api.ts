@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { LinearDuplicateError } from './duplicate-error'
 import { linearQuery } from './plugin'
 
 /**
@@ -28,18 +29,26 @@ export async function createLinearAgentActivity(
   input: { sessionId: string; projectionKey: string; content: LinearActivityContent },
   signal?: AbortSignal
 ): Promise<void> {
-  const result = await linearQuery<{ agentActivityCreate?: { success?: boolean } }>(
-    authorization,
-    'mutation FicusAgentActivity($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }',
-    {
-      input: {
-        id: linearActivityId(input.sessionId, input.projectionKey),
-        agentSessionId: input.sessionId,
-        content: input.content,
+  let result: { agentActivityCreate?: { success?: boolean } }
+  try {
+    result = await linearQuery<{ agentActivityCreate?: { success?: boolean } }>(
+      authorization,
+      'mutation FicusAgentActivity($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }',
+      {
+        input: {
+          id: linearActivityId(input.sessionId, input.projectionKey),
+          agentSessionId: input.sessionId,
+          content: input.content,
+        },
       },
-    },
-    signal
-  )
+      signal
+    )
+  } catch (error) {
+    // The activity ID is deterministic: Linear already holding it means an earlier attempt whose
+    // answer was lost (for example a timeout) stored it, so the activity is posted.
+    if (error instanceof LinearDuplicateError) return
+    throw error
+  }
   if (result.agentActivityCreate?.success !== true) throw new Error('provider_query_failed')
 }
 

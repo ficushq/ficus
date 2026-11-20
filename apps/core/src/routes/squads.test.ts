@@ -737,6 +737,46 @@ describe('squads routes', () => {
       expect((await kept.json()).metadata).toMatchObject({ custom: { saved: true }, linear: [{ teamId }] })
     })
 
+    it('resolves Linear event-rule team filters on save, rejecting an unknown key and keeping a stored one', async () => {
+      const teamId = '7e0f6b52-3c1d-4f7a-8b9e-1d2c3b4a5f60'
+      const rule = (id: string, filterTeamId?: string) => ({
+        id,
+        enabled: true,
+        source: { integration: 'linear', output: 'issue.assigned', version: 1 },
+        filters: { squadRouting: false, audience: 'any', ...(filterTeamId ? { teamId: filterTeamId } : {}) },
+        action: { type: 'notify-manager' },
+      })
+      const created = await Squad.create({
+        name: `${testPrefix} Linear rule teams`,
+        purpose: 'Testing',
+        metadata: { integrationRules: { linear: [rule('stored-key', 'OLD')] } },
+      })
+      const patch = (metadata: Record<string, unknown>) =>
+        app.request(`/api/squads/${created.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+          body: JSON.stringify({ metadata }),
+        })
+
+      // The squad has no Linear connection, so a new key cannot be resolved to a team ID.
+      const rejected = await patch({ integrationRules: { linear: [rule('typed', 'FIC')] } })
+      expect(rejected.status).toBe(400)
+      expect((await rejected.json()).error).toBe(
+        "Linear event rule typed has an invalid team filter. Ficus could not resolve Linear team key FIC to a team ID: the squad has no Linear connection to look it up with. Use a team key or ID the squad's Linear connection can see."
+      )
+
+      // A team ID is kept (no listing can disprove it), and the key already stored never blocks the save.
+      const saved = await patch({
+        integrationRules: { linear: [rule('stored-key', 'OLD'), rule('by-id', teamId), rule('any')] },
+      })
+      expect(saved.status).toBe(200)
+      expect((await saved.json()).metadata.integrationRules.linear).toEqual([
+        rule('stored-key', 'OLD'),
+        rule('by-id', teamId),
+        rule('any'),
+      ])
+    })
+
     it('rejects plaintext github token metadata and invalid identity values', async () => {
       const created = await Squad.create({
         name: `${testPrefix} Bad GitHub Identity`,

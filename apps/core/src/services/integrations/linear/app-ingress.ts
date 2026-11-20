@@ -121,14 +121,19 @@ async function processSessionEvent(
   if (!sessionId) return
   const options = { retryWhenBusy: dependencies.polled === true }
   // Webhook and poll claim the same receipt, so a session or prompt seen both ways is handled once.
-  if (payload.action === 'created')
-    return void (await withLinearDeliveryReceipt(
+  const activityId = text(record(payload.agentActivity).id)
+  if (payload.action === 'created') {
+    await withLinearDeliveryReceipt(
       linearDeliveryKey.sessionCreated(sessionId),
       () => processSessionCreated(resolved, sessionId, session, payload, dependencies),
       options
-    ))
+    )
+    // A `created` event that names its opening prompt activity settles that activity's receipt, so the
+    // prompt is never delivered again as `prompted` (by a later poll or a stray webhook).
+    if (activityId) await withLinearDeliveryReceipt(linearDeliveryKey.prompt(activityId), async () => undefined)
+    return
+  }
   if (payload.action !== 'prompted') return
-  const activityId = text(record(payload.agentActivity).id)
   if (!activityId) return
   await withLinearDeliveryReceipt(
     linearDeliveryKey.prompt(activityId),

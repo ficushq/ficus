@@ -76,6 +76,7 @@ import {
   managedVaultService,
   githubIdentityRoutesService,
   linearIdentityRoutesService,
+  reconcileStoredLinearTeamKeys,
   squadIntegrationRoutesService,
 } from './services/integrations/runtime'
 import { createLinearIdentityRouter } from './routes/linear-identity'
@@ -925,6 +926,11 @@ if (import.meta.main) {
       const { migrateLinearRuleAudiences } = await import('./services/integrations/linear/rule-audience-migration')
       await migrateLinearRuleAudiences().catch((error) =>
         log.error('Failed to keep stored Linear rule audiences behaving as before:', error)
+      )
+      // Linear team keys stored in squad routes and event-rule team filters before keys were resolved on
+      // write become team IDs. It asks Linear, so it runs in the background and never delays startup.
+      void reconcileStoredLinearTeamKeys().catch((error) =>
+        log.error('Failed to resolve stored Linear team keys to team IDs:', error)
       )
       const { initializeChannelIntegrationStates } = await import('./services/integrations/channels/settings')
       await initializeChannelIntegrationStates()
