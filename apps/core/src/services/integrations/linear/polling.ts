@@ -8,7 +8,7 @@ import type {
   VerifiedIngressEvent,
 } from '../types'
 import { linearDeliveryKey } from './delivery-receipts'
-import type { LinearSessionRow } from './session-acknowledger'
+import { LINEAR_ACK_MAX_ATTEMPTS, type LinearSessionRow } from './session-acknowledger'
 import {
   isLinearAppConfiguration,
   LinearRateLimitedError,
@@ -165,8 +165,11 @@ function issuePayload(issue: Record<string, any>) {
 
 /** A recorded session the retry sweep may try again (a `linear_agent_sessions` row). */
 export type UnfinishedLinearSession = LinearSessionRow
-/** Linear calls one session retry makes at most. */
-export const LINEAR_SESSION_RETRY_REQUESTS = 2
+/**
+ * Linear calls one session retry makes at most, all reserved before it starts: every acknowledgment
+ * attempt (`retryLinearSession` runs the full acknowledger) plus the disposition post.
+ */
+export const LINEAR_SESSION_RETRY_REQUESTS = LINEAR_ACK_MAX_ATTEMPTS + 1
 
 /** What Ficus already recorded for a polled session. */
 export interface KnownLinearSession {

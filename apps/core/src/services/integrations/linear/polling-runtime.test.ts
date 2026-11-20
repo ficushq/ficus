@@ -24,6 +24,8 @@ import {
   listLinearPollingWatches,
 } from './polling-runtime'
 import { createLinearAppFixture } from './testing/app-fixtures'
+import { LINEAR_SESSION_RETRY_REQUESTS } from './polling'
+import { retryLinearSession } from './session-retry'
 import { setLinearAppReadinessForTest } from './app-readiness'
 import {
   agentSessionCreatedPayload,
@@ -242,6 +244,29 @@ describe('recovered sessions', () => {
     await ageSession(sessionId)
     await pollOnce()
     expect(bodies(sessionId)).toHaveLength(2)
+  })
+
+  test('one retry makes no more Linear calls than it reserves', async () => {
+    await fixture.addSquad({ teamIds: [teamId] })
+    const sessionId = randomUUID()
+    linear.addSession({ id: sessionId, issueId: issue.id, creatorId: member.id })
+    for (let i = 0; i < 3; i++) linear.failNext(500, 'FicusAgentActivity')
+    await processLinearAppEvent({
+      type: 'AgentSessionEvent',
+      payload: agentSessionCreatedPayload(fixture.context, { sessionId, issue, creatorId: member.id }),
+    })
+    expect(await sessionRow(sessionId)).toMatchObject({ ackState: 'failed', dispositionState: 'failed' })
+    // The worst case: the first acknowledgment attempt fails again, the second and the disposition succeed.
+    linear.failNext(500, 'FicusAgentActivity')
+    const before = linear.calls.length
+    expect(await retryLinearSession((await sessionRow(sessionId))!, 'Bearer linear-app-access-token')).toBe(true)
+    const calls = linear.calls.slice(before)
+    expect(calls).toHaveLength(LINEAR_SESSION_RETRY_REQUESTS)
+    expect(calls.every((call) => call.operation === 'FicusAgentActivity')).toBe(true)
+    expect(bodies(sessionId)).toEqual([
+      ['thought', LINEAR_ACK_BODY],
+      ['response', LINEAR_DISPOSITION_ACTIVITIES.notified.body],
+    ])
   })
 
   test('a failed disposition alone is retried; a failed acknowledgment after a sent disposition is not', async () => {

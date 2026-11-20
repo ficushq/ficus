@@ -10,6 +10,7 @@ import {
   LINEAR_POLL_PAGE_SIZE,
   LINEAR_POLL_REQUESTS_PER_TICK,
   LINEAR_POLL_SLOW_MS,
+  LINEAR_SESSION_RETRY_REQUESTS,
   LINEAR_POLL_WEBHOOK_RECENCY_MS,
   linearSessionNeedsHandling,
   parseLinearPollingCursor,
@@ -250,16 +251,17 @@ describe('Linear agent session polling', () => {
     expect(result.nextCursor).toEqual({ ...stored })
   })
 
-  test('unfinished sessions are retried with the app token, each reserving two requests from the budget', async () => {
+  test('unfinished sessions are retried with the app token, each reserving its full call count from the budget', async () => {
+    expect(LINEAR_SESSION_RETRY_REQUESTS).toBe(3)
     unfinished = [{ id: 's1' }, { id: 's2' }, { id: 's3' }] as UnfinishedLinearSession[]
-    const budget = createEventPollingBudget(LINEAR_POLL_REQUESTS_PER_TICK + 4)
+    const budget = createEventPollingBudget(LINEAR_POLL_REQUESTS_PER_TICK + 2 * LINEAR_SESSION_RETRY_REQUESTS + 1)
     await polling().poll(appConnection, null, budget.signal)
     // Three queries, then only two of the three retries fit the remaining budget.
     expect(retried).toEqual([
       ['s1', 'Bearer linear-app-access-token'],
       ['s2', 'Bearer linear-app-access-token'],
     ])
-    expect(budget.remaining).toBe(0)
+    expect(budget.remaining).toBe(1)
   })
 
   test('a retry that throws does not fail the poll', async () => {

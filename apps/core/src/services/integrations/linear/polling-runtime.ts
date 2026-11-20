@@ -130,7 +130,8 @@ export async function dispatchPolledLinearEvent(event: { type: string; payload: 
  * The Linear polling fallback's scheduler, separate from the GitHub poller so neither's budget or
  * cadence affects the other. Polls run every 60 seconds (5 minutes while app webhooks arrive), with
  * no jitter, and make at most three queries each: at most 180 queries per connection per hour. Retries
- * of unfinished sessions add at most two calls per session, for at most five spaced-out sessions.
+ * of unfinished sessions add at most three calls per session (two acknowledgment attempts and the
+ * disposition), for at most five spaced-out sessions.
  */
 export const linearAgentSessionPollingRuntime = new EventPollingRunner({
   listWatches: listLinearPollingWatches,
