@@ -64,6 +64,7 @@ export function WorkStreamListAll({ filterContainer }: { filterContainer?: HTMLE
       isFetchingMoreDone={isFetchingMoreDone}
       onLoadMoreDone={fetchMoreDone}
       emptyMessage="No active work right now"
+      summarySurface="feed"
     />
   )
 }

@@ -31,6 +31,14 @@ import {
 import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
 import type { WorkStream, WorkStreamStatus, Squad, Agent, AgentSummary } from '@ficus/shared'
 import { FEED_DISCLOSURE_CHEVRON_CLASS, FEED_DISCLOSURE_HEADER_CLASS, FEED_ROW_INSET_CLASS } from './feedSectionLayout'
+import {
+  ShowSummariesSwitch,
+  useShowWorkStreamSummaries,
+  useWorkStreamPeek,
+  WorkStreamPeekCard,
+  WorkStreamSummaryLine,
+  type WorkStreamSummarySurface,
+} from './WorkStreamSummary'
 
 // --- Status constants ---
 
@@ -439,6 +447,7 @@ function WorkStreamRow({
   agentTypeNameMap,
   showSquadBadge,
   feedLayout,
+  showSummary = false,
   onClick,
 }: {
   workStream: WorkStream
@@ -447,12 +456,33 @@ function WorkStreamRow({
   agentTypeNameMap: Map<string, string>
   showSquadBadge: boolean
   feedLayout?: boolean
+  /** "Show summaries" is on: active rows add one muted summary line. */
+  showSummary?: boolean
   onClick: () => void
 }) {
   const { slugFor } = useSquadSlugs()
   const location = useLocation()
   const pendingAssigneeTargetRef = useRef<string | null>(null)
+  const rowRef = useRef<HTMLLIElement>(null)
+  const peek = useWorkStreamPeek()
   const isDone = isWsDone(workStream.status)
+  // Finished rows stay as they are: no peek card and never a summary.
+  const peekProps = isDone ? {} : peek.pointerHandlers
+  const peekFocusProps = isDone ? {} : peek.focusHandlers
+  const open = () => {
+    peek.hover.hide()
+    onClick()
+  }
+  const peekCard = !isDone && (
+    <WorkStreamPeekCard
+      peek={peek}
+      workStream={workStream}
+      anchor={rowRef}
+      agentMap={agentMap}
+      agentTypeNames={agentTypeNameMap}
+    />
+  )
+  const summaryLine = showSummary && !isDone && <WorkStreamSummaryLine workStream={workStream} />
   const squad = squadMap.get(workStream.squadId)
   const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
   const now = useTick(1000, hasActiveRuntime)
@@ -479,12 +509,15 @@ function WorkStreamRow({
     const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
     return (
       <li
+        ref={rowRef}
         className={clsx('relative rounded-lg pr-3 py-2.5 hover:bg-surface-hover', FEED_ROW_INSET_CLASS)}
         data-testid="feed-work-row"
+        {...peekProps}
       >
         <button
           className="flex w-full items-start gap-2 text-left after:absolute after:inset-0 after:rounded-lg"
-          onClick={onClick}
+          onClick={open}
+          {...peekFocusProps}
         >
           <span className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', statusDotClass)} aria-hidden="true" />
           <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 wrap-break-word">
@@ -492,6 +525,7 @@ function WorkStreamRow({
           </span>
           <WorkStreamStatusBadges workStream={workStream} className="max-w-[50%] sm:max-w-none" />
         </button>
+        {summaryLine && <div className="ml-4 mt-0.5 min-w-0">{summaryLine}</div>}
         <div className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           {squad && (
             <Link
@@ -545,14 +579,17 @@ function WorkStreamRow({
             ) : null
           )}
         </div>
+        {peekCard}
       </li>
     )
   }
 
   return (
     <li
+      ref={rowRef}
       className={clsx('rounded-lg px-3 py-3.5 hover:bg-surface-hover cursor-pointer', isDone && 'opacity-75')}
-      onClick={onClick}
+      onClick={open}
+      {...peekProps}
     >
       <div className="hidden md:flex items-center gap-2">
         <span
@@ -563,7 +600,14 @@ function WorkStreamRow({
         >
           {WS_STATUS_ICONS[state] ?? '○'}
         </span>
-        <span className="font-medium text-sm text-primary truncate flex-1 min-w-0">{workStreamTitle(workStream)}</span>
+        {/* The row's keyboard stop: Enter opens the stream (the click reaches the row); focus opens the peek. */}
+        <button
+          type="button"
+          className="font-medium text-sm text-primary truncate flex-1 min-w-0 text-left rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+          {...peekFocusProps}
+        >
+          {workStreamTitle(workStream)}
+        </button>
         {elapsed > 1000 && (
           <span className="text-xs text-placeholder tabular-nums shrink-0" title="Total agent execution runtime">
             {formatDuration(elapsed)}
@@ -640,9 +684,13 @@ function WorkStreamRow({
           >
             {WS_STATUS_ICONS[state] ?? '○'}
           </span>
-          <span className="line-clamp-2 wrap-break-word text-sm font-medium text-primary flex-1 min-w-0">
+          <button
+            type="button"
+            className="line-clamp-2 wrap-break-word text-sm font-medium text-primary flex-1 min-w-0 text-left rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+            {...peekFocusProps}
+          >
             {workStreamTitle(workStream)}
-          </span>
+          </button>
           {pullRequests.map((pullRequest) =>
             pullRequest.url ? (
               <a
@@ -685,6 +733,8 @@ function WorkStreamRow({
           )}
         </div>
       </div>
+      {summaryLine && <div className="mt-1 min-w-0 pl-6">{summaryLine}</div>}
+      {peekCard}
     </li>
   )
 }
@@ -739,6 +789,11 @@ interface WorkStreamListProps {
   hasMoreDone?: boolean
   isFetchingMoreDone?: boolean
   onLoadMoreDone?: () => void
+  /**
+   * Which list this is, for the "Show summaries" switch (remembered per surface). The switch sits in
+   * the filter popover, else beside the filter row, else (filters hidden) in the Active header.
+   */
+  summarySurface?: WorkStreamSummarySurface
 }
 
 export function WorkStreamList({
@@ -770,8 +825,12 @@ export function WorkStreamList({
   hasMoreDone = false,
   isFetchingMoreDone = false,
   onLoadMoreDone,
+  summarySurface,
 }: WorkStreamListProps) {
   const [selectedWsId, setSelectedWsId] = useURLStringState<string>('ws', '')
+  const [summariesOn] = useShowWorkStreamSummaries(summarySurface ?? 'feed')
+  const showSummaries = !!summarySurface && summariesOn
+  const summarySwitch = summarySurface && <ShowSummariesSwitch surface={summarySurface} />
   const { data: agentTypes = [] } = useQuery(queries.agentTypes.list())
   const agentTypeNameMap = useMemo(
     () => new Map(agentTypes.map((agentType) => [agentType.id, agentType.name])),
@@ -895,8 +954,25 @@ export function WorkStreamList({
           wrap={!!filterContainer}
         />
       )}
+      {filterContainer && summarySwitch && (
+        <>
+          <p className="pt-2 text-xs font-medium text-secondary">View</p>
+          {summarySwitch}
+        </>
+      )}
     </div>
   )
+  const inlineSummarySwitch = filterContainer === undefined && !hideFilters ? summarySwitch : null
+  const headerSummarySwitch = hideFilters ? summarySwitch : null
+  const activeActions =
+    headerSummarySwitch && activeHeaderActions ? (
+      <>
+        {headerSummarySwitch}
+        {activeHeaderActions}
+      </>
+    ) : (
+      (headerSummarySwitch ?? activeHeaderActions)
+    )
 
   const activePending = isLoading && activeStreams.length === 0
   const donePending = isLoadingDone && doneStreams.length === 0
@@ -911,7 +987,12 @@ export function WorkStreamList({
         ? (filters || filterActions) && (
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">{filters}</div>
-              {filterActions && <div className="shrink-0">{filterActions}</div>}
+              {(filterActions || inlineSummarySwitch) && (
+                <div className="flex shrink-0 items-center gap-3">
+                  {inlineSummarySwitch}
+                  {filterActions}
+                </div>
+              )}
             </div>
           )
         : filterContainer &&
@@ -956,6 +1037,7 @@ export function WorkStreamList({
                     agentMap={agentMap}
                     agentTypeNameMap={agentTypeNameMap}
                     showSquadBadge={showSquadFilter}
+                    showSummary={showSummaries}
                     onClick={() => setSelectedWsId(workStreamRef(ws))}
                   />
                 ))}
@@ -971,7 +1053,7 @@ export function WorkStreamList({
                 collapsible={activeCollapsible}
                 collapsed={activeCollapsed}
                 onToggle={() => setActiveCollapsed(!activeCollapsed)}
-                actions={activeHeaderActions}
+                actions={activeActions}
               />
               {!activeCollapsed && (
                 <LoadingContent
@@ -994,6 +1076,7 @@ export function WorkStreamList({
                         agentMap={agentMap}
                         agentTypeNameMap={agentTypeNameMap}
                         showSquadBadge={showSquadFilter}
+                        showSummary={showSummaries}
                         onClick={() => setSelectedWsId(workStreamRef(ws))}
                       />
                     ))}
@@ -1043,6 +1126,7 @@ export function WorkStreamList({
                         agentMap={agentMap}
                         agentTypeNameMap={agentTypeNameMap}
                         showSquadBadge={showSquadFilter}
+                        showSummary={showSummaries}
                         onClick={() => setSelectedWsId(workStreamRef(ws))}
                       />
                     ))}

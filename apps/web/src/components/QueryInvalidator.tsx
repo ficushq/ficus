@@ -458,7 +458,13 @@ function QueryInvalidatorEffects({
       }),
 
       // ── Work stream events ────────────────────────────────────────
-      subscribe('workstreams', () => {
+      subscribe('workstreams', ({ event }) => {
+        if (event === 'workStream.summaryUpdated') {
+          // Only the one-line summary changed: refresh the stream rows and Active work cards.
+          invalidate(queryKeys.squads.all)
+          invalidate(queryKeys.activity.presence())
+          return
+        }
         queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
         invalidate(queryKeys.squads.all)
         invalidate(queryKeys.actions.all)

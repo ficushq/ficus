@@ -14,6 +14,7 @@ import { WorkStreamDetailModal, getWsDisplayState } from '../WorkStreamDetailMod
 import { WorkStreamGraph } from '../WorkStreamGraph'
 import { WorkStreamViewToggle, useWorkStreamViewMode } from '../WorkStreamViewToggle'
 import { WorkStreamList as GenericWorkStreamList, WS_ACTIVE_STATUSES } from '../WorkStreamList'
+import { workStreamSummaryFor } from '../WorkStreamSummary'
 import { GraphIcon } from '../icons'
 import { Modal } from '../Modal'
 import {
@@ -346,6 +347,7 @@ export function WorkStreamList({
                   isFetchingMoreDone={isFetchingMoreDone}
                   onLoadMoreDone={onLoadMoreDone}
                   emptyMessage={activeOnly ? 'No active work streams' : 'No work streams yet'}
+                  summarySurface={surface}
                 />
               </div>
             )}
@@ -475,6 +477,7 @@ function WorkStreamCard({
   const displayState = getWsDisplayState(workStream)
   const callout = KANBAN_CALLOUT[displayState]
   const treatment = webStatus(WORK_STREAM_STATUS_ROLE[displayState])
+  const summary = workStreamSummaryFor(workStream)
 
   return (
     <div
@@ -494,6 +497,11 @@ function WorkStreamCard({
       )}
     >
       <h4 className="font-medium text-sm text-primary">{workStreamTitle(workStream)}</h4>
+      {summary && (
+        <p className="mt-1 line-clamp-2 text-xs text-secondary" data-testid="work-stream-card-summary">
+          {summary.text}
+        </p>
+      )}
       {workStream.description && (
         <div className="mt-1 line-clamp-2 text-xs text-muted">
           <MarkdownContent variant="document">{workStream.description}</MarkdownContent>

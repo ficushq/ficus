@@ -1,0 +1,88 @@
+import { afterEach, expect, mock, test } from 'bun:test'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { SettingMetadata } from '../../api/settings'
+import { PermissionsProvider } from '../../hooks/usePermissions'
+import { queries } from '../../queryOptions'
+import { queryKeys } from '../../queryKeys'
+import { acquireDomHarness } from '../../test/domHarness'
+import { SettingsApiProvider } from './settingsApi'
+import { STREAM_SUMMARIES_SETTING, StreamSummariesSetting } from './StreamSummariesSetting'
+
+let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
+afterEach(async () => {
+  await dom?.cleanup()
+  dom = undefined
+})
+
+const setting = (value: string): SettingMetadata => ({
+  key: STREAM_SUMMARIES_SETTING,
+  value,
+  type: 'boolean',
+  default: 'true',
+  description: 'Write one-line work stream summaries.',
+  isDefault: value === 'true',
+  updatedAt: null,
+  updatedBy: null,
+})
+
+async function renderSetting(
+  value: string,
+  permissions: string[] = ['settings:read', 'settings:write'],
+  usableCandidates?: string[]
+) {
+  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const { root, container } = dom.createRoot()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(queries.settings.list().queryKey, [setting(value)])
+  client.setQueryData(queryKeys.squads.workStreams('squad-1'), [])
+  client.setQueryData(queryKeys.activity.presence(), {})
+  client.setQueryData(queryKeys.agents.detail('agent-1'), { id: 'agent-1' })
+  const setSetting = mock((_key: string, _value: string) => Promise.resolve())
+  await dom.act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PermissionsProvider
+          usePermissions={() => ({
+            can: (permission: string) => permissions.includes(permission),
+            permissions,
+            isLoading: false,
+            isError: false,
+          })}
+        >
+          <SettingsApiProvider api={{ setSetting }}>
+            <StreamSummariesSetting usableCandidates={usableCandidates} />
+          </SettingsApiProvider>
+        </PermissionsProvider>
+      </QueryClientProvider>
+    )
+  )
+  const toggle = () => container.querySelector<HTMLInputElement>('input[role="switch"]')!
+  return { container, toggle, setSetting, client }
+}
+
+const NO_MODEL = 'No Lite model is signed in'
+
+test('shows the switch on, and turning it off saves the setting and refreshes work lists and Active work', async () => {
+  const { container, toggle, setSetting, client } = await renderSetting('true')
+  expect(container.textContent).toContain('Work stream summaries')
+  expect(toggle().checked).toBe(true)
+  await dom!.act(async () => toggle().click())
+  expect(setSetting.mock.calls).toEqual([[STREAM_SUMMARIES_SETTING, 'false']])
+  // Saved summaries are left out while the switch is off, so stream rows and cards are refetched.
+  expect(client.getQueryState(queryKeys.squads.workStreams('squad-1'))?.isInvalidated).toBe(true)
+  expect(client.getQueryState(queryKeys.activity.presence())?.isInvalidated).toBe(true)
+  expect(client.getQueryState(queryKeys.agents.detail('agent-1'))?.isInvalidated).toBe(false)
+})
+
+test('says no Lite model is signed in beside a switched-on setting, without changing it', async () => {
+  const { container, toggle, setSetting } = await renderSetting('true', undefined, [])
+  expect(toggle().checked).toBe(true)
+  expect(container.textContent).toContain(NO_MODEL)
+  expect(setSetting).not.toHaveBeenCalled()
+})
+
+test('is read-only without settings:write', async () => {
+  const { toggle } = await renderSetting('false', ['settings:read'])
+  expect(toggle().checked).toBe(false)
+  expect(toggle().disabled).toBe(true)
+})
