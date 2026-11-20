@@ -23,3 +23,13 @@ new definitions; otherwise the old API may retain port 3000. Keep the
 PostgreSQL and Core data volumes. Do not use `down --volumes` for this change.
 
 Query bearer tokens remain compatibility-only. First-party CLI connections send an Authorization header; browsers use a single-use ticket or HttpOnly session cookie. Use TLS and ensure proxy logs redact `token` and `ticket`.
+
+## Web viewer
+
+Settings → Logs (`system:logs`) shows the same stream in the browser. Connection stays manual: nothing streams until Connect. The pane fills the rest of the page and **Full screen** opens it in a window-sized dialog; Escape or **Exit full screen** returns to the page without reconnecting.
+
+- **Wrap lines** (remembered per browser) wraps long lines with a hanging indent; turned off, each entry stays on one row and the pane scrolls sideways.
+- The `[api]` and `[worker]` prefixes have their own colors and timestamps are dimmed. Errors and warnings get a red or amber bar: the dominant ANSI color when the log is colored, otherwise a guess from the text (an `error:`/`Error:`/`Failed` style start, an upper-case `ERROR`/`WARN`, a `level=` field, a stack frame or an HTTP 5xx). Production logs usually carry no level, so treat the bars as a reading aid, not a filter.
+- New lines keep the pane at the bottom. Scrolling up pauses that; **Jump to latest** shows how many lines arrived meanwhile and resumes.
+- Search highlights every case-insensitive match. Enter starts from the newest match and walks back, Shift+Enter and **Next** walk forward, **Previous** walks back; the active match is scrolled into view and pauses following.
+- The browser keeps the newest 10,000 lines.

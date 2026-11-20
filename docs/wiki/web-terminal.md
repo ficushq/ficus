@@ -1,10 +1,11 @@
 # Web terminal and log viewers
 
-The web app renders three xterm.js (`@xterm/xterm` 6) surfaces:
+The web app renders two xterm.js (`@xterm/xterm` 6) surfaces:
 
 - the interactive sandbox terminal, `apps/web/src/components/workspace/Terminal.tsx`, which forwards `onData` bytes unchanged over the terminal WebSocket to the session shell (Bash, using the managed bootstrap described in [host-runtime.md](host-runtime.md));
-- the read-only system logs, `components/settings/SystemLogsSection.tsx`;
 - the read-only sandbox logs, `components/squads/SandboxLogs.tsx`.
+
+The read-only system logs (Settings → Logs, `components/settings/SystemLogsSection.tsx`) are not an xterm: they render lines as text with the same `--log-*` palette, so they can wrap or scroll sideways, color components and levels, and follow new lines with a pause; see [system logs](system-logs.md#web-viewer).
 
 Colors come from the theme tokens through `apps/web/src/theme/terminal.ts`; see the [theme adapter contract](../../apps/web/src/theme/README.md).
 
