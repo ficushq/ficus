@@ -172,6 +172,7 @@ async function createManagedSlackConnection(
     }),
     actor: 'test',
     authorizationGrant: true,
+    authorizationKind: 'oauth2',
     clientAuthority: 'platform_broker',
   })
   if (options.enable !== false) await service.enable(created.id, 'test')

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  IntegrationAuthorizationKindRequiredError,
   IntegrationConnectionCreateCommittedError,
   IntegrationConnectionInUseError,
+  IntegrationGrantRotationNotAllowedError,
   IntegrationConnectionService,
   type ConnectionServiceDependencies,
 } from './connection-service'
@@ -16,6 +18,7 @@ import type {
 function setup(
   options: {
     allowsManualCredential?: (providerKey: string) => boolean
+    offersOAuth?: (providerKey: string) => boolean
     safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
     refreshAvailable?: (connection: IntegrationConnectionRecord, credential: string | undefined) => boolean
     refreshAuthenticationFailure?: () => Promise<{
@@ -196,6 +199,7 @@ function setup(
     }),
     requiresRemoteRevocation: options.requiresRemoteRevocation ?? ((connection) => connection.providerKey === 'notion'),
     allowsManualCredential: options.allowsManualCredential,
+    offersOAuth: options.offersOAuth,
     refreshAuthenticationFailure: options.refreshAuthenticationFailure,
     safeConfiguration: options.safeConfiguration,
     refreshAvailable: options.refreshAvailable,
@@ -303,6 +307,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'platform_broker',
       authorizationFlowId,
     })
@@ -327,6 +332,7 @@ describe('IntegrationConnectionService', () => {
         credential: 'oauth-token',
         actor: 'user:user-1',
         authorizationGrant: true,
+        authorizationKind: 'oauth2',
         clientAuthority: 'platform_broker',
         authorizationFlowId,
       })
@@ -368,6 +374,7 @@ describe('IntegrationConnectionService', () => {
         credential: 'oauth-token',
         actor: 'user:user-1',
         authorizationGrant: true,
+        authorizationKind: 'oauth2',
         clientAuthority: 'platform_broker',
         authorizationFlowId,
       })
@@ -396,6 +403,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
     })
     expect(view.configuration).toEqual({ workspaceId: 'workspace-1' })
     expect(JSON.stringify(view)).not.toContain('TOKEN-SENTINEL')
@@ -435,6 +443,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-credential',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     const callsBeforeReconciliation = harness.validationCalls()
@@ -464,6 +473,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'historical-local-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     await harness.service.validate(created.id)
@@ -483,6 +493,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'historical-local-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     const callsBefore = harness.validationCalls()
@@ -505,6 +516,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-credential',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
       clientAuthority: 'local',
     })
     const callsBeforeReconciliation = harness.validationCalls()
@@ -560,10 +572,114 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
     })
     await expect(service.replaceCredential(connection.id, 'token', 'user:user-1')).rejects.toThrow(
       'OAuth authorization required'
     )
+  })
+
+  describe('authorization kind of a granted connection', () => {
+    // Mirrors the runtime wiring: OAuth2 plugins (github, notion) and manual
+    // plugins with a managed driver (slack, linear) offer OAuth; bigbrain does not.
+    const offersOAuth = (providerKey: string) => ['github', 'notion', 'slack', 'linear'].includes(providerKey)
+    const grant = (providerKey: string) => ({
+      providerKey,
+      adapterVersion: 1,
+      displayName: providerKey,
+      configuration: { version: 1 },
+      credential: 'granted-material',
+      actor: 'user:user-1',
+      authorizationGrant: true as const,
+    })
+
+    test.each(['github', 'notion', 'slack', 'linear'])(
+      'refuses a %s grant without an explicit kind before storing anything',
+      async (providerKey) => {
+        const { service, getRow, secrets, validationCalls } = setup({ offersOAuth })
+        await expect(service.create(grant(providerKey))).rejects.toBeInstanceOf(
+          IntegrationAuthorizationKindRequiredError
+        )
+        expect(getRow()).toBeNull()
+        expect(secrets.size).toBe(0)
+        expect(validationCalls()).toBe(0)
+      }
+    )
+
+    test.each([
+      ['notion', 'oauth2'],
+      ['slack', 'oauth2'],
+      ['linear', 'manual'],
+    ] as const)('stores an explicit kind unchanged (%s, %s)', async (providerKey, authorizationKind) => {
+      const { service, getRow } = setup({ offersOAuth })
+      await service.create({ ...grant(providerKey), authorizationKind })
+      expect(getRow()!.authorizationKind).toBe(authorizationKind)
+    })
+
+    test('a service without an offersOAuth predicate fails closed for any grant without a kind', async () => {
+      const { service, getRow, secrets } = setup()
+      for (const providerKey of ['notion', 'slack', 'bigbrain']) {
+        await expect(service.create(grant(providerKey))).rejects.toBeInstanceOf(
+          IntegrationAuthorizationKindRequiredError
+        )
+      }
+      expect(getRow()).toBeNull()
+      expect(secrets.size).toBe(0)
+      await service.create({ ...grant('notion'), authorizationKind: 'oauth2' })
+      expect(getRow()!.authorizationKind).toBe('oauth2')
+    })
+
+    test.each(['github', 'notion', 'slack', 'linear'])(
+      'refuses rotating a grant into a %s connection before touching material',
+      async (providerKey) => {
+        const { service, getRow, secrets, audits } = setup({ offersOAuth })
+        await service.create({ ...grant(providerKey), authorizationKind: 'oauth2' })
+        const before = getRow()
+        const secretsBefore = new Map(secrets)
+        const auditsBefore = audits.length
+        await expect(
+          service.replaceCredential(before!.id, 'rotated-grant', 'user:user-1', true, undefined, true)
+        ).rejects.toBeInstanceOf(IntegrationGrantRotationNotAllowedError)
+        expect(getRow()).toEqual(before)
+        expect(secrets).toEqual(secretsBefore)
+        expect(audits.length).toBe(auditsBefore)
+      }
+    )
+
+    test('a service without an offersOAuth predicate refuses every grant rotation', async () => {
+      const { service, getRow, secrets } = setup()
+      await service.create({ ...grant('bigbrain'), authorizationKind: 'manual' })
+      const before = getRow()
+      const secretsBefore = new Map(secrets)
+      await expect(
+        service.replaceCredential(before!.id, 'rotated-grant', 'user:user-1', true, undefined, true)
+      ).rejects.toBeInstanceOf(IntegrationGrantRotationNotAllowedError)
+      expect(getRow()).toEqual(before)
+      expect(secrets).toEqual(secretsBefore)
+    })
+
+    test('BigBrain grant rotation through a wired manual-only predicate succeeds and stays manual', async () => {
+      const { service, getRow, secrets } = setup({ offersOAuth })
+      await service.create(grant('bigbrain'))
+      const originalRef = getRow()!.credentialRef
+      await service.replaceCredential(getRow()!.id, 'rotated-grant', 'user:user-1', true, undefined, true)
+      expect(getRow()!.credentialRef).not.toBe(originalRef)
+      expect(secrets.get(getRow()!.credentialRef)).toBe('rotated-grant')
+      expect(getRow()!.authorizationKind).toBe('manual')
+    })
+
+    test('a grant for a manual-only provider (BigBrain) stays manual without a kind', async () => {
+      const { service, getRow } = setup({ offersOAuth })
+      await service.create(grant('bigbrain'))
+      expect(getRow()!.authorizationKind).toBe('manual')
+    })
+
+    test('manual entry for a dual-driver provider needs no kind and stays manual', async () => {
+      const { service, getRow } = setup({ offersOAuth })
+      const { authorizationGrant: _grant, ...manualEntry } = grant('slack')
+      await service.create(manualEntry)
+      expect(getRow()!.authorizationKind).toBe('manual')
+    })
   })
 
   test('permits multiple provider connections without a single-enabled check', async () => {
@@ -741,6 +857,7 @@ describe('IntegrationConnectionService', () => {
       credential: 'oauth-token',
       actor: 'user:user-1',
       authorizationGrant: true,
+      authorizationKind: 'oauth2',
     })
     await service.remove(connection.id, 'user:user-1', true)
     expect(getRow()).toBeNull()

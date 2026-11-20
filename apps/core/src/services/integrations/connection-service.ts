@@ -43,6 +43,33 @@ export class IntegrationManualCredentialNotAllowedError extends Error {
   }
 }
 
+/**
+ * An authorization grant was stored for a provider that offers OAuth without
+ * saying whether the material is `oauth2` or `manual`. Defaulting to `manual`
+ * would silently drop an OAuth grant from refresh, authority fencing and
+ * remote revocation, and the plugin alone cannot decide for dual-driver
+ * providers (Slack, Linear), so the call is refused.
+ */
+export class IntegrationAuthorizationKindRequiredError extends Error {
+  constructor(readonly providerKey: string) {
+    super(`Authorization kind required for an authorization grant on provider ${providerKey}`)
+    this.name = 'IntegrationAuthorizationKindRequiredError'
+  }
+}
+
+/**
+ * `replaceCredential` was given an authorization grant for a provider that may
+ * hold OAuth connections. Rotation always records `manual`, which would drop an
+ * OAuth connection from refresh, authority fencing and remote revocation, so
+ * only manual-only providers (BigBrain) may rotate granted material.
+ */
+export class IntegrationGrantRotationNotAllowedError extends Error {
+  constructor(readonly providerKey: string) {
+    super(`Authorization grant rotation is not allowed for provider ${providerKey}`)
+    this.name = 'IntegrationGrantRotationNotAllowedError'
+  }
+}
+
 export class IntegrationConnectionCreateCommittedError extends Error {
   constructor(
     readonly connectionId: string,
@@ -81,6 +108,14 @@ export interface ConnectionServiceDependencies {
     credential: string | undefined
   ) => Promise<(() => Promise<void>) | undefined>
   allowsManualCredential?: (providerKey: string) => boolean
+  /**
+   * Whether the provider's plugin can hold OAuth-granted connections (an OAuth2
+   * plugin or a manual plugin with a managed driver). `create` refuses an
+   * authorization grant for such a provider unless `authorizationKind` is explicit,
+   * and `replaceCredential` refuses an authorization grant for it outright.
+   * Fails closed: without this predicate both treat every provider as OAuth-capable.
+   */
+  offersOAuth?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
   refreshAvailable?: (connection: IntegrationConnectionRecord, credential: string | undefined) => boolean | undefined
   /** The authority an `oauth2` connection must hold; undefined for connections that are not fenced. */
@@ -109,6 +144,7 @@ export class IntegrationConnectionService {
   readonly #deproject?: ConnectionServiceDependencies['deproject']
   readonly #prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
   readonly #allowsManualCredential: (providerKey: string) => boolean
+  readonly #offersOAuth?: (providerKey: string) => boolean
   readonly #safeConfiguration: (providerKey: string, configuration: unknown) => unknown
   readonly #refreshAvailable: NonNullable<ConnectionServiceDependencies['refreshAvailable']>
   readonly #refreshAuthenticationFailure?: ConnectionServiceDependencies['refreshAuthenticationFailure']
@@ -128,12 +164,18 @@ export class IntegrationConnectionService {
     this.#deproject = dependencies.deproject
     this.#prepareRemoval = dependencies.prepareRemoval
     this.#allowsManualCredential = dependencies.allowsManualCredential ?? (() => true)
+    this.#offersOAuth = dependencies.offersOAuth
     this.#safeConfiguration = dependencies.safeConfiguration ?? ((_providerKey, configuration) => configuration)
     this.#refreshAvailable = dependencies.refreshAvailable ?? (() => undefined)
     this.#refreshAuthenticationFailure = dependencies.refreshAuthenticationFailure
     this.#currentOAuthAuthority = dependencies.currentOAuthAuthority ?? (() => undefined)
     this.#operatorAlert = dependencies.operatorAlert
     this.#authorizationLease = dependencies.authorizationLease
+  }
+
+  /** Fails closed: without an `offersOAuth` predicate every provider may hold OAuth grants. */
+  #mayHoldOAuth(providerKey: string): boolean {
+    return !this.#offersOAuth || this.#offersOAuth(providerKey)
   }
 
   async create(input: {
@@ -144,7 +186,11 @@ export class IntegrationConnectionService {
     credential: string
     actor: string
     authorizationGrant?: true
-    /** `oauth2` only for material from an OAuth grant; defaults to `manual`. */
+    /**
+     * `oauth2` only for material from an OAuth grant; defaults to `manual`.
+     * Required with `authorizationGrant` when the provider offers OAuth, or
+     * when this service has no `offersOAuth` predicate to tell.
+     */
     authorizationKind?: IntegrationAuthorizationKind
     clientAuthority?: OAuthAuthority
     authorizationFlowId?: string
@@ -152,6 +198,8 @@ export class IntegrationConnectionService {
   }): Promise<SafeIntegrationConnection> {
     if (!input.authorizationGrant && !this.#allowsManualCredential(input.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
+    if (input.authorizationGrant && input.authorizationKind === undefined && this.#mayHoldOAuth(input.providerKey))
+      throw new IntegrationAuthorizationKindRequiredError(input.providerKey)
     const provider = this.#resolveProvider(input.providerKey, input.adapterVersion)
     const configuration = provider.parseConfig(input.configuration)
     const credential = input.authorizationGrant ? input.credential : input.credential.trim()
@@ -306,6 +354,11 @@ export class IntegrationConnectionService {
     const current = await this.#mustGet(id)
     if (!authorizationGrant && !this.#allowsManualCredential(current.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
+    // Rotation always records `manual`, so a grant may only rotate into a
+    // provider known to be manual-only. OAuth material is reinstalled through
+    // `installAuthorizedMaterial`, never here.
+    if (authorizationGrant && this.#mayHoldOAuth(current.providerKey))
+      throw new IntegrationGrantRotationNotAllowedError(current.providerKey)
     if (!authorizationGrant) credential = credential.trim()
     const parsedConfiguration =
       configuration === undefined
