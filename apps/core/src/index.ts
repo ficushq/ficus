@@ -164,6 +164,7 @@ import { startWorkerHealthMonitor, stopWorkerHealthMonitor, getWorkerStatus } fr
 import { startDiscordGateway, stopDiscordGateway } from './channels/discord'
 import { EmbeddingWorker, ExternalSourceReindexRunner, registerThreadIndexerEvents } from './services/memory'
 import { registerReplySuggestions } from './services/reply-suggestions/runtime'
+import { registerStreamSummaries } from './services/stream-summaries/runtime'
 import { ServerWebSocket } from 'bun'
 import { getVapidKeys } from './services/push'
 import { registerLiveActivityFanout, type LiveActivityFanout } from './services/push/live-activity'
@@ -1058,6 +1059,9 @@ if (import.meta.main) {
 
       // Suggest one-tap replies when a chat turn ends with a plain-text question (async, never blocks)
       registerReplySuggestions()
+
+      // Keep active work streams' one-line summaries current (Lite tier, throttled per stream)
+      registerStreamSummaries()
 
       // Start core boot subsystems in order (worker health monitor, external
       // source reindex runner, local update scheduler, auth cleanup scheduler,

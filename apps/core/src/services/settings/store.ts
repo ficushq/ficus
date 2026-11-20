@@ -200,6 +200,14 @@ const KNOWN_SETTINGS: Record<string, SettingDef> = {
       'Suggest one-tap replies in chat when an agent asks you something in plain text. Uses the Lite model tier; nothing runs without a signed-in Lite model.',
     validate: (value) => (['true', 'false'].includes(value) ? null : 'Use true or false.'),
   },
+  // Read in ficus-api (the summaries run there and the API hides saved ones while it is off).
+  STREAM_SUMMARIES_ENABLED: {
+    type: 'boolean',
+    default: 'true',
+    description:
+      "Write a one-line summary of what each active work stream is doing, from its participants' messages. Uses the Lite model tier at most once every few minutes per busy stream.",
+    validate: (value) => (['true', 'false'].includes(value) ? null : 'Use true or false.'),
+  },
   LOCAL_AUTO_UPDATE_ENABLED: {
     type: 'boolean',
     default: String(DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS.enabled),

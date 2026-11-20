@@ -1516,6 +1516,18 @@ export interface WorkStream {
    */
   hasActiveMonitor?: boolean
   derivedState?: WorkStreamDerivedState
+  /**
+   * The current workflow step as a person reads it ("Implement", "Code review + Security review",
+   * "Completion-ready", "Paused"), null when no flow step runs. Populated by list/detail endpoints for
+   * queued and active streams; absent from older servers and for finished streams.
+   */
+  step?: string | null
+  /**
+   * One-line summary of what is happening now (docs/wiki/work-stream-summaries.md). Present only for
+   * active streams, while the instance switch is on and the summary was generated for `step`. Absent
+   * means "nothing to show".
+   */
+  summary?: import('./work-stream-summary').WorkStreamSummary
   /** Open (unresolved) wait records, newest first. Populated by list/detail endpoints. */
   openWaits?: WorkStreamWait[]
   /** Count of CLOSED review waits (= completed review rounds). Populated by the detail endpoint. */

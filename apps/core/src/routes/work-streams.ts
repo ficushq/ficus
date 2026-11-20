@@ -1,3 +1,4 @@
+import { loadWorkStreamStepPresentation } from '../services/stream-summaries/presentation'
 import { bindLinearSessionForEvent } from '../services/integrations/linear/session-binding'
 import { publicErrorMessage } from '../db/errors'
 import {
@@ -142,10 +143,11 @@ async function routeWorkStreamSquadId(c: Context): Promise<string | null> {
 }
 
 async function annotateWorkStreams(streams: WorkStream[]) {
-  const [runtimes, priorityAnnotations, derived] = await Promise.all([
+  const [runtimes, priorityAnnotations, derived, steps] = await Promise.all([
     WorkStream.computeRuntimes(streams),
     computePriorityAnnotations(streams),
     computeDerivedStates(streams),
+    loadWorkStreamStepPresentation(streams),
   ])
   // Only the integrations a flow subscribes to, not the whole flow state: this runs for every
   // row of every list.
@@ -179,6 +181,7 @@ async function annotateWorkStreams(streams: WorkStream[]) {
     ...(priorityAnnotations.get(stream.id) ?? {}),
     ...(derived.get(stream.id) ?? {}),
     ...(automatedReviewGates.has(stream.id) ? { automatedReviewGate: true } : {}),
+    ...(steps.get(stream.id) ?? {}),
   }))
 }
 
@@ -1081,6 +1084,7 @@ export const workStreamsRouter = new Hono()
       const runtime = (await WorkStream.computeRuntimes([stream])).get(stream.id)
       const priorityAnnotations = (await computePriorityAnnotations([stream])).get(stream.id) ?? {}
       const derived = (await computeDerivedStates([stream])).get(stream.id) ?? {}
+      const stepPresentation = (await loadWorkStreamStepPresentation([stream])).get(stream.id) ?? {}
       // Full audit trail (every wait, open + closed, newest first); reviewHistory
       // is the review-typed subset, so one query feeds both.
       const waitHistory = (await listWaitHistory(db, stream.id)).map(toWaitJson)
@@ -1099,6 +1103,7 @@ export const workStreamsRouter = new Hono()
         requestingUserName,
         ...priorityAnnotations,
         ...derived,
+        ...stepPresentation,
         reviewHistory,
         reviewRounds,
         waitHistory,

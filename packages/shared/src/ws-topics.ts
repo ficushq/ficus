@@ -96,6 +96,7 @@ export type TopicEventMap = {
     keyof EventMap,
     | 'workStream.created'
     | 'workStream.updated'
+    | 'workStream.summaryUpdated'
     | 'workStream.assigned'
     | 'workStream.agentAdded'
     | 'workStream.agentRemoved'
