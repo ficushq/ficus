@@ -497,7 +497,9 @@ box has a toolchain to fall back to:
 - Every sandbox ensure (agent turns, terminals, deployments) first waits for the
   cheap already-applied path: readiness checks and activating the cached
   environment, at most 30 seconds. That keeps an unchanged toolchain active
-  before the first command after a box wakes.
+  before the first command after a box wakes. A toolchain that is already
+  `ready` for the declared fingerprint stays `ready` while it is re-verified; the
+  status moves only when the reconcile finds install work or fails.
 - When real install work starts, another reconcile of the box is already
   installing (in this Core process, or under the provisioning lease in another
   one), or that 30-second budget runs out, Core asks the box server whether its
