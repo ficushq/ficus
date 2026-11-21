@@ -106,6 +106,30 @@ describe('isModelPriorityList / parseDisplayModelPriorityList', () => {
 })
 
 describe('AgentInfoPanel', () => {
+  // The Info tab's model source, for a root agent whose model comes from its agent type. This covered
+  // the retired ChatPage's Info tab; squadless agents (system managers) open their Info tab here now.
+  test('a squadless root agent names its agent type model as the model source', () => {
+    const agent: Agent = {
+      ...baseAgent,
+      agentTypeId: 'manager',
+      squadId: null,
+      configuredModel: 'anthropic:claude-sonnet-4-5',
+      modelResolution: {
+        chain: 'anthropic:claude-sonnet-4-5',
+        source: { kind: 'agent-type-model' },
+        nextSelectedModel: 'anthropic:claude-sonnet-4-5',
+      },
+    }
+    const html = renderPanel(agent)
+
+    expect(html).toContain('Configured chain')
+    expect(html).toContain('anthropic:claude-sonnet-4-5')
+    expect(html).toContain('Model source')
+    expect(html).toContain('Agent type model')
+    expect(html).not.toContain('Model ID')
+    expect(html).not.toContain('Unknown')
+  })
+
   test('a Standard-type child shows its explicit override before a model is selected', () => {
     const agent: Agent = {
       ...baseAgent,
