@@ -266,6 +266,21 @@ export function installDomHarness({
           } catch (error) {
             cleanupError ??= error
           }
+          // Abort the window's in-flight fetches and XHRs while it is still installed, so their
+          // rejections run in the macrotasks below. A request that outlived this owner would
+          // otherwise settle under the next owner's window and schedule its follow-up work
+          // there; TanStack Query's five-minute garbage-collection timer then keeps that
+          // window's waitUntilComplete() pending. window.close() does not do this: Happy DOM
+          // only closes windows another window opened, so on a `new Window()` it is a no-op.
+          // abort() leaves the window usable, unlike happyDOM.close(), because some tests put
+          // timers they saved from this window back after cleanup. Its promise is not awaited:
+          // it settles only once the window has no timers, and a rejection may add one that
+          // the timer cleanup in the finally block cancels.
+          try {
+            void window.happyDOM.abort()
+          } catch (error) {
+            cleanupError ??= error
+          }
           for (const handle of pendingTimeouts) nativeClearTimeout(handle)
           pendingTimeouts.clear()
           for (const handle of pendingIntervals) nativeClearInterval(handle)
