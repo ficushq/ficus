@@ -5,6 +5,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { allowNetworkOrigin } from '../src/test/networkGuard'
 import { startFixtureServer } from './fixture-server'
 
 const cacheDir = await mkdtemp(join(tmpdir(), 'fixture-server-cache-'))
@@ -20,6 +21,8 @@ test(
       logLevel: 'silent',
       cacheDir,
     })
+    // The test preload refuses network requests except to a server the test started.
+    const revokeFirst = allowNetworkOrigin(first.resolvedUrls!.local[0]!)
     let built: { hash: string; optimized: Record<string, unknown> }
     let builtAt: number
     try {
@@ -31,11 +34,13 @@ test(
       expect(page.headers.get('content-type')).toBe('text/html')
       expect(await page.text()).toContain('<script type="module" src="/scripts/fixtures/storage-banner.tsx">')
     } finally {
+      revokeFirst()
       await first.close()
     }
 
     // Another check, serving every HTML request, reuses the same cache instead of rebuilding it.
     const second = await startFixtureServer({ entry: '/scripts/fixtures/spend.tsx', logLevel: 'silent', cacheDir })
+    const revokeSecond = allowNetworkOrigin(second.resolvedUrls!.local[0]!)
     try {
       expect(JSON.parse(await readFile(metadataPath, 'utf8')).hash).toBe(built.hash)
       expect((await stat(metadataPath)).mtimeMs).toBe(builtAt)
@@ -46,6 +51,7 @@ test(
       const module = await fetch(`${url}scripts/fixtures/spend.tsx`)
       expect(module.headers.get('content-type')).toContain('javascript')
     } finally {
+      revokeSecond()
       await second.close()
     }
   },

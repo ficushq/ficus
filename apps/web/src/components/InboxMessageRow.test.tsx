@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -7,6 +8,11 @@ import type { ReactElement } from 'react'
 import type { Squad } from '@ficus/shared'
 import type { InboxMessageResponse } from '../api/inbox'
 import { formatSender, MessageRow } from './InboxMessageRow'
+
+// The squad list behind sender links stays unavailable.
+const api = {
+  '/api/squads': apiUnavailable,
+}
 
 // MessageRow uses react-query hooks; every render needs a QueryClient in context.
 function renderRow(ui: ReactElement): string {
@@ -25,7 +31,7 @@ describe('MessageRow', () => {
   const activeQueryClients = new Set<QueryClient>()
 
   beforeEach(async () => {
-    dom = await acquireDomHarness({ url: 'http://localhost/' })
+    dom = await acquireDomHarness({ url: 'http://localhost/', api })
     ;({ container, root } = dom.createRoot())
   })
 

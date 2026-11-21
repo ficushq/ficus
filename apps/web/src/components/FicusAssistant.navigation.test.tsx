@@ -82,6 +82,7 @@ test('assistant history, starter messages, and live voice use the shared panel',
   )
   client.setQueryData(queries.squads.list().queryKey, [])
   client.setQueryData(queries.squads.activeWorkStreams().queryKey, [])
+  client.setQueryData(integrationQueries.catalog().queryKey, { integrations: [] })
   const { container, root } = dom.createRoot()
   const ChatFixture = ({ initialMessage }: { initialMessage?: { content: string } }) => (
     <output data-testid="initial-message">{initialMessage?.content}</output>

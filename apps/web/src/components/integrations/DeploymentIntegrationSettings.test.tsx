@@ -36,8 +36,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await harness.cleanup()
   globalThis.fetch = oldFetch
+  await harness.cleanup()
 })
 
 async function render(accounts: unknown[], canWrite = true) {

@@ -357,14 +357,29 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
     expect(requests.some((path) => path.includes('/squads/ficus'))).toBe(false)
     expect(requests.filter((path) => path === `/api/squads/${canonical.id}?includeRelationships=true`)).toHaveLength(1)
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
 test('Home New chat opens the Chats composer instead of selecting an existing conversation', async () => {
   const { acquireDomHarness } = await import('../test/domHarness')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/ficus' })
+  const { apiUnavailable } = await import('../test/apiMock')
+  // The page's other panels (subscription, GitHub feedback, work lists, agent types, open questions
+  // and the consultant's subagents) stay unavailable; this test covers the New chat link.
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/squads/ficus',
+    api: {
+      '/api/squads/:id/subscription': apiUnavailable,
+      '/api/squads/:id/github-feedback/summary': apiUnavailable,
+      '/api/squads/:id/agents': apiUnavailable,
+      '/api/agent-types': apiUnavailable,
+      '/api/agent-types/:id': apiUnavailable,
+      '/api/workstreams': apiUnavailable,
+      '/api/agent-questions/by-squad/:id/open-counts': apiUnavailable,
+      '/api/agents': apiUnavailable,
+    },
+  })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   const canonical = { ...squad, name: 'Ficus' }
   const consultant = {

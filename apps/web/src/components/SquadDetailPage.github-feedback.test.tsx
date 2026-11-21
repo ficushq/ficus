@@ -118,9 +118,9 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 20))
   await client.cancelQueries()
-  client.clear()
   globalThis.fetch = oldFetch
   await dom.cleanup()
+  client.clear()
 })
 
 function Navigator() {

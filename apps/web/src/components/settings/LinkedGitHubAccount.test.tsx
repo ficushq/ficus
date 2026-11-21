@@ -26,9 +26,9 @@ beforeEach(async () => {
   requests = []
 })
 afterEach(async () => {
+  globalThis.fetch = oldFetch
   await harness.cleanup()
   client.clear()
-  globalThis.fetch = oldFetch
 })
 
 function serve(routes: Record<string, (body: string) => Response>) {

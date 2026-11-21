@@ -80,8 +80,8 @@ test('shared participant edits retain step instructions and rename every referen
     expect(input('Participant ID').value).toBe('publish-agent')
     expect(document.querySelector('[aria-label="Choose participant"]')?.textContent).toContain('Used by 1 step')
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
@@ -128,7 +128,7 @@ test('tier dropdown overrides the engineer tier and can return to agent type def
       })
     }
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

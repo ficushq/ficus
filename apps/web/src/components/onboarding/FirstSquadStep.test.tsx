@@ -48,8 +48,9 @@ describe('FirstSquadStep', () => {
       configureWindow: (window) => Object.assign(window, { SyntaxError }),
       beforeUnmount: async () => {
         await Promise.all([...queryClients].map((client) => client.cancelQueries()))
-        queryClients.forEach((client) => client.clear())
       },
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClients.forEach((client) => client.clear()),
     })
     squadCreateCalls = []
     chatCalls = []

@@ -84,6 +84,7 @@ test('assistant-driven navigation keeps the text conversation visible on the des
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   cache.setQueryData(queries.voice.status().queryKey, { enabled: false })
+  cache.setQueryData(queries.squads.list().queryKey, [])
   let location = ''
   function Conversation() {
     const navigate = useAssistantPageNavigation()
@@ -126,6 +127,7 @@ test('ordinary page links never commit a closed assistant or hide its conversati
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   cache.setQueryData(queries.voice.status().queryKey, { enabled: false })
+  cache.setQueryData(queries.squads.list().queryKey, [])
   const commits: { hidden: boolean; visible: boolean; id: string }[] = []
   let current = ''
   function Conversation(props: Parameters<typeof import('./AssistantConversationView').AssistantConversationView>[0]) {
@@ -189,6 +191,7 @@ test('assistant links keep parent and recipient drafts through Back, Escape, ref
   for (const [key, value] of [
     [queries.voice.status().queryKey, { enabled: true }],
     [queries.squads.list().queryKey, []],
+    [assistantQueries.list('', 0).queryKey, { conversations: [], hasMore: false }],
     [queries.squads.allWorkStreams().queryKey, []],
     [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
     [queries.agents.detail('manager').queryKey, agent],

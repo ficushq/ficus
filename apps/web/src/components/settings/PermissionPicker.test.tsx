@@ -19,8 +19,8 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   globalThis.fetch = oldFetch
-  client.clear()
   await dom.cleanup()
+  client.clear()
 })
 function ControlledPicker({ initial = [] }: { initial?: string[] }) {
   const [selected, setSelected] = useState(initial)

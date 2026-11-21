@@ -33,6 +33,9 @@ beforeEach(async () => {
     url: 'http://localhost/settings/channels',
     beforeUnmount: async () => {
       await Promise.all([...activeQueryClients].map((client) => client.cancelQueries()))
+    },
+    // Clearing the cache while the tree is mounted would refetch its queries.
+    afterUnmount: () => {
       for (const client of activeQueryClients) client.clear()
       activeQueryClients.clear()
     },

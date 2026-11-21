@@ -424,8 +424,8 @@ test('device login stays visible through delayed startup and code preparation', 
   } finally {
     start.resolve()
     await client.cancelQueries()
+    globalThis.fetch = originalFetch
     await dom.cleanup()
     client.clear()
-    globalThis.fetch = originalFetch
   }
 })

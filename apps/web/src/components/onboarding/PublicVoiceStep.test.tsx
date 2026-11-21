@@ -169,8 +169,8 @@ for (const scenario of ['saved', 'none', 'collision', 'default-failure'] as cons
       }
     } finally {
       globalThis.fetch = original
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 
@@ -195,7 +195,7 @@ test('gated step opens GitHub setup and never shows the derivation form', async 
     await dom.act(async () => container.querySelector<HTMLButtonElement>('button')!.click())
     expect(opened).toBe(1)
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

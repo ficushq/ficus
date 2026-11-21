@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
 import type { AgentQuestion } from '@ficus/shared'
+import type { ApiRoutes } from '../test/apiMock'
 import { acquireDomHarness } from '../test/domHarness'
 import { queries } from '../queryOptions'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
@@ -31,9 +32,13 @@ async function render(
   action: ToolInlineAction,
   seed: (client: QueryClient) => void | Promise<void>,
   onClose = () => {},
-  options: { scope?: { agentId?: string; squadId?: string }; onUnavailable?: () => void } = {}
+  options: { scope?: { agentId?: string; squadId?: string }; onUnavailable?: () => void; api?: ApiRoutes } = {}
 ) {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/agent-1' })
+  // An open question's answer form offers voice input, which reads the voice status.
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/chat/agent-1',
+    api: { '/api/voice/status': { enabled: false }, ...options.api },
+  })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   await seed(client)
   const { root } = dom.createRoot()
@@ -133,18 +138,19 @@ test('a work stream navigates to its page in its own squad and closes', async ()
 test('a work stream that cannot be resolved, with no squad to fall back on, reports it unavailable and closes', async () => {
   let closed = 0
   let unavailable = 0
-  const originalFetch = globalThis.fetch
-  // The stream is gone: its lookup answers 404.
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: 'Work stream not found' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch
   const { document, act, cleanup } = await render(
     { kind: 'work_stream', key: 'work_stream:404', label: 'Open work stream #404', workStreamRef: '404' },
     () => {},
     () => closed++,
-    { scope: { agentId: 'agent-1' }, onUnavailable: () => unavailable++ }
+    {
+      scope: { agentId: 'agent-1' },
+      onUnavailable: () => unavailable++,
+      api: {
+        // The stream is gone: its lookup answers 404, and there are no squads to fall back on.
+        '/api/workstreams/:id': () => Response.json({ error: 'Work stream not found' }, { status: 404 }),
+        '/api/squads': [],
+      },
+    }
   )
   try {
     await act(async () => {
@@ -154,7 +160,6 @@ test('a work stream that cannot be resolved, with no squad to fall back on, repo
     expect(closed).toBe(1)
     expect(document.querySelector('[data-testid="location"]')!.textContent).toBe('/chat/agent-1')
   } finally {
-    globalThis.fetch = originalFetch
     await cleanup()
   }
 })

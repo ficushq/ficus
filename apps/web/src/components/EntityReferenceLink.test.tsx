@@ -123,12 +123,15 @@ async function fixture(reference: EntityReference, onOpenAgent?: (agent: import(
     tooltip,
     advance,
     cleanup: async () => {
+      // The spies wrap the harness window's timers: restore them while it is still installed, and
+      // let cleanup restore the process's own. Unmount then clears hover handles through the
+      // window, which ignores the spies' numeric ids.
+      timer.mockRestore()
+      clear.mockRestore()
       try {
         await dom.cleanup()
-        client.clear()
       } finally {
-        timer.mockRestore()
-        clear.mockRestore()
+        client.clear()
       }
     },
   }

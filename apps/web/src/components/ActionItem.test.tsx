@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
+import { workStreamReads } from '../test/workStreamApi'
 import {
   createBlankWorkflow,
   createWorkflowRun,
@@ -16,6 +18,14 @@ import { webStatus } from '../lib/statusPresentation'
 import { ActionItem } from './ActionItem'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
+
+// Reads the cards make for themselves (voice input status, the caller's permissions and the work
+// stream's own detail reads) stay unavailable unless a test serves them.
+const api = {
+  ...workStreamReads,
+  '/api/auth/permissions': apiUnavailable,
+  '/api/voice/status': apiUnavailable,
+}
 
 const action = {
   id: 'workstream-review:ws-1:wait-full-1',
@@ -56,7 +66,7 @@ const action = {
 
 describe('ActionItem work-stream approval', () => {
   test('opens a lone review without a redundant category heading and allows collapse', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -81,7 +91,7 @@ describe('ActionItem work-stream approval', () => {
   })
 
   test('renders returned actions read-only when canRespond is false', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -107,7 +117,7 @@ describe('ActionItem work-stream approval', () => {
   })
 
   test('requires explicit confirmation and submits exactly once', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const fetchCalls: Array<{ url: string; body?: string }> = []
@@ -168,7 +178,7 @@ describe('ActionItem work-stream approval', () => {
   })
 
   test('keeps a failed mutation visible and renders the server error', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     globalThis.fetch = mock(
@@ -245,7 +255,7 @@ describe('ActionItem failed answer delivery', () => {
         },
       },
     } satisfies PendingAction
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const fetchCalls: string[] = []
@@ -334,7 +344,7 @@ function failedDeliveryAction(canRespond = true): PendingAction {
 describe('ActionItem failed delivery acknowledgement', () => {
   test('offers dismiss without retry permission and acknowledges only the current generation', async () => {
     const item = failedDeliveryAction(false)
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body: unknown }> = []
@@ -386,7 +396,7 @@ describe('ActionItem refused answer delivery', () => {
       ...base,
       data: { ...data, answerDelivery: { ...data.answerDelivery!, canRetry: false, refusal } },
     } satisfies PendingAction
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -417,7 +427,7 @@ describe('ActionItem refused answer delivery', () => {
       ...base,
       data: { ...data, answerDelivery: { ...data.answerDelivery!, canRetry: true, refusal: 'attempt-replaced' } },
     } satisfies PendingAction
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -443,7 +453,7 @@ describe('ActionItem refused answer delivery', () => {
 
 describe('ActionItem exact mutation behavior', () => {
   test('sends back the exact review wait with its note', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body?: string }> = []
@@ -494,7 +504,7 @@ describe('ActionItem exact mutation behavior', () => {
 
   test('clears only the second concurrent manual wait', async () => {
     const actions = [manualAction('manual-full-1', 'Use option A'), manualAction('manual-full-2', 'Use option B')]
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body?: string }> = []
@@ -538,7 +548,7 @@ describe('ActionItem exact mutation behavior', () => {
   })
 
   test('sends a multi-line work stream input response on Cmd/Ctrl+Enter, never on plain Enter', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body?: string }> = []
@@ -593,7 +603,7 @@ describe('ActionItem exact mutation behavior', () => {
       ...action,
       data: { ...action.data, wait: { ...action.data.wait, completesOnApproval: true } },
     } as PendingAction
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -643,7 +653,7 @@ describe('ActionItem exact mutation behavior', () => {
       },
     }
     const continueExact = mock(async () => ({ resumed: 1, resumedActionIds: [halted.id], staleActionIds: [] }))
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -672,7 +682,7 @@ describe('ActionItem exact mutation behavior', () => {
 
   test('retains a failed retry and hides retry when read-only', async () => {
     const retryAction = failedDeliveryAction()
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     globalThis.fetch = mock(
@@ -753,7 +763,7 @@ describe('ActionItem exact mutation behavior', () => {
     const rejectUnsafe = mock(async () => Promise.reject({ secret: 'unsafe' }))
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
     queryClient.setQueryData(queryKeys.actions.pending(), [halted])
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -787,7 +797,7 @@ describe('ActionItem exact mutation behavior', () => {
 })
 
 test('ActionItem keeps a review mutation pending until authoritative invalidations finish', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const rendered = dom.createRoot()
   const originalFetch = globalThis.fetch
   globalThis.fetch = mock(async () => new dom.window.Response('{}', { status: 200 })) as unknown as typeof fetch
@@ -846,9 +856,10 @@ test('ActionItem keeps a review mutation pending until authoritative invalidatio
 test('a flow-owned wait opens its decision controls instead of exposing generic unblock', async () => {
   const flowAction = manualAction('flow-wait', 'Approve the design')
   ;(flowAction.data as import('@ficus/shared').WorkStreamActionData).wait.resolutionHandler = 'workflow'
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const rendered = dom.createRoot()
-  const cache = new QueryClient()
+  // The run and stream are seeded below; they stay fresh, so opening the review does not refetch them.
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   try {
     await dom.act(async () =>
       rendered.root.render(
@@ -935,7 +946,7 @@ describe('assistant task questions', () => {
   } as unknown as PendingAction
 
   test('renders with the other questions and answers inside the Assistant conversation', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/squads?tab=work' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/squads?tab=work', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1008,7 +1019,7 @@ describe('ActionItem code-host delivery gate', () => {
   })
 
   test('opens a lone PR in one click from the collapsed card, with nothing redundant to expand', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     try {
       await renderItems(dom, <ActionCenterContent actions={[deliveryAction, action]} isLoading={false} />)
       expect(document.body.textContent).toContain('Work stream reviews')
@@ -1043,7 +1054,7 @@ describe('ActionItem code-host delivery gate', () => {
   })
 
   test('labels a merge gate Open, since the link opens the PR rather than merging it', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     try {
       const merge = {
         ...deliveryAction,
@@ -1062,7 +1073,7 @@ describe('ActionItem code-host delivery gate', () => {
   })
 
   test('a merge gate with several PRs lists Open links with full references', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     try {
       const merge = withPullRequests([
         { repository: 'ficushq/ficus', number: 7, url: 'https://github.com/ficushq/ficus/pull/7' },
@@ -1080,7 +1091,7 @@ describe('ActionItem code-host delivery gate', () => {
   })
 
   test('keeps several PRs in an expandable list without a redundant View button', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     try {
       await renderItems(
         dom,
@@ -1106,7 +1117,7 @@ describe('ActionItem code-host delivery gate', () => {
   })
 
   test('a gate without a linked PR is a plain card whose title opens the work stream', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     try {
       await renderItems(dom, <ActionItem action={withPullRequests([{ repository: 'ficushq/ficus', number: 7 }])} />)
       expect(document.querySelector('a')).toBeNull()
@@ -1120,7 +1131,7 @@ describe('ActionItem code-host delivery gate', () => {
   })
 
   test('keeps the PR link reachable when embedded in the work stream modal', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     try {
       await renderItems(dom, <ActionItem action={deliveryAction} embedded />)
       expect(document.querySelector('h3')?.textContent).toBe('Use accurate Waiting label')
@@ -1154,7 +1165,7 @@ describe('ActionItem inline primary actions', () => {
 
   test('continues a halted agent from the collapsed card without expanding it', async () => {
     const continueExact = mock(async () => ({ resumed: 1, resumedActionIds: [halted.id], staleActionIds: [] }))
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1178,7 +1189,7 @@ describe('ActionItem inline primary actions', () => {
   })
 
   test('the expanded halted card explains the halt without repeating the title link', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1201,7 +1212,7 @@ describe('ActionItem inline primary actions', () => {
   })
 
   test('shows no inline action on a card the viewer cannot respond to', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1221,7 +1232,7 @@ describe('ActionItem inline primary actions', () => {
 
   test('cards that need input stay expandable and drop the View button that duplicates the title', async () => {
     for (const subject of [action, manualAction('manual-wait', 'Grant the token')]) {
-      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const dom = await acquireDomHarness({ url: 'http://localhost/', api })
       const rendered = dom.createRoot()
       try {
         await dom.act(async () =>
@@ -1277,7 +1288,7 @@ describe('ActionItem status icon', () => {
   } as PendingAction
 
   async function renderStatus(subject: PendingAction) {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1341,7 +1352,7 @@ describe('ActionItem status icon', () => {
   })
 
   test('review gates are grouped with work stream reviews, not with work stream input', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const gate = { ...workflowWait(1), id: 'workstream-blocked:ws-1:gate' } as PendingAction
     const gateData = gate.data as WorkStreamActionData
@@ -1374,7 +1385,7 @@ describe('ActionItem status icon', () => {
 
 describe('ActionItem expanded body spacing', () => {
   test('separates the expanded body from the header in Feed and embedded cards', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1402,7 +1413,7 @@ describe('ActionItem expanded body spacing', () => {
 describe('structured recovery decisions', () => {
   for (const decision of ['continue', 'stop'] as const) {
     test(`renders only the generated summary and sends exact versioned ${decision}`, async () => {
-      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const dom = await acquireDomHarness({ url: 'http://localhost/', api })
       const rendered = dom.createRoot()
       const originalFetch = globalThis.fetch
       const calls: Array<{ url: string; body: unknown }> = []
@@ -1459,7 +1470,7 @@ describe('structured recovery decisions', () => {
 
 for (const decision of ['continue', 'stop'] as const) {
   test(`standalone recovery uses typed ${decision}, not generic agent Continue`, async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body: unknown }> = []
@@ -1531,7 +1542,7 @@ for (const decision of ['continue', 'stop'] as const) {
 for (const variant of ['decide', 'provide', 'file'] as const) {
   const kind = variant === 'decide' ? 'decide' : 'provide'
   test(`typed ${variant} renders the declared task input and submits its version`, async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body: unknown }> = []
@@ -1658,9 +1669,10 @@ describe('workflow review gate cards', () => {
   }
 
   test('a lone review gate has no chevron or instruction body, and Review still opens the review screen', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
-    const cache = new QueryClient()
+    // The seeded run and stream stay fresh, so opening the review does not refetch them.
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     seedReviewSurface(cache)
     try {
       // A lone action would otherwise open expanded (no category heading).
@@ -1691,7 +1703,7 @@ describe('workflow review gate cards', () => {
 
   test('a focused or delivery-approval review gate stays collapsed to its header', async () => {
     for (const subject of [gateAction(), gateAction({ deliveryApproval: true })]) {
-      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const dom = await acquireDomHarness({ url: 'http://localhost/', api })
       const rendered = dom.createRoot()
       try {
         await dom.act(async () =>
@@ -1713,7 +1725,7 @@ describe('workflow review gate cards', () => {
   })
 
   test('the embedded preview still shows the gate message', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1735,7 +1747,7 @@ describe('workflow review gate cards', () => {
     const flowInput = manualAction('flow-input', 'Choose a base branch')
     ;(flowInput.data as WorkStreamActionData).wait.resolutionHandler = 'workflow'
     for (const subject of [action, manualAction('manual-wait', 'Grant the token'), flowInput]) {
-      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const dom = await acquireDomHarness({ url: 'http://localhost/', api })
       const rendered = dom.createRoot()
       try {
         await dom.act(async () =>
@@ -1774,7 +1786,7 @@ describe('ActionItem attempt-limit pause', () => {
   }
 
   async function renderLimit(subject: PendingAction) {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
     const calls: Array<{ url: string; body: unknown }> = []

@@ -41,8 +41,8 @@ for (const aggregated of [false, true]) {
       await dom.act(async () => button!.click())
       expect(dom.window.document.body.textContent).toContain(`Pattern file limit (1000) (${count})`)
     } finally {
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 }

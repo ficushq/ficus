@@ -12,7 +12,11 @@ async function renderModal() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(queryKeys.auth.permissions('squad-1'), { permissions: [...permissions] })
 
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/squad-1' })
+  // Mounting refetches the permissions; the server answers with the same ones.
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/squads/squad-1',
+    api: { '/api/auth/permissions': () => ({ permissions: [...permissions] }) },
+  })
   const rendered = dom.createRoot()
   try {
     await dom.act(async () =>
@@ -27,9 +31,9 @@ async function renderModal() {
     return dom.window.document.body.innerHTML
   } finally {
     await queryClient.cancelQueries()
-    queryClient.clear()
     await dom.act(async () => Bun.sleep(10))
     await dom.cleanup()
+    queryClient.clear()
   }
 }
 

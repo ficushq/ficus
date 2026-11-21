@@ -282,9 +282,9 @@ test('open agent-panel details stay live across off/on saves and cleanup state c
     }
   } finally {
     await cache.cancelQueries()
+    fetch.mockRestore()
     await dom.cleanup()
     cache.clear()
     save.mockRestore()
-    fetch.mockRestore()
   }
 })

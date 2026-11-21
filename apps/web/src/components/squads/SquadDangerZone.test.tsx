@@ -92,8 +92,8 @@ describe('SquadDangerZone', () => {
     } finally {
       globalThis.fetch = originalFetch
       await queryClient.cancelQueries()
-      queryClient.clear()
       await dom.cleanup()
+      queryClient.clear()
     }
   })
 })

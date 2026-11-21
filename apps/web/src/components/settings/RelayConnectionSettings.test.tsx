@@ -54,9 +54,9 @@ async function render(data: ServerConnection, write = true, human = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(serverConnectionQueryKeys.status(), data)
   cleanup = async () => {
+    globalThis.fetch = previousFetch
     await dom.cleanup()
     queryClient.clear()
-    globalThis.fetch = previousFetch
   }
   const { root, container } = dom.createRoot()
   const permissions: PermissionsResult = {

@@ -236,8 +236,8 @@ for (const status of [403, 404, 409]) {
       await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click())
       expect(closed).toBe(true)
     } finally {
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 }

@@ -189,8 +189,9 @@ async function harness(pools: SlotPool[], respond?: (call: Call) => { status: nu
     calls,
     restore: async () => {
       globalThis.fetch = originalFetch
-      client.clear()
+      // Clearing the cache while the settings are mounted would refetch them, so clear after unmount.
       await dom.cleanup()
+      client.clear()
     },
   }
 }

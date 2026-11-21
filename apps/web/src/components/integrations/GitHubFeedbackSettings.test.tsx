@@ -45,9 +45,10 @@ beforeEach(async () => {
   globalThis.fetch = moderationFetch(api)
 })
 afterEach(async () => {
-  client.clear()
   globalThis.fetch = oldFetch
+  // Clearing the cache while the tree is mounted would refetch its queries, so clear after unmount.
   await dom.cleanup()
+  client.clear()
 })
 
 async function render(node = <GitHubFeedbackSettings squadId={SQUAD} />) {

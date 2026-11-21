@@ -81,9 +81,9 @@ async function render({ admin = false, devices = [], connection, availability, t
   client.setQueryData(queryKeys.devices.list(), devices)
   if (connection) client.setQueryData(serverConnectionQueryKeys.status(), connection)
   cleanup = async () => {
+    globalThis.fetch = previousFetch
     await dom.cleanup()
     client.clear()
-    globalThis.fetch = previousFetch
   }
   const { root, container } = dom.createRoot()
   await act(async () =>

@@ -50,10 +50,9 @@ describe('AuthProvider password login', () => {
   beforeEach(async () => {
     dom = await acquireDomHarness({
       url: 'http://localhost/',
-      beforeUnmount: async () => {
-        await queryClient?.cancelQueries()
-        queryClient?.clear()
-      },
+      beforeUnmount: () => queryClient?.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClient?.clear(),
     })
     stubFetch()
     ;({ AuthProvider, useAuth } = await import('./AuthProvider'))

@@ -4,9 +4,18 @@ import { MemoryRouter } from 'react-router'
 import type { Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../../queryKeys'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
+import { workStreamReads } from '../../test/workStreamApi'
 import { QueryInvalidator } from '../QueryInvalidator'
 import { SquadHomeTab } from './SquadHomeTab'
 import { WorkStreamList } from './WorkStreamList'
+
+// A live update refetches the surfaces' own reads; permissions and squad agents stay unavailable.
+const api = {
+  ...workStreamReads,
+  '/api/auth/permissions': apiUnavailable,
+  '/api/squads/:id/agents': apiUnavailable,
+}
 
 const now = new Date('2026-08-14T12:00:00Z')
 const squad = {
@@ -68,7 +77,7 @@ function LiveSurfaces({ load }: { load: () => Promise<WorkStream[]> }) {
 
 describe('shared work-stream graph live rendering', () => {
   test('workStream.updated refetches and rerenders both the home list and the work graph', async () => {
-    const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+    const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
     dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'graph')
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     queryClient.setQueryData(queryKeys.squads.agents(squad.id), [])

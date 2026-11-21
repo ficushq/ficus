@@ -2,6 +2,9 @@ import { act } from 'react'
 import type { createRoot as CreateRoot, Root } from 'react-dom/client'
 import { Window } from 'happy-dom'
 import { acquireDomOwnershipLease } from './domOwnership'
+import { apiRoutesFetch, type ApiRoutes } from './apiMock'
+import { guardFetch, networkGuardInterceptor } from './networkGuard'
+import { retireDomGlobal } from './staleDomGlobals'
 export { withDomOwnership } from './domOwnership'
 
 let createRootImpl: typeof CreateRoot | undefined
@@ -59,6 +62,8 @@ type DomHarnessOptions = {
   windowOptions?: Omit<NonNullable<ConstructorParameters<typeof Window>[0]>, 'url'>
   configureWindow?: (window: Window) => void
   failAfterInstalling?: DomGlobalName
+  /** API responses for this owner's fetch; see apiMock.ts. Anything else is refused. */
+  api?: ApiRoutes
   beforeUnmount?: () => void | Promise<void>
   afterUnmount?: () => void | Promise<void>
 }
@@ -68,6 +73,7 @@ export function installDomHarness({
   windowOptions,
   configureWindow,
   failAfterInstalling,
+  api,
   beforeUnmount,
   afterUnmount,
 }: DomHarnessOptions) {
@@ -82,7 +88,22 @@ export function installDomHarness({
         search: previousWindow.location.search,
       }
     : undefined
-  const window = new Window({ ...windowOptions, url })
+  // Requests the window makes itself (fetch, XMLHttpRequest, resource loads) go through the
+  // network guard; see networkGuard.ts. A followed target="_blank" link, window.open() or an
+  // iframe gets its URL but never loads the page, the way this main window already behaves.
+  const window = new Window({
+    ...windowOptions,
+    url,
+    settings: {
+      ...windowOptions?.settings,
+      fetch: { ...windowOptions?.settings?.fetch, interceptor: networkGuardInterceptor },
+      navigation: {
+        disableChildPageNavigation: true,
+        disableChildFrameNavigation: true,
+        ...windowOptions?.settings?.navigation,
+      },
+    },
+  })
   if (windowOptions?.innerWidth !== undefined) window.innerWidth = windowOptions.innerWidth
   if (windowOptions?.innerHeight !== undefined) window.innerHeight = windowOptions.innerHeight
 
@@ -134,12 +155,13 @@ export function installDomHarness({
     if (index !== -1) listeners.splice(index, 1)
     return Reflect.apply(nativeRemoveEventListener, this, [type, listener, options])
   } as typeof eventTargetPrototype.removeEventListener
+  const happyDomFetch = window.fetch
   try {
     configureWindow?.(window)
   } catch (error) {
     Object.defineProperty(eventTargetPrototype, 'addEventListener', addEventListenerDescriptor)
     Object.defineProperty(eventTargetPrototype, 'removeEventListener', removeEventListenerDescriptor)
-    window.close()
+    void window.happyDOM.close()
     throw error
   }
   const pendingTimeouts = new Set<ReturnType<typeof window.setTimeout>>()
@@ -166,6 +188,9 @@ export function installDomHarness({
     pendingIntervals.delete(handle)
     return nativeClearInterval(handle)
   }) as typeof window.clearInterval
+  // A fetch the test put on the window is its mock; Happy DOM's own goes through the guard.
+  const windowFetch = window.fetch.bind(window) as unknown as typeof fetch
+  const guardedFetch = window.fetch === happyDomFetch ? guardFetch(windowFetch) : windowFetch
   const values: Record<DomGlobalName, unknown> = {
     IS_REACT_ACT_ENVIRONMENT: true,
     window,
@@ -192,7 +217,9 @@ export function installDomHarness({
     FormData: window.FormData,
     MutationObserver: window.MutationObserver,
     ResizeObserver: window.ResizeObserver,
-    fetch: window.fetch.bind(window),
+    // The api table answers first; anything else is refused here, before Happy DOM, so it rejects
+    // like a real network failure.
+    fetch: api ? apiRoutesFetch(api, guardedFetch) : guardedFetch,
     SyntaxError: window.SyntaxError,
     setTimeout: window.setTimeout.bind(window),
     clearTimeout: window.clearTimeout.bind(window),
@@ -221,7 +248,7 @@ export function installDomHarness({
     for (const handle of pendingIntervals) nativeClearInterval(handle)
     Object.defineProperty(eventTargetPrototype, 'addEventListener', addEventListenerDescriptor)
     Object.defineProperty(eventTargetPrototype, 'removeEventListener', removeEventListenerDescriptor)
-    window.close()
+    void window.happyDOM.close()
     globalThis.window = previousWindow
     restoreDescriptors(descriptors)
     throw error
@@ -270,12 +297,9 @@ export function installDomHarness({
           // rejections run in the macrotasks below. A request that outlived this owner would
           // otherwise settle under the next owner's window and schedule its follow-up work
           // there; TanStack Query's five-minute garbage-collection timer then keeps that
-          // window's waitUntilComplete() pending. window.close() does not do this: Happy DOM
-          // only closes windows another window opened, so on a `new Window()` it is a no-op.
-          // abort() leaves the window usable, unlike happyDOM.close(), because some tests put
-          // timers they saved from this window back after cleanup. Its promise is not awaited:
-          // it settles only once the window has no timers, and a rejection may add one that
-          // the timer cleanup in the finally block cancels.
+          // window's waitUntilComplete() pending. Its promise is not awaited: it settles only
+          // once the window has no timers, and a rejection may add one that the timer cleanup
+          // in the finally block cancels. happyDOM.close() below then closes the window.
           try {
             void window.happyDOM.abort()
           } catch (error) {
@@ -306,7 +330,11 @@ export function installDomHarness({
           pendingTimeouts.clear()
           for (const handle of pendingIntervals) nativeClearInterval(handle)
           pendingIntervals.clear()
-          window.close()
+          // Close the window for good: window.close() is a no-op on a `new Window()`, because
+          // Happy DOM only closes windows another window opened. A closed window's timers do
+          // nothing, so a test must not leave this window's functions installed as globals; the
+          // test preload reports one that does (see staleDomGlobals.ts).
+          await window.happyDOM.close()
         } finally {
           if (previousLocation && previousWindow?.location) {
             previousWindow.location.hash = previousLocation.hash
@@ -315,6 +343,7 @@ export function installDomHarness({
           }
           globalThis.window = previousWindow
           restoreDescriptors(descriptors)
+          for (const name of DOM_GLOBAL_NAMES) retireDomGlobal(name, values[name], descriptors.get(name))
         }
       }
     },

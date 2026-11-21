@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
 import type { Agent } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { integrationQueries, queries } from '../queryOptions'
 import { chatWindowsStorageKey } from '../lib/chatWindows'
@@ -36,9 +37,16 @@ function Window(props: { win: Parameters<typeof AgentChatWindow>[0]['win'] }) {
 }
 
 async function setup({ floating = false }: { floating?: boolean } = {}) {
+  // The assistant list, its activity and the update settings stay unavailable; these tests cover
+  // the floating layout.
   const dom = await acquireDomHarness({
     url: 'http://localhost/',
     windowOptions: { innerWidth: 1400, innerHeight: 900 },
+    api: {
+      '/api/assistant': apiUnavailable,
+      '/api/assistant/activity': apiUnavailable,
+      '/api/updates/settings': apiUnavailable,
+    },
   })
   const media = { matches: true, addEventListener() {}, removeEventListener() {} }
   Object.defineProperty(dom.window, 'matchMedia', { configurable: true, value: () => media })

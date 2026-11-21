@@ -10,6 +10,7 @@ import { SquadConsultantChatPage } from './SquadConsultantChatPage'
 import { SquadManagerChatPage } from './SquadManagerChatPage'
 import type { SquadAgentThreadsProps } from './squads/SquadAgentThreads'
 import { acquireDomHarness, DOM_GLOBAL_NAMES, installDomHarness, withDomOwnership } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 
 const now = new Date('2026-01-01T00:00:00Z')
 const squad = { id: 'squad-1', name: 'Ficus' } as Squad
@@ -117,6 +118,12 @@ describe('SquadAgentThreads per-instance isolation', () => {
     const clients: QueryClient[] = []
     const dom = await acquireDomHarness({
       url: 'http://localhost/',
+      // The squad lookups behind the thread lists stay unavailable; the threads come from the test API.
+      api: {
+        '/api/squads': apiUnavailable,
+        '/api/squads/:id': apiUnavailable,
+        '/api/squads/:id/agents': apiUnavailable,
+      },
       beforeUnmount: async () => {
         await Promise.all(clients.map((client) => client.cancelQueries()))
       },

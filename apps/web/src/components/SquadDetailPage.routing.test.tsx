@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
@@ -99,6 +100,14 @@ async function installViewport(width: number) {
   return (activeDom = await acquireDomHarness({
     url: 'http://localhost/',
     windowOptions: { innerWidth: width, innerHeight: 800 },
+    // Panels these routing tests do not cover (permissions, subscription, GitHub feedback and the
+    // work lists) stay unavailable.
+    api: {
+      '/api/auth/permissions': apiUnavailable,
+      '/api/squads/:id/subscription': apiUnavailable,
+      '/api/squads/:id/github-feedback/summary': apiUnavailable,
+      '/api/workstreams': apiUnavailable,
+    },
     configureWindow(window) {
       const mediaQuery = {
         get matches() {

@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import type { AssistantRoutingHint } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import {
@@ -12,6 +13,11 @@ import {
   type AssistantRoutingPick,
 } from './AssistantRoutingChip'
 
+// Refreshing the seeded squad list fails, so the chip keeps the squads each test seeds.
+const squadsApi = {
+  '/api/squads': apiUnavailable,
+}
+
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
   await dom?.cleanup()
@@ -22,7 +28,7 @@ const chlea = { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'Chlea', purpo
 const billing = { id: 'b2c3d4e5-0000-4000-8000-000000000002', name: 'Billing', purpose: 'Invoices and refunds' }
 
 async function render(hint: AssistantRoutingHint, onCorrect = mock(async (_pick: AssistantRoutingPick) => ({}))) {
-  dom = await acquireDomHarness({ url: 'http://localhost' })
+  dom = await acquireDomHarness({ url: 'http://localhost', api: squadsApi })
   const { root, container } = dom.createRoot()
   await dom.act(async () =>
     root.render(<AssistantRoutingChip hint={hint} squads={[chlea, billing]} onCorrect={onCorrect} />)
@@ -107,7 +113,7 @@ test('a failed correction goes back to the saved pick and says why', async () =>
 })
 
 test('a general hint shows no chip on the message unless the user corrected it', async () => {
-  dom = await acquireDomHarness({ url: 'http://localhost' })
+  dom = await acquireDomHarness({ url: 'http://localhost', api: squadsApi })
   const { root, container } = dom.createRoot()
   const api = { correctRouting: mock(async () => ({})) }
   const show = (hint: AssistantRoutingHint) =>
@@ -139,7 +145,7 @@ test('a general hint shows no chip on the message unless the user corrected it',
 })
 
 test('on an older message, picking a squad asks the Assistant to move it instead of correcting', async () => {
-  dom = await acquireDomHarness({ url: 'http://localhost' })
+  dom = await acquireDomHarness({ url: 'http://localhost', api: squadsApi })
   const { root, container } = dom.createRoot()
   const onAskToMove = mock(() => {})
   await dom.act(async () =>
@@ -201,7 +207,7 @@ test('the latest message is the newest one the user sent, not a system note, and
 })
 
 test("the composer pill shows the preview or the pick, and picking back the model's choice clears the pick", async () => {
-  dom = await acquireDomHarness({ url: 'http://localhost' })
+  dom = await acquireDomHarness({ url: 'http://localhost', api: squadsApi })
   const { root, container } = dom.createRoot()
   const client = new QueryClient()
   client.setQueryData(queryKeys.squads.list('active'), [

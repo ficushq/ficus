@@ -75,6 +75,14 @@ const { getImageAttachState } = await import('../lib/imageAttach')
 
 let activeDom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 
+// Each DOM below installs its window's FileReader as the global one. Put back the process's own at
+// cleanup, so a finished window's FileReader does not outlive this file.
+const processFileReader = Object.getOwnPropertyDescriptor(globalThis, 'FileReader')
+function restoreFileReader() {
+  if (processFileReader) Object.defineProperty(globalThis, 'FileReader', processFileReader)
+  else Reflect.deleteProperty(globalThis, 'FileReader')
+}
+
 /**
  * FileReader reads still in flight in the current DOM. Happy DOM finishes a read over two timer
  * turns, so a test that attaches an image waits for these (see `settleImageReads`) rather than
@@ -102,6 +110,9 @@ async function installDom({ innerWidth }: { innerWidth?: number } = {}) {
   return (activeDom = await acquireDomHarness({
     url: 'http://localhost/chat',
     windowOptions: innerWidth === undefined ? undefined : { innerWidth },
+    // The screenshot review card lists squads to file a screenshot under.
+    api: { '/api/squads': [] },
+    afterUnmount: restoreFileReader,
     configureWindow(window) {
       // A read left unfinished by an earlier test belongs to its closed window and never ends.
       pendingFileReads.clear()
@@ -2267,6 +2278,8 @@ describe('ChatView whole-surface drops and pastes', () => {
                 dependencies={
                   {
                     upload: async () => ['image-1'],
+                    // Unmounting the open review card discards its staged screenshot.
+                    discard: async () => {},
                     api: {
                       guess: async (imageId: string) => {
                         guessed.push(imageId)
@@ -2911,6 +2924,7 @@ async function renderChatViewWithControlledLayout(element: React.ReactElement) {
   const frames = new Map<number, FrameRequestCallback>()
   const dom = await acquireDomHarness({
     url: 'http://localhost/chat',
+    afterUnmount: restoreFileReader,
     configureWindow(window) {
       globalThis.FileReader = window.FileReader
       window.requestAnimationFrame = (callback: FrameRequestCallback) => {
