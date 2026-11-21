@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "fileCount": 193,
-  "testCount": 1417,
+  "fileCount": 192,
+  "testCount": 1391,
   "skipCount": 0,
   "files": [
     "src/App.gate.test.tsx",
@@ -40,7 +40,6 @@
     "src/components/Can.test.tsx",
     "src/components/Chat.test.tsx",
     "src/components/ChatDrawer.test.tsx",
-    "src/components/ChatPage.test.tsx",
     "src/components/ChatView.router.test.tsx",
     "src/components/ChatView.test.tsx",
     "src/components/ConfirmButton.test.tsx",
