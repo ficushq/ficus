@@ -225,6 +225,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     event === 'agent.queue-message-updated' ||
     event === 'sandbox.provision-transition' ||
     event === 'integration.projection-invalidated' ||
+    event === 'publicVoices.changed' ||
     event === 'liveActivity.interestChanged'
   )
     return null
