@@ -210,11 +210,6 @@ Do not use global `tsc`. To check CLI compilation:
 bun run build:cli
 ```
 
-Every tsconfig sets `compilerOptions.types` explicitly (TypeScript 6 defaults it
-to an empty list). `apps/web` still type-checks Node's `process` and `Buffer`
-through `@types/qrcode`, so `tsc` will not stop browser code from using them; don't.
-See [TypeScript configuration](docs/wiki/development.md#typescript-configuration).
-
 ## React Query
 
 Always use centralized query options from `queryOptions.ts` instead of inline `queryKey`/`queryFn`:

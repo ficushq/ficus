@@ -224,52 +224,24 @@ instance when several are installed
 
 ## TypeScript configuration
 
-TypeScript 6 changed the default of `compilerOptions.types` from "every package
-under `node_modules/@types`" to an empty list. Having `@types/bun` or
-`@types/node` installed no longer puts Bun or Node globals in scope, so each
-tsconfig declares the ambient types its code runs with:
+TypeScript 6 defaults `compilerOptions.types` to `[]`: installing an `@types`
+package no longer adds its globals automatically. The configs changed in the
+upgrade make their runtime assumptions explicit:
 
-| tsconfig                                                                 | `types`                        | Why                                                   |
-| ------------------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------- |
-| `tsconfig.json` (root base)                                              | `[]`                           | Base config; each project opts in to its own runtime  |
-| `apps/core`, `packages/sandbox-server`                                   | `["@types/bun"]`               | Runs under Bun                                        |
-| `apps/cli`                                                               | `["node", "bun"]`              | Bun-compiled CLI that also uses Node APIs             |
-| `apps/docs`, `packages/shared`                                           | `["bun"]`                      | Runs under Bun                                        |
-| `apps/web`, `packages/client-core`                                       | `[]`                           | Browser code: `DOM` libs only, no Bun or Node globals |
-| `apps/web/tsconfig.test.json`, `packages/client-core/tsconfig.test.json` | `["bun"]`                      | Bun tests and test helpers                            |
-| `apps/web/tsconfig.node.json`, `apps/farm/tsconfig.node.json`            | `["node"]`                     | The Vite config and its helpers run in Node           |
-| `apps/farm`                                                              | `["vite/client", "bun-types"]` | Vite client types plus Bun                            |
-| `packages/client-react`                                                  | `["bun-types"]`                | Bun tests alongside the React hooks                   |
+- The root `tsconfig.json` sets `types: []` as the baseline. `apps/web` and
+  `packages/client-core` also set `types: []` for their browser code.
+- `packages/shared/tsconfig.json` includes `bun` for its Bun runtime. Web and
+  client-core opt into `bun` separately in `tsconfig.test.json` for web test
+  helpers and client-core tests, respectively.
+- `apps/web/tsconfig.node.json` includes `node` for `vite.config.ts`, which
+  runs outside the browser.
 
-The `typecheck` scripts of `apps/web` and `packages/client-core` run both the
-browser config and `tsconfig.test.json`, so test code keeps Bun's types without
-leaking them into browser code. For `packages/client-core` the test config covers
-all of `src`; for `apps/web` it covers the test setup and the helpers under
-`src/test` and `src/theme/test`, and `*.test.ts(x)` files are in neither config.
-When adding a project, set `types` explicitly instead of relying on the default.
-Code in `packages/shared` is also imported by browser projects, so it avoids
-Bun-only global types (`PeriodicRunner` uses `ReturnType<typeof setInterval>`
-rather than Bun's `Timer`).
-
-### Node globals still type-check in `apps/web`
-
-`apps/web` declares `"types": []`, but it still sees Node globals such as
-`process` and `Buffer` (and Node's built-in module declarations). The QR pairing
-code (`src/components/settings/pairingQr.ts`) imports `qrcode`, and
-`@types/qrcode` starts with `/// <reference types="node" />`. A triple-slash
-reference in an imported declaration file loads `@types/node` regardless of the
-`types` list.
-
-So `tsc` does not catch browser code that uses `process` or `Buffer`, but
-neither exists in the browser and Vite does not polyfill them. Do not use them
-in `apps/web/src`: read build-time values from `import.meta.env`, and use
-`Uint8Array`, `TextEncoder`/`TextDecoder` and `btoa`/`atob` instead of `Buffer`.
-`vite.config.ts` runs in Node and may use them.
-
-There is no automated guard for this today. If one is wanted, a cheap option is
-an ESLint `no-restricted-globals` entry for `process` and `Buffer` scoped to
-`apps/web/src/**` with tests excluded, alongside the base path guard in
-`eslint.config.mjs`.
+**Browser code must not rely on `process` or `Buffer`, even if it type-checks.**
+The web app imports `qrcode`, whose `@types/qrcode` declarations include
+`/// <reference types="node" />`. That reference loads Node's global types
+regardless of `types: []`; it does not provide those globals at runtime. An
+optional guard would be ESLint's `no-restricted-globals` rule for `process`
+and `Buffer` in browser sources, excluding test code and the Vite config.
 
 ## Testing
 
