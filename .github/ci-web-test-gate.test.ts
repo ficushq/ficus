@@ -192,14 +192,11 @@ export function validateWebTestGate(
     errors.push('the workflow must run the web gate guard fail closed')
   const setup = steps.find((step) => step.uses === 'oven-sh/setup-bun@v2')
   if (setup?.with?.['bun-version'] !== bunVersion) errors.push(`the test job must pin Bun ${bunVersion}`)
-  const cache = steps.find((step) => step.name === 'Cache Bun dependencies')
-  const cachePath = String(cache?.with?.path ?? '')
-  const cacheKey = String(cache?.with?.key ?? '')
-  if (cachePath.trim() !== '~/.bun/install/cache' || cachePath.includes('node_modules')) {
-    errors.push('dependency cache must contain only the Bun download cache')
-  }
-  if (!cacheKey.includes("hashFiles('bun.lock')") || cacheKey.includes('bun.lockb')) {
-    errors.push('dependency cache key must hash bun.lock')
+  // The suite runs against a cold frozen install. A restored module tree is
+  // layout-specific, and the old ~/.bun/install/cache restore was slower than a
+  // cold install and timed out other lanes (docs/wiki/ci-cd.md).
+  if (steps.some((step) => step.uses?.startsWith('actions/cache'))) {
+    errors.push('the test job must not restore a dependency cache')
   }
   if (script !== 'bun scripts/run-full-test-gate.ts') errors.push('test:ci must invoke the canonical runner exactly')
   const orderGates = steps.filter((step) => step.name === 'Run web DOM order gate')
@@ -310,19 +307,22 @@ describe('CI web test gate', () => {
     expect(validateWebTestGate(candidate).length).toBeGreaterThan(0)
   })
 
-  test('rejects runtime, lockfile, and module-tree cache drift', () => {
+  test('rejects runtime drift and a restored dependency cache', () => {
     const candidate = structuredClone(workflow)
     const steps = candidate.jobs!['test-web']!.steps!
     // Drift the pin to a value that can never equal the reviewed .bun-version so
     // the guard is exercised regardless of which Bun the repo currently pins.
     steps.find((step) => step.uses === 'oven-sh/setup-bun@v2')!.with = { 'bun-version': '0.0.0-drift' }
-    const cache = steps.find((step) => step.name === 'Cache Bun dependencies')!
-    cache.with = { path: '~/.bun/install/cache\nnode_modules', key: "bun-${{ hashFiles('**/bun.lockb') }}" }
+    const installIndex = steps.findIndex((step) => step.name === 'Install dependencies')
+    steps.splice(installIndex, 0, {
+      name: 'Cache Bun dependencies',
+      uses: 'actions/cache@v6',
+      with: { path: '~/.bun/install/cache\nnode_modules', key: "bun-${{ hashFiles('bun.lock') }}" },
+    })
     expect(validateWebTestGate(candidate)).toEqual(
       expect.arrayContaining([
         `the test job must pin Bun ${bunVersion}`,
-        'dependency cache must contain only the Bun download cache',
-        'dependency cache key must hash bun.lock',
+        'the test job must not restore a dependency cache',
       ])
     )
   })

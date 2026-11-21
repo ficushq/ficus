@@ -161,15 +161,8 @@ jobs:
           # against that suite before moving the pin.
           bun-version: 1.4.2
 
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
 
-      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
       # Cache Docker images
       # - name: Cache Docker images
       #   uses: ScribeMD/docker-cache@0.5.0
@@ -585,15 +578,8 @@ jobs:
           # against that suite before moving the pin.
           bun-version: 1.4.2
 
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
 
-      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
       # Cache Docker images
       # - name: Cache Docker images
       #   uses: ScribeMD/docker-cache@0.5.0
@@ -700,15 +686,8 @@ jobs:
           # against that suite before moving the pin.
           bun-version: 1.4.2
 
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
 
-      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
       # Cache Docker images
       # - name: Cache Docker images
       #   uses: ScribeMD/docker-cache@0.5.0
@@ -875,15 +854,8 @@ jobs:
           # against that suite before moving the pin.
           bun-version: 1.4.2
 
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
 
-      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
       # Cache Docker images
       # - name: Cache Docker images
       #   uses: ScribeMD/docker-cache@0.5.0
@@ -950,7 +922,7 @@ jobs:
     runs-on: ubuntu-24.04
     # Hang backstop, NOT the performance budget: the final wall-time check
     # still fails at 600s and the runner stops tests at 540s plus cleanup.
-    # Setup hang limits total 17m; reserve time to report unstarted inventory
+    # Setup hang limits total 16m; reserve time to report unstarted inventory
     # even in that worst case instead of letting the outer job cancel first.
     timeout-minutes: 20
     strategy:
@@ -971,6 +943,17 @@ jobs:
           # full history — see the `test` job's identical checkout step.
           fetch-depth: 0
 
+      # Same Node the `test` job pins. The AMTP node-conformance suite is this
+      # repo's canary for the Node version (see that job's step comment), and it
+      # runs in THIS lane — a lane hosting real-subprocess tests must supply the
+      # same runtime the main job does, or moving a test here silently changes
+      # what it runs against.
+      #
+      # Kept for that reason ALONE. It was added believing it explained a
+      # subprocess-tests failure on this branch; the log later showed the
+      # failure was `attemptPickup … restarts real worker incarnations`, a
+      # pre-existing flake in this lane (3 failures / 60 main runs, two of them
+      # that same test family). The pin did not fix that and does not claim to.
       - name: Use Node.js 24
         timeout-minutes: 1
         uses: actions/setup-node@v7
@@ -984,26 +967,7 @@ jobs:
           # .github/bun-version-gate.test.ts) and the `test` job's pin.
           bun-version: 1.4.2
 
-      # Same Node the `test` job pins. The AMTP node-conformance suite is this
-      # repo's canary for the Node version (see that job's step comment), and it
-      # runs in THIS lane — a lane hosting real-subprocess tests must supply the
-      # same runtime the main job does, or moving a test here silently changes
-      # what it runs against.
-      #
-      # Kept for that reason ALONE. It was added believing it explained a
-      # subprocess-tests failure on this branch; the log later showed the
-      # failure was `attemptPickup … restarts real worker incarnations`, a
-      # pre-existing flake in this lane (3 failures / 60 main runs, two of them
-      # that same test family). The pin did not fix that and does not claim to.
-      # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
-      - name: Cache Bun dependencies
-        timeout-minutes: 1
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
 
       # Pull separately from `docker run` so a stalled pull can be retried.
       # The two timeouts seen on main (runs 44688747502 and 44693405836) both
@@ -1364,14 +1328,7 @@ jobs:
           # .github/bun-version-gate.test.ts) and the `test`/`subprocess-tests` pin.
           bun-version: 1.4.2
 
-      # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
 
       # Start PostgreSQL container (allows caching the image)
       - name: Start PostgreSQL

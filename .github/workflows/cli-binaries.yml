@@ -24,12 +24,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with: 
           bun-version: 1.4.2
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with: 
-          path: "~/.bun/install/cache\nnode_modules\napps/*/node_modules\npackages/*/node_modules\n"
-          key: "bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}"
-          restore-keys: "bun-${{ runner.os }}-\n"
+      # No Bun dependency cache: a cold install is faster than restoring one (docs/wiki/ci-cd.md).
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Typecheck CLI

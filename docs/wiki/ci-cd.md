@@ -33,6 +33,31 @@ Run `bun typecheck` and the relevant package test entrypoints before opening a
 pull request. See [development](development.md) for local commands and isolated
 test databases.
 
+## Dependency installation
+
+Jobs run `bun install --frozen-lockfile` with no dependency cache. Do not add
+`actions/cache` for `~/.bun/install/cache` or `node_modules` without measuring
+both paths on the runner first.
+
+The workflows used to cache `~/.bun/install/cache` with a `bun-<os>-` prefix
+fallback. Each lockfile change restored the previous cache and saved a
+superset, so packages that left the lockfile stayed in the cache. Bun stores
+packages unpacked, and every `@anthropic-ai/claude-agent-sdk` bump alone adds
+about 700 MB (its glibc and musl Linux binaries). By November 2026 the
+compressed entry was about 2.4 GB. A cold cache for the same lockfile is about
+2.3 GB on disk and about 510 MB compressed.
+
+Measured over 40 main and pull-request runs before the change, restoring that
+cache took 38 to 50 seconds at the median per job (p90 up to 61 seconds), plus
+up to 26 seconds to save it after a lockfile change. The 1-minute step limit
+in `subprocess-shards` timed out on 6 of 72 shard runs, and those shards never
+ran their tests. The uncached `Managed BigBrain Linux containment` job ran the
+same full install in 6 seconds at the median (15 seconds at most), and the
+cached jobs still spent 1 to 5 seconds in `bun install` after the restore.
+Without a cache step, there is no restore that can time out, the repository's
+Actions cache quota is not filled by dependency trees, and a real install
+failure still fails the job.
+
 ## Real-subprocess lane
 
 `subprocess-tests` remains the required, fail-closed aggregate check. It depends
@@ -58,7 +83,7 @@ for reports before the target. The 20-minute job timeout is only a hang
 backstop, not a performance allowance: the final wall-time check still fails at
 600 seconds. Setup steps are individually bounded (at most 16 minutes combined),
 with 3 minutes for full-history checkout and 4 minutes for dependency installation
-to tolerate cold caches. The outer backstop leaves room for diagnostics even
+to tolerate a slow package registry. The outer backstop leaves room for diagnostics even
 if setup consumes all those hang limits; an already-expired deadline starts no
 tests and fails with inventory diagnostics rather than waiting for cancellation.
 
