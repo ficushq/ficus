@@ -94,7 +94,7 @@ Other current command groups include:
 | `ficus deploy`                           | Manage local app runs and external deployment records                            |
 | `ficus skill` (`skills`)                 | Manage bundled and dynamic agent skills                                          |
 | `ficus shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                                    |
-| `ficus voice`                            | Manage public voice profiles squads are assigned to ([public voice](../public-voice.md)) |
+| `ficus voice`                            | Manage public voice profiles and choose the instance default ([public voice](../public-voice.md)) |
 | `ficus remote-hosts`                     | Manage team-owned SSH hosts                                                      |
 | `ficus amtp` / `ficus remote`            | Manage federation and agent federation identity                                  |
 | `ficus machines`                         | Manage VM sandbox machines                                                       |

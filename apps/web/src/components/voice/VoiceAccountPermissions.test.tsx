@@ -89,6 +89,16 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
       if (path === '/api/public-voices/derive') return Response.json(result)
       if (path === '/api/public-voices' && init?.method === 'POST')
         return Response.json(JSON.parse(String(init.body)), { status: 201 })
+      // Choosing the instance default needs only agent-types:update, which this person has.
+      if (path === '/api/public-voices/settings/instance-default' && init?.method === 'PUT')
+        return Response.json({
+          voiceId: 'from-github',
+          name: 'From GitHub',
+          effectiveVoiceId: 'from-github',
+          effectiveName: 'From GitHub',
+          fallback: null,
+          overCapSquadCount: 0,
+        })
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }) as typeof fetch
     try {
@@ -177,8 +187,15 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
           )
         } else {
           await click('Use this draft')
-          await click('Save profile')
-          await untilRendered(dom, () => expect(container.textContent).toContain('Profile From GitHub saved.'))
+          await click('Save and use as default voice')
+          await untilRendered(dom, () =>
+            expect(container.textContent).toContain('From GitHub is now the default voice')
+          )
+          expect(requests).toContainEqual({
+            path: '/api/public-voices/settings/instance-default',
+            method: 'PUT',
+            body: { voiceId: 'from-github' },
+          })
         }
         expect(requests).toContainEqual({
           path: '/api/public-voices',

@@ -47,7 +47,10 @@ export function publicSurfaceFromCliName(name: string): PublicSurface | null {
 
 /** Cap on the rendered voice section, in UTF-8 bytes. */
 export const PUBLIC_VOICE_MAX_BYTES = 2000
-/** The shipped profile every squad uses until it is assigned another or sets its own. */
+/**
+ * The shipped profile. It is the instance default until an admin chooses another profile, and the
+ * fallback whenever the chosen instance default is disabled or missing.
+ */
 export const DEFAULT_PUBLIC_VOICE_ID = 'default'
 /** Shared prompt carrying the fixed public-text rules and the voice token. */
 export const PUBLIC_TEXT_SHARED_PROMPT_ID = 'public-text'
@@ -132,6 +135,10 @@ export const squadPublicVoicePatchSchema = z
   .refine((p) => !(p.base && p.voiceId), { message: 'public_voice_base_conflict' })
 export type SquadPublicVoicePatch = z.infer<typeof squadPublicVoicePatchSchema>
 
+/** Body of `PUT /api/public-voices/settings/instance-default`. */
+export const publicVoiceInstanceDefaultInputSchema = z.object({ voiceId: publicVoiceIdSchema }).strict()
+export type PublicVoiceInstanceDefaultInput = z.infer<typeof publicVoiceInstanceDefaultInputSchema>
+
 /** An unsaved squad layer sent to the preview route. */
 export const publicVoiceLayerSchema = z.object({
   base: voiceText.nullable(),
@@ -168,7 +175,25 @@ export const derivationFiltersSchema = z
 export type DerivationFilters = z.infer<typeof derivationFiltersSchema>
 
 export type PublicVoiceBaseSource = 'squad' | 'profile' | 'instance' | 'none'
-export type PublicVoiceFallback = 'assigned_disabled' | 'assigned_missing'
+/** The chosen instance default is disabled or no longer exists, so the shipped `default` applies. */
+export type PublicVoiceInstanceDefaultFallback = 'default_disabled' | 'default_missing'
+export type PublicVoiceFallback = 'assigned_disabled' | 'assigned_missing' | PublicVoiceInstanceDefaultFallback
+
+/**
+ * The instance default voice: the profile squads without an assignment use
+ * (`GET /api/public-voices/settings/instance-default`, and part of every squad's voice state).
+ */
+export interface PublicVoiceInstanceDefault {
+  /** The chosen profile id; `default` (the shipped profile) unless an admin chose another. */
+  voiceId: string
+  /** The chosen profile's name, or null when it no longer exists. */
+  name: string | null
+  /** The profile that actually applies: the chosen one, else the shipped `default`; null when neither is usable. */
+  effectiveVoiceId: string | null
+  effectiveName: string | null
+  /** Set when the chosen profile is disabled or missing and the shipped `default` applies instead. */
+  fallback: PublicVoiceInstanceDefaultFallback | null
+}
 
 export interface ResolvedPublicVoice {
   base: string
@@ -312,6 +337,8 @@ export interface PublicVoiceProfileJson extends PublicVoiceProfile {
   /** UTF-8 bytes of the profile rendered by itself. */
   bytes: number
   assignedSquadCount?: number
+  /** True for the profile chosen as the instance default (even while it is disabled). */
+  isInstanceDefault?: boolean
   createdAt: string | Date
   updatedAt: string | Date
 }
@@ -331,7 +358,13 @@ export interface SquadPublicVoiceState {
   local: SquadPublicVoice
   /** The effective profile (assigned, else the instance default), or null with a custom base or no usable profile. */
   profile: PublicVoiceProfile | null
+  /**
+   * Why the squad does not use the profile it would normally get: its assignment is disabled or
+   * missing, or (for a squad on the instance default) the chosen default is disabled or missing.
+   */
   fallback: PublicVoiceFallback | null
+  /** The current instance default, which a squad without an assignment uses. */
+  instanceDefault: PublicVoiceInstanceDefault
   availableVoices: PublicVoiceOption[]
   resolved: ResolvedPublicVoice & {
     rendered: string

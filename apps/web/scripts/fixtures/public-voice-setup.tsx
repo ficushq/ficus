@@ -15,7 +15,7 @@ import '../../src/index.css'
 
 applyResolvedTheme(document.documentElement, FICUS_THEME, 'light')
 const onboarding = new URLSearchParams(location.search).has('onboarding')
-let failAssignment = new URLSearchParams(location.search).has('partial')
+let failDefault = new URLSearchParams(location.search).has('partial')
 const now = '2026-11-19T12:00:00Z'
 const base =
   'Lead with the result. Use complete sentences and explain the next step. Keep public updates concise and specific.'
@@ -34,10 +34,10 @@ const profile = (id: string, name: string, over: Partial<PublicVoiceProfileJson>
   updatedAt: now,
   ...over,
 })
-const profiles = [
-  profile('default', 'Ficus default', { hasTemplate: true }),
-  profile('platform', 'Platform voice', { assignedSquadCount: 2 }),
-  profile('previous', 'Previous launch voice', { disabled: true }),
+let profiles = [
+  profile('default', 'Ficus default', { hasTemplate: true, isInstanceDefault: true }),
+  profile('platform', 'Platform voice', { assignedSquadCount: 2, isInstanceDefault: false }),
+  profile('previous', 'Previous launch voice', { disabled: true, isInstanceDefault: false }),
 ]
 let squads = [
   { id: 'platform-squad', name: 'Platform engineering', publicVoiceId: 'platform' },
@@ -108,18 +108,31 @@ window.fetch = (async (input, init) => {
       const data = JSON.parse(String(init?.body))
       if (profiles.some((p) => p.id === data.id))
         return Response.json({ error: `Voice profile "${data.id}" already exists` }, { status: 409 })
-      const created = profile(data.id, data.name, data)
+      const created = profile(data.id, data.name, { ...data, isInstanceDefault: false })
       profiles.push(created)
       return Response.json(created, { status: 201 })
     }
   }
+  if (path === '/api/public-voices/settings/instance-default' && method === 'PUT') {
+    if (failDefault) {
+      failDefault = false
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    const { voiceId } = JSON.parse(String(init?.body))
+    profiles = profiles.map((p) => ({ ...p, isInstanceDefault: p.id === voiceId }))
+    const chosen = profiles.find((p) => p.id === voiceId)!
+    return Response.json({
+      voiceId,
+      name: chosen.name,
+      effectiveVoiceId: voiceId,
+      effectiveName: chosen.name,
+      fallback: null,
+      overCapSquadCount: 0,
+    })
+  }
   if (path === '/api/squads' && method === 'GET') return Response.json(squads)
   if (path.startsWith('/api/squads/') && path.endsWith('/voice') && method === 'PATCH') {
     const id = path.split('/')[3]
-    if (failAssignment) {
-      failAssignment = false
-      return Response.json({ error: 'public_voice_too_long' }, { status: 400 })
-    }
     const { voiceId } = JSON.parse(String(init?.body))
     squads = squads.map((s) => (s.id === id ? { ...s, publicVoiceId: voiceId } : s))
     return Response.json({ voiceId })

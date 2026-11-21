@@ -37,13 +37,21 @@ export function draftBytes(
       renderPublicVoicePrompt(resolvePublicVoice({ squad, assigned: null, instanceDefault: null }))
     )
   const storedPicker = state.local.base ? CUSTOM : (state.voiceId ?? INSTANCE)
-  const pickedProfileId = picker === INSTANCE ? DEFAULT_PUBLIC_VOICE_ID : picker
+  const pickedProfileId = picker === INSTANCE ? instanceDefaultVoiceId(state) : picker
   const profile =
     state.profile && (picker === storedPicker || state.profile.id === pickedProfileId) ? state.profile : null
   if (!profile) return null
   return publicVoiceBytes(
     renderPublicVoicePrompt(resolvePublicVoice({ squad, assigned: profile, instanceDefault: null }))
   )
+}
+
+/**
+ * The profile a squad on the instance default uses: the chosen default, else the shipped one.
+ * Older servers do not report the instance default; theirs is always the shipped profile.
+ */
+export function instanceDefaultVoiceId(state: Pick<SquadPublicVoiceState, 'instanceDefault'>): string | null {
+  return state.instanceDefault ? state.instanceDefault.effectiveVoiceId : DEFAULT_PUBLIC_VOICE_ID
 }
 
 /** The PATCH that turns the stored state into the edited one. */

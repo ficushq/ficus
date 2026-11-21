@@ -9,6 +9,7 @@ import {
   publicSurfaceFromCliName,
   type DerivationFilters,
   type PublicSurface,
+  type PublicVoiceInstanceDefault,
   type PublicVoiceProfileJson,
   type PublicVoiceSurfaces,
 } from '@ficus/shared'
@@ -185,8 +186,21 @@ export async function runDerivation(squadId: string, opts: DeriveOptions): Promi
   )
 }
 
+/** One line naming the instance default, and what applies instead when it is not usable. */
+export function describeInstanceDefaultLine(value: PublicVoiceInstanceDefault): string {
+  const chosen = value.name ? `${value.name} (${value.voiceId})` : value.voiceId
+  if (!value.fallback) return `Instance default: ${chosen}`
+  const why = value.fallback === 'default_disabled' ? 'is disabled' : 'no longer exists'
+  const instead = value.effectiveVoiceId
+    ? `${value.effectiveName ?? value.effectiveVoiceId} (${value.effectiveVoiceId})`
+    : 'no voice (the shipped default is disabled too)'
+  return `Instance default: ${chosen}, which ${why}; squads on the instance default use ${instead}`
+}
+
 function printProfile(profile: PublicVoiceProfileJson): void {
-  console.log(`${profile.name} (${profile.id})${profile.disabled ? ' [disabled]' : ''}`)
+  console.log(
+    `${profile.name} (${profile.id})${profile.isInstanceDefault ? ' [instance default]' : ''}${profile.disabled ? ' [disabled]' : ''}`
+  )
   if (profile.description) console.log(profile.description)
   console.log(`${profile.bytes} bytes; assigned squads: ${profile.assignedSquadCount ?? 0}`)
   if (profile.yamlFieldOverrides.length)
@@ -282,9 +296,10 @@ export function registerVoiceCommands(program: Command) {
             name: p.name,
             bytes: p.bytes,
             squads: p.assignedSquadCount ?? 0,
+            default: p.isInstanceDefault ? 'yes' : '',
             disabled: p.disabled ? 'yes' : 'no',
           })),
-          ['id', 'name', 'bytes', 'squads', 'disabled']
+          ['id', 'name', 'bytes', 'squads', 'default', 'disabled']
         )
       })
     )
@@ -316,12 +331,35 @@ export function registerVoiceCommands(program: Command) {
   )
 
   voice
+    .command('default [voiceId]')
+    .description('Show the instance default profile (used by every squad without an assignment), or choose it by id')
+    .action(
+      run(async (voiceId: string | undefined) => {
+        const path = '/api/public-voices/settings/instance-default'
+        const result = voiceId
+          ? await apiPut<PublicVoiceInstanceDefault & { overCapSquadCount: number }>(path, { voiceId })
+          : await apiGet<PublicVoiceInstanceDefault>(path)
+        if (isJsonMode()) return output(result)
+        console.log(describeInstanceDefaultLine(result))
+        const overCap = (result as { overCapSquadCount?: number }).overCapSquadCount
+        if (overCap)
+          console.log(
+            `${overCap} squad(s) on the instance default are now over the cap with their own entries; their last surface entries are dropped until they trim them.`
+          )
+      })
+    )
+
+  voice
     .command('delete <id>')
-    .description('Delete a profile; its squads fall back to the instance default')
+    .description(
+      'Delete a profile; its squads fall back to the instance default (deleting the instance default restores the shipped default)'
+    )
     .action(run(async (id: string) => output(await apiDelete(`/api/public-voices/${id}`))))
   voice
     .command('disable <id>')
-    .description('Disable a profile; its squads fall back to the instance default')
+    .description(
+      'Disable a profile; its squads fall back to the instance default (disabling the instance default falls back to the shipped default)'
+    )
     .action(run(async (id: string) => output(await apiPost(`/api/public-voices/${id}/disable`, {}))))
   voice
     .command('enable <id>')
