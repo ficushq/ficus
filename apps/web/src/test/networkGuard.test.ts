@@ -72,7 +72,8 @@ describe('network guard', () => {
       'This test made 2 unmocked network requests:\n' +
         '  fetch GET https://ficus.test/api/squads\n' +
         'Mock it instead: seed the query cache, inject the API, or pass the DOM harness an api route table' +
-        ' (src/test/apiMock.ts).'
+        ' (src/test/apiMock.ts).\n' +
+        'The rules for web tests are in AGENTS.md, under "Writing tests without flakes, contention, or hidden timeouts".'
     )
   })
 })

@@ -413,6 +413,7 @@ async function renderAssistantChat(url: string) {
   for (const [key, value] of [
     [queries.voice.status().queryKey, { enabled: false }],
     [queries.squads.list().queryKey, []],
+    [assistantQueries.list('', 0).queryKey, { conversations: [], hasMore: false }],
     [queries.squads.allWorkStreams().queryKey, []],
     [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
     [queries.agents.detail('system-agent').queryKey, system],

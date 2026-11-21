@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { QueryClient } from '@tanstack/react-query'
 import { acquireDomHarness, DOM_GLOBAL_NAMES, installDomHarness, withDomOwnership } from './domHarness'
 import { allowNetworkOrigin, takeBlockedRequests } from './networkGuard'
-import { takeStaleDomGlobals } from './staleDomGlobals'
+import { describeStaleDomGlobals, takeStaleDomGlobals } from './staleDomGlobals'
 
 function descriptorSnapshot() {
   return new Map(DOM_GLOBAL_NAMES.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
@@ -376,6 +376,15 @@ describe('DOM harness isolation', () => {
     expect(takeStaleDomGlobals()).toEqual(['setTimeout'])
     expect(globalThis.setTimeout).toBe(processSetTimeout)
     expect(takeStaleDomGlobals()).toEqual([])
+  })
+
+  test('the stale-global failure says how to fix it and where the rules are', () => {
+    expect(describeStaleDomGlobals(['setTimeout'])).toBe(
+      "A finished DOM harness's setTimeout was still installed as a global. " +
+        'A value saved after acquiring the harness was put back after dom.cleanup(). ' +
+        'Restore spies and saved globals before dom.cleanup(); the harness restores its own globals.\n' +
+        'The rules for web tests are in AGENTS.md, under "Writing tests without flakes, contention, or hidden timeouts".'
+    )
   })
 
   test('a spy restored before cleanup leaves no finished window global behind', async () => {

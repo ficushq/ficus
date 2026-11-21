@@ -71,13 +71,18 @@ export function takeBlockedRequests() {
   return taken
 }
 
+/** Where a failing test's author finds the rules both preload checks enforce. */
+export const WEB_TEST_RULES =
+  'The rules for web tests are in AGENTS.md, under "Writing tests without flakes, contention, or hidden timeouts".'
+
 export function describeBlockedRequests(requests: BlockedRequest[]) {
   const unique = [...new Set(requests.map(({ kind, url }) => `${kind} ${url}`))]
   return (
     `This test made ${requests.length === 1 ? 'an unmocked network request' : `${requests.length} unmocked network requests`}:\n` +
     unique.map((line) => `  ${line}`).join('\n') +
     '\nMock it instead: seed the query cache, inject the API, or pass the DOM harness an api route table' +
-    ' (src/test/apiMock.ts).'
+    ' (src/test/apiMock.ts).\n' +
+    WEB_TEST_RULES
   )
 }
 

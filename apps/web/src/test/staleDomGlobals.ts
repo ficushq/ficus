@@ -7,6 +7,8 @@
  * the test.
  */
 
+import { WEB_TEST_RULES } from './networkGuard'
+
 // Keyed weakly by the installed value, so a finished window is not kept alive by this record.
 const retired = new WeakMap<object, PropertyDescriptor | undefined>()
 const names = new Set<string>()
@@ -45,6 +47,7 @@ export function describeStaleDomGlobals(stale: string[]) {
   return (
     `A finished DOM harness's ${stale.join(', ')} ${stale.length === 1 ? 'was' : 'were'} still installed as ${stale.length === 1 ? 'a global' : 'globals'}. ` +
     'A value saved after acquiring the harness was put back after dom.cleanup(). ' +
-    'Restore spies and saved globals before dom.cleanup(); the harness restores its own globals.'
+    'Restore spies and saved globals before dom.cleanup(); the harness restores its own globals.\n' +
+    WEB_TEST_RULES
   )
 }
