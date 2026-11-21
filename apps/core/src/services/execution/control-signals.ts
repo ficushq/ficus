@@ -4,7 +4,14 @@ import {
   type PendingMessageOperation,
   type PendingMessageResult,
 } from '../agent/pending-message-control'
-import { beginTransitionalOperation, endTransitionalOperation, getSession, removeSession } from './session-state'
+import {
+  beginTransitionalOperation,
+  endTransitionalOperation,
+  getSession,
+  isSessionHeldFor,
+  removeSession,
+} from './session-state'
+import type { EventMap } from '@ficus/shared'
 import { disposePrecompactionController } from '../agent/precompaction/registry'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { findSessionFile, getSessionDir } from '../../lib/infra/session-files'
@@ -376,5 +383,41 @@ export async function handleControlSignal(payload: {
 
     default:
       if (active) await active.session.pi.abort()
+  }
+}
+
+/**
+ * Switch this worker's live session for an agent to its configured model now
+ * (`agent.model-apply-requested`). Every worker receives the request; only the one
+ * holding that exact execution answers, so the API's timeout, not a false "no
+ * session" from another worker, decides when nobody owns it.
+ */
+export async function handleModelApplyRequest(request: EventMap['agent.model-apply-requested']): Promise<void> {
+  const { agentId, executionId, requestId, expiresAt } = request
+  if (Date.now() >= expiresAt) return
+  const ack = (result: Omit<EventMap['agent.model-applied'], 'agentId' | 'executionId' | 'requestId'>) =>
+    eventEmitter.emit('agent.model-applied', { agentId, executionId, requestId, ...result })
+  const active = getSession(agentId)
+  if (!active || active.executionId !== executionId) {
+    if (isSessionHeldFor(agentId, executionId)) ack({ ok: false, code: 'no_session' })
+    return
+  }
+  if (!active.applyModel) {
+    ack({ ok: false, code: 'no_session' })
+    return
+  }
+  try {
+    const agent = await Agent.mustFind(agentId, { eager: false })
+    const result = await active.applyModel(await agent.getEffectiveModelSpec())
+    ack({
+      ok: true,
+      code: result.switched ? 'switched' : 'unchanged',
+      selectedModel: result.selected,
+      ...(result.previous ? { previousModel: result.previous } : {}),
+    })
+    if (result.switched) eventEmitter.emit('agent.updated', { agentId: agent.id, squadId: agent.squadId })
+  } catch (error) {
+    log.error(`apply-model: agentId=${agentId} failed`, error)
+    ack({ ok: false, code: 'error', error: error instanceof Error ? error.message : String(error) })
   }
 }

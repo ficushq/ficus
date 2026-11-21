@@ -5,7 +5,7 @@ import { AgentType } from '../../entities/AgentType'
 import { agentTypes, agents, messages, chatSendReceipts } from '../../db/schema'
 import { db } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { handleControlSignal } from './control-signals'
+import { handleControlSignal, handleModelApplyRequest } from './control-signals'
 import { withChatQueueState } from '../chat/queued-messages'
 import { registerSession, removeSession } from './session-state'
 import { AgentSession } from '../../entities/AgentSession'
@@ -350,5 +350,117 @@ describe('manual compaction usage refresh', () => {
     expect(createSpy).not.toHaveBeenCalled()
     const reloaded = await Agent.find(agent.id)
     expect(reloaded?.sessionUsage ?? null).toBeNull()
+  })
+})
+
+describe('model apply request', () => {
+  let testAgentTypeId: string
+  let agent: Agent
+
+  beforeEach(async () => {
+    const testPrefix = `apply-model-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    testAgentTypeId = `${testPrefix}-type`
+    await AgentType.create({
+      id: testAgentTypeId,
+      model: 'anthropic:claude-sonnet-4-5',
+      name: 'Apply Model Test Agent Type',
+      systemPrompt: 'You are a test agent.',
+    })
+    agent = await Agent.create({ agentTypeId: testAgentTypeId, modelOverride: 'anthropic:claude-opus-4-5' })
+  })
+
+  afterEach(async () => {
+    mock.restore()
+    removeSession(agent.id)
+    await db.delete(agents).where(eq(agents.agentTypeId, testAgentTypeId))
+    await db.delete(agentTypes).where(eq(agentTypes.id, testAgentTypeId))
+    eventEmitter.removeAllListeners()
+  })
+
+  function captureAcks() {
+    const acks: Array<Record<string, unknown>> = []
+    eventEmitter.on('agent.model-applied', (event) => acks.push(event))
+    return acks
+  }
+
+  it('switches the owning live session to the agent’s resolved chain and acks the request', async () => {
+    const executionId = crypto.randomUUID()
+    const applyModel = mock(async () => ({
+      switched: true,
+      selected: 'anthropic:claude-opus-4-5',
+      previous: 'anthropic:claude-sonnet-4-5',
+    }))
+    registerSession(agent.id, { executionId, session: {}, applyModel } as any)
+    const acks = captureAcks()
+
+    await handleModelApplyRequest({
+      agentId: agent.id,
+      executionId,
+      requestId: 'req-1',
+      expiresAt: Date.now() + 10_000,
+    })
+
+    expect(applyModel).toHaveBeenCalledWith('anthropic:claude-opus-4-5')
+    expect(acks).toEqual([
+      {
+        agentId: agent.id,
+        executionId,
+        requestId: 'req-1',
+        ok: true,
+        code: 'switched',
+        selectedModel: 'anthropic:claude-opus-4-5',
+        previousModel: 'anthropic:claude-sonnet-4-5',
+      },
+    ])
+  })
+
+  it('stays silent on a worker that does not run the execution, and ignores expired requests', async () => {
+    const applyModel = mock(async () => ({ switched: true, selected: 'x' }))
+    registerSession(agent.id, { executionId: 'other-execution', session: {}, applyModel } as any)
+    const acks = captureAcks()
+
+    await handleModelApplyRequest({
+      agentId: agent.id,
+      executionId: 'mine',
+      requestId: 'req-2',
+      expiresAt: Date.now() + 10_000,
+    })
+    await handleModelApplyRequest({
+      agentId: agent.id,
+      executionId: 'other-execution',
+      requestId: 'req-3',
+      expiresAt: Date.now() - 1,
+    })
+
+    expect(applyModel).not.toHaveBeenCalled()
+    expect(acks).toEqual([])
+  })
+
+  it('reports a refused switch instead of going silent', async () => {
+    const executionId = crypto.randomUUID()
+    registerSession(agent.id, {
+      executionId,
+      session: {},
+      applyModel: async () => {
+        throw new Error('No API key for anthropic/claude-opus-4-5')
+      },
+    } as any)
+    const acks = captureAcks()
+
+    await handleModelApplyRequest({
+      agentId: agent.id,
+      executionId,
+      requestId: 'req-4',
+      expiresAt: Date.now() + 10_000,
+    })
+
+    expect(acks).toEqual([
+      expect.objectContaining({
+        requestId: 'req-4',
+        ok: false,
+        code: 'error',
+        error: 'No API key for anthropic/claude-opus-4-5',
+      }),
+    ])
   })
 })

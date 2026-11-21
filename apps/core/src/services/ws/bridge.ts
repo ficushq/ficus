@@ -223,6 +223,8 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
   // Internal worker nudges; no client-facing topic.
   if (
     event === 'agent.queue-message-updated' ||
+    event === 'agent.model-apply-requested' ||
+    event === 'agent.model-applied' ||
     event === 'sandbox.provision-transition' ||
     event === 'integration.projection-invalidated' ||
     event === 'publicVoices.changed' ||

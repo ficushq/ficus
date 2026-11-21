@@ -4,8 +4,9 @@ import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Agent } from '@ficus/shared'
 import { isModelPriorityList, parseDisplayModelPriorityList, parseDisplayModelSpec } from '../lib/displayModelSpec'
-import { integrationQueryKeys, queryKeys } from '../queryKeys'
+import { integrationQueryKeys, modelTierQueryKeys, queryKeys } from '../queryKeys'
 import { AgentInfoPanel } from './AgentInfoPanel'
+import { modelSourceLabel } from '../lib/agentModelSource'
 import { acquireDomHarness } from '../test/domHarness'
 import type { IntegrationConnection } from '../api/integrations'
 import type { AgentTypeConfig } from '../api/config'
@@ -123,8 +124,8 @@ describe('AgentInfoPanel', () => {
 
     expect(html).toContain('Configured chain')
     expect(html).toContain('openai:gpt-5.3-codex')
-    expect(html).toContain('Agent override')
-    expect(html).not.toContain('Model tier: standard')
+    expect(html).toContain('Agent model override')
+    expect(html).not.toContain('Agent type tier: standard')
     expect(html).not.toContain('Active model')
   })
 
@@ -148,7 +149,7 @@ describe('AgentInfoPanel', () => {
 
     expect(html).toContain(inheritedChain)
     expect(html).toContain('Inherited parent chain')
-    expect(html).not.toContain('Model tier: standard')
+    expect(html).not.toContain('Agent type tier: standard')
   })
 
   test('tier-resolved agents show the authoritative chain, source, and active model', () => {
@@ -164,7 +165,129 @@ describe('AgentInfoPanel', () => {
     expect(html).toContain('Active model')
     expect(html).toContain('openai-codex:gpt-5.6-sol:medium')
     expect(html).toContain(STANDARD_CHAIN)
-    expect(html).toContain('Model tier: standard')
+    expect(html).toContain('Agent type tier: standard')
+  })
+
+  test('the server resolution wins over the agent type, so a workflow worker shows its participant tier', () => {
+    const deepChain = 'anthropic:claude-opus-5:high'
+    const agent: Agent = {
+      ...baseAgent,
+      selectedModel: 'anthropic:claude-opus-5:high',
+      modelResolution: {
+        chain: deepChain,
+        source: { kind: 'workflow-tier', tier: 'deep', tierLabel: 'Deep' },
+        nextSelectedModel: 'anthropic:claude-opus-5:high',
+      },
+    }
+    // The agent type itself runs the Standard tier; the participant picked Deep.
+    const html = renderPanel(agent, {
+      ...baseAgentType,
+      model: '',
+      tier: 'standard',
+      resolvedChain: STANDARD_CHAIN,
+      provenance: 'via tier: standard',
+    })
+
+    expect(html).toContain('Workflow tier: Deep')
+    expect(html).toContain(deepChain)
+    expect(html).not.toContain(STANDARD_CHAIN)
+    expect(html).not.toContain('Agent type tier')
+  })
+
+  test('shows why a configured source cannot resolve', () => {
+    const html = renderPanel({
+      ...baseAgent,
+      tierOverride: 'retired',
+      modelResolution: {
+        chain: '',
+        source: { kind: 'agent-tier-override', tier: 'retired' },
+        error: "Model tier 'retired' does not exist or is disabled",
+      },
+    })
+    expect(html).toContain('Agent tier override: retired')
+    expect(html).toContain('does not exist or is disabled')
+  })
+})
+
+describe('modelSourceLabel', () => {
+  test.each([
+    [{ kind: 'agent-model-override' }, 'Agent model override'],
+    [{ kind: 'agent-tier-override', tier: 'deep', tierLabel: 'Deep' }, 'Agent tier override: Deep'],
+    [{ kind: 'workflow-tier', tier: 'deep', tierLabel: 'Deep' }, 'Workflow tier: Deep'],
+    [{ kind: 'workflow-model' }, 'Workflow model'],
+    [{ kind: 'agent-type-tier', tier: 'standard' }, 'Agent type tier: standard'],
+    [{ kind: 'agent-type-model' }, 'Agent type model'],
+    [{ kind: 'instance-default' }, 'Instance default'],
+    [{ kind: 'inherited-parent-chain' }, 'Inherited parent chain'],
+  ] as const)('%o reads %s', (source, label) => {
+    expect(modelSourceLabel(source)).toBe(label)
+  })
+})
+
+describe('AgentInfoPanel model source control', () => {
+  const tieredAgent: Agent = {
+    ...baseAgent,
+    selectedModel: 'anthropic:claude-sonnet-4-5:high',
+    modelResolution: {
+      chain: 'anthropic:claude-sonnet-4-5:high',
+      source: { kind: 'agent-type-model' },
+      nextSelectedModel: 'anthropic:claude-sonnet-4-5:high',
+    },
+  }
+
+  test('is read-only for callers without agents:update', () => {
+    const html = renderPanel({ ...tieredAgent, canUpdate: false })
+    expect(html).toContain('Agent type model')
+    expect(html).not.toContain('role="radiogroup"')
+    expect(html).not.toContain('Save')
+    expect(html).not.toContain('Switch now')
+  })
+
+  test('offers Default, Tier and Custom model to callers who may update the agent, and says when it applies', () => {
+    const html = renderPanel({ ...tieredAgent, canUpdate: true })
+    expect(html).toContain('role="radiogroup"')
+    expect(html).toContain('Default')
+    expect(html).toContain('Tier')
+    expect(html).toContain('Custom model')
+    expect(html).toContain('Applies from the agent&#x27;s next turn')
+    // The active model is what the configuration selects: nothing to switch.
+    expect(html).not.toContain('Switch now')
+  })
+
+  test('opens on the tier picker for an agent with a tier override', () => {
+    const html = renderPanel({ ...tieredAgent, canUpdate: true, tierOverride: 'deep' }, baseAgentType, (client) =>
+      client.setQueryData(modelTierQueryKeys.list(), [
+        { slug: 'deep', label: 'Deep', description: null, chain: 'x:y', sortOrder: 0, usedByCount: 0 },
+      ])
+    )
+    expect(html).toContain('aria-label="Model tier"')
+    expect(html).toContain('Deep')
+  })
+
+  test('opens on the priority list editor for an agent with a model override', () => {
+    const html = renderPanel({
+      ...tieredAgent,
+      canUpdate: true,
+      modelOverride: 'anthropic:claude-opus-4-5:high,zai:glm-5.3:high',
+    })
+    expect(html).toContain('Primary model')
+    expect(html).toContain('Fallback 1')
+  })
+
+  test('shows Switch now while the configured model would select something other than the active one', () => {
+    const html = renderPanel({
+      ...tieredAgent,
+      canUpdate: true,
+      tierOverride: 'deep',
+      modelResolution: {
+        chain: 'anthropic:claude-opus-5:high',
+        source: { kind: 'agent-tier-override', tier: 'deep', tierLabel: 'Deep' },
+        nextSelectedModel: 'anthropic:claude-opus-5:high',
+      },
+    })
+    expect(html).toContain('Agent tier override: Deep')
+    expect(html).toContain('Switch now')
+    expect(html).toContain('anthropic:claude-opus-5:high')
   })
 })
 

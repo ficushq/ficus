@@ -14,6 +14,7 @@ import { providerHealth, type ProviderHealthAttempt } from '../../services/provi
 import {
   resolveModelCandidatesForCurrentEnv,
   selectModelSpecForCurrentEnv,
+  selectModelSpecForCurrentEnvWithSwitchBack,
   selectResolvedModelCandidatesForCurrentEnv,
 } from '../../services/model-selection'
 import { selectAccount } from '../../services/agent/account-selection'
@@ -118,6 +119,76 @@ export class ModelFailoverCoordinator {
     } catch {
       return undefined
     }
+  }
+
+  /**
+   * Switch the live session to `next` with its context preserved: project credentials for the new
+   * provider, set the model and thinking level, then record the selection and move the concurrency
+   * slot. Pi reads the session model on every request and checks the compaction threshold against it
+   * before each turn, so a running turn uses `next` from its next model call.
+   */
+  private async switchSessionModel(next: string): Promise<void> {
+    const session = this.deps.getSession()
+    // Ensure the live session projects credentials for the provider we are
+    // switching to before Pi validates auth in setModel().
+    const previousAccountId = session.accountId
+    if (session.authBackend) {
+      const nextProvider = parseModelSpec(next).provider
+      const store = accountStore.readAccountStore()
+      const nextAccount = selectAccount(nextProvider, store, {
+        isAccountHealthy: (p, accountId) =>
+          routeDecision({ provider: p, accountId }, providerHealth.snapshotRecords(), Date.now()).state === 'ready',
+      })
+      if (nextAccount) {
+        session.authBackend.selectAccount(nextProvider, nextAccount.id)
+        session.accountId = nextAccount.id
+        stampAccountLastUsed(nextProvider, nextAccount.id)
+      } else {
+        session.accountId = undefined
+      }
+    }
+
+    // Switch model on the live session (context preserved).
+    const { model, thinkingLevel } = resolveAgentModelSpec(next)
+    try {
+      await session.pi.setModel(model)
+    } catch (error) {
+      // The session keeps its current model; only the account projection moved.
+      session.accountId = previousAccountId
+      throw error
+    }
+    if (thinkingLevel) session.pi.setThinkingLevel(thinkingLevel)
+
+    this.currentSelectedSpec = next
+    session.selectedSpec = next
+    await setAgentSelectedModel(this.deps.agentId, next).catch(() => {})
+    await this.reassignConcurrencySlot(next)
+  }
+
+  /**
+   * Apply a newly configured model chain to the live session now, as the next turn would: keep the
+   * current model when the new chain still selects it, otherwise switch in place (see
+   * {@link switchSessionModel}). Later failover in this turn follows the new chain.
+   */
+  async applyConfiguredChain(
+    priorityList: string
+  ): Promise<{ switched: boolean; selected: string; previous?: string }> {
+    const previous = this.currentSelectedSpec
+    const { selected } = selectModelSpecForCurrentEnvWithSwitchBack(priorityList, previous)
+    this.priorityList = priorityList
+    this.maxFailoversThisTurn = Math.max(1, resolveModelCandidatesForCurrentEnv(priorityList).length)
+    this.failedCandidateSpecs.clear()
+    if (selected === previous) return { switched: false, selected, previous }
+    await this.switchSessionModel(selected)
+    this.deps.getBuffer().push({
+      type: 'system_message',
+      text: previous ? `Model switched to ${selected} (from ${previous}).` : `Model switched to ${selected}.`,
+    })
+    log.info('Agent model switched to its configured chain', {
+      strategy: 'configured-model-apply',
+      executionId: this.deps.executionId,
+    })
+    return { switched: true, selected, previous }
   }
 
   private async reassignConcurrencySlot(modelSpec: string): Promise<void> {
@@ -259,33 +330,8 @@ export class ModelFailoverCoordinator {
     // No switch needed if it re-selected the same spec (shouldn't happen, but guard).
     if (next === this.currentSelectedSpec) return false
 
-    // Ensure the live session projects credentials for the provider we are
-    // switching to before Pi validates auth in setModel().
-    if (session.authBackend) {
-      const nextProvider = parseModelSpec(next).provider
-      const store = accountStore.readAccountStore()
-      const nextAccount = selectAccount(nextProvider, store, {
-        isAccountHealthy: (p, accountId) =>
-          routeDecision({ provider: p, accountId }, providerHealth.snapshotRecords(), Date.now()).state === 'ready',
-      })
-      if (nextAccount) {
-        session.authBackend.selectAccount(nextProvider, nextAccount.id)
-        session.accountId = nextAccount.id
-        stampAccountLastUsed(nextProvider, nextAccount.id)
-      } else {
-        session.accountId = undefined
-      }
-    }
-
-    // Switch model on the live session (context preserved).
-    const { model, thinkingLevel } = resolveAgentModelSpec(next)
-    await session.pi.setModel(model)
-    if (thinkingLevel) session.pi.setThinkingLevel(thinkingLevel)
-
-    this.currentSelectedSpec = next
+    await this.switchSessionModel(next)
     this.failoverCountThisTurn += 1
-    await setAgentSelectedModel(this.deps.agentId, next).catch(() => {})
-    await this.reassignConcurrencySlot(next)
 
     if (candidateScopedFailure) {
       this.deps.getBuffer().push({

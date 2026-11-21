@@ -939,6 +939,7 @@ export abstract class AgentRunner {
         buffer: this.buffer,
         agentId: this.agent.id,
         executionId: this.execution.id,
+        applyModel: (chain) => this.failover.applyConfiguredChain(chain),
       })
     } catch (err) {
       // createSession threw (e.g. sandbox ensure failed) — fail through the existing path below.

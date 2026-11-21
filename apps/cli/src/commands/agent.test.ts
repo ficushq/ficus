@@ -7,6 +7,7 @@ import { registerAgentCommands } from './agent'
 describe('ficus agent model subcommand', () => {
   beforeEach(() => {
     ;(apiPatch as ReturnType<typeof mock>).mockClear()
+    ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(outputError as ReturnType<typeof mock>).mockClear()
     ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({
       id: '33333333-3333-4333-8333-333333333333',
@@ -45,16 +46,55 @@ describe('ficus agent model subcommand', () => {
     })
   })
 
-  it('clears the override with --clear (modelOverride: null)', async () => {
+  it('clears both overrides with --clear', async () => {
     await run(['agent', 'model', 'agent-123', '--clear'])
 
-    expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', { modelOverride: null })
+    expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', { modelOverride: null, tierOverride: null })
   })
 
   it('supports the -c short flag for --clear', async () => {
     await run(['agent', 'model', 'agent-123', '-c'])
 
-    expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', { modelOverride: null })
+    expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', { modelOverride: null, tierOverride: null })
+  })
+
+  it('sets a tier override with --tier', async () => {
+    await run(['agent', 'model', 'agent-123', '--tier', 'deep'])
+
+    expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', { tierOverride: 'deep' })
+    expect(apiPost).not.toHaveBeenCalled()
+  })
+
+  it('errors when both a spec and --tier are provided', async () => {
+    await run(['agent', 'model', 'agent-123', 'zai:glm-5.2:high', '--tier', 'deep'])
+
+    expect(outputError).toHaveBeenCalled()
+    expect(apiPatch).not.toHaveBeenCalled()
+  })
+
+  it('errors when --clear is combined with --tier', async () => {
+    await run(['agent', 'model', 'agent-123', '--tier', 'deep', '--clear'])
+
+    expect(outputError).toHaveBeenCalled()
+    expect(apiPatch).not.toHaveBeenCalled()
+  })
+
+  it('--now saves the change and then switches immediately', async () => {
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ code: 'switched', message: 'Switched to x.' })
+
+    await run(['agent', 'model', 'agent-123', '--tier', 'deep', '--now'])
+
+    expect(apiPatch).toHaveBeenCalledWith('/api/agents/agent-123', { tierOverride: 'deep' })
+    expect(apiPost).toHaveBeenCalledWith('/api/agents/agent-123/model/apply', {})
+  })
+
+  it('--now alone switches to the configured model without changing it', async () => {
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ code: 'unchanged', message: 'Already on x.' })
+
+    await run(['agent', 'model', 'agent-123', '--now'])
+
+    expect(apiPatch).not.toHaveBeenCalled()
+    expect(apiPost).toHaveBeenCalledWith('/api/agents/agent-123/model/apply', {})
   })
 
   it('errors when neither a spec nor --clear is provided', async () => {
