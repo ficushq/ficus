@@ -222,6 +222,55 @@ hard-code `ficus-api` / `ficus-worker`: they resolve this checkout's app names w
 instance when several are installed
 ([docs/wiki/setup.md → Multiple instances](setup.md#multiple-instances)).
 
+## TypeScript configuration
+
+TypeScript 6 changed the default of `compilerOptions.types` from "every package
+under `node_modules/@types`" to an empty list. Having `@types/bun` or
+`@types/node` installed no longer puts Bun or Node globals in scope, so each
+tsconfig declares the ambient types its code runs with:
+
+| tsconfig                                                                 | `types`                        | Why                                                   |
+| ------------------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------- |
+| `tsconfig.json` (root base)                                              | `[]`                           | Base config; each project opts in to its own runtime  |
+| `apps/core`, `packages/sandbox-server`                                   | `["@types/bun"]`               | Runs under Bun                                        |
+| `apps/cli`                                                               | `["node", "bun"]`              | Bun-compiled CLI that also uses Node APIs             |
+| `apps/docs`, `packages/shared`                                           | `["bun"]`                      | Runs under Bun                                        |
+| `apps/web`, `packages/client-core`                                       | `[]`                           | Browser code: `DOM` libs only, no Bun or Node globals |
+| `apps/web/tsconfig.test.json`, `packages/client-core/tsconfig.test.json` | `["bun"]`                      | Bun tests and test helpers                            |
+| `apps/web/tsconfig.node.json`, `apps/farm/tsconfig.node.json`            | `["node"]`                     | The Vite config and its helpers run in Node           |
+| `apps/farm`                                                              | `["vite/client", "bun-types"]` | Vite client types plus Bun                            |
+| `packages/client-react`                                                  | `["bun-types"]`                | Bun tests alongside the React hooks                   |
+
+The `typecheck` scripts of `apps/web` and `packages/client-core` run both the
+browser config and `tsconfig.test.json`, so test code keeps Bun's types without
+leaking them into browser code. For `packages/client-core` the test config covers
+all of `src`; for `apps/web` it covers the test setup and the helpers under
+`src/test` and `src/theme/test`, and `*.test.ts(x)` files are in neither config.
+When adding a project, set `types` explicitly instead of relying on the default.
+Code in `packages/shared` is also imported by browser projects, so it avoids
+Bun-only global types (`PeriodicRunner` uses `ReturnType<typeof setInterval>`
+rather than Bun's `Timer`).
+
+### Node globals still type-check in `apps/web`
+
+`apps/web` declares `"types": []`, but it still sees Node globals such as
+`process` and `Buffer` (and Node's built-in module declarations). The QR pairing
+code (`src/components/settings/pairingQr.ts`) imports `qrcode`, and
+`@types/qrcode` starts with `/// <reference types="node" />`. A triple-slash
+reference in an imported declaration file loads `@types/node` regardless of the
+`types` list.
+
+So `tsc` does not catch browser code that uses `process` or `Buffer`, but
+neither exists in the browser and Vite does not polyfill them. Do not use them
+in `apps/web/src`: read build-time values from `import.meta.env`, and use
+`Uint8Array`, `TextEncoder`/`TextDecoder` and `btoa`/`atob` instead of `Buffer`.
+`vite.config.ts` runs in Node and may use them.
+
+There is no automated guard for this today. If one is wanted, a cheap option is
+an ESLint `no-restricted-globals` entry for `process` and `Buffer` scoped to
+`apps/web/src/**` with tests excluded, alongside the base path guard in
+`eslint.config.mjs`.
+
 ## Testing
 
 Database-backed tests use a separate Docker Compose project and dynamically
