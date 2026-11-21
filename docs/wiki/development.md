@@ -222,6 +222,27 @@ hard-code `ficus-api` / `ficus-worker`: they resolve this checkout's app names w
 instance when several are installed
 ([docs/wiki/setup.md → Multiple instances](setup.md#multiple-instances)).
 
+## TypeScript configuration
+
+TypeScript 6 defaults `compilerOptions.types` to `[]`: installing an `@types`
+package no longer adds its globals automatically. The configs changed in the
+upgrade make their runtime assumptions explicit:
+
+- The root `tsconfig.json` sets `types: []` as the baseline. `apps/web` and
+  `packages/client-core` also set `types: []` for their browser code.
+- `packages/shared/tsconfig.json` includes `bun` for its Bun runtime. Web and
+  client-core opt into `bun` separately in `tsconfig.test.json` for web test
+  helpers and client-core tests, respectively.
+- `apps/web/tsconfig.node.json` includes `node` for `vite.config.ts`, which
+  runs outside the browser.
+
+**Browser code must not rely on `process` or `Buffer`, even if it type-checks.**
+The web app imports `qrcode`, whose `@types/qrcode` declarations include
+`/// <reference types="node" />`. That reference loads Node's global types
+regardless of `types: []`; it does not provide those globals at runtime. An
+optional guard would be ESLint's `no-restricted-globals` rule for `process`
+and `Buffer` in browser sources, excluding test code and the Vite config.
+
 ## Testing
 
 Database-backed tests use a separate Docker Compose project and dynamically
