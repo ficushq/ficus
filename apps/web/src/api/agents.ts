@@ -1,6 +1,7 @@
 import { sandboxControlRequest } from './sandboxControl'
 import type {
   Agent,
+  AgentModelApplyResult,
   AgentSummary,
   ManualWaitDecision,
   DeliveryMode,
@@ -78,6 +79,22 @@ export async function listAgentSummaries(filters?: { live?: boolean }): Promise<
 
 export async function getAgent(id: string): Promise<Agent> {
   return apiFetch<Agent>(`/agents/${id}`)
+}
+
+/**
+ * Set the agent's model source: an explicit model chain, a model tier, or neither (its workflow or
+ * agent type model). At most one of the two is non-null. Applies from the agent's next turn.
+ */
+export async function updateAgentModelSource(
+  id: string,
+  source: { modelOverride: string | null; tierOverride: string | null }
+): Promise<Agent> {
+  return apiFetch<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(source) })
+}
+
+/** Make the agent's configured model take effect now instead of from its next turn. */
+export async function applyAgentModelNow(id: string): Promise<AgentModelApplyResult> {
+  return apiFetch<AgentModelApplyResult>(`/agents/${id}/model/apply`, { method: 'POST' })
 }
 
 export interface ActiveExecution {

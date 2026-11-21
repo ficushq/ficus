@@ -23,10 +23,14 @@ import {
   executionAdmissionReservations,
   inbox,
   messages as messagesTable,
+  modelTiers,
   squads,
   sandboxProvisionRecoveries,
   deviceTokens,
 } from '../db'
+import * as modelSelection from '../services/model-selection'
+import { applyAgentModelNow } from '../services/agent/model-apply'
+import { eventEmitter } from '../lib/infra/event-emitter'
 import { Agent, setAgentSelectedModel } from '../entities/Agent'
 import { listen } from '../lib/infra/local-events'
 import { Squad } from '../entities/Squad'
@@ -1314,6 +1318,223 @@ describe('PATCH /api/agents/:id modelOverride', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.modelOverride).toBe('zai:glm-5.2:high')
+  })
+})
+
+// ── Agent tier override and switch now ─────────────────────────────────────
+
+describe('PATCH /api/agents/:id tierOverride and POST /api/agents/:id/model/apply', () => {
+  let testPrefix: string
+  let testAgentTypeId: string
+  let tierSlug: string
+  let squadId: string
+
+  beforeEach(async () => {
+    testPrefix = `tier-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    testAgentTypeId = `${testPrefix}-type`
+    tierSlug = `${testPrefix}-deep`
+    squadId = await makeSquad(testPrefix)
+    await AgentType.create({
+      id: testAgentTypeId,
+      model: 'anthropic:claude-sonnet-4-5',
+      name: 'Tier Override Test Agent',
+      systemPrompt: 'Test',
+    })
+    await db.insert(modelTiers).values({ slug: tierSlug, label: 'Deep fixture', chain: 'anthropic:claude-opus-4-5' })
+  })
+
+  afterEach(async () => {
+    const createdAgents = await db.select({ id: agents.id }).from(agents).where(eq(agents.agentTypeId, testAgentTypeId))
+    for (const createdAgent of createdAgents) {
+      await db.delete(executions).where(eq(executions.agentId, createdAgent.id))
+      await db.delete(messagesTable).where(eq(messagesTable.agentId, createdAgent.id))
+    }
+    await db.delete(agents).where(eq(agents.agentTypeId, testAgentTypeId))
+    await db.delete(agentTypes).where(eq(agentTypes.id, testAgentTypeId))
+    await db.delete(modelTiers).where(eq(modelTiers.slug, tierSlug))
+    await db.delete(squads).where(eq(squads.id, squadId))
+  })
+
+  const patch = (agentId: string, body: unknown) =>
+    app.request(`/api/agents/${agentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+      body: JSON.stringify(body),
+    })
+  const apply = (agentId: string) =>
+    app.request(`/api/agents/${agentId}/model/apply`, { method: 'POST', headers: authHeaders(admin.token) })
+
+  it('sets a tier override, clears the model override and reports the resolved source', async () => {
+    const agent = await Agent.create({
+      agentTypeId: testAgentTypeId,
+      squadId,
+      modelOverride: 'anthropic:claude-haiku-4-5',
+    })
+
+    const res = await patch(agent.id, { tierOverride: tierSlug })
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      modelOverride: null,
+      tierOverride: tierSlug,
+      configuredModel: 'anthropic:claude-opus-4-5',
+      modelResolution: {
+        chain: 'anthropic:claude-opus-4-5',
+        source: { kind: 'agent-tier-override', tier: tierSlug, tierLabel: 'Deep fixture' },
+      },
+    })
+
+    const back = await patch(agent.id, { modelOverride: 'anthropic:claude-haiku-4-5' })
+    expect(await back.json()).toMatchObject({ modelOverride: 'anthropic:claude-haiku-4-5', tierOverride: null })
+  })
+
+  it('rejects setting both overrides with a clear 400 and changes nothing', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId })
+
+    const res = await patch(agent.id, { modelOverride: 'anthropic:claude-haiku-4-5', tierOverride: tierSlug })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Set either modelOverride or tierOverride, not both')
+    const reloaded = await Agent.mustFind(agent.id)
+    expect([reloaded.modelOverride, reloaded.tierOverride]).toEqual([null, null])
+  })
+
+  it('rejects an unknown or disabled tier with 400', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId })
+    const missing = await patch(agent.id, { tierOverride: `${testPrefix}-missing` })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toContain('does not exist or is disabled')
+
+    await db.update(modelTiers).set({ disabled: true }).where(eq(modelTiers.slug, tierSlug))
+    expect((await patch(agent.id, { tierOverride: tierSlug })).status).toBe(400)
+  })
+
+  it('clears both overrides with nulls', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId, tierOverride: tierSlug })
+    const res = await patch(agent.id, { modelOverride: null, tierOverride: null })
+    expect(await res.json()).toMatchObject({
+      modelOverride: null,
+      tierOverride: null,
+      modelResolution: { chain: 'anthropic:claude-sonnet-4-5', source: { kind: 'agent-type-model' } },
+    })
+  })
+
+  it('GET returns the resolution and whether the caller may change the agent', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId })
+    await setAgentSelectedModel(agent.id, 'anthropic:claude-sonnet-4-5')
+    await agent.update({ tierOverride: tierSlug })
+    const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+      selected: 'anthropic:claude-opus-4-5',
+      candidates: [],
+    })
+    try {
+      const res = await app.request(`/api/agents/${agent.id}`, { headers: authHeaders(admin.token) })
+      expect(await res.json()).toMatchObject({
+        canUpdate: true,
+        selectedModel: 'anthropic:claude-sonnet-4-5',
+        modelResolution: { chain: 'anthropic:claude-opus-4-5', nextSelectedModel: 'anthropic:claude-opus-4-5' },
+      })
+    } finally {
+      selection.mockRestore()
+    }
+  })
+
+  it('switches an idle agent now by updating its selected model', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId, tierOverride: tierSlug })
+    await setAgentSelectedModel(agent.id, 'anthropic:claude-sonnet-4-5')
+    const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+      selected: 'anthropic:claude-opus-4-5',
+      candidates: [],
+    })
+    try {
+      const res = await apply(agent.id)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        code: 'switched',
+        selectedModel: 'anthropic:claude-opus-4-5',
+        previousModel: 'anthropic:claude-sonnet-4-5',
+      })
+      expect(selection).toHaveBeenCalledWith('anthropic:claude-opus-4-5', 'anthropic:claude-sonnet-4-5')
+      expect((await Agent.mustFind(agent.id)).selectedModel).toBe('anthropic:claude-opus-4-5')
+
+      const again = await apply(agent.id)
+      expect((await again.json()).code).toBe('unchanged')
+    } finally {
+      selection.mockRestore()
+    }
+  })
+
+  it('switches a running turn through the owning worker', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId, tierOverride: tierSlug })
+    const execution = await agent.queueExecution({ message: 'test' })
+    await execution.start()
+    const received: Array<{ executionId: string }> = []
+    // Stands in for the worker that owns the running turn.
+    const off = eventEmitter.on('agent.model-apply-requested', (request) => {
+      if (request.agentId !== agent.id) return
+      received.push(request)
+      eventEmitter.emit('agent.model-applied', {
+        agentId: agent.id,
+        executionId: request.executionId,
+        requestId: request.requestId,
+        ok: true,
+        code: 'switched',
+        selectedModel: 'anthropic:claude-opus-4-5',
+        previousModel: 'anthropic:claude-sonnet-4-5',
+      })
+    })
+    try {
+      const res = await apply(agent.id)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ code: 'switched', selectedModel: 'anthropic:claude-opus-4-5' })
+      expect(received).toEqual([expect.objectContaining({ executionId: execution.id })])
+    } finally {
+      off()
+    }
+  })
+
+  it('reports pending when no worker confirms in time, and surfaces a refused live switch', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId, tierOverride: tierSlug })
+    const execution = await agent.queueExecution({ message: 'test' })
+    await execution.start()
+    expect(await applyAgentModelNow(agent, { ackTimeoutMs: 50 })).toMatchObject({ code: 'pending' })
+
+    const off = eventEmitter.on('agent.model-apply-requested', (request) =>
+      eventEmitter.emit('agent.model-applied', {
+        agentId: request.agentId,
+        executionId: request.executionId,
+        requestId: request.requestId,
+        ok: false,
+        code: 'error',
+        error: 'No API key for anthropic/claude-opus-4-5',
+      })
+    )
+    try {
+      await expect(applyAgentModelNow(agent, { ackTimeoutMs: 5_000 })).rejects.toThrow(
+        'No API key for anthropic/claude-opus-4-5'
+      )
+    } finally {
+      off()
+    }
+  })
+
+  it('refuses to switch when the configured tier is disabled', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId, tierOverride: tierSlug })
+    await db.update(modelTiers).set({ disabled: true }).where(eq(modelTiers.slug, tierSlug))
+    const res = await apply(agent.id)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain('does not exist or is disabled')
+  })
+
+  it('requires agents:update to switch now', async () => {
+    const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId })
+    const unprivileged = await makeUnprivileged()
+    const res = await app.request(`/api/agents/${agent.id}/model/apply`, {
+      method: 'POST',
+      headers: authHeaders(unprivileged.token),
+    })
+    expect(res.status).toBe(403)
   })
 })
 

@@ -349,6 +349,13 @@ export const agents = pgTable(
     persist: boolean('persist').notNull().default(false),
     modelOverride: varchar('model_override', { length: 500 }),
     /**
+     * A model tier slug the agent runs instead of its workflow or agent-type model. Mutually
+     * exclusive with `modelOverride`. Stores the slug, not a copy of the chain, so tier edits
+     * apply from the agent's next turn. No foreign key: a deleted or disabled tier must fail
+     * the agent's next turn clearly rather than silently fall back.
+     */
+    tierOverride: varchar('tier_override', { length: 100 }),
+    /**
      * The actually-selected single model spec (after priority-list fallback).
      * Set at session creation and updated on runtime failover. `null` = not
      * yet selected. Distinct from `modelOverride` (the user/manager-set input)

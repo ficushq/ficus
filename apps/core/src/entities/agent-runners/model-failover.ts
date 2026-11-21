@@ -14,6 +14,7 @@ import { providerHealth, type ProviderHealthAttempt } from '../../services/provi
 import {
   resolveModelCandidatesForCurrentEnv,
   selectModelSpecForCurrentEnv,
+  selectModelSpecForCurrentEnvWithSwitchBack,
   selectResolvedModelCandidatesForCurrentEnv,
 } from '../../services/model-selection'
 import { selectAccount } from '../../services/agent/account-selection'
@@ -88,6 +89,19 @@ export class ModelFailoverCoordinator {
   private maxFailoversThisTurn = 1
   /** Turn-local candidate routes that failed without implicating the provider account. */
   private failedCandidateSpecs = new Set<string>()
+  /**
+   * Serializes everything that changes the live session's model or account: provider failover and
+   * a configured-model "Switch now" must never interleave their account projection, selected spec
+   * or concurrency slot move. Resending the turn stays outside it, because a resent prompt can fail
+   * over again.
+   */
+  private switching: Promise<unknown> = Promise.resolve()
+
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.switching.then(fn, fn)
+    this.switching = run.catch(() => {})
+    return run
+  }
 
   constructor(private readonly deps: ModelFailoverDeps) {}
 
@@ -118,6 +132,80 @@ export class ModelFailoverCoordinator {
     } catch {
       return undefined
     }
+  }
+
+  /**
+   * Switch the live session to `next` with its context preserved: project credentials for the new
+   * provider, set the model and thinking level, then record the selection and move the concurrency
+   * slot. Pi reads the session model on every request and checks the compaction threshold against it
+   * before each turn, so a running turn uses `next` from its next model call.
+   */
+  private async switchSessionModel(next: string): Promise<void> {
+    const session = this.deps.getSession()
+    // Ensure the live session projects credentials for the provider we are
+    // switching to before Pi validates auth in setModel().
+    const previousAccountId = session.accountId
+    if (session.authBackend) {
+      const nextProvider = parseModelSpec(next).provider
+      const store = accountStore.readAccountStore()
+      const nextAccount = selectAccount(nextProvider, store, {
+        isAccountHealthy: (p, accountId) =>
+          routeDecision({ provider: p, accountId }, providerHealth.snapshotRecords(), Date.now()).state === 'ready',
+      })
+      if (nextAccount) {
+        session.authBackend.selectAccount(nextProvider, nextAccount.id)
+        session.accountId = nextAccount.id
+        stampAccountLastUsed(nextProvider, nextAccount.id)
+      } else {
+        session.accountId = undefined
+      }
+    }
+
+    // Switch model on the live session (context preserved).
+    const { model, thinkingLevel } = resolveAgentModelSpec(next)
+    try {
+      await session.pi.setModel(model)
+    } catch (error) {
+      // The session keeps its current model; only the account projection moved.
+      session.accountId = previousAccountId
+      throw error
+    }
+    if (thinkingLevel) session.pi.setThinkingLevel(thinkingLevel)
+
+    this.currentSelectedSpec = next
+    session.selectedSpec = next
+    await setAgentSelectedModel(this.deps.agentId, next).catch(() => {})
+    await this.reassignConcurrencySlot(next)
+  }
+
+  /**
+   * Apply a newly configured model chain to the live session now, as the next turn would: keep the
+   * current model when the new chain still selects it, otherwise switch in place (see
+   * {@link switchSessionModel}). Later failover in this turn follows the new chain.
+   */
+  async applyConfiguredChain(
+    priorityList: string
+  ): Promise<{ switched: boolean; selected: string; previous?: string }> {
+    return this.exclusive(async () => {
+      const previous = this.currentSelectedSpec
+      const { selected } = selectModelSpecForCurrentEnvWithSwitchBack(priorityList, previous)
+      // Switch first: if the session refuses the model, it stays on its old model and keeps failing
+      // over along its old chain.
+      if (selected !== previous) await this.switchSessionModel(selected)
+      this.priorityList = priorityList
+      this.maxFailoversThisTurn = Math.max(1, resolveModelCandidatesForCurrentEnv(priorityList).length)
+      this.failedCandidateSpecs.clear()
+      if (selected === previous) return { switched: false, selected, previous }
+      this.deps.getBuffer().push({
+        type: 'system_message',
+        text: previous ? `Model switched to ${selected} (from ${previous}).` : `Model switched to ${selected}.`,
+      })
+      log.info('Agent model switched to its configured chain', {
+        strategy: 'configured-model-apply',
+        executionId: this.deps.executionId,
+      })
+      return { switched: true, selected, previous }
+    })
   }
 
   private async reassignConcurrencySlot(modelSpec: string): Promise<void> {
@@ -168,8 +256,18 @@ export class ModelFailoverCoordinator {
     if (this.failoverCountThisTurn + this.failoversReservedThisTurn >= this.maxFailoversThisTurn) return false
     this.failoversReservedThisTurn += 1
 
+    const failedSpec = this.currentSelectedSpec
+    const priorityList = this.priorityList
     try {
-      return await this.attemptReserved(classification, provider, this.priorityList)
+      const resend = await this.exclusive(async () => {
+        // A configured-model switch landed while this failure waited: the session already runs the
+        // model the person chose, so resend on it instead of failing over from the old one.
+        if (this.currentSelectedSpec !== failedSpec) return true
+        return this.attemptReserved(classification, provider, priorityList)
+      })
+      if (!resend) return false
+      await this.deps.resendPrompt()
+      return true
     } finally {
       this.failoversReservedThisTurn -= 1
     }
@@ -224,7 +322,6 @@ export class ModelFailoverCoordinator {
             failureKind: classification.kind,
           })
           this.deps.getCollector().reset()
-          await this.deps.resendPrompt()
           return true
         }
       }
@@ -259,33 +356,8 @@ export class ModelFailoverCoordinator {
     // No switch needed if it re-selected the same spec (shouldn't happen, but guard).
     if (next === this.currentSelectedSpec) return false
 
-    // Ensure the live session projects credentials for the provider we are
-    // switching to before Pi validates auth in setModel().
-    if (session.authBackend) {
-      const nextProvider = parseModelSpec(next).provider
-      const store = accountStore.readAccountStore()
-      const nextAccount = selectAccount(nextProvider, store, {
-        isAccountHealthy: (p, accountId) =>
-          routeDecision({ provider: p, accountId }, providerHealth.snapshotRecords(), Date.now()).state === 'ready',
-      })
-      if (nextAccount) {
-        session.authBackend.selectAccount(nextProvider, nextAccount.id)
-        session.accountId = nextAccount.id
-        stampAccountLastUsed(nextProvider, nextAccount.id)
-      } else {
-        session.accountId = undefined
-      }
-    }
-
-    // Switch model on the live session (context preserved).
-    const { model, thinkingLevel } = resolveAgentModelSpec(next)
-    await session.pi.setModel(model)
-    if (thinkingLevel) session.pi.setThinkingLevel(thinkingLevel)
-
-    this.currentSelectedSpec = next
+    await this.switchSessionModel(next)
     this.failoverCountThisTurn += 1
-    await setAgentSelectedModel(this.deps.agentId, next).catch(() => {})
-    await this.reassignConcurrencySlot(next)
 
     if (candidateScopedFailure) {
       this.deps.getBuffer().push({
@@ -319,7 +391,7 @@ export class ModelFailoverCoordinator {
     })
     this.deps.getCollector().reset()
 
-    // Re-dispatch the same turn. Note: the Pi SDK persists the user message
+    // The caller re-dispatches the same turn. Note: the Pi SDK persists the user message
     // to the session file before the API call, so the original failed prompt
     // already has the user message in context. Re-dispatching via sendPrompt
     // adds a second user message to the Pi session (not user-visible —
@@ -327,7 +399,6 @@ export class ModelFailoverCoordinator {
     // the prompt twice, wasting some tokens. This is consistent with the v1
     // design doc; a future iteration could use pi.continue() or remove the
     // error assistant message to avoid the duplicate.
-    await this.deps.resendPrompt()
     return true
   }
 }

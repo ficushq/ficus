@@ -365,7 +365,9 @@ async function dispatchFlowAttempt(
         agentTypeId: agentSnapshot.id,
         squadId: stream.squadId,
         persist: false,
-        modelOverride: agentSnapshot.tier ? null : agentSnapshot.model,
+        // The binding snapshot carries the participant's tier or model; model resolution reads it
+        // there, so the agent's own overrides stay free for a person to set.
+        modelOverride: null,
         metadata: {
           name: flowWorkerName(step.participant, stream.title),
           resourceGeneration: crypto.randomUUID(),

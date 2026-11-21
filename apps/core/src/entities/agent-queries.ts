@@ -280,6 +280,7 @@ export const agentSelectColumns = Object.freeze({
   status: agents.status,
   persist: agents.persist,
   modelOverride: agents.modelOverride,
+  tierOverride: agents.tierOverride,
   selectedModel: agents.selectedModel,
   metadata: agents.metadata,
   context: agents.context,
@@ -313,12 +314,13 @@ export async function takenNamesInSquad(squadId: string): Promise<string[]> {
 export async function validateModelOverrides(input: {
   agentTypeId: string
   modelOverride?: string | null
+  tierOverride?: string | null
 }): Promise<void> {
-  if (input.modelOverride == null) {
-    return
+  if (input.modelOverride != null) validateModelSpecList(input.modelOverride)
+  if (input.tierOverride != null) {
+    const { validateTierOverride } = await import('../services/model-selection/agent-model-sources')
+    await validateTierOverride(input.tierOverride)
   }
-
-  validateModelSpecList(input.modelOverride)
 }
 
 /** Row-level select behind Agent.find (no construction/eager-load). */

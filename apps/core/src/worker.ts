@@ -18,6 +18,7 @@ import { createWorkerRestartHandler, RESTART_EXIT_CODE, SYSTEM_RESTART_CHANNEL }
 import { createLogger, installConsoleContentSanitizer } from './lib/infra/logger'
 import {
   handleControlSignal,
+  handleModelApplyRequest,
   getActiveSessionCount,
   setStreamBufferFactory,
   shutdownActiveSessions,
@@ -989,6 +990,10 @@ async function startup(): Promise<void> {
   }
   eventEmitter.on('execution.created', pickupIfQueued)
   eventEmitter.on('execution.queued', pickupIfQueued)
+  // "Switch now" for a running turn: the worker that owns the session switches its model in place.
+  eventEmitter.on('agent.model-apply-requested', (request) => {
+    handleModelApplyRequest(request).catch((error) => log.error('Error applying a model switch:', error))
+  })
   registerConcurrencyReleaseListeners()
 
   // Listen for unified control signals
