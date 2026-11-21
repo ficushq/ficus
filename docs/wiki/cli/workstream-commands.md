@@ -812,6 +812,10 @@ ficus workstream untrack ws-123 --issue KEY-123
 Untracking the delivery PR is rejected — edit `metadata.codeHost.changeRequest`
 instead of untracking it.
 
+Untracking a Linear issue also releases the Linear agent session on it that is
+bound to the stream: the session gets the final response "Ficus stopped tracking
+this work." and no further progress.
+
 ---
 
 ## Attention (watch)

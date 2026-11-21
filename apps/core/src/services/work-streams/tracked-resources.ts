@@ -393,6 +393,7 @@ export async function removeTrackedResource(
   target: TrackedResourceTarget
 ): Promise<{ removed: boolean; view: TrackedResourcesView }> {
   const key = trackedResourceKey(target)
+  let linearResponseQueued = false
   const removed = await withLockedStream(streamId, async (locked, tx) => {
     const metadata = (locked.metadata as Record<string, unknown> | null) ?? {}
     const resource = resolveTrackedResources(metadata).find((entry) => entry.key === key)
@@ -418,8 +419,23 @@ export async function removeTrackedResource(
       }
     }
     await tx.update(workStreams).set({ metadata: next, updatedAt: new Date() }).where(eq(workStreams.id, streamId))
+    // A Linear agent session bound to this stream on the issue is released with the link, in the
+    // same transaction, and gets a final response so Linear stops showing it as in progress.
+    if (resource.integration === 'linear' && resource.kind === 'issue') {
+      const { releaseLinearSessionsForIssue } = await import('../integrations/linear/session-binding')
+      const { queued } = await releaseLinearSessionsForIssue(tx, streamId, {
+        ...(resource.externalId ? { externalId: resource.externalId } : {}),
+        identifier: trackedResourceLabel(resource),
+        ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+      })
+      linearResponseQueued = queued
+    }
     return { value: true, changed: true }
   })
+  if (linearResponseQueued) {
+    const { drainLinearOutboxSoon } = await import('../integrations/linear/write-back-runtime')
+    void drainLinearOutboxSoon()
+  }
   return { removed, view: await listTrackedResources(streamId) }
 }
 
