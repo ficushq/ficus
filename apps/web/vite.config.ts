@@ -573,7 +573,7 @@ export default defineConfig(({ mode, command }) => {
             {
               name: 'Chat',
               short_name: 'Chat',
-              url: './chat',
+              url: './?chat=open',
               description: 'Chat with AI assistant',
               icons: [{ src: 'icons/shortcut-chat.png', sizes: '96x96' }],
             },

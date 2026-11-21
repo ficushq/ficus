@@ -16,6 +16,7 @@ import {
 } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { ActionItem } from './ActionItem'
+import { assistantAgentChatPath } from '@ficus/shared'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
 
@@ -1202,10 +1203,30 @@ describe('ActionItem inline primary actions', () => {
         )
       )
       expect(document.body.textContent).toContain('Provider unavailable')
-      expect(document.querySelector('a')?.getAttribute('href')).toBe('/squads/squad-1?agent=agent-1')
+      expect(document.querySelector('a')?.getAttribute('href')).toBe('/squads/squad-1/agents?agent=agent-1')
       const labels = [...document.querySelectorAll('button')].map((button) => button.textContent)
       expect(labels).toEqual(['Continue', ''])
       expect(document.body.textContent).not.toContain('View agent')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test("a squadless agent's card links to the Assistant view of it, not the legacy chat page", async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const squadless = { ...halted, data: { ...halted.data, squadId: null, squadName: null } } as PendingAction
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={squadless} defaultExpanded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(document.querySelector('a')?.getAttribute('href')).toBe(assistantAgentChatPath('agent-1'))
     } finally {
       await dom.cleanup()
     }

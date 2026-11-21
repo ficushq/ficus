@@ -1,14 +1,5 @@
 import type { ReactElement } from 'react'
-import {
-  ActivityIcon,
-  CalendarIcon,
-  ChatIcon,
-  SettingsIcon,
-  SquadIcon,
-  WorkStreamIcon,
-  InboxIcon,
-  LightningIcon,
-} from './icons'
+import { ActivityIcon, CalendarIcon, SettingsIcon, SquadIcon, WorkStreamIcon, InboxIcon, LightningIcon } from './icons'
 import { appBasePath } from '../lib/basePath'
 
 /**
@@ -41,7 +32,6 @@ export const navItems: NavItem[] = [
   { to: '/', label: 'Feed', key: 'f', icon: <WorkStreamIcon /> },
   { to: '/activity', label: 'Activity', key: 'a', icon: <ActivityIcon /> },
   { to: '/squads', label: 'Squads', key: 'q', icon: <SquadIcon /> },
-  { to: '/chat', label: 'Chat', key: 'c', icon: <ChatIcon />, hidden: true },
   { to: '/inbox', label: 'Inbox', icon: <InboxIcon /> },
   { to: '/schedules', label: 'Schedules', icon: <CalendarIcon />, hidden: true },
   // Ops Insights lives in Settings now (?section=ops-insights); the route
@@ -69,9 +59,7 @@ export const farmNavigation = { go: (url: string) => window.location.replace(url
 export const visibleNavItems = navItems.filter((item) => !item.hidden)
 
 // Mobile nav: primary items shown directly, secondary items in More menu.
-export const primaryMobileItems = visibleNavItems.filter((i) =>
-  ['/', '/activity', '/squads', '/chat', '/inbox'].includes(i.to)
-)
+export const primaryMobileItems = visibleNavItems.filter((i) => ['/', '/activity', '/squads', '/inbox'].includes(i.to))
 export const moreMenuItems = visibleNavItems.filter((i) =>
   ['/schedules', '/recommendations', '/settings'].includes(i.to)
 )

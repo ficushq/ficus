@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { agentIdFromHref, isFloatingWindowClick } from './agentChatLinks'
+import { agentChatPath } from './entityReference'
 
 const origin = 'https://ficus.example'
 const id = '11111111-1111-4111-8111-111111111111'
@@ -16,6 +17,9 @@ test('agent chat links are recognized in every form the app writes them', () => 
   // Markdown references, whose id may be a unique prefix.
   expect(agentIdFromHref(`ficus:agent:${id}`, origin)).toBe(id)
   expect(agentIdFromHref('ficus:agent:1111abcd', origin)).toBe('1111abcd')
+  // A squadless agent's link: the Assistant's view of it.
+  expect(agentIdFromHref(agentChatPath({ id, squadId: null }), origin)).toBe(id)
+  expect(agentIdFromHref(`${origin}/ficus${agentChatPath({ id, squadId: null })}`, origin)).toBe(id)
 })
 
 test('other links are not agent chats', () => {
@@ -25,6 +29,10 @@ test('other links are not agent chats', () => {
     '/squads/ficus/agents?newConsultant=1',
     '/chat',
     '/settings?agent=x',
+    // The Assistant open on a saved conversation or a squad, not an agent chat.
+    '/?chat=open&commandStack=' + encodeURIComponent(JSON.stringify([['assistant', 'conversation-1', '']])),
+    '/?chat=open&commandStack=' + encodeURIComponent(JSON.stringify([['squad', 'squad-1']])),
+    '/?chat=open&commandStack=not-json',
     'ficus:ws:42',
     `https://elsewhere.example/chat/${id}`,
     'https://github.com/ficushq/ficus/pull/1',

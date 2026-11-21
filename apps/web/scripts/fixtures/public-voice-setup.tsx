@@ -113,6 +113,24 @@ window.fetch = (async (input, init) => {
       return Response.json(created, { status: 201 })
     }
   }
+  // The squads on the instance default, as the server counts them: no custom base, no usable assignment.
+  const squadCount = () =>
+    squads.filter(
+      (s) =>
+        !s.publicVoice?.base?.trim() &&
+        (!s.publicVoiceId || profiles.find((p) => p.id === s.publicVoiceId)?.disabled !== false)
+    ).length
+  if (path === '/api/public-voices/settings/instance-default' && method === 'GET') {
+    const chosen = profiles.find((p) => p.isInstanceDefault) ?? profiles[0]!
+    return Response.json({
+      voiceId: chosen.id,
+      name: chosen.name,
+      effectiveVoiceId: chosen.id,
+      effectiveName: chosen.name,
+      fallback: null,
+      squadCount: squadCount(),
+    })
+  }
   if (path === '/api/public-voices/settings/instance-default' && method === 'PUT') {
     if (failDefault) {
       failDefault = false
@@ -127,6 +145,7 @@ window.fetch = (async (input, init) => {
       effectiveVoiceId: voiceId,
       effectiveName: chosen.name,
       fallback: null,
+      squadCount: squadCount(),
       overCapSquadCount: 0,
     })
   }

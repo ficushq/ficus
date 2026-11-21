@@ -2,7 +2,7 @@ import { draftBytes, type ProfileDraft } from '../voice/profileDraft'
 import { ApiError } from '../../api/client'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PUBLIC_VOICE_MAX_BYTES, type Squad } from '@ficus/shared'
+import { PUBLIC_VOICE_MAX_BYTES, type PublicVoiceProfileJson, type Squad } from '@ficus/shared'
 import { createPublicVoice, publicVoiceQueryKeys, setPublicVoiceInstanceDefault } from '../../api/publicVoices'
 import { queries } from '../../queryOptions'
 import { AccountVoiceDerivation } from '../voice/AccountVoiceDerivation'
@@ -10,9 +10,16 @@ import { VoiceProfileDraftFields } from '../voice/VoiceProfileDraftFields'
 import { useVoiceAccounts } from '../voice/voiceAccounts'
 import { profileIdFromName } from '../voice/profileId'
 
-/** Squads that keep their voice when the instance default changes: an assigned profile or their own voice. */
-function squadsKeepingTheirVoice(squads: Squad[]): Squad[] {
-  return squads.filter((s) => !s.archivedAt && (s.publicVoiceId || s.publicVoice?.base))
+/**
+ * Squads that keep their voice when the instance default changes: their own voice, or an assigned
+ * profile that is not disabled (a disabled one falls back to the instance default). Mirrors the
+ * server's resolution; an assignment to a profile not loaded yet counts as kept.
+ */
+function squadsKeepingTheirVoice(squads: Squad[], profiles: PublicVoiceProfileJson[]): Squad[] {
+  const disabled = new Set(profiles.filter((p) => p.disabled).map((p) => p.id))
+  return squads.filter(
+    (s) => !s.archivedAt && (s.publicVoice?.base?.trim() || (s.publicVoiceId && !disabled.has(s.publicVoiceId)))
+  )
 }
 
 /**
@@ -32,7 +39,11 @@ export function PublicVoiceStep({
   const client = useQueryClient()
   const { accounts, isPending: accountsPending, error: accountsError } = useVoiceAccounts()
   const { data: squads = [] } = useQuery(queries.squads.list())
-  const keeping = squadsKeepingTheirVoice(squads)
+  const { data: profiles = [] } = useQuery(queries.publicVoices.list())
+  // The server counts the squads a new default changes, across the whole instance.
+  const { data: instanceDefault } = useQuery(queries.publicVoices.instanceDefault())
+  const changing = instanceDefault?.squadCount ?? 0
+  const keeping = squadsKeepingTheirVoice(squads, profiles)
   const [draft, setDraft] = useState<ProfileDraft | null>(null)
   // Capture the profile at the moment of creation, so a retry never recreates it.
   const [saved, setSaved] = useState<{ id: string; name: string } | null>(null)
@@ -170,6 +181,7 @@ export function PublicVoiceStep({
           <p className="text-xs text-muted">
             Saving makes this profile the default voice: every squad without an assigned profile or its own voice uses
             it, including squads created later.
+            {changing > 0 && ` It changes the voice of ${changing} ${changing === 1 ? 'squad' : 'squads'} now.`}
             {keeping.length > 0 &&
               ` ${keeping.map((s) => s.name).join(', ')} ${keeping.length === 1 ? 'keeps its' : 'keep their'} own voice setting.`}
           </p>

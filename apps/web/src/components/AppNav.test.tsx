@@ -349,6 +349,11 @@ describe('primary desktop navigation', () => {
     expect(isNavItemAllowed(item, () => true, true)).toBe(false)
   })
 
+  test('old chat bookmarks do not advertise the retired new chat action', () => {
+    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />, '/chat/agent-1')
+    expect(html).not.toContain('title="New chat"')
+  })
+
   test('does not advertise Chat or Schedules anywhere in the header', () => {
     const html = renderWithProviders(
       <AppHeader usePendingActions={useFixturePendingActions} VoiceCompanionButton={FixtureVoiceButton} />

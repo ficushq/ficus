@@ -13,6 +13,7 @@ import { AppHeader } from './AppNav'
 import { InboxPopupProvider } from './InboxPopupProvider'
 import { assistantQueries } from '../queryOptions'
 import { assistantQueryKeys } from '../queryKeys'
+import { agentChatPath } from '../lib/entityReference'
 
 test('the assistant nav button toggles the panel like its keyboard shortcut while explicit open stays idempotent', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -396,5 +397,104 @@ test('saved conversation rows show unread state, the latest update preview, and 
   } finally {
     await dom.cleanup()
     cache.clear()
+  }
+})
+
+async function renderAssistantChat(url: string) {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const system = {
+    id: 'system-agent',
+    squadId: null,
+    agentTypeId: 'manager',
+    status: 'idle',
+    metadata: { name: 'Root' },
+  }
+  for (const [key, value] of [
+    [queries.voice.status().queryKey, { enabled: false }],
+    [queries.squads.list().queryKey, []],
+    [queries.squads.allWorkStreams().queryKey, []],
+    [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
+    [queries.agents.detail('system-agent').queryKey, system],
+    [queries.agents.detail('worker').queryKey, { ...system, id: 'worker', squadId: 's1' }],
+    [queries.actions.pending().queryKey, []],
+    [integrationQueries.catalog().queryKey, { integrations: [] }],
+  ] as const)
+    cache.setQueryData(key, value)
+  const seen = { location: '', chatAgentId: undefined as string | undefined }
+  function Probe() {
+    const current = useLocation()
+    seen.location = current.pathname + current.search
+    return null
+  }
+  function Chat(props: { agentId?: string }) {
+    seen.chatAgentId = props.agentId
+    return <div data-agent-chat={props.agentId} />
+  }
+  const { root } = dom.createRoot()
+  await dom.act(async () =>
+    root.render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={[url]}>
+          <PermissionsProvider
+            usePermissions={() => ({
+              can: (p) => p === 'chat:send',
+              permissions: ['chat:send'],
+              isLoading: false,
+              isError: false,
+            })}
+          >
+            <UnifiedAssistant
+              dependencies={{ ConversationComponent: () => <div data-conversation />, ChatComponent: Chat as never }}
+            />
+            <Probe />
+          </PermissionsProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+  )
+  return {
+    seen,
+    cleanup: async () => {
+      await dom.cleanup()
+      cache.clear()
+    },
+  }
+}
+
+test("a squadless agent's chat link opens that agent's conversation in the Assistant", async () => {
+  const t = await renderAssistantChat(agentChatPath({ id: 'system-agent', squadId: null }))
+  try {
+    const panel = document.querySelector('[role="dialog"][aria-label="Assistant"]') as HTMLElement
+    expect(panel.hidden).toBe(false)
+    expect(t.seen.chatAgentId).toBe('system-agent')
+    expect(t.seen.location).toBe(agentChatPath({ id: 'system-agent', squadId: null }))
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('the old drawer link opens a squadless agent in the Assistant over the Feed', async () => {
+  const t = await renderAssistantChat('/settings?section=workflows&assistantChat=system-agent')
+  try {
+    const url = new URL(t.seen.location, 'http://localhost')
+    expect(url.pathname).toBe('/')
+    expect(url.searchParams.has('assistantChat')).toBe(false)
+    expect(url.searchParams.get('chat')).toBe('open')
+    expect(JSON.parse(url.searchParams.get('commandStack')!)).toEqual([
+      ['chat', 'system-agent', '', 'system-agent', ''],
+    ])
+    expect(t.seen.chatAgentId).toBe('system-agent')
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('the old drawer link to a squad agent opens the squad Chats tab', async () => {
+  const t = await renderAssistantChat('/settings?chat=open&assistantChat=worker')
+  try {
+    expect(t.seen.location).toBe('/squads/s1/agents?agent=worker')
+  } finally {
+    await t.cleanup()
   }
 })

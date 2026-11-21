@@ -8,7 +8,7 @@ import {
   type PublicVoiceProfileJson,
   type SquadPublicVoice,
 } from '@ficus/shared'
-import { db, squads } from '../../db'
+import { db, publicVoices, squads } from '../../db'
 import { PublicVoice } from '../../entities/PublicVoice'
 import { resolveInstanceDefaultVoice } from '../../lib/prompts/public-voice-prompt'
 
@@ -23,6 +23,43 @@ export async function describeProfiles(profiles: PublicVoice[]): Promise<PublicV
     assignedSquadCount: counts.get(profile.id) ?? 0,
     isInstanceDefault: profile.id === instanceDefaultId,
   }))
+}
+
+/** Stands in for the instance default while counting: only whether a squad falls through to it matters. */
+const INSTANCE_DEFAULT_PROBE: PublicVoiceProfile = {
+  id: 'instance-default-probe',
+  name: 'Instance default',
+  description: null,
+  base: 'Instance default.',
+  surfaces: {},
+  disabled: false,
+}
+
+/**
+ * How many squads are on the instance default, so a new default changes their voice: non-archived
+ * squads without a custom base and without a usable assigned profile (none, or a disabled one).
+ * Uses `resolvePublicVoice`, the same resolution prompts use, so the count cannot drift from it.
+ * Counts every squad on the instance; callers only ever see the number.
+ */
+export async function instanceDefaultSquadCount(): Promise<number> {
+  const rows = await db
+    .select({ layer: squads.publicVoice, assignedId: publicVoices.id, assignedDisabled: publicVoices.disabled })
+    .from(squads)
+    .leftJoin(publicVoices, eq(publicVoices.id, squads.publicVoiceId))
+    .where(isNull(squads.archivedAt))
+  let onDefault = 0
+  for (const row of rows) {
+    const assigned = row.assignedId
+      ? { ...INSTANCE_DEFAULT_PROBE, id: row.assignedId, disabled: Boolean(row.assignedDisabled) }
+      : null
+    const resolved = resolvePublicVoice({
+      squad: row.layer as SquadPublicVoice | null,
+      assigned,
+      instanceDefault: INSTANCE_DEFAULT_PROBE,
+    })
+    if (resolved.baseSource === 'instance') onDefault++
+  }
+  return onDefault
 }
 
 /**

@@ -195,6 +195,16 @@ export interface PublicVoiceInstanceDefault {
   fallback: PublicVoiceInstanceDefaultFallback | null
 }
 
+/** `GET` and `PUT /api/public-voices/settings/instance-default`: the instance default and how many squads use it. */
+export interface PublicVoiceInstanceDefaultSetting extends PublicVoiceInstanceDefault {
+  /**
+   * Non-archived squads on the instance default: no custom base and no usable assigned profile
+   * (none, or a disabled one). These are the squads a new instance default changes. A number only,
+   * counted across the whole instance whatever the caller can see.
+   */
+  squadCount: number
+}
+
 export interface ResolvedPublicVoice {
   base: string
   baseSource: PublicVoiceBaseSource

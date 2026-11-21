@@ -130,6 +130,7 @@ export { STORAGE_ALERT_HYSTERESIS_POINTS } from './storage'
 
 export * from './assistant-agent-types'
 export * from './entity-reference'
+export * from './agent-chat-path'
 export * from './custom-theme'
 export * from './theme-preferences'
 export * from './theme-preset'
