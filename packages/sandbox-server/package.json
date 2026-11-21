@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@ficus/shared": "workspace:*",
-    "bun-pty": "^0.6.0",
+    "bun-pty": "^0.6.1",
     "chokidar": "6.0.0",
     "micromatch": "^4.0.8"
   },
