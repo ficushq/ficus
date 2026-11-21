@@ -17,8 +17,8 @@ export async function resolveExecutionConcurrencyKey(
 ): Promise<{ provider: string; modelId?: string } | undefined> {
   try {
     const agent = await execution.mustGetAgent()
-    const agentType = await agent.mustGetAgentType()
-    const priorityList = await agent.getEffectiveModelSpec(agentType.model)
+    // Full resolution: a workflow worker runs its participant's tier or model, not its agent type's.
+    const priorityList = await agent.getEffectiveModelSpec()
     const { selected } = selectModelSpecForCurrentEnv(priorityList)
     const parsed = parseModelSpec(selected)
     return { provider: parsed.provider, modelId: parsed.modelId }

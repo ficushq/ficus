@@ -14,6 +14,7 @@ import {
   messageSearchQuerySchema,
 } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
+import { AgentModelApplyError, applyAgentModelNow } from '../services/agent/model-apply'
 import { withChatQueueState } from '../services/chat/queued-messages'
 import { replySuggestionsEnabled, withVisibleReplySuggestions } from '../services/reply-suggestions/visibility'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
@@ -425,8 +426,33 @@ export const agentsRouter = new Hono()
   .get('/:id', requireAgentReadPermission, async (c) => {
     const agent = await Agent.find(c.req.param('id'))
     if (!agent) return c.json({ error: 'Agent not found' }, 404)
-    return c.json(agent.toJson())
+    await agent.loadModelResolution()
+    // Clients offer agent edits (the model source control) only when this caller passes the PATCH guard.
+    const canUpdate = await hasEntityPermission(
+      c.get('identity'),
+      'agents:update',
+      agent.squadId ?? null,
+      agent.ownerUserId ?? null
+    )
+    return c.json({ ...agent.toJson(), canUpdate })
   })
+  // POST /api/agents/:id/model/apply — make the configured model take effect now, not next turn
+  .post(
+    '/:id/model/apply',
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
+    }),
+    async (c) => {
+      const agent = await Agent.find(c.req.param('id'))
+      if (!agent) return c.json({ error: 'Agent not found' }, 404)
+      try {
+        return c.json(await applyAgentModelNow(agent))
+      } catch (error) {
+        if (error instanceof AgentModelApplyError) return c.json({ error: error.message }, error.status)
+        throw error
+      }
+    }
+  )
   // PATCH /api/agents/:id — update agent
   .patch(
     '/:id',
@@ -441,8 +467,29 @@ export const agentsRouter = new Hono()
         name?: string
         persist?: boolean
         modelOverride?: string | null
+        tierOverride?: string | null
         machineId?: string | null
       }>()
+      // An agent has at most one override. Empty strings clear, like null.
+      const modelOverride =
+        body.modelOverride === undefined
+          ? undefined
+          : typeof body.modelOverride === 'string'
+            ? body.modelOverride.trim() || null
+            : null
+      const tierOverride =
+        body.tierOverride === undefined
+          ? undefined
+          : typeof body.tierOverride === 'string'
+            ? body.tierOverride.trim() || null
+            : null
+      if (
+        (body.modelOverride != null && typeof body.modelOverride !== 'string') ||
+        (body.tierOverride != null && typeof body.tierOverride !== 'string')
+      )
+        return c.json({ error: 'modelOverride and tierOverride must be strings or null' }, 400)
+      if (modelOverride && tierOverride)
+        return c.json({ error: 'Set either modelOverride or tierOverride, not both' }, 400)
       // `machineId` present (even null) means the caller intends to (un)pin. This
       // PATCH writes the pin attribute only (agents:update scope); it does NOT
       // migrate a live box — the box moves on its next ensure via box-manager's
@@ -455,17 +502,20 @@ export const agentsRouter = new Hono()
         if (
           body.name !== undefined ||
           body.persist !== undefined ||
-          body.modelOverride !== undefined ||
+          modelOverride !== undefined ||
+          tierOverride !== undefined ||
           setsMachineId
         ) {
           await agent.update({
             ...(body.name !== undefined ? { name: body.name } : {}),
             ...(body.persist !== undefined ? { persist: body.persist } : {}),
-            ...(body.modelOverride !== undefined ? { modelOverride: body.modelOverride } : {}),
+            ...(modelOverride !== undefined ? { modelOverride } : {}),
+            ...(tierOverride !== undefined ? { tierOverride } : {}),
             ...(setsMachineId ? { machineId: body.machineId ?? null } : {}),
           })
         }
 
+        await agent.loadModelResolution()
         return c.json(agent.toJson())
       } catch (error) {
         return c.json({ error: publicErrorMessage(error as Error) }, 400)

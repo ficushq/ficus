@@ -321,6 +321,7 @@ export function makeAgent(overrides: Partial<Agent> = {}): Agent {
     status: 'active' as AgentStatus,
     persist: false,
     modelOverride: null,
+    tierOverride: null,
     selectedModel: null,
     metadata: null,
     context: {},

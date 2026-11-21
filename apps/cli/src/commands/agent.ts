@@ -130,30 +130,52 @@ export function registerAgentCommands(program: Command) {
       }
     })
 
-  // ficus agent model <id> [spec] [--clear]
+  // ficus agent model <id> [spec] [--tier <slug>] [--clear] [--now]
   agent
     .command('model <id> [spec]')
     .description(
-      "Override the model an agent runs at runtime (e.g. 'openai:gpt-5.5:high'). Comma-separated for a fallback priority list. Use --clear to remove the override and fall back to the agent-type default."
+      "Override the model an agent runs (e.g. 'openai:gpt-5.5:high'; comma-separated for a fallback priority list), or with --tier make it follow a model tier's current chain. An agent has one override at most: setting a model clears its tier and vice versa. --clear removes both, so the agent runs its workflow participant's or agent type's model again. Changes apply from the agent's next turn; add --now to switch a running agent immediately."
     )
-    .option('-c, --clear', 'Clear the override and fall back to the agent-type default')
+    .option('-t, --tier <slug>', "Follow this model tier's chain (clears any model override)")
+    .option('-c, --clear', "Clear the model and tier overrides; the agent's workflow or agent type model applies")
+    .option('--now', 'Switch to the configured model now instead of from the next turn')
     .action(async (id, spec, options) => {
       try {
+        if (spec && options.tier) {
+          outputError(new Error('Set either a model spec or --tier, not both'))
+          return
+        }
+        if (options.clear && (spec || options.tier)) {
+          outputError(new Error('Cannot combine --clear with a model spec or --tier'))
+          return
+        }
+        let body: Record<string, string | null> | undefined
+        let message = ''
         if (options.clear) {
-          if (spec) {
-            outputError(new Error('Cannot specify both a model spec and --clear'))
-            return
-          }
-          const result = await apiPatch<any>(`/api/agents/${id}`, { modelOverride: null })
-          output(result, `Cleared model override for agent ${id}`)
+          body = { modelOverride: null, tierOverride: null }
+          message = `Cleared model and tier overrides for agent ${id}`
+        } else if (options.tier) {
+          body = { tierOverride: options.tier }
+          message = `Set tier override for agent ${id} to ${options.tier}`
+        } else if (spec) {
+          body = { modelOverride: spec }
+          message = `Set model override for agent ${id} to ${spec}`
+        } else if (!options.now) {
+          outputError(
+            new Error('A model spec or --tier is required (or use --clear to remove overrides, or --now to apply)')
+          )
           return
         }
-        if (!spec) {
-          outputError(new Error('A model spec is required (or use --clear to remove the override)'))
+        const updated = body ? await apiPatch<any>(`/api/agents/${id}`, body) : undefined
+        if (!options.now) {
+          output(updated, `${message}; applies from its next turn`)
           return
         }
-        const result = await apiPatch<any>(`/api/agents/${id}`, { modelOverride: spec })
-        output(result, `Set model override for agent ${id} to ${spec}`)
+        const applied = await apiPost<{ code: string; message: string }>(`/api/agents/${id}/model/apply`, {})
+        output(
+          updated ? { agent: updated, apply: applied } : applied,
+          [message, applied.message].filter(Boolean).join('. ')
+        )
       } catch (error) {
         outputError(error as Error)
       }

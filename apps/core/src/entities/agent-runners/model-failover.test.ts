@@ -132,6 +132,170 @@ describe('ModelFailoverCoordinator', () => {
     expect(sessionRead).toBe(false)
     expect(resent).toBe(false)
   })
+  describe('applyConfiguredChain', () => {
+    function liveSession() {
+      const calls = { setModel: [] as Array<{ provider: string; id: string }>, thinking: [] as string[] }
+      const session = {
+        accountId: undefined as string | undefined,
+        authBackend: undefined,
+        selectedSpec: 'anthropic:claude-sonnet-4-5' as string | undefined,
+        pi: {
+          setModel: async (model: { provider: string; id: string }) => {
+            calls.setModel.push(model)
+          },
+          setThinkingLevel: (level: string) => calls.thinking.push(level),
+        },
+      }
+      const pushed: Array<{ type: string; text?: string }> = []
+      const coordinator = new ModelFailoverCoordinator(
+        makeDeps({
+          getSession: () => session as never,
+          getBuffer: () => ({ push: (event: { type: string; text?: string }) => pushed.push(event) }) as never,
+        })
+      )
+      return { session, calls, pushed, coordinator }
+    }
+
+    it('switches the live session in place to what the new chain selects, without resending the turn', async () => {
+      const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+        selected: 'anthropic:claude-opus-4-5:high',
+        candidates: [],
+      })
+      try {
+        const { session, calls, pushed, coordinator } = liveSession()
+        await coordinator.beginTurn('anthropic:claude-sonnet-4-5', 'anthropic:claude-sonnet-4-5')
+
+        const result = await coordinator.applyConfiguredChain('anthropic:claude-opus-4-5:high,zai:glm-5-turbo')
+
+        expect(result).toEqual({
+          switched: true,
+          selected: 'anthropic:claude-opus-4-5:high',
+          previous: 'anthropic:claude-sonnet-4-5',
+        })
+        expect(selection).toHaveBeenCalledWith(
+          'anthropic:claude-opus-4-5:high,zai:glm-5-turbo',
+          'anthropic:claude-sonnet-4-5'
+        )
+        expect(calls.setModel.map((model) => `${model.provider}:${model.id}`)).toEqual(['anthropic:claude-opus-4-5'])
+        expect(calls.thinking).toEqual(['high'])
+        expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-opus-4-5:high')
+        expect(session.selectedSpec).toBe('anthropic:claude-opus-4-5:high')
+        // Later failover in this turn follows the new chain.
+        expect(coordinator.priorityList).toBe('anthropic:claude-opus-4-5:high,zai:glm-5-turbo')
+        expect(pushed).toEqual([
+          {
+            type: 'system_message',
+            text: 'Model switched to anthropic:claude-opus-4-5:high (from anthropic:claude-sonnet-4-5).',
+          },
+        ])
+      } finally {
+        selection.mockRestore()
+      }
+    })
+
+    it('keeps the current model when the new chain still selects it', async () => {
+      const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+        selected: 'anthropic:claude-sonnet-4-5',
+        candidates: [],
+      })
+      try {
+        const { calls, pushed, coordinator } = liveSession()
+        await coordinator.beginTurn('anthropic:claude-sonnet-4-5', 'anthropic:claude-sonnet-4-5')
+
+        expect(await coordinator.applyConfiguredChain('zai:glm-5-turbo,anthropic:claude-sonnet-4-5')).toEqual({
+          switched: false,
+          selected: 'anthropic:claude-sonnet-4-5',
+          previous: 'anthropic:claude-sonnet-4-5',
+        })
+        expect(calls.setModel).toEqual([])
+        expect(pushed).toEqual([])
+        expect(coordinator.priorityList).toBe('zai:glm-5-turbo,anthropic:claude-sonnet-4-5')
+      } finally {
+        selection.mockRestore()
+      }
+    })
+
+    it('serializes with provider failover, which then resends on the newly applied model', async () => {
+      const applySelection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+        selected: 'anthropic:claude-opus-4-5',
+        candidates: [],
+      })
+      const failoverSelection = spyOn(modelSelection, 'selectModelSpecForCurrentEnv').mockReturnValue({
+        selected: 'zai:glm-5-turbo',
+        candidates: [],
+      })
+      try {
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => (release = resolve))
+        const order: string[] = []
+        let resends = 0
+        const session = {
+          accountId: undefined,
+          authBackend: undefined,
+          selectedSpec: 'anthropic:claude-sonnet-4-5',
+          pi: {
+            getContextUsage: () => undefined,
+            setModel: async (model: { provider: string; id: string }) => {
+              order.push(`start ${model.id}`)
+              if (model.id === 'claude-opus-4-5') await gate
+              order.push(`end ${model.id}`)
+            },
+            setThinkingLevel: () => {},
+          },
+        }
+        const coordinator = new ModelFailoverCoordinator(
+          makeDeps({
+            getSession: () => session as never,
+            getBuffer: () => ({ push: () => {} }) as never,
+            getCollector: () => ({ reset: () => {} }) as never,
+            resendPrompt: async () => {
+              resends += 1
+            },
+            classifyError: () => ({ kind: 'capacity' }),
+          })
+        )
+        await coordinator.beginTurn('anthropic:claude-sonnet-4-5,zai:glm-5-turbo', 'anthropic:claude-sonnet-4-5')
+
+        const applying = coordinator.applyConfiguredChain('anthropic:claude-opus-4-5')
+        const failingOver = coordinator.attempt(new Error('overloaded'))
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        // The failover waits for the in-flight switch instead of interleaving with it.
+        expect(order).toEqual(['start claude-opus-4-5'])
+        release()
+
+        expect((await applying).switched).toBe(true)
+        expect(await failingOver).toBe(true)
+        expect(order).toEqual(['start claude-opus-4-5', 'end claude-opus-4-5'])
+        expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-opus-4-5')
+        expect(resends).toBe(1)
+      } finally {
+        applySelection.mockRestore()
+        failoverSelection.mockRestore()
+      }
+    })
+
+    it('leaves the session on its model when the switch is refused', async () => {
+      const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+        selected: 'anthropic:claude-opus-4-5',
+        candidates: [],
+      })
+      try {
+        const { session, coordinator } = liveSession()
+        session.pi.setModel = async () => {
+          throw new Error('No API key for anthropic/claude-opus-4-5')
+        }
+        await coordinator.beginTurn('anthropic:claude-sonnet-4-5', 'anthropic:claude-sonnet-4-5')
+
+        await expect(coordinator.applyConfiguredChain('anthropic:claude-opus-4-5')).rejects.toThrow('No API key')
+        expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-sonnet-4-5')
+        expect(session.selectedSpec).toBe('anthropic:claude-sonnet-4-5')
+        // It keeps failing over along its old chain.
+        expect(coordinator.priorityList).toBe('anthropic:claude-sonnet-4-5')
+      } finally {
+        selection.mockRestore()
+      }
+    })
+  })
 })
 
 it('moves a Claude Code session-limit failure to the next Codex model and cools only that account', async () => {

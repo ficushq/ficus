@@ -417,6 +417,90 @@ describe('agents service', () => {
     })
   })
 
+  describe('tier override', () => {
+    let tierSlug: string
+
+    beforeEach(async () => {
+      tierSlug = `${testPrefix}-tier`
+      await db
+        .insert(modelTiers)
+        .values({ slug: tierSlug, label: 'Override fixture', chain: 'anthropic:claude-opus-4-5' })
+    })
+
+    afterEach(async () => {
+      await db.delete(modelTiers).where(eq(modelTiers.slug, tierSlug))
+    })
+
+    it("follows the tier's current chain from its next resolution, without touching the agent", async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      await agent.update({ tierOverride: tierSlug })
+      expect(await agent.getEffectiveModelSpec()).toBe('anthropic:claude-opus-4-5')
+      // The runner's own base chain (its agent type or workflow participant) does not win over it.
+      expect(await agent.getEffectiveModelSpec('anthropic:claude-sonnet-4-5')).toBe('anthropic:claude-opus-4-5')
+
+      const before = (await db.select().from(agents).where(eq(agents.id, agent.id)))[0]!
+      await db
+        .update(modelTiers)
+        .set({ chain: 'anthropic:claude-haiku-4-5,anthropic:claude-opus-4-5' })
+        .where(eq(modelTiers.slug, tierSlug))
+      expect(await agent.getEffectiveModelSpec()).toBe('anthropic:claude-haiku-4-5,anthropic:claude-opus-4-5')
+      expect((await db.select().from(agents).where(eq(agents.id, agent.id)))[0]!.updatedAt).toEqual(before.updatedAt)
+
+      await agent.loadModelResolution()
+      expect(agent.toJson()).toMatchObject({
+        modelOverride: null,
+        tierOverride: tierSlug,
+        configuredModel: 'anthropic:claude-haiku-4-5,anthropic:claude-opus-4-5',
+        modelResolution: {
+          chain: 'anthropic:claude-haiku-4-5,anthropic:claude-opus-4-5',
+          source: { kind: 'agent-tier-override', tier: tierSlug, tierLabel: 'Override fixture' },
+        },
+      })
+    })
+
+    it('keeps one override at most: setting either clears the other', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId, modelOverride: 'anthropic:claude-haiku-4-5' })
+      await agent.update({ tierOverride: tierSlug })
+      expect([agent.modelOverride, agent.tierOverride]).toEqual([null, tierSlug])
+
+      await agent.update({ modelOverride: 'anthropic:claude-haiku-4-5' })
+      expect([agent.modelOverride, agent.tierOverride]).toEqual(['anthropic:claude-haiku-4-5', null])
+
+      await expect(
+        agent.update({ modelOverride: 'anthropic:claude-haiku-4-5', tierOverride: tierSlug })
+      ).rejects.toThrow('not both')
+
+      await agent.update({ modelOverride: null, tierOverride: null })
+      expect(await agent.getEffectiveModelSpec()).toBe('anthropic:claude-sonnet-4-5')
+    })
+
+    it('rejects unknown and disabled tiers at write time', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      await expect(agent.update({ tierOverride: `${testPrefix}-missing` })).rejects.toThrow(
+        'does not exist or is disabled'
+      )
+      await db.update(modelTiers).set({ disabled: true }).where(eq(modelTiers.slug, tierSlug))
+      await expect(agent.update({ tierOverride: tierSlug })).rejects.toThrow('does not exist or is disabled')
+      expect((await Agent.mustFind(agent.id)).tierOverride).toBeNull()
+    })
+
+    it('fails the next turn clearly when a stored tier is later disabled, without blocking other edits', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId, tierOverride: tierSlug })
+      await db.update(modelTiers).set({ disabled: true }).where(eq(modelTiers.slug, tierSlug))
+
+      await expect(agent.getEffectiveModelSpec()).rejects.toThrow(
+        `Model tier '${tierSlug}' does not exist or is disabled`
+      )
+      await agent.update({ name: 'still-editable' })
+      await agent.loadModelResolution()
+      expect(agent.toJson().modelResolution).toMatchObject({
+        chain: '',
+        source: { kind: 'agent-tier-override', tier: tierSlug },
+        error: `Model tier '${tierSlug}' does not exist or is disabled`,
+      })
+    })
+  })
+
   describe('Agent serialization', () => {
     it('omits cached relation fields from JSON', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })

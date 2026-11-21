@@ -36,7 +36,9 @@ import { ARTIFACT_BUILDER_AGENT_TYPE_ID, ARTIFACT_BUILDER_RUNNER_TYPE } from './
 import { generateAgentName } from '../lib/utils/agent-names'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { AgentType } from './AgentType'
-import { resolveAgentTypeChain } from '../services/model-selection/model-tier-resolution'
+import { requireAgentModelChain } from '../services/model-selection/agent-model-resolution'
+import { resolveAgentModel } from '../services/model-selection/agent-model-sources'
+import type { AgentModelResolution } from '@ficus/shared'
 import { SUBAGENT_RUNNER_TYPE } from './Subagent'
 
 // Forward declaration to avoid circular import at module load time
@@ -166,6 +168,7 @@ export interface CreateAgentInput {
   metadata?: Record<string, unknown>
   persist?: boolean
   modelOverride?: string | null
+  tierOverride?: string | null
 }
 
 export interface UpdateAgentInput {
@@ -176,7 +179,10 @@ export interface UpdateAgentInput {
   questionData?: QuestionData | null
   sessionUsage?: SessionUsage | null
   persist?: boolean
+  /** Setting a non-null model override clears the tier override. */
   modelOverride?: string | null
+  /** Setting a non-null tier override clears the model override. */
+  tierOverride?: string | null
   dormantAt?: Date | null
   terminatedAt?: Date | null
   pendingDormancyAt?: Date | null
@@ -273,6 +279,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   declare status: AgentStatus
   declare persist: boolean
   declare modelOverride: string | null
+  declare tierOverride: string | null
   declare selectedModel: string | null
   declare metadata: AgentMetadata | null
   declare context: AgentContext
@@ -297,6 +304,8 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   // Relation cache (use getters to load and cache)
   private _agentType?: AgentType | null
   private _squad?: Squad | null
+  /** Set by loadModelResolution for single-agent responses; serialized by toJson. */
+  private _modelResolution?: AgentModelResolution
 
   constructor(data: AgentRow) {
     super()
@@ -390,6 +399,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       context: input.context ?? {},
       persist,
       modelOverride: input.modelOverride ?? null,
+      tierOverride: input.modelOverride ? null : (input.tierOverride ?? null),
     }
     // Internal ingress gate: the guard and insert share one transaction. Provider I/O must
     // finish before this callback; ordinary creation keeps its existing behavior.
@@ -406,7 +416,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return agent
   }
 
-  static async validateModelOverrides(input: { agentTypeId: string; modelOverride?: string | null }): Promise<void> {
+  static async validateModelOverrides(input: {
+    agentTypeId: string
+    modelOverride?: string | null
+    tierOverride?: string | null
+  }): Promise<void> {
     return validateModelOverrides(input)
   }
 
@@ -590,9 +604,23 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       throw new Error('Dormant agents require an explicit wake source')
     }
 
-    await Agent.validateModelOverrides({ ...existingAgent, ...updates })
+    // One override at most: a new model override clears the tier override, and vice versa.
+    if (updates.modelOverride && updates.tierOverride)
+      throw new Error('Set either a model override or a tier override, not both')
+    const overrideUpdates: Pick<UpdateAgentInput, 'modelOverride' | 'tierOverride'> = updates.modelOverride
+      ? { tierOverride: null }
+      : updates.tierOverride
+        ? { modelOverride: null }
+        : {}
+    // Validate only what this update writes: a stored tier that has since been disabled must not block
+    // an unrelated rename, and fails the agent's next turn instead.
+    await Agent.validateModelOverrides({
+      agentTypeId: existingAgent.agentTypeId,
+      ...(updates.modelOverride !== undefined ? { modelOverride: updates.modelOverride } : {}),
+      ...(updates.tierOverride !== undefined ? { tierOverride: updates.tierOverride } : {}),
+    })
 
-    const { name, purpose, metadata, ...rest } = updates
+    const { name, purpose, metadata, ...rest } = { ...updates, ...overrideUpdates }
 
     const metadataPatch: Record<string, unknown> = { ...(metadata ?? {}) }
     if (name !== undefined) metadataPatch.name = name
@@ -658,9 +686,57 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return this
   }
 
-  async getEffectiveModelSpec(agentTypeModel?: string): Promise<string> {
-    if (agentTypeModel?.trim()) return composeAgentModelSpec(agentTypeModel, this.modelOverride)
-    return resolveAgentTypeChain(await this.mustGetAgentType(), this.modelOverride)
+  /**
+   * The agent's model chain and where it comes from, without throwing: a source that cannot resolve
+   * (a missing or disabled selected tier) returns an empty chain with `error`. Order: agent model
+   * override, agent tier override, workflow participant tier or model, agent type model, agent type
+   * tier, instance default.
+   */
+  async describeModel(): Promise<AgentModelResolution> {
+    return resolveAgentModel(this, () => this.mustGetAgentType())
+  }
+
+  /**
+   * The model chain the agent's next session uses.
+   *
+   * `baseModel` is a chain the caller already resolved for the layers below the agent's own
+   * overrides (a runner's workflow participant or agent type chain). The agent's model or tier
+   * override still wins over it. Without it, every layer resolves here, including the agent's
+   * workflow binding.
+   */
+  async getEffectiveModelSpec(baseModel?: string): Promise<string> {
+    if (baseModel?.trim() && !this.modelOverride?.trim() && !this.tierOverride?.trim())
+      return composeAgentModelSpec(baseModel)
+    return requireAgentModelChain(await this.describeModel())
+  }
+
+  /**
+   * Resolve the model for a single-agent response: the chain, its source and the candidate the next
+   * turn would select. toJson then includes it as `modelResolution`.
+   */
+  async loadModelResolution(): Promise<this> {
+    let resolution: AgentModelResolution
+    try {
+      resolution = await this.describeModel()
+    } catch {
+      // A missing agent type row (or a failed lookup) must not break reading or editing the agent;
+      // the response then carries no resolution and clients fall back to the agent type.
+      this._modelResolution = undefined
+      return this
+    }
+    if (resolution.chain && !resolution.error) {
+      try {
+        const { selectModelSpecForCurrentEnvWithSwitchBack } = await import('../services/model-selection')
+        resolution.nextSelectedModel = selectModelSpecForCurrentEnvWithSwitchBack(
+          resolution.chain,
+          this.selectedModel ?? undefined
+        ).selected
+      } catch {
+        // Nothing usable right now: the next turn reports why; the response stays serializable.
+      }
+    }
+    this._modelResolution = resolution
+    return this
   }
 
   /**
@@ -670,7 +746,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    */
   getSelectedOrConfiguredModelSpec(agentTypeModel?: string): string | undefined {
     if (this.selectedModel) return this.selectedModel
-    const configured = this.modelOverride?.trim() || agentTypeModel?.trim() || this._agentType?.model?.trim()
+    const configured =
+      this.modelOverride?.trim() ||
+      this._modelResolution?.chain ||
+      agentTypeModel?.trim() ||
+      this._agentType?.model?.trim()
     if (!configured) return undefined
     const candidates = configured
       .split(',')
@@ -2266,7 +2346,10 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       status: this.status,
       persist: this.persist,
       modelOverride: this.modelOverride,
-      configuredModel: this.modelOverride?.trim() || this._agentType?.model?.trim() || undefined,
+      tierOverride: this.tierOverride ?? null,
+      configuredModel:
+        this._modelResolution?.chain || this.modelOverride?.trim() || this._agentType?.model?.trim() || undefined,
+      ...(this._modelResolution ? { modelResolution: this._modelResolution } : {}),
       selectedModel: this.selectedModel ?? undefined,
       selectedModelSupportsImages: imageSupport.supportsImages,
       ...(imageSupport.error ? { modelSpecWarning: imageSupport.error } : {}),
@@ -2293,7 +2376,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
 // ---------------------------------------------------------------------------
 
 export function composeAgentModelSpec(agentTypeModel: string, modelOverride?: string | null): string {
-  const spec = modelOverride ?? agentTypeModel
+  const spec = modelOverride?.trim() || agentTypeModel
   validateModelSpecList(spec)
   return spec
 }

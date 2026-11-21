@@ -23,6 +23,11 @@ export interface ActiveSession {
   agentId: string
   executionId: string
   isCompacting?: boolean
+  /**
+   * Apply a newly configured model chain to this live session now (the runner's failover
+   * coordinator; see ModelFailoverCoordinator.applyConfiguredChain).
+   */
+  applyModel?: (priorityList: string) => Promise<{ switched: boolean; selected: string; previous?: string }>
 }
 
 // ---------------------------------------------------------------------------

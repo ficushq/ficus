@@ -393,6 +393,57 @@ export interface AgentMetadata {
 /** `GET /api/agents?view=summary`: enough to place an agent in a list, and nothing heavy. */
 export type AgentSummary = Pick<Agent, 'id' | 'agentTypeId' | 'squadId' | 'parentAgentId' | 'status'>
 
+/**
+ * Where an agent's model chain comes from, in resolution order: an agent model override, an agent
+ * tier override, a workflow participant's tier or model, the agent type's model, the agent type's
+ * tier, then the instance default. A subagent that inherited its parent's chain reports
+ * `inherited-parent-chain` instead of `agent-model-override`.
+ */
+export type AgentModelSourceKind =
+  | 'agent-model-override'
+  | 'inherited-parent-chain'
+  | 'agent-tier-override'
+  | 'workflow-tier'
+  | 'workflow-model'
+  | 'agent-type-model'
+  | 'agent-type-tier'
+  | 'instance-default'
+
+export interface AgentModelSource {
+  kind: AgentModelSourceKind
+  /** Tier slug, for the tier kinds. */
+  tier?: string
+  /** Tier display label, when the tier exists. */
+  tierLabel?: string
+}
+
+/** An agent's resolved model chain and its source, as its next turn would use it. */
+export interface AgentModelResolution {
+  /** Comma-separated priority list. Empty when the source cannot resolve (see `error`). */
+  chain: string
+  source: AgentModelSource
+  /** Why the chain cannot resolve, for example a disabled tier. The agent's next turn fails with it. */
+  error?: string
+  /**
+   * The candidate the agent's next turn would select, given the one it uses now. Absent when nothing
+   * is usable or the chain cannot resolve.
+   */
+  nextSelectedModel?: string
+}
+
+/** Response of `POST /api/agents/:id/model/apply`. */
+export interface AgentModelApplyResult {
+  /**
+   * `switched`: the model changed now (a running turn uses it from its next model call).
+   * `unchanged`: the agent already uses the model its configuration selects.
+   * `pending`: the running turn did not confirm in time; the new model applies from the next turn.
+   */
+  code: 'switched' | 'unchanged' | 'pending'
+  selectedModel?: string
+  previousModel?: string
+  message: string
+}
+
 export interface Agent {
   id: string
   agentTypeId: string
@@ -400,9 +451,19 @@ export interface Agent {
   parentAgentId: string | null
   status: AgentStatus
   persist: boolean
+  /** Explicit per-agent model spec or comma-separated priority list. Mutually exclusive with `tierOverride`. */
   modelOverride: string | null
-  /** The configured model priority list (agent type default + override). May be a comma-separated list. */
+  /** Per-agent model tier slug; the agent follows that tier's current chain. Mutually exclusive with `modelOverride`. */
+  tierOverride?: string | null
+  /** The configured model priority list (the resolved chain when `modelResolution` is present). */
   configuredModel?: string
+  /** The resolved chain and its source. Present on single-agent responses (`GET /api/agents/:id`, `PATCH`). */
+  modelResolution?: AgentModelResolution
+  /**
+   * Whether the caller may change this agent (`agents:update`, or owning a private agent). Present only on
+   * `GET /api/agents/:id`.
+   */
+  canUpdate?: boolean
   /** The actually-selected single model spec in use (after fallback). May differ from configuredModel when a priority list is configured. */
   selectedModel?: string
   /** Whether the selected/effective model accepts image input according to the Pi registry. */

@@ -26,18 +26,43 @@ An agent is a persistent instance of an agent type. It owns its identity, conver
 
 ### Schema
 
-| Column          | Type         | Description                                       |
-| --------------- | ------------ | ------------------------------------------------- |
-| `id`            | UUID         | Primary key                                       |
-| `agent_type_id` | varchar(100) | FK → `agent_types`                                |
-| `status`        | enum         | Runtime states plus `dormant` and `terminated`    |
-| `context`       | JSONB        | Type-specific metadata (see below)                |
-| `question_data` | JSONB        | Pending questions when `waiting-input`            |
-| `session_usage` | JSONB        | Accumulated token/cost usage                      |
-| `dormant_at`    | timestamp    | Audit/cutoff time for the current dormant episode |
-| `terminated_at` | timestamp    | Audit time for irreversible final termination     |
-| `created_at`    | timestamp    |                                                   |
-| `updated_at`    | timestamp    |                                                   |
+| Column           | Type         | Description                                       |
+| ---------------- | ------------ | ------------------------------------------------- |
+| `id`             | UUID         | Primary key                                       |
+| `agent_type_id`  | varchar(100) | FK → `agent_types`                                |
+| `status`         | enum         | Runtime states plus `dormant` and `terminated`    |
+| `context`        | JSONB        | Type-specific metadata (see below)                |
+| `question_data`  | JSONB        | Pending questions when `waiting-input`            |
+| `session_usage`  | JSONB        | Accumulated token/cost usage                      |
+| `model_override` | varchar(500) | Per-agent model spec or priority list             |
+| `tier_override`  | varchar(100) | Per-agent model tier slug (see below)             |
+| `selected_model` | varchar(500) | The candidate in use after priority-list fallback |
+| `dormant_at`     | timestamp    | Audit/cutoff time for the current dormant episode |
+| `terminated_at`  | timestamp    | Audit time for irreversible final termination     |
+| `created_at`     | timestamp    |                                                   |
+| `updated_at`     | timestamp    |                                                   |
+
+### Model selection
+
+An agent's model chain resolves in this order, at every session start and turn start:
+
+1. its **model override** (`model_override`, a spec or comma-separated priority list);
+2. its **tier override** (`tier_override`, a model tier slug);
+3. its workflow participant's tier, or the model frozen in the workflow binding snapshot;
+4. its agent type's model;
+5. its agent type's tier;
+6. the instance default (`DEFAULT_MODEL`).
+
+A subagent dispatched with `inheritModel` stores its parent's resolved chain as its model override and reports it as an inherited parent chain. `Agent.describeModel()` returns the chain and its source; `getEffectiveModelSpec()` without an argument resolves every layer, so compaction, session reset, provider auto-restart, concurrency accounting and subagent inheritance all see a workflow worker's participant tier. Runners pass their own resolved workflow or agent type chain as the base, and the agent's overrides still win over it.
+
+An agent has one override at most. `PATCH /api/agents/:id` takes `modelOverride` and `tierOverride`; setting one to a value clears the other, sending both values is a 400, and `null` (or an empty string) clears. A tier override stores the slug, not its chain, so edits to the tier apply from the agent's next turn. Unknown or disabled tiers are rejected when written. A tier that is disabled or deleted later fails the agent's next turn with the same error a workflow tier gives; it never falls back silently. An agent type's own tier keeps its older behavior of falling back to the instance default.
+
+Overrides apply from the agent's next turn and never interrupt a running one. `POST /api/agents/:id/model/apply` (`agents:update`) makes the configured model take effect now:
+
+- With a running turn, the API emits `agent.model-apply-requested` on the event bus rather than an `agent_control` action, because a worker that predates it treats an unknown control action as a stop and ignores an unknown event. The worker that owns the execution re-resolves the chain and calls the runner's failover coordinator (`ModelFailoverCoordinator.applyConfiguredChain`). It picks the candidate the next turn would pick, then switches the live Pi session in place with `setModel` and the model's thinking level, keeping the conversation. It also projects credentials for the new provider, records `selected_model`, moves the concurrency slot to the new provider and model, and posts a system message. Pi reads the session model on every request and checks the compaction threshold against the new model before each turn, so the turn uses the new model from its next model call and compacts first when the context is over the new model's threshold. The API waits up to 10 seconds for the worker's `agent.model-applied` acknowledgement and otherwise reports `pending`.
+- Without a running turn, the API selects the candidate the next session would pick and writes `selected_model`, so the next session starts on it. Pi checks compaction against that model before the first request.
+
+`GET /api/agents/:id` includes `modelResolution` (`chain`, `source`, an `error` when the source cannot resolve, and `nextSelectedModel`) and `canUpdate`. The web Agent info tab shows the source and, for callers with `agents:update`, a Default, Tier or Custom model control, plus a **Switch now** button while `nextSelectedModel` differs from the active model. The CLI equivalent is `ficus agent model <id> <spec> | --tier <slug> | --clear [--now]`.
 
 ### Status States
 
@@ -496,7 +521,9 @@ All event payloads are typed in `EventMap` in `packages/shared/src/events.ts`. W
 
 ```
 GET    /api/agents                     — List agents (filter by type, status)
-GET    /api/agents/:id                 — Get agent details
+GET    /api/agents/:id                 — Get agent details, with its model resolution and canUpdate
+PATCH  /api/agents/:id                 — Update name, persist, modelOverride or tierOverride, machineId
+POST   /api/agents/:id/model/apply     — Switch to the configured model now instead of from the next turn
 GET    /api/agents/:id/stream          — SSE stream (proxy from worker)
 GET    /api/agents/:id/active          — Get active execution
 GET    /api/agents/:id/executions      — List executions

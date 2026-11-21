@@ -1,5 +1,5 @@
 // Re-exports — public API
-export { handleControlSignal } from './control-signals'
+export { handleControlSignal, handleModelApplyRequest } from './control-signals'
 export {
   getActiveSessionCount,
   isSessionActive,

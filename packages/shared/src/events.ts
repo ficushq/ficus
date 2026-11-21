@@ -232,6 +232,34 @@ export type EventMap = {
     code?: string
   }
 
+  /**
+   * Ask the worker that runs `executionId` to switch its live session to the agent's configured
+   * model now. An event rather than an `agent_control` action, so a worker that predates it ignores
+   * it instead of treating an unknown control action as a stop.
+   */
+  'agent.model-apply-requested': {
+    agentId: string
+    executionId: string
+    requestId: string
+    expiresAt: number
+  }
+
+  /**
+   * The owning worker's answer to `agent.model-apply-requested`. API waiters require the exact
+   * request and execution identity. `no_session`: the worker holds the execution but has no live
+   * session to switch yet.
+   */
+  'agent.model-applied': {
+    agentId: string
+    executionId: string
+    requestId: string
+    ok: boolean
+    code: 'switched' | 'unchanged' | 'no_session' | 'error'
+    selectedModel?: string
+    previousModel?: string
+    error?: string
+  }
+
   'agent.queue-message-updated': {
     agentId: string
     executionId: string

@@ -2152,6 +2152,19 @@ test('action center human gates use review permission and assigned reviewer filt
   expect((await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).canRespond).toBe(false)
 })
 
+test('a worker without a participant tier runs the snapshot model as the workflow model, not an agent override', async () => {
+  const id = await create('active')
+  const binding = (await bindings(id))[0]!
+  expect(binding.agentSnapshot).toMatchObject({ model: 'anthropic:claude-sonnet-4-5', tier: null })
+  const worker = await Agent.mustFind(binding.agentId)
+  expect(worker.modelOverride).toBeNull()
+  expect(await worker.describeModel()).toEqual({
+    chain: 'anthropic:claude-sonnet-4-5',
+    source: { kind: 'workflow-model' },
+  })
+  expect(await worker.getEffectiveModelSpec()).toBe('anthropic:claude-sonnet-4-5')
+})
+
 test('participant tier resolves for each execution without changing the snapshotted role or current runner', async () => {
   const slug = prefix + '-deep'
   const initial = 'anthropic:claude-haiku-4-5'
@@ -2173,12 +2186,26 @@ test('participant tier resolves for each execution without changing the snapshot
     const runningType = (await flowAgentType(worker.id))!
     expect(runningType.model).toBe(updated)
     expect(await worker.getEffectiveModelSpec(runningType.model)).toBe(updated)
+    // Callers without the runner's type (compaction, reset, provider auto-restart, the info tab)
+    // resolve the participant's tier, not the agent type's own model.
+    expect(await worker.getEffectiveModelSpec()).toBe(updated)
+    expect(await worker.describeModel()).toEqual({
+      chain: updated,
+      source: { kind: 'workflow-tier', tier: slug, tierLabel: 'Deep fixture' },
+    })
     await db.update(modelTiers).set({ chain: initial }).where(eq(modelTiers.slug, slug))
     expect(runningType.model).toBe(updated)
     expect((await flowAgentType(worker.id))!.model).toBe(initial)
+    expect(await worker.getEffectiveModelSpec()).toBe(initial)
     expect((await flowAgentType(worker.id))!.systemPrompt).toBe('Shared role expertise and operational guidance')
+    // A person's tier override on the worker wins over the participant tier.
+    await worker.update({ tierOverride: overrideTier })
+    expect(await worker.getEffectiveModelSpec(runningType.model)).toBe('anthropic:claude-haiku-4-5')
+    expect((await worker.describeModel()).source.kind).toBe('agent-tier-override')
+    await worker.update({ tierOverride: null })
     await db.update(modelTiers).set({ disabled: true }).where(eq(modelTiers.slug, slug))
     await expect(flowAgentType(worker.id)).rejects.toThrow('does not exist or is disabled')
+    await expect(worker.getEffectiveModelSpec()).rejects.toThrow('does not exist or is disabled')
   } finally {
     await db.delete(modelTiers).where(eq(modelTiers.slug, slug))
   }
