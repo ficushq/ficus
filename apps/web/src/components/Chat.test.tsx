@@ -83,7 +83,7 @@ const chatDependencies = {
   usePermissionsHook: usePermissionsMock,
 }
 
-function renderChat(element: React.ReactElement, entry = '/chat/agent-1?scope=all') {
+function renderChat(element: React.ReactElement, entry = '/squads/ficus/agents?agent=agent-1') {
   const injected = { ...element, props: { ...element.props, dependencies: chatDependencies } }
   return renderToStaticMarkup(
     <MemoryRouter initialEntries={[entry]}>
@@ -156,7 +156,7 @@ describe('Chat header rendering', () => {
     })
     const render = (element: React.ReactElement) =>
       renderToStaticMarkup(
-        <MemoryRouter initialEntries={['/chat']}>
+        <MemoryRouter initialEntries={['/squads/ficus/agents']}>
           <ReactQueryHooksProvider hooks={reactQueryOverrides}>
             {{
               ...element,
@@ -248,11 +248,11 @@ describe('Chat header rendering', () => {
 })
 
 test('hands AgentChat navigation to the owning real router', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/agent-1' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/ficus/agents?agent=agent-1' })
   const router = createMemoryRouter(
     [
       {
-        path: '/chat/:agentId',
+        path: '/squads/:squadId/agents',
         element: (
           <PermissionsProvider usePermissions={usePermissionsMock}>
             <ReactQueryHooksProvider hooks={reactQueryOverrides}>
@@ -262,16 +262,16 @@ test('hands AgentChat navigation to the owning real router', async () => {
         ),
       },
     ],
-    { initialEntries: ['/chat/agent-1?scope=all'] }
+    { initialEntries: ['/squads/ficus/agents?agent=agent-1'] }
   )
   const rendered = dom.createRoot()
   try {
     await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
-    expect(router.state.location.pathname + router.state.location.search).toBe('/chat/agent-1?scope=all')
+    expect(router.state.location.pathname + router.state.location.search).toBe('/squads/ficus/agents?agent=agent-1')
     const onNavigate = capturedAgentChatProps().onNavigate as (path: string) => void
     expect(onNavigate).toBeFunction()
-    await dom.act(async () => onNavigate('/chat/agent-2?scope=system'))
-    expect(router.state.location.pathname + router.state.location.search).toBe('/chat/agent-2?scope=system')
+    await dom.act(async () => onNavigate('/squads/ficus/agents?agent=agent-2'))
+    expect(router.state.location.pathname + router.state.location.search).toBe('/squads/ficus/agents?agent=agent-2')
   } finally {
     await dom.cleanup()
   }

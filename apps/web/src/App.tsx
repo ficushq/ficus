@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router'
+import { ASSISTANT_AGENT_ROUTE } from '@ficus/shared'
 import { LegacyChatRedirect } from './components/LegacyChatRedirect'
+import { AssistantAgentRedirect } from './components/AssistantAgentRedirect'
 import { ChatDrawer } from './components/ChatDrawer'
 import { SquadsPage } from './components/SquadsPage'
 import { ActivityPage } from './components/ActivityPage'
@@ -154,6 +156,8 @@ export default function App() {
                 {/* The retired chat page: old bookmarks and sent notifications redirect to the agent's chat. */}
                 <Route path="/chat" element={<LegacyChatRedirect />} />
                 <Route path="/chat/:agentId" element={<LegacyChatRedirect />} />
+                {/* An agent's conversation in the Assistant: the stable link squadless agents and notifications use. */}
+                <Route path={ASSISTANT_AGENT_ROUTE} element={<AssistantAgentRedirect />} />
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route path="/squads" element={<SquadsPage />} />
                 <Route path="/squads/:squadId/manager" element={<SquadManagerChatPage />} />

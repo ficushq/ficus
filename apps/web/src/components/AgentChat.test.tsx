@@ -1262,7 +1262,7 @@ describe('AgentChat', () => {
     expect(_capturedSendLabel).toBe('Send Feedback')
   })
 
-  // Subagents are a separate tab owned by the page wrappers (ChatPage, SquadAgentThreads, …).
+  // Subagents are a separate tab owned by the page wrappers (SquadAgentThreads, …).
   // AgentChat must NOT render its own SubagentsInlinePanel: doing so put the subagent menu below
   // the composer, broke the chat's full height, and — because the panel renders AgentChat again —
   // recursed, with each nested instance fighting over the ?subagent URL param (History API loop).

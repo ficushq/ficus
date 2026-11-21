@@ -19,8 +19,9 @@ describe('useTabHistory store', () => {
     expect(getTabKey('/actions/123')).toBe('feed')
     expect(getTabKey('/squads')).toBe('squads')
     expect(getTabKey('/squads/abc?tab=agents')).toBe('squads')
-    expect(getTabKey('/chat')).toBe('chat')
-    expect(getTabKey('/chat/agent-1')).toBe('chat')
+    // The retired chat page only redirects, so it is no tab of its own.
+    expect(getTabKey('/chat')).toBeNull()
+    expect(getTabKey('/chat/agent-1')).toBeNull()
     expect(getTabKey('/inbox')).toBe('inbox')
     expect(getTabKey('/schedules')).toBe('schedules')
     expect(getTabKey('/settings')).toBe('settings')
@@ -50,6 +51,6 @@ describe('useTabHistory store', () => {
   })
 
   test('TAB_ROOTS exposes ordered tab list', () => {
-    expect(TAB_ROOTS.map((tab) => tab.key)).toEqual(['feed', 'squads', 'chat', 'inbox', 'schedules', 'settings'])
+    expect(TAB_ROOTS.map((tab) => tab.key)).toEqual(['feed', 'squads', 'inbox', 'schedules', 'settings'])
   })
 })

@@ -1,4 +1,4 @@
-import { parseEntityReference } from '@ficus/shared'
+import { agentIdFromAssistantAgentPath, parseEntityReference } from '@ficus/shared'
 import { readAssistantNavigation } from '../hooks/useAssistantNavigation'
 
 /**
@@ -18,8 +18,9 @@ const CHAT_PATH = /(?:^|\/)chat\/([^/]+)\/?$/
 
 /**
  * The agent an href opens a chat with: `/squads/:squad/agents?agent=:id`, `/squads/:squad?agent=:id`
- * (activity rows), the Assistant's view of an agent (`?commandStack=` ending in that agent's chat, which
- * is where squadless agents open), `/chat/:id` (old links, which redirect), or a `ficus:agent:`
+ * (activity rows), `/assistant/agents/:id` (the Assistant's view of an agent, where squadless agents
+ * open), the Assistant's own URL state (`?commandStack=` ending in that agent's chat, which squadless
+ * links used before that route), `/chat/:id` (old links, which redirect), or a `ficus:agent:`
  * reference (whose id may be a unique prefix). Only same-origin links count; the app's base path may
  * precede the route.
  */
@@ -35,6 +36,8 @@ export function agentIdFromHref(href: string | null | undefined, origin: string)
   }
   if (url.origin !== origin) return null
   if (SQUAD_CHAT_PATH.test(url.pathname)) return url.searchParams.get('agent') || null
+  const assistantAgent = agentIdFromAssistantAgentPath(url.pathname)
+  if (assistantAgent) return assistantAgent
   if (url.searchParams.has('commandStack')) {
     const top = readAssistantNavigation(url.searchParams).at(-1)
     return top?.kind === 'chat' && top.agentId ? top.agentId : null

@@ -33,14 +33,14 @@ async function render(
   onClose = () => {},
   options: { scope?: { agentId?: string; squadId?: string }; onUnavailable?: () => void } = {}
 ) {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/agent-1' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/ficus/agents?agent=agent-1' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   await seed(client)
   const { root } = dom.createRoot()
   await dom.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/chat/agent-1']}>
+        <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
           <ToolInlineActionModal
             action={action}
             scope={'scope' in options ? options.scope : { agentId: 'agent-1', squadId: 'squad-1' }}
@@ -152,7 +152,7 @@ test('a work stream that cannot be resolved, with no squad to fall back on, repo
     })
     expect(unavailable).toBe(1)
     expect(closed).toBe(1)
-    expect(document.querySelector('[data-testid="location"]')!.textContent).toBe('/chat/agent-1')
+    expect(document.querySelector('[data-testid="location"]')!.textContent).toBe('/squads/ficus/agents?agent=agent-1')
   } finally {
     globalThis.fetch = originalFetch
     await cleanup()

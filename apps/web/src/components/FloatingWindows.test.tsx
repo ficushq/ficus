@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, useLocation } from 'react-router'
+import { Link, MemoryRouter, useLocation } from 'react-router'
 import { useRef, type ReactNode } from 'react'
 import { assistantAgentChatPath, type Agent, type Squad, type WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
@@ -424,6 +424,38 @@ test("Shift- or Alt-click on a work stream row's agent caption opens a floating 
     await t.click(caption)
     expect(t.windows()).toHaveLength(0)
     expect(t.location()).toBe(`/squads/ficus/agents?agent=${A}`)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test("Shift- or Alt-click on a squadless agent's Assistant link opens a floating window, in its stable form and its older one", async () => {
+  // The older form: the Assistant's own URL state, which squadless links carried before the route.
+  const old = `/?chat=open&commandStack=${encodeURIComponent(JSON.stringify([['chat', SYSTEM, '', SYSTEM, '']]))}`
+  const t = await setup(
+    <>
+      <Link to={assistantAgentChatPath(SYSTEM)}>Root</Link>
+      <Link to={old}>Root before</Link>
+    </>,
+    { url: '/squads' }
+  )
+  try {
+    const [stable, older] = [...document.querySelectorAll('a')]
+    expect(stable!.getAttribute('href')).toBe(`/assistant/agents/${SYSTEM}`)
+    const shift = await t.click(stable!, { shiftKey: true })
+    expect(shift.defaultPrevented).toBe(true)
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([SYSTEM])
+    expect(t.location()).toBe('/squads')
+    await t.click(t.windowFor(SYSTEM)!.querySelector('button[aria-label="Close window"]')!)
+    const alt = await t.click(older!, { altKey: true })
+    expect(alt.defaultPrevented).toBe(true)
+    expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([SYSTEM])
+    expect(t.location()).toBe('/squads')
+    // A plain click follows the link.
+    await t.click(t.windowFor(SYSTEM)!.querySelector('button[aria-label="Close window"]')!)
+    await t.click(stable!)
+    expect(t.windows()).toHaveLength(0)
+    expect(t.location()).toBe(`/assistant/agents/${SYSTEM}`)
   } finally {
     await t.cleanup()
   }

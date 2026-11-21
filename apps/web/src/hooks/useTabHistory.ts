@@ -1,9 +1,8 @@
-export type TabKey = 'feed' | 'squads' | 'chat' | 'inbox' | 'schedules' | 'settings'
+export type TabKey = 'feed' | 'squads' | 'inbox' | 'schedules' | 'settings'
 
 export const TAB_ROOTS: ReadonlyArray<{ key: TabKey; root: string; prefixes: string[] }> = [
   { key: 'feed', root: '/', prefixes: ['/feed', '/actions'] },
   { key: 'squads', root: '/squads', prefixes: ['/squads'] },
-  { key: 'chat', root: '/chat', prefixes: ['/chat'] },
   { key: 'inbox', root: '/inbox', prefixes: ['/inbox'] },
   { key: 'schedules', root: '/schedules', prefixes: ['/schedules'] },
   { key: 'settings', root: '/settings', prefixes: ['/settings'] },
@@ -12,7 +11,6 @@ export const TAB_ROOTS: ReadonlyArray<{ key: TabKey; root: string; prefixes: str
 const tabKeyByRoot: Record<string, TabKey> = {
   '/': 'feed',
   '/squads': 'squads',
-  '/chat': 'chat',
   '/inbox': 'inbox',
   '/schedules': 'schedules',
   '/settings': 'settings',

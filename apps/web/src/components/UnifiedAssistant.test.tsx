@@ -3,7 +3,8 @@ import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { useAssistantPageNavigation } from '../hooks/useAssistantPageNavigation'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Link, MemoryRouter, useLocation } from 'react-router'
+import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from 'react-router'
+import { ASSISTANT_AGENT_ROUTE } from '@ficus/shared'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { ThemeProvider } from '../providers/ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
@@ -14,6 +15,8 @@ import { InboxPopupProvider } from './InboxPopupProvider'
 import { assistantQueries } from '../queryOptions'
 import { assistantQueryKeys } from '../queryKeys'
 import { agentChatPath } from '../lib/entityReference'
+import { assistantAgentDestination } from '../lib/assistantAgentDestination'
+import { AssistantAgentRedirect } from './AssistantAgentRedirect'
 
 test('the assistant nav button toggles the panel like its keyboard shortcut while explicit open stays idempotent', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -419,9 +422,11 @@ async function renderAssistantChat(url: string) {
   ] as const)
     cache.setQueryData(key, value)
   const seen = { location: '', chatAgentId: undefined as string | undefined }
+  let navigate: NavigateFunction | undefined
   function Probe() {
     const current = useLocation()
     seen.location = current.pathname + current.search
+    navigate = useNavigate()
     return null
   }
   function Chat(props: { agentId?: string }) {
@@ -441,6 +446,11 @@ async function renderAssistantChat(url: string) {
               isError: false,
             })}
           >
+            {/* The app's route for an agent's conversation in the Assistant (see App.tsx). */}
+            <Routes>
+              <Route path={ASSISTANT_AGENT_ROUTE} element={<AssistantAgentRedirect />} />
+              <Route path="*" element={null} />
+            </Routes>
             <UnifiedAssistant
               dependencies={{ ConversationComponent: () => <div data-conversation />, ChatComponent: Chat as never }}
             />
@@ -452,6 +462,7 @@ async function renderAssistantChat(url: string) {
   )
   return {
     seen,
+    navigate: (to: string) => dom.act(async () => void navigate!(to)),
     cleanup: async () => {
       await dom.cleanup()
       cache.clear()
@@ -459,13 +470,45 @@ async function renderAssistantChat(url: string) {
   }
 }
 
-test("a squadless agent's chat link opens that agent's conversation in the Assistant", async () => {
-  const t = await renderAssistantChat(agentChatPath({ id: 'system-agent', squadId: null }))
+test("a squadless agent's chat link opens that agent's conversation in the Assistant over the Feed", async () => {
+  const link = agentChatPath({ id: 'system-agent', squadId: null })
+  expect(link).toBe('/assistant/agents/system-agent')
+  const t = await renderAssistantChat(link)
   try {
     const panel = document.querySelector('[role="dialog"][aria-label="Assistant"]') as HTMLElement
     expect(panel.hidden).toBe(false)
     expect(t.seen.chatAgentId).toBe('system-agent')
-    expect(t.seen.location).toBe(agentChatPath({ id: 'system-agent', squadId: null }))
+    expect(t.seen.location).toBe(assistantAgentDestination('system-agent'))
+    const url = new URL(t.seen.location, 'http://localhost')
+    expect(url.pathname).toBe('/')
+    expect(url.searchParams.get('chat')).toBe('open')
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('squadless links written before the Assistant route still open the agent', async () => {
+  // The exact query those links carried; already-sent notifications keep it.
+  const old = `/?chat=open&commandStack=${encodeURIComponent(JSON.stringify([['chat', 'system-agent', '', 'system-agent', '']]))}`
+  const t = await renderAssistantChat(old)
+  try {
+    expect(t.seen.chatAgentId).toBe('system-agent')
+    expect(t.seen.location).toBe(old)
+    // The route lands on the same URL the old links used.
+    expect(assistantAgentDestination('system-agent')).toBe(old)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('the Assistant route opens the agent even while the Assistant shows another conversation', async () => {
+  const stack = encodeURIComponent(JSON.stringify([['assistant', 'conversation-1', '']]))
+  const t = await renderAssistantChat(`/settings?chat=open&commandStack=${stack}`)
+  try {
+    expect(t.seen.chatAgentId).toBeUndefined()
+    await t.navigate(agentChatPath({ id: 'system-agent', squadId: null }))
+    expect(t.seen.location).toBe(assistantAgentDestination('system-agent'))
+    expect(t.seen.chatAgentId).toBe('system-agent')
   } finally {
     await t.cleanup()
   }

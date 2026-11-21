@@ -1,9 +1,12 @@
 import { expect, test } from 'bun:test'
 import { agentIdFromHref, isFloatingWindowClick } from './agentChatLinks'
 import { agentChatPath } from './entityReference'
+import { assistantAgentDestination } from './assistantAgentDestination'
 
 const origin = 'https://ficus.example'
 const id = '11111111-1111-4111-8111-111111111111'
+// The query squadless agent links carried before the Assistant route; already-sent notifications still do.
+const oldStack = encodeURIComponent(JSON.stringify([['chat', id, '', id, '']]))
 
 test('agent chat links are recognized in every form the app writes them', () => {
   expect(agentIdFromHref(`/squads/ficus/agents?agent=${id}`, origin)).toBe(id)
@@ -17,9 +20,14 @@ test('agent chat links are recognized in every form the app writes them', () => 
   // Markdown references, whose id may be a unique prefix.
   expect(agentIdFromHref(`ficus:agent:${id}`, origin)).toBe(id)
   expect(agentIdFromHref('ficus:agent:1111abcd', origin)).toBe('1111abcd')
-  // A squadless agent's link: the Assistant's view of it.
+  // A squadless agent's link: the stable Assistant route.
+  expect(agentChatPath({ id, squadId: null })).toBe(`/assistant/agents/${id}`)
   expect(agentIdFromHref(agentChatPath({ id, squadId: null }), origin)).toBe(id)
   expect(agentIdFromHref(`${origin}/ficus${agentChatPath({ id, squadId: null })}`, origin)).toBe(id)
+  // Squadless links written before that route: the Assistant's own URL state, ending in the agent's chat.
+  expect(agentIdFromHref(assistantAgentDestination(id), origin)).toBe(id)
+  expect(agentIdFromHref(`/?chat=open&commandStack=${oldStack}`, origin)).toBe(id)
+  expect(agentIdFromHref(`${origin}/ficus/?chat=open&commandStack=${oldStack}`, origin)).toBe(id)
 })
 
 test('other links are not agent chats', () => {
@@ -28,6 +36,10 @@ test('other links are not agent chats', () => {
     '/squads/ficus/agents',
     '/squads/ficus/agents?newConsultant=1',
     '/chat',
+    '/assistant',
+    '/assistant/agents',
+    `/assistant/agents/${id}/extra`,
+    `https://elsewhere.example/assistant/agents/${id}`,
     '/settings?agent=x',
     // The Assistant open on a saved conversation or a squad, not an agent chat.
     '/?chat=open&commandStack=' + encodeURIComponent(JSON.stringify([['assistant', 'conversation-1', '']])),

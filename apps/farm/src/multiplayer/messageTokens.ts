@@ -1,4 +1,10 @@
-import { ENTITY_REFERENCE_SCHEME, entityReferenceHref, parseEntityReference, type FarmPerson } from '@ficus/shared'
+import {
+  ENTITY_REFERENCE_SCHEME,
+  agentIdFromAssistantAgentPath,
+  entityReferenceHref,
+  parseEntityReference,
+  type FarmPerson,
+} from '@ficus/shared'
 import { findMentions } from './mentions'
 
 /*
@@ -24,7 +30,10 @@ const REFERENCE = new RegExp(`\\b${ENTITY_REFERENCE_SCHEME}:(?:ws|agent):[0-9a-f
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'"]/gi
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** What a web-app link points at on the farm, if anything: /squads/<id>[/work?ws=<id>] or /chat/<agentId>. */
+/**
+ * What a web-app link points at on the farm, if anything: an agent's chat (see {@link agentIdFromUrl}),
+ * /squads/<id>/work?ws=<id> or /squads/<id>. The app's base path may precede the route.
+ */
 export function refFromUrl(href: string): FarmRef | null {
   let url: URL
   try {
@@ -35,14 +44,46 @@ export function refFromUrl(href: string): FarmRef | null {
   const parts = url.pathname.split('/').filter(Boolean)
   const squadAt = parts.indexOf('squads')
   const squadId = parts[squadAt + 1]
-  if (squadAt !== -1 && squadId && UUID.test(squadId)) {
+  const squadPage = squadAt !== -1 && squadId !== undefined
+  const agentId = agentIdFromUrl(url, parts, squadPage ? squadAt : -1)
+  if (agentId) return { kind: 'agent', id: agentId.toLowerCase() }
+  if (squadPage && UUID.test(squadId)) {
     const ws = url.searchParams.get('ws')
     return ws ? { kind: 'ws', id: ws.toLowerCase() } : { kind: 'squad', id: squadId.toLowerCase() }
   }
-  const chatAt = parts.indexOf('chat')
-  const agentId = parts[chatAt + 1]
-  if (chatAt !== -1 && agentId && UUID.test(agentId)) return { kind: 'agent', id: agentId.toLowerCase() }
   return null
+}
+
+/**
+ * The agent a web-app link opens a chat with, in every form the app has written:
+ * - its squad's Chats tab, /squads/<id or slug>/agents?agent=<id> (or the squad page with ?agent=);
+ * - /assistant/agents/<id>, the Assistant's view of an agent, where squadless agents open;
+ * - the Assistant's own URL state ending in that agent's chat (?commandStack=[…, ["chat", id, squad,
+ *   agent, …]]), which squadless links carried before that route, on any page but a squad's;
+ * - /chat/<id>, the retired chat page, in older messages.
+ */
+function agentIdFromUrl(url: URL, parts: string[], squadAt: number): string | null {
+  const squadChats =
+    squadAt !== -1 &&
+    (parts.length === squadAt + 2 || (parts.length === squadAt + 3 && parts[squadAt + 2] === 'agents'))
+  const candidates = [
+    squadChats ? url.searchParams.get('agent') : null,
+    agentIdFromAssistantAgentPath(url.pathname),
+    squadAt === -1 ? agentIdFromCommandStack(url.searchParams.get('commandStack')) : null,
+    parts.at(-2) === 'chat' ? (parts.at(-1) ?? null) : null,
+  ]
+  return candidates.find((id) => id !== null && UUID.test(id)) ?? null
+}
+
+function agentIdFromCommandStack(raw: string | null): string | null {
+  if (!raw) return null
+  try {
+    const rows: unknown = JSON.parse(raw)
+    const top = Array.isArray(rows) ? rows.at(-1) : null
+    return Array.isArray(top) && top[0] === 'chat' && typeof top[3] === 'string' ? top[3] : null
+  } catch {
+    return null
+  }
 }
 
 /** The chat's own reference to something on the farm, for sharing it in a message. */
