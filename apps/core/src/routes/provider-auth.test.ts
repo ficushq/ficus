@@ -169,7 +169,7 @@ describe('provider-auth routes', () => {
   // --- API Key routes ---
 
   /** Make the runtime report environment or runtime auth for exactly these providers. */
-  async function withRuntimeAuth<T>(providers: string[], run: () => Promise<T>): Promise<T> {
+  async function withRuntimeAuth<T>(providers: string[], run: () => T | Promise<T>): Promise<T> {
     const runtime = await getModelRuntime()
     const registered = [...new Set([...runtime.getRegisteredProviderIds(), ...providers])]
     const ids = spyOn(runtime, 'getRegisteredProviderIds').mockImplementation(() => registered)
