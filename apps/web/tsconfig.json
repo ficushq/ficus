@@ -18,12 +18,6 @@
     "types": []
   },
   "include": ["src"],
-  "exclude": [
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "src/test-setup.ts",
-    "src/test/**",
-    "src/theme/test/**"
-  ],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test-setup.ts", "src/test/**", "src/theme/test/**"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
