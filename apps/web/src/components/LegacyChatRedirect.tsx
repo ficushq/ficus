@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { agentChatPath } from '../lib/entityReference'
+import { CLOSE_ASSISTANT_STATE } from '../hooks/useKeepAssistantAcrossPages'
 import { ChatSkeleton } from './loading/Skeleton'
 
 /** Where the bare `/chat` page (and its `?new` link) goes: the Assistant, which replaced the chat list. */
@@ -13,13 +14,20 @@ const LEGACY_CHAT_LIST_DESTINATION = '/?chat=open'
  * notifications. An agent link goes where every other agent link goes now (its squad Chats tab, or the
  * Assistant's view of a squadless agent); the bare page goes to the Assistant.
  */
-export function LegacyChatRedirect() {
-  const { agentId } = useParams<{ agentId?: string }>()
+export function LegacyChatRedirect({ linkedId }: { linkedId?: string } = {}) {
+  const { agentId: pathId } = useParams<{ agentId?: string }>()
+  const agentId = linkedId ?? pathId
   const { slugFor } = useSquadSlugs()
   const agent = useQuery({ ...queries.agents.detail(agentId ?? ''), enabled: Boolean(agentId), retry: false })
   if (!agentId) return <Navigate to={LEGACY_CHAT_LIST_DESTINATION} replace />
   if (agent.isPending) return <ChatSkeleton label="Opening chat" />
   // An agent that cannot be loaded still opens in the Assistant, which explains what went wrong.
   const squadId = agent.data?.squadId
-  return <Navigate to={agentChatPath({ id: agentId, squadId: squadId ? slugFor(squadId) : null })} replace />
+  return (
+    <Navigate
+      to={agentChatPath({ id: agentId, squadId: squadId ? slugFor(squadId) : null })}
+      replace
+      state={CLOSE_ASSISTANT_STATE}
+    />
+  )
 }

@@ -413,6 +413,7 @@ async function renderAssistantChat(url: string) {
     [queries.squads.allWorkStreams().queryKey, []],
     [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
     [queries.agents.detail('system-agent').queryKey, system],
+    [queries.agents.detail('worker').queryKey, { ...system, id: 'worker', squadId: 's1' }],
     [queries.actions.pending().queryKey, []],
     [integrationQueries.catalog().queryKey, { integrations: [] }],
   ] as const)
@@ -470,18 +471,26 @@ test("a squadless agent's chat link opens that agent's conversation in the Assis
   }
 })
 
-test('the old drawer link (?assistantChat=) opens the agent in the Assistant on the same page, not the legacy chat page', async () => {
+test('the old drawer link opens a squadless agent in the Assistant over the Feed', async () => {
   const t = await renderAssistantChat('/settings?section=workflows&assistantChat=system-agent')
   try {
     const url = new URL(t.seen.location, 'http://localhost')
-    expect(url.pathname).toBe('/settings')
-    expect(url.searchParams.get('section')).toBe('workflows')
+    expect(url.pathname).toBe('/')
     expect(url.searchParams.has('assistantChat')).toBe(false)
     expect(url.searchParams.get('chat')).toBe('open')
     expect(JSON.parse(url.searchParams.get('commandStack')!)).toEqual([
       ['chat', 'system-agent', '', 'system-agent', ''],
     ])
     expect(t.seen.chatAgentId).toBe('system-agent')
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test('the old drawer link to a squad agent opens the squad Chats tab', async () => {
+  const t = await renderAssistantChat('/settings?chat=open&assistantChat=worker')
+  try {
+    expect(t.seen.location).toBe('/squads/s1/agents?agent=worker')
   } finally {
     await t.cleanup()
   }
