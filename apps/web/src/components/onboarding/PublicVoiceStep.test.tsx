@@ -199,8 +199,8 @@ for (const scenario of ['saved', 'none', 'collision', 'default-failure'] as cons
       }
     } finally {
       globalThis.fetch = original
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 
@@ -209,7 +209,16 @@ test('gated step opens GitHub setup and never shows the derivation form', async 
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
   let opened = 0
   client.setQueryData(queries.squads.list().queryKey, [])
-
+  // The step reads the voices and the instance default even while gated.
+  client.setQueryData(queries.publicVoices.list().queryKey, [])
+  client.setQueryData(queries.publicVoices.instanceDefault().queryKey, {
+    voiceId: 'default',
+    name: 'Default',
+    effectiveVoiceId: 'default',
+    effectiveName: 'Default',
+    fallback: null,
+    squadCount: 0,
+  })
   client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [])
   try {
     const { root, container } = dom.createRoot()
@@ -225,7 +234,7 @@ test('gated step opens GitHub setup and never shows the derivation form', async 
     await dom.act(async () => container.querySelector<HTMLButtonElement>('button')!.click())
     expect(opened).toBe(1)
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

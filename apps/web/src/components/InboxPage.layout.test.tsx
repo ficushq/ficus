@@ -20,8 +20,8 @@ describe('InboxPage responsive list gutters', () => {
   })
 
   afterEach(async () => {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   })
 
   for (const mixed of [false, true]) {

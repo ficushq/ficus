@@ -45,9 +45,9 @@ async function render(
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(productFeedbackQueryKeys.status(), options.status ?? { connected: true, managed: false })
   cleanup = async () => {
+    globalThis.fetch = previousFetch
     await dom.cleanup()
     queryClient.clear()
-    globalThis.fetch = previousFetch
   }
   const admin = options.admin ?? true
   const permissions: PermissionsResult = {

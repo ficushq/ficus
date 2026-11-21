@@ -86,9 +86,9 @@ async function render(
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(publicUrlQueryKeys.status(), status)
   cleanup = async () => {
+    globalThis.fetch = previousFetch
     await dom.cleanup()
     queryClient.clear()
-    globalThis.fetch = previousFetch
   }
   const { root, container } = dom.createRoot()
   const permissions: PermissionsResult = {

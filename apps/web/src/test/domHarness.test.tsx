@@ -1,7 +1,9 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { useEffect } from 'react'
 import { QueryClient } from '@tanstack/react-query'
 import { acquireDomHarness, DOM_GLOBAL_NAMES, installDomHarness, withDomOwnership } from './domHarness'
+import { allowNetworkOrigin, takeBlockedRequests } from './networkGuard'
+import { describeStaleDomGlobals, takeStaleDomGlobals } from './staleDomGlobals'
 
 function descriptorSnapshot() {
   return new Map(DOM_GLOBAL_NAMES.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
@@ -126,10 +128,10 @@ describe('DOM harness', () => {
         configureWindow(window) {
           configuredWindow = window
           patchedAddEventListener = window.EventTarget.prototype.addEventListener
-          const close = window.close.bind(window)
-          window.close = () => {
+          const close = window.happyDOM.close.bind(window.happyDOM)
+          window.happyDOM.close = () => {
             closed = true
-            close()
+            return close()
           }
           throw new Error('configuration failed')
         },
@@ -166,10 +168,10 @@ describe('DOM harness', () => {
         events.push(globalThis.window === dom.window ? 'cancel-with-window' : 'cancel-without-window')
       },
     })
-    const close = dom.window.close.bind(dom.window)
-    dom.window.close = () => {
+    const close = dom.window.happyDOM.close.bind(dom.window.happyDOM)
+    dom.window.happyDOM.close = () => {
       events.push('close')
-      close()
+      return close()
     }
     function Fixture() {
       useEffect(() => () => void events.push('unmount'), [])
@@ -230,10 +232,10 @@ describe('DOM harness', () => {
   test('unmounts every root before closing the window and cleanup is idempotent', async () => {
     const events: string[] = []
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
-    const close = dom.window.close.bind(dom.window)
-    dom.window.close = () => {
+    const close = dom.window.happyDOM.close.bind(dom.window.happyDOM)
+    dom.window.happyDOM.close = () => {
       events.push('close')
-      close()
+      return close()
     }
     function Fixture() {
       useEffect(() => () => void events.push('unmount'), [])
@@ -321,6 +323,7 @@ describe('DOM harness', () => {
       },
     })
     const queryClient = new QueryClient()
+    const revoke = allowNetworkOrigin(server.url)
     try {
       const first = await acquireDomHarness({ url: server.url.href })
       const settled = queryClient
@@ -351,7 +354,104 @@ describe('DOM harness', () => {
     } finally {
       release()
       queryClient.clear()
+      revoke()
       await server.stop(true)
+    }
+  })
+})
+
+describe('DOM harness isolation', () => {
+  afterEach(() => {
+    takeBlockedRequests()
+  })
+
+  test('a spy restored after cleanup reinstalls the finished window timer; the preload check puts the real one back', async () => {
+    const processSetTimeout = globalThis.setTimeout
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const spy = spyOn(globalThis, 'setTimeout')
+    await dom.cleanup()
+    // mockRestore() puts back what the spy replaced: the harness window's setTimeout.
+    spy.mockRestore()
+    expect(globalThis.setTimeout).not.toBe(processSetTimeout)
+    expect(takeStaleDomGlobals()).toEqual(['setTimeout'])
+    expect(globalThis.setTimeout).toBe(processSetTimeout)
+    expect(takeStaleDomGlobals()).toEqual([])
+  })
+
+  test('the stale-global failure says how to fix it and where the rules are', () => {
+    expect(describeStaleDomGlobals(['setTimeout'])).toBe(
+      "A finished DOM harness's setTimeout was still installed as a global. " +
+        'A value saved after acquiring the harness was put back after dom.cleanup(). ' +
+        'Restore spies and saved globals before dom.cleanup(); the harness restores its own globals.\n' +
+        'The rules for web tests are in AGENTS.md, under "Writing tests without flakes, contention, or hidden timeouts".'
+    )
+  })
+
+  test('a spy restored before cleanup leaves no finished window global behind', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const spy = spyOn(globalThis, 'setTimeout')
+    spy.mockRestore()
+    await dom.cleanup()
+    expect(takeStaleDomGlobals()).toEqual([])
+  })
+
+  test('cleanup closes the window, so a timer saved from it never fires', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const saved = globalThis.setTimeout
+    await dom.cleanup()
+    let fired = false
+    saved(() => (fired = true), 0)
+    await Bun.sleep(20)
+    expect(fired).toBe(false)
+  })
+
+  test("the window's own requests are refused unless its api table serves them", async () => {
+    const dom = await acquireDomHarness({
+      url: 'https://ficus.test/',
+      api: { '/api/auth/permissions': { permissions: ['agents:read'] } },
+    })
+    try {
+      expect(await (await fetch('/api/auth/permissions')).json()).toEqual({ permissions: ['agents:read'] })
+      await expect(fetch('/api/squads')).rejects.toThrow('fetch GET https://ficus.test/api/squads')
+      // Happy DOM's own fetch, which XMLHttpRequest and resource loads use, is guarded too.
+      const response = await dom.window.fetch('https://ficus.test/api/voice/status')
+      expect(response.type).toBe('error')
+      expect(takeBlockedRequests()).toEqual([
+        { kind: 'fetch GET', url: 'https://ficus.test/api/squads' },
+        { kind: 'DOM window GET', url: 'https://ficus.test/api/voice/status' },
+      ])
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test("a fetch the test puts on the window is the window's fetch, unguarded", async () => {
+    const dom = await acquireDomHarness({
+      url: 'https://ficus.test/',
+      configureWindow(window) {
+        window.fetch = (async () => new window.Response('{"mocked":true}')) as typeof window.fetch
+      },
+    })
+    try {
+      expect(await (await fetch('https://ficus.test/api/squads')).json()).toEqual({ mocked: true })
+      expect(takeBlockedRequests()).toEqual([])
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('following a target="_blank" link opens a window that never loads the page', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    try {
+      const link = dom.window.document.createElement('a')
+      link.href = 'https://github.com/ficushq/ficus/pull/1'
+      link.target = '_blank'
+      dom.window.document.body.appendChild(link)
+      link.click()
+      await Bun.sleep(10)
+      expect(takeBlockedRequests()).toEqual([])
+    } finally {
+      await dom.cleanup()
     }
   })
 })

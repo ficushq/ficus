@@ -6,6 +6,12 @@ import { queryKeys } from '../../queryKeys'
 import type { SandboxStatus } from '../../api/workspace'
 import * as workspace from '../../api/workspace'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
+
+// The squad sandbox status stays unavailable; these tests cover the settings form.
+const api = {
+  '/api/squads/:id/sandbox/status': apiUnavailable,
+}
 
 const spies: Array<{ mockRestore: () => void }> = []
 afterEach(() => {
@@ -53,7 +59,7 @@ test('restart requires confirmation, stays pending without claiming readiness, t
       })
   )
   spies.push(restart)
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/s1/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/s1/settings', api })
   const queryClient = client({ status: 'starting', runtime: 'vm' })
   const invalidate = spyOn(queryClient, 'invalidateQueries')
   spies.push(invalidate)

@@ -913,8 +913,8 @@ for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
       expect(messages.getAttribute('aria-pressed')).toBe('true')
       expect(scroller.scrollTop).toBe(400)
     } finally {
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 }

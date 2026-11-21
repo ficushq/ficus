@@ -5,8 +5,17 @@ import { MemoryRouter } from 'react-router'
 import { queries } from '../../queryOptions'
 import { SUBAGENT_WATCHDOG_KIND } from '../../lib/subagentWatchdog'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { SchedulesList } from './SchedulesList'
+
+// Refreshing the seeded schedule list fails, so the list keeps the schedules each test seeds; the
+// detail modal's agent types and public URL stay unavailable.
+const api = {
+  '/api/schedules': apiUnavailable,
+  '/api/agent-types': apiUnavailable,
+  '/api/public-url': apiUnavailable,
+}
 
 const dependencies = { useWebSocket: () => ({ subscribe: () => () => undefined, isConnected: false }) }
 const base: Schedule = {
@@ -40,7 +49,7 @@ const base: Schedule = {
 }
 
 async function renderSchedules(schedules: Schedule[], entry = '/') {
-  const dom = await acquireDomHarness({ url: `http://localhost${entry}` })
+  const dom = await acquireDomHarness({ url: `http://localhost${entry}`, api })
   const rendered = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const params = { scopeType: 'agent' as const, scopeId: 'parent-1', excludeKind: SUBAGENT_WATCHDOG_KIND }

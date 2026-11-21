@@ -28,9 +28,9 @@ beforeEach(async () => {
   globalThis.fetch = moderationFetch(api)
 })
 afterEach(async () => {
+  globalThis.fetch = oldFetch
   await harness.cleanup()
   client.clear()
-  globalThis.fetch = oldFetch
 })
 
 async function render(props: { onClose?: () => void } = {}) {

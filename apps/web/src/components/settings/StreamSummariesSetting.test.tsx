@@ -34,14 +34,19 @@ async function renderSetting(
   permissions: string[] = ['settings:read', 'settings:write'],
   usableCandidates?: string[]
 ) {
-  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  // The server keeps what was saved, so refreshing the settings after a save reads it back.
+  let stored = value
+  dom = await acquireDomHarness({ url: 'http://localhost/', api: { '/api/settings': () => [setting(stored)] } })
   const { root, container } = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(queries.settings.list().queryKey, [setting(value)])
   client.setQueryData(queryKeys.squads.workStreams('squad-1'), [])
   client.setQueryData(queryKeys.activity.presence(), {})
   client.setQueryData(queryKeys.agents.detail('agent-1'), { id: 'agent-1' })
-  const setSetting = mock((_key: string, _value: string) => Promise.resolve())
+  const setSetting = mock((_key: string, next: string) => {
+    stored = next
+    return Promise.resolve()
+  })
   await dom.act(async () =>
     root.render(
       <QueryClientProvider client={client}>

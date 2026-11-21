@@ -732,8 +732,8 @@ test('a clipped chat row expands in place to its full message, and only the butt
     expect(rows[1].textContent).toContain('This step is still writing; open the chat for the latest text.')
     await dom.act(() => view.root.unmount())
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 

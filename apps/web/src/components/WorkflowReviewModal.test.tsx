@@ -17,6 +17,7 @@ import {
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import { acquireDomHarness } from '../test/domHarness'
+import { workStreamReads } from '../test/workStreamApi'
 import { webkitTap } from '../test/webkitTap'
 import { client } from '../api/clientInstance'
 import { queryKeys } from '../queryKeys'
@@ -124,7 +125,8 @@ async function fixture({
   height = 900,
   url = 'http://localhost/',
 }: { permissions?: string[]; width?: number; height?: number; url?: string } = {}) {
-  const dom = await acquireDomHarness({ url, windowOptions: { width, height } })
+  // Decisions invalidate the stream's own reads, which stay unavailable; the modal keeps its seeded data.
+  const dom = await acquireDomHarness({ url, windowOptions: { width, height }, api: workStreamReads })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queryKeys.squads.list(), [])
   queryClient.setQueryData(queryKeys.workflows.run(stream.id), gateRun())

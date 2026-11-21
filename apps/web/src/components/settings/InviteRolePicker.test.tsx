@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { isUserAssignableRole, type RoleSummary } from '../../api/roles'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 
 const ROLES: RoleSummary[] = [
   { id: 'r-admin', name: 'Admin', slug: 'admin', permissions: ['*'], appliesTo: 'user', isSystem: true },
@@ -33,10 +34,11 @@ describe('invite form role picker', () => {
   beforeEach(async () => {
     dom = await acquireDomHarness({
       url: 'http://localhost/',
-      beforeUnmount: async () => {
-        await queryClient?.cancelQueries()
-        queryClient?.clear()
-      },
+      // The seat count is not seeded and stays unavailable; these tests cover the role picker.
+      api: { '/api/users/seats': apiUnavailable },
+      beforeUnmount: () => queryClient?.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClient?.clear(),
     })
     ;({ UsersSection } = await import('./UsersSection'))
     ;({ root, container } = dom.createRoot())

@@ -5,8 +5,14 @@ import type { Attention } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { AttentionMenu } from './AttentionMenu'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { expectHoverMenuContract } from '../test/hoverMenuContract'
 import { restPointerOn } from '../test/hoverTimer'
+
+// A work stream's subscription read stays unavailable unless a test seeds it.
+const api = {
+  '/api/workstreams/:id/subscription': apiUnavailable,
+}
 
 function renderSquad(attention: Attention, subscribed = true, inline = false): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -150,7 +156,7 @@ afterEach(async () => {
 })
 
 async function mountSquadMenu(align?: 'left' | 'right') {
-  const dom = (domHarness = await acquireDomHarness({ url: 'http://localhost/squads' }))
+  const dom = (domHarness = await acquireDomHarness({ url: 'http://localhost/squads', api }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(queryKeys.squadSubscription.detail('squad-1'), {
     subscribed: true,
@@ -258,7 +264,7 @@ describe('AttentionMenu hover', () => {
   })
 
   test('the inline expander (inside the work stream actions menu) keeps its native toggle and never opens on hover', async () => {
-    const dom = (domHarness = await acquireDomHarness({ url: 'http://localhost/' }))
+    const dom = (domHarness = await acquireDomHarness({ url: 'http://localhost/', api }))
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     const { root } = dom.createRoot()
     await dom.act(async () =>

@@ -132,8 +132,8 @@ async function render(
   const { root } = dom.createRoot()
   cleanup = async () => {
     search.mockRestore()
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
   const show = (agentId?: string) =>
     dom.act(async () => {

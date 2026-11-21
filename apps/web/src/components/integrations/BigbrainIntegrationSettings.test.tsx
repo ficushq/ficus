@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, getByRole } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { integrationQueryKeys } from '../../queryKeys'
+
+// A permissions refresh at cleanup, after the test's own fetch is put back, stays unavailable.
+const api = {
+  '/api/auth/permissions': apiUnavailable,
+}
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
 let root: import('react-dom/client').Root
@@ -60,7 +66,7 @@ let setupState: Record<string, unknown> = readyState
 
 beforeEach(async () => {
   setupState = readyState
-  harness = await acquireDomHarness({ url: 'http://localhost' })
+  harness = await acquireDomHarness({ url: 'http://localhost', api })
   ;({ root, container } = harness.createRoot())
   oldFetch = globalThis.fetch
   requests = []

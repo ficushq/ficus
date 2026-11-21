@@ -211,7 +211,7 @@ for (const surface of ['Settings', 'Onboarding', 'Settings page', 'Onboarding pa
       }
     } finally {
       globalThis.fetch = original
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })

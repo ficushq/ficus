@@ -38,10 +38,10 @@ test('a desktop build that already polls notifications itself is never polled ag
     expect(delivered).toEqual([])
     expect(requestedUrls.some((url) => url.includes('/api/push/desktop'))).toBe(false)
   } finally {
+    globalThis.fetch = previousFetch
     await dom.cleanup()
     delete window.ficusDesktopApp
     client.clear()
-    globalThis.fetch = previousFetch
   }
 })
 

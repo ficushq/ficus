@@ -3,10 +3,17 @@ import { DEPLOYMENT_INTEGRATION_KEYS } from '@ficus/shared'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { integrationQueryKeys } from '../../queryKeys'
 import { IntegrationsSection } from './IntegrationsSection'
 import { SettingsSearchDestination } from './SettingsSearchDestination'
+
+// A provider's service settings stay unavailable unless a test serves them; these tests cover the
+// cards.
+const api = {
+  '/api/integrations/providers/:key/service-settings': apiUnavailable,
+}
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
 let client: QueryClient
@@ -19,7 +26,7 @@ const entries = [
   { key: 'bigbrain', label: 'BigBrain', description: 'Memory' },
 ]
 beforeEach(async () => {
-  harness = await acquireDomHarness({ url: 'http://localhost/settings' })
+  harness = await acquireDomHarness({ url: 'http://localhost/settings', api })
   oldFetch = globalThis.fetch
   scrolled = []
   scrollDescriptor = Object.getOwnPropertyDescriptor(harness.window.HTMLElement.prototype, 'scrollIntoView')
@@ -46,9 +53,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (scrollDescriptor) Object.defineProperty(harness.window.HTMLElement.prototype, 'scrollIntoView', scrollDescriptor)
   else Reflect.deleteProperty(harness.window.HTMLElement.prototype, 'scrollIntoView')
+  globalThis.fetch = oldFetch
   await harness.cleanup()
   client.clear()
-  globalThis.fetch = oldFetch
 })
 async function render(writable = true, target?: string) {
   const { root, container } = harness.createRoot()

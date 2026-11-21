@@ -74,8 +74,8 @@ for (const editable of [true, false]) {
       }
     } finally {
       globalThis.fetch = originalFetch
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 }

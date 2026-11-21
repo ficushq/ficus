@@ -90,6 +90,10 @@ test('overflow keeps pause secondary, preserves attention, copies a canonical li
       await dom.act(async () => trigger.click())
     }
     cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: [] })
+    cache.setQueryData(queryKeys.workStreamSubscription.detail('read-only'), {
+      attention: { decisions: 'notify', progress: 'mute' },
+      inherited: true,
+    })
     await render({ ...stream, id: 'read-only' })
     await dom.act(async () => trigger.click())
     expect(button('Pause work…')).toBeUndefined()

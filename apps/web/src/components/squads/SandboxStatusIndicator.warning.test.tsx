@@ -17,8 +17,8 @@ async function withIndicator(status: SandboxStatus, check: (ui: Awaited<ReturnTy
   try {
     await check(ui)
   } finally {
-    ui.client.clear()
     await ui.dom.cleanup()
+    ui.client.clear()
   }
 }
 

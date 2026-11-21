@@ -61,7 +61,8 @@ async function render(
   const dom = await acquireDomHarness({ url: 'https://ficus.test' })
   cleanup = () => dom.cleanup()
   if (opts.themeId) localStorage.setItem('ficus-theme-id', opts.themeId)
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // Seeded data stays fresh, so mounting does not refetch the caller's permissions.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(themePresetQueryKeys.list('mine'), mine)
   queryClient.setQueryData(themePresetQueryKeys.list('shared'), opts.shared ?? [])
   queryClient.setQueryData(queryKeys.auth.permissions(), {
@@ -240,7 +241,10 @@ test('Escape closes the row overflow menu and returns focus to its trigger', asy
 
 test('a palette-only preset (no explicit overrides) still resolves a real swatch color, not an empty circle', async () => {
   const { palettes, resolveToken } = await import('../../theme/test/builtins')
-  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
+  const dom = await acquireDomHarness({
+    url: 'https://ficus.test',
+    api: { '/api/auth/permissions': { permissions: [] } },
+  })
   cleanup = () => dom.cleanup()
   const style = document.createElement('style')
   style.textContent = palettes
@@ -423,7 +427,7 @@ test('detached-shared: a foreign preset that 404s is shown as no longer availabl
   localStorage.setItem('ficus-custom-theme', JSON.stringify(sharedByAuthor.document))
   localStorage.setItem('ficus-theme-preset-owner-id', 'author')
   localStorage.setItem('ficus-theme-id', 'harbor')
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(themePresetQueryKeys.list('mine'), [])
   queryClient.setQueryData(themePresetQueryKeys.list('shared'), [])
   queryClient.setQueryData(queryKeys.auth.permissions(), { permissions: [], identity: { type: 'user', userId: 'u1' } })
