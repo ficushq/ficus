@@ -261,8 +261,12 @@ export class ModelFailoverCoordinator {
     try {
       const resend = await this.exclusive(async () => {
         // A configured-model switch landed while this failure waited: the session already runs the
-        // model the person chose, so resend on it instead of failing over from the old one.
-        if (this.currentSelectedSpec !== failedSpec) return true
+        // model the person chose, so resend on it instead of failing over from the old one. Drop
+        // the failed attempt's partial output first, as the failover resends below do.
+        if (this.currentSelectedSpec !== failedSpec) {
+          this.deps.getCollector().reset()
+          return true
+        }
         return this.attemptReserved(classification, provider, priorityList)
       })
       if (!resend) return false

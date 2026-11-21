@@ -7,6 +7,7 @@ import * as accountSelection from '../../services/agent/account-selection'
 import { CLAUDE_CODE_ACCOUNT_ID } from '../../services/agent/claude-code/account'
 import { describeClaudeCodeFailure } from '../../services/agent/claude-code/failures'
 import { routeFailure } from '../../services/execution/failure-routing'
+import { StreamEventCollector } from '../../services/streaming/events'
 
 function makeDeps(overrides: Partial<ModelFailoverDeps> = {}): ModelFailoverDeps {
   return {
@@ -268,6 +269,67 @@ describe('ModelFailoverCoordinator', () => {
         expect(order).toEqual(['start claude-opus-4-5', 'end claude-opus-4-5'])
         expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-opus-4-5')
         expect(resends).toBe(1)
+      } finally {
+        applySelection.mockRestore()
+        failoverSelection.mockRestore()
+      }
+    })
+
+    it('drops the failed attempt partial output before resending on the newly applied model', async () => {
+      const applySelection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+        selected: 'anthropic:claude-opus-4-5',
+        candidates: [],
+      })
+      const failoverSelection = spyOn(modelSelection, 'selectModelSpecForCurrentEnv').mockReturnValue({
+        selected: 'zai:glm-5-turbo',
+        candidates: [],
+      })
+      try {
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => (release = resolve))
+        const session = {
+          accountId: undefined,
+          authBackend: undefined,
+          selectedSpec: 'anthropic:claude-sonnet-4-5',
+          pi: {
+            getContextUsage: () => undefined,
+            setModel: async (model: { provider: string; id: string }) => {
+              if (model.id === 'claude-opus-4-5') await gate
+            },
+            setThinkingLevel: () => {},
+          },
+        }
+        const collector = new StreamEventCollector({ push: () => {} } as never)
+        // The failed attempt streamed part of an answer and recorded its error before failing.
+        collector.handleEvent({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', delta: 'partial answer from the failed attempt' },
+        } as never)
+        collector.lastError = 'overloaded'
+        expect(collector.snapshot()?.response).toBe('partial answer from the failed attempt')
+        const atResend: Array<{ snapshot: unknown; lastError: string | null }> = []
+        const coordinator = new ModelFailoverCoordinator(
+          makeDeps({
+            getSession: () => session as never,
+            getBuffer: () => ({ push: () => {} }) as never,
+            getCollector: () => collector,
+            resendPrompt: async () => {
+              atResend.push({ snapshot: collector.snapshot(), lastError: collector.lastError })
+            },
+            classifyError: () => ({ kind: 'capacity' }),
+          })
+        )
+        await coordinator.beginTurn('anthropic:claude-sonnet-4-5,zai:glm-5-turbo', 'anthropic:claude-sonnet-4-5')
+
+        const applying = coordinator.applyConfiguredChain('anthropic:claude-opus-4-5')
+        const failingOver = coordinator.attempt(new Error('overloaded'))
+        release()
+
+        expect((await applying).switched).toBe(true)
+        expect(await failingOver).toBe(true)
+        // It resent on the applied model rather than failing over, and the resent turn starts clean.
+        expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-opus-4-5')
+        expect(atResend).toEqual([{ snapshot: null, lastError: null }])
       } finally {
         applySelection.mockRestore()
         failoverSelection.mockRestore()
