@@ -89,6 +89,19 @@ export class ModelFailoverCoordinator {
   private maxFailoversThisTurn = 1
   /** Turn-local candidate routes that failed without implicating the provider account. */
   private failedCandidateSpecs = new Set<string>()
+  /**
+   * Serializes everything that changes the live session's model or account: provider failover and
+   * a configured-model "Switch now" must never interleave their account projection, selected spec
+   * or concurrency slot move. Resending the turn stays outside it, because a resent prompt can fail
+   * over again.
+   */
+  private switching: Promise<unknown> = Promise.resolve()
+
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.switching.then(fn, fn)
+    this.switching = run.catch(() => {})
+    return run
+  }
 
   constructor(private readonly deps: ModelFailoverDeps) {}
 
@@ -173,22 +186,26 @@ export class ModelFailoverCoordinator {
   async applyConfiguredChain(
     priorityList: string
   ): Promise<{ switched: boolean; selected: string; previous?: string }> {
-    const previous = this.currentSelectedSpec
-    const { selected } = selectModelSpecForCurrentEnvWithSwitchBack(priorityList, previous)
-    this.priorityList = priorityList
-    this.maxFailoversThisTurn = Math.max(1, resolveModelCandidatesForCurrentEnv(priorityList).length)
-    this.failedCandidateSpecs.clear()
-    if (selected === previous) return { switched: false, selected, previous }
-    await this.switchSessionModel(selected)
-    this.deps.getBuffer().push({
-      type: 'system_message',
-      text: previous ? `Model switched to ${selected} (from ${previous}).` : `Model switched to ${selected}.`,
+    return this.exclusive(async () => {
+      const previous = this.currentSelectedSpec
+      const { selected } = selectModelSpecForCurrentEnvWithSwitchBack(priorityList, previous)
+      // Switch first: if the session refuses the model, it stays on its old model and keeps failing
+      // over along its old chain.
+      if (selected !== previous) await this.switchSessionModel(selected)
+      this.priorityList = priorityList
+      this.maxFailoversThisTurn = Math.max(1, resolveModelCandidatesForCurrentEnv(priorityList).length)
+      this.failedCandidateSpecs.clear()
+      if (selected === previous) return { switched: false, selected, previous }
+      this.deps.getBuffer().push({
+        type: 'system_message',
+        text: previous ? `Model switched to ${selected} (from ${previous}).` : `Model switched to ${selected}.`,
+      })
+      log.info('Agent model switched to its configured chain', {
+        strategy: 'configured-model-apply',
+        executionId: this.deps.executionId,
+      })
+      return { switched: true, selected, previous }
     })
-    log.info('Agent model switched to its configured chain', {
-      strategy: 'configured-model-apply',
-      executionId: this.deps.executionId,
-    })
-    return { switched: true, selected, previous }
   }
 
   private async reassignConcurrencySlot(modelSpec: string): Promise<void> {
@@ -239,8 +256,18 @@ export class ModelFailoverCoordinator {
     if (this.failoverCountThisTurn + this.failoversReservedThisTurn >= this.maxFailoversThisTurn) return false
     this.failoversReservedThisTurn += 1
 
+    const failedSpec = this.currentSelectedSpec
+    const priorityList = this.priorityList
     try {
-      return await this.attemptReserved(classification, provider, this.priorityList)
+      const resend = await this.exclusive(async () => {
+        // A configured-model switch landed while this failure waited: the session already runs the
+        // model the person chose, so resend on it instead of failing over from the old one.
+        if (this.currentSelectedSpec !== failedSpec) return true
+        return this.attemptReserved(classification, provider, priorityList)
+      })
+      if (!resend) return false
+      await this.deps.resendPrompt()
+      return true
     } finally {
       this.failoversReservedThisTurn -= 1
     }
@@ -295,7 +322,6 @@ export class ModelFailoverCoordinator {
             failureKind: classification.kind,
           })
           this.deps.getCollector().reset()
-          await this.deps.resendPrompt()
           return true
         }
       }
@@ -365,7 +391,7 @@ export class ModelFailoverCoordinator {
     })
     this.deps.getCollector().reset()
 
-    // Re-dispatch the same turn. Note: the Pi SDK persists the user message
+    // The caller re-dispatches the same turn. Note: the Pi SDK persists the user message
     // to the session file before the API call, so the original failed prompt
     // already has the user message in context. Re-dispatching via sendPrompt
     // adds a second user message to the Pi session (not user-visible —
@@ -373,7 +399,6 @@ export class ModelFailoverCoordinator {
     // the prompt twice, wasting some tokens. This is consistent with the v1
     // design doc; a future iteration could use pi.continue() or remove the
     // error assistant message to avoid the duplicate.
-    await this.deps.resendPrompt()
     return true
   }
 }

@@ -215,6 +215,65 @@ describe('ModelFailoverCoordinator', () => {
       }
     })
 
+    it('serializes with provider failover, which then resends on the newly applied model', async () => {
+      const applySelection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
+        selected: 'anthropic:claude-opus-4-5',
+        candidates: [],
+      })
+      const failoverSelection = spyOn(modelSelection, 'selectModelSpecForCurrentEnv').mockReturnValue({
+        selected: 'zai:glm-5-turbo',
+        candidates: [],
+      })
+      try {
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => (release = resolve))
+        const order: string[] = []
+        let resends = 0
+        const session = {
+          accountId: undefined,
+          authBackend: undefined,
+          selectedSpec: 'anthropic:claude-sonnet-4-5',
+          pi: {
+            getContextUsage: () => undefined,
+            setModel: async (model: { provider: string; id: string }) => {
+              order.push(`start ${model.id}`)
+              if (model.id === 'claude-opus-4-5') await gate
+              order.push(`end ${model.id}`)
+            },
+            setThinkingLevel: () => {},
+          },
+        }
+        const coordinator = new ModelFailoverCoordinator(
+          makeDeps({
+            getSession: () => session as never,
+            getBuffer: () => ({ push: () => {} }) as never,
+            getCollector: () => ({ reset: () => {} }) as never,
+            resendPrompt: async () => {
+              resends += 1
+            },
+            classifyError: () => ({ kind: 'capacity' }),
+          })
+        )
+        await coordinator.beginTurn('anthropic:claude-sonnet-4-5,zai:glm-5-turbo', 'anthropic:claude-sonnet-4-5')
+
+        const applying = coordinator.applyConfiguredChain('anthropic:claude-opus-4-5')
+        const failingOver = coordinator.attempt(new Error('overloaded'))
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        // The failover waits for the in-flight switch instead of interleaving with it.
+        expect(order).toEqual(['start claude-opus-4-5'])
+        release()
+
+        expect((await applying).switched).toBe(true)
+        expect(await failingOver).toBe(true)
+        expect(order).toEqual(['start claude-opus-4-5', 'end claude-opus-4-5'])
+        expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-opus-4-5')
+        expect(resends).toBe(1)
+      } finally {
+        applySelection.mockRestore()
+        failoverSelection.mockRestore()
+      }
+    })
+
     it('leaves the session on its model when the switch is refused', async () => {
       const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
         selected: 'anthropic:claude-opus-4-5',
@@ -230,6 +289,8 @@ describe('ModelFailoverCoordinator', () => {
         await expect(coordinator.applyConfiguredChain('anthropic:claude-opus-4-5')).rejects.toThrow('No API key')
         expect(coordinator.currentSelectedSpec).toBe('anthropic:claude-sonnet-4-5')
         expect(session.selectedSpec).toBe('anthropic:claude-sonnet-4-5')
+        // It keeps failing over along its old chain.
+        expect(coordinator.priorityList).toBe('anthropic:claude-sonnet-4-5')
       } finally {
         selection.mockRestore()
       }

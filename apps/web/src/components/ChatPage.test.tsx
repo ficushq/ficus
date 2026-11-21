@@ -431,7 +431,7 @@ describe('ChatPage conversation header', () => {
     expect(html).toContain('Configured chain')
     expect(html).toContain('anthropic:claude-sonnet-4-5')
     expect(html).toContain('Model source')
-    expect(html).toContain('Agent type override')
+    expect(html).toContain('Agent type model')
     expect(html).not.toContain('Model ID')
     expect(html).not.toContain('Unknown')
   })
