@@ -61,6 +61,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  await PublicVoice.setInstanceDefaultId('default')
   await db.delete(squads).where(inArray(squads.id, squadIds))
   await db.delete(publicVoices).where(like(publicVoices.id, `${prefix}%`))
   await PublicVoice.setDisabled('default', false)
@@ -150,6 +151,44 @@ describe('squad voice routes', () => {
       expect(body.resolved.baseSource).toBe('instance')
     } finally {
       await PublicVoice.setDisabled(teamId, false)
+    }
+  })
+
+  test('a squad on the instance default reports and uses the chosen default, and its fallback', async () => {
+    await request(admin, 'DELETE', '')
+    let body = await (await request(reader, 'GET', '')).json()
+    expect(body.instanceDefault).toMatchObject({ voiceId: 'default', effectiveVoiceId: 'default', fallback: null })
+
+    await PublicVoice.setInstanceDefaultId(teamId)
+    try {
+      // squads:read alone sees which profile the instance default is.
+      body = await (await request(reader, 'GET', '')).json()
+      expect(body.instanceDefault).toEqual({
+        voiceId: teamId,
+        name: 'Team',
+        effectiveVoiceId: teamId,
+        effectiveName: 'Team',
+        fallback: null,
+      })
+      expect(body.voiceId).toBeNull()
+      expect(body.resolved.baseSource).toBe('instance')
+      expect(body.resolved.base).toBe('Team voice.')
+      expect(body.profile.id).toBe(teamId)
+
+      // Saving checks the cap against the chosen default.
+      const res = await request(admin, 'PATCH', '', {
+        surfaces: { channels: { mode: 'override', text: 'x'.repeat(1990) } },
+      })
+      expect(res.status).toBe(400)
+
+      await PublicVoice.setDisabled(teamId, true)
+      body = await (await request(reader, 'GET', '')).json()
+      expect(body.fallback).toBe('default_disabled')
+      expect(body.profile.id).toBe('default')
+      expect(body.instanceDefault).toMatchObject({ voiceId: teamId, effectiveVoiceId: 'default' })
+    } finally {
+      await PublicVoice.setDisabled(teamId, false)
+      await PublicVoice.setInstanceDefaultId('default')
     }
   })
 

@@ -112,6 +112,82 @@ describe('ficus voice', () => {
     expect(apiDelete).toHaveBeenCalledWith('/api/public-voices/team')
   })
 
+  it('shows and chooses the instance default', async () => {
+    const lines: string[] = []
+    const log = console.log
+    console.log = (line: string) => lines.push(line)
+    try {
+      m(apiGet).mockResolvedValue({
+        voiceId: 'mine',
+        name: 'Mine',
+        effectiveVoiceId: 'default',
+        effectiveName: 'Default',
+        fallback: 'default_disabled',
+      })
+      await run(['voice', 'default'])
+      expect(apiGet).toHaveBeenLastCalledWith('/api/public-voices/settings/instance-default')
+      expect(lines.at(-1)).toBe(
+        'Instance default: Mine (mine), which is disabled; squads on the instance default use Default (default)'
+      )
+
+      m(apiPut).mockResolvedValue({
+        voiceId: 'team',
+        name: 'Team',
+        effectiveVoiceId: 'team',
+        effectiveName: 'Team',
+        fallback: null,
+        overCapSquadCount: 2,
+      })
+      await run(['voice', 'default', 'team'])
+      expect(apiPut).toHaveBeenLastCalledWith('/api/public-voices/settings/instance-default', { voiceId: 'team' })
+      expect(lines.at(-2)).toBe('Instance default: Team (team)')
+      expect(lines.at(-1)).toStartWith('2 squad(s) on the instance default are now over the cap')
+    } finally {
+      console.log = log
+    }
+  })
+
+  it('squad voice show names the instance default', async () => {
+    const lines: string[] = []
+    const log = console.log
+    console.log = (line: string) => lines.push(line)
+    try {
+      m(apiGet).mockResolvedValue({
+        voiceId: null,
+        local: { base: null, surfaces: {} },
+        profile: null,
+        fallback: null,
+        instanceDefault: {
+          voiceId: 'team',
+          name: 'Team',
+          effectiveVoiceId: 'team',
+          effectiveName: 'Team',
+          fallback: null,
+        },
+        availableVoices: [],
+        resolved: {
+          base: 'Team voice.',
+          baseSource: 'instance',
+          profileId: 'team',
+          entries: {},
+          entrySources: {},
+          perSurface: {},
+          rendered: '',
+          bytes: 10,
+          maxBytes: 2000,
+          overCap: false,
+          dropped: [],
+        },
+        linkedGitHubLogin: null,
+      })
+      await run(['squad', 'voice', 'show', 's1'])
+      expect(lines).toContain('Voice: the instance default profile (team)')
+      expect(lines).toContain('Instance default: Team (team)')
+    } finally {
+      console.log = log
+    }
+  })
+
   it('update merges surface entries over the stored ones and can remove one', async () => {
     m(apiGet).mockResolvedValue({
       id: 'default',

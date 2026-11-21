@@ -11,7 +11,11 @@ import {
   type SquadPublicVoiceState,
 } from '@ficus/shared'
 import { PublicVoice } from '../../entities/PublicVoice'
-import { resolveSquadPublicVoice, type PublicVoiceSquad } from '../../lib/prompts/public-voice-prompt'
+import {
+  describeInstanceDefault,
+  resolveSquadPublicVoice,
+  type PublicVoiceSquad,
+} from '../../lib/prompts/public-voice-prompt'
 import { createLogger } from '../../lib/infra/logger'
 import type { Identity } from '../rbac'
 import { getGitHubPersonalIdentity } from '../integrations/github/personal-identity'
@@ -89,6 +93,7 @@ export async function describeSquadVoice(
     local: squad.publicVoice ?? { base: null, surfaces: {} },
     profile: resolution.profile,
     fallback: resolution.fallback,
+    instanceDefault: describeInstanceDefault(resolution.instanceDefault),
     availableVoices: available.map((p) => ({ id: p.id, name: p.name, description: p.description })),
     resolved: {
       ...fitted.resolved,

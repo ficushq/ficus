@@ -51,14 +51,15 @@ export function SquadVoiceAssignments({
   profile,
   squads,
 }: {
-  profile: Pick<PublicVoiceProfileJson, 'id' | 'disabled'>
+  profile: Pick<PublicVoiceProfileJson, 'id' | 'disabled' | 'isInstanceDefault'>
   squads: Squad[]
 }) {
   const client = useQueryClient()
   const available = squads.filter((s) => !s.archivedAt)
-  const isDefault = profile.id === DEFAULT_PUBLIC_VOICE_ID
+  // Servers without `isInstanceDefault` always use the shipped profile as the instance default.
+  const isDefault = profile.isInstanceDefault ?? profile.id === DEFAULT_PUBLIC_VOICE_ID
   const usesProfile = (s: Squad) =>
-    isDefault ? !s.publicVoiceId || s.publicVoiceId === DEFAULT_PUBLIC_VOICE_ID : s.publicVoiceId === profile.id
+    isDefault ? !s.publicVoiceId || s.publicVoiceId === profile.id : s.publicVoiceId === profile.id
   const [edits, setEdits] = useState<Record<string, boolean>>({})
   const [failures, setFailures] = useState<string[]>([])
   const [notice, setNotice] = useState('')
@@ -106,7 +107,8 @@ export function SquadVoiceAssignments({
       </p>
       {isDefault && (
         <p className="text-xs text-muted">
-          Unassigned squads already use the instance default. Assigning default clears a squad's assignment.
+          Unassigned squads already use this default profile. Choosing it for a squad clears that squad's assignment, so
+          it follows the default.
         </p>
       )}
       <VoiceDisclosure summary="Assign to squads">

@@ -11,6 +11,7 @@ import {
   DEFAULT_PUBLIC_VOICE_ID,
   PUBLIC_VOICE_MAX_BYTES,
   publicVoiceBytes,
+  publicVoiceInstanceDefaultInputSchema,
   publicVoiceProfileInputSchema,
   publicVoiceProfileUpdateSchema,
   renderProfileAlone,
@@ -22,12 +23,14 @@ import { zValidator } from '../lib/zod-validator'
 import { requirePermission } from '../middleware'
 import { publicVoiceSync } from '../services/config-sync'
 import { describeProfiles, overCapSquadCount } from '../services/public-voice/profiles'
+import { describeInstanceDefault, resolveInstanceDefaultVoice } from '../lib/prompts/public-voice-prompt'
 
 /**
  * Voice profiles: named, instance-level public voices that squads are
  * assigned to. Read with `agent-types:read`, managed with `agent-types:update`
- * (the permission that already covers instance-wide prompt text). Assigning a
- * profile to a squad is a squad route under `squads:update`.
+ * (the permission that already covers instance-wide prompt text), including
+ * which profile is the instance default. Assigning a profile to a squad is a
+ * squad route under `squads:update`.
  */
 export const publicVoicesRoutes = new Hono()
 
@@ -80,6 +83,28 @@ publicVoicesRoutes.get(
     if (identity?.type !== 'user') return c.json({ error: 'derivation_requires_person' }, 403)
     c.header('Cache-Control', 'no-store')
     return c.json(await listPublicVoiceGitHubAccounts())
+  }
+)
+
+// The instance default: the profile every squad without an assignment uses. A multi-segment path,
+// so `settings` stays a valid profile id for GET /:id.
+publicVoicesRoutes.get('/settings/instance-default', requirePermission('agent-types:read'), async (c) => {
+  return c.json(describeInstanceDefault(await resolveInstanceDefaultVoice()))
+})
+
+publicVoicesRoutes.put(
+  '/settings/instance-default',
+  requirePermission('agent-types:update'),
+  zValidator('json', publicVoiceInstanceDefaultInputSchema),
+  async (c) => {
+    const { voiceId } = c.req.valid('json')
+    const profile = await PublicVoice.find(voiceId)
+    if (!profile || profile.disabled) return c.json({ error: 'unknown_voice' }, 400)
+    const identity = c.get('identity') as Identity | undefined
+    await PublicVoice.setInstanceDefaultId(voiceId, identity?.type === 'user' ? (identity.userId ?? null) : null)
+    // Squads on the instance default now render with this profile; report those over the cap.
+    const overCap = await overCapSquadCount(profile.toProfile(), { asInstanceDefault: true })
+    return c.json({ ...describeInstanceDefault(await resolveInstanceDefaultVoice()), overCapSquadCount: overCap })
   }
 )
 
@@ -150,16 +175,23 @@ publicVoicesRoutes.delete('/:id', requirePermission('agent-types:update'), async
   if (profile.hasTemplate)
     return c.json({ error: 'Cannot delete a profile shipped in config/public-voices; disable it instead' }, 400)
   await PublicVoice.delete(id)
-  // Assigned squads fall back to the instance default through the foreign key.
-  return c.json({ ok: true, unassignedSquads: profile.assignedSquadCount ?? 0 })
+  // Assigned squads fall back to the instance default through the foreign key; deleting the chosen
+  // instance default clears that choice, so the shipped `default` applies again.
+  return c.json({
+    ok: true,
+    unassignedSquads: profile.assignedSquadCount ?? 0,
+    clearedInstanceDefault: Boolean(profile.isInstanceDefault),
+  })
 })
 
 publicVoicesRoutes.post('/:id/disable', requirePermission('agent-types:update'), async (c) => {
   const id = c.req.param('id')
   if (!(await PublicVoice.find(id))) return c.json({ error: 'Voice profile not found' }, 404)
+  const wasInstanceDefault = (await PublicVoice.instanceDefaultId()) === id
   await publicVoiceSync.setDisabled(id, true)
   PublicVoice.invalidateCache()
-  return c.json({ ok: true })
+  // The choice is kept: while it is disabled the shipped `default` applies, and enabling restores it.
+  return c.json({ ok: true, ...(wasInstanceDefault ? { instanceDefaultFallback: true } : {}) })
 })
 
 publicVoicesRoutes.post('/:id/enable', requirePermission('agent-types:update'), async (c) => {

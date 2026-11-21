@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PublicVoiceProfile, SquadPublicVoiceState } from '@ficus/shared'
 import { queryKeys } from '../../queryKeys'
 import { SquadVoiceEditor } from './SquadVoiceSettings'
-import { buildVoicePatch, draftBytes, pickerValueFor } from './squadVoiceDraft'
+import { buildVoicePatch, draftBytes, INSTANCE, pickerValueFor } from './squadVoiceDraft'
 
 const dflt: PublicVoiceProfile = {
   id: 'default',
@@ -21,6 +21,13 @@ function state(over: Partial<SquadPublicVoiceState> = {}): SquadPublicVoiceState
     local: { base: null, surfaces: {} },
     profile: dflt,
     fallback: null,
+    instanceDefault: {
+      voiceId: 'default',
+      name: 'Default',
+      effectiveVoiceId: 'default',
+      effectiveName: 'Default',
+      fallback: null,
+    },
     availableVoices: [
       { id: 'default', name: 'Default', description: null },
       { id: 'platform', name: 'Platform team', description: 'Terse and technical.' },
@@ -98,6 +105,59 @@ describe('SquadVoiceEditor', () => {
     )
     expect(html).toContain('is disabled')
     expect(html).toContain('Channel messages')
+  })
+})
+
+describe('a chosen instance default', () => {
+  const platform: PublicVoiceProfile = {
+    id: 'platform',
+    name: 'Platform team',
+    description: null,
+    base: 'Terse and technical.',
+    surfaces: {},
+    disabled: false,
+  }
+  const chosen = (over: Partial<SquadPublicVoiceState> = {}) =>
+    state({
+      profile: platform,
+      instanceDefault: {
+        voiceId: 'platform',
+        name: 'Platform team',
+        effectiveVoiceId: 'platform',
+        effectiveName: 'Platform team',
+        fallback: null,
+      },
+      resolved: { ...state().resolved, base: platform.base, profileId: 'platform', entries: {}, entrySources: {} },
+      ...over,
+    })
+
+  test('the picker names it, and the shipped profile becomes a separate choice', () => {
+    const html = render('sq-chosen', ['squads:read', 'squads:update'], chosen())
+    expect(html).toContain('Instance default (Platform team)')
+    // The instance default's text is shown for the instance option, and the meter knows its size.
+    expect(html).toContain('Terse and technical.')
+    expect(draftBytes(chosen(), INSTANCE, '', {})).toBeGreaterThan(0)
+  })
+
+  test('a disabled chosen default says the shipped default applies', () => {
+    const html = render(
+      'sq-chosen-off',
+      ['squads:read'],
+      chosen({
+        profile: dflt,
+        fallback: 'default_disabled',
+        instanceDefault: {
+          voiceId: 'platform',
+          name: 'Platform team',
+          effectiveVoiceId: 'default',
+          effectiveName: 'Default',
+          fallback: 'default_disabled',
+        },
+      })
+    )
+    expect(html).toContain('The instance default profile Platform team is')
+    expect(html).toContain('disabled; this squad uses the shipped default profile')
+    expect(html).not.toContain('The assigned profile')
   })
 })
 

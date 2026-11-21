@@ -110,8 +110,8 @@ test('assigning default clears the selected assignment and explains effective de
         </QueryClientProvider>
       )
     )
-    expect(container.textContent).toContain('Unassigned squads already use the instance default')
-    expect(container.textContent).toContain("Assigning default clears a squad's assignment")
+    expect(container.textContent).toContain('Unassigned squads already use this default profile')
+    expect(container.textContent).toContain("Choosing it for a squad clears that squad's assignment")
     const boxes = container.querySelectorAll<HTMLInputElement>('input')
     expect(boxes[0]!.checked).toBe(false)
     expect(boxes[1]!.checked).toBe(true)
@@ -125,3 +125,50 @@ test('assigning default clears the selected assignment and explains effective de
     await dom.cleanup()
   }
 })
+
+for (const chosen of ['mine', 'other'] as const)
+  test(`a chosen instance default (${chosen === 'mine' ? 'this profile' : 'another profile'}) decides who uses it`, async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost' })
+    const client = new QueryClient()
+    const original = globalThis.fetch
+    const patches: unknown[] = []
+    globalThis.fetch = (async (_, init) => {
+      patches.push(JSON.parse(String(init?.body)))
+      return Response.json({ voiceId: null })
+    }) as typeof fetch
+    const list = [
+      { id: 'mine-assigned', name: 'Mine assigned', publicVoiceId: 'mine' },
+      { id: 'unassigned', name: 'Unassigned', publicVoiceId: null },
+      { id: 'shipped', name: 'Shipped', publicVoiceId: 'default' },
+    ] as Squad[]
+    try {
+      const { root, container } = dom.createRoot()
+      await dom.act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <PermissionsProvider
+              usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
+            >
+              <SquadVoiceAssignments
+                profile={{ id: 'mine', disabled: false, isInstanceDefault: chosen === 'mine' }}
+                squads={list}
+              />
+            </PermissionsProvider>
+          </QueryClientProvider>
+        )
+      )
+      const boxes = container.querySelectorAll<HTMLInputElement>('input')
+      expect([...boxes].map((b) => b.checked)).toEqual([true, chosen === 'mine', false])
+      // Unassigned squads already follow the chosen default and cannot be unticked.
+      expect(boxes[1]!.disabled).toBe(chosen === 'mine')
+      await dom.act(async () => boxes[2]!.click())
+      await dom.act(async () => container.querySelector<HTMLButtonElement>('button')!.click())
+      await untilRendered(dom, () => expect(container.textContent).toContain('Updated 1 squad.'))
+      // Choosing the instance default clears the assignment; any other profile is assigned explicitly.
+      expect(patches).toEqual([{ voiceId: chosen === 'mine' ? null : 'mine', preserveCustomBase: true }])
+    } finally {
+      globalThis.fetch = original
+      client.clear()
+      await dom.cleanup()
+    }
+  })
