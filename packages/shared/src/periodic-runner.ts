@@ -55,7 +55,7 @@ export abstract class PeriodicRunner {
   protected readonly name: string
   protected readonly intervalMs: number
   protected readonly logger: PeriodicRunnerLogger
-  private timer: Timer | null = null
+  private timer: ReturnType<typeof setInterval> | null = null
   private running = false
   private runPromise: Promise<void> | null = null
 
