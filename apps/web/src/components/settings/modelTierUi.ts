@@ -1,5 +1,10 @@
+import {
+  deriveOpenRouterFallbackEntries,
+  openRouterEndpointForDirectProvider,
+  openRouterEndpointForModelId,
+} from '@ficus/shared/openrouter-tier-expansion'
 import type { AgentTypeConfig } from '../../api/config'
-import type { ProviderAuthEntry } from '../../api/providerAuth'
+import type { OpenRouterRoutingSummary, ProviderAuthEntry } from '../../api/providerAuth'
 export function formatResolvedModel(
   agentType: Pick<AgentTypeConfig, 'tier' | 'model' | 'resolvedChain' | 'provenance'>,
   tierLabel?: string
@@ -21,29 +26,62 @@ export const NO_USABLE_PROVIDER_WARNING =
  * their own, since routing simply skips them. "Unhealthy" is reserved for an enabled provider
  * with a real health problem (exhausted). The one chain-level warning is raised when every
  * entry is unusable (disabled, unauthenticated or unhealthy), because then nothing can run.
- * A provider missing from `providers` is treated as usable: the list only holds providers with
- * stored accounts, so absence (or a list still loading) is not evidence of a problem.
+ *
+ * `providers` lists every provider with stored accounts or environment/runtime auth, so once it
+ * has loaded, a provider missing from it is one nobody has signed in to. While it is still
+ * loading (or unavailable), pass `undefined`: authentication is then unknown and not judged.
+ *
+ * When the OpenRouter universal fallback is active, an entry it can shadow still runs through
+ * OpenRouter, so it counts as usable even if its own provider cannot run. This mirrors Core's
+ * expansion except for the OpenRouter catalog check, so it errs towards no warning.
  */
-export function modelChainWarnings(chain: string, providers: ProviderAuthEntry[]): string[] {
+export function modelChainWarnings(
+  chain: string,
+  providers: ProviderAuthEntry[] | undefined,
+  openRouter?: Pick<OpenRouterRoutingSummary, 'active' | 'health'>
+): string[] {
   const warnings: string[] = []
   const entries = chain
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean)
+  const shadowed = openRouterShadowedEntries(chain, openRouter)
   let usableEntries = 0
   for (const entry of entries) {
     const [provider, model] = entry.split(':')
-    const state = providers.find((item) => item.provider === provider)
-    if (state?.disabled) continue
+    const state = providers?.find((item) => item.provider === provider)
+    const viaOpenRouter = shadowed.has(entry)
+    if (state?.disabled) {
+      if (viaOpenRouter) usableEntries++
+      continue
+    }
     const unhealthy = state?.health === 'exhausted'
     if (unhealthy) warnings.push(`${provider}:${model} provider is unhealthy`)
-    if (!unhealthy && state?.configured !== false) usableEntries++
+    const authenticated = providers === undefined || (state !== undefined && state.configured !== false)
+    if ((!unhealthy && authenticated) || viaOpenRouter) usableEntries++
     const account = state?.accounts?.find((item) => !item.model || item.model === model)
     if (account?.capabilities && !account.capabilities.tools)
       warnings.push(`${provider}:${model} lacks tool capability`)
   }
   if (entries.length > 0 && usableEntries === 0) warnings.push(NO_USABLE_PROVIDER_WARNING)
   return warnings
+}
+
+/** Chain entries the active OpenRouter universal fallback would also try through OpenRouter. */
+function openRouterShadowedEntries(
+  chain: string,
+  openRouter: Pick<OpenRouterRoutingSummary, 'active' | 'health'> | undefined
+): Set<string> {
+  if (!openRouter?.active || openRouter.health === 'exhausted') return new Set()
+  return new Set(
+    deriveOpenRouterFallbackEntries(chain).flatMap((item) =>
+      'fallback' in item &&
+      openRouterEndpointForDirectProvider(item.provider) &&
+      openRouterEndpointForModelId(item.modelId)
+        ? [item.source]
+        : []
+    )
+  )
 }
 
 /** Providers the user turned off globally, for showing their chain entries muted. */

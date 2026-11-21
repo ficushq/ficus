@@ -19,7 +19,7 @@ export function registerProviderAuthCommands(program: Command) {
             console.log('No provider credentials configured')
             return
           }
-          outputTable(providers, ['provider', 'type', 'hasCredential'])
+          outputTable(providers, ['provider', 'type', 'hasCredential', 'configured'])
         }
       } catch (error) {
         outputError(error as Error)

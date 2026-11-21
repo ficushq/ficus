@@ -148,8 +148,49 @@ describe('modelChainWarnings', () => {
       ])
     ).toEqual(['openai:gpt-5 provider is unhealthy', NO_USABLE_PROVIDER_WARNING]))
 
-  test('providers missing from the list are not assumed broken (for example while loading)', () =>
-    expect(modelChainWarnings('zai:glm-5.3,openai:gpt-5', [])).toEqual([]))
+  test('while the provider list is loading, authentication is not judged', () =>
+    expect(modelChainWarnings('zai:glm-5.3,openai:gpt-5', undefined)).toEqual([]))
+
+  test('a chain naming only providers nobody has signed in to gets the chain-level warning', () => {
+    expect(modelChainWarnings('zai:glm-5.3,openai:gpt-5', [])).toEqual([NO_USABLE_PROVIDER_WARNING])
+    expect(modelChainWarnings('zai:glm-5.3', [provider('openai')])).toEqual([NO_USABLE_PROVIDER_WARNING])
+  })
+
+  test('a provider missing from a loaded list adds no entry warning while another entry is usable', () =>
+    expect(modelChainWarnings('zai:glm-5.3,openai:gpt-5', [provider('openai')])).toEqual([]))
+
+  test('a provider configured only through the environment or runtime is usable', () =>
+    expect(
+      modelChainWarnings('zai:glm-5.3', [
+        { provider: 'zai', hasCredential: false, configured: true, disabled: false, health: 'available', accounts: [] },
+      ])
+    ).toEqual([]))
+
+  describe('with the OpenRouter universal fallback', () => {
+    const active = { active: true, health: 'available' as const }
+
+    test('an active fallback keeps a chain of unsigned or disabled providers runnable', () => {
+      expect(modelChainWarnings('zai:glm-5.3,openai:gpt-5', [], active)).toEqual([])
+      expect(modelChainWarnings('zai:glm-5.3', [provider('zai', { disabled: true })], active)).toEqual([])
+    })
+
+    test('an inactive or exhausted fallback does not', () => {
+      expect(modelChainWarnings('openai:gpt-5', [], { active: false, health: 'available' })).toEqual([
+        NO_USABLE_PROVIDER_WARNING,
+      ])
+      expect(modelChainWarnings('openai:gpt-5', [], { active: true, health: 'exhausted' })).toEqual([
+        NO_USABLE_PROVIDER_WARNING,
+      ])
+    })
+
+    test('an entry OpenRouter cannot shadow is not covered', () =>
+      expect(modelChainWarnings('local:qwen', [], active)).toEqual([NO_USABLE_PROVIDER_WARNING]))
+
+    test('an exhausted provider is still reported, but the chain can run through OpenRouter', () =>
+      expect(modelChainWarnings('openai:gpt-5', [provider('openai', { health: 'exhausted' })], active)).toEqual([
+        'openai:gpt-5 provider is unhealthy',
+      ]))
+  })
 
   test('the tool capability warning skips disabled providers', () => {
     const noTools = (name: string, disabled: boolean) =>

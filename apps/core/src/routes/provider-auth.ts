@@ -508,11 +508,25 @@ app.get('/catalog', requirePermission('provider-auth:read'), async (c) => {
 })
 
 /** List all providers with auth status (no keys/tokens exposed) */
+/**
+ * List providers: every provider with stored accounts, then every provider the model
+ * runtime can authenticate without one (environment or runtime auth). The latter appear
+ * with `configured: true`, `hasCredential: false` and no accounts; nothing about where
+ * their auth comes from is exposed. Listing them lets clients read a provider missing
+ * from this list as one nobody has signed in to.
+ */
 app.get('/', requirePermission('provider-auth:read'), (c) => {
   const store = readAccountStore()
   const providers = Object.entries(store.accounts)
     .filter(([, accounts]) => accounts.length > 0)
     .map(([provider, accounts]) => providerSummary(provider, accounts))
+  const listed = new Set(providers.map((entry) => entry.provider))
+  const runtime = tryGetModelRuntime()
+  for (const provider of runtime?.getRegisteredProviderIds() ?? []) {
+    if (listed.has(provider) || !runtime?.hasConfiguredAuth(provider)) continue
+    listed.add(provider)
+    providers.push(providerSummary(provider, []))
+  }
   return c.json(providers)
 })
 
