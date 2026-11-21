@@ -1,15 +1,14 @@
 import { expect, test } from 'bun:test'
-import { act } from 'react'
-import { createRoot } from 'react-dom/client'
 import { acquireDomHarness } from '../../test/domHarness'
 import { useGraphModulesReady } from './useGraphModulesReady'
 
 for (const resolveBeforeToggle of [true, false]) {
   test(`3D labels become ready when modules resolve ${resolveBeforeToggle ? 'before' : 'after'} the 3D toggle`, async () => {
+    // The harness owns the root: loading react-dom before it installs the DOM leaves react-dom without
+    // one for every later test file in the process.
     const harness = await acquireDomHarness({ url: 'https://ficus.test' })
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
+    const { act } = harness
+    const { root, container } = harness.createRoot()
     const sprite = Promise.withResolvers<void>()
     const group = Promise.withResolvers<void>()
     const modules = Promise.all([sprite.promise, group.promise])
@@ -65,7 +64,8 @@ for (const resolveBeforeToggle of [true, false]) {
 
 test('disabled graph does not receive late readiness updates', async () => {
   const harness = await acquireDomHarness({ url: 'https://ficus.test' })
-  const root = createRoot(document.createElement('div'))
+  const { act } = harness
+  const { root } = harness.createRoot()
   const modules = Promise.withResolvers<void>()
   const renders: boolean[] = []
   function Consumer({ enabled }: { enabled: boolean }) {
