@@ -4,7 +4,7 @@ import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-provide
 import { createLocalTransport } from '../authorization/transport'
 import { projectIntegrationAssignments } from '../projection/projector'
 import { resolveProtectedBindings } from '../projection/protected-env'
-import { createNotionPlugin } from './plugin'
+import { NOTION_CLI_VERSION, createNotionPlugin } from './plugin'
 
 let restoreAdapter: (() => void) | undefined
 afterEach(() => {
@@ -58,7 +58,7 @@ test('connect assign reconcile invoke rotate without reinstall and unassign', as
   const assigned = projectIntegrationAssignments([{ plugin, connection }])
   expect(assigned.publicDeclaration.packages).toEqual(['nodejs@24.12.0'])
   expect(assigned.publicDeclaration.readiness).toEqual([
-    { id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.28' },
+    { id: 'notion-cli', command: 'ntn --version', expectedSubstring: NOTION_CLI_VERSION },
   ])
   const firstEnv = Object.fromEntries(await resolveProtectedBindings(assigned))
   expect(firstEnv).toEqual({ NOTION_WORKSPACE_ID: 'workspace-1' })

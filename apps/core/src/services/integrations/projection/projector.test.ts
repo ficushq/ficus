@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { notionPlugin } from '../notion/plugin'
+import { NOTION_CLI_VERSION, notionPlugin } from '../notion/plugin'
 import { projectIntegrationAssignments } from './projector'
 
 const connection = {
@@ -26,7 +26,7 @@ describe('projectIntegrationAssignments', () => {
       packages: ['nodejs@24.12.0'],
       setupSteps: notionPlugin.sandbox.setupSteps,
       initHooks: ['export PATH="$DEVBOX_PROJECT_ROOT/npm/bin:$PATH"'],
-      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.28' }],
+      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: NOTION_CLI_VERSION }],
       skills: ['notion'],
       extensions: [],
       protectedBindingNames: ['NOTION_WORKSPACE_ID'],
@@ -51,7 +51,7 @@ describe('projectIntegrationAssignments', () => {
       key: 'conflict',
       sandbox: {
         ...notionPlugin.sandbox,
-        setupSteps: [{ id: 'notion-cli@0.23.28', script: 'different-script' }],
+        setupSteps: [{ id: `notion-cli@${NOTION_CLI_VERSION}`, script: 'different-script' }],
         protectedBindings: [
           { name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration' as const, field: 'workspaceId' } },
         ],

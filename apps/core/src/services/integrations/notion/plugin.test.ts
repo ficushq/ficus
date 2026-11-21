@@ -4,7 +4,7 @@ import { join } from 'path'
 import { NotionClientError } from '@ficus/shared/oauth-providers/notion/client'
 import { integrationRegistry } from '../runtime'
 import { assertNotionIdentity } from './identity'
-import { createNotionPlugin } from './plugin'
+import { NOTION_CLI_VERSION, createNotionPlugin } from './plugin'
 
 function createPlugin(overrides: Record<string, unknown> = {}) {
   return createNotionPlugin({
@@ -43,8 +43,8 @@ describe('notionPlugin', () => {
     })
     expect(plugin.sandbox.packages).toEqual(['nodejs@24.12.0'])
     expect(plugin.sandbox.setupSteps).toHaveLength(1)
-    expect(plugin.sandbox.setupSteps[0].id).toBe('notion-cli@0.23.28')
-    expect(plugin.sandbox.setupSteps[0].script).toContain('npm pack --silent ntn@0.23.28')
+    expect(plugin.sandbox.setupSteps[0].id).toBe(`notion-cli@${NOTION_CLI_VERSION}`)
+    expect(plugin.sandbox.setupSteps[0].script).toContain(`npm pack --silent ntn@${NOTION_CLI_VERSION}`)
     expect(plugin.sandbox.protectedBindings).toEqual([
       { name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration', field: 'workspaceId' } },
     ])
