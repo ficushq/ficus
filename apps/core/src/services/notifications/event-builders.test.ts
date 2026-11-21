@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { withStoredPublicAppUrl } from '../../test-utils/public-app-url'
 import { buildNotificationEvent, getAppOrigin } from './event-builders'
 import { pushPreview } from '../push/preview'
+import { assistantAgentChatPath } from '@ficus/shared'
 import { WorkStream } from '../../entities/WorkStream'
 import { Squad } from '../../entities/Squad'
 import { InboxMessage } from '../../entities/InboxMessage'
@@ -97,7 +98,7 @@ describe('notification event builders', () => {
       title: '❓ Forge has a question',
       body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})`.slice(0, 300),
       pushSource: { body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})` },
-      url: 'https://ficus.example/squads/s1?agent=a1',
+      url: 'https://ficus.example/squads/s1/agents?agent=a1',
     })
   })
 
@@ -136,7 +137,8 @@ describe('notification event builders', () => {
       agentId: 'a-personal',
       title: '❓ manager has a question',
       body: 'Open Ficus to respond',
-      url: 'https://ficus.example/chat/a-personal',
+      // Squadless agents open in the Assistant's conversation view, not the legacy /chat page.
+      url: `https://ficus.example${assistantAgentChatPath('a-personal')}`,
     })
     expect(await buildNotificationEvent('agent-question.created', {})).toBeNull()
     expect(await buildNotificationEvent('agent-question.created', { questionId: 'missing' })).toBeNull()
@@ -256,6 +258,28 @@ describe('notification event builders', () => {
     })
     const failed = await buildNotificationEvent('execution.failed', { executionId: 'e1', agentId: 'a1' })
     expect(pushPreview(failed!).body).toBe('Engineer agent failed: details')
+  })
+
+  test('links execution notifications to the squad Chats tab, or the Assistant view for squadless agents', async () => {
+    process.env.APP_URL = 'https://ficus.example'
+    const { Agent } = await import('../../entities/Agent')
+    const { Execution } = await import('../../entities/Execution')
+    const agents: Record<string, unknown> = {
+      a1: { id: 'a1', agentTypeId: 'engineer', squadId: 's1', metadata: {} },
+      system: { id: 'system', agentTypeId: 'manager', squadId: null, metadata: {} },
+    }
+    track(spyOn(Agent, 'find').mockImplementation(async (id: string) => agents[id] as any))
+    track(spyOn(Execution, 'find').mockResolvedValue({ id: 'e1', error: 'boom' } as any))
+    track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
+
+    for (const type of ['execution.completed', 'execution.failed'] as const) {
+      expect((await buildNotificationEvent(type, { executionId: 'e1', agentId: 'a1' }))?.url).toBe(
+        'https://ficus.example/squads/s1/agents?agent=a1'
+      )
+      const squadless = await buildNotificationEvent(type, { executionId: 'e1', agentId: 'system' })
+      expect(squadless?.url).toBe(`https://ficus.example${assistantAgentChatPath('system')}`)
+      expect(squadless?.url).not.toContain('/chat/')
+    }
   })
 
   test('adds message and sender routing fields to agent-sent inbox notification events', async () => {

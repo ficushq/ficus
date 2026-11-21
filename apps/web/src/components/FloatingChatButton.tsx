@@ -6,15 +6,17 @@ import clsx from 'clsx'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { FLOATING_WINDOW_CLICK_HINT } from '../lib/agentChatLinks'
+import { agentChatPath } from '../lib/entityReference'
 import { FloatingWindowAgentContext, useFloatingWindows, type FloatingWindowsApi } from './floatingWindowsContext'
 import { useChatComposerOptionRow } from './chatComposerOptions'
 import { ExpandIcon, PopOutIcon } from './icons'
 
-/** An agent's own chat page: its squad's agents panel, or the personal chat page. */
+/**
+ * Where a floating window's chat goes when it leaves the window: its squad's Chats tab, or, for a
+ * squadless agent (or one whose squad is not known yet), the Assistant's view of that agent.
+ */
 export function agentFullPagePath(agentId: string, squadSlug?: string): string {
-  return squadSlug
-    ? `/squads/${encodeURIComponent(squadSlug)}/agents?agent=${encodeURIComponent(agentId)}`
-    : `/chat/${encodeURIComponent(agentId)}`
+  return agentChatPath({ id: agentId, squadId: squadSlug })
 }
 
 const BUTTON_CLASS = clsx(

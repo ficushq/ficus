@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import clsx from 'clsx'
 import { useAssistantNavigation, assistantNavigationParams } from '../hooks/useAssistantNavigation'
 import { useRealtimeEnabled } from '../hooks/useVoiceEnabled'
@@ -10,6 +10,7 @@ import { useAssistantWindow } from '../hooks/useAssistantWindow'
 import { assistantQueries } from '../queryOptions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
+import { LegacyChatRedirect } from './LegacyChatRedirect'
 import { AgentChat } from './AgentChat'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { AssistantCommandCenter } from './AssistantCommandCenter'
@@ -42,7 +43,6 @@ export function UnifiedAssistant(props: UnifiedAssistantProps = {}) {
 function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const ConversationComponent = dependencies?.ConversationComponent ?? AssistantConversationView
   const location = useLocation()
-  const navigate = useNavigate()
   const navigation = useAssistantNavigation()
   const { params, state, setState } = navigation
   const destination = navigation.entries.at(-1)
@@ -125,9 +125,6 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       setExisting(!linkedDraft)
     }
   }, [linkedId, select, idRef, linkedDraft])
-  useEffect(() => {
-    if (legacyId) navigate(`/chat/${encodeURIComponent(legacyId)}`, { replace: true })
-  }, [legacyId, navigate])
   const created = useCallback(
     (createdId: string) => {
       if (createdId === idRef.current) setExisting(true)
@@ -228,6 +225,8 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       previous?.focus()
     }
   }, [open])
+  if (legacyId) return <LegacyChatRedirect linkedId={legacyId} />
+
   return (
     <FloatingWindowFrame
       frameRef={panel}

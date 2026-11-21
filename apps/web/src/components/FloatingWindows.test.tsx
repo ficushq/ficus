@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
 import { useRef, type ReactNode } from 'react'
-import type { Agent, Squad, WorkStream } from '@ficus/shared'
+import { assistantAgentChatPath, type Agent, type Squad, type WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { queries } from '../queryOptions'
@@ -25,6 +25,7 @@ const { HoverCard, Menu, MenuItem, Panel, useHoverCard, usePopover } = await imp
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const SYSTEM = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const now = new Date('2026-11-20T00:00:00Z')
 
 function agent(id: string, name: string, overrides: Partial<Agent> = {}): Agent {
@@ -123,6 +124,7 @@ async function setup(
   for (const [key, value] of [
     [queries.agents.detail(A).queryKey, agent(A, 'Researcher')],
     [queries.agents.detail(B).queryKey, agent(B, 'Reviewer', { agentTypeId: 'reviewer' })],
+    [queries.agents.detail(SYSTEM).queryKey, agent(SYSTEM, 'System', { squadId: null, agentTypeId: 'manager' })],
     [queries.agents.detail('bbbbbbbb').queryKey, agent(B, 'Reviewer', { agentTypeId: 'reviewer' })],
     [queries.squads.list().queryKey, [squad]],
     [queries.agentTypes.list().queryKey, [{ id: 'consultant', name: 'Consultant' }]],
@@ -230,6 +232,20 @@ test('the pop-out button opens one floating window per agent, and inside it open
     expect(win.querySelector('[data-stub-conversation] [aria-label="Open in floating window"]')).toBeNull()
     await t.click(fullPage)
     expect(t.location()).toBe(`/squads/ficus/agents?agent=${A}`)
+    expect(t.windows()).toHaveLength(0)
+  } finally {
+    await t.cleanup()
+  }
+})
+
+test("a squadless agent's window opens the Assistant view of it in place of the legacy chat page", async () => {
+  const t = await setup(<FloatingChatButton agentId={SYSTEM} />, { url: '/feed' })
+  try {
+    await t.click(document.querySelector<HTMLButtonElement>('button[aria-label="Open in floating window"]')!)
+    const win = t.windowFor(SYSTEM)!
+    // The composer's control leaves the window; the title bar's uses the same path.
+    await t.click(win.querySelector<HTMLButtonElement>('[data-stub-conversation] button[aria-label="Open full page"]')!)
+    expect(t.location()).toBe(assistantAgentChatPath(SYSTEM))
     expect(t.windows()).toHaveLength(0)
   } finally {
     await t.cleanup()

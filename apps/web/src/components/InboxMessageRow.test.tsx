@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
-import type { Squad } from '@ficus/shared'
+import { assistantAgentChatPath, type Squad } from '@ficus/shared'
 import type { InboxMessageResponse } from '../api/inbox'
 import { formatSender, MessageRow } from './InboxMessageRow'
 
@@ -82,6 +82,16 @@ describe('MessageRow', () => {
     expect(html).not.toContain('data-testid="inbox-row-meta-mobile"')
     expect(html).toContain('Read')
     expect(html).not.toContain('Mark read')
+  })
+
+  test('links the sender to its squad Chats tab, or to the Assistant view of a squadless agent', () => {
+    const squadAgent = { id: 'a1', squadId: 'sq-1', name: 'A', agentTypeId: 'engineer', ownerUserId: null }
+    expect(renderRow(<MessageRow message={makeMessage({ senderAgent: squadAgent } as never)} />)).toContain(
+      'href="/squads/sq-1/agents?agent=a1"'
+    )
+    const html = renderRow(<MessageRow message={makeMessage()} />)
+    expect(html).toContain(`href="${assistantAgentChatPath('a1').replaceAll('&', '&amp;')}"`)
+    expect(html).not.toContain('/chat/')
   })
 
   test('does not create a broken chat link for a system sender', () => {
@@ -236,9 +246,9 @@ describe('formatSender', () => {
     expect(formatSender(message)).toBe('Summary Name [agent-12]')
     const html = renderRow(<MessageRow message={message} />)
     expect(html).toContain('Summary Name')
-    expect(html).toContain('/chat/agent-123456789')
+    expect(html).toContain('href="/squads/squad-1/agents?agent=agent-123456789"')
     const squadHtml = renderRow(<MessageRow message={message} squads={[{ id: 'squad-1', name: 'Squad' } as Squad]} />)
-    expect(squadHtml).toContain('/squads/squad-1?agent=agent-123456789')
+    expect(squadHtml).toContain('href="/squads/squad-1/agents?agent=agent-123456789"')
   })
 
   test('formats workspace voice assistant sender with name, type, and stable ID', () => {

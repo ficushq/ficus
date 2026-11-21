@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router'
-import { ChatPage } from './components/ChatPage'
+import { LegacyChatRedirect } from './components/LegacyChatRedirect'
 import { ChatDrawer } from './components/ChatDrawer'
 import { SquadsPage } from './components/SquadsPage'
 import { ActivityPage } from './components/ActivityPage'
@@ -151,8 +151,9 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<FeedPage />} />
                 <Route path="/feed" element={<Navigate to="/" replace />} />
-                <Route path="/chat" element={<ChatPage />} />
-                <Route path="/chat/:agentId" element={<ChatPage />} />
+                {/* The retired chat page: old bookmarks and sent notifications redirect to the agent's chat. */}
+                <Route path="/chat" element={<LegacyChatRedirect />} />
+                <Route path="/chat/:agentId" element={<LegacyChatRedirect />} />
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route path="/squads" element={<SquadsPage />} />
                 <Route path="/squads/:squadId/manager" element={<SquadManagerChatPage />} />
@@ -187,11 +188,8 @@ export default function App() {
           {/* Drop or paste a screenshot anywhere to have the Assistant file it */}
           <ScreenshotFiling />
 
-          {/* Floating chat button - desktop only, hidden on chat page */}
-          <Routes>
-            <Route path="/chat/*" element={null} />
-            <Route path="*" element={<ChatDrawer />} />
-          </Routes>
+          {/* The Assistant, over every page */}
+          <ChatDrawer />
         </div>
       </FloatingWindowsProvider>
     </InboxPopupProvider>

@@ -6,6 +6,7 @@ import type { InboxMessageResponse } from '../api/inbox'
 import { apiUrl } from '../api/client'
 import { MarkdownContent } from './MarkdownContent'
 import { getWorkStreamLink } from '../lib/inboxWorkStreamLink'
+import { agentChatPath } from '../lib/entityReference'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { ChevronDownIcon, ChevronRightIcon, WorkStreamIcon } from './icons'
 
@@ -57,11 +58,10 @@ export function MessageRow({ message, onMarkAsRead, squads = [], compact = false
           <div className="flex items-center gap-2 flex-wrap">
             {message.senderAgent ? (
               <Link
-                to={
-                  squad
-                    ? `/squads/${slugFor(squad.id)}?agent=${message.senderAgent.id}`
-                    : `/chat/${message.senderAgent.id}`
-                }
+                to={agentChatPath({
+                  id: message.senderAgent.id,
+                  squadId: message.senderAgent.squadId ? slugFor(message.senderAgent.squadId) : null,
+                })}
                 onClick={(e) => e.stopPropagation()}
                 className="text-xs text-muted hover:text-accent-light"
               >
