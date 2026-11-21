@@ -115,7 +115,7 @@ async function render(
   loadOlderCalls = []
   const scrollIntoView = mock(() => undefined)
   const dom = await acquireDomHarness({
-    url: 'http://localhost/chat',
+    url: 'http://localhost/squads/ficus/agents',
     windowOptions: innerWidth === undefined ? undefined : { innerWidth },
     configureWindow(window) {
       window.requestAnimationFrame = (callback: FrameRequestCallback) => window.setTimeout(callback, 0)

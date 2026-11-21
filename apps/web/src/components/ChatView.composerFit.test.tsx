@@ -59,7 +59,7 @@ type Props = Partial<React.ComponentProps<typeof ChatView>>
 
 async function render(props: Props = {}) {
   const dom = await acquireDomHarness({
-    url: 'http://localhost/chat',
+    url: 'http://localhost/squads/ficus/agents',
     configureWindow(window) {
       window.requestAnimationFrame = (callback: FrameRequestCallback) => window.setTimeout(callback, 0)
       window.cancelAnimationFrame = (id: number) => window.clearTimeout(id)
