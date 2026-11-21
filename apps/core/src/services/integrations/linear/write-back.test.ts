@@ -990,7 +990,13 @@ describe('untracking the issue of a bound session', () => {
 
   test('untracking another issue leaves the bound session alone', async () => {
     const { sessionId, stream } = await boundStream()
-    const other = { integration: 'linear', repository: 'eng', kind: 'issue', number: 8, externalId: randomUUID() }
+    const other = {
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 8,
+      externalId: randomUUID(),
+    } as const
     await addTrackedResources(stream.id, [{ ...other, connectionId: fixture.connectionId }])
     expect((await removeTrackedResource(stream.id, other)).removed).toBe(true)
     await drainAll()
