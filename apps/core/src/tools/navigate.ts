@@ -5,7 +5,7 @@ import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-
 
 const NavigateSchema = Type.Object({
   path: Type.String({
-    description: 'The frontend route path to navigate to (e.g. /tasks/abc123, /chat?new).',
+    description: 'The frontend route path to navigate to (e.g. /squads/abc123/work, /settings?section=providers).',
   }),
   prompt: Type.Boolean({
     description:

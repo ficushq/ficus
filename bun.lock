@@ -21,7 +21,7 @@
         "pm2": "^7.1.2",
         "prettier": "^3",
         "sharp": "^0.35.5",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
         "typescript-eslint": "^8",
         "web": "workspace:*",
       },
@@ -100,7 +100,7 @@
         "dotenv": "^18.0.10",
         "drizzle-kit": "0.31.11",
         "ntn": "0.23.30",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
     },
     "apps/docs": {
@@ -118,7 +118,7 @@
         "@types/bun": "^1.4.4",
         "happy-dom": "^21.0.4",
         "parse5": "^8.0.0",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
     },
     "apps/farm": {
@@ -146,7 +146,7 @@
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.3.0",
         "happy-dom": "^21.0.4",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
         "vite": "^8.3.8",
       },
     },
@@ -206,7 +206,7 @@
         "tailwindcss": "^4.3.5",
         "three": "^0.187.0",
         "three-spritetext": "^1.10.0",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
         "vite": "^8.3.8",
         "vite-plugin-pwa": "^2.0.0",
         "workbox-precaching": "^7.4.1",
@@ -220,7 +220,7 @@
         "zod": "^4.6.7",
       },
       "devDependencies": {
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
     },
     "packages/client-react": {
@@ -235,7 +235,7 @@
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "happy-dom": "^21.0.4",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
       "peerDependencies": {
         "@tanstack/react-query": ">=5",
@@ -254,7 +254,7 @@
       "devDependencies": {
         "@types/bun": "^1.4.4",
         "@types/micromatch": "^4.0.10",
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
     },
     "packages/shared": {
@@ -265,7 +265,7 @@
         "zod": "^4.6.7",
       },
       "devDependencies": {
-        "typescript": "^5.7.0",
+        "typescript": "^6.0.3",
       },
     },
   },
@@ -3091,7 +3091,7 @@
 
     "typesafe-path": ["typesafe-path@0.2.2", "", {}, "sha512-OJabfkAg1WLZSqJAJ0Z6Sdt3utnbzr/jh+NAHoyWHJe8CMSy79Gm085094M9nvTPy22KzTVn5Zq5mbapCI/hPA=="],
 
-    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+    "typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "typescript-auto-import-cache": ["typescript-auto-import-cache@0.3.6", "", { "dependencies": { "semver": "^7.3.8" } }, "sha512-RpuHXrknHdVdK7wv/8ug3Fr0WNsNi5l5aB8MYYuXhq2UH5lnEB1htJ1smhtD5VeCsGr2p8mUDtd83LCQDFVgjQ=="],
 

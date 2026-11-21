@@ -20,6 +20,8 @@ export interface AssistantToolEnvironment extends VoiceToolExecutor {
   can?: (permission: string) => boolean
 }
 const text = z.string().trim().min(1)
+const AGENT_CHAT_HINT =
+  'Agent chats open in their squad Chats tab (/squads/:squadId/agents?agent=:agentId) or with navigate agentId and open=true.'
 const limit = z.int().min(1).max(50).default(20)
 function tool(
   name: string,
@@ -63,6 +65,24 @@ export function createAssistantTools(
     if (!id) throw new Error('Unknown or ambiguous squad. Search for its full ID first.')
     return id
   }
+  /**
+   * Agent chats live in their squad's Chats tab, keyed by the full agent ID. The model only knows
+   * managers by handle, so resolve the agent it named and build the link from the live agent; a
+   * legacy agent thread path it remembers from elsewhere is sent to the same place.
+   */
+  async function canonicalAgentChatPath(path: string): Promise<string> {
+    const url = new URL(path, 'http://ficus.local')
+    const legacy = url.pathname.match(/^\/chat(?:\/([^/]+))?\/?$/)
+    const squadChats = /^\/squads\/[^/]+\/agents\/?$/.test(url.pathname)
+    const reference = legacy ? legacy[1] && decodeURIComponent(legacy[1]) : squadChats && url.searchParams.get('agent')
+    if (legacy && !reference) throw new Error(AGENT_CHAT_HINT)
+    if (!reference) return path
+    const agent = await resolveAgentByReference(reference, deps)
+    if (!agent.squadId) throw new Error(AGENT_CHAT_HINT)
+    const query = legacy ? new URLSearchParams() : url.searchParams
+    query.set('agent', agent.id)
+    return `/squads/${encodeURIComponent(agent.squadId)}/agents?${query}${url.hash}`
+  }
   return [
     {
       ...tool(
@@ -88,8 +108,9 @@ export function createAssistantTools(
             })
             .parse(args)
           if (input.path) {
-            env.navigate(input.path)
-            return { ok: true, navigatedTo: input.path }
+            const path = await canonicalAgentChatPath(input.path)
+            env.navigate(path)
+            return { ok: true, navigatedTo: path }
           }
           if (input.drawer) {
             const currentPath = env.getCurrentPath?.() ?? `${window.location.pathname}${window.location.search}`
