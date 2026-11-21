@@ -53,6 +53,20 @@ try {
     await capture('settings-assignments')
     await disclosure.click()
 
+    // Choosing another profile as the instance default moves the badge and reports the change.
+    assert.equal(await page.locator('[data-voice-profile="default"] [data-instance-default]').count(), 1)
+    await page.getByRole('button', { name: 'Set Platform voice as default', exact: true }).click()
+    await page.getByText('Platform voice is now the default voice for every squad without an assignment.').waitFor()
+    await page.locator('[data-voice-profile="platform"] [data-instance-default]').waitFor()
+    assert.equal(await page.locator('[data-voice-profile="default"] [data-instance-default]').count(), 0)
+    await page.locator('[data-voice-profile="default"]').scrollIntoViewIfNeeded()
+    await capture('settings-default')
+    // Disabling the current default asks first.
+    const disableDefault = page.getByRole('button', { name: 'Disable Platform voice', exact: true })
+    await disableDefault.click()
+    assert.match(await disableDefault.innerText(), /Unassigned squads use the shipped default/)
+    await capture('settings-disable-default-confirm')
+
     await page.getByRole('heading', { name: 'Create a voice from GitHub', exact: true }).scrollIntoViewIfNeeded()
     assert.equal(
       await page
@@ -84,20 +98,22 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Profile name')
     await page.getByRole('heading', { name: 'Review your voice', exact: true }).scrollIntoViewIfNeeded()
     await capture('onboarding-editor')
-    await page.getByRole('button', { name: 'Save and use for Platform engineering', exact: true }).click()
+    await page.getByRole('button', { name: 'Save and use as default voice', exact: true }).scrollIntoViewIfNeeded()
+    await capture('onboarding-save-default')
+    await page.getByRole('button', { name: 'Save and use as default voice', exact: true }).click()
     await page.getByRole('alert').scrollIntoViewIfNeeded()
     assert.match(
       await page.getByRole('alert').innerText(),
-      /Profile saved; could not assign it to Platform engineering: public_voice_too_long/
+      /Profile saved; could not make it the default voice: Forbidden/
     )
     await capture('onboarding-partial-failure')
-    await page.getByRole('button', { name: 'Retry assignment', exact: true }).click()
-    await page.getByText('From GitHub is now used by Platform engineering.', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Retry setting as default', exact: true }).click()
+    await page.getByText('From GitHub is now the default voice.', { exact: false }).waitFor()
     await capture('onboarding-success')
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Passed Settings and onboarding at 390 and 1280 pixels: account selection, derivation, named draft editor, partial assignment failure, assignment-only retry, no horizontal overflow and zero browser errors.'
+    'Passed Settings and onboarding at 390 and 1280 pixels: account selection, choosing the instance default, confirming before disabling it, derivation, named draft editor, a failed set-as-default and its retry without recreating the profile, no horizontal overflow and zero browser errors.'
   )
 } catch (error) {
   console.error('Browser errors:', errors)

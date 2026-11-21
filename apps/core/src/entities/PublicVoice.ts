@@ -1,4 +1,4 @@
-import { count, eq, inArray } from 'drizzle-orm'
+import { and, count, eq, inArray } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import {
   DEFAULT_PUBLIC_VOICE_ID,
@@ -8,9 +8,15 @@ import {
   type PublicVoiceProfileJson,
   type PublicVoiceSurfaces,
 } from '@ficus/shared'
-import { db, publicVoices, squads } from '../db'
+import { db, publicVoices, settings, squads } from '../db'
 
 export type PublicVoiceRow = InferSelectModel<typeof publicVoices>
+
+/**
+ * The admin's choice of instance default, in the plain settings table. Config sync never writes
+ * it; no row means the shipped `default` profile.
+ */
+export const INSTANCE_DEFAULT_VOICE_SETTING_KEY = 'public-voice:instance-default'
 
 export interface UpsertPublicVoiceInput {
   id: string
@@ -38,6 +44,8 @@ export class PublicVoice implements PublicVoiceRow {
 
   private static cache = new Map<string, PublicVoice>()
   private static allCached: PublicVoice[] | null = null
+  /** The chosen instance default id, refreshed with the profiles; null means the shipped `default`. */
+  private static chosenDefaultId: string | null = null
   private static lastCacheRefresh = 0
   private static cacheTimeout = 60_000
 
@@ -53,15 +61,20 @@ export class PublicVoice implements PublicVoiceRow {
   static invalidateCache(): void {
     this.cache.clear()
     this.allCached = null
+    this.chosenDefaultId = null
     this.lastCacheRefresh = 0
   }
 
   static async list(options: { includeDisabled?: boolean } = {}): Promise<PublicVoice[]> {
     if (!this.isCacheValid() || !this.allCached) {
-      const rows = await db.select().from(publicVoices).orderBy(publicVoices.id)
+      const [rows, [choice]] = await Promise.all([
+        db.select().from(publicVoices).orderBy(publicVoices.id),
+        db.select({ value: settings.value }).from(settings).where(eq(settings.key, INSTANCE_DEFAULT_VOICE_SETTING_KEY)),
+      ])
       this.allCached = rows.map((row) => new PublicVoice(row))
       this.cache.clear()
       for (const item of this.allCached) this.cache.set(item.id, item)
+      this.chosenDefaultId = choice?.value || null
       this.lastCacheRefresh = Date.now()
     }
     return options.includeDisabled ? this.allCached : this.allCached.filter((item) => !item.disabled)
@@ -76,9 +89,36 @@ export class PublicVoice implements PublicVoiceRow {
     return this.cache.get(id) ?? null
   }
 
-  /** The instance default profile, disabled or not; null if it was never synced. */
+  /**
+   * The shipped `default` profile, disabled or not; null if it was never synced. It is the instance
+   * default unless an admin chose another (`instanceDefaultId`), and always the fallback.
+   */
   static findDefault(): Promise<PublicVoice | null> {
     return this.find(DEFAULT_PUBLIC_VOICE_ID)
+  }
+
+  /** The id of the profile chosen as the instance default, whether or not it is usable. */
+  static async instanceDefaultId(): Promise<string> {
+    if (!this.isCacheValid() || !this.allCached) await this.list()
+    return this.chosenDefaultId ?? DEFAULT_PUBLIC_VOICE_ID
+  }
+
+  /**
+   * Choose the instance default. Choosing the shipped `default` removes the stored choice. Callers
+   * check that the profile exists and is enabled. Invalidates the cache, so every squad on the
+   * instance default picks the change up on its next prompt.
+   */
+  static async setInstanceDefaultId(id: string, updatedBy?: string | null): Promise<void> {
+    if (id === DEFAULT_PUBLIC_VOICE_ID) {
+      await db.delete(settings).where(eq(settings.key, INSTANCE_DEFAULT_VOICE_SETTING_KEY))
+    } else {
+      const values = { value: id, updatedAt: new Date(), updatedBy: updatedBy ?? null }
+      await db
+        .insert(settings)
+        .values({ key: INSTANCE_DEFAULT_VOICE_SETTING_KEY, ...values })
+        .onConflictDoUpdate({ target: settings.key, set: values })
+    }
+    this.invalidateCache()
   }
 
   /** Insert-only person-created profiles. A concurrent id collision must never overwrite a draft. */
@@ -124,9 +164,15 @@ export class PublicVoice implements PublicVoiceRow {
     this.invalidateCache()
   }
 
-  /** Deletes the profile; assigned squads fall back to the instance default (on delete set null). */
+  /**
+   * Deletes the profile; assigned squads fall back to the instance default (on delete set null).
+   * Deleting the chosen instance default also clears that choice, so the shipped `default` applies.
+   */
   static async delete(id: string): Promise<void> {
-    await db.delete(publicVoices).where(eq(publicVoices.id, id))
+    await db.transaction(async (tx) => {
+      await tx.delete(publicVoices).where(eq(publicVoices.id, id))
+      await tx.delete(settings).where(and(eq(settings.key, INSTANCE_DEFAULT_VOICE_SETTING_KEY), eq(settings.value, id)))
+    })
     this.invalidateCache()
   }
 

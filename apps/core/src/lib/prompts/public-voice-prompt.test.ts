@@ -3,7 +3,9 @@ import type { PublicVoiceProfile } from '@ficus/shared'
 import {
   PUBLIC_VOICE_PROMPT_TOKEN,
   buildPublicVoicePrompt,
+  describeInstanceDefault,
   publicVoicePromptFallback,
+  resolveInstanceDefaultVoice,
   resolveSquadPublicVoice,
   type PublicVoiceLoaders,
 } from './public-voice-prompt'
@@ -17,11 +19,12 @@ const profile = (id: string, base: string, disabled = false): PublicVoiceProfile
   disabled,
 })
 
-function loaders(profiles: PublicVoiceProfile[]): PublicVoiceLoaders {
+function loaders(profiles: PublicVoiceProfile[], instanceDefaultId: string | null = null): PublicVoiceLoaders {
   const byId = new Map(profiles.map((p) => [p.id, p]))
   return {
     findProfile: async (id) => byId.get(id) ?? null,
     findDefault: async () => byId.get('default') ?? null,
+    findInstanceDefaultId: async () => instanceDefaultId,
   }
 }
 
@@ -78,6 +81,93 @@ describe('resolveSquadPublicVoice', () => {
     )
     expect(disabled.fallback).toBe('assigned_disabled')
     expect(disabled.resolved.baseSource).toBe('instance')
+  })
+
+  test('an unassigned squad uses the chosen instance default; assignments and custom bases are unchanged', async () => {
+    const profiles = [profile('default', 'Shipped.'), profile('team', 'Team.'), profile('mine', 'Mine.')]
+    const chosen = loaders(profiles, 'mine')
+
+    const unassigned = await resolveSquadPublicVoice(squad(), chosen)
+    expect(unassigned.resolved.base).toBe('Mine.')
+    expect(unassigned.resolved.baseSource).toBe('instance')
+    expect(unassigned.resolved.profileId).toBe('mine')
+    expect(unassigned.profile?.id).toBe('mine')
+    expect(unassigned.fallback).toBeNull()
+    expect(unassigned.instanceDefault.voiceId).toBe('mine')
+    expect(await buildPublicVoicePrompt(null, chosen)).toBe('### Voice\n\nMine.')
+
+    const assigned = await resolveSquadPublicVoice(squad({ publicVoiceId: 'team' }), chosen)
+    expect(assigned.resolved.base).toBe('Team.')
+    expect(assigned.resolved.baseSource).toBe('profile')
+    // An explicit assignment to the shipped profile stays on it.
+    const shipped = await resolveSquadPublicVoice(squad({ publicVoiceId: 'default' }), chosen)
+    expect(shipped.resolved.base).toBe('Shipped.')
+    const custom = await resolveSquadPublicVoice(squad({ publicVoice: { base: 'Ours.', surfaces: {} } }), chosen)
+    expect(custom.resolved.base).toBe('Ours.')
+
+    // A disabled assignment falls back to the chosen default, not the shipped one.
+    const disabledAssignment = await resolveSquadPublicVoice(
+      squad({ publicVoiceId: 'team' }),
+      loaders([profile('default', 'Shipped.'), profile('team', 'Team.', true), profile('mine', 'Mine.')], 'mine')
+    )
+    expect(disabledAssignment.resolved.base).toBe('Mine.')
+    expect(disabledAssignment.fallback).toBe('assigned_disabled')
+  })
+
+  test('a disabled or missing chosen default falls back to the shipped default and reports it', async () => {
+    const disabled = await resolveSquadPublicVoice(
+      squad(),
+      loaders([profile('default', 'Shipped.'), profile('mine', 'Mine.', true)], 'mine')
+    )
+    expect(disabled.resolved.base).toBe('Shipped.')
+    expect(disabled.resolved.baseSource).toBe('instance')
+    expect(disabled.fallback).toBe('default_disabled')
+    expect(disabled.profile?.id).toBe('default')
+    expect(disabled.instanceDefault).toMatchObject({ voiceId: 'mine', fallback: 'default_disabled' })
+
+    const missing = await resolveSquadPublicVoice(squad(), loaders([profile('default', 'Shipped.')], 'gone'))
+    expect(missing.resolved.base).toBe('Shipped.')
+    expect(missing.fallback).toBe('default_missing')
+    expect(missing.instanceDefault.chosen).toBeNull()
+
+    // A squad with a usable assignment or its own base does not report the default's fallback.
+    const assigned = await resolveSquadPublicVoice(
+      squad({ publicVoiceId: 'team' }),
+      loaders([profile('default', 'Shipped.'), profile('team', 'Team.')], 'gone')
+    )
+    expect(assigned.fallback).toBeNull()
+
+    // Both unusable: no voice, and the fallback is still reported.
+    const none = await resolveSquadPublicVoice(
+      squad(),
+      loaders([profile('default', 'Shipped.', true), profile('mine', 'Mine.', true)], 'mine')
+    )
+    expect(none.resolved.baseSource).toBe('none')
+    expect(none.fallback).toBe('default_disabled')
+  })
+
+  test('describeInstanceDefault names the chosen and the effective profile', async () => {
+    const profiles = [profile('default', 'Shipped.'), profile('mine', 'Mine.', true)]
+    expect(describeInstanceDefault(await resolveInstanceDefaultVoice(loaders(profiles, 'mine')))).toEqual({
+      voiceId: 'mine',
+      name: 'mine',
+      effectiveVoiceId: 'default',
+      effectiveName: 'default',
+      fallback: 'default_disabled',
+    })
+    expect(describeInstanceDefault(await resolveInstanceDefaultVoice(loaders(profiles)))).toEqual({
+      voiceId: 'default',
+      name: 'default',
+      effectiveVoiceId: 'default',
+      effectiveName: 'default',
+      fallback: null,
+    })
+    // Loaders without a chosen id (older callers) use the shipped default.
+    const legacy: PublicVoiceLoaders = {
+      findProfile: async () => null,
+      findDefault: async () => profile('default', 'Shipped.'),
+    }
+    expect((await resolveInstanceDefaultVoice(legacy)).voiceId).toBe('default')
   })
 
   test('has no effective profile with a custom base', async () => {

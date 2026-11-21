@@ -1,6 +1,5 @@
 import { and, eq, isNotNull, isNull, or } from 'drizzle-orm'
 import {
-  DEFAULT_PUBLIC_VOICE_ID,
   PUBLIC_VOICE_MAX_BYTES,
   publicVoiceBytes,
   renderPublicVoicePrompt,
@@ -11,23 +10,38 @@ import {
 } from '@ficus/shared'
 import { db, squads } from '../../db'
 import { PublicVoice } from '../../entities/PublicVoice'
+import { resolveInstanceDefaultVoice } from '../../lib/prompts/public-voice-prompt'
 
-/** Profiles as the API lists them, with how many squads are assigned to each. */
+/** Profiles as the API lists them, with how many squads are assigned to each and which is the instance default. */
 export async function describeProfiles(profiles: PublicVoice[]): Promise<PublicVoiceProfileJson[]> {
-  const counts = await PublicVoice.assignedSquadCounts(profiles.map((p) => p.id))
-  return profiles.map((profile) => ({ ...profile.toJson(), assignedSquadCount: counts.get(profile.id) ?? 0 }))
+  const [counts, instanceDefaultId] = await Promise.all([
+    PublicVoice.assignedSquadCounts(profiles.map((p) => p.id)),
+    PublicVoice.instanceDefaultId(),
+  ])
+  return profiles.map((profile) => ({
+    ...profile.toJson(),
+    assignedSquadCount: counts.get(profile.id) ?? 0,
+    isInstanceDefault: profile.id === instanceDefaultId,
+  }))
 }
 
 /**
- * How many squads using this profile (assigned, or on the instance default when
- * it is `default`) would render over the cap with their own surface entries.
- * Squads with a custom base ignore profiles and are not counted.
+ * How many squads using this profile (assigned, or on the instance default when it is the
+ * profile the instance default currently resolves to) would render over the cap with their own
+ * surface entries. Squads with a custom base ignore profiles and are not counted.
+ *
+ * `asInstanceDefault` counts the squads on the instance default as users of this profile even
+ * when it is not the instance default yet: the check made when choosing a new default.
  */
-export async function overCapSquadCount(profile: PublicVoiceProfile): Promise<number> {
-  const usesProfile =
-    profile.id === DEFAULT_PUBLIC_VOICE_ID
-      ? or(eq(squads.publicVoiceId, profile.id), isNull(squads.publicVoiceId))
-      : eq(squads.publicVoiceId, profile.id)
+export async function overCapSquadCount(
+  profile: PublicVoiceProfile,
+  options: { asInstanceDefault?: boolean } = {}
+): Promise<number> {
+  const isInstanceDefault =
+    options.asInstanceDefault || (await resolveInstanceDefaultVoice()).profile?.id === profile.id
+  const usesProfile = isInstanceDefault
+    ? or(eq(squads.publicVoiceId, profile.id), isNull(squads.publicVoiceId))
+    : eq(squads.publicVoiceId, profile.id)
   const rows = await db
     .select({ publicVoiceId: squads.publicVoiceId, publicVoice: squads.publicVoice })
     .from(squads)

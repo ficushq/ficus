@@ -10,7 +10,7 @@ import {
 } from '@ficus/shared'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../client'
 import { isJsonMode, output, outputError } from '../output'
-import { addDeriveOptions, parseSurfaceName, readTextOption, runDerivation } from './voice'
+import { addDeriveOptions, describeInstanceDefaultLine, parseSurfaceName, readTextOption, runDerivation } from './voice'
 
 /**
  * `ficus squad voice`: which voice profile a squad uses and its own layer
@@ -31,6 +31,8 @@ function printState(state: SquadPublicVoiceState): void {
     console.log(`  The assigned profile ${state.voiceId} is disabled; using the instance default.`)
   if (state.fallback === 'assigned_missing')
     console.log(`  The assigned profile ${state.voiceId} no longer exists; using the instance default.`)
+  // Older servers do not report the instance default.
+  if (state.instanceDefault) console.log(describeInstanceDefaultLine(state.instanceDefault))
   console.log(
     `Size: ${resolved.bytes} / ${resolved.maxBytes} bytes${resolved.overCap ? ` (over the cap; dropped: ${resolved.dropped.join(', ')})` : ''}`
   )
@@ -102,7 +104,10 @@ export function registerSquadVoiceCommands(squad: Command) {
   voice
     .command('use <squadId> [voiceId]')
     .description("Assign a voice profile (clears the squad's custom voice)")
-    .option('--instance-default', 'Use the instance default profile instead of an assigned one')
+    .option(
+      '--instance-default',
+      'Use the instance default (ficus voice default shows which profile that is) instead of an assigned one'
+    )
     .action(
       run(async (squadId: string, voiceId: string | undefined, opts: { instanceDefault?: boolean }) => {
         if (!voiceId === !opts.instanceDefault) throw new Error('Give a profile id or --instance-default')

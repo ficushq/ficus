@@ -19,7 +19,14 @@ import { DeriveVoiceCard } from '../voice/DeriveVoiceCard'
 import { NewProfileDialog } from '../voice/NewProfileDialog'
 import { VoicePicker } from '../voice/VoicePicker'
 import { queries } from '../../queryOptions'
-import { buildVoicePatch, CUSTOM, draftBytes, INSTANCE, pickerValueFor } from './squadVoiceDraft'
+import {
+  buildVoicePatch,
+  CUSTOM,
+  draftBytes,
+  INSTANCE,
+  instanceDefaultVoiceId,
+  pickerValueFor,
+} from './squadVoiceDraft'
 
 /** Squad settings → Voice: how this squad's agents sound in public text. See docs/wiki/public-voice.md. */
 export function SquadVoiceSettings({ squadId }: { squadId: string }) {
@@ -76,9 +83,11 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
   const pickedProfile =
     picker === CUSTOM
       ? null
-      : (picker === INSTANCE ? DEFAULT_PUBLIC_VOICE_ID : picker) === state.profile?.id
+      : (picker === INSTANCE ? instanceDefaultVoiceId(state) : picker) === state.profile?.id
         ? state.profile
         : null
+  const instanceName = state.instanceDefault?.effectiveName
+  const instanceDefaultLabel = instanceName ? `Instance default (${instanceName})` : 'Instance default'
   const saveError = save.error instanceof ApiError ? save.error.message : save.error ? String(save.error) : null
 
   return (
@@ -94,10 +103,17 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
         </p>
       </div>
 
-      {state.fallback && (
+      {(state.fallback === 'assigned_disabled' || state.fallback === 'assigned_missing') && (
         <p className="text-xs text-status-attention-600">
           The assigned profile {state.voiceId} is {state.fallback === 'assigned_disabled' ? 'disabled' : 'missing'};
           this squad uses the instance default until you pick another.
+        </p>
+      )}
+      {(state.fallback === 'default_disabled' || state.fallback === 'default_missing') && (
+        <p className="text-xs text-status-attention-600">
+          The instance default profile {state.instanceDefault?.name ?? state.instanceDefault?.voiceId} is{' '}
+          {state.fallback === 'default_disabled' ? 'disabled' : 'missing'}; this squad uses the shipped default profile
+          instead.
         </p>
       )}
       {state.resolved.overCap && (
@@ -124,9 +140,14 @@ export function SquadVoiceEditor({ squadId, state }: { squadId: string; state: S
               onChange={setPicker}
               className="w-full"
               options={[
-                { value: INSTANCE, label: 'Instance default' },
+                {
+                  value: INSTANCE,
+                  label: instanceDefaultLabel,
+                  description: 'Follows the instance default when an admin changes it',
+                },
                 ...state.availableVoices
-                  .filter((v) => v.id !== DEFAULT_PUBLIC_VOICE_ID)
+                  // The shipped profile is listed on its own only when another profile is the default.
+                  .filter((v) => v.id !== DEFAULT_PUBLIC_VOICE_ID || instanceDefaultVoiceId(state) !== v.id)
                   .map((v) => ({ value: v.id, label: v.name, description: v.description ?? undefined })),
                 { value: CUSTOM, label: 'Custom for this squad' },
               ]}

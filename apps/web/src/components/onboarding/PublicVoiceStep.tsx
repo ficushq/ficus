@@ -3,43 +3,40 @@ import { ApiError } from '../../api/client'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PUBLIC_VOICE_MAX_BYTES, type Squad } from '@ficus/shared'
-import { createPublicVoice, patchSquadVoice, publicVoiceQueryKeys } from '../../api/publicVoices'
+import { createPublicVoice, publicVoiceQueryKeys, setPublicVoiceInstanceDefault } from '../../api/publicVoices'
 import { queries } from '../../queryOptions'
 import { AccountVoiceDerivation } from '../voice/AccountVoiceDerivation'
 import { VoiceProfileDraftFields } from '../voice/VoiceProfileDraftFields'
-import { CUSTOM_VOICE_ASSIGNMENT_NOTE } from '../voice/SquadVoiceAssignments'
 import { useVoiceAccounts } from '../voice/voiceAccounts'
 import { profileIdFromName } from '../voice/profileId'
-import { pickMostRecentlyCreated } from './FirstSquadStep'
 
-/** Optional, person-initiated setup. There is deliberately no server checklist state. */
+/** Squads that keep their voice when the instance default changes: an assigned profile or their own voice. */
+function squadsKeepingTheirVoice(squads: Squad[]): Squad[] {
+  return squads.filter((s) => !s.archivedAt && (s.publicVoiceId || s.publicVoice?.base))
+}
+
+/**
+ * Optional, person-initiated setup. There is deliberately no server checklist state. Saving creates a
+ * new profile and makes it the instance default, so every squad without an assigned profile or its
+ * own voice uses it; squads with either keep theirs (no squad is changed).
+ */
 export function PublicVoiceStep({
   githubDone,
-  createdSquad,
   onConnectGitHub,
 }: {
   githubDone: boolean
+  /** Unused here: the voice becomes the instance default rather than one squad's. Other steps use it. */
   createdSquad: Squad | null
   onConnectGitHub: () => void
 }) {
   const client = useQueryClient()
   const { accounts, isPending: accountsPending, error: accountsError } = useVoiceAccounts()
   const { data: squads = [] } = useQuery(queries.squads.list())
-  const target = createdSquad ?? pickMostRecentlyCreated(squads)
-  // A squad with its own custom base ignores profiles. Never offer to assign over it from here:
-  // the person clears that base in the squad's Voice settings, as Settings → Voices explains.
-  const customVoiceSquad = target?.publicVoice?.base ? target : null
-  const assignTarget = customVoiceSquad ? null : target
+  const keeping = squadsKeepingTheirVoice(squads)
   const [draft, setDraft] = useState<ProfileDraft | null>(null)
-  // Capture the profile and target at the moment of creation, not at assignment retry time.
-  const [saved, setSaved] = useState<{
-    id: string
-    name: string
-    target: Pick<Squad, 'id' | 'name'> | null
-    /** The squad that was not assigned because it uses (or turned out to use) its own custom voice. */
-    customVoiceSquad?: Pick<Squad, 'id' | 'name'>
-  } | null>(null)
-  const [assignmentError, setAssignmentError] = useState('')
+  // Capture the profile at the moment of creation, so a retry never recreates it.
+  const [saved, setSaved] = useState<{ id: string; name: string } | null>(null)
+  const [defaultError, setDefaultError] = useState('')
   const [complete, setComplete] = useState(false)
   const saving = useRef(false)
   const accountFields = useRef<HTMLFieldSetElement>(null)
@@ -49,29 +46,20 @@ export function PublicVoiceStep({
       client.invalidateQueries({ queryKey: publicVoiceQueryKeys.all }),
       client.invalidateQueries({ queryKey: queries.squads.list().queryKey }),
     ])
-  const assign = async (profile: NonNullable<typeof saved>) => {
-    setAssignmentError('')
-    if (profile.target) {
-      try {
-        // preserveCustomBase never wipes a custom base set after the squad list was loaded.
-        const state = await patchSquadVoice(profile.target.id, { voiceId: profile.id, preserveCustomBase: true })
-        if (state.local?.base) {
-          setSaved({ ...profile, target: null, customVoiceSquad: profile.target })
-          setComplete(true)
-          await refresh()
-          return
-        }
-      } catch (error) {
-        setAssignmentError(
-          error instanceof ApiError && typeof (error.payload as { error?: unknown })?.error === 'string'
-            ? (error.payload as { error: string }).error
-            : error instanceof Error
-              ? error.message
-              : String(error)
-        )
-        await refresh()
-        return
-      }
+  const makeDefault = async (profile: NonNullable<typeof saved>) => {
+    setDefaultError('')
+    try {
+      await setPublicVoiceInstanceDefault(profile.id)
+    } catch (error) {
+      setDefaultError(
+        error instanceof ApiError && typeof (error.payload as { error?: unknown })?.error === 'string'
+          ? (error.payload as { error: string }).error
+          : error instanceof Error
+            ? error.message
+            : String(error)
+      )
+      await refresh()
+      return
     }
     setComplete(true)
     await refresh()
@@ -88,14 +76,9 @@ export function PublicVoiceStep({
           base: draft.base,
           surfaces: draft.surfaces,
         })
-        const created = {
-          id: profile.id,
-          name: profile.name,
-          target: assignTarget ? { id: assignTarget.id, name: assignTarget.name } : null,
-          ...(customVoiceSquad ? { customVoiceSquad: { id: customVoiceSquad.id, name: customVoiceSquad.name } } : {}),
-        }
+        const created = { id: profile.id, name: profile.name }
         setSaved(created)
-        await assign(created)
+        await makeDefault(created)
       } finally {
         saving.current = false
       }
@@ -103,37 +86,34 @@ export function PublicVoiceStep({
   })
   const retry = useMutation({
     mutationFn: async () => {
-      if (saved) await assign(saved)
+      if (saved) await makeDefault(saved)
     },
   })
   if (complete && saved)
     return (
       <p role="status" className="text-sm text-secondary">
-        {saved.target
-          ? `${saved.name} is now used by ${saved.target.name}.`
-          : saved.customVoiceSquad
-            ? `Profile ${saved.name} saved. ${saved.customVoiceSquad.name} ${CUSTOM_VOICE_ASSIGNMENT_NOTE}.`
-            : `Profile ${saved.name} saved. You can assign it from Settings → Voices.`}
+        {saved.name} is now the default voice. Every squad without an assigned profile or its own voice uses it; you can
+        change the default in Settings → Voices.
       </p>
     )
-  if (saved && !assignmentError)
+  if (saved && !defaultError)
     return (
       <p role="status" className="text-sm text-muted">
-        Assigning {saved.name} to {saved.target?.name}…
+        Making {saved.name} the default voice…
       </p>
     )
   if (saved)
     return (
       <div className="space-y-3">
         <p role="alert" className="text-sm text-status-danger-500">
-          Profile saved; could not assign it to {saved.target?.name}: {assignmentError}
+          Profile saved; could not make it the default voice: {defaultError}
         </p>
         <button
           className="ficus-button ficus-button-secondary rounded px-3 py-1.5 text-sm"
           disabled={retry.isPending}
           onClick={() => retry.mutate()}
         >
-          {retry.isPending ? 'Assigning…' : 'Retry assignment'}
+          {retry.isPending ? 'Saving…' : 'Retry setting as default'}
         </button>
       </div>
     )
@@ -187,18 +167,12 @@ export function PublicVoiceStep({
           <p className="text-xs text-muted">
             {draftBytes(id, draft)} / {PUBLIC_VOICE_MAX_BYTES} bytes
           </p>
-          {customVoiceSquad ? (
-            <p className="text-xs text-muted">
-              {customVoiceSquad.name} {CUSTOM_VOICE_ASSIGNMENT_NOTE}. This saves the profile only; you can assign it
-              from Settings → Voices.
-            </p>
-          ) : (
-            !target && (
-              <p className="text-xs text-muted">
-                You can assign this profile later from Settings → Voices. It will not be assigned automatically.
-              </p>
-            )
-          )}
+          <p className="text-xs text-muted">
+            Saving makes this profile the default voice: every squad without an assigned profile or its own voice uses
+            it, including squads created later.
+            {keeping.length > 0 &&
+              ` ${keeping.map((s) => s.name).join(', ')} ${keeping.length === 1 ? 'keeps its' : 'keep their'} own voice setting.`}
+          </p>
           <button
             className="ficus-button ficus-button-primary min-h-11 rounded px-3 py-1.5 text-sm sm:min-h-0"
             disabled={
@@ -209,7 +183,7 @@ export function PublicVoiceStep({
             }
             onClick={() => save.mutate()}
           >
-            {save.isPending ? 'Saving…' : assignTarget ? `Save and use for ${assignTarget.name}` : 'Save profile'}
+            {save.isPending ? 'Saving…' : 'Save and use as default voice'}
           </button>
           {save.error && (
             <p role="alert" className="text-sm text-status-danger-500">

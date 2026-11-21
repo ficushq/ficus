@@ -116,6 +116,28 @@ describe('PublicVoiceSync', () => {
     expect((await PublicVoice.find(id))!.base).toBe('Safe voice.')
   })
 
+  test("sync never overwrites the admin's choice of instance default", async () => {
+    const id = `${PREFIX}-chosen`
+    await PublicVoice.upsert({ id, name: 'Chosen', base: 'Chosen voice.' })
+    try {
+      await PublicVoice.setInstanceDefaultId(id)
+      await sync.sync()
+      PublicVoice.invalidateCache()
+      expect(await PublicVoice.instanceDefaultId()).toBe(id)
+      // An edited, then re-synced, shipped default does not take the choice back either.
+      await sync.setDisabled('default', true)
+      await sync.sync()
+      await sync.setDisabled('default', false)
+      PublicVoice.invalidateCache()
+      expect(await PublicVoice.instanceDefaultId()).toBe(id)
+    } finally {
+      await PublicVoice.setInstanceDefaultId('default')
+      await db.delete(publicVoices).where(eq(publicVoices.id, id))
+      PublicVoice.invalidateCache()
+    }
+    expect(await PublicVoice.instanceDefaultId()).toBe('default')
+  })
+
   test('find-only callers keep a warm cache, including missing profile lookups', async () => {
     PublicVoice.invalidateCache()
     const profile = await PublicVoice.find('default')

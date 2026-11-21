@@ -2,6 +2,7 @@ import type {
   DerivationFilters,
   PublicSurface,
   PublicVoiceGitHubAccount,
+  PublicVoiceInstanceDefault,
   PublicVoiceProfileJson,
   PublicVoiceSurfaces,
   SquadPublicVoice,
@@ -43,12 +44,26 @@ export function updatePublicVoice(
   return apiFetch(`/public-voices/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
-export function deletePublicVoice(id: string): Promise<{ ok: true; unassignedSquads: number }> {
+export function deletePublicVoice(
+  id: string
+): Promise<{ ok: true; unassignedSquads: number; clearedInstanceDefault?: boolean }> {
   return apiFetch(`/public-voices/${id}`, { method: 'DELETE' })
 }
 
 export async function setPublicVoiceDisabled(id: string, disabled: boolean): Promise<void> {
   await apiFetch<void>(`/public-voices/${id}/${disabled ? 'disable' : 'enable'}`, { method: 'POST' })
+}
+
+/** The profile every squad without an assignment uses. */
+export function getPublicVoiceInstanceDefault(): Promise<PublicVoiceInstanceDefault> {
+  return apiFetch('/public-voices/settings/instance-default')
+}
+
+/** Choose the instance default; the response counts squads on it now over the cap. */
+export function setPublicVoiceInstanceDefault(
+  voiceId: string
+): Promise<PublicVoiceInstanceDefault & { overCapSquadCount: number }> {
+  return apiFetch('/public-voices/settings/instance-default', { method: 'PUT', body: JSON.stringify({ voiceId }) })
 }
 
 export async function revertPublicVoice(id: string): Promise<void> {
