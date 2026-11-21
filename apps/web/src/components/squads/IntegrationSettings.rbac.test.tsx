@@ -3,16 +3,22 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { integrationQueryKeys, queryKeys } from '../../queryKeys'
 import { IntegrationSettings } from './IntegrationSettings'
+
+// The GitHub feedback summary stays unavailable; these tests cover permission gating.
+const api = {
+  '/api/squads/:id/github-feedback/summary': apiUnavailable,
+}
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
 let root: import('react-dom/client').Root
 let container: HTMLDivElement
 
 beforeEach(async () => {
-  harness = await acquireDomHarness({ url: 'http://localhost' })
+  harness = await acquireDomHarness({ url: 'http://localhost', api })
   ;({ root, container } = harness.createRoot())
 })
 

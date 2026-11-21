@@ -60,7 +60,7 @@ test('a text question shows its context and fills the answer from a suggestion',
 })
 
 test('select questions keep their options as choices, not suggestion chips', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api: { '/api/voice/status': { enabled: false } } })
   const rendered = dom.createRoot()
   try {
     await dom.act(async () =>

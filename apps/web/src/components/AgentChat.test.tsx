@@ -20,6 +20,7 @@ import type { FicusClient } from '@ficus/client-core'
 import { ConversationClientProvider } from '@ficus/client-react'
 import type { RenderItem } from '@ficus/client-react'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 
 // ---------------------------------------------------------------------------
 // Capture hook: intercepts ChatView props so the test can inspect and call them.
@@ -192,6 +193,9 @@ let activeDom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 async function installDom() {
   return (activeDom = await acquireDomHarness({
     url: 'http://localhost/',
+    // A question card offers voice input, and a squad agent's card reads the caller's permissions;
+    // both stay unavailable.
+    api: { '/api/voice/status': apiUnavailable, '/api/auth/permissions': apiUnavailable },
     configureWindow(window) {
       window.requestAnimationFrame = (callback: FrameRequestCallback) => window.setTimeout(callback, 0)
       window.cancelAnimationFrame = (id: number) => window.clearTimeout(id)

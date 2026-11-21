@@ -4,13 +4,25 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, useLocation } from 'react-router'
 import { queryKeys } from '../queryKeys'
 import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from '@ficus/shared'
+import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'
+import { workStreamReads } from '../test/workStreamApi'
 
 const { WorkStreamList } = await import('./WorkStreamList')
 const { WorkStreamDetailModal } = await import('./WorkStreamDetailModal')
 const { WorkStreamList: SquadWorkStreamList } = await import('./squads/WorkStreamList')
 
 const now = new Date('2026-01-01T00:00:00Z')
+
+// Reads the list and detail surfaces make for themselves (permissions, agent types, squad agents and
+// agent details, and each stream's own detail reads) stay unavailable unless a test serves them.
+const api = {
+  ...workStreamReads,
+  '/api/auth/permissions': apiUnavailable,
+  '/api/agent-types': apiUnavailable,
+  '/api/squads/:id/agents': apiUnavailable,
+  '/api/agents/:id': apiUnavailable,
+}
 
 const squad: Squad = {
   id: 'squad-1',
@@ -110,7 +122,7 @@ function createTestQueryClient(agents: Agent[] = [], metrics?: WorkStreamMetrics
 }
 
 async function renderClient(element: React.ReactNode) {
-  const dom = await acquireDomHarness({ url: 'http://localhost/work-streams' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/work-streams', api })
   const rendered = dom.createRoot()
   try {
     await dom.act(async () => rendered.root.render(element))
@@ -148,7 +160,7 @@ describe('WorkStreamList', () => {
     ['Ficus', '/squads/squad-1'],
     ['Engineer', '/squads/squad-1/agents?agent=agent-1'],
   ])('feed metadata links open %s without opening the work stream', async (label, destination) => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
     const rendered = dom.createRoot()
     const client = createTestQueryClient([engineer])
     function CurrentRoute() {
@@ -376,7 +388,7 @@ describe('WorkStreamList', () => {
 
   test('customizing shows every squad in place and persists hide/unhide choices', async () => {
     const storageKey = 'feed-manager-chat-hidden-squad-ids'
-    const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
     const rendered = dom.createRoot()
     const client = createTestQueryClient()
     const beta = { ...squad, id: 'beta', name: 'Beta', order: 1 }
@@ -439,8 +451,8 @@ describe('WorkStreamList', () => {
       expect(section().querySelector('[aria-label="Ficus: Agents working"]')).toBeNull()
       expect(section().querySelector('[aria-label="Ficus: No active agents"]')).not.toBeNull()
     } finally {
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 
@@ -557,7 +569,7 @@ describe('WorkStreamList', () => {
   })
 
   test('toggles multiple status and squad filters, with All clearing each group', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
     const rendered = dom.createRoot()
     const secondSquad = { ...squad, id: 'squad-2', name: 'Beta' }
     const progress = workStream({ id: 'progress', title: 'Progress Alpha', squadId: squad.id })
@@ -651,7 +663,7 @@ describe('WorkStreamList', () => {
   })
 
   test('header filter popup controls Active and Done without a separate filter row', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
     const rendered = dom.createRoot()
     const header = dom.window.document.createElement('header')
     dom.window.document.body.append(header)
@@ -1250,7 +1262,7 @@ describe('squad WorkStreamList canonical ordering', () => {
   })
 
   test('keeps canonical queue order inside the squad Work kanban column', async () => {
-    const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}/work` })
+    const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}/work`, api })
     dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
     const rendered = dom.createRoot()
     const queryClient = createTestQueryClient()
@@ -1318,7 +1330,7 @@ describe('squad WorkStreamList dependency navigation', () => {
       queryClient.setQueryData(queryKeys.squads.workStreamMetrics(terminalDependency.id), null)
       queryClient.setQueryData(queryKeys.auth.permissions(squad.id), { permissions: [] })
       queryClient.setQueryData(queryKeys.workStreamSubscription.detail(parent.id), { subscribed: false, count: 0 })
-      const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}?ws=${parent.id}` })
+      const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}?ws=${parent.id}`, api })
       const rendered = dom.createRoot()
       const originalFetch = globalThis.fetch
       const fetchCalls: string[] = []
@@ -1426,7 +1438,7 @@ describe('WorkStreamDetailModal', async () => {
   const dependencyWait = workStreamWait({ id: 'dep-wait', type: 'dependency', referenceId: blocker.id })
   /** Render the detail modal and inspect its live DOM before the harness is released. */
   async function inspectDetail(stream: WorkStream, workStreams: WorkStream[], inspect: (document: Document) => void) {
-    const dom = await acquireDomHarness({ url: 'http://localhost/work-streams' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/work-streams', api })
     const rendered = dom.createRoot()
     try {
       await dom.act(async () =>
@@ -1813,7 +1825,7 @@ describe('WorkStreamDetailModal respond flows', () => {
       ],
     })
     const { queryClient } = renderRespondModal(ws)
-    const dom = await acquireDomHarness({ url: 'http://localhost/work-streams/ws-1' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/work-streams/ws-1', api })
     const rendered = dom.createRoot()
     try {
       await withMockedFetch(dom, ws, async (fetchCalls) => {
@@ -1949,9 +1961,9 @@ describe('WorkStreamDetailModal respond flows', () => {
       expect(JSON.parse(resolveCall!.body!)).toEqual({ resolution: 'cleared', note: 'Ship it' })
     } finally {
       await queryClient.cancelQueries()
-      queryClient.clear()
       await dom.act(async () => root.unmount())
       await dom.cleanup()
+      queryClient.clear()
     }
   })
 })

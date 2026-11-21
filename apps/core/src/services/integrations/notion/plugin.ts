@@ -19,8 +19,8 @@ import {
  * Tests import NOTION_CLI_VERSION rather than repeating the literal, so an ntn bump changes only these two
  * lines beside package.json and bun.lock; plugin.test.ts fails fast when they drift from the lockfile.
  */
-export const NOTION_CLI_VERSION = '0.23.30'
-const CLI_INTEGRITY = 'y95azLawqB5TGCFnftjPxWZSH/GyQRRlzlrlhtb49Mgo8nJXa4guOX2h9JcDio3hu/a5j0ubRT/0HRkENy67dg=='
+export const NOTION_CLI_VERSION = '0.23.31'
+const CLI_INTEGRITY = 'on+q3N+63ur3IufBL4n6DmgpQ4AeTHjoY2JGdHIoumQ3QqypHyNsjXEz9BK5rMcVNQbBtTlbsarB6YTWJsM36w=='
 /**
  * Download, verify and install `ntn` in a strict subshell inside a temporary directory, so a digest
  * mismatch (or any failed command) stops the step before `npm install` and the subshell's non-zero

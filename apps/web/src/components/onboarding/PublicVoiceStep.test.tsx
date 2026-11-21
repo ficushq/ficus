@@ -42,6 +42,16 @@ for (const scenario of ['saved', 'none', 'collision', 'default-failure'] as cons
         : [
             { id: 'plain', name: 'Plain', createdAt: '2025-01-01', publicVoiceId: null },
             { id: 'assigned', name: 'Assigned', createdAt: '2025-06-01', publicVoiceId: 'team' },
+            // A disabled assignment falls back to the instance default, so this squad changes too.
+            { id: 'retired', name: 'Retired', createdAt: '2025-03-01', publicVoiceId: 'old' },
+            // A blank custom base is no custom base: the server trims it.
+            {
+              id: 'blank',
+              name: 'Blank',
+              createdAt: '2025-04-01',
+              publicVoiceId: null,
+              publicVoice: { base: '  ', surfaces: {} },
+            },
             {
               id: 'custom',
               name: 'Custom',
@@ -61,10 +71,25 @@ for (const scenario of ['saved', 'none', 'collision', 'default-failure'] as cons
         body: init?.body ? JSON.parse(String(init.body)) : null,
       }
       calls.push(request)
-      if (request.method === 'GET')
-        return Response.json(
-          request.url.endsWith('/derive/github-accounts') ? [{ id: 'account', login: 'octo' }] : squads
-        )
+      if (request.method === 'GET') {
+        if (request.url.endsWith('/derive/github-accounts')) return Response.json([{ id: 'account', login: 'octo' }])
+        if (request.url.endsWith('/public-voices'))
+          return Response.json([
+            { id: 'team', name: 'Team', disabled: false },
+            { id: 'old', name: 'Old', disabled: true },
+          ])
+        // The server counts the squads on the instance default; the step shows its number as is.
+        if (request.url.endsWith('/public-voices/settings/instance-default'))
+          return Response.json({
+            voiceId: 'default',
+            name: 'Default',
+            effectiveVoiceId: 'default',
+            effectiveName: 'Default',
+            fallback: null,
+            squadCount: scenario === 'none' ? 0 : 3,
+          })
+        return Response.json(squads)
+      }
       if (request.url.endsWith('/derive')) return Response.json(result)
       if (request.url.endsWith('/public-voices'))
         return scenario === 'collision'
@@ -114,8 +139,13 @@ for (const scenario of ['saved', 'none', 'collision', 'default-failure'] as cons
       expect(container.querySelector<HTMLInputElement>('[aria-label="Profile name"]')!.value).toBe('From GitHub')
       expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Voice"]')!.value).toBe(result.draft.base)
       expect(container.textContent).toContain('Saving makes this profile the default voice')
-      if (scenario === 'none') expect(container.textContent).not.toContain('own voice setting')
-      else expect(container.textContent).toContain('Assigned, Custom keep their own voice setting.')
+      if (scenario === 'none') {
+        expect(container.textContent).not.toContain('own voice setting')
+        expect(container.textContent).not.toContain('changes the voice of')
+      } else {
+        await untilRendered(dom, () => expect(container.textContent).toContain('It changes the voice of 3 squads now.'))
+        expect(container.textContent).toContain('Assigned, Custom keep their own voice setting.')
+      }
       // One wording whatever the squads: the voice becomes the instance default, never one squad's.
       expect(hasButton('Save profile')).toBe(false)
       await click('Save and use as default voice')
@@ -169,8 +199,8 @@ for (const scenario of ['saved', 'none', 'collision', 'default-failure'] as cons
       }
     } finally {
       globalThis.fetch = original
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 
@@ -179,7 +209,16 @@ test('gated step opens GitHub setup and never shows the derivation form', async 
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
   let opened = 0
   client.setQueryData(queries.squads.list().queryKey, [])
-
+  // The step reads the voices and the instance default even while gated.
+  client.setQueryData(queries.publicVoices.list().queryKey, [])
+  client.setQueryData(queries.publicVoices.instanceDefault().queryKey, {
+    voiceId: 'default',
+    name: 'Default',
+    effectiveVoiceId: 'default',
+    effectiveName: 'Default',
+    fallback: null,
+    squadCount: 0,
+  })
   client.setQueryData(queries.publicVoices.githubAccounts().queryKey, [])
   try {
     const { root, container } = dom.createRoot()
@@ -195,7 +234,7 @@ test('gated step opens GitHub setup and never shows the derivation form', async 
     await dom.act(async () => container.querySelector<HTMLButtonElement>('button')!.click())
     expect(opened).toBe(1)
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

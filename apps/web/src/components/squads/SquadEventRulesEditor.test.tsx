@@ -4,11 +4,17 @@ import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { squadEventRuleSchema, createBlankWorkflow, effectiveSquadEventRules, type SquadEventRule } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { integrationQueries, queries } from '../../queryOptions'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
 
+// The workflow list stays unavailable; these tests cover the rule editor.
+const api = {
+  '/api/workflows': apiUnavailable,
+}
+
 test('event rules expose four actions, persist workflow selection, and allow priority and removal edits', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, [
     { integration: 'github', output: 'issue.assigned', version: 1, title: 'Issue assigned', fields: {} },
@@ -118,14 +124,14 @@ test('event rules expose four actions, persist workflow selection, and allow pri
     expect(value).toEqual([])
     expect(document.body.textContent).toContain('No squad actions')
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
 test('typed conditions and synthetic preview follow unsaved filters and priority without network side effects', async () => {
   const { githubOutputCatalog } = await import('@ficus/shared')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
@@ -241,14 +247,14 @@ test('typed conditions and synthetic preview follow unsaved filters and priority
     expect(document.querySelector('[aria-label="Match preview"]')).not.toBeNull()
   } finally {
     fetch.mockRestore()
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
 test('Dependabot defaults render manager routing and editable severity, state and action predicates', async () => {
   const { effectiveSquadEventRules, githubOutputCatalog } = await import('@ficus/shared')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
@@ -278,7 +284,7 @@ test('Dependabot defaults render manager routing and editable severity, state an
 
 test('decision conditions edit a yes/no or choice question, its matching answer and no-answer behavior', async () => {
   const { githubOutputCatalog } = await import('@ficus/shared')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
@@ -412,13 +418,13 @@ test('decision conditions edit a yes/no or choice question, its matching answer 
     expect(fetch).not.toHaveBeenCalled()
   } finally {
     fetch.mockRestore()
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
 test('adding a rule scrolls the new rule into view and focuses its event', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, [
     { integration: 'github', output: 'issue.assigned', version: 1, title: 'Issue assigned', fields: {} },
@@ -471,7 +477,7 @@ test('adding a rule scrolls the new rule into view and focuses its event', async
 })
 
 test('reset to defaults replaces the rules with the built-in set only after a confirming click', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, [
     { integration: 'github', output: 'issue.assigned', version: 1, title: 'Issue assigned', fields: {} },
@@ -516,7 +522,7 @@ test('reset to defaults replaces the rules with the built-in set only after a co
 
 test('PR author fields can be selected, saved, reloaded and previewed independently of actor', async () => {
   const { githubOutputCatalog } = await import('@ficus/shared')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
@@ -586,14 +592,14 @@ test('PR author fields can be selected, saved, reloaded and previewed independen
       expect(document.body.textContent!.includes('Selected: dependabot-review → notify-manager')).toBe(matches)
     }
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
 test('collection fields offer does not contain, which saves, reloads and previews against sample labels', async () => {
   const { githubOutputCatalog } = await import('@ficus/shared')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
@@ -658,14 +664,14 @@ test('collection fields offer does not contain, which saves, reloads and preview
       expect(document.body.textContent!.includes('Selected: unheld-issues → notify-manager')).toBe(matches)
     }
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 
 test('Linear rules show account involvement, offer missing recommended rules and preview with a connected account ID', async () => {
   const { linearOutputCatalog } = await import('@ficus/shared')
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueries.outputs().queryKey, linearOutputCatalog)
   client.setQueryData(integrationQueries.squad('test', 'linear').queryKey, { connections: [], attached: [] })
@@ -743,7 +749,7 @@ test('Linear rules show account involvement, offer missing recommended rules and
     )
     expect(document.body.textContent).toContain('comments authored by the connected account')
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

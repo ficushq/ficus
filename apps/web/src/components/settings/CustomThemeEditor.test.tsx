@@ -6,6 +6,7 @@ import { suggestPaletteSeeds } from '@ficus/shared/theme-derivation'
 import { HttpResponseError } from '@ficus/client-core'
 import { STATUS_TOKENS, type AssistantEditorState, type ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../../providers/ThemeProvider'
 import { CustomThemeEditor } from './CustomThemeEditor'
 import { palettes, resolveToken } from '../../theme/test/builtins'
@@ -14,6 +15,13 @@ import { assistantApi } from '../../api/assistant'
 import { assistantQueries, queries } from '../../queryOptions'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { MemoryRouter } from 'react-router'
+
+// The editor reads the caller's permissions. Without chat:send it renders without its assistant
+// panel, which the assistant tests below enable through PermissionsProvider instead.
+const api = { '/api/auth/permissions': { permissions: [] } }
+// The assistant tests cover the editor bridge, not the agent chat: binding the conversation to an
+// agent fails, so the panel stays on the conversation's own state.
+const assistantApiRoutes = { ...api, 'POST /api/assistant/:id/agent': apiUnavailable }
 
 let cleanup: (() => Promise<void>) | undefined
 afterEach(async () => {
@@ -81,7 +89,7 @@ async function render({
   scheduleIdleTimeout = undefined as ((callback: () => void, ms: number) => ReturnType<typeof setTimeout>) | undefined,
   cancelIdleTimeout = undefined as ((handle: ReturnType<typeof setTimeout>) => void) | undefined,
 } = {}) {
-  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test', api })
   cleanup = () => dom.cleanup()
   localStorage.setItem('ficus-appearance', appearance)
   if (preset) {
@@ -210,7 +218,7 @@ test('Cancel closes without touching the network; the caller unmounting the edit
 })
 
 test('unmounting the editor (not just Cancel) also restores the saved selection', async () => {
-  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test', api })
   cleanup = () => dom.cleanup()
   localStorage.setItem('ficus-appearance', 'dark')
   localStorage.setItem('ficus-theme-id', existing.document.base)
@@ -607,7 +615,7 @@ test('redo replays a coalesced typed edit', async () => {
 
 test('the theme assistant panel proposes a live-previewing edit, shares undo/redo with manual edits, and cannot save', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
-  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test', api: assistantApiRoutes })
   localStorage.setItem('ficus-appearance', 'dark')
   const sheet = document.createElement('style')
   sheet.textContent = palettes
@@ -723,7 +731,7 @@ test('the theme assistant panel proposes a live-previewing edit, shares undo/red
 
 test('typing bumps the revision every keystroke (stale assistant edits are still rejected) and an assistant proposal mid-typing is its own undo step', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
-  const dom = await acquireDomHarness({ url: 'https://ficus.test' })
+  const dom = await acquireDomHarness({ url: 'https://ficus.test', api: assistantApiRoutes })
   localStorage.setItem('ficus-appearance', 'dark')
   const sheet = document.createElement('style')
   sheet.textContent = palettes

@@ -4,6 +4,7 @@ import { Link, MemoryRouter, useLocation } from 'react-router'
 import { useRef, type ReactNode } from 'react'
 import { assistantAgentChatPath, type Agent, type Squad, type WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { queries } from '../queryOptions'
 import { chatWindowsStorageKey } from '../lib/chatWindows'
@@ -84,6 +85,25 @@ function Probe({ onLocation }: { onLocation: (location: string) => void }) {
   return null
 }
 
+// The app shell around the windows reads agents, agent types, work streams, inboxes, actions,
+// questions, the assistant, integrations, voice and update settings. Those reads stay unavailable
+// unless a test serves them; these tests cover the windows.
+const floatingWindowsApi = {
+  '/api/agents': apiUnavailable,
+  '/api/agents/:id': apiUnavailable,
+  '/api/agents/:id/active': apiUnavailable,
+  '/api/agent-types/:id': apiUnavailable,
+  '/api/workstreams': apiUnavailable,
+  '/api/inbox/*': apiUnavailable,
+  '/api/actions/pending': apiUnavailable,
+  '/api/agent-questions/by-squad/:id/open-counts': apiUnavailable,
+  '/api/assistant': apiUnavailable,
+  '/api/assistant/activity': apiUnavailable,
+  '/api/integrations/catalog': apiUnavailable,
+  '/api/voice/status': apiUnavailable,
+  '/api/updates/settings': apiUnavailable,
+}
+
 async function setup(
   page: ReactNode,
   {
@@ -97,6 +117,7 @@ async function setup(
   const dom = await acquireDomHarness({
     url: `http://localhost${url}`,
     windowOptions: { innerWidth: 1400, innerHeight: 900 },
+    api: floatingWindowsApi,
     configureWindow(window) {
       Object.assign(window, { SyntaxError })
     },

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { inArray, like } from 'drizzle-orm'
+import { eq, inArray, like } from 'drizzle-orm'
 import { db, publicVoices, squads } from '../db'
 import { PublicVoice } from '../entities/PublicVoice'
 import { Squad } from '../entities/Squad'
@@ -189,6 +189,7 @@ describe('voice profile routes', () => {
         effectiveVoiceId: chosenId,
         effectiveName: 'Chosen',
         fallback: null,
+        squadCount: expect.any(Number),
         overCapSquadCount: 0,
       })
       const list = (await (await request(admin, 'GET', '/')).json()) as Array<{
@@ -233,6 +234,56 @@ describe('voice profile routes', () => {
         fallback: null,
       })
       expect(await PublicVoice.instanceDefaultId()).toBe('default')
+    } finally {
+      await PublicVoice.setInstanceDefaultId('default')
+    }
+  })
+
+  test('counts the squads a new instance default changes', async () => {
+    const squadCount = async () => {
+      const res = await request(admin, 'GET', '/settings/instance-default')
+      expect(res.status).toBe(200)
+      return ((await res.json()) as { squadCount: number }).squadCount
+    }
+    const keptId = `${prefix}-count-kept`
+    const retiredId = `${prefix}-count-retired`
+    for (const [id, name] of [
+      [keptId, 'Kept'],
+      [retiredId, 'Retired'],
+    ])
+      expect((await request(admin, 'POST', '/', { id, name, base: `${name} voice.` })).status).toBe(201)
+    const before = await squadCount()
+    const create = async (suffix: string, voice?: Parameters<typeof Squad.setPublicVoice>[1]) => {
+      const squad = await Squad.create({ name: `${prefix}-count-${suffix}`, purpose: 'voice' })
+      squadIds.push(squad.id)
+      if (voice) await Squad.setPublicVoice(squad.id, voice)
+      return squad
+    }
+    try {
+      // Changes: no assignment and no custom base, a blank base, and own entries without a base.
+      await create('plain')
+      await create('blank', { publicVoiceId: null, publicVoice: { base: '  ', surfaces: {} } })
+      await create('entries', {
+        publicVoiceId: null,
+        publicVoice: { base: null, surfaces: { commits: { mode: 'add', text: 'Short.' } } },
+      })
+      // Keep theirs: a custom base and an enabled assignment. An archived squad is not counted.
+      await create('own', { publicVoiceId: null, publicVoice: { base: 'Ours.', surfaces: {} } })
+      await create('kept', { publicVoiceId: keptId, publicVoice: null })
+      const retired = await create('retired', { publicVoiceId: retiredId, publicVoice: null })
+      const archived = await create('archived')
+      await db.update(squads).set({ archivedAt: new Date() }).where(eq(squads.id, archived.id))
+      expect(await squadCount()).toBe(before + 3)
+
+      // A disabled assignment falls back to the instance default, so that squad changes with it.
+      expect((await request(admin, 'POST', `/${retiredId}/disable`)).status).toBe(200)
+      expect(await squadCount()).toBe(before + 4)
+      expect(await buildPublicVoicePrompt(null)).toBe(await buildPublicVoicePrompt(await Squad.find(retired.id)))
+
+      // Choosing a default reports the same count.
+      const res = await request(admin, 'PUT', '/settings/instance-default', { voiceId: keptId })
+      expect(res.status).toBe(200)
+      expect((await res.json()).squadCount).toBe(before + 4)
     } finally {
       await PublicVoice.setInstanceDefaultId('default')
     }

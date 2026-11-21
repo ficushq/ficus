@@ -10,10 +10,18 @@ import {
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { integrationQueries, queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { WorkflowEditor } from './WorkflowEditor'
 
+// Model tiers stay unavailable, and so does binding the assistant conversation to an agent: the
+// assistant tests cover the editor bridge, not the agent chat.
+const api = {
+  '/api/model-tiers': apiUnavailable,
+  'POST /api/assistant/:id/agent': apiUnavailable,
+}
+
 test('graph edits share undo/redo and selecting a node opens only its inspector', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.agentTypes.list().queryKey, [
     { id: 'general', name: 'General' },
@@ -218,7 +226,7 @@ test('assistant edits apply directly, share undo history, and cannot overwrite n
   const { assistantApi } = await import('../../api/assistant')
   const { assistantQueries } = await import('../../queryOptions')
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
-  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows', api })
   const originalObserver = globalThis.ResizeObserver
   globalThis.ResizeObserver = class {
     constructor(private callback: () => void) {}
@@ -499,10 +507,10 @@ test('assistant edits apply directly, share undo history, and cannot overwrite n
     expect(read.mock.calls.length).toBe(readsBeforeUndo)
     expect(stored.revision).toBe(beforeUndo + 2)
   } finally {
+    globalThis.ResizeObserver = originalObserver
     await dom.cleanup()
     cache.clear()
     for (const spy of [create, sync, read, close, propose]) spy.mockRestore()
-    globalThis.ResizeObserver = originalObserver
   }
 })
 
@@ -510,7 +518,7 @@ test('arrows select and delete individual connections, preserve positions, and u
   const definition = workflowPresetSchema.parse(
     Bun.YAML.parse(await Bun.file(new URL('../../test/fixtures/parallel-flow.yaml', import.meta.url)).text())
   ).definition
-  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows', api })
   const originalObserver = globalThis.ResizeObserver
   globalThis.ResizeObserver = class {
     constructor(private callback: () => void) {}
@@ -685,7 +693,7 @@ test('arrows select and delete individual connections, preserve positions, and u
 })
 
 test('decision steps are added from the toolbar, edited in the inspector and shown on the canvas', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.agentTypes.list().queryKey, [{ id: 'general', name: 'General' }])
   queryClient.setQueryData(integrationQueries.outputs().queryKey, [])

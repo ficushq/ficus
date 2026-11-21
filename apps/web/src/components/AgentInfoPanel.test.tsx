@@ -202,9 +202,12 @@ describe('AgentInfoPanel transcript export removal', () => {
   beforeEach(async () => {
     dom = await acquireDomHarness({
       url: 'http://localhost',
-      beforeUnmount: async () => {
-        await client?.cancelQueries()
+      beforeUnmount: () => client?.cancelQueries(),
+      // Clearing the cache while the panel is mounted would refetch every query, so clear after
+      // unmount, then put the window's fetch back while the window is still installed.
+      afterUnmount: () => {
         client?.clear()
+        globalThis.fetch = oldFetch
       },
     })
     ;({ container, root } = dom.createRoot())
@@ -218,7 +221,6 @@ describe('AgentInfoPanel transcript export removal', () => {
   })
 
   afterEach(async () => {
-    globalThis.fetch = oldFetch
     await dom.cleanup()
     client = undefined
   })

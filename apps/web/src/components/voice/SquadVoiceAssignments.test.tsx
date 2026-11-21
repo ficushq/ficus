@@ -83,8 +83,8 @@ for (const disabled of [false, true])
       }
     } finally {
       globalThis.fetch = original
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 
@@ -121,8 +121,8 @@ test('assigning default clears the selected assignment and explains effective de
     expect(patches).toEqual([{ voiceId: null, preserveCustomBase: true }])
   } finally {
     globalThis.fetch = original
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 

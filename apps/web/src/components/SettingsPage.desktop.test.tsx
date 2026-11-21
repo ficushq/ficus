@@ -3,7 +3,17 @@ import { afterEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { queryKeys } from '../queryKeys'
+
+// Settings sections these desktop tests do not cover (channel links, linked GitHub and Linear
+// identities, the integration catalog) stay unavailable.
+const api = {
+  '/api/channel-links': apiUnavailable,
+  '/api/github-identity': apiUnavailable,
+  '/api/linear-identity': apiUnavailable,
+  '/api/integrations/catalog': apiUnavailable,
+}
 
 function buildDependencies(logout: () => Promise<void>) {
   return {
@@ -56,7 +66,7 @@ afterEach(() => {
 })
 
 test('a paired remote instance shows Disconnect and calls disconnect, never logout', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   let logoutCalls = 0
@@ -105,7 +115,7 @@ test('a paired remote instance shows Disconnect and calls disconnect, never logo
 })
 
 test('without a paired remote instance the logout row is unchanged', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   let logoutCalls = 0
@@ -140,7 +150,7 @@ test('without a paired remote instance the logout row is unchanged', async () =>
 })
 
 test('a remote instance with a non-function disconnect keeps the existing Logout row', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   let logoutCalls = 0
@@ -186,7 +196,7 @@ test('a remote instance with a non-function disconnect keeps the existing Logout
 })
 
 test('a rejected disconnect shows an inline error instead of failing silently', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   window.ficusDesktopApp = {
@@ -226,7 +236,7 @@ test('a rejected disconnect shows an inline error instead of failing silently', 
 })
 
 test('a remote instance without disconnect keeps the existing Logout row', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   seedAccountQueries(queryClient)
   let logoutCalls = 0

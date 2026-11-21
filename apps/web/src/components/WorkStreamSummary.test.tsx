@@ -11,7 +11,9 @@ import { MemoryRouter, useLocation } from 'react-router'
 import { agentChatTargetOf } from '../lib/agentChatLinks'
 import type { AgentSummary, Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
+import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness } from '../test/domHarness'
+import { workStreamReads } from '../test/workStreamApi'
 import { WorkStreamList } from './WorkStreamList'
 import { WorkStreamGraph } from './WorkStreamGraph'
 import { WorkStreamDetailModal } from './WorkStreamDetailModal'
@@ -99,7 +101,12 @@ const agents: AgentSummary[] = [
 
 /** Renders into a fresh window; `storage` is written to its localStorage before the first render. */
 async function render(node: ReactNode, storage: Record<string, string> = {}) {
-  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  // The squad list (for link slugs) and the detail modal's own reads of the stream and its agents
+  // stay unavailable; these tests cover the summary.
+  dom = await acquireDomHarness({
+    url: 'http://localhost/',
+    api: { ...workStreamReads, '/api/agents/:id': apiUnavailable },
+  })
   for (const [key, value] of Object.entries(storage)) dom.window.localStorage.setItem(key, value)
   const { root } = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -108,6 +115,7 @@ async function render(node: ReactNode, storage: Record<string, string> = {}) {
     { id: 'reviewer', name: 'Reviewer' },
   ])
   client.setQueryData(queryKeys.squads.agents(squad.id), agents)
+  client.setQueryData(queryKeys.auth.permissions(squad.id), { permissions: [] })
   const draw = (content: ReactNode) =>
     dom!.act(async () =>
       root.render(

@@ -83,9 +83,9 @@ describe('Paired Devices pairing (shared with Mobile through usePhonePairing)', 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     client.setQueryData(queryKeys.devices.list(), devices)
     cleanup = async () => {
+      globalThis.fetch = previousFetch
       await dom.cleanup()
       client.clear()
-      globalThis.fetch = previousFetch
     }
     const { root, container } = dom.createRoot()
     await act(async () =>

@@ -220,6 +220,8 @@ describe('SettingsPage RBAC tabs', () => {
       defaultOptions: { queries: { enabled: false, retry: false, staleTime: Infinity } },
     })
     seedSettingsQueries(client, ['agent-types:read', 'agent-types:update'])
+    // The voice editor lists squads to assign the voice to.
+    client.setQueryData(queryKeys.squads.list(), [])
     client.setQueryData(publicVoiceQueryKeys.list(), [
       {
         id: 'team',
@@ -238,10 +240,9 @@ describe('SettingsPage RBAC tabs', () => {
     ])
     const dom = await acquireDomHarness({
       url: 'http://localhost/settings',
-      beforeUnmount: async () => {
-        await client.cancelQueries()
-        client.clear()
-      },
+      beforeUnmount: () => client.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => client.clear(),
     })
     try {
       const { root, container } = dom.createRoot()
@@ -574,10 +575,9 @@ describe('SettingsPage global integration RBAC', () => {
   beforeEach(async () => {
     dom = await acquireDomHarness({
       url: 'http://localhost/',
-      beforeUnmount: async () => {
-        await queryClient?.cancelQueries()
-        queryClient?.clear()
-      },
+      beforeUnmount: () => queryClient?.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClient?.clear(),
     })
     ;({ container, root } = dom.createRoot())
     requests = []
@@ -806,10 +806,9 @@ describe('SettingsPage passkey management', () => {
     dom = await acquireDomHarness({
       url: 'http://localhost/',
       configureWindow: (window) => Object.assign(window, { SyntaxError }),
-      beforeUnmount: async () => {
-        await queryClient?.cancelQueries()
-        queryClient?.clear()
-      },
+      beforeUnmount: () => queryClient?.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClient?.clear(),
     })
     requests = []
     // Route-aware: react-query refetches the credentials list on mount and after

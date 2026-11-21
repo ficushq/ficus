@@ -621,6 +621,8 @@ test('routine progress no reply covers shows as one coalesced chip at its time',
         beforeSequence: null,
       }) as any
   )
+  // Showing the updates marks them read; nothing comes back newly read.
+  const readUpdates = spyOn(assistantApi, 'readUpdates').mockResolvedValue([])
   try {
     await f.dom.act(async () => f.render())
     await waitFor(() => expect(f.api.conversationActivity).toHaveBeenCalled())
@@ -657,6 +659,7 @@ test('routine progress no reply covers shows as one coalesced chip at its time',
     expect((await footerOf(request)).querySelector('[aria-label="Task progress"]')).toBeNull()
     expect((await footerOf(finished)).querySelector('[aria-label="Task progress"]')).toBeNull()
   } finally {
+    readUpdates.mockRestore()
     await f.cleanup()
   }
 })

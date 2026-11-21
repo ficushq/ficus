@@ -11,8 +11,15 @@ import type {
 } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { ActivityPage } from './ActivityPage'
 import { WebSocketContext } from '../hooks/useWebSocket'
+
+// Activity and presence reads stay unavailable unless a test serves them.
+const api = {
+  '/api/activity': apiUnavailable,
+  '/api/activity/presence': apiUnavailable,
+}
 
 /** A socket that records subscriptions, so a test can push a squad's activity event. */
 const listeners = new Map<string, (message: { event: string; data: unknown }) => void>()
@@ -235,7 +242,7 @@ describe('ActivityPage rendering', () => {
 
 describe('ActivityPage kind filtering', () => {
   test('keeps current rows visible and pulses the filters until the server-filtered rows arrive', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([workItem])
     const originalFetch = globalThis.fetch
@@ -315,7 +322,7 @@ describe('ActivityPage kind filtering', () => {
 
 describe('ActivityPage squad chip', () => {
   test("clicking the chip navigates to that squad's Activity tab and does NOT open the row modal", async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([workItem, messageItem])
     const originalFetch = globalThis.fetch
@@ -370,7 +377,7 @@ describe('ActivityPage squad chip', () => {
 
 describe('ActivityPage issue rows', () => {
   test('the work-stream chip navigates in-app instead of following the code-host link', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([issueItem])
     const originalFetch = globalThis.fetch
@@ -429,7 +436,7 @@ describe('ActivityPage issue rows', () => {
 
 describe('ActivityPage in-place modals', () => {
   test('a plain click routes each row to its OWN squad (not a fixed one); agent rows fetch the agent then open AgentViewModal', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([workItem, messageItem])
     client.setQueryData(queryKeys.agents.detail(agentId), {
@@ -512,7 +519,7 @@ describe('ActivityPage in-place modals', () => {
   })
 
   test('an agent row falls back to the plain conversation modal while the agent record is still loading', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([messageItem])
     const originalFetch = globalThis.fetch
@@ -565,7 +572,7 @@ describe('ActivityPage in-place modals', () => {
 for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
   test(`inline agent ${reference} retains global filters and scroll without opening the source`, async () => {
     await import('./EntityReferenceModal')
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const target = { id: 'abc12345-1234-4234-8234-123456789abc', squadId: squadAId, agentTypeId: 'reviewer' }
     const item = { ...messageItem, preview: [{ text: 'Review agent', href: `ficus:agent:${reference}` }] }
     const client = seedClient([item])
@@ -635,15 +642,15 @@ for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
       expect(messages.getAttribute('aria-pressed')).toBe('true')
       expect(scroller.scrollTop).toBe(400)
     } finally {
-      client.clear()
       await dom.cleanup()
+      client.clear()
     }
   })
 }
 
 describe('ActivityPage live updates', () => {
   test("a squad's activity change refreshes the feed moments later", async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/activity' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/activity', api })
     const client = seedClient([], false)
     client.setQueryData(queryKeys.squads.list(), [{ id: 'sq-1', name: 'Chlea', status: 'active' }] as never)
     const rendered = dom.createRoot()
@@ -688,7 +695,7 @@ describe('ActivityPage live updates', () => {
 
 describe('ActivityPage Active work strip and Show everything', () => {
   test('a card click filters the query to that stream; Show everything asks for verbose rows', async () => {
-    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([workItem, messageItem])
     const streamId = '00000000-0000-4000-8000-000000000010'

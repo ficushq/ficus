@@ -28,8 +28,8 @@ async function fixture(
     )
     await action(container, dom)
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 }
 test('no usable account links to Integrations without showing a derive form', async () => {

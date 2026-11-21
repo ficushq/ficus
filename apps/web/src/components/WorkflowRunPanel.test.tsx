@@ -4,12 +4,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createWorkflowRun, advanceWorkflowRun, workflowPresetSchema, type WorkStream } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import { acquireDomHarness } from '../test/domHarness'
+import { workStreamReads } from '../test/workStreamApi'
 import { client } from '../api/clientInstance'
 import { modelTierQueryKeys, queryKeys } from '../queryKeys'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkflowEditor } from './squads/WorkflowEditor'
+
+// Decisions invalidate the stream's own reads, which stay unavailable; the panel keeps its seeded data.
+const api = {
+  ...workStreamReads,
+}
 
 const preset = workflowPresetSchema.parse(
   Bun.YAML.parse(await Bun.file(new URL('../../../../config/workflows/solo.yaml', import.meta.url)).text())
@@ -30,7 +36,7 @@ function run(human = false): WorkflowRunDetail {
   return { workStreamId: stream.id, source: {}, state: createWorkflowRun(definition), version: 0, attemptAgents: {} }
 }
 async function fixture(value: WorkflowRunDetail | null, permissions: string[] = []) {
-  const dom = await acquireDomHarness({ url: 'http://localhost/workflows' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/workflows', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(modelTierQueryKeys.list(), [{ slug: 'deep', label: 'Deep' }])
   queryClient.setQueryData(queryKeys.squads.list(), [])

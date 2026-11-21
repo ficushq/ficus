@@ -99,6 +99,8 @@ try {
     await page.getByRole('heading', { name: 'Review your voice', exact: true }).scrollIntoViewIfNeeded()
     await capture('onboarding-editor')
     await page.getByRole('button', { name: 'Save and use as default voice', exact: true }).scrollIntoViewIfNeeded()
+    // The confirmation says how many squads change, not only which keep their own voice.
+    await page.getByText('It changes the voice of 1 squad now.', { exact: false }).waitFor()
     await capture('onboarding-save-default')
     await page.getByRole('button', { name: 'Save and use as default voice', exact: true }).click()
     await page.getByRole('alert').scrollIntoViewIfNeeded()
@@ -113,7 +115,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Passed Settings and onboarding at 390 and 1280 pixels: account selection, choosing the instance default, confirming before disabling it, derivation, named draft editor, a failed set-as-default and its retry without recreating the profile, no horizontal overflow and zero browser errors.'
+    'Passed Settings and onboarding at 390 and 1280 pixels: account selection, choosing the instance default, confirming before disabling it, derivation, named draft editor, how many squads the new default changes, a failed set-as-default and its retry without recreating the profile, no horizontal overflow and zero browser errors.'
   )
 } catch (error) {
   console.error('Browser errors:', errors)

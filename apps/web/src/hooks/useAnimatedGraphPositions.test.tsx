@@ -42,8 +42,8 @@ test('layout animation interpolates shared coordinates and cancels its owned fra
     await dom.act(async () => root.root.render(null))
     expect(frames.size).toBe(0)
   } finally {
-    await dom.cleanup()
     globalThis.requestAnimationFrame = originalRequest
     globalThis.cancelAnimationFrame = originalCancel
+    await dom.cleanup()
   }
 })

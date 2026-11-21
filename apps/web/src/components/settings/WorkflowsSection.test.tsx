@@ -103,9 +103,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await cache.cancelQueries()
-  cache.clear()
-  await dom.cleanup()
   globalThis.fetch = originalFetch
+  // Clearing the cache while the section is mounted would refetch its queries, so clear after unmount.
+  await dom.cleanup()
+  cache.clear()
 })
 
 function Location() {

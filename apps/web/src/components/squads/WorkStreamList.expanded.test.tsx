@@ -4,8 +4,19 @@ import { MemoryRouter, useLocation } from 'react-router'
 import type { Squad, WorkStream } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
+import { workStreamReads } from '../../test/workStreamApi'
 import { SquadHomeTab } from './SquadHomeTab'
 import { WorkStreamList } from './WorkStreamList'
+
+// Reads the list makes for itself (permissions, agent types, squad agents, and each expanded
+// stream's own detail reads) stay unavailable; these tests cover the rendered rows.
+const api = {
+  ...workStreamReads,
+  '/api/auth/permissions': apiUnavailable,
+  '/api/agent-types': apiUnavailable,
+  '/api/squads/:id/agents': apiUnavailable,
+}
 
 const now = new Date('2026-08-17T12:00:00Z')
 function LocationProbe() {
@@ -56,7 +67,7 @@ function stream(id: string): WorkStream {
 }
 
 test('opens the dependency graph in a content-sized dialog with no view toggle and closes from its visible control', async () => {
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   queryClient.setQueryData(queries.agentTypes.list().queryKey, [])
@@ -96,13 +107,13 @@ test('opens the dependency graph in a content-sized dialog with no view toggle a
     expect(dom.window.document.body.textContent).toContain('Stream a')
     expect(dom.window.document.querySelectorAll('li')).toHaveLength(1)
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('expandable Home stays list-only inline and shows the graph skeleton in its dialog during initial load', async () => {
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   const rendered = dom.createRoot()
@@ -132,13 +143,13 @@ test('expandable Home stays list-only inline and shows the graph skeleton in its
     expect(dialog.querySelector('[aria-label="Work stream view"]')).toBeNull()
     expect(dialog.querySelector('button[aria-label="Show work stream graph"]')).toBeNull()
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('kanban preserves review, human wait, dependency wait, and blocked columns', async () => {
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
@@ -190,13 +201,13 @@ test('kanban preserves review, human wait, dependency wait, and blocked columns'
     })
     expect(dom.window.document.querySelector('[role="dialog"]')?.textContent).toContain('Stream dependency')
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('non-expandable work keeps its real categories and controls during initial load', async () => {
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   const rendered = dom.createRoot()
@@ -218,13 +229,13 @@ test('non-expandable work keeps its real categories and controls during initial 
     expect(dom.window.document.body.textContent).toContain('Stream a')
     expect(dom.window.document.querySelector('[aria-label="Work stream view"]')).toBeTruthy()
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('the graph dialog ignores the embedded Active collapse without changing it', async () => {
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   queryClient.setQueryData(queries.agentTypes.list().queryKey, [])
@@ -256,13 +267,13 @@ test('the graph dialog ignores the embedded Active collapse without changing it'
     await dom.act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click())
     expect(dom.window.document.body.textContent).not.toContain('Stream a')
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('Escape closes detail before fullscreen', async () => {
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   queryClient.setQueryData(queries.agentTypes.list().queryKey, [])
@@ -319,13 +330,13 @@ test('Escape closes detail before fullscreen', async () => {
     expect(dom.window.document.body.textContent).toContain('Stream a')
     expect(dom.window.document.activeElement?.getAttribute('aria-label')).toBe('Show work stream graph')
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('preserves filter controls as active and done queries resolve independently', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
   queryClient.setQueryData(queries.agentTypes.list().queryKey, [])
@@ -359,14 +370,14 @@ test('preserves filter controls as active and done queries resolve independently
     expect(document.body.textContent).toContain('No work streams yet')
     expect(document.querySelector('[data-testid="work-stream-filters"]')).toBe(filters)
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })
 
 test('kanban row callouts use the same specific delivery labels as lists and badges', async () => {
   const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('@ficus/shared/test-fixtures/work-stream-presentation')
-  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
+  const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}`, api })
   dom.window.localStorage.setItem(`ficus.wsView.${squad.id}`, 'kanban')
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } })
   const rendered = dom.createRoot()
@@ -391,7 +402,7 @@ test('kanban row callouts use the same specific delivery labels as lists and bad
       expect(card?.textContent).toContain(row.label)
     }
   } finally {
-    queryClient.clear()
     await dom.cleanup()
+    queryClient.clear()
   }
 })

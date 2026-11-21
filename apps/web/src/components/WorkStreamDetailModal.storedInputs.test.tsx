@@ -1,6 +1,8 @@
 import { expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness } from '../test/domHarness'
+import { workStreamReads } from '../test/workStreamApi'
 import { MemoryRouter } from 'react-router'
 import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
@@ -78,6 +80,11 @@ async function renderModal<T = string>(
   }
   const dom = await acquireDomHarness({
     url: 'http://localhost/work-streams/ws-1',
+    // The server answers with the same permissions the cache was seeded with.
+    api: {
+      ...workStreamReads,
+      '/api/auth/permissions': () => (permissionsLoading ? apiUnavailable : { permissions: [...permissions] }),
+    },
     beforeUnmount: async () => queryClient.cancelQueries(),
     afterUnmount: () => queryClient.clear(),
   })

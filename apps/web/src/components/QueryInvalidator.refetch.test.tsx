@@ -63,8 +63,8 @@ describe('QueryInvalidator — refetch behaviour', () => {
 
   afterEach(async () => {
     observers.forEach((observer) => observer.unsubscribe())
-    client.clear()
     await dom.cleanup()
+    client.clear()
   })
 
   /** Mount the component, observe each key, and let the initial fetches settle. */

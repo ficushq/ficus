@@ -40,10 +40,9 @@ describe('App auth gate', () => {
           value: { controller: null, addEventListener() {}, ready: new Promise(() => {}) },
         })
       },
-      beforeUnmount: async () => {
-        await queryClient?.cancelQueries()
-        queryClient?.clear()
-      },
+      beforeUnmount: () => queryClient?.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClient?.clear(),
     })
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url

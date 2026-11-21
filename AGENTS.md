@@ -122,6 +122,21 @@ bun run test:db:down && bun run --filter core test
   `finally`/`afterEach`. Core's runner isolates files containing `mock.module`;
   do not hide replacements in an imported helper that escapes that detection.
   Prove suspected order leaks in isolation, in a mixed cohort, and reversed.
+- Web tests never reach the network. The web test preload
+  (`apps/web/src/test-setup.ts`, see `apps/web/src/test/networkGuard.ts`)
+  refuses every unmocked `fetch`, `WebSocket` and DOM-window request and fails
+  the test that made it. Seed the query cache (with `staleTime: Infinity` so
+  mounting does not refetch), inject the API, or pass the DOM harness an `api`
+  route table (`apps/web/src/test/apiMock.ts`); `apiUnavailable` answers a read
+  the test only renders through like an unreachable server. A test that starts
+  its own server allows that origin with `allowNetworkOrigin`.
+- DOM harness cleanup restores the harness's globals and closes its window, so
+  that window's timers and fetch stop working. Restore spies and saved globals
+  (`setTimeout`, `fetch`, `requestAnimationFrame`, ...) taken after acquiring
+  the harness _before_ `dom.cleanup()`; the preload fails a test that leaves a
+  finished window's global installed. Clear a query cache _after_ unmounting
+  (`afterUnmount` or after `dom.cleanup()`): clearing a mounted tree refetches
+  its queries, usually after the test's fetch mock is gone.
 - Await a meaningful readiness boundary: listening socket, watcher `ready`,
   database lock acquisition, rendered effect, or fixture handshake. Never use a
   blind sleep to make setup “probably ready.” For timer behavior, advance an

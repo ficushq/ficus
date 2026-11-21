@@ -9,6 +9,7 @@ import {
   type PublicVoiceSurfaces,
 } from '@ficus/shared'
 import { db, publicVoices, settings, squads } from '../db'
+import { eventEmitter } from '../lib/infra/event-emitter'
 
 export type PublicVoiceRow = InferSelectModel<typeof publicVoices>
 
@@ -28,7 +29,8 @@ export interface UpsertPublicVoiceInput {
 
 /**
  * A named voice profile (see docs/wiki/public-voice.md). Cached like
- * SharedPrompt: runners resolve the voice on every turn.
+ * SharedPrompt: runners resolve the voice on every turn. The API and worker
+ * processes each hold a cache; every write clears both (see `invalidateCache`).
  */
 export class PublicVoice implements PublicVoiceRow {
   declare id: string
@@ -58,7 +60,18 @@ export class PublicVoice implements PublicVoiceRow {
     return Date.now() - this.lastCacheRefresh < this.cacheTimeout
   }
 
+  /**
+   * Drop this process's cache and tell the other Core process to drop its own: the API handles the
+   * writes and the worker builds the prompts. The event is best effort; a missed one costs at most
+   * `cacheTimeout`.
+   */
   static invalidateCache(): void {
+    this.dropLocalCache()
+    eventEmitter.emit('publicVoices.changed', {})
+  }
+
+  /** This process only; `publicVoices.changed` from either process calls it. */
+  static dropLocalCache(): void {
     this.cache.clear()
     this.allCached = null
     this.chosenDefaultId = null
@@ -211,3 +224,7 @@ export class PublicVoice implements PublicVoiceRow {
     }
   }
 }
+
+// Both Core processes load this entity, so each drops its cache when either one writes a voice. The
+// emitter also delivers this process's own events here; clearing twice is harmless.
+eventEmitter.on('publicVoices.changed', () => PublicVoice.dropLocalCache())

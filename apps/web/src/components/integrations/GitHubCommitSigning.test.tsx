@@ -15,9 +15,9 @@ beforeEach(async () => {
   originalFetch = globalThis.fetch
 })
 afterEach(async () => {
+  globalThis.fetch = originalFetch
   await harness.cleanup()
   client.clear()
-  globalThis.fetch = originalFetch
 })
 
 async function render(

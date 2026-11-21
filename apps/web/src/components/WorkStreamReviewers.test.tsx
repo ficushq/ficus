@@ -8,12 +8,17 @@ import { client } from '../api/clientInstance'
 import { WorkStreamReviewers } from './WorkStreamReviewers'
 
 test('work-stream editors assign and clear reviewer filters without granting review permissions', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/workstream' })
+  const reviewers = [{ id: 'reviewer', name: 'Riley' }]
+  // Assigning a reviewer refreshes the reviewer options.
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/workstream',
+    api: { '/api/workflows/reviewers': reviewers },
+  })
   const { root } = dom.createRoot()
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   const stream = { id: 'stream', squadId: 'squad', assignedReviewerIds: [] } as unknown as WorkStream
   cache.setQueryData(queryKeys.auth.permissions('squad'), { permissions: ['workstreams:update'] })
-  cache.setQueryData(queryKeys.workflows.reviewers('squad'), [{ id: 'reviewer', name: 'Riley' }])
+  cache.setQueryData(queryKeys.workflows.reviewers('squad'), reviewers)
   const update = spyOn(client.workflows, 'assignReviewers').mockResolvedValue({
     ...stream,
     assignedReviewerIds: ['reviewer'],
