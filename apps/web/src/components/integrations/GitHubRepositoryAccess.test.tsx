@@ -16,9 +16,9 @@ beforeEach(async () => {
   originalFetch = globalThis.fetch
 })
 afterEach(async () => {
+  globalThis.fetch = originalFetch
   await harness.cleanup()
   client.clear()
-  globalThis.fetch = originalFetch
 })
 const missing: Access = { status: 'missing', complete: true, personalAccountInstalled: false, installations: [] }
 async function render(data: Access, usesFicusApp = true) {

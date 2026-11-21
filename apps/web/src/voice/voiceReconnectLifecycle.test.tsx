@@ -73,8 +73,10 @@ test('automatic reconnection preserves browser timer receivers, has a finite ret
     expect(connects).toBe(4)
     expect(latest.status).toBe('idle')
   } finally {
-    await dom.cleanup()
+    // These are the harness window's timers: put them back while it is still installed, and let
+    // cleanup restore the process's own.
     globalThis.setTimeout = originalSet
     globalThis.clearTimeout = originalClear
+    await dom.cleanup()
   }
 })

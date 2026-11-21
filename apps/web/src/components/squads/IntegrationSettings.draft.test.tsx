@@ -162,9 +162,9 @@ beforeEach(async () => {
   await click('Settings')
 })
 afterEach(async () => {
-  client.clear()
   globalThis.fetch = originalFetch
   await dom.cleanup()
+  client.clear()
 })
 
 test('dirty rules and shared scope survive invalidation, refetch, and unrelated parent updates', async () => {

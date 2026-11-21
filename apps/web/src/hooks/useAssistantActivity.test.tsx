@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { AssistantActivityPage } from '@ficus/shared'
+import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness } from '../test/domHarness'
 import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { useAssistantActivity } from './useAssistantActivity'
@@ -37,15 +38,27 @@ function seed(queryClient: QueryClient, userId: string, permissions: string[]) {
   })
 }
 
-const fetchSpy = spyOn(globalThis, 'fetch')
 afterEach(() => {
-  fetchSpy.mockClear()
   latest = undefined
 })
 
+// Cached data stays fresh, as under the app's five-minute default, so only a new owner's page is
+// requested; that request fails, so the new owner keeps no activity.
+async function render() {
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api: { '/api/assistant/activity': apiUnavailable } })
+  // Spy on the harness window's fetch, which the hook's requests use.
+  const fetchSpy = spyOn(globalThis, 'fetch')
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const cleanup = async () => {
+    fetchSpy.mockRestore()
+    await dom.cleanup()
+    queryClient.clear()
+  }
+  return { dom, fetchSpy, queryClient, cleanup }
+}
+
 test('reports unread conversations from cached activity without any network or realtime activity', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const { dom, fetchSpy, queryClient, cleanup } = await render()
   try {
     seed(queryClient, owner, ['chat:send'])
     queryClient.setQueryData(assistantQueryKeys.activity(owner, 0), page(3))
@@ -79,14 +92,12 @@ test('reports unread conversations from cached activity without any network or r
     expect(latest?.activity).toBeUndefined()
     expect(container.textContent).toBe('0')
   } finally {
-    await dom.cleanup()
-    queryClient.clear()
+    await cleanup()
   }
 })
 
 test('stays idle without chat:send', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const { dom, fetchSpy, queryClient, cleanup } = await render()
   try {
     seed(queryClient, owner, ['squads:read'])
     queryClient.setQueryData(assistantQueryKeys.activity(owner, 0), page(5))
@@ -101,7 +112,6 @@ test('stays idle without chat:send', async () => {
     expect(container.textContent).toBe('0')
     expect(fetchSpy).not.toHaveBeenCalled()
   } finally {
-    await dom.cleanup()
-    queryClient.clear()
+    await cleanup()
   }
 })

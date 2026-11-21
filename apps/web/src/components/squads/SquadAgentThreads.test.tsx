@@ -10,6 +10,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, useLocation } from 'react-router'
 import type { Window } from 'happy-dom'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
+import { workStreamReads } from '../../test/workStreamApi'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
 import { SquadAgentThreadsApiProvider } from './squadAgentThreadsApi'
@@ -137,6 +139,19 @@ function renderThreads(
 async function installDom() {
   return acquireDomHarness({
     url: 'http://localhost/squads/squad-1',
+    // The thread list's surroundings (agent and work lists, agent types, open question counts, the
+    // squad, and an opened stream's own reads) stay unavailable; the threads come from the test API.
+    api: {
+      ...workStreamReads,
+      '/api/agents': apiUnavailable,
+      '/api/workstreams': apiUnavailable,
+      '/api/agent-types': apiUnavailable,
+      '/api/agent-types/:id': apiUnavailable,
+      '/api/agent-questions/by-squad/:id/open-counts': apiUnavailable,
+      '/api/squads/:id': apiUnavailable,
+      '/api/squads/:id/agents': apiUnavailable,
+      '/api/workstreams/:id/subscription': apiUnavailable,
+    },
     configureWindow(window) {
       Object.assign(window, { SyntaxError })
     },
@@ -2129,8 +2144,8 @@ test('squad composer expansion includes the selected agent identity and view tab
     expect(dialog.textContent).toContain('Chat')
     expect(dialog.textContent).toContain('Work')
   } finally {
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })
 

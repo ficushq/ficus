@@ -16,18 +16,39 @@ import { afterEach, beforeEach, mock } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { domOwnership } from './test/domOwnership'
+import { describeBlockedRequests, installNetworkGuard, takeBlockedRequests } from './test/networkGuard'
+import { describeStaleDomGlobals, takeStaleDomGlobals } from './test/staleDomGlobals'
+
+// Web tests never reach the network: an unmocked request is refused and fails
+// the test that made it (see test/networkGuard.ts).
+installNetworkGuard()
 
 // The DOM ownership lease is process-wide. A lease still held when its test
 // (or, for beforeAll owners, its file) has finished is a leak: report it on the
 // test that leaked it and release it, so one leak cannot block every later DOM
-// test until the CI job times out. These preload hooks wrap each file's own.
+// test until the CI job times out. A finished harness's globals put back by a
+// test, and refused network requests, are reported the same way. These preload
+// hooks wrap each file's own.
+function isolationLeaks() {
+  const messages: string[] = []
+  const stale = takeStaleDomGlobals()
+  if (stale.length) messages.push(describeStaleDomGlobals(stale))
+  const requests = takeBlockedRequests()
+  if (requests.length) messages.push(describeBlockedRequests(requests))
+  return messages
+}
 beforeEach(async () => {
   const leak = await domOwnership.beginTest()
-  if (leak) throw new Error(`${leak.message}\nThis test failed only to surface a leak from an earlier file.`)
+  const messages = [...(leak ? [leak.message] : []), ...isolationLeaks()]
+  if (messages.length)
+    throw new Error(
+      `${messages.join('\n')}\nThis test failed only to surface a leak from an earlier test, file or beforeAll hook.`
+    )
 })
 afterEach(async () => {
   const leak = await domOwnership.endTest()
-  if (leak) throw new Error(leak.message)
+  const messages = [...(leak ? [leak.message] : []), ...isolationLeaks()]
+  if (messages.length) throw new Error(messages.join('\n'))
 })
 
 const WEB = join(import.meta.dir, '..', 'node_modules')

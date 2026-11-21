@@ -2,9 +2,15 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { restPointerOn } from '../test/hoverTimer'
 import { queries } from '../queryOptions'
 import { squadSwitchPath, SquadSwitcher } from './SquadSwitcher'
+
+// Refreshing the seeded squad list fails, so the switcher keeps the squads each test seeds.
+const api = {
+  '/api/squads': apiUnavailable,
+}
 
 describe('squadSwitchPath', () => {
   test('keeps the squad tab you are on and drops its query', () => {
@@ -28,7 +34,7 @@ afterEach(async () => {
 })
 
 async function renderSwitcher(path = '/squads/alpha/work?ws=12') {
-  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const squad = (id: string, name: string, extra: object = {}) => ({
     id,

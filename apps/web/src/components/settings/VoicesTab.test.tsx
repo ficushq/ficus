@@ -352,7 +352,7 @@ test('Voices derives through accounts instead of squads and still opens Save as 
     expect(dom.window.document.querySelector('[aria-label="Profile name"]')).not.toBeNull()
   } finally {
     globalThis.fetch = original
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

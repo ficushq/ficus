@@ -192,8 +192,8 @@ test('inside the desktop app, the Updates page uses native updates without polli
     return new Response('{}', { status: 500 })
   }) as typeof fetch
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const { root, container } = harness.createRoot()
   try {
-    const { root, container } = harness.createRoot()
     await harness.act(async () =>
       root.render(
         <QueryClientProvider client={client}>
@@ -205,6 +205,8 @@ test('inside the desktop app, the Updates page uses native updates without polli
     expect(container.textContent).not.toContain('Auto-update this instance')
     expect(requests.filter((url) => url.includes('/updates/'))).toEqual([])
   } finally {
+    // Clearing the cache while the section is mounted would refetch it, so unmount first.
+    await harness.act(async () => root.unmount())
     globalThis.fetch = previousFetch
     client.clear()
   }

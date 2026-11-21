@@ -7,10 +7,16 @@ import * as workspaceApi from '../../api/workspace'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { queryKeys } from '../../queryKeys'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import type { LocalDeployment } from '@ficus/shared'
 
 import { localDeploymentActionErrorMessage } from '../../lib/localDeploymentActionError'
 import { getLocalDeploymentAppHost, previewLocalDeploymentAliasUrl } from './localDeploymentAppHost'
+
+// The instance's public URL stays unavailable unless a test serves it.
+const api = {
+  '/api/public-url': apiUnavailable,
+}
 
 const { LocalDeploymentsPanel } = await import('./LocalDeploymentsPanel')
 
@@ -163,7 +169,7 @@ function apiError(status: number, error: string): ApiError {
 async function mountPanel(localDeployments: LocalDeployment[]) {
   // A successful action invalidates the list; serve the same rows instead of hitting the network.
   spies.push(spyOn(workspaceApi, 'listLocalDeployments').mockResolvedValue(localDeployments))
-  const dom = await acquireDomHarness({ url: 'http://localhost/squads/squad-1' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/squad-1', api })
   const queryClient = seededQueryClient(localDeployments)
   const root = dom.createRoot()
   await dom.act(async () =>

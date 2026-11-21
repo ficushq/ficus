@@ -647,10 +647,10 @@ describe('OnboardingPage — appearance control', () => {
 
   afterEach(async () => {
     await queryClient?.cancelQueries()
-    queryClient?.clear()
     delete window.ficusDesktopApp
     document.documentElement.classList.remove('dark')
     await dom.cleanup()
+    queryClient?.clear()
     globalThis.fetch = oldFetch
   })
 
@@ -771,7 +771,7 @@ test('the gated optional voice action actually opens the core GitHub setup step'
     expect(container.textContent).toContain('Your workspace is ready.')
   } finally {
     globalThis.fetch = original
-    client.clear()
     await dom.cleanup()
+    client.clear()
   }
 })

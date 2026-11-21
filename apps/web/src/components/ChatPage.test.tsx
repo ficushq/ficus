@@ -7,6 +7,7 @@ import { RouterProvider } from 'react-router/dom'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ComponentProps, ReactNode } from 'react'
+import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness } from '../test/domHarness'
 import { Chat } from './Chat'
 
@@ -191,11 +192,21 @@ const route = (router: ReturnType<typeof createMemoryRouter>) =>
 
 type Navigation = { key: string; route: string; action: string }
 
+// The page reads the caller's permissions, and the selected agent's header loads its details,
+// sandbox and model catalog. These tests cover routing only, so those details stay unavailable.
+const chatRouteApi = {
+  '/api/auth/permissions': { permissions: [] },
+  '/api/agents/:id': apiUnavailable,
+  '/api/agents/:id/sandbox/status': apiUnavailable,
+  '/api/agents/:id/model-catalog': apiUnavailable,
+}
+
 async function renderChatRoute(entry: string, width: number) {
   const dom = await acquireDomHarness({
     url: `https://ficus.test${entry}`,
     windowOptions: { innerWidth: width },
     configureWindow: configureViewport(width),
+    api: chatRouteApi,
   })
 
   const router = createMemoryRouter(

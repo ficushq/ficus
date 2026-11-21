@@ -35,7 +35,11 @@ async function harness() {
   let id = 0
   const previousRequest = globalThis.requestAnimationFrame
   const previousCancel = globalThis.cancelAnimationFrame
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  // ThemeControl reads the caller's permissions; these tests need none.
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/',
+    api: { '/api/auth/permissions': { permissions: [] } },
+  })
   globalThis.requestAnimationFrame = (fn) => {
     frames.set(++id, fn)
     return id

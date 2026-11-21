@@ -4,6 +4,7 @@ import { fireEvent, waitFor } from '@testing-library/dom'
 import { MemoryRouter } from 'react-router'
 import type { ReactNode } from 'react'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { queryKeys, integrationQueryKeys } from '../../queryKeys'
 import { SquadPresetsSection } from './SquadPresetsSection'
@@ -12,18 +13,26 @@ import { NotificationsConfigSection } from './NotificationsConfigSection'
 import { AssistantMemorySection } from './AssistantMemorySection'
 import { ProviderAuthSection } from './ProviderAuthSection'
 
+// The squad preset editor's workflow list and a provider's sign-in status are not seeded and stay
+// unavailable.
+const api = {
+  '/api/workflows': apiUnavailable,
+  '/api/provider-auth/:provider/status': apiUnavailable,
+}
+
 let dom: Awaited<ReturnType<typeof acquireDomHarness>>
 let client: QueryClient
 let oldFetch: typeof fetch
 beforeEach(async () => {
-  dom = await acquireDomHarness({ url: 'http://localhost/settings' })
+  dom = await acquireDomHarness({ url: 'http://localhost/settings', api })
   client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
   oldFetch = globalThis.fetch
 })
 afterEach(async () => {
   globalThis.fetch = oldFetch
-  client.clear()
+  // Clearing the cache while the tree is mounted would refetch its queries, so clear after unmount.
   await dom.cleanup()
+  client.clear()
 })
 async function render(node: ReactNode, writable = true) {
   const { root, container } = dom.createRoot()

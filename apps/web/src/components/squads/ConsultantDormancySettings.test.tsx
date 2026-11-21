@@ -56,8 +56,8 @@ async function harness(days: number | null) {
     settle,
     restore: async () => {
       globalThis.fetch = originalFetch
-      client.clear()
       await dom.cleanup()
+      client.clear()
     },
   }
 }

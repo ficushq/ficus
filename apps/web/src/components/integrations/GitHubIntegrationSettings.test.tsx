@@ -2,15 +2,25 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
+import { apiUnavailable } from '../../test/apiMock'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 import { GitHubIntegrationSettings } from './GitHubIntegrationSettings'
 import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'
+
+// Each listed account's repository access and commit signing, the squad list and the caller's
+// permissions stay unavailable unless a test serves them.
+const api = {
+  '/api/integrations/connections/:id/github-repository-access': apiUnavailable,
+  '/api/integrations/connections/:id/github-commit-signing': apiUnavailable,
+  '/api/squads': apiUnavailable,
+  '/api/auth/permissions': apiUnavailable,
+}
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
 let oldFetch: typeof globalThis.fetch
 let client: QueryClient
 beforeEach(async () => {
-  harness = await acquireDomHarness({ url: 'http://localhost/settings' })
+  harness = await acquireDomHarness({ url: 'http://localhost/settings', api })
   oldFetch = globalThis.fetch
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(integrationQueryKeys.pool('github'), [])
@@ -28,9 +38,9 @@ beforeEach(async () => {
   })
 })
 afterEach(async () => {
+  globalThis.fetch = oldFetch
   await harness.cleanup()
   client.clear()
-  globalThis.fetch = oldFetch
 })
 
 test('device login displays only the public code and cancellation removes it', async () => {

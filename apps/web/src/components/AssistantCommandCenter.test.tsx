@@ -3,11 +3,21 @@ import { useState } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
 import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
+import { apiUnavailable } from '../test/apiMock'
 import { queries, integrationQueries } from '../queryOptions'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { AssistantCommandCenter } from './AssistantCommandCenter'
 import type { AssistantConversationDestination, CommandDestination } from '../lib/commandCenterSearch'
 import { assistantQueryKeys } from '../queryKeys'
+
+// Reads the command center makes beyond its seeded data (agent lookups, assistant activity
+// refreshes and voice status) stay unavailable.
+const api = {
+  '/api/agents/:id': apiUnavailable,
+  '/api/agents': apiUnavailable,
+  '/api/assistant/activity': apiUnavailable,
+  '/api/voice/status': apiUnavailable,
+}
 
 const ownerUserId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
 const activityConversationId = '6a1c0b4e-8c2d-4f3e-9a7b-1c2d3e4f5a6b'
@@ -47,7 +57,7 @@ async function fixture(
   delayedQuery = false,
   options: { activity?: boolean | 'quiet' } = {}
 ) {
-  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
   if (options.activity)
     client.setQueryData(

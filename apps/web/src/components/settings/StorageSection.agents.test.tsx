@@ -449,8 +449,8 @@ async function interact(granted: string[], mutate?: (data: StorageSnapshot) => v
     settle,
     restore: async () => {
       globalThis.fetch = originalFetch
-      queryClient.clear()
       await dom.cleanup()
+      queryClient.clear()
     },
   }
 }

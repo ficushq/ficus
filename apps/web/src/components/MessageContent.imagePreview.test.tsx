@@ -54,8 +54,8 @@ async function renderMessage(metadata: MessageMetadata, content = 'Look at this'
     previewSrc: () => document.querySelector<HTMLImageElement>(`${PREVIEW_DIALOG} img`)?.getAttribute('src'),
     click: (element: HTMLElement) => dom.act(async () => element.click()),
     async cleanup() {
-      queryClient.clear()
       await dom.cleanup()
+      queryClient.clear()
     },
   }
 }

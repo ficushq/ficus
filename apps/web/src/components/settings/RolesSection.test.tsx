@@ -36,10 +36,9 @@ describe('RolesSection cloning', () => {
   beforeEach(async () => {
     dom = await acquireDomHarness({
       url: 'http://localhost/settings',
-      beforeUnmount: async () => {
-        await queryClient?.cancelQueries()
-        queryClient?.clear()
-      },
+      beforeUnmount: () => queryClient?.cancelQueries(),
+      // Clearing the cache while the tree is mounted would refetch its queries.
+      afterUnmount: () => queryClient?.clear(),
     })
     ;({ RolesSection } = await import('./RolesSection'))
     ;({ root, container } = dom.createRoot())
