@@ -23,8 +23,8 @@ updates:
       pi:
         patterns: ["@earendil-works/pi-*"]
       # The Notion CLI (ntn) version and its npm tarball integrity are pinned in
-      # apps/core/src/services/integrations/notion/plugin.ts (CLI_VERSION and
-      # CLI_INTEGRITY), so every ntn bump needs a matching code change. Kept in its
+      # apps/core/src/services/integrations/notion/plugin.ts (NOTION_CLI_VERSION
+      # and CLI_INTEGRITY), so every ntn bump needs a matching code change. Kept in its
       # own PR so it can't hold back the rest of the minor-and-patch group.
       ntn:
         patterns: ["ntn"]

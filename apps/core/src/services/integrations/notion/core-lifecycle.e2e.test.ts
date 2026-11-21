@@ -30,7 +30,7 @@ import { IntegrationProjectionWorker } from '../projection/worker'
 import { NotionClient, type NotionTokenResponse } from '@ficus/shared/oauth-providers/notion/client'
 import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/config'
 import { NotionConnectionAuthorizer } from './connection-authorizer'
-import { createNotionPlugin } from './plugin'
+import { NOTION_CLI_VERSION, createNotionPlugin } from './plugin'
 import { expectCleanExit, expectFailedExit, runCapturedProcess } from '../../../test-utils/captured-process'
 
 const binary = join(dirname(Bun.resolveSync('ntn/package.json', import.meta.dir)), 'bin', 'ntn')
@@ -337,13 +337,13 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
         }
         readinessCount += 1
         expect(desired.config.packages).toContain('nodejs@24.12.0')
-        expect(desired.config.setupScript).toContain('npm pack --silent ntn@0.23.28')
+        expect(desired.config.setupScript).toContain(`npm pack --silent ntn@${NOTION_CLI_VERSION}`)
         expect(desired.readiness).toContainEqual({
           id: 'notion-cli',
           command: 'ntn --version',
-          expectedSubstring: '0.23.28',
+          expectedSubstring: NOTION_CLI_VERSION,
         })
-        expect(Bun.spawnSync([binary, '--version'], { stdout: 'pipe' }).stdout.toString()).toContain('0.23.28')
+        expect(Bun.spawnSync([binary, '--version'], { stdout: 'pipe' }).stdout.toString()).toContain(NOTION_CLI_VERSION)
       },
     } as any,
     targets: async () => [{ sandboxId: 'squad-box', options: { workspacePath: root } }],

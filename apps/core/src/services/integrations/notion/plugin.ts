@@ -14,9 +14,13 @@ import {
   type NotionConnectionConfiguration,
 } from '@ficus/shared/oauth-providers/notion/config'
 
-/** Pinned `ntn` release; keep in step with apps/core/package.json and the npm dist.integrity below. */
-const CLI_VERSION = '0.23.28'
-const CLI_INTEGRITY = '8XX88Roci3f7AZKvHZ8zobstDiqudybGVIBGW+nYccCpwddOuPzt7lTnr2N5qLBAmW6uM2ipznJf7pdKRy62XQ=='
+/**
+ * Pinned `ntn` release; keep in step with apps/core/package.json and the npm dist.integrity below.
+ * Tests import NOTION_CLI_VERSION rather than repeating the literal, so an ntn bump changes only these two
+ * lines beside package.json and bun.lock; plugin.test.ts fails fast when they drift from the lockfile.
+ */
+export const NOTION_CLI_VERSION = '0.23.30'
+const CLI_INTEGRITY = 'y95azLawqB5TGCFnftjPxWZSH/GyQRRlzlrlhtb49Mgo8nJXa4guOX2h9JcDio3hu/a5j0ubRT/0HRkENy67dg=='
 /**
  * Download, verify and install `ntn` in a strict subshell inside a temporary directory, so a digest
  * mismatch (or any failed command) stops the step before `npm install` and the subshell's non-zero
@@ -36,7 +40,7 @@ export function notionCliSetupScript(version: string, integrity: string): string
     ')',
   ].join('\n')
 }
-const CLI_SETUP_SCRIPT = notionCliSetupScript(CLI_VERSION, CLI_INTEGRITY)
+const CLI_SETUP_SCRIPT = notionCliSetupScript(NOTION_CLI_VERSION, CLI_INTEGRITY)
 
 type NotionPlugin = Omit<
   IntegrationPluginV1<NotionConnectionConfiguration, OAuthCredentialBundleV1>,
@@ -114,9 +118,9 @@ export function createNotionPlugin(client: NotionClientContract): NotionPlugin {
     },
     sandbox: {
       packages: ['nodejs@24.12.0'],
-      setupSteps: [{ id: `notion-cli@${CLI_VERSION}`, script: CLI_SETUP_SCRIPT }],
+      setupSteps: [{ id: `notion-cli@${NOTION_CLI_VERSION}`, script: CLI_SETUP_SCRIPT }],
       initHooks: ['export PATH="$DEVBOX_PROJECT_ROOT/npm/bin:$PATH"'],
-      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: CLI_VERSION }],
+      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: NOTION_CLI_VERSION }],
       skills: ['notion'],
       extensions: [],
       protectedBindings: [{ name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration', field: 'workspaceId' } }],

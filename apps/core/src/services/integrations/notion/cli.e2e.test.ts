@@ -14,7 +14,7 @@ import { parseNotionConfiguration } from '@ficus/shared/oauth-providers/notion/c
 import { classifyNotionError, registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
 import type { OAuthProviderGrant } from '@ficus/shared/oauth-providers/types'
 import { createLocalTransport } from '../authorization/transport'
-import { createNotionPlugin } from './plugin'
+import { NOTION_CLI_VERSION, createNotionPlugin } from './plugin'
 import { expectCleanExit, expectFailedExit, runCapturedProcess } from '../../../test-utils/captured-process'
 
 const binary = join(dirname(Bun.resolveSync('ntn/package.json', import.meta.dir)), 'bin', 'ntn')
@@ -182,7 +182,7 @@ test('pinned Notion CLI uses fresh exec credentials without rewriting generated 
   try {
     const version = Bun.spawnSync([binary, '--version'], { stdout: 'pipe', stderr: 'pipe' })
     expect(version.exitCode).toBe(0)
-    expect(version.stdout.toString()).toContain('0.23.28')
+    expect(version.stdout.toString()).toContain(NOTION_CLI_VERSION)
 
     const exchanged = await transport.completeAuthorization({
       providerKey: 'notion',
@@ -252,7 +252,7 @@ test('pinned Notion CLI uses fresh exec credentials without rewriting generated 
     expect(assigned.publicDeclaration.readiness).toContainEqual({
       id: 'notion-cli',
       command: 'ntn --version',
-      expectedSubstring: '0.23.28',
+      expectedSubstring: NOTION_CLI_VERSION,
     })
     await reconcile()
     expect(installCount).toBe(1)
