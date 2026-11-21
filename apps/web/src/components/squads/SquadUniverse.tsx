@@ -6,6 +6,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { listSquadAgents } from '../../api/squads'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
+import { universeNodePath } from './universeNodePath'
 import { CanvasSkeleton } from '../loading/Skeleton'
 import { AGENT_STATUS_ROLE, type Squad, type SquadRelationship, type Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
@@ -157,11 +158,8 @@ export function SquadUniverse({ squads, relationships }: Props) {
   // Handle node click
   const handleNodeClick = useCallback(
     (node: any) => {
-      if (node.type === 'squad') {
-        navigate(`/squads/${slugFor(node.id)}`)
-      } else if (node.type === 'agent') {
-        navigate(`/chat/${node.id}`)
-      }
+      const path = universeNodePath(node, slugFor)
+      if (path) navigate(path)
     },
     [navigate, slugFor]
   )

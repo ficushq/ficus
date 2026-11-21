@@ -2,6 +2,7 @@ import { StructuredInputActions, AgentRecoveryActions } from './StructuredInputA
 import { AttemptLimitActions } from './AttemptLimitActions'
 import clsx from 'clsx'
 import { assistantConversationSearch } from '../lib/assistantConversationSearch'
+import { agentChatPath } from '../lib/entityReference'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
@@ -76,9 +77,9 @@ function actionStatusPresentation(action: PendingAction): ActionStatusPresentati
   )
 }
 
-// Link to an agent's conversation thread (squad agents open in the squad view; personal agents in chat).
+// Link to an agent's conversation: its squad Chats tab, or the Assistant's view of a squadless agent.
 function agentThreadPath(agentId: string, squadId: string | null): string {
-  return squadId ? `/squads/${squadId}?agent=${agentId}` : `/chat/${agentId}`
+  return agentChatPath({ id: agentId, squadId })
 }
 
 interface ActionItemProps {

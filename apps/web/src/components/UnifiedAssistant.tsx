@@ -125,9 +125,21 @@ function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
       setExisting(!linkedDraft)
     }
   }, [linkedId, select, idRef, linkedDraft])
+  // The old drawer's `?assistantChat=<agent>` link: open that agent's conversation here, on the same page,
+  // where squadless agents' links land too (the legacy /chat page is no longer a destination).
+  const paramsRef = useStableRef(params)
   useEffect(() => {
-    if (legacyId) navigate(`/chat/${encodeURIComponent(legacyId)}`, { replace: true })
-  }, [legacyId, navigate])
+    if (!legacyId) return
+    const entry = { kind: 'chat' as const, id: legacyId, agentId: legacyId, label: 'Conversation' }
+    navigate(
+      {
+        pathname: location.pathname,
+        search: assistantNavigationParams(paramsRef.current, [entry], '').toString(),
+        hash: location.hash,
+      },
+      { replace: true }
+    )
+  }, [legacyId, navigate, location.pathname, location.hash, paramsRef])
   const created = useCallback(
     (createdId: string) => {
       if (createdId === idRef.current) setExisting(true)

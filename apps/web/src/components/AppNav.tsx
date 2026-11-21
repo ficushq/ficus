@@ -6,7 +6,7 @@ import clsx from 'clsx'
 import { useEffect } from 'react'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon, SproutIcon } from './icons'
+import { SettingsIcon, InboxIcon, MoreIcon, SproutIcon } from './icons'
 import { FicusLogo } from './FicusLogo'
 import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendingActions'
 import { desktopInstance } from '../lib/desktop'
@@ -45,7 +45,6 @@ type NavDependencies = {
 export function AppHeader({ usePendingActions: usePendingActionsProp = usePendingActions }: NavDependencies = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const isChat = location.pathname.startsWith('/chat')
   const { triggerRef: inboxTriggerRef, hover: inboxHover, open: inboxOpen } = useInboxPopup()
   const { can, isLoading: permissionsLoading } = usePermissions()
   const theme = useTheme()
@@ -190,17 +189,6 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
 
           {/* Right: Actions */}
           <div className="flex items-center gap-1">
-            {/* Mobile new chat button - only on chat pages */}
-            {isChat && (
-              <button
-                onClick={() => navigate('/chat?new')}
-                className="ficus-button ficus-button-ghost md:hidden p-2 text-accent-light hover:text-accent-light"
-                title="New chat"
-              >
-                <PencilIcon className="w-5 h-5" />
-              </button>
-            )}
-
             <button
               onClick={() => window.dispatchEvent(new Event(TOGGLE_ASSISTANT_EVENT))}
               title="Assistant (⌘K / Ctrl+K)"

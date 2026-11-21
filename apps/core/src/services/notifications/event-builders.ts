@@ -1,6 +1,7 @@
 import { resolvePublicAppUrl } from '../../lib/public-app-url'
 import {
   workStreamWaitActor,
+  agentChatPath,
   assistantConversationPath,
   parseAssistantInboxConversationId,
   parseInboxPushPresentation,
@@ -109,7 +110,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       title: `❓ ${agentLabel} has a question`,
       body: questionText.slice(0, 300) || 'Open Ficus to respond',
       pushSource: { body: questionText || 'Open Ficus to respond' },
-      url: question.squadId ? buildUrl(`/squads/${question.squadId}?agent=${agent.id}`) : buildUrl(`/chat/${agent.id}`),
+      url: buildUrl(agentChatPath({ id: agent.id, squadId: question.squadId })),
       timestamp: new Date(),
     }
   },
@@ -356,7 +357,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const agentName = (agent.metadata as Record<string, unknown>)?.name as string | undefined
     const agentLabel = agentName || agent.agentTypeId
 
-    // Squad agents link to squad threads tab, system agents link to chat
+    // Squad agents link to their squad Chats tab, squadless agents to the Assistant's view of them.
     let url: string | undefined
     let squadId: string | undefined
     let squadName: string | undefined
@@ -366,10 +367,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       if (squad) {
         squadId = squad.id
         squadName = squad.name
-        url = buildUrl(`/squads/${squad.id}?agent=${agent.id}`)
+        url = buildUrl(agentChatPath({ id: agent.id, squadId: squad.id }))
       }
     } else {
-      url = buildUrl(`/chat/${agent.id}`)
+      url = buildUrl(agentChatPath({ id: agent.id, squadId: null }))
     }
 
     return {
@@ -399,7 +400,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const agentLabel = agentName || agent.agentTypeId
     const errorMsg = execution.error || 'Unknown error'
 
-    // Squad agents link to squad threads tab, system agents link to chat
+    // Squad agents link to their squad Chats tab, squadless agents to the Assistant's view of them.
     let url: string | undefined
     let squadId: string | undefined
     let squadName: string | undefined
@@ -409,10 +410,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       if (squad) {
         squadId = squad.id
         squadName = squad.name
-        url = buildUrl(`/squads/${squad.id}?agent=${agent.id}`)
+        url = buildUrl(agentChatPath({ id: agent.id, squadId: squad.id }))
       }
     } else {
-      url = buildUrl(`/chat/${agent.id}`)
+      url = buildUrl(agentChatPath({ id: agent.id, squadId: null }))
     }
 
     return {
