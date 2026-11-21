@@ -7,13 +7,17 @@ export interface VisibleAgentContext {
   source: VisibleAgentSource
 }
 
+/**
+ * The agent whose conversation the page itself shows: a squad's Chats tab (`?agent=`). The retired
+ * `/chat/:agentId` page is not read: that route only redirects, showing a loading state and no
+ * conversation until it does, and `/assistant/agents/:agentId` redirects at once to the Assistant's
+ * URL state, which is read below as the command bar chat.
+ */
 function getUrlAgentId(path: string): string | null {
-  const agentMatch = path.match(/\/chat\/([^/?]+)/)
   const url = new URL(path, 'https://ficus.local')
   const tab = url.pathname.split('/')[3] ?? url.searchParams.get('tab')
   const agentParam = !tab || tab === 'agents' ? path.match(/[?&]agent=([^&]+)/) : null
-  const agentId = agentMatch?.[1] ?? agentParam?.[1]
-  return agentId ? decodeURIComponent(agentId) : null
+  return agentParam?.[1] ? decodeURIComponent(agentParam[1]) : null
 }
 
 function getDrawerAgentId(doc: Pick<Document, 'querySelector'>): string | null {

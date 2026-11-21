@@ -36,7 +36,7 @@ async function render(
 ) {
   // An open question's answer form offers voice input, which reads the voice status.
   const dom = await acquireDomHarness({
-    url: 'http://localhost/chat/agent-1',
+    url: 'http://localhost/squads/ficus/agents?agent=agent-1',
     api: { '/api/voice/status': { enabled: false }, ...options.api },
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -45,7 +45,7 @@ async function render(
   await dom.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/chat/agent-1']}>
+        <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
           <ToolInlineActionModal
             action={action}
             scope={'scope' in options ? options.scope : { agentId: 'agent-1', squadId: 'squad-1' }}
@@ -158,7 +158,7 @@ test('a work stream that cannot be resolved, with no squad to fall back on, repo
     })
     expect(unavailable).toBe(1)
     expect(closed).toBe(1)
-    expect(document.querySelector('[data-testid="location"]')!.textContent).toBe('/chat/agent-1')
+    expect(document.querySelector('[data-testid="location"]')!.textContent).toBe('/squads/ficus/agents?agent=agent-1')
   } finally {
     await cleanup()
   }

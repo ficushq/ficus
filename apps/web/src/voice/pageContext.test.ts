@@ -14,27 +14,36 @@ function docWithDrawerAgent(agentId: string | null): Pick<Document, 'querySelect
   }
 }
 
+const CHATS_TAB = '/squads/ficus/agents?agent=url-agent'
+
 describe('getVisibleAgentContext', () => {
   test('detects the open system manager chat drawer before URL agent context', () => {
-    expect(getVisibleAgentContext('/chat/url-agent', docWithDrawerAgent('drawer-agent'))).toEqual({
+    expect(getVisibleAgentContext(CHATS_TAB, docWithDrawerAgent('drawer-agent'))).toEqual({
       id: 'drawer-agent',
       source: 'system-manager-chat-drawer',
     })
   })
 
   test('returns drawer before URL agent when both are visible', () => {
-    expect(getVisibleAgentContexts('/chat/url-agent', docWithDrawerAgent('drawer-agent'))).toEqual([
+    expect(getVisibleAgentContexts(CHATS_TAB, docWithDrawerAgent('drawer-agent'))).toEqual([
       { id: 'drawer-agent', source: 'system-manager-chat-drawer' },
       { id: 'url-agent', source: 'url' },
     ])
   })
 
   test('falls back to chat URL agent when no drawer is open', () => {
-    expect(getVisibleAgentContext('/chat/url-agent', docWithDrawerAgent(null))).toEqual({
+    expect(getVisibleAgentContext(CHATS_TAB, docWithDrawerAgent(null))).toEqual({
       id: 'url-agent',
       source: 'url',
     })
   })
+})
+
+test('the retired chat page and the Assistant agent route show no conversation of their own', () => {
+  // Both only redirect; the Assistant's URL state they land on is read as the command bar chat.
+  expect(getVisibleAgentContexts('/chat/url-agent', docWithDrawerAgent(null))).toEqual([])
+  expect(getVisibleAgentContexts('/chat/url-agent?scope=all', docWithDrawerAgent(null))).toEqual([])
+  expect(getVisibleAgentContexts('/assistant/agents/url-agent', docWithDrawerAgent(null))).toEqual([])
 })
 
 test('a persisted agent selection on another squad tab is not an open conversation', () => {
@@ -53,12 +62,12 @@ test('the selected nested agent is primary context, without confusing a hidden p
       ['chat', 'manager', 'squad', 'manager'],
     ]),
   })
-  expect(getVisibleAgentContexts(`/chat/page-agent?${params}`, docWithDrawerAgent(null))).toEqual([
+  expect(getVisibleAgentContexts(`/squads/ficus/agents?agent=page-agent&${params}`, docWithDrawerAgent(null))).toEqual([
     { id: 'manager', source: 'command-bar-chat' },
     { id: 'page-agent', source: 'url' },
   ])
   params.set('chat', 'closed')
-  expect(getVisibleAgentContexts(`/chat/page-agent?${params}`, docWithDrawerAgent(null))).toEqual([
+  expect(getVisibleAgentContexts(`/squads/ficus/agents?agent=page-agent&${params}`, docWithDrawerAgent(null))).toEqual([
     { id: 'page-agent', source: 'url' },
   ])
 })

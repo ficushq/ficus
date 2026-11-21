@@ -278,6 +278,8 @@ describe('notification event builders', () => {
       )
       const squadless = await buildNotificationEvent(type, { executionId: 'e1', agentId: 'system' })
       expect(squadless?.url).toBe(`https://ficus.example${assistantAgentChatPath('system')}`)
+      // A short, stable route: persisted notification URLs never carry the Assistant's internal state.
+      expect(squadless?.url).toBe('https://ficus.example/assistant/agents/system')
       expect(squadless?.url).not.toContain('/chat/')
     }
   })

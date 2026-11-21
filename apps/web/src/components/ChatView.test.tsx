@@ -108,7 +108,7 @@ function trackingFileReader(Base: typeof FileReader): typeof FileReader {
 /** `innerWidth` sets the viewport media queries see (Happy DOM's default is a desktop width). */
 async function installDom({ innerWidth }: { innerWidth?: number } = {}) {
   return (activeDom = await acquireDomHarness({
-    url: 'http://localhost/chat',
+    url: 'http://localhost/squads/ficus/agents',
     windowOptions: innerWidth === undefined ? undefined : { innerWidth },
     // The screenshot review card lists squads to file a screenshot under.
     api: { '/api/squads': [] },
@@ -185,7 +185,7 @@ function deferred<T>() {
 
 async function renderChatView(
   element: React.ReactElement,
-  entry = '/chat/agent-1?scope=all',
+  entry = '/squads/ficus/agents?agent=agent-1',
   { innerWidth }: { innerWidth?: number } = {}
 ): Promise<{
   dom: Awaited<ReturnType<typeof acquireDomHarness>>
@@ -408,7 +408,7 @@ test('sticky content ends the message flow and floats above the plant while it p
 
   await dom.act(async () =>
     root.render(
-      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+      <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
         <PermissionsProvider usePermissions={usePermissionsMock}>
           <ChatView
             items={[]}
@@ -973,7 +973,7 @@ describe('ChatView clear pending queue', () => {
         candidate.textContent?.includes('pending message')
       )
     const view = (items: RenderItem[], isStreaming = false) => (
-      <MemoryRouter initialEntries={['/chat']}>
+      <MemoryRouter initialEntries={['/squads/ficus/agents']}>
         <PermissionsProvider usePermissions={usePermissionsMock}>
           <ChatView
             items={items}
@@ -2747,7 +2747,7 @@ async function renderChatViewWithScrollSpy(element: React.ReactElement) {
     return undefined
   })
   const dom = await acquireDomHarness({
-    url: 'http://localhost/chat',
+    url: 'http://localhost/squads/ficus/agents',
     configureWindow(window) {
       window.requestAnimationFrame = (callback: FrameRequestCallback) => window.setTimeout(callback, 0)
       window.cancelAnimationFrame = (id: number) => window.clearTimeout(id)
@@ -2770,7 +2770,7 @@ async function renderChatViewWithScrollSpy(element: React.ReactElement) {
   }
   await dom.act(async () => {
     root.render(
-      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+      <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
         <PermissionsProvider usePermissions={usePermissionsMock}>{injected}</PermissionsProvider>
       </MemoryRouter>
     )
@@ -2923,7 +2923,7 @@ async function renderChatViewWithControlledLayout(element: React.ReactElement) {
   let nextFrameId = 1
   const frames = new Map<number, FrameRequestCallback>()
   const dom = await acquireDomHarness({
-    url: 'http://localhost/chat',
+    url: 'http://localhost/squads/ficus/agents',
     afterUnmount: restoreFileReader,
     configureWindow(window) {
       globalThis.FileReader = window.FileReader
@@ -2963,7 +2963,7 @@ async function renderChatViewWithControlledLayout(element: React.ReactElement) {
   const render = async (view: React.ReactElement) => {
     await dom.act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+        <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
           <PermissionsProvider usePermissions={usePermissionsMock}>{inject(view)}</PermissionsProvider>
         </MemoryRouter>
       )
@@ -3240,7 +3240,7 @@ describe('ChatView beforeMessages', () => {
     // Older live pages come first chronologically: the archive waits until they have loaded.
     await dom.act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+        <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
           <PermissionsProvider usePermissions={usePermissionsMock}>
             <ChatView
               items={[row(first)]}
@@ -3555,7 +3555,7 @@ describe('ChatView persisted draft', () => {
     const { root, container } = dom.createRoot()
     await dom.act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/chat']}>
+        <MemoryRouter initialEntries={['/squads/ficus/agents']}>
           <PermissionsProvider usePermissions={usePermissionsMock}>
             <ChatView
               items={[]}
@@ -3589,7 +3589,7 @@ describe('ChatView persisted draft', () => {
     const renderFor = (key: string) =>
       dom.act(async () => {
         root.render(
-          <MemoryRouter initialEntries={['/chat']}>
+          <MemoryRouter initialEntries={['/squads/ficus/agents']}>
             <PermissionsProvider usePermissions={usePermissionsMock}>
               <ChatView
                 items={[]}
@@ -3665,7 +3665,7 @@ describe('ChatView persisted draft', () => {
 describe('ChatView composer draft', () => {
   test('a composer draft goes after any typed text, focused, and a new id adds it again', async () => {
     const view = (composerDraft?: { id: number; text: string }) => (
-      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+      <MemoryRouter initialEntries={['/squads/ficus/agents?agent=agent-1']}>
         <PermissionsProvider usePermissions={usePermissionsMock}>
           <ChatView
             items={[]}

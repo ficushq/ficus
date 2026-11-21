@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { createRoot } from 'react-dom/client'
 import { act } from 'react'
 import { acquireDomHarness } from '../test/domHarness'
 import { applyResolvedTheme } from './apply'
@@ -74,9 +73,9 @@ test('memoized reader re-reads on appearance, theme, inline override and reset; 
 
 test('mounted consumers refresh graph and status colors without remounting or prop changes', async () => {
   const harness = await acquireDomHarness({ url: 'https://ficus.test' })
-  const host = document.createElement('div')
-  document.body.append(host)
-  const renderer = createRoot(host)
+  // The harness owns the root: loading react-dom before it installs the DOM leaves react-dom without
+  // one for every later test file in the process.
+  const { root: renderer, container: host } = harness.createRoot()
   try {
     const root = document.documentElement
     const style = document.createElement('style')

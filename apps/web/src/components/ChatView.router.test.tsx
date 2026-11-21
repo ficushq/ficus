@@ -47,37 +47,37 @@ function chatElement(items: RenderItem[] = []) {
 }
 
 function chatRouter(entry: string, items: RenderItem[] = []) {
-  return createMemoryRouter([{ path: '/chat/:agentId', element: chatElement(items) }], {
+  return createMemoryRouter([{ path: '/squads/:squadId/agents', element: chatElement(items) }], {
     initialEntries: [entry],
   })
 }
 
 test('fullscreen controls update only their router search and replace history', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/a?scope=all&fullscreen=1' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/ficus/agents?agent=a&fullscreen=1' })
   const router = createMemoryRouter(
     [
       {
-        path: '/chat/:agentId',
+        path: '/squads/:squadId/agents',
         element: chatElement(),
       },
       { path: '/before', element: <div>Before</div> },
     ],
-    { initialEntries: ['/before', '/chat/a?scope=all&fullscreen=1'], initialIndex: 1 }
+    { initialEntries: ['/before', '/squads/ficus/agents?agent=a&fullscreen=1'], initialIndex: 1 }
   )
   const rendered = dom.createRoot()
   try {
     await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
-    expect(router.state.location.pathname).toBe('/chat/a')
-    expect(router.state.location.search).toBe('?scope=all&fullscreen=1')
+    expect(router.state.location.pathname).toBe('/squads/ficus/agents')
+    expect(router.state.location.search).toBe('?agent=a&fullscreen=1')
 
     const exit = dom.window.document.querySelector('[aria-label="Exit fullscreen"]') as unknown as HTMLElement
     expect(exit).not.toBeNull()
     await dom.act(async () => exit.click())
-    expect(router.state.location.search).toBe('?scope=all')
+    expect(router.state.location.search).toBe('?agent=a')
 
     const enter = dom.window.document.querySelector('[aria-label="Fullscreen"]') as unknown as HTMLElement
     await dom.act(async () => enter.click())
-    expect(router.state.location.search).toBe('?scope=all&fullscreen=1')
+    expect(router.state.location.search).toBe('?agent=a&fullscreen=1')
 
     await dom.act(async () => router.navigate(-1))
     expect(router.state.location.pathname).toBe('/before')
@@ -87,7 +87,7 @@ test('fullscreen controls update only their router search and replace history', 
 })
 
 test('a real rendered Link navigates its router while preserving the target search', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/a' })
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/ficus/agents' })
   const navigateItem = {
     kind: 'streaming',
     id: 'navigate-stream',
@@ -98,19 +98,22 @@ test('a real rendered Link navigates its router while preserving the target sear
         type: 'tool_use',
         id: 'navigate-tool',
         _done: true,
-        toolCall: { toolName: 'navigate', args: JSON.stringify({ path: '/chat/b?scope=squad', prompt: true }) },
+        toolCall: {
+          toolName: 'navigate',
+          args: JSON.stringify({ path: '/squads/ficus/agents?agent=b', prompt: true }),
+        },
       },
     ],
   } as RenderItem
-  const router = chatRouter('/chat/a', [navigateItem])
+  const router = chatRouter('/squads/ficus/agents', [navigateItem])
   const rendered = dom.createRoot()
   try {
     await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
-    const link = dom.window.document.querySelector('a[href="/chat/b?scope=squad"]') as unknown as HTMLElement
+    const link = dom.window.document.querySelector('a[href="/squads/ficus/agents?agent=b"]') as unknown as HTMLElement
     expect(link).not.toBeNull()
-    expect(router.state.location.pathname + router.state.location.search).toBe('/chat/a')
+    expect(router.state.location.pathname + router.state.location.search).toBe('/squads/ficus/agents')
     await dom.act(async () => link.click())
-    expect(router.state.location.pathname + router.state.location.search).toBe('/chat/b?scope=squad')
+    expect(router.state.location.pathname + router.state.location.search).toBe('/squads/ficus/agents?agent=b')
   } finally {
     await dom.cleanup()
   }
@@ -119,19 +122,19 @@ test('a real rendered Link navigates its router while preserving the target sear
 test('fresh routers stay isolated in both creation orders', async () => {
   for (const reverse of [false, true]) {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
-    const a = chatRouter('/chat/a?scope=A')
-    const b = chatRouter('/chat/b?scope=B')
+    const a = chatRouter('/squads/ficus/agents?agent=a')
+    const b = chatRouter('/squads/ficus/agents?agent=b')
     const ordered = reverse ? [b, a] : [a, b]
     const roots = ordered.map(() => dom.createRoot())
     try {
       for (let index = 0; index < ordered.length; index++) {
         await dom.act(async () => roots[index]!.root.render(<RouterProvider router={ordered[index]!} />))
       }
-      expect(a.state.location.pathname + a.state.location.search).toBe('/chat/a?scope=A')
-      expect(b.state.location.pathname + b.state.location.search).toBe('/chat/b?scope=B')
-      await dom.act(async () => a.navigate('/chat/a?scope=A&fullscreen=1'))
-      expect(a.state.location.search).toBe('?scope=A&fullscreen=1')
-      expect(b.state.location.search).toBe('?scope=B')
+      expect(a.state.location.pathname + a.state.location.search).toBe('/squads/ficus/agents?agent=a')
+      expect(b.state.location.pathname + b.state.location.search).toBe('/squads/ficus/agents?agent=b')
+      await dom.act(async () => a.navigate('/squads/ficus/agents?agent=a&fullscreen=1'))
+      expect(a.state.location.search).toBe('?agent=a&fullscreen=1')
+      expect(b.state.location.search).toBe('?agent=b')
     } finally {
       await dom.cleanup()
     }
@@ -140,8 +143,8 @@ test('fresh routers stay isolated in both creation orders', async () => {
 
 test('two overlapping live ChatView roots keep URL mutations instance-local', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
-  const a = chatRouter('/chat/a?scope=A')
-  const b = chatRouter('/chat/b?scope=B')
+  const a = chatRouter('/squads/ficus/agents?agent=a')
+  const b = chatRouter('/squads/ficus/agents?agent=b')
   const rootA = dom.createRoot()
   const rootB = dom.createRoot()
   try {
@@ -151,14 +154,14 @@ test('two overlapping live ChatView roots keep URL mutations instance-local', as
     })
     const buttonA = rootA.container.querySelector('[aria-label="Fullscreen"]') as HTMLElement
     const buttonB = rootB.container.querySelector('[aria-label="Fullscreen"]') as HTMLElement
-    expect(a.state.location.search).toBe('?scope=A')
-    expect(b.state.location.search).toBe('?scope=B')
+    expect(a.state.location.search).toBe('?agent=a')
+    expect(b.state.location.search).toBe('?agent=b')
     await dom.act(async () => buttonA.click())
-    expect(a.state.location.search).toBe('?scope=A&fullscreen=1')
-    expect(b.state.location.search).toBe('?scope=B')
+    expect(a.state.location.search).toBe('?agent=a&fullscreen=1')
+    expect(b.state.location.search).toBe('?agent=b')
     await dom.act(async () => buttonB.click())
-    expect(a.state.location.search).toBe('?scope=A&fullscreen=1')
-    expect(b.state.location.search).toBe('?scope=B&fullscreen=1')
+    expect(a.state.location.search).toBe('?agent=a&fullscreen=1')
+    expect(b.state.location.search).toBe('?agent=b&fullscreen=1')
   } finally {
     await dom.cleanup()
   }
@@ -167,13 +170,13 @@ test('two overlapping live ChatView roots keep URL mutations instance-local', as
 for (const enableFullscreen of [true, false]) {
   test(`mobile composer tap expands ${enableFullscreen ? 'routed' : 'embedded'} chat and retains draft, caret, and focus`, async () => {
     const dom = await acquireDomHarness({
-      url: 'http://localhost/chat/a?scope=all',
+      url: 'http://localhost/squads/ficus/agents?agent=a',
       windowOptions: { innerWidth: 390 },
     })
     const router = createMemoryRouter(
       [
         {
-          path: '/chat/:agentId',
+          path: '/squads/:squadId/agents',
           element: (
             <ChatView
               dependencies={dependencies}
@@ -184,7 +187,7 @@ for (const enableFullscreen of [true, false]) {
           ),
         },
       ],
-      { initialEntries: ['/chat/a?scope=all'] }
+      { initialEntries: ['/squads/ficus/agents?agent=a'] }
     )
     const rendered = dom.createRoot()
     try {
@@ -204,7 +207,7 @@ for (const enableFullscreen of [true, false]) {
       expect(expanded.selectionStart).toBe(3)
       expect(expanded.selectionEnd).toBe(8)
       expect(dom.window.document.activeElement).toBe(expanded)
-      expect(router.state.location.search).toBe('?scope=all')
+      expect(router.state.location.search).toBe('?agent=a')
       await dom.act(async () => expanded.click())
       expect(dom.window.document.querySelectorAll('[role="dialog"]').length).toBe(1)
       await dom.act(async () => {
@@ -213,7 +216,7 @@ for (const enableFullscreen of [true, false]) {
       })
       expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
       expect(dom.window.document.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('Draft after expanding')
-      expect(router.state.location.search).toBe('?scope=all')
+      expect(router.state.location.search).toBe('?agent=a')
     } finally {
       await dom.cleanup()
     }
@@ -227,13 +230,13 @@ for (const scenario of [
 ]) {
   test(`composer tap does not expand in ${scenario.name}`, async () => {
     const dom = await acquireDomHarness({
-      url: 'http://localhost/chat/a',
+      url: 'http://localhost/squads/ficus/agents',
       windowOptions: { innerWidth: scenario.width },
     })
     const router = createMemoryRouter(
       [
         {
-          path: '/chat/:agentId',
+          path: '/squads/:squadId/agents',
           element: (
             <ChatFullscreenContext value={scenario.context}>
               <div className={scenario.alreadyFullscreen ? 'mobile-chat-modal' : undefined}>
@@ -243,7 +246,7 @@ for (const scenario of [
           ),
         },
       ],
-      { initialEntries: ['/chat/a?scope=all'] }
+      { initialEntries: ['/squads/ficus/agents?agent=a'] }
     )
     const rendered = dom.createRoot()
     try {
@@ -252,7 +255,7 @@ for (const scenario of [
       await dom.act(async () => textarea.click())
       expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
       expect(dom.window.document.querySelector('textarea')).toBe(textarea)
-      expect(router.state.location.search).toBe('?scope=all')
+      expect(router.state.location.search).toBe('?agent=a')
     } finally {
       await dom.cleanup()
     }
@@ -260,7 +263,10 @@ for (const scenario of [
 }
 
 test('a retained conversation closes its mobile fullscreen portal when it becomes inactive', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/a', windowOptions: { innerWidth: 390 } })
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/squads/ficus/agents',
+    windowOptions: { innerWidth: 390 },
+  })
   function RetainedChat() {
     const [active, setActive] = useState(true)
     return (
@@ -272,8 +278,8 @@ test('a retained conversation closes its mobile fullscreen portal when it become
       </>
     )
   }
-  const router = createMemoryRouter([{ path: '/chat/:agentId', element: <RetainedChat /> }], {
-    initialEntries: ['/chat/a'],
+  const router = createMemoryRouter([{ path: '/squads/:squadId/agents', element: <RetainedChat /> }], {
+    initialEntries: ['/squads/ficus/agents'],
   })
   const rendered = dom.createRoot()
   try {
@@ -288,7 +294,10 @@ test('a retained conversation closes its mobile fullscreen portal when it become
 })
 
 test('composer and button expansion share the parent header without remounting the conversation', async () => {
-  const dom = await acquireDomHarness({ url: 'http://localhost/chat/a', windowOptions: { innerWidth: 390 } })
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/squads/ficus/agents',
+    windowOptions: { innerWidth: 390 },
+  })
   function ParentChat() {
     const [fullscreen, setFullscreen] = useState(false)
     const [tab, setTab] = useState('Chat')
@@ -310,8 +319,8 @@ test('composer and button expansion share the parent header without remounting t
       </ExpandableChatPanel>
     )
   }
-  const router = createMemoryRouter([{ path: '/chat/:agentId', element: <ParentChat /> }], {
-    initialEntries: ['/chat/a'],
+  const router = createMemoryRouter([{ path: '/squads/:squadId/agents', element: <ParentChat /> }], {
+    initialEntries: ['/squads/ficus/agents'],
   })
   const rendered = dom.createRoot()
   try {

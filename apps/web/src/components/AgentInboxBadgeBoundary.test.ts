@@ -4,7 +4,6 @@ import { join } from 'node:path'
 
 const componentSource = (relativePath: string) => readFileSync(join(import.meta.dir, relativePath), 'utf8')
 
-const chatPageSource = componentSource('ChatPage.tsx')
 const threadsSource = componentSource('squads/SquadAgentThreads.tsx')
 const visualizationSource = componentSource('squads/AgentVisualization.tsx')
 const inboxPanelSource = componentSource('squads/AgentInboxPanel.tsx')
@@ -16,9 +15,6 @@ const invalidationSource = componentSource('../hooks/useAgentInboxInvalidation.t
 
 describe('agent inbox badge boundary', () => {
   test('agent chat surfaces do not query or render unread counts', () => {
-    expect(chatPageSource).not.toContain('queries.inbox.unreadCount')
-    expect(chatPageSource).not.toMatch(/value: 'inbox',[\s\S]{0,120}badgeCount/)
-
     expect(threadsSource).not.toContain('queries.inbox.unreadCount')
     expect(threadsSource).not.toContain('unreadCounts')
     expect(threadsSource).not.toContain('useAgentInboxInvalidationHook')

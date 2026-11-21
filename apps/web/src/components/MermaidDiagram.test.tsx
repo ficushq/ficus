@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
 import { acquireDomHarness } from '../test/domHarness'
 import { isDarkColor } from '../theme/isDarkColor'
 import { MermaidDiagram, type MermaidRenderer } from './MermaidDiagram'
@@ -17,9 +16,9 @@ function controlledRenderer() {
 
 async function mount(renderer: MermaidRenderer) {
   const harness = await acquireDomHarness({ url: 'https://ficus.test' })
-  const host = document.createElement('div')
-  document.body.append(host)
-  const root = createRoot(host)
+  // The harness owns the root: loading react-dom before it installs the DOM leaves react-dom without
+  // one for every later test file in the process.
+  const { root, container: host } = harness.createRoot()
   await act(async () => root.render(<MermaidDiagram source="flowchart TD" fallback={fallback} renderer={renderer} />))
   return {
     harness,

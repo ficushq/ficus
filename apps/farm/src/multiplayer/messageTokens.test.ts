@@ -40,6 +40,62 @@ describe('chat message tokens', () => {
     expect(tokenize(link, [])).toEqual([{ kind: 'ref', text: link, ref: { kind: 'agent', id: AGENT }, href: link }])
   })
 
+  test('turn every agent chat link the web app writes into an agent reference', () => {
+    const stack = (rows: unknown) => encodeURIComponent(JSON.stringify(rows))
+    for (const link of [
+      // A squad agent's Chats tab, by squad id or slug, with or without the agents tab.
+      `https://acme.ficus.sh/squads/${SQUAD}/agents?agent=${AGENT}`,
+      `https://acme.ficus.sh/squads/ficus/agents?agent=${AGENT}&view=chat`,
+      `https://acme.ficus.sh/squads/ficus?agent=${AGENT}`,
+      // A squadless agent's stable Assistant route, also under a base path.
+      `https://acme.ficus.sh/assistant/agents/${AGENT}`,
+      `https://acme.ficus.sh/app/assistant/agents/${AGENT}/`,
+      // Squadless links written before that route: the Assistant's URL state ending in the agent's chat.
+      `https://acme.ficus.sh/?chat=open&commandStack=${stack([['chat', AGENT, '', AGENT, '']])}`,
+      `https://acme.ficus.sh/settings?chat=open&commandStack=${stack([
+        ['squad', SQUAD],
+        ['chat', AGENT, '', AGENT, ''],
+      ])}`,
+      // The retired chat page, in older messages.
+      `https://acme.ficus.sh/chat/${AGENT}`,
+      `https://acme.ficus.sh/app/chat/${AGENT}?scope=all`,
+    ])
+      expect(refFromUrl(link)).toEqual({ kind: 'agent', id: AGENT })
+    const link = `https://acme.ficus.sh/assistant/agents/${AGENT}`
+    expect(tokenize(`ask ${link}.`, [])).toEqual([
+      { kind: 'text', text: 'ask ' },
+      { kind: 'ref', text: link, ref: { kind: 'agent', id: AGENT }, href: link },
+      { kind: 'text', text: '.' },
+    ])
+  })
+
+  test('leave links that are not an agent chat alone', () => {
+    const stack = (rows: unknown) => encodeURIComponent(JSON.stringify(rows))
+    // Squad pages other than its Chats tab stay squad and work stream references.
+    expect(refFromUrl(`https://acme.ficus.sh/squads/${SQUAD}/work?ws=${WS}&agent=${AGENT}`)).toEqual({
+      kind: 'ws',
+      id: WS,
+    })
+    expect(refFromUrl(`https://acme.ficus.sh/squads/${SQUAD}/agents`)).toEqual({ kind: 'squad', id: SQUAD })
+    // An Assistant open over a squad page is still that squad.
+    expect(
+      refFromUrl(
+        `https://acme.ficus.sh/squads/${SQUAD}?chat=open&commandStack=${stack([['chat', AGENT, '', AGENT, '']])}`
+      )
+    ).toEqual({ kind: 'squad', id: SQUAD })
+    for (const link of [
+      'https://acme.ficus.sh/squads/ficus/agents?agent=not-an-id',
+      'https://acme.ficus.sh/assistant/agents/not-an-id',
+      `https://acme.ficus.sh/assistant/agents/${AGENT}/more`,
+      'https://acme.ficus.sh/assistant',
+      `https://acme.ficus.sh/?chat=open&commandStack=${stack([['assistant', 'conversation-1', '']])}`,
+      'https://acme.ficus.sh/?chat=open&commandStack=not-json',
+      'https://acme.ficus.sh/chat',
+      `https://acme.ficus.sh/settings?agent=${AGENT}`,
+    ])
+      expect(refFromUrl(link)).toBeNull()
+  })
+
   test('become plain text for a speech bubble', () => {
     expect(bubbleText(`ship ficus:ws:${WS} today, see https://example.com`)).toBe('ship 🔗 today, see 🔗')
   })
