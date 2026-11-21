@@ -15,6 +15,7 @@ import {
   publicVoiceProfileInputSchema,
   publicVoiceProfileUpdateSchema,
   renderProfileAlone,
+  type PublicVoiceInstanceDefaultSetting,
   type PublicVoiceProfile,
 } from '@ficus/shared'
 import { publicErrorMessage } from '../db/errors'
@@ -22,7 +23,7 @@ import { PublicVoice } from '../entities/PublicVoice'
 import { zValidator } from '../lib/zod-validator'
 import { requirePermission } from '../middleware'
 import { publicVoiceSync } from '../services/config-sync'
-import { describeProfiles, overCapSquadCount } from '../services/public-voice/profiles'
+import { describeProfiles, instanceDefaultSquadCount, overCapSquadCount } from '../services/public-voice/profiles'
 import { describeInstanceDefault, resolveInstanceDefaultVoice } from '../lib/prompts/public-voice-prompt'
 
 /**
@@ -39,6 +40,12 @@ function tooLong(profile: PublicVoiceProfile) {
   return bytes > PUBLIC_VOICE_MAX_BYTES
     ? { error: 'public_voice_too_long', bytes, maxBytes: PUBLIC_VOICE_MAX_BYTES }
     : null
+}
+
+/** The instance default and how many squads use it (`PublicVoiceInstanceDefaultSetting`). */
+async function describeInstanceDefaultSetting(): Promise<PublicVoiceInstanceDefaultSetting> {
+  const [instance, squadCount] = await Promise.all([resolveInstanceDefaultVoice(), instanceDefaultSquadCount()])
+  return { ...describeInstanceDefault(instance), squadCount }
 }
 
 async function describeOne(id: string) {
@@ -86,10 +93,10 @@ publicVoicesRoutes.get(
   }
 )
 
-// The instance default: the profile every squad without an assignment uses. A multi-segment path,
-// so `settings` stays a valid profile id for GET /:id.
+// The instance default: the profile every squad without an assignment uses, and how many squads use
+// it. A multi-segment path, so `settings` stays a valid profile id for GET /:id.
 publicVoicesRoutes.get('/settings/instance-default', requirePermission('agent-types:read'), async (c) => {
-  return c.json(describeInstanceDefault(await resolveInstanceDefaultVoice()))
+  return c.json(await describeInstanceDefaultSetting())
 })
 
 publicVoicesRoutes.put(
@@ -104,7 +111,7 @@ publicVoicesRoutes.put(
     await PublicVoice.setInstanceDefaultId(voiceId, identity?.type === 'user' ? (identity.userId ?? null) : null)
     // Squads on the instance default now render with this profile; report those over the cap.
     const overCap = await overCapSquadCount(profile.toProfile(), { asInstanceDefault: true })
-    return c.json({ ...describeInstanceDefault(await resolveInstanceDefaultVoice()), overCapSquadCount: overCap })
+    return c.json({ ...(await describeInstanceDefaultSetting()), overCapSquadCount: overCap })
   }
 )
 

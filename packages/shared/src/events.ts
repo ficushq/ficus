@@ -120,6 +120,8 @@ export type EventMap = {
   // derives which status query to invalidate from its prefix.
   'sandbox.status': { sandboxId: string }
   'integration.projection-invalidated': { squadId: string; providerKey: string }
+  // Content-free: a voice profile or the instance default changed, so each Core process drops its cached copy.
+  'publicVoices.changed': Record<string, never>
   // Content-free GitHub moderation invalidations. Never carry author, repository, text or routing.
   // Squad-scoped: pending queue / trusted authors / author filter changed in this squad.
   'githubFeedback.updated': { squadId: string }
