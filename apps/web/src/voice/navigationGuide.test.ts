@@ -30,3 +30,30 @@ test('settings navigation includes a description for every destination without i
   }
   expect(guide).toContain('not live values')
 })
+
+test('nothing the Assistant reads points it at the legacy /chat page', async () => {
+  const { buildVoiceInstructions } = await import('./assistants/siteOperator/siteOperatorInstructions')
+  const { siteOperatorToolDefinitions } = await import('./assistants/siteOperator/siteOperatorTools')
+  const { assistantSearch } = await import('../lib/assistantSearch')
+  const legacyRoute = /(^|[^?&\w])\/chat(?![\w-])/
+  const instructions = buildVoiceInstructions({
+    currentPath: '/squads/squad-1/home',
+    squads: [
+      {
+        id: 'squad-1',
+        name: 'Source',
+        status: 'active',
+        agents: [{ id: 'aaaaaaaa-1111-4111-8111-111111111111', agentTypeId: 'manager', status: 'idle' }],
+      },
+    ],
+  } as any)
+  expect(instructions).not.toMatch(legacyRoute)
+  expect(instructions).toContain('/squads/:squadId/agents?agent=:agentId (an agent handle works)')
+  expect(JSON.stringify(siteOperatorToolDefinitions)).not.toMatch(legacyRoute)
+  for (const query of ['chat', 'chats', 'manager chat'])
+    for (const row of assistantSearch(query, [], [], new Set()) as any[])
+      expect(row.path ?? '').not.toMatch(legacyRoute)
+  // The guard itself still recognizes the route it protects against.
+  expect('threads use /chat/:agentId.').toMatch(legacyRoute)
+  expect('/?chat=open').not.toMatch(legacyRoute)
+})
