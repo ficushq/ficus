@@ -79,7 +79,7 @@
     "concurrently": "^10.0.7",
     "dotenv": "^18.0.10",
     "drizzle-kit": "0.31.11",
-    "ntn": "0.23.28",
+    "ntn": "0.23.31",
     "typescript": "^6.0.3",
     "@types/tar-stream": "^3.1.4"
   },
