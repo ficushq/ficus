@@ -53,6 +53,24 @@ function child(
     }
   })()
   const stderr = new Response(process.stderr).text()
+  // Commands go only to a child blocked waiting for them. A child that has
+  // already exited is a test failure: name it instead of surfacing a bare EPIPE
+  // (child gone, not yet reaped) or silently dropping the write (already reaped).
+  const send = (command: string) => {
+    const exited = () => {
+      const status =
+        process.signalCode ?? (process.exitCode === null ? 'exit status not reaped yet' : `code ${process.exitCode}`)
+      return new Error(`${role} exited (${status}) before receiving ${command}: ${JSON.stringify(events)}`)
+    }
+    if (process.exitCode !== null || process.signalCode !== null) throw exited()
+    try {
+      process.stdin.write(`${command}\n`)
+      process.stdin.flush()
+    } catch (error) {
+      if ((error as { code?: string }).code === 'EPIPE') throw Object.assign(exited(), { cause: error })
+      throw error
+    }
+  }
   return {
     process,
     events,
@@ -77,16 +95,13 @@ function child(
       }
     },
     shutdown() {
-      process.stdin.write('shutdown\n')
-      process.stdin.flush()
+      send('shutdown')
     },
     releaseSetup() {
-      process.stdin.write('release-setup\n')
-      process.stdin.flush()
+      send('release-setup')
     },
     release() {
-      process.stdin.write('release\n')
-      process.stdin.flush()
+      send('release')
     },
     async stop() {
       process.kill()
@@ -191,7 +206,6 @@ test('two fresh-box processes publish success only after owner setup, then admit
     expect(bash.at!).toBeGreaterThanOrEqual(setup.at!)
     expect(worker.events.at(-1)!.result).toBe('joined-ready')
   } finally {
-    api.releaseSetup()
     await api.stop()
     await worker?.stop()
     await db.delete(machines).where(eq(machines.id, machineId))
@@ -367,9 +381,12 @@ for (const outcome of ['success', 'failure', 'defer', 'killed'] as const) {
     let retry: ReturnType<typeof child> | undefined
     try {
       await owner.waitFor('acquired')
+      // A deferring owner returns right after acquiring and never reads stdin,
+      // so writing release to it races its exit (EPIPE on a loaded host).
       if (outcome === 'killed') owner.process.kill('SIGKILL')
-      else owner.release()
-      await owner.process.exited
+      else if (outcome !== 'defer') owner.release()
+      const exitCode = await owner.process.exited
+      if (outcome !== 'killed') expect(exitCode).toBe(0)
       await owner.output
       if (outcome !== 'killed')
         expect(owner.events.at(-1)!.event).toBe(
