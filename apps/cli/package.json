@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "amtp-protocol": "^0.2.0",
-    "@types/bun": "^1.4.4",
+    "@types/bun": "^1.4.5",
     "@types/node": "^26.6.6"
   }
 }
