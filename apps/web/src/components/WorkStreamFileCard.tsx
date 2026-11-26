@@ -12,6 +12,7 @@ import {
   ATTACHMENT_SOURCE_LABELS,
   handoffDocument,
   storedDocument,
+  storedInputPresentation,
   WORKSPACE_FILE_MISSING,
   type ReviewDocument,
 } from '../lib/workflowAttachments'
@@ -201,32 +202,41 @@ export function WorkStreamFileList({ files, squadId }: { files: string[]; squadI
 export function WorkStreamAttachments({ stream }: { stream: WorkStream }) {
   const { data: run } = useQuery(queries.workflows.run(stream.id))
   const { isFullscreen, toggleFullscreen, exitFullscreen } = useFullscreen()
-  const [open, setOpen] = useState<ReviewDocument | null>(null)
+  const [open, setOpen] = useState<{ document: ReviewDocument; name: string } | null>(null)
   const files = [...new Set((stream.files ?? []).map((path) => path.trim()).filter(Boolean))]
-  const documents: Array<{ document: ReviewDocument; source: string; title?: string }> = [
-    ...(stream.assetAttachments ?? []).map((asset) => ({
-      document: storedDocument(asset),
-      source: ATTACHMENT_SOURCE_LABELS.stored,
-    })),
+  const documents: Array<{ document: ReviewDocument; name: string; source: string; title?: string }> = [
+    ...(stream.assetAttachments ?? []).map((asset) => {
+      const { title, detail } = storedInputPresentation(asset)
+      return { document: storedDocument(asset), name: title, source: detail }
+    }),
     ...Object.values(run?.attachments ?? {})
       .flat()
-      .map((file) => ({ document: handoffDocument(file), source: ATTACHMENT_SOURCE_LABELS.handoff, title: file.path })),
+      .map((file) => ({
+        document: handoffDocument(file),
+        name: file.filename,
+        source: ATTACHMENT_SOURCE_LABELS.handoff,
+        title: file.path,
+      })),
     ...Object.values(run?.assetAttachments ?? {})
       .flat()
-      .map((asset) => ({ document: storedDocument(asset), source: ATTACHMENT_SOURCE_LABELS.handoff })),
+      .map((asset) => ({
+        document: storedDocument(asset),
+        name: storedInputPresentation(asset).title,
+        source: ATTACHMENT_SOURCE_LABELS.handoff,
+      })),
   ]
   if (documents.length === 0 && files.length === 0) return null
   return (
     <section aria-label="Attachments">
       <h3 className="text-xs font-medium text-secondary">Attachments</h3>
       <div className="space-y-1.5 mt-2">
-        {documents.map(({ document, source, title }) => (
+        {documents.map(({ document, name, source, title }) => (
           <button
             key={`${document.stored ? 'stored' : 'snapshot'}:${document.id}`}
             type="button"
             title={title}
             onClick={() => {
-              setOpen(document)
+              setOpen({ document, name })
               toggleFullscreen()
             }}
             className="ficus-button ficus-button-secondary flex items-center gap-3 px-3 py-3 rounded-xl transition-colors text-left w-full group"
@@ -241,7 +251,7 @@ export function WorkStreamAttachments({ stream }: { stream: WorkStream }) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-primary truncate group-hover:text-link-hover transition-colors">
-                {document.filename}
+                {name}
               </p>
               <p className="text-[10px] text-placeholder truncate">{source}</p>
             </div>
@@ -262,11 +272,11 @@ export function WorkStreamAttachments({ stream }: { stream: WorkStream }) {
           exitFullscreen()
           setOpen(null)
         }}
-        title={open?.filename ?? ''}
+        title={open?.name ?? ''}
         overlayClassName="border-0!"
         maxWidth="readable"
       >
-        {open && <AttachmentView key={open.id} workStreamId={stream.id} attachment={open} />}
+        {open && <AttachmentView key={open.document.id} workStreamId={stream.id} attachment={open.document} />}
       </Modal>
     </section>
   )

@@ -193,8 +193,10 @@ stays live through the squad's `squadActivity` topic, with a 30 second poll as t
 links to `/activity?workStream=<id>`, which opens the Activity page filtered to the stream.
 
 **Attachments** is one list of every file the stream carries, each with a muted source line:
-"From chat" (stored inputs shared by ID), "From handoff" (files a step handed off) and "Workspace
-file" (paths into the squad workspace, with the full path on hover and in the viewer). A workspace
+"From chat" (stored inputs shared by ID), "From inbox" (stored inbox attachments), "From
+handoff" (files a step handed off) and "Workspace file" (paths into the squad workspace, with the
+full path on hover and in the viewer). A stored input with a label shows the label as its title and
+the filename beside its source on the line below. A workspace
 file that cannot be read says "This file could not be read. It may have been moved or deleted from
 the squad workspace." The mobile work stream page uses the same strings.
 

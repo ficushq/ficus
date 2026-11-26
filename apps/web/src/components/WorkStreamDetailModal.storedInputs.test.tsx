@@ -178,3 +178,42 @@ test('the Attachments list is hidden when the stream has no files', async () => 
   )
   expect(text).not.toContain('Attachments')
 })
+
+test('an inbox attachment says "From inbox", and a label leads with the filename on the line below', async () => {
+  const share = {
+    workStreamId: 'ws-1',
+    attemptId: null,
+    contentType: 'image/png',
+    byteSize: 4,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }
+  const stream: WorkStream = {
+    ...reviewWorkStream(),
+    // The inbox kind and labels come from a newer server; the list reads them without the type.
+    assetAttachments: [
+      {
+        ...share,
+        id: 'share-labelled',
+        source: { kind: 'inbox-attachment', attachmentId: '33333333-3333-4333-8333-333333333333' },
+        filename: 'IMG_0042.png',
+        label: 'Today’s squads page',
+      },
+      {
+        ...share,
+        id: 'share-plain',
+        source: { kind: 'inbox-attachment', attachmentId: '44444444-4444-4444-8444-444444444444' },
+        filename: 'IMG_0043.png',
+        label: null,
+      },
+    ] as unknown as WorkStream['assetAttachments'],
+  }
+  const rows = await renderModal({ workStream: stream }, (dom) =>
+    [...dom.window.document.body.querySelectorAll('section[aria-label="Attachments"] button')].map((card) =>
+      [...card.querySelectorAll('p')].map((line) => line.textContent)
+    )
+  )
+  expect(rows).toEqual([
+    ['Today’s squads page', 'IMG_0042.png · From inbox'],
+    ['IMG_0043.png', 'From inbox'],
+  ])
+})
