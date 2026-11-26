@@ -226,7 +226,12 @@ test('an inbox attachment is shared over HTTP with an optional label, which can 
     const created = await app.request(base, json(admin.token, { source, label: '  Today’s squads page ' }))
     expect(created.status).toBe(201)
     const share = await created.json()
-    expect(share).toMatchObject({ source, filename: 'squads.png', label: 'Today’s squads page', contentType: 'image/png' })
+    expect(share).toMatchObject({
+      source,
+      filename: 'squads.png',
+      label: 'Today’s squads page',
+      contentType: 'image/png',
+    })
     const bytes = await app.request(`${base}/${share.id}`, { headers: authHeaders(admin.token) })
     expect(bytes.headers.get('content-type')).toBe('image/png')
     expect(Buffer.from(await bytes.arrayBuffer()).equals(PNG)).toBe(true)

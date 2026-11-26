@@ -199,9 +199,7 @@ test('a labelled input shows its label with the filename beside it; an unlabelle
   try {
     const result = await renderModal({ workStream: stream }, async (dom) => {
       const body = dom.window.document.body
-      const cards = [...body.querySelectorAll('button')].filter((button) =>
-        button.textContent?.includes('IMG_004')
-      )
+      const cards = [...body.querySelectorAll('button')].filter((button) => button.textContent?.includes('IMG_004'))
       const rows = cards.map((card) => [...card.querySelectorAll('p')].map((line) => line.textContent))
       await dom.act(async () => cards[0]!.click())
       await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 20)))

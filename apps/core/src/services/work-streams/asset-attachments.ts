@@ -564,7 +564,10 @@ export async function attachAttemptAsset(input: {
         // References and the attempt's current uploaded handoff files share its limit.
         const attempt = lockedRun!.state.attempts.find((entry) => entry.id === input.attemptId)!
         if ((await attemptSlotsUsed(tx, stream.id, attempt)) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
-          throw new AssetAttachmentError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
+          throw new AssetAttachmentError(
+            `An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`,
+            409
+          )
       },
       { label: input.label }
     )
@@ -803,7 +806,11 @@ export async function retainedAssetIdsForStream(streamId: string): Promise<strin
 
 async function sourceRowExists(tx: DbTx, asset: AssetRow): Promise<boolean> {
   const table =
-    asset.sourceKind === 'image' ? images : asset.sourceKind === 'inbox-attachment' ? inboxAttachments : agentFileAttachments
+    asset.sourceKind === 'image'
+      ? images
+      : asset.sourceKind === 'inbox-attachment'
+        ? inboxAttachments
+        : agentFileAttachments
   const [row] = await tx.select({ id: table.id }).from(table).where(eq(table.id, asset.sourceId))
   return Boolean(row)
 }

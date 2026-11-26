@@ -183,7 +183,9 @@ export const workflowsRouter = new Hono()
     '/runs/:streamId/attempts/:attemptId/asset-attachments',
     zValidator(
       'json',
-      z.object({ source: workStreamAssetSourceSchema, label: workStreamAssetLabelSchema.nullable().optional() }).strict()
+      z
+        .object({ source: workStreamAssetSourceSchema, label: workStreamAssetLabelSchema.nullable().optional() })
+        .strict()
     ),
     async (c) => {
       const attemptId = Number(c.req.param('attemptId'))

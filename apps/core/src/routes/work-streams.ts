@@ -1135,7 +1135,9 @@ export const workStreamsRouter = new Hono()
     '/:id/asset-attachments',
     zValidator(
       'json',
-      z.object({ source: workStreamAssetSourceSchema, label: workStreamAssetLabelSchema.nullable().optional() }).strict()
+      z
+        .object({ source: workStreamAssetSourceSchema, label: workStreamAssetLabelSchema.nullable().optional() })
+        .strict()
     ),
     async (c) => {
       const identity = c.get('identity') as Identity | undefined

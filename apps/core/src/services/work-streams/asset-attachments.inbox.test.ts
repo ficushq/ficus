@@ -181,7 +181,11 @@ test('an agent shares an attachment from its own inbox as a stored input that re
   // The namespaces never mix: the same ID as a chat file is not this inbox attachment.
   expect(
     await refusal(
-      attachStreamAsset({ identity: manager, streamId: target.id, source: { kind: 'agent-file', attachmentId: file.id } })
+      attachStreamAsset({
+        identity: manager,
+        streamId: target.id,
+        source: { kind: 'agent-file', attachmentId: file.id },
+      })
     )
   ).toEqual(UNAVAILABLE)
 })
@@ -344,25 +348,38 @@ test('labels are optional, set when sharing, edited and cleared by anyone who ca
   expect(kept.attachment.label).toBe('Squads page, light mode')
 
   // Cleared: the filename shows again.
-  const cleared = await updateStreamAssetLabel({ identity: manager, streamId: target.id, shareId: attachment.id, label: null })
+  const cleared = await updateStreamAssetLabel({
+    identity: manager,
+    streamId: target.id,
+    shareId: attachment.id,
+    label: null,
+  })
   expect(cleared.label).toBeNull()
   expect(assetManifestLines([cleared])[0]).toStartWith(`- Squads page.png (image/png, ${PNG.length} bytes)`)
   expect((await listStreamAssets(target.id)).inputs).toEqual([cleared])
 
   // Not someone who cannot edit the stream, not another stream's share, not a removed one.
   expect(
-    await refusal(updateStreamAssetLabel({ identity: user(outsider), streamId: target.id, shareId: attachment.id, label: 'x' }))
+    await refusal(
+      updateStreamAssetLabel({ identity: user(outsider), streamId: target.id, shareId: attachment.id, label: 'x' })
+    )
   ).toEqual({ status: 403, message: 'Forbidden' })
   expect(
-    await refusal(updateStreamAssetLabel({ identity: sibling, streamId: target.id, shareId: attachment.id, label: 'x' }))
+    await refusal(
+      updateStreamAssetLabel({ identity: sibling, streamId: target.id, shareId: attachment.id, label: 'x' })
+    )
   ).toEqual({ status: 403, message: 'Forbidden' })
   const elsewhere = await stream()
   expect(
-    await refusal(updateStreamAssetLabel({ identity: manager, streamId: elsewhere.id, shareId: attachment.id, label: 'x' }))
+    await refusal(
+      updateStreamAssetLabel({ identity: manager, streamId: elsewhere.id, shareId: attachment.id, label: 'x' })
+    )
   ).toEqual({ status: 404, message: 'Attachment not found' })
   await removeStreamAsset({ identity: manager, streamId: target.id, shareId: attachment.id })
   expect(
-    await refusal(updateStreamAssetLabel({ identity: manager, streamId: target.id, shareId: attachment.id, label: 'x' }))
+    await refusal(
+      updateStreamAssetLabel({ identity: manager, streamId: target.id, shareId: attachment.id, label: 'x' })
+    )
   ).toEqual({ status: 404, message: 'Attachment not found' })
 })
 
@@ -376,6 +393,8 @@ test('a finished stream’s labels no longer change', async () => {
   })
   await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, target.id))
   expect(
-    await refusal(updateStreamAssetLabel({ identity: manager, streamId: target.id, shareId: attachment.id, label: 'x' }))
+    await refusal(
+      updateStreamAssetLabel({ identity: manager, streamId: target.id, shareId: attachment.id, label: 'x' })
+    )
   ).toEqual({ status: 409, message: 'This work stream is finished; its stored images and files can no longer change' })
 })

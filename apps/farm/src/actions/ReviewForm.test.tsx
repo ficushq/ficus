@@ -619,7 +619,10 @@ it('Farm names a labelled stored input by its label, keeping the filename and in
     getWorkStream: () =>
       Promise.resolve({
         ...stream(),
-        assetAttachments: [input('share-labelled', 'notes-1.md', 'Owner notes'), input('share-plain', 'notes-2.md', null)],
+        assetAttachments: [
+          input('share-labelled', 'notes-1.md', 'Owner notes'),
+          input('share-plain', 'notes-2.md', null),
+        ],
       }),
     downloadWorkStreamAsset: () => Promise.resolve(new TextEncoder().encode('Synthetic stored notes.')),
   })
