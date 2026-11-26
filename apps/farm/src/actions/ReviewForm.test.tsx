@@ -632,11 +632,11 @@ it('Farm names a labelled stored input by its label, keeping the filename and in
   await click(tabs[1] as HTMLButtonElement)
   const panel = container.querySelector('[role="tabpanel"]')!
   expect(panel.querySelector('h4')!.textContent).toBe('Owner notes')
-  expect(panel.textContent).toContain('Work stream input: notes-1.md, stored inbox attachment, shared by ID')
+  expect(panel.textContent).toContain('Work stream input · notes-1.md · From inbox')
   await click(tabs[2] as HTMLButtonElement)
   const plain = container.querySelector('[role="tabpanel"]')!
   expect(plain.querySelector('h4')!.textContent).toBe('notes-2.md')
-  expect(plain.textContent).toContain('Work stream input: stored inbox attachment, shared by ID')
+  expect(plain.textContent).toContain('Work stream input · From inbox')
 })
 
 for (const kind of ['carried-forward', 'none'] as const) {

@@ -33,12 +33,12 @@ interface BriefDocument {
 }
 
 function storedBriefDocument(asset: WorkStreamAssetAttachment, scope: string): BriefDocument {
+  // An inbox attachment's source line is "From inbox", the wording web and mobile use.
   const origin =
-    asset.source.kind === 'image'
-      ? 'chat image'
-      : asset.source.kind === 'inbox-attachment'
-        ? 'inbox attachment'
-        : 'chat file'
+    asset.source.kind === 'inbox-attachment'
+      ? 'From inbox'
+      : `stored chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`
+  const named = asset.label ? `${asset.filename} · ${origin}` : origin
   return {
     id: asset.id,
     filename: asset.filename,
@@ -46,7 +46,7 @@ function storedBriefDocument(asset: WorkStreamAssetAttachment, scope: string): B
     contentType: asset.contentType,
     stored: true,
     // A labelled share keeps its filename in view.
-    detail: `${scope}: ${asset.label ? `${asset.filename}, ` : ''}stored ${origin}, shared by ID`,
+    detail: asset.source.kind === 'inbox-attachment' ? `${scope} · ${named}` : `${scope}: ${named}`,
   }
 }
 

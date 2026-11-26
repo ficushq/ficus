@@ -63,16 +63,22 @@ export function documentTitle(document: Pick<ReviewDocument, 'filename' | 'label
   return workStreamAssetDisplayName(document)
 }
 
-/** Where a stored reference came from, in words: "chat image", "chat file" or "inbox attachment". */
-export function storedAssetOrigin(asset: Pick<WorkStreamAssetAttachment, 'source'>): string {
-  if (asset.source.kind === 'image') return 'chat image'
-  if (asset.source.kind === 'inbox-attachment') return 'inbox attachment'
-  return 'chat file'
-}
+/** The source line every client shows for an inbox attachment (the mobile app uses the same words). */
+export const INBOX_SOURCE_LINE = 'From inbox'
 
-/** A labelled share keeps its filename in view beside its origin. */
-function storedDetail(asset: WorkStreamAssetAttachment, origin: string): string {
-  return asset.label ? `${asset.filename} · ${origin}` : origin
+/**
+ * Where a stored reference came from: "From inbox" for an inbox attachment, otherwise the chat image
+ * or chat file wording, with `scope` (for example "Work stream input") in front when given. A
+ * labelled share keeps its filename in view before it.
+ */
+export function storedAssetDetail(asset: WorkStreamAssetAttachment, scope?: string): string {
+  const origin =
+    asset.source.kind === 'inbox-attachment'
+      ? INBOX_SOURCE_LINE
+      : `${scope ? 'stored' : 'Stored'} chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`
+  const named = asset.label ? `${asset.filename} · ${origin}` : origin
+  if (!scope) return named
+  return asset.source.kind === 'inbox-attachment' ? `${scope} · ${named}` : `${scope}: ${named}`
 }
 
 export function storedDocument(asset: WorkStreamAssetAttachment): ReviewDocument {
@@ -82,7 +88,7 @@ export function storedDocument(asset: WorkStreamAssetAttachment): ReviewDocument
     label: asset.label || null,
     byteSize: asset.byteSize,
     attemptId: asset.attemptId,
-    detail: storedDetail(asset, `Stored ${storedAssetOrigin(asset)}, shared by ID`),
+    detail: storedAssetDetail(asset),
     stored: true,
   }
 }
@@ -106,7 +112,7 @@ export function reviewDocuments(
     ]),
     ...inputs.map((asset) => ({
       ...storedDocument(asset),
-      detail: storedDetail(asset, `Work stream input: stored ${storedAssetOrigin(asset)}, shared by ID`),
+      detail: storedAssetDetail(asset, 'Work stream input'),
     })),
   ]
 }

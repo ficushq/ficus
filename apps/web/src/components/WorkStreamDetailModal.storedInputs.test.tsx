@@ -207,8 +207,8 @@ test('a labelled input shows its label with the filename beside it; an unlabelle
       return { rows, src: image?.getAttribute('src') ?? null }
     })
     expect(result.rows).toEqual([
-      ['Today’s squads page', 'IMG_0042.png · Stored inbox attachment, shared by ID'],
-      ['IMG_0043.png', 'Stored inbox attachment, shared by ID'],
+      ['Today’s squads page', 'IMG_0042.png · From inbox'],
+      ['IMG_0043.png', 'From inbox'],
     ])
     // An inbox image renders as an image, like a chat image.
     expect(download.mock.calls[0]!.slice(0, 2)).toEqual(['ws-1', 'share-labelled'])

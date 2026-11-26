@@ -27,7 +27,7 @@ const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64'
 )
-const UNAVAILABLE = { status: 404, message: 'Image or file not found, or you cannot share it' }
+const UNAVAILABLE = { status: 404 as const, message: 'Image or file not found, or you cannot share it' }
 const prefix = `ws-inbox-assets-${randomUUID()}`
 const profile = `${prefix}-profile`
 const originalHome = process.env.HOME_DIR
