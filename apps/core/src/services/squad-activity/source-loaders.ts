@@ -344,16 +344,60 @@ export async function loadWorkStreamSnapshot(executor: Executor, groupId: string
       sql`SELECT ws.*,a.agent_type_id creator_type FROM work_streams ws LEFT JOIN agents a ON a.id=ws.creator_agent_id WHERE ws.id=${groupId}::uuid`
     )
   )[0]
-  return row
-    ? {
-        squadId: row.squad_id,
-        id: row.id,
-        title: row.title,
-        creatorAgentId: row.creator_agent_id,
-        creatorAgentTypeId: row.creator_type,
-        createdAt: row.created_at,
-      }
-    : null
+  if (!row) return null
+  const verdicts = rows<any>(await executor.execute(reviewVerdictsSql(groupId)))
+  return {
+    squadId: row.squad_id,
+    id: row.id,
+    title: row.title,
+    creatorAgentId: row.creator_agent_id,
+    creatorAgentTypeId: row.creator_type,
+    createdAt: row.created_at,
+    ...(verdicts.length
+      ? {
+          reviewVerdicts: verdicts.map((verdict) => ({
+            requestId: verdict.request_id,
+            at: verdict.created_at,
+            agentId: verdict.agent_id,
+            agentTypeId: verdict.agent_type_id,
+            action: verdict.action,
+            outcome: verdict.outcome,
+            targetStepId: verdict.target_step_id,
+            note: verdict.note,
+          })),
+        }
+      : {}),
+  }
+}
+
+/** The agent id in a transition's `agent:<uuid>` actor key; NULL for people and other actors. */
+const transitionAgentIdSql = sql`(CASE WHEN t.actor_key ~ '^agent:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  THEN substring(t.actor_key from 7)::uuid END)`
+
+/**
+ * Verdicts a Reviewer agent recorded on one stream: its own `complete` or `return` transitions.
+ * The reviewer is the attempt's recorded participant type, or the acting agent's type when the
+ * attempt is no longer in the run (a reopened stream). Agent steps only; people decide gates.
+ */
+export function reviewVerdictsSql(workStreamId: string) {
+  return sql`SELECT t.request_id,t.created_at,${transitionAgentIdSql} agent_id,
+      coalesce(attempt.value->'participant'->>'agentTypeId',ag.agent_type_id) agent_type_id,
+      t.command->>'action' action,t.command->>'outcome' outcome,t.command->>'targetStepId' target_step_id,
+      CASE WHEN t.command->>'action'='return' THEN t.command->>'feedback' ELSE t.command->>'evidence' END note
+    FROM work_stream_flow_transitions t
+    LEFT JOIN agents ag ON ag.id=${transitionAgentIdSql}
+    LEFT JOIN work_stream_flow_runs run ON run.work_stream_id=t.work_stream_id
+    LEFT JOIN LATERAL (
+      SELECT a.value FROM jsonb_array_elements(CASE WHEN jsonb_typeof(run.state->'attempts')='array'
+          THEN run.state->'attempts' ELSE '[]'::jsonb END) a
+      WHERE a.value->'id'=t.command->'attemptId' LIMIT 1
+    ) attempt ON true
+    WHERE t.work_stream_id=${workStreamId}::uuid
+      AND t.command->>'action' IN ('complete','return')
+      AND ${transitionAgentIdSql} IS NOT NULL
+      AND coalesce(attempt.value->'step'->>'kind','agent')='agent'
+      AND coalesce(attempt.value->'participant'->>'agentTypeId',ag.agent_type_id)='reviewer'
+    ORDER BY t.created_at,t.request_id`
 }
 
 export async function loadWaitSnapshot(executor: Executor, groupId: string): Promise<WaitSnapshot | null> {
@@ -632,6 +676,11 @@ export async function listWorkStreamSourcePage(
   return keysetPage(
     await db.execute(sql`WITH source AS (
       SELECT id::text source_id,created_at source_at,id::text cursor_id FROM work_streams WHERE created_at>=${from.toISOString()}::timestamptz AND created_at<${to.toISOString()}::timestamptz
+      -- Agent verdicts (lane 32) land long after the stream was created: page them by their own time.
+      UNION ALL SELECT work_stream_id::text,min(created_at),work_stream_id::text||':verdicts' FROM work_stream_flow_transitions
+        WHERE created_at>=${from.toISOString()}::timestamptz AND created_at<${to.toISOString()}::timestamptz
+          AND command->>'action' IN ('complete','return') AND actor_key LIKE 'agent:%'
+        GROUP BY work_stream_id
     ) SELECT source_id,source_at,cursor_id FROM source WHERE true ${keyset} ORDER BY cursor_id LIMIT ${limit}`),
     limit
   )

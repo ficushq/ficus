@@ -437,3 +437,88 @@ test('presence and native interest queries preserve paused rows without false hu
   expect(snapshot.top.find((row) => row.id === pausedWithoutWait!.id)).toMatchObject({ pause: true, bucket: 'paused' })
   expect(JSON.stringify(snapshot)).not.toContain('private pause reason')
 })
+
+describe('GET /api/activity/settled', () => {
+  test('validates its query', async () => {
+    const future = new Date(Date.now() + 60_000).toISOString()
+    for (const query of ['', 'since=yesterday', `since=${future}`, 'since=2026-01-01T00:00:00Z&squadId=nope'])
+      expect(
+        (await activityRequest(`/api/activity/settled?${query}`, { headers: authHeaders(admin.token) })).status
+      ).toBe(400)
+    for (const query of ['settled=questions', 'settled=everything&since=2026-01-01T00:00:00Z', 'squadId=nope'])
+      expect((await activityRequest(`/api/activity?${query}`, { headers: authHeaders(admin.token) })).status).toBe(400)
+  })
+
+  test('counts only squads and rows the caller may read, and lists the same rows', async () => {
+    const squad = await seedSquad('settled-redaction')
+    const [owner, worker] = await db
+      .insert(agents)
+      .values([
+        { squadId: squad.id, agentTypeId: 'manager' },
+        { squadId: squad.id, agentTypeId: 'engineer' },
+      ])
+      .returning()
+    const [stream] = await db
+      .insert(workStreams)
+      .values({ squadId: squad.id, title: 'Settled route fixture', status: 'active', ownerAgentId: owner!.id })
+      .returning()
+    const request = {
+      schemaVersion: 1 as const,
+      kind: 'decide' as const,
+      purpose: 'task-decision' as const,
+      actor: 'owner' as const,
+      subject: 'Pick one',
+      options: [
+        { id: 'a', label: 'A' },
+        { id: 'b', label: 'B' },
+      ],
+    }
+    const [wait] = await db
+      .insert(workStreamWaits)
+      .values({
+        workStreamId: stream!.id,
+        type: 'manual',
+        actor: 'owner',
+        createdBy: 'agent',
+        createdByAgentId: worker!.id,
+        resolvedByAgentId: owner!.id,
+        structured: {
+          request,
+          summary: { attempted: 'Pick one', attemptCount: 0, lastError: null, text: 'Choose' },
+          version: 1,
+        },
+        openedAt: new Date(Date.now() - 120_000),
+        closedAt: new Date(),
+        resolution: 'cleared',
+      })
+      .returning()
+    await repairFixtures()
+    const since = new Date(Date.now() - 3_600_000).toISOString()
+    const settled = async (token: string, extra = '') => {
+      const response = await activityRequest(`/api/activity/settled?since=${encodeURIComponent(since)}${extra}`, {
+        headers: authHeaders(token),
+      })
+      expect(response.status).toBe(200)
+      return ((await response.json()) as { counts: Record<string, number> }).counts
+    }
+    const reader = await scopedUser(squad.id, ['squads:read', 'workstreams:read'])
+    const blind = await scopedUser(squad.id, ['squads:read'])
+    const outsider = await scopedUser((await seedSquad('settled-elsewhere')).id, ['squads:read', 'workstreams:read'])
+    expect(await settled(reader.token)).toMatchObject({ questions: 1 })
+    expect(await settled(reader.token, `&squadId=${squad.id}`)).toMatchObject({ questions: 1 })
+    expect(await settled(reader.token, `&squadId=${crypto.randomUUID()}`)).toMatchObject({ questions: 0 })
+    expect(await settled(blind.token)).toEqual({ questions: 0, reviews: 0, completed: 0 })
+    expect(await settled(outsider.token)).toEqual({ questions: 0, reviews: 0, completed: 0 })
+
+    const list = async (token: string) => {
+      const response = await activityRequest(
+        `/api/activity?settled=questions&since=${encodeURIComponent(since)}&squadId=${squad.id}`,
+        { headers: authHeaders(token) }
+      )
+      expect(response.status).toBe(200)
+      return ((await response.json()) as { items: Array<{ id: string }> }).items.map((item) => item.id)
+    }
+    expect(await list(reader.token)).toEqual([`41:${wait!.id}`])
+    expect(await list(blind.token)).toEqual([])
+  })
+})
