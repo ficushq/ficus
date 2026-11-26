@@ -112,7 +112,7 @@ async function renderModal<T = string>(
   }
 }
 
-test('stored inputs list beside legacy files and open in the viewer from the reference endpoint', async () => {
+test('stored inputs and workspace files share one Attachments list, each with its source, and open in the viewer', async () => {
   const stream: WorkStream = {
     ...reviewWorkStream(),
     files: ['docs/plans/notes.md'],
@@ -142,17 +142,25 @@ test('stored inputs list beside legacy files and open in the viewer from the ref
       const card = [...body.querySelectorAll('button')].find((button) =>
         button.textContent?.includes('22222222-2222-4222-8222-222222222222.png')
       )!
-      const legacy = text.includes('docs/plans/notes.md')
+      const workspaceCard = [...body.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('notes.md')
+      )!
+      const workspace = { text: workspaceCard.textContent ?? '', title: workspaceCard.getAttribute('title') }
+      const lists = body.querySelectorAll('section[aria-label="Attachments"]').length
       const detail = card.textContent ?? ''
       await dom.act(async () => card.click())
       await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
       const image = body.querySelector<HTMLImageElement>('img[alt="22222222-2222-4222-8222-222222222222.png"]')
-      return { text, legacy, detail, src: image?.getAttribute('src') ?? null }
+      return { text, workspace, lists, detail, src: image?.getAttribute('src') ?? null }
     })
-    expect(result.text).toContain('Stored inputs')
-    expect(result.legacy).toBe(true)
+    expect(result.lists).toBe(1)
+    expect(result.text).not.toContain('Stored inputs')
+    // A workspace file shows its name and source; the full path stays reachable on the row.
+    expect(result.workspace.text).toContain('Workspace file')
+    expect(result.workspace.text).not.toContain('docs/plans/notes.md')
+    expect(result.workspace.title).toBe('docs/plans/notes.md')
     // An ID is never presented as a path.
-    expect(result.detail).toContain('Stored chat image, shared by ID')
+    expect(result.detail).toContain('From chat')
     expect(result.detail).not.toContain('/')
     expect(download.mock.calls[0]!.slice(0, 2)).toEqual(['ws-1', 'share-1'])
     expect(result.src).toBe('blob:stored-input')
@@ -161,4 +169,12 @@ test('stored inputs list beside legacy files and open in the viewer from the ref
     revoke.mockRestore()
     download.mockRestore()
   }
+})
+
+test('the Attachments list is hidden when the stream has no files', async () => {
+  const text = await renderModal(
+    { workStream: reviewWorkStream() },
+    (dom) => dom.window.document.body.textContent ?? ''
+  )
+  expect(text).not.toContain('Attachments')
 })

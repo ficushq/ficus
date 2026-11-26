@@ -7,13 +7,21 @@ import { Modal } from './Modal'
 import { FilePreview } from './FilePreview'
 import { SquadWorkspaceImageViewer } from './SquadWorkspaceImageViewer'
 import { DocumentSkeleton } from './loading/Skeleton'
-import type { WorkStreamAssetAttachment } from '@ficus/shared'
-import { storedDocument, type ReviewDocument } from '../lib/workflowAttachments'
+import type { WorkStream } from '@ficus/shared'
+import {
+  ATTACHMENT_SOURCE_LABELS,
+  handoffDocument,
+  storedDocument,
+  WORKSPACE_FILE_MISSING,
+  type ReviewDocument,
+} from '../lib/workflowAttachments'
 import { AttachmentView } from './WorkflowReviewAttachments'
 
 interface WorkStreamFileCardProps {
   filePath: string
   squadId: string
+  /** The muted line under the name; the full path by default. The path stays in the viewer either way. */
+  detail?: string
 }
 
 function getFileIcon(name: string): string {
@@ -85,7 +93,7 @@ function isImageFile(name: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext ?? '')
 }
 
-export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProps) {
+export function WorkStreamFileCard({ filePath, squadId, detail }: WorkStreamFileCardProps) {
   const { isFullscreen, toggleFullscreen, exitFullscreen } = useFullscreen()
   const [hasOpened, setHasOpened] = useState(false)
 
@@ -109,6 +117,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
     <>
       <button
         onClick={handleClick}
+        title={filePath}
         className="ficus-button ficus-button-secondary flex items-center gap-3 px-3 py-3 rounded-xl transition-colors text-left w-full group"
       >
         <div
@@ -123,7 +132,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
           <p className="text-xs font-medium text-primary truncate group-hover:text-link-hover transition-colors">
             {fileName}
           </p>
-          <p className="text-[10px] text-placeholder truncate">{filePath}</p>
+          <p className="text-[10px] text-placeholder truncate">{detail ?? filePath}</p>
         </div>
       </button>
 
@@ -135,11 +144,12 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
         headerExtra={<span className="text-xs text-muted bg-surface-secondary px-2 py-0.5 rounded">{contentType}</span>}
         maxWidth="readable"
       >
+        {detail && <p className="mb-3 break-all font-mono text-xs text-muted">{filePath}</p>}
         {isLoading && <DocumentSkeleton label="Loading work stream file" lines={10} className="min-h-64" />}
         {error && (
-          <div className="flex items-center justify-center py-12 text-status-danger-500">
-            <span>Failed to load file</span>
-          </div>
+          <FilePreview fileName={fileName} kind="unavailable">
+            <span>{WORKSPACE_FILE_MISSING}</span>
+          </FilePreview>
         )}
         {data && !data.error && isImageFile(fileName) && (
           <FilePreview
@@ -183,27 +193,38 @@ export function WorkStreamFileList({ files, squadId }: { files: string[]; squadI
 }
 
 /**
- * A work stream's stored inputs: chat images and files Ficus already holds, shared by ID. Each opens
- * in the review file viewer, which fetches its bytes afresh (a share can be removed or revoked).
+ * Every file a work stream carries, in one list: its stored inputs (chat images and files Ficus holds,
+ * shared by ID), its workspace files (live paths into the squad workspace) and the files its steps
+ * handed off. They stay distinct underneath, and each row says which it is; each opens in the viewer
+ * for its kind. Renders nothing while there are none.
  */
-export function StoredAssetList({
-  workStreamId,
-  attachments,
-}: {
-  workStreamId: string
-  attachments: WorkStreamAssetAttachment[]
-}) {
+export function WorkStreamAttachments({ stream }: { stream: WorkStream }) {
+  const { data: run } = useQuery(queries.workflows.run(stream.id))
   const { isFullscreen, toggleFullscreen, exitFullscreen } = useFullscreen()
   const [open, setOpen] = useState<ReviewDocument | null>(null)
-  if (attachments.length === 0) return null
+  const files = [...new Set((stream.files ?? []).map((path) => path.trim()).filter(Boolean))]
+  const documents: Array<{ document: ReviewDocument; source: string; title?: string }> = [
+    ...(stream.assetAttachments ?? []).map((asset) => ({
+      document: storedDocument(asset),
+      source: ATTACHMENT_SOURCE_LABELS.stored,
+    })),
+    ...Object.values(run?.attachments ?? {})
+      .flat()
+      .map((file) => ({ document: handoffDocument(file), source: ATTACHMENT_SOURCE_LABELS.handoff, title: file.path })),
+    ...Object.values(run?.assetAttachments ?? {})
+      .flat()
+      .map((asset) => ({ document: storedDocument(asset), source: ATTACHMENT_SOURCE_LABELS.handoff })),
+  ]
+  if (documents.length === 0 && files.length === 0) return null
   return (
-    <div className="space-y-1.5 mt-2">
-      {attachments.map((attachment) => {
-        const document = storedDocument(attachment)
-        return (
+    <section aria-label="Attachments">
+      <h3 className="text-xs font-medium text-secondary">Attachments</h3>
+      <div className="space-y-1.5 mt-2">
+        {documents.map(({ document, source, title }) => (
           <button
-            key={attachment.id}
+            key={`${document.stored ? 'stored' : 'snapshot'}:${document.id}`}
             type="button"
+            title={title}
             onClick={() => {
               setOpen(document)
               toggleFullscreen()
@@ -213,20 +234,28 @@ export function StoredAssetList({
             <div
               className={clsx(
                 'shrink-0 w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold',
-                iconColors[getFileIcon(attachment.filename)]
+                iconColors[getFileIcon(document.filename)]
               )}
             >
-              {iconLabels[getFileIcon(attachment.filename)]}
+              {iconLabels[getFileIcon(document.filename)]}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-primary truncate group-hover:text-link-hover transition-colors">
-                {attachment.filename}
+                {document.filename}
               </p>
-              <p className="text-[10px] text-placeholder truncate">{document.detail}</p>
+              <p className="text-[10px] text-placeholder truncate">{source}</p>
             </div>
           </button>
-        )
-      })}
+        ))}
+        {files.map((filePath) => (
+          <WorkStreamFileCard
+            key={filePath}
+            filePath={filePath}
+            squadId={stream.squadId}
+            detail={ATTACHMENT_SOURCE_LABELS.workspace}
+          />
+        ))}
+      </div>
       <Modal
         isOpen={isFullscreen && open !== null}
         onClose={() => {
@@ -237,8 +266,8 @@ export function StoredAssetList({
         overlayClassName="border-0!"
         maxWidth="readable"
       >
-        {open && <AttachmentView key={open.id} workStreamId={workStreamId} attachment={open} />}
+        {open && <AttachmentView key={open.id} workStreamId={stream.id} attachment={open} />}
       </Modal>
-    </div>
+    </section>
   )
 }

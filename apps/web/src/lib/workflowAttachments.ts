@@ -88,3 +88,17 @@ export function reviewDocuments(
     })),
   ]
 }
+
+/**
+ * Where an attachment comes from, as the muted line under its name. Shared wording with the mobile
+ * work stream page, so both say the same thing about the same file.
+ */
+export const ATTACHMENT_SOURCE_LABELS = {
+  stored: 'From chat',
+  workspace: 'Workspace file',
+  handoff: 'From handoff',
+} as const
+
+/** What the viewer says when a workspace file cannot be read: it is a live path, not a stored copy. */
+export const WORKSPACE_FILE_MISSING =
+  'This file could not be read. It may have been moved or deleted from the squad workspace.'
