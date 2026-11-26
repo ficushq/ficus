@@ -7,6 +7,7 @@ import {
   workflowReviewBriefForAttempt,
   workflowHistoricalStep,
   workflowIncomingAttempts,
+  workStreamAssetDisplayName,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
   type WorkflowUnseenRevision,
@@ -17,12 +18,14 @@ import { ActionText, ErrorNote } from './ui'
 
 /** Brief first, files as peer documents, and only the internal handoff behind a disclosure. */
 /**
- * A document the review can open: a handoff file uploaded with --attach, or a stored chat image or
- * file shared by ID (which can be removed, so it is never cached).
+ * A document the review can open: a handoff file uploaded with --attach, or a stored chat image,
+ * chat file or inbox attachment shared by ID (which can be removed, so it is never cached).
  */
 interface BriefDocument {
   id: string
   filename: string
+  /** What it is called on screen: a stored share's label when it has one, else its filename. */
+  title: string
   contentType: string
   stored: boolean
   /** Where it came from, shown under the name; a stored reference has no path and is not given one. */
@@ -30,12 +33,20 @@ interface BriefDocument {
 }
 
 function storedBriefDocument(asset: WorkStreamAssetAttachment, scope: string): BriefDocument {
+  const origin =
+    asset.source.kind === 'image'
+      ? 'chat image'
+      : asset.source.kind === 'inbox-attachment'
+        ? 'inbox attachment'
+        : 'chat file'
   return {
     id: asset.id,
     filename: asset.filename,
+    title: workStreamAssetDisplayName(asset),
     contentType: asset.contentType,
     stored: true,
-    detail: `${scope}: stored chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`,
+    // A labelled share keeps its filename in view.
+    detail: `${scope}: ${asset.label ? `${asset.filename}, ` : ''}stored ${origin}, shared by ID`,
   }
 }
 
@@ -67,6 +78,7 @@ export function WorkflowBriefDocuments({
       ...(run.attachments?.[String(id)] ?? []).map((file) => ({
         id: file.id,
         filename: file.filename,
+        title: file.filename,
         contentType: file.contentType,
         stored: false,
         detail: file.path,
@@ -80,7 +92,7 @@ export function WorkflowBriefDocuments({
   const [selected, setSelected] = useState(primary.id)
   const prefix = useId()
   const list = useRef<HTMLDivElement>(null)
-  const tabs = [primary, ...attachments.map((a) => ({ id: a.id, label: a.filename }))]
+  const tabs = [primary, ...attachments.map((a) => ({ id: a.id, label: a.title }))]
   const file = attachments.find((attachment) => attachment.id === selected)
   if (brief.kind === 'legacy' && !attachments.length) return <>{children}</>
   return (
@@ -271,12 +283,12 @@ function BriefAttachment({ workStreamId, attachment }: { workStreamId: string; a
       ? new TextDecoder().decode(query.data)
       : null
   return (
-    <section aria-label={attachment.filename} className="g-materials">
-      <h4 className="g-materials-title">{attachment.filename}</h4>
+    <section aria-label={attachment.title} className="g-materials">
+      <h4 className="g-materials-title">{attachment.title}</h4>
       <p className="g-action-note">{attachment.detail}</p>
       {text !== null && <ActionText>{text}</ActionText>}
       {url && RASTER_IMAGE_TYPES.has(attachment.contentType) && (
-        <img className="g-attachment-image" src={url} alt={attachment.filename} />
+        <img className="g-attachment-image" src={url} alt={attachment.title} />
       )}
       {url && (
         <a className="g-link" href={url} download={attachment.filename}>

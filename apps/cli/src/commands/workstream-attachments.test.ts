@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
-import { apiDelete, apiFetch, apiGet, apiPost } from '../client'
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
 import { registerWorkstreamAttachmentCommands } from './workstream-attachments'
 
@@ -15,6 +15,7 @@ const share = {
   attemptId: null,
   source: { kind: 'image', imageId },
   filename: `${imageId}.png`,
+  label: null,
   contentType: 'image/png',
   byteSize: 4,
   createdAt: '2026-10-30T00:00:00.000Z',
@@ -50,11 +51,58 @@ describe('ficus workstream attachment', () => {
     expect(apiPost).toHaveBeenLastCalledWith(`/api/workstreams/${stream}/asset-attachments`, {
       source: { kind: 'agent-file', attachmentId: imageId },
     })
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValueOnce(share)
+    await run(['attachment', 'add', stream, '--inbox-attachment', imageId])
+    expect(apiPost).toHaveBeenLastCalledWith(`/api/workstreams/${stream}/asset-attachments`, {
+      source: { kind: 'inbox-attachment', attachmentId: imageId },
+    })
     const calls = (apiPost as ReturnType<typeof mock>).mock.calls.length
+    const exactlyOne =
+      'Give exactly one of --image IMAGE_ID, --agent-file FILE_ATTACHMENT_ID or --inbox-attachment INBOX_ATTACHMENT_ID'
     await run(['attachment', 'add', stream])
-    expect(lastError()?.message).toBe('Give exactly one of --image IMAGE_ID or --agent-file FILE_ATTACHMENT_ID')
+    expect(lastError()?.message).toBe(exactlyOne)
     await run(['attachment', 'add', stream, '--image', imageId, '--agent-file', imageId])
+    expect(lastError()?.message).toBe(exactlyOne)
+    await run(['attachment', 'add', stream, '--agent-file', imageId, '--inbox-attachment', imageId])
+    expect(lastError()?.message).toBe(exactlyOne)
     expect((apiPost as ReturnType<typeof mock>).mock.calls.length).toBe(calls)
+  })
+
+  it('add sends an optional label, and list shows it before the filename', async () => {
+    const labelled = { ...share, label: 'Today’s squads page' }
+    ;(apiPost as ReturnType<typeof mock>).mockResolvedValueOnce(labelled)
+    await run(['attachment', 'add', stream, '--inbox-attachment', imageId, '--label', 'Today’s squads page'])
+    expect(apiPost).toHaveBeenLastCalledWith(`/api/workstreams/${stream}/asset-attachments`, {
+      source: { kind: 'inbox-attachment', attachmentId: imageId },
+      label: 'Today’s squads page',
+    })
+    expect(output).toHaveBeenLastCalledWith(
+      labelled,
+      `Attached ${share.id}  "Today’s squads page"  ${share.filename}  image/png  4 bytes  (image ${imageId})`
+    )
+  })
+
+  it('label sets or clears a share’s label, and needs exactly one of a label or --clear', async () => {
+    ;(apiPatch as ReturnType<typeof mock>).mockResolvedValueOnce({ ...share, label: 'Dark mode' })
+    await run(['attachment', 'label', stream, share.id, 'Dark mode'])
+    expect(apiPatch).toHaveBeenLastCalledWith(`/api/workstreams/${stream}/asset-attachments/${share.id}`, {
+      label: 'Dark mode',
+    })
+    ;(apiPatch as ReturnType<typeof mock>).mockResolvedValueOnce(share)
+    await run(['attachment', 'label', stream, share.id, '--clear'])
+    expect(apiPatch).toHaveBeenLastCalledWith(`/api/workstreams/${stream}/asset-attachments/${share.id}`, {
+      label: null,
+    })
+    expect(output).toHaveBeenLastCalledWith(
+      share,
+      `Cleared the label of ${share.id}  ${share.filename}  image/png  4 bytes  (image ${imageId})`
+    )
+    const calls = (apiPatch as ReturnType<typeof mock>).mock.calls.length
+    await run(['attachment', 'label', stream, share.id])
+    expect(lastError()?.message).toBe('Give a label, or --clear to remove the current one')
+    await run(['attachment', 'label', stream, share.id, 'Both', '--clear'])
+    expect(lastError()?.message).toBe('Give a label, or --clear to remove the current one')
+    expect((apiPatch as ReturnType<typeof mock>).mock.calls.length).toBe(calls)
   })
 
   it('list reads metadata only; nothing is downloaded', async () => {

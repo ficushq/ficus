@@ -6,7 +6,8 @@
  * not a CLI command. Each source kind reuses that source's own authorization, run as this agent's
  * own identity (the one its CLI token resolves to); the tool adds no access of its own:
  *
- * - workstream-asset: a stored chat image or file shared with a work stream (workstreams:read).
+ * - workstream-asset: a stored chat image, chat file or inbox attachment shared with a work stream
+ *   (workstreams:read). One that came from an inbox is labelled as its sender's untrusted data.
  * - workflow-attachment: a file a flow attempt handed off with --attach (workstreams:read).
  * - inbox-attachment: a file on an inbox message (the inbox routes' recipient rule). Its filename and
  *   text are the sender's, so they are escaped and labelled as untrusted data, as inbox delivery does.
@@ -121,6 +122,8 @@ export async function loadAttachmentSource(agent: Agent, source: Source): Promis
             contentType: found.attachment.contentType,
             bytes: found.bytes,
             download: `ficus workstream attachment get ${stream.id} ${found.attachment.id} --out PATH`,
+            // Sharing it with a stream does not make an inbox sender's data trusted.
+            ...(found.attachment.source.kind === 'inbox-attachment' ? { untrustedFrom: 'an inbox sender' } : {}),
           }
         }
         const found = await readWorkflowAttachment(stream.id, attachmentId)

@@ -8,7 +8,7 @@ import { FilePreview } from './FilePreview'
 import { SquadWorkspaceImageViewer } from './SquadWorkspaceImageViewer'
 import { DocumentSkeleton } from './loading/Skeleton'
 import type { WorkStreamAssetAttachment } from '@ficus/shared'
-import { storedDocument, type ReviewDocument } from '../lib/workflowAttachments'
+import { documentTitle, storedDocument, type ReviewDocument } from '../lib/workflowAttachments'
 import { AttachmentView } from './WorkflowReviewAttachments'
 
 interface WorkStreamFileCardProps {
@@ -183,8 +183,10 @@ export function WorkStreamFileList({ files, squadId }: { files: string[]; squadI
 }
 
 /**
- * A work stream's stored inputs: chat images and files Ficus already holds, shared by ID. Each opens
- * in the review file viewer, which fetches its bytes afresh (a share can be removed or revoked).
+ * A work stream's stored inputs: chat images, chat files and inbox attachments Ficus already holds,
+ * shared by ID. Each shows its label when it has one (its filename then moves to the line below),
+ * and opens in the review file viewer, which fetches its bytes afresh (a share can be removed or
+ * revoked).
  */
 export function StoredAssetList({
   workStreamId,
@@ -220,7 +222,7 @@ export function StoredAssetList({
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-primary truncate group-hover:text-link-hover transition-colors">
-                {attachment.filename}
+                {documentTitle(document)}
               </p>
               <p className="text-[10px] text-placeholder truncate">{document.detail}</p>
             </div>
@@ -233,7 +235,7 @@ export function StoredAssetList({
           exitFullscreen()
           setOpen(null)
         }}
-        title={open?.filename ?? ''}
+        title={open ? documentTitle(open) : ''}
         overlayClassName="border-0!"
         maxWidth="readable"
       >

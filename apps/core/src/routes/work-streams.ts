@@ -23,6 +23,7 @@ import {
   prepareCreationAssets,
   readStreamAsset,
   removeStreamAsset,
+  updateStreamAssetLabel,
 } from '../services/work-streams/asset-attachments'
 import { downloadDisposition } from '../services/attachments/http'
 import { z } from 'zod'
@@ -49,6 +50,7 @@ import {
   mapLegacyWorkStreamStatus,
   sortCanonicalWorkStreams,
   attentionSchema,
+  workStreamAssetLabelSchema,
   workStreamAssetSourceSchema,
   DEFAULT_ATTENTION,
   type Attention,
@@ -1131,16 +1133,21 @@ export const workStreamsRouter = new Hono()
   )
   .post(
     '/:id/asset-attachments',
-    zValidator('json', z.object({ source: workStreamAssetSourceSchema }).strict()),
+    zValidator(
+      'json',
+      z.object({ source: workStreamAssetSourceSchema, label: workStreamAssetLabelSchema.nullable().optional() }).strict()
+    ),
     async (c) => {
       const identity = c.get('identity') as Identity | undefined
       if (!identity) return c.json({ error: 'Unauthorized' }, 401)
       c.set('authzChecked', true)
+      const body = c.req.valid('json')
       try {
         const { attachment, created } = await attachStreamAsset({
           identity,
           streamId: await routeWorkStreamId(c),
-          source: c.req.valid('json').source,
+          source: body.source,
+          ...(body.label !== undefined ? { label: body.label } : {}),
         })
         return c.json(attachment, created ? 201 : 200)
       } catch (error) {
@@ -1171,6 +1178,30 @@ export const workStreamsRouter = new Hono()
           'Cache-Control': 'private, no-store',
         },
       })
+    }
+  )
+  // Set (a short label) or clear (null) a share's label; the filename is never changed.
+  .patch(
+    '/:id/asset-attachments/:attachmentId',
+    zValidator('json', z.object({ label: workStreamAssetLabelSchema.nullable() }).strict()),
+    async (c) => {
+      const identity = c.get('identity') as Identity | undefined
+      if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+      c.set('authzChecked', true)
+      const attachmentId = c.req.param('attachmentId')
+      if (!z.uuid().safeParse(attachmentId).success) return c.json({ error: 'Attachment not found' }, 404)
+      try {
+        return c.json(
+          await updateStreamAssetLabel({
+            identity,
+            streamId: await routeWorkStreamId(c),
+            shareId: attachmentId.toLowerCase(),
+            label: c.req.valid('json').label,
+          })
+        )
+      } catch (error) {
+        return assetFailure(c, error)
+      }
     }
   )
   .delete('/:id/asset-attachments/:attachmentId', async (c) => {

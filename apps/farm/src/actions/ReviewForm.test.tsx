@@ -590,6 +590,52 @@ it('Farm opens stored references and stream inputs as review documents, fetched 
   expect(api.downloadWorkStreamAsset).toHaveBeenCalledTimes(3)
 })
 
+it('Farm names a labelled stored input by its label, keeping the filename and inbox origin in view', async () => {
+  const run = workflowRun('gate')
+  run.state.attempts[0]!.decisionBrief = {
+    value: {
+      decision: 'Approve the staging design.',
+      recommendation: 'Approve because fallback reads are tested.',
+      approvalEffect: 'Approval permits staging work only, not production deployment.',
+      risks: 'Maintenance work increases temporarily.',
+    },
+    submittedVersion: 6,
+    contexts: [],
+  }
+  run.state.attempts[1]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [1] }
+  const input = (id: string, filename: string, label: string | null) => ({
+    id,
+    workStreamId: 'ws-1',
+    attemptId: null,
+    source: { kind: 'inbox-attachment' as const, attachmentId: '44444444-4444-4444-8444-444444444444' },
+    filename,
+    label,
+    contentType: 'text/markdown',
+    byteSize: 16,
+    createdAt: '',
+  })
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(run),
+    getWorkStream: () =>
+      Promise.resolve({
+        ...stream(),
+        assetAttachments: [input('share-labelled', 'notes-1.md', 'Owner notes'), input('share-plain', 'notes-2.md', null)],
+      }),
+    downloadWorkStreamAsset: () => Promise.resolve(new TextEncoder().encode('Synthetic stored notes.')),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  const tabs = [...container.querySelectorAll('[role="tab"]')]
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['Decision brief', 'Owner notes', 'notes-2.md'])
+  await click(tabs[1] as HTMLButtonElement)
+  const panel = container.querySelector('[role="tabpanel"]')!
+  expect(panel.querySelector('h4')!.textContent).toBe('Owner notes')
+  expect(panel.textContent).toContain('Work stream input: notes-1.md, stored inbox attachment, shared by ID')
+  await click(tabs[2] as HTMLButtonElement)
+  const plain = container.querySelector('[role="tabpanel"]')!
+  expect(plain.querySelector('h4')!.textContent).toBe('notes-2.md')
+  expect(plain.textContent).toContain('Work stream input: stored inbox attachment, shared by ID')
+})
+
 for (const kind of ['carried-forward', 'none'] as const) {
   it(`Farm labels ${kind} and retains the gate's own message`, async () => {
     const run = workflowRun('gate')

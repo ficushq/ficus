@@ -13,6 +13,7 @@ import {
   workflowPresetSchema,
   workflowSourceSchema,
   workflowCommandSchema,
+  workStreamAssetLabelSchema,
   workStreamAssetSourceSchema,
 } from '@ficus/shared'
 import { AssetAttachmentError, attachAttemptAsset, listStreamAssets } from '../services/work-streams/asset-attachments'
@@ -176,21 +177,27 @@ export const workflowsRouter = new Hono()
       },
     })
   })
-  // An attempt's agent attaches a stored chat image or file by ID: no upload, no workspace copy.
+  // An attempt's agent attaches a stored chat image, chat file or inbox attachment by ID: no upload,
+  // no workspace copy.
   .post(
     '/runs/:streamId/attempts/:attemptId/asset-attachments',
-    zValidator('json', z.object({ source: workStreamAssetSourceSchema }).strict()),
+    zValidator(
+      'json',
+      z.object({ source: workStreamAssetSourceSchema, label: workStreamAssetLabelSchema.nullable().optional() }).strict()
+    ),
     async (c) => {
       const attemptId = Number(c.req.param('attemptId'))
       if (!Number.isSafeInteger(attemptId) || attemptId < 1) return c.json({ error: 'Invalid attempt id' }, 400)
       const stream = await WorkStream.find(c.req.param('streamId'))
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       try {
+        const body = c.req.valid('json')
         const { attachment, created } = await attachAttemptAsset({
           identity: c.get('identity')!,
           streamId: stream.id,
           attemptId,
-          source: c.req.valid('json').source,
+          source: body.source,
+          ...(body.label !== undefined ? { label: body.label } : {}),
         })
         return c.json(attachment, created ? 201 : 200)
       } catch (error) {

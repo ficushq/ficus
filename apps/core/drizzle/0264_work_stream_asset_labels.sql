@@ -1,0 +1,1 @@
+ALTER TABLE "work_stream_asset_attachments" ADD COLUMN "label" varchar(120);

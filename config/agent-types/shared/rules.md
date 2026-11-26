@@ -54,8 +54,13 @@ would not paste into that thread.
 
 Images and files Ficus already stores (chat images and files, handoff and inbox
 attachments) need no workspace copy: view them with the `read_attachment` tool, and
-share a chat image with a work stream by ID with
-`ficus workstream attachment add STREAM_ID --image IMAGE_ID` (or
-`--attach-image IMAGE_ID` on `advance`). Download only when a local tool needs the
-bytes: `ficus image get IMAGE_ID --out SHARED_TASK_PATH`. Details are in the
-work-stream-driven-development skill.
+share a chat image, chat file or inbox attachment with a work stream by ID with
+`ficus workstream attachment add STREAM_ID` and `--image IMAGE_ID`,
+`--agent-file FILE_ATTACHMENT_ID` or `--inbox-attachment INBOX_ATTACHMENT_ID`
+(add `--label 'short name'` if the filename says little). `workstream create` takes
+the same three options; `advance` takes `--attach-image`, `--attach-agent-file` and
+`--attach-inbox-attachment`. A file that exists only in the shared workspace is
+recorded by path instead: `ficus workstream update STREAM_ID -f PATH` (this replaces
+the stream's path list, so repeat `-f` for paths it already has). Download only when
+a local tool needs the bytes: `ficus image get IMAGE_ID --out SHARED_TASK_PATH`.
+Details are in the work-stream-driven-development skill.

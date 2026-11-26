@@ -1,5 +1,6 @@
 import {
   workflowAttachmentContentType,
+  workStreamAssetDisplayName,
   type WorkflowAttemptAttachment,
   type WorkStreamAssetAttachment,
 } from '@ficus/shared'
@@ -30,12 +31,14 @@ export function attachmentPreviewMode(
 
 /**
  * One document a review or a stream shows: a handoff file (uploaded with --attach, which has the
- * path it was attached from) or a stored chat image or file shared by ID (which has no path, and is
- * never given one).
+ * path it was attached from) or a stored chat image, chat file or inbox attachment shared by ID
+ * (which has no path, and is never given one).
  */
 export interface ReviewDocument {
   id: string
   filename: string
+  /** A stored share's optional label, shown instead of the filename; null otherwise. */
+  label: string | null
   byteSize: number
   attemptId: number | null
   /** What the row says under the name: the handoff file's path, or where a stored asset came from. */
@@ -47,6 +50,7 @@ export function handoffDocument(file: WorkflowAttemptAttachment): ReviewDocument
   return {
     id: file.id,
     filename: file.filename,
+    label: null,
     byteSize: file.byteSize,
     attemptId: file.attemptId,
     detail: file.path,
@@ -54,13 +58,31 @@ export function handoffDocument(file: WorkflowAttemptAttachment): ReviewDocument
   }
 }
 
+/** What a document is called on screen: a stored share's label when it has one, else its filename. */
+export function documentTitle(document: Pick<ReviewDocument, 'filename' | 'label'>): string {
+  return workStreamAssetDisplayName(document)
+}
+
+/** Where a stored reference came from, in words: "chat image", "chat file" or "inbox attachment". */
+export function storedAssetOrigin(asset: Pick<WorkStreamAssetAttachment, 'source'>): string {
+  if (asset.source.kind === 'image') return 'chat image'
+  if (asset.source.kind === 'inbox-attachment') return 'inbox attachment'
+  return 'chat file'
+}
+
+/** A labelled share keeps its filename in view beside its origin. */
+function storedDetail(asset: WorkStreamAssetAttachment, origin: string): string {
+  return asset.label ? `${asset.filename} · ${origin}` : origin
+}
+
 export function storedDocument(asset: WorkStreamAssetAttachment): ReviewDocument {
   return {
     id: asset.id,
     filename: asset.filename,
+    label: asset.label || null,
     byteSize: asset.byteSize,
     attemptId: asset.attemptId,
-    detail: asset.source.kind === 'image' ? 'Stored chat image, shared by ID' : 'Stored chat file, shared by ID',
+    detail: storedDetail(asset, `Stored ${storedAssetOrigin(asset)}, shared by ID`),
     stored: true,
   }
 }
@@ -84,7 +106,7 @@ export function reviewDocuments(
     ]),
     ...inputs.map((asset) => ({
       ...storedDocument(asset),
-      detail: `Work stream input: stored chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`,
+      detail: storedDetail(asset, `Work stream input: stored ${storedAssetOrigin(asset)}, shared by ID`),
     })),
   ]
 }

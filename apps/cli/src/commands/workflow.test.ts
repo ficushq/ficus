@@ -580,7 +580,9 @@ test('advance attaches stored chat images and files by ID before advancing, with
     '--attach-image',
     'image-1',
     '--attach-agent-file',
-    'file-1'
+    'file-1',
+    '--attach-inbox-attachment',
+    'inbox-file-1'
   )
   expect(f.errors).toEqual([])
   expect(f.calls).toEqual([
@@ -594,6 +596,11 @@ test('advance attaches stored chat images and files by ID before advancing, with
       method: 'POST',
       path: '/api/workflows/runs/stream-id/attempts/4/asset-attachments',
       body: { source: { kind: 'agent-file', attachmentId: 'file-1' } },
+    },
+    {
+      method: 'POST',
+      path: '/api/workflows/runs/stream-id/attempts/4/asset-attachments',
+      body: { source: { kind: 'inbox-attachment', attachmentId: 'inbox-file-1' } },
     },
     {
       method: 'POST',
@@ -613,6 +620,22 @@ test('advance attaches stored chat images and files by ID before advancing, with
   await refused.run('advance', 'stream-id', '--file', rework, '--attach-image', 'image-1')
   expect(refused.errors.map((error) => error.message)).toEqual([
     '--attach-image is only available when completing an attempt',
+  ])
+  const refusedAll = fixture(runAt(), undefined, 'workstream')
+  await refusedAll.run(
+    'advance',
+    'stream-id',
+    '--file',
+    rework,
+    '--attach-image',
+    'image-1',
+    '--attach-agent-file',
+    'file-1',
+    '--attach-inbox-attachment',
+    'inbox-file-1'
+  )
+  expect(refusedAll.errors.map((error) => error.message)).toEqual([
+    '--attach-image, --attach-agent-file and --attach-inbox-attachment are only available when completing an attempt',
   ])
   const many = fixture(runAt(), undefined, 'workstream')
   await many.run(

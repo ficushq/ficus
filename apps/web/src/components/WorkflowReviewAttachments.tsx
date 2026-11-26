@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode }
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workflowAttachmentContentType } from '@ficus/shared'
 import { actionErrorMessage } from '../lib/actionError'
-import { attachmentPreviewMode, type ReviewDocument } from '../lib/workflowAttachments'
+import { attachmentPreviewMode, documentTitle, type ReviewDocument } from '../lib/workflowAttachments'
 import { queries } from '../queryOptions'
 import { FilePreview } from './FilePreview'
 import { PdfPreview } from './PdfPreview'
@@ -26,14 +26,19 @@ export function ReviewTabs({
   onSelect,
 }: {
   idPrefix: string
-  attachments: Array<Pick<ReviewDocument, 'id' | 'filename' | 'detail'>>
+  attachments: Array<Pick<ReviewDocument, 'id' | 'filename' | 'detail'> & { label?: string | null }>
   primary?: { id: string; label: string }
   selected: string
   onSelect: (id: string) => void
 }) {
+  // A stored share's label names its tab; the filename stays in the tooltip's detail.
   const tabs = [
     { ...primary, title: undefined as string | undefined },
-    ...attachments.map((attachment) => ({ id: attachment.id, label: attachment.filename, title: attachment.detail })),
+    ...attachments.map((attachment) => ({
+      id: attachment.id,
+      label: documentTitle({ filename: attachment.filename, label: attachment.label ?? null }),
+      title: attachment.detail,
+    })),
   ]
   const list = useRef<HTMLDivElement>(null)
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -128,6 +133,7 @@ function decodeText(bytes: Uint8Array): string | null {
  */
 export function AttachmentView({ workStreamId, attachment }: { workStreamId: string; attachment: ReviewDocument }) {
   const mode = attachmentPreviewMode(attachment)
+  const title = documentTitle(attachment)
   const options = queries.workflows.document(workStreamId, attachment)
   const { data: bytes, error } = useQuery({ ...options, enabled: mode !== 'download' })
   const queryClient = useQueryClient()
@@ -185,7 +191,7 @@ export function AttachmentView({ workStreamId, attachment }: { workStreamId: str
           <BytesImage
             bytes={bytes}
             type={workflowAttachmentContentType(attachment.filename)}
-            alt={attachment.filename}
+            alt={title}
             className="max-w-full object-contain"
           />
         }
@@ -194,9 +200,9 @@ export function AttachmentView({ workStreamId, attachment }: { workStreamId: str
   else if (mode === 'pdf' && bytes)
     body = <PdfPreview bytes={bytes} fileName={attachment.filename} onError={() => setPdfFailed(true)} />
   else if (typeof text === 'string') body = <FilePreview fileName={attachment.filename} kind="text" content={text} />
-  else body = <DocumentSkeleton label={`Loading ${attachment.filename}`} lines={10} className="min-h-64" />
+  else body = <DocumentSkeleton label={`Loading ${title}`} lines={10} className="min-h-64" />
   return (
-    <section aria-label={attachment.filename} className="space-y-4">
+    <section aria-label={title} className="space-y-4">
       <div className="flex min-w-0 items-center gap-3 border-b border-panel-border pb-2">
         <p className="min-w-0 flex-1 truncate text-xs text-muted" title={attachment.detail}>
           {attachment.detail}
