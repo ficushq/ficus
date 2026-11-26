@@ -114,6 +114,19 @@ Desktop-managed instances store a per-user presentation copy in `desktop_notific
 
 The feed returns at most 100 recent alerts from seven days; expired rows are purged on subsequent enqueues. Current mute and preview preferences are rechecked on reads. A hidden or minimized window continues receiving alerts; quitting the app stops delivery until reopening. Displaying an alert never marks inbox messages read or advances work. See [Desktop notifications](desktop-notifications.md) for delivery, deduplication, privacy, and bridge boundaries.
 
+### In-app notices (web)
+
+With the web app open, a new Needs-you question or human gate also raises a small card at the top right (see [Web UI → Action Center](web-ui.md#action-center)). It follows the same audience as push: `GET /api/actions/pending` marks each question and human gate with `alerts: true` when it alerts the viewer (a question's squadless personal owner or direct recipient, otherwise an effective `decisions` level of `notify` by the same origin precedence push uses; `show`, the default, lists without alerting), and the client then applies the user's master push switch and the `question` and `review` category mutes. Question actions also carry `workStream` (id, number, title) when the question has exactly one work-stream origin, the same rule its push uses to name the work.
+
+A user never gets the card and an OS notification for the same item while the window is focused:
+
+- **Ficus Desktop** already shows no OS alert for updates while its window is focused, so the card is the notice.
+- **Web push in Chromium and Firefox:** the service worker skips the OS notification for a Needs-you push (its `actionId` is an `agent-question:`, `squad-question:`, `workstream-review:` or `workstream-blocked:` action) while a Ficus window on that origin is focused and visible. Chrome exempts a focused origin from its show-a-notification rule, and Firefox does not charge its push quota while the site is open.
+- **WebKit (Safari, every iOS browser):** WebKit revokes a push subscription whose push shows nothing, even while focused, so the OS notification always shows there, and the page shows no card while that browser is subscribed to push.
+- **Hidden page:** no card; the OS notification is the notice, as before.
+
+The rule lives in `apps/web/src/lib/needsYouPush.ts`, shared by the service worker and the page. Dismissing or ignoring a card never changes the item.
+
 ### Adding a notification type
 
 1. Define and emit the event through the shared event emitter. Add its presentation to `apps/core/src/services/notifications/event-builders.ts`; an event without a builder cannot produce a push alert.

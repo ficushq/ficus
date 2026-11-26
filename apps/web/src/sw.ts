@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { resolveNotificationTarget } from './lib/notificationTarget'
+import { shouldSkipPushNotification } from './lib/needsYouPush'
 import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
 import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
 
@@ -164,7 +165,23 @@ self.addEventListener('push', (event) => {
     actions: data.actions || [],
   }
 
-  event.waitUntil(self.registration.showNotification(data.title || 'Ficus', options))
+  event.waitUntil(
+    (async () => {
+      // A focused Ficus window shows the in-app Needs-you card for this item instead (never on
+      // WebKit, which revokes subscriptions whose pushes show nothing); see lib/needsYouPush.ts.
+      // Any failure here falls back to showing the notification.
+      const isAppWindow = (url: URL) =>
+        url.origin === self.location.origin &&
+        url.pathname.startsWith(BASE_PATH) &&
+        !bypassesServiceWorker(url.pathname, BASE_PATH)
+      const skip = await self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((windows) => shouldSkipPushNotification(data, self.navigator.userAgent, windows, isAppWindow))
+        .catch(() => false)
+      if (skip) return
+      await self.registration.showNotification(data.title || 'Ficus', options)
+    })()
+  )
 })
 
 // Notification click event

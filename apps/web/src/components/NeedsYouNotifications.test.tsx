@@ -1,0 +1,236 @@
+import { afterEach, expect, test } from 'bun:test'
+import { MemoryRouter, useLocation } from 'react-router'
+import type { PendingAction } from '@ficus/shared'
+import { acquireDomHarness } from '../test/domHarness'
+import { NeedsYouNotifications } from './NeedsYouNotifications'
+import type { NeedsYouNoticePreferences } from '../lib/needsYouNotices'
+import { otherAction, questionAction, waitAction } from '../lib/needsYouNotices.fixtures'
+
+type Dom = Awaited<ReturnType<typeof acquireDomHarness>>
+let dom: Dom | undefined
+
+afterEach(async () => {
+  await dom?.cleanup()
+  dom = undefined
+})
+
+const ON: NeedsYouNoticePreferences = { pushEnabled: true, mutedEvents: [] }
+
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
+}
+
+/** Renders the notices over a pending list the test changes, as the Action Center query would. */
+async function mount({
+  path = '/',
+  initial = [] as PendingAction[],
+  preferences = ON as NeedsYouNoticePreferences | 'unloaded',
+  visible = true,
+  osNotification = false,
+  timeoutMs = 60_000,
+} = {}) {
+  dom = await acquireDomHarness({ url: `http://localhost${path}` })
+  const harness = dom
+  const { root } = harness.createRoot()
+  let pending = initial
+  const render = () =>
+    harness.act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={[path]}>
+          <NeedsYouNotifications
+            // A fresh object each render, so the component re-reads the pending list.
+            dependencies={{
+              usePendingActions: () => ({ data: pending }),
+              usePreferences: () => (preferences === 'unloaded' ? undefined : preferences),
+              documentVisible: () => visible,
+              osNotificationReplacesCard: () => osNotification,
+              timeoutMs,
+            }}
+          />
+          <LocationProbe />
+        </MemoryRouter>
+      )
+    )
+  await render()
+  return {
+    async setPending(next: PendingAction[]) {
+      pending = next
+      await render()
+    },
+    cards: () => [...document.querySelectorAll('[data-testid="needs-you-notice"]')] as HTMLElement[],
+    headlines: () =>
+      [...document.querySelectorAll('[data-testid="needs-you-notice"] button:first-of-type')].map(
+        (button) => button.querySelector('.font-medium')?.textContent
+      ),
+    location: () => document.querySelector('[data-testid="location"]')?.textContent,
+    act: harness.act,
+  }
+}
+
+test('items already pending when the app opens raise no notice; only new ones do', async () => {
+  const view = await mount({ initial: [questionAction('old')] })
+  expect(view.cards()).toHaveLength(0)
+  await view.setPending([questionAction('old'), questionAction('new', { createdAt: '2026-11-26T12:05:00.000Z' })])
+  expect(view.cards()).toHaveLength(1)
+  expect(view.cards()[0]!.textContent).toContain('Payments Engineer has a question')
+  expect(view.cards()[0]!.textContent).toContain('Retry on 409 as well?')
+  expect(view.cards()[0]!.textContent).toContain('#8 · Make every payment retry safe')
+})
+
+test('the trigger set is exactly new questions and gates the user can act on', async () => {
+  const view = await mount()
+  await view.setPending([])
+  await view.setPending([
+    questionAction('q', { createdAt: '2026-11-26T12:03:00.000Z' }),
+    waitAction('review', { createdAt: '2026-11-26T12:02:00.000Z' }),
+    waitAction('input', { type: 'workstream-blocked', createdAt: '2026-11-26T12:01:00.000Z' }),
+    questionAction('unanswerable', { canRespond: false }),
+    waitAction('shown-only', { alerts: undefined }),
+    otherAction('agent-error', 'halted'),
+    otherAction('assistant-needs-input', 'task'),
+    otherAction('workstream-delivery', 'pr'),
+  ])
+  expect(view.headlines()).toEqual([
+    'Payments Engineer has a question',
+    'Payments Engineer requests review',
+    'Payments Engineer needs your input',
+  ])
+})
+
+test('more than three new items show the newest three', async () => {
+  const view = await mount()
+  await view.setPending([])
+  await view.setPending(
+    [1, 2, 3, 4].map((minute) =>
+      questionAction(`q${minute}`, { createdAt: `2026-11-26T12:0${minute}:00.000Z` }, { agentName: `Agent ${minute}` })
+    )
+  )
+  expect(view.headlines()).toEqual(['Agent 4 has a question', 'Agent 3 has a question', 'Agent 2 has a question'])
+})
+
+test('no notice for an item the user already has open', async () => {
+  const view = await mount({ path: '/actions/agent-question%3Aq1' })
+  await view.setPending([])
+  await view.setPending([questionAction('q1')])
+  expect(view.cards()).toHaveLength(0)
+})
+
+test("no notice for a question while its agent's conversation is open, or a gate while its work stream is", async () => {
+  const chat = await mount({ path: '/squads/product-engineering/agents?agent=agent-1' })
+  await chat.setPending([])
+  await chat.setPending([questionAction('q1')])
+  expect(chat.cards()).toHaveLength(0)
+  await dom!.cleanup()
+
+  const work = await mount({ path: '/squads/product-engineering/work?ws=8' })
+  await work.setPending([])
+  await work.setPending([waitAction('w1')])
+  expect(work.cards()).toHaveLength(0)
+})
+
+test('dismissing a notice hides it without touching the item, and it does not come back', async () => {
+  const view = await mount()
+  await view.setPending([])
+  const pending = [questionAction('q1')]
+  // The DOM harness refuses any request, so a dismissal that called the API would fail here.
+  await view.setPending(pending)
+  const close = view.cards()[0]!.querySelector('button[aria-label^="Dismiss"]') as HTMLButtonElement
+  await view.act(async () => close.click())
+  expect(view.cards()).toHaveLength(0)
+  expect(view.location()).toBe('/')
+  await view.setPending([...pending])
+  expect(view.cards()).toHaveLength(0)
+})
+
+test('Escape dismisses a focused notice', async () => {
+  const view = await mount()
+  await view.setPending([])
+  await view.setPending([questionAction('q1')])
+  const card = view.cards()[0]!
+  await view.act(async () => {
+    card.querySelector('button')!.focus()
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  expect(view.cards()).toHaveLength(0)
+})
+
+test('clicking a notice opens the item, the same destination as Needs you', async () => {
+  const view = await mount({ path: '/squads' })
+  await view.setPending([])
+  await view.setPending([questionAction('q1')])
+  await view.act(async () => (view.cards()[0]!.querySelector('button') as HTMLButtonElement).click())
+  expect(view.location()).toBe('/actions/agent-question%3Aq1')
+  expect(view.cards()).toHaveLength(0)
+})
+
+test('a workflow gate opens its review over the current page', async () => {
+  const view = await mount({ path: '/squads' })
+  await view.setPending([])
+  await view.setPending([
+    waitAction('w9', { type: 'workstream-blocked', wait: { resolutionHandler: 'workflow', workflowHumanGate: true } }),
+  ])
+  expect(view.headlines()).toEqual(['Payments Engineer requests review'])
+  await view.act(async () => (view.cards()[0]!.querySelector('button') as HTMLButtonElement).click())
+  expect(view.location()).toBe('/squads?review=ws-uuid-8&reviewWait=w9')
+})
+
+test('a notice dismisses itself after its timeout, unless hovered', async () => {
+  const view = await mount({ timeoutMs: 40 })
+  await view.setPending([])
+  await view.setPending([questionAction('q1'), questionAction('q2', { createdAt: '2026-11-26T12:01:00.000Z' })])
+  expect(view.cards()).toHaveLength(2)
+  const hovered = view.cards().find((card) => card.textContent?.includes('Retry'))!
+  await view.act(async () => {
+    hovered.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }))
+  })
+  await view.act(() => new Promise((resolve) => setTimeout(resolve, 120)))
+  expect(view.cards()).toHaveLength(1)
+})
+
+test('a notice leaves when its item is settled elsewhere', async () => {
+  const view = await mount()
+  await view.setPending([])
+  await view.setPending([questionAction('q1')])
+  expect(view.cards()).toHaveLength(1)
+  await view.setPending([])
+  expect(view.cards()).toHaveLength(0)
+})
+
+test('notification preferences off shows nothing', async () => {
+  const off = await mount({ preferences: { pushEnabled: false, mutedEvents: [] } })
+  await off.setPending([])
+  await off.setPending([questionAction('q1'), waitAction('w1')])
+  expect(off.cards()).toHaveLength(0)
+  await dom!.cleanup()
+
+  const mutedQuestions = await mount({ preferences: { pushEnabled: true, mutedEvents: ['question'] } })
+  await mutedQuestions.setPending([])
+  await mutedQuestions.setPending([questionAction('q1'), waitAction('w1')])
+  expect(mutedQuestions.headlines()).toEqual(['Payments Engineer requests review'])
+  await dom!.cleanup()
+
+  const unloaded = await mount({ preferences: 'unloaded' })
+  await unloaded.setPending([])
+  await unloaded.setPending([questionAction('q1')])
+  expect(unloaded.cards()).toHaveLength(0)
+})
+
+test('no notice while the page is hidden, or where this browser shows the OS notification itself', async () => {
+  const hidden = await mount({ visible: false })
+  await hidden.setPending([])
+  await hidden.setPending([questionAction('q1')])
+  expect(hidden.cards()).toHaveLength(0)
+  await dom!.cleanup()
+
+  const webkit = await mount({ osNotification: true })
+  await webkit.setPending([])
+  await webkit.setPending([questionAction('q1')])
+  expect(webkit.cards()).toHaveLength(0)
+})
+
+test('the notices region is a polite live region', async () => {
+  await mount()
+  const region = document.querySelector('section[aria-label="Needs you notifications"]')
+  expect(region?.getAttribute('aria-live')).toBe('polite')
+})

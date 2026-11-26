@@ -2,7 +2,13 @@ import { isHumanFlowWait } from '../workflows/wait-policy'
 import { listOpenWaits, toWaitJson } from '../work-streams/waits'
 import { workflowReviewBlockingWaits } from '@ficus/shared'
 import { recoveryRecipientsById } from '../recovery/recipients'
-import type { PendingAction, WorkStreamActionData, WorkStreamDeliveryActionData } from '@ficus/shared'
+import type {
+  AgentQuestionActionData,
+  AttentionLevel,
+  PendingAction,
+  WorkStreamActionData,
+  WorkStreamDeliveryActionData,
+} from '@ficus/shared'
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
@@ -73,15 +79,59 @@ async function decisionsUnmuted(
   question: { id: string; squadId: string | null },
   context: PendingActionAttentionContext
 ): Promise<boolean> {
-  const squadUnmuted = context.attention.forSquad(question.squadId).decisions !== 'mute'
-  if (context.attention.workStreams.size === 0) return squadUnmuted
+  return questionDecisions(question, context, (level) => level !== 'mute')
+}
+
+/** Does `matches` hold for the question's effective `decisions` level, by the origin precedence above? */
+async function questionDecisions(
+  question: { id: string; squadId: string | null },
+  context: PendingActionAttentionContext,
+  matches: (level: AttentionLevel) => boolean
+): Promise<boolean> {
+  const squadMatches = matches(context.attention.forSquad(question.squadId).decisions)
+  if (context.attention.workStreams.size === 0) return squadMatches
   const origins = context.questionOrigins
     ? (context.questionOrigins.get(question.id) ?? [])
     : ((await loadQuestionWorkStreamOrigins([question.id])).get(question.id) ?? [])
-  if (origins.length === 0) return squadUnmuted
-  return origins.some(
-    (workStreamId) => context.attention.forWorkStream(workStreamId, question.squadId).decisions !== 'mute'
+  if (origins.length === 0) return squadMatches
+  return origins.some((workStreamId) =>
+    matches(context.attention.forWorkStream(workStreamId, question.squadId).decisions)
   )
+}
+
+/**
+ * Does this visible item ALERT the viewer (inbox message and push), beyond being listed in Needs
+ * you? The same audience its push uses: a question's squadless personal owner and direct
+ * recipients, and otherwise an effective `decisions` level of `notify` (a question by its origins,
+ * a review or input gate by its work stream, a squad question by its squad). `show`, the default
+ * with no attention row, lists an item without interrupting. Personal push preferences (master
+ * switch, category mutes) are the client's to apply. Only questions and human gates alert here.
+ */
+export async function pendingActionAlertsViewer(
+  identity: Identity,
+  action: PendingAction,
+  context: PendingActionAttentionContext
+): Promise<boolean> {
+  if (identity.type !== 'user') return false
+  const notify = (level: AttentionLevel) => level === 'notify'
+  switch (action.type) {
+    case 'agent-question': {
+      const data = action.data as AgentQuestionActionData
+      if (data.ownerUserId === identity.userId && !data.squadId) return true
+      if (await isDirectQuestionAttentionRecipient(data.questionId, identity.userId)) return true
+      if (!data.squadId) return false
+      return questionDecisions({ id: data.questionId, squadId: data.squadId }, context, notify)
+    }
+    case 'squad-question':
+      return Boolean(action.squadId && notify(context.attention.forSquad(action.squadId).decisions))
+    case 'workstream-review':
+    case 'workstream-blocked': {
+      const data = action.data as WorkStreamActionData
+      return notify(context.attention.forWorkStream(data.workStreamId, action.squadId).decisions)
+    }
+    default:
+      return false
+  }
 }
 
 /**

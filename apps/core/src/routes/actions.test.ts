@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db } from '../db'
 import {
+  agentQuestionWorkStreamOrigins,
   agentQuestions,
   agents,
   agentTypes,
@@ -155,6 +156,72 @@ describe('GET /api/actions/pending policy matrix', () => {
     expect(actions.some((action) => action.data.workStreamTitle?.includes('terminal'))).toBe(false)
     expect(actions.some((action) => action.data.workStreamTitle?.includes('queued review'))).toBe(true)
     expect(actions.some((action) => action.data.workStreamTitle?.includes('queued blocked'))).toBe(true)
+  })
+
+  test('marks the questions and gates that alert the viewer: Decisions at Notify alerts, Show only lists', async () => {
+    type Listed = Array<{ type: string; alerts?: boolean; data: { questionData?: unknown } }>
+    const notified = (await (
+      await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
+    ).json()) as Listed
+    expect(notified.length).toBeGreaterThan(0)
+    for (const action of notified) expect(action.alerts).toBe(action.type === 'agent-error' ? undefined : true)
+
+    // The same items at Show: still listed in Needs you, but none of them alerts. The async question
+    // is the exception: the responder is its owner snapshot, not a direct recipient or a personal
+    // owner, so it follows the squad level like the rest.
+    await subscribeToSquad(squad.id, responder.id, { decisions: 'show', progress: 'notify' })
+    try {
+      const shown = (await (
+        await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
+      ).json()) as Listed
+      expect(shown.map((action) => action.type)).toEqual(notified.map((action) => action.type))
+      expect(shown.every((action) => action.alerts === undefined)).toBe(true)
+    } finally {
+      await subscribeToSquad(squad.id, responder.id, { decisions: 'notify', progress: 'notify' })
+    }
+
+    // A squadless personal agent's question always alerts its owner.
+    const personal = (await (
+      await app.request('/api/actions/pending', { headers: authHeaders(ownerOnly.token) })
+    ).json()) as Listed
+    expect(personal.find((action) => action.type === 'agent-question')?.alerts).toBe(true)
+  })
+
+  test('names the work stream a question was asked from only when it has exactly one origin', async () => {
+    const origin = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} question origin` })
+    const other = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} second origin` })
+    const [single, shared] = await db
+      .insert(agentQuestions)
+      .values(
+        ['single origin?', 'two origins?'].map((question) => ({
+          agentId: agentIds[2]!,
+          squadId: squad.id,
+          ownerUserId: responder.id,
+          questionData: { questions: [{ id: 'origin', type: 'text' as const, question }] },
+        }))
+      )
+      .returning()
+    try {
+      await db.insert(agentQuestionWorkStreamOrigins).values([
+        { questionId: single!.id, workStreamId: origin.id },
+        { questionId: shared!.id, workStreamId: origin.id },
+        { questionId: shared!.id, workStreamId: other.id },
+      ])
+      const response = await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
+      expect(response.status).toBe(200)
+      const actions = (await response.json()) as Array<{ id: string; data: { workStream?: unknown } }>
+      expect(actions.find((action) => action.id === `agent-question:${single!.id}`)?.data.workStream).toEqual({
+        id: origin.id,
+        number: origin.number,
+        title: `${prefix} question origin`,
+      })
+      const sharedAction = actions.find((action) => action.id === `agent-question:${shared!.id}`)
+      expect(sharedAction).toBeDefined()
+      expect(sharedAction!.data.workStream).toBeUndefined()
+    } finally {
+      await db.delete(agentQuestions).where(inArray(agentQuestions.id, [single!.id, shared!.id]))
+      await db.delete(workStreams).where(inArray(workStreams.id, [origin.id, other.id]))
+    }
   })
 
   test('serializes concurrent waits with full stable identities and checkpoint truth', async () => {
