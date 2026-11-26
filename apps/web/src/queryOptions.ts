@@ -34,7 +34,12 @@ import {
   getSystemPause,
   getSystemPauseDetails,
 } from './api/system'
-import { getGlobalActivityPresence, getSquadActivityPresence, listGlobalActivity } from './api/activity'
+import {
+  getGlobalActivityPresence,
+  getSettledActivity,
+  getSquadActivityPresence,
+  listGlobalActivity,
+} from './api/activity'
 
 // API functions
 import {
@@ -88,7 +93,14 @@ import { searchMemory, type SearchMemoryParams } from './api/memory'
 import { getMyInboxUnreadCount, getSystemInboxUnreadCount } from './api/inbox'
 import { listSecrets, getGitAuthorDefaults } from './api/secrets'
 import { listSettings } from './api/settings'
-import { getAuthSettings, getAuthStatus, getCurrentUser, getMyPermissions, listMyCredentials } from './api/auth'
+import {
+  getAuthSettings,
+  getAuthStatus,
+  getCurrentUser,
+  getFeedVisit,
+  getMyPermissions,
+  listMyCredentials,
+} from './api/auth'
 import { getSeatPricing, getUser, getUserRoles, listUsers, listUserSessions } from './api/users'
 import { getRole, listRoles } from './api/roles'
 import { listSessions } from './api/sessions'
@@ -1327,6 +1339,23 @@ export const feedQueries = {
       refetchOnMount: 'always',
       refetchOnWindowFocus: 'always',
       refetchOnReconnect: 'always',
+    }),
+  /** Taken once per Feed mount, so recording this visit never moves the period this mount shows. */
+  visit: (userId: string, visitId: string) =>
+    queryOptions({
+      queryKey: feedQueryKeys.visit(userId, visitId),
+      queryFn: () => getFeedVisit(),
+      staleTime: Infinity,
+      gcTime: 0,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    }),
+  settled: (userId: string, since: string, squadIds: readonly string[]) =>
+    queryOptions({
+      queryKey: feedQueryKeys.settled(userId, since, squadIds),
+      queryFn: () => getSettledActivity(since, squadIds),
+      staleTime: 60_000,
     }),
   recent: (after: string, squadIds: readonly string[]) =>
     queryOptions({

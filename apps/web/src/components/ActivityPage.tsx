@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router'
 import type {
   Agent,
   GlobalActivityPresence,
@@ -16,6 +17,7 @@ import { activityAgentLabel, activitySubjectLabel, globalActivityItemHref } from
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { Modal } from './Modal'
 import { AgentConversation } from './AgentConversation'
+import { parseSettledActivityParams, SETTLED_FILTER_TITLES, settledPeriodLabel } from '../lib/settledActivity'
 
 const EMPTY_PRESENCE: GlobalActivityPresence = {
   workingAgentIds: [],
@@ -66,14 +68,24 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const [showEverything, setShowEverything] = useState(false)
   // Active work card filter (one stream's rows and its participants' rows).
   const [workStreamFilter, setWorkStreamFilter] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { settled, squadIds: settledSquadIds } = useMemo(() => parseSettledActivityParams(searchParams), [searchParams])
+  const clearSettled = useCallback(() => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      for (const key of ['settled', 'since', 'squad']) next.delete(key)
+      return next
+    })
+  }, [setSearchParams])
   const filters = useMemo<NormalizedSquadActivityFilters>(
     () => ({
       verbose: showEverything,
       agentIds: [],
       kinds: [...kinds].sort(),
       ...(workStreamFilter ? { workStreamId: workStreamFilter } : {}),
+      ...(settled ? { settled, ...(settledSquadIds.length ? { squadIds: settledSquadIds } : {}) } : {}),
     }),
-    [kinds, showEverything, workStreamFilter]
+    [kinds, showEverything, workStreamFilter, settled, settledSquadIds]
   )
   const query = useInfiniteQuery(queries.activity.global(filters))
   useGlobalActivityLive()
@@ -144,6 +156,27 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Activity">
       <h1 className="ficus-page-title mb-4 shrink-0">Activity</h1>
+      {settled && (
+        <div
+          className="ficus-section mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs text-secondary"
+          role="status"
+          data-testid="activity-settled-filter"
+        >
+          <span>
+            <span className="font-medium text-primary">{SETTLED_FILTER_TITLES[settled.kind]}</span>{' '}
+            {settledPeriodLabel(settled.since).replace(/^Since/, 'since')}
+            {settledSquadIds.length > 0 &&
+              ` · ${settledSquadIds.length === 1 ? '1 squad' : `${settledSquadIds.length} squads`}`}
+          </span>
+          <button
+            type="button"
+            className="ficus-button ficus-button-ghost ml-auto rounded-md px-2 py-1 text-xs"
+            onClick={clearSettled}
+          >
+            Show all activity
+          </button>
+        </div>
+      )}
       <ActivityFeedView
         kinds={kinds}
         onKindsChange={setKinds}

@@ -37,6 +37,9 @@ try {
         completedAt: new Date(Date.parse(at) - i * 1000).toISOString(),
       }))
       const saved = new Set<string>()
+      const lastVisit = '2026-10-27T09:00:00.000Z'
+      const observedAt = '2026-10-28T12:30:00.000Z'
+      const visits: string[] = []
       let refreshed = false
       let arrived = false
       await page.route('**/api/**', async (route) => {
@@ -73,6 +76,19 @@ try {
           saved.add(id)
           return route.fulfill({ json: { seen: true } })
         }
+        if (url.pathname === '/api/auth/me/feed-visit') {
+          if (route.request().method() === 'POST') {
+            visits.push(route.request().postDataJSON().visitedAt)
+            return route.fulfill({ json: { lastVisitedAt: observedAt } })
+          }
+          return route.fulfill({ json: { lastVisitedAt: lastVisit, observedAt } })
+        }
+        if (url.pathname === '/api/activity/settled') {
+          assert.equal(url.searchParams.get('since'), lastVisit)
+          return route.fulfill({
+            json: { since: lastVisit, clamped: false, counts: { questions: 4, reviews: 2, completed: 0 } },
+          })
+        }
         if (url.pathname.includes('/inbox')) return route.fulfill({ json: { count: 0 } })
         errors.push(`Unexpected API call: ${url.pathname}`)
         return route.abort()
@@ -85,6 +101,15 @@ try {
           console.error(errors, await page.locator('body').innerText())
           throw error
         })
+      // The settled line counts only what was settled without a person, and links each count to Activity.
+      const settledLine = page.getByTestId('feed-settled-line')
+      await settledLine.waitFor()
+      assert.match(await settledLine.innerText(), /: 4 questions settled by managers, 2 reviews done by agents$/)
+      assert.deepEqual(
+        await settledLine.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+        ['questions', 'reviews'].map((kind) => `/activity?settled=${kind}&since=${encodeURIComponent(lastVisit)}`)
+      )
+      assert.deepEqual(visits, [observedAt])
       assert.equal(await page.locator('time[aria-label]').count(), 0)
       assert.ok((await page.locator('time[title] .sr-only').count()) > 0)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
