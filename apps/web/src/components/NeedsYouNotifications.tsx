@@ -191,7 +191,10 @@ function NeedsYouNoticeCard({
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
+        // Moving between the card's own buttons keeps the timer paused: check where focus landed
+        // once it has settled, after this blur's task.
+        const card = event.currentTarget
+        setTimeout(() => setFocused(card.contains(document.activeElement)))
       }}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return

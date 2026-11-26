@@ -188,6 +188,18 @@ test('a notice dismisses itself after its timeout, unless hovered', async () => 
   expect(view.cards()).toHaveLength(1)
 })
 
+test('keyboard focus pauses the timeout, including while focus moves between the card buttons', async () => {
+  const view = await mount({ timeoutMs: 40 })
+  await view.setPending([])
+  await view.setPending([questionAction('q1')])
+  const [open, close] = [...view.cards()[0]!.querySelectorAll('button')] as HTMLButtonElement[]
+  await view.act(async () => open!.focus())
+  await view.act(() => new Promise((resolve) => setTimeout(resolve, 80)))
+  await view.act(async () => close!.focus())
+  await view.act(() => new Promise((resolve) => setTimeout(resolve, 80)))
+  expect(view.cards()).toHaveLength(1)
+})
+
 test('a notice leaves when its item is settled elsewhere', async () => {
   const view = await mount()
   await view.setPending([])
