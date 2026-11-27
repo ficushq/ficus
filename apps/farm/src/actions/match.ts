@@ -5,6 +5,7 @@ import type {
   PendingAction,
   SquadQuestionActionData,
   WorkStreamActionData,
+  WorkStreamDeliveryActionData,
   WorkStreamWait,
 } from '@ficus/shared'
 
@@ -16,6 +17,7 @@ export type TypedAction =
   | { type: 'workstream-review'; action: PendingAction; data: WorkStreamActionData }
   | { type: 'workstream-blocked'; action: PendingAction; data: WorkStreamActionData }
   | { type: 'assistant-needs-input'; action: PendingAction; data: AssistantTaskActionData }
+  | { type: 'workstream-delivery'; action: PendingAction; data: WorkStreamDeliveryActionData }
   | { type: 'unknown'; action: PendingAction }
 
 export function typedAction(action: PendingAction): TypedAction {
@@ -31,14 +33,16 @@ export function typedAction(action: PendingAction): TypedAction {
       return { type: action.type, action, data: action.data as WorkStreamActionData }
     case 'assistant-needs-input':
       return { type: action.type, action, data: action.data as AssistantTaskActionData }
+    case 'workstream-delivery':
+      return { type: action.type, action, data: action.data as WorkStreamDeliveryActionData }
     default:
       return { type: 'unknown', action }
   }
 }
 
 /**
- * Actions that belong on a work stream's plot: its review / blocked waits
- * (`WorkStreamActionData.workStreamId`), plus, when the stream's open waits are
+ * Actions that belong on a work stream's plot: its review / blocked waits and
+ * pull request review / merge gates (`workStreamId`), plus, when the stream's open waits are
  * given, the agent questions its `question` waits point at (the wait's
  * `referenceId` is the agent question id).
  */
@@ -57,6 +61,7 @@ export function actionsForStream(
     switch (typed.type) {
       case 'workstream-review':
       case 'workstream-blocked':
+      case 'workstream-delivery':
         return typed.data.workStreamId === workStreamId
       case 'agent-question':
         return questionIds.has(typed.data.questionId)
