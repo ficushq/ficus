@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { Agent } from '@ficus/shared'
 import {
+  agentHoverTitle,
   agentListLabels,
   agentThreadLinkTitle,
   agentTypeDisplayName,
@@ -163,6 +164,27 @@ describe('configured agent type names', () => {
     const qa = mk({ id: 'q', agentTypeId: 'qa-bot', metadata: { name: 'Moss' } })
     expect(agentMatchesQuery(qa, 'release', typeNames)).toBe(true)
     expect(agentMatchesQuery(qa, 'release')).toBe(false)
+  })
+
+  it('builds hover titles type first, with the name and ID but never the raw type id', () => {
+    const builder = mk({ id: 'b1', agentTypeId: 'engineer', metadata: { name: ' Fern ' } })
+    const unnamed = mk({ id: 'q1', agentTypeId: 'qa-bot', metadata: {} })
+    expect(agentHoverTitle(builder, typeNames)).toBe('Builder · Fern · b1')
+    expect(agentHoverTitle(unnamed, typeNames)).toBe('Release QA · q1')
+    expect(agentHoverTitle(unnamed)).toBe('Qa Bot · q1')
+    // A workflow agent's `<participant> · <stream title>` name reads like the chat header's handle.
+    expect(
+      agentHoverTitle(mk({ id: 'w1', agentTypeId: 'engineer', metadata: { name: 'engineer · Forward the client IP' } }))
+    ).toBe('Engineer · Engineer · Forward the client IP · w1')
+    expect(agentHoverTitle(mk({ id: 'g1', agentTypeId: 'general', metadata: { name: 'Gale' } }))).toBe(
+      'General Purpose agent · Gale · g1'
+    )
+    expect(
+      agentHoverTitle(mk({ id: 'k1', metadata: { name: 'Juniper' } }), typeNames, {
+        typeNote: 'via Assistant',
+        details: [undefined, '1 pending question'],
+      })
+    ).toBe('Consultant via Assistant · Juniper · k1 · 1 pending question')
   })
 
   it('titles an agent thread link without saying "agent" twice', () => {

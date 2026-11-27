@@ -4,6 +4,8 @@ import { isWorkflowTextTarget, workflowHistoryKey } from '../../lib/workflowEdit
 import { isWorkerAgentType } from '@ficus/shared'
 import { WorkflowBuilder } from './WorkflowBuilder'
 import { useStableRef } from '../../hooks/useStableRef'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
+import { agentTypeDisplayName } from '../../lib/agentDisplay'
 import { WorkflowGraph } from '../WorkflowGraph'
 import { WorkflowStructureEditor } from './WorkflowStructureEditor'
 import { useState, useEffect, useRef, useId } from 'react'
@@ -123,6 +125,7 @@ export function WorkflowEditor({
   }
   const { data: catalog = [] } = useQuery(queries.workflows.list())
   const { data: agentTypes = [] } = useQuery(queries.agentTypes.list())
+  const typeNames = useAgentTypeNames()
   const [raw, setRaw] = useState('')
   const [error, setError] = useState<string | null>(null)
   let definition = value?.kind === 'inline' ? value.definition : undefined
@@ -341,7 +344,7 @@ export function WorkflowEditor({
                           (agentType) => agentType.id === participant.agentTypeId && isWorkerAgentType(agentType)
                         ) && (
                           <option value={participant.agentTypeId} disabled>
-                            {participant.agentTypeId} (unavailable for workers)
+                            {agentTypeDisplayName(participant.agentTypeId, typeNames)} (unavailable for workers)
                           </option>
                         )}
                         {agentTypes.filter(isWorkerAgentType).map((agentType) => (
