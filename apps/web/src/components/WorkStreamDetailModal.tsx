@@ -22,18 +22,21 @@ import { MarkdownContent } from './MarkdownContent'
 import { MultilineResponseField } from './MultilineResponseField'
 import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
-import { StoredAssetList, WorkStreamFileList } from './WorkStreamFileCard'
+import { WorkStreamAttachments } from './WorkStreamFileCard'
 import { WaitAge, WorkStreamDependencies } from './WorkStreamDependencies'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
 import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
-import { getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentPrimaryLabel, typeFirstAgentLabels } from '../lib/agentDisplay'
+import { workflowStepDisplayName } from '../lib/workflowProgress'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
 import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
 import { WorkStreamQuestionWait } from './WorkStreamQuestionWait'
 import { WorkStreamTrackedResources } from './WorkStreamTrackedResources'
+import { WorkStreamProgress } from './WorkStreamProgress'
+import { WorkStreamRecentActivity } from './WorkStreamRecentActivity'
 import { actionErrorMessage } from '../lib/actionError'
 import { LoadingSurface, SkeletonBlock, SkeletonRows } from './loading/Skeleton'
 
@@ -216,6 +219,33 @@ export function WorkStreamDetailModal({
   })
   const assignee = workStream.assigneeAgentId ? resolvedAgentMap.get(workStream.assigneeAgentId) : null
   const owner = workStream.ownerAgentId ? resolvedAgentMap.get(workStream.ownerAgentId) : null
+  const matchAgent = (idOrPrefix: string) =>
+    resolvedAgentMap.get(idOrPrefix) ??
+    Array.from(resolvedAgentMap.values()).find((agent) => agent.id.startsWith(idOrPrefix))
+  // Agents are named type first; two of one type add the step they work on here, else their purpose.
+  const { data: run } = useQuery(queries.workflows.run(workStream.id))
+  const stepOfAgent = new Map<string, string>()
+  for (const attempt of run?.state.attempts ?? []) {
+    const agentId = run?.attemptAgents[attempt.id]
+    const step = run?.state.definition.steps.find((entry) => entry.id === attempt.stepId)
+    if (agentId) stepOfAgent.set(agentId, step ? workflowStepDisplayName(step) : attempt.stepId)
+  }
+  const shownAgents = [
+    assignee,
+    owner,
+    ...(workStream.agentIds ?? []).map(matchAgent),
+    ...Object.keys(metrics?.byAgent ?? {}).map((agentId) => resolvedAgentMap.get(agentId)),
+  ].filter((agent): agent is Agent => !!agent)
+  const agentLabels = typeFirstAgentLabels(shownAgents, (agent) => {
+    const step = stepOfAgent.get(agent.id)
+    return step ? [workStream.number ? `#${workStream.number}` : null, step].filter(Boolean).join(' · ') : undefined
+  })
+  const agentLabel = (agent: Agent) => agentLabels.get(agent.id) ?? getAgentPrimaryLabel(agent)
+  /** The name and purpose a type-first label leaves out, on hover. */
+  const agentTitle = (agent: Agent) =>
+    [agent.metadata?.name, agent.metadata?.purpose]
+      .filter((part) => typeof part === 'string' && part.trim())
+      .join(' · ') || undefined
   const displayMetadata = Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== 'nextSteps'))
   const hasMetadata = Object.keys(displayMetadata).length > 0
 
@@ -436,169 +466,7 @@ export function WorkStreamDetailModal({
           </div>
         )}
 
-        {/* What this stream waits on, above the details and description so blockers are visible at once. */}
-        <WorkStreamDependencies
-          dependsOn={workStream.dependsOn}
-          dependencies={workStream.dependencies}
-          waits={openWaits}
-          streams={resolvedWorkStreamMap}
-          onSelectWorkStream={onSelectWorkStream}
-        />
-
-        {/* Metadata summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-          <div>
-            <label className="text-xs font-medium text-secondary">Squad</label>
-            {squad ? (
-              <Link
-                to={`/squads/${slugFor(squad.id)}`}
-                className="block mt-0.5 text-accent-light hover:text-link-hover hover:underline"
-                onClick={onClose}
-              >
-                {squad.name}
-              </Link>
-            ) : (
-              <p className="text-muted mt-0.5 italic">Unknown squad</p>
-            )}
-          </div>
-          <div>
-            <label className="text-xs font-medium text-secondary">Assignee</label>
-            {assignee ? (
-              <div className="mt-0.5">
-                <Link
-                  to={`/squads/${slugFor(workStream.squadId)}?agent=${assignee.id}`}
-                  className="text-accent-light hover:text-link-hover hover:underline"
-                  onClick={onClose}
-                >
-                  {getAgentPrimaryLabel(assignee)}
-                </Link>
-                <p className="text-xs text-muted">{assignee.agentTypeId}</p>
-              </div>
-            ) : squad?.managerAgentId ? (
-              <div className="mt-0.5">
-                <Link
-                  to={`/squads/${slugFor(workStream.squadId)}?agent=${squad.managerAgentId}`}
-                  className="text-accent-light hover:text-link-hover hover:underline"
-                  onClick={onClose}
-                >
-                  Squad Manager
-                </Link>
-              </div>
-            ) : (
-              <p className="text-muted mt-0.5 italic">Unassigned</p>
-            )}
-          </div>
-          <div>
-            <label className="text-xs font-medium text-secondary">Owner</label>
-            {owner ? (
-              <div className="mt-0.5">
-                <Link
-                  to={`/squads/${slugFor(owner.squadId ?? workStream.squadId)}?agent=${owner.id}`}
-                  className="text-accent-light hover:text-link-hover hover:underline"
-                  onClick={onClose}
-                >
-                  {getAgentPrimaryLabel(owner)}
-                </Link>
-                <p className="text-xs text-muted">{owner.agentTypeId}</p>
-              </div>
-            ) : workStream.ownerAgentId ? (
-              <p className="font-mono text-xs text-secondary mt-0.5">{workStream.ownerAgentId.slice(0, 8)}</p>
-            ) : (
-              <p className="text-muted mt-0.5 italic">None</p>
-            )}
-          </div>
-          {workStream.requestingUserId && (
-            <div>
-              <label className="text-xs font-medium text-secondary">Requested By</label>
-              <p className="text-primary mt-0.5">
-                {workStream.requestingUserName || 'Unknown user'}{' '}
-                <span className="font-mono text-xs text-muted">[{workStream.requestingUserId.slice(0, 8)}]</span>
-              </p>
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-medium text-secondary">Runtime</label>
-            <p className="text-primary mt-0.5" title="Total agent execution runtime">
-              {formatElapsed(elapsed)}
-            </p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-secondary">Priority</label>
-            <p className="text-primary mt-0.5">
-              {workStream.priority ?? 'normal'}
-              {workStream.effectivePriority && workStream.effectivePriority !== (workStream.priority ?? 'normal') && (
-                <>
-                  {' '}
-                  — effective {workStream.effectivePriority}
-                  {workStream.effectivePriorityVia ? ` via ${workStream.effectivePriorityVia}` : ''}
-                </>
-              )}
-            </p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-secondary">Completion</label>
-            <div className="mt-0.5">
-              <Badge color={WS_COMPLETION_MODE_BADGE_COLORS[workStream.completionMode]}>
-                {WS_COMPLETION_MODE_LABELS[workStream.completionMode]}
-              </Badge>
-            </div>
-          </div>
-          {githubRepository && (
-            <div className="min-w-0">
-              <label className="text-xs font-medium text-secondary">Repository</label>
-              <div className="mt-0.5">
-                <a
-                  href={githubRepository.repositoryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-start gap-1.5 text-accent hover:underline wrap-break-word"
-                >
-                  <GitHubIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{githubRepository.repository}</span>
-                </a>
-              </div>
-            </div>
-          )}
-          {pullRequests.length > 0 && (
-            <div className="min-w-0">
-              <label className="text-xs font-medium text-secondary">Pull request</label>
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                {pullRequests.map((pullRequest) => {
-                  const number = (
-                    <span className="inline-flex items-center gap-1">
-                      <PullRequestIcon className="w-3.5 h-3.5 shrink-0" />#{pullRequest.number}
-                    </span>
-                  )
-                  return pullRequest.url ? (
-                    <a
-                      key={pullRequest.key}
-                      href={pullRequest.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-accent hover:underline"
-                    >
-                      {number}
-                    </a>
-                  ) : (
-                    <span key={pullRequest.key} className="inline-flex items-center gap-1.5 text-secondary">
-                      {number}
-                    </span>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-          {/* A full-width row inside the details grid: pending questions stay
-              immediately after these details. */}
-          <div className="col-span-2 min-w-0 sm:col-span-3">
-            <WorkStreamTrackedResources
-              workStreamId={workStream.id}
-              canUpdate={!permissionsLoading && can('workstreams:update')}
-            />
-          </div>
-        </div>
-
-        {/* Question waits take priority over usage statistics, even while metrics load. */}
+        {/* "Your answer": pending questions stay with the other callouts, before anything else. */}
         {questionWaits.length > 0 && (
           <section aria-label="Pending questions">
             <h3 className="text-xs font-medium text-secondary">Pending Questions</h3>
@@ -629,6 +497,37 @@ export function WorkStreamDetailModal({
           </section>
         )}
 
+        {/* What is this */}
+        {workStream.description && (
+          <div className="min-w-0 wrap-anywhere">
+            <label className="text-xs font-medium text-secondary">Description</label>
+            <div className="mt-3 text-sm leading-relaxed text-secondary">
+              <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
+            </div>
+          </div>
+        )}
+
+        {/* Next steps */}
+        {nextSteps && (
+          <div>
+            <label className="text-xs font-medium text-secondary">Next Steps</label>
+            <div className="mt-3 text-sm leading-relaxed text-secondary">
+              <MarkdownContent variant="document">{nextSteps}</MarkdownContent>
+            </div>
+          </div>
+        )}
+
+        {/* Where is it up to: the step list, what it waits on, then the full graph behind its disclosure. */}
+        <WorkStreamProgress stream={workStream} onOpenAgent={onClose} />
+        {/* What this stream waits on. */}
+        <WorkStreamDependencies
+          dependsOn={workStream.dependsOn}
+          dependencies={workStream.dependencies}
+          waits={openWaits}
+          streams={resolvedWorkStreamMap}
+          onSelectWorkStream={onSelectWorkStream}
+        />
+
         {/* Open waits not already shown in the respond panel or question section above */}
         {remainingWaits.length > 0 && (
           <div>
@@ -655,86 +554,6 @@ export function WorkStreamDetailModal({
           </div>
         )}
 
-        {/* Metrics */}
-        {metrics && (
-          <div className="border-t border-panel-border pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                <div>
-                  <span className="text-muted">Cost:</span>{' '}
-                  <span className="font-medium text-primary">{formatCost(metrics.cost)}</span>
-                </div>
-                <div>
-                  <span className="text-muted">Tokens:</span>{' '}
-                  <span className="font-medium text-primary">{formatTokens(metrics.tokens.total)}</span>
-                </div>
-                <div>
-                  <span className="text-muted">Executions:</span>{' '}
-                  <span className="font-medium text-primary">
-                    {metrics.executions.completed}/{metrics.executions.total}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <details className="mt-3 text-xs text-muted">
-              <summary className="cursor-pointer py-1 text-accent-light">Usage breakdown</summary>
-              <p className="mt-2">{formatTokenBreakdown(metrics.tokens)}</p>
-              {/* Per-agent breakdown */}
-              {Object.keys(metrics.byAgent).length > 0 && (
-                <div className="mt-3 pt-3 border-t border-th-border">
-                  <table className="ficus-table w-full text-xs">
-                    <thead>
-                      <tr className="text-muted">
-                        <th className="text-left font-medium pb-1">Agent</th>
-                        <th className="text-right font-medium pb-1">Tokens</th>
-                        <th className="text-right font-medium pb-1">Cost</th>
-                        <th className="text-right font-medium pb-1">Runs</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(metrics.byAgent).map(([agentId, agentMetrics]) => {
-                        const agent = resolvedAgentMap.get(agentId)
-                        return (
-                          <tr key={agentId} className="text-primary">
-                            <td className="py-0.5">
-                              {agent ? (
-                                <Link
-                                  to={`/squads/${slugFor(workStream.squadId)}?agent=${agentId}`}
-                                  className="text-accent-light hover:text-link-hover hover:underline"
-                                  onClick={onClose}
-                                >
-                                  {getAgentPrimaryLabel(agent)}
-                                </Link>
-                              ) : (
-                                <span className="font-mono">{agentId.slice(0, 8)}</span>
-                              )}
-                            </td>
-                            <td className="text-right py-0.5">{formatTokens(agentMetrics.tokens)}</td>
-                            <td className="text-right py-0.5">{formatCost(agentMetrics.cost)}</td>
-                            <td className="text-right py-0.5">{agentMetrics.executions}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </details>
-          </div>
-        )}
-        {metricsLoading && (
-          <LoadingSurface label="Loading work stream metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <SkeletonRows count={4}>
-              {(index) => (
-                <div key={index} className="space-y-2 rounded-md bg-surface-secondary p-2">
-                  <SkeletonBlock className="h-2.5 w-12" />
-                  <SkeletonBlock className={index % 2 ? 'h-4 w-16' : 'h-4 w-12'} />
-                </div>
-              )}
-            </SkeletonRows>
-          </LoadingSurface>
-        )}
-
         <WorkflowRunPanel
           key={focusWaitId ?? workStream.id}
           stream={workStream}
@@ -742,83 +561,171 @@ export function WorkStreamDetailModal({
           focusWaitId={focusWaitId}
         />
 
-        {/* Next steps */}
-        {nextSteps && (
+        {/* What happened last */}
+        <WorkStreamRecentActivity stream={workStream} onNavigate={onClose} />
+
+        {/* Everything else: who, how long, and what it tracks. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
           <div>
-            <label className="text-xs font-medium text-secondary">Next Steps</label>
-            <div className="mt-3 text-sm leading-relaxed text-secondary">
-              <MarkdownContent variant="document">{nextSteps}</MarkdownContent>
+            <label className="text-xs font-medium text-secondary">Squad</label>
+            {squad ? (
+              <Link
+                to={`/squads/${slugFor(squad.id)}`}
+                className="block mt-0.5 text-accent-light hover:text-link-hover hover:underline"
+                onClick={onClose}
+              >
+                {squad.name}
+              </Link>
+            ) : (
+              <p className="text-muted mt-0.5 italic">Unknown squad</p>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-medium text-secondary">Assignee</label>
+            {assignee ? (
+              <div className="mt-0.5">
+                <Link
+                  to={`/squads/${slugFor(workStream.squadId)}?agent=${assignee.id}`}
+                  className="text-accent-light hover:text-link-hover hover:underline"
+                  title={agentTitle(assignee)}
+                  onClick={onClose}
+                >
+                  {agentLabel(assignee)}
+                </Link>
+              </div>
+            ) : squad?.managerAgentId ? (
+              <div className="mt-0.5">
+                <Link
+                  to={`/squads/${slugFor(workStream.squadId)}?agent=${squad.managerAgentId}`}
+                  className="text-accent-light hover:text-link-hover hover:underline"
+                  onClick={onClose}
+                >
+                  Manager
+                </Link>
+              </div>
+            ) : (
+              <p className="text-muted mt-0.5 italic">Unassigned</p>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-medium text-secondary">Owner</label>
+            {owner ? (
+              <div className="mt-0.5">
+                <Link
+                  to={`/squads/${slugFor(owner.squadId ?? workStream.squadId)}?agent=${owner.id}`}
+                  className="text-accent-light hover:text-link-hover hover:underline"
+                  title={agentTitle(owner)}
+                  onClick={onClose}
+                >
+                  {agentLabel(owner)}
+                </Link>
+              </div>
+            ) : workStream.ownerAgentId ? (
+              <p className="font-mono text-xs text-secondary mt-0.5">{workStream.ownerAgentId.slice(0, 8)}</p>
+            ) : (
+              <p className="text-muted mt-0.5 italic">None</p>
+            )}
+          </div>
+          {workStream.requestingUserId && (
+            <div>
+              <label className="text-xs font-medium text-secondary">Requested by</label>
+              <p className="text-primary mt-0.5">{workStream.requestingUserName || 'Unknown user'}</p>
             </div>
-          </div>
-        )}
-
-        {/* Description */}
-        {workStream.description && (
-          <div className="min-w-0 wrap-anywhere">
-            <label className="text-xs font-medium text-secondary">Description</label>
-            <div className="mt-3 text-sm leading-relaxed text-secondary">
-              <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
-            </div>
-          </div>
-        )}
-
-        {/* Stored chat images and files shared by ID */}
-        {workStream.assetAttachments && workStream.assetAttachments.length > 0 && (
+          )}
           <div>
-            <label className="text-xs font-medium text-secondary">Stored inputs</label>
-            <StoredAssetList workStreamId={workStream.id} attachments={workStream.assetAttachments} />
+            <label className="text-xs font-medium text-secondary">Runtime</label>
+            <p className="text-primary mt-0.5" title="Total agent execution runtime">
+              {formatElapsed(elapsed)}
+            </p>
           </div>
-        )}
-
-        {/* Files */}
-        {workStream.files && workStream.files.length > 0 && (
           <div>
-            <label className="text-xs font-medium text-secondary">Files</label>
-            <WorkStreamFileList files={workStream.files} squadId={workStream.squadId} />
+            <label className="text-xs font-medium text-secondary">Priority</label>
+            <p className="text-primary mt-0.5">
+              {workStream.priority ?? 'normal'}
+              {workStream.effectivePriority && workStream.effectivePriority !== (workStream.priority ?? 'normal') && (
+                <>
+                  {' '}
+                  — effective {workStream.effectivePriority}
+                  {workStream.effectivePriorityVia ? ` via ${workStream.effectivePriorityVia}` : ''}
+                </>
+              )}
+            </p>
           </div>
-        )}
+        </div>
 
-        {/* Assigned Agents */}
-        {workStream.agentIds && workStream.agentIds.length > 0 && (
-          <div>
-            <label className="text-xs font-medium text-secondary">Assigned Agents</label>
-            <ul className="mt-0.5 space-y-1">
-              {workStream.agentIds.map((agentIdOrPrefix) => {
-                // Try to find matching agent (supports prefix matching)
-                const matchingAgent = Array.from(resolvedAgentMap.values()).find(
-                  (a) => a.id === agentIdOrPrefix || a.id.startsWith(agentIdOrPrefix)
+        {pullRequests.length > 0 && (
+          <div className="min-w-0">
+            <label className="text-xs font-medium text-secondary">Pull request</label>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {pullRequests.map((pullRequest) => {
+                const number = (
+                  <span className="inline-flex items-center gap-1">
+                    <PullRequestIcon className="w-3.5 h-3.5 shrink-0" />#{pullRequest.number}
+                  </span>
                 )
-                return (
-                  <li key={agentIdOrPrefix} className="text-xs">
-                    {matchingAgent ? (
-                      <Link
-                        to={`/squads/${slugFor(workStream.squadId)}?agent=${matchingAgent.id}`}
-                        className="text-accent-light hover:text-link-hover hover:underline"
-                        onClick={onClose}
-                      >
-                        {getAgentPrimaryLabel(matchingAgent)}
-                        <span className="text-muted ml-1">({matchingAgent.agentTypeId})</span>
-                      </Link>
-                    ) : (
-                      <span className="font-mono text-secondary">{agentIdOrPrefix.slice(0, 8)}</span>
-                    )}
-                  </li>
+                return pullRequest.url ? (
+                  <a
+                    key={pullRequest.key}
+                    href={pullRequest.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-accent hover:underline"
+                  >
+                    {number}
+                  </a>
+                ) : (
+                  <span key={pullRequest.key} className="inline-flex items-center gap-1.5 text-secondary">
+                    {number}
+                  </span>
                 )
               })}
-            </ul>
+            </div>
           </div>
         )}
+        <WorkStreamTrackedResources
+          workStreamId={workStream.id}
+          canUpdate={!permissionsLoading && can('workstreams:update')}
+          part="list"
+        />
 
-        <WorktreeCleanupSettings stream={workStream} />
+        {/* One list of every file the stream carries: stored inputs, workspace files and handoff files. */}
+        <WorkStreamAttachments stream={workStream} />
 
-        {/* Metadata */}
-        {(hasMetadata || workStream.branch || workStream.baseBranch) && (
-          <details className="border-t border-panel-border pt-4">
-            <summary className="cursor-pointer text-sm font-medium text-secondary hover:text-primary">
-              Technical details
-            </summary>
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              {' '}
+        {/* Everything operational, one click away. Nothing here is gone from the modal. */}
+        <details className="border-t border-panel-border pt-4" aria-label="Work stream details">
+          <summary className="cursor-pointer text-sm font-medium text-secondary hover:text-primary">Details</summary>
+          <div className="mt-4 space-y-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+              <div>
+                <label className="text-xs font-medium text-secondary">Completion</label>
+                <div className="mt-0.5">
+                  <Badge color={WS_COMPLETION_MODE_BADGE_COLORS[workStream.completionMode]}>
+                    {WS_COMPLETION_MODE_LABELS[workStream.completionMode]}
+                  </Badge>
+                </div>
+              </div>
+              {githubRepository && (
+                <div className="min-w-0">
+                  <label className="text-xs font-medium text-secondary">Repository</label>
+                  <div className="mt-0.5">
+                    <a
+                      href={githubRepository.repositoryUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-start gap-1.5 text-accent hover:underline wrap-break-word"
+                    >
+                      <GitHubIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>{githubRepository.repository}</span>
+                    </a>
+                  </div>
+                </div>
+              )}
+              {workStream.requestingUserId && (
+                <div>
+                  <label className="text-xs font-medium text-secondary">Requester ID</label>
+                  <p className="mt-0.5 font-mono text-xs text-secondary">{workStream.requestingUserId.slice(0, 8)}</p>
+                </div>
+              )}
               {workStream.branch && (
                 <div>
                   <label className="text-xs font-medium text-secondary">Branch</label>
@@ -832,58 +739,185 @@ export function WorkStreamDetailModal({
                 </div>
               )}
             </div>
-            {hasMetadata && <p className="mt-4 text-xs text-muted">Metadata</p>}
-            <dl className="mt-1 space-y-1.5">
-              {Object.entries(displayMetadata).map(([key, value]) => (
-                <div key={key}>
-                  <dt className="text-xs text-muted">{key}</dt>
-                  <dd className="text-xs font-mono text-secondary whitespace-pre-wrap wrap-break-word">
-                    {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        )}
 
-        {/* Wait history — the full auditable trail of EVERY resolved wait (all
-            types), default-collapsed. Resolving a wait never deletes it, so this
-            is the durable record of what the stream waited on and how each was
-            resolved (incl. manual waits, previously invisible in the UI). */}
-        {(() => {
-          const closed = (workStream.waitHistory ?? []).filter((wait) => wait.closedAt)
-          if (closed.length === 0) return null
-          return (
-            <details className="group">
-              <summary className="text-xs font-medium text-secondary cursor-pointer select-none">
-                Wait history ({closed.length})
-              </summary>
-              <ul className="mt-1 space-y-1.5">
-                {closed.map((wait) => (
-                  <li key={wait.id} className="text-xs bg-surface-secondary rounded-lg p-3">
-                    <div className="flex items-center gap-2">
-                      <WaitBadge wait={wait} history />
-                      {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
-                      {wait.resolution && (
-                        <span className="text-muted">{WAIT_RESOLUTION_LABELS[wait.resolution] ?? wait.resolution}</span>
-                      )}
-                      <span className="text-muted ml-auto shrink-0">
-                        {wait.closedAt ? new Date(wait.closedAt).toLocaleString() : ''}
+            {/* Metrics */}
+            {metrics && (
+              <div className="border-t border-panel-border pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-muted">Cost:</span>{' '}
+                      <span className="font-medium text-primary">{formatCost(metrics.cost)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted">Tokens:</span>{' '}
+                      <span className="font-medium text-primary">{formatTokens(metrics.tokens.total)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted">Executions:</span>{' '}
+                      <span className="font-medium text-primary">
+                        {metrics.executions.completed}/{metrics.executions.total}
                       </span>
                     </div>
-                    {(wait.resolutionNote || wait.message) && (
-                      <div className="mt-1 text-primary">
-                        <MarkdownContent variant="document">
-                          {wait.resolutionNote || wait.message || ''}
-                        </MarkdownContent>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )
-        })()}
+                  </div>
+                </div>
+                <details className="mt-3 text-xs text-muted">
+                  <summary className="cursor-pointer py-1 text-accent-light">Usage breakdown</summary>
+                  <p className="mt-2">{formatTokenBreakdown(metrics.tokens)}</p>
+                  {/* Per-agent breakdown */}
+                  {Object.keys(metrics.byAgent).length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-th-border">
+                      <table className="ficus-table w-full text-xs">
+                        <thead>
+                          <tr className="text-muted">
+                            <th className="text-left font-medium pb-1">Agent</th>
+                            <th className="text-right font-medium pb-1">Tokens</th>
+                            <th className="text-right font-medium pb-1">Cost</th>
+                            <th className="text-right font-medium pb-1">Runs</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(metrics.byAgent).map(([agentId, agentMetrics]) => {
+                            const agent = resolvedAgentMap.get(agentId)
+                            return (
+                              <tr key={agentId} className="text-primary">
+                                <td className="py-0.5">
+                                  {agent ? (
+                                    <Link
+                                      to={`/squads/${slugFor(workStream.squadId)}?agent=${agentId}`}
+                                      className="text-accent-light hover:text-link-hover hover:underline"
+                                      title={agentTitle(agent)}
+                                      onClick={onClose}
+                                    >
+                                      {agentLabel(agent)}
+                                    </Link>
+                                  ) : (
+                                    <span className="font-mono">{agentId.slice(0, 8)}</span>
+                                  )}
+                                </td>
+                                <td className="text-right py-0.5">{formatTokens(agentMetrics.tokens)}</td>
+                                <td className="text-right py-0.5">{formatCost(agentMetrics.cost)}</td>
+                                <td className="text-right py-0.5">{agentMetrics.executions}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </details>
+              </div>
+            )}
+            {metricsLoading && (
+              <LoadingSurface label="Loading work stream metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <SkeletonRows count={4}>
+                  {(index) => (
+                    <div key={index} className="space-y-2 rounded-md bg-surface-secondary p-2">
+                      <SkeletonBlock className="h-2.5 w-12" />
+                      <SkeletonBlock className={index % 2 ? 'h-4 w-16' : 'h-4 w-12'} />
+                    </div>
+                  )}
+                </SkeletonRows>
+              </LoadingSurface>
+            )}
+
+            {/* Assigned Agents */}
+            {workStream.agentIds && workStream.agentIds.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-secondary">Assigned Agents</label>
+                <ul className="mt-0.5 space-y-1">
+                  {workStream.agentIds.map((agentIdOrPrefix) => {
+                    // Try to find matching agent (supports prefix matching)
+                    const matchingAgent = matchAgent(agentIdOrPrefix)
+                    return (
+                      <li key={agentIdOrPrefix} className="text-xs">
+                        {matchingAgent ? (
+                          <Link
+                            to={`/squads/${slugFor(workStream.squadId)}?agent=${matchingAgent.id}`}
+                            className="text-accent-light hover:text-link-hover hover:underline"
+                            title={agentTitle(matchingAgent)}
+                            onClick={onClose}
+                          >
+                            {agentLabel(matchingAgent)}
+                          </Link>
+                        ) : (
+                          <span className="font-mono text-secondary">{agentIdOrPrefix.slice(0, 8)}</span>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <WorkStreamTrackedResources
+              workStreamId={workStream.id}
+              canUpdate={!permissionsLoading && can('workstreams:update')}
+              part="add"
+            />
+
+            <WorktreeCleanupSettings stream={workStream} />
+
+            {hasMetadata && (
+              <div>
+                <p className="text-xs text-muted">Metadata</p>
+                <dl className="mt-1 space-y-1.5">
+                  {Object.entries(displayMetadata).map(([key, value]) => (
+                    <div key={key}>
+                      <dt className="text-xs text-muted">{key}</dt>
+                      <dd className="text-xs font-mono text-secondary whitespace-pre-wrap wrap-break-word">
+                        {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
+            {/* Wait history — the full auditable trail of EVERY resolved wait (all
+                types), default-collapsed. Resolving a wait never deletes it, so this
+                is the durable record of what the stream waited on and how each was
+                resolved (incl. manual waits, previously invisible in the UI). */}
+            {(() => {
+              const closed = (workStream.waitHistory ?? []).filter((wait) => wait.closedAt)
+              if (closed.length === 0) return null
+              return (
+                <details className="group">
+                  <summary className="text-xs font-medium text-secondary cursor-pointer select-none">
+                    Wait history ({closed.length})
+                  </summary>
+                  <ul className="mt-1 space-y-1.5">
+                    {closed.map((wait) => (
+                      <li key={wait.id} className="text-xs bg-surface-secondary rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <WaitBadge wait={wait} history />
+                          {wait.flowAttemptId != null && (
+                            <span className="text-muted">Attempt {wait.flowAttemptId}</span>
+                          )}
+                          {wait.resolution && (
+                            <span className="text-muted">
+                              {WAIT_RESOLUTION_LABELS[wait.resolution] ?? wait.resolution}
+                            </span>
+                          )}
+                          <span className="text-muted ml-auto shrink-0">
+                            {wait.closedAt ? new Date(wait.closedAt).toLocaleString() : ''}
+                          </span>
+                        </div>
+                        {(wait.resolutionNote || wait.message) && (
+                          <div className="mt-1 text-primary">
+                            <MarkdownContent variant="document">
+                              {wait.resolutionNote || wait.message || ''}
+                            </MarkdownContent>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )
+            })()}
+          </div>
+        </details>
 
         {/* Footer: timestamps */}
         <div className="border-t border-th-border pt-3 flex items-center gap-4 text-xs text-muted">

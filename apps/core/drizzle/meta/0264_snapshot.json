@@ -1,5 +1,5 @@
 {
-  "id": "998fa16d-6161-4094-aa61-d2bac9e7c1e0",
+  "id": "91791c26-3ae1-4621-accd-490afa5c2282",
   "prevId": "9b0ac24d-3a20-443f-8419-00aa6edcee57",
   "version": "7",
   "dialect": "postgresql",
@@ -20383,15 +20383,15 @@
       "checkConstraints": {
         "squad_activity_lane_check": {
           "name": "squad_activity_lane_check",
-          "value": "\"squad_activity\".\"lane\" IN (10,20,21,22,30,31,32,40,41,50,60,61,70,71)"
+          "value": "\"squad_activity\".\"lane\" IN (10,20,21,22,30,31,40,41,50,60,61,70,71)"
         },
         "squad_activity_lane_kind_check": {
           "name": "squad_activity_lane_kind_check",
-          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"kind\"='subagent') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=32 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"kind\"='handoff') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"kind\"='pr') OR (\"squad_activity\".\"lane\"=71 AND \"squad_activity\".\"kind\"='issue')"
+          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"kind\"='subagent') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"kind\"='handoff') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"kind\"='pr') OR (\"squad_activity\".\"lane\"=71 AND \"squad_activity\".\"kind\"='issue')"
         },
         "squad_activity_lane_scope_check": {
           "name": "squad_activity_lane_scope_check",
-          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=32 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=71 AND \"squad_activity\".\"access_scope\"='workstreams')"
+          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=71 AND \"squad_activity\".\"access_scope\"='workstreams')"
         },
         "squad_activity_recipient_check": {
           "name": "squad_activity_recipient_check",
@@ -23244,6 +23244,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "label": {
+          "name": "label",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by_type": {
           "name": "created_by_type",
           "type": "varchar(32)",
@@ -23757,21 +23763,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_work_stream_flow_transitions_created": {
-          "name": "idx_work_stream_flow_transitions_created",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -24224,18 +24215,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "resolved_by_agent_id": {
-          "name": "resolved_by_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_by_user_id": {
-          "name": "resolved_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -24320,32 +24299,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "work_stream_waits_resolved_by_agent_id_agents_id_fk": {
-          "name": "work_stream_waits_resolved_by_agent_id_agents_id_fk",
-          "tableFrom": "work_stream_waits",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "resolved_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "work_stream_waits_resolved_by_user_id_users_id_fk": {
-          "name": "work_stream_waits_resolved_by_user_id_users_id_fk",
-          "tableFrom": "work_stream_waits",
-          "tableTo": "users",
-          "columnsFrom": [
-            "resolved_by_user_id"
           ],
           "columnsTo": [
             "id"

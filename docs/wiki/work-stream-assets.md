@@ -2,8 +2,9 @@
 
 Images and files that Ficus already stores — chat images, chat files, flow handoff
 files and inbox attachments — do not need to be copied into a workspace for an
-agent to use them. A work stream can share a stored chat image or chat file **by
-ID**, and every agent can **view** stored images with the `read_attachment` tool.
+agent to use them. A work stream can share a stored chat image, chat file or inbox
+attachment **by ID**, and every agent can **view** stored images with the
+`read_attachment` tool.
 Downloading stays available for the cases where a local tool really needs the bytes.
 
 ## Where images and files live
@@ -14,7 +15,7 @@ Downloading stays available for the cases where a local tool really needs the by
 | Chat file                               | An `agent_file_attachments` row; also copied into the receiving agent's private `chat-attachments/` | `read` on its private path, or `read_attachment` once shared with a stream      |
 | Handoff file (`advance --attach PATH`)  | A snapshot per flow attempt                                                                         | `read_attachment` (`workflow-attachment`)                                       |
 | Inbox attachment                        | An inbox attachment row                                                                             | `read_attachment` (`inbox-attachment`)                                          |
-| Stored-asset reference                  | A share of a chat image or chat file, by ID                                                         | `read_attachment` (`workstream-asset`)                                          |
+| Stored-asset reference                  | A share of a chat image, chat file or inbox attachment, by ID                                       | `read_attachment` (`workstream-asset`)                                          |
 | Legacy work-stream file (`--file PATH`) | A workspace path in `files`                                                                         | `read`                                                                          |
 
 Delivered chat images carry a short, model-only note naming their IDs, so an agent
@@ -27,6 +28,7 @@ inspecting message metadata. The stored message is unchanged.
 # As a stream input (everyone who can read the stream can see it):
 ficus workstream attachment add STREAM_ID --image IMAGE_ID
 ficus workstream attachment add STREAM_ID --agent-file FILE_ATTACHMENT_ID
+ficus workstream attachment add STREAM_ID --inbox-attachment INBOX_ATTACHMENT_ID --label 'Today’s squads page'
 
 # At creation, before the first worker is assigned (repeatable):
 ficus workstream create 'Fix the sign-in button' --squad SQUAD_ID --image IMAGE_ID
@@ -37,14 +39,35 @@ ficus workstream advance STREAM_ID --stdin --attach-image IMAGE_ID <<'FICUS_COMM
 FICUS_COMMAND
 
 ficus workstream attachment list STREAM_ID
+ficus workstream attachment label STREAM_ID ATTACHMENT_ID 'A better label'
+ficus workstream attachment label STREAM_ID ATTACHMENT_ID --clear
 ficus workstream attachment get STREAM_ID ATTACHMENT_ID --out SHARED_TASK_PATH
 ficus workstream attachment remove STREAM_ID ATTACHMENT_ID
 ```
 
-`attachment add` takes exactly one of `--image` or `--agent-file`; the two ID
-namespaces are never mixed. Repeating the same source returns the existing share.
-A share has its own ID: list, read and remove use the share ID, not the source ID.
-`attachment get` also downloads a handoff file of the same stream by its ID.
+`attachment add` takes exactly one of `--image`, `--agent-file` or
+`--inbox-attachment`; the three ID namespaces are never mixed. `workstream create`
+takes the same options (repeatable), and `advance` takes `--attach-image`,
+`--attach-agent-file` and `--attach-inbox-attachment`. Repeating the same source
+returns the existing share (a `--label` given with the repeat replaces its label).
+A share has its own ID: list, label, read and remove use the share ID, not the
+source ID. `attachment get` also downloads a handoff file of the same stream by its
+ID.
+
+A file that exists only in the shared workspace is not a stored file: record it on
+the stream by path with `ficus workstream update STREAM_ID -f PATH` (this replaces the
+stream's whole `files` list, so repeat `-f` for paths it already has).
+
+### Labels
+
+A share may carry an optional short label (at most 120 characters, one line of
+plain text) that clients show instead of its filename; the filename stays visible
+beside it. Labels are never required: unlabelled shares keep showing their
+filename. Set one with `--label` when sharing, or later with `attachment label`;
+`--clear` (or `{ "label": null }`) removes it. Anyone who may add or remove the
+share may change its label: the stream-edit rule for inputs, and the attempt's own
+agent while it is open for an attempt's result. A finished stream's labels no
+longer change, as its shares do not.
 
 A stream holds at most 10 stored inputs. An attempt's stored references and
 uploaded handoff files share that attempt's limit of 10. Stored references to
@@ -56,10 +79,14 @@ and removing them are both refused.
 API: `GET|POST /api/workstreams/:id/asset-attachments`,
 `GET|DELETE /api/workstreams/:id/asset-attachments/:attachmentId`,
 `POST /api/workflows/runs/:streamId/attempts/:attemptId/asset-attachments` with
-`{ "source": { "kind": "image", "imageId": "…" } }` or
-`{ "source": { "kind": "agent-file", "attachmentId": "…" } }`. Stream creation
+`{ "source": { "kind": "image", "imageId": "…" } }`,
+`{ "source": { "kind": "agent-file", "attachmentId": "…" } }` or
+`{ "source": { "kind": "inbox-attachment", "attachmentId": "…" } }`, and an optional
+`"label"`. `PATCH /api/workstreams/:id/asset-attachments/:attachmentId` with
+`{ "label": "…" }` or `{ "label": null }` sets or clears a label. Stream creation
 accepts the same sources as `assetReferences`. Stream detail returns
 `assetAttachments` (inputs); flow detail returns `assetAttachments` keyed by attempt.
+Each share carries `label` (null when unset); older servers omit it.
 
 ## Viewing without a download: `read_attachment`
 
@@ -99,6 +126,16 @@ Each source keeps its own rule; the tool and the reference API add no access:
   Staged (unsent), failed and avatar images are not shareable. An image counts as
   sent (`used`) once the agent's session has received its message, so an agent can
   share or re-read an image during the turn that delivered it.
+- An **inbox attachment** is shareable by anyone who may read it under the inbox
+  recipient rule (the rule `read_attachment` and `ficus inbox download` apply): an
+  agent its own inbox (or a squad inbox it may read), a person their own. An agent's
+  inbox stays in that agent's squad (a private agent's only with its owner), a
+  person's own inbox can be shared only by that person, and the system and voice
+  inboxes are not shareable. The file must be within the current per-file limit
+  (`INBOX_MAX_ATTACHMENT_BYTES`) and match its recorded size and digest. Its preview
+  type follows the filename, never the sender's declared type, and control
+  characters are dropped from the filename. Assignments and `read_attachment` mark a
+  share that came from an inbox as the sender's untrusted data.
 - **Reading** a share needs `workstreams:read` on the stream and an active share of
   exactly that stream. Handoff files follow the same stream rule; inbox attachments
   follow the inbox recipient rule; conversation images follow the chat image scope.
@@ -120,7 +157,8 @@ a model's context.
 
 A share never copies bytes. A `retained_assets` row records the source's existing
 blob (with its size and digest) and keeps it alive after the source row is deleted:
-deleting a chat image or a chat leaves bytes in place while a share needs them.
+deleting a chat image, a chat or an inbox attachment leaves bytes in place while a
+share needs them.
 When the last share goes (removal, stream deletion, squad deletion), the record is
 released; if the source row is gone too, that exact blob is unlinked. A failed unlink
 is retried by the agent-lifecycle convergence sweep, which also releases records
@@ -132,18 +170,22 @@ stay in place, and Core logs an error. Done or canceled streams, dormant or
 deleted agents and worktree cleanup do not expire shares. Worktree cleanup only ever
 considers registered worktree and repository paths, never Core-held bytes.
 
-Retained chat-file bytes count toward `INBOX_MAX_TOTAL_STORAGE_BYTES` once (only
-after their chat row is gone, when they stop counting as chat files). Settings →
+Retained chat-file and inbox-attachment bytes count toward
+`INBOX_MAX_TOTAL_STORAGE_BYTES` once (only after their own row is gone, when they stop
+counting as chat files or inbox attachments). Settings →
 Storage lists retained files and images separately. Images keep their existing
 classification and do not count toward the attachment quota.
 
 ## Clients
 
 Web and Farm reviews show each attempt's stored references as document tabs beside
-its handoff files, and the work-stream detail lists stored inputs. They are labelled
-by origin, never given a path, and fetched afresh on each view. Older clients ignore
-the new fields; legacy `files` and handoff snapshots are unchanged. The native mobile
-app needs its own update to show stored references.
+its handoff files, and the work-stream detail lists stored inputs. They show their
+label when they have one (else their filename), are described by origin (chat image,
+chat file or inbox attachment), never given a path, and fetched afresh on each view.
+Images render inline by their filename's type, whatever their origin. Older clients
+ignore the new fields; legacy `files` and handoff snapshots are unchanged. The native
+mobile app lists stored inputs by filename and previews them by type; showing labels
+there needs its own update.
 
 ## When a file is still the right tool
 

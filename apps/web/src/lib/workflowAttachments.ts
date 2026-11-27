@@ -1,5 +1,6 @@
 import {
   workflowAttachmentContentType,
+  workStreamAssetDisplayName,
   type WorkflowAttemptAttachment,
   type WorkStreamAssetAttachment,
 } from '@ficus/shared'
@@ -30,12 +31,14 @@ export function attachmentPreviewMode(
 
 /**
  * One document a review or a stream shows: a handoff file (uploaded with --attach, which has the
- * path it was attached from) or a stored chat image or file shared by ID (which has no path, and is
- * never given one).
+ * path it was attached from) or a stored chat image, chat file or inbox attachment shared by ID
+ * (which has no path, and is never given one).
  */
 export interface ReviewDocument {
   id: string
   filename: string
+  /** A stored share's optional label, shown instead of the filename; null otherwise. */
+  label: string | null
   byteSize: number
   attemptId: number | null
   /** What the row says under the name: the handoff file's path, or where a stored asset came from. */
@@ -47,6 +50,7 @@ export function handoffDocument(file: WorkflowAttemptAttachment): ReviewDocument
   return {
     id: file.id,
     filename: file.filename,
+    label: null,
     byteSize: file.byteSize,
     attemptId: file.attemptId,
     detail: file.path,
@@ -54,13 +58,45 @@ export function handoffDocument(file: WorkflowAttemptAttachment): ReviewDocument
   }
 }
 
+/**
+ * Where an attachment comes from, as the muted line under its name. Shared wording with the mobile
+ * work stream page, so both say the same thing about the same file.
+ */
+export const ATTACHMENT_SOURCE_LABELS = {
+  stored: 'From chat',
+  inbox: 'From inbox',
+  workspace: 'Workspace file',
+  handoff: 'From handoff',
+} as const
+
+/** What a document is called on screen: a stored share's label when it has one, else its filename. */
+export function attachmentTitle(document: Pick<ReviewDocument, 'filename' | 'label'>): string {
+  return workStreamAssetDisplayName(document)
+}
+
+/**
+ * Where a stored reference came from, for review tabs and the viewer: `ATTACHMENT_SOURCE_LABELS.inbox`
+ * for an inbox attachment, otherwise the chat image or chat file wording, with `scope` (for example
+ * "Work stream input") in front when given. A labelled share keeps its filename in view before it.
+ */
+export function storedAssetDetail(asset: WorkStreamAssetAttachment, scope?: string): string {
+  const origin =
+    asset.source.kind === 'inbox-attachment'
+      ? ATTACHMENT_SOURCE_LABELS.inbox
+      : `${scope ? 'stored' : 'Stored'} chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`
+  const named = asset.label ? `${asset.filename} · ${origin}` : origin
+  if (!scope) return named
+  return asset.source.kind === 'inbox-attachment' ? `${scope} · ${named}` : `${scope}: ${named}`
+}
+
 export function storedDocument(asset: WorkStreamAssetAttachment): ReviewDocument {
   return {
     id: asset.id,
     filename: asset.filename,
+    label: asset.label || null,
     byteSize: asset.byteSize,
     attemptId: asset.attemptId,
-    detail: asset.source.kind === 'image' ? 'Stored chat image, shared by ID' : 'Stored chat file, shared by ID',
+    detail: storedAssetDetail(asset),
     stored: true,
   }
 }
@@ -84,7 +120,26 @@ export function reviewDocuments(
     ]),
     ...inputs.map((asset) => ({
       ...storedDocument(asset),
-      detail: `Work stream input: stored chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`,
+      detail: storedAssetDetail(asset, 'Work stream input'),
     })),
   ]
 }
+
+/**
+ * How a stored input appears in the Attachments list: its label as the title when it has one (the
+ * filename then moves to the secondary line), and where it came from. Servers that predate labels omit
+ * the field, which reads as no label.
+ */
+export function storedInputPresentation(asset: Pick<WorkStreamAssetAttachment, 'filename' | 'source' | 'label'>): {
+  title: string
+  detail: string
+} {
+  const title = asset.label?.trim() || null
+  const source =
+    asset.source.kind === 'inbox-attachment' ? ATTACHMENT_SOURCE_LABELS.inbox : ATTACHMENT_SOURCE_LABELS.stored
+  return title ? { title, detail: `${asset.filename} · ${source}` } : { title: asset.filename, detail: source }
+}
+
+/** What the viewer says when a workspace file cannot be read: it is a live path, not a stored copy. */
+export const WORKSPACE_FILE_MISSING =
+  'This file could not be read. It may have been moved or deleted from the squad workspace.'

@@ -112,7 +112,7 @@ async function renderModal<T = string>(
   }
 }
 
-test('stored inputs list beside legacy files and open in the viewer from the reference endpoint', async () => {
+test('stored inputs and workspace files share one Attachments list, each with its source, and open in the viewer', async () => {
   const stream: WorkStream = {
     ...reviewWorkStream(),
     files: ['docs/plans/notes.md'],
@@ -142,19 +142,92 @@ test('stored inputs list beside legacy files and open in the viewer from the ref
       const card = [...body.querySelectorAll('button')].find((button) =>
         button.textContent?.includes('22222222-2222-4222-8222-222222222222.png')
       )!
-      const legacy = text.includes('docs/plans/notes.md')
+      const workspaceCard = [...body.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('notes.md')
+      )!
+      const workspace = { text: workspaceCard.textContent ?? '', title: workspaceCard.getAttribute('title') }
+      const lists = body.querySelectorAll('section[aria-label="Attachments"]').length
       const detail = card.textContent ?? ''
       await dom.act(async () => card.click())
       await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
       const image = body.querySelector<HTMLImageElement>('img[alt="22222222-2222-4222-8222-222222222222.png"]')
-      return { text, legacy, detail, src: image?.getAttribute('src') ?? null }
+      return { text, workspace, lists, detail, src: image?.getAttribute('src') ?? null }
     })
-    expect(result.text).toContain('Stored inputs')
-    expect(result.legacy).toBe(true)
+    expect(result.lists).toBe(1)
+    expect(result.text).not.toContain('Stored inputs')
+    // A workspace file shows its name and source; the full path stays reachable on the row.
+    expect(result.workspace.text).toContain('Workspace file')
+    expect(result.workspace.text).not.toContain('docs/plans/notes.md')
+    expect(result.workspace.title).toBe('docs/plans/notes.md')
     // An ID is never presented as a path.
-    expect(result.detail).toContain('Stored chat image, shared by ID')
+    expect(result.detail).toContain('From chat')
     expect(result.detail).not.toContain('/')
     expect(download.mock.calls[0]!.slice(0, 2)).toEqual(['ws-1', 'share-1'])
+    expect(result.src).toBe('blob:stored-input')
+  } finally {
+    create.mockRestore()
+    revoke.mockRestore()
+    download.mockRestore()
+  }
+})
+
+test('the Attachments list is hidden when the stream has no files', async () => {
+  const text = await renderModal(
+    { workStream: reviewWorkStream() },
+    (dom) => dom.window.document.body.textContent ?? ''
+  )
+  expect(text).not.toContain('Attachments')
+})
+
+test('an inbox attachment says "From inbox", and a label leads with the filename on the line below', async () => {
+  const share = {
+    workStreamId: 'ws-1',
+    attemptId: null,
+    contentType: 'image/png',
+    byteSize: 4,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }
+  const stream: WorkStream = {
+    ...reviewWorkStream(),
+    assetAttachments: [
+      {
+        ...share,
+        id: 'share-labelled',
+        source: { kind: 'inbox-attachment', attachmentId: '33333333-3333-4333-8333-333333333333' },
+        filename: 'IMG_0042.png',
+        label: 'Today’s squads page',
+      },
+      {
+        ...share,
+        id: 'share-plain',
+        source: { kind: 'inbox-attachment', attachmentId: '44444444-4444-4444-8444-444444444444' },
+        filename: 'IMG_0043.png',
+        label: null,
+      },
+    ],
+  }
+  const { client } = await import('../api/clientInstance')
+  const download = spyOn(client.workStreams, 'downloadAssetAttachment').mockResolvedValue(
+    new Uint8Array([137, 80, 78, 71])
+  )
+  const create = spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:stored-input')
+  const revoke = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  try {
+    const result = await renderModal({ workStream: stream }, async (dom) => {
+      const body = dom.window.document.body
+      const cards = [...body.querySelectorAll('button')].filter((button) => button.textContent?.includes('IMG_004'))
+      const rows = cards.map((card) => [...card.querySelectorAll('p')].map((line) => line.textContent))
+      await dom.act(async () => cards[0]!.click())
+      await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      const image = body.querySelector<HTMLImageElement>('img[alt="Today’s squads page"]')
+      return { rows, src: image?.getAttribute('src') ?? null }
+    })
+    expect(result.rows).toEqual([
+      ['Today’s squads page', 'IMG_0042.png · From inbox'],
+      ['IMG_0043.png', 'From inbox'],
+    ])
+    // An inbox image renders as an image, like a chat image.
+    expect(download.mock.calls[0]!.slice(0, 2)).toEqual(['ws-1', 'share-labelled'])
     expect(result.src).toBe('blob:stored-input')
   } finally {
     create.mockRestore()

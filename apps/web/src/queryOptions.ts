@@ -4,7 +4,7 @@ import { getRelayAvailability, getServerConnection } from './api/serverConnectio
 import { getPublicAppUrl, getPublicAppUrlStatus } from './api/publicUrl'
 import { getProductFeedbackStatus } from './api/productFeedback'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
-import { desktopQueryKeys, messageSearchQueryKeys } from './queryKeys'
+import { desktopQueryKeys, messageSearchQueryKeys, workStreamActivityQueryKeys } from './queryKeys'
 import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
 import { apiFetch, ApiError } from './api/client'
 import { channelLinkQueryKeys } from './queryKeys'
@@ -759,6 +759,18 @@ export const queries = {
         placeholderData: keepPreviousData,
         // Live through each squad's squadActivity topic (useGlobalActivityLive);
         // this poll is the fallback for a missed event or a dropped socket.
+        refetchInterval: 30_000,
+      }),
+    /**
+     * One stream's newest rows for its detail modal: the global feed's own request with the same
+     * default filters the Activity page uses for that stream, so the rows and wording match it.
+     */
+    workStreamRecent: (workStreamId: string) =>
+      queryOptions({
+        queryKey: workStreamActivityQueryKeys.recent(workStreamId),
+        queryFn: ({ signal }) =>
+          listGlobalActivity({ verbose: false, agentIds: [], kinds: [], workStreamId, limit: 12, signal }),
+        // Live through the stream's squadActivity topic (useWorkStreamRecentActivity); this is the fallback.
         refetchInterval: 30_000,
       }),
   },

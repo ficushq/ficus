@@ -38,8 +38,20 @@ const resourceIdentity = (resource: TrackedRow) => ({
  * Issues and pull requests a work stream follows. Reference material (the
  * stream's `sources`) deliberately stays out — only links that can produce
  * updates belong here.
+ *
+ * `part` splits the section for the work stream modal: `list` shows what is
+ * tracked and renders nothing while nothing is; `add` is the form to track a
+ * link (or "Nothing tracked" for someone who cannot add one). `all` is both.
  */
-export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workStreamId: string; canUpdate: boolean }) {
+export function WorkStreamTrackedResources({
+  workStreamId,
+  canUpdate,
+  part = 'all',
+}: {
+  workStreamId: string
+  canUpdate: boolean
+  part?: 'all' | 'list' | 'add'
+}) {
   const cache = useQueryClient()
   const [url, setUrl] = useState('')
   const [countsTowardDelivery, setCountsTowardDelivery] = useState(false)
@@ -69,11 +81,18 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
   const merged = deliveryPullRequests.filter((pullRequest) => pullRequest.state === 'merged').length
   // Only a pull request can count toward delivery, so the flag follows what the typed link resolves to.
   const deliverable = parseTrackedResourceUrl(url.trim())?.kind === 'pull_request'
+  const showList = part !== 'add'
+  const showAdd = part !== 'list'
+  const hasTracked = resources.length > 0 || deliveryPullRequests.length > 0
+  if (part === 'list' && !hasTracked) return null
+  const shownError = part === 'list' ? (remove.error ?? designate.error) : part === 'add' ? add.error : error
 
   return (
     <section aria-label="Tracked issues, PRs and alerts" className="space-y-1.5">
-      <h3 className="text-xs font-medium text-secondary">Tracked issues, PRs and alerts</h3>
-      {resources.length > 0 && (
+      <h3 className="text-xs font-medium text-secondary">
+        {part === 'add' ? 'Track an issue, PR or alert' : 'Tracked issues, PRs and alerts'}
+      </h3>
+      {showList && resources.length > 0 && (
         <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
           {resources.map((resource) => {
             const href = trackedResourceUrl(resource)
@@ -134,14 +153,14 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
           })}
         </ul>
       )}
-      {!resources.length && !canUpdate && <p className="text-xs text-muted">Nothing tracked</p>}
-      {deliveryPullRequests.length > 0 && (
+      {showAdd && !resources.length && !canUpdate && <p className="text-xs text-muted">Nothing tracked</p>}
+      {showList && deliveryPullRequests.length > 0 && (
         <p className="text-xs text-muted">
           Delivery: {merged} of {deliveryPullRequests.length} pull requests merged
         </p>
       )}
-      {hint && <p className="text-xs text-muted">{hint}</p>}
-      {canUpdate && (
+      {hint && (part === 'all' || (part === 'list') === hasTracked) && <p className="text-xs text-muted">{hint}</p>}
+      {showAdd && canUpdate && (
         <form
           className="flex items-center gap-2"
           onSubmit={(event) => {
@@ -177,9 +196,9 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
           </button>
         </form>
       )}
-      {error && (
+      {shownError && (
         <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
-          {error.message}
+          {shownError.message}
         </p>
       )}
     </section>

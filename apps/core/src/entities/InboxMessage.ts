@@ -34,6 +34,7 @@ import { BaseEntity } from './base'
 import type { InferSelectModel } from 'drizzle-orm'
 import { Agent, AgentDormantError, AgentTargetUnavailableError, AgentTerminatedError } from './Agent'
 import { acquireAgentQueueLock } from '../services/execution/agent-admission'
+import { sanitizeAttachmentDisplayText } from '../services/inbox/display-text'
 import { InboxAttachment } from './InboxAttachment'
 import { githubInboxCondition, readOutputInbox } from '../services/integrations/github/feedback-pass-read'
 import { visibleInboxCondition, withheldGitHubInboxCondition } from '../services/integrations/github/feedback-upgrade'
@@ -1193,15 +1194,7 @@ export function formatInboxMessageSender(m: InboxMessage): string {
   return parts || m.senderType
 }
 
-/** Escape a sender-supplied attachment name or type for display to a model: no markup, no control characters. */
-export function sanitizeAttachmentDisplayText(value: string): string {
-  return value.replace(/[\\`*_{}[\]()<>#+!|~]/g, '\\$&').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => {
-    if (character === '\n') return '\\n'
-    if (character === '\r') return '\\r'
-    if (character === '\t') return '\\t'
-    return `\\u${character.codePointAt(0)!.toString(16).padStart(4, '0')}`
-  })
-}
+export { sanitizeAttachmentDisplayText }
 
 function formatInboxMessageAttachments(message: InboxMessage): string {
   if (!message.attachments?.length) return ''

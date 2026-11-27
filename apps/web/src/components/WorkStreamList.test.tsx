@@ -1464,7 +1464,7 @@ describe('WorkStreamDetailModal', async () => {
     }
   }
 
-  test('a dependency wait shows the blocker once, above the description, with no Open Waits row', async () => {
+  test('a dependency wait shows the blocker once, with progress below the description, and no Open Waits row', async () => {
     await inspectDetail(workStream({ dependsOn: [blocker.id], openWaits: [dependencyWait] }), [blocker], (document) => {
       const html = document.body.innerHTML
       const dependencies = document.querySelector('section[aria-label="Dependencies"]')!
@@ -1478,7 +1478,9 @@ describe('WorkStreamDetailModal', async () => {
       expect(row.querySelector('time')!.getAttribute('title')).toBe(now.toLocaleString())
       expect(html.split('#489 · Make decision notes optional')).toHaveLength(2)
       expect(html).not.toContain('Open Waits')
-      expect(html.indexOf('aria-label="Dependencies"')).toBeLessThan(html.indexOf('>Description</label>'))
+      // What the stream waits on sits with where it is up to, after what it is.
+      expect(html.indexOf('aria-label="Dependencies"')).toBeGreaterThan(html.indexOf('>Description</label>'))
+      expect(html.indexOf('>Description</label>')).toBeGreaterThan(-1)
     })
   })
 

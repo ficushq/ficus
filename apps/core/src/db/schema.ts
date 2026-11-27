@@ -1867,7 +1867,7 @@ export const workflowAttemptAttachments = pgTable(
 )
 
 /**
- * A stored chat image or chat file that one or more work streams reference. It names bytes that
+ * A stored chat image, chat file or inbox attachment that one or more work streams reference. It names bytes that
  * already exist (the source's own blob) and keeps them alive after the source row is deleted; it
  * never holds a copy. One row per source. Deleted once no active share uses it: if the source row is
  * gone by then, its bytes go too (`deleteRequestedAt` marks a deletion the cleanup sweep retries).
@@ -1876,9 +1876,12 @@ export const retainedAssets = pgTable(
   'retained_assets',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    sourceKind: varchar('source_kind', { length: 32 }).notNull().$type<'image' | 'agent-file'>(),
+    sourceKind: varchar('source_kind', { length: 32 }).notNull().$type<'image' | 'agent-file' | 'inbox-attachment'>(),
     sourceId: uuid('source_id').notNull(),
-    /** Server-derived storage locator: the image's stored filename, or the chat file's owning agent id. */
+    /**
+     * Server-derived storage locator: the image's stored filename, the chat file's owning agent id, or
+     * the inbox attachment's message id.
+     */
     blobOwner: varchar('blob_owner', { length: 255 }).notNull(),
     filename: varchar('filename', { length: 255 }).notNull(),
     contentType: varchar('content_type', { length: 255 }).notNull(),
@@ -1912,11 +1915,13 @@ export const workStreamAssetAttachments = pgTable(
       .references(() => workStreams.id, { onDelete: 'cascade' }),
     attemptId: integer('attempt_id'),
     retainedAssetId: uuid('retained_asset_id').references(() => retainedAssets.id, { onDelete: 'set null' }),
-    sourceKind: varchar('source_kind', { length: 32 }).notNull().$type<'image' | 'agent-file'>(),
+    sourceKind: varchar('source_kind', { length: 32 }).notNull().$type<'image' | 'agent-file' | 'inbox-attachment'>(),
     sourceId: uuid('source_id').notNull(),
     filename: varchar('filename', { length: 255 }).notNull(),
     contentType: varchar('content_type', { length: 255 }).notNull(),
     byteSize: integer('byte_size').notNull(),
+    /** An optional short label shown instead of the filename; null when there is none. */
+    label: varchar('label', { length: 120 }),
     /** Provenance only: `agent` or `user` and its id. */
     createdByType: varchar('created_by_type', { length: 32 }).notNull(),
     createdById: varchar('created_by_id', { length: 200 }).notNull(),
@@ -2002,7 +2007,7 @@ export const workStreamWaits = pgTable(
     resolution: text('resolution'),
     resolutionNote: text('resolution_note'),
     // Who answered a typed task input (`request-input`): the owner agent or the person, recorded by the
-    // input decision from migration 0264 on. Null means not recorded: every other close path (flow
+    // input decision from migration 0265 on. Null means not recorded: every other close path (flow
     // supersession, terminal streams, generic unblock) and older rows, never "nobody".
     resolvedByAgentId: uuid('resolved_by_agent_id').references(() => agents.id, { onDelete: 'set null' }),
     resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),

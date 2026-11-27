@@ -1,6 +1,14 @@
 import type { ThemePresetScope } from '@ficus/shared'
 // Query keys now live in @ficus/client-core so web and mobile share one definition.
 export { queryKeys } from '@ficus/client-core'
+/**
+ * One work stream's newest Activity rows, for its detail modal. Under the Activity feed's `activity`
+ * prefix, so anything that refreshes the whole feed (a reconnect) refreshes these too.
+ */
+export const workStreamActivityQueryKeys = {
+  recent: (workStreamId: string) => ['activity', 'work-stream', workStreamId] as const,
+}
+
 export const desktopQueryKeys = {
   notifications: () => ['desktop', 'notifications'] as const,
   enabled: () => ['desktop', 'notifications-enabled'] as const,

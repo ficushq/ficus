@@ -11,7 +11,7 @@ import {
 /**
  * Work settled without a person, counted only from recorded Activity rows, so each count is exactly
  * the rows `GET /api/activity?settled=<kind>&since=<time>` lists for the same viewer. Nothing is
- * estimated: a question whose answering agent was not recorded (before migration 0264, or closed by
+ * estimated: a question whose answering agent was not recorded (before migration 0265, or closed by
  * any path other than the owner's input decision) is not counted.
  */
 

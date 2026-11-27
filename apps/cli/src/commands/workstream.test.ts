@@ -166,7 +166,7 @@ describe('workstream CLI commands', () => {
     expect(outputError).not.toHaveBeenCalled()
   })
 
-  it('create shares stored chat images, then chat files, as inputs by ID', async () => {
+  it('create shares stored chat images, then chat files, then inbox attachments, as inputs by ID', async () => {
     await run([
       'workstream',
       'create',
@@ -179,6 +179,8 @@ describe('workstream CLI commands', () => {
       'file-1',
       '--image',
       'image-2',
+      '--inbox-attachment',
+      'inbox-file-1',
     ])
     expect(apiPost).toHaveBeenLastCalledWith(
       '/api/workstreams',
@@ -187,6 +189,7 @@ describe('workstream CLI commands', () => {
           { kind: 'image', imageId: 'image-1' },
           { kind: 'image', imageId: 'image-2' },
           { kind: 'agent-file', attachmentId: 'file-1' },
+          { kind: 'inbox-attachment', attachmentId: 'inbox-file-1' },
         ],
       })
     )
