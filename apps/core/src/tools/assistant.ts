@@ -503,7 +503,7 @@ export function createAssistantTools(
       async (input) => {
         const { user } = await access()
         if (input.view === 'actions') {
-          const actions = await listPendingActionsForIdentity(user, { includeDeliveryGates: true })
+          const actions = await listPendingActionsForIdentity(user)
           return { actions: actions.slice(0, input.limit ?? 50), total: actions.length }
         }
         return db

@@ -32,6 +32,23 @@ describe('squadsResource', () => {
     expect(calls[0].path).toBe('/workstreams?squadId=sq-1&statuses=queued,active')
   })
 
+  test('listAllWorkStreams lists across squads with optional statuses', async () => {
+    const { t, calls } = mockTransport(() => [])
+    await squadsResource(t).listAllWorkStreams()
+    await squadsResource(t).listAllWorkStreams(['queued', 'active'])
+    expect(calls.map((call) => call.path)).toEqual(['/workstreams', '/workstreams?statuses=queued,active'])
+  })
+
+  test('listAllWorkStreams can respect attention and omit descriptions, as a feed does', async () => {
+    const { t, calls } = mockTransport(() => [])
+    await squadsResource(t).listAllWorkStreams(['queued', 'active'], { respectAttention: true, omitDescription: true })
+    await squadsResource(t).listAllWorkStreams(undefined, { respectAttention: true })
+    expect(calls.map((call) => call.path)).toEqual([
+      '/workstreams?statuses=queued,active&respectAttention=true&omitDescription=true',
+      '/workstreams?respectAttention=true',
+    ])
+  })
+
   test('getWorkStream fetches a single work stream by ID', async () => {
     const mockWorkStream = { id: 'ws-1', title: 'Test work stream' } as WorkStream
     const { t, calls } = mockTransport((path) => {
