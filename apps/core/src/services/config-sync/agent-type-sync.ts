@@ -8,6 +8,17 @@ import { AgentType } from '../../entities/AgentType'
 import { ConfigSync, type SyncResult } from './ConfigSync'
 import { loadSharedPromptFiles } from './shared-prompt-sync'
 import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
+import { parseToolSearchPolicy, unknownToolSearchNames, type ToolSearchPolicy } from '../agent/tool-search/labels'
+
+/** The tool-search keys of a parsed `tools` object, or null when it sets none. */
+function toolSearchOf(tools: AgentTypeYaml['tools']): ToolSearchPolicy | null {
+  if (!tools) return null
+  const policy: ToolSearchPolicy = {}
+  if (tools.search) policy.search = tools.search
+  if (tools.direct) policy.direct = tools.direct
+  if (tools.deferred) policy.deferred = tools.deferred
+  return Object.keys(policy).length > 0 ? policy : null
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,7 +53,7 @@ export interface AgentTypeYaml {
   tools?: {
     allow?: string[]
     deny?: string[]
-  }
+  } & ToolSearchPolicy
   earlyMarginTokens?: number
   inFlightMarginTokens?: number
   heartbeat?: HeartbeatYaml
@@ -224,6 +235,22 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
           throw new YamlValidationError("AgentType: 'tools.deny' must be an array")
         }
         agentType.tools.deny = tools.deny as string[]
+      }
+
+      let toolSearch: ToolSearchPolicy | undefined
+      try {
+        toolSearch = parseToolSearchPolicy(tools)
+      } catch (error) {
+        throw new YamlValidationError(`AgentType: ${(error as Error).message}`)
+      }
+      if (toolSearch) {
+        Object.assign(agentType.tools, toolSearch)
+        const unknown = unknownToolSearchNames(toolSearch)
+        if (unknown.length > 0) {
+          this.log.warn(
+            `agent type '${agentType.id}': tools.direct/tools.deferred name no known Ficus tool: ${unknown.join(', ')} (ignored unless an integration or extension provides it)`
+          )
+        }
       }
     }
 
@@ -429,6 +456,7 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
       extensions: parsed.extensions ?? null,
       toolsAllow: parsed.tools?.allow ?? null,
       toolsDeny: parsed.tools?.deny ?? null,
+      toolSearch: toolSearchOf(parsed.tools),
       extraScopes: parsed.scopes ?? null,
       integrationCapabilities: parsed.integrations ?? null,
       earlyMarginTokens: parsed.earlyMarginTokens ?? null,
@@ -450,6 +478,7 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
       extensions: (row.extensions as string[]) ?? null,
       toolsAllow: (row.toolsAllow as string[]) ?? null,
       toolsDeny: (row.toolsDeny as string[]) ?? null,
+      toolSearch: (row.toolSearch as ToolSearchPolicy | null) ?? null,
       extraScopes: (row.extraScopes as string[]) ?? null,
       integrationCapabilities: (row.integrationCapabilities as AgentTypeIntegrationPolicyV1) ?? null,
       earlyMarginTokens: (row.earlyMarginTokens as number | null) ?? null,
@@ -489,10 +518,12 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
     // Convert flat toolsAllow/toolsDeny back to nested tools: { allow, deny }
     const toolsAllow = row.toolsAllow as string[] | null
     const toolsDeny = row.toolsDeny as string[] | null
-    if (toolsAllow || toolsDeny) {
+    const toolSearch = row.toolSearch as ToolSearchPolicy | null
+    if (toolsAllow || toolsDeny || toolSearch) {
       const tools: Record<string, unknown> = {}
       if (toolsAllow) tools.allow = toolsAllow
       if (toolsDeny) tools.deny = toolsDeny
+      if (toolSearch) Object.assign(tools, toolSearch)
       obj.tools = tools
     }
 

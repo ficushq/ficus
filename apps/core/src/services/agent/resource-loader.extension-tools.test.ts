@@ -66,4 +66,23 @@ describe('FicusResourceLoader extension tools', () => {
     })
     expect(result.content[0]!.text).toBe('plain')
   })
+
+  it('labels extension tools for tool search without dropping their wrapper, and appends the prompt section', async () => {
+    const value = `CANARY_SECRET_${randomUUID()}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const loader = await FicusResourceLoader.create('system prompt', [], [writeEchoExtension()], (tool) =>
+      wrapToolWithOutputRedaction(tool, safety)
+    )
+    expect(loader.getExtensionTools().map((tool) => tool.name)).toEqual(['ext_echo'])
+    loader.relabelExtensionTools((tool) => (tool.name === 'ext_echo' ? { ...tool, exposure: 'deferred' } : tool))
+    const extension = loader.getExtensions().extensions.find((candidate) => candidate.tools.has('ext_echo'))!
+    const relabelled = extension.tools.get('ext_echo')!.definition
+    expect(relabelled.exposure).toBe('deferred')
+    const result = await (relabelled as unknown as Executable).execute('call-4', { text: value })
+    expect(result.content[0]!.text).toBe('[REDACTED_SECRET_ENV:SYNTHETIC_KEY]')
+
+    expect(loader.getSystemPrompt()).toBe('system prompt')
+    loader.setSystemPromptSuffix('## Tools loaded on demand')
+    expect(loader.getSystemPrompt()).toBe('system prompt\n\n## Tools loaded on demand')
+  })
 })

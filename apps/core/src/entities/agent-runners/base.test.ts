@@ -3735,6 +3735,18 @@ describe('buildBaseSessionOptions tool policy', () => {
 
     expect(options.tools.allow).toBeUndefined()
     expect(options.tools.deny).toBeUndefined()
+    expect(options.tools.toolSearch).toBeUndefined()
+  })
+
+  it("passes the agent type's tool-search override to the session", async () => {
+    const runner = makeRunner({ toolSearch: { search: 'off', direct: ['browser_*'] } })
+
+    const options = await (runner as any).buildBaseSessionOptions({
+      ...baseOpts,
+      tools: { core: [], available: [] },
+    })
+
+    expect(options.tools.toolSearch).toEqual({ search: 'off', direct: ['browser_*'] })
   })
 })
 

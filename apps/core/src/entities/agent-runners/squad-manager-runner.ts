@@ -265,7 +265,7 @@ export class SquadManagerRunner extends AgentRunner {
             undefined,
             { allowBlocking: false }
           )
-    const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
+    const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id, executionId: this.execution.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
     const todoTools = createSquadTodoTools(this.squad.id, this.agent.id)
     // The consultant's prompt (consultant.yaml) already tells it to set a purpose, but the
@@ -323,6 +323,7 @@ export class SquadManagerRunner extends AgentRunner {
             version: 1,
             squadId: this.squad.id,
             environmentToolNames: effectiveEnvironmentTools.map((tool) => tool.name),
+            ...(this.agentType.toolSearch ? { toolSearch: this.agentType.toolSearch } : {}),
             executionId: this.execution.id,
           },
         }),

@@ -14,8 +14,9 @@
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
 import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import { Agent } from '../entities/Agent'
-import { InboxMessage } from '../entities/InboxMessage'
+import { InboxMessage, type SendInboxMessageInput } from '../entities/InboxMessage'
 import { WorkStream } from '../entities/WorkStream'
 import { createLogger } from '../lib/infra/logger'
 
@@ -33,6 +34,8 @@ const NotifyContactSchema = Type.Object({
 
 interface NotifyContactToolContext {
   agentId: string
+  /** The running execution; with the tool call ID it makes each notification exactly-once. */
+  executionId?: string
 }
 
 // Decide where an agent's notify_contact message should go. notify_contact is agent→agent
@@ -79,13 +82,47 @@ export function createNotifyContactTool(ctx: NotifyContactToolContext): ToolDefi
       'Do NOT use for routine status updates.',
     parameters: NotifyContactSchema,
     async execute(
-      _toolCallId: string,
+      toolCallId: string,
       params: { title: string; message: string; url?: string }
     ): Promise<AgentToolResult<unknown>> {
+      // The same tool call executed again returns its first notification instead of sending another.
+      const idempotencyKey =
+        ctx.executionId && toolCallId
+          ? `notify-contact:${toolCallIdempotencyKey(ctx.agentId, ctx.executionId, toolCallId)}`
+          : undefined
       // Build message content with optional URL
       let content = params.message
       if (params.url) {
         content += `\n\n[Link](${params.url})`
+      }
+
+      const previous = idempotencyKey ? await InboxMessage.findByIdempotencyKey(idempotencyKey) : null
+      if (previous && (previous.subject !== params.title || previous.content !== content)) {
+        const error = 'This tool call already sent a different notification; nothing was sent.'
+        return { content: [{ type: 'text' as const, text: `Error: ${error}` }], details: { error } }
+      }
+      if (previous) {
+        const where =
+          previous.recipientType === 'system'
+            ? 'system inbox'
+            : previous.metadata.routedTo === 'work_stream_owner'
+              ? 'work stream owner'
+              : 'squad manager'
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `This tool call already sent its notification to the ${where}; nothing was sent again: "${previous.subject ?? params.title}"`,
+            },
+          ],
+          details: {
+            success: true,
+            routedTo: previous.metadata.routedTo,
+            workStreamId: previous.metadata.workStreamId,
+            messageId: previous.id,
+            reused: true,
+          },
+        }
       }
 
       const target = await resolveNotifyTarget(ctx.agentId)
@@ -94,7 +131,7 @@ export function createNotifyContactTool(ctx: NotifyContactToolContext): ToolDefi
       const routedTo = target.kind === 'agent' ? target.routedTo : 'system'
       const workStreamId = target.kind === 'agent' ? target.workStreamId : undefined
 
-      await InboxMessage.send({
+      const input: SendInboxMessageInput = {
         recipientType,
         recipientId,
         senderType: 'agent',
@@ -102,7 +139,10 @@ export function createNotifyContactTool(ctx: NotifyContactToolContext): ToolDefi
         subject: params.title,
         content,
         metadata: { url: params.url, routedTo, workStreamId },
-      })
+      }
+      const message = idempotencyKey
+        ? (await InboxMessage.sendOnce(input, idempotencyKey)).message
+        : await InboxMessage.send(input)
 
       log.info(`notify_contact:${ctx.agentId}: Sent to ${routedTo}: ${params.title}`)
 
@@ -114,7 +154,7 @@ export function createNotifyContactTool(ctx: NotifyContactToolContext): ToolDefi
           : 'system inbox'
       return {
         content: [{ type: 'text' as const, text: `Notification sent to ${where}: "${params.title}"` }],
-        details: { success: true, routedTo, workStreamId },
+        details: { success: true, routedTo, workStreamId, messageId: message.id },
       }
     },
   }

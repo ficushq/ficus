@@ -19,7 +19,8 @@ import {
 import { assignRole, createTestRole, createTestUser, cleanupTestRbac } from '../test-utils'
 import { ensureAssistantConversationAgent } from './assistant-conversation-agent'
 import { forwardAssistantUpdates, linkAssistantSummaries } from './assistant-conversation-updates'
-import { createAssistantTools, assistantToolClientId } from '../tools/assistant'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
+import { createAssistantTools } from '../tools/assistant'
 
 const prefix = `assistant-durable-${randomUUID()}`
 const conversations: string[] = [],
@@ -273,10 +274,10 @@ test('every in-process tool rejects another owner’s conversation and revoked u
 test('tool call idempotency is stable but fenced by execution and agent', () => {
   const agent = randomUUID(),
     execution = randomUUID()
-  expect(assistantToolClientId(agent, execution, 'call')).toBe(assistantToolClientId(agent, execution, 'call'))
-  expect(assistantToolClientId(agent, execution, 'call')).not.toBe(assistantToolClientId(agent, randomUUID(), 'call'))
-  expect(assistantToolClientId(agent, execution, 'call')).not.toBe(
-    assistantToolClientId(randomUUID(), execution, 'call')
+  expect(toolCallIdempotencyKey(agent, execution, 'call')).toBe(toolCallIdempotencyKey(agent, execution, 'call'))
+  expect(toolCallIdempotencyKey(agent, execution, 'call')).not.toBe(toolCallIdempotencyKey(agent, randomUUID(), 'call'))
+  expect(toolCallIdempotencyKey(agent, execution, 'call')).not.toBe(
+    toolCallIdempotencyKey(randomUUID(), execution, 'call')
   )
 })
 

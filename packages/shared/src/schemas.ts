@@ -617,6 +617,10 @@ export const sendInboxMessageSchema = z.object({
   // Only the agent that received the request may report, and only on local sends.
   assistantTaskStatus: reportableAssistantTaskStatusSchema.optional(),
   attachmentIds: z.array(z.string().min(1)).max(100).optional(),
+  // Local sends: at most one message per key and sender. A repeated send with the same key returns
+  // the first message (with `idempotentReplay: true`) instead of sending again. The `ficus` CLI
+  // derives it from the agent tool call that runs it; see packages/shared/src/node/tool-call-key.ts.
+  idempotencyKey: z.string().min(1).max(200).optional(),
   // Federation signed-send (Slice 5). agentKey/agentSig authorize authorship; the client
   // envelope id becomes the idempotency/dedup key; inReplyToEnvelopeId is the WIRE reply
   // target (distinct from inReplyTo, which is a LOCAL inbox-message id).

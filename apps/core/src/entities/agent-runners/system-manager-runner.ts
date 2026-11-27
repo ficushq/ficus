@@ -243,6 +243,7 @@ export class SystemManagerRunner extends AgentRunner {
               version: 1,
               squadId: null,
               environmentToolNames: effectiveEnvironmentTools.map((tool) => tool.name),
+              ...(this.agentType.toolSearch ? { toolSearch: this.agentType.toolSearch } : {}),
               executionId: this.execution.id,
             },
           }),

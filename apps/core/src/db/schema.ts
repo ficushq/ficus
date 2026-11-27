@@ -324,6 +324,8 @@ export const agentTypes = pgTable('agent_types', {
   extensions: text('extensions').array(),
   toolsAllow: text('tools_allow').array(),
   toolsDeny: text('tools_deny').array(),
+  /** Tool-search override (`tools.search`, `tools.direct`, `tools.deferred`); see services/agent/tool-search. */
+  toolSearch: jsonb('tool_search').$type<import('@ficus/shared').AgentTypeToolSearchPolicy>(),
   extraScopes: text('extra_scopes').array(),
   integrationCapabilities: jsonb('integration_capabilities'),
   earlyMarginTokens: integer('early_margin_tokens'),
@@ -2675,9 +2677,14 @@ export const agentQuestions = pgTable(
     // Set when the answer was passed on because the asking attempt had already finished or been
     // replaced: who received it and why (AgentQuestionAnswerForward).
     answerDeliveryForward: jsonb('answer_delivery_forward').$type<AgentQuestionAnswerForward>(),
+    // The ask_human tool call that created the question (a digest of agent, execution and tool call
+    // ID). The same call executed again finds this row instead of asking twice. Null for questions
+    // created outside a tool call and for rows created before this was recorded.
+    idempotencyKey: varchar('idempotency_key', { length: 200 }),
   },
   (table) => [
     index('idx_agent_questions_agent_status').on(table.agentId, table.status),
+    uniqueIndex('uq_agent_questions_idempotency_key').on(table.idempotencyKey).concurrently(),
     index('idx_agent_questions_answer_delivery_due')
       .on(table.answerDeliveryNextAttemptAt)
       .where(sql`${table.answerDeliveryStatus} IN ('pending', 'delivering')`),

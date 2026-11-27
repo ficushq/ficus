@@ -740,6 +740,64 @@ describe('SubagentRunner.createSession squad workspace', () => {
     expect(offered.filter((name: string) => name.startsWith('bigbrain_'))).toEqual(['bigbrain_search_vault'])
   })
 
+  it.each([
+    {
+      label: "the parent's override",
+      parentToolSearch: { search: 'on', direct: ['browser_*'] },
+      expected: { search: 'on', direct: ['browser_*'] },
+    },
+    { label: 'the global defaults when the parent has no override', parentToolSearch: undefined, expected: null },
+    {
+      label: 'the global defaults when the stored override is malformed',
+      parentToolSearch: { search: 7 },
+      expected: null,
+    },
+  ])('inherits $label as its tool-search labels, not its own type', async ({ parentToolSearch, expected }) => {
+    const agentId = 'subagent-tool-search'
+    const mockAgent = {
+      id: agentId,
+      agentTypeId: 'subagent-type',
+      squadId: TEST_SQUAD_ID,
+      parentAgentId: 'parent-1',
+      metadata: {
+        parentExecutionContext: {
+          version: 1,
+          squadId: TEST_SQUAD_ID,
+          environmentToolNames: ['read'],
+          ...(parentToolSearch ? { toolSearch: parentToolSearch } : {}),
+        },
+      },
+      modelOverride: null,
+      selectedModel: null,
+      getOrCreateToken: async () => undefined,
+      resolveLiveSandboxOwner: async () => ({ id: 'parent-1', squadId: TEST_SQUAD_ID }),
+      getSandboxId: async () => 'agent_parent-tool-search',
+      getEffectiveModelSpec: async (m: string) => m,
+    } as any
+    const mockAgentType = {
+      id: 'subagent-type',
+      model: 'anthropic:claude-sonnet-4-5',
+      systemPrompt: 'test',
+      earlyMarginTokens: null,
+      inFlightMarginTokens: null,
+      toolsAllow: null,
+      toolsDeny: null,
+      toolSearch: { search: 'off' },
+    } as any
+    const runner = new TestSubagentRunner(
+      { id: 'exec-tool-search', agentId, message: 'do work', startedAt: new Date() } as any,
+      mockAgent,
+      mockAgentType
+    )
+    await runner.exposeCreateSession({
+      assertActive() {},
+      runEffect: (_spec: unknown, operation: (context: unknown) => Promise<unknown>) =>
+        operation({ signal: new AbortController().signal }),
+    } as any)
+
+    expect(sessionCreateSpy.mock.calls[0][0].tools.toolSearch).toEqual(expected)
+  })
+
   it('ensures the shared box before the light box for inherited shared file tools without squad_bash', async () => {
     const agentId = 'subagent-file-only'
     const lightId = 'agent_parent-file-only'

@@ -764,3 +764,66 @@ describe('recipient validation', () => {
     await db.delete(inbox).where(eq(inbox.recipientId, SYSTEM_RECIPIENT_ID))
   })
 })
+
+describe('idempotent agent inbox sends', () => {
+  it('sends once per sender and key, and a different key or content behaves as before', async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `${rbacPrefix}-idempotent-send`, purpose: 'test' })
+      .returning()
+    const sender = await Agent.create({ agentTypeId: 'system-manager', squadId: squad.id, context: {} })
+    const recipient = await Agent.create({ agentTypeId: 'system-manager', squadId: squad.id, context: {} })
+    const token = await createTestAgentToken({ agentId: sender.id, squadId: squad.id })
+    const send = (body: Record<string, unknown>, bearer = token.token) =>
+      app.request('/api/inbox', {
+        method: 'POST',
+        headers: { ...authHeaders(bearer), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientType: 'agent', recipientId: recipient.id, ...body }),
+      })
+
+    try {
+      const first = await send({ content: 'review please', subject: 'PR', idempotencyKey: 'key-1' })
+      expect(first.status).toBe(201)
+      const firstBody = await first.json()
+
+      const replay = await send({ content: 'review please', subject: 'PR', idempotencyKey: 'key-1' })
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toMatchObject({ id: firstBody.id, idempotentReplay: true, attachments: [] })
+
+      const conflicting = await send({ content: 'something else', subject: 'PR', idempotencyKey: 'key-1' })
+      expect(conflicting.status).toBe(409)
+      const otherUrl = await send({
+        content: 'review please',
+        subject: 'PR',
+        metadata: { url: 'https://example.com/other' },
+        idempotencyKey: 'key-1',
+      })
+      expect(otherUrl.status).toBe(409)
+      const otherMode = await send({
+        content: 'review please',
+        subject: 'PR',
+        deliveryMode: 'follow-up',
+        idempotencyKey: 'key-1',
+      })
+      expect(otherMode.status).toBe(409)
+
+      const otherKey = await send({ content: 'review please', subject: 'PR', idempotencyKey: 'key-2' })
+      expect(otherKey.status).toBe(201)
+      const noKey = await send({ content: 'review please', subject: 'PR' })
+      expect(noKey.status).toBe(201)
+
+      // The same key from another sender is that sender's own message.
+      const fromAdmin = await send({ content: 'review please', subject: 'PR', idempotencyKey: 'key-1' }, admin.token)
+      expect(fromAdmin.status).toBe(201)
+      expect((await fromAdmin.json()).id).not.toBe(firstBody.id)
+
+      const rows = await db.select().from(inbox).where(eq(inbox.recipientId, recipient.id))
+      expect(rows).toHaveLength(4)
+    } finally {
+      await db.delete(inbox).where(eq(inbox.recipientId, recipient.id))
+      await db.delete(agents).where(eq(agents.id, recipient.id))
+      await db.delete(agents).where(eq(agents.id, sender.id))
+      await db.delete(squads).where(eq(squads.id, squad.id))
+    }
+  })
+})
