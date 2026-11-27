@@ -164,6 +164,46 @@ Target WCAG 2.2 AA, without treating this guide as a compliance certification. N
 
 ## Work stream details
 
+The detail modal (`WorkStreamDetailModal`) is ordered by what someone opening a stream wants to
+know: the title and status (with the "Now" summary line and pause state); then anything waiting on
+the reader (review, manual and delivery callouts, and pending questions); the description and next
+steps; **Progress**; **Recent activity**; and then everything else. Everything else is the people
+and timing facts (squad, assignee, owner, requester name, runtime, priority), tracked issues, PRs
+and alerts and pull request links (only when there are any), one **Attachments** list, and a
+collapsed **Details** section. Details holds the completion mode, repository, requester ID, branches,
+cost, tokens, executions and the usage breakdown, assigned agents, the form to track a link,
+worktree cleanup, raw metadata and the wait history. Nothing is dropped from the modal: anything
+moved is at most one click deeper than before.
+
+**Progress** (`WorkStreamProgress`, rule in `lib/workflowProgress.ts`) lists the flow's steps
+without opening the graph, each with its state (done, in progress, waiting, returned for rework,
+queued, upcoming, or not run once the stream has ended) and who does it (the participant's agent
+type, "Reviewer" or "Assigned reviewer" for a human approval, "Decision model"). Steps are listed
+in the order the flow first reaches them from its entry along forward outcomes. Each step appears
+once with its latest state: a rework edge marks the step it sends work back to as "Returned for
+rework" and is not a step of its own, a loop back to an earlier step does not repeat it, parallel
+branches are listed together and marked "in parallel", and an outcome straight to `finish` ends the
+work early without branching the list. When one step can lead to two or more different unlisted
+steps (true alternatives, such as a decision choosing a path), the flow cannot be shown honestly as
+a list, so Progress shows only the current steps and a done count, and the graph carries the shape.
+
+**Recent activity** (`WorkStreamRecentActivity`) shows the stream's newest five Activity rows,
+fetched from the Activity feed's own endpoint with the default filters and worded the same way. It
+stays live through the squad's `squadActivity` topic, with a 30 second poll as the fallback, and
+links to `/activity?workStream=<id>`, which opens the Activity page filtered to the stream.
+
+**Attachments** is one list of every file the stream carries, each with a muted source line:
+"From chat" (stored inputs shared by ID), "From inbox" (stored inbox attachments), "From
+handoff" (files a step handed off) and "Workspace file" (paths into the squad workspace, with the
+full path on hover and in the viewer). A stored input with a label shows the label as its title and
+the filename beside its source on the line below. A workspace
+file that cannot be read says "This file could not be read. It may have been moved or deleted from
+the squad workspace." The mobile work stream page uses the same strings.
+
+Agents in the modal are named type first ("Engineer"). Two agents of the same type add the stream
+and step they work on ("Engineer (#12 · Implement)"), or else their purpose; the name and purpose
+show on hover (`typeFirstAgentLabels` in `lib/agentDisplay.ts`).
+
 Workflow previews start collapsed. The disclosure visibly says **Workflow · actual name**
 (including custom inline names); missing names show **Workflow**, not a guessed preset.
 Expanding exposes the interactive graph and grouped steps. Step usage, handoff history and

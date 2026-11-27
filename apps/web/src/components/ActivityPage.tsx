@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router'
 import type {
   Agent,
   GlobalActivityPresence,
@@ -64,8 +65,23 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const [kinds, setKinds] = useState<SquadActivityKind[]>([])
   // "Show everything" turns the cleanup off: verbose rows from the server, no sender-row hiding.
   const [showEverything, setShowEverything] = useState(false)
-  // Active work card filter (one stream's rows and its participants' rows).
-  const [workStreamFilter, setWorkStreamFilter] = useState<string | null>(null)
+  // Active work card filter (one stream's rows and its participants' rows). It lives in the URL
+  // (`?workStream=<id>`), so a work stream's modal can link straight to its activity.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const workStreamFilter = searchParams.get('workStream') || null
+  const setWorkStreamFilter = useCallback(
+    (workStreamId: string | null) =>
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current)
+          if (workStreamId) next.set('workStream', workStreamId)
+          else next.delete('workStream')
+          return next
+        },
+        { replace: true }
+      ),
+    [setSearchParams]
+  )
   const filters = useMemo<NormalizedSquadActivityFilters>(
     () => ({
       verbose: showEverything,

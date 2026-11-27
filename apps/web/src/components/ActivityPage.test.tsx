@@ -795,4 +795,42 @@ describe('ActivityPage Active work strip and Show everything', () => {
       await dom.cleanup()
     }
   })
+  test('opens filtered to the stream named in the URL, as a work stream modal links to it', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
+    const rendered = dom.createRoot()
+    const client = seedClient([workItem])
+    const streamId = '00000000-0000-4000-8000-000000000011'
+    const originalFetch = globalThis.fetch
+    const requested: string[] = []
+    globalThis.fetch = mock(async (input) => {
+      const url = String(input)
+      if (url.includes('/api/activity?') || url.endsWith('/api/activity')) requested.push(url)
+      const body = url.includes('/api/activity')
+        ? { items: [workItem], hasMore: false, nextCursor: null, squads: { [squadAId]: { name: 'Squad Alpha' } } }
+        : {}
+      return new dom.window.Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as unknown as Response
+    }) as typeof fetch
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter initialEntries={[`/activity?workStream=${streamId}`]}>
+            <QueryClientProvider client={client}>
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage />
+              </WebSocketContext.Provider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+      await dom.act(async () => {
+        await waitFor(() => expect(requested.some((url) => url.includes(`workStreamId=${streamId}`))).toBe(true))
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
 })

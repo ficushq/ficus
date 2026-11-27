@@ -60,7 +60,12 @@ export function storedDocument(asset: WorkStreamAssetAttachment): ReviewDocument
     filename: asset.filename,
     byteSize: asset.byteSize,
     attemptId: asset.attemptId,
-    detail: asset.source.kind === 'image' ? 'Stored chat image, shared by ID' : 'Stored chat file, shared by ID',
+    detail:
+      asset.source.kind === 'image'
+        ? 'Stored chat image, shared by ID'
+        : (asset.source.kind as string) === 'inbox-attachment'
+          ? 'Stored inbox attachment, shared by ID'
+          : 'Stored chat file, shared by ID',
     stored: true,
   }
 }
@@ -88,3 +93,36 @@ export function reviewDocuments(
     })),
   ]
 }
+
+/**
+ * Where an attachment comes from, as the muted line under its name. Shared wording with the mobile
+ * work stream page, so both say the same thing about the same file.
+ */
+export const ATTACHMENT_SOURCE_LABELS = {
+  stored: 'From chat',
+  inbox: 'From inbox',
+  workspace: 'Workspace file',
+  handoff: 'From handoff',
+} as const
+
+/**
+ * How a stored input appears in the Attachments list: its label as the title when it has one (the
+ * filename then moves to the secondary line), and where it came from. Written against the wire shape
+ * loosely, so servers that predate inbox attachments and labels, or add them later, read the same.
+ */
+export function storedInputPresentation(asset: Pick<WorkStreamAssetAttachment, 'filename' | 'source'>): {
+  title: string
+  detail: string
+} {
+  const label = (asset as { label?: unknown }).label
+  const title = typeof label === 'string' && label.trim() ? label.trim() : null
+  const source =
+    (asset.source.kind as string) === 'inbox-attachment'
+      ? ATTACHMENT_SOURCE_LABELS.inbox
+      : ATTACHMENT_SOURCE_LABELS.stored
+  return title ? { title, detail: `${asset.filename} · ${source}` } : { title: asset.filename, detail: source }
+}
+
+/** What the viewer says when a workspace file cannot be read: it is a live path, not a stored copy. */
+export const WORKSPACE_FILE_MISSING =
+  'This file could not be read. It may have been moved or deleted from the squad workspace.'
