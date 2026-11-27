@@ -7,6 +7,7 @@ import { relatedInboxPageSql } from './event-handlers'
 import { chatSourcePageSql, listChatSourcePage } from './source-loaders'
 import { workStreamRuntimesSql } from '../../entities/WorkStream'
 import { workStreamLastEventsSql } from './global-presence'
+import { settledCountSql } from './settled'
 
 const squadIds: string[] = []
 const recipientIds: string[] = []
@@ -199,4 +200,55 @@ test('Active work last events probe each participant once instead of scanning it
   expect(probes[0]['Actual Loops']).toBe(streams)
   expect(probes[0]['Actual Rows']).toBeLessThanOrEqual(1)
   expect(buffers(plan)).toBeLessThan(streams * 6)
+})
+
+test("the Feed's settled count seeks its two row kinds instead of reading every row of the period", async () => {
+  const [squad] = await db
+    .insert(squads)
+    .values({ name: `scan-cost-${crypto.randomUUID()}`, purpose: 'test' })
+    .returning()
+  squadIds.push(squad.id)
+  const since = new Date(Date.now() - 2 * 60 * 60_000)
+  const query = settledCountSql(
+    [{ squadId: squad.id, access: { agentsRead: true, workstreamsRead: true, inbox: { mode: 'all' } } }],
+    since
+  )
+  // Same shadowing as above: a temporary squad_activity with the generated production indexes.
+  const indexes = ['idx_squad_activity_feed', 'idx_squad_activity_kind'].map((name) =>
+    generatedIndexStatement(name).replace(' ON "squad_activity" ', ' ON pg_temp."squad_activity" ')
+  )
+  const rollback = new Error('discard fixture')
+  let plan: any
+  await expect(
+    db.transaction(async (tx) => {
+      await tx.execute(
+        sql`CREATE TEMP TABLE squad_activity (LIKE public.squad_activity INCLUDING DEFAULTS) ON COMMIT DROP`
+      )
+      for (const index of indexes) await tx.execute(sql.raw(index))
+      // 20,000 rows in the period, and a handful of wait rows the count has to look at. The other rows
+      // carry thousands of distinct kinds (the temporary table has no lane/kind check), so Postgres 18's
+      // skip scan cannot reach the wait rows through the kind index unless the query names the kind:
+      // Postgres 16, which production compose runs, has no skip scan at all.
+      await tx.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
+          agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
+        SELECT ${squad.id}::uuid,CASE WHEN n<=5 THEN 41 ELSE 10 END,gen_random_uuid(),
+          CASE WHEN n<=5 THEN 'wait' ELSE 'chat' END,gen_random_uuid()::text,
+          now() - (n * interval '300 milliseconds'),NULL,'engineer',CASE WHEN n<=5 THEN 'wait' ELSE 'message-' || n END,
+          repeat(md5(n::text),8),'[]'::jsonb,'{}'::jsonb,true,(CASE WHEN n<=5 THEN 'workstreams' ELSE 'agents' END)::squad_activity_access_scope,
+          md5(n::text) || md5(n::text)
+        FROM generate_series(1,20000) n`)
+      await tx.execute(sql`ANALYZE squad_activity`)
+      const [row] = await tx.execute(sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${query}`)
+      plan = (row['QUERY PLAN'] as any)[0].Plan
+      throw rollback
+    })
+  ).rejects.toBe(rollback)
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled count plan', JSON.stringify(plan))
+  const indexesUsed = planNodes(plan).map((node) => node['Index Name'])
+  expect(indexesUsed).toContain('idx_squad_activity_kind')
+  expect(indexesUsed).not.toContain('idx_squad_activity_feed')
+  expect(
+    planNodes(plan).some((node) => node['Node Type'] === 'Seq Scan' && node['Relation Name'] === 'squad_activity')
+  ).toBe(false)
+  expect(buffers(plan)).toBeLessThan(100)
 })

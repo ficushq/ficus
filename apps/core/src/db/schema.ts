@@ -769,14 +769,14 @@ export const squadActivity = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.squadId, table.lane, table.rowId] }),
-    check('squad_activity_lane_check', sql`${table.lane} IN (10,20,21,22,30,31,40,41,50,60,61,70,71)`),
+    check('squad_activity_lane_check', sql`${table.lane} IN (10,20,21,22,30,31,32,40,41,50,60,61,70,71)`),
     check(
       'squad_activity_lane_kind_check',
-      sql`(${table.lane}=10 AND ${table.kind}='message') OR (${table.lane}=20 AND ${table.kind}='message') OR (${table.lane}=21 AND ${table.kind}='message') OR (${table.lane}=22 AND ${table.kind}='subagent') OR (${table.lane}=30 AND ${table.kind}='workstream') OR (${table.lane}=31 AND ${table.kind}='workstream') OR (${table.lane}=40 AND ${table.kind}='wait') OR (${table.lane}=41 AND ${table.kind}='wait') OR (${table.lane}=50 AND ${table.kind}='handoff') OR (${table.lane}=60 AND ${table.kind}='execution') OR (${table.lane}=61 AND ${table.kind}='execution') OR (${table.lane}=70 AND ${table.kind}='pr') OR (${table.lane}=71 AND ${table.kind}='issue')`
+      sql`(${table.lane}=10 AND ${table.kind}='message') OR (${table.lane}=20 AND ${table.kind}='message') OR (${table.lane}=21 AND ${table.kind}='message') OR (${table.lane}=22 AND ${table.kind}='subagent') OR (${table.lane}=30 AND ${table.kind}='workstream') OR (${table.lane}=31 AND ${table.kind}='workstream') OR (${table.lane}=32 AND ${table.kind}='workstream') OR (${table.lane}=40 AND ${table.kind}='wait') OR (${table.lane}=41 AND ${table.kind}='wait') OR (${table.lane}=50 AND ${table.kind}='handoff') OR (${table.lane}=60 AND ${table.kind}='execution') OR (${table.lane}=61 AND ${table.kind}='execution') OR (${table.lane}=70 AND ${table.kind}='pr') OR (${table.lane}=71 AND ${table.kind}='issue')`
     ),
     check(
       'squad_activity_lane_scope_check',
-      sql`(${table.lane}=10 AND ${table.accessScope}='agents') OR (${table.lane}=20 AND ${table.accessScope}='inbox') OR (${table.lane}=21 AND ${table.accessScope}='inbox') OR (${table.lane}=22 AND ${table.accessScope}='inbox') OR (${table.lane}=30 AND ${table.accessScope}='workstreams') OR (${table.lane}=31 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=40 AND ${table.accessScope}='workstreams') OR (${table.lane}=41 AND ${table.accessScope}='workstreams') OR (${table.lane}=50 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=60 AND ${table.accessScope}='agents') OR (${table.lane}=61 AND ${table.accessScope}='agents') OR (${table.lane}=70 AND ${table.accessScope}='workstreams') OR (${table.lane}=71 AND ${table.accessScope}='workstreams')`
+      sql`(${table.lane}=10 AND ${table.accessScope}='agents') OR (${table.lane}=20 AND ${table.accessScope}='inbox') OR (${table.lane}=21 AND ${table.accessScope}='inbox') OR (${table.lane}=22 AND ${table.accessScope}='inbox') OR (${table.lane}=30 AND ${table.accessScope}='workstreams') OR (${table.lane}=31 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=32 AND ${table.accessScope}='workstreams') OR (${table.lane}=40 AND ${table.accessScope}='workstreams') OR (${table.lane}=41 AND ${table.accessScope}='workstreams') OR (${table.lane}=50 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=60 AND ${table.accessScope}='agents') OR (${table.lane}=61 AND ${table.accessScope}='agents') OR (${table.lane}=70 AND ${table.accessScope}='workstreams') OR (${table.lane}=71 AND ${table.accessScope}='workstreams')`
     ),
     check(
       'squad_activity_recipient_check',
@@ -1823,6 +1823,8 @@ export const workStreamFlowTransitions = pgTable(
   (table) => [
     primaryKey({ columns: [table.workStreamId, table.requestId] }),
     uniqueIndex('idx_work_stream_flow_transition_version').on(table.workStreamId, table.version),
+    // Activity's repair sweep pages recorded verdicts (lane 32) by time window.
+    index('idx_work_stream_flow_transitions_created').on(table.createdAt),
   ]
 )
 
@@ -2004,6 +2006,11 @@ export const workStreamWaits = pgTable(
     // 'satisfied' | 'answered' | 'approved' | 'sent_back' | 'cleared'
     resolution: text('resolution'),
     resolutionNote: text('resolution_note'),
+    // Who answered a typed task input (`request-input`): the owner agent or the person, recorded by the
+    // input decision from migration 0265 on. Null means not recorded: every other close path (flow
+    // supersession, terminal streams, generic unblock) and older rows, never "nobody".
+    resolvedByAgentId: uuid('resolved_by_agent_id').references(() => agents.id, { onDelete: 'set null' }),
+    resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   },
   (table) => [
     // At most ONE open review wait per stream; other types may have several.

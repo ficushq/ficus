@@ -13,6 +13,7 @@ import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { apiUnavailable } from '../test/apiMock'
 import { ActivityPage } from './ActivityPage'
+import { parseSettledActivityParams } from '../lib/settledActivity'
 import { WebSocketContext } from '../hooks/useWebSocket'
 
 // Activity and presence reads stay unavailable unless a test serves them.
@@ -828,6 +829,87 @@ describe('ActivityPage Active work strip and Show everything', () => {
       await dom.act(async () => {
         await waitFor(() => expect(requested.some((url) => url.includes(`workStreamId=${streamId}`))).toBe(true))
       })
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+})
+
+describe('ActivityPage settled filter from the Feed', () => {
+  test('parses only well-formed links', () => {
+    const since = '2026-11-25T09:00:00.000Z'
+    expect(
+      parseSettledActivityParams(
+        new URLSearchParams(`settled=reviews&since=${since}&squad=${squadBId}&squad=${squadAId}`)
+      )
+    ).toEqual({ settled: { kind: 'reviews', since }, squadIds: [squadAId, squadBId] })
+    for (const query of ['settled=reviews', `settled=everything&since=${since}`, 'settled=questions&since=soon'])
+      expect(parseSettledActivityParams(new URLSearchParams(query))).toEqual({ squadIds: [] })
+  })
+
+  test('asks for exactly the counted rows and "Show all activity" drops the filter', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
+    const rendered = dom.createRoot()
+    const client = seedClient([workItem])
+    const since = '2026-11-25T09:00:00.000Z'
+    const originalFetch = globalThis.fetch
+    const requested: string[] = []
+    let location = ''
+    function Location() {
+      const current = useLocation()
+      location = current.search
+      return null
+    }
+    globalThis.fetch = mock(async (input) => {
+      const url = String(input)
+      if (url.includes('/api/activity?') || url.endsWith('/api/activity')) requested.push(url)
+      const body = url.includes('/api/activity')
+        ? { items: [workItem], hasMore: false, nextCursor: null, squads: { [squadAId]: { name: 'Squad Alpha' } } }
+        : {}
+      return new dom.window.Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as unknown as Response
+    }) as typeof fetch
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter
+            initialEntries={[`/activity?settled=questions&since=${encodeURIComponent(since)}&squad=${squadAId}`]}
+          >
+            <QueryClientProvider client={client}>
+              <WebSocketContext.Provider value={socket}>
+                <ActivityPage />
+                <Location />
+              </WebSocketContext.Provider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+      const document = dom.window.document
+      const banner = document.querySelector('[data-testid="activity-settled-filter"]')!
+      expect(banner.textContent).toContain('Questions settled by agents')
+      await dom.act(async () => {
+        await waitFor(() =>
+          expect(
+            requested.some(
+              (url) =>
+                url.includes('settled=questions') &&
+                url.includes(`since=${encodeURIComponent(since)}`) &&
+                url.includes(`squadId=${squadAId}`)
+            )
+          ).toBe(true)
+        )
+      })
+      await dom.act(async () => {
+        ;[...banner.querySelectorAll<HTMLButtonElement>('button')]
+          .find((button) => button.textContent === 'Show all activity')!
+          .click()
+        await Bun.sleep(0)
+      })
+      expect(location).toBe('')
+      expect(document.querySelector('[data-testid="activity-settled-filter"]')).toBeNull()
     } finally {
       globalThis.fetch = originalFetch
       await dom.cleanup()

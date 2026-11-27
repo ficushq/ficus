@@ -111,6 +111,10 @@ export async function resolveStructuredInput(
         resolution: 'cleared',
         resolutionNote: note,
         structured: { ...wait.structured, version: wait.structured.version + 1 },
+        // Exactly one of these is set: the check above admits an owner agent or a person, never neither.
+        // The Feed's "settled without you" count reads it; nothing infers it later.
+        resolvedByAgentId: wait.actor === 'owner' ? actor.agentId : null,
+        resolvedByUserId: wait.actor === 'owner' ? null : actor.userId,
       })
       .where(and(eq(workStreamWaits.id, wait.id), isNull(workStreamWaits.closedAt)))
       .returning()

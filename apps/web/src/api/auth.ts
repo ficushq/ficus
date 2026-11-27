@@ -202,3 +202,19 @@ export async function addCredentialVerify(response: unknown, displayName?: strin
     body: JSON.stringify({ response, displayName }),
   })
 }
+
+/** The account's Feed visit watermark and the server time this read was taken. */
+export interface FeedVisit {
+  lastVisitedAt: string | null
+  observedAt: string
+}
+
+/** Read the watermark without moving it. */
+export function getFeedVisit(): Promise<FeedVisit> {
+  return apiFetch('/auth/me/feed-visit')
+}
+
+/** Record a visit at the server time `getFeedVisit` observed. Core keeps the later of the two times. */
+export function acknowledgeFeedVisit(visitedAt: string): Promise<{ lastVisitedAt: string | null }> {
+  return apiFetch('/auth/me/feed-visit', { method: 'POST', body: JSON.stringify({ visitedAt }) })
+}

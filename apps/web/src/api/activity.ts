@@ -1,4 +1,5 @@
 import type {
+  ActivitySettledSummary,
   GlobalActivityPresence,
   GlobalSquadActivityPage,
   NormalizedSquadActivityFilters,
@@ -42,9 +43,29 @@ export async function listGlobalActivity(
   if (options.workStreamId) params.set('workStreamId', options.workStreamId)
   for (const agentId of [...new Set(options.agentIds ?? [])].sort()) params.append('agentId', agentId)
   for (const kind of [...new Set<SquadActivityKind>(options.kinds ?? [])].sort()) params.append('kind', kind)
+  for (const squadId of [...new Set(options.squadIds ?? [])].sort()) params.append('squadId', squadId)
+  if (options.settled) {
+    params.set('settled', options.settled.kind)
+    params.set('since', options.settled.since)
+  }
   const query = params.toString()
   return fetch<GlobalSquadActivityPage>(
     `/activity${query ? `?${query}` : ''}`,
     options.signal ? { signal: options.signal } : undefined
   )
+}
+
+/**
+ * Work settled without a person since `since` (GET /api/activity/settled), over the squads the caller
+ * may read, optionally narrowed to `squadIds`. Each count is the rows `listGlobalActivity` returns
+ * with the matching `settled` filter.
+ */
+export async function getSettledActivity(
+  since: string,
+  squadIds: readonly string[] = [],
+  fetch: typeof apiFetch = apiFetch
+): Promise<ActivitySettledSummary> {
+  const params = new URLSearchParams({ since })
+  for (const squadId of [...new Set(squadIds)].sort()) params.append('squadId', squadId)
+  return fetch<ActivitySettledSummary>(`/activity/settled?${params.toString()}`)
 }
