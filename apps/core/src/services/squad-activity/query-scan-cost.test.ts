@@ -225,13 +225,16 @@ test("the Feed's settled count seeks its two row kinds instead of reading every 
         sql`CREATE TEMP TABLE squad_activity (LIKE public.squad_activity INCLUDING DEFAULTS) ON COMMIT DROP`
       )
       for (const index of indexes) await tx.execute(sql.raw(index))
-      // 20,000 chat rows in the period, and a handful of wait rows the count has to look at.
+      // 20,000 rows in the period, and a handful of wait rows the count has to look at. The other rows
+      // carry thousands of distinct kinds (the temporary table has no lane/kind check), so Postgres 18's
+      // skip scan cannot reach the wait rows through the kind index unless the query names the kind:
+      // Postgres 16, which production compose runs, has no skip scan at all.
       await tx.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
           agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
         SELECT ${squad.id}::uuid,CASE WHEN n<=5 THEN 41 ELSE 10 END,gen_random_uuid(),
           CASE WHEN n<=5 THEN 'wait' ELSE 'chat' END,gen_random_uuid()::text,
-          now() - (n * interval '300 milliseconds'),NULL,'engineer',CASE WHEN n<=5 THEN 'wait' ELSE 'message' END,
-          repeat(md5(n::text),8),'[]'::jsonb,'{}'::jsonb,true,CASE WHEN n<=5 THEN 'workstreams' ELSE 'agents' END,
+          now() - (n * interval '300 milliseconds'),NULL,'engineer',CASE WHEN n<=5 THEN 'wait' ELSE 'message-' || n END,
+          repeat(md5(n::text),8),'[]'::jsonb,'{}'::jsonb,true,(CASE WHEN n<=5 THEN 'workstreams' ELSE 'agents' END)::squad_activity_access_scope,
           md5(n::text) || md5(n::text)
         FROM generate_series(1,20000) n`)
       await tx.execute(sql`ANALYZE squad_activity`)
