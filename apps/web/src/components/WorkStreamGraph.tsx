@@ -1,7 +1,7 @@
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { useMemo, useRef } from 'react'
 import clsx from 'clsx'
-import type { Agent, WorkStream } from '@ficus/shared'
+import type { Agent, WorkStream, WorkStreamViewer } from '@ficus/shared'
 import { getAgentLabel } from '../lib/agentDisplay'
 import { Badge } from './Badge'
 import { workStreamStatusLabel, WS_STATUS_BADGE_COLORS, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
@@ -15,7 +15,6 @@ import {
 } from '../lib/workStreamGraphLayout'
 import { useWorkStreamPeek, WorkStreamPeekCard } from './WorkStreamSummary'
 import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
-import type { WorkStreamViewer } from '../lib/workStreamRuntime'
 
 interface WorkStreamGraphProps {
   workStreams: WorkStream[]

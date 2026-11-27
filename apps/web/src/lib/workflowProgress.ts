@@ -9,9 +9,9 @@ import {
   type WorkflowRun,
   type WorkflowStep,
   type WorkStreamSlotWait,
+  type WorkStreamViewer,
   type WorkStreamWait,
 } from '@ficus/shared'
-import type { WorkStreamViewer } from './workStreamRuntime'
 import type { AgentTypeName } from './agentDisplay'
 
 /**

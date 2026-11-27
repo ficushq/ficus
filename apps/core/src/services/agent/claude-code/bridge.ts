@@ -1,13 +1,15 @@
 /**
  * Drives the user's own signed-in Claude Code as a pi model backend.
  *
- * Claude Code runs with none of its built-in tools. The agent's tools are offered to it through an
- * in-process MCP server; when Claude calls one, the pi turn ends with that tool call, Core runs it
- * exactly as it runs any provider's tool calls (sandbox routing, secret redaction, Ficus tools), and
- * the next pi turn hands the result back to the MCP call Claude Code is waiting on. One long-lived
- * Claude Code query per pi session carries the conversation, so Claude Code's own prompt caching
- * applies. A worker restart resumes it by Claude Code session id; a history Claude Code never saw
- * (compaction, an edit, a restart mid-tool) starts a fresh session seeded with the transcript.
+ * Claude Code runs with none of its built-in tools, except its tool search (`ToolSearch`) in
+ * sessions whose plan holds tools back; Claude Code answers those searches itself and pi never sees
+ * them. The agent's tools are offered to it through an in-process MCP server; when Claude calls one,
+ * the pi turn ends with that tool call, Core runs it exactly as it runs any provider's tool calls
+ * (sandbox routing, secret redaction, Ficus tools), and the next pi turn hands the result back to
+ * the MCP call Claude Code is waiting on. One long-lived Claude Code query per pi session carries
+ * the conversation, so Claude Code's own prompt caching applies. A worker restart resumes it by
+ * Claude Code session id; a history Claude Code never saw (compaction, an edit, a restart mid-tool)
+ * starts a fresh session seeded with the transcript.
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -34,6 +36,7 @@ import { claudeChildEnv, claudeCodeExecutable } from './availability'
 import { describeClaudeCodeFailure } from './failures'
 import { claudeCodeToolLabels, claudeCodeToolMeta, type ClaudeCodeToolLabels } from '../tool-search/claude-code'
 import {
+  CLAUDE_CODE_TOOL_SEARCH,
   CLAUDE_TOOL_PREFIX,
   TOOL_SERVER,
   TurnTranslator,
@@ -143,6 +146,8 @@ class Bridge {
     readonly signature: string,
     tools: Tool[],
     toolLabels: ClaudeCodeToolLabels,
+    /** The Claude Code built-in tools this process runs with; it answers their calls itself. */
+    private readonly builtinTools: ReadonlySet<string>,
     options: Options,
     runQuery: QueryFn,
     private readonly onSession: (bridge: Bridge) => void,
@@ -200,6 +205,7 @@ class Bridge {
 
   begin(turn: TurnTranslator) {
     this.clearIdle()
+    turn.internalTools = this.builtinTools
     this.turn = turn
   }
 
@@ -284,8 +290,9 @@ class Bridge {
       if (message.parent_tool_use_id) return
       const turn = this.turn
       if (!turn || turn.done) {
-        // Claude Code moved on without pi (for example it answered a tool call itself): the two
-        // histories no longer match.
+        // Claude Code moved on without pi (for example it answered a tool call pi was shown
+        // itself): the two histories no longer match. Its own tool search keeps the turn open
+        // instead (see TurnTranslator), so it never lands here.
         this.desynced = true
         return
       }
@@ -402,7 +409,11 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
       // Fixed when the session starts, so the signature (and the Claude Code process) only changes
       // when the prompt, model or pi's tool set does.
       const toolLabels = claudeCodeToolLabels(options?.sessionId)
+      // Claude Code's tool search is the only built-in tool, and only when the plan holds tools
+      // back: without it Claude Code has nothing to search with and declares every tool up front.
+      const builtinTools = toolLabels.enableToolSearch === 'true' ? [CLAUDE_CODE_TOOL_SEARCH] : []
       const signature = hash({
+        builtinTools,
         model: model.id,
         effort,
         systemPrompt,
@@ -450,10 +461,11 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
           ENABLE_TOOL_SEARCH: toolLabels.enableToolSearch,
         }),
         systemPrompt,
-        // No Claude Code built-in tools. The agent's own tools are pre-approved by name; anything
-        // else is refused without prompting. Ficus applies its own policy when it runs each call.
-        tools: [],
-        allowedTools: tools.map((tool) => `${CLAUDE_TOOL_PREFIX}${tool.name}`),
+        // No Claude Code built-in tools but its tool search, when offered. Those and the agent's own
+        // tools are pre-approved by name; anything else is refused without prompting. Ficus applies
+        // its own policy when it runs each agent tool call.
+        tools: builtinTools,
+        allowedTools: [...builtinTools, ...tools.map((tool) => `${CLAUDE_TOOL_PREFIX}${tool.name}`)],
         permissionMode: 'dontAsk',
         settingSources: [],
         strictMcpConfig: true,
@@ -476,6 +488,7 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
           signature,
           tools,
           toolLabels,
+          new Set(builtinTools),
           canResume ? { ...baseOptions, resume: saved!.claudeSessionId } : baseOptions,
           runQuery,
           onSession,
@@ -548,8 +561,8 @@ function hash(value: unknown) {
 }
 
 function workDir(stateDir: string) {
-  // An empty working directory: Claude Code's own tools are off, and no project CLAUDE.md or
-  // settings should leak into an agent's session. All Ficus sessions group under this one project.
+  // An empty working directory: Claude Code's own tools are off (tool search reads no files), and
+  // no project CLAUDE.md or settings should leak into an agent's session. All Ficus sessions group under this one project.
   const dir = join(stateDir, 'workdir')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return dir

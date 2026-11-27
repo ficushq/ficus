@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   agentQuestionRecipients,
@@ -12,7 +12,11 @@ import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-stream
 import { listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
 import { filterUserIdsWithPermission } from '../rbac/permitted-users'
 import { createLogger } from '../../lib/infra/logger'
-import { listAgentQuestionAttentionUserIds } from './questions'
+import {
+  announceAgentQuestionOnce,
+  finalizeAgentQuestionAttentionRouting,
+  listAgentQuestionAttentionUserIds,
+} from './questions'
 import { listEnabledUserIds } from '../users/enabled'
 
 const log = createLogger('question-attention-reconciliation')
@@ -22,6 +26,50 @@ export interface QuestionAttentionReconciliationOptions {
   limit?: number
   /** Optional bounded scope for isolated repair runs and tests. */
   candidateQuestionIds?: readonly string[]
+}
+
+/** How long the asking call has to announce its own question before the sweep does it instead. */
+export const QUESTION_ANNOUNCE_GRACE_MS = 60_000
+
+/**
+ * Announce open questions whose asking call stopped before announcing them: the process died after
+ * the question was recorded (or its audience finalized) and before `agent-question.created` was
+ * emitted, so nothing told the person they were being asked. Only questions waiting longer than the
+ * grace period are taken, so a call that is still finishing announces its own. A question still
+ * `pending` is finalized first. Each one is announced at most once (`announceAgentQuestionOnce`), and
+ * an answered or dismissed one never is.
+ */
+export async function announceUnannouncedAgentQuestionsOnce(
+  options: { limit?: number; graceMs?: number; candidateQuestionIds?: readonly string[] } = {}
+): Promise<{ processed: number; announced: number }> {
+  const graceMs = options.graceMs ?? QUESTION_ANNOUNCE_GRACE_MS
+  const candidates = await db
+    .select({ id: agentQuestions.id, audienceResolution: agentQuestions.audienceResolution })
+    .from(agentQuestions)
+    .where(
+      and(
+        eq(agentQuestions.status, 'open'),
+        isNotNull(agentQuestions.announcePendingSince),
+        // The database assigned the timestamp, so its clock decides the grace period too.
+        sql`${agentQuestions.announcePendingSince} <= now() - ${graceMs} * interval '1 millisecond'`,
+        options.candidateQuestionIds ? inArray(agentQuestions.id, [...options.candidateQuestionIds]) : undefined
+      )
+    )
+    .orderBy(asc(agentQuestions.announcePendingSince), asc(agentQuestions.id))
+    .limit(options.limit ?? 100)
+
+  let announced = 0
+  for (const candidate of candidates) {
+    try {
+      if (candidate.audienceResolution === 'pending') {
+        await finalizeAgentQuestionAttentionRouting(candidate.id)
+      }
+      if (await announceAgentQuestionOnce(candidate.id)) announced += 1
+    } catch (error) {
+      log.error(`Failed to announce agent question ${candidate.id}; the next sweep retries it:`, error)
+    }
+  }
+  return { processed: candidates.length, announced }
 }
 
 function parsedConsumedAt(metadata: Record<string, unknown> | null): Date | null {

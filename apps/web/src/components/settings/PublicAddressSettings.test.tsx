@@ -65,6 +65,7 @@ async function render(
     put?: (body: unknown, reply: Reply) => Response
     url?: string
     preview?: PublicAppUrlPreview
+    proposed?: { url: string; n: number }
   } = {}
 ) {
   const { write = true } = options
@@ -103,7 +104,7 @@ async function render(
     root.render(
       <QueryClientProvider client={queryClient}>
         <PermissionsProvider usePermissions={() => permissions}>
-          <PublicAddressSettings onSaved={(message) => saved.push(message)} />
+          <PublicAddressSettings onSaved={(message) => saved.push(message)} proposed={options.proposed} />
         </PermissionsProvider>
       </QueryClientProvider>
     )
@@ -303,4 +304,55 @@ test('a path squad apps cannot use says apps will not open under it', async () =
     '/a;b has characters that cannot be used for squad apps, so apps will not open under that path.'
   )
   expect(text).toContain('Open them from http://localhost:61896/.')
+})
+
+test('an address proposed by the mobile device guide opens the form with it, ready to review', async () => {
+  const { container } = await render(localOnly, { proposed: { url: 'http://studio-mac.local:3000', n: 1 } })
+  const field = getByRole(container, 'textbox', { name: 'New public address' }) as HTMLInputElement
+  expect(field.value).toBe('http://studio-mac.local:3000')
+  expect(getByRole(container, 'button', { name: 'Review change' })).toBeTruthy()
+})
+
+test('a proposed address does nothing for someone who cannot change the setting', async () => {
+  const { container } = await render(localOnly, {
+    write: false,
+    proposed: { url: 'http://studio-mac.local:3000', n: 1 },
+  })
+  expect(queryByRole(container, 'textbox', { name: 'New public address' })).toBeNull()
+})
+
+test('an http home-network address is explained as working on this network only, not as unusable', async () => {
+  const home: PublicAppUrlPreview = {
+    ...preview,
+    normalizedUrl: 'http://studio-mac.local:3000',
+    effectiveUrl: 'http://studio-mac.local:3000',
+    impact: { ...preview.impact, mobileReady: false },
+  }
+  const { container, dom } = await render(localOnly, {
+    preview: home,
+    proposed: { url: 'http://studio-mac.local:3000', n: 1 },
+  })
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Review change' })))
+  await waitFor(() =>
+    expect(document.body.textContent).toContain('the Ficus app works only while the mobile device is on this network')
+  )
+  expect(document.body.textContent).toContain('Mobile & Pro needs an HTTPS address')
+  expect(document.body.textContent).not.toContain('The Ficus app and Mobile & Pro need an HTTPS address.')
+})
+
+test('an http public address still says the app needs HTTPS', async () => {
+  const plain: PublicAppUrlPreview = {
+    ...preview,
+    normalizedUrl: 'http://ficus.example.com',
+    effectiveUrl: 'http://ficus.example.com',
+    impact: { ...preview.impact, mobileReady: false },
+  }
+  const { container, dom } = await render(localOnly, {
+    preview: plain,
+    proposed: { url: 'http://ficus.example.com', n: 1 },
+  })
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Review change' })))
+  await waitFor(() =>
+    expect(document.body.textContent).toContain('The Ficus app and Mobile & Pro need an HTTPS address.')
+  )
 })

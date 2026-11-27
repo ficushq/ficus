@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'bun:test'
+import { toolNameMatchesAny } from '../../../lib/tools'
+import { classifiedTools, toolMetadata } from '../../../tools/metadata'
 import {
   isToolSearchPolicy,
   parseToolSearchPolicy,
   resolveToolLabel,
   resolveToolSearchMode,
+  TOOL_GROUPS,
   toolGroup,
   unknownToolSearchNames,
 } from './labels'
@@ -40,6 +43,31 @@ describe('resolveToolLabel', () => {
 
   it('treats a tool it does not know as direct', () => {
     expect(resolveToolLabel('linear_issue_create')).toBe('direct')
+    expect(resolveToolLabel('tool_search')).toBe('direct')
+  })
+
+  it('reads the default from the tool metadata table', () => {
+    for (const [name, metadata] of classifiedTools()) expect(resolveToolLabel(name)).toBe(metadata.label)
+    expect(resolveToolLabel('linear_issue_create')).toBe(toolMetadata('linear_issue_create').label)
+  })
+
+  it('keeps the defaults the tool groups used to carry: browser, code navigation and checklist are deferrable', () => {
+    const deferrableGroups = ['browser_*', 'ast_*', 'todo_*']
+    for (const name of classifiedTools().keys()) {
+      expect([name, resolveToolLabel(name)]).toEqual([
+        name,
+        toolNameMatchesAny(deferrableGroups, name) ? 'deferrable' : 'direct',
+      ])
+    }
+  })
+
+  it('gives every classified tool in a group the same default, so a namespace is loaded whole', () => {
+    for (const group of TOOL_GROUPS) {
+      const labels = new Set(
+        [...classifiedTools()].filter(([name]) => toolGroup(name) === group).map(([, metadata]) => metadata.label)
+      )
+      expect([group.name, labels.size]).toEqual([group.name, 1])
+    }
   })
 
   it("applies the agent type's override, with direct winning over deferred", () => {

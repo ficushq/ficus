@@ -1538,6 +1538,19 @@ export abstract class AgentRunner {
     return messages
   }
 
+  /**
+   * Prompt text when no pending row was claimed. Every execution queued with a message also stores
+   * it as its own human row, so nothing claimed usually means that row already reached the session:
+   * a resume after a restart or hard interruption, or a failover re-dispatch. Re-sending the text
+   * would give the model the whole task again, so only continue. Without that session witness the
+   * text never reached the session and is sent as before.
+   */
+  private async unclaimedPromptText(): Promise<string> {
+    const original = this.execution.message?.trim()
+    if (!original) return 'Continue.'
+    return (await this.agent.hasSessionDeliveredExecutionPrompt(this.execution.id)) ? 'Continue.' : original
+  }
+
   private buildInitialPromptText(messages: Message[]): string {
     return messages
       .map((message) => messageTextForModel(message).trim())
@@ -1614,8 +1627,7 @@ export abstract class AgentRunner {
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
     this.noteHumanSenders(claimed)
     const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
-    const initialText =
-      prepared.length > 0 ? this.buildInitialPromptText(prepared) : this.execution.message?.trim() || 'Continue.'
+    const initialText = prepared.length > 0 ? this.buildInitialPromptText(prepared) : await this.unclaimedPromptText()
     const notice = this.execution.restartContext
       ? restartResumeNotice(this.execution.restartContext)
       : this.prepareInterruptionResume()
@@ -1637,12 +1649,17 @@ export abstract class AgentRunner {
       }
       if (this._timing) logRunnerMilestone(this._timing, 'prompt-sent')
     } catch (err) {
+      // Pi appends the user entry before the provider call. Let its acknowledgement land before the
+      // release below: a release first fences the late acknowledgement out, so a re-dispatch would
+      // claim the row again and send text the session already holds.
+      if (claimed.length > 0) await this.persistence.waitForAll()
       for (const message of claimed) {
         await this.agent.resetPendingInterventionSessionDelivery(message.id, message.metadata?.sessionDelivery)
       }
       const validationError = providerRequestValidationError(err)
       const errorMsg = validationError?.message ?? (err instanceof Error ? err.message : String(err))
-      // The re-queued run sends this prompt again, images included.
+      // A prompt that never reached the session was released above, so the re-queued run claims
+      // and sends it again, images included; one the session already holds is only continued.
       if (this.leaveForShutdownRequeue(errorMsg)) return
       if (imageIds.length > 0) await Image.markManyFailed(imageIds)
       log.error(`session.prompt() failed for execution ${this.execution.id}:`, validationError ?? err)

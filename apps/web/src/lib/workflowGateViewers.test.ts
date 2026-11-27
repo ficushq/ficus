@@ -12,14 +12,15 @@ import {
   createWorkflowRun,
   workflowDefinitionSchema,
   type WorkflowGateApprover,
+  workStreamPersonWait,
   type WorkStream,
+  type WorkStreamViewer,
   type WorkStreamWait,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import { workStreamPeekFacts } from '../components/WorkStreamSummary'
 import { workflowProgress } from './workflowProgress'
 import { humanGateContext } from './workflowReview'
-import { workStreamPersonWait, type WorkStreamViewer } from './workStreamRuntime'
 
 /** execute (agent) → design-approval (human approval with this approver), waiting on the approval. */
 function gatedRun(approver: WorkflowGateApprover) {
