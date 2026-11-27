@@ -35,7 +35,12 @@ const panel = '[data-testid="chat-history-search"]'
 /** Where the visible search button is, and what sits between the parent's title bar and the transcript. */
 function measure(page: Page) {
   return page.evaluate((selector) => {
-    const visible = (el: Element) => (el as HTMLElement).offsetParent !== null
+    // Folded composer actions stay laid out (so the composer can measure them) but are hidden and
+    // inert, so an offsetParent alone would count them as shown.
+    const visible = (el: Element) =>
+      (el as HTMLElement).offsetParent !== null &&
+      el.checkVisibility({ visibilityProperty: true }) &&
+      !el.closest('[inert]')
     const button = [...document.querySelectorAll<HTMLButtonElement>(selector)].find(visible) ?? null
     const titleBar = document.querySelector('[data-testid="parent-title-bar"]')!.getBoundingClientRect()
     const transcript = document.querySelector('[data-testid="chat-messages"]')!.getBoundingClientRect()
