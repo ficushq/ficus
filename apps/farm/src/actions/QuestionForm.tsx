@@ -12,6 +12,7 @@ import { Markdown } from '../chat/Markdown'
 import { useStableRef } from '../hooks/useStableRef'
 import { useActionsApi } from './ActionsApiProvider'
 import {
+  MULTI_SELECT_HINT,
   OTHER_LABEL,
   OTHER_OPTION,
   formatAnswer,
@@ -450,7 +451,7 @@ function QuestionField({
     <fieldset className="g-question" aria-describedby={describedBy}>
       <legend className="g-question-title">{heading}</legend>
       {context}
-      {multi && <p className="g-question-hint">Pick all that apply.</p>}
+      {multi && <p className="g-question-hint">{MULTI_SELECT_HINT}</p>}
       <div className="g-options">
         {choices.map((choice) => (
           <label key={choice.value} className={clsx('g-option', isOn(choice.value) && 'g-option-on')}>
