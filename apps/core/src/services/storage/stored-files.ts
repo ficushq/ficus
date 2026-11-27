@@ -13,7 +13,7 @@ import {
   workStreams,
 } from '../../db/schema'
 import {
-  retainedChatFileWithoutSource,
+  retainedFileWithoutSource,
   retainedImageWithoutSource,
   totalAttachmentStorageBytes,
 } from '../attachments/storage-quota'
@@ -87,7 +87,7 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
     },
   },
   {
-    // Bytes kept for work streams after the chat file that held them was deleted.
+    // Bytes kept for work streams after the chat file or inbox attachment that held them was deleted.
     key: 'retainedFiles',
     label: 'Work-stream files kept after their chat was removed',
     countsTowardQuota: true,
@@ -95,7 +95,7 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
       db
         .select({ squadId: retainedAssets.squadId, bytes: sql<string>`sum(${retainedAssets.byteSize})` })
         .from(retainedAssets)
-        .where(and(retainedChatFileWithoutSource, squadId ? eq(retainedAssets.squadId, squadId) : undefined))
+        .where(and(retainedFileWithoutSource, squadId ? eq(retainedAssets.squadId, squadId) : undefined))
         .groupBy(retainedAssets.squadId),
   },
   {

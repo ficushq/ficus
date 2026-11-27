@@ -189,7 +189,6 @@ test('an inbox attachment says "From inbox", and a label leads with the filename
   }
   const stream: WorkStream = {
     ...reviewWorkStream(),
-    // The inbox kind and labels come from a newer server; the list reads them without the type.
     assetAttachments: [
       {
         ...share,
@@ -205,15 +204,34 @@ test('an inbox attachment says "From inbox", and a label leads with the filename
         filename: 'IMG_0043.png',
         label: null,
       },
-    ] as unknown as WorkStream['assetAttachments'],
+    ],
   }
-  const rows = await renderModal({ workStream: stream }, (dom) =>
-    [...dom.window.document.body.querySelectorAll('section[aria-label="Attachments"] button')].map((card) =>
-      [...card.querySelectorAll('p')].map((line) => line.textContent)
-    )
+  const { client } = await import('../api/clientInstance')
+  const download = spyOn(client.workStreams, 'downloadAssetAttachment').mockResolvedValue(
+    new Uint8Array([137, 80, 78, 71])
   )
-  expect(rows).toEqual([
-    ['Today’s squads page', 'IMG_0042.png · From inbox'],
-    ['IMG_0043.png', 'From inbox'],
-  ])
+  const create = spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:stored-input')
+  const revoke = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  try {
+    const result = await renderModal({ workStream: stream }, async (dom) => {
+      const body = dom.window.document.body
+      const cards = [...body.querySelectorAll('button')].filter((button) => button.textContent?.includes('IMG_004'))
+      const rows = cards.map((card) => [...card.querySelectorAll('p')].map((line) => line.textContent))
+      await dom.act(async () => cards[0]!.click())
+      await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      const image = body.querySelector<HTMLImageElement>('img[alt="Today’s squads page"]')
+      return { rows, src: image?.getAttribute('src') ?? null }
+    })
+    expect(result.rows).toEqual([
+      ['Today’s squads page', 'IMG_0042.png · From inbox'],
+      ['IMG_0043.png', 'From inbox'],
+    ])
+    // An inbox image renders as an image, like a chat image.
+    expect(download.mock.calls[0]!.slice(0, 2)).toEqual(['ws-1', 'share-labelled'])
+    expect(result.src).toBe('blob:stored-input')
+  } finally {
+    create.mockRestore()
+    revoke.mockRestore()
+    download.mockRestore()
+  }
 })

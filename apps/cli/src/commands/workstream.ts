@@ -532,6 +532,12 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       []
     )
     .option(
+      '--inbox-attachment <attachmentId>',
+      'Share an inbox attachment you can read as an input, by ID, before the first assignment (repeatable)',
+      collect,
+      []
+    )
+    .option(
       '--requesting-user <userId>',
       'Attribute the request to a specific user (defaults to whoever you are chatting with)'
     )
@@ -567,11 +573,15 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(options.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
           ...(options.baseSource !== undefined ? { baseSource: options.baseSource } : {}),
           ...(options.fromEvent !== undefined ? { integrationEventId: options.fromEvent } : {}),
-          ...(options.image.length || options.agentFile.length
+          ...(options.image.length || options.agentFile.length || options.inboxAttachment.length
             ? {
                 assetReferences: [
                   ...options.image.map((imageId: string) => ({ kind: 'image', imageId })),
                   ...options.agentFile.map((attachmentId: string) => ({ kind: 'agent-file', attachmentId })),
+                  ...options.inboxAttachment.map((attachmentId: string) => ({
+                    kind: 'inbox-attachment',
+                    attachmentId,
+                  })),
                 ],
               }
             : {}),

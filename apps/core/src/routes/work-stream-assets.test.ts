@@ -200,3 +200,65 @@ test('creation installs references before the first assignment is written', asyn
     await db.delete(agentTypes).where(eq(agentTypes.id, workerType))
   }
 })
+
+test('an inbox attachment is shared over HTTP with an optional label, which can be edited and cleared', async () => {
+  const { inbox } = await import('../db')
+  const { InboxAttachment } = await import('../entities/InboxAttachment')
+  const [message] = await db
+    .insert(inbox)
+    .values({ recipientType: 'user', recipientId: admin.id, senderType: 'user', senderId: admin.id, content: 'x' })
+    .returning({ id: inbox.id })
+  try {
+    const file = await InboxAttachment.create({
+      messageId: message!.id,
+      filename: 'squads.png',
+      contentType: 'image/png',
+      bytes: PNG,
+    })
+    const [stream] = await db.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
+    streams.push(stream!.id)
+    const base = `/api/workstreams/${stream!.id}/asset-attachments`
+    const source = { kind: 'inbox-attachment', attachmentId: file.id }
+
+    // Labels are one short line of plain text; an empty one is not a way to clear.
+    for (const label of ['', '   ', 'x'.repeat(121), 'two\nlines', 'bidi \u202e'])
+      expect((await app.request(base, json(admin.token, { source, label }))).status).toBe(400)
+    const created = await app.request(base, json(admin.token, { source, label: '  Today’s squads page ' }))
+    expect(created.status).toBe(201)
+    const share = await created.json()
+    expect(share).toMatchObject({
+      source,
+      filename: 'squads.png',
+      label: 'Today’s squads page',
+      contentType: 'image/png',
+    })
+    const bytes = await app.request(`${base}/${share.id}`, { headers: authHeaders(admin.token) })
+    expect(bytes.headers.get('content-type')).toBe('image/png')
+    expect(Buffer.from(await bytes.arrayBuffer()).equals(PNG)).toBe(true)
+
+    const patch = (token: string, body: unknown, id = share.id) =>
+      app.request(`${base}/${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(token), 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    expect((await patch(outsider.token, { label: 'Nope' })).status).toBe(403)
+    expect((await patch(admin.token, { label: '' })).status).toBe(400)
+    expect((await patch(admin.token, {})).status).toBe(400)
+    expect((await patch(admin.token, { label: 'x' }, 'not-a-uuid')).status).toBe(404)
+    const edited = await patch(admin.token, { label: 'Squads, dark mode' })
+    expect(edited.status).toBe(200)
+    expect(await edited.json()).toEqual({ ...share, label: 'Squads, dark mode' })
+    const cleared = await patch(admin.token, { label: null })
+    expect(await cleared.json()).toEqual({ ...share, label: null })
+    const detail = await (
+      await app.request(`/api/workstreams/${stream!.id}`, { headers: authHeaders(admin.token) })
+    ).json()
+    expect(detail.assetAttachments).toEqual([{ ...share, label: null }])
+  } finally {
+    await db.delete(workStreams).where(inArray(workStreams.id, streams.splice(0)))
+    const { runRetainedAssetCleanup } = await import('../services/work-streams/asset-attachments')
+    await runRetainedAssetCleanup({ maxAssets: 50 })
+    await db.delete(inbox).where(eq(inbox.id, message!.id))
+  }
+})

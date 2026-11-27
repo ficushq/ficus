@@ -88,6 +88,26 @@ function extractCommandReferences(file: string, source: string): CommandReferenc
   return references
 }
 
+// Prose that hands an option to a command, as in "pass `--repository PATH` to `ficus workstream
+// create`" or "`--label` (pass the same option to `ficus workstream create`)": the option sits in
+// its own code span, so the quoted command alone never shows it. One clause, at most 80 characters.
+const PROSE_OPTION = /`(--[a-z][\w-]*)[^`\n]*`([^`.;\n]{0,80}?)\b(?:to|on)\s+`ficus\s+([^`\n]+)`/g
+
+/**
+ * Options that prose attributes to a quoted command, each as a reference of that command with the
+ * option, so the command checker can tell whether the command really takes it.
+ */
+function extractProseOptionReferences(file: string, source: string): CommandReference[] {
+  // Sentences wrap across lines in Markdown; a single newline is a space (lengths stay the same).
+  const text = (file.endsWith('.ts') ? source.replace(/\\`/g, '`') : source).replace(/\n(?!\n)/g, ' ')
+  return [...text.matchAll(PROSE_OPTION)].map((match) => ({
+    file: relative(repoRoot, file),
+    line: source.slice(0, match.index).split('\n').length,
+    text: `${match[3]!.trim()} ${match[1]}`,
+    code: true,
+  }))
+}
+
 /** Split a command into shell words, keeping quoted arguments whole. */
 function shellWords(text: string): string[] {
   return text.match(/(?:[^\s'"]+|'[^']*'?|"[^"]*"?)+/g) ?? []
@@ -202,6 +222,19 @@ describe('the command reference checker', () => {
     expect(check('nonexistent list')).toBe('`ficus` has no subcommand `nonexistent`')
   })
 
+  test('catches an option that prose hands to a command which does not take it', () => {
+    const file = join(repoRoot, 'example.md')
+    const prose = (text: string) =>
+      extractProseOptionReferences(file, text).map((entry) => checkCommandReference(program, entry))
+    expect(
+      prose("optional `--label 'short name'` (pass the same option to `ficus workstream\ncreate` so it has it)")
+    ).toEqual(['`ficus workstream create` has no option `--label`'])
+    expect(prose('Pass `--repository <checkout-path>` to `ficus workstream create` to validate it.')).toEqual([null])
+    expect(prose('Add `--label` on `ficus workstream attachment add`.')).toEqual([null])
+    // Another sentence, or no hand-off word, is not an attribution.
+    expect(prose('Use `--label`. Then run `ficus workstream create`.')).toEqual([])
+  })
+
   test('ignores prose that never named a command', () => {
     expect(check('binary is installed', false)).toBeNull()
     const text =
@@ -215,9 +248,10 @@ describe('the command reference checker', () => {
 
 describe('ficus commands quoted in agent guidance', () => {
   const program = createProgram()
-  const references = GUIDANCE_SOURCES.flatMap(listFiles).flatMap((file) =>
-    extractCommandReferences(file, readFileSync(file, 'utf8'))
-  )
+  const references = GUIDANCE_SOURCES.flatMap(listFiles).flatMap((file) => {
+    const source = readFileSync(file, 'utf8')
+    return [...extractCommandReferences(file, source), ...extractProseOptionReferences(file, source)]
+  })
   const problems = references.flatMap((reference) => {
     const problem = checkCommandReference(program, reference)
     return problem

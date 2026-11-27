@@ -13,8 +13,9 @@ type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0
 
 /**
  * Bytes held by every kind of stored attachment: inbox deliveries, agent chat files, workflow
- * handoff files, and chat files a work stream still retains after their chat row was deleted (counted
- * once, however many streams share them). All of them share INBOX_MAX_TOTAL_STORAGE_BYTES.
+ * handoff files, and chat files and inbox attachments a work stream still retains after their own row
+ * was deleted (counted once, however many streams share them). All of them share
+ * INBOX_MAX_TOTAL_STORAGE_BYTES.
  */
 export async function totalAttachmentStorageBytes(executor: DbExecutor = db): Promise<number> {
   const totals = await Promise.all([
@@ -24,13 +25,19 @@ export async function totalAttachmentStorageBytes(executor: DbExecutor = db): Pr
     executor
       .select({ total: sql<number>`coalesce(sum(${retainedAssets.byteSize}), 0)` })
       .from(retainedAssets)
-      .where(retainedChatFileWithoutSource),
+      .where(retainedFileWithoutSource),
   ])
   return totals.reduce((sum, [row]) => sum + Number(row?.total ?? 0), 0)
 }
 
 /** A retained chat file whose own row is gone: its bytes are no longer counted as a chat file. */
 export const retainedChatFileWithoutSource = sql`${retainedAssets.sourceKind} = 'agent-file' and not exists (select 1 from ${agentFileAttachments} where ${agentFileAttachments.id} = ${retainedAssets.sourceId})`
+
+/** A retained inbox attachment whose own row is gone: its bytes are no longer counted as an inbox file. */
+export const retainedInboxAttachmentWithoutSource = sql`${retainedAssets.sourceKind} = 'inbox-attachment' and not exists (select 1 from ${inboxAttachments} where ${inboxAttachments.id} = ${retainedAssets.sourceId})`
+
+/** Any retained file (not an image) whose own row is gone. */
+export const retainedFileWithoutSource = sql`((${retainedChatFileWithoutSource}) or (${retainedInboxAttachmentWithoutSource}))`
 
 /** A retained image whose own row is gone (images are reported, not counted toward the quota). */
 export const retainedImageWithoutSource = sql`${retainedAssets.sourceKind} = 'image' and not exists (select 1 from ${images} where ${images.id} = ${retainedAssets.sourceId})`

@@ -101,9 +101,15 @@ export function registerWorkstreamFlowCommands(
       collect,
       []
     )
+    .option(
+      '--attach-inbox-attachment <attachmentId>',
+      'Attach an inbox attachment you can read, by ID, with no copy (repeatable; complete only)',
+      collect,
+      []
+    )
     .addHelpText(
       'after',
-      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete). When no attempt is active (for example a flow paused at its attempt limit), revise takes no attemptId: omit it or send null.\nAt an attempt-limit pause, {"action":"raise-limit","expectedVersion":N,"maxStepAttempts":<number or null>} raises or removes the limit and starts the held attempt in one step (see workstream raise-limit).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; --attach-image and --attach-agent-file attach stored chat images and files by ID instead of uploading. If any attachment fails, the attempt is not advanced.\namend revises your own completed attempt while the human approval gate it feeds is open: send expectedVersion, attemptId, the complete revised decisionBrief and evidence (name the commit SHAs of any changes), optional removeAttachmentPaths, and --attach for files to add or replace (the CLI names them in attachmentPaths); other files and stored references carry over. Stored references are attached only when completing. The gate stays open and it is not a new review round. A decision on an older revision is refused.'
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete). When no attempt is active (for example a flow paused at its attempt limit), revise takes no attemptId: omit it or send null.\nAt an attempt-limit pause, {"action":"raise-limit","expectedVersion":N,"maxStepAttempts":<number or null>} raises or removes the limit and starts the held attempt in one step (see workstream raise-limit).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; --attach-image, --attach-agent-file and --attach-inbox-attachment attach stored chat images, chat files and inbox attachments by ID instead of uploading. If any attachment fails, the attempt is not advanced.\namend revises your own completed attempt while the human approval gate it feeds is open: send expectedVersion, attemptId, the complete revised decisionBrief and evidence (name the commit SHAs of any changes), optional removeAttachmentPaths, and --attach for files to add or replace (the CLI names them in attachmentPaths); other files and stored references carry over. Stored references are attached only when completing. The gate stays open and it is not a new review round. A decision on an older revision is refused.'
     )
     .action(
       (
@@ -113,6 +119,7 @@ export function registerWorkstreamFlowCommands(
           attach: string[]
           attachImage?: string[]
           attachAgentFile?: string[]
+          attachInboxAttachment?: string[]
         }
       ) =>
         run(async () => {
@@ -125,6 +132,10 @@ export function registerWorkstreamFlowCommands(
           const references: WorkStreamAssetSource[] = [
             ...(options.attachImage ?? []).map((imageId) => ({ kind: 'image' as const, imageId })),
             ...(options.attachAgentFile ?? []).map((attachmentId) => ({ kind: 'agent-file' as const, attachmentId })),
+            ...(options.attachInboxAttachment ?? []).map((attachmentId) => ({
+              kind: 'inbox-attachment' as const,
+              attachmentId,
+            })),
           ]
           if (options.attach.length && value.action !== 'complete' && value.action !== 'amend')
             throw new Error('--attach is only available when completing or amending an attempt')
@@ -133,10 +144,10 @@ export function registerWorkstreamFlowCommands(
             const flags = [
               options.attachImage?.length ? '--attach-image' : '',
               options.attachAgentFile?.length ? '--attach-agent-file' : '',
+              options.attachInboxAttachment?.length ? '--attach-inbox-attachment' : '',
             ].filter(Boolean)
-            throw new Error(
-              `${flags.join(' and ')} ${flags.length > 1 ? 'are' : 'is'} only available when completing an attempt`
-            )
+            const named = flags.length > 1 ? `${flags.slice(0, -1).join(', ')} and ${flags.at(-1)}` : flags[0]
+            throw new Error(`${named} ${flags.length > 1 ? 'are' : 'is'} only available when completing an attempt`)
           }
           if (options.attach.length + references.length > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
             throw new Error(`At most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files can be attached to one handoff`)

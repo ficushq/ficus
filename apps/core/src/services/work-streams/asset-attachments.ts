@@ -1,13 +1,17 @@
 /**
- * Work-stream references to stored chat images and chat files.
+ * Work-stream references to stored chat images, chat files and inbox attachments.
  *
  * Attaching an existing image or chat file shares it with everyone who can read the work stream,
  * without copying its bytes into a workspace or a new blob. The bytes stay where the source stored
  * them; a `retained_assets` row keeps them alive if the source row is later deleted, and the last
  * share to go releases them. Two checks gate every attach: the caller must legitimately hold the
  * source (an agent: an image or file in its own conversation scope; a person: one they may read,
- * with private conversations owner-only) and must be allowed to write the target stream. A shared
- * source must belong to the stream's squad unless it is the caller's own private conversation.
+ * with private conversations owner-only; anyone: an inbox attachment they may read under the inbox
+ * recipient rule) and must be allowed to write the target stream. A shared source must belong to the
+ * stream's squad unless it is the caller's own private conversation (or personal inbox).
+ *
+ * A share may carry a short label, shown instead of its filename; anyone who may change the share
+ * may change or clear its label.
  *
  * Retention and source deletion share one lock per source, `hashtext(sourceId)`, the same advisory
  * lock Image.deleteMany and AgentFileAttachment take, so a reference and a deletion never race.
@@ -29,6 +33,7 @@ import {
   agentFileAttachments,
   db,
   images,
+  inboxAttachments,
   retainedAssets,
   squads,
   workflowAttemptAttachments,
@@ -43,6 +48,9 @@ import { createLogger } from '../../lib/infra/logger'
 import { deleteAgentAttachmentBlob, readVerifiedAgentAttachmentBlob } from '../attachments/blob-storage'
 import { assertAttachmentInScope, resolveAttachmentScope } from '../attachments/agent-scope'
 import { canReadImage } from '../images/access'
+import { inboxAttachmentAccess } from '../inbox/access'
+import { inboxAttachmentPath, sha256Hex } from '../inbox/attachment-storage'
+import { getSettingsStore } from '../settings'
 import { hasAgentResourcePermission, hasPermission, identityUserId, type Identity } from '../rbac'
 import { assertCanAttach, attemptSlotsUsed } from '../workflows/attachments'
 import { assetManifestLines, type AssignmentAssets } from '../workflows/handoff-prompt'
@@ -79,16 +87,41 @@ export class AssetUnavailableError extends Error {
 /** `<uuid>.<ext>`: the only shape Image.create gives a stored image's filename. */
 const IMAGE_FILENAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,16}$/
 
+/** A UUID, lowercase: the only shape a message or attachment id takes in a blob path. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+function sourceJson(kind: ShareRow['sourceKind'], sourceId: string): WorkStreamAssetSource {
+  if (kind === 'image') return { kind: 'image', imageId: sourceId }
+  if (kind === 'inbox-attachment') return { kind: 'inbox-attachment', attachmentId: sourceId }
+  return { kind: 'agent-file', attachmentId: sourceId }
+}
+
+/** An inbox attachment's stored bytes, derived from ids alone (never from a stored path). */
+function inboxBlobPath(messageId: string, attachmentId: string): string {
+  if (!UUID.test(messageId) || !UUID.test(attachmentId)) throw new Error('Invalid inbox attachment locator')
+  return inboxAttachmentPath(messageId, attachmentId)
+}
+
+/**
+ * A sender's filename as a share records it: one line, no control or format characters, at most
+ * the column's 255 characters (the extension kept, as the preview type follows it).
+ */
+function shareFilename(name: string): string {
+  const clean = name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim() || 'attachment'
+  if (clean.length <= 255) return clean
+  const dot = clean.lastIndexOf('.')
+  const extension = dot > 0 && clean.length - dot <= 17 ? clean.slice(dot) : ''
+  return clean.slice(0, 255 - extension.length) + extension
+}
+
 function shareJson(row: ShareRow): WorkStreamAssetAttachment {
   return {
     id: row.id,
     workStreamId: row.workStreamId,
     attemptId: row.attemptId,
-    source:
-      row.sourceKind === 'image'
-        ? { kind: 'image', imageId: row.sourceId }
-        : { kind: 'agent-file', attachmentId: row.sourceId },
+    source: sourceJson(row.sourceKind, row.sourceId),
     filename: row.filename,
+    label: row.label ?? null,
     contentType: row.contentType,
     byteSize: row.byteSize,
     createdAt: row.createdAt.toISOString(),
@@ -135,9 +168,12 @@ export async function canWriteStreamInputs(
 interface ResolvedSource {
   kind: WorkStreamAssetSource['kind']
   sourceId: string
-  /** The image's filename, or the chat file's owning agent. */
+  /** The image's filename, the chat file's owning agent, or the inbox attachment's message. */
   blobOwner: string
-  /** The agent whose conversation holds the source, rechecked under the lock. */
+  /**
+   * Rechecked under the lock: the agent whose conversation holds an image or chat file, or the
+   * message an inbox attachment belongs to.
+   */
   ownerAgentId: string
   filename: string
   contentType: string
@@ -170,6 +206,7 @@ async function resolveShareableSource(
   stream: Pick<StreamRow, 'squadId'>
 ): Promise<ResolvedSource> {
   const unavailable = () => new AssetAttachmentError(SOURCE_UNAVAILABLE, 404)
+  if (source.kind === 'inbox-attachment') return resolveInboxAttachment(identity, source.attachmentId, stream)
   let resolved: ResolvedSource
   let owner: Agent | null
   if (source.kind === 'image') {
@@ -233,8 +270,65 @@ async function resolveShareableSource(
   return resolved
 }
 
+/**
+ * An inbox attachment the caller may read under the inbox routes' recipient rule (the same rule
+ * `read_attachment` and `ficus inbox download` apply), checked against its stored size and digest.
+ * The recipient decides where it may go: an agent's inbox stays in that agent's squad (a private
+ * agent's only with its owner), and a person's own inbox can be shared only by that person.
+ */
+async function resolveInboxAttachment(
+  identity: Identity,
+  attachmentId: string,
+  stream: Pick<StreamRow, 'squadId'>
+): Promise<ResolvedSource> {
+  const unavailable = () => new AssetAttachmentError(SOURCE_UNAVAILABLE, 404)
+  const access = await inboxAttachmentAccess(identity, attachmentId.toLowerCase(), 'inbox:read')
+  const { attachment, message } = access
+  if (access.denial || !attachment || !message) throw unavailable()
+  if (message.recipientType === 'agent') {
+    const recipient = await Agent.find(message.recipientId, { eager: false })
+    if (!recipient) throw unavailable()
+    if (recipient.squadId) {
+      if (recipient.squadId !== stream.squadId) throw unavailable()
+    } else if (!recipient.ownerUserId || identityUserId(identity) !== recipient.ownerUserId) {
+      throw unavailable()
+    }
+  } else if (message.recipientType !== 'user' || identityUserId(identity) !== message.recipientId) {
+    // The system and voice inboxes have no squad to keep a file in.
+    throw unavailable()
+  }
+  // The same per-file limit a chat file has, as it stands now.
+  if (attachment.byteSize > Number(getSettingsStore().getTyped('INBOX_MAX_ATTACHMENT_BYTES'))) throw unavailable()
+  let bytes: Buffer
+  try {
+    bytes = await readFile(inboxBlobPath(attachment.messageId, attachment.id))
+  } catch {
+    throw unavailable()
+  }
+  if (bytes.length !== attachment.byteSize || sha256Hex(bytes) !== attachment.sha256) throw unavailable()
+  const filename = shareFilename(attachment.filename)
+  return {
+    kind: 'inbox-attachment',
+    sourceId: attachment.id,
+    blobOwner: attachment.messageId,
+    ownerAgentId: attachment.messageId,
+    filename,
+    // Previews follow the name, as for chat files, never the sender's declared type.
+    contentType: workflowAttachmentContentType(filename),
+    byteSize: attachment.byteSize,
+    sha256: attachment.sha256,
+  }
+}
+
 /** Under the source lock: the source still exists, unchanged, in the same conversation. */
 async function sourceStillShareable(tx: DbTx, source: ResolvedSource): Promise<boolean> {
+  if (source.kind === 'inbox-attachment') {
+    const [row] = await tx
+      .select({ messageId: inboxAttachments.messageId })
+      .from(inboxAttachments)
+      .where(eq(inboxAttachments.id, source.sourceId))
+    return row?.messageId === source.ownerAgentId
+  }
   if (source.kind === 'image') {
     const [row] = await tx
       .select({ agentId: images.agentId, status: images.status })
@@ -285,7 +379,10 @@ function activeShare(streamId: string, attemptId: number | null) {
   )
 }
 
-/** Insert the share (or return the identical active one) holding the source lock. */
+/**
+ * Insert the share (or return the identical active one) holding the source lock. A `label` given
+ * for a repeat replaces the existing share's label; an omitted one leaves it.
+ */
 async function insertShare(
   tx: DbTx,
   identity: Identity,
@@ -293,8 +390,9 @@ async function insertShare(
   attemptId: number | null,
   source: ResolvedSource,
   checkCapacity: () => Promise<void>,
-  createdAt?: Date
+  options: { createdAt?: Date; label?: string | null } = {}
 ): Promise<{ attachment: WorkStreamAssetAttachment; created: boolean }> {
+  const { createdAt, label } = options
   await lockSource(tx, source.sourceId)
   if (!(await sourceStillShareable(tx, source))) throw new AssetAttachmentError(SOURCE_UNAVAILABLE, 404)
   const [same] = await tx
@@ -307,7 +405,15 @@ async function insertShare(
         eq(workStreamAssetAttachments.sourceId, source.sourceId)
       )
     )
-  if (same) return { attachment: shareJson(same), created: false }
+  if (same) {
+    if (label === undefined || (same.label ?? null) === label) return { attachment: shareJson(same), created: false }
+    const [relabelled] = await tx
+      .update(workStreamAssetAttachments)
+      .set({ label })
+      .where(eq(workStreamAssetAttachments.id, same.id))
+      .returning()
+    return { attachment: shareJson(relabelled!), created: false }
+  }
   await checkCapacity()
   const asset = await retainSource(tx, source, stream.squadId)
   const [row] = await tx
@@ -319,6 +425,7 @@ async function insertShare(
       sourceKind: source.kind,
       sourceId: source.sourceId,
       filename: asset.filename,
+      label: label ?? null,
       contentType: asset.contentType,
       byteSize: asset.byteSize,
       ...creator(identity),
@@ -349,6 +456,8 @@ export async function attachStreamAsset(input: {
   identity: Identity
   streamId: string
   source: WorkStreamAssetSource
+  /** An optional label (already validated); null clears a repeat's label. */
+  label?: string | null
   notify?: boolean
 }): Promise<{ attachment: WorkStreamAssetAttachment; created: boolean }> {
   const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, input.streamId))
@@ -361,17 +470,25 @@ export async function attachStreamAsset(input: {
     const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, stream.id)).for('update')
     if (!locked) throw new AssetAttachmentError('Work stream not found', 404)
     assertInputsCanChange(locked)
-    return insertShare(tx, input.identity, locked, null, source, async () => {
-      const [inputs] = await tx
-        .select({ total: count() })
-        .from(workStreamAssetAttachments)
-        .where(activeShare(stream.id, null))
-      if ((inputs?.total ?? 0) >= WORK_STREAM_INPUT_ASSET_LIMIT)
-        throw new AssetAttachmentError(
-          `A work stream can hold at most ${WORK_STREAM_INPUT_ASSET_LIMIT} stored inputs; remove one first`,
-          409
-        )
-    })
+    return insertShare(
+      tx,
+      input.identity,
+      locked,
+      null,
+      source,
+      async () => {
+        const [inputs] = await tx
+          .select({ total: count() })
+          .from(workStreamAssetAttachments)
+          .where(activeShare(stream.id, null))
+        if ((inputs?.total ?? 0) >= WORK_STREAM_INPUT_ASSET_LIMIT)
+          throw new AssetAttachmentError(
+            `A work stream can hold at most ${WORK_STREAM_INPUT_ASSET_LIMIT} stored inputs; remove one first`,
+            409
+          )
+      },
+      { label: input.label }
+    )
   })
   if (result.created && input.notify !== false) await notifyRunningWorkers(stream.id, input.identity, result.attachment)
   return result
@@ -408,7 +525,7 @@ export async function insertCreationAssets(
   for (const id of prepared.map((source) => source.sourceId).sort()) await lockSource(tx, id)
   const base = Date.now()
   for (const [index, source] of prepared.entries())
-    await insertShare(tx, identity, created, null, source, async () => {}, new Date(base + index))
+    await insertShare(tx, identity, created, null, source, async () => {}, { createdAt: new Date(base + index) })
 }
 
 /**
@@ -420,6 +537,7 @@ export async function attachAttemptAsset(input: {
   streamId: string
   attemptId: number
   source: WorkStreamAssetSource
+  label?: string | null
 }): Promise<{ attachment: WorkStreamAssetAttachment; created: boolean }> {
   const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, input.streamId))
   if (!stream) throw new AssetAttachmentError('Work stream not found', 404)
@@ -436,12 +554,23 @@ export async function attachAttemptAsset(input: {
       .where(eq(workStreamFlowRuns.workStreamId, stream.id))
       .for('update')
     assertCanAttach(locked, lockedRun, input.attemptId, input.identity)
-    return insertShare(tx, input.identity, locked!, input.attemptId, source, async () => {
-      // References and the attempt's current uploaded handoff files share its limit.
-      const attempt = lockedRun!.state.attempts.find((entry) => entry.id === input.attemptId)!
-      if ((await attemptSlotsUsed(tx, stream.id, attempt)) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
-        throw new AssetAttachmentError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
-    })
+    return insertShare(
+      tx,
+      input.identity,
+      locked!,
+      input.attemptId,
+      source,
+      async () => {
+        // References and the attempt's current uploaded handoff files share its limit.
+        const attempt = lockedRun!.state.attempts.find((entry) => entry.id === input.attemptId)!
+        if ((await attemptSlotsUsed(tx, stream.id, attempt)) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+          throw new AssetAttachmentError(
+            `An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`,
+            409
+          )
+      },
+      { label: input.label }
+    )
   })
 }
 
@@ -516,8 +645,11 @@ async function readRetainedBytes(asset: AssetRow): Promise<Buffer> {
   try {
     if (asset.sourceKind === 'agent-file')
       return await readVerifiedAgentAttachmentBlob(asset.blobOwner, asset.sourceId, asset.byteSize, asset.sha256)
-    if (!IMAGE_FILENAME.test(asset.blobOwner)) throw new Error('Invalid stored image name')
-    const bytes = await readFile(getImagePath(asset.blobOwner))
+    let path: string
+    if (asset.sourceKind === 'inbox-attachment') path = inboxBlobPath(asset.blobOwner, asset.sourceId)
+    else if (IMAGE_FILENAME.test(asset.blobOwner)) path = getImagePath(asset.blobOwner)
+    else throw new Error('Invalid stored image name')
+    const bytes = await readFile(path)
     if (bytes.length !== asset.byteSize || createHash('sha256').update(bytes).digest('hex') !== asset.sha256)
       throw new Error('ATTACHMENT_BLOB_CORRUPT')
     return bytes
@@ -601,6 +733,62 @@ export async function removeStreamAsset(input: {
     await releaseRetainedAsset(released).catch((error) => log.warn('Asset release deferred to cleanup', error))
 }
 
+/**
+ * Set or clear (null) an active share's label, under the same rule as removing it: an input needs
+ * the stream-edit rule, an attempt's result only its own agent while it is open, and a finished
+ * stream's shares stay as they are. Returns the share as it now reads.
+ */
+export async function updateStreamAssetLabel(input: {
+  identity: Identity
+  streamId: string
+  shareId: string
+  /** Already validated; null clears it. */
+  label: string | null
+}): Promise<WorkStreamAssetAttachment> {
+  const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, input.streamId))
+  if (!stream) throw new AssetAttachmentError('Work stream not found', 404)
+  if (!(await canReadStreamAssets(input.identity, stream))) throw new AssetAttachmentError('Forbidden', 403)
+  const [share] = await db
+    .select()
+    .from(workStreamAssetAttachments)
+    .where(
+      and(
+        eq(workStreamAssetAttachments.id, input.shareId),
+        eq(workStreamAssetAttachments.workStreamId, stream.id),
+        isNull(workStreamAssetAttachments.removedAt)
+      )
+    )
+  if (!share) throw new AssetAttachmentError('Attachment not found', 404)
+  if (share.attemptId === null) {
+    if (!(await canWriteStreamInputs(input.identity, stream))) throw new AssetAttachmentError('Forbidden', 403)
+  } else {
+    const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id))
+    assertCanAttach(stream, run, share.attemptId, input.identity)
+  }
+  assertInputsCanChange(stream)
+  return db.transaction(async (tx) => {
+    await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, stream.squadId)).for('update')
+    const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, stream.id)).for('update')
+    if (!locked) throw new AssetAttachmentError('Work stream not found', 404)
+    assertInputsCanChange(locked)
+    if (share.attemptId !== null) {
+      const [run] = await tx
+        .select()
+        .from(workStreamFlowRuns)
+        .where(eq(workStreamFlowRuns.workStreamId, stream.id))
+        .for('update')
+      assertCanAttach(locked, run, share.attemptId, input.identity)
+    }
+    const [row] = await tx
+      .update(workStreamAssetAttachments)
+      .set({ label: input.label })
+      .where(and(eq(workStreamAssetAttachments.id, share.id), isNull(workStreamAssetAttachments.removedAt)))
+      .returning()
+    if (!row) throw new AssetAttachmentError('Attachment not found', 404)
+    return shareJson(row)
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Retention
 // ---------------------------------------------------------------------------
@@ -617,7 +805,12 @@ export async function retainedAssetIdsForStream(streamId: string): Promise<strin
 }
 
 async function sourceRowExists(tx: DbTx, asset: AssetRow): Promise<boolean> {
-  const table = asset.sourceKind === 'image' ? images : agentFileAttachments
+  const table =
+    asset.sourceKind === 'image'
+      ? images
+      : asset.sourceKind === 'inbox-attachment'
+        ? inboxAttachments
+        : agentFileAttachments
   const [row] = await tx.select({ id: table.id }).from(table).where(eq(table.id, asset.sourceId))
   return Boolean(row)
 }
@@ -660,6 +853,7 @@ export async function releaseRetainedAsset(assetId: string): Promise<'kept' | 'r
   const { asset } = decision
   try {
     if (asset.sourceKind === 'agent-file') await deleteAgentAttachmentBlob(asset.blobOwner, asset.sourceId)
+    else if (asset.sourceKind === 'inbox-attachment') await unlink(inboxBlobPath(asset.blobOwner, asset.sourceId))
     else if (IMAGE_FILENAME.test(asset.blobOwner)) await unlink(getImagePath(asset.blobOwner))
   } catch (error) {
     if (!isMissingFile(error)) {

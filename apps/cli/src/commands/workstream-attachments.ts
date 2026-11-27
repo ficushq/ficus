@@ -1,25 +1,37 @@
 import { writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import type { WorkStreamAssetAttachment, WorkStreamAssetAttachments, WorkStreamAssetSource } from '@ficus/shared'
-import { apiDelete, apiFetch, apiGet, apiPost } from '../client'
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from '../client'
 import { isJsonMode, output, outputError } from '../output'
 
 const path = (id: string, rest = '') => `/api/workstreams/${encodeURIComponent(id)}/asset-attachments${rest}`
 
-function sourceFrom(options: { image?: string; agentFile?: string }): WorkStreamAssetSource {
-  if (Boolean(options.image) === Boolean(options.agentFile))
-    throw new Error('Give exactly one of --image IMAGE_ID or --agent-file FILE_ATTACHMENT_ID')
-  return options.image
-    ? { kind: 'image', imageId: options.image }
-    : { kind: 'agent-file', attachmentId: options.agentFile! }
+interface SourceOptions {
+  image?: string
+  agentFile?: string
+  inboxAttachment?: string
+}
+
+function sourceFrom(options: SourceOptions): WorkStreamAssetSource {
+  const given = [options.image, options.agentFile, options.inboxAttachment].filter(Boolean)
+  if (given.length !== 1)
+    throw new Error(
+      'Give exactly one of --image IMAGE_ID, --agent-file FILE_ATTACHMENT_ID or --inbox-attachment INBOX_ATTACHMENT_ID'
+    )
+  if (options.image) return { kind: 'image', imageId: options.image }
+  if (options.agentFile) return { kind: 'agent-file', attachmentId: options.agentFile }
+  return { kind: 'inbox-attachment', attachmentId: options.inboxAttachment! }
 }
 
 function describe(attachment: WorkStreamAssetAttachment): string {
   const source =
     attachment.source.kind === 'image'
       ? `image ${attachment.source.imageId}`
-      : `chat file ${attachment.source.attachmentId}`
-  return `${attachment.id}  ${attachment.filename}  ${attachment.contentType}  ${attachment.byteSize} bytes  (${source})`
+      : attachment.source.kind === 'inbox-attachment'
+        ? `inbox attachment ${attachment.source.attachmentId}`
+        : `chat file ${attachment.source.attachmentId}`
+  const label = attachment.label ? `  "${attachment.label}"` : ''
+  return `${attachment.id}${label}  ${attachment.filename}  ${attachment.contentType}  ${attachment.byteSize} bytes  (${source})`
 }
 
 /**
@@ -32,25 +44,36 @@ async function download(id: string, attachmentId: string): Promise<Response> {
   return apiFetch(`/api/workflows/runs/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`)
 }
 
-/** `ficus workstream attachment ...`: share stored chat images and files with a work stream by ID. */
+/**
+ * `ficus workstream attachment ...`: share stored chat images, chat files and inbox attachments with
+ * a work stream by ID, and label them.
+ */
 export function registerWorkstreamAttachmentCommands(ws: Command): void {
   const attachment = ws
     .command('attachment')
     .alias('attachments')
     .description(
-      'Share stored chat images and files with a work stream by ID (no workspace copy), and list, download or remove them'
+      'Share stored chat images, chat files and inbox attachments with a work stream by ID (no workspace copy), and list, label, download or remove them'
     )
 
   attachment
     .command('add <id>')
     .description(
-      'Share an image or chat file Ficus already stores with the work stream as an input; everyone who can read the work stream can see it'
+      'Share an image, chat file or inbox attachment Ficus already stores with the work stream as an input; everyone who can read the work stream can see it'
     )
     .option('--image <imageId>', 'Chat image ID (from your conversation)')
     .option('--agent-file <attachmentId>', 'Chat file attachment ID')
-    .action(async (id: string, options: { image?: string; agentFile?: string }) => {
+    .option('--inbox-attachment <attachmentId>', 'Inbox attachment ID (from an inbox message you can read)')
+    .option('--label <label>', `Optional short label shown instead of the filename (at most 120 characters)`)
+    .action(async (id: string, options: SourceOptions & { label?: string }) => {
       try {
-        const result = await apiPost<WorkStreamAssetAttachment>(path(id), { source: sourceFrom(options) })
+        const source = sourceFrom(options)
+        if (options.label !== undefined && !options.label.trim())
+          throw new Error('A label cannot be empty; leave out --label to share without one')
+        const result = await apiPost<WorkStreamAssetAttachment>(path(id), {
+          source,
+          ...(options.label !== undefined ? { label: options.label } : {}),
+        })
         output(result, `Attached ${describe(result)}`)
       } catch (error) {
         outputError(error as Error)
@@ -77,6 +100,27 @@ export function registerWorkstreamAttachmentCommands(ws: Command): void {
           for (const entry of entries) console.log(`  ${describe(entry)}`)
         }
         console.log('Agents can view these with the read_attachment tool; download only when a local tool needs bytes.')
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  attachment
+    .command('label <id> <attachmentId> [label]')
+    .description(
+      "Set a stored input's short label (shown instead of its filename), or clear it with --clear; the filename never changes"
+    )
+    .option('--clear', 'Remove the label, so the filename shows again')
+    .action(async (id: string, attachmentId: string, label: string | undefined, options: { clear?: boolean }) => {
+      try {
+        if (Boolean(options.clear) === (label !== undefined))
+          throw new Error('Give a label, or --clear to remove the current one')
+        if (label !== undefined && !label.trim())
+          throw new Error('A label cannot be empty; use --clear to remove the current one')
+        const result = await apiPatch<WorkStreamAssetAttachment>(path(id, `/${encodeURIComponent(attachmentId)}`), {
+          label: options.clear ? null : label,
+        })
+        output(result, result.label ? `Labelled ${describe(result)}` : `Cleared the label of ${describe(result)}`)
       } catch (error) {
         outputError(error as Error)
       }

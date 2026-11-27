@@ -1,7 +1,7 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import { db } from '../db'
-import { inboxAttachments } from '../db/schema'
+import { inboxAttachments, retainedAssets } from '../db/schema'
 import { getSettingsStore } from '../services/settings'
 import { deleteAttachmentFile, sha256Hex, writeAttachmentFile } from '../services/inbox/attachment-storage'
 import { reserveAttachmentStorage, totalAttachmentStorageBytes } from '../services/attachments/storage-quota'
@@ -114,8 +114,22 @@ export class InboxAttachment {
     for (const m of messages) m.attachments = map.get(m.id) ?? []
   }
 
+  /**
+   * Delete the row, and its bytes unless a work stream retains them (see
+   * services/work-streams/asset-attachments.ts). Sharing takes the same per-source advisory lock,
+   * so a share cannot appear between the check and the unlink; the last share's release unlinks
+   * retained bytes later.
+   */
   async delete(): Promise<void> {
-    await db.delete(inboxAttachments).where(eq(inboxAttachments.id, this.id))
-    await deleteAttachmentFile(this.storagePath).catch(() => {})
+    const retained = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${this.id}))`)
+      await tx.delete(inboxAttachments).where(eq(inboxAttachments.id, this.id))
+      const [row] = await tx
+        .select({ id: retainedAssets.id })
+        .from(retainedAssets)
+        .where(and(eq(retainedAssets.sourceKind, 'inbox-attachment'), eq(retainedAssets.sourceId, this.id)))
+      return Boolean(row)
+    })
+    if (!retained) await deleteAttachmentFile(this.storagePath).catch(() => {})
   }
 }

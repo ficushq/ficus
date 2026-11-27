@@ -64,15 +64,20 @@ usually unnecessary; prefer leaving `maxStepAttempts` unset.
 
 ### Stored images and files
 
-Chat images and chat files Ficus already stores are attached by ID, with no
-workspace copy: `ficus workstream attachment add STREAM_ID --image IMAGE_ID` (or
-`--agent-file FILE_ATTACHMENT_ID`) shares one as a stream input,
-`ficus workstream create ... --image IMAGE_ID` does so before the first assignment,
-and `advance --attach-image IMAGE_ID` / `--attach-agent-file FILE_ATTACHMENT_ID`
-(repeatable, `complete` only) attaches one to the completing attempt alongside any
-`--attach` uploads, within the same limit of 10. `attachment list`, `get --out PATH`
-and `remove` manage them; agents view them, and handoff files, with the
-`read_attachment` tool. See [Stored images and files in work streams](../work-stream-assets.md)
+Chat images, chat files and inbox attachments Ficus already stores are attached by
+ID, with no workspace copy: `ficus workstream attachment add STREAM_ID --image IMAGE_ID`
+(or `--agent-file FILE_ATTACHMENT_ID`, or `--inbox-attachment INBOX_ATTACHMENT_ID`)
+shares one as a stream input, with an optional `--label 'short name'` shown instead of
+the filename. `ficus workstream create ... --image IMAGE_ID` (or `--agent-file`,
+`--inbox-attachment`) does so before the first assignment, and `advance` with
+`--attach-image IMAGE_ID`, `--attach-agent-file FILE_ATTACHMENT_ID` or
+`--attach-inbox-attachment INBOX_ATTACHMENT_ID` (repeatable, `complete` only) attaches
+one to the completing attempt alongside any `--attach` uploads, within the same limit
+of 10. `attachment list`, `label STREAM_ID ATTACHMENT_ID 'new label'` (or `--clear`),
+`get --out PATH` and `remove` manage them; agents view them, and handoff files, with
+the `read_attachment` tool. A file that exists only in the shared workspace is
+recorded by path with `ficus workstream update STREAM_ID -f PATH`, which replaces the
+stream's whole path list. See [Stored images and files in work streams](../work-stream-assets.md)
 for sharing rules, retention and the API.
 
 When a transition immediately assigns work to the calling agent, its response

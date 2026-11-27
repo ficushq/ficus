@@ -194,8 +194,8 @@ export function WorkStreamFileList({ files, squadId }: { files: string[]; squadI
 }
 
 /**
- * Every file a work stream carries, in one list: its stored inputs (chat images and files Ficus holds,
- * shared by ID), its workspace files (live paths into the squad workspace) and the files its steps
+ * Every file a work stream carries, in one list: its stored inputs (chat images, chat files and inbox
+ * attachments Ficus holds, shared by ID, titled by their label when they have one), its workspace files (live paths into the squad workspace) and the files its steps
  * handed off. They stay distinct underneath, and each row says which it is; each opens in the viewer
  * for its kind. Renders nothing while there are none.
  */
