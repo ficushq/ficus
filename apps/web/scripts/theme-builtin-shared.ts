@@ -175,7 +175,9 @@ export function fitSelectionBackground(tokens: Record<string, string>, accent: s
   const lightText =
     srgbToOklch(tokenRgba(tokens, '--color-text-primary').slice(0, 3) as [number, number, number]).l > 0.5
   for (let pct = 10; pct <= 100; pct += 5) {
-    let candidate = tint.map((channel, i) => Math.round((channel * pct + hover[i]! * (100 - pct)) / 100))
+    let candidate: readonly number[] = tint.map((channel, i) =>
+      Math.round((channel * pct + hover[i]! * (100 - pct)) / 100)
+    )
     if (!selectionTextReadable(tokens, candidate)) {
       const oklch = srgbToOklch(candidate as [number, number, number])
       let near = oklch.l

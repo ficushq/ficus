@@ -85,7 +85,7 @@ try {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const errors: string[] = []
   for (const variant of variants) {
-    const page = await browser.newPage()
+    const page: Page = await browser.newPage()
     page.setDefaultTimeout(10000)
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setViewportSize({ width: 1280, height: 900 })

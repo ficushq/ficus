@@ -128,7 +128,7 @@ for (const [key, value] of [
     },
   ],
 ] as const)
-  cache.setQueryData(key, value)
+  cache.setQueryData(key as never, value as never)
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={cache}>
