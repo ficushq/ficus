@@ -4,10 +4,11 @@ import { workflowHistoricalStep, workflowReviewBriefForAttempt } from './workflo
 import {
   effectiveWorkflowStep,
   workflowCompletionTargets,
+  workflowOutcomeRequiresEvidence,
   type WorkflowAttempt,
   type WorkflowRun,
 } from './workflow-runtime'
-import type { WorkflowTransition } from './workflows'
+import type { WorkflowStep, WorkflowTransition } from './workflows'
 
 /**
  * The review screen's plain words for people and effects, shared so web and Farm say the same thing:
@@ -22,10 +23,48 @@ export function workflowStepName(run: WorkflowRun, stepId: string): string {
   return run.definition.steps.find((entry) => entry.id === stepId)?.name ?? stepId
 }
 
-/** "changes-requested" as "Changes requested". */
+/** A decided outcome as it reads in records of what happened: "changes-requested" is "Changes requested". */
 export function workflowOutcomeLabel(outcome: string): string {
   const words = outcome.replace(/[-_]+/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** Present-tense action labels for well-known outcome IDs, keyed by the ID with `_` read as `-`. */
+const OUTCOME_ACTION_LABELS: Record<string, string> = {
+  approved: 'Approve',
+  'changes-requested': 'Request changes',
+  rejected: 'Reject',
+  accepted: 'Accept',
+  declined: 'Decline',
+  denied: 'Deny',
+}
+
+/**
+ * An outcome as a decision button names it, in the present tense: "approved" is "Approve" and
+ * "changes-requested" is "Request changes". Unknown or custom outcomes keep the `workflowOutcomeLabel` wording.
+ */
+export function workflowOutcomeActionLabel(outcome: string): string {
+  return OUTCOME_ACTION_LABELS[outcome.trim().toLowerCase().replace(/_/g, '-')] ?? workflowOutcomeLabel(outcome)
+}
+
+/**
+ * The notes helper for a gate's outcomes: "Required.", "Optional." or which outcomes need them. Notes
+ * are required exactly where Core requires them (`workflowOutcomeRequiresEvidence`): a send-back needs
+ * them as the returned step's rework feedback, and moving work forward does not.
+ */
+export function workflowDecisionNotesHint(step: WorkflowStep, outcomes: Array<[string, WorkflowTransition]>): string {
+  const labelsWhere = (required: boolean) =>
+    outcomes
+      .filter(([, transition]) => workflowOutcomeRequiresEvidence(step, transition) === required)
+      .map(([outcome]) => workflowOutcomeActionLabel(outcome))
+  const requiredFor = labelsWhere(true)
+  const optionalFor = labelsWhere(false)
+  const rule = !requiredFor.length
+    ? 'Optional.'
+    : !optionalFor.length
+      ? 'Required.'
+      : `Optional for ${optionalFor.join(', ')}; required for ${requiredFor.join(', ')}.`
+  return `${rule} Your notes are recorded with the decision and passed to the next step.`
 }
 
 /** "design-assessment · Attempt 16 · Proposal ready": the attempt whose handoff is under review. */

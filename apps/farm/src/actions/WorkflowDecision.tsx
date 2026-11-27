@@ -24,8 +24,10 @@ import {
   workflowSeenRevisionsAtOpen,
   workflowUnseenLabel,
   workflowApprovalStatement,
+  workflowDecisionNotesHint,
+  workflowOutcomeActionLabel,
   workflowOutcomeEffect,
-  workflowOutcomeLabel,
+  workflowOutcomeRequiresEvidence,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   type ResolvedTrackedResource,
   type WorkflowAttemptLimitPause,
@@ -388,6 +390,7 @@ function HumanGate({
         unseen={unseen}
         inputs={stream.assetAttachments}
         preparedBy={people.authorOf}
+        approvalShownWithDecision={approvalStatement}
       >
         {materials}
       </WorkflowBriefDocuments>
@@ -432,7 +435,7 @@ function HumanGate({
             onChange={(event) => setEvidence(event.target.value)}
           />
           <p id={`${notesId}-hint`} className="g-action-note">
-            Required. Your notes are recorded with the decision and passed to the next step.
+            {workflowDecisionNotesHint(step, Object.entries(step.outcomes))}
           </p>
           {unseenMessage && (
             <div className="g-action-row">
@@ -452,12 +455,18 @@ function HumanGate({
             {Object.entries(step.outcomes).map(([outcome, transition]) => (
               <VerbButton
                 key={outcome}
-                verb={workflowOutcomeLabel(outcome)}
-                busyVerb={`${workflowOutcomeLabel(outcome)}…`}
+                verb={workflowOutcomeActionLabel(outcome)}
+                busyVerb={`${workflowOutcomeActionLabel(outcome)}…`}
                 help={effectOf(outcome)}
                 tone={outcome === firstForward ? 'harvest' : 'returnTo' in transition ? 'prune' : 'plain'}
                 busy={advance.isPending && advance.variables === outcome}
-                disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0 || unseen.length > 0}
+                disabled={
+                  advance.isPending ||
+                  // Notes are required only where Core requires them: a send-back's rework feedback.
+                  (workflowOutcomeRequiresEvidence(step, transition) && !evidence.trim()) ||
+                  blockingWaits.length > 0 ||
+                  unseen.length > 0
+                }
                 onClick={() => advance.mutate(outcome)}
               />
             ))}
@@ -474,7 +483,7 @@ function HumanGate({
           <ul aria-label="Outcomes" className="g-action-note">
             {Object.keys(step.outcomes).map((outcome) => (
               <li key={outcome}>
-                <span className="g-byline-author">{workflowOutcomeLabel(outcome)}</span> · {effectOf(outcome)}
+                <span className="g-byline-author">{workflowOutcomeActionLabel(outcome)}</span> · {effectOf(outcome)}
               </li>
             ))}
           </ul>

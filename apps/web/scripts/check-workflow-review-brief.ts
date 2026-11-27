@@ -176,10 +176,8 @@ try {
           if (mode === 'return')
             await review
               .getByRole('button', { name: /^Approve/ })
-              // The Farm keeps its own captions until its review screen is reworded.
-              .getByText(surface === 'farm' ? 'Continues to execute' : 'Next: execute (General Purpose agent)', {
-                exact: true,
-              })
+              // Web and Farm caption outcomes with the same shared words.
+              .getByText('Next: execute (General Purpose agent)', { exact: true })
               .waitFor()
           await review.evaluate((el) => {
             el.querySelector('[data-review-document]')?.scrollTo(0, 0)
@@ -194,7 +192,7 @@ try {
             await review.getByText('Wait for staging prerequisite 1.', { exact: false }).waitFor()
             await review.getByText('Wait for staging prerequisite 2.', { exact: false }).waitFor()
             await review.getByText('Review queued', { exact: true }).waitFor()
-            if (surface === 'farm') await review.getByLabel('Decision notes').fill('Read the synthetic staging design.')
+            // Approving needs no notes on either surface, so only the blockers hold the button.
             assert.equal(await approve.isDisabled(), true)
             await page.evaluate(() => (window as unknown as { clearReviewBlockers: () => void }).clearReviewBlockers())
             await page.waitForFunction(

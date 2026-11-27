@@ -3,12 +3,14 @@ import {
   workflowApprovalStatement,
   workflowAttemptAuthor,
   workflowAttemptSummary,
+  workflowDecisionNotesHint,
+  workflowOutcomeActionLabel,
   workflowOutcomeEffect,
   workflowWaitingLabel,
 } from './workflow-review-labels'
 import { advanceWorkflowRun, createWorkflowRun } from './workflow-runtime'
 import { createBlankWorkflow } from './workflow-editing'
-import { workflowDefinitionSchema } from './workflows'
+import { workflowDefinitionSchema, type WorkflowStep } from './workflows'
 
 /** execute (an engineer) → Release approval → finish, or a check (a reviewer) and a sign-off; the gate is open. */
 function gateRun({
@@ -154,4 +156,16 @@ test('an attempt summary names its step, attempt and outcome', () => {
   const run = gateRun()
   expect(workflowAttemptSummary(run.state, run.state.attempts[0]!)).toBe('execute · Attempt 1 · Completed')
   expect(workflowAttemptSummary(run.state, run.state.attempts.at(-1)!)).toBe('Release approval · Attempt 2')
+})
+
+test('decision buttons say what they do now; a send-back alone needs notes', () => {
+  expect(workflowOutcomeActionLabel('approved')).toBe('Approve')
+  expect(workflowOutcomeActionLabel('changes_requested')).toBe('Request changes')
+  expect(workflowOutcomeActionLabel('ship-it')).toBe('Ship it')
+  const run = gateRun()
+  const gate = run.state.attempts.at(-1)!
+  const step = gate.step as WorkflowStep
+  expect(workflowDecisionNotesHint(step, Object.entries(step.outcomes))).toBe(
+    'Optional for Approve, Needs review; required for Request changes. Your notes are recorded with the decision and passed to the next step.'
+  )
 })

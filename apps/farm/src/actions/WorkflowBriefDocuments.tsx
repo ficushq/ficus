@@ -58,6 +58,7 @@ export function WorkflowBriefDocuments({
   children,
   unseen = [],
   preparedBy,
+  approvalShownWithDecision,
 }: {
   run: WorkflowRunDetail
   attempt: WorkflowAttempt
@@ -69,6 +70,11 @@ export function WorkflowBriefDocuments({
   unseen?: WorkflowUnseenRevision[]
   /** Who prepared a source ("Engineer (Payments)"); without one the brief names the step that did. */
   preparedBy?: (source: WorkflowAttempt) => string | undefined
+  /**
+   * What approval allows, when the decision below shows it whole beside the outcomes. The card is one
+   * column, so the brief points there instead of repeating the same text right above it.
+   */
+  approvalShownWithDecision?: string
 }) {
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [...brief.sources, ...(brief.carriedSources ?? [])]
@@ -174,7 +180,13 @@ export function WorkflowBriefDocuments({
                     source.decisionBrief?.value[field] ? (
                       <section key={field}>
                         <h5 className="g-material-head">{label}</h5>
-                        <ActionText>{source.decisionBrief.value[field]}</ActionText>
+                        {field === 'approvalEffect' &&
+                        approvalShownWithDecision &&
+                        source.decisionBrief.value[field].trim() === approvalShownWithDecision ? (
+                          <p className="g-action-note">Shown in full with the decision below.</p>
+                        ) : (
+                          <ActionText>{source.decisionBrief.value[field]}</ActionText>
+                        )}
                       </section>
                     ) : null
                   )}

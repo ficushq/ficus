@@ -10,6 +10,8 @@ export {
   workflowAttemptAuthor as attemptAuthor,
   workflowWaitingLabel as waitingLabel,
   workflowAttemptSummary as attemptSummary,
+  workflowOutcomeActionLabel as outcomeActionLabel,
+  workflowDecisionNotesHint as decisionNotesHint,
 } from '@ficus/shared'
 /** The squad's own name for an agent type (`AgentType.name`), when it is known. */
 export type { AgentTypeName } from './agentDisplay'
@@ -25,7 +27,6 @@ import {
   workflowIncomingAttempts,
   workflowOutcomeRequiresEvidence,
   workflowHistoricalStep,
-  workflowOutcomeLabel as outcomeLabel,
   workflowApprovalStatement as approvalStatement,
   workflowGateApprover,
   type WorkflowGateApprover,
@@ -50,24 +51,6 @@ export function isHumanGate(run: WorkflowRun, attempt: WorkflowAttempt): boolean
   return step?.kind === 'human-approval' || (step?.kind === 'decision' && !!attempt.decision?.awaitingPerson)
 }
 
-/** Present-tense action labels for well-known outcome IDs, keyed by the ID with `_` read as `-`. */
-const OUTCOME_ACTION_LABELS: Record<string, string> = {
-  approved: 'Approve',
-  'changes-requested': 'Request changes',
-  rejected: 'Reject',
-  accepted: 'Accept',
-  declined: 'Decline',
-  denied: 'Deny',
-}
-
-/**
- * An outcome as a decision button names it, in the present tense: "approved" is "Approve" and
- * "changes-requested" is "Request changes". Unknown or custom outcomes keep the `outcomeLabel` wording.
- */
-export function outcomeActionLabel(outcome: string): string {
-  return OUTCOME_ACTION_LABELS[outcome.trim().toLowerCase().replace(/_/g, '-')] ?? outcomeLabel(outcome)
-}
-
 /**
  * Whether deciding this outcome needs decision notes: the one place the web rule lives. It mirrors
  * Core's authoritative check, so forward approval needs no notes and a send-back (`returnTo`) does,
@@ -75,22 +58,6 @@ export function outcomeActionLabel(outcome: string): string {
  */
 export function outcomeRequiresNotes(step: WorkflowStep, transition: WorkflowTransition): boolean {
   return workflowOutcomeRequiresEvidence(step, transition)
-}
-
-/** The notes helper for a gate's outcomes: "Required.", "Optional." or which outcomes need them. */
-export function decisionNotesHint(step: WorkflowStep, outcomes: Array<[string, WorkflowTransition]>): string {
-  const labelsWhere = (required: boolean) =>
-    outcomes
-      .filter(([, transition]) => outcomeRequiresNotes(step, transition) === required)
-      .map(([outcome]) => outcomeActionLabel(outcome))
-  const requiredFor = labelsWhere(true)
-  const optionalFor = labelsWhere(false)
-  const rule = !requiredFor.length
-    ? 'Optional.'
-    : !optionalFor.length
-      ? 'Required.'
-      : `Optional for ${optionalFor.join(', ')}; required for ${requiredFor.join(', ')}.`
-  return `${rule} Your notes are recorded with the decision and passed to the next step.`
 }
 
 /**
