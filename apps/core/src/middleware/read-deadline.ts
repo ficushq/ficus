@@ -42,10 +42,11 @@ type RequestContext = { env: unknown; req: { raw: Request } }
 
 /** Bun's server, as index.ts hands it to `app.fetch` (hono/bun `getBunServer` reads it the same way). */
 function bunServer(c: RequestContext): IdleTimeoutServer | undefined {
-  const env = c.env as { server?: IdleTimeoutServer } | IdleTimeoutServer | undefined
+  const env = c.env
   if (!env || typeof env !== 'object') return undefined
-  const server = 'server' in env ? env.server : env
-  return typeof server?.timeout === 'function' ? server : undefined
+  const server: unknown = 'server' in env ? env.server : env
+  if (!server || typeof server !== 'object' || !('timeout' in server)) return undefined
+  return typeof server.timeout === 'function' ? (server as IdleTimeoutServer) : undefined
 }
 
 /**
