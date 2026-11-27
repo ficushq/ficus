@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-describe('hasSessionDeliveredExecutionPrompt', () => {
+describe('sessionDeliveredExecutionPromptEntryIds', () => {
   let typeId: string
   let agent: Agent
   let dir: string
@@ -44,20 +44,20 @@ describe('hasSessionDeliveredExecutionPrompt', () => {
     return { claimed: claimed!, owner }
   }
 
-  it('is false while the queued prompt row is pending and true once its session entry is acknowledged', async () => {
+  it('is empty while the queued prompt row is pending and holds its session entry once acknowledged', async () => {
     const execution = await agent.queueExecution({ message: 'original task text' })
     expect(execution.message).toBe('original task text')
-    expect(await agent.hasSessionDeliveredExecutionPrompt(execution.id)).toBe(false)
+    expect(await agent.sessionDeliveredExecutionPromptEntryIds(execution.id)).toEqual([])
 
     const { claimed, owner } = await claimOwnPrompt(execution.id)
     // Claimed but not yet appended: still not in the session.
-    expect(await agent.hasSessionDeliveredExecutionPrompt(execution.id)).toBe(false)
+    expect(await agent.sessionDeliveredExecutionPromptEntryIds(execution.id)).toEqual([])
 
     const deliveryId = claimed.metadata!.sessionDelivery!.id
     await agent.confirmSessionDelivery(deliveryId, owner, 'entry-1', { executionId: execution.id, streamGroupId: 'g' })
-    expect(await agent.hasSessionDeliveredExecutionPrompt(execution.id)).toBe(true)
+    expect(await agent.sessionDeliveredExecutionPromptEntryIds(execution.id)).toEqual(['entry-1'])
     // Another execution's prompt is not this one.
-    expect(await agent.hasSessionDeliveredExecutionPrompt(crypto.randomUUID())).toBe(false)
+    expect(await agent.sessionDeliveredExecutionPromptEntryIds(crypto.randomUUID())).toEqual([])
   })
 
   it('counts a prompt that hard-interruption reconciliation finds appended to the session', async () => {
@@ -73,14 +73,14 @@ describe('hasSessionDeliveredExecutionPrompt', () => {
       },
     ])
     await agent.reconcileSessionDeliveries((ids) => readSessionDeliveryReceipts(file, ids))
-    expect(await agent.hasSessionDeliveredExecutionPrompt(appended.id)).toBe(true)
+    expect(await agent.sessionDeliveredExecutionPromptEntryIds(appended.id)).toEqual(['entry-appended'])
   })
 
   it('releases a prompt that never reached the session before a hard interruption', async () => {
     const lost = await agent.queueExecution({ message: 'lost before the crash' })
     await claimOwnPrompt(lost.id)
     await agent.reconcileSessionDeliveries((ids) => readSessionDeliveryReceipts(sessionFile([]), ids))
-    expect(await agent.hasSessionDeliveredExecutionPrompt(lost.id)).toBe(false)
+    expect(await agent.sessionDeliveredExecutionPromptEntryIds(lost.id)).toEqual([])
     // Released, so the resumed run claims and sends it again.
     const [reclaimed] = await agent.claimInitialPendingMessagesForSessionDelivery({
       executionId: lost.id,
