@@ -3,6 +3,8 @@ import { queries } from '../../queryOptions'
 import { useState } from 'react'
 import clsx from 'clsx'
 import { separateWorkflowParticipant } from '../../lib/workflowEditing'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
+import { agentTypeDisplayName } from '../../lib/agentDisplay'
 import { isWorkerAgentType, type WorkflowDefinition } from '@ficus/shared'
 
 const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
@@ -193,6 +195,7 @@ function WorkflowParticipantFields({
   onChange: (participant: WorkflowDefinition['participants'][string]) => void
 }) {
   const { data: agentTypes = [] } = useQuery(queries.agentTypes.list())
+  const typeNames = useAgentTypeNames()
   return (
     <div className="space-y-5">
       <label className="block text-sm">
@@ -204,7 +207,7 @@ function WorkflowParticipantFields({
         >
           {!agentTypes.some((type) => type.id === participant.agentTypeId && isWorkerAgentType(type)) && (
             <option value={participant.agentTypeId} disabled>
-              {participant.agentTypeId} (unavailable for workers)
+              {agentTypeDisplayName(participant.agentTypeId, typeNames)} (unavailable for workers)
             </option>
           )}
           {agentTypes.filter(isWorkerAgentType).map((type) => (

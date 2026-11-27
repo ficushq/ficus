@@ -391,7 +391,7 @@ describe('SquadAgentThreads completed agents', () => {
       expect(sectionToggle.getAttribute('aria-expanded')).toBe('true')
 
       const dormantButton = window.document.querySelector(
-        'button[title="Sleeping Agent · engineer · sleeping"]'
+        'button[title="Engineer · Sleeping Agent · sleeping"]'
       ) as HTMLButtonElement
       expect(dormantButton).toBeTruthy()
       expect(dormantButton.tagName).toBe('BUTTON')
@@ -436,7 +436,7 @@ describe('SquadAgentThreads terminated agent collapse', () => {
     )
 
     expect(html).toContain('Recently Completed (1)')
-    expect(html).not.toContain('Old Engineer · engineer · old1')
+    expect(html).not.toContain('Engineer · Old Engineer · old1')
     expect(html).toContain('data-agent-type-section="recently-completed"')
   })
 })
@@ -1122,7 +1122,7 @@ describe('SquadAgentThreads new consultant chat', () => {
 
       const row = () =>
         window.document.querySelector(
-          '[data-agent-type-section="manager"] [title="Pearl · manager · m1"]'
+          '[data-agent-type-section="manager"] [title="Manager · Pearl · m1"]'
         ) as HTMLElement | null
 
       // The auto-selected manager row is highlighted.
@@ -1163,7 +1163,7 @@ describe('SquadAgentThreads new consultant chat', () => {
       expect(window.document.querySelector('[data-testid="consultant-chat-composer"]')).toBeTruthy()
       expect(window.document.body.textContent).toContain('New consultant')
       const row = window.document.querySelector(
-        '[data-agent-type-section="manager"] [title="Pearl · manager · m1"]'
+        '[data-agent-type-section="manager"] [title="Manager · Pearl · m1"]'
       ) as HTMLElement | null
       expect(row?.getAttribute('aria-pressed')).toBe('false')
 
@@ -1280,6 +1280,60 @@ describe('SquadAgentThreads section headings', () => {
     expect(general).not.toContain('<span>General</span>')
     const custom = html.slice(html.indexOf('data-agent-type-section="qa-bot"'))
     expect(custom).toContain('<span>Qa Bot</span>')
+  })
+})
+
+describe('SquadAgentThreads hover titles', () => {
+  test('lead with the configured type name, then the name and ID, never the raw type id', async () => {
+    const dom = await installDom()
+    const { window } = dom
+    try {
+      const { root } = dom.createRoot()
+      const client = makeQueryClient()
+      client.setQueryData(queries.agentTypes.list().queryKey, [
+        { id: 'sysops', name: 'SysOps' },
+        { id: 'consultant', name: 'Consultant' },
+      ])
+      await dom.act(async () => {
+        renderThreadsDom(
+          root,
+          client,
+          [
+            agent({ id: 'm1', agentTypeId: 'manager' }),
+            agent({ id: 's1', agentTypeId: 'sysops', metadata: { name: 'Flint' } }),
+            agent({ id: 'g1', agentTypeId: 'general', metadata: {} }),
+            agent({
+              id: 'k1',
+              agentTypeId: 'consultant',
+              context: { origin: 'assistant' } as Agent['context'],
+              metadata: { name: 'Juniper' },
+            }),
+          ],
+          [agent({ id: 'old-s', agentTypeId: 'sysops', status: 'terminated', metadata: { name: 'Slate' } })]
+        )
+      })
+      const toggle = Array.from(window.document.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Recently Completed')
+      ) as HTMLButtonElement
+      await dom.act(async () => toggle.click())
+
+      const titles = Array.from(window.document.querySelectorAll('.squad-chat-agent'))
+        .map((row) => (row.matches('button') ? row : row.querySelector('button'))?.getAttribute('title'))
+        .filter(Boolean)
+      expect(titles).toContain('SysOps · Flint · s1')
+      // No name: the type and the ID, not the type id standing in for the name.
+      expect(titles).toContain('General Purpose agent · g1')
+      expect(titles).toContain('Consultant via Assistant · Juniper · k1')
+      // Recently Completed rows read the same way.
+      expect(titles).toContain('SysOps · Slate · old-s')
+      for (const title of titles) {
+        expect(title).not.toMatch(/ · (sysops|general|consultant|manager)( |$)/)
+      }
+
+      await dom.act(async () => root.unmount())
+    } finally {
+      await dom.cleanup()
+    }
   })
 })
 
@@ -1550,8 +1604,8 @@ describe('SquadAgentThreads active filter', () => {
       await dom.act(async () =>
         (document.querySelector('[aria-label="Collapse Engineer"]') as HTMLButtonElement).click()
       )
-      expect(document.querySelector('[title="Selected worker · engineer · idle-worker"]')).not.toBeNull()
-      expect(document.querySelector('[title="Other worker · engineer · other-idle"]')).toBeNull()
+      expect(document.querySelector('[title="Engineer · Selected worker · idle-worker"]')).not.toBeNull()
+      expect(document.querySelector('[title="Engineer · Other worker · other-idle"]')).toBeNull()
       await dom.act(async () =>
         (document.querySelector('[data-agent-type-section="manager"] button') as HTMLButtonElement).click()
       )
@@ -1591,10 +1645,10 @@ describe('SquadAgentThreads active filter', () => {
         const category = status === 'idle' ? 'engineer' : 'recently-completed'
         expect(
           dialog.querySelector(
-            `[data-agent-type-section="${category}"] [title="Selected worker · engineer · selected-worker"]`
+            `[data-agent-type-section="${category}"] [title="Engineer · Selected worker · selected-worker"]`
           )
         ).not.toBeNull()
-        expect(dialog.querySelector('[title="Other worker · reviewer · other-worker"]')).toBeNull()
+        expect(dialog.querySelector('[title="Reviewer · Other worker · other-worker"]')).toBeNull()
         expect(dialog.textContent).not.toContain('No active agents')
       } finally {
         await dom.cleanup()
@@ -1668,17 +1722,17 @@ describe('SquadAgentThreads active filter', () => {
       const search = window.document.querySelector('input[type="search"]') as HTMLInputElement
       const header = window.document.querySelector('[data-testid="agent-picker-static"]')!
       expect(header.textContent).toContain('Idle Engineer')
-      expect(window.document.querySelector('[title="Idle Engineer · engineer · e2"]')).not.toBeNull()
+      expect(window.document.querySelector('[title="Engineer · Idle Engineer · e2"]')).not.toBeNull()
       expect(window.document.body.textContent).toContain('Agent chat body')
 
       await dom.act(async () => filter.click())
       expect(filter.getAttribute('aria-pressed')).toBe('false')
-      expect(window.document.querySelector('[title="Idle Engineer · engineer · e2"]')).not.toBeNull()
+      expect(window.document.querySelector('[title="Engineer · Idle Engineer · e2"]')).not.toBeNull()
       expect(window.document.querySelector('[data-agent-type-section="recently-completed"]')).not.toBeNull()
       await dom.act(async () => changeSearchInput(window, search, 'Idle'))
-      expect(window.document.querySelector('[title="Working Engineer · engineer · e1"]')).toBeNull()
+      expect(window.document.querySelector('[title="Engineer · Working Engineer · e1"]')).toBeNull()
       await dom.act(async () => filter.click())
-      expect(window.document.querySelector('[title="Idle Engineer · engineer · e2"]')).not.toBeNull()
+      expect(window.document.querySelector('[title="Engineer · Idle Engineer · e2"]')).not.toBeNull()
       await dom.act(async () => changeSearchInput(window, search, 'does not match'))
       expect(window.document.body.textContent).toContain('No conversations match your search')
       expect(header.textContent).toContain('Idle Engineer')
@@ -1703,7 +1757,7 @@ describe('SquadAgentThreads active filter', () => {
       expect(window.document.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
       await dom.act(async () => renderThreadsDom(root, queryClient, [agent(), { ...worker, status: 'idle' }]))
       expect(window.document.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
-      expect(window.document.querySelector('[title="Worker · engineer · e1"]')?.getAttribute('aria-pressed')).toBe(
+      expect(window.document.querySelector('[title="Engineer · Worker · e1"]')?.getAttribute('aria-pressed')).toBe(
         'true'
       )
       expect(window.document.body.textContent).not.toContain('No active agents')
@@ -1785,7 +1839,7 @@ describe('SquadAgentThreads consultant recency', () => {
         }),
       ]
     )
-    const listed = [...html.matchAll(/title="Chat (\d+) · consultant · chat-\d+"/g)].map((match) => match[1])
+    const listed = [...html.matchAll(/title="Consultant · Chat (\d+) · chat-\d+"/g)].map((match) => match[1])
     expect(listed).toEqual(['11', '10', '09', '08', '07'])
     expect(html).toContain('View all (12)')
     expect(html).not.toContain('Archived Chat')
@@ -1805,8 +1859,8 @@ describe('SquadAgentThreads consultant recency', () => {
         createdAt: new Date(now.getTime() + 60 * 60_000),
       }),
     ])
-    expect(html.indexOf('Fresh chat · consultant')).toBeLessThan(html.indexOf('Chat 11 · consultant'))
-    expect(html).not.toContain('Chat 02 · consultant')
+    expect(html.indexOf('Consultant · Fresh chat')).toBeLessThan(html.indexOf('Consultant · Chat 11'))
+    expect(html).not.toContain('Consultant · Chat 02')
   })
 
   test('View all reveals older chats, search spans the full history, and human messages promote a chat', async () => {
@@ -1818,7 +1872,7 @@ describe('SquadAgentThreads consultant recency', () => {
       let chats = history()
       await dom.act(async () => renderThreadsDom(root, client, [agent(), ...chats]))
       const section = () => dom.window.document.querySelector('[data-agent-type-section="consultant"]')!
-      const rows = () => Array.from(section().querySelectorAll('button[title*=" · consultant · "]'))
+      const rows = () => Array.from(section().querySelectorAll('button[title^="Consultant · "]'))
       expect(rows()).toHaveLength(5)
       const toggle = Array.from(section().querySelectorAll('button')).find((button) =>
         button.textContent?.includes('View all')
@@ -1850,16 +1904,16 @@ describe('SquadAgentThreads consultant recency', () => {
 
   test.each([0, 2, 5])('keeps %i consultants without an unnecessary View all action', (count) => {
     const html = renderThreads([agent(), ...history().slice(0, count)])
-    expect([...html.matchAll(/title="Chat \d+ · consultant · chat-\d+"/g)]).toHaveLength(count)
+    expect([...html.matchAll(/title="Consultant · Chat \d+ · chat-\d+"/g)]).toHaveLength(count)
     expect(html).not.toContain('View all')
     expect(html.includes('Recent chats')).toBe(count > 0)
   })
 
   test('offers View all as soon as a sixth consultant exists, including during a cached refresh', () => {
     const html = renderThreads([agent(), ...history().slice(0, 6)], [], true)
-    expect([...html.matchAll(/title="Chat \d+ · consultant · chat-\d+"/g)]).toHaveLength(5)
+    expect([...html.matchAll(/title="Consultant · Chat \d+ · chat-\d+"/g)]).toHaveLength(5)
     expect(html).toContain('View all (6)')
-    expect(html).not.toContain('Chat 00 · consultant')
+    expect(html).not.toContain('Consultant · Chat 00')
     expect(html).not.toContain('Loading agent conversations')
   })
 
@@ -1875,7 +1929,7 @@ describe('SquadAgentThreads consultant recency', () => {
         const rows = () => Array.from(section.querySelectorAll<HTMLButtonElement>('.squad-chat-agent > button'))
         const recentNames = ['Chat 11', 'Chat 10', 'Chat 09', 'Chat 08', 'Chat 07']
         const expectedNames = selectedId === 'chat-0' ? [...recentNames, 'Chat 00'] : recentNames
-        const names = () => rows().map((row) => row.title.split(' · ')[0])
+        const names = () => rows().map((row) => row.title.split(' · ')[1])
         expect(names()).toEqual(expectedNames)
         expect(rows().filter((row) => row.getAttribute('aria-pressed') === 'true')).toHaveLength(1)
         await dom.act(async () => getByRole(section, 'button', { name: 'View all (12)' }).click())
@@ -2022,7 +2076,7 @@ describe('SquadAgentThreads consultant recency', () => {
         )
         const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"]')!
         const section = dialog.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
-        expect(section.querySelectorAll('button[title*=" · consultant · "]')).toHaveLength(layout === 'page' ? 11 : 6)
+        expect(section.querySelectorAll('button[title^="Consultant · "]')).toHaveLength(layout === 'page' ? 11 : 6)
         const toggle = section.querySelector<HTMLButtonElement>('button[aria-controls]')
         if (layout === 'page') {
           expect(toggle).toBeNull()
@@ -2058,7 +2112,7 @@ describe('SquadAgentThreads consultant recency', () => {
       )
       const filter = dom.window.document.querySelector('[aria-label="Active workers only"]') as HTMLButtonElement
       const consultantRows = () =>
-        dom.window.document.querySelectorAll('[data-agent-type-section="consultant"] button[title*=" · consultant · "]')
+        dom.window.document.querySelectorAll('[data-agent-type-section="consultant"] button[title^="Consultant · "]')
       expect(consultantRows()).toHaveLength(5)
       expect(dom.window.document.querySelector('[data-agent-type-section="engineer"]')).toBeNull()
       await dom.act(async () => filter.click())

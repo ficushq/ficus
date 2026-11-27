@@ -5,6 +5,7 @@ import { createBlankWorkflow } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { WorkflowParticipantEditor } from './WorkflowParticipantEditor'
+import { StaticAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 test('shared participant edits retain step instructions and rename every reference', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
@@ -127,6 +128,49 @@ test('tier dropdown overrides the engineer tier and can return to agent type def
         ...(tier ? { tier } : {}),
       })
     }
+  } finally {
+    await dom.cleanup()
+    client.clear()
+  }
+})
+
+test('a participant whose agent type cannot run workflow work is named by its configured type name', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const { root } = dom.createRoot()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(queries.modelTiers.list().queryKey, [])
+  client.setQueryData(queries.agentTypes.list().queryKey, [
+    { id: 'engineer', name: 'Engineer' },
+    { id: 'manager', name: 'Squad Lead', systemOnly: true },
+  ])
+  const definition = createBlankWorkflow()
+  definition.participants.lead = { agentTypeId: 'manager', session: 'reuse-within-stream' }
+  definition.participants.gone = { agentTypeId: 'old-auditor', session: 'reuse-within-stream' }
+  const render = (selected: string) =>
+    dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <StaticAgentTypeNames names={{ manager: 'Squad Lead' }}>
+            <WorkflowParticipantEditor
+              definition={definition}
+              onChange={() => {}}
+              selected={selected}
+              onSelect={() => {}}
+            />
+          </StaticAgentTypeNames>
+        </QueryClientProvider>
+      )
+    )
+  const disabledOption = () =>
+    [...document.querySelectorAll('label')]
+      .find((label) => label.textContent?.startsWith('Agent type'))!
+      .querySelector('option:disabled')?.textContent
+  try {
+    await render('lead')
+    expect(disabledOption()).toBe('Squad Lead (unavailable for workers)')
+    // A type the squad no longer has reads title-cased; its raw id stays in the workflow definition.
+    await render('gone')
+    expect(disabledOption()).toBe('Old Auditor (unavailable for workers)')
   } finally {
     await dom.cleanup()
     client.clear()

@@ -131,6 +131,29 @@ export function getAgentTitle(
   return getAgentLabel(agent, undefined, typeNames)
 }
 
+/**
+ * Hover detail for an agent's row: the type as people read it first, then the agent's name (the handle
+ * used with `ficus inbox send`) and its full ID, then any `details` ("Engineer · Quinn · 1a2b… · 1 pending
+ * question"). `typeNote` qualifies the type ("Consultant via Assistant"). The raw type id is never shown;
+ * admins find it on the agent type's settings page.
+ */
+export function agentHoverTitle(
+  agent: Pick<Agent, 'id' | 'agentTypeId' | 'metadata'>,
+  typeNames: AgentTypeName = noAgentTypeNames,
+  { typeNote, details = [] }: { typeNote?: string; details?: ReadonlyArray<string | undefined> } = {}
+): string {
+  const type = agentTypeDisplayName(agent.agentTypeId, typeNames)
+  const name = agent.metadata?.name
+  return [
+    typeNote ? `${type} ${typeNote}` : type,
+    typeof name === 'string' && name.trim() ? name.trim() : undefined,
+    agent.id,
+    ...details,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 export function agentMatchesQuery(agent: Agent, query: string, typeNames: AgentTypeName = noAgentTypeNames): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
