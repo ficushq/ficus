@@ -55,12 +55,11 @@ export function createStatusTools(deps: {
           },
           includeFinished: {
             type: 'boolean',
-            description: `Also include finished (done or canceled) work streams in list results, ${VOICE_FINISHED_LIMIT} at a time, most recently finished first. The result's finished.totalCount says how many there are and finished.nextCursor, when set, fetches the next page. Default false.`,
+            description: `Also list done and canceled work, ${VOICE_FINISHED_LIMIT} per page, newest first, with finished.totalCount. Default false.`,
           },
           finishedCursor: {
             type: 'string',
-            description:
-              'finished.nextCursor from an earlier get_work result with includeFinished: returns only that next page of finished work, for the same squadId (or none).',
+            description: 'A finished.nextCursor: the next finished page for the same squadId.',
           },
         },
       },
