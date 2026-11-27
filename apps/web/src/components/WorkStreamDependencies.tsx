@@ -2,6 +2,7 @@ import { useState } from 'react'
 import clsx from 'clsx'
 import {
   WORK_STREAM_STATUS_ROLE,
+  formatWaitedDuration,
   workStreamTitle,
   type WorkStream,
   type WorkStreamDependencyEdge,
@@ -13,15 +14,15 @@ import { MarkdownContent } from './MarkdownContent'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { CheckIcon } from './icons'
 
-/** "waiting 3m": how long a wait has been open, from its opening time. */
+/**
+ * "waiting 3m": how long a wait has been open, from its opening time. Counts seconds for its first
+ * minute, then reads the shared {@link formatWaitedDuration} units.
+ */
 export function waitingFor(openedAt: string, now = Date.now()): string {
-  const seconds = Math.max(0, Math.floor((now - new Date(openedAt).getTime()) / 1000))
+  const ms = now - new Date(openedAt).getTime()
+  const seconds = Math.max(0, Math.floor(ms / 1000))
   if (seconds < 60) return `waiting ${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `waiting ${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `waiting ${hours}h`
-  return `waiting ${Math.floor(hours / 24)}d`
+  return `waiting ${formatWaitedDuration(ms)}`
 }
 
 /** A wait's relative age with its exact opening time on hover. */

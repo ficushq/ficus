@@ -24,3 +24,20 @@ test('a review gate queued behind other waits trails as "review next"', () => {
   )
   expect(activityCardWaitLabel({ waits: [wait('review', false)] })).toBe('Waiting: review')
 })
+
+test('a wait on someone else names what that person is waited on for', () => {
+  expect(activityCardWaitLabel({ waits: [{ type: 'review', needsYou: true, you: false }] })).toBe('Waiting on review')
+  expect(activityCardWaitLabel({ waits: [{ type: 'question', needsYou: true, you: false }] })).toBe(
+    'Waiting on an answer'
+  )
+  expect(activityCardWaitLabel({ waits: [{ type: 'manual', needsYou: true, you: false }] })).toBe('Waiting on a person')
+  expect(
+    activityCardWaitLabel({
+      waits: [
+        { type: 'question', needsYou: true, you: false },
+        { type: 'manual', needsYou: true, you: false },
+        { type: 'dependency', needsYou: true, you: false },
+      ],
+    })
+  ).toBe('Waiting on an answer, a person, a dependency')
+})

@@ -5,6 +5,8 @@ import {
   computeWorkStreamElapsedMs,
   formatWaitedDuration,
   formatWorkStreamDuration,
+  mayRespondToWorkStreamWaits,
+  PERSON_WAIT_NOUN,
   viewerCanActOnWait,
   workStreamPersonWait,
   workStreamTimeTickMs,
@@ -115,6 +117,29 @@ describe('formatting', () => {
     expect(formatWaitedDuration(5 * 3_600_000 + 59 * 60_000)).toBe('5h')
     expect(formatWaitedDuration((7 * 24 + 2) * 3_600_000)).toBe('7d')
     expect(formatWaitedDuration(-5)).toBe('<1m')
+  })
+
+  test('names what a person is waited on for', () => {
+    expect(PERSON_WAIT_NOUN).toEqual({
+      answer: 'an answer',
+      review: 'review',
+      approval: 'approval',
+      blocker: 'a person',
+    })
+  })
+})
+
+describe('mayRespondToWorkStreamWaits', () => {
+  const holding =
+    (...held: string[]) =>
+    (permission: string) =>
+      held.includes(permission)
+
+  test('takes workstreams:respond or workstreams:update', () => {
+    expect(mayRespondToWorkStreamWaits(holding('workstreams:respond'))).toBe(true)
+    expect(mayRespondToWorkStreamWaits(holding('workstreams:update'))).toBe(true)
+    expect(mayRespondToWorkStreamWaits(holding('workstreams:read', 'workstreams:review', 'agents:run'))).toBe(false)
+    expect(mayRespondToWorkStreamWaits(holding())).toBe(false)
   })
 })
 

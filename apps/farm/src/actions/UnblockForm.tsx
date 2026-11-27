@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { WorkStreamPrompt, WorkStreamWait } from '@ficus/shared'
+import { mayRespondToWorkStreamWaits, type WorkStreamPrompt, type WorkStreamWait } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 import { useActionsApi } from './ActionsApiProvider'
 import { settleStreamWait } from './cache'
@@ -63,7 +63,7 @@ function ManualUnblock({
   const queryClient = useQueryClient()
   const onResolvedRef = useStableRef(onResolved)
   const { can, isLoading } = usePermissions(squadId)
-  const canRespond = actionCanRespond ?? (!isLoading && (can('workstreams:respond') || can('workstreams:update')))
+  const canRespond = actionCanRespond ?? (!isLoading && mayRespondToWorkStreamWaits(can))
   const [note, setNote] = useState('')
   const noteId = useId()
   const clear = useMutation({

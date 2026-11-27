@@ -92,7 +92,8 @@ export type WorkStreamViewerFacts = Pick<WorkStream, 'openWaits' | 'delivery' | 
 /** What a person is being waited on for. */
 export type PersonWaitKind = 'answer' | 'review' | 'approval' | 'blocker'
 
-const PERSON_WAIT_NOUN: Record<PersonWaitKind, string> = {
+/** What a person is waited on for, as "Waiting on review" reads it to someone who cannot act. */
+export const PERSON_WAIT_NOUN: Readonly<Record<PersonWaitKind, string>> = {
   answer: 'an answer',
   review: 'review',
   approval: 'approval',
@@ -109,9 +110,18 @@ function personWaitKind(wait: WorkStreamWait, ws: WorkStreamViewerFacts): Person
 }
 
 /**
+ * Whether these permissions may resolve a work stream's waits that are not questions or workflow
+ * gates (a manual review, a blocker, the delivery approval): workstreams:respond or
+ * workstreams:update, mirroring the server's wait resolution check.
+ */
+export function mayRespondToWorkStreamWaits(can: (permission: string) => boolean): boolean {
+  return can('workstreams:respond') || can('workstreams:update')
+}
+
+/**
  * Whether this viewer can clear the wait, mirroring the server's checks: answering a question
  * takes agents:run, a workflow gate is the shared {@link mayDecideWorkflowGate} rule for the
- * approver Core puts on the wait, anything else workstreams:respond or workstreams:update.
+ * approver Core puts on the wait, anything else {@link mayRespondToWorkStreamWaits}.
  */
 function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStreamViewerFacts, viewer: WorkStreamViewer) {
   if (kind === 'answer') return viewer.can('agents:run')
@@ -122,7 +132,7 @@ function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream
       ws.assignedReviewerIds,
       workflowGateOfWait(wait)
     )
-  return viewer.can('workstreams:respond') || viewer.can('workstreams:update')
+  return mayRespondToWorkStreamWaits((permission) => viewer.can(permission))
 }
 
 /**
