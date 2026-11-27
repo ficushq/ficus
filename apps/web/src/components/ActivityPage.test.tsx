@@ -851,7 +851,7 @@ describe('ActivityPage settled filter from the Feed', () => {
       })
       const document = dom.window.document
       const banner = document.querySelector('[data-testid="activity-settled-filter"]')!
-      expect(banner.textContent).toContain('Questions settled by managers')
+      expect(banner.textContent).toContain('Questions settled by agents')
       await dom.act(async () => {
         await waitFor(() =>
           expect(

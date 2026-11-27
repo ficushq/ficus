@@ -445,7 +445,7 @@ describe('GET /api/activity/settled', () => {
       expect(
         (await activityRequest(`/api/activity/settled?${query}`, { headers: authHeaders(admin.token) })).status
       ).toBe(400)
-    for (const query of ['settled=questions', 'settled=everything&since=2026-01-01T00:00:00Z', 'squadId=nope'])
+    for (const query of ['settled=questions', 'settled=completed&since=2026-01-01T00:00:00Z', 'squadId=nope'])
       expect((await activityRequest(`/api/activity?${query}`, { headers: authHeaders(admin.token) })).status).toBe(400)
   })
 
@@ -507,8 +507,8 @@ describe('GET /api/activity/settled', () => {
     expect(await settled(reader.token)).toMatchObject({ questions: 1 })
     expect(await settled(reader.token, `&squadId=${squad.id}`)).toMatchObject({ questions: 1 })
     expect(await settled(reader.token, `&squadId=${crypto.randomUUID()}`)).toMatchObject({ questions: 0 })
-    expect(await settled(blind.token)).toEqual({ questions: 0, reviews: 0, completed: 0 })
-    expect(await settled(outsider.token)).toEqual({ questions: 0, reviews: 0, completed: 0 })
+    expect(await settled(blind.token)).toEqual({ questions: 0, reviews: 0 })
+    expect(await settled(outsider.token)).toEqual({ questions: 0, reviews: 0 })
 
     const list = async (token: string) => {
       const response = await activityRequest(

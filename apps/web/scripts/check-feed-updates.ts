@@ -86,7 +86,7 @@ try {
         if (url.pathname === '/api/activity/settled') {
           assert.equal(url.searchParams.get('since'), lastVisit)
           return route.fulfill({
-            json: { since: lastVisit, clamped: false, counts: { questions: 4, reviews: 2, completed: 0 } },
+            json: { since: lastVisit, clamped: false, counts: { questions: 4, reviews: 2 } },
           })
         }
         if (url.pathname.includes('/inbox')) return route.fulfill({ json: { count: 0 } })
@@ -104,7 +104,7 @@ try {
       // The settled line counts only what was settled without a person, and links each count to Activity.
       const settledLine = page.getByTestId('feed-settled-line')
       await settledLine.waitFor()
-      assert.match(await settledLine.innerText(), /: 4 questions settled by managers, 2 reviews done by agents$/)
+      assert.match(await settledLine.innerText(), /: 4 questions settled by agents, 2 reviews done by agents$/)
       assert.deepEqual(
         await settledLine.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
         ['questions', 'reviews'].map((kind) => `/activity?settled=${kind}&since=${encodeURIComponent(lastVisit)}`)

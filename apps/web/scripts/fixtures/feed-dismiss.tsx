@@ -42,7 +42,7 @@ const hooks = {
         }
       : {
           isSuccess: true,
-          data: { since, clamped: false, counts: { questions: 4, reviews: 2, completed: 2 } },
+          data: { since, clamped: false, counts: { questions: 4, reviews: 2 } },
         }) as never,
 }
 const useActivity = (() => ({ ownerId: 'example-user', activity: { conversations: [] } })) as never

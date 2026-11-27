@@ -342,11 +342,12 @@ export interface SquadActivityFilters {
  * Work settled without a person, as the Feed's "since your last visit" line counts it. Each kind
  * names exactly the Activity rows that make up its count (GET /api/activity/settled):
  * - `questions`: closed task-input waits an agent asked of its stream owner (`request-input` with
- *   `actor: owner`) and another agent answered, that never asked a person (lane 41).
+ *   `actor: owner`) and another agent answered, that never asked a person (lane 41). The owner may
+ *   be any agent, not only the squad manager, so the line says "settled by agents".
  * - `reviews`: verdicts a Reviewer agent submitted on a flow step (lane 32).
- * - `completed`: work streams marked done (lane 31 done notices), counted once per stream.
+ * Completed streams are not a kind: the Updates header already counts them from the Feed's own list.
  */
-export const ACTIVITY_SETTLED_KINDS = ['questions', 'reviews', 'completed'] as const
+export const ACTIVITY_SETTLED_KINDS = ['questions', 'reviews'] as const
 export type ActivitySettledKind = (typeof ACTIVITY_SETTLED_KINDS)[number]
 
 /** An Activity filter to the rows behind one settled count, from `since` (inclusive). */
@@ -377,12 +378,11 @@ export interface NormalizedSquadActivityFilters {
   squadIds?: string[]
 }
 
-/** "4 questions settled by managers": the count with its noun, singular when it is one. */
+/** "4 questions settled by agents": the count with its noun, singular when it is one. */
 export function activitySettledCountLabel(kind: ActivitySettledKind, count: number): string {
   const one = count === 1
-  if (kind === 'questions') return `${count} ${one ? 'question' : 'questions'} settled by managers`
-  if (kind === 'reviews') return `${count} ${one ? 'review' : 'reviews'} done by agents`
-  return `${count} ${one ? 'stream' : 'streams'} completed`
+  if (kind === 'questions') return `${count} ${one ? 'question' : 'questions'} settled by agents`
+  return `${count} ${one ? 'review' : 'reviews'} done by agents`
 }
 
 /**

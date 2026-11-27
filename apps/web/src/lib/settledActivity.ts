@@ -43,9 +43,8 @@ export function settledLineParts(summary: ActivitySettledSummary | null | undefi
 
 /** Activity's banner title for one settled filter. */
 export const SETTLED_FILTER_TITLES: Record<ActivitySettledKind, string> = {
-  questions: 'Questions settled by managers',
+  questions: 'Questions settled by agents',
   reviews: 'Reviews done by agents',
-  completed: 'Streams completed',
 }
 
 /**

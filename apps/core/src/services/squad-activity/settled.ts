@@ -38,15 +38,30 @@ export function settledQuestionWaitSql(wait: SQL): SQL {
       WHERE change->>'from'='human' OR change->>'to'='human')`
 }
 
-/** The `squad_activity` rows behind one settled count, from `since` on. */
+/**
+ * The `squad_activity` rows behind one settled count, from `since` on. Each kind names its row
+ * `kind` as well as its lane, so the scan seeks `idx_squad_activity_kind` (squad, kind, time) rather
+ * than walking every row of the period in `idx_squad_activity_feed`.
+ */
 export function settledRowSql(kind: ActivitySettledKind, since: Date): SQL {
   const from = sql`squad_activity.at>=${since.toISOString()}::timestamptz`
-  if (kind === 'reviews') return sql`(squad_activity.lane=32 AND ${from})`
-  if (kind === 'questions')
-    return sql`(squad_activity.lane=41 AND ${from} AND EXISTS (SELECT 1 FROM work_stream_waits settled_wait
+  if (kind === 'reviews') return sql`(squad_activity.kind='workstream' AND squad_activity.lane=32 AND ${from})`
+  return sql`(squad_activity.kind='wait' AND squad_activity.lane=41 AND ${from} AND EXISTS (SELECT 1 FROM work_stream_waits settled_wait
       WHERE settled_wait.id=squad_activity.row_id AND ${settledQuestionWaitSql(sql`settled_wait`)}))`
-  return sql`(squad_activity.lane=31 AND ${from} AND EXISTS (SELECT 1 FROM inbox settled_notice
-    WHERE settled_notice.id=squad_activity.row_id AND settled_notice.metadata->>'event'='done'))`
+}
+
+/** The count query, exported for its scan-cost test. */
+export function settledCountSql(squadAccess: GlobalActivitySquadAccess[], since: Date): SQL {
+  return sql`
+    WITH squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id) AS (
+      VALUES ${globalActivityAccessRowsSql(squadAccess)}
+    )
+    SELECT count(*) FILTER (WHERE ${settledRowSql('questions', since)})::int questions,
+      count(*) FILTER (WHERE ${settledRowSql('reviews', since)})::int reviews
+    FROM squad_activity JOIN squad_access ON squad_activity.squad_id=squad_access.squad_id
+    WHERE squad_activity.kind IN ('wait','workstream') AND squad_activity.lane IN (32,41)
+      AND squad_activity.at>=${since.toISOString()}::timestamptz
+      AND ${globalActivityAccessPredicateSql}`
 }
 
 /** Counts for the Feed's line, over the squads and row scopes the viewer may read. */
@@ -56,18 +71,9 @@ export async function countSettledActivity(
   now = new Date()
 ): Promise<ActivitySettledSummary> {
   const { since, clamped } = settledPeriodStart(requestedSince, now)
-  const counts = { questions: 0, reviews: 0, completed: 0 }
+  const counts = { questions: 0, reviews: 0 }
   if (squadAccess.length > 0) {
-    const [row] = await db.execute<{ questions: number; reviews: number; completed: number }>(sql`
-      WITH squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id) AS (
-        VALUES ${globalActivityAccessRowsSql(squadAccess)}
-      )
-      SELECT count(*) FILTER (WHERE ${settledRowSql('questions', since)})::int questions,
-        count(*) FILTER (WHERE ${settledRowSql('reviews', since)})::int reviews,
-        count(DISTINCT squad_activity.work_stream_id) FILTER (WHERE ${settledRowSql('completed', since)})::int completed
-      FROM squad_activity JOIN squad_access ON squad_activity.squad_id=squad_access.squad_id
-      WHERE squad_activity.lane IN (31,32,41) AND squad_activity.at>=${since.toISOString()}::timestamptz
-        AND ${globalActivityAccessPredicateSql}`)
+    const [row] = await db.execute<{ questions: number; reviews: number }>(settledCountSql(squadAccess, since))
     Object.assign(counts, row)
   }
   return { since: since.toISOString(), clamped, counts }

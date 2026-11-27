@@ -5,6 +5,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { ReactQueryHooksProvider } from '../reactQueryHooks'
 import { AccountFeedVisit } from './FeedVisitSummary'
 import { settledActivityHref, settledLineParts, settledPeriodLabel } from '../lib/settledActivity'
+import { FEED_VISIT_HIDDEN_KEY, FEED_VISIT_IDLE_MS, readSessionFeedVisit } from '../hooks/useSettledSinceLastVisit'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -16,17 +17,18 @@ const since = '2026-11-25T09:00:00.000Z'
 const summary = (counts: Partial<ActivitySettledSummary['counts']>): ActivitySettledSummary => ({
   since,
   clamped: false,
-  counts: { questions: 0, reviews: 0, completed: 0, ...counts },
+  counts: { questions: 0, reviews: 0, ...counts },
 })
 
 describe('settled line text', () => {
   test('leaves out zero counts and is empty when every count is zero', () => {
     expect(settledLineParts(summary({}))).toEqual([])
     expect(settledLineParts(null)).toEqual([])
-    expect(settledLineParts(summary({ questions: 4, completed: 1 })).map((part) => part.label)).toEqual([
-      '4 questions settled by managers',
-      '1 stream completed',
+    expect(settledLineParts(summary({ questions: 4, reviews: 2 })).map((part) => part.label)).toEqual([
+      '4 questions settled by agents',
+      '2 reviews done by agents',
     ])
+    expect(settledLineParts(summary({ questions: 1 }))[0]?.label).toBe('1 question settled by agents')
     expect(settledLineParts(summary({ reviews: 1 }))[0]?.label).toBe('1 review done by agents')
   })
 
@@ -51,16 +53,21 @@ async function renderVisit(options: {
   squadIds?: string[]
 }) {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
+  dom.window.sessionStorage.clear()
   const { root } = dom.createRoot()
   const recorded: string[] = []
   const settledRequests: unknown[][] = []
+  const visitReads: unknown[][] = []
   const hooks = {
     useQuery: ((query: { queryKey: unknown[]; enabled?: boolean }) => {
-      if (query.queryKey[1] === 'feed-visit')
+      if (query.queryKey[1] === 'feed-visit') {
+        if (query.enabled === false) return { isSuccess: false, data: undefined }
+        visitReads.push(query.queryKey)
         return {
           isSuccess: true,
           data: { lastVisitedAt: options.lastVisitedAt, observedAt: '2026-11-26T12:00:00.000Z' },
         }
+      }
       if (query.enabled === false) return { isSuccess: false, data: undefined }
       settledRequests.push(query.queryKey)
       return { isSuccess: !!options.settled, data: options.settled }
@@ -72,44 +79,47 @@ async function renderVisit(options: {
       hasNextPage: false,
     })) as never,
   }
-  await dom.act(async () =>
-    root.render(
-      <MemoryRouter>
-        <ReactQueryHooksProvider hooks={hooks}>
-          <AccountFeedVisit
-            userId="u1"
-            squadIds={options.squadIds ?? []}
-            acknowledge={async () => ({ seen: true as const })}
-            acknowledgeVisit={async (visitedAt) => {
-              recorded.push(visitedAt)
-              return { lastVisitedAt: visitedAt }
-            }}
-            useActivity={(() => ({ ownerId: 'u1', activity: { conversations: [] } })) as never}
-          />
-        </ReactQueryHooksProvider>
-      </MemoryRouter>
+  let mount = 0
+  const render = async () => {
+    mount++
+    await dom!.act(async () =>
+      root.render(
+        <MemoryRouter>
+          <ReactQueryHooksProvider hooks={hooks}>
+            <AccountFeedVisit
+              key={mount}
+              userId="u1"
+              squadIds={options.squadIds ?? []}
+              acknowledge={async () => ({ seen: true as const })}
+              acknowledgeVisit={async (visitedAt) => {
+                recorded.push(visitedAt)
+                return { lastVisitedAt: visitedAt }
+              }}
+              useActivity={(() => ({ ownerId: 'u1', activity: { conversations: [] } })) as never}
+            />
+          </ReactQueryHooksProvider>
+        </MemoryRouter>
+      )
     )
-  )
-  return { document: dom.window.document, recorded, settledRequests }
+  }
+  await render()
+  return { document: dom!.window.document, recorded, settledRequests, visitReads, render }
 }
 
 describe('Feed Updates with the settled line', () => {
   test('shows the line on its own and records the visit after the counts load', async () => {
     const { document, recorded, settledRequests } = await renderVisit({
       lastVisitedAt: since,
-      settled: summary({ questions: 4, reviews: 2, completed: 2 }),
+      settled: summary({ questions: 4, reviews: 2 }),
       squadIds: ['s1'],
     })
     const line = document.querySelector('[data-testid="feed-settled-line"]')
     expect(document.querySelector('[data-testid="feed-visit-summary"]')).not.toBeNull()
-    expect(line?.textContent).toMatch(
-      /: 4 questions settled by managers, 2 reviews done by agents, 2 streams completed$/
-    )
+    expect(line?.textContent).toMatch(/: 4 questions settled by agents, 2 reviews done by agents$/)
     const links = [...line!.querySelectorAll('a')].map((link) => link.getAttribute('href'))
     expect(links).toEqual([
       settledActivityHref('questions', since, ['s1']),
       settledActivityHref('reviews', since, ['s1']),
-      settledActivityHref('completed', since, ['s1']),
     ])
     expect(settledRequests[0]).toEqual(['activity', 'settled', 'u1', since, ['s1']])
     expect(recorded).toEqual(['2026-11-26T12:00:00.000Z'])
@@ -127,6 +137,33 @@ describe('Feed Updates with the settled line', () => {
     expect(document.querySelector('[data-testid="feed-settled-line"]')).toBeNull()
     expect(settledRequests).toEqual([])
     expect(recorded).toEqual(['2026-11-26T12:00:00.000Z'])
+  })
+
+  test('coming back from Activity keeps the period: the visit lasts for the tab session', async () => {
+    const { document, recorded, visitReads, render } = await renderVisit({
+      lastVisitedAt: since,
+      settled: summary({ questions: 4, reviews: 2 }),
+    })
+    await render()
+    expect(document.querySelector('[data-testid="feed-settled-line"]')?.textContent).toContain('4 questions')
+    // One account read for the whole tab visit, not one per Feed mount.
+    expect(new Set(visitReads.map((key) => JSON.stringify(key))).size).toBe(1)
+    expect(recorded).toEqual(['2026-11-26T12:00:00.000Z'])
+    expect(readSessionFeedVisit('u1')).toEqual({
+      lastVisitedAt: since,
+      observedAt: '2026-11-26T12:00:00.000Z',
+      recorded: true,
+    })
+  })
+
+  test('a tab away for longer than the idle timeout starts a new visit', async () => {
+    await renderVisit({ lastVisitedAt: since, settled: summary({ questions: 1 }) })
+    const now = Date.now()
+    dom!.window.sessionStorage.setItem(FEED_VISIT_HIDDEN_KEY, String(now - FEED_VISIT_IDLE_MS + 60_000))
+    expect(readSessionFeedVisit('u1', now)).not.toBeNull()
+    dom!.window.sessionStorage.setItem(FEED_VISIT_HIDDEN_KEY, String(now - FEED_VISIT_IDLE_MS - 60_000))
+    expect(readSessionFeedVisit('u1', now)).toBeNull()
+    expect(readSessionFeedVisit('u1', now)).toBeNull()
   })
 
   test('keeps the older start when the counts fail to load', async () => {

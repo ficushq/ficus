@@ -140,7 +140,7 @@ describe('settled without you', () => {
 
     const summary = await countSettledActivity([{ squadId, access: FULL }], since)
     expect(summary).toMatchObject({ since: since.toISOString(), clamped: false })
-    expect(summary.counts).toEqual({ questions: 1, reviews: 0, completed: 0 })
+    expect(summary.counts).toEqual({ questions: 1, reviews: 0 })
 
     // The Activity filter lists exactly the counted rows.
     const page = await projectGlobalActivity({
@@ -154,7 +154,7 @@ describe('settled without you', () => {
     expect(page.items.map((item) => item.id)).toEqual([`41:${wait.id}`])
   })
 
-  test('counts Reviewer verdicts and completed streams from their recorded events', async () => {
+  test('counts Reviewer verdicts from their recorded transitions, and nothing for completed streams', async () => {
     const attempt = (id: number, agentTypeId: string) => ({
       id,
       stepId: agentTypeId === 'reviewer' ? 'review' : 'implement',
@@ -199,11 +199,11 @@ describe('settled without you', () => {
       transition(crypto.randomUUID(), `agent:${reviewer}`, { action: 'amend', attemptId: 2, evidence: 'more' }, 3),
     ])
     await materializeSourceGroup({ family: 'workstream', groupId: streamId })
+    // Completed streams are the Updates header's count, not the line's.
     await doneNotice('done')
-    await doneNotice('canceled')
 
     const summary = await countSettledActivity([{ squadId, access: FULL }], since)
-    expect(summary.counts).toEqual({ questions: 0, reviews: 1, completed: 1 })
+    expect(summary.counts).toEqual({ questions: 0, reviews: 1 })
 
     const reviews = await projectGlobalActivity({
       limit: 50,
@@ -226,10 +226,8 @@ describe('settled without you', () => {
 
   test('is zero when nothing was settled, and raises an old start to the retention floor', async () => {
     const summary = await countSettledActivity([{ squadId, access: FULL }], since)
-    expect(summary.counts).toEqual({ questions: 0, reviews: 0, completed: 0 })
-    expect(await countSettledActivity([], since)).toMatchObject({
-      counts: { questions: 0, reviews: 0, completed: 0 },
-    })
+    expect(summary.counts).toEqual({ questions: 0, reviews: 0 })
+    expect(await countSettledActivity([], since)).toMatchObject({ counts: { questions: 0, reviews: 0 } })
     const old = await countSettledActivity([{ squadId, access: FULL }], new Date(Date.now() - 90 * 24 * HOUR))
     expect(old.clamped).toBe(true)
     expect(old.since).toBe(activityRetentionFloor(new Date()).toISOString())
@@ -237,20 +235,14 @@ describe('settled without you', () => {
 
   test('counts only rows the viewer may read', async () => {
     const wait = await closedWait({ resolvedByAgentId: owner })
-    await doneNotice('done')
     expect(wait.id).toBeTruthy()
 
     const count = async (access: SquadActivityAccess) =>
       (await countSettledActivity([{ squadId, access }], since)).counts
-    expect(await count(FULL)).toEqual({ questions: 1, reviews: 0, completed: 1 })
-    // Work stream rows need workstreams:read; done notices also need inbox access.
-    expect(await count({ ...FULL, workstreamsRead: false })).toEqual({ questions: 0, reviews: 0, completed: 0 })
-    expect(await count({ ...FULL, inbox: { mode: 'none' } })).toEqual({ questions: 1, reviews: 0, completed: 0 })
-    expect(await count({ ...FULL, inbox: { mode: 'own', recipientId: worker } })).toEqual({
-      questions: 1,
-      reviews: 0,
-      completed: 0,
-    })
+    expect(await count(FULL)).toEqual({ questions: 1, reviews: 0 })
+    // Work stream rows need workstreams:read; inbox access does not matter for these rows.
+    expect(await count({ ...FULL, workstreamsRead: false })).toEqual({ questions: 0, reviews: 0 })
+    expect(await count({ ...FULL, agentsRead: false, inbox: { mode: 'none' } })).toEqual({ questions: 1, reviews: 0 })
     // A squad the viewer cannot read contributes nothing.
     const [other] = await db
       .insert(squads)
@@ -260,7 +252,6 @@ describe('settled without you', () => {
     expect((await countSettledActivity([{ squadId: other!.id, access: FULL }], since)).counts).toEqual({
       questions: 0,
       reviews: 0,
-      completed: 0,
     })
   })
 })
