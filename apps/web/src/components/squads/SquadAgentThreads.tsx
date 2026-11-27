@@ -329,8 +329,8 @@ export function SquadAgentThreads({
     [agentTypeMap, sharedTypeNames]
   )
 
-  // Fetch work streams to check if agents have active ones
-  const { data: workStreams = [] } = useQuery(queries.squads.workStreams(squadId))
+  // Open work only: the rows show each agent's active work streams, never finished ones.
+  const { data: workStreams = [] } = useQuery(queries.squads.activeWorkStreams(squadId))
 
   // Open work streams each agent is assigned to or bound to, most relevant first.
   const activeWorkStreamsByAgent = useMemo(

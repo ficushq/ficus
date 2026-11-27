@@ -1,7 +1,13 @@
 import { workStreamRef } from '@ficus/shared'
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getActiveExecution, getAgent } from '../../api/agents'
-import { getWorkStream, listAllWorkStreams, listSquadAgents, listSquads, listWorkStreams } from '../../api/squads'
+import {
+  getWorkStream,
+  listActiveWorkStreams,
+  listDoneWorkStreams,
+  listSquadAgents,
+  listSquads,
+} from '../../api/squads'
 import { selectWorkStreamPresentationState, type WorkStream } from '@ficus/shared'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
@@ -10,6 +16,9 @@ export function voiceWorkStreamStatus(workStream: WorkStream) {
 }
 
 const FINISHED = new Set(['done', 'canceled'])
+
+/** How much finished work includeFinished adds: the most recent completions, never the whole history. */
+export const VOICE_FINISHED_LIMIT = 50
 
 function summarize(workStream: WorkStream) {
   return {
@@ -25,9 +34,9 @@ export function createStatusTools(deps: {
   getAgent: typeof getAgent
   getActiveExecution: typeof getActiveExecution
   listSquads: typeof listSquads
-  listAllWorkStreams: typeof listAllWorkStreams
+  listActiveWorkStreams: typeof listActiveWorkStreams
+  listDoneWorkStreams: typeof listDoneWorkStreams
   listSquadAgents: typeof listSquadAgents
-  listWorkStreams: typeof listWorkStreams
   getWorkStream: typeof getWorkStream
 }) {
   const getWorkTool: VoiceAssistantTool<VoiceToolExecutor> = {
@@ -46,7 +55,7 @@ export function createStatusTools(deps: {
           },
           includeFinished: {
             type: 'boolean',
-            description: 'Include done and canceled work in list results. Default false.',
+            description: `Also include the ${VOICE_FINISHED_LIMIT} most recently finished (done or canceled) work streams in list results. Default false.`,
           },
         },
       },
@@ -58,6 +67,17 @@ export function createStatusTools(deps: {
         includeFinished?: boolean
       }
       const keep = (workStream: WorkStream) => includeFinished || !FINISHED.has(voiceWorkStreamStatus(workStream))
+      // Open work, plus the latest finished work on request: the unfiltered list is every stream a
+      // squad ever had and is the heaviest read Core serves.
+      const listWork = async (squad?: string) => {
+        const [open, finished] = await Promise.all([
+          deps.listActiveWorkStreams(squad),
+          includeFinished
+            ? deps.listDoneWorkStreams({ squadId: squad, limit: VOICE_FINISHED_LIMIT, omitDescription: true })
+            : undefined,
+        ])
+        return [...open, ...(finished?.items ?? [])]
+      }
       if (squadId && workStreamId) return { error: 'Pass squadId or workStreamId, not both' }
       if (workStreamId) {
         const id = workStreamId.replace(/^work:/, '')
@@ -69,7 +89,7 @@ export function createStatusTools(deps: {
           return {
             error: `Unknown or ambiguous squad reference: ${squadId}. Use a full squad ID from your instructions.`,
           }
-        const [agents, streams] = await Promise.all([deps.listSquadAgents(resolved), deps.listWorkStreams(resolved)])
+        const [agents, streams] = await Promise.all([deps.listSquadAgents(resolved), listWork(resolved)])
         return {
           agents: agents.map((agent) => ({
             id: agent.id,
@@ -80,7 +100,7 @@ export function createStatusTools(deps: {
           workStreams: streams.filter(keep).map(summarize),
         }
       }
-      const streams = await deps.listAllWorkStreams()
+      const streams = await listWork()
       return { workStreams: streams.filter(keep).map(summarize) }
     },
   }
@@ -91,8 +111,8 @@ export const { getWorkTool, statusTools } = createStatusTools({
   getAgent,
   getActiveExecution,
   listSquads,
-  listAllWorkStreams,
+  listActiveWorkStreams,
+  listDoneWorkStreams,
   listSquadAgents,
-  listWorkStreams,
   getWorkStream,
 })

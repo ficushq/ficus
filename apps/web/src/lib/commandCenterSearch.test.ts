@@ -214,3 +214,41 @@ test('an exact work stream title still finds older work first when streams are n
   // The number stays searchable through the label.
   expect(commandCenterSearch('#30', { ...data, consultants: [], streams }, now)[0]!.id).toBe('work:recent')
 })
+
+test('server search hits add older work rows, only while searching and only for work not already loaded', () => {
+  const hit = (id: string, squadId: string, label: string) => ({
+    kind: 'work_stream' as const,
+    id,
+    number: 7,
+    label,
+    detail: '',
+    squadId,
+    squadName: 'Ficus',
+    status: 'done',
+    updatedAt: '2025-01-01T00:00:00.000Z',
+    agentId: null,
+    score: 1,
+  })
+  const olderWork = [
+    hit('work', 'tau', 'Review OAuth'),
+    hit('ancient', 'tau', 'Ancient OAuth work'),
+    hit('elsewhere', 'other', 'OAuth elsewhere'),
+  ]
+  const work = (query: string, squadId?: string) =>
+    commandCenterSearch(query, { ...data, olderWork, squadId }).filter((r) => r.kind === 'Work stream')
+  expect(work('OAuth').map((r) => [r.id, r.label, r.olderWork ?? false])).toEqual([
+    ['work:work', 'Review OAuth', false],
+    ['work:ancient', '#7 · Ancient OAuth work', true],
+    ['work:elsewhere', '#7 · OAuth elsewhere', true],
+  ])
+  expect(work('OAuth', 'tau').map((r) => r.id)).toEqual(['work:work', 'work:ancient'])
+  expect(work('OAuth')[1]?.destination).toEqual({
+    kind: 'work',
+    id: 'ancient',
+    squadId: 'tau',
+    label: '#7 · Ancient OAuth work',
+  })
+  // An exact title still leads, even when only the server knows it.
+  expect(work('Ancient OAuth work')[0]?.id).toBe('work:ancient')
+  expect(work('').some((r) => r.olderWork)).toBe(false)
+})

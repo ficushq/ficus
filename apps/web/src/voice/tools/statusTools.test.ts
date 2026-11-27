@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { WorkStream } from '@ficus/shared'
-import { createStatusTools, voiceWorkStreamStatus } from './statusTools'
+import { createStatusTools, VOICE_FINISHED_LIMIT, voiceWorkStreamStatus } from './statusTools'
 
 function stream(overrides: Partial<WorkStream> = {}): WorkStream {
   return {
@@ -42,11 +42,13 @@ describe('get_work', () => {
       listSquads: async () => [{ id: squadId, name: 'Ficus', createdAt: '2026-01-01' }] as any,
       listSquadAgents: async () =>
         [{ id: 'a1', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Ava' } }] as any,
-      listWorkStreams: async () => [stream({ id: 'ws-s', squadId })],
-      listAllWorkStreams: async () => [
-        stream({ id: 'ws-1' }),
-        stream({ id: 'ws-2', status: 'done', derivedState: 'done' }),
-      ],
+      listActiveWorkStreams: async (id) => [stream({ id: id ? 'ws-s' : 'ws-1', squadId: id ?? 'squad-1' })],
+      listDoneWorkStreams: async () => ({
+        items: [stream({ id: 'ws-2', status: 'done', derivedState: 'done' })],
+        hasMore: true,
+        nextCursor: 'next',
+        totalCount: 900,
+      }),
       getAgent: async () => {
         throw new Error('Unexpected agent request')
       },
@@ -65,6 +67,27 @@ describe('get_work', () => {
     expect(active.workStreams.map((w: any) => w.id)).toEqual(['ws-1'])
     const all = (await getWorkTool.execute({ includeFinished: true }, env)) as any
     expect(all.workStreams.map((w: any) => w.id)).toEqual(['ws-1', 'ws-2'])
+  })
+
+  test('reads open work and one page of finished work, never the unfiltered list', async () => {
+    const active: Array<string | undefined> = []
+    const done: unknown[] = []
+    const { getWorkTool } = tools({
+      listActiveWorkStreams: async (id) => {
+        active.push(id)
+        return []
+      },
+      listDoneWorkStreams: async (opts) => {
+        done.push(opts)
+        return { items: [], hasMore: false, nextCursor: null, totalCount: 0 }
+      },
+    })
+    await getWorkTool.execute({}, env)
+    await getWorkTool.execute({ squadId: 'ficus' }, env)
+    expect(active).toEqual([undefined, squadId])
+    expect(done).toEqual([])
+    await getWorkTool.execute({ squadId: 'ficus', includeFinished: true }, env)
+    expect(done).toEqual([{ squadId, limit: VOICE_FINISHED_LIMIT, omitDescription: true }])
   })
 
   test('a squad reference resolves the slug and returns agents with work', async () => {

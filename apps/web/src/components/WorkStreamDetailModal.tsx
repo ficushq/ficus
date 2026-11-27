@@ -293,8 +293,6 @@ export function WorkStreamDetailModal({
       const actionType = variables.resolution === 'cleared' ? 'workstream-blocked' : 'workstream-review'
       removeAnsweredActions(queryClient, [`${actionType}:${workStream.id}:${variables.waitId}`])
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(workStream.squadId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(workStream.squadId) })
       queryClient.invalidateQueries({ queryKey: [...queryKeys.squads.all, 'doneWorkStreams'] })

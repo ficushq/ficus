@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
 import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
-import { apiUnavailable } from '../test/apiMock'
+import { apiUnavailable, type ApiRequest } from '../test/apiMock'
 import { queries, integrationQueries } from '../queryOptions'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { AssistantCommandCenter } from './AssistantCommandCenter'
@@ -57,7 +57,33 @@ async function fixture(
   delayedQuery = false,
   options: { activity?: boolean | 'quiet' } = {}
 ) {
-  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
+  // Every work stream list the command center reads, and the finished work and search hits it answers with.
+  const workStreamReads: URL[] = []
+  const finished: any[] = []
+  const searchHits: any[] = []
+  const searchReads: URL[] = []
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/',
+    api: {
+      ...api,
+      '/api/workstreams': ({ url }: ApiRequest) => {
+        workStreamReads.push(url)
+        if (!url.searchParams.has('limit')) return []
+        const after = url.searchParams.get('completedAfter')
+        const items = finished.filter(
+          (w) =>
+            url.searchParams.get('statuses')!.split(',').includes(w.status) &&
+            (!url.searchParams.get('squadId') || w.squadId === url.searchParams.get('squadId')) &&
+            (!after || new Date(w.completedAt) > new Date(after))
+        )
+        return { items, hasMore: false, nextCursor: null, totalCount: items.length }
+      },
+      '/api/search': ({ url }: ApiRequest) => {
+        searchReads.push(url)
+        return { results: searchHits }
+      },
+    },
+  })
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
   if (options.activity)
     client.setQueryData(
@@ -87,7 +113,8 @@ async function fixture(
   }
   for (const [key, value] of [
     [queries.squads.list().queryKey, [squad]],
-    [queries.squads.allWorkStreams().queryKey, [work]],
+    [queries.squads.activeWorkStreams().queryKey, [work]],
+    [queries.squads.recentDoneWorkStreams().queryKey, { items: [], hasMore: false, nextCursor: null, totalCount: 0 }],
     [queries.squads.workStreamDetail('work').queryKey, work],
     [queries.squads.agents('ficus').queryKey, [worker]],
     [queries.agents.detail('worker').queryKey, worker],
@@ -188,6 +215,10 @@ async function fixture(
     client,
     work,
     workFetch,
+    workStreamReads,
+    finished,
+    searchHits,
+    searchReads,
     container,
     chats,
     ask,
@@ -349,7 +380,7 @@ test('no matches defaults to Ask, and arriving results select the first row', as
     )
     expect(f.ask.mock.calls).toEqual([['New discovery']])
     await f.dom.act(async () => {
-      f.client.setQueryData(queries.squads.allWorkStreams().queryKey, [{ ...f.work, title: 'New discovery' }])
+      f.client.setQueryData(queries.squads.activeWorkStreams().queryKey, [{ ...f.work, title: 'New discovery' }])
       await new Promise<void>((resolve) => notifyManager.schedule(resolve))
     })
     expect(askButton.dataset.enterTarget).toBeUndefined()
@@ -529,9 +560,9 @@ test('squad completed work starts collapsed and preserves its period after openi
       title: 'Finished deployment',
       status: 'done',
       derivedState: 'done',
-      completedAt: new Date(Date.now() - 14 * 86_400_000),
+      completedAt: new Date(Date.now() - 14 * 86_400_000).toISOString(),
     }
-    f.client.setQueryData(queries.squads.allWorkStreams().queryKey, [f.work, completed])
+    f.finished.push(completed)
     f.client.setQueryData(queries.squads.workStreamDetail('completed').queryKey, completed)
     expect(f.container.querySelector('[aria-controls="command-completed-work"]')?.getAttribute('aria-expanded')).toBe(
       'false'
@@ -573,7 +604,7 @@ test('squad search is scoped, restores its query, and reaches work conversations
     await f.type(input, 'Ficus')
     await f.click('[role="option"]')
     await f.dom.act(async () =>
-      f.client.setQueryData(queries.squads.allWorkStreams().queryKey, [
+      f.client.setQueryData(queries.squads.activeWorkStreams().queryKey, [
         f.work,
         { ...f.work, id: 'other', squadId: 'other', title: 'OAuth elsewhere' },
       ])
@@ -808,6 +839,58 @@ test('a squad preview never shows or queries Assistant updates', async () => {
   const f = await fixture(undefined, [{ kind: 'squad', id: 'ficus', label: 'Ficus' }], false, { activity: true })
   try {
     expect(f.container.textContent).not.toContain('Hosting comparison')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('older work comes from the server search, and every list read is open work or a bounded page', async () => {
+  const f = await fixture(undefined, [{ kind: 'squad', id: 'ficus', label: 'Ficus' }])
+  try {
+    f.searchHits.push(
+      {
+        kind: 'work_stream',
+        id: 'legacy',
+        number: 12,
+        label: 'Legacy OAuth migration',
+        detail: '',
+        squadId: 'ficus',
+        squadName: 'Ficus',
+        status: 'done',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        agentId: null,
+        score: 10,
+      },
+      // Already loaded as open work: the loaded row stays the only one.
+      { ...f.work, kind: 'work_stream', label: 'Fix OAuth', squadName: 'Ficus', agentId: null, score: 20 }
+    )
+    f.client.setQueryData(queries.squads.workStreamDetail('legacy').queryKey, {
+      ...f.work,
+      id: 'legacy',
+      number: 12,
+      title: 'Legacy OAuth migration',
+      status: 'done',
+    })
+    const input = f.container.querySelector<HTMLInputElement>('[role="combobox"]')!
+    await f.type(input, 'OAuth')
+    for (let attempt = 0; attempt < 100 && f.container.querySelectorAll('[role="option"]').length < 2; attempt++)
+      await f.dom.act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+    const options = Array.from(f.container.querySelectorAll('[role="option"]')).map((option) => option.textContent)
+    expect(options).toHaveLength(2)
+    expect(options[0]).toContain('Fix OAuth')
+    expect(options[1]).toContain('#12 · Legacy OAuth migration')
+    expect(f.searchReads.map((url) => Object.fromEntries(url.searchParams))).toEqual([
+      { q: 'OAuth', limit: '20', kind: 'work_stream', squadId: 'ficus' },
+    ])
+    await f.click('#command-result-1')
+    expect(f.container.querySelector('[data-command-preview]')?.textContent).toContain('Investigate login')
+
+    // The squad's own finished page and its completed-work period; nothing unfiltered.
+    expect(f.workStreamReads.length).toBeGreaterThan(0)
+    for (const url of f.workStreamReads) {
+      const statuses = url.searchParams.get('statuses')
+      expect(statuses === 'queued,active' || url.searchParams.has('limit')).toBe(true)
+    }
   } finally {
     await f.cleanup()
   }

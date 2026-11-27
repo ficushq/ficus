@@ -1,5 +1,6 @@
 import {
   pendingActionContextLine,
+  type EntitySearchResult,
   workStreamTitle,
   type Agent,
   type PendingAction,
@@ -38,6 +39,8 @@ export interface CommandResult {
   agentTypeId?: string
   status?: Agent['status']
   work?: WorkStream
+  /** A server search hit for work older than the loaded lists: no stream row to render, ranked as old. */
+  olderWork?: boolean
   /** Update rows only: unread marker, task summary, and the latest update time. */
   unread?: boolean
   summary?: string
@@ -71,6 +74,8 @@ export function commandCenterSearch(
   data: {
     squads: readonly Squad[]
     streams: readonly WorkStream[]
+    /** Server search hits for the query; those not already in `streams` become plain work rows. */
+    olderWork?: readonly EntitySearchResult[]
     consultants: readonly Agent[]
     actions: readonly PendingAction[]
     allowedSettings: ReadonlySet<string>
@@ -155,6 +160,7 @@ export function commandCenterSearch(
         keywords: w.derivedState ?? w.status,
         destination: { kind: 'work' as const, id: w.id, squadId: w.squadId, label: workStreamTitle(w) },
       })),
+    ...(query.trim() ? olderWorkRows(data.olderWork ?? [], data.streams, scoped) : []),
     ...(!data.squadId ? assistantSearch(query, [], [], data.allowedSettings) : []),
   ]
   if (!query.trim()) {
@@ -181,6 +187,30 @@ export function commandCenterSearch(
         (a.work && b.work ? workTimestamp(b.work) - workTimestamp(a.work) : 0)
       )
     })
+}
+
+/** Search hits for work the loaded lists do not hold (older history), as rows that open the stream. */
+function olderWorkRows(
+  hits: readonly EntitySearchResult[],
+  streams: readonly WorkStream[],
+  scoped: (squadId: string | null | undefined) => boolean
+): CommandResult[] {
+  const loaded = new Set(streams.map((w) => w.id))
+  return hits.flatMap((hit) => {
+    if (hit.kind !== 'work_stream' || !hit.squadId || !scoped(hit.squadId) || loaded.has(hit.id)) return []
+    const label = workStreamTitle({ title: hit.label, number: hit.number })
+    return [
+      {
+        id: `work:${hit.id}`,
+        kind: 'Work stream' as const,
+        label,
+        detail: hit.squadName ?? 'Personal',
+        keywords: hit.status ?? undefined,
+        olderWork: true,
+        destination: { kind: 'work' as const, id: hit.id, squadId: hit.squadId, label },
+      },
+    ]
+  })
 }
 
 /**
@@ -210,6 +240,8 @@ function workAgeDays(work: WorkStream, now: number) {
 
 function resultScore(result: CommandResult, match: number, now: number) {
   const relevance = match === 4 ? 50 : match * 3
+  // Older than every finished stream loaded locally, so it sits with month-old completions.
+  if (result.olderWork) return relevance + 12
   if (!result.work || isOpenWork(result.work)) return relevance
   if (result.work.status === 'canceled') return relevance + 14
   const age = workAgeDays(result.work, now)
