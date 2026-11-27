@@ -134,6 +134,27 @@ The CLI shows the 503's message as is. If a server without the deadline drops a 
 `apiGet` reports that Ficus closed the connection before answering, probably because it
 was busy for more than 30 seconds, and that nothing was changed.
 
+The web app never reads the unfiltered list either, because every work stream event
+refetches whatever list is on screen:
+
+- **Open work comes from `statuses=queued,active`.** The agent Chats rows, the agent's
+  Work streams panel (still polled every 10 seconds) and the Assistant's command center
+  all use it.
+- **Finished work is paged.** The agent panel pages its history with
+  `statuses=done,canceled&limit=25&agentId=<id>` and a "Show older work streams"
+  button. `agentId` keeps the streams the agent is assigned to, owns, created or is
+  attached to, and is accepted only on a paginated terminal-status query (anything else
+  is a `400`). The command center loads the 100 most recent completions, reads a squad's
+  "Recently completed" period with `completedAfter`, and asks `GET /api/search`
+  (`kind=work_stream`) for older work matching what was typed. The voice `get_work`
+  tool adds the 50 most recent completions when asked for finished work.
+- **A 503 waits for its Retry-After.** The web and Farm query clients use
+  `shouldRetryQuery` and `queryRetryDelay` from `packages/client-core/src/retry.ts`. A
+  `503` is retried no sooner than its `Retry-After` (5 seconds when the header is
+  missing, never under 1 second), doubled per retry with up to 10% jitter, at most
+  twice, and not at all if the wait would exceed 60 seconds. Every other failure keeps
+  three retries with the usual 1, 2 and 4 second backoff.
+
 ## Tracked issues and pull requests
 
 A work stream can track any number of GitHub issues and pull requests, and any
