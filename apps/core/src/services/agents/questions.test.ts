@@ -24,6 +24,7 @@ import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
 import { makeDormant, reconcileAgentLifecycleRequest } from '../agent/lifecycle'
 import {
+  announceAgentQuestionOnce,
   createAgentQuestion,
   answerAgentQuestion,
   dismissAgentQuestion,
@@ -46,6 +47,7 @@ import { subscribeToWorkStream } from '../work-streams/subscriptions'
 import { getSettingsStore } from '../settings/store'
 import { waitForQuestionAnswerDeliveryDrains } from './question-answer-delivery'
 import * as admissionModule from '../work-streams/admission'
+import { announceUnannouncedAgentQuestionsOnce } from './question-attention-reconciliation'
 
 const QUESTION = { questions: [{ id: 'q1', type: 'text' as const, question: 'Ship it?' }] }
 
@@ -1492,7 +1494,7 @@ describe('async agent questions', () => {
       // As if the first call committed the question and then died before finalizing and announcing it.
       await db
         .update(agentQuestions)
-        .set({ audienceResolution: 'pending', audienceResolvedAt: null })
+        .set({ audienceResolution: 'pending', audienceResolvedAt: null, announcePendingSince: new Date() })
         .where(eq(agentQuestions.id, first.id))
 
       const createdEvents: unknown[] = []
@@ -1505,6 +1507,150 @@ describe('async agent questions', () => {
       expect(replay.audienceResolution).not.toBe('pending')
       expect(again.id).toBe(first.id)
       expect(createdEvents).toEqual([{ questionId: first.id, agentId: agent.id, squadId: squad.id }])
+    })
+  })
+
+  describe('announcing after a crash', () => {
+    const crash = () => Promise.reject(new Error('process died'))
+
+    async function startExecution(agent: Agent) {
+      const [execution] = await db.insert(executions).values({ agentId: agent.id, status: 'running' }).returning()
+      return { agentId: agent.id, executionId: execution.id }
+    }
+
+    async function questionRow(questionId: string) {
+      const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+      return row!
+    }
+
+    async function onlyQuestionOf(agentId: string) {
+      const rows = await db.select().from(agentQuestions).where(eq(agentQuestions.agentId, agentId))
+      expect(rows).toHaveLength(1)
+      return rows[0]!
+    }
+
+    function recordCreatedEvents() {
+      const events: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => events.push(event))
+      return { events, unsubscribe }
+    }
+
+    it('records the announcement of a question asked normally, so the sweep leaves it alone', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const recorder = recordCreatedEvents()
+      const question = await createAgentQuestion(await startExecution(agent), QUESTION)
+      const swept = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [question.id] })
+      recorder.unsubscribe()
+
+      expect((await questionRow(question.id)).announcePendingSince).toBeNull()
+      expect(swept).toEqual({ processed: 0, announced: 0 })
+      expect(recorder.events).toEqual([{ questionId: question.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('announces once a question finalized by a call that died before announcing it', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const recorder = recordCreatedEvents()
+      await expect(
+        createAgentQuestion(await startExecution(agent), QUESTION, { testHooks: { beforeAnnounce: crash } })
+      ).rejects.toThrow('process died')
+      const stranded = await onlyQuestionOf(agent.id)
+      expect(stranded.audienceResolution).not.toBe('pending')
+      expect(stranded.announcePendingSince).not.toBeNull()
+      expect(recorder.events).toEqual([])
+
+      // Within the grace period the asking call could still be finishing, so the sweep waits.
+      expect(await announceUnannouncedAgentQuestionsOnce({ candidateQuestionIds: [stranded.id] })).toEqual({
+        processed: 0,
+        announced: 0,
+      })
+      const first = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      const second = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      recorder.unsubscribe()
+
+      expect(first).toEqual({ processed: 1, announced: 1 })
+      expect(second).toEqual({ processed: 0, announced: 0 })
+      expect((await questionRow(stranded.id)).announcePendingSince).toBeNull()
+      expect(recorder.events).toEqual([{ questionId: stranded.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('finalizes and announces a question whose call died before finalizing its audience', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const recorder = recordCreatedEvents()
+      await expect(
+        createAgentQuestion(await startExecution(agent), QUESTION, { testHooks: { beforeAttentionFinalize: crash } })
+      ).rejects.toThrow('process died')
+      const stranded = await onlyQuestionOf(agent.id)
+      expect(stranded.audienceResolution).toBe('pending')
+
+      const swept = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      recorder.unsubscribe()
+
+      expect(swept).toEqual({ processed: 1, announced: 1 })
+      expect((await questionRow(stranded.id)).audienceResolution).not.toBe('pending')
+      expect(recorder.events).toEqual([{ questionId: stranded.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('announces once when a replay of the asking call and the sweep both find it unannounced', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      await expect(
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-died', testHooks: { beforeAnnounce: crash } })
+      ).rejects.toThrow('process died')
+      const stranded = await onlyQuestionOf(agent.id)
+
+      const recorder = recordCreatedEvents()
+      const [replay, swept] = await Promise.all([
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-died' }),
+        announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] }),
+      ])
+      const later = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      const replayAgain = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-died' })
+      recorder.unsubscribe()
+
+      expect(replay).toMatchObject({ id: stranded.id, reused: 'tool-call' })
+      expect(replayAgain.id).toBe(stranded.id)
+      expect(swept.processed).toBeLessThanOrEqual(1)
+      expect(later).toEqual({ processed: 0, announced: 0 })
+      expect(recorder.events).toEqual([{ questionId: stranded.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('never announces a question answered or dismissed before it was announced', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const ids: string[] = []
+      for (const close of ['answer', 'dismiss'] as const) {
+        await expect(
+          createAgentQuestion(
+            origin,
+            { questions: [{ id: 'q1', type: 'text', question: `Close by ${close}?` }] },
+            { testHooks: { beforeAnnounce: crash } }
+          )
+        ).rejects.toThrow('process died')
+        const [row] = await db
+          .select()
+          .from(agentQuestions)
+          .where(and(eq(agentQuestions.agentId, agent.id), eq(agentQuestions.status, 'open')))
+        ids.push(row!.id)
+        if (close === 'answer') expect(await answerAgentQuestion(row!.id, 'Yes', user.id)).not.toBeNull()
+        else
+          expect(
+            await dismissAgentQuestion(row!.id, {
+              dismissedBy: { type: 'user', userId: user.id },
+              reason: 'not needed',
+            })
+          ).not.toBeNull()
+      }
+      await waitForQuestionAnswerDeliveryDrains()
+
+      const recorder = recordCreatedEvents()
+      const swept = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: ids })
+      const announcedDirectly = await Promise.all(ids.map((id) => announceAgentQuestionOnce(id)))
+      recorder.unsubscribe()
+
+      expect(swept).toEqual({ processed: 0, announced: 0 })
+      expect(announcedDirectly).toEqual([false, false])
+      expect(recorder.events).toEqual([])
+      for (const id of ids) expect((await questionRow(id)).announcePendingSince).toBeNull()
     })
   })
 

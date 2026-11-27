@@ -974,6 +974,19 @@ async function startup(): Promise<void> {
   eventEmitter.initialize('worker', notify)
   await eventEmitter.startListening(listen)
 
+  // Announce questions whose asking call stopped (a crash) after recording them and before emitting
+  // `agent-question.created`, so the person is still told. Started only now: an event emitted before
+  // the emitter forwards to the api process would reach no notification or websocket listener.
+  const { announceUnannouncedAgentQuestionsOnce } = await import('./services/agents/question-attention-reconciliation')
+  createPeriodicRunner({
+    name: 'agent-question-announce-recovery',
+    intervalMs: 60_000,
+    task: async () => {
+      const result = await announceUnannouncedAgentQuestionsOnce()
+      if (result.announced > 0) log.info('Announced agent questions left unannounced', result)
+    },
+  }).start()
+
   // This event-driven backstop must exist before startup recovery or pickup can
   // transition a queued execution to running while a watchdog wait is open.
   registerWorkStreamContinuationEventHandlers()

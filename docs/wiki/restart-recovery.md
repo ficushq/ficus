@@ -111,8 +111,12 @@ Every built-in tool has a replay class in one table, `apps/core/src/tools/metada
 `safe` (reads only), `idempotent` (a repeat with the same arguments leaves the same
 final state, or is refused) or `unsafe` (a repeat may duplicate an effect). A tool
 that is not listed, including pi extension and integration tools, is `unsafe`.
-`wrapToolWithRecovery` puts the class on each session tool definition as `ficus`
-and as pi's standard `annotations` hints (`readOnlyHint`, `idempotentHint`).
+`tool_search` is `idempotent`: a repeat finds the tools it loads already loaded.
+The same table holds each tool's default tool-search label (`direct` or
+`deferrable`, see [tool search](tool-search.md#labels)), so one entry per tool
+carries both. `wrapToolWithRecovery` puts the metadata on each session tool
+definition as `ficus` (`{ replay, label }`) and the class as pi's standard
+`annotations` hints (`readOnlyHint`, `idempotentHint`).
 
 The recovery wrapper also has a budget rule for the class: a `safe` or
 `idempotent` call that a lost sandbox connection cut off mid-call
@@ -390,6 +394,22 @@ A replayed `ask_human` whose question was answered returns the recorded answer,
 and one whose question was dismissed says that no answer is coming; only an open
 question tells the agent to wait. A replayed `dispatch` says which children the
 first run had already started and that they may have finished.
+
+**Announcing a question.** A question is announced (`agent-question.created`,
+which pushes it to the people asked) after it is recorded and its audience is
+finalized. A process that died between those steps used to leave a recorded
+question that nobody was ever told about. Each new question now carries
+`agent_questions.announce_pending_since` until it is announced, and
+`announceAgentQuestionOnce` emits the event and clears it in one transaction
+that holds the question row, so the asking call, a replay of it and the worker's
+`agent-question-announce-recovery` sweep (at startup and every 60 seconds,
+taking questions left pending for over a minute) announce it once between them.
+The sweep finalizes a still-pending audience first. A question answered or
+dismissed before it was announced is never announced. The event itself is not
+durable, so a process that dies after emitting and before that transaction
+commits gets the question announced again by the sweep: a narrower window that
+now errs towards a second notification rather than none. Questions recorded
+before this column existed are not swept.
 
 ### Confirmed tool outcomes
 

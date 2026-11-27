@@ -44,6 +44,7 @@ import {
   DEFAULT_ATTENTION,
   withoutStoredWorkStreamSummary,
   workStreamWaitActor,
+  RUNTIME_STALE_AFTER_MS,
 } from '@ficus/shared'
 import type {
   WorkStream as WorkStreamJson,
@@ -2753,13 +2754,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     }
   }
 }
-
-/**
- * How long an execution may go without a new assistant message before it stops
- * counting as work. Longer than the longest single tool call an agent may run in
- * the foreground (one hour), so a long test run still counts in full.
- */
-export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
 
 type AttributionStream = { wsId: string; agentIds: readonly string[] }
 
