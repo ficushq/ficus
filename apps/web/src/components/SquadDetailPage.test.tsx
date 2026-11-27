@@ -426,7 +426,7 @@ test('Home New chat opens the Chats composer instead of selecting an existing co
     expect(container.querySelector('[data-testid="consultant-chat-composer"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="existing-conversation"]')).toBeNull()
     expect(
-      container.querySelector('[title="Existing consultant · consultant · consultant-1"]')?.getAttribute('aria-pressed')
+      container.querySelector('[title="Consultant · Existing consultant · consultant-1"]')?.getAttribute('aria-pressed')
     ).toBe('false')
   } finally {
     await dom.cleanup()
