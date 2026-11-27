@@ -33,14 +33,24 @@ describe('squad cards', () => {
   function renderCards(
     squadAgents: ReturnType<typeof agent>[],
     workStreams: Record<string, unknown>[] = [],
-    pendingActions: Record<string, unknown>[] = []
+    // null: still loading; 'error': failed to load.
+    pendingActions: Record<string, unknown>[] | null | 'error' = [],
+    { workStreamsLoaded = true }: { workStreamsLoaded?: boolean } = {}
   ) {
-    const client = new QueryClient()
+    // A failed load that has used up its retries, rather than one retried as the cards mount.
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: pendingActions !== 'error' } } })
     client.setQueryData(queries.squads.list('active').queryKey, [squad] as never)
     // The cards count agents from summary rows of the live ones, not the full agent list.
     client.setQueryData(queries.agents.summaries({ live: true }).queryKey, squadAgents as never)
-    client.setQueryData(queries.squads.activeWorkStreams().queryKey, workStreams as never)
-    client.setQueryData(queries.actions.pending().queryKey, pendingActions as never)
+    if (workStreamsLoaded) client.setQueryData(queries.squads.activeWorkStreams().queryKey, workStreams as never)
+    if (Array.isArray(pendingActions)) {
+      client.setQueryData(queries.actions.pending().queryKey, pendingActions as never)
+    } else if (pendingActions === 'error') {
+      client
+        .getQueryCache()
+        .build(client, queries.actions.pending())
+        .setState({ status: 'error', error: new Error('offline'), fetchStatus: 'idle' })
+    }
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <MemoryRouter>
@@ -117,6 +127,40 @@ describe('squad cards', () => {
     expect(html).toMatch(
       /<a [^>]*aria-label="2 more active work streams in Chlea" href="\/squads\/sq\/work"[^>]*>\+2 more<\/a>/
     )
+  })
+
+  const reviewOf = (workStreamId: string) => ({
+    id: `r-${workStreamId}`,
+    type: 'workstream-review',
+    priority: 2,
+    createdAt: '',
+    canRespond: true,
+    data: { workStreamId },
+  })
+  const streams = [work(1, '2026-11-25T00:00:00Z'), work(2, '2026-11-20T00:00:00Z'), work(3, '2026-11-01T00:00:00Z')]
+
+  test('hold the rows as placeholders until the viewer’s actions load, then show them in final order', () => {
+    const loading = renderCards([], streams, null)
+    // Shown now, the rows would sit in activity order and then jump when #3 moved to the top.
+    expect(rowTitles(loading)).toEqual([])
+    expect(loading.match(/data-testid="squad-card-work-placeholder"/g)).toHaveLength(3)
+    expect(loading).toContain('aria-label="Loading Chlea active work"')
+    expect(loading).not.toContain('No active work')
+
+    const loaded = renderCards([], streams, [reviewOf('ws-3')])
+    expect(rowTitles(loaded)).toEqual(['#3 · Stream 3', '#1 · Stream 1', '#2 · Stream 2'])
+    expect(loaded).not.toContain('squad-card-work-placeholder')
+  })
+
+  test('hold the rows while the streams themselves load, instead of claiming there is no work', () => {
+    const html = renderCards([], [], [], { workStreamsLoaded: false })
+    expect(html.match(/data-testid="squad-card-work-placeholder"/g)).toHaveLength(1)
+    expect(html).not.toContain('No active work')
+  })
+
+  test('show the rows in activity order when the viewer’s actions fail to load', () => {
+    const html = renderCards([], streams, 'error')
+    expect(rowTitles(html)).toEqual(['#1 · Stream 1', '#2 · Stream 2', '#3 · Stream 3'])
   })
 
   test('a squad with no active work says so in one quiet line', () => {

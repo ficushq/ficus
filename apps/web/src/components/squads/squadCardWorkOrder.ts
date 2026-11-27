@@ -40,13 +40,33 @@ export function workStreamIdsNeedingViewer(
   return ids
 }
 
-function activityTime(workStream: Pick<WorkStream, 'updatedAt'>): number {
-  const time = new Date(workStream.updatedAt).getTime()
-  return Number.isNaN(time) ? 0 : time
+type ActivityFields = Pick<WorkStream, 'createdAt' | 'updatedAt' | 'runtime'>
+
+function time(value: Date | string | null | undefined): number {
+  if (value == null) return 0
+  const ms = new Date(value).getTime()
+  return Number.isNaN(ms) ? 0 : ms
 }
 
-/** Active streams only: the ones that need the viewer first, then the rest by most recent activity. */
-export function orderSquadCardWork<T extends Pick<WorkStream, 'id' | 'status' | 'updatedAt'>>(
+/**
+ * When the stream's work last moved: the newest work by one of its executions, or
+ * its creation when that is later or nothing has run yet. Edits to the stream's own
+ * fields bump `updatedAt` but are not activity, so it is the fallback only for a
+ * server that does not report `runtime.lastWorkedAt`.
+ */
+export function lastActivityTime(workStream: ActivityFields): number {
+  const lastWorkedAt = workStream.runtime?.lastWorkedAt
+  if (lastWorkedAt === undefined) return time(workStream.updatedAt)
+  return Math.max(time(lastWorkedAt), time(workStream.createdAt))
+}
+
+/**
+ * Active streams only: the ones that need the viewer first, then the rest by most
+ * recent activity. Streams working right now share one activity time, so newer
+ * streams lead among them and the id settles the rest, keeping the order stable
+ * across refetches.
+ */
+export function orderSquadCardWork<T extends Pick<WorkStream, 'id' | 'status'> & ActivityFields>(
   workStreams: readonly T[],
   needsViewer: ReadonlySet<string>
 ): T[] {
@@ -54,6 +74,11 @@ export function orderSquadCardWork<T extends Pick<WorkStream, 'id' | 'status' | 
     .filter((workStream) => workStream.status === 'queued' || workStream.status === 'active')
     .sort((a, b) => {
       const needs = Number(needsViewer.has(b.id)) - Number(needsViewer.has(a.id))
-      return needs || activityTime(b) - activityTime(a)
+      return (
+        needs ||
+        lastActivityTime(b) - lastActivityTime(a) ||
+        time(b.createdAt) - time(a.createdAt) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+      )
     })
 }
