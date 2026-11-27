@@ -553,7 +553,7 @@ test('an interrupted call to a safe tool spends no budget; the same interruption
     },
     origin
   )
-  expect(read.ficus).toEqual({ replay: 'safe', label: 'direct' })
+  expect(read.ficus).toEqual({ replay: 'safe' })
   // More interruptions than the budget allows, and still no hold: each one is free.
   for (const id of ['read-1', 'read-2'])
     await expect(executeTool(read, id, { path: 'notes.md' })).rejects.toThrow(
@@ -576,7 +576,7 @@ test('an interrupted call to a safe tool spends no budget; the same interruption
     },
     origin
   )
-  expect(bash.ficus).toEqual({ replay: 'unsafe', label: 'direct' })
+  expect(bash.ficus).toEqual({ replay: 'unsafe' })
   const failure = await executeTool(bash, 'bash-1', { command: 'deploy' }).catch((error: Error) => error)
   expect(String(failure)).toContain('Inspect the affected state')
   expect(String(failure)).not.toContain('does not count toward the recovery budget')
