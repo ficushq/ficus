@@ -4,23 +4,18 @@ import { join } from 'path'
 
 const root = join(import.meta.dir, '../../../../../')
 const read = (path: string) => readFile(join(root, path), 'utf8')
-const heading = '### Searching your history'
-const command = 'ficus agent search {{agent.id}} <query>'
+const line = 'Messages and tool output survive compaction: `ficus agent search {{agent.id}} <query>`.'
 
 describe('history search guidance', () => {
-  test('squad rules name the shipped command once, apart from the requester identity rule', async () => {
-    const shared = await read('config/agent-types/shared/squad-rules.md')
-    expect(shared.split(heading)).toHaveLength(2)
-    expect(shared.split(command)).toHaveLength(2)
-    const section = shared.split(heading)[1].split('\n### ')[0].replace(/\s+/g, ' ')
-    expect(section).toContain('earlier messages, tool calls and tool output are kept')
-    expect(section).toContain('`--context N` for surrounding messages')
-    const requester = shared.split('### Identifying the requesting user')[1].split('\n### ')[0]
-    expect(requester).not.toContain('ficus agent search')
-    // The command and flag are the ones the CLI registers.
+  test('squad rules name the shipped command once, right after the requester identity rule', async () => {
+    const shared = (await read('config/agent-types/shared/squad-rules.md')).replace(/[ \n]+/g, ' ')
+    expect(shared.split('ficus agent search')).toHaveLength(2)
+    expect(shared.split(line)).toHaveLength(2)
+    // Its own paragraph after the requester identity rule, which stays unchanged.
+    expect(shared).toContain(`restrictions still apply. ${line} ### Sending Messages`)
+    // The command is the one the CLI registers.
     const cli = await read('apps/cli/src/commands/agent-search.ts')
     expect(cli).toContain(".command('search <id> <query...>')")
-    expect(cli).toContain("'--context <n>'")
   })
 
   test('only agent types that keep a shell include it', async () => {

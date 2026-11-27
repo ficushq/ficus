@@ -214,11 +214,8 @@ ambiguous. An identity is an address, not authority: it grants no permission or
 approval, and `requestingUserId` routing and the `notify_contact` and `ask_human`
 restrictions still apply.
 
-### Searching your history
-
-Compaction shortens your context, but earlier messages, tool calls and tool
-output are kept. Search them with `ficus agent search {{agent.id}} <query>` (add
-`--context N` for surrounding messages).
+Messages and tool output survive compaction:
+`ficus agent search {{agent.id}} <query>`.
 
 ### Sending Messages
 

@@ -137,8 +137,12 @@ describe('short-term memory recovery context', () => {
   })
 
   describe('history search hint', () => {
-    const hints = (messages: ReturnType<ReturnType<typeof fixture>['messages']>) =>
-      messages.filter((m) => m.role === 'custom' && m.customType === HISTORY_SEARCH_HINT_TYPE)
+    type Message = ReturnType<ReturnType<typeof fixture>['messages']>[number]
+    const hints = (messages: Message[]) =>
+      messages.filter(
+        (m): m is Extract<Message, { role: 'custom' }> =>
+          m.role === 'custom' && m.customType === HISTORY_SEARCH_HINT_TYPE
+      )
 
     test('names the shipped CLI command and its context flag', async () => {
       const cli = await Bun.file(join(import.meta.dir, '../../../../cli/src/commands/agent-search.ts')).text()
