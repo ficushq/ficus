@@ -378,7 +378,7 @@ describe('AgentRunner (base class)', () => {
   let claimInitialPendingMessagesForSessionDeliverySpy: any
   let claimPendingInterventionForSessionDeliverySpy: any
   let resetPendingInterventionSessionDeliverySpy: any
-  let hasSessionDeliveredExecutionPromptSpy: any
+  let sessionDeliveredEntryIdsSpy: any
   let queueExecutionSpy: any
   let deliverInboxMessagesToAgentSpy: any
   let resolvePermissionsSpy: any
@@ -435,7 +435,7 @@ describe('AgentRunner (base class)', () => {
       agent,
       'resetPendingInterventionSessionDelivery'
     ).mockResolvedValue()
-    hasSessionDeliveredExecutionPromptSpy = spyOn(agent, 'hasSessionDeliveredExecutionPrompt').mockResolvedValue(false)
+    sessionDeliveredEntryIdsSpy = spyOn(agent, 'sessionDeliveredExecutionPromptEntryIds').mockResolvedValue([])
     queueExecutionSpy = spyOn(agent, 'queueExecution').mockResolvedValue(makeExecution({ status: 'queued' }, agentRef))
     deliverInboxMessagesToAgentSpy = spyOn(inboxDelivery, 'deliverInboxMessagesToAgent').mockResolvedValue()
 
@@ -480,7 +480,7 @@ describe('AgentRunner (base class)', () => {
     claimInitialPendingMessagesForSessionDeliverySpy?.mockRestore()
     claimPendingInterventionForSessionDeliverySpy?.mockRestore()
     resetPendingInterventionSessionDeliverySpy?.mockRestore()
-    hasSessionDeliveredExecutionPromptSpy?.mockRestore()
+    sessionDeliveredEntryIdsSpy?.mockRestore()
     queueExecutionSpy?.mockRestore()
     deliverInboxMessagesToAgentSpy?.mockRestore()
     resolvePermissionsSpy?.mockRestore()
@@ -1069,15 +1069,33 @@ describe('AgentRunner (base class)', () => {
       // row. That row was delivered before the restart, so nothing is claimed on resume.
       execution.message = 'original task text'
       execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
-      hasSessionDeliveredExecutionPromptSpy.mockResolvedValue(true)
+      sessionDeliveredEntryIdsSpy.mockResolvedValue(['entry-original'])
+      mockSession.pi.sessionEntries.set('entry-original', { type: 'message', id: 'entry-original' })
 
       await runner.run()
 
       const text = mockSession.pi.promptCalls[0].text
-      expect(hasSessionDeliveredExecutionPromptSpy).toHaveBeenCalledWith(execution.id)
+      expect(sessionDeliveredEntryIdsSpy).toHaveBeenCalledWith(execution.id)
       expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
       expect(text).toEndWith('\n\nContinue.')
       expect(text).not.toContain('original task text')
+    })
+
+    it('keeps the original task text when the acknowledged prompt entry is no longer in the live session', async () => {
+      // The DB still records the delivery, but the session file was lost, emptied (pi then starts a
+      // new session) or not carried over in a host move, so the session no longer holds the task.
+      execution.message = 'original task text'
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+      sessionDeliveredEntryIdsSpy.mockResolvedValue(['entry-original'])
+      mockSession.pi.sessionEntries.set('entry-unrelated', { type: 'message', id: 'entry-unrelated' })
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(sessionDeliveredEntryIdsSpy).toHaveBeenCalledWith(execution.id)
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text).toEndWith('\n\noriginal task text')
+      expect(text).not.toContain('Continue.')
     })
 
     it('keeps the original task text on a resumed run whose prompt never reached the session', async () => {
@@ -1100,7 +1118,8 @@ describe('AgentRunner (base class)', () => {
         recoveredAt: new Date().toISOString(),
         executionStartedAt: new Date(Date.now() - 60_000).toISOString(),
       }
-      hasSessionDeliveredExecutionPromptSpy.mockResolvedValue(true)
+      sessionDeliveredEntryIdsSpy.mockResolvedValue(['entry-original'])
+      mockSession.pi.sessionEntries.set('entry-original', { type: 'message', id: 'entry-original' })
 
       await runner.run()
 
@@ -3416,7 +3435,7 @@ describe('AgentRunner (base class)', () => {
       resetPendingInterventionSessionDeliverySpy.mockImplementation(async () => {
         order.push('release')
       })
-      hasSessionDeliveredExecutionPromptSpy.mockImplementation(async () => acknowledged)
+      sessionDeliveredEntryIdsSpy.mockImplementation(async () => (acknowledged ? ['entry-original'] : []))
       let firstPrompt = true
       spyOn(mockSession.pi, 'prompt').mockImplementation(async (text: string, options?: any) => {
         mockSession.pi.promptCalls.push({ text, options })
