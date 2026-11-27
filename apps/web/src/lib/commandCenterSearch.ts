@@ -1,7 +1,13 @@
-import { workStreamTitle, type Agent, type PendingAction, type Squad, type WorkStream } from '@ficus/shared'
+import {
+  pendingActionContextLine,
+  workStreamTitle,
+  type Agent,
+  type PendingAction,
+  type Squad,
+  type WorkStream,
+} from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
 import { getAgentName, getConversationTitle } from './agentDisplay'
-import { pendingActionContextLine } from './pendingActionWording'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
 export type CommandDestination =

@@ -1,5 +1,6 @@
+import { typeFirstAgentLabel } from './agentLabel'
+import { WORK_STREAM_WAIT_STATE, workStreamWaitDisplayType } from './status-presentation'
 import {
-  typeFirstAgentLabel,
   workStreamWaitActor,
   type AgentErrorActionData,
   type AgentQuestionActionData,
@@ -7,12 +8,11 @@ import {
   type SquadQuestionActionData,
   type WorkStreamActionData,
   type WorkStreamDeliveryActionData,
-} from '@ficus/shared'
-import { workStreamActionPresentationState } from './workStreamStatusPresentation'
+} from './types'
 
 /**
- * One phrase for each kind of wait, used by every list that shows a Needs-you item (the Feed and
- * Action Center cards, the Assistant list). A routine review or approval is never "blocked": that
+ * One phrase for each kind of wait, used by every list that shows a Needs-you item (the web Feed and
+ * Action Center cards, the Assistant list, and the mobile app). A routine review or approval is never "blocked": that
  * word is kept for a manual hold a person must clear.
  */
 export const WAIT_PHRASES = {
@@ -48,7 +48,8 @@ export function pendingActionWaitPhrase(action: PendingAction): string {
       return WAIT_PHRASES.review
     case 'workstream-blocked': {
       const data = action.data as WorkStreamActionData
-      if (workStreamActionPresentationState(action) === 'in_review') return WAIT_PHRASES.review
+      // A workflow approval gate is stored as a manual wait but presents as a review.
+      if (WORK_STREAM_WAIT_STATE[workStreamWaitDisplayType(data.wait)] === 'in_review') return WAIT_PHRASES.review
       if (data.deliveryApproval) return WAIT_PHRASES.approveDelivery
       if (data.attemptLimit) return WAIT_PHRASES.attemptLimit
       if (data.wait.resolutionHandler === 'workflow') return WAIT_PHRASES.decision
