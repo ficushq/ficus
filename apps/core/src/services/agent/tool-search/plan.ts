@@ -15,8 +15,9 @@ import { resolveToolLabel, resolveToolSearchMode, type ToolSearchPolicy } from '
  * 2,500 tokens saves less per request than one such round trip costs, so it is not worth it.
  * 2,500 sits in the middle of the 2,000 to 3,000 range agreed for this check. Measured on the real
  * tool factories (estimated tokens): browser 584, ast about 400, subagents 479, monitor 824,
- * todo 641. No single group reaches it; an engineer or manager with every default deferrable
- * group (2,930) does.
+ * todo 641. No group reaches it, and neither do the default deferrable groups together
+ * (browser, ast and todo, about 1,630), so `auto` declares every tool for the shipped engineer and
+ * manager; an agent type turns search on with `search: on` or by deferring more tools.
  */
 export const TOOL_SEARCH_MIN_DEFERRED_TOKENS = 2_500
 

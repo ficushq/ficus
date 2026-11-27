@@ -12,11 +12,11 @@ The global defaults are the tool groups in `labels.ts`. Each group has a name an
 | --------------- | ---------------------------------------------- | ------------ |
 | Browser         | `browser_*`                                    | `deferrable` |
 | Code navigation | `ast_*`                                        | `deferrable` |
-| Subagents       | `dispatch`, `check_subagents`, `stop_subagent` | `deferrable` |
-| Monitors        | `monitor`                                      | `deferrable` |
+| Subagents       | `dispatch`, `check_subagents`, `stop_subagent` | `direct`     |
+| Monitors        | `monitor`                                      | `direct`     |
 | Checklist       | `todo_*`                                       | `deferrable` |
 
-Every other tool is `direct`, including the tools the system prompt tells every agent to use by name: `bash`, `squad_bash`, `read`, `write`, `edit`, `ask_human`, `notify_contact`, the memory tools, the short-term memory tools, `sandbox_status`, `set_agent_purpose`, `websearch` and `webfetch`.
+The subagent and monitor groups are `direct` by default (the shared subagents include tells agents to dispatch); they have a group so an agent type that defers them gets a namespace. Every other tool is `direct`, including the tools the system prompt tells every agent to use by name: `bash`, `squad_bash`, `read`, `write`, `edit`, `ask_human`, `notify_contact`, the memory tools, the short-term memory tools, `sandbox_status`, `set_agent_purpose`, `websearch` and `webfetch`.
 
 An agent type overrides the defaults in its YAML, next to `allow` and `deny` (stored in `agent_types.tool_search`). Sync warns about names in `direct` or `deferred` that match no known Ficus tool:
 
@@ -34,7 +34,7 @@ tools:
 
 `AgentSession.create` decides a plan once, when a session starts (`planToolSearch` in `plan.ts`):
 
-- `search: off`, no deferrable tools, or (with `auto`) deferrable schemas under `TOOL_SEARCH_MIN_DEFERRED_TOKENS` (2,500 estimated tokens, pi's characters-divided-by-four estimate): mode `direct`, every tool declared, no `tool_search`. A load costs a round trip and, without cache-safe additions, a cache miss, which a small saving does not pay for.
+- `search: off`, no deferrable tools, or (with `auto`) deferrable schemas under `TOOL_SEARCH_MIN_DEFERRED_TOKENS` (2,500 estimated tokens, pi's characters-divided-by-four estimate): mode `direct`, every tool declared, no `tool_search`. A load costs a round trip and, without cache-safe additions, a cache miss, which a small saving does not pay for. With the default labels the deferrable tools of the shipped engineer and manager come to about 1,630 tokens, so `auto` declares every tool for them; set `search: on` on an agent type to hold its browser, code navigation and checklist tools back.
 - The session's model cannot add tools mid-conversation: mode `direct`. `supportsMidConversationToolAdditions` checks the same model compat flags pi's transports use: Anthropic inline tool changes, OpenAI Responses `additional_tools` or client tool search, Chat Completions tool additions. Every primary model of the shipped tiers supports it; `zai:glm-5.3` does not.
 - Any session while a Claude Code account is enabled: mode `claude-code` (below), whatever the session's first model, because per-account and model failover can move a turn onto the Claude Code bridge mid-run. The bridge starts a new Claude Code process only when everything new is a user message, so a tool `tool_search` loaded mid-run would not be callable there until the next user message. A Claude Code account enabled after a session started does not change that session's plan.
 - Otherwise mode `search`: the deferrable tools are hidden. `search: on` skips the size check, not the capability check.

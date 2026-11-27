@@ -26,20 +26,14 @@ describe('resolveToolLabel', () => {
       'set_agent_purpose',
       'websearch',
       'webfetch',
-    ]) {
-      expect(resolveToolLabel(name)).toBe('direct')
-    }
-    for (const name of [
-      'browser_open',
-      'browser_screenshot',
-      'ast_symbols',
-      'ast_rename',
       'dispatch',
       'check_subagents',
       'stop_subagent',
       'monitor',
-      'todo_add',
     ]) {
+      expect(resolveToolLabel(name)).toBe('direct')
+    }
+    for (const name of ['browser_open', 'browser_screenshot', 'ast_symbols', 'ast_rename', 'todo_add']) {
       expect(resolveToolLabel(name)).toBe('deferrable')
     }
   })

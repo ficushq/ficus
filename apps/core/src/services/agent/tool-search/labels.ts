@@ -40,9 +40,12 @@ export interface ToolGroup {
 }
 
 /**
- * Tool groups in prompt order. Only rarely used, heavy tools default to `deferrable`; the tools the
- * system prompt tells every agent to use by name (shell, files, memory, ask_human, notify_contact,
- * sandbox_status, short-term memory, set_agent_purpose) stay `direct`. A tool in no group is `direct`.
+ * Tool groups in prompt order. Only rarely used, heavy tools default to `deferrable`: browser, code
+ * navigation and checklist. The tools the system prompt tells every agent to use by name (shell,
+ * files, memory, ask_human, notify_contact, sandbox_status, short-term memory, set_agent_purpose),
+ * the subagent tools (the shared subagents include tells agents to dispatch) and monitor stay
+ * `direct` (owner decision, 2026-11-27). The direct groups keep a namespace for agent types that
+ * defer them. A tool in no group is `direct`.
  */
 export const TOOL_GROUPS: readonly ToolGroup[] = [
   {
@@ -63,13 +66,13 @@ export const TOOL_GROUPS: readonly ToolGroup[] = [
     name: 'subagents',
     description: 'Subagents: dispatch scoped tasks to ephemeral subagents, check their status, stop one',
     tools: ['dispatch', 'check_subagents', 'stop_subagent'],
-    label: 'deferrable',
+    label: 'direct',
   },
   {
     name: 'monitors',
     description: 'Background monitors: watch a long-running command and receive its events',
     tools: ['monitor'],
-    label: 'deferrable',
+    label: 'direct',
   },
   {
     name: 'checklist',
