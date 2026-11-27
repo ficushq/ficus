@@ -97,13 +97,54 @@ A call with the same tool and exact arguments that an earlier interruption in th
 same session already cut off gets the cautious wording whatever its class: it was
 interrupted by a restart before, so it may be what caused it (a read or search
 large enough to exhaust memory). The model is told not to run it again as is and
-to narrow it first. Nothing else caps a crash loop yet; requeueing a run does not
-count against the failure budget.
+to narrow it first. If the run still keeps being cut off, the crash-loop cap below
+stops resuming it.
 
 The hook rewrites only pi's copy of the context; the session file keeps the call
 without a result. The Claude Code bridge receives that same context, so a session
 re-seeded after the crash (a pending tool result always re-seeds) shows the same
 result in its transcript. Nothing is rerun automatically.
+
+### Crash-loop cap
+
+A call that takes Core down (a read or a command whose output exhausts memory,
+for example) would otherwise be requeued and resumed forever: requeues never
+count against the three-attempt failure budget, because a hard crash records no
+failure. So each hard recovery notice also records `interruptionCount`, the
+number of hard recovery notices this execution has had, this one included. It is
+counted in the same transaction that requeues the execution, from the
+execution's earlier notices (`admissionRecoveryExecutionId`, no `restartPhase`).
+Startup recovery and the lease sweep add to the same total.
+
+At the limit (default 5, matching pi-durable's `restartLimit`;
+`FICUS_EXECUTION_REQUEUE_LIMIT` overrides it, and `0` turns the cap off) the
+execution is still requeued, because that is the fenced way to hand a dead
+owner's admission back. The notice says it will not resume automatically. On its
+next pickup, `Execution.run` sees the count before any recovery delay, sandbox or
+model work and calls `holdExecutionAtRequeueLimit`
+(`services/execution/requeue-limit.ts`). That records one failure on the
+existing `execution:run` recovery episode (invocation
+`<execution>:requeue-limit:<notice>`, so a repeated pickup of the same requeue
+counts once). The `requeue-limit` failure kind exhausts the cycle at once rather
+than retrying with backoff, so the episode goes to `waiting-manager`, or to
+`waiting-owner` after the manager's extra cycle. That opens the usual flow wait
+or standalone hold and Continue / Stop notice. Then the pickup fails the
+execution with `recovery_held`, the same refusal as any held recovery, so the
+interrupted call is never replayed. If the agent still holds a slot claim or flow
+attempt, the stranded-run notice gives `recovery-held` as the reason. No new
+execution or recovery state was added.
+
+Continue resumes through the normal recovery continuation, which starts a new
+execution, so the count starts again from zero. Stop keeps the scope held.
+
+Graceful restarts are not counted, and they do not reset the count either. A
+shutdown drains at a tool boundary and leaves a `restartPhase: pause` marker. It
+is an operator restart or deploy, not something the run did, so counting it
+would hold long tasks that just span several deploys. A run that is cut off hard
+four times, then restarted gracefully, then cut off hard again still reaches
+the cap on that fifth hard interruption. The count is per execution and never
+resets on progress, so a long run that unrelated crashes cut off five times is
+held too. The manager's Continue is the way out.
 
 ### Tool replay classes
 

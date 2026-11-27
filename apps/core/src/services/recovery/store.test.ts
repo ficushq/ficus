@@ -2116,3 +2116,52 @@ test.each(['flow', 'standalone'] as const)(
     ).rejects.toThrow('End your turn')
   }
 )
+
+test('an execution at the requeue cap opens the native recovery hold at once, counted once per recovery notice', async () => {
+  const { holdExecutionAtRequeueLimit } = await import('../execution/requeue-limit')
+  const { recoveryAttempts } = await import('../../db')
+  const api = await store()
+  const hold = (noticeId: string) =>
+    holdExecutionAtRequeueLimit({
+      agentId: worker.id,
+      executionId: execution.id,
+      noticeId,
+      interruptions: 5,
+      cause: 'core_restart',
+    })
+  let record = await hold('notice-5')
+  // No retries with backoff first: running it again could take Core down again.
+  expect(record.state).toMatchObject({ state: 'waiting-manager', failures: 1, cycleFailures: 3, nextRetryAt: null })
+  expect(record.state.requestValidation).toBe(false)
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record.waitId!))
+  expect(wait!.actor).toBe('manager')
+  expect(wait!.structured?.summary).toMatchObject({
+    attemptCount: 1,
+    lastError:
+      'The execution was interrupted 5 times without finishing, most recently because an interruption of unknown cause, so it was not resumed again.',
+  })
+  // A repeated pickup of the same requeue does not count again or notify again.
+  expect((await hold('notice-5')).state.failures).toBe(1)
+  const attempts = await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record.id))
+  expect(attempts.map((attempt) => [attempt.invocationId, attempt.outcome])).toEqual([
+    [`${execution.id}:requeue-limit:notice-5`, 'unknown'],
+  ])
+  const notices = await db
+    .select()
+    .from(inbox)
+    .where(sql`${inbox.metadata}->>'recoveryId' = ${record.id}`)
+  expect(notices.map((notice) => notice.recipientId)).toEqual([squad.managerAgentId!])
+  // The hold refuses the run until someone decides.
+  await expect(
+    api.recoveryRetryDelay({ agentId: worker.id, executionId: execution.id }, 'execution:run')
+  ).rejects.toThrow('Recovery is held')
+  // Continue grants one cycle; reaching the cap again in it goes to the owner, as for any recovery.
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  expect(record.state.state).toBe('recovering')
+  record = await hold('notice-6')
+  expect(record.state).toMatchObject({ state: 'waiting-owner', ownerEscalated: true, failures: 2 })
+})

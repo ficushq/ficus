@@ -45,13 +45,16 @@ export function successorRecoveryState(attempted: string, previous?: RecoverySta
 /** Internal runtime input only. No caller-facing API accepts counted outcomes or restart claims. */
 export function failedRecovery(
   previous: RecoveryState,
-  failure: { kind: 'unknown' | 'request-validation'; error: string } | { kind: 'restart' },
+  failure: { kind: 'unknown' | 'request-validation' | 'requeue-limit'; error: string } | { kind: 'restart' },
   now: number
 ): RecoveryState {
   if (previous.state !== 'recovering') throw new Error('Recovery is held; an authorized decision is required')
   if (failure.kind === 'restart') return { ...previous, nextRetryAt: now }
-  const cycleFailures = previous.cycleFailures + 1
   const requestValidation = failure.kind === 'request-validation'
+  // An execution at the requeue cap already spent its interruptions as attempts; running it
+  // again could take Core down again, so it exhausts the cycle at once instead of retrying
+  // with backoff. It is an ordinary exhausted cycle, not a new kind of hold.
+  const cycleFailures = failure.kind === 'requeue-limit' ? RECOVERY_ATTEMPT_BUDGET : previous.cycleFailures + 1
   const exhausted = requestValidation || cycleFailures >= RECOVERY_ATTEMPT_BUDGET
   const ownerEscalated = previous.ownerEscalated || (exhausted && previous.managerCycles >= RECOVERY_MANAGER_CYCLES)
   return {

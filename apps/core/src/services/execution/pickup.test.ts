@@ -1244,6 +1244,141 @@ describeSubprocess('attemptPickup result matrix', () => {
     expect(await findHardInterruption(untouched.id, fresh.id)).toBeUndefined()
   })
 
+  describe('crash-loop cap', () => {
+    // Put the execution back to `running` under a fresh lease, as if pickup had resumed it.
+    async function resumeAsRunning(agent: Agent, execution: Execution, ownerIncarnation: string = randomUUID()) {
+      const lease = await seedStrandedQueuedAdmission(agent, execution, ownerIncarnation)
+      await db
+        .update(executions)
+        .set({ status: 'running', runnerClaimToken: lease.token, runnerClaimGeneration: lease.admittedGeneration })
+        .where(eq(executions.id, execution.id))
+    }
+    async function hardInterrupt(agent: Agent, execution: Execution, path: 'startup' | 'lease') {
+      await resumeAsRunning(agent, execution)
+      const recovered =
+        path === 'startup' ? await recoverInterruptedExecutionsForStartup() : await requeueAbandonedLeaseExecutions()
+      expect(recovered).toContain(execution.id)
+    }
+    async function gracefulRestart(agent: Agent, execution: Execution, n: number) {
+      await resumeAsRunning(agent, execution, admissionProcessIncarnation)
+      const restart = { restartId: `restart-graceful-${n}-${randomUUID()}`, restartedAt: new Date().toISOString() }
+      expect(await requeueOwnedExecutionsForShutdown([execution.id], { restart })).toContain(execution.id)
+    }
+    async function recoveryNotices(agentId: string, executionId: string) {
+      return (
+        await db
+          .select()
+          .from(messages)
+          .where(
+            and(
+              eq(messages.agentId, agentId),
+              sql`${messages.metadata}->>'admissionRecoveryExecutionId' = ${executionId}`
+            )
+          )
+          .orderBy(messages.createdAt, messages.id)
+      ).map((message) => ({
+        content: message.content,
+        count: (message.metadata as { interruptionCount?: number }).interruptionCount,
+        graceful: (message.metadata as { restartPhase?: string }).restartPhase === 'pause',
+      }))
+    }
+
+    test('the fifth hard requeue of one execution holds it for a recovery decision instead of running it', async () => {
+      const { recoveryEpisodes } = await import('../../db/schema')
+      const { findHardInterruption } = await import('./startup-recovery')
+      const agent = await createSquadAgent('zai:glm-5.2')
+      const execution = await agent.queueExecution({ message: 'a call that crashes Core' })
+      createdExecutionIds.push(execution.id)
+      try {
+        // Both hard paths count toward the same per-execution total.
+        for (const path of ['startup', 'lease', 'startup', 'lease', 'startup'] as const)
+          await hardInterrupt(agent, execution, path)
+        const notices = await recoveryNotices(agent.id, execution.id)
+        expect(notices.map((notice) => notice.count)).toEqual([1, 2, 3, 4, 5])
+        expect(notices.slice(0, 4).map((notice) => notice.content)).toEqual([
+          PROCESS_RESTART_NOTICE,
+          '[System] Agent recovered after its execution was interrupted (admission lease lapsed).',
+          PROCESS_RESTART_NOTICE,
+          '[System] Agent recovered after its execution was interrupted (admission lease lapsed).',
+        ])
+        expect(notices[4]!.content).toContain('interrupted 5 times without finishing')
+        expect(notices[4]!.content).toContain('will not resume automatically')
+        expect(await findHardInterruption(execution.id, agent.id)).toMatchObject({
+          cause: 'core_restart',
+          interruptionCount: 5,
+        })
+        expect((await Execution.mustFind(execution.id)).status).toBe('queued')
+        await expectCanonicalQueuedAdmission(execution.id, agent.id)
+
+        expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('started')
+        await waitFor(async () => (await Execution.mustFind(execution.id)).status === 'failed', {
+          description: 'the capped execution to fail into its recovery hold',
+        })
+        const failed = await Execution.mustFind(execution.id)
+        expect(failed.failureReason).toBe('recovery_held')
+        expect(failed.error).toContain('interrupted 5 times without finishing')
+        // Held before any runner or model work: the crashing call is not replayed.
+        expect(createSessionSpy).not.toHaveBeenCalled()
+        expect(createdSessions).toHaveLength(0)
+        const [episode] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
+        expect(episode?.executionId).toBe(execution.id)
+        expect(episode?.state).toMatchObject({ failures: 1, nextRetryAt: null })
+        expect(['waiting-manager', 'waiting-owner']).toContain(episode!.state.state)
+      } finally {
+        await db.delete(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
+      }
+    })
+
+    test('graceful restarts neither count toward the cap nor reset it', async () => {
+      const { recoveryEpisodes } = await import('../../db/schema')
+      const { findHardInterruption } = await import('./startup-recovery')
+      const agent = await createSquadAgent('zai:glm-5.2')
+      const execution = await agent.queueExecution({ message: 'long task across deploys' })
+      createdExecutionIds.push(execution.id)
+      try {
+        // Seven requeues, only four of them hard: below the cap of five.
+        await hardInterrupt(agent, execution, 'startup')
+        await gracefulRestart(agent, execution, 1)
+        await hardInterrupt(agent, execution, 'lease')
+        await gracefulRestart(agent, execution, 2)
+        await hardInterrupt(agent, execution, 'startup')
+        await gracefulRestart(agent, execution, 3)
+        await hardInterrupt(agent, execution, 'lease')
+        const notices = await recoveryNotices(agent.id, execution.id)
+        expect(notices.map((notice) => (notice.graceful ? 'graceful' : notice.count))).toEqual([
+          1,
+          'graceful',
+          2,
+          'graceful',
+          3,
+          'graceful',
+          4,
+        ])
+        expect(await findHardInterruption(execution.id, agent.id)).toMatchObject({ interruptionCount: 4 })
+
+        expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('started')
+        await sessionCreated
+        expect(createdSessions).toHaveLength(1)
+        expect((await Execution.mustFind(execution.id)).status).toBe('running')
+        expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))).toHaveLength(0)
+      } finally {
+        await db.delete(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agent.id))
+      }
+    })
+
+    test('a graceful restart after the fourth hard requeue does not keep the fifth from tripping the cap', async () => {
+      const agent = await createSquadAgent('zai:glm-5.2')
+      const execution = await agent.queueExecution({ message: 'crash, deploy, crash' })
+      createdExecutionIds.push(execution.id)
+      for (const path of ['startup', 'lease', 'startup', 'lease'] as const) await hardInterrupt(agent, execution, path)
+      await gracefulRestart(agent, execution, 1)
+      await hardInterrupt(agent, execution, 'startup')
+      const notices = await recoveryNotices(agent.id, execution.id)
+      expect(notices.at(-1)).toMatchObject({ count: 5, graceful: false })
+      expect(notices.at(-1)!.content).toContain('interrupted 5 times without finishing')
+    })
+  })
+
   test('shutdown requeues a running execution this process owns whose session already died', async () => {
     // gracefulShutdown's session sweep only sees executions with a LIVE session.
     // A fence abort kills the session while leaving the row `running`, so without

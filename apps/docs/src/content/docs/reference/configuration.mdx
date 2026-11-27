@@ -82,6 +82,8 @@ Browser sessions, CLI device credentials and model-provider credentials are sepa
 
 `MAX_CONCURRENT_AGENTS` supplies the environment default for concurrent worker runs. The application fallback is 30 when no valid value is supplied; a checkout's `.env` may already set a different number. **Settings → System → Agent Execution** overrides the environment value without restarting. The UI accepts up to 500; clearing the setting returns to the environment default.
 
+`FICUS_EXECUTION_REQUEUE_LIMIT` caps how many times one execution is resumed after a hard interruption (Core stopped without a graceful shutdown, or its lease lapsed). When an execution reaches the limit, it is held for a Continue or Stop recovery decision instead of being resumed. The default is 5, and `0` turns the cap off. Graceful restarts do not count.
+
 For host-runtime browsing, `FICUS_BROWSER_EXECUTABLE_PATH` selects an installed browser executable, and `FICUS_BROWSER_CHANNEL` selects a supported Chromium-family channel. They are alternatives to automatic local browser discovery, not downloads or installation commands.
 
 Connect optional OpenAI Realtime voice, transcription and embeddings through **Settings → Integrations → OpenAI API services**. This is separate from the model accounts in AI Providers. `OPENAI_API_KEY` remains a legacy environment source and can also affect model-provider discovery, so prefer the integration card for services-only configuration.
