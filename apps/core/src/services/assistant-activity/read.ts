@@ -149,10 +149,15 @@ export async function listAssistantActivity(
   }
 }
 
-/** Who sent an update, as people see it: an agent by its type ("Engineer"), never its name alone. */
-function senderName(metadata: Record<string, unknown>): string {
+/**
+ * Who sent an update, as people and the Assistant read it: an agent by its type ("Engineer"), never its
+ * name alone. The update cards and the Assistant's mailbox both use it, so the two always agree.
+ */
+export function assistantUpdateSenderName(metadata: Record<string, unknown>): string {
   const sender = metadata.sender as { name?: string; agentTypeName?: string; agentTypeId?: string } | undefined
-  return agentSenderLabel(sender) || sender?.name || sender?.agentTypeName || 'Agent'
+  // Identity only: a purpose recorded with the sender needs its own read authorization, so it is never passed on.
+  const label = agentSenderLabel({ agentTypeId: sender?.agentTypeId, agentTypeName: sender?.agentTypeName })
+  return label || sender?.name || sender?.agentTypeName || 'Agent'
 }
 
 /** One update card: the tracking row plus its inbox message. */
@@ -171,7 +176,7 @@ export function toAssistantActivityUpdate({
     reportedStatus: update.reportedStatus,
     content: message.content,
     subject: message.subject,
-    senderName: senderName(message.metadata),
+    senderName: assistantUpdateSenderName(message.metadata),
     processedAt: update.processedAt?.toISOString() ?? null,
     summarized: update.summarizedMessageId !== null,
     seenAt: update.seenAt?.toISOString() ?? null,
