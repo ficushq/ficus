@@ -2701,6 +2701,49 @@ describe('WorkStream entity', () => {
       expect(r.workingCount).toBe(0)
     })
 
+    it('reports when counted executions last worked, unmoved by edits to the stream itself', async () => {
+      const agent = await createTestAgent()
+      const idle = await storedLegacyWorkStream({ squadId: testSquad.id, title: `${testPrefix} never worked` })
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} last worked`,
+        agentIds: [agent.id],
+      })
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db.insert(executions).values([
+        { agentId: agent.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 20_000) },
+        { agentId: agent.id, status: 'completed', startedAt: new Date(s.getTime() - 60_000), endedAt: s },
+      ])
+      await db.update(schema.workStreams).set({ updatedAt: new Date() }).where(eq(schema.workStreams.id, ws.id))
+
+      const map = await WorkStream.computeRuntimes([idle, ws])
+      expect(map.get(idle.id)!.lastWorkedAt).toBeNull()
+      expect(map.get(ws.id)!.lastWorkedAt).toBe(new Date(s.getTime() + 20_000).toISOString())
+
+      // A working execution is working now.
+      await db
+        .insert(executions)
+        .values({ agentId: agent.id, status: 'running', startedAt: new Date(Date.now() - 5_000) })
+      const running = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(running.lastWorkedAt).toBe(running.computedAt)
+    })
+
+    it('a stale running execution last worked at its last message', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} stale last worked`,
+        agentIds: [agent.id],
+      })
+      const started = new Date(Date.now() - 7 * 24 * 3_600_000)
+      const lastMessage = new Date(started.getTime() + 10 * 60_000)
+      await db.insert(executions).values({ agentId: agent.id, status: 'running', startedAt: started })
+      await assistantMessageAt(agent.id, lastMessage)
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.lastWorkedAt).toBe(lastMessage.toISOString())
+    })
+
     it('a long execution with recent activity counts to now and keeps ticking', async () => {
       const agent = await createTestAgent()
       const ws = await storedLegacyWorkStream({

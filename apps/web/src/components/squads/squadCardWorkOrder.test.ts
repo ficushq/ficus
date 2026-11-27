@@ -1,12 +1,27 @@
 import { describe, expect, test } from 'bun:test'
 import type { PendingAction, WorkStream } from '@ficus/shared'
-import { orderSquadCardWork, workStreamIdsNeedingViewer } from './squadCardWorkOrder'
+import { lastActivityTime, orderSquadCardWork, workStreamIdsNeedingViewer } from './squadCardWorkOrder'
 
+type Row = Pick<WorkStream, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'runtime' | 'openWaits'>
+
+/** A stream from a server that does not report `runtime.lastWorkedAt`, unless `extra` sets it. */
 function stream(id: string, updatedAt: string, extra: Partial<WorkStream> = {}) {
-  return { id, status: 'active', updatedAt: updatedAt as never, openWaits: [], ...extra } as Pick<
-    WorkStream,
-    'id' | 'status' | 'updatedAt' | 'openWaits'
-  >
+  return {
+    id,
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00Z' as never,
+    updatedAt: updatedAt as never,
+    openWaits: [],
+    ...extra,
+  } as Row
+}
+
+/** A stream whose executions last worked at `lastWorkedAt` (null: none has run). */
+function worked(id: string, lastWorkedAt: string | null, extra: Partial<WorkStream> = {}) {
+  return stream(id, '2026-11-27T00:00:00Z', {
+    runtime: { totalMs: 0, activeCount: 0, lastWorkedAt, computedAt: '2026-11-27T00:00:00Z' },
+    ...extra,
+  })
 }
 
 function action(type: PendingAction['type'], data: Record<string, unknown>): PendingAction {
@@ -79,5 +94,53 @@ describe('orderSquadCardWork', () => {
       new Set(['done'])
     )
     expect(ordered.map((ws) => ws.id)).toEqual(['active', 'queued'])
+  })
+})
+
+describe('last activity', () => {
+  test('orders by when the work last ran, not by edits that bumped updatedAt', () => {
+    // Every stream below was edited at the same, later time; only their work differs.
+    const ordered = orderSquadCardWork(
+      [worked('older', '2026-11-20T00:00:00Z'), worked('newer', '2026-11-24T00:00:00Z')],
+      new Set()
+    )
+    expect(ordered.map((ws) => ws.id)).toEqual(['newer', 'older'])
+    const edited = worked('edited', '2026-11-20T00:00:00Z', { updatedAt: '2026-11-26T00:00:00Z' as never })
+    expect(lastActivityTime(edited)).toBe(Date.parse('2026-11-20T00:00:00Z'))
+  })
+
+  test('a stream nothing has worked on yet counts from its creation', () => {
+    const fresh = worked('fresh', null, { createdAt: '2026-11-22T00:00:00Z' as never })
+    expect(lastActivityTime(fresh)).toBe(Date.parse('2026-11-22T00:00:00Z'))
+    const ordered = orderSquadCardWork(
+      [worked('older', '2026-11-20T00:00:00Z'), fresh, worked('newer', '2026-11-24T00:00:00Z')],
+      new Set()
+    )
+    expect(ordered.map((ws) => ws.id)).toEqual(['newer', 'fresh', 'older'])
+  })
+
+  test('creation counts when it is later than the work an agent did before the stream', () => {
+    const relisted = worked('relisted', '2026-11-01T00:00:00Z', { createdAt: '2026-11-15T00:00:00Z' as never })
+    expect(lastActivityTime(relisted)).toBe(Date.parse('2026-11-15T00:00:00Z'))
+  })
+
+  test('falls back to updatedAt for a server that does not report when work last ran', () => {
+    const legacy = stream('legacy', '2026-11-21T00:00:00Z', {
+      runtime: { totalMs: 0, activeCount: 0, computedAt: '2026-11-27T00:00:00Z' },
+    })
+    expect(lastActivityTime(legacy)).toBe(Date.parse('2026-11-21T00:00:00Z'))
+    expect(lastActivityTime(stream('no-runtime', '2026-11-23T00:00:00Z'))).toBe(Date.parse('2026-11-23T00:00:00Z'))
+  })
+
+  test('streams working right now keep one order whatever order the server sent them in', () => {
+    const now = '2026-11-27T07:00:00Z'
+    const rows = [
+      worked('b', now, { createdAt: '2026-11-10T00:00:00Z' as never }),
+      worked('a', now, { createdAt: '2026-11-10T00:00:00Z' as never }),
+      worked('newest', now, { createdAt: '2026-11-20T00:00:00Z' as never }),
+    ]
+    const expected = ['newest', 'a', 'b']
+    expect(orderSquadCardWork(rows, new Set()).map((ws) => ws.id)).toEqual(expected)
+    expect(orderSquadCardWork([...rows].reverse(), new Set()).map((ws) => ws.id)).toEqual(expected)
   })
 })

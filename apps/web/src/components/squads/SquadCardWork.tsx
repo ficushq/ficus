@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { workStreamRef, workStreamTitle, type WorkStream } from '@ficus/shared'
 import { Badge } from '../Badge'
+import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { WorkStreamStatusMarker } from '../WorkStreamStatusMarker'
 import {
   getWsDisplayState,
@@ -12,6 +13,10 @@ import { orderSquadCardWork, SQUAD_CARD_WORK_LIMIT } from './squadCardWorkOrder'
 /**
  * The squad card's work rows. The card itself opens the squad through a link stretched
  * over it, so every link here sits above that layer (`relative z-10`).
+ *
+ * `needsViewer` is null until both the streams and the viewer's pending actions have
+ * loaded. The rows wait as placeholders until then: shown earlier, they would sit in
+ * activity order and jump once the streams that need the viewer moved to the top.
  */
 export function SquadCardWork({
   squadName,
@@ -22,9 +27,24 @@ export function SquadCardWork({
   squadName: string
   squadSlug: string
   workStreams: readonly WorkStream[]
-  needsViewer: ReadonlySet<string>
+  needsViewer: ReadonlySet<string> | null
 }) {
-  const ordered = orderSquadCardWork(workStreams, needsViewer)
+  const ordered = orderSquadCardWork(workStreams, needsViewer ?? new Set())
+  if (needsViewer === null) {
+    return (
+      <LoadingSurface label={`Loading ${squadName} active work`} className="mb-3 -mx-2 flex flex-col">
+        <SkeletonRows count={Math.max(1, Math.min(ordered.length, SQUAD_CARD_WORK_LIMIT))}>
+          {(index) => (
+            <div key={index} className="flex items-center gap-2 px-2 py-1.5" data-testid="squad-card-work-placeholder">
+              <SkeletonBlock className="h-3 w-3 shrink-0 rounded-full" />
+              <SkeletonLine className="flex-1" />
+              <SkeletonBlock className="h-5 w-14 shrink-0 rounded-full" />
+            </div>
+          )}
+        </SkeletonRows>
+      </LoadingSurface>
+    )
+  }
   if (ordered.length === 0) {
     return <p className="mb-3 text-sm text-muted">No active work</p>
   }

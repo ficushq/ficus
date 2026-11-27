@@ -53,12 +53,17 @@ export function SquadList() {
   const { data: squads = [], isLoading } = useQuery(queries.squads.list('active'))
   // Head counts only: summary rows of the agents that can still act, not every agent's full record.
   const { data: allAgents = [] } = useQuery(queries.agents.summaries({ live: true }))
-  const { data: allWorkStreams = [] } = useQuery(queries.squads.activeWorkStreams())
+  const { data: allWorkStreams = [], isPending: workStreamsPending } = useQuery(queries.squads.activeWorkStreams())
   // The same Needs you list the Feed shows: streams it points at lead each card's work rows.
-  const { data: pendingActions } = usePendingActions()
+  // Null until both lists have loaded, so the rows first appear in their final order; if the
+  // actions fail to load, the rows fall back to activity order rather than waiting forever.
+  const { data: pendingActions, isPending: pendingActionsPending } = usePendingActions()
   const needsViewer = useMemo(
-    () => workStreamIdsNeedingViewer(pendingActions ?? [], allWorkStreams),
-    [pendingActions, allWorkStreams]
+    () =>
+      workStreamsPending || pendingActionsPending
+        ? null
+        : workStreamIdsNeedingViewer(pendingActions ?? [], allWorkStreams),
+    [workStreamsPending, pendingActionsPending, pendingActions, allWorkStreams]
   )
 
   // Filter out anonymous squads
@@ -231,7 +236,7 @@ function SquadCardContent({
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
-  needsViewer: ReadonlySet<string>
+  needsViewer: ReadonlySet<string> | null
 }) {
   const activeWorkStreams = workStreams.filter((ws) => ws.status !== 'done' && ws.status !== 'canceled').length
   const activeAgents = agents.filter((a) => a.status === 'active').length
@@ -292,7 +297,7 @@ function SortableSquadCard({
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
-  needsViewer: ReadonlySet<string>
+  needsViewer: ReadonlySet<string> | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: squad.id })
 
@@ -333,7 +338,7 @@ function SquadCard({
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
-  needsViewer: ReadonlySet<string>
+  needsViewer: ReadonlySet<string> | null
 }) {
   return (
     <div className="ficus-panel ficus-interactive-card relative isolate flex min-w-0 flex-col p-5">

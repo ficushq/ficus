@@ -2481,6 +2481,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       total_ms: string | number
       active_count: number
       working_count: number
+      last_worked_at: string | Date | null
     }>
 
     let computedAtIso = new Date().toISOString()
@@ -2490,6 +2491,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         totalMs: Number(row.total_ms),
         activeCount: Number(row.active_count),
         workingCount: Number(row.working_count),
+        lastWorkedAt: row.last_worked_at === null ? null : new Date(row.last_worked_at).toISOString(),
         computedAt: iso,
       })
       computedAtIso = iso
@@ -2497,7 +2499,13 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
     for (const ws of streams) {
       if (!result.has(ws.id)) {
-        result.set(ws.id, { totalMs: 0, activeCount: 0, workingCount: 0, computedAt: computedAtIso })
+        result.set(ws.id, {
+          totalMs: 0,
+          activeCount: 0,
+          workingCount: 0,
+          lastWorkedAt: null,
+          computedAt: computedAtIso,
+        })
       }
     }
 
@@ -2774,6 +2782,12 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  * execution), which schedule recovery relies on; `working_count` is the subset
  * still accruing time, which clients extrapolate from.
  *
+ * `last_worked_at` is the newest moment any counted execution did work: where its
+ * counted time ends (now while it works, its last message once it went silent),
+ * or its start while it has not run or never recorded an end. It reads the same
+ * joined rows, so it costs no extra scan, and unlike `updated_at` an edit to the
+ * stream's own fields never moves it.
+ *
  * Every column read from `executions` is in `idx_executions_agent_run_runtime`, so
  * the history stays an index-only scan; the message probe runs only for an
  * execution longer than the stale bound.
@@ -2817,7 +2831,8 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             GREATEST(0, EXTRACT(EPOCH FROM (w.worked_until - w.start_ts)) * 1000)
           ), 0)::bigint AS total_ms,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count,
-          COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count
+          COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count,
+          MAX(COALESCE(w.worked_until, w.start_ts)) AS last_worked_at
         FROM streams s
         LEFT JOIN pairs p ON p.ws_id = s.ws_id
         LEFT JOIN ${executions} e ON e.agent_id = p.agent_id
