@@ -2681,9 +2681,18 @@ export const agentQuestions = pgTable(
     // ID). The same call executed again finds this row instead of asking twice. Null for questions
     // created outside a tool call and for rows created before this was recorded.
     idempotencyKey: varchar('idempotency_key', { length: 200 }),
+    // Set when the question is created and cleared once `agent-question.created` has been emitted for
+    // it. A question still carrying it after its asking call stopped (a crash between finalizing the
+    // audience and announcing) is announced by the question attention maintenance sweep. Null for
+    // questions created outside `createAgentQuestion` and for rows created before this was recorded.
+    announcePendingSince: timestamp('announce_pending_since', { withTimezone: true }),
   },
   (table) => [
     index('idx_agent_questions_agent_status').on(table.agentId, table.status),
+    index('idx_agent_questions_announce_pending')
+      .on(table.announcePendingSince)
+      .where(sql`${table.announcePendingSince} IS NOT NULL AND ${table.status} = 'open'`)
+      .concurrently(),
     uniqueIndex('uq_agent_questions_idempotency_key').on(table.idempotencyKey).concurrently(),
     index('idx_agent_questions_answer_delivery_due')
       .on(table.answerDeliveryNextAttemptAt)

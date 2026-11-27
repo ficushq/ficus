@@ -1912,6 +1912,20 @@
       "when": 1795768652243,
       "tag": "0272_agent_questions_idempotency_key_index",
       "breakpoints": true
+    },
+    {
+      "idx": 273,
+      "version": "7",
+      "when": 1795774965199,
+      "tag": "0273_agent_questions_announce_pending",
+      "breakpoints": true
+    },
+    {
+      "idx": 274,
+      "version": "7",
+      "when": 1795774972989,
+      "tag": "0274_agent_questions_announce_pending_index",
+      "breakpoints": true
     }
   ]
 }
