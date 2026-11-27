@@ -29,6 +29,7 @@ import {
   updateLocalDeploymentRecord,
 } from '../services/deploy/local-deployment-service'
 import { identityMiddleware } from '../middleware/identity'
+import { restoreExtendedIdleTimeout } from '../middleware/read-deadline'
 import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
 import { insertMachine, deleteMachine } from '../services/machines/queries'
 import { eventEmitter } from '../lib/infra/event-emitter'
@@ -1520,6 +1521,53 @@ describe('squads routes', () => {
       })
       expect(ok.status).toBe(200)
       expect(await ok.text()).toBe('inside')
+    })
+  })
+
+  describe('workspace download on a real listener (host runtime)', () => {
+    let prevRuntime: string | undefined
+    let workspaceDir: string
+
+    beforeEach(() => {
+      prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'host'
+      workspaceDir = mkdtempSync(join(tmpdir(), 'squad-route-download-'))
+      mkdirSync(join(workspaceDir, 'docs'))
+      writeFileSync(join(workspaceDir, 'docs', 'big.bin'), Buffer.alloc(300_000, 7))
+    })
+
+    afterEach(() => {
+      clearHostWorkspaceOverrides()
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
+      rmSync(workspaceDir, { recursive: true, force: true })
+    })
+
+    it('sends a file with its Content-Length and no chunked framing, and holds only a directory archive', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Download Framing`, purpose: 'download' })
+      setHostWorkspaceOverride(squad.id, workspaceDir)
+      const served = new Hono()
+      served.use('*', restoreExtendedIdleTimeout())
+      served.use('*', identityMiddleware)
+      served.route('/api/squads', squadsRouter)
+      const server = Bun.serve({ port: 0, fetch: (request, bun) => served.fetch(request, bun) })
+      try {
+        const base = `http://127.0.0.1:${server.port}/api/squads/${squad.id}/workspace/download`
+        const file = await fetch(`${base}?path=docs/big.bin`, { headers: authHeaders(admin.token) })
+        expect(file.status).toBe(200)
+        expect(file.headers.get('Content-Length')).toBe('300000')
+        expect(file.headers.get('Transfer-Encoding')).toBeNull()
+        expect((await file.arrayBuffer()).byteLength).toBe(300_000)
+
+        // A directory archive is a stream that can go quiet while it is packed, so it is held.
+        const archive = await fetch(`${base}?path=docs&archive=tar.gz`, { headers: authHeaders(admin.token) })
+        expect(archive.status).toBe(200)
+        expect(archive.headers.get('X-Ficus-Archive')).toBe('tar.gz')
+        expect(archive.headers.get('Transfer-Encoding')).toBe('chunked')
+        expect((await archive.arrayBuffer()).byteLength).toBeGreaterThan(0)
+      } finally {
+        await server.stop(true)
+      }
     })
   })
 

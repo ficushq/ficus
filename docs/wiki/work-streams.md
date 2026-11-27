@@ -140,7 +140,9 @@ Two things keep reads bounded, and a third keeps slow writes from losing their a
   the whole keep-alive connection, so leaving it off would keep that idle socket open
   forever. A route that set its own idle timeout keeps it here; `restoreExtendedIdleTimeout`
   (same file) turns an `extendIdleTimeout` timer back on when that handler returns, or, for
-  a workspace download, once its streamed body has been sent. Every restore is guarded: if
+  a workspace download whose body is already a stream (relayed from a box, or a directory
+  archive; `holdIdleTimerUntilBodySent`), once that body has been sent. A local file
+  download keeps its file body and `Content-Length`. Every restore is guarded: if
   Bun throws because the client has already gone, Core logs it instead of letting it
   replace the handler's own result or error. The fix is in Core rather than
   in the CLI (which could send `{}` instead) so that browsers, scripts and older CLIs are

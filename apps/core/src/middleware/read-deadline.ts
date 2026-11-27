@@ -40,7 +40,7 @@ const ownIdleTimeout = new WeakSet<Request>()
 /**
  * Requests that turned their idle timer off or up through {@link extendIdleTimeout},
  * and when {@link restoreExtendedIdleTimeout} turns it back on: once the handler
- * returns, or once the response body has been sent.
+ * returns, or once the response body has been sent ({@link holdIdleTimerUntilBodySent}).
  */
 const extendedIdleTimeouts = new WeakMap<Request, { untilBodySent: boolean }>()
 
@@ -66,15 +66,30 @@ function bunServer(c: RequestContext): IdleTimeoutServer | undefined {
  *
  * Bun applies `server.timeout(request, seconds)` to the whole keep-alive socket,
  * not just this request, so {@link restoreExtendedIdleTimeout} puts the listener's
- * timeout back once the handler returns. A route whose response body can go quiet
- * for longer than that timeout while it streams (a download) passes
- * `untilBodySent`, and the timer comes back only once the body has been sent or
- * the client has gone.
+ * timeout back once the handler returns.
  */
-export function extendIdleTimeout(c: RequestContext, seconds: number, options: { untilBodySent?: boolean } = {}): void {
+export function extendIdleTimeout(c: RequestContext, seconds: number): void {
   exemptFromReadDeadline(c)
-  extendedIdleTimeouts.set(c.req.raw, { untilBodySent: options.untilBodySent ?? false })
+  if (!extendedIdleTimeouts.has(c.req.raw)) extendedIdleTimeouts.set(c.req.raw, { untilBodySent: false })
   bunServer(c)?.timeout(c.req.raw, seconds)
+}
+
+/**
+ * Keep this request's idle timer off (or extended) until its response body has
+ * been sent, rather than only until the handler returns, for a body that is
+ * already a stream and can go quiet for longer than the listener's timeout while
+ * it is produced: a directory archive being packed, or a download relayed from a
+ * box. Bun cuts a streamed body that goes quiet, even mid-download.
+ *
+ * Only for such bodies: holding the timer means relaying the body through a JS
+ * stream, and Bun sends a relayed body chunked, without its Content-Length and
+ * without sendfile. A file body (`Bun.file`) cannot go quiet, so the restore when
+ * the handler returns is right for it. A request that has not extended its
+ * timeout gets it turned off here.
+ */
+export function holdIdleTimerUntilBodySent(c: RequestContext): void {
+  if (!extendedIdleTimeouts.has(c.req.raw)) extendIdleTimeout(c, 0)
+  extendedIdleTimeouts.get(c.req.raw)!.untilBodySent = true
 }
 
 /** For a route that sets the idle timeout itself (the local-app proxy). */
@@ -142,8 +157,9 @@ function restoreWhenBodySent(response: Response, body: ReadableStream<Uint8Array
  * once made such a request would never be closed for idleness.
  *
  * The timer comes back once the handler returns, before the response is written,
- * or, for a route that asked for `untilBodySent`, once its response body has been
- * sent. The local-app proxy ({@link exemptFromReadDeadline}) manages its own.
+ * or, for a route that called {@link holdIdleTimerUntilBodySent}, once its response
+ * body has been sent. The local-app proxy ({@link exemptFromReadDeadline}) manages
+ * its own.
  */
 export function restoreExtendedIdleTimeout(options: { idleTimeoutSeconds?: number } = {}): MiddlewareHandler {
   const idleTimeoutSeconds = options.idleTimeoutSeconds ?? CORE_IDLE_TIMEOUT_SECONDS

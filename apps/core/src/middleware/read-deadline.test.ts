@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { Hono } from 'hono'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import {
   CORE_IDLE_TIMEOUT_SECONDS,
   READ_DEADLINE_CODE,
@@ -7,6 +10,7 @@ import {
   exemptFromReadDeadline,
   extendIdleTimeout,
   holdIdleTimerForBodylessWrites,
+  holdIdleTimerUntilBodySent,
   readDeadline,
   restoreExtendedIdleTimeout,
 } from './read-deadline'
@@ -373,7 +377,7 @@ describe('restoreExtendedIdleTimeout', () => {
       throw new Error('create failed')
     })
     app.get('/download', (c) => {
-      extendIdleTimeout(c, 0, { untilBodySent: true })
+      holdIdleTimerUntilBodySent(c)
       const encoder = new TextEncoder()
       const body = new ReadableStream<Uint8Array>({
         async start(controller) {
@@ -386,7 +390,7 @@ describe('restoreExtendedIdleTimeout', () => {
       return new Response(body, { headers: { 'Content-Type': 'application/gzip', 'Content-Length': '10' } })
     })
     app.get('/missing', (c) => {
-      extendIdleTimeout(c, 0, { untilBodySent: true })
+      holdIdleTimerUntilBodySent(c)
       return c.json({ error: 'File not found' }, 404)
     })
     app.get('/plain', (c) => c.json({ ok: true }))
@@ -501,6 +505,44 @@ describe('restoreExtendedIdleTimeout', () => {
     await cancelled.body!.cancel()
   })
 
+  it('leaves a file body to Bun, which sends it with its Content-Length, when the route does not hold the timer', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'read-deadline-'))
+    const file = join(directory, 'download.bin')
+    writeFileSync(file, Buffer.alloc(300_000, 7))
+    const timeouts: number[] = []
+    const app = new Hono()
+    app.use('*', restoreExtendedIdleTimeout({ idleTimeoutSeconds: 30 }))
+    app.get('/file', (c) => {
+      extendIdleTimeout(c, 0)
+      return new Response(Bun.file(file), { headers: { 'Content-Length': '300000' } })
+    })
+    // What a held body costs, and why only bodies that are already streams are held.
+    app.get('/held', (c) => {
+      holdIdleTimerUntilBodySent(c)
+      return new Response(Bun.file(file), { headers: { 'Content-Length': '300000' } })
+    })
+    const server = Bun.serve({
+      port: 0,
+      fetch: (request) =>
+        app.fetch(request, { timeout: (_request: Request, seconds: number) => timeouts.push(seconds) }),
+    })
+    try {
+      const plain = await fetch(`http://127.0.0.1:${server.port}/file`)
+      expect(plain.headers.get('Content-Length')).toBe('300000')
+      expect(plain.headers.get('Transfer-Encoding')).toBeNull()
+      expect((await plain.arrayBuffer()).byteLength).toBe(300_000)
+      expect(timeouts).toEqual([0, 30])
+
+      const held = await fetch(`http://127.0.0.1:${server.port}/held`)
+      expect(held.headers.get('Content-Length')).toBeNull()
+      expect(held.headers.get('Transfer-Encoding')).toBe('chunked')
+      expect((await held.arrayBuffer()).byteLength).toBe(300_000)
+    } finally {
+      await server.stop(true)
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('closes the idle keep-alive socket after an extending route, and keeps a quiet download open until it is sent', async () => {
     // At idleTimeout 1, Bun 1.4.2 closes a socket that has been idle for about 4 s.
     const PAUSE_MS = 6_000
@@ -512,7 +554,8 @@ describe('restoreExtendedIdleTimeout', () => {
       return c.json(await c.req.json())
     })
     app.get('/download', (c) => {
-      extendIdleTimeout(c, 0, { untilBodySent: true })
+      extendIdleTimeout(c, 0)
+      holdIdleTimerUntilBodySent(c)
       return new Response(pausingBody('first,', 'last', PAUSE_MS))
     })
     // The same download, with the timer back on as soon as the handler returns.
