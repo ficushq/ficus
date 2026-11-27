@@ -19,7 +19,9 @@ import {
   workflowReviewBriefForAttempt,
   agentTypeNoun,
   typeFirstAgentLabel,
+  workflowGateApprover,
   type Agent,
+  type WorkflowGateApprover,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
   type WorkflowDecisionBrief,
@@ -277,17 +279,27 @@ export function humanGateContext(
     gateWait,
     blockingWaits,
     canDecide,
-    readOnlyReason: canDecide
-      ? undefined
-      : canReview
-        ? 'Only the reviewers assigned to this work stream can decide.'
-        : 'You need review permission in this squad to decide.',
+    readOnlyReason: canDecide ? undefined : workflowGateReadOnlyReason(workflowGateApprover(step), canReview),
     sources,
     primaryOutcome,
     outcomes,
     approvalStatement: approvalStatement(run.state, attempt),
     history,
   }
+}
+
+/**
+ * Why a viewer who may not decide a workflow gate cannot, from who decides it and whether they
+ * hold review permission in the squad; undefined when neither explains it. Core still decides who
+ * may respond; this only words the reason.
+ */
+export function workflowGateReadOnlyReason(
+  approver: WorkflowGateApprover | undefined,
+  canReview: boolean
+): string | undefined {
+  if (!canReview) return 'You need review permission in this squad to decide.'
+  if (approver === 'assigned-reviewers') return 'Only the reviewers assigned to this work stream can decide.'
+  return undefined
 }
 
 /** The document's own title: its first heading, else its first line, as plain text. */
