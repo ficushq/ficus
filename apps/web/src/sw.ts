@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { resolveNotificationTarget } from './lib/notificationTarget'
-import { shouldSkipPushNotification } from './lib/needsYouPush'
+import { confirmNeedsYouCard, needsYouPushActionId, needsYouPushWindows } from './lib/needsYouPush'
 import { runtimeServiceWorkerCaches, serviceWorkerCacheNames, staleServiceWorkerCaches } from './swCaches'
 import { bypassesServiceWorker, isUncachedApi } from './swRoutes'
 
@@ -167,17 +167,21 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
-      // A focused Ficus window shows the in-app Needs-you card for this item instead (never on
-      // WebKit, which revokes subscriptions whose pushes show nothing); see lib/needsYouPush.ts.
-      // Any failure here falls back to showing the notification.
+      // Skip only when a focused Ficus window confirms it shows the in-app Needs-you card for this
+      // exact item (never on WebKit, which revokes subscriptions whose pushes show nothing); see
+      // lib/needsYouPush.ts. No answer, a no, or any failure shows the notification.
       const isAppWindow = (url: URL) =>
         url.origin === self.location.origin &&
         url.pathname.startsWith(BASE_PATH) &&
         !bypassesServiceWorker(url.pathname, BASE_PATH)
-      const skip = await self.clients
-        .matchAll({ type: 'window', includeUncontrolled: true })
-        .then((windows) => shouldSkipPushNotification(data, self.navigator.userAgent, windows, isAppWindow))
-        .catch(() => false)
+      const actionId = needsYouPushActionId(data)
+      const skip = actionId
+        ? await self.clients
+            .matchAll({ type: 'window', includeUncontrolled: true })
+            .then((windows) => needsYouPushWindows(data, self.navigator.userAgent, windows, isAppWindow))
+            .then((windows) => confirmNeedsYouCard(windows, actionId))
+            .catch(() => false)
+        : false
       if (skip) return
       await self.registration.showNotification(data.title || 'Ficus', options)
     })()

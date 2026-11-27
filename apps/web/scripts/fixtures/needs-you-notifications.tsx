@@ -44,7 +44,8 @@ function Fixture() {
             dependencies={{
               usePendingActions: () => ({ data: pending }),
               usePreferences: () => ({ pushEnabled: true, mutedEvents: [] }),
-              documentVisible: () => true,
+              useWindowFocus: () => ({ isFocused: () => true, since: 0 }),
+              subscribePushChecks: () => () => {},
               osNotificationReplacesCard: () => false,
               timeoutMs: 600_000,
             }}

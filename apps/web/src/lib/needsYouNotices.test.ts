@@ -7,7 +7,13 @@ import {
   needsYouNoticeDestination,
   needsYouNoticesAllowed,
 } from './needsYouNotices'
-import { isNeedsYouPush, isWebKitEngine, shouldSkipPushNotification } from './needsYouPush'
+import {
+  confirmNeedsYouCard,
+  isWebKitEngine,
+  NEEDS_YOU_PUSH_CHECK,
+  needsYouPushActionId,
+  needsYouPushWindows,
+} from './needsYouPush'
 import { otherAction, questionAction, waitAction } from './needsYouNotices.fixtures'
 
 const at = (path: string) => {
@@ -27,6 +33,15 @@ describe('needs-you notice triggers', () => {
     expect(needsYouNoticeCategory(questionAction('q4', { alerts: undefined }))).toBeNull()
     expect(needsYouNoticeCategory(waitAction('w5', { alerts: false }))).toBeNull()
     expect(needsYouNoticeCategory(waitAction('w3', { canRespond: false }))).toBeNull()
+    // A recovery decision ("Continue recovery?") is a halted agent's, not a new ask.
+    expect(
+      needsYouNoticeCategory(
+        waitAction('w6', {
+          type: 'workstream-blocked',
+          wait: { structured: { request: { kind: 'continue', recoveryId: 'r1' } } as never },
+        })
+      )
+    ).toBeNull()
     for (const type of ['agent-error', 'assistant-needs-input', 'workstream-delivery'] as const)
       expect(needsYouNoticeCategory(otherAction(type, 'x'))).toBeNull()
   })
@@ -153,14 +168,15 @@ describe('push notifications while a Ficus window is focused', () => {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15'
   const iosChrome =
     'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0 Mobile/15E148 Safari/604.1'
-  const focused = [{ focused: true, visibilityState: 'visible' as const, url: 'https://ficus.test/ficus/' }]
+  const focused = { focused: true, visibilityState: 'visible' as const, url: 'https://ficus.test/ficus/' }
   const isApp = (url: URL) => url.pathname.startsWith('/ficus/') && !url.pathname.startsWith('/ficus/docs')
+  const push = { actionId: 'agent-question:q' }
 
-  test('only question and review pushes are Needs-you pushes', () => {
+  test('only question and gate pushes may have a card', () => {
     for (const actionId of ['agent-question:q', 'squad-question:a', 'workstream-review:w:1', 'workstream-blocked:w:1'])
-      expect(isNeedsYouPush({ actionId })).toBe(true)
-    expect(isNeedsYouPush({ actionId: 'agent-error:a' })).toBe(false)
-    expect(isNeedsYouPush({ title: 'Done' })).toBe(false)
+      expect(needsYouPushActionId({ actionId })).toBe(actionId)
+    expect(needsYouPushActionId({ actionId: 'agent-error:a' })).toBeNull()
+    expect(needsYouPushActionId({ title: 'Done' })).toBeNull()
   })
 
   test('WebKit is every Safari and iOS browser, never desktop Chromium or Firefox', () => {
@@ -170,22 +186,47 @@ describe('push notifications while a Ficus window is focused', () => {
     expect(isWebKitEngine(firefox)).toBe(false)
   })
 
-  test('Chromium and Firefox skip a Needs-you notification while a Ficus window is focused', () => {
-    const push = { actionId: 'agent-question:q' }
-    expect(shouldSkipPushNotification(push, chrome, focused, isApp)).toBe(true)
-    expect(shouldSkipPushNotification(push, firefox, focused, isApp)).toBe(true)
-    // Not focused, hidden, or a sibling app on the same origin: the OS notification shows.
-    expect(shouldSkipPushNotification(push, chrome, [{ ...focused[0]!, focused: false }], isApp)).toBe(false)
-    expect(shouldSkipPushNotification(push, chrome, [{ ...focused[0]!, visibilityState: 'hidden' }], isApp)).toBe(false)
-    expect(
-      shouldSkipPushNotification(push, chrome, [{ ...focused[0]!, url: 'https://ficus.test/ficus/docs/' }], isApp)
-    ).toBe(false)
-    // Other pushes always show.
-    expect(shouldSkipPushNotification({ actionId: 'agent-error:a' }, chrome, focused, isApp)).toBe(false)
+  test('Chromium and Firefox ask only focused, visible Ficus windows', () => {
+    expect(needsYouPushWindows(push, chrome, [focused], isApp)).toEqual([focused])
+    expect(needsYouPushWindows(push, firefox, [focused], isApp)).toEqual([focused])
+    expect(needsYouPushWindows(push, chrome, [{ ...focused, focused: false }], isApp)).toEqual([])
+    expect(needsYouPushWindows(push, chrome, [{ ...focused, visibilityState: 'hidden' }], isApp)).toEqual([])
+    expect(needsYouPushWindows(push, chrome, [{ ...focused, url: 'https://ficus.test/ficus/docs/' }], isApp)).toEqual(
+      []
+    )
+    expect(needsYouPushWindows({ actionId: 'agent-error:a' }, chrome, [focused], isApp)).toEqual([])
   })
 
-  test('WebKit always shows the notification, so its subscription is never revoked', () => {
-    expect(shouldSkipPushNotification({ actionId: 'agent-question:q' }, safari, focused, isApp)).toBe(false)
-    expect(shouldSkipPushNotification({ actionId: 'agent-question:q' }, iosChrome, focused, isApp)).toBe(false)
+  test('WebKit asks no window, so its notification always shows and its subscription is never revoked', () => {
+    expect(needsYouPushWindows(push, safari, [focused], isApp)).toEqual([])
+    expect(needsYouPushWindows(push, iosChrome, [focused], isApp)).toEqual([])
+  })
+
+  /** A window client that answers through the transferred port, or never (no card mounted). */
+  function windowAnswering(answer: boolean | 'silent' | 'throws') {
+    const asked: unknown[] = []
+    return {
+      asked,
+      postMessage(message: unknown, [port]: Transferable[]) {
+        if (answer === 'throws') throw new Error('gone')
+        asked.push(message)
+        if (answer !== 'silent') (port as MessagePort).postMessage({ shown: answer })
+      },
+    }
+  }
+
+  test('the notification is skipped only when a window confirms its card for that action', async () => {
+    const yes = windowAnswering(true)
+    expect(await confirmNeedsYouCard([windowAnswering(false), yes], 'agent-question:q', 500)).toBe(true)
+    expect(yes.asked).toEqual([{ type: NEEDS_YOU_PUSH_CHECK, actionId: 'agent-question:q' }])
+  })
+
+  test('a no, no answer at all (a focused voice or sign-in window), or a failure shows the notification', async () => {
+    expect(await confirmNeedsYouCard([windowAnswering(false)], 'agent-question:q', 500)).toBe(false)
+    const started = Date.now()
+    expect(await confirmNeedsYouCard([windowAnswering('silent')], 'agent-question:q', 60)).toBe(false)
+    expect(Date.now() - started).toBeLessThan(450)
+    expect(await confirmNeedsYouCard([windowAnswering('throws')], 'agent-question:q', 500)).toBe(false)
+    expect(await confirmNeedsYouCard([], 'agent-question:q', 500)).toBe(false)
   })
 })

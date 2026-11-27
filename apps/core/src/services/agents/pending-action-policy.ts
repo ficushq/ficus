@@ -29,6 +29,12 @@ export interface PendingActionAttentionContext {
    * entry has no origins. Omit it and each question loads its own origins on demand.
    */
   questionOrigins?: ReadonlyMap<string, readonly string[]>
+  /**
+   * Preloaded ids of the questions the viewer is a direct attention recipient of, so a caller
+   * evaluating many questions pays one recipient query instead of one or two per question. When
+   * present it is authoritative; omit it and each question checks its own row.
+   */
+  directRecipientQuestionIds?: ReadonlySet<string>
 }
 
 export interface PendingActionPolicyDecision {
@@ -36,7 +42,27 @@ export interface PendingActionPolicyDecision {
   canRespond: boolean
 }
 
-async function isDirectQuestionAttentionRecipient(questionId: string, userId: string): Promise<boolean> {
+/** The ids among `questionIds` that `userId` is a direct attention recipient of, in one query. */
+export async function loadDirectRecipientQuestionIds(
+  userId: string,
+  questionIds: readonly string[]
+): Promise<Set<string>> {
+  if (questionIds.length === 0) return new Set()
+  const rows = await db
+    .select({ questionId: agentQuestionRecipients.questionId })
+    .from(agentQuestionRecipients)
+    .where(
+      and(eq(agentQuestionRecipients.userId, userId), inArray(agentQuestionRecipients.questionId, [...questionIds]))
+    )
+  return new Set(rows.map((row) => row.questionId))
+}
+
+async function isDirectQuestionAttentionRecipient(
+  questionId: string,
+  userId: string,
+  context?: PendingActionAttentionContext
+): Promise<boolean> {
+  if (context?.directRecipientQuestionIds) return context.directRecipientQuestionIds.has(questionId)
   const [recipient] = await db
     .select({ userId: agentQuestionRecipients.userId })
     .from(agentQuestionRecipients)
@@ -118,7 +144,7 @@ export async function pendingActionAlertsViewer(
     case 'agent-question': {
       const data = action.data as AgentQuestionActionData
       if (data.ownerUserId === identity.userId && !data.squadId) return true
-      if (await isDirectQuestionAttentionRecipient(data.questionId, identity.userId)) return true
+      if (await isDirectQuestionAttentionRecipient(data.questionId, identity.userId, context)) return true
       if (!data.squadId) return false
       return questionDecisions({ id: data.questionId, squadId: data.squadId }, context, notify)
     }
@@ -158,7 +184,7 @@ export async function canReceiveAgentQuestionAttention(
   // Only a squadless personal agent's owner bypasses attention; a squad-bound agent's owner
   // snapshot is metadata, not an attention entitlement.
   if (userId && question.ownerUserId === userId && !question.squadId) return true
-  if (userId && (await isDirectQuestionAttentionRecipient(question.id, userId))) return true
+  if (userId && (await isDirectQuestionAttentionRecipient(question.id, userId, context))) return true
   if (!(await hasPermission(identity, 'actions:read', question.squadId ?? undefined))) return false
   // Non-user identities (agents, system/legacy tokens) never carried attention rows.
   if (identity.type !== 'user') return true

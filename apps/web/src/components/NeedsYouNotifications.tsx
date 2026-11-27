@@ -7,7 +7,8 @@ import { usePendingActions } from '../hooks/usePendingActions'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 import { queries } from '../queryOptions'
 import { desktopBridge } from '../lib/desktop'
-import { isWebKitEngine } from '../lib/needsYouPush'
+import { isWebKitEngine, subscribeNeedsYouPushChecks } from '../lib/needsYouPush'
+import { useStableRef } from '../hooks/useStableRef'
 import {
   isNeedsYouItemOpen,
   mergeNeedsYouNotices,
@@ -16,6 +17,7 @@ import {
   needsYouNoticeDestination,
   needsYouNoticesAllowed,
   NEEDS_YOU_NOTICE_TIMEOUT_MS,
+  NEEDS_YOU_REFOCUS_GRACE_MS,
   type NeedsYouNoticePreferences,
 } from '../lib/needsYouNotices'
 import { FicusLogo } from './FicusLogo'
@@ -36,16 +38,49 @@ function osNotificationReplacesCard(): boolean {
   return isWebKitEngine(navigator.userAgent)
 }
 
-function documentVisible(): boolean {
-  return document.visibilityState === 'visible'
+/** Where the window's focus stands: cards appear only in a focused, visible window. */
+export interface WindowFocus {
+  /** Read when a list arrives (never tracked from blur events; see popupDismissal.guard.test.ts). */
+  isFocused: () => boolean
+  /** When focus was last regained (ms since the epoch); 0 when it has not been since mount. */
+  since: number
+}
+
+function readWindowFocus(): boolean {
+  return document.visibilityState === 'visible' && document.hasFocus()
+}
+
+function useWindowFocus(): WindowFocus {
+  const [since, setSince] = useState(0)
+  useEffect(() => {
+    const regained = () => {
+      if (readWindowFocus()) setSince(Date.now())
+    }
+    window.addEventListener('focus', regained)
+    document.addEventListener('visibilitychange', regained)
+    return () => {
+      window.removeEventListener('focus', regained)
+      document.removeEventListener('visibilitychange', regained)
+    }
+  }, [])
+  return { isFocused: readWindowFocus, since }
+}
+
+interface PendingActionsResult {
+  data?: PendingAction[]
+  /** When the list was fetched (ms since the epoch), as react-query reports it. */
+  dataUpdatedAt?: number
+  refetch?: () => Promise<unknown>
 }
 
 interface NeedsYouNotificationsDependencies {
-  usePendingActions: () => { data?: PendingAction[] }
+  usePendingActions: () => PendingActionsResult
   usePreferences: () => NeedsYouNoticePreferences | undefined
-  /** False while the page is hidden: the OS notification is the notice then. */
-  documentVisible: () => boolean
+  /** Cards appear only while the window is focused; otherwise the OS notification is the notice. */
+  useWindowFocus: () => WindowFocus
   osNotificationReplacesCard: () => boolean
+  /** Answers the service worker's "do you show a card for this push?" (lib/needsYouPush.ts). */
+  subscribePushChecks: (handler: (actionId: string) => Promise<boolean>) => () => void
   timeoutMs: number
 }
 
@@ -58,6 +93,9 @@ interface NoticeState {
   seen: ReadonlySet<string> | null
   notices: PendingAction[]
 }
+
+const CONFIRM_POLL_MS = 50
+const CONFIRM_ATTEMPTS = 12
 
 /**
  * The in-app "Needs you" notice: when a question or a review/approval gate starts needing the
@@ -72,17 +110,21 @@ export function NeedsYouNotifications({
   const {
     usePendingActions: usePending = usePendingActions,
     usePreferences = useMyNotificationPreferences,
-    documentVisible: isDocumentVisible = documentVisible,
+    useWindowFocus: useFocus = useWindowFocus,
     osNotificationReplacesCard: osNotificationShows = osNotificationReplacesCard,
+    subscribePushChecks = subscribeNeedsYouPushChecks,
     timeoutMs = NEEDS_YOU_NOTICE_TIMEOUT_MS,
   } = dependencies
-  const { data: actions } = usePending()
+  const { data: actions, dataUpdatedAt, refetch } = usePending()
   const preferences = usePreferences()
+  const focus = useFocus()
   const location = useLocation()
   const navigate = useNavigate()
   const [state, setState] = useState<NoticeState>({ seen: null, notices: [] })
 
-  // Each new pending list: announce the items not seen before, once each.
+  // Each new pending list: announce the items not seen before, once each. A list fetched while the
+  // window was away, or right as it came back, only records its items: they arrived while the user
+  // was elsewhere and got their OS notification then.
   useAdjustOnChange(
     [actions],
     () => {
@@ -95,8 +137,11 @@ export function NeedsYouNotifications({
       const seen = state.seen
       const fresh = actions.filter((action) => !seen.has(action.id))
       if (fresh.length === 0) return
+      const away =
+        !focus.isFocused() ||
+        (focus.since > 0 && (dataUpdatedAt ?? Number.POSITIVE_INFINITY) < focus.since + NEEDS_YOU_REFOCUS_GRACE_MS)
       const announce =
-        isDocumentVisible() && !osNotificationShows()
+        !away && !osNotificationShows()
           ? fresh.filter((action) => {
               const category = needsYouNoticeCategory(action)
               return (
@@ -122,6 +167,25 @@ export function NeedsYouNotifications({
       !isNeedsYouItemOpen(action, location)
     )
   })
+
+  // Every item this page has put on screen, dismissed or not: the service worker skips a push's OS
+  // notification only for these.
+  const shown = useRef(new Set<string>())
+  useEffect(() => {
+    for (const action of visible) shown.current.add(action.id)
+  })
+  const refetchRef = useStableRef(refetch)
+  useEffect(
+    () =>
+      subscribePushChecks(async (actionId) => {
+        // The push usually lands before the next poll: fetch the list, then let it render.
+        await refetchRef.current?.()
+        for (let attempt = 0; attempt < CONFIRM_ATTEMPTS && !shown.current.has(actionId); attempt++)
+          await new Promise((resolve) => setTimeout(resolve, CONFIRM_POLL_MS))
+        return shown.current.has(actionId)
+      }),
+    [subscribePushChecks, refetchRef]
+  )
 
   const dismiss = useCallback(
     (id: string) => setState((current) => ({ ...current, notices: current.notices.filter((n) => n.id !== id) })),

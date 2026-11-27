@@ -43,6 +43,7 @@ import type { Identity } from '../rbac'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import {
   evaluatePendingAction,
+  loadDirectRecipientQuestionIds,
   loadQuestionWorkStreamOrigins,
   pendingActionAlertsViewer,
 } from './pending-action-policy'
@@ -568,7 +569,16 @@ export async function listPendingActionsForIdentity(
         )
     : []
   const acknowledged = new Map(acknowledgements.map((row) => [row.questionId, row.generation]))
-  const context = { attention, questionOrigins }
+  // One recipient query per request, shared by visibility and the `alerts` flag below.
+  const directRecipientQuestionIds = userId
+    ? await loadDirectRecipientQuestionIds(
+        userId,
+        actions
+          .filter((action) => action.type === 'agent-question')
+          .map((action) => (action.data as AgentQuestionActionData).questionId)
+      )
+    : undefined
+  const context = { attention, questionOrigins, directRecipientQuestionIds }
   const visible: PendingAction[] = []
   for (const action of actions) {
     if (action.type === 'agent-question') {

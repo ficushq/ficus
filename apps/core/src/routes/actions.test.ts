@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db } from '../db'
 import {
+  agentQuestionRecipients,
   agentQuestionWorkStreamOrigins,
   agentQuestions,
   agents,
@@ -185,6 +186,38 @@ describe('GET /api/actions/pending policy matrix', () => {
       await app.request('/api/actions/pending', { headers: authHeaders(ownerOnly.token) })
     ).json()) as Listed
     expect(personal.find((action) => action.type === 'agent-question')?.alerts).toBe(true)
+  })
+
+  test('a direct recipient is alerted about a question even at Show, and nobody else is', async () => {
+    const [direct, other] = await db
+      .insert(agentQuestions)
+      .values(
+        ['asked of you?', 'asked of the squad?'].map((question) => ({
+          agentId: agentIds[2]!,
+          squadId: squad.id,
+          ownerUserId: responder.id,
+          questionData: { questions: [{ id: 'direct', type: 'text' as const, question }] },
+        }))
+      )
+      .returning()
+    await db.insert(agentQuestionRecipients).values({
+      questionId: direct!.id,
+      userId: responder.id,
+      reason: 'execution-participant',
+    })
+    await subscribeToSquad(squad.id, responder.id, { decisions: 'show', progress: 'notify' })
+    try {
+      const listed = (await (
+        await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
+      ).json()) as Array<{ id: string; alerts?: boolean }>
+      expect(listed.find((action) => action.id === `agent-question:${direct!.id}`)?.alerts).toBe(true)
+      const squadOnly = listed.find((action) => action.id === `agent-question:${other!.id}`)
+      expect(squadOnly).toBeDefined()
+      expect(squadOnly!.alerts).toBeUndefined()
+    } finally {
+      await subscribeToSquad(squad.id, responder.id, { decisions: 'notify', progress: 'notify' })
+      await db.delete(agentQuestions).where(inArray(agentQuestions.id, [direct!.id, other!.id]))
+    }
   })
 
   test('names the work stream a question was asked from only when it has exactly one origin', async () => {

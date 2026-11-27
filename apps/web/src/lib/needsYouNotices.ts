@@ -18,6 +18,11 @@ import { workflowReviewPath } from './workflowReview'
 export const MAX_NEEDS_YOU_NOTICES = 3
 /** Each card dismisses itself after this long, paused while hovered or focused. */
 export const NEEDS_YOU_NOTICE_TIMEOUT_MS = 8000
+/**
+ * Items that first appear within this long of the window regaining focus arrived while it was
+ * away: their OS notification was the notice, so they raise no card.
+ */
+export const NEEDS_YOU_REFOCUS_GRACE_MS = 5000
 
 /** The notification preference category a notice belongs to (the push category ids). */
 export type NeedsYouNoticeCategory = 'question' | 'review'
@@ -27,8 +32,10 @@ export type NeedsYouNoticeCategory = 'question' | 'review'
  * agent question the user can answer, or a review, approval or input gate the user can decide,
  * and only where it alerts the user (`alerts`: a direct recipient, or Decisions at Notify for its
  * squad or work stream). At Show an item is listed in Needs you without interrupting, so no card.
- * Halted agents, Assistant task updates, code-host delivery gates (decided outside Ficus), and an
- * answered question whose delivery failed are not new asks, so they never raise a card.
+ * Halted agents and their recovery decisions ("Continue recovery?", a manual wait with a structured
+ * `continue` request), Assistant task updates, code-host delivery gates (decided outside Ficus), and
+ * an answered question whose delivery failed are not new asks, so they never raise a card; their
+ * pushes still show as OS notifications, because no page confirms a card for them.
  */
 export function needsYouNoticeCategory(action: PendingAction): NeedsYouNoticeCategory | null {
   if (!action.canRespond || action.alerts !== true) return null
@@ -38,8 +45,9 @@ export function needsYouNoticeCategory(action: PendingAction): NeedsYouNoticeCat
     case 'squad-question':
       return 'question'
     case 'workstream-review':
-    case 'workstream-blocked':
       return 'review'
+    case 'workstream-blocked':
+      return (action.data as WorkStreamActionData).wait.structured?.request.kind === 'continue' ? null : 'review'
     default:
       return null
   }

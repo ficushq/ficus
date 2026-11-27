@@ -1,8 +1,8 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { MemoryRouter, useLocation } from 'react-router'
 import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
-import { NeedsYouNotifications } from './NeedsYouNotifications'
+import { NeedsYouNotifications, type WindowFocus } from './NeedsYouNotifications'
 import type { NeedsYouNoticePreferences } from '../lib/needsYouNotices'
 import { otherAction, questionAction, waitAction } from '../lib/needsYouNotices.fixtures'
 
@@ -21,6 +21,8 @@ function LocationProbe() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
 }
 
+type PushCheck = (actionId: string) => Promise<boolean>
+
 /** Renders the notices over a pending list the test changes, as the Action Center query would. */
 async function mount({
   path = '/',
@@ -34,6 +36,12 @@ async function mount({
   const harness = dom
   const { root } = harness.createRoot()
   let pending = initial
+  let fetchedAt = Date.now()
+  let focused = visible
+  let since = 0
+  // What the next refetch delivers, as the server would after a push.
+  let onRefetch: (() => PendingAction[]) | null = null
+  let pushCheck: PushCheck | null = null
   const render = () =>
     harness.act(async () =>
       root.render(
@@ -41,10 +49,26 @@ async function mount({
           <NeedsYouNotifications
             // A fresh object each render, so the component re-reads the pending list.
             dependencies={{
-              usePendingActions: () => ({ data: pending }),
+              usePendingActions: () => ({
+                data: pending,
+                dataUpdatedAt: fetchedAt,
+                refetch: async () => {
+                  if (!onRefetch) return
+                  pending = onRefetch()
+                  fetchedAt = Date.now()
+                  onRefetch = null
+                  await render()
+                },
+              }),
               usePreferences: () => (preferences === 'unloaded' ? undefined : preferences),
-              documentVisible: () => visible,
+              useWindowFocus: (): WindowFocus => ({ isFocused: () => focused, since }),
               osNotificationReplacesCard: () => osNotification,
+              subscribePushChecks: (handler) => {
+                pushCheck = handler
+                return () => {
+                  if (pushCheck === handler) pushCheck = null
+                }
+              },
               timeoutMs,
             }}
           />
@@ -54,9 +78,21 @@ async function mount({
     )
   await render()
   return {
-    async setPending(next: PendingAction[]) {
+    async setPending(next: PendingAction[], at = Date.now()) {
       pending = next
+      fetchedAt = at
       await render()
+    },
+    async setFocus(next: { focused: boolean; since: number }) {
+      focused = next.focused
+      since = next.since
+      await render()
+    },
+    /** The service worker asks about a push; the next refetch returns `serverList` when given. */
+    async askAboutPush(actionId: string, serverList?: PendingAction[]) {
+      if (serverList) onRefetch = () => serverList
+      // Outside act: the refetch renders in its own act, and the check then waits for the commit.
+      return pushCheck!(actionId)
     },
     cards: () => [...document.querySelectorAll('[data-testid="needs-you-notice"]')] as HTMLElement[],
     headlines: () =>
@@ -228,7 +264,7 @@ test('notification preferences off shows nothing', async () => {
   expect(unloaded.cards()).toHaveLength(0)
 })
 
-test('no notice while the page is hidden, or where this browser shows the OS notification itself', async () => {
+test('no notice while the window is away, or where this browser shows the OS notification itself', async () => {
   const hidden = await mount({ visible: false })
   await hidden.setPending([])
   await hidden.setPending([questionAction('q1')])
@@ -245,4 +281,89 @@ test('the notices region is a polite live region', async () => {
   await mount()
   const region = document.querySelector('section[aria-label="Needs you notifications"]')
   expect(region?.getAttribute('aria-live')).toBe('polite')
+})
+
+test('no notice while the window is not focused, even when it is visible', async () => {
+  const view = await mount()
+  await view.setPending([])
+  await view.setFocus({ focused: false, since: 0 })
+  await view.setPending([questionAction('q1')])
+  expect(view.cards()).toHaveLength(0)
+})
+
+test('items that arrived while the window was away raise no notice when it comes back', async () => {
+  const view = await mount()
+  await view.setPending([])
+  await view.setFocus({ focused: false, since: 0 })
+  const back = Date.now()
+  await view.setFocus({ focused: true, since: back })
+  // The list fetched on return carries what arrived while away: recorded, not announced.
+  await view.setPending([questionAction('while-away')], back + 100)
+  expect(view.cards()).toHaveLength(0)
+  // Something genuinely new afterwards still announces itself.
+  await view.setPending(
+    [questionAction('while-away'), questionAction('later', { createdAt: '2026-11-26T12:09:00.000Z' })],
+    back + 10_000
+  )
+  expect(view.cards()).toHaveLength(1)
+})
+
+describe('confirming a card to the service worker, so it skips the OS notification', () => {
+  test('a push for an item that gets a card is confirmed, and the card shows', async () => {
+    const view = await mount()
+    await view.setPending([])
+    expect(await view.askAboutPush('agent-question:q1', [questionAction('q1')])).toBe(true)
+    expect(view.cards()).toHaveLength(1)
+  })
+
+  test('a card already shown, or dismissed, stays confirmed', async () => {
+    const view = await mount()
+    await view.setPending([])
+    await view.setPending([questionAction('q1')])
+    const close = view.cards()[0]!.querySelector('button[aria-label^="Dismiss"]') as HTMLButtonElement
+    await view.act(async () => close.click())
+    expect(await view.askAboutPush('agent-question:q1')).toBe(true)
+  })
+
+  test('items that never get a card are not confirmed, so their OS notification shows', async () => {
+    const failedDelivery = questionAction(
+      'failed',
+      {},
+      {
+        answerDelivery: {
+          status: 'failed',
+          generation: 1,
+          attemptCount: 3,
+          nextAttemptAt: null,
+          lastError: 'gone',
+          deliveredAt: null,
+        } as never,
+      }
+    )
+    const recovery = waitAction('recover', {
+      type: 'workstream-blocked',
+      wait: { structured: { request: { kind: 'continue', recoveryId: 'r1' } } as never },
+    })
+    const watcher = waitAction('watch', { canRespond: false })
+    const shownOnly = waitAction('show', { alerts: undefined })
+    for (const action of [failedDelivery, recovery, watcher, shownOnly]) {
+      const view = await mount()
+      await view.setPending([])
+      expect(await view.askAboutPush(action.id, [action])).toBe(false)
+      expect(view.cards()).toHaveLength(0)
+      await dom!.cleanup()
+    }
+  })
+
+  test('an item already pending when the page loaded is not confirmed', async () => {
+    const view = await mount({ initial: [questionAction('old')] })
+    expect(await view.askAboutPush('agent-question:old')).toBe(false)
+  })
+
+  test('a window that is not focused confirms nothing', async () => {
+    const view = await mount()
+    await view.setPending([])
+    await view.setFocus({ focused: false, since: 0 })
+    expect(await view.askAboutPush('agent-question:q1', [questionAction('q1')])).toBe(false)
+  })
 })
