@@ -35,6 +35,7 @@ import {
 import { getAgentLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
+import { usePermissions } from '../../hooks/usePermissions'
 
 const KANBAN_CALLOUT: Partial<
   Record<WorkStreamPresentationState, { label?: string; suffix?: string; pulse: boolean }>
@@ -191,6 +192,9 @@ export function WorkStreamList({
   })
 
   const agentMap = useMemo(() => new Map(agents.map((a: Agent) => [a.id, a])), [agents])
+  // A graph node's peek says "Waiting on you" only to a viewer who can act on the wait.
+  const permissions = usePermissions(squadId)
+  const viewer = permissions.isLoading ? undefined : permissions
   const squadMap = useMemo(() => (squad ? new Map([[squad.id, squad]]) : new Map<string, Squad>()), [squad])
 
   const grouped = KANBAN_COLUMNS.reduce(
@@ -311,6 +315,7 @@ export function WorkStreamList({
                   workStreams={graphWorkStreams}
                   agentMap={agentMap}
                   onSelectWorkStream={setSelectedWs}
+                  viewer={viewer}
                 />
                 {selectedWorkStream && (
                   <WorkStreamDetailModal

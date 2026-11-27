@@ -29,7 +29,6 @@ import {
 import { WORK_STREAM_SUMMARIES_CHANGED_EVENT, WORK_STREAM_SUMMARIES_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { viewerCanActOnWait, type WorkStreamViewer } from '../lib/workStreamRuntime'
-import { usePermissions } from '../hooks/usePermissions'
 import { AgentActivityDot } from './AgentActivityDot'
 import { HoverCard } from './popover/HoverCard'
 import { useHoverCard, type HoverCardState } from './popover/useHoverCard'
@@ -341,6 +340,7 @@ export function WorkStreamPeekCard({
   agentMap,
   agentTypeNames,
   squadSlug,
+  viewer,
 }: {
   peek: WorkStreamPeek
   workStream: WorkStream
@@ -349,10 +349,11 @@ export function WorkStreamPeekCard({
   agentTypeNames?: Map<string, string>
   /** The stream's squad slug for participant chat links; squad routes also accept the id. */
   squadSlug?: string
+  /** Who is looking, as the row knows them; without one the waits never say "you". */
+  viewer?: WorkStreamViewer
 }) {
   const summary = workStreamSummaryFor(workStream)
-  const permissions = usePermissions(workStream.squadId)
-  const facts = workStreamPeekFacts(workStream, permissions.isLoading ? undefined : permissions)
+  const facts = workStreamPeekFacts(workStream, viewer)
   const step = activityStepLabel(workStream.step) ?? (workStream.status === 'queued' ? 'Queued' : null)
   const participants = (workStream.agentIds ?? []).flatMap((id) => {
     const agent = agentMap?.get(id)
