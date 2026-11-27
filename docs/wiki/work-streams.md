@@ -105,7 +105,7 @@ went from 0.17 to 6.7 seconds, while `/health` stayed at 0.03 seconds. A few age
 polling `ficus workstream list` that way are enough to push ordinary reads past 30
 seconds.
 
-Four things keep reads bounded:
+Four things keep reads bounded, and a fifth keeps slow writes from losing their answer:
 
 - **Open work by default.** `ficus workstream list` asks for `statuses=queued,active`
   unless it gets `--status` or `--all` (see
@@ -116,9 +116,9 @@ Four things keep reads bounded:
   `apps/core/src/routes/work-streams.ts`). When more history exists, the response carries
   a `Link: </api/workstreams?...&statuses=done,canceled&limit=50&cursor=...>; rel="next"`
   header. That target is an ordinary paginated request (the same squad filter, the
-  requested terminal statuses and `omitDescription`), whose `{ items, hasMore, nextCursor,
-totalCount }` answer continues the history; repeat with each `nextCursor` until it is
-  `null`. A request with `respectAttention` is capped the same way but gets no `Link`,
+  requested terminal statuses and `omitDescription`). Its answer,
+  `{ items, hasMore, nextCursor, totalCount }`, continues the history; repeat with each
+  `nextCursor` until it is `null`. A request with `respectAttention` is capped the same way but gets no `Link`,
   because paginated requests refuse that filter. Requests that already send `limit` are
   unchanged. The CLI follows the link (`apiGetList`), so `--all` and `--status done` fetch
   the history page by page.
@@ -133,12 +133,9 @@ totalCount }` answer continues the history; repeat with each `nextCursor` until 
   timer's coarse granularity (on Bun 1.4.2 handlers answering at 28 and 31 seconds still
   got through; the close came at 32). Only the time until the response headers counts:
   the deadline never cuts a streamed body that has started. Its late result is discarded,
-  and Core logs a `read-deadline` warning for the read and another when it finishes. Routes that set their own idle timeout through
-  `extendIdleTimeout` (workspace transfers, work stream creation) and the local-app
-  proxy are exempt. Writes with a JSON body are never cut by the idle timer. A `POST`
-  without a body (for example `workstream pause` or `cancel`) still can be; it is a
-  write, so Core does not answer it early.
-
+  and Core logs a `read-deadline` warning for the read and another when it finishes.
+  Routes that set their own idle timeout through `extendIdleTimeout` (workspace
+  transfers, work stream creation) and the local-app proxy are exempt.
 - **Cancelled abandoned reads.** When the deadline answers for a read, or its client hangs
   up before it has an answer, Core cancels the read's database work so its pool connection
   is free again (`apps/core/src/db/query-cancellation.ts`). The middleware runs the handler
@@ -150,6 +147,18 @@ totalCount }` answer continues the history; repeat with each `nextCursor` until 
   cancelled, so a streamed body runs on after a disconnect. Dedicated connections (locks,
   migrations, `withDedicatedDbTransaction`) are not tied to the scope, and work a read
   starts that must outlive it can opt out with `runDetachedFromQueryCancellation`.
+- **Body-less writes run to their answer.** Writes with a body (a JSON `POST`) are never
+  cut by the idle timer, even after the handler has read the body. A write without one
+  (`workstream pause`, `resume`, `cancel` and `reopen` send none, nor does a body-less
+  `DELETE`) would be, and it cannot be answered early like a read because it may already
+  have changed something. `holdIdleTimerForBodylessWrites` (same file) therefore turns
+  the timer off for any non-`GET`/`HEAD` request without a body while its handler runs,
+  so every client gets the real result, and turns it back on before the response is
+  written. That second step matters: Bun's per-request `timeout(request, 0)` lasts for
+  the whole keep-alive connection, so leaving it off would keep that idle socket open
+  forever. A route that set its own idle timeout keeps it. The fix is in Core rather than
+  in the CLI (which could send `{}` instead) so that browsers, scripts and older CLIs are
+  covered too, and no client depends on how Bun treats request bodies.
 
 The CLI shows the 503's message as is. If a server without the deadline drops a read,
 `apiGet` reports that Ficus closed the connection before answering, probably because it
