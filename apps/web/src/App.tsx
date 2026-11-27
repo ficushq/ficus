@@ -37,6 +37,7 @@ import { useAuth } from './providers/AuthProvider'
 import { useRef } from 'react'
 import { useVisualViewportShell } from './hooks/useVisualViewportShell'
 import { DesktopNotifications } from './components/DesktopNotifications'
+import { NeedsYouNotifications } from './components/NeedsYouNotifications'
 import { ScreenshotFiling } from './components/ScreenshotFiling'
 import { useDesktopShellChrome } from './hooks/useDesktopShellChrome'
 
@@ -145,7 +146,9 @@ export default function App() {
           <StorageBanner />
           <OnboardingBanner />
 
-          <div className="grow min-h-0 flex flex-col overflow-hidden overscroll-none">
+          <div className="relative grow min-h-0 flex flex-col overflow-hidden overscroll-none">
+            {/* A new question or review for the signed-in user: a card at the top right of every page */}
+            <NeedsYouNotifications />
             <main
               data-testid="app-scroll-container"
               className="grow min-h-0 flex flex-col overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] max-w-7xl w-full mx-auto p-4 md:pt-6 md:px-6"

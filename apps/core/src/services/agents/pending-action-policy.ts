@@ -2,7 +2,13 @@ import { isHumanFlowWait } from '../workflows/wait-policy'
 import { listOpenWaits, toWaitJson } from '../work-streams/waits'
 import { workflowReviewBlockingWaits } from '@ficus/shared'
 import { recoveryRecipientsById } from '../recovery/recipients'
-import type { PendingAction, WorkStreamActionData, WorkStreamDeliveryActionData } from '@ficus/shared'
+import type {
+  AgentQuestionActionData,
+  AttentionLevel,
+  PendingAction,
+  WorkStreamActionData,
+  WorkStreamDeliveryActionData,
+} from '@ficus/shared'
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
@@ -23,6 +29,12 @@ export interface PendingActionAttentionContext {
    * entry has no origins. Omit it and each question loads its own origins on demand.
    */
   questionOrigins?: ReadonlyMap<string, readonly string[]>
+  /**
+   * Preloaded ids of the questions the viewer is a direct attention recipient of, so a caller
+   * evaluating many questions pays one recipient query instead of one or two per question. When
+   * present it is authoritative; omit it and each question checks its own row.
+   */
+  directRecipientQuestionIds?: ReadonlySet<string>
 }
 
 export interface PendingActionPolicyDecision {
@@ -30,7 +42,27 @@ export interface PendingActionPolicyDecision {
   canRespond: boolean
 }
 
-async function isDirectQuestionAttentionRecipient(questionId: string, userId: string): Promise<boolean> {
+/** The ids among `questionIds` that `userId` is a direct attention recipient of, in one query. */
+export async function loadDirectRecipientQuestionIds(
+  userId: string,
+  questionIds: readonly string[]
+): Promise<Set<string>> {
+  if (questionIds.length === 0) return new Set()
+  const rows = await db
+    .select({ questionId: agentQuestionRecipients.questionId })
+    .from(agentQuestionRecipients)
+    .where(
+      and(eq(agentQuestionRecipients.userId, userId), inArray(agentQuestionRecipients.questionId, [...questionIds]))
+    )
+  return new Set(rows.map((row) => row.questionId))
+}
+
+async function isDirectQuestionAttentionRecipient(
+  questionId: string,
+  userId: string,
+  context?: PendingActionAttentionContext
+): Promise<boolean> {
+  if (context?.directRecipientQuestionIds) return context.directRecipientQuestionIds.has(questionId)
   const [recipient] = await db
     .select({ userId: agentQuestionRecipients.userId })
     .from(agentQuestionRecipients)
@@ -73,15 +105,59 @@ async function decisionsUnmuted(
   question: { id: string; squadId: string | null },
   context: PendingActionAttentionContext
 ): Promise<boolean> {
-  const squadUnmuted = context.attention.forSquad(question.squadId).decisions !== 'mute'
-  if (context.attention.workStreams.size === 0) return squadUnmuted
+  return questionDecisions(question, context, (level) => level !== 'mute')
+}
+
+/** Does `matches` hold for the question's effective `decisions` level, by the origin precedence above? */
+async function questionDecisions(
+  question: { id: string; squadId: string | null },
+  context: PendingActionAttentionContext,
+  matches: (level: AttentionLevel) => boolean
+): Promise<boolean> {
+  const squadMatches = matches(context.attention.forSquad(question.squadId).decisions)
+  if (context.attention.workStreams.size === 0) return squadMatches
   const origins = context.questionOrigins
     ? (context.questionOrigins.get(question.id) ?? [])
     : ((await loadQuestionWorkStreamOrigins([question.id])).get(question.id) ?? [])
-  if (origins.length === 0) return squadUnmuted
-  return origins.some(
-    (workStreamId) => context.attention.forWorkStream(workStreamId, question.squadId).decisions !== 'mute'
+  if (origins.length === 0) return squadMatches
+  return origins.some((workStreamId) =>
+    matches(context.attention.forWorkStream(workStreamId, question.squadId).decisions)
   )
+}
+
+/**
+ * Does this visible item ALERT the viewer (inbox message and push), beyond being listed in Needs
+ * you? The same audience its push uses: a question's squadless personal owner and direct
+ * recipients, and otherwise an effective `decisions` level of `notify` (a question by its origins,
+ * a review or input gate by its work stream, a squad question by its squad). `show`, the default
+ * with no attention row, lists an item without interrupting. Personal push preferences (master
+ * switch, category mutes) are the client's to apply. Only questions and human gates alert here.
+ */
+export async function pendingActionAlertsViewer(
+  identity: Identity,
+  action: PendingAction,
+  context: PendingActionAttentionContext
+): Promise<boolean> {
+  if (identity.type !== 'user') return false
+  const notify = (level: AttentionLevel) => level === 'notify'
+  switch (action.type) {
+    case 'agent-question': {
+      const data = action.data as AgentQuestionActionData
+      if (data.ownerUserId === identity.userId && !data.squadId) return true
+      if (await isDirectQuestionAttentionRecipient(data.questionId, identity.userId, context)) return true
+      if (!data.squadId) return false
+      return questionDecisions({ id: data.questionId, squadId: data.squadId }, context, notify)
+    }
+    case 'squad-question':
+      return Boolean(action.squadId && notify(context.attention.forSquad(action.squadId).decisions))
+    case 'workstream-review':
+    case 'workstream-blocked': {
+      const data = action.data as WorkStreamActionData
+      return notify(context.attention.forWorkStream(data.workStreamId, action.squadId).decisions)
+    }
+    default:
+      return false
+  }
 }
 
 /**
@@ -108,7 +184,7 @@ export async function canReceiveAgentQuestionAttention(
   // Only a squadless personal agent's owner bypasses attention; a squad-bound agent's owner
   // snapshot is metadata, not an attention entitlement.
   if (userId && question.ownerUserId === userId && !question.squadId) return true
-  if (userId && (await isDirectQuestionAttentionRecipient(question.id, userId))) return true
+  if (userId && (await isDirectQuestionAttentionRecipient(question.id, userId, context))) return true
   if (!(await hasPermission(identity, 'actions:read', question.squadId ?? undefined))) return false
   // Non-user identities (agents, system/legacy tokens) never carried attention rows.
   if (identity.type !== 'user') return true
