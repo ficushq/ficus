@@ -14,6 +14,7 @@ type C = FarmClient
  * - workflows.advance / finish / run: WorkflowReviewCallout.tsx, WorkflowRunPanel.tsx
  * - workStreams.pause / resume / park: WorkStreamPauseControls.tsx
  * - auth.getMyPermissions: apps/web/src/hooks/usePermissions.ts
+ * - squads.listSquadAgents, agents.listAgentTypes: WorkflowReviewModal.tsx (who prepared the work)
  *
  * Everything the web uses for these actions is already on client-core, so no
  * raw `client.transport.request` calls are needed here.
@@ -36,6 +37,9 @@ export interface ActionsApi {
   resumeWorkStream: C['workStreams']['resume']
   parkWorkStream: C['workStreams']['park']
   getMyPermissions: C['auth']['getMyPermissions']
+  /** Who prepared a review's attempts (their purpose) and the squad's names for agent types. */
+  listSquadAgents: C['squads']['listSquadAgents']
+  listAgentTypes: C['agents']['listAgentTypes']
   /** Idempotency key for workflow commands (the web uses crypto.randomUUID()). */
   newRequestId: () => string
 }
@@ -60,6 +64,8 @@ export function createActionsApi(c: FarmClient): ActionsApi {
     resumeWorkStream: (id) => c.workStreams.resume(id),
     parkWorkStream: (id) => c.workStreams.park(id),
     getMyPermissions: (squadId) => c.auth.getMyPermissions(squadId),
+    listSquadAgents: (squadId) => c.squads.listSquadAgents(squadId),
+    listAgentTypes: () => c.agents.listAgentTypes(),
     newRequestId: () => crypto.randomUUID(),
   }
 }

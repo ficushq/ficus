@@ -35,6 +35,8 @@ function demoActionsApi(): ActionsApi {
     resumeWorkStream: ok('resumeWorkStream'),
     parkWorkStream: ok('parkWorkStream'),
     getMyPermissions: async () => ({ permissions: ['*'], identity: { type: 'user', id: 'demo' } as never }),
+    listSquadAgents: async () => [],
+    listAgentTypes: async () => [],
     newRequestId: () => crypto.randomUUID(),
   }
 }

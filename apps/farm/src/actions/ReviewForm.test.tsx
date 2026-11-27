@@ -207,7 +207,7 @@ describe('WorkflowDecision · delivery approval', () => {
 describe('WorkflowDecision · human-approval gate', () => {
   const gateWait = wait({ id: 'gate-wait', type: 'manual', resolutionHandler: 'workflow', flowAttemptId: 2 })
 
-  it('completes the gate with the chosen outcome and required notes', async () => {
+  it('completes the gate with the chosen outcome, needing notes only to send it back', async () => {
     const api = fakeApi({
       workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [gateWait] })),
       getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
@@ -216,11 +216,17 @@ describe('WorkflowDecision · human-approval gate', () => {
     const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
     expect(container.textContent).toContain('Taste the tomatoes')
     expect(container.textContent).toContain('Planted and watered')
-    expect(button(container, 'Approved').textContent).toContain('Finishes the flow')
-    expect(button(container, 'Needs salt').textContent).toContain('Sends back to Build')
-    expect(button(container, 'Approved').disabled).toBe(true)
+    expect(button(container, 'Approve').textContent).toContain('Completes the work stream')
+    expect(button(container, 'Needs salt').textContent).toContain('Returns to the Engineer with your notes')
+    // As in Core and on web: moving work forward needs no notes; a send-back's notes are its rework feedback.
+    expect(container.textContent).toContain(
+      'Optional for Approve; required for Needs salt. Your notes are recorded with the decision and passed to the next step.'
+    )
+    expect(button(container, 'Approve').disabled).toBe(false)
+    expect(button(container, 'Needs salt').disabled).toBe(true)
     await typeInto(byLabel(container, 'Decision notes'), 'Tasted: perfect')
-    await click(button(container, 'Approved'))
+    expect(button(container, 'Needs salt').disabled).toBe(false)
+    await click(button(container, 'Approve'))
     expect(api.advanceWorkflow).toHaveBeenCalledWith(
       'ws-1',
       {
@@ -234,6 +240,51 @@ describe('WorkflowDecision · human-approval gate', () => {
       },
       'request-1'
     )
+  })
+
+  it('approves without notes', async () => {
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [gateWait] })),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      advanceWorkflow: () => Promise.resolve({ version: 8, stateStatus: 'running' as const, activeAttemptId: null }),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    await click(button(container, 'Approve'))
+    expect(api.advanceWorkflow).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({ outcome: 'approved', evidence: '' }),
+      'request-1'
+    )
+  })
+
+  it('names decision buttons as present-tense actions while past decisions keep the past tense', async () => {
+    const run = workflowRun('gate', { openWaits: [gateWait] })
+    run.state.attempts[0]!.outcome = 'changes-requested'
+    const steps = run.state.definition.steps as Array<{ outcomes: Record<string, unknown> }>
+    steps[1]!.outcomes = { approved: { next: 'finish' }, changes_requested: { returnTo: 'build' } }
+    let settleAdvance: () => void = () => {}
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(run),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      advanceWorkflow: () =>
+        new Promise((resolve) => {
+          settleAdvance = () => resolve({ version: 8, stateStatus: 'running' as const, activeAttemptId: null })
+        }),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    expect(hasButton(container, 'Approve')).toBe(true)
+    expect(hasButton(container, 'Request changes')).toBe(true)
+    expect(hasButton(container, 'Approved')).toBe(false)
+    // The button's accessible name is its present-tense label and what it does.
+    expect(button(container, 'Request changes').textContent).toBe(
+      'Request changesReturns to the Engineer with your notes'
+    )
+    expect(container.textContent).toContain('Optional for Approve; required for Request changes.')
+    // What already happened keeps the past tense.
+    expect(container.textContent).toContain('Engineer · Build · Attempt 1 · Changes requested')
+    await click(button(container, 'Approve'))
+    expect(container.querySelector('button[aria-busy="true"] .g-verb-label')?.textContent).toBe('Approve…')
+    await act(async () => settleAdvance())
   })
 
   it('marks a revision that arrives while open and decides only after it is reviewed', async () => {
@@ -257,13 +308,13 @@ describe('WorkflowDecision · human-approval gate', () => {
     })
     await act(async () => queryClient.setQueryData(queryKeys.workflows.run('ws-1'), amended))
     await settle()
-    expect(container.textContent).toContain('build · Attempt 1 · Revision 2 · Revised 2 min ago')
+    expect(container.textContent).toContain('Engineer · Build · Attempt 1 · Done · Revision 2 · Revised 2 min ago')
     expect(container.textContent).toContain('This was revised since you opened it. Review the latest revision.')
     await typeInto(byLabel(container, 'Decision notes'), 'Tasted again')
-    expect(button(container, 'Approved').disabled).toBe(true)
+    expect(button(container, 'Approve').disabled).toBe(true)
     await click(button(container, 'Mark as reviewed'))
-    expect(button(container, 'Approved').disabled).toBe(false)
-    await click(button(container, 'Approved'))
+    expect(button(container, 'Approve').disabled).toBe(false)
+    await click(button(container, 'Approve'))
     expect(api.advanceWorkflow).toHaveBeenCalledWith(
       'ws-1',
       expect.objectContaining({ expectedVersion: 8, reviewedRevisions: [{ attemptId: 1, revision: 2 }] }),
@@ -312,7 +363,7 @@ describe('WorkflowDecision · human-approval gate', () => {
     expect(container.textContent).not.toContain('What changed since you last looked')
     expect(hasButton(container, 'Mark as reviewed')).toBe(false)
     await typeInto(byLabel(container, 'Decision notes'), 'Tasted both beds')
-    await click(button(container, 'Approved'))
+    await click(button(container, 'Approve'))
     expect(api.advanceWorkflow).toHaveBeenCalledWith(
       'ws-1',
       expect.objectContaining({
@@ -337,18 +388,18 @@ describe('WorkflowDecision · human-approval gate', () => {
     )
     await act(async () => queryClient.setQueryData(queryKeys.workflows.run('ws-1'), joined(8)))
     await settle()
-    expect(container.textContent).toContain('build · Attempt 3 · Revision 1 · New since you opened')
-    expect(container.textContent).not.toContain('Attempt 1 · Revision 1 · ')
+    expect(container.textContent).toContain('Engineer · Build · Attempt 3 · Done · Revision 1 · New since you opened')
+    expect(container.textContent).not.toContain('Attempt 1 · Done · Revision 1 · ')
     expect(container.textContent).toContain('New work was added since you opened it. Review it before deciding.')
     const changes = container.querySelector('[aria-label="What changed since you last looked"]')!
     expect(changes.textContent).toContain('New since you opened this review.')
     expect(changes.textContent).toContain('Added: beds.md')
     await typeInto(byLabel(container, 'Decision notes'), 'Tasted both beds')
-    expect(button(container, 'Approved').disabled).toBe(true)
+    expect(button(container, 'Approve').disabled).toBe(true)
     await click(button(container, 'Mark as reviewed'))
     expect(container.textContent).not.toContain('New since you opened')
-    expect(button(container, 'Approved').disabled).toBe(false)
-    await click(button(container, 'Approved'))
+    expect(button(container, 'Approve').disabled).toBe(false)
+    await click(button(container, 'Approve'))
     expect(api.advanceWorkflow).toHaveBeenCalledWith(
       'ws-1',
       expect.objectContaining({
@@ -362,6 +413,134 @@ describe('WorkflowDecision · human-approval gate', () => {
     )
   })
 
+  /** The squad's agents and type names, as the review reads them. */
+  const people = {
+    listSquadAgents: () =>
+      Promise.resolve([
+        { id: 'agent-1', agentTypeId: 'engineer', metadata: { purpose: 'Tomato beds' } },
+        { id: 'agent-3', agentTypeId: 'engineer', metadata: {} },
+      ] as never),
+    listAgentTypes: () => Promise.resolve([{ id: 'engineer', name: 'Gardener' }] as never),
+  }
+
+  it('names who prepared the work first, with the step and attempt after it', async () => {
+    const run = joined()
+    run.attemptAgents = { '1': 'agent-1', '3': 'agent-3' }
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(run),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      ...people,
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    expect(api.listSquadAgents).toHaveBeenCalledWith('squad-1')
+    // The brief is prepared by the agent that wrote it; the step and attempt are secondary.
+    const brief = container.querySelector('[aria-label="Decision brief"]')!
+    const preparedBy = [...brief.querySelectorAll('.g-material-head')].find((head) =>
+      head.textContent?.startsWith('Prepared by')
+    )!
+    expect(preparedBy.textContent).toBe('Prepared by Gardener · Build · Attempt 3')
+    expect(preparedBy.querySelector('.g-byline-author')?.textContent).toBe('Gardener')
+    expect(container.textContent).not.toContain('Prepared by Build')
+    // The internal handoff names each attempt the same way, purpose included.
+    const heads = [...container.querySelectorAll('.g-material .g-material-head')].map((head) => head.textContent)
+    expect(heads).toContain('Gardener (Tomato beds) · Build · Attempt 1 · Done')
+    // Send-back captions use the squad's name for the type too.
+    expect(button(container, 'Needs salt').textContent).toContain('Returns to the Gardener with your notes')
+  })
+
+  it('names the step when the agent list cannot be read, and the participant type when no agent is known', async () => {
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(joined()),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      listSquadAgents: () => Promise.reject(new Error('Forbidden')),
+      listAgentTypes: () => Promise.reject(new Error('Forbidden')),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    expect(container.textContent).toContain('Prepared by Engineer · Build · Attempt 3')
+    expect(button(container, 'Needs salt').textContent).toContain('Returns to the Engineer with your notes')
+  })
+
+  it('shows what approval allows whole, right by the outcomes', async () => {
+    const statement = [
+      'Approval merges the pull request. It also deploys the change to production immediately.',
+      '',
+      '1. Merge the change to main.',
+      '2. Turn the flag on for 10% of traffic.',
+      '3. Raise it to all traffic after a day without errors.',
+    ].join('\n')
+    const run = joined()
+    run.state.attempts.find((attempt) => attempt.id === 3)!.decisionBrief!.value.approvalEffect = statement
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(run),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    const allows = container.querySelector('section[aria-label="What approval allows"]')!
+    expect(allows.querySelector('.g-action-text')?.textContent).toBe(statement)
+    // One column: the brief points to the decision instead of repeating the statement right above it.
+    expect(container.textContent!.split(statement).length - 1).toBe(1)
+    const brief = container.querySelector('[aria-label="Decision brief"]')!
+    expect(brief.textContent).toContain('What approval allowsShown in full with the decision below.')
+    // It sits in the decision, before the notes and the outcomes, not only in the brief above.
+    const notes = byLabel(container, 'Decision notes')
+    const following = 4 // Node.DOCUMENT_POSITION_FOLLOWING
+    expect(allows.compareDocumentPosition(notes) & following).toBeTruthy()
+    expect(allows.compareDocumentPosition(button(container, 'Approve')) & following).toBeTruthy()
+  })
+
+  it('shows no approval statement for a gate with two forward outcomes or without a brief for it', async () => {
+    const twoForward = joined()
+    const steps = twoForward.state.definition.steps as Array<{ outcomes: Record<string, unknown> }>
+    steps[1]!.outcomes = { ...steps[1]!.outcomes, 'pick-early': { next: 'finish' } }
+    const plain = workflowRun('gate', { openWaits: [gateWait] })
+    for (const run of [twoForward, plain]) {
+      const api = fakeApi({
+        workflowRun: () => Promise.resolve(run),
+        getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      })
+      const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+      expect(container.querySelector('section[aria-label="What approval allows"]')).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('shows a viewer who cannot decide what approval allows and what each outcome does', async () => {
+    const run = joined()
+    const steps = run.state.definition.steps as Array<{ approver?: string }>
+    steps[1]!.approver = 'assigned-reviewers'
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(run),
+      getWorkStream: () =>
+        Promise.resolve(
+          stream({ openWaits: [gateWait], assignedReviewerIds: ['someone-else'] } as Partial<WorkStream>)
+        ),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    expect(hasButton(container, 'Approve')).toBe(false)
+    expect(container.querySelector('section[aria-label="What approval allows"]')?.textContent).toContain(
+      workflowReviewBriefFixture.approvalEffect
+    )
+    const outcomes = [...container.querySelectorAll('ul[aria-label="Outcomes"] li')].map((item) => item.textContent)
+    expect(outcomes).toEqual([
+      'Approve · Completes the work stream',
+      'Needs salt · Returns to the Engineer with your notes',
+    ])
+  })
+
+  it('says how long the review has waited, with the exact time on hover', async () => {
+    const openedAt = new Date(Date.now() - 3 * 24 * 60 * 60_000 - 5 * 60_000).toISOString()
+    const waiting = { ...gateWait, openedAt }
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [waiting] })),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [waiting] })),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    const time = container.querySelector('time')!
+    expect(time.textContent).toBe('Waiting 3 days')
+    expect(time.getAttribute('dateTime')).toBe(openedAt)
+    expect(time.getAttribute('title')).toBe(`Waiting since ${new Date(openedAt).toLocaleString()}`)
+  })
+
   it('waits for other open waits on the step first', async () => {
     const other = wait({ id: 'q', type: 'question', flowAttemptId: 2 })
     const api = fakeApi({
@@ -370,7 +549,7 @@ describe('WorkflowDecision · human-approval gate', () => {
     })
     const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
     await typeInto(byLabel(container, 'Decision notes'), 'ok')
-    expect(button(container, 'Approved').disabled).toBe(true)
+    expect(button(container, 'Approve').disabled).toBe(true)
     expect(container.textContent).toContain('Waiting for an answer:')
   })
 
@@ -383,7 +562,7 @@ describe('WorkflowDecision · human-approval gate', () => {
       getWorkStream: () => Promise.resolve(stream({ assignedReviewerIds: ['someone-else'] } as Partial<WorkStream>)),
     })
     const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
-    expect(hasButton(container, 'Approved')).toBe(false)
+    expect(hasButton(container, 'Approve')).toBe(false)
     expect(container.textContent).toContain('Only the reviewers assigned')
   })
 
@@ -465,8 +644,8 @@ it('kept gates offer live outcomes instead of the original verdicts', async () =
   value.version = 8
   const api = fakeApi({ workflowRun: () => Promise.resolve(value), getWorkStream: () => Promise.resolve(stream()) })
   const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
-  expect(hasButton(container, 'Accepted')).toBe(true)
-  expect(hasButton(container, 'Approved')).toBe(false)
+  expect(hasButton(container, 'Accept')).toBe(true)
+  expect(hasButton(container, 'Approve')).toBe(false)
   expect(container.textContent).toContain('Taste the tomatoes')
 })
 
@@ -491,7 +670,7 @@ it('a second workflow-owned wait blocks the gate', async () => {
   })
   const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
   await typeInto(byLabel(container, 'Decision notes'), 'Ready for staging.')
-  expect(button(container, 'Approved').disabled).toBe(true)
+  expect(button(container, 'Approve').disabled).toBe(true)
 })
 
 it('Farm leads with the authored brief, keeps attachment peer tabs and collapses only the handoff', async () => {
@@ -681,7 +860,7 @@ it('Farm queued reviews list every owner and manager blocker without advertising
   expect(container.querySelector('[aria-label="Review blockers"]')!.textContent).toContain('Waiting on manager:')
   for (const wait of waits.slice(1)) expect(container.textContent).toContain(wait.message!)
   await typeInto(byLabel(container, 'Decision notes'), 'Checked the design.')
-  expect(button(container, 'Approved').disabled).toBe(true)
+  expect(button(container, 'Approve').disabled).toBe(true)
 })
 
 function decisionPassThrough() {
@@ -830,7 +1009,7 @@ for (const [name, instructions, summary] of [
     const subtitle = container.querySelector('.g-decision-title + .g-action-note')!
     const sentence = summary.length <= 160 ? summary : summary.slice(0, 160).replace(/\s+\S*$/, '') + '…'
     expect(subtitle.textContent).toBe(`Human approval · ${sentence}`)
-    expect(button(container, 'Approved').disabled).toBe(true)
+    expect(button(container, 'Needs salt').disabled).toBe(true)
     expect(api.advanceWorkflow).not.toHaveBeenCalled()
   })
 }

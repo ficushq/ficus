@@ -35,6 +35,9 @@ export function fakeApi(overrides: Partial<ActionsApi> = {}): MockedApi {
     resumeWorkStream: notStubbed('resumeWorkStream'),
     parkWorkStream: notStubbed('parkWorkStream'),
     getMyPermissions: () => Promise.resolve({ permissions: ['*'], identity: { type: 'user', userId: 'user-1' } }),
+    // Unknown agents and type names: reviews name authors by the participant type they ran as.
+    listSquadAgents: () => Promise.resolve([]),
+    listAgentTypes: () => Promise.resolve([]),
     newRequestId: () => 'request-1',
   }
   const merged = { ...defaults, ...overrides }

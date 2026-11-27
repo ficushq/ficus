@@ -217,7 +217,11 @@ export function workflowRun(
       attempts,
       returns: [],
       completedStepIds: [],
-      definition: { steps, completion: { mode: 'review-approval' } },
+      definition: {
+        participants: { dev: { agentTypeId: 'engineer', session: 'reuse-within-stream' } },
+        steps,
+        completion: { mode: 'review-approval' },
+      },
     },
   } as unknown as WorkflowRunDetail
 }
