@@ -378,6 +378,7 @@ describe('AgentRunner (base class)', () => {
   let claimInitialPendingMessagesForSessionDeliverySpy: any
   let claimPendingInterventionForSessionDeliverySpy: any
   let resetPendingInterventionSessionDeliverySpy: any
+  let hasSessionDeliveredExecutionPromptSpy: any
   let queueExecutionSpy: any
   let deliverInboxMessagesToAgentSpy: any
   let resolvePermissionsSpy: any
@@ -434,6 +435,7 @@ describe('AgentRunner (base class)', () => {
       agent,
       'resetPendingInterventionSessionDelivery'
     ).mockResolvedValue()
+    hasSessionDeliveredExecutionPromptSpy = spyOn(agent, 'hasSessionDeliveredExecutionPrompt').mockResolvedValue(false)
     queueExecutionSpy = spyOn(agent, 'queueExecution').mockResolvedValue(makeExecution({ status: 'queued' }, agentRef))
     deliverInboxMessagesToAgentSpy = spyOn(inboxDelivery, 'deliverInboxMessagesToAgent').mockResolvedValue()
 
@@ -478,6 +480,7 @@ describe('AgentRunner (base class)', () => {
     claimInitialPendingMessagesForSessionDeliverySpy?.mockRestore()
     claimPendingInterventionForSessionDeliverySpy?.mockRestore()
     resetPendingInterventionSessionDeliverySpy?.mockRestore()
+    hasSessionDeliveredExecutionPromptSpy?.mockRestore()
     queueExecutionSpy?.mockRestore()
     deliverInboxMessagesToAgentSpy?.mockRestore()
     resolvePermissionsSpy?.mockRestore()
@@ -1059,6 +1062,33 @@ describe('AgentRunner (base class)', () => {
       expect(agent.status).not.toBe('waiting-input')
       expect(execution.status).toBe('running')
       expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    it('continues a resumed run whose original task text already reached the session', async () => {
+      // A chat- or subagent-started run stores its text on executions.message and as its own human
+      // row. That row was delivered before the restart, so nothing is claimed on resume.
+      execution.message = 'original task text'
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+      hasSessionDeliveredExecutionPromptSpy.mockResolvedValue(true)
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(hasSessionDeliveredExecutionPromptSpy).toHaveBeenCalledWith(execution.id)
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text).toEndWith('\n\nContinue.')
+      expect(text).not.toContain('original task text')
+    })
+
+    it('keeps the original task text on a resumed run whose prompt never reached the session', async () => {
+      execution.message = 'original task text'
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text).toEndWith('\n\noriginal task text')
     })
 
     it('emits a system_message when the session reports a switch-back', async () => {
@@ -3281,6 +3311,81 @@ describe('AgentRunner (base class)', () => {
       expect(setAgentSelectedModelSpy).toHaveBeenCalledWith(agent.id, ZAI)
       expect(mockSession.pi.promptCalls).toHaveLength(2)
       expect(providerHealth.isProviderHealthy('anthropic')).toBe(false)
+    })
+
+    it('re-dispatches a failed-over prompt that reached the session as a continuation, not a second copy', async () => {
+      const ANTHROPIC = 'anthropic:claude-haiku-4-5'
+      const ZAI = 'zai:glm-5-turbo'
+      selectModelSpy.mockReturnValue(explicitProviderFailoverSelection(ANTHROPIC, ZAI))
+      execution.message = 'original task text'
+      const deliveryId = crypto.randomUUID()
+      claimInitialPendingMessagesForSessionDeliverySpy.mockImplementationOnce(
+        async (owner: NonNullable<Parameters<Agent['claimInitialPendingMessagesForSessionDelivery']>[0]>) => [
+          {
+            id: 'own-prompt-row',
+            agentId: agent.id,
+            role: 'human',
+            content: 'original task text',
+            metadata: { executionId: execution.id, sessionDelivery: { id: deliveryId, ...owner } },
+            pending: true,
+            createdAt: new Date(),
+          } as Message,
+        ]
+      )
+      // The DB acknowledgement is slower than the prompt's rejection, as it is against a real DB.
+      // A release that ran first would fence the acknowledgement out and leave the row claimable.
+      const order: string[] = []
+      let acknowledged = false
+      confirmDeliverySpy.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        acknowledged = true
+        order.push('acknowledge')
+        return []
+      })
+      resetPendingInterventionSessionDeliverySpy.mockImplementation(async () => {
+        order.push('release')
+      })
+      hasSessionDeliveredExecutionPromptSpy.mockImplementation(async () => acknowledged)
+      let firstPrompt = true
+      spyOn(mockSession.pi, 'prompt').mockImplementation(async (text: string, options?: any) => {
+        mockSession.pi.promptCalls.push({ text, options })
+        if (firstPrompt) {
+          firstPrompt = false
+          // Pi appends the user entry before the provider call fails.
+          mockSession.pi.persistUserPrompt('entry-original')
+          throw new Error('rate limit exceeded')
+        }
+      })
+
+      const failoverAttempt = runner.waitForNextFailoverAttempt()
+      await runner.run()
+      expect(await failoverAttempt).toBe(true)
+
+      expect(order).toEqual(['acknowledge', 'release'])
+      expect(mockSession.pi.promptCalls).toHaveLength(2)
+      expect(mockSession.pi.promptCalls[0].text).toBe('original task text')
+      expect(mockSession.pi.promptCalls[1].text).toBe('Continue.')
+    })
+
+    it('re-sends a failed-over prompt that never reached the session', async () => {
+      const ANTHROPIC = 'anthropic:claude-haiku-4-5'
+      const ZAI = 'zai:glm-5-turbo'
+      selectModelSpy.mockReturnValue(explicitProviderFailoverSelection(ANTHROPIC, ZAI))
+      execution.message = 'original task text'
+      let firstPrompt = true
+      spyOn(mockSession.pi, 'prompt').mockImplementation(async (text: string, options?: any) => {
+        mockSession.pi.promptCalls.push({ text, options })
+        if (firstPrompt) {
+          firstPrompt = false
+          throw new Error('rate limit exceeded')
+        }
+      })
+
+      const failoverAttempt = runner.waitForNextFailoverAttempt()
+      await runner.run()
+      expect(await failoverAttempt).toBe(true)
+
+      expect(mockSession.pi.promptCalls.map((call) => call.text)).toEqual(['original task text', 'original task text'])
     })
 
     it('preserves a structured generic 5xx from prompt rejection through real failover classification', async () => {
