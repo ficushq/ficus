@@ -1,6 +1,7 @@
 import type { Agent, PendingAction, Squad, WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
-import { getAgentPurpose, getAgentName } from './agentDisplay'
+import { getAgentPurpose, getAgentLabel } from './agentDisplay'
+import { pendingActionContextLine } from './pendingActionWording'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
 export type CommandDestination =
@@ -45,6 +46,11 @@ export function consultantConversations(agents: readonly Agent[]) {
         new Date(b.lastHumanMessageAt ?? b.createdAt).getTime() -
         new Date(a.lastHumanMessageAt ?? a.createdAt).getTime()
     )
+}
+
+/** A conversation is titled by its purpose (its topic); untitled ones are named by type, never by name. */
+function conversationLabel(agent: Agent): string {
+  return getAgentPurpose(agent) ?? getAgentLabel(agent)
 }
 
 export function actionTitle(action: PendingAction): string {
@@ -100,7 +106,7 @@ export function commandCenterSearch(
         id: `action:${a.id}`,
         kind: 'Needs you' as const,
         label: actionTitle(a),
-        detail: `${a.squadName ?? squadName(a.data.squadId)} · ${a.type.replaceAll('-', ' ')}`,
+        detail: pendingActionContextLine(a),
         destination: { kind: 'action' as const, id: a.id, label: actionTitle(a) },
       })),
     ...data.squads
@@ -119,14 +125,14 @@ export function commandCenterSearch(
         kind: 'Conversation' as const,
         status: a.status,
         agentTypeId: a.agentTypeId,
-        label: getAgentPurpose(a) || getAgentName(a),
+        label: conversationLabel(a),
         detail: `${squadName(a.squadId)} · ${new Date(a.lastHumanMessageAt ?? a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
         destination: {
           kind: 'chat' as const,
           id: a.id,
           agentId: a.id,
           squadId: a.squadId!,
-          label: getAgentPurpose(a) || getAgentName(a),
+          label: conversationLabel(a),
         },
       })),
     ...data.streams

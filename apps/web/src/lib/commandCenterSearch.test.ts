@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { commandCenterSearch, recentlyCompletedWork } from './commandCenterSearch'
+import { waitAction } from './needsYouNotices.fixtures'
 
 const data = {
   squads: [{ id: 'tau', name: 'Ficus', purpose: 'Orchestration' }],
@@ -168,4 +169,18 @@ test('Voices searches navigate to the standalone settings page only when allowed
   expect(commandCenterSearch('Voices', allowed)[0]?.path).toBe('/settings?section=voices')
   expect(commandCenterSearch('public text', allowed)[0]?.label).toBe('Voices')
   expect(commandCenterSearch('Voices', data)).toEqual([])
+})
+test('lists a pending approval in the same words as the Feed, not by its action type', () => {
+  const approval = waitAction('gate', {
+    type: 'workstream-blocked',
+    wait: { type: 'manual', workflowHumanGate: true, resolutionHandler: 'workflow' },
+  })
+  const [row] = commandCenterSearch('', { ...data, actions: [approval] }).filter((r) => r.kind === 'Needs you')
+  expect(row!.detail).toBe('Product Engineering · review needed')
+  expect(row!.detail).not.toContain('blocked')
+})
+test('an untitled conversation is named by its agent type, never by the agent name alone', () => {
+  const untitled = { ...data.consultants[0], id: 'untitled', metadata: { name: 'Quartz' } }
+  const row = commandCenterSearch('', { ...data, consultants: [untitled] }).find((r) => r.id === 'chat:untitled')
+  expect(row!.label).toBe('Consultant')
 })

@@ -938,6 +938,8 @@ export interface SquadQuestionActionData {
   agentId: string
   agentName: string | null
   agentTypeId: string
+  /** The agent's self-set purpose, so clients can name it "Type (Purpose)". Omitted when unset and by older servers. */
+  agentPurpose?: string
   squadId: string
   squadName: string
   questionData: QuestionData
@@ -970,6 +972,8 @@ export interface WorkStreamActionData {
   }
   assigneeAgentId: string | null
   assigneeName: string | null
+  /** The assignee's type, so clients lead with it ("Engineer") instead of its name. Omitted by older servers. */
+  assigneeAgentTypeId?: string
   completionMode: WorkStreamCompletionMode
   prompt: WorkStreamPrompt
 }
@@ -979,6 +983,8 @@ export interface AgentQuestionActionData {
   agentId: string
   agentName: string | null
   agentTypeId: string
+  /** The agent's self-set purpose, so clients can name it "Type (Purpose)". Omitted when unset and by older servers. */
+  agentPurpose?: string
   squadId: string | null
   squadName: string | null
   ownerUserId: string | null
@@ -999,6 +1005,8 @@ export interface AgentErrorActionData {
   agentId: string
   agentName: string | null
   agentTypeId: string
+  /** The agent's self-set purpose, so clients can name it "Type (Purpose)". Omitted when unset and by older servers. */
+  agentPurpose?: string
   squadId: string | null
   squadName: string | null
   ownerUserId: string | null

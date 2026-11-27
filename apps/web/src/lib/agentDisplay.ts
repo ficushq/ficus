@@ -1,5 +1,5 @@
 import type { Agent, AgentStatus } from '@ficus/shared'
-import { activityAgentLabel, agentLabelParts } from '@ficus/shared'
+import { activityAgentLabel, agentLabelParts, typeFirstAgentLabel } from '@ficus/shared'
 
 export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
   active: 'Working',
@@ -37,6 +37,19 @@ export function getAgentPrimaryLabel(agent: Agent): string {
 /** Secondary (gray, smaller) label shown beside the primary — the name, only when a purpose leads. */
 export function getAgentSecondaryLabel(agent: Agent): string | undefined {
   return labelParts(agent).secondary
+}
+
+/**
+ * How the app names one agent: type first, then what it is working on, or its purpose when there is
+ * no work stream ("Engineer (#12 · Implement)", "Engineer (Onboarding)", "Engineer"). Never the name
+ * alone; surfaces that need the stable handle show `getAgentName` beside it.
+ */
+export function getAgentLabel(agent: Pick<Agent, 'agentTypeId' | 'metadata'>, workingOn?: string): string {
+  return typeFirstAgentLabel({
+    agentTypeId: agent.agentTypeId,
+    purpose: getAgentPurpose(agent as Agent),
+    workingOn,
+  })
 }
 
 export function agentMatchesQuery(agent: Agent, query: string): boolean {

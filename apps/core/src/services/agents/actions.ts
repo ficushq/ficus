@@ -71,6 +71,12 @@ const PRIORITY: Record<PendingActionType, number> = {
  * have no wait, so they are listed from the same batch classification the work
  * stream feed uses, never from provider calls.
  */
+/** An agent's self-set purpose for its action data, so clients can name it by type and purpose. */
+function agentPurposeField(metadata: unknown): { agentPurpose?: string } {
+  const purpose = (metadata as Record<string, unknown> | null | undefined)?.purpose
+  return typeof purpose === 'string' && purpose.trim() ? { agentPurpose: purpose.trim() } : {}
+}
+
 async function listDeliveryGateActions(): Promise<PendingAction[]> {
   // Polled by every open client: read the columns used below, not whole stream, squad and
   // flow-state rows (a squad's metadata alone can be tens of kilobytes).
@@ -177,6 +183,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       agentId: agent.id,
       agentName: (agent.metadata as Record<string, unknown>)?.name as string | null,
       agentTypeId: agent.agentTypeId,
+      ...agentPurposeField(agent.metadata),
       squadId: squad.id,
       squadName: squad.name,
       questionData: agent.questionData as QuestionData,
@@ -213,6 +220,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
         agentId: q.agentId,
         agentName: ((agent?.metadata as Record<string, unknown>)?.name as string | null) ?? null,
         agentTypeId: agent?.agentTypeId ?? 'unknown',
+        ...agentPurposeField(agent?.metadata),
         squadId: q.squadId,
         squadName: squad?.name ?? null,
         ownerUserId: q.ownerUserId,
@@ -249,6 +257,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
         agentId: agent.id,
         agentName: ((agent.metadata as Record<string, unknown>)?.name as string | null) ?? null,
         agentTypeId: agent.agentTypeId,
+        ...agentPurposeField(agent.metadata),
         squadId: agent.squadId,
         squadName: squad?.name ?? null,
         ownerUserId: agent.ownerUserId,
@@ -397,10 +406,12 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       assigneeAgentId = run?.attemptAgents[String(wait.flowAttemptId)] ?? wait.createdByAgentId ?? null
     }
     let assigneeName: string | null = null
+    let assigneeAgentTypeId: string | undefined
     if (assigneeAgentId) {
       const [assignee] = await db.select().from(agents).where(eq(agents.id, assigneeAgentId))
       if (assignee) {
         assigneeName = (assignee.metadata as Record<string, unknown>)?.name as string | null
+        assigneeAgentTypeId = assignee.agentTypeId
       }
     }
 
@@ -417,6 +428,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
       assigneeAgentId,
       assigneeName,
+      ...(assigneeAgentTypeId ? { assigneeAgentTypeId } : {}),
       completionMode: new WorkStream(ws).completionMode,
       prompt,
     }

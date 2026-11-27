@@ -81,25 +81,27 @@ describe('needs-you notice preferences', () => {
 })
 
 describe('needs-you notice content', () => {
-  test('a question names its agent, the question and its work stream', () => {
+  test('a question names its agent by type, the question and its work stream', () => {
     expect(needsYouNoticeContent(questionAction('q1'))).toEqual({
-      who: 'Payments Engineer',
-      headline: 'Payments Engineer has a question',
+      who: 'Engineer',
+      headline: 'Engineer has a question',
       detail: 'Retry on 409 as well?',
       context: '#8 · Make every payment retry safe',
     })
   })
 
-  test('a question outside a work stream falls back to its squad, and a nameless agent to its role', () => {
-    const content = needsYouNoticeContent(questionAction('q1', {}, { agentName: null, workStream: undefined }))
-    expect(content.headline).toBe('engineer has a question')
+  test('a question outside a work stream falls back to its squad, and adds the agent purpose to its type', () => {
+    const content = needsYouNoticeContent(questionAction('q1', {}, { agentPurpose: 'Onboarding', workStream: undefined }))
+    expect(content.headline).toBe('Engineer (Onboarding) has a question')
     expect(content.context).toBe('Product Engineering')
+    const unnamed = needsYouNoticeContent(questionAction('q1', {}, { agentName: null, workStream: undefined }))
+    expect(unnamed.headline).toBe('Engineer has a question')
   })
 
-  test('a review gate reads "<agent> requests review" with the work stream number and title', () => {
+  test('a review gate reads "<agent type> requests review" with the work stream number and title', () => {
     expect(needsYouNoticeContent(waitAction('w1'))).toEqual({
-      who: 'Payments Engineer',
-      headline: 'Payments Engineer requests review',
+      who: 'Engineer',
+      headline: 'Engineer requests review',
       detail: null,
       context: '#8 · Make every payment retry safe',
     })
@@ -107,9 +109,14 @@ describe('needs-you notice content', () => {
 
   test('a manual input gate says what it needs', () => {
     const content = needsYouNoticeContent(
-      waitAction('w2', { type: 'workstream-blocked', wait: { message: 'Pick the retry budget' } })
+      waitAction(
+        'w2',
+        { type: 'workstream-blocked', wait: { message: 'Pick the retry budget' } },
+        { assigneeAgentTypeId: undefined }
+      )
     )
-    expect(content.headline).toBe('Payments Engineer needs your input')
+    // An older server sends only the assignee's name, which is never shown alone.
+    expect(content.headline).toBe('An agent needs your input')
     expect(content.detail).toBe('Pick the retry budget')
   })
 })

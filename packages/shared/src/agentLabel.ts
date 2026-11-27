@@ -33,6 +33,35 @@ export function agentLabelParts(input: AgentLabelInput): AgentLabelParts {
   return { primary: name ?? fallback }
 }
 
+/** An agent type as people read it: "engineer" → "Engineer", "general-purpose" → "General Purpose". */
+export function agentTypeLabel(agentTypeId: string | null | undefined): string {
+  const id = agentTypeId?.trim()
+  if (!id) return 'Agent'
+  return id
+    .split(/[-_]/)
+    .map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word))
+    .join(' ')
+}
+
+export interface TypeFirstAgentLabelInput {
+  agentTypeId?: string | null
+  purpose?: string | null
+  /** What the agent is working on, such as a work stream reference and step ("#12 · Implement"). */
+  workingOn?: string | null
+}
+
+/**
+ * How the app refers to one agent: its type leads, because a type means more to people than a
+ * name. What the agent is working on follows in parentheses, or its purpose when there is no work
+ * stream: "Engineer (#12 · Implement)", "Engineer (Onboarding)", "Engineer". A name is never shown
+ * alone; a surface that needs the stable handle shows it beside this label.
+ */
+export function typeFirstAgentLabel(input: TypeFirstAgentLabelInput): string {
+  const type = agentTypeLabel(input.agentTypeId)
+  const detail = input.workingOn?.trim() || input.purpose?.trim()
+  return detail ? `${type} (${detail})` : type
+}
+
 /** One-line "Purpose · Name" form for compact, single-line spots. */
 export function formatAgentLabel(input: AgentLabelInput): string {
   const { primary, secondary } = agentLabelParts(input)

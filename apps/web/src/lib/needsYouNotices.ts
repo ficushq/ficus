@@ -1,4 +1,5 @@
 import {
+  typeFirstAgentLabel,
   WORK_STREAM_STATUS_ROLE,
   type AgentQuestionActionData,
   type PendingAction,
@@ -105,7 +106,11 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
   switch (action.type) {
     case 'agent-question': {
       const data = action.data as AgentQuestionActionData
-      const who = data.agentName || data.agentTypeId
+      // Type first; the purpose tells agents apart when the notice names no work stream.
+      const who = typeFirstAgentLabel({
+        agentTypeId: data.agentTypeId,
+        purpose: data.workStream ? undefined : data.agentPurpose,
+      })
       return {
         who,
         headline: `${who} has a question`,
@@ -115,7 +120,7 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
     }
     case 'squad-question': {
       const data = action.data as SquadQuestionActionData
-      const who = data.agentName || data.agentTypeId
+      const who = typeFirstAgentLabel({ agentTypeId: data.agentTypeId, purpose: data.agentPurpose })
       return {
         who,
         headline: `${who} has a question`,
@@ -125,7 +130,7 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
     }
     default: {
       const data = action.data as WorkStreamActionData
-      const who = data.assigneeName || 'An agent'
+      const who = data.assigneeAgentTypeId ? typeFirstAgentLabel({ agentTypeId: data.assigneeAgentTypeId }) : 'An agent'
       const state = workStreamActionPresentationState(action)
       const review = state !== null && WORK_STREAM_STATUS_ROLE[state] === 'review'
       return {

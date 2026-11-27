@@ -1,3 +1,5 @@
+import { agentTypeLabel } from './agentLabel'
+
 export const SQUAD_ACTIVITY_KINDS = [
   'message',
   'workstream',
@@ -112,11 +114,7 @@ export interface SquadActivityItem {
 
 /** Agent identity only; a missing/redacted type is not evidence of a system sender. */
 export function activityAgentLabel(agentTypeId: string | null): string {
-  if (!agentTypeId) return 'Agent'
-  return agentTypeId
-    .split(/[-_]/)
-    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
-    .join(' ')
+  return agentTypeLabel(agentTypeId)
 }
 
 /** The primary identity always names the navigation destination, never its actor. */

@@ -82,6 +82,7 @@ export function waitAction(
       focus: { kind: 'workstream-wait', workStreamId: 'ws-uuid-8', waitId: id },
       assigneeAgentId: 'agent-1',
       assigneeName: 'Payments Engineer',
+      assigneeAgentTypeId: 'engineer',
       completionMode: 'review-approval',
       prompt: { type: 'text', message: 'Review this' },
       ...data,

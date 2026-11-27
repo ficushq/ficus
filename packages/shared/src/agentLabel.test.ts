@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { agentLabelParts, formatAgentLabel } from './agentLabel'
+import { agentLabelParts, agentTypeLabel, formatAgentLabel, typeFirstAgentLabel } from './agentLabel'
 
 describe('agentLabelParts', () => {
   test('purpose leads, name is secondary', () => {
@@ -26,5 +26,20 @@ describe('agentLabelParts', () => {
   test('formatAgentLabel joins with a separator', () => {
     expect(formatAgentLabel({ name: 'Quartz', purpose: 'Billing migration' })).toBe('Billing migration · Quartz')
     expect(formatAgentLabel({ name: 'Quartz' })).toBe('Quartz')
+  })
+})
+
+describe('typeFirstAgentLabel', () => {
+  test('leads with the type and adds what the agent works on, else its purpose', () => {
+    expect(typeFirstAgentLabel({ agentTypeId: 'engineer', purpose: 'Onboarding', workingOn: '#12 · Implement' })).toBe(
+      'Engineer (#12 · Implement)'
+    )
+    expect(typeFirstAgentLabel({ agentTypeId: 'engineer', purpose: ' Onboarding ' })).toBe('Engineer (Onboarding)')
+    expect(typeFirstAgentLabel({ agentTypeId: 'general-purpose', purpose: '' })).toBe('General Purpose')
+  })
+
+  test('never names the agent; an unknown type reads "Agent"', () => {
+    expect(typeFirstAgentLabel({ agentTypeId: null })).toBe('Agent')
+    expect(agentTypeLabel('product_lead')).toBe('Product Lead')
   })
 })

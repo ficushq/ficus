@@ -79,7 +79,7 @@ describe('notification event builders', () => {
       spyOn(Agent, 'find').mockResolvedValue({
         id: 'a1',
         agentTypeId: 'engineer',
-        metadata: { name: 'Forge' },
+        metadata: { name: 'Forge', purpose: 'Release prep' },
       } as any)
     )
     track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Ficus' } as any))
@@ -95,7 +95,7 @@ describe('notification event builders', () => {
       agentId: 'a1',
       squadId: 's1',
       squadName: 'Ficus',
-      title: '❓ Forge has a question',
+      title: '❓ Engineer (Release prep) has a question',
       body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})`.slice(0, 300),
       pushSource: { body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})` },
       url: 'https://ficus.example/squads/s1/agents?agent=a1',
@@ -135,7 +135,7 @@ describe('notification event builders', () => {
     expect(await buildNotificationEvent('agent-question.created', { questionId: persisted.id })).toMatchObject({
       actionId: `agent-question:${persisted.id}`,
       agentId: 'a-personal',
-      title: '❓ manager has a question',
+      title: '❓ Manager has a question',
       body: 'Open Ficus to respond',
       // Squadless agents open in the Assistant's conversation view, not the legacy /chat page.
       url: `https://ficus.example${assistantAgentChatPath('a-personal')}`,

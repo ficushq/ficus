@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { Agent } from '@ficus/shared'
 import {
+  getAgentLabel,
   getAgentName,
   getAgentPrimaryLabel,
   getAgentPurpose,
@@ -68,5 +69,16 @@ describe('typeFirstAgentLabels', () => {
     expect(labels.get('e1')).toBe('Engineer (#12 · Implement)')
     expect(labels.get('e2')).toBe('Engineer (Billing)')
     expect(labels.get('m')).toBe('Manager')
+  })
+})
+
+describe('getAgentLabel', () => {
+  it('leads with the type, then what the agent works on or its purpose, and never the name alone', () => {
+    expect(getAgentLabel(agent({ name: 'Quartz', purpose: 'Onboarding' }))).toBe('Engineer (Onboarding)')
+    expect(getAgentLabel(agent({ name: 'Quartz', purpose: 'Onboarding' }), '#12 · Implement')).toBe(
+      'Engineer (#12 · Implement)'
+    )
+    expect(getAgentLabel(agent({ name: 'Quartz' }))).toBe('Engineer')
+    expect(getAgentLabel(agent({ name: 'Quartz' }, 'general-purpose'))).toBe('General Purpose')
   })
 })
