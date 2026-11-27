@@ -8,6 +8,8 @@ export interface MessageCursorContext {
   search?: string
   before?: string
   after?: string
+  /** Search scope; omitted from the digest for the default `text`, so earlier cursors stay valid. */
+  scope?: string
 }
 
 const DECIMAL = /^-?(0|[1-9]\d*)$/
@@ -23,6 +25,7 @@ const digest = (context: MessageCursorContext) =>
         search: context.search ?? null,
         before: context.before ?? null,
         after: context.after ?? null,
+        ...(context.scope && context.scope !== 'text' ? { scope: context.scope } : {}),
       })
     )
     .digest('hex')

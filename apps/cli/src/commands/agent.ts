@@ -6,6 +6,7 @@ import { explainDormantRecipient, WAKE_OPTION_DESCRIPTION } from '../dormant-age
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { readLine, StdinClosedError } from '../local-server/prompt'
 import { registerSandboxProcessCommands } from './sandbox-processes'
+import { parseSearchScope, registerAgentSearchCommand } from './agent-search'
 
 function truncate(s: string, max: number): string {
   if (!s) return ''
@@ -219,10 +220,18 @@ export function registerAgentCommands(program: Command) {
     .option('--offset <n>', 'Offset for pagination')
     .option('--before <timestamp>', 'Only messages before this ISO timestamp')
     .option('--after <timestamp>', 'Only messages after this ISO timestamp')
-    .option('--search <term>', 'Search message content (case-insensitive)')
+    .option(
+      '--search <term>',
+      'Only messages containing this case-insensitive, literal text (%, _ and \\ match themselves). For snippets, tool output and context use `ficus agent search`'
+    )
+    .option(
+      '--in <scope>',
+      'Where --search looks: text (default, the message text), tools (tool calls and results), or all'
+    )
     .option('--role <role>', 'Filter by role (human or assistant)')
     .action(async (id, options) => {
       try {
+        const scope = parseSearchScope(options.in, 'text')
         const params = new URLSearchParams()
         // --last is a shortcut for --limit
         const limit = options.limit || options.last
@@ -231,6 +240,7 @@ export function registerAgentCommands(program: Command) {
         if (options.before) params.set('before', options.before)
         if (options.after) params.set('after', options.after)
         if (options.search) params.set('search', options.search)
+        if (options.search && scope !== 'text') params.set('in', scope)
         if (options.role) params.set('role', options.role)
         const query = params.toString() ? `?${params}` : ''
         const result = await apiGet<{ messages: any[]; pagination: any }>(`/api/agents/${id}/messages${query}`)
@@ -248,7 +258,9 @@ export function registerAgentCommands(program: Command) {
             console.log(`[${role}] (${time})`)
             console.log(`${msg.content}\n`)
           }
-          if (limit) {
+          if (options.search && typeof result.pagination?.totalCount === 'number' && !options.offset) {
+            console.log(`--- Showing ${messages.length} of ${result.pagination.totalCount} matching message(s) ---`)
+          } else if (limit) {
             console.log(`--- Showing ${messages.length} message(s) ---`)
           }
         }
@@ -256,6 +268,8 @@ export function registerAgentCommands(program: Command) {
         outputError(error as Error)
       }
     })
+
+  registerAgentSearchCommand(agent)
 
   // ficus agent worker-log <id> [options] — condensed activity log
   agent
@@ -265,7 +279,10 @@ export function registerAgentCommands(program: Command) {
     .option('--limit <n>', 'Max messages to return')
     .option('--before <timestamp>', 'Only messages before this ISO timestamp')
     .option('--after <timestamp>', 'Only messages after this ISO timestamp')
-    .option('--search <term>', 'Search message content (case-insensitive)')
+    .option(
+      '--search <term>',
+      'Only messages whose text or tool calls (names, arguments, results) contain this case-insensitive, literal text'
+    )
     .option('--tools-only', 'Show only tool calls (no text responses)')
     .option('--raw', 'Output full JSON including metadata')
     .action(async (id, options) => {
@@ -277,7 +294,11 @@ export function registerAgentCommands(program: Command) {
         if (limit) params.set('limit', limit)
         if (options.before) params.set('before', options.before)
         if (options.after) params.set('after', options.after)
-        if (options.search) params.set('search', options.search)
+        if (options.search) {
+          params.set('search', options.search)
+          params.set('in', 'all')
+        }
+        params.set('count', 'false') // worker-log never shows totalCount
         const query = `?${params}`
         const result = await apiGet<{ messages: any[]; pagination: any }>(`/api/agents/${id}/messages${query}`)
         const messages = result.messages

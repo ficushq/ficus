@@ -1220,6 +1220,15 @@ describe('Squad entity', () => {
       expect(agentIds).toContain(agent2.id)
     })
 
+    it('treats LIKE wildcards in the term literally', async () => {
+      await agent1.recordMessage({ role: 'assistant', content: 'pi_durable is 100% done' })
+      await agent2.recordMessage({ role: 'assistant', content: 'pi-durable is mostly done' })
+
+      expect((await squad.searchMessages('pi_durable')).map((r) => r.agentId)).toEqual([agent1.id])
+      expect(await squad.searchMessages('pi%done')).toEqual([])
+      expect(await squad.searchMessages('\\')).toEqual([])
+    })
+
     it('returns empty for no matches', async () => {
       await agent1.recordMessage({ role: 'assistant', content: 'Hello' })
 
