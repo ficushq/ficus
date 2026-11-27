@@ -221,6 +221,27 @@ export interface TerminalWorkStreamPage {
   hasMore: boolean
 }
 
+/** A terminal page read without its total count (`countTotal: false`). */
+export type UncountedTerminalWorkStreamPage = Omit<TerminalWorkStreamPage, 'totalCount'>
+
+export interface TerminalWorkStreamPageQuery {
+  squadId?: string
+  squadIds?: string[]
+  statuses: WorkStreamStatus[]
+  limit: number
+  cursor?: TerminalWorkStreamCursorKey
+  completedBefore?: Date
+  completedAfter?: Date
+  feedUserId?: string
+  /** Only streams this agent is assigned to, owns, created, or is attached to. */
+  agentId?: string
+  /**
+   * Whether to count every matching row as well (default true). The count is a second query
+   * over the whole history; a caller that never reports `totalCount` passes false to skip it.
+   */
+  countTotal?: boolean
+}
+
 // Feed receipts require an immutable, explicitly dated completion revision. Keep this
 // timestamptz throughout: converting to timestamp would make persisted receipts depend
 // on the database session's timezone. Legacy updatedAt fallback is history-only.
@@ -1119,18 +1140,13 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Keyset-page terminal history without resolving the cursor row through the
    * current status filter. The cursor key therefore survives reopen/removal.
    */
-  static async listTerminalPage(options: {
-    squadId?: string
-    squadIds?: string[]
-    statuses: WorkStreamStatus[]
-    limit: number
-    cursor?: TerminalWorkStreamCursorKey
-    completedBefore?: Date
-    completedAfter?: Date
-    feedUserId?: string
-    /** Only streams this agent is assigned to, owns, created, or is attached to. */
-    agentId?: string
-  }): Promise<TerminalWorkStreamPage> {
+  static async listTerminalPage(
+    options: TerminalWorkStreamPageQuery & { countTotal: false }
+  ): Promise<UncountedTerminalWorkStreamPage>
+  static async listTerminalPage(options: TerminalWorkStreamPageQuery): Promise<TerminalWorkStreamPage>
+  static async listTerminalPage(
+    options: TerminalWorkStreamPageQuery
+  ): Promise<TerminalWorkStreamPage | UncountedTerminalWorkStreamPage> {
     const conditions: SQL[] = [inArray(workStreams.status, options.statuses)]
     if (options.squadId) conditions.push(uuidPrefixCondition(workStreams.squadId, options.squadId))
     if (options.squadIds) conditions.push(inArray(workStreams.squadId, options.squadIds))
@@ -1181,16 +1197,18 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           workStreams.id
         )
         .limit(options.limit + 1),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(workStreams)
-        .where(countWhere),
+      options.countTotal === false
+        ? null
+        : db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(workStreams)
+            .where(countWhere),
     ])
-    return {
+    const page = {
       items: await WorkStream.hydrateDependedOnBy(rows.slice(0, options.limit).map((row) => new WorkStream(row))),
-      totalCount: countRows[0]?.count ?? 0,
       hasMore: rows.length > options.limit,
     }
+    return countRows ? { ...page, totalCount: countRows[0]?.count ?? 0 } : page
   }
 
   /**
