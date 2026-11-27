@@ -907,6 +907,11 @@ test('the decision shows what approval allows whole: every sentence, list step a
       await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
       const area = f.doc.querySelector('[data-review-decision], [data-review-sheet]')!
       const statement = area.querySelector<HTMLElement>('[data-approval-statement]')!
+      if (area.hasAttribute('data-review-sheet')) {
+        // The phone sheet starts it as a marked preview, so the document keeps its room; a tap opens it.
+        expect(statement.querySelector('[data-collapsed]')).not.toBeNull()
+        await f.dom.act(async () => statement.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      }
       expect(statement.querySelector('code')!.textContent).toContain('bun run migrate --target staging')
       expect(statement.textContent).toContain('It also turns the flag on in three stages')
       expect([...statement.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
@@ -1209,11 +1214,39 @@ test('without a producing agent the review keeps the decision rail and the stack
       const layout = f.dialog()!.querySelector<HTMLElement>('[data-review-layout]')!
       expect(layout.getAttribute('data-review-layout')).toBe(expected)
       expect(layout.querySelector('[data-review-chat]')).toBeNull()
-      if (expected === 'columns') expect(layout.querySelector('[data-review-rail]')!.className).toContain('w-[360px]')
+      if (expected === 'columns') {
+        expect(layout.querySelector('[data-review-rail]')!.className).toContain('w-[360px]')
+        expect(layout.querySelector('textarea')!.getAttribute('rows')).toBe('8')
+      }
       expect(f.decisionButtons()).toHaveLength(2)
     } finally {
       await f.cleanup()
     }
+  }
+})
+
+test('beside a statement the rail starts its notes shorter, so both outcomes stay in view', async () => {
+  const f = await fixture({ width: 1280, height: 900 })
+  try {
+    const run = { ...gateRun(), attemptAgents: {} }
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staging migration.',
+        recommendation: 'Approve because the migration is tested.',
+        approvalEffect: 'Approval runs the staging migration and turns the new reader on for staging only.',
+        risks: 'The migration locks one table briefly.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const rail = f.dialog()!.querySelector<HTMLElement>('[data-review-rail]')!
+    expect(rail.querySelector('[data-approval-statement]')!.textContent).toContain('turns the new reader on')
+    expect(rail.querySelector('textarea')!.getAttribute('rows')).toBe('4')
+  } finally {
+    await f.cleanup()
   }
 })
 

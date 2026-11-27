@@ -142,7 +142,7 @@ const APPROVAL_STATEMENT_LIMIT = { characters: 360, lines: 10 }
  * touch screens too, so it is never shortened, line-clamped or left to a tooltip. A long one starts as a
  * faded preview with a visible Show all control, so the cut is marked and the decision stays in reach.
  */
-function ApprovalStatement({ gate }: { gate: HumanGateContext }) {
+function ApprovalStatement({ gate, collapsed = false }: { gate: HumanGateContext; collapsed?: boolean }) {
   if (!gate.approvalStatement) return null
   return (
     <section
@@ -153,8 +153,10 @@ function ApprovalStatement({ gate }: { gate: HumanGateContext }) {
       <h3 className="mb-1 text-xs font-medium text-muted">What approval allows</h3>
       <ExpandableMarkdown
         label="of what approval allows"
-        limit={APPROVAL_STATEMENT_LIMIT}
-        previewClassName="max-h-24"
+        // On the phone sheet it always starts as a preview: the brief above shows it too, and the document
+        // keeps its room. The cut is marked and Show all opens it in place.
+        limit={collapsed ? { characters: 0, lines: 0 } : APPROVAL_STATEMENT_LIMIT}
+        previewClassName={collapsed ? 'max-h-12' : 'max-h-24'}
         markdownClassName="text-sm leading-relaxed text-primary"
       >
         {gate.approvalStatement}
@@ -868,7 +870,8 @@ function DecisionForm({
         <NotesField
           id={`${id}-notes`}
           hintId={`${id}-hint`}
-          rows={layout === 'pinned' ? 3 : 8}
+          // Beside a statement the rail's notes start shorter, so both outcomes stay in view; they grow as typed.
+          rows={layout === 'pinned' ? 3 : gate.approvalStatement ? 4 : 8}
           value={notes}
           onChange={setNotes}
         />
@@ -952,7 +955,7 @@ function DecisionSheet(state: DecisionState) {
           </div>
           <ReviewBlockers gate={gate} />
           <RevisionNotice revisions={state.revisions} />
-          <ApprovalStatement gate={gate} />
+          <ApprovalStatement gate={gate} collapsed />
           <div className="grid grid-cols-2 gap-2">
             <DecisionButtons {...state} />
           </div>

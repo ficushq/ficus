@@ -176,7 +176,10 @@ try {
           if (mode === 'return')
             await review
               .getByRole('button', { name: /^Approved/ })
-              .getByText('Next: execute (General Purpose agent)', { exact: true })
+              // The Farm keeps its own captions until its review screen is reworded.
+              .getByText(surface === 'farm' ? 'Continues to execute' : 'Next: execute (General Purpose agent)', {
+                exact: true,
+              })
               .waitFor()
           await review.evaluate((el) => {
             el.querySelector('[data-review-document]')?.scrollTo(0, 0)
