@@ -10,7 +10,7 @@ import { isLiveAgentStatus, type Agent } from '@ficus/shared'
 import type { AgentPrivateStatus } from '../../api/agentPrivate'
 import { startAgentPrivateSandbox } from '../../api/agentPrivate'
 import { queryKeys } from '../../queryKeys'
-import { agentMatchesQuery, getAgentPrimaryLabel, getAgentSecondaryLabel } from '../../lib/agentDisplay'
+import { agentMatchesQuery, getAgentLabel } from '../../lib/agentDisplay'
 import { Panel, PopoverHeading, PopoverRowContent, popoverRowClass, usePopover } from '../popover'
 import { handleListKey, listItems } from '../popover/listNavigation'
 import { newFilePathError, privateAreaAgents, sandboxStatusLabel } from './agentPrivateTargets'
@@ -119,7 +119,7 @@ export function WorkspaceTargetSelect({
               className={popoverRowClass(agent.id === value)}
               onClick={() => pick(agent.id)}
             >
-              <PopoverRowContent label={targetLabel(agent)} description={getAgentSecondaryLabel(agent)} />
+              <PopoverRowContent label={targetLabel(agent)} description={agentHandle(agent)} />
             </button>
           ))}
           {!showSquad && matches.length === 0 && (
@@ -131,8 +131,14 @@ export function WorkspaceTargetSelect({
   )
 }
 
+/** The stable name, beside the type-first label, so agents of one type stay distinguishable. */
+function agentHandle(agent: Agent): string | undefined {
+  const name = agent.metadata?.name
+  return typeof name === 'string' && name.trim() ? name.trim() : undefined
+}
+
 function targetLabel(agent: Agent): string {
-  return `${getAgentPrimaryLabel(agent)}${isLiveAgentStatus(agent.status) ? '' : ' (dormant)'}`
+  return `${getAgentLabel(agent)}${isLiveAgentStatus(agent.status) ? '' : ' (dormant)'}`
 }
 
 export function AgentPrivateStatusBar({

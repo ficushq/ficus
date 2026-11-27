@@ -970,6 +970,8 @@ export interface WorkStreamActionData {
   }
   assigneeAgentId: string | null
   assigneeName: string | null
+  /** The assignee's type, so clients lead with it ("Engineer") instead of its name. Omitted by older servers. */
+  assigneeAgentTypeId?: string
   completionMode: WorkStreamCompletionMode
   prompt: WorkStreamPrompt
 }

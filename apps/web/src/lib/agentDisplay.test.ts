@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import type { Agent } from '@ficus/shared'
 import {
+  agentListLabels,
+  getAgentLabel,
   getAgentName,
   getAgentPrimaryLabel,
   getAgentPurpose,
@@ -68,5 +70,41 @@ describe('typeFirstAgentLabels', () => {
     expect(labels.get('e1')).toBe('Engineer (#12 · Implement)')
     expect(labels.get('e2')).toBe('Engineer (Billing)')
     expect(labels.get('m')).toBe('Manager')
+  })
+})
+
+describe('getAgentLabel', () => {
+  it('leads with the type, then what the agent works on or its purpose, and never the name alone', () => {
+    expect(getAgentLabel(agent({ name: 'Quartz', purpose: 'Onboarding' }))).toBe('Engineer (Onboarding)')
+    expect(getAgentLabel(agent({ name: 'Quartz', purpose: 'Onboarding' }), '#12 · Implement')).toBe(
+      'Engineer (#12 · Implement)'
+    )
+    expect(getAgentLabel(agent({ name: 'Quartz' }))).toBe('Engineer')
+    expect(getAgentLabel(agent({ name: 'Quartz' }, 'general-purpose'))).toBe('General Purpose')
+  })
+})
+
+describe('agentListLabels', () => {
+  const engineer = (id: string, metadata: Agent['metadata']) => ({ ...agent(metadata), id })
+  it('tells untitled agents of one type apart by their work stream, then name, then a short ID', () => {
+    const labels = agentListLabels(
+      [
+        engineer('working-1', { name: 'Edda' }),
+        engineer('named-2', { name: 'Quinn' }),
+        engineer('3f9a2b7c-unnamed', {}),
+        engineer('titled-4', { name: 'Pearl', purpose: 'Onboarding' }),
+      ],
+      (candidate) => (candidate.id === 'working-1' ? '#12' : undefined)
+    )
+    expect([...labels.values()]).toEqual([
+      'Engineer (#12)',
+      'Engineer (Quinn)',
+      'Engineer (3f9a2b7c)',
+      'Engineer (Onboarding)',
+    ])
+  })
+
+  it('names a lone agent of its type by type and purpose only', () => {
+    expect(agentListLabels([engineer('solo', { name: 'Edda' })]).get('solo')).toBe('Engineer')
   })
 })

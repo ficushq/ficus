@@ -1,9 +1,10 @@
 import { workStreamRef } from '@ficus/shared'
 import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
+import { WorkStreamStatusMarker } from './WorkStreamStatusMarker'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { useURLStringState, useURLStringArrayState, useURLBooleanState } from '../hooks/useURLState'
@@ -15,13 +16,7 @@ import { webStatus } from '../lib/statusPresentation'
 import { queries } from '../queryOptions'
 import { WorkStreamDetailModal, getWsDisplayState } from './WorkStreamDetailModal'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
-import {
-  deliveryTagPullRequestKey,
-  workStreamDeliveryTag,
-  workStreamStatusLabel,
-  WS_STATUS_ICONS,
-} from '../lib/workStreamStatusPresentation'
-import { Badge } from './Badge'
+import { deliveryTagPullRequestKey, workStreamDeliveryTag } from '../lib/workStreamStatusPresentation'
 import { AgentActivityDot } from './AgentActivityDot'
 import { WorkStreamFilterGroup, WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
 import { ChevronDownIcon, ChevronRightIcon, PullRequestIcon } from './icons'
@@ -494,283 +489,156 @@ function WorkStreamRow({
   const assigneeTypeName = assignee ? (agentTypeNameMap.get(assignee.agentTypeId) ?? assignee.agentTypeId) : null
   const assigneeTarget = assignee ? `/squads/${slugFor(workStream.squadId)}/agents?agent=${assignee.id}` : null
 
-  // Shared presentation preserves genuine blockers and failures; ordinary idle
-  // is neutral, and a proven current resource subscription is informational.
-  const state = wsFilterState(workStream)
-  const statusTreatment = webStatus(WORK_STREAM_STATUS_ROLE[state] ?? 'neutral')
-  const isInProgress = WORK_STREAM_STATUS_ROLE[state] === 'progress'
-  const statusColorClass = statusTreatment.textClass
-  const statusDotClass = statusTreatment.markerClass
-
   const queuePositionText =
     workStream.status === 'queued' && workStream.queuePosition != null ? `#${workStream.queuePosition} in queue` : null
-  // Tooltips use the same derived label as the pill (e.g. "Awaiting CI" rather than the generic external wait).
-  const statusBadgeText = workStreamStatusLabel(workStream)
 
-  if (feedLayout) {
-    const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
-    return (
-      <li
-        ref={rowRef}
-        className={clsx('relative rounded-lg pr-3 py-2.5 hover:bg-surface-hover', FEED_ROW_INSET_CLASS)}
-        data-testid="feed-work-row"
-        {...peekProps}
-      >
-        <button
-          className="flex w-full items-start gap-2 text-left after:absolute after:inset-0 after:rounded-lg"
-          onClick={open}
-          {...peekFocusProps}
-        >
-          <span className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', statusDotClass)} aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 wrap-break-word">
-            {workStreamTitle(workStream)}
-          </span>
-          <WorkStreamStatusBadges
-            workStream={workStream}
-            deliveryLabel={deliveryLabelMode}
-            showQueuedReview={false}
-            className="max-w-[50%] sm:max-w-none"
-          />
-        </button>
-        {summaryLine && <div className="ml-4 mt-0.5 min-w-0">{summaryLine}</div>}
-        <div className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          {squad && (
-            <Link
-              to={`/squads/${slugFor(squad.id)}`}
-              className={FEED_METADATA_LINK_CLASS}
-              title={`Open ${squad.name} squad`}
-            >
-              {squad.name}
-            </Link>
-          )}
-          {!isDone && assigneeTypeName && assigneeTarget && (
-            <>
-              <span aria-hidden="true">·</span>
-              <Link
-                to={assigneeTarget}
-                className={FEED_METADATA_LINK_CLASS}
-                title={`Open ${assigneeTypeName} agent thread`}
-              >
-                {assigneeTypeName}
-              </Link>
-            </>
-          )}
-          {isDone && Number.isFinite(completedAt.getTime()) && (
-            <>
-              <span aria-hidden="true">·</span>
-              <time dateTime={completedAt.toISOString()}>
-                {completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-              </time>
-            </>
-          )}
-          {!isDone && elapsed > 1000 && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>{formatDuration(elapsed)}</span>
-            </>
-          )}
-          {pullRequests.map((pullRequest) => {
-            if (!pullRequest.url) return null
-            const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null
-            return (
-              <Fragment key={pullRequest.key}>
-                <span aria-hidden="true">·</span>
-                <a
-                  href={pullRequest.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
-                  aria-label={
-                    tag ? `Open PR #${pullRequest.number}, delivery: ${tag.label}` : `Open PR #${pullRequest.number}`
-                  }
-                  title={tag ? `Delivery: ${tag.label}` : undefined}
-                >
-                  <PullRequestIcon className="h-3.5 w-3.5" /> #{pullRequest.number}
-                  {tag && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className={tag.textClass} data-testid="pull-request-delivery-label">
-                        {tag.label}
-                      </span>
-                    </>
-                  )}
-                </a>
-              </Fragment>
-            )
-          })}
-        </div>
-        {peekCard}
-      </li>
-    )
+  const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
+  // On the squad pages the assignee link selects the agent in the side panel; a second press on
+  // the agent already selected moves focus to that panel instead of re-navigating.
+  const onAssigneeClick = (event: MouseEvent) => {
+    const alreadySelected = `${location.pathname}${location.search}` === assigneeTarget
+    if (alreadySelected || pendingAssigneeTargetRef.current === assigneeTarget) {
+      event.preventDefault()
+      focusVisibleSquadAgentPanel()
+      return
+    }
+    pendingAssigneeTargetRef.current = assigneeTarget
+    queueMicrotask(() => {
+      pendingAssigneeTargetRef.current = null
+    })
   }
 
-  return (
-    <li
-      ref={rowRef}
-      className={clsx('rounded-lg px-3 py-3.5 hover:bg-surface-hover cursor-pointer', isDone && 'opacity-75')}
-      onClick={open}
-      {...peekProps}
-    >
-      <div className="hidden md:flex items-center gap-2">
-        <span
-          className={clsx('w-4 text-center text-sm shrink-0', isInProgress && 'animate-pulse', statusColorClass)}
-          role="img"
-          aria-label={statusBadgeText}
-          title={statusBadgeText}
+  // One line of context under the title, in a fixed order. Lists only add to it.
+  const context: Array<{ key: string; node: ReactNode }> = []
+  if (showSquadBadge && squad) {
+    context.push({
+      key: 'squad',
+      node: (
+        <Link
+          to={`/squads/${slugFor(squad.id)}`}
+          className={FEED_METADATA_LINK_CLASS}
+          title={`Open ${squad.name} squad`}
         >
-          {WS_STATUS_ICONS[state] ?? '○'}
+          {squad.name}
+        </Link>
+      ),
+    })
+  }
+  if (assignee && assigneeTypeName && assigneeTarget) {
+    context.push({
+      key: 'assignee',
+      node: (
+        <Link
+          to={assigneeTarget}
+          onClick={onAssigneeClick}
+          className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
+          title={`Open ${assigneeTypeName} agent thread`}
+        >
+          {!isDone && <AgentActivityDot status={assignee.status} />}
+          {assigneeTypeName}
+        </Link>
+      ),
+    })
+  }
+  if (queuePositionText) {
+    context.push({
+      key: 'queue',
+      node: <span title="Position in the squad's admission queue">{queuePositionText}</span>,
+    })
+  }
+  if (isDone && Number.isFinite(completedAt.getTime())) {
+    context.push({
+      key: 'completed',
+      node: (
+        <time dateTime={completedAt.toISOString()}>
+          {completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </time>
+      ),
+    })
+  }
+  if (elapsed > 1000) {
+    context.push({
+      key: 'runtime',
+      node: (
+        <span className="tabular-nums" title="Total agent execution runtime">
+          {formatDuration(elapsed)}
         </span>
-        {/* The row's keyboard stop: Enter opens the stream (the click reaches the row); focus opens the peek. */}
-        <button
-          type="button"
-          className="font-medium text-sm text-primary truncate flex-1 min-w-0 text-left rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-          {...peekFocusProps}
+      ),
+    })
+  }
+  for (const pullRequest of pullRequests) {
+    if (!pullRequest.url) continue
+    const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null
+    context.push({
+      key: `pr:${pullRequest.key}`,
+      node: (
+        <a
+          href={pullRequest.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
+          aria-label={tag ? `Open PR #${pullRequest.number}, delivery: ${tag.label}` : `Open PR #${pullRequest.number}`}
+          title={tag ? `Delivery: ${tag.label}` : undefined}
         >
-          {workStreamTitle(workStream)}
-        </button>
-        {elapsed > 1000 && (
-          <span className="text-xs text-placeholder tabular-nums shrink-0" title="Total agent execution runtime">
-            {formatDuration(elapsed)}
-          </span>
-        )}
-        {pullRequests.map((pullRequest) => {
-          if (!pullRequest.url) return null
-          const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null
-          return (
-            <a
-              key={pullRequest.key}
-              href={pullRequest.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="shrink-0"
-              title={tag ? `Open PR #${pullRequest.number} · Delivery: ${tag.label}` : `Open PR #${pullRequest.number}`}
-            >
-              <Badge color={tag?.color ?? 'accent-2'} className="gap-1">
-                <PullRequestIcon className="w-3.5 h-3.5" />#{pullRequest.number}
-                {tag && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span data-testid="pull-request-delivery-label">
-                      <span className="sr-only">Delivery: </span>
-                      {tag.label}
-                    </span>
-                  </>
-                )}
-              </Badge>
-            </a>
-          )
-        })}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {assignee && (
-            <Badge
-              color="accent-1"
-              className="gap-1"
-              to={assigneeTarget!}
-              onClick={(event) => {
-                event.stopPropagation()
-                const alreadySelected = `${location.pathname}${location.search}` === assigneeTarget
-                if (alreadySelected || pendingAssigneeTargetRef.current === assigneeTarget) {
-                  event.preventDefault()
-                  focusVisibleSquadAgentPanel()
-                  return
-                }
-                pendingAssigneeTargetRef.current = assigneeTarget
-                queueMicrotask(() => {
-                  pendingAssigneeTargetRef.current = null
-                })
-              }}
-              title={`Open ${assigneeTypeName} agent thread`}
-            >
-              <AgentActivityDot status={assignee.status} />
-              {assigneeTypeName}
-            </Badge>
-          )}
-          {queuePositionText && (
-            <Badge color="neutral" title="Position in the squad's admission queue">
-              {queuePositionText}
-            </Badge>
-          )}
-          {state !== 'done' && (
-            <WorkStreamStatusBadges
-              workStream={workStream}
-              deliveryLabel={deliveryLabelMode}
-              showQueuedReview={false}
-            />
-          )}
-          {showSquadBadge && squad && (
-            <Badge
-              color="accent-1"
-              to={`/squads/${slugFor(squad.id)}`}
-              onClick={(e) => e.stopPropagation()}
-              title={`Open ${squad.name} squad`}
-            >
-              {squad.name}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      <div className="flex md:hidden flex-col gap-1">
-        <div className="flex items-start gap-2">
-          <span
-            className={clsx('text-sm shrink-0 pt-0.5', isInProgress && 'animate-pulse', statusColorClass)}
-            role="img"
-            aria-label={statusBadgeText}
-            title={statusBadgeText}
-          >
-            {WS_STATUS_ICONS[state] ?? '○'}
-          </span>
-          <button
-            type="button"
-            className="line-clamp-2 wrap-break-word text-sm font-medium text-primary flex-1 min-w-0 text-left rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-            {...peekFocusProps}
-          >
-            {workStreamTitle(workStream)}
-          </button>
-          {pullRequests.map((pullRequest) =>
-            pullRequest.url ? (
-              <a
-                key={pullRequest.key}
-                href={pullRequest.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="shrink-0"
-                title={`Open PR #${pullRequest.number}`}
-              >
-                <Badge color="accent-2" className="gap-1">
-                  <PullRequestIcon className="w-3.5 h-3.5" />#{pullRequest.number}
-                </Badge>
-              </a>
-            ) : null
-          )}
-        </div>
-        <div
-          data-testid="work-stream-mobile-metadata"
-          className="flex flex-wrap items-center gap-2 text-xs text-muted pl-6 min-w-0"
-        >
-          <span className={clsx('inline-block w-1.5 h-1.5 rounded-full shrink-0', statusDotClass)} />
-          {assigneeTypeName && <span className="truncate">{assigneeTypeName}</span>}
-          <span aria-hidden="true">·</span>
-          <WorkStreamStatusBadges workStream={workStream} />
-          {queuePositionText && (
+          <PullRequestIcon className="h-3.5 w-3.5" /> #{pullRequest.number}
+          {tag && (
             <>
               <span aria-hidden="true">·</span>
-              <span className="shrink-0">{queuePositionText}</span>
-            </>
-          )}
-          {elapsed > 1000 && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="tabular-nums shrink-0" title="Total agent execution runtime">
-                {formatDuration(elapsed)}
+              <span className={tag.textClass} data-testid="pull-request-delivery-label">
+                {tag.label}
               </span>
             </>
           )}
+        </a>
+      ),
+    })
+  }
+
+  // The one work stream row every list draws: status marker, "#number · title", the status badge
+  // at the right, and one line of context beneath (squad, agent type, queue, runtime, pull requests).
+  return (
+    <li
+      ref={rowRef}
+      className={clsx(
+        'relative rounded-lg pr-3 py-2.5 hover:bg-surface-hover',
+        feedLayout ? FEED_ROW_INSET_CLASS : 'pl-3'
+      )}
+      data-testid="work-stream-row"
+      {...peekProps}
+    >
+      {/* The row's keyboard stop: Enter opens the stream; focus opens the peek. */}
+      <button
+        type="button"
+        className="flex w-full items-start gap-2 text-left rounded-lg after:absolute after:inset-0 after:rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+        onClick={open}
+        {...peekFocusProps}
+      >
+        <WorkStreamStatusMarker workStream={workStream} className="mt-1.5" />
+        <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 wrap-break-word">
+          {workStreamTitle(workStream)}
+        </span>
+        <WorkStreamStatusBadges
+          workStream={workStream}
+          deliveryLabel={deliveryLabelMode}
+          showQueuedReview={false}
+          className="max-w-[50%] sm:max-w-none"
+        />
+      </button>
+      {summaryLine && <div className="ml-4 mt-0.5 min-w-0">{summaryLine}</div>}
+      {context.length > 0 && (
+        <div
+          data-testid="work-stream-row-context"
+          className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted"
+        >
+          {/* Each separator stays with the item before it, so a wrapped line never starts with "·". */}
+          {context.map((item, index) => (
+            <span key={item.key} className="inline-flex min-w-0 items-center gap-x-2">
+              {item.node}
+              {index < context.length - 1 && <span aria-hidden="true">·</span>}
+            </span>
+          ))}
         </div>
-      </div>
-      {summaryLine && <div className="mt-1 min-w-0 pl-6">{summaryLine}</div>}
+      )}
       {peekCard}
     </li>
   )
@@ -1247,24 +1115,16 @@ function WorkStreamRowsSkeleton({ count, label, feedLayout }: { count: number; l
       <div className="space-y-1">
         <SkeletonRows count={Math.max(1, count)}>
           {(index) => (
-            <div key={index} className={clsx('pr-3 py-3.5', feedLayout ? FEED_ROW_INSET_CLASS : 'pl-3')}>
-              <div className="hidden h-5 items-center gap-2 md:flex">
-                <SkeletonBlock className="h-3 w-3 shrink-0 rounded-full" />
+            <div key={index} className={clsx('pr-3 py-2.5', feedLayout ? FEED_ROW_INSET_CLASS : 'pl-3')}>
+              {/* The row's shape: marker, title and status badge, then one line of context. */}
+              <div className="flex h-5 items-center gap-2">
+                <SkeletonBlock className="h-2 w-2 shrink-0 rounded-full" />
                 <SkeletonLine className={index % 3 === 0 ? 'w-2/3' : 'w-1/2'} />
-                <SkeletonLine className="ml-auto w-10" />
-                <SkeletonBlock className="h-5 w-14 rounded-full" />
-                <SkeletonBlock className="h-5 w-20 rounded-full" />
-                <SkeletonBlock className="h-5 w-16 rounded-full" />
+                <SkeletonBlock className="ml-auto h-5 w-20 shrink-0 rounded-full" />
               </div>
-              <div className="space-y-2 py-1 md:hidden">
-                <div className="flex items-center gap-2">
-                  <SkeletonBlock className="h-3 w-3 shrink-0 rounded-full" />
-                  <SkeletonLine className={index % 3 === 0 ? 'w-2/3' : 'w-1/2'} />
-                </div>
-                <div className="ml-5 flex gap-2">
-                  <SkeletonLine className="w-20" />
-                  <SkeletonLine className="w-14" />
-                </div>
+              <div className="ml-4 mt-1 flex gap-2">
+                <SkeletonLine className="w-20" />
+                <SkeletonLine className="w-14" />
               </div>
             </div>
           )}

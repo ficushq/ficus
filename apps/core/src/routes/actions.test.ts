@@ -257,6 +257,50 @@ describe('GET /api/actions/pending policy matrix', () => {
     }
   })
 
+  test('carries the work stream assignee type, and never an agent purpose, so clients name agents type first', async () => {
+    const purposeful = await Agent.create({
+      agentTypeId: `${prefix}-type`,
+      squadId: squad.id,
+      ownerUserId: responder.id,
+      metadata: { purpose: 'SYNTHETIC_PRIVATE_PURPOSE' },
+    })
+    const held = await storedLegacyWorkStream({
+      squadId: squad.id,
+      title: `${prefix} assignee type`,
+      assigneeAgentId: purposeful.id,
+    })
+    const [question] = await db
+      .insert(agentQuestions)
+      .values({
+        agentId: purposeful.id,
+        squadId: squad.id,
+        ownerUserId: responder.id,
+        questionData: { questions: [{ id: 'purpose', type: 'text' as const, question: 'Purpose?' }] },
+      })
+      .returning()
+    try {
+      await held.block({ message: 'Need input' })
+      const response = await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
+      expect(response.status).toBe(200)
+      const body = await response.text()
+      // Seeing an action does not grant reading the agent, so its purpose never rides along.
+      expect(body).not.toContain('SYNTHETIC_PRIVATE_PURPOSE')
+      const actions = JSON.parse(body) as Array<{
+        id: string
+        data: { agentTypeId?: string; assigneeAgentTypeId?: string; workStreamId?: string }
+      }>
+      expect(actions.find((action) => action.id === `agent-question:${question!.id}`)?.data.agentTypeId).toBe(
+        `${prefix}-type`
+      )
+      const blocked = actions.find((action) => action.data.workStreamId === held.id)
+      expect(blocked?.data.assigneeAgentTypeId).toBe(`${prefix}-type`)
+    } finally {
+      await db.delete(agentQuestions).where(eq(agentQuestions.id, question!.id))
+      await db.delete(workStreams).where(eq(workStreams.id, held.id))
+      await db.delete(agents).where(eq(agents.id, purposeful.id))
+    }
+  })
+
   test('serializes concurrent waits with full stable identities and checkpoint truth', async () => {
     const manual = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} exact manual waits` })
     const checkpoint = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} exact checkpoint` })

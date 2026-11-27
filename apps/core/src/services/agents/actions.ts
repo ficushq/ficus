@@ -403,10 +403,12 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       assigneeAgentId = run?.attemptAgents[String(wait.flowAttemptId)] ?? wait.createdByAgentId ?? null
     }
     let assigneeName: string | null = null
+    let assigneeAgentTypeId: string | undefined
     if (assigneeAgentId) {
       const [assignee] = await db.select().from(agents).where(eq(agents.id, assigneeAgentId))
       if (assignee) {
         assigneeName = (assignee.metadata as Record<string, unknown>)?.name as string | null
+        assigneeAgentTypeId = assignee.agentTypeId
       }
     }
 
@@ -423,6 +425,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
       assigneeAgentId,
       assigneeName,
+      ...(assigneeAgentTypeId ? { assigneeAgentTypeId } : {}),
       completionMode: new WorkStream(ws).completionMode,
       prompt,
     }

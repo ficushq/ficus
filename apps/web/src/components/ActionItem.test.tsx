@@ -410,7 +410,7 @@ describe('ActionItem refused answer delivery', () => {
         )
       )
       const text = document.body.textContent ?? ''
-      expect(text).toContain('Answer not delivered')
+      expect(text).toContain('answer not delivered')
       expect(text).toContain(cause)
       expect(text).not.toContain('confirmation')
       expect(text).not.toContain('may already have received it')
@@ -441,7 +441,7 @@ describe('ActionItem refused answer delivery', () => {
         )
       )
       const text = document.body.textContent ?? ''
-      expect(text).toContain('Answer not delivered')
+      expect(text).toContain('answer not delivered')
       expect(text).toContain('was no longer running when it arrived')
       expect(text).toContain('Retry delivery to pass it to whoever now holds that work')
       expect(text).not.toContain('send it to the agent as a message')
@@ -529,7 +529,7 @@ describe('ActionItem exact mutation behavior', () => {
       )
       const headers = dom.window.document.querySelectorAll('div.cursor-pointer')
       await dom.act(async () => headers[1]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
-      expect(dom.window.document.body.textContent).toContain('needs input')
+      expect(dom.window.document.body.textContent).toContain('blocked on your input')
       expect(dom.window.document.body.textContent).toContain('Use option B')
       const input = dom.window.document.querySelector('textarea[placeholder="Your response..."]') as HTMLTextAreaElement
       await dom.act(async () => {
@@ -1027,7 +1027,7 @@ describe('ActionItem code-host delivery gate', () => {
       const card = [...document.querySelectorAll('[tabindex="-1"]')].find((candidate) =>
         candidate.textContent?.includes('Use accurate Waiting label')
       )!
-      expect(card.textContent).toContain('Ficus · Review pull request')
+      expect(card.textContent).toContain('Ficus · review pull request')
       // The title keeps its two-line clamp beside the inline button (a display utility would undo line-clamp).
       const title = card.querySelector('h3, button') as HTMLButtonElement
       expect(title.textContent).toBe('Use accurate Waiting label')
@@ -1067,7 +1067,7 @@ describe('ActionItem code-host delivery gate', () => {
       expect(link.getAttribute('aria-label')).toBe('Open #42, pull request ficushq/ficus-mobile#42')
       expect(link.getAttribute('title')).toBe('Open ficushq/ficus-mobile#42')
       expect(document.body.textContent).not.toContain('Merge #42')
-      expect(document.body.textContent).toContain('Ficus · Merge pull request')
+      expect(document.body.textContent).toContain('Ficus · merge pull request')
     } finally {
       await dom.cleanup()
     }

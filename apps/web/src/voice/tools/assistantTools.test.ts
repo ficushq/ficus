@@ -185,7 +185,7 @@ test('navigate takes exactly one of path, agentId, or drawer', async () => {
   expect(await nav.execute({ path: '/squads/ficus' }, envWith)).toEqual({ ok: true, navigatedTo: '/squads/ficus' })
   expect(navigate.mock.calls).toEqual([['/squads/ficus']])
   const offered = (await nav.execute({ agentId: 'manager' }, envWith)) as any
-  expect(offered.conversation).toMatchObject({ agentId: 'manager', squadId: 'squad', label: 'Morgan' })
+  expect(offered.conversation).toMatchObject({ agentId: 'manager', squadId: 'squad', label: 'Manager' })
   expect(openConversation).not.toHaveBeenCalled()
   await nav.execute({ agentId: 'manager', open: true }, envWith)
   expect(openConversation.mock.calls).toEqual([[offered.conversation]])

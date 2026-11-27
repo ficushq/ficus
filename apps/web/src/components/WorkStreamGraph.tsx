@@ -2,7 +2,7 @@ import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { useMemo, useRef } from 'react'
 import clsx from 'clsx'
 import type { Agent, WorkStream } from '@ficus/shared'
-import { getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentLabel } from '../lib/agentDisplay'
 import { Badge } from './Badge'
 import { workStreamStatusLabel, WS_STATUS_BADGE_COLORS, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
 import { WS_PRIORITY_BADGE_COLORS } from './WorkStreamDetailModal'
@@ -153,7 +153,7 @@ function WorkStreamGraphNode({
   const effectivePriority = stream.effectivePriority ?? storedPriority
   const boosted = effectivePriority !== storedPriority
   const assignee = stream.assigneeAgentId ? agentMap.get(stream.assigneeAgentId) : undefined
-  const assigneeLabel = assignee ? getAgentPrimaryLabel(assignee) : null
+  const assigneeLabel = assignee ? getAgentLabel(assignee) : null
   const assigneeInitial = assigneeLabel?.charAt(0).toUpperCase() ?? '—'
   const select = () => {
     peek.hover.hide()

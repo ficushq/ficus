@@ -370,6 +370,43 @@ describe('inbox delivery service', () => {
     sendSpy.mockRestore()
   })
 
+  it('names an agent sender type first for people, keeps its purpose private, and keeps the From line for the agent', async () => {
+    const sender = await Agent.create({
+      agentTypeId: testAgentTypeId,
+      metadata: { name: 'Riley', purpose: 'Fix inline PR rows' },
+    })
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: agent.id,
+      senderType: 'agent',
+      senderId: sender.id,
+      subject: null,
+      content: 'Rows are fixed',
+      metadata: { sender: { name: 'Riley', agentTypeId: testAgentTypeId } },
+      deliveryMode: 'follow-up',
+    })
+    const sendSpy = spyOn(Agent.prototype, 'sendMessage').mockImplementation(async () => ({
+      success: true,
+      status: 'queued',
+    }))
+
+    await deliverInboxMessagesToAgent(agent.id)
+
+    const [prompt, opts] = sendSpy.mock.calls[0]!
+    const [summary] = (opts as { metadata: { inboxMessageSummaries: Array<{ senderDisplay?: string }> } }).metadata
+      .inboxMessageSummaries
+    const typeLabel = `${testAgentTypeId
+      .split(/[-_]/)
+      .map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word))
+      .join(' ')}`
+    expect(summary!.senderDisplay).toBe(`${typeLabel} · Riley [${sender.id.slice(0, 8)}]`)
+    // Inbox payloads carry identity only: the sender's purpose needs its own read authorization.
+    expect(summary!.senderDisplay).not.toContain('Fix inline PR rows')
+    // The agent's own prompt keeps addressing the sender by name.
+    expect(prompt).toContain(`**From:** Riley (`)
+    sendSpy.mockRestore()
+  })
+
   it('running agent + steer messages calls Agent.sendMessage with deliveryMode steer', async () => {
     await db.insert(executions).values({ agentId: agent.id, status: 'running' })
     const message = await createInboxMessage({ recipientId: agent.id, content: 'Interrupt now', deliveryMode: 'steer' })
