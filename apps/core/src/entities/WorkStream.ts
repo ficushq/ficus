@@ -2777,6 +2777,8 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  *   squad member, the owner) are not counted: their executions serve other work.
  * - A stream from before flows has no bindings, and its listed agents are the
  *   only record of who worked on it, so it keeps counting their executions.
+ *   `WorkStream.attributedAgentIds` applies the same rule for `getMetrics`;
+ *   change both together.
  *
  * How long each counts: from the moment it started running (`run_started_at`,
  * set when a runner claims it) to its end (now, while it runs), so time spent
