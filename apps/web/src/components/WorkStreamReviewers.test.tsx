@@ -102,5 +102,6 @@ test('the stream warns to reassign while no assigned reviewer is active, and mar
     </QueryClientProvider>
   )
   expect(list.match(/no longer active/g)).toHaveLength(2)
-  expect(list).toContain('No assigned reviewer is still active')
+  // The warning is the stream's notice, not repeated in the list.
+  expect(list).not.toContain('No assigned reviewer')
 })

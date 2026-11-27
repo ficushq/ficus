@@ -522,7 +522,7 @@ Other reviewers still cannot decide, and while even one assigned reviewer is act
 
 The rule is the shared `mayDecideWorkflowGate` / `workflowGateDecisionBasis` in `@ficus/shared`, which Core enforces on every decision (the advance command, review consultations and Action Center items) and every client uses. Core sends the inactive reviewers on list and detail work stream responses as `inactiveAssignedReviewerIds` (omitted while all are active); clients that do not read it, or servers that do not send it, behave as before. While the fallback applies:
 
-- the review screen tells the owner or admin why they may decide ("No active assigned reviewer; you can decide as the owner") and asks them to assign an active reviewer, and tells anyone else that only the owner or an admin can decide;
+- the review screen (on the web and in Farm) tells the owner or admin why they may decide ("No active assigned reviewer; you can decide as the owner") and asks them to assign an active reviewer, and tells anyone else that only the owner or an admin can decide;
 - the gate shows as "Waiting on you" and in the Action Center for the owner and admins, and Progress names the approver as "Owner or admin";
 - the work stream shows a notice asking for an active reviewer to be assigned, and the reviewer list marks inactive reviewers "no longer active". The notice clears once an active reviewer is assigned.
 

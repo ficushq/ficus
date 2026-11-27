@@ -42,8 +42,8 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
     },
   })
   const ids = stream.assignedReviewerIds ?? []
+  // The stream's NoActiveReviewerNotice carries the warning; the list only marks who is inactive.
   const inactive = stream.inactiveAssignedReviewerIds ?? []
-  const noneActive = workflowGateHasNoActiveAssignedReviewer(ids, inactive)
   return (
     <div className="space-y-2 text-sm" aria-label="Assigned reviewers">
       <div className="font-medium">Assigned reviewers</div>
@@ -69,12 +69,6 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
           )}
         </div>
       ))}
-      {noneActive && (
-        <p role="alert" className="text-xs text-status-warning-700 dark:text-status-warning-400">
-          No assigned reviewer is still active, so the owner and admins decide approvals meant for assigned reviewers.
-          Assign an active reviewer.
-        </p>
-      )}
       {!ids.length && (
         <p className="text-xs text-muted">No reviewers assigned — anyone with review permission can decide.</p>
       )}
