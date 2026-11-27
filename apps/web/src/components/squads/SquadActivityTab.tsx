@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import {
   ACTIVITY_PRESENCE_ROW_KINDS,
   compareSquadActivityItems,
-  workStreamNeedsHumanAttention,
+  workStreamWaitsOnViewer,
   type Agent,
   type NormalizedSquadActivityFilters,
   type SquadActivityItem,
@@ -94,7 +94,11 @@ export function SquadActivityTab({
     () => new Set(agents.filter((candidate) => candidate.status === 'active').map((candidate) => candidate.id)),
     [agents]
   )
-  const needsYouCount = useMemo(() => presenceStreams.filter(workStreamNeedsHumanAttention).length, [presenceStreams])
+  // "N waiting on you" counts only streams this viewer can act on (the rule Core's presence uses).
+  const needsYouCount = useMemo(() => {
+    const viewer = accessResolved ? { can, identity } : undefined
+    return presenceStreams.filter((ws) => workStreamWaitsOnViewer(ws, viewer)).length
+  }, [presenceStreams, accessResolved, can, identity])
   // Active work cards come from the server (step, waits, PR/CI, working participants, last event).
   const { data: squadPresence } = useQuery(
     queries.activity.squadPresence(squadId, activityEnabled && canReadWorkStreams)

@@ -188,6 +188,12 @@ export interface ActivityWorkStreamCardWait {
   type: import('./types').WorkStreamWaitType
   /** A person must act (rather than an agent, the owner or the manager). */
   needsYou: boolean
+  /**
+   * The viewer is that person: they may act on this wait (`viewerCanActOnWait`, with workflow
+   * gates following `mayDecideWorkflowGate`). Core sets it per request for the viewer. Absent from
+   * older servers, where a wait a person must act on reads as the viewer's.
+   */
+  you?: boolean
 }
 
 /** The stream's primary pull request, when its code-host binding names one. */
@@ -213,7 +219,7 @@ export interface ActivityWorkStreamCard {
   step: string | null
   /** Open waits, display precedence first. */
   waits: ActivityWorkStreamCardWait[]
-  /** The stream needs the viewer (the same rule as `needsYouCount`). */
+  /** The stream waits on the viewer (`workStreamWaitsOnViewer`, the same rule as `needsYouCount`). */
   needsYou: boolean
   pullRequest: ActivityWorkStreamCardPullRequest | null
   /** Aggregate CI state of the delivery pull request when delivery tracking knows it. */
@@ -305,6 +311,11 @@ export const ACTIVITY_WORK_STREAM_CARD_STATE_LABELS: Record<ActivityWorkStreamCa
 export interface GlobalActivityPresence {
   workingAgentIds: string[]
   workingCount: number
+  /**
+   * Streams that wait on this viewer (`workStreamWaitsOnViewer`): a stream needing a person counts
+   * only for a viewer who may act on one of its waits. Streams whose decisions the viewer muted
+   * are left out.
+   */
   needsYouCount: number
   streamCount: number
   /**

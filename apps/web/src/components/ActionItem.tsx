@@ -32,6 +32,7 @@ import type {
   AssistantTaskActionData,
   WorkStreamActionData,
   WorkStreamDeliveryActionData,
+  WorkStreamWait,
 } from '@ficus/shared'
 import {
   pendingActionAgentLabel,
@@ -47,6 +48,8 @@ import {
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
+import { usePermissions } from '../hooks/usePermissions'
+import { workflowGateReadOnlyReason } from '../lib/workflowReview'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -259,6 +262,10 @@ export function ActionItem({
               </Link>
             )}
             <ActionSubtitle action={action} />
+            {/* A gate card has no body, so a viewer who may not decide it learns why here. */}
+            {!expandable && !action.canRespond && blockedWait?.workflowHumanGate && (
+              <ReadOnlyGateNotice squadId={wsData!.squadId} wait={blockedWait} />
+            )}
             {continueMutation.isError && (
               <p role="alert" className="mt-1 text-xs text-status-danger-600">
                 {actionErrorMessage(continueMutation.error)}
@@ -308,7 +315,7 @@ export function ActionItem({
                 (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
               <ActionContent action={action} onComplete={completeAction} />
             ) : (
-              <p className="text-xs text-muted">You can view this action but do not have permission to respond.</p>
+              <ReadOnlyActionNotice action={action} />
             )}
           </div>
         )}
@@ -336,6 +343,25 @@ export function ActionItem({
       )}
     </>
   )
+}
+
+const READ_ONLY_ACTION = 'You can view this action but do not have permission to respond.'
+
+/** What a viewer who may not respond sees; for a workflow gate, why it is not theirs to decide. */
+function ReadOnlyActionNotice({ action }: { action: PendingAction }) {
+  const wait =
+    (action.type === 'workstream-blocked' || action.type === 'workstream-review') &&
+    (action.data as WorkStreamActionData).wait
+  if (!wait || !wait.workflowHumanGate) return <p className="text-xs text-muted">{READ_ONLY_ACTION}</p>
+  return <ReadOnlyGateNotice squadId={(action.data as WorkStreamActionData).squadId} wait={wait} />
+}
+
+function ReadOnlyGateNotice({ squadId, wait }: { squadId: string; wait: WorkStreamWait }) {
+  const { can, isLoading, isError } = usePermissions(squadId)
+  // Core decides who may respond; the card only words why, once the viewer's permissions are known.
+  const reason =
+    isLoading || isError ? undefined : workflowGateReadOnlyReason(wait.workflowGateApprover, can('workstreams:review'))
+  return <p className="mt-1 text-xs text-muted">{reason ?? READ_ONLY_ACTION}</p>
 }
 
 function ActionSubtitle({ action }: { action: PendingAction }) {

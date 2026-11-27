@@ -2088,6 +2088,17 @@ test('action center human gates use review permission and assigned reviewer filt
   await assignRole({ userId: reviewer.id, roleId: reviewRole.id, scope: 'squad', squadId })
   await assignRole({ userId: responder.id, roleId: responseRole.id, scope: 'squad', squadId })
   const action = (await listPendingActions()).find((a) => 'workStreamId' in a.data && a.data.workStreamId === id)!
+  // The card names who decides the gate, so it can say why a viewer may not.
+  expect((action.data as import('@ficus/shared').WorkStreamActionData).wait.workflowGateApprover).toBe(
+    'assigned-reviewers'
+  )
+  const openDefinition = structuredClone(definition)
+  openDefinition.steps[0] = { ...definition.steps[0]!, approver: 'reviewers' } as (typeof definition.steps)[number]
+  const openId = await create('active', openDefinition)
+  const openAction = (await listPendingActions()).find(
+    (a) => 'workStreamId' in a.data && a.data.workStreamId === openId
+  )!
+  expect((openAction.data as import('@ficus/shared').WorkStreamActionData).wait.workflowGateApprover).toBe('reviewers')
   const context = { attention: EMPTY_USER_ATTENTION }
   expect(await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).toEqual({
     visible: true,
@@ -2139,7 +2150,12 @@ test('action center human gates use review permission and assigned reviewer filt
     scope: 'stream',
     message: 'Provide the staging credential.',
   })
-  expect((await findAction()).map((a) => (a.data as { waitId: string }).waitId)).toEqual([question.wait.id])
+  const questionActions = await findAction()
+  expect(questionActions.map((a) => (a.data as { waitId: string }).waitId)).toEqual([question.wait.id])
+  // Only a workflow gate names an approver.
+  expect((questionActions[0]!.data as import('@ficus/shared').WorkStreamActionData).wait).not.toHaveProperty(
+    'workflowGateApprover'
+  )
   await closeOpenWaits(db, { workStreamId: id, waitId: question.wait.id }, 'cleared')
   await closeOpenWaits(db, { workStreamId: id, waitId: hold.wait.id }, 'cleared')
   expect((await findAction()).map((a) => (a.data as { waitId: string }).waitId)).toEqual([
