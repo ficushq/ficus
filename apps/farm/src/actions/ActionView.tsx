@@ -1,4 +1,9 @@
-import type { AssistantTaskActionData, PendingAction, WorkStreamActionData } from '@ficus/shared'
+import type {
+  AssistantTaskActionData,
+  PendingAction,
+  WorkStreamActionData,
+  WorkStreamDeliveryActionData,
+} from '@ficus/shared'
 import type { ReactNode } from 'react'
 import { webAppUrl } from '../api/base'
 import { HaltedAgentAction } from './HaltedAgentAction'
@@ -33,12 +38,19 @@ export function webAssistantUrl(conversationId: string, taskId?: string): string
   return webAppUrl(`/?${params}`)
 }
 
+/** Web-app URL that opens a work stream in its squad's Work tab (mirrors the web's inboxWorkStreamLink). */
+export function webWorkStreamUrl(squadId: string, workStreamRef: string | number): string {
+  return webAppUrl(`/squads/${encodeURIComponent(squadId)}/work?ws=${encodeURIComponent(String(workStreamRef))}`)
+}
+
 /** The right form for one pending action, for every action type. */
 export function ActionView({ action, onFocusStream, onOpenAssistant, onOpenAgent, onResolved }: ActionViewProps) {
-  if (!action.canRespond) {
+  const typed = typedAction(action)
+  // A pull request gate never takes a response here (the code host settles it), and a type newer
+  // than this build links to the web app, so neither is a matter of permission.
+  if (!action.canRespond && typed.type !== 'workstream-delivery' && typed.type !== 'unknown') {
     return <p className="g-action-note">You can see this, but you don't have permission to respond to it.</p>
   }
-  const typed = typedAction(action)
   switch (typed.type) {
     case 'squad-question':
       return (
@@ -98,6 +110,8 @@ export function ActionView({ action, onFocusStream, onOpenAssistant, onOpenAgent
       )
     case 'assistant-needs-input':
       return <AssistantTask data={typed.data} onOpenAssistant={onOpenAssistant} />
+    case 'workstream-delivery':
+      return <PullRequestGate data={typed.data} onFocusStream={onFocusStream} />
     case 'unknown':
       return (
         <div className="g-action">
@@ -106,11 +120,79 @@ export function ActionView({ action, onFocusStream, onOpenAssistant, onOpenAgent
           </p>
           <a className="g-button g-button-quiet g-verb" href={webActionUrl(action.id)}>
             <span className="g-verb-label">Open in Ficus</span>
-            <span className="g-verb-help">Handle it in the web app</span>
+            <span className="g-verb-help">
+              {action.canRespond ? 'Handle it in the web app' : 'See it in the web app'}
+            </span>
           </a>
         </div>
       )
   }
+}
+
+type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]
+
+/**
+ * A work stream waiting on a person to review or merge its pull request on the code host. Ficus
+ * can't approve or merge it, so the card says what the stream waits on, links out to the pull
+ * request (one inline, several as a list, like the web's ActionItem) and opens the work stream.
+ */
+function PullRequestGate({
+  data,
+  onFocusStream,
+}: {
+  data: WorkStreamDeliveryActionData
+  onFocusStream?: (workStreamId: string) => void
+}) {
+  const merge = data.deliveryKind === 'merge'
+  const linked = data.pullRequests.filter((pullRequest) => pullRequest.url)
+  const several = data.pullRequests.length > 1
+  const what = several ? 'its pull requests' : 'its pull request'
+  return (
+    <div className="g-action">
+      <p className="g-action-note">
+        {merge ? `Waiting on someone to merge ${what}` : `Waiting on someone to review ${what}`} on the code host. The
+        work stream moves on by itself once that happens.
+      </p>
+      {linked.length === 1 && <PullRequestLink pullRequest={linked[0]!} merge={merge} />}
+      {linked.length > 1 && (
+        <ul className="g-pr-list" aria-label="Pull requests">
+          {linked.map((pullRequest) => (
+            <li key={`${pullRequest.repository}#${pullRequest.number}`}>
+              <PullRequestLink pullRequest={pullRequest} merge={merge} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {linked.length === 0 && <p className="g-action-note">Open the work stream in Ficus to find its pull request.</p>}
+      {onFocusStream ? (
+        <VerbButton
+          verb="Go to plot"
+          help="Show this work stream on the farm"
+          tone="quiet"
+          onClick={() => onFocusStream(data.workStreamId)}
+        />
+      ) : (
+        <a
+          className="g-button g-button-quiet g-verb"
+          href={webWorkStreamUrl(data.squadId, data.workStreamNumber ?? data.workStreamId)}
+        >
+          <span className="g-verb-label">Open work stream</span>
+          <span className="g-verb-help">See it in Ficus</span>
+        </a>
+      )}
+    </div>
+  )
+}
+
+/** A link out to one pull request. "Merge" would read as if clicking merges it, so a merge gate says Open. */
+function PullRequestLink({ pullRequest, merge }: { pullRequest: DeliveryPullRequest; merge: boolean }) {
+  const reference = `${pullRequest.repository}#${pullRequest.number}`
+  return (
+    <a className="g-button g-button-primary g-verb" href={pullRequest.url} target="_blank" rel="noreferrer">
+      <span className="g-verb-label">{`${merge ? 'Open' : 'Review'} #${pullRequest.number}`}</span>
+      <span className="g-verb-help">{`${reference} on the code host`}</span>
+    </a>
+  )
 }
 
 function StreamAction({

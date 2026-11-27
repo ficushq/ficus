@@ -36,6 +36,16 @@
   font: 500 13px/1.45 var(--g-font-body);
 }
 
+/* A delivery gate's pull requests when there are several, one link each. */
+.g-pr-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .g-action-sub {
   padding-top: 12px;
   border-top: var(--g-border-thin) var(--g-rule-style) var(--g-divider);
