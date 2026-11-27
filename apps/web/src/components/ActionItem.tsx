@@ -6,6 +6,7 @@ import { agentChatPath } from '../lib/entityReference'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
+import { removeAnsweredActions } from '../lib/answeredActions'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { QuestionInput } from './QuestionInput'
 import { AgentQuestionCard } from './AgentQuestionCard'
@@ -141,9 +142,7 @@ export function ActionItem({
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
   const completeAction = async () => {
-    queryClient.setQueryData<PendingAction[]>(queryKeys.actions.pending(), (current) =>
-      current?.filter((candidate) => candidate.id !== action.id)
-    )
+    removeAnsweredActions(queryClient, [action.id])
 
     const invalidations = [queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })]
     if (action.type === 'workstream-review' || action.type === 'workstream-blocked') {

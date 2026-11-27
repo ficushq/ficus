@@ -4,6 +4,7 @@ import { isHttpResponseError } from '@ficus/client-core'
 import { resolveQuestionAnswers, type AgentQuestion } from '@ficus/shared'
 import { answerAgentQuestion, dismissAgentQuestion } from '../api/agentQuestions'
 import { queryKeys } from '../queryKeys'
+import { removeAnsweredActions } from '../lib/answeredActions'
 import { QuestionInput } from './QuestionInput'
 import { QuestionAnswerList } from './QuestionAnswerCard'
 import { actionErrorMessage } from '../lib/actionError'
@@ -42,10 +43,7 @@ export function AgentQuestionCard({
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() }),
     ])
   const settleQuestion = async () => {
-    const actionId = `agent-question:${question.id}`
-    queryClient.setQueryData<import('@ficus/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
-      current?.filter((action) => action.id !== actionId)
-    )
+    removeAnsweredActions(queryClient, [`agent-question:${question.id}`])
     await reconcileQuestion()
   }
   const answerMutation = useMutation({

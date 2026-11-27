@@ -5,12 +5,13 @@
 
 @layer utilities {
   @media (prefers-reduced-motion: no-preference) {
-    /* A row that arrived while the list was on screen fades in while the rows around it slide (so
-       it does not sit on top of a row still leaving its place), then keeps a brief accent wash
-       that fades out. The row is positioned (relative) by its list, and the wash follows its
-       rounded corners. */
+    /* A row that arrived while the list was on screen stays clear for the first 120ms, while the
+       rows around it slide past its place (the 300ms move covers most of its distance by then), then
+       fades in, so it never sits on top of a row still leaving. It keeps a brief accent wash that
+       fades out. The row is positioned (relative) by its list, and the wash follows its rounded
+       corners. */
     .ficus-live-arrived {
-      animation: ficus-live-enter 300ms ease-out;
+      animation: ficus-live-enter 240ms ease-out 120ms both;
     }
 
     .ficus-live-arrived::after {

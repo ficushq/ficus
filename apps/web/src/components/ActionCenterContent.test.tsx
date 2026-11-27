@@ -305,6 +305,65 @@ describe('ActionCenterContent live motion', () => {
   })
 })
 
+describe('ActionCenterContent answered cards', () => {
+  test('a card answered in this session that a refetch briefly returns is not highlighted again', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const continueOne = mock(async (actionIds: string[]) => ({
+      resumed: actionIds.length,
+      resumedActionIds: actionIds,
+      staleActionIds: [],
+    }))
+    const answered = haltedAction('agent-error:answered-in-session', true)
+    const other = haltedAction('agent-error:still-halted', false)
+    const arriving = haltedAction('agent-error:arrives-later', true)
+    queryClient.setQueryData(queryKeys.actions.pending(), [answered, other])
+    try {
+      const feed = dom.createRoot()
+      const renderFeed = async (actions: PendingAction[]) => {
+        await dom.act(async () => {
+          feed.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={queryClient}>
+                <ActionCenterContent
+                  actions={actions}
+                  isLoading={false}
+                  continueHaltedActions={continueOne}
+                  liveMotionKey="[]"
+                />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        })
+        await dom.act(() => afterAnimationFrames(dom.window))
+      }
+      const highlighted = () =>
+        [...feed.container.querySelectorAll('.ficus-live-arrived')].map((node) => node.getAttribute('data-live-row'))
+      await renderFeed([answered, other])
+      const continueButton = [
+        ...feed.container.querySelectorAll<HTMLButtonElement>(`[data-live-row="${answered.id}"] button`),
+      ].find((button) => button.textContent === 'Continue')
+      expect(continueButton).toBeDefined()
+      await dom.act(async () => {
+        continueButton!.click()
+        // Let the mutation settle (and the card re-render) inside act.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(continueOne).toHaveBeenCalledWith([answered.id])
+      expect(queryClient.getQueryData(queryKeys.actions.pending())).toEqual([other])
+
+      await renderFeed([other])
+      // A refetch that started before the answer landed returns the card, alongside a real arrival.
+      await renderFeed([answered, other, arriving])
+      expect(feed.container.querySelector(`[data-live-row="${answered.id}"]`)).not.toBeNull()
+      expect(highlighted()).toEqual([arriving.id])
+    } finally {
+      await dom.cleanup()
+      queryClient.clear()
+    }
+  })
+})
+
 describe('ActionCenterContent first live arrival', () => {
   test('cards it mounts with are highlighted only when they arrived live', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
