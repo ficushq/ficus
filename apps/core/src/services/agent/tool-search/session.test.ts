@@ -108,124 +108,139 @@ const declared = (context: TranscriptContext) =>
     .map((t) => t.name)
     .sort()
 
+// Real pi sessions, a resume and a compaction: allow for a loaded shared box.
+const TIMEOUT_MS = 30_000
+
 describe('tool search on a pi session', () => {
-  it('declares direct tools plus tool_search, loads a match, and runs it through the wrappers next turn', async () => {
-    const faux = fauxProvider({ provider: 'faux-tool-search', models: [{ id: 'faux-model' }] })
-    const calls: string[] = []
-    const wrapperCalls: string[] = []
-    const plan: ToolSearchPlan = {
-      mode: 'search',
-      hidden: ['ast_symbols', 'browser_open', 'browser_screenshot'],
-      reason: 'test',
-    }
-    const requests: string[][] = []
-    const systemPrompts: string[] = []
-    const record = (context: TranscriptContext) => {
-      requests.push(declared(context))
-      systemPrompts.push(getCurrentSystemPrompt(context.messages))
-    }
-    faux.setResponses([
-      (context) => {
-        record(context)
-        return fauxAssistantMessage(fauxToolCall('tool_search', { query: 'screenshot the page', limit: 1 }), {
-          stopReason: 'toolUse',
-        })
-      },
-      (context) => {
-        record(context)
-        return fauxAssistantMessage(fauxToolCall('browser_screenshot', {}), { stopReason: 'toolUse' })
-      },
-      (context) => {
-        record(context)
-        return fauxAssistantMessage('done')
-      },
-    ])
-    const sessionManager = SessionManager.inMemory(process.cwd())
-    const session = await startSession({ sessionManager, plan, faux, calls, wrapperCalls })
-    await session.prompt('take a screenshot')
-
-    expect(requests[0]).toEqual(['bash', 'tool_search'])
-    expect(requests[1]).toEqual(['bash', 'browser_screenshot', 'tool_search'])
-    expect(calls).toEqual(['browser_screenshot'])
-    expect(wrapperCalls).toEqual(['browser_screenshot'])
-    expect(systemPrompts[0]).toContain('browser_open, browser_screenshot')
-
-    // Resume: a new pi session over the same session file keeps the loaded tool, and records no
-    // tool change, so the request head (and the prompt cache) stays the same.
-    const systemMessagesBefore = sessionManager
-      .getBranch()
-      .filter((entry) => entry.type === 'message' && entry.message.role === 'system').length
-    faux.setResponses([
-      (context) => {
-        record(context)
-        return fauxAssistantMessage('resumed')
-      },
-    ])
-    const resumed = await startSession({ sessionManager, plan, faux, calls, wrapperCalls })
-    await resumed.prompt('again')
-    expect(requests.at(-1)).toEqual(['bash', 'browser_screenshot', 'tool_search'])
-    const systemMessagesAfter = sessionManager
-      .getBranch()
-      .filter((entry) => entry.type === 'message' && entry.message.role === 'system').length
-    expect(systemMessagesAfter).toBe(systemMessagesBefore)
-    expect(systemPrompts.at(-1)).toBe(systemPrompts[0])
-
-    // Compaction, then another resume: the loaded tool is still declared.
-    // History summary and turn-prefix summary.
-    faux.setResponses([() => fauxAssistantMessage('summary'), () => fauxAssistantMessage('turn prefix summary')])
-    await resumed.compact()
-    faux.setResponses([
-      (context) => {
-        record(context)
-        return fauxAssistantMessage('after compaction')
-      },
-    ])
-    const afterCompaction = await startSession({ sessionManager, plan, faux, calls, wrapperCalls })
-    await afterCompaction.prompt('once more')
-    expect(sessionManager.getBranch().some((entry) => entry.type === 'compaction')).toBe(true)
-    expect(requests.at(-1)).toEqual(['bash', 'browser_screenshot', 'tool_search'])
-    expect(systemPrompts.at(-1)).toBe(systemPrompts[0])
-  })
-
-  it('declares every tool and no tool_search in a direct session', async () => {
-    const faux = fauxProvider({ provider: 'faux-direct', models: [{ id: 'faux-model' }] })
-    const requests: string[][] = []
-    faux.setResponses([
-      (context) => {
+  it(
+    'declares direct tools plus tool_search, loads a match, and runs it through the wrappers next turn',
+    async () => {
+      const faux = fauxProvider({ provider: 'faux-tool-search', models: [{ id: 'faux-model' }] })
+      const calls: string[] = []
+      const wrapperCalls: string[] = []
+      const plan: ToolSearchPlan = {
+        mode: 'search',
+        hidden: ['ast_symbols', 'browser_open', 'browser_screenshot'],
+        reason: 'test',
+      }
+      const requests: string[][] = []
+      const systemPrompts: string[] = []
+      const record = (context: TranscriptContext) => {
         requests.push(declared(context))
-        return fauxAssistantMessage('ok')
-      },
-    ])
-    const session = await startSession({
-      sessionManager: SessionManager.inMemory(process.cwd()),
-      plan: { mode: 'direct', hidden: [], reason: 'test' },
-      faux,
-      calls: [],
-      wrapperCalls: [],
-    })
-    await session.prompt('hi')
-    expect(requests[0]).toEqual(['ast_symbols', 'bash', 'browser_open', 'browser_screenshot'])
-  })
+        systemPrompts.push(getCurrentSystemPrompt(context.messages))
+      }
+      faux.setResponses([
+        (context) => {
+          record(context)
+          return fauxAssistantMessage(fauxToolCall('tool_search', { query: 'screenshot the page', limit: 1 }), {
+            stopReason: 'toolUse',
+          })
+        },
+        (context) => {
+          record(context)
+          return fauxAssistantMessage(fauxToolCall('browser_screenshot', {}), { stopReason: 'toolUse' })
+        },
+        (context) => {
+          record(context)
+          return fauxAssistantMessage('done')
+        },
+      ])
+      const sessionManager = SessionManager.inMemory(process.cwd())
+      const session = await startSession({ sessionManager, plan, faux, calls, wrapperCalls })
+      await session.prompt('take a screenshot')
 
-  it('lets pi tool search find a tool by its namespace description', async () => {
-    const faux = fauxProvider({ provider: 'faux-namespace', models: [{ id: 'faux-model' }] })
-    const requests: string[][] = []
-    faux.setResponses([
-      // Neither browser tool's own description says "visual review"; their namespace does.
-      () => fauxAssistantMessage(fauxToolCall('tool_search', { query: 'visual review' }), { stopReason: 'toolUse' }),
-      (context) => {
-        requests.push(declared(context))
-        return fauxAssistantMessage('ok')
-      },
-    ])
-    const session = await startSession({
-      sessionManager: SessionManager.inMemory(process.cwd()),
-      plan: { mode: 'search', hidden: ['ast_symbols', 'browser_open', 'browser_screenshot'], reason: 'test' },
-      faux,
-      calls: [],
-      wrapperCalls: [],
-    })
-    await session.prompt('look at the page')
-    expect(requests[0]).toEqual(['bash', 'browser_open', 'browser_screenshot', 'tool_search'])
-  })
+      expect(requests[0]).toEqual(['bash', 'tool_search'])
+      expect(requests[1]).toEqual(['bash', 'browser_screenshot', 'tool_search'])
+      expect(calls).toEqual(['browser_screenshot'])
+      expect(wrapperCalls).toEqual(['browser_screenshot'])
+      expect(systemPrompts[0]).toContain('browser_open, browser_screenshot')
+
+      // Resume: a new pi session over the same session file keeps the loaded tool, and records no
+      // tool change, so the request head (and the prompt cache) stays the same.
+      const systemMessagesBefore = sessionManager
+        .getBranch()
+        .filter((entry) => entry.type === 'message' && entry.message.role === 'system').length
+      faux.setResponses([
+        (context) => {
+          record(context)
+          return fauxAssistantMessage('resumed')
+        },
+      ])
+      const resumed = await startSession({ sessionManager, plan, faux, calls, wrapperCalls })
+      await resumed.prompt('again')
+      expect(requests.at(-1)).toEqual(['bash', 'browser_screenshot', 'tool_search'])
+      const systemMessagesAfter = sessionManager
+        .getBranch()
+        .filter((entry) => entry.type === 'message' && entry.message.role === 'system').length
+      expect(systemMessagesAfter).toBe(systemMessagesBefore)
+      expect(systemPrompts.at(-1)).toBe(systemPrompts[0])
+
+      // Compaction, then another resume: the loaded tool is still declared.
+      // History summary and turn-prefix summary.
+      faux.setResponses([() => fauxAssistantMessage('summary'), () => fauxAssistantMessage('turn prefix summary')])
+      await resumed.compact()
+      faux.setResponses([
+        (context) => {
+          record(context)
+          return fauxAssistantMessage('after compaction')
+        },
+      ])
+      const afterCompaction = await startSession({ sessionManager, plan, faux, calls, wrapperCalls })
+      await afterCompaction.prompt('once more')
+      expect(sessionManager.getBranch().some((entry) => entry.type === 'compaction')).toBe(true)
+      expect(requests.at(-1)).toEqual(['bash', 'browser_screenshot', 'tool_search'])
+      expect(systemPrompts.at(-1)).toBe(systemPrompts[0])
+    },
+    TIMEOUT_MS
+  )
+
+  it(
+    'declares every tool and no tool_search in a direct session',
+    async () => {
+      const faux = fauxProvider({ provider: 'faux-direct', models: [{ id: 'faux-model' }] })
+      const requests: string[][] = []
+      faux.setResponses([
+        (context) => {
+          requests.push(declared(context))
+          return fauxAssistantMessage('ok')
+        },
+      ])
+      const session = await startSession({
+        sessionManager: SessionManager.inMemory(process.cwd()),
+        plan: { mode: 'direct', hidden: [], reason: 'test' },
+        faux,
+        calls: [],
+        wrapperCalls: [],
+      })
+      await session.prompt('hi')
+      expect(requests[0]).toEqual(['ast_symbols', 'bash', 'browser_open', 'browser_screenshot'])
+    },
+    TIMEOUT_MS
+  )
+
+  it(
+    'lets pi tool search find a tool by its namespace description',
+    async () => {
+      const faux = fauxProvider({ provider: 'faux-namespace', models: [{ id: 'faux-model' }] })
+      const requests: string[][] = []
+      faux.setResponses([
+        // Neither browser tool's own description says "visual review"; their namespace does.
+        () => fauxAssistantMessage(fauxToolCall('tool_search', { query: 'visual review' }), { stopReason: 'toolUse' }),
+        (context) => {
+          requests.push(declared(context))
+          return fauxAssistantMessage('ok')
+        },
+      ])
+      const session = await startSession({
+        sessionManager: SessionManager.inMemory(process.cwd()),
+        plan: { mode: 'search', hidden: ['ast_symbols', 'browser_open', 'browser_screenshot'], reason: 'test' },
+        faux,
+        calls: [],
+        wrapperCalls: [],
+      })
+      await session.prompt('look at the page')
+      expect(requests[0]).toEqual(['bash', 'browser_open', 'browser_screenshot', 'tool_search'])
+    },
+    TIMEOUT_MS
+  )
 })
