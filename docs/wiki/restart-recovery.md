@@ -251,6 +251,64 @@ Shared provisioning-follower retries are owned by provisioning recovery, not by
 restart attribution. The executor-side fields require the updated executor bundle;
 this change performs no live restart, artifact refresh or deployment.
 
+### Exactly-once creating tools
+
+The tools that create durable records are exactly-once per tool call. Each
+derives a key from the agent, the execution and the provider's tool call ID
+(`toolCallIdempotencyKey` in `packages/shared/src/node/tool-call-key.ts`, also
+used for the Assistant tools' client IDs). The same call executed again (a
+transport redelivery, or a rerun of the same call) finds the record its first
+execution made:
+
+| Tool                      | Where the key lives                                                      | A repeated call                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ask_human`               | `agent_questions.idempotency_key` (unique)                               | Returns the same question and its open waits; opens no second wait. Different questions under the same key are refused.                             |
+| `dispatch`                | Child metadata `dispatchKey` and `dispatchIndex`                         | Returns the same children; creates only positions the first run had not created yet. Children stopped to compensate a failed dispatch do not count. |
+| `notify_contact`          | `inbox.idempotency_key` (`notify-contact:<key>`)                         | Returns the first notification; sends nothing.                                                                                                      |
+| `POST /api/inbox` (local) | `inbox.idempotency_key` (`inbox-send:<digest of sender and client key>`) | Returns the first message with `idempotentReplay: true` (HTTP 200); a different message under the same key is refused with 409.                     |
+
+Commands run by `bash` and `squad_bash` see the calling tool call's key in
+`FICUS_TOOL_CALL_KEY` (k8s, vm, docker and host runtimes; absent when the tool
+has no execution). The `ficus` CLI derives one key per command from it with
+`cliCommandIdempotencyKey`: the digest of the command name, the tool call key and
+the canonical JSON of the command's full payload.
+
+- `ficus inbox send` sends it as `idempotencyKey`. The payload is the recipient,
+  subject, content, URL, reply target, delivery mode, wake flag, task status and
+  the name and SHA-256 of each `--attach` file. A replayed send uploads only the
+  files the first run did not attach. `--idempotency-key` overrides it.
+- `ficus workstream advance` and `ficus workstream raise-limit` use it as the
+  default `requestId`; the payload is the stream reference, the command and the
+  attachment flags. An explicit `--request-id` still wins.
+
+So one bash call that sends several different messages or advances different
+streams still performs each of them, and re-running the same command with the
+same payload inside that bash call is the same request. Two identical sends to
+the same recipient in one bash call are one message; pass distinct
+`--idempotency-key` values if that is really meant. Outside an agent tool call no
+key is derived and each command is new, as before.
+
+**Limit.** A key only protects against the same call running again. After a hard
+Core restart the model sees no result for the cut-off call and may retry with a
+new call, which has a new ID and so a new key. Two narrow content guards cover
+the most harmful of those duplicates within the same execution (a restart
+resumes the same execution):
+
+- `ask_human` returns an open question from the same execution with exactly the
+  same questions instead of asking again. A blocking re-ask reuses it only when
+  it already holds waits or no work stream could be blocked; otherwise the
+  explicit change to blocking creates the question.
+- `dispatch` returns the children of an earlier dispatch from the same execution
+  with exactly the same specs while every one of them is still live. Once any of
+  them has finished, an identical dispatch starts new children.
+
+`notify_contact` and inbox sends have no content guard: sending the same text
+again later can be intended, and a duplicate notification is less harmful than
+a duplicate question or set of subagents. A call answered by a content guard
+records nothing under its own key, so if that call is itself re-executed after
+the earlier question was answered or the earlier children finished, it creates
+a new record.
+
 ### Confirmed tool outcomes
 
 Expected command exits, confirmed host deadlines, missing task paths and edit

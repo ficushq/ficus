@@ -1,5 +1,6 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { LIVE_AGENT_STATUSES, isLiveAgentStatus, type AgentStatus } from '@ficus/shared'
+import { canonicalJson, stableUuidFromParts } from '@ficus/shared/node'
 import { agents, db, recoveryEpisodes, withDedicatedDbTransaction } from '../db'
 import type { DbHandle } from '../services/work-streams/waits'
 import { Agent, AgentTargetUnavailableError } from './Agent'
@@ -33,7 +34,50 @@ export type DispatchSpec = {
   label?: string
 }
 
-export type DispatchResult = { subagents: Array<{ subagentId: string; label: string }> }
+export type DispatchResult = {
+  subagents: Array<{ subagentId: string; label: string }>
+  /**
+   * Set when the call created no new children: `tool-call` when the same dispatch call already
+   * created them, `identical-running-dispatch` when the same execution already dispatched exactly
+   * these specs and all of those children are still live.
+   */
+  reused?: 'tool-call' | 'identical-running-dispatch'
+}
+
+/** Child metadata recording which dispatch call created it, at which position and with what specs. */
+const DISPATCH_KEY = 'dispatchKey'
+const DISPATCH_INDEX = 'dispatchIndex'
+const DISPATCH_FINGERPRINT = 'dispatchFingerprint'
+
+/** The specs exactly as dispatch will act on them, so equal requests compare equal. */
+function dispatchFingerprint(executionId: string, specs: DispatchSpec[]): string {
+  return stableUuidFromParts([
+    'dispatch',
+    executionId,
+    canonicalJson(
+      specs.map((spec) => ({
+        agentType: spec.agentType ?? SUBAGENT_AGENT_TYPE_ID,
+        model: spec.model ?? null,
+        inheritModel: spec.inheritModel === true,
+        systemPrompt: spec.systemPrompt ?? null,
+        instructions: spec.instructions,
+        label: spec.label ?? null,
+      }))
+    ),
+  ])
+}
+
+type DispatchedChild = { id: string; status: AgentStatus; metadata: Record<string, unknown> }
+
+function dispatchIndexOf(child: DispatchedChild): number | null {
+  const index = child.metadata[DISPATCH_INDEX]
+  return typeof index === 'number' && Number.isSafeInteger(index) ? index : null
+}
+
+function childRow(child: DispatchedChild): { subagentId: string; label: string } {
+  const label = child.metadata.label
+  return { subagentId: child.id, label: typeof label === 'string' ? label : child.id }
+}
 
 /** Safe, server-derived snapshot of the parent's effective execution environment. */
 export type SubagentParentExecutionContext = {
@@ -80,8 +124,14 @@ export class Subagent {
     parentAgentId: string
     parentExecutionContext?: SubagentParentExecutionContext
     subagents: DispatchSpec[]
+    /**
+     * Exactly-once key for the dispatching tool call (see `toolCallIdempotencyKey`). Each child
+     * records it with its position, so the same call executed again returns the children it
+     * created and creates only the ones it had not yet created.
+     */
+    idempotencyKey?: string
   }): Promise<DispatchResult> {
-    const { parentAgentId, parentExecutionContext, subagents } = input
+    const { parentAgentId, parentExecutionContext, subagents, idempotencyKey } = input
     const { forbidUntrackedDelegation } = await import('../services/workflows/execution')
     await forbidUntrackedDelegation(parentAgentId)
     if (subagents.length === 0) throw new Error('dispatch requires at least one subagent spec')
@@ -132,21 +182,96 @@ export class Subagent {
                 : {}),
             }
           : undefined
+        // Children are created on their own connections and commit before this transaction does,
+        // and the parent row lock above serializes dispatches, so earlier children are visible here.
+        const executionId = normalizedParentExecutionContext?.executionId
+        const fingerprint = executionId ? dispatchFingerprint(executionId, subagents) : undefined
+        const earlier: DispatchedChild[] =
+          idempotencyKey || fingerprint
+            ? (
+                await tx
+                  .select({ id: agents.id, status: agents.status, metadata: agents.metadata })
+                  .from(agents)
+                  .where(
+                    and(
+                      eq(agents.parentAgentId, parentAgentId),
+                      or(
+                        idempotencyKey ? sql`${agents.metadata}->>${DISPATCH_KEY} = ${idempotencyKey}` : undefined,
+                        fingerprint ? sql`${agents.metadata}->>${DISPATCH_FINGERPRINT} = ${fingerprint}` : undefined
+                      ),
+                      // Children stopped to compensate a failed dispatch never counted as dispatched.
+                      sql`COALESCE(${agents.metadata}->>'dispatchCompensation', 'false') <> 'true'`
+                    )
+                  )
+              ).map((row) => ({
+                id: row.id,
+                status: row.status as AgentStatus,
+                metadata: (row.metadata ?? {}) as Record<string, unknown>,
+              }))
+            : []
+        const existingByIndex = new Map<number, DispatchedChild>()
+        if (idempotencyKey)
+          for (const child of earlier) {
+            const index = dispatchIndexOf(child)
+            if (child.metadata[DISPATCH_KEY] !== idempotencyKey || index === null) continue
+            if (
+              child.metadata[DISPATCH_FINGERPRINT] !== undefined &&
+              child.metadata[DISPATCH_FINGERPRINT] !== fingerprint
+            )
+              throw new Error('This dispatch call already created subagents with different specs')
+            if (!existingByIndex.has(index)) existingByIndex.set(index, child)
+          }
+        if (existingByIndex.size === subagents.length && subagents.every((_, index) => existingByIndex.has(index))) {
+          return {
+            rows: subagents.map((_, index) => childRow(existingByIndex.get(index)!)),
+            reused: 'tool-call' as const,
+          }
+        }
+        if (existingByIndex.size === 0 && fingerprint) {
+          // A new call repeating a dispatch whose children are all still running only duplicates
+          // them (for example after a hard restart cut off the first call's result).
+          const groups = new Map<string, Map<number, DispatchedChild>>()
+          for (const child of earlier) {
+            const key = child.metadata[DISPATCH_KEY]
+            const index = dispatchIndexOf(child)
+            if (child.metadata[DISPATCH_FINGERPRINT] !== fingerprint || typeof key !== 'string' || index === null)
+              continue
+            const group = groups.get(key) ?? new Map<number, DispatchedChild>()
+            group.set(index, child)
+            groups.set(key, group)
+          }
+          for (const group of groups.values()) {
+            if (
+              group.size === subagents.length &&
+              subagents.every((_, index) => group.has(index) && isLiveAgentStatus(group.get(index)!.status))
+            )
+              return {
+                rows: subagents.map((_, index) => childRow(group.get(index)!)),
+                reused: 'identical-running-dispatch' as const,
+              }
+          }
+        }
+        const missing = subagents.map((_, index) => index).filter((index) => !existingByIndex.has(index))
         const [{ count }] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(agents)
           .where(and(eq(agents.parentAgentId, parentAgentId), inArray(agents.status, [...LIVE_AGENT_STATUSES])))
         const free = SUBAGENT_MAX_PER_PARENT - count
-        if (subagents.length > free) {
-          throw new Error(`Subagent cap exceeded: ${free} slots free, requested ${subagents.length}`)
+        if (missing.length > free) {
+          throw new Error(`Subagent cap exceeded: ${free} slots free, requested ${missing.length}`)
         }
         await assertNoChildValidationHold(tx, parentAgentId)
         const parent = new Agent(parentRow)
-        const inheritedParentChain = subagents.some((spec) => spec.inheritModel)
+        const inheritedParentChain = missing.some((index) => subagents[index].inheritModel)
           ? await parent.getEffectiveModelSpec()
           : null
         const rows: Array<{ subagentId: string; label: string }> = []
         for (let i = 0; i < subagents.length; i++) {
+          const existing = existingByIndex.get(i)
+          if (existing) {
+            rows.push(childRow(existing))
+            continue
+          }
           const spec = subagents[i]
           const label = spec.label ?? `subagent-${i + 1}`
           const child = await Agent.create({
@@ -163,16 +288,19 @@ export class Subagent {
               ...(spec.model ? { requestedModel: spec.model } : {}),
               ...(spec.inheritModel ? { inheritModel: true } : {}),
               ...(normalizedParentExecutionContext ? { parentExecutionContext: normalizedParentExecutionContext } : {}),
+              ...(idempotencyKey ? { [DISPATCH_KEY]: idempotencyKey, [DISPATCH_INDEX]: i } : {}),
+              ...(fingerprint ? { [DISPATCH_FINGERPRINT]: fingerprint } : {}),
             },
           })
           createdAgents.push(child)
           await child.queueExecution({ message: spec.instructions })
           rows.push({ subagentId: child.id, label })
         }
-        return rows
+        return { rows, reused: undefined }
       })
+      // Idempotent; also repairs a first call that stopped before reaching it.
       await Subagent.reconcileWatchdog(parentAgentId)
-      return { subagents: created }
+      return created.reused ? { subagents: created.rows, reused: created.reused } : { subagents: created.rows }
     } catch (error) {
       // Persist the stronger final target before stopping work. The lifecycle
       // request is sweepable even if an external teardown effect fails.

@@ -16,6 +16,7 @@ import { MATERIALIZED_SKILLS_DIR, getSandboxSkillsDir } from '../services/agent/
 import { ToolFeedbackError } from './tool-feedback'
 import { join } from 'path'
 import { createHash } from 'crypto'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import * as fs from 'node:fs'
 import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { createReadTool } from '@earendil-works/pi-coding-agent'
@@ -122,6 +123,39 @@ describe('stable invocation identity', () => {
     expect(requests[0].invocationId).not.toBe(requests[2].invocationId)
     expect(requests[0].invocationId).not.toBe(requests[3].invocationId)
     expect(requests[0].invocationId).not.toContain('echo secret')
+  })
+
+  test('exposes the calling tool call key to the command, per call and per execution', async () => {
+    const requests: any[] = []
+    const manager = {
+      getClientForSandbox: mock(() => ({
+        bash: mock((request: any) => {
+          requests.push(request)
+          const stream = createMockStream()
+          queueMicrotask(() => {
+            stream.emitData({ exitCode: 0 })
+            stream.emitEnd()
+          })
+          return stream
+        }),
+      })),
+      podManager: { namespace: 'tau-sandboxes' },
+    } as unknown as K8sSandboxManager
+    const bashFor = (executionId?: string) =>
+      createK8sSandboxedCodingTools('/ignored', 'agent_a1', manager, 'tok', undefined, executionId, 'agent-1').find(
+        (tool) => tool.key === 'bash'
+      )!
+
+    await bashFor('exec-1').execute('tool-1', { command: 'true' } as any)
+    await bashFor('exec-1').execute('tool-1', { command: 'true' } as any)
+    await bashFor('exec-1').execute('tool-2', { command: 'true' } as any)
+    await bashFor(undefined).execute('tool-1', { command: 'true' } as any)
+
+    const keys = requests.map((request) => request.env.FICUS_TOOL_CALL_KEY)
+    expect(keys[0]).toBe(toolCallIdempotencyKey('agent-1', 'exec-1', 'tool-1'))
+    expect(keys[1]).toBe(keys[0])
+    expect(keys[2]).toBe(toolCallIdempotencyKey('agent-1', 'exec-1', 'tool-2'))
+    expect(keys[3]).toBeUndefined()
   })
 })
 

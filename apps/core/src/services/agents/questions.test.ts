@@ -1297,6 +1297,170 @@ describe('async agent questions', () => {
     })
   })
 
+  describe('tool call idempotency', () => {
+    async function startExecution(agent: Agent, originWorkStreamIds: string[] = []) {
+      const [execution] = await db.insert(executions).values({ agentId: agent.id, status: 'running' }).returning()
+      for (const workStreamId of originWorkStreamIds) {
+        await db.insert(messages).values({
+          agentId: agent.id,
+          role: 'human',
+          content: 'Trusted work stream delivery',
+          pending: false,
+          metadata: {
+            source: 'work-stream-continuation',
+            workStreamId,
+            executionId: execution.id,
+            consumedAt: execution.startedAt.toISOString(),
+          },
+        })
+      }
+      return { agentId: agent.id, executionId: execution.id }
+    }
+
+    async function questionRows(agentId: string) {
+      return db.select().from(agentQuestions).where(eq(agentQuestions.agentId, agentId))
+    }
+
+    async function openWaitsFor(questionId: string) {
+      return db
+        .select()
+        .from(workStreamWaits)
+        .where(
+          and(
+            eq(workStreamWaits.referenceId, questionId),
+            eq(workStreamWaits.type, 'question'),
+            isNull(workStreamWaits.closedAt)
+          )
+        )
+    }
+
+    async function createStreamFor(agentId: string, title: string): Promise<WorkStream> {
+      return storedLegacyWorkStream({
+        squadId: squad.id,
+        title: `${prefix} ${title}`,
+        assigneeAgentId: agentId,
+        agentIds: [agentId],
+      })
+    }
+
+    afterEach(async () => {
+      await db.delete(workStreams).where(eq(workStreams.squadId, squad.id))
+    })
+
+    it('returns the same question and its one wait when the same tool call runs twice', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'idempotent-blocking')
+      const origin = await startExecution(agent, [ws.id])
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const first = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-key-1' })
+      const second = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-key-1' })
+      unsubscribe()
+
+      expect(first.reused).toBeUndefined()
+      expect(first.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(second.id).toBe(first.id)
+      expect(second.reused).toBe('tool-call')
+      expect(second.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(await openWaitsFor(first.id)).toHaveLength(1)
+      expect(createdEvents).toHaveLength(1)
+    })
+
+    it('returns an answered question for a replayed call instead of asking again', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-key-answered' })
+      await answerAgentQuestion(first.id, 'Yes', user.id)
+      await waitForQuestionAnswerDeliveryDrains()
+
+      const replay = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-key-answered' })
+      expect(replay).toMatchObject({ id: first.id, status: 'answered', reused: 'tool-call' })
+      expect(await questionRows(agent.id)).toHaveLength(1)
+    })
+
+    it('refuses a key that already recorded different questions', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-key-mismatch' })
+      await expect(
+        createAgentQuestion(
+          origin,
+          { questions: [{ id: 'q1', type: 'text', question: 'Something else?' }] },
+          { idempotencyKey: 'call-key-mismatch' }
+        )
+      ).rejects.toThrow('already recorded different questions')
+      expect(await questionRows(agent.id)).toHaveLength(1)
+    })
+
+    it('creates separate questions for different tool calls with different questions', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-a' })
+      const second = await createAgentQuestion(
+        origin,
+        { questions: [{ id: 'q1', type: 'text', question: 'Merge it?' }] },
+        { idempotencyKey: 'call-b' }
+      )
+      expect(second.id).not.toBe(first.id)
+      expect(second.reused).toBeUndefined()
+      expect(await questionRows(agent.id)).toHaveLength(2)
+    })
+
+    it('reuses an identical open question from the same execution under a new tool call', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'identical-open')
+      const origin = await startExecution(agent, [ws.id])
+      const first = await createAgentQuestion(origin, QUESTION, {
+        blocking: true,
+        idempotencyKey: 'call-before-restart',
+      })
+      // After a hard restart the model sees no result and asks again with a new tool call ID.
+      const again = await createAgentQuestion(
+        origin,
+        { questions: [{ question: 'Ship it?', type: 'text', id: 'q1' }] },
+        { blocking: true, idempotencyKey: 'call-after-restart' }
+      )
+      expect(again).toMatchObject({ id: first.id, reused: 'identical-open-question' })
+      expect(again.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(await openWaitsFor(first.id)).toHaveLength(1)
+    })
+
+    it('asks again when the identical question is closed, from another execution, or now needs to block', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'identical-not-reused')
+      const origin = await startExecution(agent, [ws.id])
+
+      const answered = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-1' })
+      await answerAgentQuestion(answered.id, 'Yes', user.id)
+      await waitForQuestionAnswerDeliveryDrains()
+      const afterAnswer = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-2' })
+      expect(afterAnswer.id).not.toBe(answered.id)
+
+      const nowBlocking = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-3' })
+      expect(nowBlocking.id).not.toBe(afterAnswer.id)
+      expect(nowBlocking.openedWaitWorkStreamIds).toEqual([ws.id])
+
+      const otherExecution = await startExecution(agent)
+      const elsewhere = await createAgentQuestion(otherExecution, QUESTION, { idempotencyKey: 'call-4' })
+      expect([answered.id, afterAnswer.id, nowBlocking.id]).not.toContain(elsewhere.id)
+      expect(await questionRows(agent.id)).toHaveLength(4)
+    })
+
+    it('records one question when the same call runs twice concurrently', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const results = await Promise.all([
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-concurrent' }),
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-concurrent' }),
+      ])
+      expect(results[0].id).toBe(results[1].id)
+      expect(results.filter((result) => result.reused)).toHaveLength(1)
+      expect(await questionRows(agent.id)).toHaveLength(1)
+    })
+  })
+
   describe('question dismissal', () => {
     async function createStreamFor(agentId: string, title: string): Promise<WorkStream> {
       return storedLegacyWorkStream({

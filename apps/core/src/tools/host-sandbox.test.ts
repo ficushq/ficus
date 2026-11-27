@@ -2,6 +2,7 @@ import { ToolFeedbackError } from './tool-feedback'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import * as fs from 'node:fs'
 import { createHash } from 'crypto'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import {
   chmodSync,
   lstatSync,
@@ -208,6 +209,25 @@ describe('host sandboxed coding tools', () => {
     const out = await run(bash, { command: 'echo id=$FICUS_AGENT_ID; echo store=$FICUS_AUTH_STORE' })
     expect(out).toContain('id=agent-7')
     expect(out).toContain(`store=${join(home, 'host', 'cli-auth', 'agent-7.json')}`)
+  })
+
+  test('each command sees its own tool call key, and none outside an execution', async () => {
+    const bash = createHostSandboxedCodingTools('', 'agent_a1', 'tok', undefined, 'exec-1', 'agent-7').find(
+      (t) => t.key === 'bash'
+    )!
+    const keyOf = async (callId: string) => {
+      const result = (await bash.execute(callId, { command: 'echo key=${FICUS_TOOL_CALL_KEY:-unset}' })) as {
+        content: Array<{ text?: string }>
+      }
+      return result.content
+        .map((c) => c.text ?? '')
+        .join('')
+        .trim()
+    }
+    expect(await keyOf('call-1')).toBe(`key=${toolCallIdempotencyKey('agent-7', 'exec-1', 'call-1')}`)
+    expect(await keyOf('call-2')).toBe(`key=${toolCallIdempotencyKey('agent-7', 'exec-1', 'call-2')}`)
+    const withoutExecution = createHostBashTool(join(home, 'private', 'agent_a1'), { agentId: 'agent-7' })
+    expect(await run(withoutExecution, { command: 'echo key=${FICUS_TOOL_CALL_KEY:-unset}' })).toContain('key=unset')
   })
 
   test('bash output beyond the display limit is not written to disk', async () => {

@@ -18,6 +18,7 @@ import {
   type WorkStreamAssetSource,
 } from '@ficus/shared'
 import { apiGet, apiPost, apiPostForm } from '../client'
+import { cliCommandIdempotencyKey } from '@ficus/shared/node'
 import { output, outputError } from '../output'
 
 const defaults = { apiGet, apiPost, output, outputError }
@@ -82,7 +83,10 @@ export function registerWorkstreamFlowCommands(
     )
   addStructuredInputOptions(command.command('advance <id>', { hidden: legacy }))
     .description('Complete, return, amend, delegate, rework, revise, or raise-limit a flow using a versioned command')
-    .option('--request-id <id>', 'Stable UUID for retrying this exact command')
+    .option(
+      '--request-id <id>',
+      'Stable UUID for retrying this exact command. Inside an agent tool call it defaults to one derived from the tool call and the full command, so re-running the same command in that call is the same request.'
+    )
     .option(
       '--attach <path>',
       `Attach a file to the handoff for reviewers (repeatable; complete and amend only; at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files of 10 MB)`,
@@ -180,10 +184,19 @@ export function registerWorkstreamFlowCommands(
               await uploadAttachments(id, value.attemptId, options.attach)
             }
           }
+          const requestId =
+            options.requestId ??
+            cliCommandIdempotencyKey('workstream advance', {
+              id,
+              command: value,
+              attach: options.attach,
+              references,
+            }) ??
+            crypto.randomUUID()
           deps.output(
             await deps.apiPost(`/api/workflows/runs/${encodeURIComponent(id)}/advance`, {
               command: value,
-              requestId: options.requestId ?? crypto.randomUUID(),
+              requestId,
             })
           )
         })
@@ -200,7 +213,10 @@ export function registerWorkstreamFlowCommands(
     .option('--remove', 'Remove the attempt limit entirely')
     .option('-m, --reason <text>', 'Why, recorded with your name in the flow revision history')
     .option('--version <version>', 'Expected flow version (defaults to the current version from workstream flow)')
-    .option('--request-id <id>', 'Stable UUID for retrying this exact command')
+    .option(
+      '--request-id <id>',
+      'Stable UUID for retrying this exact command. Inside an agent tool call it defaults to one derived from the tool call and the full command, so re-running the same command in that call is the same request.'
+    )
     .addHelpText(
       'after',
       '\nWorks only while the flow is paused at its attempt limit (workstream flow shows status paused and pauseReason attempt-limit). It clears the pause wait and starts the held attempt with its pending request in one step.\nAllowed: people who can review the work stream (an assigned reviewer when reviewers are assigned) or manage flows, the stream owner agent, and the squad manager agent. The agent that ran the paused step cannot raise its own limit.\nEquivalent advance command: {"action":"raise-limit","expectedVersion":<version>,"maxStepAttempts":<number or null>}.'
@@ -235,7 +251,10 @@ export function registerWorkstreamFlowCommands(
           deps.output(
             await deps.apiPost(`/api/workflows/runs/${encodeURIComponent(id)}/advance`, {
               command: value,
-              requestId: options.requestId ?? crypto.randomUUID(),
+              requestId:
+                options.requestId ??
+                cliCommandIdempotencyKey('workstream raise-limit', { id, command: value }) ??
+                crypto.randomUUID(),
             }),
             maxStepAttempts === null
               ? `Removed the attempt limit for step ${pause.stepId}; its next attempt is starting`

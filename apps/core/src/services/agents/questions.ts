@@ -8,6 +8,7 @@ import {
   type AgentQuestionStatus,
   type QuestionData,
 } from '@ficus/shared'
+import { canonicalJson } from '@ficus/shared/node'
 import { db, agentQuestions, AmbiguousPrefixError, uuidPrefixCondition } from '../../db'
 import {
   agentQuestionRecipients,
@@ -205,11 +206,24 @@ function toJson(row: Row): AgentQuestion {
  */
 export type AgentQuestionCreationResult = AgentQuestion & {
   openedWaitWorkStreamIds: string[]
+  /**
+   * Set when no new question was created: `tool-call` when the same tool call (same idempotency
+   * key) already created this question, `identical-open-question` when the same execution already
+   * has this exact question open. `openedWaitWorkStreamIds` then lists the question's open waits.
+   */
+  reused?: 'tool-call' | 'identical-open-question'
 }
 
 export interface AgentQuestionOrigin {
   agentId: string
   executionId: string
+}
+
+type CreationTransactionResult = {
+  row: Row
+  openedWaitWorkStreamIds: string[]
+  changedWorkStreams: ChangedWorkStream[]
+  reused?: AgentQuestionCreationResult['reused']
 }
 
 function consumedAt(metadata: Record<string, unknown> | null): Date | null {
@@ -239,6 +253,54 @@ export async function finalizeAgentQuestionAttentionRouting(questionId: string):
   return (await getAgentQuestionRow(questionId)) ?? current
 }
 
+/** Work streams on which this question currently holds an open `question` wait. */
+async function listOpenQuestionWaitStreamIds(tx: DbTransaction, questionId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ workStreamId: workStreamWaits.workStreamId })
+    .from(workStreamWaits)
+    .where(
+      and(
+        eq(workStreamWaits.referenceId, questionId),
+        eq(workStreamWaits.type, 'question'),
+        isNull(workStreamWaits.closedAt)
+      )
+    )
+  return [...new Set(rows.map((row) => row.workStreamId))]
+}
+
+/**
+ * An open question from the same execution with exactly the same questions. Asking it again would
+ * only duplicate it: after a hard restart the model sees no result for its earlier call and may
+ * ask again under a new tool call ID. A blocking re-ask reuses it only when it already blocks, or
+ * when no work stream could be blocked anyway; otherwise the explicit change of mode wins.
+ */
+async function findIdenticalOpenQuestion(
+  tx: DbTransaction,
+  origin: AgentQuestionOrigin,
+  questionData: QuestionData,
+  blocking: boolean
+): Promise<{ row: Row; openWaitStreamIds: string[] } | null> {
+  const candidates = await tx
+    .select()
+    .from(agentQuestions)
+    .where(
+      and(
+        eq(agentQuestions.agentId, origin.agentId),
+        eq(agentQuestions.executionId, origin.executionId),
+        eq(agentQuestions.status, 'open')
+      )
+    )
+    .orderBy(desc(agentQuestions.createdAt))
+  const wanted = canonicalJson(questionData)
+  for (const row of candidates) {
+    if (canonicalJson(row.questionData) !== wanted) continue
+    const openWaitStreamIds = await listOpenQuestionWaitStreamIds(tx, row.id)
+    if (!blocking || openWaitStreamIds.length > 0) return { row, openWaitStreamIds }
+    if ((await listWaitableOriginStreamIds(tx, row.id, origin.agentId)).length === 0) return { row, openWaitStreamIds }
+  }
+  return null
+}
+
 async function getAgentQuestionRow(questionId: string): Promise<Row | null> {
   const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
   return row ?? null
@@ -250,6 +312,11 @@ export async function createAgentQuestion(
   opts: {
     blocking?: boolean
     waitScope?: 'stream' | 'attempt'
+    /**
+     * Exactly-once key for the asking tool call (see `toolCallIdempotencyKey`). The same key
+     * returns the question it first created, with its waits, instead of asking again.
+     */
+    idempotencyKey?: string
     testHooks?: {
       afterAgentLocked?: () => Promise<void>
       beforeAttentionFinalize?: () => Promise<void>
@@ -258,8 +325,11 @@ export async function createAgentQuestion(
   } = {}
 ): Promise<AgentQuestionCreationResult> {
   assertHumanAnswerableQuestions(questionData.questions)
+  const idempotencyKey = opts.idempotencyKey
+  if (idempotencyKey !== undefined && (!idempotencyKey || idempotencyKey.length > 200))
+    throw new Error('Question idempotency key must be 1 to 200 characters')
   const { assertNoPendingRecovery, recoveryScopeForAgent } = await import('../recovery/store')
-  const result = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<CreationTransactionResult> => {
     const [execution] = await tx
       .select({ agentId: executions.agentId, flowContext: executions.flowContext })
       .from(executions)
@@ -267,6 +337,24 @@ export async function createAgentQuestion(
     if (!execution || execution.agentId !== origin.agentId) {
       throw new Error('Question execution does not belong to the asking agent')
     }
+    const reuseByKey = async (): Promise<CreationTransactionResult | null> => {
+      if (!idempotencyKey) return null
+      const [existing] = await tx.select().from(agentQuestions).where(eq(agentQuestions.idempotencyKey, idempotencyKey))
+      if (!existing) return null
+      if (existing.agentId !== origin.agentId || existing.executionId !== origin.executionId)
+        throw new Error('Question idempotency key belongs to another agent or execution')
+      if (canonicalJson(existing.questionData) !== canonicalJson(questionData))
+        throw new Error('This ask_human call already recorded different questions')
+      return {
+        row: existing,
+        openedWaitWorkStreamIds: await listOpenQuestionWaitStreamIds(tx, existing.id),
+        changedWorkStreams: [],
+        reused: 'tool-call',
+      }
+    }
+    // A re-executed call returns its question even if the agent has since become unable to ask.
+    const replayed = await reuseByKey()
+    if (replayed) return replayed
     await lockAgentFlowStream(tx, origin.agentId)
     const [agent] = await tx
       .select({
@@ -288,20 +376,34 @@ export async function createAgentQuestion(
       throw new Error('Asking agent is terminating or not live')
     await opts.testHooks?.afterAgentLocked?.()
 
-    const [created] = await tx
-      .insert(agentQuestions)
-      .values({
-        agentId: origin.agentId,
-        squadId: agent.squadId ?? null,
-        ownerUserId: agent.ownerUserId ?? null,
-        executionId: origin.executionId,
-        // The attempt the question is asked from, so a late answer's target is never inferred.
-        flowWorkStreamId: execution.flowContext?.workStreamId ?? null,
-        flowAttemptId: execution.flowContext?.attemptId ?? null,
-        audienceResolution: 'pending',
-        questionData,
-      })
-      .returning()
+    const identical = await findIdenticalOpenQuestion(tx, origin, questionData, opts.blocking === true)
+    if (identical)
+      return {
+        row: identical.row,
+        openedWaitWorkStreamIds: identical.openWaitStreamIds,
+        changedWorkStreams: [],
+        reused: 'identical-open-question',
+      }
+
+    const insert = tx.insert(agentQuestions).values({
+      agentId: origin.agentId,
+      squadId: agent.squadId ?? null,
+      ownerUserId: agent.ownerUserId ?? null,
+      executionId: origin.executionId,
+      // The attempt the question is asked from, so a late answer's target is never inferred.
+      flowWorkStreamId: execution.flowContext?.workStreamId ?? null,
+      flowAttemptId: execution.flowContext?.attemptId ?? null,
+      audienceResolution: 'pending',
+      questionData,
+      idempotencyKey: idempotencyKey ?? null,
+    })
+    // A concurrent execution of the same call that committed first wins; adopt its question.
+    const [created] = idempotencyKey ? await insert.onConflictDoNothing().returning() : await insert.returning()
+    if (!created) {
+      const winner = await reuseByKey()
+      if (!winner) throw new Error('Question insert conflicted without an idempotent winner')
+      return winner
+    }
 
     const candidateOrigins = await listTrustedWorkStreamOriginsForExecution(tx, origin)
     const originMessageIds = candidateOrigins.flatMap(({ messageIds }) => messageIds)
@@ -433,6 +535,17 @@ export async function createAgentQuestion(
     }
     return { row: created, openedWaitWorkStreamIds, changedWorkStreams }
   })
+
+  if (result.reused) {
+    // Nothing new was created. Only a question whose first call stopped before finalizing its
+    // attention routing still needs that step and its announcement.
+    let row = result.row
+    if (row.audienceResolution === 'pending') {
+      row = (await finalizeAgentQuestionAttentionRouting(row.id)) ?? row
+      eventEmitter.emit('agent-question.created', { questionId: row.id, agentId: row.agentId, squadId: row.squadId })
+    }
+    return { ...toJson(row), openedWaitWorkStreamIds: result.openedWaitWorkStreamIds, reused: result.reused }
+  }
 
   // The wait transaction is committed: publish its invalidation before any later attention
   // finalization, which may fail independently and must not hide the committed wait.

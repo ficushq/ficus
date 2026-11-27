@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import { Subagent, type SubagentParentExecutionContext } from '../entities/Subagent'
 
 const DispatchSchema = Type.Object({
@@ -35,21 +36,28 @@ export function createDispatchTool(ctx: {
       "Dispatch one or more fresh ephemeral subagents to perform scoped tasks asynchronously. Without a model option, each child defaults through the subagent's Standard tier; model provides an explicit child override; inheritModel=true copies the parent's full resolved model fallback chain. model and inheritModel=true cannot be combined. Returns immediately with subagent IDs; results arrive later by inbox/steer.",
     parameters: DispatchSchema,
     async execute(
-      _toolCallId: string,
+      toolCallId: string,
       params: Parameters<typeof Subagent.dispatch>[0]
     ): Promise<AgentToolResult<unknown>> {
+      const executionId = ctx.parentExecutionContext.executionId
       const result = await Subagent.dispatch({
         parentAgentId: ctx.agentId,
         parentExecutionContext: ctx.parentExecutionContext,
         subagents: params.subagents,
+        // The same tool call executed again returns the children it created instead of new ones.
+        ...(executionId && toolCallId
+          ? { idempotencyKey: toolCallIdempotencyKey(ctx.agentId, executionId, toolCallId) }
+          : {}),
       })
+      const list = result.subagents.map((s) => `${s.label} (${s.subagentId})`).join(', ')
+      const text =
+        result.reused === 'tool-call'
+          ? `This tool call was already dispatched, so no new subagents were started: ${list}`
+          : result.reused === 'identical-running-dispatch'
+            ? `You already dispatched exactly these subagents in this run and they are still running, so no new ones were started: ${list}. Their results arrive by inbox.`
+            : `Dispatched ${result.subagents.length} subagent(s): ${list}`
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Dispatched ${result.subagents.length} subagent(s): ${result.subagents.map((s) => `${s.label} (${s.subagentId})`).join(', ')}`,
-          },
-        ],
+        content: [{ type: 'text' as const, text }],
         details: result,
       }
     },

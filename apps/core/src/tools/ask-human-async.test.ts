@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { assertHumanAnswerableQuestions, type AgentQuestion } from '@ficus/shared'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import { createAsyncAskHumanTool } from './ask-human-async'
 
 const record: AgentQuestion = {
@@ -59,8 +60,58 @@ describe('async ask_human trusted origin', () => {
     expect(order).toEqual(['flush', 'create'])
     expect(createQuestion).toHaveBeenCalledWith({ agentId: 'agent-1', executionId: 'execution-1' }, expect.anything(), {
       blocking: false,
+      idempotencyKey: toolCallIdempotencyKey('agent-1', 'execution-1', 'call-1'),
     })
     expect(JSON.stringify(tool.parameters)).not.toMatch(/agentId|executionId|recipient|workStreamId/)
+  })
+})
+
+describe('async ask_human tool call idempotency', () => {
+  test('keys the question on the agent, execution and tool call', async () => {
+    const createQuestion = mock(async () => ({ ...record, openedWaitWorkStreamIds: [] }))
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion }
+    )
+    const ask = (callId: string) =>
+      tool.execute(callId, { questions: [{ id: 'ship', question: 'Ship it?' }] }, undefined, undefined, {} as any)
+    await ask('call-1')
+    await ask('call-1')
+    await ask('call-2')
+    const keys = createQuestion.mock.calls.map((call) => (call as unknown[])[2] as { idempotencyKey?: string })
+    expect(keys[0]?.idempotencyKey).toBe(toolCallIdempotencyKey('agent-1', 'execution-1', 'call-1'))
+    expect(keys[1]?.idempotencyKey).toBe(keys[0]!.idempotencyKey!)
+    expect(keys[2]?.idempotencyKey).not.toBe(keys[0]!.idempotencyKey!)
+  })
+
+  test('says a reused question was not asked again and reports its existing waits', async () => {
+    for (const [reused, reason] of [
+      ['tool-call', 'This tool call was already recorded'],
+      ['identical-open-question', 'You already asked exactly this question in this run'],
+    ] as const) {
+      const createQuestion = mock(async () => ({ ...record, openedWaitWorkStreamIds: ['ws-one'], reused }))
+      const tool = createAsyncAskHumanTool(
+        { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+        { createQuestion }
+      )
+      const result = await tool.execute(
+        'call-1',
+        { blocking: true, questions: [{ id: 'ship', question: 'Ship it?' }] },
+        undefined,
+        undefined,
+        {} as any
+      )
+      const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+      expect(text).toContain(reason)
+      expect(text).toContain('no new question was created: question question (open)')
+      expect(text).toContain('It holds waits on 1 work stream: ws-one')
+      expect(result.details).toMatchObject({
+        questionId: record.id,
+        reused,
+        blocking: true,
+        openedWaitWorkStreamIds: ['ws-one'],
+      })
+    }
   })
 })
 
@@ -142,6 +193,7 @@ describe('async ask_human without blocking (managers and assistants)', () => {
       expect.anything(),
       {
         blocking: false,
+        idempotencyKey: toolCallIdempotencyKey('manager-1', 'execution-1', 'call-1'),
       }
     )
     const text = result.content[0]?.type === 'text' ? result.content[0].text : ''

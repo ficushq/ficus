@@ -221,6 +221,205 @@ describe('Subagent.dispatch', () => {
     expect(child.metadata).toMatchObject({ parentExecutionContext: { executionId } })
   })
 
+  describe('tool call idempotency', () => {
+    const executionId = '55555555-5555-4555-8555-555555555555'
+    const context = { version: 1 as const, squadId: null, environmentToolNames: [], executionId }
+    const specs = [
+      { label: 'first', instructions: 'inspect the parser' },
+      { label: 'second', instructions: 'inspect the lexer' },
+    ]
+
+    async function newParent(): Promise<Agent> {
+      const parent = await Agent.create({ agentTypeId: parentTypeId, squadId: null })
+      createdIds.push(parent.id)
+      return parent
+    }
+
+    async function childrenOf(parentId: string) {
+      const children = await Agent.list({ parentAgentId: parentId })
+      createdIds.push(...children.map((child) => child.id))
+      return children
+    }
+
+    it('returns the same children when the same dispatch call runs twice', async () => {
+      const parent = await newParent()
+      const first = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-1',
+      })
+      const second = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-1',
+      })
+      expect(first.reused).toBeUndefined()
+      expect(second).toEqual({ subagents: first.subagents, reused: 'tool-call' })
+      expect(await childrenOf(parent.id)).toHaveLength(2)
+    })
+
+    it('returns the same children for a replayed call after they finished', async () => {
+      const parent = await newParent()
+      const first = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-finished',
+      })
+      for (const child of first.subagents) await makeDormant(await Agent.mustFind(child.subagentId))
+      const replay = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-finished',
+      })
+      expect(replay).toEqual({ subagents: first.subagents, reused: 'tool-call' })
+      expect(await childrenOf(parent.id)).toHaveLength(2)
+    })
+
+    it('creates only the children a replayed call had not created yet', async () => {
+      const parent = await newParent()
+      const first = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-partial',
+      })
+      // As if the first execution stopped after creating only its first child.
+      await db.delete(agents).where(eq(agents.id, first.subagents[1].subagentId))
+      const replay = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-partial',
+      })
+      expect(replay.reused).toBeUndefined()
+      expect(replay.subagents[0]).toEqual(first.subagents[0])
+      expect(replay.subagents[1].subagentId).not.toBe(first.subagents[1].subagentId)
+      expect(replay.subagents[1].label).toBe('second')
+      const children = await childrenOf(parent.id)
+      expect(children).toHaveLength(2)
+      expect(children.find((child) => child.id === replay.subagents[1].subagentId)?.metadata).toMatchObject({
+        dispatchKey: 'dispatch-call-partial',
+        dispatchIndex: 1,
+      })
+    })
+
+    it('refuses a key that already created children with different specs', async () => {
+      const parent = await newParent()
+      await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-call-mismatch',
+      })
+      await expect(
+        Subagent.dispatch({
+          parentAgentId: parent.id,
+          parentExecutionContext: context,
+          subagents: [{ label: 'first', instructions: 'something else' }, specs[1]],
+          idempotencyKey: 'dispatch-call-mismatch',
+        })
+      ).rejects.toThrow('different specs')
+      expect(await childrenOf(parent.id)).toHaveLength(2)
+    })
+
+    it('reuses an identical dispatch from the same execution while all its children are live', async () => {
+      const parent = await newParent()
+      const first = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-before-restart',
+      })
+      const again = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: [
+          { instructions: 'inspect the parser', label: 'first' },
+          { instructions: 'inspect the lexer', label: 'second' },
+        ],
+        idempotencyKey: 'dispatch-after-restart',
+      })
+      expect(again).toEqual({ subagents: first.subagents, reused: 'identical-running-dispatch' })
+      expect(await childrenOf(parent.id)).toHaveLength(2)
+    })
+
+    it('dispatches again when the calls differ, an earlier child finished, or another execution asks', async () => {
+      const parent = await newParent()
+      const first = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-a',
+      })
+      const different = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: [{ label: 'third', instructions: 'inspect the emitter' }],
+        idempotencyKey: 'dispatch-b',
+      })
+      expect(different.reused).toBeUndefined()
+
+      const otherExecution = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: { ...context, executionId: '66666666-6666-4666-8666-666666666666' },
+        subagents: specs,
+        idempotencyKey: 'dispatch-c',
+      })
+      expect(otherExecution.reused).toBeUndefined()
+
+      await makeDormant(await Agent.mustFind(first.subagents[0].subagentId))
+      await makeDormant(await Agent.mustFind(otherExecution.subagents[0].subagentId))
+      const afterFinish = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-d',
+      })
+      expect(afterFinish.reused).toBeUndefined()
+      expect(afterFinish.subagents.map((child) => child.subagentId)).not.toContain(first.subagents[1].subagentId)
+      expect(await childrenOf(parent.id)).toHaveLength(7)
+    })
+
+    it('ignores children stopped to compensate a failed dispatch', async () => {
+      const parent = await newParent()
+      const originalQueue = Agent.prototype.queueExecution
+      let queueCalls = 0
+      const queue = spyOn(Agent.prototype, 'queueExecution').mockImplementation(async function (
+        this: Agent,
+        input: Parameters<Agent['queueExecution']>[0]
+      ) {
+        queueCalls += 1
+        if (queueCalls === 2) throw new Error('injected second queue failure')
+        return originalQueue.call(this, input)
+      })
+      try {
+        await expect(
+          Subagent.dispatch({
+            parentAgentId: parent.id,
+            parentExecutionContext: context,
+            subagents: specs,
+            idempotencyKey: 'dispatch-compensated',
+          })
+        ).rejects.toThrow('injected second queue failure')
+      } finally {
+        queue.mockRestore()
+      }
+      const retried = await Subagent.dispatch({
+        parentAgentId: parent.id,
+        parentExecutionContext: context,
+        subagents: specs,
+        idempotencyKey: 'dispatch-compensated',
+      })
+      expect(retried.reused).toBeUndefined()
+      expect(await Subagent.countLive(parent.id)).toBe(2)
+      expect(await childrenOf(parent.id)).toHaveLength(4)
+    })
+  })
+
   it('rejects a parent execution context whose squad does not match the locked parent', async () => {
     const parent = await Agent.create({ agentTypeId: parentTypeId, squadId: null })
     createdIds.push(parent.id)

@@ -6,6 +6,7 @@ import {
   type QuestionOption,
   type QuestionType,
 } from '@ficus/shared'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import { createAgentQuestion } from '../services/agents/questions'
 
 const QUESTION_CONTEXT_MAX_LENGTH = 2000
@@ -211,7 +212,7 @@ export function createAsyncAskHumanTool(
     label: 'Ask Human',
     description: allowBlocking ? BLOCKING_DESCRIPTION : ASYNC_ONLY_DESCRIPTION,
     parameters: allowBlocking ? AsyncAskHumanSchema : AsyncOnlyAskHumanSchema,
-    async execute(_toolCallId: string, params: AskParams): Promise<AgentToolResult<unknown>> {
+    async execute(toolCallId: string, params: AskParams): Promise<AgentToolResult<unknown>> {
       const questions = params.questions ?? []
       if (!questions.length) return errorResult('At least one question is required.')
 
@@ -269,13 +270,46 @@ export function createAsyncAskHumanTool(
         record = await dependencies.createQuestion(
           { agentId: origin.agentId, executionId: origin.executionId },
           { questions: items },
-          { blocking, ...(blocking && params.waitScope ? { waitScope: params.waitScope } : {}) }
+          {
+            blocking,
+            ...(blocking && params.waitScope ? { waitScope: params.waitScope } : {}),
+            // The same tool call executed again returns its question instead of asking twice.
+            ...(toolCallId
+              ? { idempotencyKey: toolCallIdempotencyKey(origin.agentId, origin.executionId, toolCallId) }
+              : {}),
+          }
         )
       } catch (error) {
         return errorResult(error instanceof Error ? error.message : String(error))
       }
       const summary = items.map((q) => `"${q.question}"`).join(', ')
       const openedWaitWorkStreamIds = record.openedWaitWorkStreamIds
+      if (record.reused) {
+        const waits =
+          openedWaitWorkStreamIds.length === 0
+            ? ' It holds no work-stream waits.'
+            : ` It holds waits on ${openedWaitWorkStreamIds.length === 1 ? '1 work stream' : `${openedWaitWorkStreamIds.length} work streams`}: ${openedWaitWorkStreamIds.join(', ')}.`
+        const why =
+          record.reused === 'tool-call'
+            ? 'This tool call was already recorded'
+            : 'You already asked exactly this question in this run and it is still open'
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `${why}, so no new question was created: question ${record.id.slice(0, 8)} (${record.status}).${waits} The answer will arrive as an inbox message; do not ask again or poll.`,
+            },
+          ],
+          details: {
+            questionId: record.id,
+            async: true,
+            blocking: openedWaitWorkStreamIds.length > 0,
+            openedWaitCount: openedWaitWorkStreamIds.length,
+            openedWaitWorkStreamIds,
+            reused: record.reused,
+          },
+        }
+      }
       const blockingNote = !blocking
         ? ''
         : openedWaitWorkStreamIds.length === 0

@@ -75,6 +75,37 @@ describe('subagent tools ownership scoping', () => {
     expect(dispatchTool.description).toContain('model and inheritModel=true cannot be combined')
   })
 
+  it('dispatch returns the same children when the same tool call runs twice', async () => {
+    const parent = await createParent()
+    const executionId = '77777777-7777-4777-8777-777777777777'
+    const dispatchTool = createDispatchTool({
+      agentId: parent.id,
+      parentExecutionContext: { version: 1, squadId: null, environmentToolNames: [], executionId },
+    })
+    const run = (toolCallId: string, instructions: string) =>
+      dispatchTool.execute(
+        toolCallId,
+        { subagents: [{ instructions, label: 'child' }] } as never,
+        undefined,
+        undefined,
+        {} as never
+      )
+
+    const first = await run('tool-call-1', 'scoped child')
+    const second = await run('tool-call-1', 'scoped child')
+    const other = await run('tool-call-2', 'another child')
+    const ids = (result: Awaited<ReturnType<typeof run>>) =>
+      (result.details as { subagents: Array<{ subagentId: string }> }).subagents.map((child) => child.subagentId)
+    const children = await Agent.list({ parentAgentId: parent.id })
+    createdAgentIds.push(...children.map((child) => child.id))
+
+    expect(ids(second)).toEqual(ids(first))
+    expect(second.details).toMatchObject({ reused: 'tool-call' })
+    expect(second.content[0]).toMatchObject({ text: expect.stringContaining('no new subagents were started') })
+    expect(ids(other)).not.toEqual(ids(first))
+    expect(children).toHaveLength(2)
+  })
+
   it('dispatch uses the executing agent as parent and ignores caller-supplied parent ids', async () => {
     const parent = await createParent()
     const otherParent = await createParent()

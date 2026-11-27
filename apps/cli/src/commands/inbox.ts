@@ -11,6 +11,7 @@ import {
 } from '@ficus/shared'
 import { requireMatchingSigningIdentity } from '../amtp/identity'
 import { buildFederatedSendBody, type FederatedAttachmentRef } from '../amtp/sign'
+import { cliCommandIdempotencyKey } from '@ficus/shared/node'
 
 export function getInboxSendDeliveryMode(options: { followUp?: boolean }): 'steer' | 'follow-up' {
   return options.followUp ? 'follow-up' : 'steer'
@@ -123,6 +124,10 @@ export function registerInboxCommands(program: Command): void {
     .option('--url <url>', 'URL to attach to message (used for push notification links)')
     .option('--attach <file>', 'Attach a file (repeatable)', collectAttachments, [])
     .option(
+      '--idempotency-key <key>',
+      'Send at most one message for this key (local sends only). Inside an agent tool call it defaults to a key derived from the tool call and the full message, so re-running the same command in that call does not send twice.'
+    )
+    .option(
       '--attachment-id <id>',
       'Reference an existing inbox attachment by id (remote sends only; repeatable)',
       collectAttachments,
@@ -154,7 +159,15 @@ export function registerInboxCommands(program: Command): void {
 
         const metadata = options.url ? { url: options.url } : undefined
 
-        const message = await apiPost<InboxMessage>('/api/inbox', {
+        const { readFile } = await import('fs/promises')
+        const { basename } = await import('path')
+        const files = await Promise.all(
+          ((options.attach as string[]) ?? []).map(async (filePath) => {
+            const bytes = await readFile(filePath)
+            return { name: basename(filePath), bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
+          })
+        )
+        const body = {
           recipientType,
           recipientId,
           subject: options.subject,
@@ -164,19 +177,35 @@ export function registerInboxCommands(program: Command): void {
           ...(options.assistantTaskStatus ? { assistantTaskStatus: options.assistantTaskStatus } : {}),
           ...(options.wake ? { wake: true } : {}),
           deliveryMode,
+        }
+        // The files are part of what makes two sends the same send.
+        const idempotencyKey =
+          options.idempotencyKey ??
+          cliCommandIdempotencyKey('inbox send', {
+            ...body,
+            attachments: files.map(({ name, sha256 }) => ({ name, sha256 })),
+          })
+        const message = await apiPost<InboxMessage & { idempotentReplay?: boolean }>('/api/inbox', {
+          ...body,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
         })
 
-        const { readFile } = await import('fs/promises')
-        const { basename } = await import('path')
+        // A repeated send uploads only the files its first run did not get to.
+        const present = new Set((message.attachments ?? []).map((a) => `${a.filename}\0${a.sha256}`))
         const { apiPostForm } = await import('../client')
-        for (const filePath of (options.attach as string[]) ?? []) {
-          const buf = await readFile(filePath)
+        for (const file of files) {
+          if (present.has(`${file.name}\0${file.sha256}`)) continue
           const form = new FormData()
-          form.set('file', new File([buf], basename(filePath)))
+          form.set('file', new File([file.bytes], file.name))
           await apiPostForm(`/api/inbox/${message.id}/attachments`, form)
         }
 
-        output(message, `Message sent to ${recipientId} (${message.id.slice(0, 8)})`)
+        output(
+          message,
+          message.idempotentReplay
+            ? `Message to ${recipientId} was already sent (${message.id.slice(0, 8)}); not sent again`
+            : `Message sent to ${recipientId} (${message.id.slice(0, 8)})`
+        )
       } catch (error) {
         outputError((await explainDormantRecipient(error, recipientId)) as Error)
       }
