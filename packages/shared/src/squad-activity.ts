@@ -348,6 +348,14 @@ export interface SquadActivityFilters {
 export const ACTIVITY_SETTLED_KINDS = ['questions', 'reviews'] as const
 export type ActivitySettledKind = (typeof ACTIVITY_SETTLED_KINDS)[number]
 
+/**
+ * How far behind the database clock a settled count stops (its `through`). An Activity row is
+ * written after the event it records and carries the event's time, so a count that ran up to the
+ * clock itself could miss a row still being written, and the next period, starting there, would
+ * miss it too. A row that settled in the last minute is counted in the next period instead.
+ */
+export const ACTIVITY_SETTLED_MARGIN_MS = 60_000
+
 /** An Activity filter to the rows behind one settled count, from `since` (inclusive). */
 export interface ActivitySettledFilter {
   kind: ActivitySettledKind
@@ -361,6 +369,12 @@ export interface ActivitySettledSummary {
   since: string
   /** True when the requested time was older than Activity keeps rows and was raised. */
   clamped: boolean
+  /**
+   * Server time the counts run up to (exclusive): ACTIVITY_SETTLED_MARGIN_MS behind the database
+   * clock, so rows still being written land after it. The Feed records it as the end of what a
+   * visit has shown, so the next visit starts here: nothing is counted twice and nothing is skipped.
+   */
+  through: string
   counts: Record<ActivitySettledKind, number>
 }
 
