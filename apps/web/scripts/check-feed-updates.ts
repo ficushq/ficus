@@ -86,6 +86,16 @@ try {
           return route.fulfill({ json: { lastVisitedAt: lastVisit, observedAt } })
         }
         if (url.pathname === '/api/activity/settled') {
+          if (url.searchParams.get('since') === countedThrough) {
+            return route.fulfill({
+              json: {
+                since: countedThrough,
+                clamped: false,
+                through: countedThrough,
+                counts: { questions: 0, reviews: 0 },
+              },
+            })
+          }
           assert.equal(url.searchParams.get('since'), lastVisit)
           return route.fulfill({
             json: { since: lastVisit, clamped: false, through: countedThrough, counts: { questions: 4, reviews: 2 } },

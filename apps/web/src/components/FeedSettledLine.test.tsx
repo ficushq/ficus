@@ -70,6 +70,8 @@ async function renderVisit(options: {
   lastVisitedAt: string | null
   settledAt?: (number | { at: number; squadId: string })[]
   reviews?: number
+  failRecord?: boolean
+  noStorage?: boolean
   failCounts?: boolean
   squadIds?: string[]
   now?: number
@@ -77,6 +79,13 @@ async function renderVisit(options: {
   setSystemTime(new Date(options.now ?? T0 + 3 * HOUR))
   dom = await acquireDomHarness({ url: 'http://localhost/' })
   dom.window.sessionStorage.clear()
+  if (options.noStorage)
+    Object.defineProperty(dom.window, 'sessionStorage', {
+      configurable: true,
+      get() {
+        throw new Error('Storage unavailable')
+      },
+    })
   const { root } = dom.createRoot()
   const account = {
     watermark: options.lastVisitedAt,
@@ -144,6 +153,7 @@ async function renderVisit(options: {
               acknowledge={async () => ({ seen: true as const })}
               acknowledgeVisit={async (visitedAt) => {
                 recorded.push(visitedAt)
+                if (options.failRecord) throw new Error('Visit not recorded')
                 if (!account.watermark || Date.parse(visitedAt) > Date.parse(account.watermark))
                   account.watermark = visitedAt
                 return { lastVisitedAt: account.watermark }
@@ -159,6 +169,7 @@ async function renderVisit(options: {
   const document = dom!.window.document
   return {
     document,
+    dismiss: async () => dom!.act(async () => document.querySelector<HTMLButtonElement>('summary button')!.click()),
     recorded,
     settledRequests,
     visitReads,
@@ -216,6 +227,48 @@ describe('Feed Updates with the settled line', () => {
     expect(settledRequests[0]).toEqual(['activity', 'settled', 'u1', since, ['s1']])
     // Filtered counts never move the account watermark (see the squad filter tests below).
     expect(recorded).toEqual([])
+  })
+
+  test('Dismiss persists the displayed end, not the click time, when the filter is cleared or the Feed reopened', async () => {
+    const view = await renderVisit({ lastVisitedAt: iso(T0 - 24 * HOUR), settledAt: [T0 + HOUR], squadIds: ['s1'] })
+    const end = endAt(Date.now())
+    view.advance(HOUR)
+    await view.dismiss()
+    await view.render()
+    expect(view.line()).toBeNull()
+    expect(view.recorded).toEqual([])
+    await view.filter([])
+    expect(view.line()).toBeNull()
+    view.settle(Date.now())
+    view.advance(HOUR)
+    await view.refetchCounts()
+    expect(view.line()).toBe(`${settledPeriodLabel(end)}: 1 question settled by agents`)
+    expect(view.document.querySelector('[data-testid="feed-settled-line"] a')?.getAttribute('href')).toContain(
+      `since=${encodeURIComponent(end)}`
+    )
+  })
+
+  test('without storage Dismiss counts later settlements on the same mount from the exact boundary', async () => {
+    const view = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR], noStorage: true })
+    const end = view.watermark()!
+    await view.dismiss()
+    expect(view.line()).toBeNull()
+    view.settle(Date.parse(end))
+    view.advance(HOUR)
+    await view.refetchCounts()
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    expect(view.settledRequests.at(-1)?.[3]).toBe(end)
+  })
+
+  test('a failed visit write does not undo Dismiss, but a new visit reads the older watermark', async () => {
+    const view = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR], failRecord: true })
+    await view.dismiss()
+    await view.render()
+    expect(view.line()).toBeNull()
+    view.advance(FEED_VISIT_MAX_MS + 1)
+    await view.focus()
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    expect(view.watermark()).toBe(since)
   })
 
   test('an unfiltered Feed records the end of its counts', async () => {

@@ -21,7 +21,7 @@ const FEED_VISIT_CHECK_MS = 60_000
 /** When the tab was last hidden, while it still is (or was when the page unloaded). */
 export const FEED_VISIT_HIDDEN_KEY = 'ficus:feed-visit-hidden-at'
 
-/** This tab's visit: the period read when it began, when it began here, and how far it was recorded. */
+/** This tab's visit: the current counting period, when it began here, and how far it was recorded. */
 export interface SessionFeedVisit extends FeedVisit {
   /** This client's clock when the visit began, for FEED_VISIT_MAX_MS (the server's clock may differ). */
   startedAt: number
@@ -157,23 +157,26 @@ function trackTimeAway(doc: Document) {
  * The account watermark is read once when a visit begins. Each time the counts load, the visit
  * records their end (`through`, the server time they were counted up to) as the new watermark, so
  * the next visit starts exactly where this one's line stopped: work settled during a visit is either
- * in this visit's latest counts or in the next visit's, never both and never neither. A failed load
+ * in this visit's latest counts or in the next visit's, except after a filtered dismissal (below). A failed load
  * records nothing and keeps the older start for next time. No watermark yet means no line, and the
  * visit's start, less the same margin the counts keep (ACTIVITY_SETTLED_MARGIN_MS), is recorded as
  * the first watermark.
+ *
+ * Dismissing a line advances only this tab’s counting period to the displayed end.
  *
  * The watermark belongs to the account, so only an unfiltered Feed records it. With a squad filter
  * on, the counts (and their `through`) cover only the filtered squads; recording them would move the
  * watermark past other squads' work, which no later line would then count. A filtered Feed still
  * shows its counts from the visit's period but records nothing. Turning the filter off loads the
- * unfiltered counts for the same period and records their end, as it would have from the start.
+ * unfiltered counts for the current period and records their end. If a filtered line was dismissed,
+ * that period starts at its dismissed end: earlier work in other squads is not counted retroactively.
  */
 export function useSettledSinceLastVisit(
   userId: string,
   visitId: string,
   squadIds: readonly string[],
   acknowledgeVisit: typeof acknowledgeFeedVisit = acknowledgeFeedVisit
-): ActivitySettledSummary | null {
+) {
   // `stored` is the visit this tab already had when this mount (or this new visit) began.
   const [visit, setVisit] = useState(() => ({ generation: 0, stored: readSessionFeedVisit(userId) }))
   const read = useQuery({
@@ -261,5 +264,22 @@ export function useSettledSinceLastVisit(
     },
     { onMount: true }
   )
-  return settledForVisit ? current : previous
+  const displayed = settledForVisit ? current : previous
+  // Snapshot the displayed end, not the time the receipts finish. Keep the original visit age
+  // and account acknowledgement independent of this tab's new counting period.
+  function dismissSettled() {
+    const start = started.current
+    if (!displayed || !observedAt || start?.observedAt !== observedAt) return
+    const stored = readSessionFeedVisit(userId)
+    const next = {
+      observedAt,
+      startedAt: start.at,
+      recordedThrough: stored?.recordedThrough ?? storedThrough,
+      lastVisitedAt: displayed.through,
+    }
+    writeSessionFeedVisit(userId, next)
+    setPrevious(null)
+    setVisit((current) => (current.generation === visit.generation ? { ...current, stored: next } : current))
+  }
+  return { settled: displayed, dismissSettled }
 }

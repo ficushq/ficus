@@ -187,7 +187,7 @@ export function AccountFeedVisit({
   // Separate cache per mount/account: an old query page must not replay a saved receipt on refresh.
   const [visitId] = useState(() => crypto.randomUUID())
   const completed = useInfiniteQuery(feedQueries.updates(userId, visitId, squadIds))
-  const settled = useSettledSinceLastVisit(userId, visitId, squadIds, acknowledgeVisit)
+  const { settled, dismissSettled } = useSettledSinceLastVisit(userId, visitId, squadIds, acknowledgeVisit)
   const hasSettledLine = settledLineParts(settled).length > 0
   const { receipts, save, active } = useCompletionReceipts(acknowledge)
   const [dismissing, setDismissing] = useState(false)
@@ -235,6 +235,7 @@ export function AccountFeedVisit({
   useAdjustOnChange([dismissed], () => {
     if (dismissed) setNewAbove(false)
   })
+  const visibleStreams = dismissed ? [] : streams
   const dismiss = async () => {
     if (dismissingRef.current) return
     dismissingRef.current = true
@@ -243,13 +244,14 @@ export function AccountFeedVisit({
     let allSeen = true
     // Snapshot only loaded rows in this list. Sequential writes bound request pressure and
     // let an account switch cancel the remaining queue without using the next user's session.
-    for (const stream of streams) {
+    for (const stream of visibleStreams) {
       if (!active.current) return
       const receipt = await save(stream)
       if (receipt.state !== 'seen') allSeen = false
     }
     if (!active.current) return
     if (allSeen) {
+      if (hasSettledLine) dismissSettled()
       setDismissedThrough(frontier)
     }
     dismissingRef.current = false
@@ -259,14 +261,14 @@ export function AccountFeedVisit({
   // not consume their unread state; they are not labeled as new Feed completions.
   const activity = useActivity()
   const unreadConversations =
-    squadIds.length > 0 || activity.ownerId !== userId
+    dismissed || squadIds.length > 0 || activity.ownerId !== userId
       ? []
       : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
-  if (dismissed || (!streams.length && !unreadConversations.length && !hasSettledLine && !completed.isError))
+  if (!hasSettledLine && !visibleStreams.length && !unreadConversations.length && (dismissed || !completed.isError))
     return null
   const parts = [
-    streams.length
-      ? `${completed.hasNextPage ? (completed.data?.pages[0]?.totalCount ?? streams.length) : streams.length} completed`
+    visibleStreams.length
+      ? `${completed.hasNextPage ? (completed.data?.pages[0]?.totalCount ?? visibleStreams.length) : visibleStreams.length} completed`
       : '',
     unreadConversations.length
       ? `${unreadConversations.length} Assistant ${unreadConversations.length === 1 ? 'update' : 'updates'}`
@@ -324,7 +326,7 @@ export function AccountFeedVisit({
         </summary>
         <div className="space-y-3 pb-3 pt-3">
           <FeedSettledLine summary={settled} squadIds={squadIds} />
-          {completed.isError && (
+          {!dismissed && completed.isError && (
             <p role="alert" className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-sm text-muted')}>
               Could not load updates.{' '}
               <button
@@ -378,9 +380,9 @@ export function AccountFeedVisit({
             </ul>
           )}
 
-          {streams.length > 0 && (
+          {visibleStreams.length > 0 && (
             <ul className="space-y-1" aria-label="Completed work updates">
-              {streams.map((stream) => {
+              {visibleStreams.map((stream) => {
                 const params = new URLSearchParams(location.search)
                 params.set('ws', workStreamRef(stream))
                 return (
@@ -421,7 +423,7 @@ export function AccountFeedVisit({
               })}
             </ul>
           )}
-          {completed.hasNextPage && (
+          {!dismissed && completed.hasNextPage && (
             <button
               type="button"
               className="ficus-button ficus-button-ghost ml-1 px-2 py-1 text-xs sm:ml-7"
@@ -431,7 +433,7 @@ export function AccountFeedVisit({
               {completed.isFetchingNextPage ? 'Loading…' : 'Show more updates'}
             </button>
           )}
-          {completed.isFetchNextPageError && (
+          {!dismissed && completed.isFetchNextPageError && (
             <p
               role="alert"
               className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-sm text-status-danger-600 dark:text-status-danger-400')}
