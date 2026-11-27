@@ -1,4 +1,4 @@
-import { recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
+import { endsWithSentencePunctuation, recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
 import { getAgentLabel } from '../lib/agentDisplay'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
@@ -17,8 +17,12 @@ function formatQuestion(question: QuestionItem, index: number): string {
   const optionText = options?.length ? ` Options: ${options.join(', ')}.` : ''
   // Agents now give their recommendation as an option field rather than in the question text.
   const recommended = recommendedQuestionOption(question)
+  const recommendedLabel = recommended ? (recommended.label ?? recommended.value) : ''
+  // A label that already ends a sentence ("Ship it now?") gets no extra full stop when no reason follows it.
   const recommendedText = recommended
-    ? ` Recommended: ${recommended.label ?? recommended.value}${recommended.reason ? ` (${recommended.reason})` : ''}.`
+    ? recommended.reason
+      ? ` Recommended: ${recommendedLabel} (${recommended.reason}).`
+      : ` Recommended: ${recommendedLabel}${endsWithSentencePunctuation(recommendedLabel) ? '' : '.'}`
     : ''
   const optionalText = question.optional ? ' Optional.' : ''
   const contextText = question.context?.trim() ? ` Context: ${question.context.trim()}` : ''
