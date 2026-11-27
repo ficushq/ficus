@@ -1,4 +1,9 @@
-import { recommendedQuestionOption, type QuestionData, type WorkStreamPause } from '@ficus/shared'
+import {
+  endsWithSentencePunctuation,
+  recommendedQuestionOption,
+  type QuestionData,
+  type WorkStreamPause,
+} from '@ficus/shared'
 import type { LinearAgentActivityContent } from './write-api'
 
 /**
@@ -148,13 +153,17 @@ export function selectableQuestion(data: QuestionData) {
   return options.length ? { item, options } : undefined
 }
 
-/** "Recommended: <label>. <reason>" for a question's recommended option, so Linear shows the agent's pick. */
+/**
+ * "Recommended: <label>. <reason>" for a question's recommended option, so Linear shows the agent's pick.
+ * A label that already ends a sentence ("Ship it now?") gets no extra full stop.
+ */
 function recommendationLine(item: QuestionData['questions'][number]): string | undefined {
   const option = recommendedQuestionOption(item)
   if (!option) return undefined
   const label = option.label?.trim() || option.value
   const reason = option.reason?.trim()
-  return `Recommended: ${label}.${reason ? ` ${reason}` : ''}`
+  const end = endsWithSentencePunctuation(label) ? '' : '.'
+  return `Recommended: ${label}${end}${reason ? ` ${reason}` : ''}`
 }
 
 /** The elicitation for a question: its text and context, the options, the recommendation, and how to answer. */
