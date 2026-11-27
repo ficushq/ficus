@@ -20,7 +20,7 @@ The tool groups in `labels.ts` name and describe tools; they do not label them. 
 
 The subagent and monitor tools are `direct` by default (the shared subagents include tells agents to dispatch); they have a group so an agent type that defers them gets a namespace. Every other tool is `direct`, including `tool_search` itself and the tools the system prompt tells every agent to use by name: `bash`, `squad_bash`, `read`, `write`, `edit`, `ask_human`, `notify_contact`, the memory tools, the short-term memory tools, `sandbox_status`, `set_agent_purpose`, `websearch` and `webfetch`.
 
-An agent type overrides the defaults in its YAML, next to `allow` and `deny` (stored in `agent_types.tool_search`). Sync warns about names in `direct` or `deferred` that match no known Ficus tool:
+An agent type overrides the defaults in its YAML, next to `allow` and `deny` (stored in `agent_types.tool_search`). Sync warns about names in `direct` or `deferred` that match no tool in the metadata table, which lists every built-in tool; an integration or extension tool is not in it, so a name that only one of those provides gets the warning but still applies:
 
 ```yaml
 tools:

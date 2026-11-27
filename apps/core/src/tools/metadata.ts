@@ -236,11 +236,20 @@ function annotationsFor(replay: ToolReplay): NonNullable<ToolDefinition['annotat
   return { readOnlyHint: false, idempotentHint: replay === 'idempotent' }
 }
 
+/**
+ * The metadata a tool definition carries: the replay class only. The label is left off because an
+ * agent type's `tools.direct` and `tools.deferred` override it per session; read it with
+ * `resolveToolLabel` (`services/agent/tool-search/labels.ts`), not from the definition.
+ */
+export type ToolDefinitionMetadata = Pick<ToolMetadata, 'replay'>
+
 /** A tool definition that carries its Ficus metadata. */
-export type ClassifiedToolDefinition<T extends ToolDefinition = ToolDefinition> = T & { ficus: ToolMetadata }
+export type ClassifiedToolDefinition<T extends ToolDefinition = ToolDefinition> = T & {
+  ficus: ToolDefinitionMetadata
+}
 
 /**
- * Put the tool's classification on its definition: `ficus` for Ficus code, `annotations` for pi and
+ * Put the tool's replay class on its definition: `ficus` for Ficus code, `annotations` for pi and
  * other readers of the standard hints. The recovery wrapper applies it to every session tool,
  * extension tools included. Any `ficus` value the tool brought is replaced by the table's.
  */
@@ -248,7 +257,7 @@ export function withToolMetadata<T extends ToolDefinition>(tool: T): ClassifiedT
   const classified = TOOL_METADATA.get(tool.name)
   return {
     ...tool,
-    ficus: classified ?? DEFAULT_TOOL_METADATA,
+    ficus: Object.freeze({ replay: (classified ?? DEFAULT_TOOL_METADATA).replay }),
     ...(classified ? { annotations: { ...tool.annotations, ...annotationsFor(classified.replay) } } : {}),
   }
 }
