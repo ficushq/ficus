@@ -167,9 +167,10 @@ const PERSON_WAIT_NOUNS: Record<WorkStreamWaitType, string> = {
 
 /**
  * One wait as the label reads it. `you` narrows "a person must act" (`needsYou`) to the viewer:
- * false when this viewer cannot act on it. Server-built cards omit it and read as the viewer's.
+ * false when this viewer cannot act on it. Core sets it on Active work cards for the viewer; cards
+ * from older servers omit it and read as the viewer's.
  */
-export type ActivityCardLabelWait = ActivityWorkStreamCardWait & { you?: boolean }
+export type ActivityCardLabelWait = ActivityWorkStreamCardWait
 
 /**
  * "Waiting on you: review" when the viewer must act, "Waiting on review" when someone else must,

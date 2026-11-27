@@ -56,8 +56,8 @@ interface ActivityWorkStreamCard {
   title: string
   status: WorkStreamStatus // queued or active
   step: string | null // same rule as row context
-  waits: Array<{ type: WorkStreamWaitType; needsYou: boolean }> // display precedence first
-  needsYou: boolean // same rule as needsYouCount
+  waits: Array<{ type: WorkStreamWaitType; needsYou: boolean; you?: boolean }> // display precedence first
+  needsYou: boolean // the stream waits on this viewer; same rule as needsYouCount
   pullRequest: { number: number; url?: string; repository: string; state: 'open' | 'merged' | 'closed' } | null
   ci: 'passing' | 'failing' | 'pending' | null
   deliveryLabel: string | null // "Awaiting CI", "Review Pull Request", …
@@ -70,7 +70,9 @@ interface ActivityWorkStreamCard {
 ```
 
 - Cards cover exactly the streams `streamCount` counts: queued and active streams in squads where the viewer has `workstreams:read`, minus streams whose progress the viewer muted. They are ordered by `needsYou` first, then newest `lastEventAt`, and capped at `ACTIVITY_WORK_STREAM_CARD_LIMIT` (12, twice what the strip shows); `streamCount` still counts every stream.
-- `waits[].type` is the display type (`workStreamWaitDisplayType`, so a workflow approval gate reads `review`); `needsYou` uses `workStreamWaitNeedsHuman`, the per-wait half of `workStreamNeedsHumanAttention`.
+- `waits[].type` is the display type (`workStreamWaitDisplayType`, so a workflow approval gate reads `review`); `needsYou` uses `workStreamWaitNeedsHuman`, the per-wait half of `workStreamNeedsHumanAttention`: some person must act.
+- "Waiting on you" is about the viewer, and Core applies it per request. `waits[].you` says whether this viewer is that person (`viewerCanActOnWait`: answering a question takes `agents:run`, a workflow gate follows `mayDecideWorkflowGate` for the approver on the wait and the stream's assigned reviewers, any other person wait `workstreams:respond` or `workstreams:update`). The card's `needsYou` and `needsYouCount` use `workStreamWaitsOnViewer`: the stream needs a person and the viewer can act on one of its person waits; a stream whose only person action is its pull request's review or merge at the code host counts for every viewer, since Ficus cannot tell who may act there. Older servers omit `you`, and clients read a wait a person must act on as the viewer's. The cost is one more column (`assigned_reviewer_ids`) and the viewer's permissions in each squad holding a stream with an open wait (cached for users).
+- The per-squad Activity tab counts "N waiting on you" on the client from the squad's active streams with the same `workStreamWaitsOnViewer` rule and the viewer's squad permissions.
 - `pullRequest` comes from the stream's code-host binding (`resolveCodeHostReference`) with the state observed by delivery tracking. `ci` and `deliveryLabel` come only from the server's delivery presentation (`delivery.explanation.gates.checksState` and `codeHostReason`), so they are null before a flow reaches completion-ready. An individual successful CI run is never reported as passing.
 - `workingAgentIds` is empty unless the viewer has `agents:read` in the stream's squad.
 - `summary` is the stream's one-line summary, only while the instance switch is on and it was generated for the card's `step` ([Work stream summaries](work-stream-summaries.md)).

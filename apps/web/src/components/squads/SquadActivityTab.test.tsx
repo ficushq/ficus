@@ -823,6 +823,48 @@ describe('background presence (operator decisions 2026-08-27)', () => {
     expect(quiet).toContain('0 working')
     expect(quiet).not.toContain('Working now')
   })
+
+  test('"waiting on you" counts only the streams this viewer can act on', () => {
+    // A human approval limited to the stream's assigned reviewers, and a question.
+    const gate = (assignedReviewerIds: string[]) => ({
+      status: 'active',
+      derivedState: 'in_review',
+      assignedReviewerIds,
+      openWaits: [
+        {
+          id: `gate-${assignedReviewerIds.join()}`,
+          type: 'manual',
+          workflowHumanGate: true,
+          workflowGateApprover: 'assigned-reviewers',
+          resolutionHandler: 'workflow',
+          flowAttemptId: 2,
+          openedAt: '2026-11-01T00:00:00Z',
+        },
+      ],
+    })
+    const question = {
+      status: 'active',
+      derivedState: 'waiting_on_answer',
+      openWaits: [{ id: 'q', type: 'question', referenceId: 'q', openedAt: '2026-11-01T00:00:00Z' }],
+    }
+    const activeStreams = [
+      { id: 'ws-mine', ...gate(['user-1']) },
+      { id: 'ws-theirs', ...gate(['someone-else']) },
+      { id: 'ws-question', ...question },
+    ]
+    // The assigned reviewer, who cannot answer questions: only their own gate.
+    const reviewer = staticRender([], false, {
+      permissions: ['workstreams:read', 'workstreams:review'],
+      activeStreams,
+    })
+    expect(reviewer).toContain('1 waiting on you')
+    // Someone who can answer but not review: only the question.
+    const answerer = staticRender([], false, { permissions: ['workstreams:read', 'agents:run'], activeStreams })
+    expect(answerer).toContain('1 waiting on you')
+    // A reader who can act on none of them.
+    const reader = staticRender([], false, { permissions: ['workstreams:read'], activeStreams })
+    expect(reader).toContain('0 waiting on you')
+  })
 })
 
 for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
