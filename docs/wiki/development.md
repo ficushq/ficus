@@ -235,6 +235,11 @@ upgrade make their runtime assumptions explicit:
   helpers and client-core tests, respectively.
 - `apps/web/tsconfig.node.json` includes `node` for `vite.config.ts`, which
   runs outside the browser.
+- `apps/web/tsconfig.scripts.json` type-checks `apps/web/scripts`, including
+  the rendered checks and the fixtures they load, with `bun` types. The web
+  `typecheck` script runs it, so CI's typecheck fails when a fixture calls an
+  export that was renamed or removed. The fixtures may cast partial seed data
+  (`as never`), but a property that no longer exists still fails to compile.
 
 **Browser code must not rely on `process` or `Buffer`, even if it type-checks.**
 The web app imports `qrcode`, whose `@types/qrcode` declarations include

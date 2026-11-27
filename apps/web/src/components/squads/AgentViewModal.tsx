@@ -11,7 +11,8 @@ import { AgentInfoPanel } from '../AgentInfoPanel'
 import { ChatIcon, InboxIcon, WorkStreamIcon, MemoryIcon } from '../icons'
 import type { Agent } from '@ficus/shared'
 import {
-  formatAgentName,
+  agentTypeDisplayName,
+  formatAgentNameAfterType,
   getAgentLabel,
   getAgentName,
   noAgentTypeNames,
@@ -22,13 +23,16 @@ import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 /**
  * The agent chat header: the agent's type first, with its purpose in parentheses ("Engineer
  * (Onboarding)"), then its name as the secondary handle. A squad has one manager, so it is
- * "Manager". A workflow agent's name leads with its participant, title-cased.
+ * "Manager". A workflow agent's name leads with its participant, title-cased, unless the participant
+ * reads as the type already leading the title ("Engineer · Forward the client IP", not "Engineer ·
+ * Engineer · Forward the client IP").
  */
 export function getAgentHeaderTitleParts(
   agent: Agent,
   typeNames: AgentTypeName = noAgentTypeNames
 ): { title: string; suffix: string } {
-  const stableName = formatAgentName(getAgentName(agent))
+  const type = agent.agentTypeId === 'manager' ? 'Manager' : agentTypeDisplayName(agent.agentTypeId, typeNames)
+  const stableName = formatAgentNameAfterType(getAgentName(agent), type)
   if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: stableName }
   return { title: getAgentLabel(agent, undefined, typeNames), suffix: stableName }
 }

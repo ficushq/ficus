@@ -1,5 +1,4 @@
 /** Fixture-only in-memory response: no account, provider or backend is contacted. */
-import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { emptySamplingBreakdown, type DerivationProgress } from '@ficus/shared'
 import { DeriveVoiceCard } from '../../src/components/voice/DeriveVoiceCard'

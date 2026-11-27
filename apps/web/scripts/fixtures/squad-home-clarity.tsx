@@ -149,7 +149,12 @@ for (const item of streams) {
     inherited: true,
     attention: { decisions: 'show', progress: 'show' },
   })
-  client.setQueryData(queries.activity.workStreamRecent(item.id).queryKey, { items: [], hasMore: false })
+  client.setQueryData(queries.activity.workStreamRecent(item.id).queryKey, {
+    items: [],
+    hasMore: false,
+    nextCursor: null,
+    squads: {},
+  })
 }
 // A VM squad whose box has never been provisioned: normal until the first agent runs.
 client.setQueryData(queryKeys.sandbox.status(squadId), {

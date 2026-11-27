@@ -37,10 +37,10 @@ try {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const screenshotDir = process.env.SCREENSHOT_DIR
   if (screenshotDir) await mkdir(screenshotDir, { recursive: true })
-  const views = BUILT_IN_THEMES.flatMap((theme) =>
+  const views = BUILT_IN_THEMES.flatMap((theme): { theme: string; appearance: 'light' | 'dark' | 'constant' }[] =>
     theme.kind === 'dual'
       ? (['light', 'dark'] as const).map((appearance) => ({ theme: theme.id, appearance }))
-      : [{ theme: theme.id, appearance: 'constant' as const }]
+      : [{ theme: theme.id, appearance: 'constant' }]
   )
   for (const view of views) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 640 }, reducedMotion: 'reduce' })

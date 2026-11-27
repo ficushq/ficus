@@ -33,10 +33,12 @@ const lines: Array<[Message['role'], string]> = [
 const items: RenderItem[] = lines.map(([role, content], index) => {
   const message: Message = {
     id: `m${index}`,
+    agentId: AGENT,
     role,
     content,
     metadata: null,
-    createdAt: new Date(start + index * 60_000).toISOString(),
+    pending: false,
+    createdAt: new Date(start + index * 60_000),
   }
   return { kind: 'persisted', id: message.id, message, mergedFrom: [message], blocks: [] }
 })

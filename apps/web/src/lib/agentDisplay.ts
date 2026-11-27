@@ -54,8 +54,29 @@ const titleCase = (id: string) =>
  * participant id is title-cased ("Engineer · Forward the real client IP"); other names are unchanged.
  */
 export function formatAgentName(name: string): string {
-  const match = /^([a-z0-9]+(?:[-_][a-z0-9]+)*) · (.+)$/.exec(name)
+  const match = WORKFLOW_AGENT_NAME.exec(name)
   return match ? `${titleCase(match[1]!)} · ${match[2]}` : name
+}
+
+const WORKFLOW_AGENT_NAME = /^([a-z0-9]+(?:[-_][a-z0-9]+)*) · (.+)$/
+
+/** Words compared case-insensitively, without the "agent" the general type adds ("General Purpose agent"). */
+const typeWords = (label: string) =>
+  label
+    .trim()
+    .toLowerCase()
+    .replace(/\s+agent$/, '')
+
+/**
+ * An agent's name shown after a label that already leads with its type (`typeLabel`): as
+ * `formatAgentName` shows it, except that a workflow agent's participant is dropped when it reads as
+ * that type, so "engineer · Forward the client IP" after "Engineer" is "Forward the client IP". A
+ * participant that differs from the type ("Code Reviewer" run by an Engineer) stays.
+ */
+export function formatAgentNameAfterType(name: string, typeLabel: string): string {
+  const match = WORKFLOW_AGENT_NAME.exec(name)
+  if (match && typeWords(titleCase(match[1]!)) === typeWords(typeLabel)) return match[2]!
+  return formatAgentName(name)
 }
 
 function labelParts(agent: Agent) {
@@ -148,9 +169,10 @@ export function getAgentTitle(
 
 /**
  * Hover detail for an agent's row: the type as people read it first, then the agent's name (the handle
- * used with `ficus inbox send`, as `formatAgentName` shows it) and its full ID, then any `details` ("Engineer · Quinn · 1a2b… · 1 pending
- * question"). `typeNote` qualifies the type ("Consultant via Assistant"). The raw type id is never shown;
- * admins find it on the agent type's settings page.
+ * used with `ficus inbox send`, as `formatAgentNameAfterType` shows it, so a workflow agent's participant
+ * is not repeated after the same type) and its full ID, then any `details` ("Engineer · Quinn · 1a2b… · 1
+ * pending question"). `typeNote` qualifies the type ("Consultant via Assistant"). The raw type id is never
+ * shown; admins find it on the agent type's settings page.
  */
 export function agentHoverTitle(
   agent: Pick<Agent, 'id' | 'agentTypeId' | 'metadata'>,
@@ -161,7 +183,7 @@ export function agentHoverTitle(
   const name = agent.metadata?.name
   return [
     typeNote ? `${type} ${typeNote}` : type,
-    typeof name === 'string' && name.trim() ? formatAgentName(name.trim()) : undefined,
+    typeof name === 'string' && name.trim() ? formatAgentNameAfterType(name.trim(), type) : undefined,
     agent.id,
     ...details,
   ]

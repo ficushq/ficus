@@ -1,5 +1,4 @@
 /** Synthetic Settings/onboarding fixture. All data and mutations stay in memory. */
-import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
@@ -55,7 +54,7 @@ let squads = [
   createdAt: now,
   updatedAt: now,
   status: 'active',
-})) as Squad[]
+})) as unknown as Squad[]
 const accounts = [
   { id: 'a1111111-1111-4111-8111-111111111111', login: 'octocat', displayName: 'Personal GitHub account' },
 ]

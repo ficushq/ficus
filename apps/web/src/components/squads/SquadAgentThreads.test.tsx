@@ -464,15 +464,20 @@ describe('SquadAgentThreads header', () => {
   })
 
   test("a workflow agent's name shows its participant id title-cased, once", () => {
-    expect(
-      getAgentHeaderTitleParts(
-        agent({
-          agentTypeId: 'engineer',
-          metadata: { name: 'engineer · Forward the real client IP', purpose: 'Fix local-app client IP forwarding' },
-        })
-      )
-    ).toEqual({
+    const workflowAgent = (purpose?: string) =>
+      agent({ agentTypeId: 'engineer', metadata: { name: 'engineer · Forward the real client IP', purpose } })
+    // The participant reads as the type leading the title, so it is not repeated.
+    expect(getAgentHeaderTitleParts(workflowAgent('Fix local-app client IP forwarding'))).toEqual({
       title: 'Engineer (Fix local-app client IP forwarding)',
+      suffix: 'Forward the real client IP',
+    })
+    expect(getAgentHeaderTitleParts(workflowAgent())).toEqual({
+      title: 'Engineer',
+      suffix: 'Forward the real client IP',
+    })
+    // A configured type name that differs from the participant keeps both.
+    expect(getAgentHeaderTitleParts(workflowAgent(), (id) => (id === 'engineer' ? 'Builder' : undefined))).toEqual({
+      title: 'Builder',
       suffix: 'Engineer · Forward the real client IP',
     })
     expect(

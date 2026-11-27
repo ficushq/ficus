@@ -5,11 +5,13 @@ import {
   agentListLabels,
   agentThreadLinkTitle,
   agentTypeDisplayName,
+  formatAgentNameAfterType,
   getAgentLabel,
   getAgentTitle,
   getConversationTitle,
   getAgentName,
   getAgentPrimaryLabel,
+  noAgentTypeNames,
   getAgentPurpose,
   agentMatchesQuery,
   typeFirstAgentLabels,
@@ -172,10 +174,25 @@ describe('configured agent type names', () => {
     expect(agentHoverTitle(builder, typeNames)).toBe('Builder · Fern · b1')
     expect(agentHoverTitle(unnamed, typeNames)).toBe('Release QA · q1')
     expect(agentHoverTitle(unnamed)).toBe('Qa Bot · q1')
-    // A workflow agent's `<participant> · <stream title>` name reads like the chat header's handle.
+    // A workflow agent's `<participant> · <stream title>` name reads like the chat header's handle, and a
+    // participant that reads as the type already leading the title is not said twice.
+    const workflowAgent = mk({
+      id: 'w1',
+      agentTypeId: 'engineer',
+      metadata: { name: 'engineer · Forward the client IP' },
+    })
+    expect(agentHoverTitle(workflowAgent)).toBe('Engineer · Forward the client IP · w1')
+    expect(agentHoverTitle(workflowAgent, noAgentTypeNames, { typeNote: 'via Assistant' })).toBe(
+      'Engineer via Assistant · Forward the client IP · w1'
+    )
+    // Configured as "Builder", the type no longer matches the participant, so both stay.
+    expect(agentHoverTitle(workflowAgent, typeNames)).toBe('Builder · Engineer · Forward the client IP · w1')
     expect(
-      agentHoverTitle(mk({ id: 'w1', agentTypeId: 'engineer', metadata: { name: 'engineer · Forward the client IP' } }))
-    ).toBe('Engineer · Engineer · Forward the client IP · w1')
+      agentHoverTitle(mk({ id: 'r1', agentTypeId: 'engineer', metadata: { name: 'code-reviewer · Check the diff' } }))
+    ).toBe('Engineer · Code Reviewer · Check the diff · r1')
+    expect(
+      agentHoverTitle(mk({ id: 'g2', agentTypeId: 'general', metadata: { name: 'general-purpose · Write the docs' } }))
+    ).toBe('General Purpose agent · Write the docs · g2')
     expect(agentHoverTitle(mk({ id: 'g1', agentTypeId: 'general', metadata: { name: 'Gale' } }))).toBe(
       'General Purpose agent · Gale · g1'
     )
@@ -185,6 +202,16 @@ describe('configured agent type names', () => {
         details: [undefined, '1 pending question'],
       })
     ).toBe('Consultant via Assistant · Juniper · k1 · 1 pending question')
+  })
+
+  it('drops a workflow participant only when it reads as the type before it', () => {
+    expect(formatAgentNameAfterType('engineer · Forward the client IP', 'Engineer')).toBe('Forward the client IP')
+    expect(formatAgentNameAfterType('code_reviewer · Check', 'code reviewer')).toBe('Check')
+    expect(formatAgentNameAfterType('engineer · Forward the client IP', 'Builder')).toBe(
+      'Engineer · Forward the client IP'
+    )
+    expect(formatAgentNameAfterType('Quinn', 'Engineer')).toBe('Quinn')
+    expect(formatAgentNameAfterType('engineer', 'Engineer')).toBe('engineer')
   })
 
   it('titles an agent thread link without saying "agent" twice', () => {

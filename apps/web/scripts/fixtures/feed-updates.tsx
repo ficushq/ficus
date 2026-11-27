@@ -15,7 +15,13 @@ Object.assign(window, { refreshFeed: () => client.invalidateQueries({ queryKey: 
 const actions = [
   { id: 'pending-action', type: 'workstream-review', priority: 1, data: { squadId: 'synthetic' } },
 ] as PendingAction[]
-const pending = () => ({ data: actions, isLoading: false, isError: false, error: null, refetch: async () => {} })
+const pending = (() => ({
+  data: actions,
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: async () => {},
+})) as never
 const activity = (() => ({
   ownerId: 'synthetic',
   activity: {
