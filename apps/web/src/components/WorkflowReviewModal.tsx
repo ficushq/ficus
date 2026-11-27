@@ -1011,7 +1011,7 @@ function DecisionButtons({ gate, run, notes, advance, revisions, typeName }: Omi
             onClick={() => advance.mutate(outcome)}
           >
             {outcomeLabel(outcome)}
-            <span className="block text-xs font-normal opacity-80 line-clamp-2">{effect.short}</span>
+            <span className="line-clamp-2 text-xs font-normal opacity-80">{effect.short}</span>
           </button>
         )
       })}
