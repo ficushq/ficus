@@ -99,9 +99,49 @@ describe('tool classification', () => {
       expect(toolReplay(name)).toBe('unsafe')
   })
 
-  test('a tool no one classified is unsafe, including extension and integration tools', () => {
+  test('a tool no one classified is unsafe and direct, including extension and integration tools', () => {
     for (const name of ['some_extension_tool', 'mcp__github__create_issue', '', 'READ'])
-      expect(toolMetadata(name)).toEqual({ replay: 'unsafe' })
+      expect(toolMetadata(name)).toEqual({ replay: 'unsafe', label: 'direct' })
+  })
+
+  test('tool_search is idempotent: a repeat finds the tools already loaded', () => {
+    expect(toolMetadata('tool_search')).toEqual({ replay: 'idempotent', label: 'direct' })
+    expect(replayIsHarmless(toolReplay('tool_search'))).toBe(true)
+  })
+
+  test('only the browser, code navigation and checklist tools default to deferrable', () => {
+    const deferrable = [...classifiedTools()]
+      .filter(([, metadata]) => metadata.label === 'deferrable')
+      .map(([name]) => name)
+      .sort()
+    expect(deferrable).toEqual([
+      'ast_references',
+      'ast_rename',
+      'ast_symbols',
+      'browser_click',
+      'browser_console',
+      'browser_open',
+      'browser_read',
+      'browser_screenshot',
+      'browser_scroll',
+      'browser_type',
+      'todo_add',
+      'todo_list',
+      'todo_remove',
+      'todo_toggle',
+      'todo_update',
+    ])
+    for (const name of ['bash', 'read', 'ask_human', 'dispatch', 'monitor', 'memory_search', 'webfetch'])
+      expect(toolMetadata(name).label).toBe('direct')
+  })
+
+  test('the label does not follow the replay class', () => {
+    // Deferrable tools span every class, and direct ones too.
+    expect(toolMetadata('browser_read')).toEqual({ replay: 'safe', label: 'deferrable' })
+    expect(toolMetadata('ast_rename')).toEqual({ replay: 'idempotent', label: 'deferrable' })
+    expect(toolMetadata('todo_add')).toEqual({ replay: 'unsafe', label: 'deferrable' })
+    expect(toolMetadata('read')).toEqual({ replay: 'safe', label: 'direct' })
+    expect(toolMetadata('bash')).toEqual({ replay: 'unsafe', label: 'direct' })
   })
 
   test('only safe and idempotent replays are harmless', () => {
@@ -124,7 +164,7 @@ describe('metadata on tool definitions', () => {
 
   test('a classified tool carries its class and the matching standard hints', () => {
     expect(withToolMetadata(definition('read'))).toMatchObject({
-      ficus: { replay: 'safe' },
+      ficus: { replay: 'safe', label: 'direct' },
       annotations: { readOnlyHint: true },
     })
     expect(withToolMetadata(definition('write'))).toMatchObject({
@@ -141,7 +181,7 @@ describe('metadata on tool definitions', () => {
     const tool = withToolMetadata(
       definition('ext_tool', { annotations: { readOnlyHint: true }, ficus: { replay: 'safe' } })
     )
-    expect(tool.ficus).toEqual({ replay: 'unsafe' })
+    expect(tool.ficus).toEqual({ replay: 'unsafe', label: 'direct' })
     expect(tool.annotations).toEqual({ readOnlyHint: true })
   })
 })

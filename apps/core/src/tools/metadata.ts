@@ -14,12 +14,14 @@
  * restart cut off (`services/agent/interrupted-tool-calls.ts`) and whether an interrupted call
  * spends the unexplained-failure budget (`services/recovery/runtime.ts`).
  *
- * Every built-in tool is listed by exact name. A tool that is not listed, such as a tool from a
- * pi extension or an integration added later, is `unsafe`. The table is authoritative: a tool's
- * own self-description cannot make Ficus treat it as safer.
+ * `label` is the tool's default tool-search label: `direct` tools are declared on every request,
+ * `deferrable` tools may be held back and loaded when the agent asks for them
+ * (`services/agent/tool-search/labels.ts`, where an agent type's `tools.direct` and
+ * `tools.deferred` override it).
  *
- * The same shape is meant to carry the tool-search label (`direct` or `deferrable`) as a second
- * field, so both labels are read from one table instead of two parallel mechanisms.
+ * Every built-in tool is listed by exact name. A tool that is not listed, such as a tool from a
+ * pi extension or an integration added later, is `unsafe` and `direct`. The table is
+ * authoritative: a tool's own self-description cannot make Ficus treat it as safer.
  */
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 
@@ -27,15 +29,19 @@ export type ToolReplay = 'safe' | 'idempotent' | 'unsafe'
 
 export const TOOL_REPLAY_CLASSES: readonly ToolReplay[] = ['safe', 'idempotent', 'unsafe']
 
+export type ToolLabel = 'direct' | 'deferrable'
+
 /** What Ficus knows about a tool, whatever runtime (pi or the Claude Code bridge) runs it. */
 export interface ToolMetadata {
   replay: ToolReplay
+  label: ToolLabel
 }
 
-/** The class of a tool no one classified. */
-export const DEFAULT_TOOL_METADATA: Readonly<ToolMetadata> = Object.freeze({ replay: 'unsafe' })
+/** The metadata of a tool no one classified. */
+export const DEFAULT_TOOL_METADATA: Readonly<ToolMetadata> = Object.freeze({ replay: 'unsafe', label: 'direct' })
 
-interface ToolMetadataGroup extends ToolMetadata {
+interface ToolMetadataGroup {
+  replay: ToolReplay
   /** Why these tools have this class, for a reviewer changing one. */
   why: string
   tools: readonly string[]
@@ -162,12 +168,44 @@ const TOOL_METADATA_GROUPS: readonly ToolMetadataGroup[] = [
   },
 ]
 
+/**
+ * The classified tools whose default label is `deferrable`; every other tool is `direct`. Only
+ * rarely used, heavy tools are deferrable: browser, code navigation and checklist. The tools the
+ * system prompt tells every agent to use by name (shell, files, memory, ask_human, notify_contact,
+ * sandbox_status, short-term memory, set_agent_purpose), the subagent tools (the shared subagents
+ * include tells agents to dispatch) and monitor stay `direct` (owner decision, 2026-11-27).
+ */
+const DEFERRABLE_TOOLS: ReadonlySet<string> = new Set([
+  // Browser
+  'browser_open',
+  'browser_click',
+  'browser_type',
+  'browser_scroll',
+  'browser_read',
+  'browser_screenshot',
+  'browser_console',
+  // Code navigation (the code-ast extension)
+  'ast_symbols',
+  'ast_references',
+  'ast_rename',
+  // Checklist
+  'todo_list',
+  'todo_add',
+  'todo_toggle',
+  'todo_remove',
+  'todo_update',
+])
+
 const TOOL_METADATA = new Map<string, ToolMetadata>()
 for (const group of TOOL_METADATA_GROUPS) {
   for (const name of group.tools) {
     if (TOOL_METADATA.has(name)) throw new Error(`Tool ${name} is classified twice`)
-    TOOL_METADATA.set(name, Object.freeze({ replay: group.replay }))
+    const label: ToolLabel = DEFERRABLE_TOOLS.has(name) ? 'deferrable' : 'direct'
+    TOOL_METADATA.set(name, Object.freeze({ replay: group.replay, label }))
   }
+}
+for (const name of DEFERRABLE_TOOLS) {
+  if (!TOOL_METADATA.has(name)) throw new Error(`Deferrable tool ${name} has no replay class`)
 }
 
 /** Every classified tool name with its metadata. */
@@ -175,7 +213,7 @@ export function classifiedTools(): ReadonlyMap<string, ToolMetadata> {
   return TOOL_METADATA
 }
 
-/** The tool's metadata; a tool no one classified is `unsafe`. */
+/** The tool's metadata; a tool no one classified is `unsafe` and `direct`. */
 export function toolMetadata(name: string): ToolMetadata {
   return TOOL_METADATA.get(name) ?? DEFAULT_TOOL_METADATA
 }

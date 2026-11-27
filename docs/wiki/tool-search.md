@@ -6,7 +6,9 @@ Agent sessions do not declare every tool on every request. Rarely used, heavy to
 
 Every tool is either `direct` (declared on every request) or `deferrable` (may be held back). The label is runtime neutral: pi and the Claude Code bridge read the same labels.
 
-The global defaults are the tool groups in `labels.ts`. Each group has a name and a short purpose, which becomes the tool's pi namespace (so `tool_search` matches natural queries such as "screenshot the page") and the line that names the group in the system prompt:
+The global default is the tool's `label` in the tool metadata table, `apps/core/src/tools/metadata.ts`, which also holds its replay class (see [restart recovery](restart-recovery.md#tool-replay-classes)). Tools are listed there by exact name; a tool the table does not list, such as an integration or pi extension tool, is `direct`.
+
+The tool groups in `labels.ts` name and describe tools; they do not label them. Each group has a name and a short purpose, which becomes the tool's pi namespace (so `tool_search` matches natural queries such as "screenshot the page") and the line that names the group in the system prompt. Every listed tool in a group has the same default label:
 
 | Group           | Tools                                          | Default      |
 | --------------- | ---------------------------------------------- | ------------ |
@@ -16,7 +18,7 @@ The global defaults are the tool groups in `labels.ts`. Each group has a name an
 | Monitors        | `monitor`                                      | `direct`     |
 | Checklist       | `todo_*`                                       | `deferrable` |
 
-The subagent and monitor groups are `direct` by default (the shared subagents include tells agents to dispatch); they have a group so an agent type that defers them gets a namespace. Every other tool is `direct`, including the tools the system prompt tells every agent to use by name: `bash`, `squad_bash`, `read`, `write`, `edit`, `ask_human`, `notify_contact`, the memory tools, the short-term memory tools, `sandbox_status`, `set_agent_purpose`, `websearch` and `webfetch`.
+The subagent and monitor tools are `direct` by default (the shared subagents include tells agents to dispatch); they have a group so an agent type that defers them gets a namespace. Every other tool is `direct`, including `tool_search` itself and the tools the system prompt tells every agent to use by name: `bash`, `squad_bash`, `read`, `write`, `edit`, `ask_human`, `notify_contact`, the memory tools, the short-term memory tools, `sandbox_status`, `set_agent_purpose`, `websearch` and `webfetch`.
 
 An agent type overrides the defaults in its YAML, next to `allow` and `deny` (stored in `agent_types.tool_search`). Sync warns about names in `direct` or `deferred` that match no known Ficus tool:
 

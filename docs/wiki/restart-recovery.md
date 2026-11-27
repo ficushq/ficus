@@ -111,8 +111,12 @@ Every built-in tool has a replay class in one table, `apps/core/src/tools/metada
 `safe` (reads only), `idempotent` (a repeat with the same arguments leaves the same
 final state, or is refused) or `unsafe` (a repeat may duplicate an effect). A tool
 that is not listed, including pi extension and integration tools, is `unsafe`.
-`wrapToolWithRecovery` puts the class on each session tool definition as `ficus`
-and as pi's standard `annotations` hints (`readOnlyHint`, `idempotentHint`).
+`tool_search` is `idempotent`: a repeat finds the tools it loads already loaded.
+The same table holds each tool's default tool-search label (`direct` or
+`deferrable`, see [tool search](tool-search.md#labels)), so one entry per tool
+carries both. `wrapToolWithRecovery` puts the metadata on each session tool
+definition as `ficus` (`{ replay, label }`) and the class as pi's standard
+`annotations` hints (`readOnlyHint`, `idempotentHint`).
 
 The recovery wrapper also has a budget rule for the class: a `safe` or
 `idempotent` call that a lost sandbox connection cut off mid-call
