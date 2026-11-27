@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { and, eq, inArray } from 'drizzle-orm'
-import { manualInputRequestSchema, taskInputSummary } from '@ficus/shared'
+import { ACTIVITY_SETTLED_MARGIN_MS, manualInputRequestSchema, taskInputSummary } from '@ficus/shared'
 import { db } from '../../db'
 import {
   agents,
@@ -22,6 +22,8 @@ import { countSettledActivity } from './settled'
 
 const FULL: SquadActivityAccess = { agentsRead: true, workstreamsRead: true, inbox: { mode: 'all' } }
 const HOUR = 3_600_000
+/** Settled long enough ago that a count includes it: counts stop ACTIVITY_SETTLED_MARGIN_MS ago. */
+const settledAt = () => new Date(Date.now() - ACTIVITY_SETTLED_MARGIN_MS - 60_000)
 const createdSquads: string[] = []
 const inboxRecipients: string[] = []
 let squadId: string
@@ -57,7 +59,7 @@ async function closedWait(values: Partial<typeof workStreamWaits.$inferInsert>) 
       createdByAgentId: worker,
       structured: { request, summary: taskInputSummary(request as never), version: 1 },
       openedAt: new Date(Date.now() - 2 * HOUR),
-      closedAt: new Date(),
+      closedAt: settledAt(),
       resolution: 'cleared',
       resolutionNote: 'Selected: Redis',
       ...values,
@@ -124,6 +126,7 @@ describe('settled without you', () => {
     )
     expect(closed.resolvedByAgentId).toBe(owner)
     expect(closed.resolvedByUserId).toBeNull()
+    await db.update(workStreamWaits).set({ closedAt: settledAt() }).where(eq(workStreamWaits.id, wait.id))
     await materializeSourceGroup({ family: 'wait', groupId: wait.id })
 
     // Each of these is left out: answered by a person, once routed to a person, closed by a path
@@ -180,6 +183,7 @@ describe('settled without you', () => {
       version,
       stateStatus: 'running' as const,
       actorKey,
+      createdAt: settledAt(),
     })
     await db.insert(workStreamFlowTransitions).values([
       // The engineer's own completion is not a review.
@@ -233,26 +237,37 @@ describe('settled without you', () => {
     expect(old.since).toBe(activityRetentionFloor(new Date()).toISOString())
   })
 
-  test('counts up to the time it reports as `through`, so the next period starts there', async () => {
+  test('counts up to `through`, a margin behind the clock, so the next period counts what settled since', async () => {
     await closedWait({ resolvedByAgentId: owner })
-    // Recorded with a time after the count runs: left for the period that starts at `through`.
-    const later = await closedWait({ resolvedByAgentId: owner, closedAt: new Date(Date.now() + HOUR) })
+    // Settled seconds ago: its row may still be being written while a count runs, so it is left to
+    // the period that starts at `through` rather than lost between the two.
+    const recent = await closedWait({ resolvedByAgentId: owner, closedAt: new Date(Date.now() - 5_000) })
     const before = Date.now()
     const summary = await countSettledActivity([{ squadId, access: FULL }], since)
     expect(summary.through).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
-    expect(Math.abs(Date.parse(summary.through) - before)).toBeLessThan(60_000)
+    expect(Math.abs(Date.parse(summary.through) - (before - ACTIVITY_SETTLED_MARGIN_MS))).toBeLessThan(10_000)
     expect(summary.counts).toEqual({ questions: 1, reviews: 0 })
-    // The later row is recorded and in the period; only the upper bound leaves it out of this count.
     const [row] = await db
       .select({ at: squadActivity.at })
       .from(squadActivity)
-      .where(and(eq(squadActivity.rowId, later.id), eq(squadActivity.lane, 41)))
+      .where(and(eq(squadActivity.rowId, recent.id), eq(squadActivity.lane, 41)))
     expect(row!.at.getTime()).toBeGreaterThan(Date.parse(summary.through))
-    // The next period starts at `through` and so picks up the row once it is no longer in the future.
-    const next = await countSettledActivity([{ squadId, access: FULL }], new Date(summary.through))
+
+    // The next visit starts at `through` and counts it: once, and not dropped.
+    const next = await countSettledActivity([{ squadId, access: FULL }], new Date(summary.through), new Date())
     expect(next.since).toBe(summary.through)
-    expect(next.counts).toEqual({ questions: 0, reviews: 0 })
-    expect(await countSettledActivity([], since)).toMatchObject({ through: expect.any(String) })
+    const page = await projectGlobalActivity({
+      limit: 50,
+      verbose: false,
+      agentIds: [],
+      kinds: [],
+      settled: { kind: 'questions', since: summary.through },
+      squadAccess: [{ squadId, access: FULL }],
+    })
+    expect(page.items.map((item) => item.id)).toEqual([`41:${recent.id}`])
+    // With no squads there is nothing to count, but the end comes from the same clock and margin.
+    const empty = await countSettledActivity([], since)
+    expect(Math.abs(Date.parse(empty.through) - (Date.now() - ACTIVITY_SETTLED_MARGIN_MS))).toBeLessThan(10_000)
   })
 
   test('counts only rows the viewer may read', async () => {

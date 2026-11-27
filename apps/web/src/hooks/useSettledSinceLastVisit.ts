@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ActivitySettledSummary } from '@ficus/shared'
+import { ACTIVITY_SETTLED_MARGIN_MS, type ActivitySettledSummary } from '@ficus/shared'
 import { useQuery } from '../reactQueryHooks'
 import { acknowledgeFeedVisit, type FeedVisit } from '../api/auth'
 import { feedQueries } from '../queryOptions'
+import { useAdjustOnChange } from './useAdjustOnChange'
 
 /** A visit ends after this long away from the tab, the usual web analytics session timeout. */
 export const FEED_VISIT_IDLE_MS = 30 * 60_000
@@ -14,6 +15,9 @@ export const FEED_VISIT_IDLE_MS = 30 * 60_000
 export const FEED_VISIT_MAX_MS = 8 * 60 * 60_000
 
 const VISIT_KEY_PREFIX = 'ficus:feed-visit:'
+/** How often a mounted Feed checks its visit: a timer for the full age would pause while the device sleeps. */
+const FEED_VISIT_CHECK_MS = 60_000
+
 /** When the tab was last hidden, while it still is (or was when the page unloaded). */
 export const FEED_VISIT_HIDDEN_KEY = 'ficus:feed-visit-hidden-at'
 
@@ -113,6 +117,12 @@ function markSessionVisitRecorded(userId: string, observedAt: string, through: s
   }
 }
 
+/** A server time less the counts' margin; an unreadable time is kept as it is. */
+function beforeMargin(time: string) {
+  const at = Date.parse(time)
+  return Number.isNaN(at) ? time : new Date(at - ACTIVITY_SETTLED_MARGIN_MS).toISOString()
+}
+
 const trackedDocuments = new WeakSet<Document>()
 
 /** Note when the tab is hidden; coming back after the idle timeout ends this tab's visit. */
@@ -141,14 +151,16 @@ function trackTimeAway(doc: Document) {
  * for the tab session, until the tab closes, has been away for FEED_VISIT_IDLE_MS, or the visit is
  * FEED_VISIT_MAX_MS old, so following a count to Activity and coming back keeps every count. A Feed
  * that stays mounted starts the new visit when the person comes back (the tab is shown again or the
- * window regains focus) or, on screen, when the visit reaches its maximum age.
+ * window regains focus) or, on screen, when the visit reaches its maximum age. Until the new visit's
+ * counts load, the previous line stays on screen, so the Updates section does not jump.
  *
  * The account watermark is read once when a visit begins. Each time the counts load, the visit
  * records their end (`through`, the server time they were counted up to) as the new watermark, so
  * the next visit starts exactly where this one's line stopped: work settled during a visit is either
  * in this visit's latest counts or in the next visit's, never both and never neither. A failed load
  * records nothing and keeps the older start for next time. No watermark yet means no line, and the
- * visit's start is recorded as the first watermark.
+ * visit's start, less the same margin the counts keep (ACTIVITY_SETTLED_MARGIN_MS), is recorded as
+ * the first watermark.
  */
 export function useSettledSinceLastVisit(
   userId: string,
@@ -182,6 +194,8 @@ export function useSettledSinceLastVisit(
   useEffect(() => {
     if (typeof document !== 'undefined') trackTimeAway(document)
   }, [])
+  // Re-rendered when the day changes, so "Since earlier today" becomes "Since yesterday" on screen.
+  const [, setDay] = useState(() => new Date().toDateString())
   // Coming back after the idle timeout, or to a visit past its maximum age, starts a new visit here.
   useEffect(() => {
     if (!observedAt || typeof document === 'undefined') return
@@ -189,6 +203,7 @@ export function useSettledSinceLastVisit(
     const startedAt = () => (started.current?.observedAt === observedAt ? started.current.at : Date.now())
     const check = () => {
       const now = Date.now()
+      setDay(new Date(now).toDateString())
       if (document.visibilityState === 'hidden') {
         hiddenAt ??= now
         return
@@ -199,11 +214,11 @@ export function useSettledSinceLastVisit(
       endSessionVisits()
       setVisit((current) => ({ generation: current.generation + 1, stored: null }))
     }
-    const timer = window.setTimeout(check, Math.max(0, startedAt() + FEED_VISIT_MAX_MS - Date.now()) + 1_000)
+    const timer = window.setInterval(check, FEED_VISIT_CHECK_MS)
     document.addEventListener('visibilitychange', check)
     window.addEventListener('focus', check)
     return () => {
-      window.clearTimeout(timer)
+      window.clearInterval(timer)
       document.removeEventListener('visibilitychange', check)
       window.removeEventListener('focus', check)
     }
@@ -213,8 +228,8 @@ export function useSettledSinceLastVisit(
   const settled = useQuery({ ...feedQueries.settled(userId, since ?? '', squadIds), enabled: since !== null })
   const summary = since !== null && settled.isSuccess ? (settled.data as ActivitySettledSummary | undefined) : undefined
   // How far this visit has shown: the end of its latest counts or, with no earlier visit (so no
-  // counts), its own start.
-  const through = !observedAt ? undefined : since === null ? observedAt : summary?.through
+  // counts), its own start less the counts' margin.
+  const through = !observedAt ? undefined : since === null ? beforeMargin(observedAt) : summary?.through
   const recorded = useRef<{ observedAt: string; through: string } | null>(null)
   useEffect(() => {
     if (!observedAt || !through) return
@@ -227,5 +242,16 @@ export function useSettledSinceLastVisit(
       () => {}
     )
   }, [observedAt, through, storedThrough, acknowledgeVisit, userId])
-  return summary?.counts ? summary : null
+  const current = summary?.counts ? summary : null
+  // Settled for this visit: its counts loaded or failed, or there is no period to count.
+  const settledForVisit = !!observedAt && (since === null || settled.isSuccess || settled.isError)
+  const [previous, setPrevious] = useState<ActivitySettledSummary | null>(null)
+  useAdjustOnChange(
+    [current, settledForVisit],
+    () => {
+      if (settledForVisit) setPrevious(current)
+    },
+    { onMount: true }
+  )
+  return settledForVisit ? current : previous
 }

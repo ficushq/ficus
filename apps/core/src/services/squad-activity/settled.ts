@@ -1,5 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm'
-import type { ActivitySettledKind, ActivitySettledSummary } from '@ficus/shared'
+import { ACTIVITY_SETTLED_MARGIN_MS, type ActivitySettledKind, type ActivitySettledSummary } from '@ficus/shared'
 import { db } from '../../db'
 import { activityRetentionFloor } from '../squad/activity-cursor'
 import {
@@ -51,10 +51,18 @@ export function settledRowSql(kind: ActivitySettledKind, since: Date): SQL {
 }
 
 /**
- * The count query, exported for its scan-cost test. It counts up to `through`, the database clock
- * when it ran (to the millisecond, so the ISO string round-trips exactly) and returns that time: a
- * Feed visit records it, so the next visit starts where these counts ended, with nothing counted
- * twice and nothing skipped.
+ * The end of a count: the database clock ACTIVITY_SETTLED_MARGIN_MS ago, to the millisecond so the
+ * ISO string round-trips exactly. A row is written after its event, with the event's time, so a row
+ * still being written now lands after this end and is counted in the next period, never in neither.
+ */
+const settledThroughSql = sql`date_trunc('milliseconds',clock_timestamp()
+  - make_interval(secs => ${ACTIVITY_SETTLED_MARGIN_MS / 1000}::double precision))`
+const isoSql = (value: SQL) => sql`to_char((${value}) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+
+/**
+ * The count query, exported for its scan-cost test. It counts up to `through` (settledThroughSql)
+ * and returns it: a Feed visit records it, so the next visit starts where these counts ended, with
+ * nothing counted twice and nothing skipped.
  */
 export function settledCountSql(squadAccess: GlobalActivitySquadAccess[], since: Date): SQL {
   // In the counts' filters rather than the scan's WHERE: an upper bound the planner cannot see
@@ -62,11 +70,11 @@ export function settledCountSql(squadAccess: GlobalActivitySquadAccess[], since:
   const before = sql`squad_activity.at<(SELECT through FROM params)`
   return sql`
     WITH params AS MATERIALIZED (
-      SELECT date_trunc('milliseconds',clock_timestamp()) through
+      SELECT ${settledThroughSql} through
     ), squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id) AS (
       VALUES ${globalActivityAccessRowsSql(squadAccess)}
     )
-    SELECT to_char((SELECT through FROM params) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') through,
+    SELECT ${isoSql(sql`SELECT through FROM params`)} through,
       count(*) FILTER (WHERE ${settledRowSql('questions', since)} AND ${before})::int questions,
       count(*) FILTER (WHERE ${settledRowSql('reviews', since)} AND ${before})::int reviews
     FROM squad_activity JOIN squad_access ON squad_activity.squad_id=squad_access.squad_id
@@ -83,7 +91,9 @@ export async function countSettledActivity(
 ): Promise<ActivitySettledSummary> {
   const { since, clamped } = settledPeriodStart(requestedSince, now)
   if (squadAccess.length === 0) {
-    return { since: since.toISOString(), clamped, through: now.toISOString(), counts: { questions: 0, reviews: 0 } }
+    // Nothing to count, but the same end as a count, from the same clock.
+    const [row] = await db.execute<{ through: string }>(sql`SELECT ${isoSql(settledThroughSql)} through`)
+    return { since: since.toISOString(), clamped, through: row!.through, counts: { questions: 0, reviews: 0 } }
   }
   const [row] = await db.execute<{ through: string; questions: number; reviews: number }>(
     settledCountSql(squadAccess, since)

@@ -250,7 +250,10 @@ function expectKindSeek(plan: any) {
   expect(
     planNodes(plan).some((node) => node['Node Type'] === 'Seq Scan' && node['Relation Name'] === 'squad_activity')
   ).toBe(false)
-  expect(buffers(plan)).toBeLessThan(100)
+  // The temporary squad_activity is read through local buffers, so count those as well as shared ones.
+  const blocks = buffers(plan) + plan['Local Hit Blocks'] + plan['Local Read Blocks']
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled blocks', blocks)
+  expect(blocks).toBeLessThan(100)
 }
 
 async function scanCostSquad() {

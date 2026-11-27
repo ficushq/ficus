@@ -1,6 +1,6 @@
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
-import type { ActivitySettledSummary } from '@ficus/shared'
+import { ACTIVITY_SETTLED_MARGIN_MS, type ActivitySettledSummary } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ReactQueryHooksProvider } from '../reactQueryHooks'
 import { AccountFeedVisit } from './FeedVisitSummary'
@@ -56,6 +56,8 @@ describe('settled line text', () => {
 const HOUR = 3_600_000
 const T0 = Date.parse(since)
 const iso = (ms: number) => new Date(ms).toISOString()
+/** Where counts taken at `ms` end, and so where the visit that showed them records its end. */
+const endAt = (ms: number) => iso(ms - ACTIVITY_SETTLED_MARGIN_MS)
 
 /**
  * The Feed with a fake account behind it: its Feed watermark, and the questions settled without a
@@ -79,18 +81,20 @@ async function renderVisit(options: {
   const settledRequests: unknown[][] = []
   const visitReads: unknown[][] = []
   const cache = new Map<string, unknown>()
+  let holdVisitReads = false
   const hooks = {
     useQuery: ((query: { queryKey: unknown[]; enabled?: boolean }) => {
       if (query.enabled === false) return { isSuccess: false, data: undefined }
       const key = JSON.stringify(query.queryKey)
       if (!cache.has(key)) {
         if (query.queryKey[1] === 'feed-visit') {
+          if (holdVisitReads) return { isSuccess: false, data: undefined }
           visitReads.push(query.queryKey)
           cache.set(key, { lastVisitedAt: account.watermark, observedAt: iso(Date.now()) })
         } else {
           settledRequests.push(query.queryKey)
           const from = Date.parse(query.queryKey[3] as string)
-          const through = Date.now()
+          const through = Date.now() - ACTIVITY_SETTLED_MARGIN_MS
           const questions = account.settledAt.filter((at) => at >= from && at < through).length
           cache.set(
             key,
@@ -161,6 +165,10 @@ async function renderVisit(options: {
         Object.defineProperty(document, 'visibilityState', { configurable: true, value })
         document.dispatchEvent(new dom!.window.Event('visibilitychange'))
       }),
+    /** The account read for a new visit stays in flight until released. */
+    holdVisitReads: (value: boolean) => {
+      holdVisitReads = value
+    },
     focus: async () => dom!.act(async () => void dom!.window.dispatchEvent(new dom!.window.Event('focus'))),
   }
 }
@@ -185,7 +193,7 @@ describe('Feed Updates with the settled line', () => {
       settledActivityHref('reviews', since, ['s1']),
     ])
     expect(settledRequests[0]).toEqual(['activity', 'settled', 'u1', since, ['s1']])
-    expect(recorded).toEqual([iso(T0 + 3 * HOUR)])
+    expect(recorded).toEqual([endAt(T0 + 3 * HOUR)])
   })
 
   test('is absent when every count is zero', async () => {
@@ -199,7 +207,8 @@ describe('Feed Updates with the settled line', () => {
     const { line, recorded, settledRequests } = await renderVisit({ lastVisitedAt: null })
     expect(line()).toBeNull()
     expect(settledRequests).toEqual([])
-    expect(recorded).toEqual([iso(T0 + 3 * HOUR)])
+    // The visit's start, less the margin counts keep, so a row still being written is not skipped.
+    expect(recorded).toEqual([endAt(T0 + 3 * HOUR)])
   })
 
   test('coming back from Activity keeps the period: the visit lasts for the tab session', async () => {
@@ -211,12 +220,12 @@ describe('Feed Updates with the settled line', () => {
     expect(line()).toContain('1 question settled')
     // One account read for the whole tab visit, not one per Feed mount, and one record of the same end.
     expect(visitReads).toHaveLength(1)
-    expect(recorded).toEqual([iso(T0 + 3 * HOUR)])
+    expect(recorded).toEqual([endAt(T0 + 3 * HOUR)])
     expect(readSessionFeedVisit('u1')).toEqual({
       lastVisitedAt: since,
       observedAt: iso(T0 + 3 * HOUR),
       startedAt: T0 + 3 * HOUR,
-      recordedThrough: iso(T0 + 3 * HOUR),
+      recordedThrough: endAt(T0 + 3 * HOUR),
     })
   })
 
@@ -249,23 +258,25 @@ describe('Feed Updates with the settled line', () => {
   test('work settled during a visit is counted once: in that visit’s latest counts or in the next visit', async () => {
     const view = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR], now: T0 + 2 * HOUR })
     expect(view.line()).toMatch(/: 1 question settled by agents$/)
-    expect(view.recorded).toEqual([iso(T0 + 2 * HOUR)])
+    expect(view.recorded).toEqual([endAt(T0 + 2 * HOUR)])
 
     // Settled while the Feed is open: the counts load again later in the same visit and include it.
     view.settle(T0 + 2.5 * HOUR)
     view.advance(HOUR)
     await view.refetchCounts()
     expect(view.line()).toMatch(/: 2 questions settled by agents$/)
-    expect(view.recorded).toEqual([iso(T0 + 2 * HOUR), iso(T0 + 3 * HOUR)])
+    expect(view.recorded).toEqual([endAt(T0 + 2 * HOUR), endAt(T0 + 3 * HOUR)])
 
-    // Settled after those counts, then the visit ends (the tab is away past the idle timeout).
-    view.settle(T0 + 3.5 * HOUR)
+    // Settled seconds before those counts (its row may still have been being written), and after
+    // them; then the visit ends (the tab is away past the idle timeout).
+    view.settle(T0 + 3 * HOUR - 5_000)
+    view.settle(T0 + 3.25 * HOUR)
     await view.visibility('hidden')
     view.advance(FEED_VISIT_IDLE_MS + 60_000)
     await view.visibility('visible')
     // The next visit starts where the last counts ended: only the work not shown yet, nothing twice.
-    expect(view.settledRequests.at(-1)?.[3]).toBe(iso(T0 + 3 * HOUR))
-    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    expect(view.settledRequests.at(-1)?.[3]).toBe(endAt(T0 + 3 * HOUR))
+    expect(view.line()).toMatch(/: 2 questions settled by agents$/)
   })
 
   test('a Feed that stays mounted starts the new visit when the person comes back', async () => {
@@ -284,9 +295,9 @@ describe('Feed Updates with the settled line', () => {
     view.advance(FEED_VISIT_IDLE_MS + 60_000)
     await view.visibility('visible')
     expect(view.visitReads).toHaveLength(2)
-    expect(view.settledRequests.at(-1)?.[3]).toBe(iso(T0 + 3 * HOUR))
+    expect(view.settledRequests.at(-1)?.[3]).toBe(endAt(T0 + 3 * HOUR))
     expect(view.line()).toMatch(/: 1 question settled by agents$/)
-    expect(readSessionFeedVisit('u1')?.lastVisitedAt).toBe(iso(T0 + 3 * HOUR))
+    expect(readSessionFeedVisit('u1')?.lastVisitedAt).toBe(endAt(T0 + 3 * HOUR))
   })
 
   test('a window that never leaves the screen starts a new visit at its maximum age, when it regains focus', async () => {
@@ -295,11 +306,41 @@ describe('Feed Updates with the settled line', () => {
     await view.focus()
     expect(view.visitReads).toHaveLength(1)
     view.settle(Date.now())
-    view.advance(2 * 60_000)
+    view.advance(3 * 60_000)
     await view.focus()
     expect(view.visitReads).toHaveLength(2)
-    expect(view.settledRequests.at(-1)?.[3]).toBe(iso(T0 + 3 * HOUR))
+    expect(view.settledRequests.at(-1)?.[3]).toBe(endAt(T0 + 3 * HOUR))
     expect(view.line()).toMatch(/: 1 question settled by agents$/)
+  })
+
+  test('the previous line stays on screen until the new visit has its counts', async () => {
+    const view = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR] })
+    view.settle(T0 + 3.25 * HOUR)
+    view.holdVisitReads(true)
+    await view.visibility('hidden')
+    view.advance(FEED_VISIT_IDLE_MS + 60_000)
+    await view.visibility('visible')
+    // The new visit is still reading the account: the old line holds its place.
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    expect(view.document.querySelector('[data-testid="feed-visit-summary"]')).not.toBeNull()
+    view.holdVisitReads(false)
+    await view.render({ remount: false })
+    expect(view.settledRequests.at(-1)?.[3]).toBe(endAt(T0 + 3 * HOUR))
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+  })
+
+  test('the period label follows the day on screen', async () => {
+    const view = await renderVisit({
+      lastVisitedAt: new Date(2026, 10, 26, 8, 0).toISOString(),
+      settledAt: [new Date(2026, 10, 26, 9, 0).getTime()],
+      now: new Date(2026, 10, 26, 20, 0).getTime(),
+    })
+    expect(view.line()).toMatch(/^Since earlier today: /)
+    // Past midnight, 4.5 hours into the visit: the same visit, now named from the next day.
+    setSystemTime(new Date(2026, 10, 27, 0, 30))
+    await view.focus()
+    expect(view.visitReads).toHaveLength(1)
+    expect(view.line()).toMatch(/^Since yesterday: /)
   })
 
   test('keeps the older start when the counts fail to load', async () => {
