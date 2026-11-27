@@ -37,7 +37,7 @@ function listPage(path: string) {
   const offset = Number(params.get('offset') ?? 0)
   const limit = Number(params.get('limit') ?? 50)
   const newestFirst = [...conversation].reverse().slice(offset, offset + limit)
-  return { messages: newestFirst.reverse(), pagination: {} }
+  return { messages: newestFirst.reverse(), pagination: { hasMore: offset + limit < conversation.length } }
 }
 
 async function run(args: string[]): Promise<string[]> {
@@ -188,8 +188,9 @@ describe('ficus agent search', () => {
       if (path.includes('/messages/search')) return { results: [hit('m5', 4)], nextCursor: null }
       const params = new URL(path, 'http://x').searchParams
       const offset = Number(params.get('offset'))
-      const newestFirst = [...grown].reverse().slice(offset, offset + Number(params.get('limit')))
-      return { messages: newestFirst.reverse() }
+      const limit = Number(params.get('limit'))
+      const newestFirst = [...grown].reverse().slice(offset, offset + limit)
+      return { messages: newestFirst.reverse(), pagination: { hasMore: offset + limit < grown.length } }
     })
     const lines = await run(['search', 'agent-1', 'deploy', '--context', '1'])
     expect(lines).toEqual([
@@ -198,6 +199,28 @@ describe('ficus agent search', () => {
       '> m5 2026-11-27T07:00:00.000Z assistant: the deploy pipeline',
       '  m6 2026-11-27T07:06:00.000Z human: message 6',
     ])
+  })
+
+  it('gives no context rather than a cut-short window when more messages arrived than it allows for', async () => {
+    // The search saw m5 with 4 newer messages; 12 more arrived, so m5 is the first message of the page.
+    const grown = [...conversation, ...Array.from({ length: 12 }, (_, i) => ({ ...conversation[9], id: `n${i}` }))]
+    get.mockImplementation(async (path: string) => {
+      if (path.includes('/messages/search')) return { results: [hit('m5', 4)], nextCursor: null }
+      const params = new URL(path, 'http://x').searchParams
+      const offset = Number(params.get('offset'))
+      const limit = Number(params.get('limit'))
+      const newestFirst = [...grown].reverse().slice(offset, offset + limit)
+      return { messages: newestFirst.reverse(), pagination: { hasMore: offset + limit < grown.length } }
+    })
+    const lines = await run(['search', 'agent-1', 'deploy', '--context', '2'])
+    expect(lines[1]).toBe('> m5 2026-11-27T07:00:00.000Z assistant: the deploy pipeline')
+    expect(lines[2]).toContain('context unavailable')
+  })
+
+  it('takes a query that starts with a dash after --', async () => {
+    get.mockResolvedValue({ results: [], nextCursor: null })
+    await run(['search', 'agent-1', '--in', 'tools', '--', '--force', 'push'])
+    expect(get).toHaveBeenCalledWith('/api/agents/agent-1/messages/search?q=--force+push&in=tools')
   })
 
   it('says so when the hit is no longer in reach of its position', async () => {
@@ -247,9 +270,9 @@ describe('ficus agent messages --search and worker-log --search use the shared s
     expect(lines.at(-1)).toBe('--- Showing 1 of 3 matching message(s) ---')
   })
 
-  it('searches tool calls too in worker-log', async () => {
+  it('searches tool calls too in worker-log, and skips the count it never shows', async () => {
     get.mockResolvedValue({ messages: [], pagination: {} })
     await run(['worker-log', 'agent-1', '--search', 'needle'])
-    expect(get).toHaveBeenLastCalledWith('/api/agents/agent-1/messages?role=assistant&search=needle&in=all')
+    expect(get).toHaveBeenLastCalledWith('/api/agents/agent-1/messages?role=assistant&search=needle&in=all&count=false')
   })
 })

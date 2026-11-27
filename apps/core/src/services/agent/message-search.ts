@@ -9,6 +9,9 @@ import type {
 import { db, messages } from '../../db'
 import { decodeMessageCursor, encodeMessageCursor } from './message-cursor'
 import { buildMessageSnippet, containsQuery } from './message-snippet'
+import { createLogger } from '../../lib/infra/logger'
+
+const log = createLogger('message-search')
 
 /**
  * Search one agent conversation's full message history. This is the only message-search
@@ -67,6 +70,22 @@ export function toolCallJsonPath(query: string): string {
   return `$.content[*] ? (@.type == "tool_use").toolCall ? (${checks.join(' || ')})`
 }
 
+/**
+ * Log how long a conversation search took, without the query text. Tool search is not indexed, so these
+ * lines are what tells us when long histories make it slow enough to need the trigram index.
+ */
+export function logMessageSearch(entry: {
+  agentId: string
+  via: 'search' | 'list'
+  scope: MessageSearchScope
+  durationMs: number
+  results: number
+}): void {
+  log.info(
+    `Searched agent ${entry.agentId} via ${entry.via} (in=${entry.scope}): ${entry.results} result(s) in ${Math.round(entry.durationMs)} ms`
+  )
+}
+
 /** The SQL condition for "this message matches the query in this scope". */
 export function messageSearchCondition(query: string, scope: MessageSearchScope = 'text'): SQL {
   const text = ilike(messages.content, `%${escapeLike(query)}%`)
@@ -119,6 +138,7 @@ export function locateMessageMatch(
 }
 
 export async function searchAgentMessages(agentId: string, input: MessageSearchQuery): Promise<MessageSearchResponse> {
+  const startedAt = performance.now()
   const query = input.q
   const scope = input.in ?? 'text'
   const cursorContext = {
@@ -170,6 +190,7 @@ export async function searchAgentMessages(agentId: string, input: MessageSearchQ
   const hasMore = rows.length > input.limit
   const page = hasMore ? rows.slice(0, input.limit) : rows
   const last = page.at(-1)
+  logMessageSearch({ agentId, via: 'search', scope, durationMs: performance.now() - startedAt, results: page.length })
 
   return {
     results: page.map((row) => {

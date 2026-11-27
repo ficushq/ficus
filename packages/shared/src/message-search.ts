@@ -21,12 +21,28 @@ const timestampSchema = z
   .max(100)
   .refine((value) => !Number.isNaN(new Date(value).valueOf()), 'Expected an ISO timestamp')
 
+/** C0 control characters other than tab, line feed and carriage return, and DEL. */
+// eslint-disable-next-line no-control-regex
+const MESSAGE_SEARCH_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
+
+/**
+ * Search text for one conversation: trimmed, 1 to 200 characters, and free of control characters
+ * (Postgres text cannot hold NUL). Tab and line breaks are allowed. Both
+ * `GET /api/agents/:id/messages/search?q=` and `GET /api/agents/:id/messages?search=` validate with it.
+ */
+export const messageSearchTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MESSAGE_SEARCH_MAX_QUERY_LENGTH)
+  .refine((value) => !MESSAGE_SEARCH_CONTROL_CHARACTERS.test(value), 'The query cannot contain control characters')
+
 /**
  * Query for `GET /api/agents/:id/messages/search`: a case-insensitive, literal substring
  * search over one conversation, newest first.
  */
 export const messageSearchQuerySchema = z.object({
-  q: z.string().trim().min(1).max(MESSAGE_SEARCH_MAX_QUERY_LENGTH),
+  q: messageSearchTextSchema,
   limit: z.coerce.number().int().min(1).max(MESSAGE_SEARCH_MAX_LIMIT).default(20),
   /** Opaque cursor from the previous page's `nextCursor`; bound to the agent, query and filters. */
   cursor: z.string().max(1000).optional(),

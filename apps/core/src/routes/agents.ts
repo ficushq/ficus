@@ -11,8 +11,10 @@ import {
   chatPagePathSchema,
   chatRequestSchema,
   manualWaitDecisionSchema,
+  MESSAGE_SEARCH_MAX_QUERY_LENGTH,
   messageSearchQuerySchema,
   messageSearchScopeSchema,
+  messageSearchTextSchema,
 } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { AgentModelApplyError, applyAgentModelNow } from '../services/agent/model-apply'
@@ -948,7 +950,8 @@ export const agentsRouter = new Hono()
   )
   // GET /api/agents/:id/messages — get messages for agent
   // Supports pagination with ?cursor=<opaque>&limit=50 and filters role, before, after, and search with in=text|tools|all
-  // (the shared conversation search; see services/agent/message-search.ts). totalCount counts the filtered messages.
+  // (the shared conversation search; see services/agent/message-search.ts). totalCount counts the filtered messages on
+  // the first page; count=false skips that query (totalCount is then 0, as on later pages).
   .get('/:id/messages', requireAgentReadPermission, async (c) => {
     const agent = await Agent.find(c.req.param('id'))
     if (!agent) return c.json({ error: 'Agent not found' }, 404)
@@ -969,7 +972,17 @@ export const agentsRouter = new Hono()
     if (cursor) options.cursor = cursor
     else if (beforeId) options.beforeId = beforeId
     if (after) options.after = after
-    if (search) options.search = search
+    if (search) {
+      // Same limits as /messages/search: the text becomes a LIKE pattern and, with in=tools|all, a jsonpath regex.
+      const text = messageSearchTextSchema.safeParse(search)
+      if (!text.success)
+        return c.json(
+          { error: `search must be 1 to ${MESSAGE_SEARCH_MAX_QUERY_LENGTH} characters with no control characters` },
+          400
+        )
+      options.search = text.data
+    }
+    if (c.req.query('count') === 'false') options.skipCount = true
     if (searchIn !== undefined) {
       const scope = messageSearchScopeSchema.safeParse(searchIn)
       if (!scope.success) return c.json({ error: 'in must be one of text, tools, all' }, 400)

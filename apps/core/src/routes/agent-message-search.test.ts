@@ -196,6 +196,10 @@ describe('GET /api/agents/:id/messages/search', () => {
     expect((await search(squadAgent.id, admin.token, { q: 'e', limit: '51' })).status).toBe(400)
     expect((await search(squadAgent.id, admin.token, { q: 'e', limit: '0' })).status).toBe(400)
     expect((await search(squadAgent.id, admin.token, { q: 'e', cursor: 'not a cursor' })).status).toBe(400)
+    // Postgres text cannot hold NUL; control characters are refused, while tab and line breaks are allowed.
+    expect((await search(squadAgent.id, admin.token, { q: 'a\u0000b', in: 'all' })).status).toBe(400)
+    expect((await search(squadAgent.id, admin.token, { q: 'a\u007fb' })).status).toBe(400)
+    expect((await search(squadAgent.id, admin.token, { q: 'a\tb\nc', in: 'all' })).status).toBe(200)
   })
 
   it('returns 404 for a missing agent the caller may otherwise read', async () => {
@@ -259,11 +263,12 @@ describe('GET /api/agents/:id/messages/search', () => {
 
 describe('GET /api/agents/:id/messages/search with tool calls', () => {
   it('keeps the default scope on visible text, so tool-only strings are not found', async () => {
-    for (const params of [
+    const cases: Array<Record<string, string>> = [
       { q: 'resultonlyword' },
       { q: 'resultonlyword', in: 'text' },
       { q: 'thinkonlyword', in: 'all' },
-    ]) {
+    ]
+    for (const params of cases) {
       expect((await searchBody(toolAgent.id, params)).results).toEqual([])
     }
     const text = await searchBody(toolAgent.id, { q: 'archive_v2' })
@@ -355,11 +360,12 @@ describe('GET /api/agents/:id/messages/search with tool calls', () => {
     expect(first.nextCursor).toBeString()
     const next = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'all', limit: '2', cursor: first.nextCursor! })
     expect(next.results.map((r) => r.newerCount)).toEqual([2, 3])
-    for (const changed of [
+    const changes: Array<Record<string, string>> = [
       { in: 'text' },
       { in: 'all', role: 'assistant' },
       { in: 'all', after: '2026-01-01T00:00:00Z' },
-    ]) {
+    ]
+    for (const changed of changes) {
       const res = await search(toolAgent.id, admin.token, {
         q: 'archive_v2',
         limit: '1',

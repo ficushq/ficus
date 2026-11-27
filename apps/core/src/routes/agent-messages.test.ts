@@ -305,6 +305,32 @@ describe('agent messages route', () => {
       expect((await list('search=x&in=everything')).status).toBe(400)
     })
 
+    it('applies the search endpoint limits to search: length and control characters', async () => {
+      await testAgent.recordMessage({ role: 'human', content: 'tab\there' })
+      const status = async (search: string) =>
+        (
+          await app.request(`/api/agents/${testAgentId}/messages?in=all&search=${encodeURIComponent(search)}`, {
+            headers: authHeaders(admin.token),
+          })
+        ).status
+      expect(await status('x'.repeat(200))).toBe(200)
+      expect(await status('x'.repeat(201))).toBe(400)
+      expect(await status('a\u0000b')).toBe(400)
+      expect(await status('a\u001bb')).toBe(400)
+      expect(await status('   ')).toBe(400)
+      expect(await status('tab\there')).toBe(200)
+    })
+
+    it('skips the count with count=false', async () => {
+      await testAgent.recordMessage({ role: 'human', content: 'needle' })
+      const res = await app.request(`/api/agents/${testAgentId}/messages?search=needle&count=false`, {
+        headers: authHeaders(admin.token),
+      })
+      const body = (await res.json()) as { messages: unknown[]; pagination: { totalCount: number } }
+      expect(body.messages).toHaveLength(1)
+      expect(body.pagination.totalCount).toBe(0)
+    })
+
     it('ignores invalid role filter', async () => {
       await testAgent.recordMessage({ role: 'human', content: 'Hello' })
 

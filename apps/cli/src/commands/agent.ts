@@ -298,6 +298,7 @@ export function registerAgentCommands(program: Command) {
           params.set('search', options.search)
           params.set('in', 'all')
         }
+        params.set('count', 'false') // worker-log never shows totalCount
         const query = `?${params}`
         const result = await apiGet<{ messages: any[]; pagination: any }>(`/api/agents/${id}/messages${query}`)
         const messages = result.messages

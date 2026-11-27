@@ -60,7 +60,7 @@ import { AGENT_TOKEN_PREFIX } from '../services/auth/token-prefixes'
 import * as pendingDelivery from '../services/agent/pending-delivery'
 import { maintenanceStore } from '../services/maintenance/store'
 import { decodeMessageCursor, encodeMessageCursor, InvalidMessageCursorError } from '../services/agent/message-cursor'
-import { messageSearchCondition } from '../services/agent/message-search'
+import { logMessageSearch, messageSearchCondition } from '../services/agent/message-search'
 import * as lifecycle from '../services/agent/lifecycle'
 import { withoutDelta } from '../services/execution/usage-delta'
 import { mapMessage } from './message-mapper'
@@ -222,6 +222,8 @@ export interface ListMessagesOptions {
   search?: string
   /** Where `search` looks: message text (default), tool calls and results, or both. */
   searchIn?: MessageSearchScope
+  /** Skip the totalCount query on the first page (totalCount is then 0, as on later pages). */
+  skipCount?: boolean
   /** Filter by role */
   role?: 'human' | 'assistant'
 }
@@ -1004,6 +1006,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * @returns The messages with pagination metadata.
    */
   async listMessages(options?: ListMessagesOptions): Promise<ListMessagesResult> {
+    const startedAt = performance.now()
     const conditions: SQL[] = [eq(messages.agentId, this.id)]
 
     if (options?.role) {
@@ -1076,13 +1079,21 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     // Count only on the first page (no cursor/offset) to avoid an expensive query on every page. It counts
     // the messages matching the active filters (role, time range, search), not the whole conversation.
     let totalCount = 0
-    if (!options?.cursor && !options?.beforeId && !options?.offset) {
+    if (!options?.cursor && !options?.beforeId && !options?.offset && !options?.skipCount) {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(messages)
         .where(and(...filterConditions))
       totalCount = countResult?.count ?? 0
     }
+    if (options?.search)
+      logMessageSearch({
+        agentId: this.id,
+        via: 'list',
+        scope: options.searchIn ?? 'text',
+        durationMs: performance.now() - startedAt,
+        results: pageMessages.length,
+      })
 
     // Map and reverse to chronological order
     const mappedMessages = pageMessages.map(mapMessage).reverse()

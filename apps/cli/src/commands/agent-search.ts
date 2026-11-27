@@ -71,7 +71,8 @@ export function formatContextLine(message: ContextMessage): string {
 /**
  * The N messages before and after a hit, in conversation order. The hit's `newerCount` is its
  * position counted from the newest message, which is the list endpoint's offset (newest first).
- * Returns null when the hit is no longer where the search said, because many messages arrived since.
+ * Returns null when the hit is no longer where the search said, or is too close to the start of a
+ * page that has older messages beyond it, because more messages arrived since than the slack covers.
  */
 export async function fetchHitContext(
   agentId: string,
@@ -81,13 +82,15 @@ export async function fetchHitContext(
   const offset = Math.max(0, hit.newerCount - n)
   const limit = hit.newerCount - offset + 1 + n + CONTEXT_SLACK
   const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
-  const page = await apiGet<{ messages: ContextMessage[] }>(
+  const page = await apiGet<{ messages: ContextMessage[]; pagination?: { hasMore?: boolean } }>(
     `/api/agents/${encodeURIComponent(agentId)}/messages?${params}`
   )
   // The list endpoint returns the page oldest first.
   const messages = page.messages ?? []
   const index = messages.findIndex((message) => message.id === hit.id)
   if (index < 0) return null
+  // Older messages exist beyond this page, so fewer than n before the hit means the window was cut short.
+  if (index < n && page.pagination?.hasMore) return null
   return { before: messages.slice(Math.max(0, index - n), index), after: messages.slice(index + 1, index + 1 + n) }
 }
 
@@ -123,7 +126,8 @@ export function registerAgentSearchCommand(agent: Command) {
         'By default it searches message text and tool calls (tool names, arguments and results). Each hit is one',
         'line: message id, timestamp, who wrote it and where it matched (for a tool hit, the tool and whether the',
         'match is in its args, its result or its name, shown as call), then a snippet. With --json the full results, including',
-        'newerCount (how many messages are newer) and the snippet highlight ranges, are printed.',
+        'newerCount (how many messages are newer) and the snippet highlight ranges, are printed. Put -- before a',
+        'query that starts with a dash: ficus agent search <id> -- --force.',
       ].join(' ')
     )
     .option('--in <scope>', 'Where to search: all (message text and tool calls), text, or tools', 'all')
@@ -176,7 +180,7 @@ export function registerAgentSearchCommand(agent: Command) {
           console.log(`--- hit ${i + 1} of ${hits.length} ---`)
           if (!hit.context) {
             console.log(`> ${formatHitLine(hit)}`)
-            console.log('  (context unavailable: many messages arrived since the search; search again)')
+            console.log('  (context unavailable: too many messages arrived since the search; search again)')
             return
           }
           for (const message of hit.context.before) console.log(`  ${formatContextLine(message)}`)
