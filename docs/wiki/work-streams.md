@@ -147,7 +147,8 @@ refetches whatever list is on screen:
   is a `400`). The command center loads the 100 most recent completions, reads a squad's
   "Recently completed" period with `completedAfter`, and asks `GET /api/search`
   (`kind=work_stream`) for older work matching what was typed. The voice `get_work`
-  tool adds the 50 most recent completions when asked for finished work.
+  tool returns finished work 50 at a time when asked, with `finished.totalCount` and a
+  `finished.nextCursor` that it passes back as `finishedCursor` for the next page.
 - **A 503 waits for its Retry-After.** The web and Farm query clients use
   `shouldRetryQuery` and `queryRetryDelay` from `packages/client-core/src/retry.ts`. A
   `503` is retried no sooner than its `Retry-After` (5 seconds when the header is

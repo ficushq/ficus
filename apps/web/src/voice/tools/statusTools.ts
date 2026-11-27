@@ -17,7 +17,7 @@ export function voiceWorkStreamStatus(workStream: WorkStream) {
 
 const FINISHED = new Set(['done', 'canceled'])
 
-/** How much finished work includeFinished adds: the most recent completions, never the whole history. */
+/** Finished work per page with includeFinished: newest completions first, paged by finishedCursor. */
 export const VOICE_FINISHED_LIMIT = 50
 
 function summarize(workStream: WorkStream) {
@@ -55,30 +55,54 @@ export function createStatusTools(deps: {
           },
           includeFinished: {
             type: 'boolean',
-            description: `Also include the ${VOICE_FINISHED_LIMIT} most recently finished (done or canceled) work streams in list results. Default false.`,
+            description: `Also include finished (done or canceled) work streams in list results, ${VOICE_FINISHED_LIMIT} at a time, most recently finished first. The result's finished.totalCount says how many there are and finished.nextCursor, when set, fetches the next page. Default false.`,
+          },
+          finishedCursor: {
+            type: 'string',
+            description:
+              'finished.nextCursor from an earlier get_work result with includeFinished: returns only that next page of finished work, for the same squadId (or none).',
           },
         },
       },
     },
     async execute(args) {
-      const { squadId, workStreamId, includeFinished } = args as {
+      const { squadId, workStreamId, finishedCursor } = args as {
         squadId?: string
         workStreamId?: string
         includeFinished?: boolean
+        finishedCursor?: string
       }
+      const includeFinished = Boolean((args as { includeFinished?: boolean }).includeFinished || finishedCursor)
       const keep = (workStream: WorkStream) => includeFinished || !FINISHED.has(voiceWorkStreamStatus(workStream))
-      // Open work, plus the latest finished work on request: the unfiltered list is every stream a
-      // squad ever had and is the heaviest read Core serves.
+      // Open work, plus finished work a page at a time on request: the unfiltered list is every
+      // stream a squad ever had and is the heaviest read Core serves. A cursor asks for only the
+      // next finished page; the open work came with the first one.
       const listWork = async (squad?: string) => {
         const [open, finished] = await Promise.all([
-          deps.listActiveWorkStreams(squad),
+          finishedCursor ? [] : deps.listActiveWorkStreams(squad),
           includeFinished
-            ? deps.listDoneWorkStreams({ squadId: squad, limit: VOICE_FINISHED_LIMIT, omitDescription: true })
+            ? deps.listDoneWorkStreams({
+                squadId: squad,
+                limit: VOICE_FINISHED_LIMIT,
+                omitDescription: true,
+                cursor: finishedCursor,
+              })
             : undefined,
         ])
-        return [...open, ...(finished?.items ?? [])]
+        return {
+          workStreams: [...open, ...(finished?.items ?? [])].filter(keep).map(summarize),
+          ...(finished
+            ? {
+                finished: {
+                  totalCount: finished.totalCount,
+                  nextCursor: finished.hasMore ? finished.nextCursor : null,
+                },
+              }
+            : {}),
+        }
       }
       if (squadId && workStreamId) return { error: 'Pass squadId or workStreamId, not both' }
+      if (finishedCursor && workStreamId) return { error: 'finishedCursor pages a list, not one work stream' }
       if (workStreamId) {
         const id = workStreamId.replace(/^work:/, '')
         return { workStream: await deps.getWorkStream(id) }
@@ -89,7 +113,8 @@ export function createStatusTools(deps: {
           return {
             error: `Unknown or ambiguous squad reference: ${squadId}. Use a full squad ID from your instructions.`,
           }
-        const [agents, streams] = await Promise.all([deps.listSquadAgents(resolved), listWork(resolved)])
+        if (finishedCursor) return listWork(resolved)
+        const [agents, work] = await Promise.all([deps.listSquadAgents(resolved), listWork(resolved)])
         return {
           agents: agents.map((agent) => ({
             id: agent.id,
@@ -97,11 +122,10 @@ export function createStatusTools(deps: {
             status: agent.status,
             name: agent.metadata?.name,
           })),
-          workStreams: streams.filter(keep).map(summarize),
+          ...work,
         }
       }
-      const streams = await listWork()
-      return { workStreams: streams.filter(keep).map(summarize) }
+      return listWork()
     },
   }
   return { getWorkTool, statusTools: [getWorkTool] }
