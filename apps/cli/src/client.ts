@@ -39,6 +39,93 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return response.json()
 }
 
+/** An idempotent POST that ran out of its time budget or retries; the server may still finish it. */
+export class IdempotentRequestIncompleteError extends Error {
+  constructor(
+    readonly reason: 'timeout' | 'retries',
+    readonly idempotencyKey: string,
+    readonly timeoutMs: number,
+    readonly cause?: unknown
+  ) {
+    super(
+      reason === 'timeout'
+        ? `No answer within ${Math.round(timeoutMs / 1000)} seconds`
+        : `The request kept failing: ${cause instanceof Error ? cause.message : String(cause)}`
+    )
+    this.name = 'IdempotentRequestIncompleteError'
+  }
+}
+
+export interface IdempotentPostOptions {
+  idempotencyKey: string
+  /** Total time budget across every attempt. */
+  timeoutMs: number
+  /** Retries after the first attempt. Default 3. */
+  maxRetries?: number
+  /** Called before each retry, for a progress note. */
+  onRetry?: (attempt: number, reason: string) => void
+  sleep?: (ms: number) => Promise<void>
+}
+
+const RETRYABLE_STATUSES = new Set([502, 503, 504])
+
+/**
+ * POST with an `Idempotency-Key` header, a bounded total time and safe retries.
+ *
+ * Only for endpoints that honor the key (a repeat returns the first result),
+ * so a retry can never apply the request twice. Retries cover a dropped or
+ * refused connection, a gateway error (502, 503, 504) and the server's
+ * `create_in_progress` answer. Every other error response is returned at once.
+ */
+export async function apiPostIdempotent<T>(path: string, body: unknown, options: IdempotentPostOptions): Promise<T> {
+  const maxRetries = options.maxRetries ?? 3
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const deadline = Date.now() + options.timeoutMs
+  const timedOut = (cause?: unknown) =>
+    new IdempotentRequestIncompleteError('timeout', options.idempotencyKey, options.timeoutMs, cause)
+  for (let attempt = 0; ; attempt++) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw timedOut()
+    // Only a request that got no answer, or an answer listed below, is retried.
+    let failure: unknown
+    let response: Response | undefined
+    try {
+      response = await fetch(`${config.apiUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': options.idempotencyKey,
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(remaining),
+      })
+    } catch (error) {
+      if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
+        throw timedOut(error)
+      // fetch rejects like this when the connection drops or is refused.
+      failure = error
+    }
+    if (response) {
+      // Everything after an answer arrived is final, except the retryable statuses:
+      // an unreadable body is not retried.
+      if (response.ok) return (await response.json()) as T
+      const error = await throwApiError(response).catch((caught: unknown) => caught)
+      const retryable =
+        error instanceof ApiRequestError &&
+        (RETRYABLE_STATUSES.has(error.status) || (error.status === 409 && error.code === 'create_in_progress'))
+      if (!retryable) throw error
+      failure = error
+    }
+    if (attempt >= maxRetries)
+      throw new IdempotentRequestIncompleteError('retries', options.idempotencyKey, options.timeoutMs, failure)
+    const pause = Math.min(1000 * 2 ** attempt, deadline - Date.now())
+    if (pause <= 0) throw timedOut(failure)
+    options.onRetry?.(attempt + 1, failure instanceof Error ? failure.message : String(failure))
+    await sleep(pause)
+  }
+}
+
 /** Authenticated, checked POST whose body stays unread for a negotiated stream. */
 export async function apiPostResponse(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
   const response = await apiFetch(path, {

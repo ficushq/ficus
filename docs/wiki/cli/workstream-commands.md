@@ -255,6 +255,8 @@ ficus workstream create|new [options] <title>
 | `-m, --message <msg>`             | Handoff message (included in assignment notifications)                                                                                                                                                                                                                                                                                            |
 | `--depends-on <wsId[:condition]>` | Dependency work stream (can be repeated). `<wsId>` or `<wsId>:done` waits until the dependency is done; `<wsId>:ready` unlocks when its work is implemented and its pull request is open, stacks this stream on its branch and holds delivery until it merges. See [Dependencies and stacked work](../workflows.md#dependencies-and-stacked-work) |
 | `--from-event <eventId>`          | Create idempotently from an integration event's issue/PR; a replayed event returns the existing stream (`reusedFromEvent: true`) instead of a duplicate                                                                                                                                                                                           |
+| `--idempotency-key <key>`         | Reuse the key a timed-out create printed. A repeat with the same key and the same arguments returns the stream the first attempt created (`reusedFromIdempotencyKey: true`). Default: a new key for each run                                                                                                                                      |
+| `--timeout <seconds>`             | Total time to wait, retries included (default 150)                                                                                                                                                                                                                                                                                                |
 
 **Examples:**
 
@@ -287,6 +289,36 @@ ficus workstream create "Use the new parser" --squad squad-123 --depends-on ws-p
 # Create idempotently from an integration event (e.g. an issue-assignment
 # notification carrying "Event reference: <id>"); replays reuse the stream
 ficus workstream create "Fix reported bug" --squad squad-123 --from-event b2b7c1d0-...
+```
+
+**Timeouts and safe retries:**
+
+Creating a stream with `--repository` provisions a worktree in the squad box before
+the command answers, which usually takes 8 to 15 seconds and can take minutes when
+the squad is busy. Each run sends an `Idempotency-Key` header with a fresh key (or the
+one given with `--idempotency-key`), so a repeat of the same request can never create
+a second stream or worktree.
+
+- When the connection drops, the server answers 502, 503 or 504, or another request
+  with the same key is still creating the stream (`409 create_in_progress`), the CLI
+  retries up to three times with the same key, printing a note to stderr.
+- Any other error, including an answer whose body cannot be read, is reported at once and
+  is not retried.
+- A re-run with the same key and the same arguments matches even when it restamps source
+  links (`--from-url`, `--from-slack`, `--from-memory`, `--source-link`), because the server
+  ignores their `addedAt` time. Changing anything else answers `idempotency_key_conflict`.
+- Servers older than this release ignore the `Idempotency-Key` header. Against one of them,
+  a retry after a dropped connection or a 502, 503 or 504 can create a second stream; check
+  with `ficus workstream list --squad <squad-id>` after a retried create.
+- When `--timeout` (150 seconds by default) runs out, the CLI stops with a message
+  that the server may still finish the create, and prints the key. Re-run the same
+  command with `--idempotency-key <key>` to collect the stream once it exists, or look
+  for it with `ficus workstream list --squad <squad-id>`.
+
+```bash
+# Collect a create that timed out, without creating a duplicate
+ficus workstream create "Build login API" --squad squad-123 --repository app \
+  --idempotency-key 3f1c2a9e-7d0b-4c55-9b7e-1a2b3c4d5e6f
 ```
 
 ---

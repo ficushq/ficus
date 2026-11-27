@@ -19,8 +19,8 @@ import {
   validateStructuredInput,
 } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
-import { Command, Option } from 'commander'
-import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
+import { Command, InvalidArgumentError, Option } from 'commander'
+import { apiGet, apiPost, apiPatch, apiDelete, apiPostIdempotent, IdempotentRequestIncompleteError } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
 import {
   WORK_STREAM_COMPLETION_MODES,
@@ -98,6 +98,7 @@ export interface WorkStream {
   metrics?: WorkStreamMetrics | null
   /** create returns 200 with this set when an idempotent replay from --from-event matched an existing stream. */
   reusedFromEvent?: boolean
+  reusedFromIdempotencyKey?: boolean
 }
 
 interface WorkStreamWaitSummary {
@@ -405,6 +406,25 @@ export function formatWorkStreamAgents(
   return agentIds.map((agentId) => formatAgentSummary(agentId, summaries.get(agentId))).join(', ')
 }
 
+/** Default total time `workstream create` waits, retries included. */
+export const CREATE_TIMEOUT_SECONDS = 150
+
+function parsePositiveSeconds(value: string): number {
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new InvalidArgumentError('Expected a positive number of seconds')
+  return seconds
+}
+
+/** The create may still finish on the server: say so, and how to collect it without a duplicate. */
+export function describeIncompleteCreate(error: Error, idempotencyKey: string, squadId: string): string {
+  return [
+    `Work stream creation did not complete: ${error.message}.`,
+    'The server may still finish creating it.',
+    `To collect it without creating a duplicate, re-run the same command with --idempotency-key ${idempotencyKey}`,
+    `(it returns the stream once it exists), or look for it with: ficus workstream list --squad ${squadId}`,
+  ].join(' ')
+}
+
 /** Shown under `ficus workstream --help`: which verbs predate flows, and what replaces them. */
 const LEGACY_VERBS_HELP = `
 A work stream with a flow moves through flow, advance and finish: submit step outcomes,
@@ -541,9 +561,20 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       '--requesting-user <userId>',
       'Attribute the request to a specific user (defaults to whoever you are chatting with)'
     )
+    .option(
+      '--idempotency-key <key>',
+      'Reuse the key a timed-out create printed: returns the stream it created instead of a duplicate (default: a new key per run)'
+    )
+    .option(
+      '--timeout <seconds>',
+      `Give up after this many seconds, retries included (default: ${CREATE_TIMEOUT_SECONDS})`,
+      parsePositiveSeconds
+    )
     .option('--json', 'Output in JSON format')
     .action(async (title, options) => {
       if (options.json) setOutputOptions({ json: true })
+      // One key per invocation: every retry below reuses it, so none can create a second stream.
+      const idempotencyKey: string = options.idempotencyKey ?? crypto.randomUUID()
       try {
         const autoCleanupWorktree = parseCleanupSetting(options.autoCleanupWorktree)
         const priority = validateWorkStreamPriority(options.priority as string | undefined)
@@ -551,7 +582,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         const sources = buildWorkStreamSourceLinks(options)
 
         const workflow = await readWorkflowSource(options)
-        const ws = await apiPost<WorkStream & { warnings?: string[] }>('/api/workstreams', {
+        const createBody = {
           ...(workflow ? { workflow } : {}),
           squadId: options.squad,
           taskId: options.task,
@@ -585,6 +616,14 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
                 ],
               }
             : {}),
+        }
+        const ws = await apiPostIdempotent<WorkStream & { warnings?: string[] }>('/api/workstreams', createBody, {
+          idempotencyKey,
+          timeoutMs: (options.timeout ?? CREATE_TIMEOUT_SECONDS) * 1000,
+          onRetry: (attempt, reason) =>
+            console.error(
+              `Create did not complete (${reason}); retrying with the same idempotency key (retry ${attempt})`
+            ),
         })
 
         output(
@@ -592,13 +631,17 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           [
             ws.reusedFromEvent
               ? `Reused existing work stream ${workStreamLabel(ws)} for this event`
-              : `Created work stream ${workStreamLabel(ws)}: ${ws.title}`,
+              : ws.reusedFromIdempotencyKey
+                ? `Reused work stream ${workStreamLabel(ws)}: ${ws.title} (an earlier attempt with this idempotency key created it)`
+                : `Created work stream ${workStreamLabel(ws)}: ${ws.title}`,
             // Server advice about the flow (for example a merge-completed flow that will not observe its merge).
             ...(ws.warnings ?? []).map((warning) => `Warning: ${warning}`),
           ].join('\n')
         )
       } catch (error) {
-        outputError(error as Error)
+        if (error instanceof IdempotentRequestIncompleteError)
+          outputError(new Error(describeIncompleteCreate(error, idempotencyKey, options.squad)))
+        else outputError(error as Error)
       }
     })
 

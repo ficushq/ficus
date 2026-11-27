@@ -72,3 +72,85 @@ test('preserves structured error payloads and legacy fallbacks across the real c
   expect(result.stderr.toString()).toBe('')
   expect(result.exitCode).toBe(0)
 })
+
+// Real client in a child process (the preload mocks client.ts); fetch is replaced and stays local.
+test('idempotent POST retries dropped connections and in-progress answers with one key, and bounds its time', () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { strict as assert } from 'node:assert'
+    import { apiPostIdempotent, IdempotentRequestIncompleteError } from './src/client.ts'
+    import { ApiRequestError } from './src/client-errors.ts'
+    const sleep = async () => {}
+    const calls = []
+    const answers = [
+      () => { throw new TypeError('The socket connection was closed unexpectedly') },
+      () => Response.json({ code: 'create_in_progress', error: 'still creating' }, { status: 409 }),
+      () => new Response('bad gateway', { status: 502 }),
+      () => Response.json({ id: 'stream-1', reusedFromIdempotencyKey: true }, { status: 200 }),
+    ]
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), key: init.headers['Idempotency-Key'], body: init.body })
+      return answers[calls.length - 1]()
+    }
+    const retries = []
+    const created = await apiPostIdempotent('/api/workstreams', { title: 'T' }, {
+      idempotencyKey: 'key-1', timeoutMs: 60_000, sleep, onRetry: (attempt) => retries.push(attempt),
+    })
+    assert.deepEqual(created, { id: 'stream-1', reusedFromIdempotencyKey: true })
+    assert.equal(calls.length, 4)
+    assert.deepEqual(new Set(calls.map((call) => call.key)), new Set(['key-1']))
+    assert.deepEqual(new Set(calls.map((call) => call.body)), new Set([JSON.stringify({ title: 'T' })]))
+    assert.deepEqual(retries, [1, 2, 3])
+
+    // An answer whose body cannot be read is final, not retried.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      return new Response('not json', { status: 201 })
+    }
+    await assert.rejects(apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, sleep }))
+    assert.equal(calls.length, 1)
+
+    // Any other error answer is final: no retry.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      return Response.json({ error: 'Squad not found' }, { status: 404 })
+    }
+    await assert.rejects(
+      apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, sleep }),
+      (error) => error instanceof ApiRequestError && error.status === 404
+    )
+    assert.equal(calls.length, 1)
+
+    // Retries are bounded.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      throw new TypeError('connection refused')
+    }
+    await assert.rejects(
+      apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, maxRetries: 2, sleep }),
+      (error) => error instanceof IdempotentRequestIncompleteError && error.reason === 'retries' && error.idempotencyKey === 'k'
+    )
+    assert.equal(calls.length, 3)
+
+    // A server that never answers is abandoned at the time budget.
+    globalThis.fetch = (url, init) =>
+      new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)))
+    const started = Date.now()
+    await assert.rejects(
+      apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 200, sleep }),
+      (error) => error instanceof IdempotentRequestIncompleteError && error.reason === 'timeout'
+    )
+    assert(Date.now() - started < 5_000)
+  `,
+    ],
+    { cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe' }
+  )
+  expect(result.stderr.toString()).toBe('')
+  expect(result.exitCode).toBe(0)
+})
