@@ -37,6 +37,14 @@ describe('useTabHistory store', () => {
     expect(getTabPath('squads')).toBe('/squads/abc?tab=agents')
   })
 
+  test('remembers Activity without the settled count but keeps other filters', () => {
+    const count = 'settled=reviews&since=start&until=end&squad=a&squad=b'
+    recordTabPath(`/activity?${count}`)
+    expect(getTabNavigationTarget('/', '/activity')).toBe('/activity')
+    recordTabPath(`/activity?workStream=w&${count}&tag=a&tag=b`)
+    expect(getTabNavigationTarget('/', '/activity')).toBe('/activity?workStream=w&tag=a&tag=b')
+  })
+
   test('ignores unknown routes', () => {
     recordTabPath('/voice')
     expect(getTabPath('feed')).toBe('/')
@@ -51,6 +59,6 @@ describe('useTabHistory store', () => {
   })
 
   test('TAB_ROOTS exposes ordered tab list', () => {
-    expect(TAB_ROOTS.map((tab) => tab.key)).toEqual(['feed', 'squads', 'inbox', 'schedules', 'settings'])
+    expect(TAB_ROOTS.map((tab) => tab.key)).toEqual(['feed', 'activity', 'squads', 'inbox', 'schedules', 'settings'])
   })
 })

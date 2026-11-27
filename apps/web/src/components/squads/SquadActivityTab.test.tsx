@@ -221,7 +221,7 @@ describe('SquadActivityTab rendering', () => {
       issueItem,
     ]
     const html = staticRender(emittedKinds, true)
-    expect(html).toContain('>All<')
+    expect(html).toContain('aria-label="Filters"')
     expect(html).toContain('Ship it')
     expect(html).toContain('/squads/ficus/work?ws=00000000-0000-4000-8000-000000000010')
     expect(html).toContain('/squads/ficus?agent=00000000-0000-4000-8000-000000000002&amp;view=inbox')
@@ -249,8 +249,8 @@ describe('SquadActivityTab rendering', () => {
     // Infinite scroll (2026-08-27): a sentinel replaces the Load-more button.
     expect(html).not.toContain('Load more')
     expect(html).toContain('lg:col-span-1 lg:col-start-3')
-    expect(html).toContain('>GitHub<')
-    expect(html).toContain('>Subagents<')
+    expect(html).not.toContain('>GitHub<')
+    expect(html).not.toContain('>Subagents<')
   })
 })
 
@@ -403,7 +403,7 @@ describe('activity small-text contrast', () => {
 })
 
 describe('SquadActivityTab filters', () => {
-  test('drives kind filters into the canonical query (verbose retired, always quiet)', async () => {
+  test('drives kinds and Show everything into the query and clears both', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
@@ -432,13 +432,13 @@ describe('SquadActivityTab filters', () => {
       })
       const button = (label: string) =>
         [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)!
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click())
       // The agent pill filter was removed 2026-08-27: no per-agent button
       // renders, and no agentId param ever reaches the wire.
       expect(
         [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === 'Ada')
       ).toBeUndefined()
-      // The Verbose toggle was retired 2026-08-27: no button renders and the
-      // wire always requests the quiet feed.
+      // The default feed is quiet.
       expect(
         [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === 'Verbose')
       ).toBeUndefined()
@@ -449,6 +449,15 @@ describe('SquadActivityTab filters', () => {
       expect(urls.at(-1)).not.toContain('verbose=true')
       expect(urls.at(-1)).toContain('kind=message')
       expect(urls.at(-1)).not.toContain('agentId=')
+      const doc = dom.window.document
+      expect(doc.querySelector('[aria-label="Filters, Messages"]')).not.toBeNull()
+      expect(doc.querySelector('[aria-label="Activity filters"]')!.textContent).toContain('relayed copies')
+      await dom.act(() => doc.querySelector<HTMLButtonElement>('[role="switch"]')!.click())
+      expect(urls.at(-1)).toContain('verbose=true')
+      expect(doc.querySelector('[aria-label="Filters, 2 active"]')).not.toBeNull()
+      await dom.act(() => doc.querySelector<HTMLButtonElement>('[aria-label="Clear filters"]')!.click())
+      expect(doc.querySelector('[aria-label="Filters"]')).not.toBeNull()
+      expect(doc.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false')
     } finally {
       globalThis.fetch = originalFetch
       await dom.cleanup()
@@ -569,14 +578,15 @@ describe('SquadActivityTab direct live activity', () => {
       expect(dom.window.document.body.textContent).not.toContain('Ship it')
       expect(requests).toBeGreaterThan(0)
       expect(requests).toBeLessThanOrEqual(2)
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click())
       const activityButton = (label: string) =>
         [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)!
-      expect(activityButton('All').getAttribute('aria-pressed')).toBe('true')
+      expect(activityButton('Messages').getAttribute('aria-pressed')).toBe('false')
       await dom.act(async () => {
         activityButton('Messages').click()
         await Bun.sleep(10)
       })
-      expect(activityButton('All').getAttribute('aria-pressed')).toBe('false')
+      expect(dom.window.document.querySelector('[aria-label="Filters, Messages"]')).not.toBeNull()
       expect(activityButton('Messages').getAttribute('aria-pressed')).toBe('true')
       await dom.act(async () => {
         callbacks.get(`squadActivity:${squadId}`)?.({
@@ -928,7 +938,8 @@ for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
           </MemoryRouter>
         )
       )
-      const messages = [...view.container.querySelectorAll('button')].find(
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click())
+      const messages = [...dom.window.document.querySelectorAll('button')].find(
         (button) => button.textContent === 'Messages'
       )!
       await dom.act(() => messages.click())

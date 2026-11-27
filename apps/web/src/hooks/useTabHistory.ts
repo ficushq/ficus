@@ -1,7 +1,10 @@
-export type TabKey = 'feed' | 'squads' | 'inbox' | 'schedules' | 'settings'
+import { withoutSettledParams } from '../lib/settledActivity'
+
+export type TabKey = 'feed' | 'activity' | 'squads' | 'inbox' | 'schedules' | 'settings'
 
 export const TAB_ROOTS: ReadonlyArray<{ key: TabKey; root: string; prefixes: string[] }> = [
   { key: 'feed', root: '/', prefixes: ['/feed', '/actions'] },
+  { key: 'activity', root: '/activity', prefixes: ['/activity'] },
   { key: 'squads', root: '/squads', prefixes: ['/squads'] },
   { key: 'inbox', root: '/inbox', prefixes: ['/inbox'] },
   { key: 'schedules', root: '/schedules', prefixes: ['/schedules'] },
@@ -10,6 +13,7 @@ export const TAB_ROOTS: ReadonlyArray<{ key: TabKey; root: string; prefixes: str
 
 const tabKeyByRoot: Record<string, TabKey> = {
   '/': 'feed',
+  '/activity': 'activity',
   '/squads': 'squads',
   '/inbox': 'inbox',
   '/schedules': 'schedules',
@@ -42,6 +46,15 @@ export function getTabKey(pathWithSearch: string): TabKey | null {
 export function recordTabPath(pathWithSearch: string): void {
   const key = getTabKey(pathWithSearch)
   if (!key) return
+  if (key === 'activity' && pathWithSearch.includes('?')) {
+    const separator = pathWithSearch.indexOf('?')
+    const path = pathWithSearch.slice(0, separator)
+    const params = new URLSearchParams(pathWithSearch.slice(separator + 1))
+    if (params.has('settled')) {
+      const remaining = withoutSettledParams(params).toString()
+      pathWithSearch = remaining ? `${path}?${remaining}` : path
+    }
+  }
   lastPathByTab.set(key, pathWithSearch)
 }
 

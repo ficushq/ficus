@@ -58,6 +58,36 @@ try {
       const theme = appearance === 'dark' ? '&dark' : ''
       await page.setViewportSize({ width, height: 900 })
 
+      await page.goto(`${base}?settled${theme}`)
+      const chip = page.getByRole('button', { name: /^Remove Reviews done/ })
+      const filters = page.getByRole('button', { name: /^Filters/ })
+      const filterPanel = page.getByRole('region', { name: 'Activity filters' })
+      const capture = async (state: string) => {
+        assert.ok(await chip.isVisible())
+        assert.ok(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${label}: ${state} overflows`
+        )
+        await shot(`filters-${label}-${appearance}-${state}`)
+      }
+      await chip.waitFor()
+      await capture('closed')
+      await filters.focus()
+      await filters.press('Enter')
+      await filterPanel.waitFor()
+      await capture('open')
+      await filterPanel.getByRole('button', { name: 'Work' }).click()
+      assert.equal(await filters.getAttribute('aria-label'), 'Filters, Work')
+      await capture('one')
+      await filterPanel.getByRole('switch', { name: 'Show everything' }).click()
+      assert.equal(await filters.getAttribute('aria-label'), 'Filters, 2 active')
+      await capture('several')
+      await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: 'Clear filters' }).click()
+      assert.equal(await filters.getAttribute('aria-label'), 'Filters')
+      await chip.press('Enter')
+      assert.equal(await chip.count(), 0)
+
       // Hidden by default: the presence line holds the counts and the pill, nothing else.
       await page.goto(`${base}?view=feed${theme}`)
       await trigger.waitFor()

@@ -151,6 +151,8 @@ cache.setQueryData(['agents', 'message', 'eng-1', 'm-1'], {
 
 function App() {
   const [kinds, setKinds] = useState<SquadActivityKind[]>([])
+  const [showEverything, setShowEverything] = useState(false)
+  const [settled, setSettled] = useState(params.has('settled'))
   const selected = params.get('select')
   const [filter, setFilter] = useState<string | null>(selected ? id(Number(selected)) : null)
   const shown = filter
@@ -160,8 +162,17 @@ function App() {
     <MemoryRouter>
       <QueryClientProvider client={cache}>
         <div className="mx-auto flex h-screen max-w-6xl flex-col p-4 sm:p-6">
-          <h1 className="ficus-page-title mb-4 shrink-0">Activity</h1>
           <ActivityFeedView
+            title={params.has('settled') ? 'Activity' : undefined}
+            settledChip={
+              settled
+                ? {
+                    label: 'Reviews done by agents · since Nov 6 · 2 squads',
+                    period: 'From 2026-11-06T12:00:00.000Z until 2026-11-27T12:00:00.000Z',
+                    onRemove: () => setSettled(false),
+                  }
+                : undefined
+            }
             kinds={kinds}
             onKindsChange={setKinds}
             presence={{ workingCount: 3, needsYouCount: 0, streamCount: 7, streams: cards }}
@@ -169,11 +180,24 @@ function App() {
             onWorkStreamFilterChange={setFilter}
             workListHref="/"
             agentLabelFor={(agentId) => (agentId.startsWith('eng') ? 'Engineer' : undefined)}
-            showEverything={false}
-            onShowEverythingChange={() => undefined}
+            showEverything={showEverything}
+            onShowEverythingChange={setShowEverything}
             isLoading={false}
             isError={false}
-            items={shown}
+            items={
+              settled
+                ? kinds.length && !kinds.includes('wait')
+                  ? []
+                  : [
+                      item(3, {
+                        kind: 'wait',
+                        summary: 'Review approved',
+                        preview: [{ text: 'Review approved' }],
+                        context: { workStream: stream1394 },
+                      }),
+                    ]
+                : shown
+            }
             loadingShapeKey="activity:fixture"
             workingAgentIds={new Set(['eng-1', 'eng-2', 'manager-1'])}
             agentDetailFor={() => undefined}

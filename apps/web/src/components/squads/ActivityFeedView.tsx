@@ -1,3 +1,5 @@
+import { WorkStreamFiltersPopover, WorkStreamFilterGroup } from '../WorkStreamFiltersPopover'
+import { CloseIcon } from '../icons'
 import { ActivityRowText } from './ActivityRowText'
 import { ActivityWorkPicker } from './ActivityWorkPicker'
 import { ActivityWorkStreamDetails } from './ActivityWorkStreamDetails'
@@ -32,6 +34,8 @@ import {
 import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivityItem> {
+  title?: string
+  settledChip?: { label: string; period: string; onRemove: () => void }
   kinds: SquadActivityKind[]
   onKindsChange: Dispatch<SetStateAction<SquadActivityKind[]>>
   /**
@@ -94,6 +98,8 @@ export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivi
  * `squadId` the per-squad wire shape omits) don't need casts.
  */
 export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem>({
+  title,
+  settledChip,
   kinds,
   onKindsChange,
   presence,
@@ -122,7 +128,9 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
 }: ActivityFeedViewProps<T>) {
   const navigate = useNavigate()
   const typeNames = useAgentTypeNames()
-  const isGlobalFeed = squadChipFor !== undefined
+  const activeGroups = FILTER_GROUPS.filter((group) => group.kinds.every((kind) => kinds.includes(kind)))
+  const activeLabels = activeGroups.map((group) => group.label)
+  if (showEverything) activeLabels.push('Show everything')
   // Default-view cleanup: a sender's own row hides while a received row for the same
   // message is among the rows shown (already server-filtered and permission-redacted).
   const shownItems = useMemo(() => (showEverything ? items : hideRelayedSenderRows(items)), [items, showEverything])
@@ -242,80 +250,94 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
 
   return (
     <>
-      {/* Toolbar OUTSIDE the scroll container: the feed's scrollbar starts
-          below it and the pills never scroll away (2026-08-27 audit). */}
-      <div
-        className={clsx(
-          'flex shrink-0 flex-wrap items-center gap-1.5 ficus-section mb-2',
-          isGlobalFeed ? 'px-3 py-3' : 'px-1 pb-1',
-          filtersPending && 'animate-pulse'
+      <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2">
+        {title && <h1 className="ficus-page-title mr-auto">{title}</h1>}
+        {settledChip && (
+          <button
+            type="button"
+            onClick={settledChip.onRemove}
+            aria-label={`Remove ${settledChip.label} filter`}
+            title={`${settledChip.label}: ${settledChip.period}`}
+            className="max-sm:order-last flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-selection px-3 py-1.5 text-left text-xs text-accent-light focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {settledChip.label}
+            <CloseIcon className="h-3.5 w-3.5 shrink-0" />
+          </button>
         )}
-        role="group"
-        aria-label="Activity kind filters"
-        aria-busy={filtersPending}
-      >
-        <button
-          type="button"
-          className={clsx(
-            'ficus-button ficus-button-ghost',
-            'rounded-lg px-3 text-xs transition-colors',
-            isGlobalFeed ? 'py-2' : 'py-1.5',
-            kinds.length === 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
-          )}
-          onClick={() => onKindsChange([])}
-          aria-pressed={kinds.length === 0}
-        >
-          All
-        </button>
-        {FILTER_GROUPS.map((group) => {
-          const active = group.kinds.every((kind) => kinds.includes(kind))
-          return (
-            <button
-              type="button"
-              key={group.label}
-              className={clsx(
-                'ficus-button ficus-button-ghost',
-                'rounded-lg px-3 text-xs transition-colors',
-                isGlobalFeed ? 'py-2' : 'py-1.5',
-                active && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
-              )}
-              onClick={() =>
-                onKindsChange((current) =>
-                  active
-                    ? current.filter((kind) => !group.kinds.includes(kind))
-                    : [...current, ...group.kinds.filter((kind) => !current.includes(kind))]
-                )
-              }
-              aria-pressed={active}
-            >
-              {group.label}
-            </button>
-          )
-        })}
-        {onShowEverythingChange && (
-          <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap pl-2 text-xs text-secondary">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showEverything}
-              onClick={() => onShowEverythingChange(!showEverything)}
-              className={clsx(
-                'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
-                showEverything ? 'bg-accent' : 'bg-th-border'
-              )}
-              data-testid="activity-show-everything"
-            >
-              <span
-                aria-hidden
-                className={clsx(
-                  'inline-block h-4 w-4 transform rounded-full bg-surface transition-transform',
-                  showEverything ? 'translate-x-4' : 'translate-x-0'
-                )}
-              />
-            </button>
-            Show everything
-          </label>
-        )}
+        <div aria-busy={filtersPending} className={clsx(filtersPending && 'animate-pulse')}>
+          <WorkStreamFiltersPopover
+            count={activeLabels.length}
+            activeLabel={activeLabels[0]}
+            label="Activity filters"
+            align={title ? 'end' : 'start'}
+            onClear={() => {
+              onKindsChange([])
+              onShowEverythingChange?.(false)
+            }}
+          >
+            <WorkStreamFilterGroup title="Activity kinds">
+              <div className="flex flex-wrap gap-1">
+                {FILTER_GROUPS.map((group) => {
+                  const active = activeGroups.includes(group)
+                  return (
+                    <button
+                      type="button"
+                      key={group.label}
+                      className={clsx(
+                        'ficus-button ficus-button-ghost',
+                        'rounded-lg px-3 py-1.5 text-xs transition-colors',
+                        active && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
+                      )}
+                      onClick={() =>
+                        onKindsChange((current) =>
+                          active
+                            ? current.filter((kind) => !group.kinds.includes(kind))
+                            : [...current, ...group.kinds.filter((kind) => !current.includes(kind))]
+                        )
+                      }
+                      aria-pressed={active}
+                    >
+                      {group.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </WorkStreamFilterGroup>
+            {onShowEverythingChange && (
+              <div className="mt-3">
+                <WorkStreamFilterGroup title="Detail level">
+                  <label className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap pl-2 text-xs text-secondary">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-label="Show everything"
+                      aria-checked={showEverything}
+                      onClick={() => onShowEverythingChange(!showEverything)}
+                      className={clsx(
+                        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent',
+                        showEverything ? 'bg-accent' : 'bg-th-border'
+                      )}
+                      data-testid="activity-show-everything"
+                    >
+                      <span
+                        aria-hidden
+                        className={clsx(
+                          'inline-block h-4 w-4 transform rounded-full bg-surface transition-transform',
+                          showEverything ? 'translate-x-4' : 'translate-x-0'
+                        )}
+                      />
+                    </button>
+                    Show everything
+                  </label>
+                  <p className="px-1 text-xs text-secondary">
+                    Also shows relayed copies of messages and routine notices about CI, auto-merge, and merged or closed
+                    pull requests.
+                  </p>
+                </WorkStreamFilterGroup>
+              </div>
+            )}
+          </WorkStreamFiltersPopover>
+        </div>
       </div>
 
       {/* Presence strip: background work at a glance even while no rows
