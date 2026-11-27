@@ -36,7 +36,14 @@ function loader(options: {
   /** The user's permissions in every squad; by default they may act on any wait. */
   permissions?: string[]
   /** Open waits by stream, overriding the default question for `attention` streams. */
-  waits?: Record<string, { derivedState: WorkStreamDerivedState; openWaits: NonNullable<WorkStream['openWaits']> }>
+  waits?: Record<
+    string,
+    {
+      derivedState: WorkStreamDerivedState
+      openWaits: NonNullable<WorkStream['openWaits']>
+      delivery?: WorkStream['delivery']
+    }
+  >
 }) {
   const checked: string[] = []
   const viewersLoaded: string[] = []
@@ -189,6 +196,7 @@ describe('work interest selector', () => {
         squadId,
         title,
         bucket: derivedState === 'waiting_on_answer' ? 'needsYou' : 'running',
+        needsYou: derivedState === 'waiting_on_answer',
       }))
     )
     expect(snapshot.top[0]?.id).toBe('stream-11')
@@ -287,6 +295,49 @@ describe('work interest selector', () => {
     expect(reviewer.viewersLoaded).toEqual(['squad'])
   })
 
+  test('each row says whether it waits on this user; buckets stay viewer-independent', async () => {
+    const gate = {
+      id: 'gate',
+      type: 'manual',
+      workflowHumanGate: true,
+      flowAttemptId: 2,
+      resolutionHandler: 'workflow',
+      workflowGateApprover: 'assigned-reviewers',
+    } as NonNullable<WorkStream['openWaits']>[number]
+    const load = (userId: string) =>
+      loader({
+        permissions: ['workstreams:review'],
+        candidates: [
+          candidate('gated', 'squad', { assignedReviewerIds: ['reviewer'] }),
+          candidate('pr', 'other-squad'),
+          candidate('running', 'squad'),
+        ],
+        waits: {
+          gated: { derivedState: 'in_review', openWaits: [gate] },
+          // A pull request awaiting review at the code host: nobody in Ficus can be told apart.
+          pr: { derivedState: 'in_review', openWaits: [], delivery: { kind: 'review' } },
+        },
+      }).load(userId)
+    const rows = (snapshot: Awaited<ReturnType<typeof load>>) => ({
+      widget: Object.fromEntries(snapshot.top.map((row) => [row.id, [row.needsYou, row.bucket]])),
+      live: Object.fromEntries(snapshot.liveActivity.top.map((row) => [row.id, [row.needsYou, row.bucket]])),
+    })
+    const outsider = rows(await load('someone-else'))
+    const reviewer = rows(await load('reviewer'))
+    for (const view of [outsider.widget, outsider.live])
+      expect(view).toEqual({
+        gated: [false, 'needsYou'],
+        pr: [true, 'needsYou'],
+        running: [false, 'running'],
+      })
+    for (const view of [reviewer.widget, reviewer.live])
+      expect(view).toEqual({
+        gated: [true, 'needsYou'],
+        pr: [true, 'needsYou'],
+        running: [false, 'running'],
+      })
+  })
+
   test('a stream whose decisions are muted never waits on the user, as on Activity', async () => {
     const { load, viewersLoaded } = loader({
       streamAttention: { asking: { decisions: 'mute', progress: 'show' } },
@@ -296,6 +347,8 @@ describe('work interest selector', () => {
     const snapshot = await load('user-1')
     expect(snapshot.top.map(({ id }) => id)).toEqual(['asking'])
     expect(snapshot.liveActivity.needsYouCount).toBe(0)
+    expect(snapshot.top[0]).toMatchObject({ bucket: 'needsYou', needsYou: false })
+    expect(snapshot.liveActivity.top[0]).toMatchObject({ bucket: 'needsYou', needsYou: false })
     expect(viewersLoaded).toEqual([])
   })
 
