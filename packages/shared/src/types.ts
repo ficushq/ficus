@@ -938,8 +938,6 @@ export interface SquadQuestionActionData {
   agentId: string
   agentName: string | null
   agentTypeId: string
-  /** The agent's self-set purpose, so clients can name it "Type (Purpose)". Omitted when unset and by older servers. */
-  agentPurpose?: string
   squadId: string
   squadName: string
   questionData: QuestionData
@@ -983,8 +981,6 @@ export interface AgentQuestionActionData {
   agentId: string
   agentName: string | null
   agentTypeId: string
-  /** The agent's self-set purpose, so clients can name it "Type (Purpose)". Omitted when unset and by older servers. */
-  agentPurpose?: string
   squadId: string | null
   squadName: string | null
   ownerUserId: string | null
@@ -1005,8 +1001,6 @@ export interface AgentErrorActionData {
   agentId: string
   agentName: string | null
   agentTypeId: string
-  /** The agent's self-set purpose, so clients can name it "Type (Purpose)". Omitted when unset and by older servers. */
-  agentPurpose?: string
   squadId: string | null
   squadName: string | null
   ownerUserId: string | null

@@ -70,8 +70,9 @@ export function pendingActionWaitPhrase(action: PendingAction): string {
 
 /**
  * The agent an action is about, type first: "Engineer (#12)" for a question asked from a work
- * stream, "Engineer (Onboarding)" for one with a purpose and no stream, else "Engineer". The
- * assignee of a work stream wait is named by its type alone, since the stream is already the row.
+ * stream, else "Engineer". Action data carries agent identity only (seeing an action does not grant
+ * reading the agent), so a purpose is never added here. The assignee of a work stream wait is named
+ * by its type alone, since the stream is already the row.
  * Null when the action names no agent. Older servers send no type for an assignee; the card then
  * names no agent rather than showing its name alone.
  */
@@ -81,14 +82,13 @@ export function pendingActionAgentLabel(action: PendingAction): string | null {
       const data = action.data as AgentQuestionActionData
       return typeFirstAgentLabel({
         agentTypeId: data.agentTypeId,
-        purpose: data.agentPurpose,
         workingOn: data.workStream ? `#${data.workStream.number}` : undefined,
       })
     }
     case 'squad-question':
     case 'agent-error': {
       const data = action.data as SquadQuestionActionData | AgentErrorActionData
-      return typeFirstAgentLabel({ agentTypeId: data.agentTypeId, purpose: data.agentPurpose })
+      return typeFirstAgentLabel({ agentTypeId: data.agentTypeId })
     }
     case 'workstream-review':
     case 'workstream-blocked': {

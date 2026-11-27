@@ -433,14 +433,11 @@ export class InboxMessage
 
     if (fromAgent) {
       const agentType = await AgentType.find(fromAgent.agentTypeId)
-      const purpose = fromAgent.metadata?.purpose
       metadata.sender = {
         name: participantSummary(fromAgent)?.name ?? null,
         squadId: fromAgent.squadId,
         agentTypeId: fromAgent.agentTypeId,
         agentTypeName: agentType?.name,
-        // Lets people-facing surfaces name the sender type first ("Engineer (Onboarding)").
-        ...(typeof purpose === 'string' && purpose.trim() ? { purpose: purpose.trim() } : {}),
       }
     } else if (input.senderType === 'user') {
       const { User } = await import('./User')
@@ -1179,17 +1176,15 @@ export class InboxMessage
 /**
  * Format sender info for display.
  */
-/** The sender line people read in a transcript's inbox summary: type first, the name as the handle. */
+/**
+ * The sender line people read in a transcript's inbox summary: type first, the name as the handle
+ * ("Engineer · Riley [abc12345]"). Inbox payloads carry identity only, so the agent's purpose,
+ * which needs its own read authorization, is never added here.
+ */
 export function formatInboxMessageSenderForPeople(m: InboxMessage): string {
   if (m.senderType !== 'agent') return formatInboxMessageSender(m)
   const senderMetadata = m.metadata?.sender as Record<string, unknown> | undefined
-  const label = agentSenderLabel(
-    {
-      ...senderMetadata,
-      ...(typeof m.senderAgent?.metadata?.purpose === 'string' ? { purpose: m.senderAgent.metadata.purpose } : {}),
-    },
-    m.senderAgent?.agentTypeId
-  )
+  const label = agentSenderLabel({ agentTypeId: senderMetadata?.agentTypeId }, m.senderAgent?.agentTypeId)
   if (!label) return formatInboxMessageSender(m)
   const name = participantSummary(m.senderAgent)?.name || (senderMetadata?.name as string | undefined)
   const id = m.senderId ? `[${m.senderId.slice(0, 8)}]` : ''

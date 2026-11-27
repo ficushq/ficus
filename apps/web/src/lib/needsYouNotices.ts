@@ -106,11 +106,8 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
   switch (action.type) {
     case 'agent-question': {
       const data = action.data as AgentQuestionActionData
-      // Type first; the purpose tells agents apart when the notice names no work stream.
-      const who = typeFirstAgentLabel({
-        agentTypeId: data.agentTypeId,
-        purpose: data.workStream ? undefined : data.agentPurpose,
-      })
+      // Type first; the work stream it asked from is the notice's context line.
+      const who = typeFirstAgentLabel({ agentTypeId: data.agentTypeId })
       return {
         who,
         headline: `${who} has a question`,
@@ -120,7 +117,7 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
     }
     case 'squad-question': {
       const data = action.data as SquadQuestionActionData
-      const who = typeFirstAgentLabel({ agentTypeId: data.agentTypeId, purpose: data.agentPurpose })
+      const who = typeFirstAgentLabel({ agentTypeId: data.agentTypeId })
       return {
         who,
         headline: `${who} has a question`,

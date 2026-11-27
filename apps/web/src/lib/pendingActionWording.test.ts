@@ -55,9 +55,6 @@ describe('pendingActionWaitPhrase', () => {
 describe('pendingActionAgentLabel', () => {
   test('names a question asker by type and the work stream it asked from, never by name', () => {
     expect(pendingActionAgentLabel(questionAction('q'))).toBe('Engineer (#8)')
-    expect(
-      pendingActionAgentLabel(questionAction('q', {}, { workStream: undefined, agentPurpose: 'Onboarding' }))
-    ).toBe('Engineer (Onboarding)')
     expect(pendingActionAgentLabel(questionAction('q', {}, { workStream: undefined }))).toBe('Engineer')
   })
 

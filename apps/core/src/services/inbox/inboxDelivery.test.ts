@@ -370,7 +370,7 @@ describe('inbox delivery service', () => {
     sendSpy.mockRestore()
   })
 
-  it('names an agent sender type first for people, and keeps the name-first From line for the agent', async () => {
+  it('names an agent sender type first for people, keeps its purpose private, and keeps the From line for the agent', async () => {
     const sender = await Agent.create({
       agentTypeId: testAgentTypeId,
       metadata: { name: 'Riley', purpose: 'Fix inline PR rows' },
@@ -382,7 +382,7 @@ describe('inbox delivery service', () => {
       senderId: sender.id,
       subject: null,
       content: 'Rows are fixed',
-      metadata: { sender: { name: 'Riley', agentTypeId: testAgentTypeId, purpose: 'Fix inline PR rows' } },
+      metadata: { sender: { name: 'Riley', agentTypeId: testAgentTypeId } },
       deliveryMode: 'follow-up',
     })
     const sendSpy = spyOn(Agent.prototype, 'sendMessage').mockImplementation(async () => ({
@@ -398,8 +398,10 @@ describe('inbox delivery service', () => {
     const typeLabel = `${testAgentTypeId
       .split(/[-_]/)
       .map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word))
-      .join(' ')} (Fix inline PR rows)`
+      .join(' ')}`
     expect(summary!.senderDisplay).toBe(`${typeLabel} · Riley [${sender.id.slice(0, 8)}]`)
+    // Inbox payloads carry identity only: the sender's purpose needs its own read authorization.
+    expect(summary!.senderDisplay).not.toContain('Fix inline PR rows')
     // The agent's own prompt keeps addressing the sender by name.
     expect(prompt).toContain(`**From:** Riley (`)
     sendSpy.mockRestore()

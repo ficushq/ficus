@@ -127,7 +127,6 @@ const pendingActions = [
       agentId: 'eng-1',
       agentName: 'Quartz',
       agentTypeId: 'engineer',
-      agentPurpose: 'Onboarding',
       squadId: 'product',
       squadName: 'Product Engineering',
       ownerUserId: 'viewer',

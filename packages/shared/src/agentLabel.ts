@@ -63,9 +63,10 @@ export function typeFirstAgentLabel(input: TypeFirstAgentLabelInput): string {
 }
 
 /**
- * How people see the agent that sent a message, from the sender metadata recorded at send time
- * (`agentTypeId`, optional `purpose`): type first, never its name alone. Null when the sender is not
- * an agent. Agents' own prompts keep the name-first form they address each other by.
+ * How people see the agent that sent a message, from the sender metadata recorded at send time:
+ * type first, never its name alone. Null when the sender is not an agent. Inbox metadata carries
+ * identity only, so callers pass a purpose only when they may read it. Agents' own prompts keep the
+ * name-first form they address each other by.
  */
 export function agentSenderLabel(sender: unknown, agentTypeId?: string | null): string | null {
   const meta = (sender ?? {}) as { agentTypeId?: unknown; purpose?: unknown }

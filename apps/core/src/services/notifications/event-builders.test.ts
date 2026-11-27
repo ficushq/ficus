@@ -95,7 +95,8 @@ describe('notification event builders', () => {
       agentId: 'a1',
       squadId: 's1',
       squadName: 'Ficus',
-      title: '❓ Engineer (Release prep) has a question',
+      // Type first; the purpose stays out of a push its recipient may not be allowed to read.
+      title: '❓ Engineer has a question',
       body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})`.slice(0, 300),
       pushSource: { body: `[Which release should I target?](https://example.com/${'x'.repeat(600)})` },
       url: 'https://ficus.example/squads/s1/agents?agent=a1',

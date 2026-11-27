@@ -93,10 +93,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       .where(eq(agentQuestionWorkStreamOrigins.questionId, questionId))
       .limit(2)
     const work = origins.length === 1 ? await WorkStream.find(origins[0]!.id) : null
-    // Type first, as the app names agents: the work stream it asked from, else its purpose.
+    // Type first, as the app names agents, with the work stream it asked from. Push recipients may
+    // not read the agent, so its purpose is never included.
     const agentLabel = typeFirstAgentLabel({
       agentTypeId: agent.agentTypeId,
-      purpose: agent.metadata?.purpose as string | undefined,
       workingOn: work ? `#${work.number}` : undefined,
     })
     const questionText = question.questionData.questions
@@ -360,10 +360,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const [agent, execution] = await Promise.all([Agent.find(agentId), Execution.find(executionId)])
     if (!agent || !execution) return null
 
-    const agentLabel = typeFirstAgentLabel({
-      agentTypeId: agent.agentTypeId,
-      purpose: (agent.metadata as Record<string, unknown>)?.purpose as string | undefined,
-    })
+    const agentLabel = typeFirstAgentLabel({ agentTypeId: agent.agentTypeId })
 
     // Squad agents link to their squad Chats tab, squadless agents to the Assistant's view of them.
     let url: string | undefined
@@ -404,10 +401,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const [agent, execution] = await Promise.all([Agent.find(agentId), Execution.find(executionId)])
     if (!agent || !execution) return null
 
-    const agentLabel = typeFirstAgentLabel({
-      agentTypeId: agent.agentTypeId,
-      purpose: (agent.metadata as Record<string, unknown>)?.purpose as string | undefined,
-    })
+    const agentLabel = typeFirstAgentLabel({ agentTypeId: agent.agentTypeId })
     const errorMsg = execution.error || 'Unknown error'
 
     // Squad agents link to their squad Chats tab, squadless agents to the Assistant's view of them.

@@ -138,15 +138,11 @@ test('more than three new items show the newest three', async () => {
       questionAction(
         `q${minute}`,
         { createdAt: `2026-11-26T12:0${minute}:00.000Z` },
-        { agentPurpose: `Task ${minute}`, workStream: undefined }
+        { agentTypeId: ['engineer', 'designer', 'reviewer', 'writer'][minute - 1]! }
       )
     )
   )
-  expect(view.headlines()).toEqual([
-    'Engineer (Task 4) has a question',
-    'Engineer (Task 3) has a question',
-    'Engineer (Task 2) has a question',
-  ])
+  expect(view.headlines()).toEqual(['Writer has a question', 'Reviewer has a question', 'Designer has a question'])
 })
 
 test('no notice for an item the user already has open', async () => {

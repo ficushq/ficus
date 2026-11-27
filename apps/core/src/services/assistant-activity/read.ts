@@ -149,10 +149,10 @@ export async function listAssistantActivity(
   }
 }
 
-/** Who sent an update, as people see it: an agent type first ("Engineer (Onboarding)"), never its name alone. */
+/** Who sent an update, as people see it: an agent by its type ("Engineer"), never its name alone. */
 function senderName(metadata: Record<string, unknown>): string {
-  const sender = metadata.sender as { name?: string; agentTypeName?: string } | undefined
-  return agentSenderLabel(sender) || sender?.name || sender?.agentTypeName || 'Agent'
+  const sender = metadata.sender as { name?: string; agentTypeName?: string; agentTypeId?: string } | undefined
+  return agentSenderLabel({ agentTypeId: sender?.agentTypeId }) || sender?.name || sender?.agentTypeName || 'Agent'
 }
 
 /** One update card: the tracking row plus its inbox message. */

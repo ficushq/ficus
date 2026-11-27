@@ -90,14 +90,11 @@ describe('needs-you notice content', () => {
     })
   })
 
-  test('a question outside a work stream falls back to its squad, and adds the agent purpose to its type', () => {
-    const content = needsYouNoticeContent(
-      questionAction('q1', {}, { agentPurpose: 'Onboarding', workStream: undefined })
-    )
-    expect(content.headline).toBe('Engineer (Onboarding) has a question')
+  test('a question outside a work stream falls back to its squad, and names its agent by type only', () => {
+    const content = needsYouNoticeContent(questionAction('q1', {}, { workStream: undefined }))
+    expect(content.headline).toBe('Engineer has a question')
+    expect(content.headline).not.toContain('Payments Engineer')
     expect(content.context).toBe('Product Engineering')
-    const unnamed = needsYouNoticeContent(questionAction('q1', {}, { agentName: null, workStream: undefined }))
-    expect(unnamed.headline).toBe('Engineer has a question')
   })
 
   test('a review gate reads "<agent type> requests review" with the work stream number and title', () => {
