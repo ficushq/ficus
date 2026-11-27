@@ -1386,6 +1386,8 @@ export const workStreamCreateRequests = pgTable(
   (table) => [
     uniqueIndex('uq_work_stream_create_requests_key').on(table.squadId, table.requesterKey, table.idempotencyKey),
     index('idx_work_stream_create_requests_created_at').on(table.createdAt),
+    // Deleting a stream cascades here; without this every delete would scan the table.
+    index('idx_work_stream_create_requests_work_stream').on(table.workStreamId),
   ]
 )
 

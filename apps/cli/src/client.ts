@@ -81,13 +81,16 @@ export async function apiPostIdempotent<T>(path: string, body: unknown, options:
   const maxRetries = options.maxRetries ?? 3
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const deadline = Date.now() + options.timeoutMs
-  let lastError: unknown
+  const timedOut = (cause?: unknown) =>
+    new IdempotentRequestIncompleteError('timeout', options.idempotencyKey, options.timeoutMs, cause)
   for (let attempt = 0; ; attempt++) {
     const remaining = deadline - Date.now()
-    if (remaining <= 0) throw new IdempotentRequestIncompleteError('timeout', options.idempotencyKey, options.timeoutMs)
-    let retryReason: string
+    if (remaining <= 0) throw timedOut()
+    // Only a request that got no answer, or an answer listed below, is retried.
+    let failure: unknown
+    let response: Response | undefined
     try {
-      const response = await fetch(`${config.apiUrl}${path}`, {
+      response = await fetch(`${config.apiUrl}${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,27 +100,28 @@ export async function apiPostIdempotent<T>(path: string, body: unknown, options:
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(remaining),
       })
+    } catch (error) {
+      if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
+        throw timedOut(error)
+      // fetch rejects like this when the connection drops or is refused.
+      failure = error
+    }
+    if (response) {
+      // Everything after an answer arrived is final, except the retryable statuses:
+      // an unreadable body is not retried.
       if (response.ok) return (await response.json()) as T
       const error = await throwApiError(response).catch((caught: unknown) => caught)
       const retryable =
         error instanceof ApiRequestError &&
         (RETRYABLE_STATUSES.has(error.status) || (error.status === 409 && error.code === 'create_in_progress'))
       if (!retryable) throw error
-      lastError = error
-      retryReason = (error as ApiRequestError).message
-    } catch (error) {
-      if (error instanceof ApiRequestError) throw error
-      if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
-        throw new IdempotentRequestIncompleteError('timeout', options.idempotencyKey, options.timeoutMs, error)
-      // fetch rejects with a TypeError (or a Bun system error) when the connection drops or is refused.
-      lastError = error
-      retryReason = error instanceof Error ? error.message : String(error)
+      failure = error
     }
     if (attempt >= maxRetries)
-      throw new IdempotentRequestIncompleteError('retries', options.idempotencyKey, options.timeoutMs, lastError)
+      throw new IdempotentRequestIncompleteError('retries', options.idempotencyKey, options.timeoutMs, failure)
     const pause = Math.min(1000 * 2 ** attempt, deadline - Date.now())
-    if (pause <= 0) throw new IdempotentRequestIncompleteError('timeout', options.idempotencyKey, options.timeoutMs)
-    options.onRetry?.(attempt + 1, retryReason)
+    if (pause <= 0) throw timedOut(failure)
+    options.onRetry?.(attempt + 1, failure instanceof Error ? failure.message : String(failure))
     await sleep(pause)
   }
 }

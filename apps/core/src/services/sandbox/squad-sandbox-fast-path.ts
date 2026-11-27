@@ -90,7 +90,8 @@ async function fastPathBlocker(
   manager: ISandboxManager,
   deps: SquadSandboxFastPathDeps
 ): Promise<string | undefined> {
-  if (squad.isArchived) return 'archived'
+  // Same test as ensureSquadSandbox's refusal.
+  if (squad.isArchived || squad.status === 'archived') return 'archived'
   if (!deps.isRemoteRuntime()) return 'local-runtime'
   if (!manager.hasSandbox(sandboxId)) return 'untracked'
   if (manager.isSandboxSpecDrifted?.(sandboxId, deps.buildSandboxOptions(squad))) return 'spec-drift'

@@ -1,5 +1,5 @@
 {
-  "id": "848ff47a-3174-463d-bfee-be75ab4347a7",
+  "id": "ec16187f-e24a-437d-aed9-c47f8f56bdd5",
   "prevId": "c6f4d05a-9c18-4674-bc74-952600943a57",
   "version": "7",
   "dialect": "postgresql",
@@ -23726,6 +23726,21 @@
           "columns": [
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_work_stream_create_requests_work_stream": {
+          "name": "idx_work_stream_create_requests_work_stream",
+          "columns": [
+            {
+              "expression": "work_stream_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

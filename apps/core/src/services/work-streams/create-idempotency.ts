@@ -36,8 +36,11 @@ const KEY_PATTERN = /^[\x21-\x7e]{1,200}$/
 export const CREATE_CLAIM_LEASE_MS = 60_000
 /** How often the owner renews its claim. */
 export const CREATE_CLAIM_RENEW_MS = 20_000
-/** How long a repeat waits for an in-progress create before answering 409 `create_in_progress`. */
-export const CREATE_CLAIM_WAIT_MS = 5 * 60_000
+/**
+ * How long a repeat waits for an in-progress create before answering 409 `create_in_progress`.
+ * Kept well under the CLI's default budget (150 s) so the CLI sees the answer and retries.
+ */
+export const CREATE_CLAIM_WAIT_MS = 45_000
 /** Claims older than this are pruned; a key is only meaningful for retries, not forever. */
 const CREATE_CLAIM_RETENTION_DAYS = 30
 
@@ -76,6 +79,8 @@ export class CreateInProgressError extends Error {
 
 /** The owner lost its claim (its lease expired and another request took over), so it must not commit. */
 export class CreateClaimLostError extends Error {
+  readonly status = 409
+  readonly code = 'create_claim_lost'
   constructor() {
     super('Idempotency claim was taken over by another request; this create was rolled back')
     this.name = 'CreateClaimLostError'
@@ -129,9 +134,36 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? 'null'
 }
 
-/** Stable across key order and absent fields, so a client retry with the same body always matches. */
+/**
+ * Stable across key order and absent fields, so a client retry with the same body always matches.
+ *
+ * `metadata.sources[*].addedAt` is left out: clients (the CLI's --from-url, --from-slack,
+ * --from-memory and --source-link) stamp it with the current time, so a re-run of the same
+ * command with the same key would otherwise never match its first attempt.
+ */
 export function fingerprintCreateRequest(body: unknown): string {
-  return createHash('sha256').update(canonicalJson(body)).digest('hex')
+  return createHash('sha256')
+    .update(canonicalJson(withoutSourceTimestamps(body)))
+    .digest('hex')
+}
+
+function withoutSourceTimestamps(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body
+  const metadata = (body as { metadata?: unknown }).metadata
+  if (!metadata || typeof metadata !== 'object') return body
+  const sources = (metadata as { sources?: unknown }).sources
+  if (!Array.isArray(sources)) return body
+  return {
+    ...body,
+    metadata: {
+      ...metadata,
+      sources: sources.map((source) => {
+        if (!source || typeof source !== 'object') return source
+        const { addedAt: _addedAt, ...rest } = source as Record<string, unknown>
+        return rest
+      }),
+    },
+  }
 }
 
 export interface CreateClaim {

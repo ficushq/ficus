@@ -82,9 +82,13 @@ describe('work stream create reliability', () => {
     await db.delete(squads).where(like(squads.name, `${prefix}%`))
   })
 
-  const post = (body: unknown, key?: string, init: { fetch?: typeof app.fetch; base?: string } = {}) =>
+  const post = (
+    body: unknown,
+    key?: string,
+    init: { fetch?: (request: Request) => Response | Promise<Response> } = {}
+  ) =>
     (init.fetch ?? ((request: Request) => app.fetch(request)))(
-      new Request(`${init.base ?? 'http://localhost'}/api/workstreams`, {
+      new Request('http://localhost/api/workstreams', {
         method: 'POST',
         body: JSON.stringify(body),
         headers: {
@@ -175,22 +179,67 @@ describe('work stream create reliability', () => {
     }
   })
 
-  // Bun closes a connection whose handler is silent past idleTimeout (4-second granularity),
-  // while the handler still completes. Core runs with idleTimeout 30; 1 keeps this test short.
-  it('answers with the real result when a create outlasts the server idle timeout', async () => {
-    setupDelayMs = 6_000
-    const server = Bun.serve({ port: 0, idleTimeout: 1, fetch: (request, bunServer) => app.fetch(request, bunServer) })
-    try {
-      const started = Date.now()
-      const response = await post({ squadId, title: `${prefix} slow`, repository: 'repo' }, 'key-slow', {
-        fetch: (request) => fetch(request),
-        base: `http://127.0.0.1:${server.port}`,
-      })
-      expect(Date.now() - started).toBeGreaterThanOrEqual(6_000)
-      expect(response.status).toBe(201)
-      expect(await response.json()).toMatchObject({ title: `${prefix} slow` })
-    } finally {
-      await server.stop(true)
-    }
-  }, 30_000)
+  // Core's listener runs Bun.serve({ idleTimeout: 30 }). On Bun 1.4.2 that timer closes bodyless
+  // requests but not a JSON POST, so a real-listener test could not fail without the fix. Instead,
+  // the route must disable its own per-request timer (Bun's server.timeout(request, 0)) before any
+  // slow phase starts; a fake env server records that, as routes/squads-sandbox-paths.test.ts does.
+  it('disables its per-request idle timer before a slow phase, and answers with the real result', async () => {
+    const calls: Array<{ request: Request; seconds: number }> = []
+    const server = { timeout: (request: Request, seconds: number) => calls.push({ request, seconds }) }
+    let callsWhenSlowPhaseStarted = -1
+    setup.mockImplementationOnce(async (_squadId, _input, key, metadata, _record, options) => {
+      callsWhenSlowPhaseStarted = calls.length
+      await options!.timing!.time('repository-worktree-add', () => Bun.sleep(300))
+      return { ...metadata, git: { worktree: `/workspace/worktrees/${key}`, branch: `work/${key}` } }
+    })
+    const response = await post({ squadId, title: `${prefix} slow`, repository: 'repo' }, 'key-slow', {
+      fetch: (request) => app.fetch(request, server),
+    })
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ title: `${prefix} slow` })
+    expect(calls.map((call) => call.seconds)).toEqual([0])
+    expect(callsWhenSlowPhaseStarted).toBe(1)
+
+    // Refused requests never get the exemption: an unauthorized client cannot hold a socket open.
+    calls.length = 0
+    const refused = await app.fetch(
+      new Request('http://localhost/api/workstreams', {
+        method: 'POST',
+        body: JSON.stringify({ squadId, title: `${prefix} anonymous` }),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      server
+    )
+    expect(refused.status).toBeGreaterThanOrEqual(400)
+    expect(calls).toEqual([])
+  })
+
+  it('returns the same stream when a re-run only restamps its source links', async () => {
+    const body = (addedAt: string) => ({
+      squadId,
+      title: `${prefix} sourced`,
+      repository: 'repo',
+      metadata: {
+        sources: [
+          { kind: 'url', url: 'https://example.com/spec', addedAt },
+          { kind: 'slack_thread', url: 'https://example.slack.com/archives/C1/p1', addedAt },
+        ],
+      },
+    })
+    const first = await post(body('2026-11-27T10:00:00.000Z'), 'key-sourced')
+    expect(first.status).toBe(201)
+    const { id } = (await first.json()) as { id: string }
+    const rerun = await post(body('2026-11-27T10:05:00.000Z'), 'key-sourced')
+    expect(rerun.status).toBe(200)
+    expect(await rerun.json()).toMatchObject({ id, reusedFromIdempotencyKey: true })
+    expect(setup).toHaveBeenCalledTimes(1)
+    expect(await streamCount()).toBe(1)
+
+    // A different source is still a different request.
+    const changed = body('2026-11-27T10:05:00.000Z')
+    changed.metadata.sources[0]!.url = 'https://example.com/other'
+    const conflict = await post(changed, 'key-sourced')
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ code: 'idempotency_key_conflict' })
+  })
 })

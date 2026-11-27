@@ -37,10 +37,14 @@ squad is busy. Four things keep that safe:
   ASCII characters, no spaces). Before anything is provisioned, Core claims the key for
   the squad, the authenticated identity and the key (`work_stream_create_requests`). A
   repeat with the same key and the same JSON body (compared by a SHA-256 of the canonical
-  body) returns `200 { ...stream, reusedFromIdempotencyKey: true }` instead of creating a
-  second stream or worktree.
+  body) returns `200 { ...stream, reusedFromIdempotencyKey: true }`, with the same workflow
+  `warnings` as the original `201`, instead of creating a second stream or worktree.
+  - The comparison ignores `metadata.sources[*].addedAt`. Clients stamp it with the current
+    time (the CLI does for `--from-url`, `--from-slack`, `--from-memory` and
+    `--source-link`), so a re-run of the same command with the same key still matches.
+    Every other field, including the sources themselves, must be identical.
   - A repeat that arrives while the first request is still running waits for it, up to
-    5 minutes, and then answers `409 { code: "create_in_progress" }`. Retrying later with
+    45 seconds, and then answers `409 { code: "create_in_progress" }`. Retrying later with
     the same key is safe.
   - The same key with a different body answers `409 { code: "idempotency_key_conflict" }`;
     a malformed key answers `400 { code: "invalid_idempotency_key" }`.
@@ -48,14 +52,19 @@ squad is busy. Four things keep that safe:
     starts fresh. The claim is bound to the stream inside the creation transaction.
   - A pending claim holds a 60-second lease that its request renews every 20 seconds. If
     the Core process dies mid-create, a repeat takes the claim over once the lease
-    expires. Claims are pruned after 30 days.
+    expires. A request whose claim was taken over this way rolls its transaction back and
+    answers `409 { code: "create_claim_lost" }`; the repeat that took over returns the
+    stream. Claims are pruned after 30 days.
   - Without the header, creation behaves as before. `ficus workstream create` always
     sends one (see [CLI: workstream create](cli/workstream-commands.md#create)).
-- **No idle cutoff.** Core's listener closes a connection that stays silent for 30
-  seconds (`Bun.serve({ idleTimeout: 30 })`) while its handler keeps running, so a slow
-  create used to report a dropped connection for a stream that was then created. The
-  create route disables that per-request timer after authorization (as workspace
-  transfers do; see [Request limits](request-limits.md)) and answers with its real result.
+- **No idle cutoff.** Core's listener runs `Bun.serve({ idleTimeout: 30 })`. On Bun 1.4.2
+  that timer closes requests without a body (as seen on slow `workstream get` and `list`
+  reads) while their handlers keep running; it does not close a JSON `POST` such as a
+  create. The create route still disables its own per-request timer after authorization
+  (as workspace transfers do; see [Request limits](request-limits.md)), as a defence
+  should Bun start applying the timer to such requests. A connection dropped by anything
+  else on the path (a proxy, the network) is covered by the idempotency key and the CLI's
+  retry with the same key.
 - **Lighter squad-box check.** Repository setup skips the full squad-box ensure (exposure
   cleanup, env-file regeneration, the runtime ensure behind the per-box gate, the
   toolchain settle and the watch setup) when the box is already healthy. On a vm or k8s
@@ -64,7 +73,8 @@ squad is busy. Four things keep that safe:
   current declaration applied and activated, maintenance admission is open, and one
   command in the box answers within 10 seconds. Anything else, including an archived
   squad, a missing or untracked box, a docker or host runtime, or a failed check, runs
-  the full ensure as before (`services/sandbox/squad-sandbox-fast-path.ts`).
+  the full ensure as before (`services/sandbox/squad-sandbox-fast-path.ts`). The same
+  check runs when `PATCH`/`workstream update` sets up a repository on an existing stream.
 - **Per-phase timing.** Every create logs one line under the `work-stream-create` logger:
 
   ```

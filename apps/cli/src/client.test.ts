@@ -105,6 +105,15 @@ test('idempotent POST retries dropped connections and in-progress answers with o
     assert.deepEqual(new Set(calls.map((call) => call.body)), new Set([JSON.stringify({ title: 'T' })]))
     assert.deepEqual(retries, [1, 2, 3])
 
+    // An answer whose body cannot be read is final, not retried.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      return new Response('not json', { status: 201 })
+    }
+    await assert.rejects(apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, sleep }))
+    assert.equal(calls.length, 1)
+
     // Any other error answer is final: no retry.
     calls.length = 0
     globalThis.fetch = async (url, init) => {

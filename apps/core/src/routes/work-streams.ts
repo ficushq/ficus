@@ -19,6 +19,7 @@ import {
   type WorkStreamCreateTimer,
 } from '../services/work-streams/create-timing'
 import {
+  CreateClaimLostError,
   CreateInProgressError,
   fingerprintCreateRequest,
   IDEMPOTENCY_KEY_HEADER,
@@ -1110,9 +1111,12 @@ export const workStreamsRouter = new Hono()
             throw error
           }
         }
+        // A key replay answers like the original 201 did, including the workflow's warnings.
+        const { workflowSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
         return c.json(
           {
             ...existing.toJson(),
+            ...(replayedKey ? withWarnings(input.workflow ? await workflowSourceWarnings(input.workflow) : []) : {}),
             ...(replayedKey ? { reusedFromIdempotencyKey: true } : { reusedFromEvent: true }),
             ...(identity.type === 'agent'
               ? { observing: await isObservingWorkStream(existing.id, identity.agentId) }
@@ -1122,7 +1126,11 @@ export const workStreamsRouter = new Hono()
         )
       }
       if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
-      if (error instanceof IdempotencyKeyConflictError || error instanceof CreateInProgressError)
+      if (
+        error instanceof IdempotencyKeyConflictError ||
+        error instanceof CreateInProgressError ||
+        error instanceof CreateClaimLostError
+      )
         return c.json({ error: error.message, code: error.code }, error.status)
       if (error instanceof AssetAttachmentError) return c.json({ error: error.message }, error.status)
       if (error instanceof SquadArchivedError) return c.json({ error: error.message }, 410)

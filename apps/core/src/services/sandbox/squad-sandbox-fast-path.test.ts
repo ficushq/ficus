@@ -55,6 +55,10 @@ describe('squad sandbox fast path for repository setup', () => {
     ['spec-drift', () => harness({}, { isSandboxSpecDrifted: mock(() => true) })],
     ['local-runtime', () => harness({ isRemoteRuntime: () => false })],
     ['archived', () => harness({ findSquad: async () => ({ id: SQUAD_ID, isArchived: true }) as Squad })],
+    [
+      'archived',
+      () => harness({ findSquad: async () => ({ id: SQUAD_ID, isArchived: false, status: 'archived' }) as Squad }),
+    ],
     ['toolchain-installing', () => harness({ isToolchainInstalling: () => true })],
     [
       'toolchain-unsettled',

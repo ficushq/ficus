@@ -302,7 +302,14 @@ a second stream or worktree.
 - When the connection drops, the server answers 502, 503 or 504, or another request
   with the same key is still creating the stream (`409 create_in_progress`), the CLI
   retries up to three times with the same key, printing a note to stderr.
-- Any other error is reported at once and is not retried.
+- Any other error, including an answer whose body cannot be read, is reported at once and
+  is not retried.
+- A re-run with the same key and the same arguments matches even when it restamps source
+  links (`--from-url`, `--from-slack`, `--from-memory`, `--source-link`), because the server
+  ignores their `addedAt` time. Changing anything else answers `idempotency_key_conflict`.
+- Servers older than this release ignore the `Idempotency-Key` header. Against one of them,
+  a retry after a dropped connection or a 502, 503 or 504 can create a second stream; check
+  with `ficus workstream list --squad <squad-id>` after a retried create.
 - When `--timeout` (150 seconds by default) runs out, the CLI stops with a message
   that the server may still finish the create, and prints the key. Re-run the same
   command with `--idempotency-key <key>` to collect the stream once it exists, or look
