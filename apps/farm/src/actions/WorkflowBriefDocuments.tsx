@@ -57,6 +57,7 @@ export function WorkflowBriefDocuments({
   inputs = [],
   children,
   unseen = [],
+  preparedBy,
 }: {
   run: WorkflowRunDetail
   attempt: WorkflowAttempt
@@ -66,6 +67,8 @@ export function WorkflowBriefDocuments({
   children: ReactNode
   /** Sources revised or added since the reviewer last looked; each lists what changed. */
   unseen?: WorkflowUnseenRevision[]
+  /** Who prepared a source ("Engineer (Payments)"); without one the brief names the step that did. */
+  preparedBy?: (source: WorkflowAttempt) => string | undefined
 }) {
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [...brief.sources, ...(brief.carriedSources ?? [])]
@@ -156,10 +159,7 @@ export function WorkflowBriefDocuments({
                       </p>
                     </>
                   )}
-                  <p className="g-material-head">
-                    Prepared by {workflowHistoricalStep(run.state, source)?.name ?? source.stepId} · Attempt {source.id}
-                    {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
-                  </p>
+                  <PreparedBy run={run} source={source} author={preparedBy?.(source)} />
                   {unseen
                     .filter((entry) => entry.attemptId === source.id)
                     .map((entry) => (
@@ -190,6 +190,24 @@ export function WorkflowBriefDocuments({
         )}
       </div>
     </>
+  )
+}
+
+/** "Prepared by Engineer (Payments)", then the step, attempt and revision as secondary text (as on web). */
+function PreparedBy({ run, source, author }: { run: WorkflowRunDetail; source: WorkflowAttempt; author?: string }) {
+  const step = workflowHistoricalStep(run.state, source)?.name ?? source.stepId
+  const detail = [
+    ...(author ? [step] : []),
+    `Attempt ${source.id}`,
+    ...(workflowResultRevision(source) > 1 ? [`Revision ${workflowResultRevision(source)}`] : []),
+  ].join(' · ')
+  return (
+    <p className="g-material-head">
+      <span>
+        Prepared by <span className="g-byline-author">{author ?? step}</span>
+        <span className="g-byline-detail"> · {detail}</span>
+      </span>
+    </p>
   )
 }
 

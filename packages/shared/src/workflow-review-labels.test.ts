@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   workflowApprovalStatement,
   workflowAttemptAuthor,
+  workflowAttemptSummary,
   workflowOutcomeEffect,
   workflowWaitingLabel,
 } from './workflow-review-labels'
@@ -18,7 +19,7 @@ function gateRun({
   const definition = createBlankWorkflow()
   definition.participants.builder = { agentTypeId: 'engineer', session: 'reuse-within-stream' }
   definition.participants.checker = { agentTypeId: 'reviewer', session: 'reuse-within-stream' }
-  definition.steps[0]!.participant = 'builder'
+  Object.assign(definition.steps[0]!, { participant: 'builder' })
   definition.steps[0]!.outcomes = { completed: { next: 'gate' } }
   definition.steps.push({
     id: 'gate',
@@ -75,10 +76,12 @@ test('outcome effects say who gets the work next, in words', () => {
   const gate = run.state.attempts.at(-1)!
   const outcomes = (gate.step as { outcomes: Record<string, Parameters<typeof workflowOutcomeEffect>[1]> }).outcomes
   const typeName = (id: string) => ({ engineer: 'Engineer', reviewer: 'Reviewer' })[id] ?? id
-  expect(workflowOutcomeEffect(run.state, outcomes['changes-requested']!, gate, 'changes-requested', { typeName })).toBe(
-    'Returns to the Engineer with your notes'
+  expect(
+    workflowOutcomeEffect(run.state, outcomes['changes-requested']!, gate, 'changes-requested', { typeName })
+  ).toBe('Returns to the Engineer with your notes')
+  expect(workflowOutcomeEffect(run.state, outcomes.approved!, gate, 'approved', { typeName })).toBe(
+    'Completes the work stream'
   )
-  expect(workflowOutcomeEffect(run.state, outcomes.approved!, gate, 'approved', { typeName })).toBe('Completes the work stream')
   expect(workflowOutcomeEffect(run.state, outcomes['needs-review']!, gate, 'needs-review', { typeName })).toBe(
     'Next: check (Reviewer) and Product sign-off'
   )
@@ -145,4 +148,10 @@ test('waiting labels say how long in the largest whole unit', () => {
   expect(workflowWaitingLabel('2026-11-19T13:20:00.000Z', now)).toBe('Waiting 7 days')
   // A clock behind the server never reads as negative.
   expect(workflowWaitingLabel('2026-11-26T13:25:00.000Z', now)).toBe('Waiting less than a minute')
+})
+
+test('an attempt summary names its step, attempt and outcome', () => {
+  const run = gateRun()
+  expect(workflowAttemptSummary(run.state, run.state.attempts[0]!)).toBe('execute · Attempt 1 · Completed')
+  expect(workflowAttemptSummary(run.state, run.state.attempts.at(-1)!)).toBe('Release approval · Attempt 2')
 })

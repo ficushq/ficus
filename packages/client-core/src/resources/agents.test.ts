@@ -52,6 +52,15 @@ describe('agentsResource listAgents filters', () => {
   })
 })
 
+describe('agentsResource agent types', () => {
+  test('listAgentTypes reads the agent type list', async () => {
+    const { t, calls } = mockTransport(() => [{ id: 'engineer', name: 'Builder' }])
+
+    expect(await agentsResource(t).listAgentTypes()).toEqual([{ id: 'engineer', name: 'Builder' }] as never)
+    expect(calls[0].path).toBe('/agent-types')
+  })
+})
+
 describe('agentsResource continuation methods', () => {
   test('continues one exact halted agent', async () => {
     const { t, calls } = mockTransport(() => ({ resumed: true }))

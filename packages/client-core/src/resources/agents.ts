@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentSummary,
+  AgentType,
   ManualWaitDecision,
   AssistantRoutingSend,
   DeliveryMode,
@@ -170,6 +171,8 @@ export function agentsResource(t: Transport) {
       return t.request(`/agents/${agentId}/recoveries/${recoveryId}/input`, { method: 'POST', body: decision })
     },
 
+    /** GET /agent-types: every agent type, for naming agents by their type's configured name. */
+    listAgentTypes: (): Promise<AgentType[]> => t.request('/agent-types'),
     listAgents: (filters?: ListAgentsFilters): Promise<Agent[]> => {
       const p = new URLSearchParams()
       if (filters?.scopeType) p.set('scopeType', filters.scopeType)

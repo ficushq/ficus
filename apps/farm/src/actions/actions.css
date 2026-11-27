@@ -331,6 +331,17 @@
   font: 700 12.5px var(--g-font-body);
 }
 
+/* Who prepared the work leads a byline; the step, attempt and outcome follow, quieter. */
+.g-byline-author {
+  color: var(--g-text);
+  font-weight: 700;
+}
+
+.g-byline-detail {
+  color: var(--g-ink-soft);
+  font-weight: 500;
+}
+
 .g-link,
 .g-link-button {
   display: inline-flex;

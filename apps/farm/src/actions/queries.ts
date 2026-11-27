@@ -25,6 +25,21 @@ export const actionQueries = {
       queryKey: queryKeys.workflows.run(workStreamId),
       queryFn: () => api.workflowRun(workStreamId),
     }),
+  /** Optional context for naming people: a 403 or an outage leaves the participant type to name them. */
+  squadAgents: (api: ActionsApi, squadId: string) =>
+    queryOptions({
+      queryKey: queryKeys.squads.agents(squadId),
+      queryFn: () => api.listSquadAgents(squadId),
+      retry: false,
+    }),
+  agentTypes: (api: ActionsApi) =>
+    queryOptions({
+      queryKey: queryKeys.agentTypes.list(),
+      queryFn: () => api.listAgentTypes(),
+      retry: false,
+      // Type names change rarely; settings edits invalidate the list themselves.
+      staleTime: 5 * 60_000,
+    }),
   openAgentQuestions: (api: ActionsApi, agentId: string) =>
     queryOptions({
       queryKey: queryKeys.agentQuestions.byAgent(agentId, 'open'),

@@ -1,7 +1,12 @@
 import { agentTypeNoun, typeFirstAgentLabel } from './agentLabel'
 import type { Agent } from './types'
 import { workflowHistoricalStep, workflowReviewBriefForAttempt } from './workflow-review-history'
-import { effectiveWorkflowStep, workflowCompletionTargets, type WorkflowAttempt, type WorkflowRun } from './workflow-runtime'
+import {
+  effectiveWorkflowStep,
+  workflowCompletionTargets,
+  type WorkflowAttempt,
+  type WorkflowRun,
+} from './workflow-runtime'
 import type { WorkflowTransition } from './workflows'
 
 /**
@@ -21,6 +26,12 @@ export function workflowStepName(run: WorkflowRun, stepId: string): string {
 export function workflowOutcomeLabel(outcome: string): string {
   const words = outcome.replace(/[-_]+/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** "design-assessment · Attempt 16 · Proposal ready": the attempt whose handoff is under review. */
+export function workflowAttemptSummary(run: WorkflowRun, attempt: WorkflowAttempt): string {
+  const outcome = attempt.outcome ? ` · ${workflowOutcomeLabel(attempt.outcome)}` : ''
+  return `${workflowStepName(run, attempt.stepId)} · Attempt ${attempt.id}${outcome}`
 }
 
 /** "Engineer", or "General Purpose agent" for the built-in general type (see `agentTypeNoun`). */

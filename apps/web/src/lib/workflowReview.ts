@@ -9,6 +9,7 @@ export {
   workflowApprovalStatement as approvalStatement,
   workflowAttemptAuthor as attemptAuthor,
   workflowWaitingLabel as waitingLabel,
+  workflowAttemptSummary as attemptSummary,
 } from '@ficus/shared'
 /** The squad's own name for an agent type (`AgentType.name`), when it is known. */
 export type { AgentTypeName } from './agentDisplay'
@@ -24,7 +25,6 @@ import {
   workflowIncomingAttempts,
   workflowOutcomeRequiresEvidence,
   workflowHistoricalStep,
-  workflowStepName as stepName,
   workflowOutcomeLabel as outcomeLabel,
   workflowApprovalStatement as approvalStatement,
   workflowGateApprover,
@@ -73,11 +73,6 @@ export function decisionNotesHint(step: WorkflowStep, outcomes: Array<[string, W
       ? 'Required.'
       : `Optional for ${optionalFor.join(', ')}; required for ${requiredFor.join(', ')}.`
   return `${rule} Your notes are recorded with the decision and passed to the next step.`
-}
-
-/** "design-assessment · Attempt 16 · Proposal ready": the attempt whose handoff is under review. */
-export function attemptSummary(run: WorkflowRun, attempt: WorkflowAttempt): string {
-  return `${stepName(run, attempt.stepId)} · Attempt ${attempt.id}${attempt.outcome ? ` · ${outcomeLabel(attempt.outcome)}` : ''}`
 }
 
 /**
