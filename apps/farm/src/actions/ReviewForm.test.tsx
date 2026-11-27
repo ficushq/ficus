@@ -620,7 +620,7 @@ describe('WorkflowDecision · human-approval gate', () => {
     it('tells another reviewer only the owner or an admin can decide', async () => {
       const container = await viewing(['workstreams:review'], 'other')
       expect(hasButton(container, 'Approve')).toBe(false)
-      expect(container.textContent).toContain('only its owner or an admin can decide')
+      expect(container.textContent).toContain('Only an admin or the owner with squad review permission can decide.')
       expect(container.querySelector('ul[aria-label="Outcomes"]')?.textContent).toContain('Approve')
     })
 

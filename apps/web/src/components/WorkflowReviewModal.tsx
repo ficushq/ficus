@@ -1239,7 +1239,7 @@ function GateReviewersNotice({ gate }: { gate: HumanGateContext }) {
     >
       {gate.fallbackNote
         ? `${gate.fallbackNote} Assign an active reviewer to this work stream.`
-        : 'Its assigned reviewers are no longer active. Ask its owner or an admin to assign an active reviewer.'}
+        : 'Its assigned reviewers are no longer active. Ask a work stream editor to assign an active reviewer.'}
     </p>
   )
 }

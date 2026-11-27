@@ -158,8 +158,8 @@ describe('a gate for the assigned reviewers when none of them is still active', 
     // The owner (all permissions, so an admin) and the requester decide instead.
     ['owner', yours],
     ['requester', yours],
-    ['unassigned reviewer', notYours('Owner or admin')],
-    ['viewer with no rights', notYours('Owner or admin')],
+    ['unassigned reviewer', notYours('Admin or owner with review permission')],
+    ['viewer with no rights', notYours('Admin or owner with review permission')],
   ])('%s', (name, expected) => {
     expect(surfaces('assigned-reviewers', viewers[name]!, stale)).toEqual(expected)
   })
@@ -173,7 +173,7 @@ describe('a gate for the assigned reviewers when none of them is still active', 
     expect(admin.fallbackNote).toBe('No active assigned reviewer; you can decide as an admin.')
     const other = humanGateContext(stream, run, run.state.attempts[1]!, viewers['unassigned reviewer']!)!
     expect(other.readOnlyReason).toBe(
-      'No assigned reviewer of this work stream is still active; only its owner or an admin can decide.'
+      'No assigned reviewer of this work stream is still active. Only an admin or the owner with squad review permission can decide.'
     )
   })
 

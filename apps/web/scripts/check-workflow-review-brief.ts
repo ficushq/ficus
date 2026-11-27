@@ -47,6 +47,7 @@ try {
       for (const dark of surface === 'web' ? [false, true] : [false])
         for (const mode of [
           'first',
+          'stale-reviewers',
           'repeat',
           'blocked',
           'carried',
@@ -80,6 +81,14 @@ try {
             'Real review styles must be present'
           )
           if (surface === 'web') assert.equal(await review.evaluate((el) => getComputedStyle(el).position), 'fixed')
+          if (mode === 'stale-reviewers') {
+            const warning = review.getByText('No active assigned reviewer; you can decide as the owner.', {
+              exact: false,
+            })
+            await warning.waitFor()
+            assert.match(await warning.innerText(), /Assign an active reviewer/)
+            assert.equal(await review.getByRole('button', { name: /^Approve/ }).isEnabled(), true)
+          }
           const legacy = ['legacy', 'legacy-queued', 'transitive-legacy'].includes(mode)
           const article = review.getByRole('article', { name: 'Decision brief', exact: true })
           const primary = review.getByRole('tab', { name: legacy ? 'Handoff' : 'Decision brief', exact: true })

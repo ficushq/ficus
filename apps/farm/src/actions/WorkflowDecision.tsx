@@ -16,6 +16,7 @@ import {
   workflowGateFallbackForViewer,
   workflowGateFallbackNote,
   workflowGateHasNoActiveAssignedReviewer,
+  WORKFLOW_GATE_FALLBACK_ELIGIBILITY,
   effectiveWorkflowStep,
   deliveryPullRequests,
   workflowReworkAttempt,
@@ -336,7 +337,7 @@ function HumanGate({
   const waits = run.openWaits ?? stream.openWaits ?? []
   const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
   const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
-  // The shared rule Core enforces: when no assigned reviewer is still active, the owner and admins decide.
+  // The shared rule Core enforces: when no assigned reviewer is active, fallback still requires review permission.
   const basis = workflowGateDecisionBasis(
     identity,
     can('workstreams:review'),
@@ -499,7 +500,7 @@ function HumanGate({
             {!can('workstreams:review')
               ? 'You need review permission in this squad to decide.'
               : noActiveAssignedReviewer
-                ? 'No assigned reviewer of this work stream is still active; only its owner or an admin can decide. Ask them to assign an active reviewer.'
+                ? `No assigned reviewer of this work stream is still active. ${WORKFLOW_GATE_FALLBACK_ELIGIBILITY} Ask a work stream editor to assign an active reviewer.`
                 : 'Only the reviewers assigned to this work stream can decide.'}
           </p>
           <ApprovalStatement statement={approvalStatement} />

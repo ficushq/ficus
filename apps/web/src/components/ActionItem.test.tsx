@@ -1956,7 +1956,7 @@ describe('ActionItem read-only workflow gate', () => {
       { ...pending, data: { ...pending.data, noActiveAssignedReviewer: true } as WorkStreamActionData },
       true
     )
-    expect(text).toContain('only its owner or an admin can decide.')
+    expect(text).toContain('Only an admin or the owner with squad review permission can decide.')
     expect(text).not.toContain('Only the reviewers assigned')
   })
 

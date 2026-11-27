@@ -2190,7 +2190,9 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
   const requester = await createTestUser({ prefix })
   const other = await createTestUser({ prefix })
   const admin = await createTestAdmin({ prefix })
-  for (const user of [first, requester, other])
+  const requesterReadRole = await createTestRole({ prefix, permissions: ['actions:read', 'workstreams:read'] })
+  await assignRole({ userId: requester.id, roleId: requesterReadRole.id, scope: 'squad', squadId })
+  for (const user of [first, other])
     await assignRole({ userId: user.id, roleId: reviewRole.id, scope: 'squad', squadId })
   // The second reviewer's own role, so it can lose the permission without touching the others.
   const secondRole = await createTestRole({ prefix, permissions: ['actions:read', 'workstreams:review'] })
@@ -2210,6 +2212,13 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
     (await evaluatePendingAction({ type: 'user', userId }, action, context)).canRespond
   const getViewerAction = async (userId: string) =>
     (await listPendingActionsForIdentity({ type: 'user', userId })).find((candidate) => candidate.id === action.id)!
+  const command = (version: number) => ({
+    action: 'complete' as const,
+    expectedVersion: version,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: '',
+  })
   const setDisabled = async (userId: string, disabled: boolean) => {
     await db
       .update(users)
@@ -2233,6 +2242,20 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
   invalidatePermissionCache()
   expect(await inactive()).toEqual([first.id, second.id])
   expect((await getAction()).data).toHaveProperty('noActiveAssignedReviewer', true)
+  // Requesting the stream is not enough: the fallback requires squad review permission.
+  const requesterIdentity = { type: 'user', userId: requester.id } as const
+  const adminIdentity = { type: 'user', userId: admin.id } as const
+  const noReview = await getViewerAction(requester.id)
+  expect(noReview.canRespond).toBe(false)
+  expect(noReview).not.toHaveProperty('workflowGateFallbackBasis')
+  await expect(advanceFlow(id, command(0), randomUUID(), requesterIdentity)).rejects.toMatchObject({ status: 403 })
+  expect((await evaluatePendingAction(actor, action, context)).canRespond).toBe(false)
+  await expect(advanceFlow(id, command(0), randomUUID(), actor)).rejects.toMatchObject({ status: 403 })
+  await expect(advanceFlow(id, command(1), randomUUID(), adminIdentity)).rejects.toMatchObject({
+    status: 409,
+    message: 'Stale flow version',
+  })
+  await assignRole({ userId: requester.id, roleId: reviewRole.id, scope: 'squad', squadId })
   expect(await getViewerAction(requester.id)).toMatchObject({ canRespond: true, workflowGateFallbackBasis: 'owner' })
   expect(await getViewerAction(admin.id)).toMatchObject({ canRespond: true, workflowGateFallbackBasis: 'admin' })
   expect(await getViewerAction(other.id)).not.toHaveProperty('workflowGateFallbackBasis')
@@ -2248,6 +2271,11 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
   expect(await getViewerAction(first.id)).not.toHaveProperty('workflowGateFallbackBasis')
   expect(await canRespond(requester.id)).toBe(false)
   expect(await canRespond(admin.id)).toBe(false)
+  await expect(advanceFlow(id, command(0), randomUUID(), adminIdentity)).rejects.toMatchObject({
+    status: 403,
+    message: 'This step requires its designated human approver',
+  })
+  expect((await getFlow(id))!.version).toBe(0)
 
   // Back in the squad, but its role lost the review permission: inactive again.
   await assignRole({ userId: second.id, roleId: secondRole.id, scope: 'squad', squadId })
@@ -2265,13 +2293,6 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
 
   // With both inactive again, the server enforces the same fallback on the decision itself.
   await setDisabled(first.id, true)
-  const command = (version: number) => ({
-    action: 'complete' as const,
-    expectedVersion: version,
-    attemptId: 1,
-    outcome: 'completed',
-    evidence: '',
-  })
   await expect(advanceFlow(id, command(0), randomUUID(), { type: 'user', userId: other.id })).rejects.toThrow(
     'designated human approver'
   )

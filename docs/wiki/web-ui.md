@@ -196,8 +196,9 @@ type, "Decision model", or for a human approval "You" when the viewer may decide
 permission, and being an assigned reviewer when the step is limited to them, with the other assigned
 reviewers named beside it: "You or Ben"), else the assigned reviewers by name ("Ana or Ben", "Ana,
 Ben or 2 others"), else the only person with review permission, else "Reviewer". When none of the
-assigned reviewers is still active, the owner and admins decide instead and it reads "You" to them
-and "Owner or admin" to anyone else (see the workflows page, "When no assigned reviewer is active"). Names are display
+assigned reviewers is still active, an admin or the owner with squad review permission can decide.
+It reads "You" to an eligible viewer and "Admin or owner with review permission" to anyone else
+(see the workflows page, "When no assigned reviewer is active"). Names are display
 names only, never email addresses (the part of the email before the @ for someone without a display
 name). An approval already decided never says "You", because Ficus does not record who decided it. Steps are listed in the order the flow first reaches them from its entry
 along forward outcomes. Each step appears once with its latest state: a rework edge marks the step

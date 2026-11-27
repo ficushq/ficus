@@ -25,6 +25,7 @@ import {
   workflowGateFallbackForViewer,
   workflowGateFallbackNote,
   workflowGateHasNoActiveAssignedReviewer,
+  WORKFLOW_GATE_FALLBACK_ELIGIBILITY,
   workflowEarlierHumanDecisions,
   describeWorkflowDecision,
   effectiveWorkflowStep,
@@ -107,7 +108,7 @@ export interface HumanGateContext {
   fallbackNote?: string
   /**
    * The gate is limited to the stream's assigned reviewers and none of them is still active, so
-   * its owner and admins decide; the stream should get an active reviewer assigned.
+   * admins and the owner with squad review permission can decide.
    */
   noActiveAssignedReviewer: boolean
   /** The attempts whose handoffs are under review. */
@@ -193,7 +194,7 @@ export function workflowGateReadOnlyReason(
   if (!canReview) return 'You need review permission in this squad to decide.'
   if (approver === 'assigned-reviewers')
     return noActiveAssignedReviewer
-      ? 'No assigned reviewer of this work stream is still active; only its owner or an admin can decide.'
+      ? `No assigned reviewer of this work stream is still active. ${WORKFLOW_GATE_FALLBACK_ELIGIBILITY}`
       : 'Only the reviewers assigned to this work stream can decide.'
   return undefined
 }

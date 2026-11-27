@@ -1,16 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { workflowGateHasNoActiveAssignedReviewer, type WorkStream } from '@ficus/shared'
+import {
+  WORKFLOW_GATE_FALLBACK_ELIGIBILITY,
+  workflowGateHasNoActiveAssignedReviewer,
+  type WorkStream,
+} from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
 
-/**
- * On an open stream whose assigned reviewers are all inactive: the owner and admins now decide its
- * assigned-reviewers approvals, and someone should assign an active reviewer. Clears once one is.
- */
-export function NoActiveReviewerNotice({ stream }: { stream: WorkStream }) {
-  if (stream.status === 'done' || stream.status === 'canceled') return null
+/** Warn only on an open stream with an assigned-reviewer gate. Only editors get setup directions. */
+export function NoActiveReviewerNotice({
+  stream,
+  hasAssignedReviewerGate,
+  canUpdate,
+}: {
+  stream: WorkStream
+  hasAssignedReviewerGate: boolean
+  canUpdate: boolean
+}) {
+  if (!hasAssignedReviewerGate || stream.status === 'done' || stream.status === 'canceled') return null
   if (!workflowGateHasNoActiveAssignedReviewer(stream.assignedReviewerIds, stream.inactiveAssignedReviewerIds))
     return null
   return (
@@ -19,8 +28,10 @@ export function NoActiveReviewerNotice({ stream }: { stream: WorkStream }) {
       aria-label="No active assigned reviewer"
       className="rounded border border-th-border p-3 text-xs text-status-warning-700 dark:text-status-warning-400"
     >
-      No assigned reviewer of this work stream is still active, so its owner and admins decide the approvals meant for
-      assigned reviewers. Assign an active reviewer under Workflow, then Manage workflow.
+      No assigned reviewer of this work stream is still active. {WORKFLOW_GATE_FALLBACK_ELIGIBILITY}{' '}
+      {canUpdate
+        ? 'Assign an active reviewer under Workflow, then Manage workflow.'
+        : 'Ask a work stream editor to assign an active reviewer.'}
     </p>
   )
 }

@@ -36,6 +36,7 @@ import {
   mayRespondToWorkStreamWaits,
   workStreamPersonWait,
   workStreamTimeTickMs,
+  workflowGateApprover,
   type WorkStream,
   type WorkStreamPriority,
   type WorkStreamWait,
@@ -345,7 +346,15 @@ export function WorkStreamDetailModal({
           <WorkStreamPauseControls stream={workStream} controls={pauseControls} />
         )}
 
-        <NoActiveReviewerNotice stream={workStream} />
+        <NoActiveReviewerNotice
+          stream={workStream}
+          hasAssignedReviewerGate={
+            openWaits.some((wait) => wait.workflowGateApprover === 'assigned-reviewers') ||
+            (run?.state.status !== 'completion-ready' &&
+              !!run?.state.definition.steps.some((step) => workflowGateApprover(step) === 'assigned-reviewers'))
+          }
+          canUpdate={!permissionsLoading && can('workstreams:update')}
+        />
 
         {/* Review/manual wait respond panel */}
         {missingFocusedWait && (

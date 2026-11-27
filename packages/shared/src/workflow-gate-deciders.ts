@@ -116,6 +116,9 @@ export function workflowGateFallbackForViewer(
   }
 }
 
+/** The fallback eligibility shown to viewers who are not deciding the gate. */
+export const WORKFLOW_GATE_FALLBACK_ELIGIBILITY = 'Only an admin or the owner with squad review permission can decide.'
+
 /** The note a gate card shows a person who decides only through the fallback; undefined otherwise. */
 export function workflowGateFallbackNote(basis: WorkflowGateDecisionBasis | null): string | undefined {
   if (basis === 'owner') return 'No active assigned reviewer; you can decide as the owner.'

@@ -82,9 +82,15 @@ test('the stream warns to reassign while no assigned reviewer is active, and mar
     status: 'active',
     assignedReviewerIds: ['gone', 'left'],
   } as unknown as WorkStream
-  const notice = (fields: Partial<WorkStream>) =>
-    renderToStaticMarkup(<NoActiveReviewerNotice stream={{ ...stream, ...fields }} />)
-  expect(notice({ inactiveAssignedReviewerIds: ['gone', 'left'] })).toContain('Assign an active reviewer')
+  const notice = (fields: Partial<WorkStream>, canUpdate = true, hasAssignedReviewerGate = true) => {
+    const props = { stream: { ...stream, ...fields }, canUpdate, hasAssignedReviewerGate }
+    return renderToStaticMarkup(<NoActiveReviewerNotice {...props} />)
+  }
+  const stale = { inactiveAssignedReviewerIds: ['gone', 'left'] }
+  expect(notice(stale)).toContain('Assign an active reviewer under Workflow, then Manage workflow.')
+  expect(notice(stale, false)).toContain('Only an admin or the owner with squad review permission can decide.')
+  expect(notice(stale, false)).not.toContain('Manage workflow')
+  expect(notice(stale, true, false)).toBe('')
   // One still active, an older server that sends nothing, or a finished stream: no warning.
   expect(notice({ inactiveAssignedReviewerIds: ['gone'] })).toBe('')
   expect(notice({})).toBe('')
