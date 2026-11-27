@@ -378,6 +378,7 @@ describe('AgentRunner (base class)', () => {
   let claimInitialPendingMessagesForSessionDeliverySpy: any
   let claimPendingInterventionForSessionDeliverySpy: any
   let resetPendingInterventionSessionDeliverySpy: any
+  let sessionDeliveredEntryIdsSpy: any
   let queueExecutionSpy: any
   let deliverInboxMessagesToAgentSpy: any
   let resolvePermissionsSpy: any
@@ -434,6 +435,7 @@ describe('AgentRunner (base class)', () => {
       agent,
       'resetPendingInterventionSessionDelivery'
     ).mockResolvedValue()
+    sessionDeliveredEntryIdsSpy = spyOn(agent, 'sessionDeliveredExecutionPromptEntryIds').mockResolvedValue([])
     queueExecutionSpy = spyOn(agent, 'queueExecution').mockResolvedValue(makeExecution({ status: 'queued' }, agentRef))
     deliverInboxMessagesToAgentSpy = spyOn(inboxDelivery, 'deliverInboxMessagesToAgent').mockResolvedValue()
 
@@ -478,6 +480,7 @@ describe('AgentRunner (base class)', () => {
     claimInitialPendingMessagesForSessionDeliverySpy?.mockRestore()
     claimPendingInterventionForSessionDeliverySpy?.mockRestore()
     resetPendingInterventionSessionDeliverySpy?.mockRestore()
+    sessionDeliveredEntryIdsSpy?.mockRestore()
     queueExecutionSpy?.mockRestore()
     deliverInboxMessagesToAgentSpy?.mockRestore()
     resolvePermissionsSpy?.mockRestore()
@@ -1059,6 +1062,123 @@ describe('AgentRunner (base class)', () => {
       expect(agent.status).not.toBe('waiting-input')
       expect(execution.status).toBe('running')
       expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    it('continues a resumed run whose original task text already reached the session', async () => {
+      // A chat- or subagent-started run stores its text on executions.message and as its own human
+      // row. That row was delivered before the restart, so nothing is claimed on resume.
+      execution.message = 'original task text'
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+      sessionDeliveredEntryIdsSpy.mockResolvedValue(['entry-original'])
+      mockSession.pi.sessionEntries.set('entry-original', { type: 'message', id: 'entry-original' })
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(sessionDeliveredEntryIdsSpy).toHaveBeenCalledWith(execution.id)
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text).toEndWith('\n\nContinue.')
+      expect(text).not.toContain('original task text')
+    })
+
+    it('keeps the original task text when the acknowledged prompt entry is no longer in the live session', async () => {
+      // The DB still records the delivery, but the session file was lost, emptied (pi then starts a
+      // new session) or not carried over in a host move, so the session no longer holds the task.
+      execution.message = 'original task text'
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+      sessionDeliveredEntryIdsSpy.mockResolvedValue(['entry-original'])
+      mockSession.pi.sessionEntries.set('entry-unrelated', { type: 'message', id: 'entry-unrelated' })
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(sessionDeliveredEntryIdsSpy).toHaveBeenCalledWith(execution.id)
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text).toEndWith('\n\noriginal task text')
+      expect(text).not.toContain('Continue.')
+    })
+
+    it('keeps the original task text on a resumed run whose prompt never reached the session', async () => {
+      execution.message = 'original task text'
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(text).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(text).toEndWith('\n\noriginal task text')
+    })
+
+    it('continues a hard-interrupted run whose original task text already reached the session', async () => {
+      execution.message = 'original task text'
+      execution.interruption = {
+        noticeId: 'notice-1',
+        executionId: execution.id,
+        cause: 'core_restart',
+        recoveredAt: new Date().toISOString(),
+        executionStartedAt: new Date(Date.now() - 60_000).toISOString(),
+      }
+      sessionDeliveredEntryIdsSpy.mockResolvedValue(['entry-original'])
+      mockSession.pi.sessionEntries.set('entry-original', { type: 'message', id: 'entry-original' })
+
+      await runner.run()
+
+      const text = mockSession.pi.promptCalls[0].text
+      expect(text).toStartWith(
+        `Ficus recovered this run at ${execution.interruption.recoveredAt} after an unexpected Core restart.`
+      )
+      expect(text).toEndWith('\n\nContinue.')
+      expect(text).not.toContain('original task text')
+    })
+
+    it('after a hard interruption, records the cut-off calls and tells the model once in the resumed prompt', async () => {
+      const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+      const { INTERRUPTED_TOOL_CALLS_TYPE } = await import('../../services/agent/interrupted-tool-calls')
+      // The session as the crashed worker left it.
+      const session = SessionManager.inMemory()
+      session.appendMessage({ role: 'user', content: 'deploy it', timestamp: Date.now() - 5000 })
+      session.appendMessage({
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'call-bash', name: 'bash', arguments: { command: 'deploy' } }],
+        stopReason: 'toolUse',
+        timestamp: Date.now() - 4000,
+      } as any)
+      Object.assign(mockSession.pi.sessionManager, {
+        getBranch: () => session.getBranch(),
+        appendCustomEntry: (type: string, data: unknown) => session.appendCustomEntry(type, data),
+      })
+      execution.interruption = {
+        noticeId: 'notice-1',
+        executionId: execution.id,
+        cause: 'core_restart',
+        recoveredAt: new Date().toISOString(),
+        executionStartedAt: new Date(Date.now() - 60_000).toISOString(),
+      }
+      await runner.run()
+      const text = mockSession.pi.promptCalls[0].text
+      expect(text).toStartWith(
+        `Ficus recovered this run at ${execution.interruption.recoveredAt} after an unexpected Core restart.`
+      )
+      expect(text.match(/safe, idempotent work/g)).toHaveLength(1)
+      const records = session
+        .getBranch()
+        .filter((entry) => entry.type === 'custom' && entry.customType === INTERRUPTED_TOOL_CALLS_TYPE)
+      expect(records.map((entry) => (entry as any).data.calls)).toEqual([
+        [expect.objectContaining({ toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' })],
+      ])
+      // Once the resumed prompt is in the conversation, a later pickup of the same run does not repeat it.
+      session.appendMessage({ role: 'user', content: text, timestamp: Date.now() })
+      expect((runner as any).prepareInterruptionResume()).toBeUndefined()
+      expect(
+        session
+          .getBranch()
+          .filter((entry) => entry.type === 'custom' && entry.customType === INTERRUPTED_TOOL_CALLS_TYPE)
+      ).toHaveLength(1)
+    })
+
+    it('a run with no interruption gets no notice', async () => {
+      await runner.run()
+      expect(mockSession.pi.promptCalls[0].text).not.toContain('Ficus recovered this run')
     })
 
     it('emits a system_message when the session reports a switch-back', async () => {
@@ -3281,6 +3401,81 @@ describe('AgentRunner (base class)', () => {
       expect(setAgentSelectedModelSpy).toHaveBeenCalledWith(agent.id, ZAI)
       expect(mockSession.pi.promptCalls).toHaveLength(2)
       expect(providerHealth.isProviderHealthy('anthropic')).toBe(false)
+    })
+
+    it('re-dispatches a failed-over prompt that reached the session as a continuation, not a second copy', async () => {
+      const ANTHROPIC = 'anthropic:claude-haiku-4-5'
+      const ZAI = 'zai:glm-5-turbo'
+      selectModelSpy.mockReturnValue(explicitProviderFailoverSelection(ANTHROPIC, ZAI))
+      execution.message = 'original task text'
+      const deliveryId = crypto.randomUUID()
+      claimInitialPendingMessagesForSessionDeliverySpy.mockImplementationOnce(
+        async (owner: NonNullable<Parameters<Agent['claimInitialPendingMessagesForSessionDelivery']>[0]>) => [
+          {
+            id: 'own-prompt-row',
+            agentId: agent.id,
+            role: 'human',
+            content: 'original task text',
+            metadata: { executionId: execution.id, sessionDelivery: { id: deliveryId, ...owner } },
+            pending: true,
+            createdAt: new Date(),
+          } as Message,
+        ]
+      )
+      // The DB acknowledgement is slower than the prompt's rejection, as it is against a real DB.
+      // A release that ran first would fence the acknowledgement out and leave the row claimable.
+      const order: string[] = []
+      let acknowledged = false
+      confirmDeliverySpy.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        acknowledged = true
+        order.push('acknowledge')
+        return []
+      })
+      resetPendingInterventionSessionDeliverySpy.mockImplementation(async () => {
+        order.push('release')
+      })
+      sessionDeliveredEntryIdsSpy.mockImplementation(async () => (acknowledged ? ['entry-original'] : []))
+      let firstPrompt = true
+      spyOn(mockSession.pi, 'prompt').mockImplementation(async (text: string, options?: any) => {
+        mockSession.pi.promptCalls.push({ text, options })
+        if (firstPrompt) {
+          firstPrompt = false
+          // Pi appends the user entry before the provider call fails.
+          mockSession.pi.persistUserPrompt('entry-original')
+          throw new Error('rate limit exceeded')
+        }
+      })
+
+      const failoverAttempt = runner.waitForNextFailoverAttempt()
+      await runner.run()
+      expect(await failoverAttempt).toBe(true)
+
+      expect(order).toEqual(['acknowledge', 'release'])
+      expect(mockSession.pi.promptCalls).toHaveLength(2)
+      expect(mockSession.pi.promptCalls[0].text).toBe('original task text')
+      expect(mockSession.pi.promptCalls[1].text).toBe('Continue.')
+    })
+
+    it('re-sends a failed-over prompt that never reached the session', async () => {
+      const ANTHROPIC = 'anthropic:claude-haiku-4-5'
+      const ZAI = 'zai:glm-5-turbo'
+      selectModelSpy.mockReturnValue(explicitProviderFailoverSelection(ANTHROPIC, ZAI))
+      execution.message = 'original task text'
+      let firstPrompt = true
+      spyOn(mockSession.pi, 'prompt').mockImplementation(async (text: string, options?: any) => {
+        mockSession.pi.promptCalls.push({ text, options })
+        if (firstPrompt) {
+          firstPrompt = false
+          throw new Error('rate limit exceeded')
+        }
+      })
+
+      const failoverAttempt = runner.waitForNextFailoverAttempt()
+      await runner.run()
+      expect(await failoverAttempt).toBe(true)
+
+      expect(mockSession.pi.promptCalls.map((call) => call.text)).toEqual(['original task text', 'original task text'])
     })
 
     it('preserves a structured generic 5xx from prompt rejection through real failover classification', async () => {

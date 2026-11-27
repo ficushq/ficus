@@ -68,6 +68,11 @@ export interface DesktopBridge {
   signInWithBrowser?(): Promise<void>
   /** Tells Desktop this window's theme, so its Dock icon can follow the focused window. */
   setAppIcon?(icon: DesktopAppIcon): Promise<void>
+  /**
+   * Local instance only: lets other devices on this Mac's network reach it, or stops them. Desktop asks the person in
+   * its own dialog and resolves false when they decline. Agreeing restarts local Ficus, which reloads this page.
+   */
+  setNetworkAccess?(enabled: boolean): Promise<boolean>
 }
 declare global {
   interface Window {
@@ -138,4 +143,10 @@ export function desktopBrowserSignIn(): (() => Promise<void>) | undefined {
 export function desktopAppIcon(): ((icon: DesktopAppIcon) => Promise<void>) | undefined {
   const bridge = desktopBridge()
   return typeof bridge?.setAppIcon === 'function' ? bridge.setAppIcon.bind(bridge) : undefined
+}
+
+/** Present only in a Desktop window of the local instance, on a build that can change what it listens on. */
+export function desktopNetworkAccess(): ((enabled: boolean) => Promise<boolean>) | undefined {
+  const bridge = desktopBridge()
+  return typeof bridge?.setNetworkAccess === 'function' ? bridge.setNetworkAccess.bind(bridge) : undefined
 }

@@ -552,31 +552,92 @@ GET    /api/agents/:id/messages/search — Search this conversation's full histo
 
 ### Conversation history search
 
-`GET /api/agents/:id/messages/search?q=<text>&limit=<1-50>&cursor=<opaque>` searches one
-conversation's whole history, not just what a client has loaded. It uses exactly the authorization of
-reading that conversation's messages (`agents:read` in the agent's squad; owner only for private agents
-and Assistant conversations, even against other administrators), so it never reveals a message the
-caller could not page to anyway, and it never searches across conversations.
+`GET /api/agents/:id/messages/search?q=<text>` searches one conversation's whole history, not just
+what a client has loaded. It uses exactly the authorization of reading that conversation's messages
+(`agents:read` in the agent's squad; owner only for private agents and Assistant conversations, even
+against other administrators), so it never reveals a message the caller could not page to anyway, and
+it never searches across conversations.
 
-- It matches a case-insensitive substring of the visible message text (`messages.content`): what people
-  wrote and the agent's reply text. Thinking, tool calls and tool output (`metadata.content`) are not
-  searched, because the chat view collapses them and a jump could not show the match.
-- `q` is trimmed and limited to 200 characters; LIKE wildcards in it are literal. Results are newest
-  first, 20 per page by default and at most 50, with a `nextCursor` bound to the agent and query.
+It is the only search implementation for a conversation (`apps/core/src/services/agent/message-search.ts`).
+The web chat's history search and `ficus agent search` call this endpoint, and the `search` filter of
+`GET /api/agents/:id/messages` (`ficus agent messages --search`, `ficus agent worker-log --search`)
+uses the same matching rule, so they cannot drift apart.
+
+- A match is a case-insensitive, literal substring: `%`, `_` and `\` in the query match themselves.
+  `q` is trimmed, limited to 200 characters and may not contain control characters other than tab and
+  line breaks (a NUL is a 400).
+- `in` chooses where to look. `text` (the default, and what the web chat uses) is the visible message
+  text (`messages.content`): what people wrote and the agent's reply text. The chat view collapses tool
+  calls, so a jump could not show a match inside one. `tools` is every tool call's name, arguments and
+  result (`tool_use` blocks in `metadata.content`). `all` is both. Thinking is never searched. Tool
+  arguments are stored as JSON text, so they also match the query in its JSON-escaped form: `-m "fix"`
+  finds `git commit -m "fix"`, which is stored as `-m \"fix\"`.
+- `role` (`human` or `assistant`), `before` and `after` (ISO timestamps) filter the messages.
+- Results are newest first, 20 per page by default and at most 50, with a `nextCursor` bound to the
+  agent, query, scope and filters.
 - Each result carries the message `id`, `createdAt`, `role`, the recorded `sender` or delivery `source`,
-  a short single-line `snippet` with highlight ranges, and `newerCount`: how many messages are newer,
-  which the web chat uses to load enough history to reach it.
-- There is no dedicated index: a 50,000-message conversation searches in well under a second. If
-  conversations grow far beyond that, a trigram index is the next step.
+  `match` (`{ field: 'text' }`, or `tool_name`, `tool_args` or `tool_result` with the `toolName` and
+  `toolCallId`), a short single-line `snippet` of the matching field with highlight ranges, and
+  `newerCount`: how many messages in the whole conversation are newer. The web chat uses it to load
+  enough history to reach the message; the CLI uses it as the list offset for `--context`.
+- On `GET /api/agents/:id/messages`, `search` follows the same limits as `q` and takes the same `in`
+  (default `text`). `totalCount` on the first page counts the messages matching every active filter
+  (role, time range, search), not the whole conversation; `count=false` skips that query (it is then
+  0, as on later pages).
+- Every search logs its duration, scope and result count (never the query text) under
+  `message-search`, so slow tool searches show up.
+
+There is no dedicated index, and no migration. Text matching scans the agent's rows through the
+`(agent_id, created_at)` index; tool matching is a jsonpath filter
+(`metadata @? '$.content[*] ? (@.type == "tool_use").toolCall ? (@.args like_regex "…" flag "iq" …)'`)
+over the same rows. Measured on PostgreSQL 18 with 225,000 synthetic messages (513 MB), searching one
+25,000-message conversation whose tool text averages 2.2 KB per assistant message (about 2.7 times the
+volume of a real manager history of 23,000 messages), for a query with no match (a full scan, the worst
+case), warm cache:
+
+| Approach                                               | Time       |
+| ------------------------------------------------------ | ---------- |
+| Text only (`content ILIKE`)                            | 92 ms      |
+| Tools by `jsonb_array_elements` and `ILIKE`            | 1,093 ms   |
+| Tools by a flattened tool-text column, no index        | 740 ms     |
+| Tools by jsonpath `like_regex` (chosen)                | 433–455 ms |
+| Tools by a flattened column with a `pg_trgm` GIN index | 1.5–5 ms   |
+
+The trigram index is about 100 to 300 times faster to query but was rejected for now: on that sample it was
+276 MB for 322 MB of tool text, took about five minutes to build, needs a backfill of every message, a
+column kept in step with every metadata write, and a `pg_trgm` extension migration, and it made updates
+of a message's tool text about 20 times slower (13.5 s against 0.6 s for 2,000 rows). Messages are
+rewritten repeatedly while an agent streams tool calls, so that cost lands on the hottest write path,
+while search is an occasional, interactive read. If conversations grow to where a tool search takes
+more than a couple of seconds (the `message-search` log lines show it), a trigram index over a
+flattened tool-text column is the next step.
 
 The web chat view opens the search from a button in the composer controls (in the options sheet on
 phones; in the chat header when the chat has no composer) or with Cmd/Ctrl+Shift+F (Cmd/Ctrl+F stays
 the browser's, or Ficus Desktop's, find in page). Choosing a result loads older history in larger pages
 (up to 500 messages per request), then scrolls to and highlights the message. Because the transcript
 is not virtualized, a jump reaches at most 5,000 messages back; beyond that the result says it is too
-far back. The CLI's `ficus agent messages <id> --search <text>` lists matching messages with the same
-authorization. `apps/web/scripts/check-history-search-placement.ts` checks the button's placement in
+far back. `apps/web/scripts/check-history-search-placement.ts` checks the button's placement in
 Chromium (desktop and phone widths, with and without a composer).
+
+From the CLI (and so from agents, which use the CLI rather than a dedicated tool):
+
+- `ficus agent search <id> <query> [--in all|text|tools] [--role human|assistant] [--before <ts>] [--after <ts>] [--context <n>] [--limit <n>] [--cursor <c>]`
+  searches message text and tool calls by default (`--in all`). Each hit is one line: message id,
+  timestamp, who wrote it (with the sender's name or delivery source) and, for a tool hit, the tool and
+  whether the match is in its `args`, `result` or name (`call`), then the snippet. A last line gives the
+  `--cursor` for the next page. `--context <n>` (up to 20) prints the n messages before and after each
+  hit in conversation order, fetched from the list endpoint at the hit's `newerCount` offset; it
+  tolerates up to 10 messages arriving between the search and that request, and otherwise says the
+  context is unavailable rather than showing a shortened window. Put `--` before a query that starts
+  with a dash (`ficus agent search <id> -- --force`). `--json` prints the full
+  results (with `context.before` and `context.after` when asked).
+- `ficus agent messages <id> --search <text>` keeps its output (full messages; with `--raw`, the
+  metadata including `metadata.sender`) and its `--role`, `--before` and `--after` filters, so
+  `--role human --search <text>` still finds who sent a message. It searches the message text unless
+  `--in tools` or `--in all` is given, and reports how many messages match.
+- `ficus agent worker-log <id> --search <text>` searches text and tool calls, since it shows tool calls,
+  and skips the count it never shows.
 
 ## Chat file attachments
 

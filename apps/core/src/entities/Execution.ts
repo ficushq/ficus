@@ -18,6 +18,7 @@ import { Execution as ExecutionJson, ExecutionStatus, SessionUsage, AgentStatus,
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
 import type { ProvisionFailureCode } from '../services/sandbox/k8s/provision-failure'
 import type { AdmissionLease } from '../services/maintenance/admission-reservation'
+import type { HardInterruption } from '../services/agent/interrupted-tool-calls'
 import {
   admissionLeaseFromError,
   isExactAdmissionLeaseTerminal,
@@ -259,6 +260,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   declare maintenanceQueuedAt: Date | null
   /** Loaded from an exact shutdown marker, not inferred from error text or clock proximity. */
   restartContext?: RestartContext
+  /** Loaded from a startup-recovery or lease-sweep notice when there is no shutdown marker. */
+  interruption?: HardInterruption
 
   declare runnerClaimToken: string | null
   declare runnerClaimGeneration: number | null
@@ -1062,7 +1065,13 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     error: string,
     admissionLease?: AdmissionLease,
     failure?: ExecutionFailure,
-    recovery?: { safeStartupRetry?: boolean; explained?: boolean; cause?: unknown }
+    recovery?: {
+      safeStartupRetry?: boolean
+      explained?: boolean
+      cause?: unknown
+      /** The held recovery that refused this run at pickup, so a stranded notice links and routes by it. */
+      heldRecord?: import('../services/recovery/store').RecoveryRecord
+    }
   ): Promise<boolean> {
     const requestValidation =
       failure?.failureClass === 'provider_model' && failure.failureReason === REQUEST_VALIDATION_REASON
@@ -1081,7 +1090,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       const resumed = await this.resumedRunFailureContext()
       const counted =
         requestValidation || (!recovery?.explained && isUnexplainedExecutionFailure(error, failure, cause))
-      let record: import('../services/recovery/store').RecoveryRecord | undefined
+      let record: import('../services/recovery/store').RecoveryRecord | undefined = recovery?.heldRecord
       if (counted) {
         const { recordRecoveryFailure } = await import('../services/recovery/store')
         // A resumed run is never replay-safe: the interrupted segment may have
@@ -1107,7 +1116,14 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           return undefined
         })
       }
-      if (resumed?.hasObligations) await this.notifyIfResumedRunStranded(error, counted, record, resumed.obligations)
+      if (resumed?.hasObligations)
+        await this.notifyIfResumedRunStranded(
+          error,
+          counted,
+          record,
+          resumed.obligations,
+          failure?.failureReason === 'recovery_held'
+        )
     }
     return terminalized
   }
@@ -1140,12 +1156,15 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     error: string,
     counted: boolean,
     record: import('../services/recovery/store').RecoveryRecord | undefined,
-    obligations: import('../services/execution/resumed-run-failure').ResumedRunObligations
+    obligations: import('../services/execution/resumed-run-failure').ResumedRunObligations,
+    held = false
   ): Promise<void> {
     try {
       const { lastErrorLine, recoveryContinuationIsCurrent } = await import('../services/recovery/store')
       let reason: import('../services/execution/resumed-run-failure').StrandedResumedRunReason | null
-      if (!counted) reason = 'not-counted'
+      // Refused at pickup by a held recovery (including the requeue cap): not a known-cause refusal.
+      if (held) reason = 'recovery-held'
+      else if (!counted) reason = 'not-counted'
       else if (!record) reason = 'recovery-unrecorded'
       else if (record.state.state !== 'recovering') reason = 'recovery-held'
       else {
@@ -1428,8 +1447,10 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * Requires the agent relation to be loaded (via setAgent or mustGetAgent).
    */
   async run(): Promise<void> {
-    const { prepareRestartResume } = await import('../services/execution/startup-recovery')
+    const { findHardInterruption, prepareRestartResume } = await import('../services/execution/startup-recovery')
     this.restartContext = await prepareRestartResume(this.id, this.agentId)
+    const interruption = this.restartContext ? undefined : await findHardInterruption(this.id, this.agentId)
+    this.interruption = interruption
     const { reserveSession, removeSessionForExecution } = await import('../services/execution/session-state')
     const removeOwnSession = () => removeSessionForExecution(this.agentId, this.id)
 
@@ -1453,8 +1474,25 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     const agent = await this.mustGetAgent()
 
     try {
-      const { recoveryRetryDelay } = await import('../services/recovery/store')
+      const { recoveryRetryDelay, RecoveryHeldError } = await import('../services/recovery/store')
       const { EXECUTION_RECOVERY_OPERATION } = await import('../services/recovery/executions')
+      if (interruption) {
+        // Crash-loop cap: an execution cut off this many times may be what is stopping Core, so it
+        // is not resumed again. It opens the native recovery hold before any runner or model work.
+        const { requeueLimitReached, holdExecutionAtRequeueLimit } = await import('../services/execution/requeue-limit')
+        if (requeueLimitReached(interruption.interruptionCount)) {
+          let held: import('../services/recovery/store').RecoveryRecord
+          try {
+            held = await holdExecutionAtRequeueLimit({ agentId: this.agentId, interruption })
+          } catch (holdError) {
+            // Still refuse the run: a failure to open the hold must not become an ordinary
+            // counted failure, whose retry wake would start a fresh execution with no count.
+            log.error(`Could not open the requeue-limit hold for execution ${this.id}:`, holdError)
+            throw new RecoveryHeldError()
+          }
+          throw new RecoveryHeldError(held)
+        }
+      }
       const retryDelay = await recoveryRetryDelay(
         { agentId: this.agentId, executionId: this.id },
         EXECUTION_RECOVERY_OPERATION
@@ -1603,7 +1641,12 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       const errorMsg = err instanceof Error ? err.message : String(err)
       const { RecoveryHeldError } = await import('../services/recovery/store')
       if (err instanceof RecoveryHeldError) {
-        await this.fail(errorMsg, undefined, { failureClass: 'execution_failure', failureReason: 'recovery_held' })
+        await this.fail(
+          errorMsg,
+          undefined,
+          { failureClass: 'execution_failure', failureReason: 'recovery_held' },
+          err.record ? { heldRecord: err.record } : undefined
+        )
         return
       }
       log.error(`Failed to run agent (${agent.id}) execution ${this.id}:`, err)

@@ -65,6 +65,7 @@ import { AttachmentView, HANDOFF_TAB, ReviewTabs } from './WorkflowReviewAttachm
 import { WorkflowReviewChat } from './WorkflowReviewChat'
 import { WorkflowRevisionChanges } from './WorkflowRevisionChanges'
 import { ChatIcon, PullRequestIcon, WorkStreamIcon } from './icons'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** At this width the review splits into the document and a decision rail; below it, a bottom sheet. */
 export const REVIEW_COLUMNS_QUERY = '(min-width: 900px)'
@@ -86,13 +87,14 @@ type AttemptAuthorOf = (attempt: WorkflowAttempt) => string | undefined
 function useReviewPeople(stream: WorkStream, run: WorkflowRunDetail) {
   const { data: agents } = useQuery({ ...queries.squads.agents(stream.squadId), retry: false })
   const { data: agentTypes } = useQuery({ ...queries.agentTypes.list(), retry: false })
+  const sharedTypeNames = useAgentTypeNames()
   return useMemo(() => {
     const names = new Map((agentTypes ?? []).map((type) => [type.id, type.name]))
     const byId = new Map((agents ?? []).map((agent) => [agent.id, agent]))
-    const typeName: AgentTypeName = (id) => names.get(id)
+    const typeName: AgentTypeName = (id) => names.get(id) || sharedTypeNames(id)
     const authorOf: AttemptAuthorOf = (attempt) => attemptAuthor(run, attempt, { agents: byId, typeName })
     return { typeName, authorOf }
-  }, [agents, agentTypes, run])
+  }, [agents, agentTypes, run, sharedTypeNames])
 }
 
 /** "Engineer (Payments) · implement · Attempt 1 · Ready", as one line of text. */
@@ -1077,7 +1079,7 @@ function ReadOnlyDecision({
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-primary">Awaiting a decision</p>
-      <p className="text-xs text-muted">{gate.readOnlyReason}</p>
+      {gate.readOnlyReason && <p className="text-xs text-muted">{gate.readOnlyReason}</p>}
       <ReviewBlockers gate={gate} />
       <RevisionNotice revisions={revisions} />
       <ApprovalStatement gate={gate} />

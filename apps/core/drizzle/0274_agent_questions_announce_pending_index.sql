@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_agent_questions_announce_pending" ON "agent_questions" USING btree ("announce_pending_since") WHERE "agent_questions"."announce_pending_since" IS NOT NULL AND "agent_questions"."status" = 'open';

@@ -1,0 +1,1 @@
+ALTER TABLE "agent_questions" ADD COLUMN "announce_pending_since" timestamp with time zone;

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY "uq_agent_questions_idempotency_key" ON "agent_questions" USING btree ("idempotency_key");

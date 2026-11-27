@@ -18,6 +18,7 @@ import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { Modal } from './Modal'
 import { AgentConversation } from './AgentConversation'
 import { parseSettledActivityParams, SETTLED_FILTER_TITLES, settledPeriodLabel } from '../lib/settledActivity'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 const EMPTY_PRESENCE: GlobalActivityPresence = {
   workingAgentIds: [],
@@ -63,6 +64,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const AgentConversationBody = dependencies?.AgentConversationComponent ?? AgentConversation
   const WorkStreamModal = dependencies?.WorkStreamViewModalComponent ?? WorkStreamViewModal
   const AgentViewModalBody = dependencies?.AgentViewModalComponent ?? AgentViewModal
+  const typeNames = useAgentTypeNames()
   const [kinds, setKinds] = useState<SquadActivityKind[]>([])
   // "Show everything" turns the cleanup off: verbose rows from the server, no sender-row hiding.
   const [showEverything, setShowEverything] = useState(false)
@@ -87,7 +89,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const clearSettled = useCallback(() => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
-      for (const key of ['settled', 'since', 'squad']) next.delete(key)
+      for (const key of ['settled', 'since', 'until', 'squad']) next.delete(key)
       return next
     })
   }, [setSearchParams])
@@ -116,30 +118,36 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   >
 
   const [openItem, setOpenItem] = useState<OpenActivityItem | null>(null)
-  const openActivityItem = useCallback((item: GlobalSquadActivityItem) => {
-    if (item.ref.type === 'workstream')
-      setOpenItem({ type: 'workstream', workStreamId: item.ref.workStreamId, squadId: item.squadId })
-    else if (item.ref.type === 'agent')
+  const openActivityItem = useCallback(
+    (item: GlobalSquadActivityItem) => {
+      if (item.ref.type === 'workstream')
+        setOpenItem({ type: 'workstream', workStreamId: item.ref.workStreamId, squadId: item.squadId })
+      else if (item.ref.type === 'agent')
+        setOpenItem({
+          type: 'agent',
+          agentId: item.ref.agentId,
+          squadId: item.squadId,
+          label: activitySubjectLabel(item, typeNames),
+          view: item.ref.view,
+          messageId: item.ref.messageId,
+        })
+    },
+    [typeNames]
+  )
+
+  const openAgentReference = useCallback(
+    (agent: Agent) => {
       setOpenItem({
         type: 'agent',
-        agentId: item.ref.agentId,
-        squadId: item.squadId,
-        label: activitySubjectLabel(item),
-        view: item.ref.view,
-        messageId: item.ref.messageId,
+        agentId: agent.id,
+        squadId: agent.squadId,
+        label: activityAgentLabel(agent.agentTypeId, typeNames(agent.agentTypeId)),
+        view: 'chat',
+        resolvedAgent: agent,
       })
-  }, [])
-
-  const openAgentReference = useCallback((agent: Agent) => {
-    setOpenItem({
-      type: 'agent',
-      agentId: agent.id,
-      squadId: agent.squadId,
-      label: activityAgentLabel(agent.agentTypeId),
-      view: 'chat',
-      resolvedAgent: agent,
-    })
-  }, [])
+    },
+    [typeNames]
+  )
 
   const hrefFor = useCallback((item: GlobalSquadActivityItem) => globalActivityItemHref(item, slugFor), [slugFor])
   const squadChipFor = useCallback(
@@ -206,6 +214,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         isError={query.isError}
         items={items}
         loadingShapeKey="activity:global"
+        liveMotionScope={JSON.stringify([settled, settledSquadIds])}
         workingAgentIds={workingAgentIds}
         agentDetailFor={agentDetailFor}
         hrefFor={hrefFor}

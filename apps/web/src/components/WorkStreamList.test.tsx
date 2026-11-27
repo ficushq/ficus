@@ -234,6 +234,102 @@ describe('WorkStreamList', () => {
     }
   })
 
+  test('row tooltips sit above the stretched button and a click on them still opens the stream', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
+    const rendered = dom.createRoot()
+    const client = createTestQueryClient()
+    function CurrentRoute() {
+      return <output data-testid="current-route">{useLocation().search}</output>
+    }
+    const queued = workStream({
+      status: 'queued',
+      queuePosition: 2,
+      runtime: { totalMs: 12_000, activeCount: 0, workingCount: 0, computedAt: now.toISOString() },
+    })
+    // A fresh router each time (the key), so every click starts from a closed stream.
+    const render = (feedLayout: boolean, key: string) =>
+      dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter key={key} initialEntries={['/feed']}>
+            <QueryClientProvider client={client}>
+              <WorkStreamList
+                workStreams={[queued]}
+                squadMap={new Map([[squad.id, squad]])}
+                agentMap={new Map()}
+                feedLayout={feedLayout}
+                hideFilters
+              />
+              <CurrentRoute />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+    const row = () => rendered.container.querySelector('[data-testid="work-stream-row"]')!
+    const targets = {
+      queue: () => [...row().querySelectorAll('span')].find((element) => element.textContent === '#2 in queue')!,
+      time: () => row().querySelector<HTMLElement>('[data-testid="work-stream-time"]')!,
+    }
+    try {
+      for (const feedLayout of [false, true]) {
+        await render(feedLayout, `${feedLayout}`)
+        expect(targets.queue().getAttribute('title')).toBe("Position in the squad's admission queue")
+        expect(targets.time().getAttribute('title')).toContain('Time worked')
+        // The button's pseudo-element covers the row; anything with a tooltip must sit above it.
+        for (const target of Object.values(targets)) {
+          expect(target().closest('button')).toBeNull()
+          expect(target().className).toContain('relative z-10')
+        }
+        expect(row().querySelector('button [title="Queued (2)"]')!.parentElement!.className).toContain('relative z-10')
+        for (const [name, target] of Object.entries(targets)) {
+          await render(feedLayout, `${feedLayout}-${name}`)
+          expect(rendered.container.querySelector('[data-testid="current-route"]')!.textContent).toBe('')
+          await dom.act(async () => target().click())
+          expect(rendered.container.querySelector('[data-testid="current-route"]')!.textContent).toContain('ws=ws-1')
+        }
+      }
+    } finally {
+      await dom.cleanup()
+      client.clear()
+    }
+  })
+
+  test('a row names its assignee by the configured type name, never the raw type id', () => {
+    const custom = { ...engineer, id: 'agent-qa', agentTypeId: 'qa-bot' }
+    const general = { ...engineer, id: 'agent-general', agentTypeId: 'general' }
+    const rows = [
+      workStream({ id: 'ws-qa', title: 'QA pass', assigneeAgentId: custom.id }),
+      workStream({ id: 'ws-general', title: 'Docs pass', assigneeAgentId: general.id }),
+    ]
+    const render = (names: Record<string, string>) => {
+      const client = createTestQueryClient()
+      client.setQueryData(
+        queryKeys.agentTypes.list(),
+        Object.entries(names).map(([id, name]) => ({ id, name }))
+      )
+      return renderToStaticMarkup(
+        <MemoryRouter>
+          <QueryClientProvider client={client}>
+            <WorkStreamList
+              workStreams={rows}
+              squadMap={new Map([[squad.id, squad]])}
+              agentMap={new Map([custom, general].map((agent) => [agent.id, agent]))}
+              showSquadFilter={false}
+              hideFilters
+            />
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    }
+    const named = render({ 'qa-bot': 'Release QA', general: 'Helper' })
+    expect(named).toContain('title="Open Release QA agent thread"')
+    expect(named).toContain('title="Open Helper agent thread"')
+    expect(named).not.toContain('>qa-bot<')
+    // Without the names, the id is title-cased, and the general type is never a bare "General".
+    const fallback = render({})
+    expect(fallback).toContain('title="Open Qa Bot agent thread"')
+    expect(fallback).toContain('title="Open General Purpose agent thread"')
+  })
+
   test('renders agent runtime instead of wall-clock since createdAt', () => {
     const oldCreated = new Date(now.getTime() - 60 * 60 * 1000)
     const ws = workStream({
@@ -1312,13 +1408,16 @@ describe('WorkStreamList delivery label on the pull request', () => {
     expect(html).not.toContain('text-xs text-secondary')
   })
 
-  test('every list leaves "Review queued" to the peek card', () => {
+  test('every list leaves "Review queued" to the peek card, except where the peek card cannot open', () => {
     const gate = workStreamWait({ id: 'gate', type: 'manual', flowAttemptId: 2, workflowHumanGate: true })
     const question = workStreamWait({ id: 'question', type: 'question', flowAttemptId: 2 })
     const stream = workStream({ derivedState: 'waiting_on_answer', openWaits: [question, gate] })
     for (const html of [renderWorkStreamList([stream]), renderWorkStreamList([stream], feedProps)]) {
       expect(html).toContain('Waiting on Answer')
-      expect(html).not.toContain('Review queued')
+      // Hidden unless the device cannot hover (touch), where a tap opens the stream instead of the peek card.
+      expect(html).toMatch(
+        /class="[^"]*hidden \[@media\(hover:none\)\]:inline[^"]*" data-testid="queued-review-label">Review queued</
+      )
     }
   })
 })

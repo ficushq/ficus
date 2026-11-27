@@ -2,7 +2,11 @@ import { describe, expect, it } from 'bun:test'
 import type { Agent } from '@ficus/shared'
 import {
   agentListLabels,
+  agentThreadLinkTitle,
+  agentTypeDisplayName,
   getAgentLabel,
+  getAgentTitle,
+  getConversationTitle,
   getAgentName,
   getAgentPrimaryLabel,
   getAgentPurpose,
@@ -84,7 +88,7 @@ describe('getAgentLabel', () => {
   })
 
   it('uses the squad’s name for the type, and reads the general type as "General Purpose agent"', () => {
-    expect(getAgentLabel(agent({ purpose: 'Payments' }), undefined, 'Builder')).toBe('Builder (Payments)')
+    expect(getAgentLabel(agent({ purpose: 'Payments' }), undefined, () => 'Builder')).toBe('Builder (Payments)')
     expect(getAgentLabel(agent({ purpose: 'Docs' }, 'general'))).toBe('General Purpose agent (Docs)')
   })
 })
@@ -111,5 +115,58 @@ describe('agentListLabels', () => {
 
   it('names a lone agent of its type by type and purpose only', () => {
     expect(agentListLabels([engineer('solo', { name: 'Edda' })]).get('solo')).toBe('Engineer')
+  })
+})
+
+describe('configured agent type names', () => {
+  // The squad renamed two built-in types and added a custom one.
+  const names: Record<string, string> = { engineer: 'Builder', 'system-manager': 'Assistant', 'qa-bot': 'Release QA' }
+  const typeNames = (id: string) => names[id]
+
+  it('names every type by its configured name, custom types included, and title-cases the rest', () => {
+    expect(agentTypeDisplayName('engineer', typeNames)).toBe('Builder')
+    expect(agentTypeDisplayName('system-manager', typeNames)).toBe('Assistant')
+    expect(agentTypeDisplayName('qa-bot', typeNames)).toBe('Release QA')
+    expect(agentTypeDisplayName('qa-bot')).toBe('Qa Bot')
+    expect(agentTypeDisplayName('reviewer', typeNames)).toBe('Reviewer')
+    // The general type is never a bare "General".
+    expect(agentTypeDisplayName('general', typeNames)).toBe('General Purpose agent')
+    expect(agentTypeDisplayName('general', () => 'Helper')).toBe('Helper agent')
+  })
+
+  it('reaches every label helper', () => {
+    const builder = mk({ id: 'b', agentTypeId: 'engineer', metadata: { name: 'Fern' } })
+    const qa = mk({ id: 'q', agentTypeId: 'qa-bot', metadata: { name: 'Moss', purpose: 'Smoke tests' } })
+    const assistant = mk({ id: 's', agentTypeId: 'system-manager', metadata: { name: 'Sol' } })
+    expect(getAgentLabel(builder, undefined, typeNames)).toBe('Builder')
+    expect(getAgentLabel(builder, '#12', typeNames)).toBe('Builder (#12)')
+    expect(getAgentTitle(assistant, typeNames)).toBe('Assistant')
+    expect(getConversationTitle(builder, typeNames)).toBe('Builder')
+    expect(getConversationTitle(qa, typeNames)).toBe('Smoke tests')
+    expect(agentListLabels([builder, qa], undefined, typeNames)).toEqual(
+      new Map([
+        ['b', 'Builder'],
+        ['q', 'Release QA (Smoke tests)'],
+      ])
+    )
+    const twin = mk({ id: 'b2', agentTypeId: 'engineer', metadata: { name: 'Ash' } })
+    expect(typeFirstAgentLabels([builder, twin, qa], undefined, typeNames)).toEqual(
+      new Map([
+        ['b', 'Builder (Fern)'],
+        ['b2', 'Builder (Ash)'],
+        ['q', 'Release QA'],
+      ])
+    )
+  })
+
+  it('finds an agent by the type name people read', () => {
+    const qa = mk({ id: 'q', agentTypeId: 'qa-bot', metadata: { name: 'Moss' } })
+    expect(agentMatchesQuery(qa, 'release', typeNames)).toBe(true)
+    expect(agentMatchesQuery(qa, 'release')).toBe(false)
+  })
+
+  it('titles an agent thread link without saying "agent" twice', () => {
+    expect(agentThreadLinkTitle('Builder')).toBe('Open Builder agent thread')
+    expect(agentThreadLinkTitle('General Purpose agent')).toBe('Open General Purpose agent thread')
   })
 })

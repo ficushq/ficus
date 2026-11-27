@@ -15,6 +15,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
+import { removeAnsweredActions } from '../lib/answeredActions'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { resolveWorkStreamWait } from '../api/squads'
@@ -26,9 +27,6 @@ import { WorkStreamAttachments } from './WorkStreamFileCard'
 import { WaitAge, WorkStreamDependencies } from './WorkStreamDependencies'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
-import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
-import { getAgentPrimaryLabel, typeFirstAgentLabels } from '../lib/agentDisplay'
-import { workflowStepDisplayName } from '../lib/workflowProgress'
 import {
   TIME_WORKED_DEFINITION,
   computeWorkStreamElapsedMs,
@@ -36,7 +34,14 @@ import {
   formatWorkStreamDuration,
   workStreamPersonWait,
   workStreamTimeTickMs,
-} from '../lib/workStreamRuntime'
+  type WorkStream,
+  type WorkStreamPriority,
+  type WorkStreamWait,
+  type Squad,
+  type Agent,
+} from '@ficus/shared'
+import { getAgentPrimaryLabel, typeFirstAgentLabels } from '../lib/agentDisplay'
+import { workflowStepDisplayName } from '../lib/workflowProgress'
 import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
@@ -46,6 +51,7 @@ import { WorkStreamProgress } from './WorkStreamProgress'
 import { WorkStreamRecentActivity } from './WorkStreamRecentActivity'
 import { actionErrorMessage } from '../lib/actionError'
 import { LoadingSurface, SkeletonBlock, SkeletonRows } from './loading/Skeleton'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 // --- Helpers (exported for use by WorkStreamListAll) ---
 
@@ -218,6 +224,7 @@ export function WorkStreamDetailModal({
     Array.from(resolvedAgentMap.values()).find((agent) => agent.id.startsWith(idOrPrefix))
   // Agents are named type first; two of one type add the step they work on here, else their purpose.
   const { data: run } = useQuery(queries.workflows.run(workStream.id))
+  const typeNames = useAgentTypeNames()
   const stepOfAgent = new Map<string, string>()
   for (const attempt of run?.state.attempts ?? []) {
     const agentId = run?.attemptAgents[attempt.id]
@@ -230,10 +237,14 @@ export function WorkStreamDetailModal({
     ...(workStream.agentIds ?? []).map(matchAgent),
     ...Object.keys(metrics?.byAgent ?? {}).map((agentId) => resolvedAgentMap.get(agentId)),
   ].filter((agent): agent is Agent => !!agent)
-  const agentLabels = typeFirstAgentLabels(shownAgents, (agent) => {
-    const step = stepOfAgent.get(agent.id)
-    return step ? [workStream.number ? `#${workStream.number}` : null, step].filter(Boolean).join(' · ') : undefined
-  })
+  const agentLabels = typeFirstAgentLabels(
+    shownAgents,
+    (agent) => {
+      const step = stepOfAgent.get(agent.id)
+      return step ? [workStream.number ? `#${workStream.number}` : null, step].filter(Boolean).join(' · ') : undefined
+    },
+    typeNames
+  )
   const agentLabel = (agent: Agent) => agentLabels.get(agent.id) ?? getAgentPrimaryLabel(agent)
   /** The name and purpose a type-first label leaves out, on hover. */
   const agentTitle = (agent: Agent) =>
@@ -280,10 +291,7 @@ export function WorkStreamDetailModal({
     }) => resolveWorkStreamWait(workStream.id, waitId, { resolution, note }),
     onSuccess: (_result, variables) => {
       const actionType = variables.resolution === 'cleared' ? 'workstream-blocked' : 'workstream-review'
-      const actionId = `${actionType}:${workStream.id}:${variables.waitId}`
-      queryClient.setQueryData<import('@ficus/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
-        current?.filter((action) => action.id !== actionId)
-      )
+      removeAnsweredActions(queryClient, [`${actionType}:${workStream.id}:${variables.waitId}`])
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(workStream.squadId) })

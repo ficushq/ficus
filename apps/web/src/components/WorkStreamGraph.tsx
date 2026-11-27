@@ -1,7 +1,7 @@
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { useMemo, useRef } from 'react'
 import clsx from 'clsx'
-import type { Agent, WorkStream } from '@ficus/shared'
+import type { Agent, WorkStream, WorkStreamViewer } from '@ficus/shared'
 import { getAgentLabel } from '../lib/agentDisplay'
 import { Badge } from './Badge'
 import { workStreamStatusLabel, WS_STATUS_BADGE_COLORS, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
@@ -14,11 +14,14 @@ import {
   type WorkStreamGraphNodeLayout,
 } from '../lib/workStreamGraphLayout'
 import { useWorkStreamPeek, WorkStreamPeekCard } from './WorkStreamSummary'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 interface WorkStreamGraphProps {
   workStreams: WorkStream[]
   agentMap: Map<string, Agent>
   onSelectWorkStream: (id: string) => void
+  /** Who is looking, so a node's peek says "Waiting on you" only to a viewer who can act. */
+  viewer?: WorkStreamViewer
 }
 
 /** "Waits until its pull request is ready (satisfied)": what an edge waits on and whether it still does. */
@@ -54,7 +57,7 @@ function EdgeLegend({ label, dashed, satisfied }: { label: string; dashed?: bool
   )
 }
 
-export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: WorkStreamGraphProps) {
+export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream, viewer }: WorkStreamGraphProps) {
   const layout = useMemo(() => layoutWorkStreamGraph(workStreams), [workStreams])
   const streamById = useMemo(() => new Map(workStreams.map((stream) => [stream.id, stream])), [workStreams])
 
@@ -106,6 +109,7 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
               stream={streamById.get(node.id)!}
               agentMap={agentMap}
               onSelectWorkStream={onSelectWorkStream}
+              viewer={viewer}
             />
           ))}
         </svg>
@@ -141,19 +145,22 @@ function WorkStreamGraphNode({
   stream,
   agentMap,
   onSelectWorkStream,
+  viewer,
 }: {
   node: WorkStreamGraphNodeLayout
   stream: WorkStream
   agentMap: Map<string, Agent>
   onSelectWorkStream: (id: string) => void
+  viewer?: WorkStreamViewer
 }) {
   const card = useRef<HTMLDivElement>(null)
   const peek = useWorkStreamPeek()
+  const typeNames = useAgentTypeNames()
   const storedPriority = stream.priority ?? 'normal'
   const effectivePriority = stream.effectivePriority ?? storedPriority
   const boosted = effectivePriority !== storedPriority
   const assignee = stream.assigneeAgentId ? agentMap.get(stream.assigneeAgentId) : undefined
-  const assigneeLabel = assignee ? getAgentLabel(assignee) : null
+  const assigneeLabel = assignee ? getAgentLabel(assignee, undefined, typeNames) : null
   const assigneeInitial = assigneeLabel?.charAt(0).toUpperCase() ?? '—'
   const select = () => {
     peek.hover.hide()
@@ -203,7 +210,7 @@ function WorkStreamGraphNode({
               {assigneeInitial}
             </span>
           </div>
-          <WorkStreamPeekCard peek={peek} workStream={stream} anchor={card} agentMap={agentMap} />
+          <WorkStreamPeekCard peek={peek} workStream={stream} anchor={card} agentMap={agentMap} viewer={viewer} />
         </div>
       </foreignObject>
     </g>

@@ -40,6 +40,23 @@ function createRuntime(initialIds: string[] = []) {
 }
 
 describe('createHandleAgentWaitingInputEvent', () => {
+  test('names the waiting agent by its configured type name', async () => {
+    const handle = createHandleAgentWaitingInputEvent(
+      mock(async (id: string) => waitingAgent(id)) as never,
+      async () => (id) => (id === 'engineer' ? 'Builder' : undefined)
+    )
+    const { runtime, announcements } = createRuntime()
+    await handle(runtime, 'agent-1')
+    expect(announcements[0]).toStartWith('Agent Builder needs your input')
+    // Without the names (no permission, offline) the type id is title-cased.
+    const fallback = createRuntime()
+    await createHandleAgentWaitingInputEvent(mock(async (id: string) => waitingAgent(id)) as never)(
+      fallback.runtime,
+      'agent-1'
+    )
+    expect(fallback.announcements[0]).toStartWith('Agent Engineer needs your input')
+  })
+
   test('suppresses an identical event replay already spoken in this execution', async () => {
     const getAgent = mock(async (id: string) => waitingAgent(id))
     const handle = createHandleAgentWaitingInputEvent(getAgent as never)
@@ -186,4 +203,35 @@ test('spoken waiting-input prompts name the recommended option and its reason', 
   expect(buildAgentWaitingInputPrompt(agent)).toContain(
     '1. Where should I deploy? Options: Staging, Production. Recommended: Production (The release build passed there.).'
   )
+})
+
+test('spoken waiting-input prompts add no full stop after a recommended label that already ends a sentence', async () => {
+  const { buildAgentWaitingInputPrompt } = await import('./agentInputAnnouncements')
+  const agent = waitingAgent('a1')
+  agent.questionData = {
+    questions: [
+      {
+        id: 'q1',
+        type: 'select',
+        question: 'What now?',
+        options: [
+          { value: 'ship', label: 'Ship it now?', recommended: true },
+          { value: 'wait', label: 'Wait' },
+        ],
+      },
+      {
+        id: 'q2',
+        type: 'select',
+        question: 'Where?',
+        options: [
+          { value: 'staging', label: 'Staging', recommended: true },
+          { value: 'prod', label: 'Production' },
+        ],
+      },
+    ],
+  }
+  const prompt = buildAgentWaitingInputPrompt(agent)
+  expect(prompt).toContain('1. What now? Options: Ship it now?, Wait. Recommended: Ship it now?\n')
+  expect(prompt).not.toContain('Ship it now?.')
+  expect(prompt).toContain('2. Where? Options: Staging, Production. Recommended: Staging.')
 })

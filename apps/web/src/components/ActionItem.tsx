@@ -6,6 +6,7 @@ import { agentChatPath } from '../lib/entityReference'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
+import { removeAnsweredActions } from '../lib/answeredActions'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { QuestionInput } from './QuestionInput'
 import { AgentQuestionCard } from './AgentQuestionCard'
@@ -31,8 +32,14 @@ import type {
   AssistantTaskActionData,
   WorkStreamActionData,
   WorkStreamDeliveryActionData,
+  WorkStreamWait,
 } from '@ficus/shared'
-import { WORK_STREAM_STATUS_ROLE, type StatusRole } from '@ficus/shared'
+import {
+  pendingActionAgentLabel,
+  pendingActionContextLine,
+  WORK_STREAM_STATUS_ROLE,
+  type StatusRole,
+} from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import {
   workStreamActionPresentationState,
@@ -40,7 +47,9 @@ import {
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
-import { pendingActionAgentLabel, pendingActionContextLine } from '../lib/pendingActionWording'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
+import { usePermissions } from '../hooks/usePermissions'
+import { workflowGateReadOnlyReason } from '../lib/workflowReview'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -98,6 +107,7 @@ export function ActionItem({
   defaultExpanded = false,
   embedded = false,
 }: ActionItemProps) {
+  const typeNames = useAgentTypeNames()
   const [isExpanded, setExpanded] = useState(defaultExpanded)
   const expanded = embedded || isExpanded
   const itemRef = useRef<HTMLDivElement>(null)
@@ -137,9 +147,7 @@ export function ActionItem({
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
   const completeAction = async () => {
-    queryClient.setQueryData<PendingAction[]>(queryKeys.actions.pending(), (current) =>
-      current?.filter((candidate) => candidate.id !== action.id)
-    )
+    removeAnsweredActions(queryClient, [action.id])
 
     const invalidations = [queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })]
     if (action.type === 'workstream-review' || action.type === 'workstream-blocked') {
@@ -197,8 +205,8 @@ export function ActionItem({
       : assistantTask
         ? assistantTask.taskLabel
         : agentItem
-          ? (pendingActionAgentLabel(action) ?? agentItem.agentTypeId)
-          : (pendingActionAgentLabel(action) ?? action.squadName)
+          ? (pendingActionAgentLabel(action, typeNames) ?? agentItem.agentTypeId)
+          : (pendingActionAgentLabel(action, typeNames) ?? action.squadName)
 
   return (
     <>
@@ -254,6 +262,10 @@ export function ActionItem({
               </Link>
             )}
             <ActionSubtitle action={action} />
+            {/* A gate card has no body, so a viewer who may not decide it learns why here. */}
+            {!expandable && !action.canRespond && blockedWait?.workflowHumanGate && (
+              <ReadOnlyGateNotice squadId={wsData!.squadId} wait={blockedWait} />
+            )}
             {continueMutation.isError && (
               <p role="alert" className="mt-1 text-xs text-status-danger-600">
                 {actionErrorMessage(continueMutation.error)}
@@ -303,7 +315,7 @@ export function ActionItem({
                 (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
               <ActionContent action={action} onComplete={completeAction} />
             ) : (
-              <p className="text-xs text-muted">You can view this action but do not have permission to respond.</p>
+              <ReadOnlyActionNotice action={action} />
             )}
           </div>
         )}
@@ -333,8 +345,28 @@ export function ActionItem({
   )
 }
 
+const READ_ONLY_ACTION = 'You can view this action but do not have permission to respond.'
+
+/** What a viewer who may not respond sees; for a workflow gate, why it is not theirs to decide. */
+function ReadOnlyActionNotice({ action }: { action: PendingAction }) {
+  const wait =
+    (action.type === 'workstream-blocked' || action.type === 'workstream-review') &&
+    (action.data as WorkStreamActionData).wait
+  if (!wait || !wait.workflowHumanGate) return <p className="text-xs text-muted">{READ_ONLY_ACTION}</p>
+  return <ReadOnlyGateNotice squadId={(action.data as WorkStreamActionData).squadId} wait={wait} />
+}
+
+function ReadOnlyGateNotice({ squadId, wait }: { squadId: string; wait: WorkStreamWait }) {
+  const { can, isLoading, isError } = usePermissions(squadId)
+  // Core decides who may respond; the card only words why, once the viewer's permissions are known.
+  const reason =
+    isLoading || isError ? undefined : workflowGateReadOnlyReason(wait.workflowGateApprover, can('workstreams:review'))
+  return <p className="mt-1 text-xs text-muted">{reason ?? READ_ONLY_ACTION}</p>
+}
+
 function ActionSubtitle({ action }: { action: PendingAction }) {
-  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action)}</p>
+  const typeNames = useAgentTypeNames()
+  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action, typeNames)}</p>
 }
 
 type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]

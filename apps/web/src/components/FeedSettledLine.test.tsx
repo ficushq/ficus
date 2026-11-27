@@ -46,9 +46,10 @@ describe('settled line text', () => {
     expect(settledPeriodLabel(new Date(2026, 9, 27, 12, 0).toISOString(), now)).toMatch(/^Since Oct 27$/)
   })
 
-  test('each count opens Activity filtered to its rows in the same squads', () => {
-    expect(settledActivityHref('reviews', since, ['s2', 's1'])).toBe(
-      `/activity?settled=reviews&since=${encodeURIComponent(since)}&squad=s1&squad=s2`
+  test('each count opens Activity filtered to its rows in the same squads, up to the end of the count', () => {
+    const through = '2026-11-26T12:00:00.000Z'
+    expect(settledActivityHref('reviews', { since, through }, ['s2', 's1'])).toBe(
+      `/activity?settled=reviews&since=${encodeURIComponent(since)}&until=${encodeURIComponent(through)}&squad=s1&squad=s2`
     )
   })
 })
@@ -62,11 +63,12 @@ const endAt = (ms: number) => iso(ms - ACTIVITY_SETTLED_MARGIN_MS)
 /**
  * The Feed with a fake account behind it: its Feed watermark, and the questions settled without a
  * person by time. Like the real cache, the visit read is taken once per key and the counts once per
- * key until `refetchCounts`; the counts run from `since` up to the time they were taken (`through`).
+ * key until `refetchCounts`; the counts run from `since` up to the time they were taken (`through`),
+ * over the squads the Feed is filtered to. Work is settled in squad `s1` unless another is named.
  */
 async function renderVisit(options: {
   lastVisitedAt: string | null
-  settledAt?: number[]
+  settledAt?: (number | { at: number; squadId: string })[]
   reviews?: number
   failCounts?: boolean
   squadIds?: string[]
@@ -76,7 +78,13 @@ async function renderVisit(options: {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
   dom.window.sessionStorage.clear()
   const { root } = dom.createRoot()
-  const account = { watermark: options.lastVisitedAt, settledAt: [...(options.settledAt ?? [])] }
+  const account = {
+    watermark: options.lastVisitedAt,
+    settledAt: (options.settledAt ?? []).map((entry) =>
+      typeof entry === 'number' ? { at: entry, squadId: 's1' } : entry
+    ),
+  }
+  let squadIds = options.squadIds ?? []
   const recorded: string[] = []
   const settledRequests: unknown[][] = []
   const visitReads: unknown[][] = []
@@ -94,8 +102,11 @@ async function renderVisit(options: {
         } else {
           settledRequests.push(query.queryKey)
           const from = Date.parse(query.queryKey[3] as string)
+          const squads = query.queryKey[4] as string[]
           const through = Date.now() - ACTIVITY_SETTLED_MARGIN_MS
-          const questions = account.settledAt.filter((at) => at >= from && at < through).length
+          const questions = account.settledAt.filter(
+            ({ at, squadId }) => at >= from && at < through && (squads.length === 0 || squads.includes(squadId))
+          ).length
           cache.set(
             key,
             options.failCounts
@@ -129,7 +140,7 @@ async function renderVisit(options: {
             <AccountFeedVisit
               key={mount}
               userId="u1"
-              squadIds={options.squadIds ?? []}
+              squadIds={squadIds}
               acknowledge={async () => ({ seen: true as const })}
               acknowledgeVisit={async (visitedAt) => {
                 recorded.push(visitedAt)
@@ -153,7 +164,14 @@ async function renderVisit(options: {
     visitReads,
     render,
     line: () => document.querySelector('[data-testid="feed-settled-line"]')?.textContent ?? null,
-    settle: (at: number) => account.settledAt.push(at),
+    settle: (at: number, squadId = 's1') => account.settledAt.push({ at, squadId }),
+    /** The account's Feed watermark as Core holds it now. */
+    watermark: () => account.watermark,
+    /** The person changes the Feed's squad filter (none for every squad); the Feed stays mounted. */
+    filter: async (ids: string[]) => {
+      squadIds = ids
+      await render({ remount: false })
+    },
     advance: (ms: number) => setSystemTime(new Date(Date.now() + ms)),
     /** The counts load again, as on window focus once they are a minute old. */
     refetchCounts: async () => {
@@ -176,7 +194,7 @@ async function renderVisit(options: {
 describe('Feed Updates with the settled line', () => {
   afterEach(() => setSystemTime())
 
-  test('shows the line on its own and records the end of its counts', async () => {
+  test('shows the line on its own, counted and linked in the filtered squads', async () => {
     const { document, recorded, settledRequests, line } = await renderVisit({
       lastVisitedAt: since,
       settledAt: [1, 2, 3, 4].map((n) => T0 + n * 60_000),
@@ -188,12 +206,23 @@ describe('Feed Updates with the settled line', () => {
     const links = [...document.querySelector('[data-testid="feed-settled-line"]')!.querySelectorAll('a')].map((link) =>
       link.getAttribute('href')
     )
-    expect(links).toEqual([
-      settledActivityHref('questions', since, ['s1']),
-      settledActivityHref('reviews', since, ['s1']),
-    ])
+    // Each link ends where its count did, the same `through` the visit records.
+    expect(links).toEqual(
+      ['questions', 'reviews'].map(
+        (kind) =>
+          `/activity?settled=${kind}&since=${encodeURIComponent(since)}&until=${encodeURIComponent(endAt(T0 + 3 * HOUR))}&squad=s1`
+      )
+    )
     expect(settledRequests[0]).toEqual(['activity', 'settled', 'u1', since, ['s1']])
-    expect(recorded).toEqual([endAt(T0 + 3 * HOUR)])
+    // Filtered counts never move the account watermark (see the squad filter tests below).
+    expect(recorded).toEqual([])
+  })
+
+  test('an unfiltered Feed records the end of its counts', async () => {
+    const view = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR] })
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    expect(view.recorded).toEqual([endAt(T0 + 3 * HOUR)])
+    expect(view.watermark()).toBe(endAt(T0 + 3 * HOUR))
   })
 
   test('is absent when every count is zero', async () => {
@@ -346,5 +375,77 @@ describe('Feed Updates with the settled line', () => {
   test('keeps the older start when the counts fail to load', async () => {
     const { recorded } = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR], failCounts: true })
     expect(recorded).toEqual([])
+  })
+})
+
+describe('the settled line with a squad filter', () => {
+  afterEach(() => setSystemTime())
+
+  test('a filtered Feed shows its counts but never moves the watermark, so the next visit still counts other squads', async () => {
+    const view = await renderVisit({
+      lastVisitedAt: since,
+      settledAt: [T0 + HOUR, { at: T0 + 2 * HOUR, squadId: 's2' }],
+      squadIds: ['s1'],
+    })
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    // Counts loading again later in the visit record nothing either.
+    view.advance(10 * 60_000)
+    await view.refetchCounts()
+    expect(view.recorded).toEqual([])
+    expect(view.watermark()).toBe(since)
+    expect(readSessionFeedVisit('u1')?.recordedThrough).toBeNull()
+
+    // The next visit starts from the same watermark, so unfiltered it counts the other squad's work too.
+    await view.visibility('hidden')
+    view.advance(FEED_VISIT_IDLE_MS + 60_000)
+    await view.visibility('visible')
+    expect(view.visitReads).toHaveLength(2)
+    expect(view.settledRequests.at(-1)).toEqual(['activity', 'settled', 'u1', since, ['s1']])
+    expect(view.recorded).toEqual([])
+    await view.filter([])
+    expect(view.settledRequests.at(-1)).toEqual(['activity', 'settled', 'u1', since, []])
+    expect(view.line()).toMatch(/: 2 questions settled by agents$/)
+  })
+
+  test('turning the filter off mid-visit counts every squad from the stored watermark and records again', async () => {
+    const view = await renderVisit({
+      lastVisitedAt: since,
+      settledAt: [T0 + HOUR, { at: T0 + 2 * HOUR, squadId: 's2' }],
+      squadIds: ['s1'],
+    })
+    expect(view.recorded).toEqual([])
+    view.advance(5 * 60_000)
+    await view.filter([])
+    // The same visit and period: no new account read, and the counts now cover every squad.
+    expect(view.visitReads).toHaveLength(1)
+    expect(view.settledRequests.at(-1)).toEqual(['activity', 'settled', 'u1', since, []])
+    expect(view.line()).toMatch(/: 2 questions settled by agents$/)
+    expect(view.recorded).toEqual([endAt(T0 + 3 * HOUR + 5 * 60_000)])
+    expect(view.watermark()).toBe(endAt(T0 + 3 * HOUR + 5 * 60_000))
+  })
+
+  test('turning the filter on stops recording, and turning it off resumes it', async () => {
+    const view = await renderVisit({ lastVisitedAt: since, settledAt: [T0 + HOUR] })
+    expect(view.recorded).toEqual([endAt(T0 + 3 * HOUR)])
+
+    await view.filter(['s1'])
+    view.settle(T0 + 3.25 * HOUR, 's2')
+    view.advance(HOUR)
+    await view.refetchCounts()
+    expect(view.line()).toMatch(/: 1 question settled by agents$/)
+    expect(view.recorded).toEqual([endAt(T0 + 3 * HOUR)])
+
+    await view.filter([])
+    expect(view.line()).toMatch(/: 2 questions settled by agents$/)
+    expect(view.recorded).toEqual([endAt(T0 + 3 * HOUR), endAt(T0 + 4 * HOUR)])
+  })
+
+  test('without a recorded visit, a filtered Feed leaves the first watermark to the unfiltered Feed', async () => {
+    const view = await renderVisit({ lastVisitedAt: null, squadIds: ['s1'] })
+    expect(view.recorded).toEqual([])
+    expect(view.watermark()).toBeNull()
+    await view.filter([])
+    // The visit's start, as an unfiltered Feed records it from the beginning.
+    expect(view.recorded).toEqual([endAt(T0 + 3 * HOUR)])
   })
 })

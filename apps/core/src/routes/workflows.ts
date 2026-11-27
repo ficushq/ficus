@@ -13,6 +13,7 @@ import {
   workflowPresetSchema,
   workflowSourceSchema,
   workflowCommandSchema,
+  workflowGateApproverForAttempt,
   workStreamAssetLabelSchema,
   workStreamAssetSourceSchema,
 } from '@ficus/shared'
@@ -142,7 +143,12 @@ export const workflowsRouter = new Hono()
         activeOutcomes: activeOutcomeBindings(run),
         deliveryInstructions: deliveryInstructionsForFlow(stream, run, notice, viewerAgentId(identity)),
         deliveryParticipant: deliveryParticipantView(run, viewerAgentId(identity)) ?? null,
-        openWaits: openWaits.map(toWaitJson),
+        openWaits: openWaits.map((wait) =>
+          toWaitJson(
+            wait,
+            wait.flowAttemptId == null ? undefined : workflowGateApproverForAttempt(run.state, wait.flowAttemptId)
+          )
+        ),
         ...(integrationDeliveries ? { integrationDeliveries } : {}),
         usage,
         attachments: files.attachments,

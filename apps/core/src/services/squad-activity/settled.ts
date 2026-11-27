@@ -39,12 +39,15 @@ export function settledQuestionWaitSql(wait: SQL): SQL {
 }
 
 /**
- * The `squad_activity` rows behind one settled count, from `since` on. Each kind names its row
+ * The `squad_activity` rows behind one settled count, from `since` on and before `until` when it is
+ * given (the count's `through`, so Activity lists exactly the rows counted). Each kind names its row
  * `kind` as well as its lane, so the scan seeks `idx_squad_activity_kind` (squad, kind, time) rather
  * than walking every row of the period in `idx_squad_activity_feed`.
  */
-export function settledRowSql(kind: ActivitySettledKind, since: Date): SQL {
-  const from = sql`squad_activity.at>=${since.toISOString()}::timestamptz`
+export function settledRowSql(kind: ActivitySettledKind, since: Date, until?: Date): SQL {
+  const from = until
+    ? sql`squad_activity.at>=${since.toISOString()}::timestamptz AND squad_activity.at<${until.toISOString()}::timestamptz`
+    : sql`squad_activity.at>=${since.toISOString()}::timestamptz`
   if (kind === 'reviews') return sql`(squad_activity.kind='workstream' AND squad_activity.lane=32 AND ${from})`
   return sql`(squad_activity.kind='wait' AND squad_activity.lane=41 AND ${from} AND EXISTS (SELECT 1 FROM work_stream_waits settled_wait
       WHERE settled_wait.id=squad_activity.row_id AND ${settledQuestionWaitSql(sql`settled_wait`)}))`

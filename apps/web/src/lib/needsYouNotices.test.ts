@@ -15,7 +15,7 @@ import {
   needsYouPushWindows,
   subscribeNeedsYouPushChecks,
 } from './needsYouPush'
-import { otherAction, questionAction, waitAction } from './needsYouNotices.fixtures'
+import { otherAction, questionAction, waitAction } from '@ficus/shared/test-fixtures/pending-actions'
 
 const at = (path: string) => {
   const url = new URL(path, 'http://ficus.test')
@@ -88,6 +88,12 @@ describe('needs-you notice content', () => {
       detail: 'Retry on 409 as well?',
       context: '#8 · Make every payment retry safe',
     })
+  })
+
+  test('a notice names the agent by its configured type name when it is known', () => {
+    const typeNames = (id: string) => (id === 'engineer' ? 'Builder' : undefined)
+    expect(needsYouNoticeContent(questionAction('q1'), typeNames).headline).toBe('Builder has a question')
+    expect(needsYouNoticeContent(waitAction('w1'), typeNames).who).toBe('Builder')
   })
 
   test('a question outside a work stream falls back to its squad, and names its agent by type only', () => {

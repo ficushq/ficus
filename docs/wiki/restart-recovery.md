@@ -55,6 +55,136 @@ A correlated startup failure retains its actual error but is presented as
 than a separate unexplained “Execution failed” notice. This does not classify the new error itself as restart-caused.
 Provider/auth policy and admission fences are unchanged.
 
+## Hard interruptions: no shutdown marker
+
+When Core dies without draining (OOM, SIGKILL, node loss), startup recovery
+(`recoverInterruptedExecutionsForStartup`) or the abandoned-lease sweep
+(`requeueAbandonedLeaseExecutions`) requeues the execution. Their chat notice
+records the cause in metadata as `interruptionCause`: `core_restart` for startup
+recovery, `lease_lapsed` for the sweep. Nothing was drained, so the pi session
+file holds the assistant message with any tool call that was running, but not its
+result. On the next model request pi-ai would fill that gap with a generic
+`No result provided` error.
+
+On pickup, `findHardInterruption` reads the execution's latest recovery notice.
+When it is a hard one (not a graceful pause marker), the base runner:
+
+- records the calls the interruption cut off as a `ficus:interrupted-tool-calls`
+  session custom entry, once per notice
+  (`services/agent/interrupted-tool-calls.ts`). A call counts only when it is in
+  the session's last assistant message, has no result after it, and that message
+  was written after the execution was created and before the notice. Any other
+  missing result keeps pi-ai's placeholder.
+- prefixes the resumed prompt with `interruptedResumeNotice` ("Ficus recovered
+  this run at &lt;time&gt; after an unexpected Core restart. …", or "after the
+  Ficus worker running it stopped unexpectedly" for a lapsed lease) and the
+  shared `RESTART_RECOVERY_BRIEF`. It is sent until a prompt reaches the
+  session, so a pickup that fails before prompting repeats it and a later requeue
+  of the same run does not. Before this, the chat notice was the only trace of a
+  hard interruption, and it never reached the model.
+
+A pi `context` hook (`createInterruptedToolCallsExtension`, registered by
+`FicusResourceLoader`) answers each recorded call that still has no result with
+a specific error result, chosen by the tool's replay class:
+
+| Class        | Result after "The &lt;tool&gt; call was interrupted by an unexpected Core restart before it returned a result (recovered at &lt;time&gt;). No output was kept." |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `safe`       | "&lt;tool&gt; only reads, so it is safe to run again."                                                                                                          |
+| `idempotent` | "It may or may not have completed. Running it again with the same arguments leaves the same final state, so it is safe to repeat."                              |
+| `unsafe`     | "It may have partially run or completed. Inspect the current state before retrying, and do not repeat an external side effect whose outcome is unknown."        |
+
+A call with the same tool and exact arguments that an earlier interruption in the
+same session already cut off gets the cautious wording whatever its class: it was
+interrupted by a restart before, so it may be what caused it (a read or search
+large enough to exhaust memory). The model is told not to run it again as is and
+to narrow it first. If the run still keeps being cut off, the crash-loop cap below
+stops resuming it.
+
+The hook rewrites only pi's copy of the context; the session file keeps the call
+without a result. The Claude Code bridge receives that same context, so a session
+re-seeded after the crash (a pending tool result always re-seeds) shows the same
+result in its transcript. Nothing is rerun automatically.
+
+### Crash-loop cap
+
+A call that takes Core down (a read or a command whose output exhausts memory,
+for example) would otherwise be requeued and resumed forever: requeues never
+count against the three-attempt failure budget, because a hard crash records no
+failure. So each hard recovery notice also records `interruptionCount`, the
+number of hard recovery notices this execution has had, this one included. It is
+counted in the same transaction that requeues the execution, from the
+execution's earlier notices (`admissionRecoveryExecutionId`, no `restartPhase`),
+reading only rows written since the execution started.
+Startup recovery and the lease sweep add to the same total.
+
+At the limit (default 5, matching pi-durable's `restartLimit`;
+`FICUS_EXECUTION_REQUEUE_LIMIT` overrides it, `0` turns the cap off, and an
+invalid value warns once and uses 5) the
+execution is still requeued, because that is the fenced way to hand a dead
+owner's admission back. The notice says it will not resume automatically. On its
+next pickup, `Execution.run` sees the count before any recovery delay, sandbox or
+model work and calls `holdExecutionAtRequeueLimit`
+(`services/execution/requeue-limit.ts`). It first records the calls that
+interruption cut off in the agent's session file on Core, with the same
+`recordInterruptedToolCalls` a resumed runner uses, so a call cut off before is
+marked `repeated`. That only reads and appends to the local session file. Then it
+records one failure on the
+existing `execution:run` recovery episode (invocation
+`<execution>:requeue-limit:<notice>`, so a repeated pickup of the same requeue
+counts once). The `requeue-limit` failure kind exhausts the cycle at once rather
+than retrying with backoff, so the episode goes to `waiting-manager`, or to
+`waiting-owner` after the manager's extra cycle. That opens the usual flow wait
+or standalone hold and Continue / Stop notice. The decision text names the
+cut-off calls by tool, marking repeats, or says the run was cut off between tool
+calls, so whoever decides can see what Continue risks. Then the pickup fails the
+execution with `recovery_held`, the same refusal as any held recovery, so the
+interrupted call is never replayed. If the agent still holds a slot claim or flow
+attempt, the stranded-run notice gives `recovery-held` as the reason and links
+the recovery carried on `RecoveryHeldError`, so it is routed like the decision
+(to the owner once escalated). If opening the hold itself fails, the run is still
+refused as `recovery_held` rather than failing as an ordinary counted failure,
+whose automatic retry would start a fresh execution with no count. No new
+execution or recovery state was added.
+
+Continue resumes through the normal recovery continuation, which starts a new
+execution, so the count starts again from zero. That run opens the same session
+file, so the `context` hook answers the capped call with the cut-off result,
+including the repeated-call warning, rather than pi-ai's generic placeholder.
+Stop keeps the scope held.
+
+Graceful restarts are not counted, and they do not reset the count either. A
+shutdown drains at a tool boundary and leaves a `restartPhase: pause` marker. It
+is an operator restart or deploy, not something the run did, so counting it
+would hold long tasks that just span several deploys. A run that is cut off hard
+four times, then restarted gracefully, then cut off hard again still reaches
+the cap on that fifth hard interruption. The count is per execution and never
+resets on progress, so a long run that unrelated crashes cut off five times is
+held too. The manager's Continue is the way out.
+
+### Tool replay classes
+
+Every built-in tool has a replay class in one table, `apps/core/src/tools/metadata.ts`:
+`safe` (reads only), `idempotent` (a repeat with the same arguments leaves the same
+final state, or is refused) or `unsafe` (a repeat may duplicate an effect). A tool
+that is not listed, including pi extension and integration tools, is `unsafe`.
+`tool_search` is `idempotent`: a repeat finds the tools it loads already loaded.
+The same table holds each tool's default tool-search label (`direct` or
+`deferrable`, see [tool search](tool-search.md#labels)), so one entry per tool
+carries both. `wrapToolWithRecovery` puts the metadata on each session tool
+definition as `ficus` (`{ replay, label }`) and the class as pi's standard
+`annotations` hints (`readOnlyHint`, `idempotentHint`).
+
+The recovery wrapper also has a budget rule for the class: a `safe` or
+`idempotent` call that a lost sandbox connection cut off mid-call
+(`BashOutcomeUnknownError`, or a response-phase `SandboxTransportError`) is not
+recorded as an unexplained failure, and its error says it is safe to run again. The
+same interruption of an `unsafe` tool still counts. Today the rule has no effect on
+built-in tools: only the Bash stream reports these errors, and Bash is `unsafe`;
+unary sandbox reads and writes classify every transport failure as `connect`, which
+counts for every tool. It applies once those transports report response-phase
+failures. Restart-tagged cancellations stay free for every tool as before, and a
+hard crash records nothing.
+
 ## Failed resumed runs
 
 A resumed run is one the platform requeued after an interruption: a graceful
@@ -113,6 +243,8 @@ facts and distinct events, not copies of that procedure:
 | Surface                                                 | What it carries                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `restartResumeNotice`, prefixed once by the base runner | Correlation plus the shared `RESTART_RECOVERY_BRIEF` (free retry, safe recovery) for an execution resumed after a **worker** restart.                                                                                                                                     |
+| `interruptedResumeNotice`, prefixed by the base runner  | The cause and recovery time plus the shared `RESTART_RECOVERY_BRIEF`, for an execution resumed after a **hard** interruption (startup recovery or the lease sweep). Never in the same prompt as `restartResumeNotice`.                                                    |
+| Cut-off tool results (context hook)                     | Per-call fact and the tool's replay class (safe to run again, safe to repeat, or inspect first). No general restart procedure.                                                                                                                                            |
 | Command drain errors/refusals                           | Per-command outcome and correlation; unconfirmed cleanup still requires process inspection. No general replay instructions.                                                                                                                                               |
 | Recovery tool wrapper                                   | For a box-only restart (the execution keeps running, so no resumed prompt follows) it appends the same `RESTART_RECOVERY_BRIEF` once to the tool result. For a worker restart it adds nothing. Unknown losses and native holds still carry their own safety instructions. |
 | Startup pause/resume chat rows                          | Status and durable correlation metadata, not another agent procedure.                                                                                                                                                                                                     |
@@ -250,6 +382,90 @@ owner-only routing, scoped parked continuation, legacy compatibility and typed U
 Shared provisioning-follower retries are owned by provisioning recovery, not by
 restart attribution. The executor-side fields require the updated executor bundle;
 this change performs no live restart, artifact refresh or deployment.
+
+### Exactly-once creating tools
+
+The tools that create durable records are exactly-once per tool call. Each
+derives a key from the agent, the execution and the provider's tool call ID
+(`toolCallIdempotencyKey` in `packages/shared/src/node/tool-call-key.ts`, also
+used for the Assistant tools' client IDs). The same call executed again (a
+transport redelivery, or a rerun of the same call) finds the record its first
+execution made:
+
+| Tool                      | Where the key lives                                                      | A repeated call                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ask_human`               | `agent_questions.idempotency_key` (unique)                               | Returns the same question and its open waits; opens no second wait. Different questions under the same key are refused.                             |
+| `dispatch`                | Child metadata `dispatchKey` and `dispatchIndex`                         | Returns the same children; creates only positions the first run had not created yet. Children stopped to compensate a failed dispatch do not count. |
+| `notify_contact`          | `inbox.idempotency_key` (`notify-contact:<key>`)                         | Returns the first notification; sends nothing.                                                                                                      |
+| `POST /api/inbox` (local) | `inbox.idempotency_key` (`inbox-send:<digest of sender and client key>`) | Returns the first message with `idempotentReplay: true` (HTTP 200); a different message under the same key is refused with 409.                     |
+
+Commands run by `bash` and `squad_bash` see the calling tool call's key in
+`FICUS_TOOL_CALL_KEY` (k8s, vm, docker and host runtimes; absent when the tool
+has no execution). The `ficus` CLI derives one key per command from it with
+`cliCommandIdempotencyKey`: the digest of the command name, the tool call key and
+the canonical JSON of the command's full payload.
+
+- `ficus inbox send` sends it as `idempotencyKey`. The payload is the recipient,
+  subject, content, URL, reply target, delivery mode, wake flag, task status and
+  the name and SHA-256 of each `--attach` file. A replayed send uploads only the
+  files the first run did not attach. `--idempotency-key` overrides it.
+- `ficus workstream advance` and `ficus workstream raise-limit` use it as the
+  default `requestId`; the payload is the stream reference, the command and the
+  attachment flags. An explicit `--request-id` still wins.
+
+So one bash call that sends several different messages or advances different
+streams still performs each of them, and re-running the same command with the
+same payload inside that bash call is the same request. Two identical sends to
+the same recipient in one bash call are one message; pass distinct
+`--idempotency-key` values if that is really meant. Outside an agent tool call no
+key is derived and each command is new, as before.
+
+**Limit.** A key only protects against the same call running again. After a hard
+Core restart the model sees an interruption result for the cut-off call (see
+[Hard interruptions](#hard-interruptions-no-shutdown-marker)) and may retry with a
+new call, which has a new ID and so a new key. Two narrow content guards cover
+the most harmful of those duplicates within the same execution (a restart
+resumes the same execution):
+
+- `ask_human` returns an open question from the same execution with exactly the
+  same questions instead of asking again. A blocking re-ask of one that does not
+  block yet makes it block (as `setQuestionBlocking` does) rather than putting a
+  second copy in front of the person; only a re-ask for a stream-wide wait, which
+  that conversion does not offer, creates a new question.
+- `dispatch` returns the children of an earlier dispatch from the same execution
+  with exactly the same specs while every one of them is still live. Once any of
+  them has finished, an identical dispatch starts new children.
+
+`notify_contact` and inbox sends have no content guard: sending the same text
+again later can be intended, and a duplicate notification is less harmful than
+a duplicate question or set of subagents. A call answered by a content guard
+records nothing under its own key, so if that call is itself re-executed after
+the earlier question was answered or the earlier children finished, it creates
+a new record. The dispatch guard needs the earlier call's complete set of
+children: a dispatch cut off partway by a hard restart and retried under a new
+call ID starts all of its children again, so the ones the first call had already
+created run twice.
+
+A replayed `ask_human` whose question was answered returns the recorded answer,
+and one whose question was dismissed says that no answer is coming; only an open
+question tells the agent to wait. A replayed `dispatch` says which children the
+first run had already started and that they may have finished.
+
+**Announcing a question.** A question is announced (`agent-question.created`,
+which pushes it to the people asked) after it is recorded and its audience is
+finalized. A process that died between those steps used to leave a recorded
+question that nobody was ever told about. Each new question now carries
+`agent_questions.announce_pending_since` until it is announced, and
+`announceAgentQuestionOnce` emits the event and clears it in one transaction
+that holds the question row, so the asking call, a replay of it and the worker's
+`agent-question-announce-recovery` sweep (at startup and every 60 seconds,
+taking questions left pending for over a minute) announce it once between them.
+The sweep finalizes a still-pending audience first. A question answered or
+dismissed before it was announced is never announced. The event itself is not
+durable, so a process that dies after emitting and before that transaction
+commits gets the question announced again by the sweep: a narrower window that
+now errs towards a second notification rather than none. Questions recorded
+before this column existed are not swept.
 
 ### Confirmed tool outcomes
 

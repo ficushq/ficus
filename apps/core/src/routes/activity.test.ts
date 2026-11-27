@@ -336,12 +336,16 @@ describe('GET /api/activity/presence', () => {
     ])
 
     const reader = await createTestUser({ prefix })
+    // workstreams:respond lets the reader clear these review and manual waits: they wait on the reader.
     const fullRole = await createTestRole({
       prefix,
-      permissions: ['squads:read', 'agents:read', 'workstreams:read'],
+      permissions: ['squads:read', 'agents:read', 'workstreams:read', 'workstreams:respond'],
     })
     const agentRole = await createTestRole({ prefix, permissions: ['squads:read', 'agents:read'] })
-    const streamRole = await createTestRole({ prefix, permissions: ['squads:read', 'workstreams:read'] })
+    const streamRole = await createTestRole({
+      prefix,
+      permissions: ['squads:read', 'workstreams:read', 'workstreams:respond'],
+    })
     await assignRole({ userId: reader.id, roleId: fullRole.id, scope: 'squad', squadId: fullSquad.id })
     await assignRole({ userId: reader.id, roleId: agentRole.id, scope: 'squad', squadId: agentOnlySquad.id })
     await assignRole({ userId: reader.id, roleId: streamRole.id, scope: 'squad', squadId: streamOnlySquad.id })
@@ -371,7 +375,7 @@ describe('GET /api/activity/presence', () => {
     })
     expect(streams?.find((card) => card.id === fullReview.id)).toMatchObject({
       needsYou: true,
-      waits: [{ type: 'review', needsYou: true }],
+      waits: [{ type: 'review', needsYou: true, you: true }],
     })
     expect(body.workingAgentIds).not.toContain(fullIdle.id)
     expect(body.workingAgentIds).not.toContain(streamOnlyWorking.id)
@@ -385,8 +389,18 @@ describe('GET /api/activity/presence', () => {
       .values([{ squadId: muteSquad.id, title: 'Muted review', status: 'active' }])
       .returning()
     await db.insert(workStreamWaits).values([{ workStreamId: stream.id, type: 'review' }])
-    const muter = await scopedUser(muteSquad.id, ['squads:read', 'agents:read', 'workstreams:read'])
-    const other = await scopedUser(muteSquad.id, ['squads:read', 'agents:read', 'workstreams:read'])
+    const muter = await scopedUser(muteSquad.id, [
+      'squads:read',
+      'agents:read',
+      'workstreams:read',
+      'workstreams:respond',
+    ])
+    const other = await scopedUser(muteSquad.id, [
+      'squads:read',
+      'agents:read',
+      'workstreams:read',
+      'workstreams:respond',
+    ])
 
     const readPresence = async (token: string) => {
       const response = await activityRequest('/api/activity/presence', { headers: authHeaders(token) })
@@ -402,11 +416,75 @@ describe('GET /api/activity/presence', () => {
     expect(await readPresence(muter.token)).toMatchObject({ needsYouCount: 0, streamCount: 0, streams: [] })
     expect(await readPresence(other.token)).toMatchObject({ needsYouCount: 1, streamCount: 1 })
   })
+
+  test('"waiting on you" counts and labels a stream only for a viewer who can act on its wait', async () => {
+    const squad = await seedSquad('presence-viewer')
+    const reviewerPermissions = ['squads:read', 'agents:read', 'workstreams:read', 'workstreams:review']
+    const assignedReviewer = await scopedUser(squad.id, reviewerPermissions)
+    const otherReviewer = await scopedUser(squad.id, reviewerPermissions)
+    const answerer = await scopedUser(squad.id, ['squads:read', 'workstreams:read', 'agents:run'])
+    const [gated, asking] = await db
+      .insert(workStreams)
+      .values([
+        {
+          squadId: squad.id,
+          title: 'Gate for assigned reviewers',
+          status: 'active',
+          assignedReviewerIds: [assignedReviewer.id],
+        },
+        { squadId: squad.id, title: 'Question', status: 'active' },
+      ])
+      .returning()
+    const { flowWaitReference } = await import('../services/workflows/wait-policy')
+    // A human approval wait with no flow run to name its approver reads as limited to the
+    // stream's assigned reviewers, the narrowest reading of the shared mayDecideWorkflowGate rule.
+    await db.insert(workStreamWaits).values([
+      {
+        workStreamId: gated!.id,
+        type: 'manual',
+        resolutionHandler: 'workflow',
+        flowAttemptId: 2,
+        referenceId: flowWaitReference(gated!.id, 'human', 2),
+        createdBy: 'system',
+      },
+      { workStreamId: asking!.id, type: 'question', createdBy: 'agent' },
+    ])
+
+    const readPresence = async (token: string) => {
+      const response = await activityRequest('/api/activity/presence', { headers: authHeaders(token) })
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as GlobalActivityPresence
+      return {
+        needsYouCount: body.needsYouCount,
+        gate: body.streams?.find((card) => card.id === gated!.id),
+        question: body.streams?.find((card) => card.id === asking!.id),
+      }
+    }
+
+    // The assigned reviewer can decide the gate but not answer the question.
+    const mine = await readPresence(assignedReviewer.token)
+    expect(mine.needsYouCount).toBe(1)
+    expect(mine.gate).toMatchObject({ needsYou: true, waits: [{ type: 'review', needsYou: true, you: true }] })
+    expect(mine.question).toMatchObject({ needsYou: false, waits: [{ type: 'question', needsYou: true, you: false }] })
+    // Another reviewer cannot act on either: both still name the person they wait on.
+    const theirs = await readPresence(otherReviewer.token)
+    expect(theirs.needsYouCount).toBe(0)
+    expect(theirs.gate).toMatchObject({ needsYou: false, waits: [{ type: 'review', needsYou: true, you: false }] })
+    expect(theirs.question).toMatchObject({ needsYou: false, waits: [{ needsYou: true, you: false }] })
+    // Answering takes agents:run: the question waits on this viewer, the gate does not.
+    const answers = await readPresence(answerer.token)
+    expect(answers.needsYouCount).toBe(1)
+    expect(answers.question).toMatchObject({ needsYou: true, waits: [{ needsYou: true, you: true }] })
+    expect(answers.gate).toMatchObject({ needsYou: false })
+    // Cards needing the viewer sort first.
+    const first = await activityRequest('/api/activity/presence', { headers: authHeaders(answerer.token) })
+    expect(((await first.json()) as GlobalActivityPresence).streams?.[0]?.id).toBe(asking!.id)
+  })
 })
 
 test('presence and native interest queries preserve paused rows without false human attention', async () => {
   const squad = await seedSquad('paused-native-presence')
-  const reader = await scopedUser(squad.id, ['squads:read', 'agents:read', 'workstreams:read'])
+  const reader = await scopedUser(squad.id, ['squads:read', 'agents:read', 'workstreams:read', 'workstreams:respond'])
   const pause = {
     id: crypto.randomUUID(),
     pausedAt: new Date().toISOString(),
@@ -445,7 +523,14 @@ describe('GET /api/activity/settled', () => {
       expect(
         (await activityRequest(`/api/activity/settled?${query}`, { headers: authHeaders(admin.token) })).status
       ).toBe(400)
-    for (const query of ['settled=questions', 'settled=completed&since=2026-01-01T00:00:00Z', 'squadId=nope'])
+    for (const query of [
+      'settled=questions',
+      'settled=completed&since=2026-01-01T00:00:00Z',
+      'squadId=nope',
+      // `until` only bounds a settled filter, and must be an instant.
+      'until=2026-01-02T00:00:00Z',
+      'settled=questions&since=2026-01-01T00:00:00Z&until=later',
+    ])
       expect((await activityRequest(`/api/activity?${query}`, { headers: authHeaders(admin.token) })).status).toBe(400)
   })
 
@@ -511,9 +596,10 @@ describe('GET /api/activity/settled', () => {
     expect(await settled(blind.token)).toEqual({ questions: 0, reviews: 0 })
     expect(await settled(outsider.token)).toEqual({ questions: 0, reviews: 0 })
 
-    const list = async (token: string) => {
+    const list = async (token: string, until?: Date) => {
+      const bound = until ? `&until=${encodeURIComponent(until.toISOString())}` : ''
       const response = await activityRequest(
-        `/api/activity?settled=questions&since=${encodeURIComponent(since)}&squadId=${squad.id}`,
+        `/api/activity?settled=questions&since=${encodeURIComponent(since)}${bound}&squadId=${squad.id}`,
         { headers: authHeaders(token) }
       )
       expect(response.status).toBe(200)
@@ -521,5 +607,11 @@ describe('GET /api/activity/settled', () => {
     }
     expect(await list(reader.token)).toEqual([`41:${wait!.id}`])
     expect(await list(blind.token)).toEqual([])
+    // `until` (the count's `through`) is exclusive: a count that ended before the wait settled lists
+    // nothing, one that ended after lists it, and the bound never widens what a viewer may read.
+    expect(await list(reader.token, new Date(Date.now() - 3 * 60_000))).toEqual([])
+    expect(await list(reader.token, wait!.closedAt!)).toEqual([])
+    expect(await list(reader.token, new Date(Date.now() - 60_000))).toEqual([`41:${wait!.id}`])
+    expect(await list(blind.token, new Date(Date.now() - 60_000))).toEqual([])
   })
 })

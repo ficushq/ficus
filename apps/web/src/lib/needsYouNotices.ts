@@ -1,4 +1,5 @@
 import {
+  pendingActionWaitPhrase,
   typeFirstAgentLabel,
   WORK_STREAM_STATUS_ROLE,
   type AgentQuestionActionData,
@@ -7,8 +8,8 @@ import {
   type WorkStreamActionData,
 } from '@ficus/shared'
 import { workStreamActionPresentationState } from './workStreamStatusPresentation'
-import { pendingActionWaitPhrase } from './pendingActionWording'
 import { workflowReviewPath } from './workflowReview'
+import { noAgentTypeNames, type AgentTypeName } from './agentDisplay'
 
 /**
  * The in-app "Needs you" notice: a small card at the top right that appears, on any page, when an
@@ -103,12 +104,17 @@ function workStreamLabel(work: { number?: number | null; title: string }): strin
   return work.number ? `#${work.number} · ${work.title}` : work.title
 }
 
-export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeContent {
+export function needsYouNoticeContent(
+  action: PendingAction,
+  /** The configured agent type names (`useAgentTypeNames`); without them the type id is title-cased. */
+  typeNames: AgentTypeName = noAgentTypeNames
+): NeedsYouNoticeContent {
+  const agentLabel = (agentTypeId: string) => typeFirstAgentLabel({ agentTypeId, typeName: typeNames(agentTypeId) })
   switch (action.type) {
     case 'agent-question': {
       const data = action.data as AgentQuestionActionData
       // Type first; the work stream it asked from is the notice's context line.
-      const who = typeFirstAgentLabel({ agentTypeId: data.agentTypeId })
+      const who = agentLabel(data.agentTypeId)
       return {
         who,
         headline: `${who} has a question`,
@@ -118,7 +124,7 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
     }
     case 'squad-question': {
       const data = action.data as SquadQuestionActionData
-      const who = typeFirstAgentLabel({ agentTypeId: data.agentTypeId })
+      const who = agentLabel(data.agentTypeId)
       return {
         who,
         headline: `${who} has a question`,
@@ -128,7 +134,7 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
     }
     default: {
       const data = action.data as WorkStreamActionData
-      const agent = data.assigneeAgentTypeId ? typeFirstAgentLabel({ agentTypeId: data.assigneeAgentTypeId }) : null
+      const agent = data.assigneeAgentTypeId ? agentLabel(data.assigneeAgentTypeId) : null
       const state = workStreamActionPresentationState(action)
       const review = state !== null && WORK_STREAM_STATUS_ROLE[state] === 'review'
       // The same wait phrase the Needs-you lists use ("Engineer · review needed").

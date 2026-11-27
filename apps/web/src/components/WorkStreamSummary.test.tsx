@@ -99,8 +99,15 @@ const agents: AgentSummary[] = [
   { id: 'agent-2', agentTypeId: 'reviewer', squadId: squad.id, parentAgentId: null, status: 'idle' },
 ]
 
-/** Renders into a fresh window; `storage` is written to its localStorage before the first render. */
-async function render(node: ReactNode, storage: Record<string, string> = {}) {
+/**
+ * Renders into a fresh window; `storage` is written to its localStorage before the first render.
+ * The viewer holds `permissions` in the squad: by default they may answer questions (agents:run).
+ */
+async function render(
+  node: ReactNode,
+  storage: Record<string, string> = {},
+  permissions: string[] = ['agents:run', 'workstreams:review']
+) {
   // The squad list (for link slugs) and the detail modal's own reads of the stream and its agents
   // stay unavailable; these tests cover the summary.
   dom = await acquireDomHarness({
@@ -115,7 +122,10 @@ async function render(node: ReactNode, storage: Record<string, string> = {}) {
     { id: 'reviewer', name: 'Reviewer' },
   ])
   client.setQueryData(queryKeys.squads.agents(squad.id), agents)
-  client.setQueryData(queryKeys.auth.permissions(squad.id), { permissions: [] })
+  client.setQueryData(queryKeys.auth.permissions(squad.id), {
+    permissions,
+    identity: { type: 'user', userId: 'user-1' },
+  })
   const draw = (content: ReactNode) =>
     dom!.act(async () =>
       root.render(
@@ -199,7 +209,7 @@ test('hovering a Feed row opens the peek card after about half a second', async 
   expect(peekCard()).toBeNull()
 })
 
-test('the peek card names a review gate queued behind other waits as next, and Feed rows leave it out', async () => {
+test('the peek card names a review gate queued behind other waits as next, and Feed rows show it only on touch', async () => {
   const question = workStream().openWaits![0]!
   const gate = {
     ...question,
@@ -210,16 +220,38 @@ test('the peek card names a review gate queued behind other waits as next, and F
     workflowHumanGate: true,
   }
   const queued = workStream({ openWaits: [{ ...question, flowAttemptId: 3 }, gate] })
-  expect(workStreamPeekFacts(queued).waitLabel).toBe('Waiting on you: question · review next')
+  const reviewer = {
+    can: (permission: string) => ['agents:run', 'workstreams:review'].includes(permission),
+    identity: { type: 'user', userId: 'user-1' },
+  }
+  expect(workStreamPeekFacts(queued, reviewer).waitLabel).toBe('Waiting on you: question · review next')
   // A gate nothing blocks is the person's review now, not a queued one.
-  expect(workStreamPeekFacts(workStream({ openWaits: [gate] })).waitLabel).toBe('Waiting on you: review')
+  expect(workStreamPeekFacts(workStream({ openWaits: [gate] }), reviewer).waitLabel).toBe('Waiting on you: review')
+  // Someone who cannot act on them reads what they wait on, as do viewers whose permissions are loading.
+  expect(workStreamPeekFacts(queued, { can: () => false }).waitLabel).toBe('Waiting on an answer · review next')
+  expect(workStreamPeekFacts(workStream({ openWaits: [gate] })).waitLabel).toBe('Waiting on review')
 
   const { doc, wait, peekCard, mouse } = await render(feedList([queued]))
   const row = doc.querySelector('[data-testid="work-stream-row"]')!
-  expect(row.textContent).not.toContain('Review queued')
+  // A mouse reads it in the peek card; the row's copy is hidden unless the device cannot hover.
+  const label = row.querySelector('[data-testid="queued-review-label"]')!
+  expect(label.textContent).toBe('Review queued')
+  expect(label.className.split(' ')).toEqual(expect.arrayContaining(['hidden', '[@media(hover:none)]:inline']))
   await mouse(row, 'mouseover')
   await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
   expect(peekCard()!.textContent).toContain('Waiting on you: question · review next')
+})
+
+test('the peek card says "Waiting on you" only to a viewer who can act on the wait', async () => {
+  const { doc, wait, peekCard, mouse } = await render(feedList([workStream()]), {}, ['workstreams:read'])
+  const row = doc.querySelector('[data-testid="work-stream-row"]')!
+  await mouse(row, 'mouseover')
+  await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
+  const card = peekCard()!
+  expect(card.textContent).toContain('Implement · Waiting on an answer')
+  expect(card.textContent).not.toContain('on you')
+  // The row's own time agrees with the peek.
+  expect(row.textContent).toContain('Waiting on an answer')
 })
 
 test('keyboard focus opens the peek at once; Escape and blur dismiss it; the row is described by it', async () => {

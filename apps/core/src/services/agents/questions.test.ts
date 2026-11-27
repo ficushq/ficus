@@ -24,6 +24,7 @@ import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
 import { makeDormant, reconcileAgentLifecycleRequest } from '../agent/lifecycle'
 import {
+  announceAgentQuestionOnce,
   createAgentQuestion,
   answerAgentQuestion,
   dismissAgentQuestion,
@@ -46,6 +47,7 @@ import { subscribeToWorkStream } from '../work-streams/subscriptions'
 import { getSettingsStore } from '../settings/store'
 import { waitForQuestionAnswerDeliveryDrains } from './question-answer-delivery'
 import * as admissionModule from '../work-streams/admission'
+import { announceUnannouncedAgentQuestionsOnce } from './question-attention-reconciliation'
 
 const QUESTION = { questions: [{ id: 'q1', type: 'text' as const, question: 'Ship it?' }] }
 
@@ -1294,6 +1296,361 @@ describe('async agent questions', () => {
 
       await answerAgentQuestion(q.id, 'done', user.id)
       expect(await setQuestionBlocking(q.id, true)).toBeNull()
+    })
+  })
+
+  describe('tool call idempotency', () => {
+    async function startExecution(agent: Agent, originWorkStreamIds: string[] = []) {
+      const [execution] = await db.insert(executions).values({ agentId: agent.id, status: 'running' }).returning()
+      for (const workStreamId of originWorkStreamIds) {
+        await db.insert(messages).values({
+          agentId: agent.id,
+          role: 'human',
+          content: 'Trusted work stream delivery',
+          pending: false,
+          metadata: {
+            source: 'work-stream-continuation',
+            workStreamId,
+            executionId: execution.id,
+            consumedAt: execution.startedAt.toISOString(),
+          },
+        })
+      }
+      return { agentId: agent.id, executionId: execution.id }
+    }
+
+    async function questionRows(agentId: string) {
+      return db.select().from(agentQuestions).where(eq(agentQuestions.agentId, agentId))
+    }
+
+    async function openWaitsFor(questionId: string) {
+      return db
+        .select()
+        .from(workStreamWaits)
+        .where(
+          and(
+            eq(workStreamWaits.referenceId, questionId),
+            eq(workStreamWaits.type, 'question'),
+            isNull(workStreamWaits.closedAt)
+          )
+        )
+    }
+
+    async function createStreamFor(agentId: string, title: string): Promise<WorkStream> {
+      return storedLegacyWorkStream({
+        squadId: squad.id,
+        title: `${prefix} ${title}`,
+        assigneeAgentId: agentId,
+        agentIds: [agentId],
+      })
+    }
+
+    afterEach(async () => {
+      await db.delete(workStreams).where(eq(workStreams.squadId, squad.id))
+    })
+
+    it('returns the same question and its one wait when the same tool call runs twice', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'idempotent-blocking')
+      const origin = await startExecution(agent, [ws.id])
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const first = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-key-1' })
+      const second = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-key-1' })
+      unsubscribe()
+
+      expect(first.reused).toBeUndefined()
+      expect(first.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(second.id).toBe(first.id)
+      expect(second.reused).toBe('tool-call')
+      expect(second.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(await openWaitsFor(first.id)).toHaveLength(1)
+      expect(createdEvents).toHaveLength(1)
+    })
+
+    it('returns an answered question for a replayed call instead of asking again', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-key-answered' })
+      await answerAgentQuestion(first.id, 'Yes', user.id)
+      await waitForQuestionAnswerDeliveryDrains()
+
+      const replay = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-key-answered' })
+      expect(replay).toMatchObject({ id: first.id, status: 'answered', reused: 'tool-call' })
+      expect(await questionRows(agent.id)).toHaveLength(1)
+    })
+
+    it('refuses a key that already recorded different questions', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-key-mismatch' })
+      await expect(
+        createAgentQuestion(
+          origin,
+          { questions: [{ id: 'q1', type: 'text', question: 'Something else?' }] },
+          { idempotencyKey: 'call-key-mismatch' }
+        )
+      ).rejects.toThrow('already recorded different questions')
+      expect(await questionRows(agent.id)).toHaveLength(1)
+    })
+
+    it('creates separate questions for different tool calls with different questions', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-a' })
+      const second = await createAgentQuestion(
+        origin,
+        { questions: [{ id: 'q1', type: 'text', question: 'Merge it?' }] },
+        { idempotencyKey: 'call-b' }
+      )
+      expect(second.id).not.toBe(first.id)
+      expect(second.reused).toBeUndefined()
+      expect(await questionRows(agent.id)).toHaveLength(2)
+    })
+
+    it('reuses an identical open question from the same execution under a new tool call', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'identical-open')
+      const origin = await startExecution(agent, [ws.id])
+      const first = await createAgentQuestion(origin, QUESTION, {
+        blocking: true,
+        idempotencyKey: 'call-before-restart',
+      })
+      // After a hard restart the model sees no result and asks again with a new tool call ID.
+      const again = await createAgentQuestion(
+        origin,
+        { questions: [{ question: 'Ship it?', type: 'text', id: 'q1' }] },
+        { blocking: true, idempotencyKey: 'call-after-restart' }
+      )
+      expect(again).toMatchObject({ id: first.id, reused: 'identical-open-question' })
+      expect(again.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(await openWaitsFor(first.id)).toHaveLength(1)
+    })
+
+    it('asks again when the identical question is closed, needs a stream-wide wait, or is from another execution', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'identical-not-reused')
+      const origin = await startExecution(agent, [ws.id])
+
+      const answered = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-1' })
+      await answerAgentQuestion(answered.id, 'Yes', user.id)
+      await waitForQuestionAnswerDeliveryDrains()
+      const afterAnswer = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-2' })
+      expect(afterAnswer.id).not.toBe(answered.id)
+
+      const streamWide = await createAgentQuestion(origin, QUESTION, {
+        blocking: true,
+        waitScope: 'stream',
+        idempotencyKey: 'call-3',
+      })
+      expect(streamWide.id).not.toBe(afterAnswer.id)
+      expect(streamWide.openedWaitWorkStreamIds).toEqual([ws.id])
+
+      const otherExecution = await startExecution(agent)
+      const elsewhere = await createAgentQuestion(otherExecution, QUESTION, { idempotencyKey: 'call-4' })
+      expect([answered.id, afterAnswer.id, streamWide.id]).not.toContain(elsewhere.id)
+      expect(await questionRows(agent.id)).toHaveLength(4)
+    })
+
+    it('makes an open identical question block instead of asking it again as blocking', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'identical-convert')
+      const origin = await startExecution(agent, [ws.id])
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-async' })
+      expect(first.openedWaitWorkStreamIds).toEqual([])
+      const again = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-blocking' })
+      unsubscribe()
+      expect(again).toMatchObject({ id: first.id, reused: 'identical-open-question' })
+      expect(again.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(await openWaitsFor(first.id)).toHaveLength(1)
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(createdEvents).toHaveLength(1)
+    })
+
+    it('records one question when the same call runs twice concurrently', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const results = await Promise.all([
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-concurrent' }),
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-concurrent' }),
+      ])
+      unsubscribe()
+      expect(results[0].id).toBe(results[1].id)
+      expect(results.filter((result) => result.reused)).toHaveLength(1)
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(createdEvents).toEqual([{ questionId: results[0].id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('announces a question once when a replay finds its first call stopped before announcing it', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-cut-off' })
+      // As if the first call committed the question and then died before finalizing and announcing it.
+      await db
+        .update(agentQuestions)
+        .set({ audienceResolution: 'pending', audienceResolvedAt: null, announcePendingSince: new Date() })
+        .where(eq(agentQuestions.id, first.id))
+
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const replay = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-cut-off' })
+      const again = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-cut-off' })
+      unsubscribe()
+
+      expect(replay).toMatchObject({ id: first.id, reused: 'tool-call' })
+      expect(replay.audienceResolution).not.toBe('pending')
+      expect(again.id).toBe(first.id)
+      expect(createdEvents).toEqual([{ questionId: first.id, agentId: agent.id, squadId: squad.id }])
+    })
+  })
+
+  describe('announcing after a crash', () => {
+    const crash = () => Promise.reject(new Error('process died'))
+
+    async function startExecution(agent: Agent) {
+      const [execution] = await db.insert(executions).values({ agentId: agent.id, status: 'running' }).returning()
+      return { agentId: agent.id, executionId: execution.id }
+    }
+
+    async function questionRow(questionId: string) {
+      const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, questionId))
+      return row!
+    }
+
+    async function onlyQuestionOf(agentId: string) {
+      const rows = await db.select().from(agentQuestions).where(eq(agentQuestions.agentId, agentId))
+      expect(rows).toHaveLength(1)
+      return rows[0]!
+    }
+
+    function recordCreatedEvents() {
+      const events: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => events.push(event))
+      return { events, unsubscribe }
+    }
+
+    it('records the announcement of a question asked normally, so the sweep leaves it alone', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const recorder = recordCreatedEvents()
+      const question = await createAgentQuestion(await startExecution(agent), QUESTION)
+      const swept = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [question.id] })
+      recorder.unsubscribe()
+
+      expect((await questionRow(question.id)).announcePendingSince).toBeNull()
+      expect(swept).toEqual({ processed: 0, announced: 0 })
+      expect(recorder.events).toEqual([{ questionId: question.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('announces once a question finalized by a call that died before announcing it', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const recorder = recordCreatedEvents()
+      await expect(
+        createAgentQuestion(await startExecution(agent), QUESTION, { testHooks: { beforeAnnounce: crash } })
+      ).rejects.toThrow('process died')
+      const stranded = await onlyQuestionOf(agent.id)
+      expect(stranded.audienceResolution).not.toBe('pending')
+      expect(stranded.announcePendingSince).not.toBeNull()
+      expect(recorder.events).toEqual([])
+
+      // Within the grace period the asking call could still be finishing, so the sweep waits.
+      expect(await announceUnannouncedAgentQuestionsOnce({ candidateQuestionIds: [stranded.id] })).toEqual({
+        processed: 0,
+        announced: 0,
+      })
+      const first = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      const second = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      recorder.unsubscribe()
+
+      expect(first).toEqual({ processed: 1, announced: 1 })
+      expect(second).toEqual({ processed: 0, announced: 0 })
+      expect((await questionRow(stranded.id)).announcePendingSince).toBeNull()
+      expect(recorder.events).toEqual([{ questionId: stranded.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('finalizes and announces a question whose call died before finalizing its audience', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const recorder = recordCreatedEvents()
+      await expect(
+        createAgentQuestion(await startExecution(agent), QUESTION, { testHooks: { beforeAttentionFinalize: crash } })
+      ).rejects.toThrow('process died')
+      const stranded = await onlyQuestionOf(agent.id)
+      expect(stranded.audienceResolution).toBe('pending')
+
+      const swept = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      recorder.unsubscribe()
+
+      expect(swept).toEqual({ processed: 1, announced: 1 })
+      expect((await questionRow(stranded.id)).audienceResolution).not.toBe('pending')
+      expect(recorder.events).toEqual([{ questionId: stranded.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('announces once when a replay of the asking call and the sweep both find it unannounced', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      await expect(
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-died', testHooks: { beforeAnnounce: crash } })
+      ).rejects.toThrow('process died')
+      const stranded = await onlyQuestionOf(agent.id)
+
+      const recorder = recordCreatedEvents()
+      const [replay, swept] = await Promise.all([
+        createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-died' }),
+        announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] }),
+      ])
+      const later = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: [stranded.id] })
+      const replayAgain = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-died' })
+      recorder.unsubscribe()
+
+      expect(replay).toMatchObject({ id: stranded.id, reused: 'tool-call' })
+      expect(replayAgain.id).toBe(stranded.id)
+      expect(swept.processed).toBeLessThanOrEqual(1)
+      expect(later).toEqual({ processed: 0, announced: 0 })
+      expect(recorder.events).toEqual([{ questionId: stranded.id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('never announces a question answered or dismissed before it was announced', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const ids: string[] = []
+      for (const close of ['answer', 'dismiss'] as const) {
+        await expect(
+          createAgentQuestion(
+            origin,
+            { questions: [{ id: 'q1', type: 'text', question: `Close by ${close}?` }] },
+            { testHooks: { beforeAnnounce: crash } }
+          )
+        ).rejects.toThrow('process died')
+        const [row] = await db
+          .select()
+          .from(agentQuestions)
+          .where(and(eq(agentQuestions.agentId, agent.id), eq(agentQuestions.status, 'open')))
+        ids.push(row!.id)
+        if (close === 'answer') expect(await answerAgentQuestion(row!.id, 'Yes', user.id)).not.toBeNull()
+        else
+          expect(
+            await dismissAgentQuestion(row!.id, {
+              dismissedBy: { type: 'user', userId: user.id },
+              reason: 'not needed',
+            })
+          ).not.toBeNull()
+      }
+      await waitForQuestionAnswerDeliveryDrains()
+
+      const recorder = recordCreatedEvents()
+      const swept = await announceUnannouncedAgentQuestionsOnce({ graceMs: 0, candidateQuestionIds: ids })
+      const announcedDirectly = await Promise.all(ids.map((id) => announceAgentQuestionOnce(id)))
+      recorder.unsubscribe()
+
+      expect(swept).toEqual({ processed: 0, announced: 0 })
+      expect(announcedDirectly).toEqual([false, false])
+      expect(recorder.events).toEqual([])
+      for (const id of ids) expect((await questionRow(id)).announcePendingSince).toBeNull()
     })
   })
 

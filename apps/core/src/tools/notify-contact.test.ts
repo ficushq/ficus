@@ -116,4 +116,30 @@ describe('notify_contact tool', () => {
     expect(messages[0].recipientId).toBe(squad.managerAgentId!)
     expect((messages[0].metadata as Record<string, unknown>).routedTo).toBe('squad_manager')
   })
+
+  it('sends once per tool call: the same call again returns the first notification', async () => {
+    const worker = await createAgent()
+    const tool = createNotifyContactTool({ agentId: worker.id, executionId: crypto.randomUUID() })
+    const notify = (toolCallId: string, title: string) =>
+      tool.execute(toolCallId, { title, message: 'Ready for review.' }, undefined, undefined, {} as any)
+
+    const first = await notify('tool-call-1', 'PR ready')
+    const replay = await notify('tool-call-1', 'PR ready')
+    const other = await notify('tool-call-2', 'PR ready again')
+
+    const messages = await db.select().from(inbox).where(eq(inbox.senderId, worker.id))
+    expect(messages.map((message) => message.subject).sort()).toEqual(['PR ready', 'PR ready again'])
+    const firstId = (first.details as { messageId: string }).messageId
+    expect(replay.details).toMatchObject({ success: true, routedTo: 'squad_manager', messageId: firstId, reused: true })
+    expect(replay.content[0]).toMatchObject({ text: expect.stringContaining('nothing was sent again') })
+    expect((other.details as { messageId: string }).messageId).not.toBe(firstId)
+
+    // A reused tool call ID with a different notification is refused, not reported as sent.
+    const mismatch = await notify('tool-call-1', 'Something else')
+    expect(mismatch.content[0]).toMatchObject({
+      text: expect.stringContaining('already sent a different notification'),
+    })
+    expect(mismatch.details).toMatchObject({ error: expect.any(String) })
+    expect(await db.select().from(inbox).where(eq(inbox.senderId, worker.id))).toHaveLength(2)
+  })
 })

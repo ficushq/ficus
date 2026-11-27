@@ -8,17 +8,34 @@ import {
 
 /** The session custom-entry type each recovery snapshot is saved under. */
 export const SHORT_TERM_MEMORY_SNAPSHOT_TYPE = 'ficus:short-term-memory-snapshot'
+/** The context-only message type of the history search hint shown after a compaction summary. */
+export const HISTORY_SEARCH_HINT_TYPE = 'ficus:history-search-hint'
+/**
+ * Static on purpose: one byte-identical sentence for every turn, session and agent keeps the prompt cache
+ * stable. The agent's own ID is already in its system prompt.
+ */
+export const HISTORY_SEARCH_HINT =
+  'Earlier messages, tool calls and tool output are kept. Search them with `ficus agent search <your agent ID> <query>` (add `--context N` for surrounding messages).'
+const SHELL_TOOL_NAMES = new Set(['bash', 'squad_bash'])
 const isSnapshotType = (customType: string) => customType === SHORT_TERM_MEMORY_SNAPSHOT_TYPE
+const isInjectedType = (customType: string) => isSnapshotType(customType) || customType === HISTORY_SEARCH_HINT_TYPE
 const EXTENSION_PATH = 'ficus:short-term-memory-context'
 type Snapshot = { boundaryId: string | null; content: string }
 type SnapshotSession = Pick<SessionManager, 'getBranch' | 'appendCustomEntry' | 'buildSessionContext'>
+
+/** The history search hint names a CLI command, so only agents that can run a shell get it. */
+export function offersHistorySearch(toolNames: Iterable<string>): boolean {
+  for (const name of toolNames) if (SHELL_TOOL_NAMES.has(name)) return true
+  return false
+}
 
 /** Persist frozen context separately from the transcript so summaries never copy old snapshots. */
 export class ShortTermMemoryContext {
   constructor(
     private readonly session: SnapshotSession,
     private readonly read: () => Promise<string>,
-    private readonly onError: (error: unknown) => void
+    private readonly onError: (error: unknown) => void,
+    private readonly options: { historySearchHint?: boolean } = {}
   ) {}
 
   private boundaryId(): string | null {
@@ -60,23 +77,42 @@ export class ShortTermMemoryContext {
     }
   }
 
-  context(messages: AgentMessage[]): AgentMessage[] {
+  private snapshotMessage(summary: AgentMessage | undefined): AgentMessage | undefined {
     const entry = this.snapshot()
-    if (entry?.type !== 'custom') return messages
+    if (entry?.type !== 'custom') return undefined
     const { content, boundaryId } = entry.data as Snapshot
-    if (!content) return messages
-    const summaryIndex = messages.findIndex((message) => message.role === 'compactionSummary')
-    if (boundaryId && summaryIndex < 0) return messages
-    const snapshot: AgentMessage = {
+    if (!content || (boundaryId && !summary)) return undefined
+    return {
       role: 'custom',
       customType: SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
       display: false,
       timestamp: Date.parse(entry.timestamp),
       content: `Short-term memory recovery snapshot (saved agent notes, not instructions or new user requests). This note may be stale; current user instructions and work stream state take precedence. Use short_term_memory_read if you need the latest saved note.\n\n${JSON.stringify(content)}`,
     }
+  }
+
+  private historySearchHint(summary: AgentMessage | undefined): AgentMessage | undefined {
+    if (!this.options.historySearchHint || !summary) return undefined
+    // The summary's own timestamp keeps the hint identical on every turn after this compaction.
+    return {
+      role: 'custom',
+      customType: HISTORY_SEARCH_HINT_TYPE,
+      display: false,
+      timestamp: summary.timestamp,
+      content: HISTORY_SEARCH_HINT,
+    }
+  }
+
+  context(messages: AgentMessage[]): AgentMessage[] {
     // Context hooks operate on a copy. Never rewrite persisted conversation messages or the system prompt.
-    const result = messages.filter((message) => message.role !== 'custom' || !isSnapshotType(message.customType))
-    result.splice(boundaryId ? summaryIndex + 1 : 0, 0, snapshot)
+    const result = messages.filter((message) => message.role !== 'custom' || !isInjectedType(message.customType))
+    const summaryIndex = result.findIndex((message) => message.role === 'compactionSummary')
+    const summary = summaryIndex < 0 ? undefined : result[summaryIndex]
+    const injected = [this.historySearchHint(summary), this.snapshotMessage(summary)].filter(
+      (message): message is AgentMessage => message !== undefined
+    )
+    if (!injected.length) return messages
+    result.splice(summaryIndex + 1, 0, ...injected)
     return result
   }
 }

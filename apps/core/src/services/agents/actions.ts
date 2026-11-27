@@ -8,6 +8,8 @@ import {
   workStreamTitle,
   workStreamWaitActor,
   workflowAttemptLimitPause,
+  workflowGateApprover,
+  type WorkflowGateApprover,
 } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
@@ -109,7 +111,7 @@ async function listDeliveryGateActions(): Promise<PendingAction[]> {
     const delivery = deliveries.get(ws.id)
     const state = selectWorkStreamPresentationState({
       status: ws.status,
-      openWaits: (waits.get(ws.id) ?? []).map(toWaitJson),
+      openWaits: (waits.get(ws.id) ?? []).map((row) => toWaitJson(row)),
       delivery,
     })
     if (state !== 'delivery_review' && state !== 'delivery_merge') continue
@@ -342,16 +344,22 @@ export async function listPendingActions(options: PendingActionListOptions = {})
   ])
   const runsByStream = new Map(candidateRuns.map((run) => [run.workStreamId, run]))
   for (const { ws, squad, wait } of actionableWorkStreams) {
+    // Who decides a workflow gate, so a card can say why its viewer may not.
+    let gateApprover: WorkflowGateApprover | undefined
     if (isHumanFlowWait(wait)) {
       const run = runsByStream.get(ws.id)
       const attempt = run && activeWorkflowAttempts(run.state).find((a) => a.id === wait.flowAttemptId)
       const step = attempt && effectiveWorkflowStep(run!.state, attempt)
+      gateApprover = step ? workflowGateApprover(step) : undefined
       if (
         ws.pause ||
         run?.state.status !== 'running' ||
         !attempt ||
         !(step?.kind === 'human-approval' || (step?.kind === 'decision' && attempt.decision?.awaitingPerson)) ||
-        workflowReviewBlockingWaits(toWaitJson(wait), (allWaits.get(ws.id) ?? []).map(toWaitJson)).length
+        workflowReviewBlockingWaits(
+          toWaitJson(wait),
+          (allWaits.get(ws.id) ?? []).map((row) => toWaitJson(row))
+        ).length
       )
         continue
     }
@@ -419,7 +427,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       squadId: squad.id,
       squadName: squad.name,
       waitId: wait.id,
-      wait: toWaitJson(wait),
+      wait: toWaitJson(wait, gateApprover),
       ...(isDeliveryApprovalWait(ws.id, wait) ? { deliveryApproval: true as const } : {}),
       ...(limitPause ? { attemptLimit: { ...limitPause, flowVersion: limitRun!.version } } : {}),
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },

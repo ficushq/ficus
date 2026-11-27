@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { desktopAppIcon, desktopBridge, desktopInstance, type DesktopBridge } from './desktop'
+import { desktopAppIcon, desktopBridge, desktopInstance, desktopNetworkAccess, type DesktopBridge } from './desktop'
 
 afterEach(() => {
   Reflect.deleteProperty(window, 'tauDesktopApp') // ficus-negative-test
@@ -124,5 +124,25 @@ describe('desktopAppIcon', () => {
     }
     await desktopAppIcon()?.(icon)
     expect(icons).toEqual([icon])
+  })
+})
+
+describe('desktopNetworkAccess', () => {
+  test('is offered only when this Desktop build provides it', async () => {
+    expect(desktopNetworkAccess()).toBeUndefined()
+    window.ficusDesktopApp = bridge()
+    expect(desktopNetworkAccess()).toBeUndefined()
+    window.ficusDesktopApp = { ...bridge(), setNetworkAccess: 'yes' } as unknown as DesktopBridge
+    expect(desktopNetworkAccess()).toBeUndefined()
+    const asked: boolean[] = []
+    window.ficusDesktopApp = {
+      ...bridge(),
+      setNetworkAccess: async (enabled) => {
+        asked.push(enabled)
+        return true
+      },
+    }
+    expect(await desktopNetworkAccess()!(true)).toBe(true)
+    expect(asked).toEqual([true])
   })
 })

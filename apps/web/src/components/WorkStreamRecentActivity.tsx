@@ -16,6 +16,7 @@ import {
 } from './squads/squadActivityView'
 import { workStreamActivityHref } from '../lib/workStreamActivity'
 import { LoadingSurface, SkeletonLine, SkeletonRows } from './loading/Skeleton'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** How many rows the modal shows; the link opens the rest on the Activity page. */
 export const WORK_STREAM_RECENT_ACTIVITY_LIMIT = 5
@@ -64,6 +65,7 @@ function useWorkStreamRecentActivityLive(workStreamId: string, squadId: string) 
 export function WorkStreamRecentActivity({ stream, onNavigate }: { stream: WorkStream; onNavigate?: () => void }) {
   const { data, isPending, isError } = useQuery(queries.activity.workStreamRecent(stream.id))
   useWorkStreamRecentActivityLive(stream.id, stream.squadId)
+  const typeNames = useAgentTypeNames()
   const items = useMemo(
     () => hideRelayedSenderRows(data?.items ?? []).slice(0, WORK_STREAM_RECENT_ACTIVITY_LIMIT),
     [data]
@@ -119,14 +121,14 @@ export function WorkStreamRecentActivity({ stream, onNavigate }: { stream: WorkS
                     'min-w-0 truncate',
                     agentTypeColor(item.ref.type === 'agent' ? item.agentTypeId : null)
                   )}
-                  title={activitySubjectLabel(item)}
+                  title={activitySubjectLabel(item, typeNames)}
                 >
-                  {activitySubjectLabel(item)}
+                  {activitySubjectLabel(item, typeNames)}
                 </span>
                 <span className={clsx('min-w-0 wrap-break-word', item.kind !== 'message' && ACTIVITY_SMALL_TEXT_CLASS)}>
                   {context && <span className="block truncate text-xs text-muted">{context}</span>}
                   {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
-                    <span>By {activityAgentLabel(item.agentTypeId)} · </span>
+                    <span>By {activityAgentLabel(item.agentTypeId, typeNames(item.agentTypeId))} · </span>
                   )}
                   <ActivityRowText item={item} />
                 </span>

@@ -1,15 +1,26 @@
-import { recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
+import { endsWithSentencePunctuation, recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
-import { getAgentLabel } from '../lib/agentDisplay'
+import { listAgentTypes } from '../api/agentTypes'
+import { getAgentLabel, noAgentTypeNames, type AgentTypeName } from '../lib/agentDisplay'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 
 type WaitingInputState = {
   spokenWaitingInputAgentIds?: string[] | Set<string>
 }
 
-// Spoken the way the app names agents: type first, then the purpose.
-function getAgentDisplayName(agent: Agent): string {
-  return getAgentLabel(agent)
+// Spoken the way the app names agents: type first (by its configured name), then the purpose.
+function getAgentDisplayName(agent: Agent, typeNames: AgentTypeName): string {
+  return getAgentLabel(agent, undefined, typeNames)
+}
+
+/** The configured agent type names; none when they cannot be read (offline, or no permission). */
+async function loadAgentTypeNames(): Promise<AgentTypeName> {
+  try {
+    const names = new Map((await listAgentTypes()).map((type) => [type.id, type.name]))
+    return (id) => names.get(id)
+  } catch {
+    return noAgentTypeNames
+  }
 }
 
 function formatQuestion(question: QuestionItem, index: number): string {
@@ -17,16 +28,20 @@ function formatQuestion(question: QuestionItem, index: number): string {
   const optionText = options?.length ? ` Options: ${options.join(', ')}.` : ''
   // Agents now give their recommendation as an option field rather than in the question text.
   const recommended = recommendedQuestionOption(question)
+  const recommendedLabel = recommended ? (recommended.label ?? recommended.value) : ''
+  // A label that already ends a sentence ("Ship it now?") gets no extra full stop when no reason follows it.
   const recommendedText = recommended
-    ? ` Recommended: ${recommended.label ?? recommended.value}${recommended.reason ? ` (${recommended.reason})` : ''}.`
+    ? recommended.reason
+      ? ` Recommended: ${recommendedLabel} (${recommended.reason}).`
+      : ` Recommended: ${recommendedLabel}${endsWithSentencePunctuation(recommendedLabel) ? '' : '.'}`
     : ''
   const optionalText = question.optional ? ' Optional.' : ''
   const contextText = question.context?.trim() ? ` Context: ${question.context.trim()}` : ''
   return `${index + 1}. ${question.question}${contextText}${optionText}${recommendedText}${optionalText}`
 }
 
-export function buildAgentWaitingInputPrompt(agent: Agent): string {
-  const displayName = getAgentDisplayName(agent)
+export function buildAgentWaitingInputPrompt(agent: Agent, typeNames: AgentTypeName = noAgentTypeNames): string {
+  const displayName = getAgentDisplayName(agent, typeNames)
   const questions = agent.questionData?.questions ?? []
   const questionText = questions.length
     ? questions.map(formatQuestion).join('\n')
@@ -59,7 +74,10 @@ function markSpokenWaitingInput<TState extends WaitingInputState>(
   runtime.setState({ ...state, spokenWaitingInputAgentIds: [...ids.slice(-49), agentId] })
 }
 
-export function createHandleAgentWaitingInputEvent(getAgentDependency: typeof getAgent) {
+export function createHandleAgentWaitingInputEvent(
+  getAgentDependency: typeof getAgent,
+  loadTypeNames: () => Promise<AgentTypeName> = async () => noAgentTypeNames
+) {
   return async function handleAgentWaitingInputEvent<TState extends WaitingInputState>(
     runtime: VoiceAssistantRuntime<TState>,
     agentId: string,
@@ -71,11 +89,13 @@ export function createHandleAgentWaitingInputEvent(getAgentDependency: typeof ge
     if (!isActive()) return
     if (agent.status !== 'waiting-input' || !agent.questionData?.questions?.length) return
     if (hasSpokenWaitingInput(runtime.getState(), agentId)) return
+    const typeNames = await loadTypeNames()
+    if (!isActive() || hasSpokenWaitingInput(runtime.getState(), agentId)) return
 
     const message: PendingVoiceMessage<TState> = {
       id: `agent-waiting-input:${agent.id}`,
       dedupeKey: `agent-waiting-input:${agent.id}`,
-      text: buildAgentWaitingInputPrompt(agent),
+      text: buildAgentWaitingInputPrompt(agent, typeNames),
       onStart: (queuedRuntime) => {
         markSpokenWaitingInput(queuedRuntime, agent.id)
       },
@@ -84,4 +104,4 @@ export function createHandleAgentWaitingInputEvent(getAgentDependency: typeof ge
   }
 }
 
-export const handleAgentWaitingInputEvent = createHandleAgentWaitingInputEvent(getAgent)
+export const handleAgentWaitingInputEvent = createHandleAgentWaitingInputEvent(getAgent, loadAgentTypeNames)

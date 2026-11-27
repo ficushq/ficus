@@ -68,3 +68,28 @@ export const previewPublicAppUrl = (url: string | null) =>
   apiFetch<PublicAppUrlPreview>('/public-url/preview', { method: 'POST', body: JSON.stringify({ url }) })
 export const savePublicAppUrl = (input: { url: string | null; expectedVersion: string }) =>
   apiFetch<PublicAppUrlStatus>('/public-url', { method: 'PUT', body: JSON.stringify(input) })
+
+/** Where an address can be opened from, judged from the address alone (see @ficus/shared classifyServerAddress). */
+export type ServerAddressReach = 'none' | 'this-computer' | 'home-network' | 'tailscale' | 'public'
+
+/** What this machine could offer a mobile device (GET /api/public-url/reach). */
+export interface PhoneReachReport {
+  current: { url: string | null; reach: ServerAddressReach; https: boolean }
+  /** `desktopManaged`: Ficus Desktop started this server and decides what it listens on. */
+  listening: { host: string; port: number; beyondThisComputer: boolean; desktopManaged: boolean }
+  homeNetwork: { addresses: string[] }
+  tailscale: {
+    state: 'not-installed' | 'stopped' | 'running'
+    /** The Tailscale tool found: on PATH, only inside the macOS app, or none. */
+    cli: 'path' | 'app' | null
+    address?: string
+    serveCommand: string
+  }
+}
+
+export type AddressCheckResult =
+  { ok: true } | { ok: false; reason: 'invalid' | 'unreachable' | 'timeout' | 'certificate' | 'not-this-server' }
+
+export const getPhoneReach = () => apiFetch<PhoneReachReport>('/public-url/reach')
+export const checkPublicAddress = (url: string) =>
+  apiFetch<AddressCheckResult>('/public-url/check', { method: 'POST', body: JSON.stringify({ url }) })

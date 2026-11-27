@@ -1,5 +1,6 @@
 import { providerRequestValidationError } from '../../services/execution/provider-request-validation'
-import { restartResumeNotice } from '@ficus/shared/restart-context'
+import { interruptedResumeNotice, restartResumeNotice } from '@ficus/shared/restart-context'
+import { interruptionNoticePending, recordInterruptedToolCalls } from '../../services/agent/interrupted-tool-calls'
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
@@ -1537,6 +1538,23 @@ export abstract class AgentRunner {
     return messages
   }
 
+  /**
+   * Prompt text when no pending row was claimed. Every execution queued with a message also stores
+   * it as its own human row, so nothing claimed usually means that row already reached the session:
+   * a resume after a restart or hard interruption, or a failover re-dispatch. Re-sending the text
+   * would give the model the whole task again, so only continue. The witness is an acknowledged
+   * session entry that the live session still holds; the DB record alone is not enough, because a
+   * lost, emptied or untransferred session file starts a new session without the task. Without a
+   * live witness the text is sent as before.
+   */
+  private async unclaimedPromptText(): Promise<string> {
+    const original = this.execution.message?.trim()
+    if (!original) return 'Continue.'
+    const entryIds = await this.agent.sessionDeliveredExecutionPromptEntryIds(this.execution.id)
+    const sessionManager = this.session.pi.sessionManager
+    return entryIds.some((entryId) => sessionManager.getEntry(entryId) !== undefined) ? 'Continue.' : original
+  }
+
   private buildInitialPromptText(messages: Message[]): string {
     return messages
       .map((message) => messageTextForModel(message).trim())
@@ -1570,6 +1588,31 @@ export abstract class AgentRunner {
   }
 
   /**
+   * After a hard interruption (startup recovery or the lease sweep requeued this run without a
+   * shutdown marker), record the tool calls it cut off so the model gets a specific result for
+   * each, and return the notice for the resumed prompt until a prompt has been sent.
+   */
+  private prepareInterruptionResume(): string | undefined {
+    const interruption = this.execution.interruption
+    if (!interruption) return undefined
+    const sessionManager = this.session.pi.sessionManager
+    try {
+      const record = recordInterruptedToolCalls(sessionManager, interruption)
+      if (record.calls.length > 0)
+        log.warn(
+          `Execution ${this.execution.id} resumed after ${interruption.cause} with ${record.calls.length} cut-off tool call(s): ${record.calls.map((call) => `${call.toolName} (${call.replay})`).join(', ')}`
+        )
+      return interruptionNoticePending(sessionManager, interruption.noticeId)
+        ? interruptedResumeNotice(interruption.cause, interruption.recoveredAt)
+        : undefined
+    } catch (error) {
+      // The notice and results are guidance; a session write failure must not block the resume.
+      log.error(`Could not record cut-off tool calls for execution ${this.execution.id}:`, error)
+      return interruptedResumeNotice(interruption.cause, interruption.recoveredAt)
+    }
+  }
+
+  /**
    * Claim pending human rows first, then use the claimed content as the initial
    * SDK prompt. The running-session drain is started only after prompt dispatch
    * begins so later pending rows use steer/follow-up without racing ahead of the
@@ -1588,11 +1631,11 @@ export abstract class AgentRunner {
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
     this.noteHumanSenders(claimed)
     const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
-    const initialText =
-      prepared.length > 0 ? this.buildInitialPromptText(prepared) : this.execution.message?.trim() || 'Continue.'
-    const text = this.execution.restartContext
-      ? `${restartResumeNotice(this.execution.restartContext)}\n\n${initialText}`
-      : initialText
+    const initialText = prepared.length > 0 ? this.buildInitialPromptText(prepared) : await this.unclaimedPromptText()
+    const notice = this.execution.restartContext
+      ? restartResumeNotice(this.execution.restartContext)
+      : this.prepareInterruptionResume()
+    const text = notice ? `${notice}\n\n${initialText}` : initialText
     const { imageIds, images } = await this.loadPendingMessageImages(prepared)
 
     try {
@@ -1610,12 +1653,17 @@ export abstract class AgentRunner {
       }
       if (this._timing) logRunnerMilestone(this._timing, 'prompt-sent')
     } catch (err) {
+      // Pi appends the user entry before the provider call. Let its acknowledgement land before the
+      // release below: a release first fences the late acknowledgement out, so a re-dispatch would
+      // claim the row again and send text the session already holds.
+      if (claimed.length > 0) await this.persistence.waitForAll()
       for (const message of claimed) {
         await this.agent.resetPendingInterventionSessionDelivery(message.id, message.metadata?.sessionDelivery)
       }
       const validationError = providerRequestValidationError(err)
       const errorMsg = validationError?.message ?? (err instanceof Error ? err.message : String(err))
-      // The re-queued run sends this prompt again, images included.
+      // A prompt that never reached the session was released above, so the re-queued run claims
+      // and sends it again, images included; one the session already holds is only continued.
       if (this.leaveForShutdownRequeue(errorMsg)) return
       if (imageIds.length > 0) await Image.markManyFailed(imageIds)
       log.error(`session.prompt() failed for execution ${this.execution.id}:`, validationError ?? err)

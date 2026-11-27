@@ -734,6 +734,25 @@ describe('site assistant task renderers', () => {
     ).toContain('Task update')
   })
 
+  it('assistant_inbox names each batched update by the type-first sender it was given', () => {
+    const result = JSON.stringify({
+      updates: [
+        { messageId: 'm1', senderId: 'a', senderName: 'Engineer', content: 'Found the regression.' },
+        { messageId: 'm2', senderId: 'b', senderName: 'General Purpose agent', content: 'Docs updated.' },
+      ],
+    })
+    const html = renderToStaticMarkup(
+      <ToolResultView
+        renderers={siteAssistantToolRenderers}
+        toolName="assistant_inbox"
+        result={result}
+        isError={false}
+      />
+    )
+    expect(html).toContain('Engineer: </span>Found the regression.')
+    expect(html).toContain('General Purpose agent: </span>Docs updated.')
+  })
+
   it('search_ficus summarizes the query', () => {
     expect(
       renderToStaticMarkup(

@@ -190,7 +190,7 @@ export class SquadWorkerRunner extends AgentRunner {
       executionId: this.execution.id,
       flushPersistence: () => this.persistence.waitForAll(),
     })
-    const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
+    const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id, executionId: this.execution.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
     const todoTools = createSquadTodoTools(this.squad.id, this.agent.id)
     const setAgentPurposeTool = createSetAgentPurposeTool({ agentId: this.agent.id })

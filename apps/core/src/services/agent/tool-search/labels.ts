@@ -5,7 +5,9 @@
  * `deferrable` tools may be held back and loaded when the agent asks for them. pi's
  * `tool_search` and Claude Code's own tool search both read the same labels.
  *
- * The labels are global defaults (below), which an agent type can override in its YAML:
+ * The global defaults are the `label` field of the tool metadata table
+ * (`apps/core/src/tools/metadata.ts`, next to each tool's replay class). An agent type can override
+ * them in its YAML:
  *
  * ```yaml
  * tools:
@@ -16,8 +18,9 @@
  */
 import type { AgentTypeToolSearchPolicy } from '@ficus/shared'
 import { toolNameMatchesAny, toolNameMatchesPattern } from '../../../lib/tools'
+import { toolMetadata, type ToolLabel } from '../../../tools/metadata'
 
-export type ToolLabel = 'direct' | 'deferrable'
+export type { ToolLabel }
 
 /** An agent type's override of the global labels (`tools.search`, `tools.direct`, `tools.deferred`). */
 export type ToolSearchPolicy = AgentTypeToolSearchPolicy
@@ -35,17 +38,13 @@ export interface ToolGroup {
   description: string
   /** Name patterns of the tools in the group. */
   tools: string[]
-  /** The group's global default label. */
-  label: ToolLabel
 }
 
 /**
- * Tool groups in prompt order. Only rarely used, heavy tools default to `deferrable`: browser, code
- * navigation and checklist. The tools the system prompt tells every agent to use by name (shell,
- * files, memory, ask_human, notify_contact, sandbox_status, short-term memory, set_agent_purpose),
- * the subagent tools (the shared subagents include tells agents to dispatch) and monitor stay
- * `direct` (owner decision, 2026-11-27). The direct groups keep a namespace for agent types that
- * defer them. A tool in no group is `direct`.
+ * Tool groups in prompt order. A group names and describes tools; it does not label them (the
+ * tool metadata table does). The browser, code navigation and checklist tools default to
+ * `deferrable`; the subagent and monitor tools default to `direct` and keep a namespace for agent
+ * types that defer them.
  */
 export const TOOL_GROUPS: readonly ToolGroup[] = [
   {
@@ -53,32 +52,27 @@ export const TOOL_GROUPS: readonly ToolGroup[] = [
     description:
       'Browser automation and visual review: open a page, click, type, scroll, read text, take a screenshot, read console logs',
     tools: ['browser_*'],
-    label: 'deferrable',
   },
   {
     name: 'code_navigation',
     description:
       'Code navigation: list the symbols in a file, find references to a symbol, rename a symbol across the codebase',
     tools: ['ast_*'],
-    label: 'deferrable',
   },
   {
     name: 'subagents',
     description: 'Subagents: dispatch scoped tasks to ephemeral subagents, check their status, stop one',
     tools: ['dispatch', 'check_subagents', 'stop_subagent'],
-    label: 'direct',
   },
   {
     name: 'monitors',
     description: 'Background monitors: watch a long-running command and receive its events',
     tools: ['monitor'],
-    label: 'direct',
   },
   {
     name: 'checklist',
     description: 'Checklist: add, list, toggle, update and remove todo items',
     tools: ['todo_*'],
-    label: 'deferrable',
   },
 ]
 
@@ -87,11 +81,14 @@ export function toolGroup(name: string): ToolGroup | undefined {
   return TOOL_GROUPS.find((group) => toolNameMatchesAny(group.tools, name))
 }
 
-/** The tool's label: the agent type's override when it names the tool, else the global default. */
+/**
+ * The tool's label: the agent type's override when it names the tool, else the global default from
+ * the tool metadata table (`direct` for a tool the table does not list).
+ */
 export function resolveToolLabel(name: string, policy?: ToolSearchPolicy | null): ToolLabel {
   if (policy?.direct && toolNameMatchesAny(policy.direct, name)) return 'direct'
   if (policy?.deferred && toolNameMatchesAny(policy.deferred, name)) return 'deferrable'
-  return toolGroup(name)?.label ?? 'direct'
+  return toolMetadata(name).label
 }
 
 /**

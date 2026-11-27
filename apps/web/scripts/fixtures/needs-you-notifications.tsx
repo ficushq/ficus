@@ -8,7 +8,7 @@ import type { PendingAction } from '@ficus/shared'
 import { NeedsYouNotifications } from '../../src/components/NeedsYouNotifications'
 import { applyResolvedTheme } from '../../src/theme/apply'
 import { findWebTheme } from '../../src/theme/registry'
-import { questionAction, waitAction } from '../../src/lib/needsYouNotices.fixtures'
+import { questionAction, waitAction } from '@ficus/shared/test-fixtures/pending-actions'
 import '../../src/index.css'
 
 const params = new URLSearchParams(location.search)

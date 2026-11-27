@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { commandCenterSearch, recentlyCompletedWork } from './commandCenterSearch'
-import { waitAction } from './needsYouNotices.fixtures'
+import { waitAction } from '@ficus/shared/test-fixtures/pending-actions'
 
 const data = {
   squads: [{ id: 'tau', name: 'Ficus', purpose: 'Orchestration' }],

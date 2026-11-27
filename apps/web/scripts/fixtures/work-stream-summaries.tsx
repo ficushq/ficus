@@ -144,7 +144,7 @@ cache.setQueryData(queryKeys.squads.agents(squad.id), agents)
 cache.setQueryData(queryKeys.squads.list(), [squad])
 cache.setQueryData(queryKeys.squads.basic(squad.id), squad)
 cache.setQueryData(queryKeys.auth.permissions(squad.id), {
-  permissions: ['workstreams:update', 'workstreams:respond'],
+  permissions: ['workstreams:update', 'workstreams:respond', 'workstreams:review', 'agents:run'],
   identity: { type: 'user', userId: 'fixture' },
 })
 for (const item of [...streams, done]) {

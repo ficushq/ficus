@@ -4,7 +4,7 @@ import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { NeedsYouNotifications, type WindowFocus } from './NeedsYouNotifications'
 import type { NeedsYouNoticePreferences } from '../lib/needsYouNotices'
-import { otherAction, questionAction, waitAction } from '../lib/needsYouNotices.fixtures'
+import { otherAction, questionAction, waitAction } from '@ficus/shared/test-fixtures/pending-actions'
 
 type Dom = Awaited<ReturnType<typeof acquireDomHarness>>
 let dom: Dom | undefined

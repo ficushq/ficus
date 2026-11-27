@@ -1,4 +1,4 @@
-import { agentTypeLabel } from './agentLabel'
+import { agentTypeNoun } from './agentLabel'
 
 export const SQUAD_ACTIVITY_KINDS = [
   'message',
@@ -116,16 +116,26 @@ export interface SquadActivityItem {
   senderActivityId?: string
 }
 
-/** Agent identity only; a missing/redacted type is not evidence of a system sender. */
-export function activityAgentLabel(agentTypeId: string | null): string {
-  return agentTypeLabel(agentTypeId)
+/**
+ * Agent identity only; a missing/redacted type is not evidence of a system sender. The type reads by
+ * its configured name (`AgentType.name`) when the caller knows it, else as the title-cased id.
+ */
+export function activityAgentLabel(agentTypeId: string | null, typeName?: string | null): string {
+  return agentTypeNoun({ agentTypeId, typeName })
 }
 
-/** The primary identity always names the navigation destination, never its actor. */
-export function activitySubjectLabel(item: SquadActivityItem): string {
+/**
+ * The primary identity always names the navigation destination, never its actor. `typeName` gives an
+ * agent type's configured name (`AgentType.name`) when the caller knows it.
+ */
+export function activitySubjectLabel(
+  item: SquadActivityItem,
+  typeName: (agentTypeId: string) => string | null | undefined = () => undefined
+): string {
   const ref = item.ref
   if (!ref || typeof ref !== 'object') return 'Activity'
-  if (ref.type === 'agent') return activityAgentLabel(item.agentTypeId)
+  if (ref.type === 'agent')
+    return activityAgentLabel(item.agentTypeId, item.agentTypeId ? typeName(item.agentTypeId) : null)
   if (ref.type === 'workstream')
     return ref.workStreamNumber !== undefined
       ? `Work stream #${ref.workStreamNumber}`
@@ -178,6 +188,12 @@ export interface ActivityWorkStreamCardWait {
   type: import('./types').WorkStreamWaitType
   /** A person must act (rather than an agent, the owner or the manager). */
   needsYou: boolean
+  /**
+   * The viewer is that person: they may act on this wait (`viewerCanActOnWait`, with workflow
+   * gates following `mayDecideWorkflowGate`). Core sets it per request for the viewer. Absent from
+   * older servers, where a wait a person must act on reads as the viewer's.
+   */
+  you?: boolean
 }
 
 /** The stream's primary pull request, when its code-host binding names one. */
@@ -203,7 +219,7 @@ export interface ActivityWorkStreamCard {
   step: string | null
   /** Open waits, display precedence first. */
   waits: ActivityWorkStreamCardWait[]
-  /** The stream needs the viewer (the same rule as `needsYouCount`). */
+  /** The stream waits on the viewer (`workStreamWaitsOnViewer`, the same rule as `needsYouCount`). */
   needsYou: boolean
   pullRequest: ActivityWorkStreamCardPullRequest | null
   /** Aggregate CI state of the delivery pull request when delivery tracking knows it. */
@@ -295,6 +311,11 @@ export const ACTIVITY_WORK_STREAM_CARD_STATE_LABELS: Record<ActivityWorkStreamCa
 export interface GlobalActivityPresence {
   workingAgentIds: string[]
   workingCount: number
+  /**
+   * Streams that wait on this viewer (`workStreamWaitsOnViewer`): a stream needing a person counts
+   * only for a viewer who may act on one of its waits. Streams whose decisions the viewer muted
+   * are left out.
+   */
   needsYouCount: number
   streamCount: number
   /**
@@ -356,11 +377,19 @@ export type ActivitySettledKind = (typeof ACTIVITY_SETTLED_KINDS)[number]
  */
 export const ACTIVITY_SETTLED_MARGIN_MS = 60_000
 
-/** An Activity filter to the rows behind one settled count, from `since` (inclusive). */
+/**
+ * An Activity filter to the rows behind one settled count, from `since` (inclusive) to `until`
+ * (exclusive) when it is given.
+ */
 export interface ActivitySettledFilter {
   kind: ActivitySettledKind
   /** ISO time. The server raises it to the Activity retention floor. */
   since: string
+  /**
+   * ISO time, exclusive: the count's `through`, so the list holds exactly the rows counted and
+   * nothing that settled after the count. Omitted means no upper bound.
+   */
+  until?: string
 }
 
 /** GET /api/activity/settled: permission-filtered counts of work settled without a person. */

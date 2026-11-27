@@ -1,7 +1,7 @@
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { lockFlowInboxDelivery, assertCurrentIntegrationInbox } from '../services/work-streams/wait-scope'
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 
 import {
   agents,
@@ -38,7 +38,7 @@ import { eventEmitter } from '../lib/infra/event-emitter'
 import { AgentType } from './AgentType'
 import { requireAgentModelChain } from '../services/model-selection/agent-model-resolution'
 import { resolveAgentModel } from '../services/model-selection/agent-model-sources'
-import type { AgentModelResolution } from '@ficus/shared'
+import type { AgentModelResolution, MessageSearchScope } from '@ficus/shared'
 import { SUBAGENT_RUNNER_TYPE } from './Subagent'
 
 // Forward declaration to avoid circular import at module load time
@@ -60,6 +60,7 @@ import { AGENT_TOKEN_PREFIX } from '../services/auth/token-prefixes'
 import * as pendingDelivery from '../services/agent/pending-delivery'
 import { maintenanceStore } from '../services/maintenance/store'
 import { decodeMessageCursor, encodeMessageCursor, InvalidMessageCursorError } from '../services/agent/message-cursor'
+import { logMessageSearch, messageSearchCondition } from '../services/agent/message-search'
 import * as lifecycle from '../services/agent/lifecycle'
 import { withoutDelta } from '../services/execution/usage-delta'
 import { mapMessage } from './message-mapper'
@@ -214,8 +215,15 @@ export interface ListMessagesOptions {
   beforeId?: string
   /** Only messages after this ISO timestamp */
   after?: string
-  /** Fuzzy search on message content (case-insensitive) */
+  /**
+   * Only messages containing this case-insensitive, literal substring. Matched by the shared
+   * conversation search (services/agent/message-search.ts), in the `searchIn` scope.
+   */
   search?: string
+  /** Where `search` looks: message text (default), tool calls and results, or both. */
+  searchIn?: MessageSearchScope
+  /** Skip the totalCount query on the first page (totalCount is then 0, as on later pages). */
+  skipCount?: boolean
   /** Filter by role */
   role?: 'human' | 'assistant'
 }
@@ -998,6 +1006,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * @returns The messages with pagination metadata.
    */
   async listMessages(options?: ListMessagesOptions): Promise<ListMessagesResult> {
+    const startedAt = performance.now()
     const conditions: SQL[] = [eq(messages.agentId, this.id)]
 
     if (options?.role) {
@@ -1010,8 +1019,10 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       conditions.push(gt(messages.createdAt, new Date(options.after)))
     }
     if (options?.search) {
-      conditions.push(ilike(messages.content, `%${options.search}%`))
+      conditions.push(messageSearchCondition(options.search, options.searchIn))
     }
+    // The filters without the page position: what totalCount counts.
+    const filterConditions = [...conditions]
 
     const cursorContext = {
       agentId: this.id,
@@ -1019,6 +1030,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       search: options?.search,
       before: options?.before,
       after: options?.after,
+      scope: options?.search ? options.searchIn : undefined,
     }
     let cursorKeyset: { createdAt: Date; enqueueOrder: bigint } | undefined
     if (options?.cursor) {
@@ -1064,15 +1076,24 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     const hasMore = limit !== undefined && results.length > limit
     const pageMessages = hasMore ? results.slice(0, limit) : results
 
-    // Get total count only on first page (no beforeId/offset) to avoid expensive query on every page
+    // Count only on the first page (no cursor/offset) to avoid an expensive query on every page. It counts
+    // the messages matching the active filters (role, time range, search), not the whole conversation.
     let totalCount = 0
-    if (!options?.cursor && !options?.beforeId && !options?.offset) {
+    if (!options?.cursor && !options?.beforeId && !options?.offset && !options?.skipCount) {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(messages)
-        .where(eq(messages.agentId, this.id))
+        .where(and(...filterConditions))
       totalCount = countResult?.count ?? 0
     }
+    if (options?.search)
+      logMessageSearch({
+        agentId: this.id,
+        via: 'list',
+        scope: options.searchIn ?? 'text',
+        durationMs: performance.now() - startedAt,
+        results: pageMessages.length,
+      })
 
     // Map and reverse to chronological order
     const mappedMessages = pageMessages.map(mapMessage).reverse()
@@ -1406,6 +1427,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     owner?: pendingDelivery.SessionDeliveryOwner
   ): Promise<Message | null> {
     return pendingDelivery.claimPendingInterventionForSessionDelivery(this.id, messageId, owner)
+  }
+
+  /** SDK session entry ids of the human rows this execution has acknowledged; see pending-delivery. */
+  async sessionDeliveredExecutionPromptEntryIds(executionId: string): Promise<string[]> {
+    return pendingDelivery.sessionDeliveredExecutionPromptEntryIds(this.id, executionId)
   }
 
   /**

@@ -10,7 +10,7 @@ import { isLiveAgentStatus, type Agent } from '@ficus/shared'
 import type { AgentPrivateStatus } from '../../api/agentPrivate'
 import { startAgentPrivateSandbox } from '../../api/agentPrivate'
 import { queryKeys } from '../../queryKeys'
-import { agentMatchesQuery, getAgentLabel } from '../../lib/agentDisplay'
+import { agentMatchesQuery, getAgentLabel, type AgentTypeName } from '../../lib/agentDisplay'
 import { Panel, PopoverHeading, PopoverRowContent, popoverRowClass, usePopover } from '../popover'
 import { handleListKey, listItems } from '../popover/listNavigation'
 import { newFilePathError, privateAreaAgents, sandboxStatusLabel } from './agentPrivateTargets'
@@ -18,6 +18,7 @@ import { Modal } from '../Modal'
 import { ChevronDownIcon, KeyIcon, PlayIcon, PlusIcon, SpinnerIcon } from '../icons'
 import { CopyPathButton } from './CopyPathButton'
 import { agentVisiblePath, type WorkspaceSource } from './workspaceSource'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 const TARGET_OPTION = '[role="option"]'
 
@@ -40,11 +41,12 @@ export function WorkspaceTargetSelect({
 }) {
   const popover = usePopover({ kind: 'dialog' })
   const [query, setQuery] = useState('')
-  const listed = privateAreaAgents(agents)
-  const matches = listed.filter((agent) => agentMatchesQuery(agent, query))
+  const typeNames = useAgentTypeNames()
+  const listed = privateAreaAgents(agents, typeNames)
+  const matches = listed.filter((agent) => agentMatchesQuery(agent, query, typeNames))
   const showSquad = !query.trim() || 'squad workspace'.includes(query.trim().toLowerCase())
   const selected = value === null ? null : listed.find((agent) => agent.id === value)
-  const label = value === null ? 'Squad workspace' : selected ? targetLabel(selected) : 'Unknown agent'
+  const label = value === null ? 'Squad workspace' : selected ? targetLabel(selected, typeNames) : 'Unknown agent'
 
   const pick = (next: string | null) => {
     popover.close({ returnFocus: true })
@@ -119,7 +121,7 @@ export function WorkspaceTargetSelect({
               className={popoverRowClass(agent.id === value)}
               onClick={() => pick(agent.id)}
             >
-              <PopoverRowContent label={targetLabel(agent)} description={agentHandle(agent)} />
+              <PopoverRowContent label={targetLabel(agent, typeNames)} description={agentHandle(agent)} />
             </button>
           ))}
           {!showSquad && matches.length === 0 && (
@@ -137,8 +139,8 @@ function agentHandle(agent: Agent): string | undefined {
   return typeof name === 'string' && name.trim() ? name.trim() : undefined
 }
 
-function targetLabel(agent: Agent): string {
-  return `${getAgentLabel(agent)}${isLiveAgentStatus(agent.status) ? '' : ' (dormant)'}`
+function targetLabel(agent: Agent, typeNames: AgentTypeName): string {
+  return `${getAgentLabel(agent, undefined, typeNames)}${isLiveAgentStatus(agent.status) ? '' : ' (dormant)'}`
 }
 
 export function AgentPrivateStatusBar({

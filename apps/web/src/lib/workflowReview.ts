@@ -9,13 +9,15 @@ export {
   workflowApprovalStatement as approvalStatement,
   workflowAttemptAuthor as attemptAuthor,
   workflowWaitingLabel as waitingLabel,
-  type WorkflowAgentTypeName as AgentTypeName,
 } from '@ficus/shared'
+/** The squad's own name for an agent type (`AgentType.name`), when it is known. */
+export type { AgentTypeName } from './agentDisplay'
 import {
   activeWorkflowAttempts,
   workflowReviewPlainText as plainText,
   workflowReviewBlockingWaits,
   isWorkflowHumanGateWait,
+  mayDecideWorkflowGate,
   workflowEarlierHumanDecisions,
   describeWorkflowDecision,
   effectiveWorkflowStep,
@@ -25,6 +27,8 @@ import {
   workflowStepName as stepName,
   workflowOutcomeLabel as outcomeLabel,
   workflowApprovalStatement as approvalStatement,
+  workflowGateApprover,
+  type WorkflowGateApprover,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
   type WorkflowDecisionBrief,
@@ -141,13 +145,9 @@ export function humanGateContext(
   const waits = run.openWaits ?? stream.openWaits ?? []
   const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
   const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
-  const assigned = stream.assignedReviewerIds ?? []
   // Any reviewer decides for a decision step; only approvals can be limited to assigned reviewers.
-  const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
   const canReview = permissions.can('workstreams:review')
-  const identity = permissions.identity
-  const canDecide =
-    canReview && (!restricted || (identity?.type === 'user' && !!identity.userId && assigned.includes(identity.userId)))
+  const canDecide = mayDecideWorkflowGate(permissions.identity, canReview, stream.assignedReviewerIds, step)
   // A decision step before this gate passes its own sources through, so the work under review shows.
   const sources = workflowIncomingAttempts(run.state, attempt)
   const declared = Object.entries(step.outcomes)
@@ -166,17 +166,27 @@ export function humanGateContext(
     gateWait,
     blockingWaits,
     canDecide,
-    readOnlyReason: canDecide
-      ? undefined
-      : canReview
-        ? 'Only the reviewers assigned to this work stream can decide.'
-        : 'You need review permission in this squad to decide.',
+    readOnlyReason: canDecide ? undefined : workflowGateReadOnlyReason(workflowGateApprover(step), canReview),
     sources,
     primaryOutcome,
     outcomes,
     approvalStatement: approvalStatement(run.state, attempt),
     history,
   }
+}
+
+/**
+ * Why a viewer who may not decide a workflow gate cannot, from who decides it and whether they
+ * hold review permission in the squad; undefined when neither explains it. Core still decides who
+ * may respond; this only words the reason.
+ */
+export function workflowGateReadOnlyReason(
+  approver: WorkflowGateApprover | undefined,
+  canReview: boolean
+): string | undefined {
+  if (!canReview) return 'You need review permission in this squad to decide.'
+  if (approver === 'assigned-reviewers') return 'Only the reviewers assigned to this work stream can decide.'
+  return undefined
 }
 
 /** The document's own title: its first heading, else its first line, as plain text. */

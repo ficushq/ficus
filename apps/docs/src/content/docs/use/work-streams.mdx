@@ -58,6 +58,8 @@ A stream's lifecycle is **Queued**, **Active**, **Done**, or **Canceled**. Its d
 
 Beside the status, each stream shows its **time worked**: the time its agents spent running on this stream. It counts only the executions that did this stream's work, from the moment each one started running, so time spent queued or waiting for capacity adds nothing. It also adds nothing while the stream waits, and an execution that has gone quiet for over 90 minutes stops counting at its last message. While the stream is waiting on a person (a question, a review, an approval, or a blocker only a person can clear), the list shows how long instead. It reads **Waiting on you 7d** when you can act on it, and names the wait otherwise, for example **Waiting on review 7d**. Hover over it for the time worked. The work stream details show both.
 
+The cost, tokens and executions under **Details**, and the figures `ficus workstream get --metrics` prints, count those same executions: on a stream with a flow, the work of the agents its flow created for it, and not that of a persistent squad member listed on it, whose executions also serve other streams. A stream with a flow therefore counts nothing until its first step starts. `--metrics` prints the time worked as **Time worked**.
+
 Do not infer that a stream is frozen just because no new text is streaming. An agent may be using a tool, waiting on capacity, or waiting for a response. Open its details before sending the same request again.
 
 ## Read and reply in context

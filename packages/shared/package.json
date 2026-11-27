@@ -31,6 +31,7 @@
     "./provider-health": "./src/provider-health.ts",
     "./test-fixtures/workflow-review": "./src/test-fixtures/workflow-review.ts",
     "./test-fixtures/work-stream-presentation": "./src/test-fixtures/work-stream-presentation.ts",
+    "./test-fixtures/pending-actions": "./src/test-fixtures/pending-actions.ts",
     "./testDbCapacity": "./src/testDbCapacity.ts",
     "./testDbLifecycle": "./src/testDbLifecycle.ts",
     "./testDbLock": "./src/testDbLock.ts",

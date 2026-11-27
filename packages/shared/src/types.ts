@@ -1,5 +1,6 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { WorkflowAttemptLimitPause } from './workflow-runtime'
+import type { WorkflowGateApprover } from './workflow-gate-deciders'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 import type { WorkflowReviewConsultation } from './workflow-result-revisions'
@@ -45,6 +46,15 @@ export const QUESTION_RECOMMENDATION_REASON_MAX_LENGTH = 200
  */
 export function recommendedQuestionOption(question: Pick<QuestionItem, 'options'>): QuestionOption | undefined {
   return question.options?.find((option) => option.recommended === true)
+}
+
+/**
+ * Whether text already ends a sentence (. ? ! … and their full-width forms, also before a closing
+ * quote or bracket), so a formatter that adds a full stop after an option label can skip it
+ * instead of printing "Ship it now?.".
+ */
+export function endsWithSentencePunctuation(text: string): boolean {
+  return /[.?!…‽。？！]["'”’)\]]*$/.test(text.trimEnd())
 }
 
 export interface QuestionItem {
@@ -1422,6 +1432,12 @@ export interface WorkStreamWait {
   /** Read-only exact-reference annotation; never writable by clients. */
   workflowHumanGate?: boolean
   /**
+   * Read-only, on a workflow gate's wait: who decides the gate (its step's approver; `reviewers`
+   * for a decision step). Clients pass it to `mayDecideWorkflowGate`. Omitted on other waits and by
+   * older servers.
+   */
+  workflowGateApprover?: WorkflowGateApprover
+  /**
    * Read-only: the flow paused at its attempt limit. The stream presents as blocked on a person;
    * Raise limit (the `raise-limit` flow command) clears it. Omitted otherwise and by older servers.
    */
@@ -1746,8 +1762,9 @@ export interface WorkStreamRuntime {
   workingCount?: number
   /**
    * ISO time of the newest work by a counted execution (`computedAt` while one is
-   * working), or null when none has run. Unlike `updatedAt`, edits to the stream's
-   * own fields never move it. Omitted by older servers.
+   * working), or null when none has run. An execution still queued or waiting for a
+   * sandbox has not run, so it does not move this. Unlike `updatedAt`, edits to the
+   * stream's own fields never move it. Omitted by older servers.
    */
   lastWorkedAt?: string | null
   computedAt: string // ISO timestamp
@@ -1842,9 +1859,12 @@ export interface ResolveWorkStreamWaitInput {
   note?: string
 }
 
-// Work stream metrics (aggregated from executions)
+// Work stream metrics, aggregated from the executions that did this stream's work:
+// the same executions its time worked counts (the flow's bound agents, or the
+// listed agents of a stream from before flows), never a persistent agent's work
+// on other streams.
 export interface WorkStreamMetrics {
-  // Token counts across all executions
+  // Token counts across those executions
   tokens: {
     input: number
     output: number
@@ -1862,7 +1882,7 @@ export interface WorkStreamMetrics {
   }
   // Time metrics
   duration: {
-    totalMs: number // Sum of all execution durations
+    totalMs: number // Time worked: equals the stream's runtime totalMs
     firstStartedAt: string | null
     lastEndedAt: string | null
   }

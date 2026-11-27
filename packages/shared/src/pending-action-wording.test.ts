@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { PendingAction, WorkStreamDeliveryActionData } from '@ficus/shared'
-import { otherAction, questionAction, waitAction } from './needsYouNotices.fixtures'
-import { pendingActionAgentLabel, pendingActionContextLine, pendingActionWaitPhrase } from './pendingActionWording'
+import type { PendingAction, WorkStreamDeliveryActionData } from './types'
+import { otherAction, questionAction, waitAction } from './test-fixtures/pending-actions'
+import { pendingActionAgentLabel, pendingActionContextLine, pendingActionWaitPhrase } from './pending-action-wording'
 
 function deliveryAction(deliveryKind: 'review' | 'merge'): PendingAction {
   return {
@@ -61,6 +61,15 @@ describe('pendingActionAgentLabel', () => {
   test('names a work stream assignee by type, and not at all when an older server sends no type', () => {
     expect(pendingActionAgentLabel(waitAction('r'))).toBe('Engineer')
     expect(pendingActionAgentLabel(waitAction('r', {}, { assigneeAgentTypeId: undefined }))).toBeNull()
+  })
+
+  test('uses the configured type name when it is known', () => {
+    const typeNames = (id: string) => (id === 'engineer' ? 'Builder' : undefined)
+    expect(pendingActionAgentLabel(questionAction('q'), typeNames)).toBe('Builder (#8)')
+    expect(pendingActionAgentLabel(waitAction('r'), typeNames)).toBe('Builder')
+    expect(pendingActionContextLine(waitAction('r', {}, { assigneeAgentTypeId: 'engineer' }), typeNames)).toBe(
+      'Product Engineering · Builder · review needed'
+    )
   })
 })
 

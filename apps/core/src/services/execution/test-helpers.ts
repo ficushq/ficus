@@ -16,7 +16,14 @@ type PromptOptions = NonNullable<Parameters<PiAgentSession['prompt']>[1]>
 
 export class MockPiAgentSession {
   private listeners: EventListener[] = []
-  sessionManager = { getEntries: () => [], getPersistedEntries: () => [], getSessionFile: () => undefined }
+  /** Entries the live session holds, by id; persistUserPrompt adds the prompt's entry. */
+  sessionEntries = new Map<string, unknown>()
+  sessionManager = {
+    getEntries: () => [],
+    getPersistedEntries: () => [],
+    getSessionFile: () => undefined,
+    getEntry: (id: string) => this.sessionEntries.get(id),
+  }
   promptCalls: Array<{ text: string; options?: PromptOptions }> = []
   steerCalls: string[] = []
   followUpCalls: string[] = []
@@ -119,6 +126,7 @@ export class MockPiAgentSession {
       content: [{ type: 'text' as const, text: call.text }],
       timestamp: Date.now(),
     }
+    this.sessionEntries.set(entryId, { type: 'message', id: entryId, message })
     this.emit({ type: 'message_end', message })
     this.emit({ type: 'session_message_persisted', message, entryId, deliveryId, sessionFile: 'test.jsonl' })
     return { deliveryId, entryId }

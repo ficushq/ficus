@@ -44,6 +44,7 @@ import {
   DEFAULT_ATTENTION,
   withoutStoredWorkStreamSummary,
   workStreamWaitActor,
+  RUNTIME_STALE_AFTER_MS,
 } from '@ficus/shared'
 import type {
   WorkStream as WorkStreamJson,
@@ -2518,8 +2519,27 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 
   /**
+   * The agents whose executions are this stream's work: see
+   * `workStreamAttributedAgentsSql`, the one rule time worked also reads.
+   */
+  async attributedAgentIds(): Promise<string[]> {
+    const rows = (await db.execute(
+      workStreamAttributedAgentsSql([{ wsId: this.id, agentIds: this.agentIds ?? [] }])
+    )) as unknown as Array<{ agent_id: string }>
+    return rows.map((row) => row.agent_id)
+  }
+
+  /**
    * Get aggregated metrics for this work stream.
    * Computes on-read from executions table.
+   *
+   * ## Which executions count
+   *
+   * The same ones as time worked (see `workStreamAttributedAgentsSql`): a
+   * persistent agent listed on a flow stream also works on other streams, so its
+   * executions are not this stream's tokens or cost. `duration.totalMs` is the stream's time worked itself, with its stale
+   * cap, so the two figures never disagree. Pass `runtime` when the caller has
+   * already computed it.
    *
    * ## Why this is not a plain SUM
    *
@@ -2539,10 +2559,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Casts are `bigint`: a cumulative session total above 2^31 overflows `int`
    * and makes the whole query throw.
    */
-  async getMetrics(): Promise<WorkStreamMetrics | null> {
-    if (!this.agentIds?.length) {
+  async getMetrics(options: { runtime?: WorkStreamRuntime } = {}): Promise<WorkStreamMetrics | null> {
+    const agentIds = await this.attributedAgentIds()
+    if (agentIds.length === 0) {
       return null
     }
+    const runtime = options.runtime ?? (await this.getRuntime())
 
     // The typed `TokenField` parameter is the signature boundary — an arbitrary
     // string is now a type error — and `field` is bound as a parameter on the
@@ -2572,21 +2594,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         totalExecutions: sql<number>`COUNT(*)`,
         completedExecutions: sql<number>`COUNT(*) FILTER (WHERE ${executions.status} = 'completed')`,
         failedExecutions: sql<number>`COUNT(*) FILTER (WHERE ${executions.status} = 'failed')`,
-        totalDurationMs: sql<number>`COALESCE(SUM(
-          CASE
-            WHEN ${executions.status} = 'queued' THEN 0
-            WHEN ${executions.endedAt} IS NOT NULL THEN
-              GREATEST(0, EXTRACT(EPOCH FROM (${executions.endedAt} - ${executions.startedAt})) * 1000)
-            WHEN ${executions.status} IN ('running', 'stopping') THEN
-              GREATEST(0, EXTRACT(EPOCH FROM (NOW() - ${executions.startedAt})) * 1000)
-            ELSE 0
-          END
-        ), 0)`,
         firstStartedAt: sql<string | null>`MIN(${executions.startedAt})`,
         lastEndedAt: sql<string | null>`MAX(${executions.endedAt})`,
       })
       .from(executions)
-      .where(inArray(executions.agentId, this.agentIds))
+      .where(inArray(executions.agentId, agentIds))
       .groupBy(executions.agentId)
 
     // No executions yet is zeroed metrics, NOT null: null means "this stream has
@@ -2602,7 +2614,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       executions: 0,
       completed: 0,
       failed: 0,
-      durationMs: 0,
     }
     let firstStartedAt: number | null = null
     let lastEndedAt: number | null = null
@@ -2617,7 +2628,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       totals.executions += Number(row.totalExecutions)
       totals.completed += Number(row.completedExecutions)
       totals.failed += Number(row.failedExecutions)
-      totals.durationMs += Number(row.totalDurationMs)
       if (row.firstStartedAt) {
         const at = new Date(row.firstStartedAt).getTime()
         if (firstStartedAt === null || at < firstStartedAt) firstStartedAt = at
@@ -2648,7 +2658,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         failed: totals.failed,
       },
       duration: {
-        totalMs: totals.durationMs,
+        totalMs: runtime.totalMs,
         firstStartedAt: firstStartedAt === null ? null : new Date(firstStartedAt).toISOString(),
         lastEndedAt: lastEndedAt === null ? null : new Date(lastEndedAt).toISOString(),
       },
@@ -2745,58 +2755,30 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 }
 
-/**
- * How long an execution may go without a new assistant message before it stops
- * counting as work. Longer than the longest single tool call an agent may run in
- * the foreground (one hour), so a long test run still counts in full.
- */
-export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
+type AttributionStream = { wsId: string; agentIds: readonly string[] }
 
 /**
- * Time worked per work stream: the summed duration of the executions that did
- * this stream's work. Shared by runtime reads and their plan regression tests.
+ * The `streams(ws_id)` and `pairs(ws_id, agent_id)` CTEs (plus their helper
+ * `listed`): `pairs` holds, for each given stream, the agents whose executions
+ * are that stream's work. This is the single statement of the attribution rule;
+ * time worked, `runtime.lastWorkedAt` and `getMetrics` all read it.
  *
- * Which executions count:
- * - A stream with a flow counts the executions of the agents its flow bound to
- *   it. Every bound agent is created for that one stream and never rebound, so
- *   all of its executions are this stream's work, including delivery turns that
- *   run without a flow attempt. Other agents listed on the stream (a persistent
- *   squad member, the owner) are not counted: their executions serve other work.
- * - A stream from before flows has no bindings, and its listed agents are the
- *   only record of who worked on it, so it keeps counting their executions.
+ * - A stream with a flow (a `work_stream_flow_runs` row) counts the agents its
+ *   flow bound to it. Every bound agent is created for that one stream and never
+ *   rebound, so all of its executions are this stream's work, including delivery
+ *   turns that run without a flow attempt. Other agents listed on the stream (a
+ *   persistent squad member, the owner) never count, not even before the flow's
+ *   first step has bound anyone: their executions serve other work, so a flow
+ *   stream that has not started yet counts nothing.
+ * - A stream from before flows has no flow, and its listed agents are the only
+ *   record of who worked on it, so it counts them.
  *
- * How long each counts: from the moment it started running (`run_started_at`,
- * set when a runner claims it) to its end (now, while it runs), so time spent
- * queued, waiting for a sandbox or waiting out maintenance adds nothing, even
- * after the execution runs. Rows from before `run_started_at` existed fall back
- * to `started_at`. `run_started_at` is rewritten each time an execution is
- * claimed, so one that ran, went back to waiting for maintenance and ran again
- * counts only from its last claim: a small undercount, never queue time. An
- * execution that has been silent (no new assistant message
- * other than a `[System]` notice, such as the one written when a run is
- * interrupted) for more than `RUNTIME_STALE_AFTER_MS` before its end, such as one
- * left open in `running`, counts only up to its last such message, and no longer
- * ticks.
- *
- * `active_count` keeps its meaning (any queued-for-sandbox, running or stopping
- * execution), which schedule recovery relies on; `working_count` is the subset
- * still accruing time, which clients extrapolate from.
- *
- * `last_worked_at` is the newest moment any counted execution did work: where its
- * counted time ends (now while it works, its last message once it went silent),
- * or its start while it has not run or never recorded an end. It reads the same
- * joined rows, so it costs no extra scan, and unlike `updated_at` an edit to the
- * stream's own fields never moves it.
- *
- * Every column read from `executions` is in `idx_executions_agent_run_runtime`, so
- * the history stays an index-only scan; the message probe runs only for an
- * execution longer than the stale bound.
+ * `streams` must not be empty.
  */
-export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds: readonly string[] }[]) {
+function attributedAgentsCtes(streams: readonly AttributionStream[]): SQL {
   const listed = streams.flatMap((stream) => stream.agentIds.map((agentId) => ({ wsId: stream.wsId, agentId })))
-  const staleAfter = sql`make_interval(secs => ${RUNTIME_STALE_AFTER_MS / 1000})`
   return sql`
-        WITH streams(ws_id) AS (
+        streams(ws_id) AS (
           VALUES ${sql.join(
             streams.map((stream) => sql`(${stream.wsId}::uuid)`),
             sql`, `
@@ -2819,8 +2801,59 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
           UNION
           SELECT l.ws_id, l.agent_id
           FROM listed l
-          WHERE NOT EXISTS (SELECT 1 FROM ${workflowBindings} b WHERE b.work_stream_id = l.ws_id)
-        ),
+          WHERE NOT EXISTS (SELECT 1 FROM ${workStreamFlowRuns} f WHERE f.work_stream_id = l.ws_id)
+        )`
+}
+
+/** The attributed `(ws_id, agent_id)` pairs for the given streams: see `attributedAgentsCtes`. */
+export function workStreamAttributedAgentsSql(streams: readonly AttributionStream[]) {
+  return sql`WITH ${attributedAgentsCtes(streams)} SELECT ws_id, agent_id FROM pairs`
+}
+
+/**
+ * Time worked per work stream: the summed duration of the executions that did
+ * this stream's work. Shared by runtime reads and their plan regression tests.
+ *
+ * Which executions count: those of the agents `attributedAgentsCtes` attributes
+ * to the stream, the same rule `getMetrics` reads.
+ *
+ * How long each counts: from the moment it started running (`run_started_at`,
+ * set when a runner claims it) to its end (now, while it runs), so time spent
+ * queued, waiting for a sandbox or waiting out maintenance adds nothing, even
+ * after the execution runs. Rows from before `run_started_at` existed fall back
+ * to `started_at`. `run_started_at` is rewritten each time an execution is
+ * claimed, so one that ran, went back to waiting for maintenance and ran again
+ * counts only from its last claim: a small undercount, never queue time. An
+ * execution that has been silent (no new assistant message
+ * other than a `[System]` notice, such as the one written when a run is
+ * interrupted) for more than `RUNTIME_STALE_AFTER_MS` before its end, such as one
+ * left open in `running`, counts only up to its last such message, and no longer
+ * ticks.
+ *
+ * `active_count` keeps its meaning (any queued-for-sandbox, running or stopping
+ * execution), which schedule recovery relies on; `working_count` is the subset
+ * still accruing time, which clients extrapolate from.
+ *
+ * `last_worked_at` is the newest moment any counted execution did work: where its
+ * counted time ends (now while it works, its last message once it went silent).
+ * An execution that has not run (queued or waiting for a sandbox) or never
+ * recorded an end adds no time, so it does not count as work here either. It
+ * reads the same joined rows, so it costs no extra scan, it follows the same
+ * attribution rule as the total, and unlike `updated_at` an edit to the stream's
+ * own fields never moves it.
+ *
+ * `started_at`, `ended_at` and `messages.created_at` are `timestamp` without a
+ * time zone, written in UTC (see `db/clock.ts`), so they are read and compared
+ * `AT TIME ZONE 'utc'` rather than cast, which would apply the session TimeZone.
+ *
+ * Every column read from `executions` is in `idx_executions_agent_run_runtime`, so
+ * the history stays an index-only scan; the message probe runs only for an
+ * execution longer than the stale bound.
+ */
+export function workStreamRuntimesSql(streams: readonly AttributionStream[]) {
+  const staleAfter = sql`make_interval(secs => ${RUNTIME_STALE_AFTER_MS / 1000})`
+  return sql`
+        WITH ${attributedAgentsCtes(streams)},
         computed AS (
           SELECT NOW() AS now_ts
         )
@@ -2832,7 +2865,7 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
           ), 0)::bigint AS total_ms,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count,
-          MAX(COALESCE(w.worked_until, w.start_ts)) AS last_worked_at
+          MAX(w.worked_until) AS last_worked_at
         FROM streams s
         LEFT JOIN pairs p ON p.ws_id = s.ws_id
         LEFT JOIN ${executions} e ON e.agent_id = p.agent_id
@@ -2847,10 +2880,10 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             x.open AND (x.end_ts - x.start_ts <= ${staleAfter} OR x.end_ts - a.last_at <= ${staleAfter}) AS working
           FROM (
             SELECT
-              COALESCE(e.run_started_at, e.started_at::timestamptz) AS start_ts,
+              COALESCE(e.run_started_at, e.started_at AT TIME ZONE 'utc') AS start_ts,
               CASE
                 WHEN e.status IN ('queued', 'waiting-sandbox') THEN NULL
-                WHEN e.ended_at IS NOT NULL THEN e.ended_at::timestamptz
+                WHEN e.ended_at IS NOT NULL THEN e.ended_at AT TIME ZONE 'utc'
                 WHEN e.status IN ('running', 'stopping') THEN (SELECT now_ts FROM computed)
                 ELSE NULL
               END AS end_ts,
@@ -2863,13 +2896,13 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             -- stopped and is not evidence that it was working.
             -- LIMIT keeps this one probe per execution: a scalar subquery here would be
             -- copied into every expression that reads it.
-            SELECT m.created_at::timestamptz AS last_at
+            SELECT m.created_at AT TIME ZONE 'utc' AS last_at
             FROM ${messages} m
             WHERE x.end_ts - x.start_ts > ${staleAfter}
               AND m.agent_id = e.agent_id
               AND m.role = 'assistant'
-              AND m.created_at >= x.start_ts
-              AND m.created_at <= x.end_ts
+              AND m.created_at >= x.start_ts AT TIME ZONE 'utc'
+              AND m.created_at <= x.end_ts AT TIME ZONE 'utc'
               AND m.content NOT LIKE '[System]%'
             ORDER BY m.created_at DESC
             LIMIT 1

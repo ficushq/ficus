@@ -500,6 +500,33 @@ export async function claimPendingInterventionForSessionDelivery(
 }
 
 /**
+ * SDK session entry ids of the human rows this execution has acknowledged.
+ * acknowledgeSessionDelivery stamps the consuming executionId on every row it
+ * acknowledges (the row that queued the execution, with the same text as
+ * executions.message, and any steers or follow-ups), so a non-empty result means
+ * the session received this execution's conversation. This is only a DB record:
+ * the caller must check that an entry still exists in the live session (the file
+ * can be lost, emptied or left behind on a host move) before it skips re-sending
+ * executions.message. A released, never-appended row stays pending and is
+ * re-claimed instead.
+ */
+export async function sessionDeliveredExecutionPromptEntryIds(agentId: string, executionId: string): Promise<string[]> {
+  const rows = await db
+    .select({ entryId: sql<string>`${jsonbObjectRecovered(messages.metadata)}->>'sessionEntryId'` })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.agentId, agentId),
+        eq(messages.role, 'human'),
+        eq(messages.pending, false),
+        sql`${jsonbObjectRecovered(messages.metadata)}->>'executionId' = ${executionId}`,
+        sql`${jsonbObjectRecovered(messages.metadata)}->>'sessionEntryId' IS NOT NULL`
+      )
+    )
+  return rows.map((row) => row.entryId)
+}
+
+/**
  * Reset a claimed pending message so a future queue drain can retry it.
  * Used when the SDK rejects delivery after the injectedAt CAS claim.
  */

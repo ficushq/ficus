@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
+import { mobileAppInstall } from '../../lib/ficusMobileApp'
 import { canOpenFicusApp, type RenderedPairing } from './pairingQr'
+import { ExternalLink } from './SettingsRow'
 
 /**
  * A minted pairing code as the person pairing sees it: the QR, a countdown to
- * its expiry, the raw code to copy, and the deep link on a phone. Calls
+ * its expiry, the raw code to copy, and the deep link on a phone. The deep
+ * link does nothing on a phone without the app, so it comes with a way to get
+ * the app unless the page offers one itself (`getAppLink={false}`). Calls
  * `onExpired` once the countdown reaches zero so the owner can clear it.
  */
 export function PairingCode({
@@ -12,14 +16,17 @@ export function PairingCode({
   onRegenerate,
   regenerating,
   hint = 'Scan with the Ficus app.',
+  getAppLink = true,
 }: {
   pairing: RenderedPairing & { code: string }
   onExpired: () => void
   onRegenerate: () => void
   regenerating: boolean
   hint?: string
+  getAppLink?: boolean
 }) {
   const [openInApp] = useState(canOpenFicusApp)
+  const [install] = useState(() => mobileAppInstall())
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     // Read the clock from timers: at once for a new pairing, then every second.
@@ -59,6 +66,11 @@ export function PairingCode({
         >
           Open in Ficus app
         </a>
+      )}
+      {openInApp && getAppLink && (
+        <p className="text-xs text-muted">
+          Don’t have the app? <ExternalLink href={install.url}>{install.label}</ExternalLink>
+        </p>
       )}
       <button
         onClick={onRegenerate}

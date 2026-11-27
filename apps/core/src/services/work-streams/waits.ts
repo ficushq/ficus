@@ -13,9 +13,11 @@ import {
   type WorkStreamWaitActor,
   type WorkStreamWaitResolution,
   type WorkStreamWaitType,
+  type WorkflowGateApprover,
+  workflowGateApprover,
 } from '@ficus/shared'
 import { db } from '../../db'
-import { workStreams, workStreamWaits, recoveryEpisodes } from '../../db/schema'
+import { workStreams, workStreamWaits, workStreamFlowRuns, recoveryEpisodes } from '../../db/schema'
 import { loadReadyDependencyIds, pendingReadyDependencyIds, unlockReadyEdge } from './dependency-edges'
 
 export type WorkStreamWaitRow = InferSelectModel<typeof workStreamWaits>
@@ -25,10 +27,16 @@ type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 /** Either the root client or a transaction — every writer here composes into callers' transactions. */
 export type DbHandle = DbTransaction | typeof db
 
-export function toWaitJson(row: WorkStreamWaitRow): WorkStreamWait {
+/**
+ * The wire shape of a wait. `gateApprover` is who decides the workflow gate a human gate wait
+ * stands for ({@link loadWorkflowGateApprovers}); it is sent only on such a wait.
+ */
+export function toWaitJson(row: WorkStreamWaitRow, gateApprover?: WorkflowGateApprover): WorkStreamWait {
+  const workflowHumanGate = isHumanFlowWait(row)
   return {
     id: row.id,
-    workflowHumanGate: isHumanFlowWait(row),
+    workflowHumanGate,
+    ...(workflowHumanGate && gateApprover ? { workflowGateApprover: gateApprover } : {}),
     ...(isAttemptLimitFlowWait(row) ? { workflowAttemptLimit: true as const } : {}),
     ...(row.structured ? { structured: row.structured } : {}),
     flowAttemptId: row.flowAttemptId ?? null,
@@ -275,6 +283,56 @@ export async function listOpenWaitsForStreams(
     else result.set(row.workStreamId, [row])
   }
   return result
+}
+
+/**
+ * Who decides each human gate wait among `rows`, by wait ID: the approver of the step its attempt
+ * runs. Postgres picks out only that step's kind and approver ({@link workflowGateStepsSql}), so a
+ * list never ships a stream's whole run state to read one field.
+ */
+export async function loadWorkflowGateApprovers(
+  rows: readonly WorkStreamWaitRow[],
+  dbx: DbHandle = db
+): Promise<Map<string, WorkflowGateApprover>> {
+  const result = new Map<string, WorkflowGateApprover>()
+  const gateIds = rows.filter((row) => isHumanFlowWait(row) && row.flowAttemptId != null).map((row) => row.id)
+  if (gateIds.length === 0) return result
+  const steps = await dbx.execute<{ wait_id: string; kind: string | null; approver: string | null }>(
+    workflowGateStepsSql(gateIds)
+  )
+  for (const step of steps) {
+    const approver = step.kind
+      ? workflowGateApprover({ kind: step.kind, approver: step.approver ?? undefined })
+      : undefined
+    if (approver) result.set(step.wait_id, approver)
+  }
+  return result
+}
+
+/**
+ * The kind and approver of the step each wait's attempt runs: the attempt's own step snapshot,
+ * else the run definition's step with its ID (as `effectiveWorkflowStep` reads it). A wait whose
+ * stream has no run, or whose attempt or step is not found, yields a null kind.
+ */
+export function workflowGateStepsSql(waitIds: readonly string[]) {
+  return sql`
+    SELECT gate.id AS wait_id, step.value->>'kind' AS kind, step.value->>'approver' AS approver
+    FROM ${workStreamWaits} gate
+    JOIN ${workStreamFlowRuns} run ON run.work_stream_id = gate.work_stream_id
+    CROSS JOIN LATERAL (
+      SELECT jsonb_path_query_first(run.state, '$.attempts[*] ? (@.id == $id)', jsonb_build_object('id', gate.flow_attempt_id)) AS value
+    ) attempt
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(
+        NULLIF(attempt.value->'step', 'null'::jsonb),
+        jsonb_path_query_first(run.state, '$.definition.steps[*] ? (@.id == $id)', jsonb_build_object('id', attempt.value->'stepId'))
+      ) AS value
+    ) step
+    WHERE gate.id IN (${sql.join(
+      waitIds.map((id) => sql`${id}::uuid`),
+      sql`, `
+    )})
+  `
 }
 
 /** All review waits for one stream (open + closed), newest first. Closed rows = completed rounds. */

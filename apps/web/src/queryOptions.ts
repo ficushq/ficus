@@ -1,7 +1,7 @@
 import { getAgentPrivateStatus } from './api/agentPrivate'
 import { productFeedbackQueryKeys, publicUrlQueryKeys, serverConnectionQueryKeys } from './queryKeys'
 import { getRelayAvailability, getServerConnection } from './api/serverConnection'
-import { getPublicAppUrl, getPublicAppUrlStatus } from './api/publicUrl'
+import { getPublicAppUrl, getPublicAppUrlStatus, getPhoneReach } from './api/publicUrl'
 import { getProductFeedbackStatus } from './api/productFeedback'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys, messageSearchQueryKeys, workStreamActivityQueryKeys } from './queryKeys'
@@ -73,6 +73,7 @@ import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
 
 import { listPendingActions } from './api/actions'
+import { forgetSettledAnswers } from './lib/answeredActions'
 import { getArtifactContext, listArtifacts, type ListArtifactsParams } from './api/artifacts'
 import {
   getWorkspaceTree,
@@ -512,7 +513,8 @@ export const queries = {
     pending: () =>
       queryOptions({
         queryKey: queryKeys.actions.pending(),
-        queryFn: listPendingActions,
+        // A card answered in this session stays quiet (no arrival highlight) until a fetch shows it gone.
+        queryFn: forgetSettledAnswers(() => listPendingActions()),
       }),
   },
 
@@ -1449,6 +1451,8 @@ export const publicUrlQueries = {
   runtime: () => queryOptions({ queryKey: publicUrlQueryKeys.runtime(), queryFn: getPublicAppUrl, staleTime: 60_000 }),
   status: () =>
     queryOptions({ queryKey: publicUrlQueryKeys.status(), queryFn: getPublicAppUrlStatus, staleTime: 15_000 }),
+  reach: () =>
+    queryOptions({ queryKey: publicUrlQueryKeys.reach(), queryFn: getPhoneReach, staleTime: 15_000, retry: false }),
 }
 
 export const serverConnectionQueries = {

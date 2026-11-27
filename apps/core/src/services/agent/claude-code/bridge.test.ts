@@ -21,6 +21,12 @@ import {
   createClaudeCodeStream,
 } from './bridge'
 import { claudeSystemPrompt, emptyUsage, renderHistoryPrompt } from './convert'
+import {
+  answerInterruptedToolCalls,
+  INTERRUPTED_TOOL_CALLS_TYPE,
+  interruptedToolCalls,
+  interruptedToolResultText,
+} from '../interrupted-tool-calls'
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
@@ -338,6 +344,47 @@ test('a seeded transcript names tool calls the way Claude Code knows them', asyn
   expect(prompt).not.toContain('<tool_call name="bash"')
 })
 
+test('after a hard restart mid tool call, the re-seeded session shows the restart-aware result pi shows', async () => {
+  const before = harness()
+  const first = before.stream(model, context([user('list files')]), { sessionId: 's-crash' })
+  await before.processes[0]!.nextPrompt(1)
+  before.processes[0]!.emit(...toolResponse('msg_1', 'toolu_1', { command: 'ls' }))
+  const call = (await first.result()) as AssistantMessage
+  // Core dies while the call runs: the session keeps the call, never its result. On resume the
+  // context hook answers the recorded call before the conversation reaches the bridge.
+  const recorded = interruptedToolCalls([
+    {
+      type: 'custom',
+      id: 'entry-1',
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      customType: INTERRUPTED_TOOL_CALLS_TYPE,
+      data: {
+        noticeId: 'notice-1',
+        executionId: 'execution-1',
+        cause: 'core_restart',
+        recoveredAt: '2026-11-27T08:05:00.000Z',
+        calls: [{ toolCallId: 'toolu_1', toolName: 'bash', replay: 'unsafe' }],
+      },
+    },
+  ])
+  const resumed = answerInterruptedToolCalls([user('list files'), call, user('Continue.')], recorded) as Message[]
+
+  const after = harness(before.stateDir)
+  const next = after.stream(model, context(resumed), { sessionId: 's-crash' })
+  const claude = after.processes[0]!
+  // Claude Code's own transcript has no answer for the call, so the session is seeded, not resumed.
+  expect(claude.options.resume).toBeUndefined()
+  const [transcript, latest] = (await claude.nextPrompt(1)).message.content
+  expect(transcript.text).toContain(
+    `<tool_result id="toolu_1" error="true">\n${interruptedToolResultText({ toolName: 'bash', replay: 'unsafe' }, { cause: 'core_restart', recoveredAt: '2026-11-27T08:05:00.000Z' })}\n</tool_result>`
+  )
+  expect(transcript.text).not.toContain('No result provided')
+  expect(latest).toEqual({ type: 'text', text: 'Continue.' })
+  claude.emit(...textResponse('msg_2', 'checking state first'))
+  expect((await next.result()).stopReason).toBe('stop')
+})
+
 test('a history Claude Code never saw starts a fresh session seeded with the transcript', async () => {
   const { stream, processes } = harness()
   const compacted: Message[] = [
@@ -629,6 +676,167 @@ describe('Ficus tool labels in Claude Code', () => {
     expect(tools.map((tool) => tool._meta)).toEqual([
       { 'anthropic/alwaysLoad': true },
       { 'anthropic/alwaysLoad': true },
+    ])
+  })
+
+  test('a session that holds tools back offers Claude Code’s tool search, pre-approved; one that does not stays without', async () => {
+    registerClaudeCodeToolLabels('s-offer', { mode: 'claude-code', hidden: ['browser_open'], reason: 'test' })
+    registerClaudeCodeToolLabels('s-plain', { mode: 'direct', hidden: [], reason: 'search is off' })
+    const { stream, processes } = harness()
+    stream(model, labelled([user('hi')]), { sessionId: 's-offer' })
+    stream(model, labelled([user('hi')]), { sessionId: 's-plain' })
+    expect(processes[0]!.options).toMatchObject({
+      tools: ['ToolSearch'],
+      allowedTools: ['ToolSearch', 'mcp__ficus__bash', 'mcp__ficus__browser_open'],
+    })
+    expect(processes[1]!.options).toMatchObject({
+      tools: [],
+      allowedTools: ['mcp__ficus__bash', 'mcp__ficus__browser_open'],
+    })
+  })
+
+  /** The model calls Claude Code's tool search; Claude Code runs it and sends its result back. */
+  function toolSearchResponse(id: string, toolUseId: string, extra: any[] = []) {
+    const query = { query: 'select:mcp__ficus__browser_open' }
+    return [
+      event({
+        type: 'message_start',
+        message: {
+          id,
+          model: 'claude-opus-5-5',
+          usage: { input_tokens: 30, output_tokens: 1, cache_read_input_tokens: 100 },
+        },
+      }),
+      event({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+      event({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Loading the browser.' } }),
+      event({ type: 'content_block_stop', index: 0 }),
+      event({
+        type: 'content_block_start',
+        index: 1,
+        content_block: { type: 'tool_use', id: toolUseId, name: 'ToolSearch', input: {} },
+      }),
+      event({
+        type: 'content_block_delta',
+        index: 1,
+        delta: { type: 'input_json_delta', partial_json: JSON.stringify(query) },
+      }),
+      event({ type: 'content_block_stop', index: 1 }),
+      ...extra,
+      event({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 9 } }),
+      event({ type: 'message_stop' }),
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: toolUseId, name: 'ToolSearch', input: query }] },
+        parent_tool_use_id: null,
+        session_id: 'cc-1',
+      },
+      {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: [{ type: 'tool_reference', tool_name: 'mcp__ficus__browser_open' }],
+            },
+          ],
+        },
+        parent_tool_use_id: null,
+        session_id: 'cc-1',
+      },
+    ]
+  }
+
+  test('Claude Code’s tool search stays inside Claude Code: pi sees only the loaded tool’s call, and the process carries on', async () => {
+    registerClaudeCodeToolLabels('s-search', { mode: 'claude-code', hidden: ['browser_open'], reason: 'test' })
+    const { stream, processes } = harness()
+    const first = stream(model, labelled([user('open the page')]), { sessionId: 's-search' })
+    const events: string[] = []
+    void (async () => {
+      for await (const part of first) events.push(part.type)
+    })()
+    const claude = processes[0]!
+    await claude.nextPrompt(1)
+    claude.emit(
+      ...toolSearchResponse('msg_1', 'toolu_search'),
+      ...toolResponse('msg_2', 'toolu_1', { url: 'https://example.com' }, 'mcp__ficus__browser_open')
+    )
+    const call = (await first.result()) as AssistantMessage
+    // One pi turn holds both model responses; the search call and its result are not in it.
+    expect(call.stopReason).toBe('toolUse')
+    expect(call.content).toEqual([
+      { type: 'text', text: 'Loading the browser.' },
+      { type: 'toolCall', id: 'toolu_1', name: 'browser_open', arguments: { url: 'https://example.com' } },
+    ])
+    expect(call.responseId).toBe('msg_2')
+    expect(call.usage).toMatchObject({ input: 50, output: 13, cacheRead: 100 })
+    await Bun.sleep(0)
+    expect(events).not.toContain('error')
+    expect(events.filter((type) => type === 'toolcall_start')).toHaveLength(1)
+
+    // The loaded tool runs through pi as usual and its result reaches the waiting MCP call.
+    const pending = claude.callTool('browser_open', { url: 'https://example.com' }, 'toolu_1')
+    const history = [user('open the page'), call, { ...toolResult('toolu_1', 'opened'), toolName: 'browser_open' }]
+    const second = stream(model, labelled(history), { sessionId: 's-search' })
+    expect(await pending).toEqual({ content: [{ type: 'text', text: 'opened' }], isError: false })
+    claude.emit(...textResponse('msg_3', 'Opened it'))
+    const reply = (await second.result()) as AssistantMessage
+    expect(reply.stopReason).toBe('stop')
+
+    // The following user turn continues the same process: nothing restarted or re-seeded it.
+    const third = stream(model, labelled([...history, reply, user('thanks')]), { sessionId: 's-search' })
+    expect((await claude.nextPrompt(2)).message.content).toEqual([{ type: 'text', text: 'thanks' }])
+    claude.emit(...textResponse('msg_4', 'Any time'))
+    expect((await third.result()).stopReason).toBe('stop')
+    expect(processes).toHaveLength(1)
+    expect(claude.closed).toBe(false)
+  })
+
+  test('a tool search next to an agent tool call hides only the search', async () => {
+    registerClaudeCodeToolLabels('s-both', { mode: 'claude-code', hidden: ['browser_open'], reason: 'test' })
+    const { stream, processes } = harness()
+    const first = stream(model, labelled([user('check and open')]), { sessionId: 's-both' })
+    const claude = processes[0]!
+    await claude.nextPrompt(1)
+    claude.emit(
+      ...toolSearchResponse('msg_1', 'toolu_search', [
+        event({
+          type: 'content_block_start',
+          index: 2,
+          content_block: { type: 'tool_use', id: 'toolu_2', name: 'mcp__ficus__bash', input: {} },
+        }),
+        event({
+          type: 'content_block_delta',
+          index: 2,
+          delta: { type: 'input_json_delta', partial_json: '{"command":"ls"}' },
+        }),
+        event({ type: 'content_block_stop', index: 2 }),
+      ])
+    )
+    const call = (await first.result()) as AssistantMessage
+    expect(call.stopReason).toBe('toolUse')
+    expect(call.content).toEqual([
+      { type: 'text', text: 'Loading the browser.' },
+      { type: 'toolCall', id: 'toolu_2', name: 'bash', arguments: { command: 'ls' } },
+    ])
+  })
+
+  test('any other Claude Code tool, and tool search where it is not offered, is still reported as unknown', async () => {
+    registerClaudeCodeToolLabels('s-other', { mode: 'claude-code', hidden: ['browser_open'], reason: 'test' })
+    const { stream, processes } = harness()
+    const other = stream(model, labelled([user('run it')]), { sessionId: 's-other' })
+    await processes[0]!.nextPrompt(1)
+    processes[0]!.emit(...toolResponse('msg_1', 'toolu_1', { command: 'ls' }, 'Bash'))
+    expect((await other.result()).content).toEqual([
+      { type: 'toolCall', id: 'toolu_1', name: 'claude-code-unknown:Bash', arguments: { command: 'ls' } },
+    ])
+
+    const plain = stream(model, labelled([user('search')]), { sessionId: 's-not-offered' })
+    await processes[1]!.nextPrompt(1)
+    processes[1]!.emit(...toolResponse('msg_2', 'toolu_2', { query: 'browser' }, 'ToolSearch'))
+    expect((await plain.result()).content).toEqual([
+      { type: 'toolCall', id: 'toolu_2', name: 'claude-code-unknown:ToolSearch', arguments: { query: 'browser' } },
     ])
   })
 
