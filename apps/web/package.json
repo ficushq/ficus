@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build && bun run --cwd ../farm build:into-web",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.scripts.json",
     "test:ci": "bun scripts/run-full-test-gate.ts",
     "test:dom-order:ci": "bun scripts/run-dom-order-gate.ts"
   },

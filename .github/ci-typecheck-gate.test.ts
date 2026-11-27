@@ -103,6 +103,12 @@ function validateTypecheckGate(
       errors.push(`workspace ${manifest.path} must not consume the Core-only heap variable`)
     }
   }
+  // The rendered checks and their fixtures live outside apps/web/src, so the web app's own config never
+  // sees them; without this config a fixture calling a removed export only fails in the browser.
+  const web = manifests.find((manifest) => manifest.path === 'apps/web/package.json')
+  if (!web?.scripts?.typecheck?.split(' && ').includes('tsc --noEmit -p tsconfig.scripts.json')) {
+    errors.push('the web typecheck must cover its scripts and rendered-check fixtures')
+  }
   const core = manifests.find((manifest) => manifest.path === 'apps/core/package.json')
   if (core?.scripts?.typecheck !== 'NODE_OPTIONS="${CORE_TYPECHECK_NODE_OPTIONS:-${NODE_OPTIONS:-}}" tsc --noEmit') {
     errors.push('Core alone must consume the CI-only raised V8 ceiling')
@@ -371,6 +377,35 @@ finish_measurement candidate "$sha" 0 "$log"`,
         { path: 'apps/new-workspace/package.json', scripts: {} },
       ])
     ).toEqual(['workspace apps/new-workspace/package.json must define a typecheck script'])
+  })
+
+  test('rejects a web typecheck that skips its scripts and fixtures', () => {
+    const manifests = workspaceManifests.map((manifest) =>
+      manifest.path === 'apps/web/package.json'
+        ? {
+            ...manifest,
+            scripts: { ...manifest.scripts, typecheck: 'tsc --noEmit && tsc --noEmit -p tsconfig.test.json' },
+          }
+        : manifest
+    )
+
+    expect(validateTypecheckGate(structuredClone(workflow), packageJson.scripts, manifests)).toEqual([
+      'the web typecheck must cover its scripts and rendered-check fixtures',
+    ])
+  })
+
+  test('the web scripts config includes every script and fixture', () => {
+    const config = JSON.parse(readFileSync(join(repoRoot, 'apps/web/tsconfig.scripts.json'), 'utf8')) as {
+      include?: string[]
+      exclude?: string[]
+    }
+    const files = [...new Bun.Glob('scripts/**/*.{ts,tsx}').scanSync({ cwd: join(repoRoot, 'apps/web') })]
+    const included = (file: string) =>
+      (config.include ?? []).some((pattern) => new Bun.Glob(pattern).match(file)) &&
+      !(config.exclude ?? []).some((pattern) => new Bun.Glob(pattern).match(file))
+
+    expect(files).toContain('scripts/fixtures/work-stream-rows.tsx')
+    expect(files.filter((file) => !included(file))).toEqual([])
   })
 
   test('rejects workspace package-list drift in the root script', () => {
