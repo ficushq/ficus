@@ -396,6 +396,82 @@ describe('the Live Activity "waiting on you" count follows the viewer rule', () 
     expect([...anonymous.top, ...anonymous.liveActivity.top].some((row) => 'needsYou' in row)).toBe(false)
   })
 
+  describe('rows waiting on this user rank first', () => {
+    const at = (hour: number) => new Date(`2026-08-29T${String(hour).padStart(2, '0')}:00:00.000Z`)
+    // Someone else's gate is the newest needs-you row. The pull request waiting on review is still
+    // running, so the viewer-independent order put the gate and a busy stream above it.
+    const ranked = [
+      stream({ id: 'busy', updatedAt: at(13) }),
+      stream({
+        id: 'gated',
+        updatedAt: at(14),
+        derivedState: 'in_review',
+        openWaits: [gate],
+        assignedReviewerIds: ['reviewer'],
+      }),
+      stream({ id: 'pr', updatedAt: at(12), derivedState: 'in_progress', openWaits: [], delivery: { kind: 'review' } }),
+      stream({
+        id: 'merge',
+        updatedAt: at(9),
+        derivedState: 'in_review',
+        openWaits: [question],
+        delivery: { kind: 'merge' },
+      }),
+      stream({ id: 'queued', status: 'queued', updatedAt: at(15) }),
+    ]
+    const outsider = viewer(['workstreams:review'], 'someone-else')
+    const reviewer = viewer(['workstreams:review'], 'reviewer')
+    const snapshotFor = (who?: WorkStreamViewer) =>
+      buildWorkInterestSnapshot(ranked, who ? { viewerFor: () => who } : {})
+    const ids = (rows: Array<{ id: string }>) => rows.map(({ id }) => id)
+
+    test('someone else’s gate never outranks a stream waiting on this user', () => {
+      const snapshot = snapshotFor(outsider)
+      // Before: gated, merge, queued — the pull request waiting on this user lost its row.
+      expect(ids(snapshot.liveActivity.top)).toEqual(['merge', 'pr', 'gated'])
+      expect(ids(snapshot.top)).toEqual(['merge', 'pr', 'gated', 'queued', 'busy'])
+      const firstOther = snapshot.top.findIndex((row) => !row.needsYou)
+      expect(snapshot.top.slice(firstOther).some((row) => row.needsYou)).toBe(false)
+      expect(snapshot.liveActivity.top.map((row) => row.needsYou)).toEqual([true, true, false])
+    })
+
+    test('the user who may decide the gate sees it first, with the rest of their work', () => {
+      expect(ids(snapshotFor(reviewer).top)).toEqual(['gated', 'merge', 'pr', 'queued', 'busy'])
+    })
+
+    test('ties keep today’s order: needs-you bucket, then most recently updated', () => {
+      // Without a user nothing waits on anyone, so the order is the viewer-independent one.
+      expect(ids(snapshotFor().top)).toEqual(['gated', 'merge', 'queued', 'busy', 'pr'])
+      // A viewer nothing waits on keeps exactly that order.
+      expect(ids(buildWorkInterestSnapshot(ranked, { viewerFor: () => undefined }).top)).toEqual(ids(snapshotFor().top))
+      // For every viewer, each group keeps the viewer-independent order.
+      const today = ids(snapshotFor().top)
+      for (const who of [outsider, reviewer, viewer([], 'nobody'), viewer(['agents:run'], 'answerer')]) {
+        const rows = snapshotFor(who).top
+        const waiting = rows.filter((row) => row.needsYou).map(({ id }) => id)
+        const others = rows.filter((row) => !row.needsYou).map(({ id }) => id)
+        expect(ids(rows)).toEqual([...waiting, ...others])
+        expect(waiting).toEqual(today.filter((id) => waiting.includes(id)))
+        expect(others).toEqual(today.filter((id) => others.includes(id)))
+      }
+    })
+
+    test('buckets and counts stay the same for every viewer', () => {
+      const anonymous = snapshotFor()
+      const bucketsById = (rows: Array<{ id: string; bucket?: string }>) =>
+        Object.fromEntries(rows.map((row) => [row.id, row.bucket]))
+      for (const who of [outsider, reviewer]) {
+        const snapshot = snapshotFor(who)
+        expect(snapshot.bucketCounts).toEqual(anonymous.bucketCounts)
+        expect(snapshot.totalCount).toBe(anonymous.totalCount)
+        expect(snapshot.liveActivity.activeCount).toBe(anonymous.liveActivity.activeCount)
+        expect(bucketsById(snapshot.top)).toEqual(bucketsById(anonymous.top))
+      }
+      expect(snapshotFor(outsider).liveActivity.needsYouCount).toBe(2)
+      expect(snapshotFor(reviewer).liveActivity.needsYouCount).toBe(3)
+    })
+  })
+
   test('a running stream is not waiting on anyone, and says so explicitly', () => {
     const snapshot = buildWorkInterestSnapshot([stream({ id: 'busy' })], you)
     const row = JSON.parse(JSON.stringify(snapshot.liveActivity.top[0]))

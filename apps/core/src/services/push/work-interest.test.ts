@@ -338,6 +338,41 @@ describe('work interest selector', () => {
       })
   })
 
+  test('rows waiting on this user rank above someone else’s gate in the widget and Live Activity', async () => {
+    const gate = {
+      id: 'gate',
+      type: 'manual',
+      workflowHumanGate: true,
+      flowAttemptId: 2,
+      resolutionHandler: 'workflow',
+      workflowGateApprover: 'assigned-reviewers',
+    } as NonNullable<WorkStream['openWaits']>[number]
+    // Ids set recency: the gate is the newest row, the pull request waiting on review the oldest.
+    const load = (userId: string) =>
+      loader({
+        permissions: ['workstreams:review'],
+        candidates: [
+          candidate('gated9', 'squad', { assignedReviewerIds: ['reviewer'] }),
+          candidate('running8', 'squad'),
+          candidate('running7', 'squad'),
+          candidate('pr1', 'other-squad'),
+        ],
+        waits: {
+          gated9: { derivedState: 'in_review', openWaits: [gate] },
+          pr1: { derivedState: 'in_progress', openWaits: [], delivery: { kind: 'review' } },
+        },
+      }).load(userId)
+    const outsider = await load('someone-else')
+    expect(outsider.liveActivity.top.map(({ id }) => id)).toEqual(['pr1', 'gated9', 'running8'])
+    expect(outsider.top.map(({ id }) => id)).toEqual(['pr1', 'gated9', 'running8', 'running7'])
+    const reviewer = await load('reviewer')
+    expect(reviewer.liveActivity.top.map(({ id }) => id)).toEqual(['gated9', 'pr1', 'running8'])
+    // Buckets and counts do not depend on who is looking.
+    expect(outsider.bucketCounts).toEqual(reviewer.bucketCounts)
+    expect(outsider.liveActivity.activeCount).toBe(reviewer.liveActivity.activeCount)
+    expect(outsider.top.find(({ id }) => id === 'gated9')?.bucket).toBe('needsYou')
+  })
+
   test('a stream whose decisions are muted never waits on the user, as on Activity', async () => {
     const { load, viewersLoaded } = loader({
       streamAttention: { asking: { decisions: 'mute', progress: 'show' } },
