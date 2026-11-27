@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto'
-import { SQUAD_ACTIVITY_LANES, type SquadActivityKind, type SquadActivityLane } from '@ficus/shared'
+import {
+  SQUAD_ACTIVITY_LANES,
+  type ActivitySettledFilter,
+  type SquadActivityKind,
+  type SquadActivityLane,
+} from '@ficus/shared'
 
 export class InvalidActivityCursorError extends Error {}
 export class ActivityCursorExpiredError extends Error {}
@@ -69,6 +74,8 @@ export interface GlobalActivityCursorContext {
   agentIds: string[]
   kinds: readonly (SquadActivityKind | string)[]
   workStreamId?: string
+  /** Part of the digest only when set, so cursors issued without it stay valid. */
+  settled?: ActivitySettledFilter
 }
 export interface GlobalActivityCursorKeyset {
   at: Date
@@ -86,6 +93,7 @@ const globalDigest = (context: GlobalActivityCursorContext, floor: Date) =>
         agentIds: unique(context.agentIds),
         kinds: unique(context.kinds),
         ...(context.workStreamId ? { workStreamId: context.workStreamId } : {}),
+        ...(context.settled ? { settled: { kind: context.settled.kind, since: context.settled.since } } : {}),
         retentionFloor: floor.toISOString(),
       })
     )

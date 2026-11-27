@@ -182,9 +182,55 @@ export interface WorkStreamSnapshot {
   creatorAgentId: string | null
   creatorAgentTypeId: string | null
   createdAt: Date | string
+  /** Recorded flow verdicts by Reviewer agents, oldest first. Absent means none. */
+  reviewVerdicts?: ReviewVerdictSnapshot[]
 }
+
+/**
+ * One flow transition a Reviewer agent submitted on its own attempt: `complete` with the outcome it
+ * chose (for example `approved` or `changes-requested`), or `return` to an earlier step.
+ */
+export interface ReviewVerdictSnapshot {
+  /** The transition's request id: unique per stream and stable, so it is the row id. */
+  requestId: string
+  at: Date | string
+  agentId: string | null
+  agentTypeId: string
+  action: 'complete' | 'return'
+  outcome: string | null
+  targetStepId: string | null
+  /** Evidence for `complete`, feedback for `return`. */
+  note: string | null
+}
+
+/** "review approved", "review changes requested", "review returned to implement". */
+export function reviewVerdictLabel(verdict: Pick<ReviewVerdictSnapshot, 'action' | 'outcome' | 'targetStepId'>) {
+  if (verdict.action === 'return') return `review returned${verdict.targetStepId ? ` to ${verdict.targetStepId}` : ''}`
+  return `review ${(verdict.outcome ?? 'completed').replace(/[-_]+/g, ' ')}`
+}
+
 export function extractWorkStream(snapshot: WorkStreamSnapshot): ExtractedSquadActivity[] {
+  const verdicts: ExtractedSquadActivity[] = (snapshot.reviewVerdicts ?? []).map((verdict) => ({
+    id: `32:${verdict.requestId}`,
+    lane: 32,
+    rowId: verdict.requestId,
+    squadId: snapshot.squadId,
+    at: at(verdict.at),
+    agentId: verdict.agentId,
+    agentTypeId: verdict.agentTypeId,
+    kind: 'workstream',
+    ...structuralPreview(`[ws-${snapshot.id.slice(0, 4)} · ${reviewVerdictLabel(verdict)}]`, verdict.note),
+    ref: { type: 'workstream', workStreamId: snapshot.id },
+    sourceFamily: 'workstream',
+    sourceGroupId: snapshot.id,
+    workStreamId: snapshot.id,
+    quietEligible: true,
+    accessScope: 'workstreams',
+    inboxRecipientId: null,
+    agentTypeRequiresAgentsRead: true,
+  }))
   return [
+    ...verdicts,
     {
       id: `30:${snapshot.id}`,
       lane: 30,

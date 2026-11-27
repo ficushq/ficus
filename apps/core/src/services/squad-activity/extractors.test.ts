@@ -6,6 +6,8 @@ import {
   extractGitHubIssueDispatch,
   extractGitHubPrDispatch,
   extractInboxMessage,
+  extractWorkStream,
+  reviewVerdictLabel,
 } from './extractors'
 
 describe('execution row retirement (operator decision 2026-08-27)', () => {
@@ -465,5 +467,61 @@ describe('folded system notices (operator request 2026-11-20)', () => {
       'Notes on CI success: not an integration subject',
     ])
       expect(notice(subject).quietEligible).toBe(true)
+  })
+})
+
+describe('Reviewer verdict rows (lane 32)', () => {
+  const stream = {
+    squadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
+    id: '0dce8512-c750-4e86-add4-4e93c26a0f7c',
+    title: 'Feed line',
+    creatorAgentId: null,
+    creatorAgentTypeId: null,
+    createdAt: new Date('2026-11-26T10:00:00Z'),
+  }
+  test('a stream without verdicts keeps only its created row', () => {
+    expect(extractWorkStream(stream).map((row) => row.lane)).toEqual([30])
+  })
+
+  test('each verdict is a work stream row by the Reviewer, opening the stream', () => {
+    const rows = extractWorkStream({
+      ...stream,
+      reviewVerdicts: [
+        {
+          requestId: '6a1f0c38-9a59-4f63-8d0c-3f1b8a1f2c11',
+          at: new Date('2026-11-26T11:00:00Z'),
+          agentId: 'aeb03ca8-9290-4d2f-9878-79561bd931ce',
+          agentTypeId: 'reviewer',
+          action: 'complete',
+          outcome: 'approved',
+          targetStepId: null,
+          note: 'Looks right.\nTests pass.',
+        },
+      ],
+    })
+    const verdict = rows.find((row) => row.lane === 32)!
+    expect(verdict).toMatchObject({
+      id: '32:6a1f0c38-9a59-4f63-8d0c-3f1b8a1f2c11',
+      kind: 'workstream',
+      agentTypeId: 'reviewer',
+      accessScope: 'workstreams',
+      agentTypeRequiresAgentsRead: true,
+      quietEligible: true,
+      sourceFamily: 'workstream',
+      sourceGroupId: stream.id,
+      workStreamId: stream.id,
+      ref: { type: 'workstream', workStreamId: stream.id },
+      at: '2026-11-26T11:00:00.000Z',
+    })
+    expect(verdict.summary.startsWith('[ws-0dce · review approved]')).toBe(true)
+  })
+
+  test('labels say what the reviewer decided', () => {
+    expect(reviewVerdictLabel({ action: 'complete', outcome: 'changes-requested', targetStepId: null })).toBe(
+      'review changes requested'
+    )
+    expect(reviewVerdictLabel({ action: 'return', outcome: null, targetStepId: 'implement' })).toBe(
+      'review returned to implement'
+    )
   })
 })

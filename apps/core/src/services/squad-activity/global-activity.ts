@@ -1,15 +1,16 @@
 import { addWorkReferences } from './work-references'
 import { addActivityRowContext } from './row-context'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { coerceSquadActivityRef } from '@ficus/shared'
-import type { GlobalSquadActivityItem, SquadActivityKind } from '@ficus/shared'
+import type { ActivitySettledFilter, GlobalSquadActivityItem, SquadActivityKind } from '@ficus/shared'
 import { shapeActivityPage, type SquadActivityAccess } from '../squad/activity'
 import {
   decodeGlobalActivityCursor,
   encodeGlobalActivityCursor,
   type GlobalActivityCursorContext,
 } from '../squad/activity-cursor'
+import { settledRowSql } from './settled'
 
 export interface GlobalActivitySquadAccess {
   squadId: string
@@ -23,6 +24,8 @@ export interface ProjectGlobalActivityInput {
   kinds: readonly SquadActivityKind[]
   /** Only this work stream: its rows plus its bound participants' rows (workstreams:read squads only). */
   workStreamId?: string
+  /** Only the rows behind one of the Feed's settled counts (services/squad-activity/settled.ts). */
+  settled?: ActivitySettledFilter
   cursor?: string | null
   /** Every squad the caller may see rows from, with that squad's own resolved access. */
   squadAccess: GlobalActivitySquadAccess[]
@@ -49,6 +52,29 @@ type GlobalRow = Record<string, unknown> & {
 }
 
 /**
+ * The joined `squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id)` VALUES
+ * rows. Every column is cast: a VALUES row gives Postgres no context to infer a parameter type from,
+ * and postgres.js 4 sends JS booleans as untyped parameters, so an uncast flag is inferred as text and
+ * `NOT agents_read` fails with 42804 (v3 sent them typed as boolean).
+ */
+export function globalActivityAccessRowsSql(squadAccess: GlobalActivitySquadAccess[]): SQL {
+  return sql.join(
+    squadAccess.map(({ squadId, access }) => {
+      const inboxAll = access.inbox.mode === 'all'
+      const ownRecipient = access.inbox.mode === 'own' ? access.inbox.recipientId : null
+      return sql`(${squadId}::uuid,${access.agentsRead}::boolean,${access.workstreamsRead}::boolean,${inboxAll}::boolean,${ownRecipient}::uuid)`
+    }),
+    sql`,`
+  )
+}
+
+/** Row visibility against the joined `squad_access` row: the same rule as the per-squad projection. */
+export const globalActivityAccessPredicateSql = sql`((access_scope='agents' AND squad_access.agents_read)
+  OR (access_scope='workstreams' AND squad_access.workstreams_read)
+  OR (access_scope='inbox' AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id))
+  OR (access_scope='workstreams_inbox' AND squad_access.workstreams_read AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id)))`
+
+/**
  * Cross-squad sibling of projectSquadActivity (services/squad/activity.ts):
  * same indexed `squad_activity` projection, generalized to many
  * {squadId, access} pairs at once via a joined VALUES table instead of a
@@ -65,6 +91,7 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     agentIds: input.agentIds,
     kinds: input.kinds,
     ...(input.workStreamId ? { workStreamId: input.workStreamId } : {}),
+    ...(input.settled ? { settled: input.settled } : {}),
   }
   // Cursor validation always runs, even with zero accessible squads — an
   // invalid/malformed cursor is a client error regardless of what the caller
@@ -73,22 +100,12 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     input.cursor !== undefined && input.cursor !== null ? decodeGlobalActivityCursor(input.cursor, context) : null
   if (input.squadAccess.length === 0) return { items: [], hasMore: false, nextCursor: null }
 
-  const accessRows = input.squadAccess.map(({ squadId, access }) => {
-    const inboxAll = access.inbox.mode === 'all'
-    const ownRecipient = access.inbox.mode === 'own' ? access.inbox.recipientId : null
-    // Every column is cast: a VALUES row gives Postgres no context to infer a
-    // parameter type from, and postgres.js 4 sends JS booleans as untyped
-    // parameters, so an uncast flag is inferred as text and `NOT agents_read`
-    // fails with 42804 (v3 sent them typed as boolean).
-    return sql`(${squadId}::uuid,${access.agentsRead}::boolean,${access.workstreamsRead}::boolean,${inboxAll}::boolean,${ownRecipient}::uuid)`
-  })
-
   const rows = await db.execute<GlobalRow>(sql`
     WITH params AS (
       SELECT date_trunc('day',clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
         - interval '30 days' retention_floor
     ), squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id) AS (
-      VALUES ${sql.join(accessRows, sql`,`)}
+      VALUES ${globalActivityAccessRowsSql(input.squadAccess)}
     ), page AS (
       SELECT squad_activity.squad_id,lane,row_id,date_trunc('milliseconds',at) at,
         agent_id,CASE WHEN agent_type_requires_agents_read AND NOT squad_access.agents_read THEN NULL ELSE agent_type_id END agent_type_id,
@@ -97,11 +114,9 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
       JOIN squad_access ON squad_activity.squad_id=squad_access.squad_id
       CROSS JOIN params
       WHERE at>=params.retention_floor
-        AND ((access_scope='agents' AND squad_access.agents_read)
-          OR (access_scope='workstreams' AND squad_access.workstreams_read)
-          OR (access_scope='inbox' AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id))
-          OR (access_scope='workstreams_inbox' AND squad_access.workstreams_read AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id)))
+        AND ${globalActivityAccessPredicateSql}
         AND (${input.verbose}::boolean OR quiet_eligible)
+        AND ${input.settled ? settledRowSql(input.settled.kind, new Date(input.settled.since)) : sql`TRUE`}
         AND ${
           input.kinds.length === 0
             ? sql`TRUE`

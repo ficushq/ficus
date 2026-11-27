@@ -18,6 +18,10 @@ import {
 } from './feedSectionLayout'
 import { webStatus } from '../lib/statusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { acknowledgeFeedVisit } from '../api/auth'
+import { FeedSettledLine } from './FeedSettledLine'
+import { settledLineParts } from '../lib/settledActivity'
+import { useSettledSinceLastVisit } from '../hooks/useSettledSinceLastVisit'
 
 const ALL_SQUADS: readonly string[] = []
 const completionKey = (stream: WorkStream) => `${stream.id}:${stream.completedAt}`
@@ -171,16 +175,20 @@ export function AccountFeedVisit({
   userId,
   squadIds = ALL_SQUADS,
   acknowledge = acknowledgeFeedCompletion,
+  acknowledgeVisit = acknowledgeFeedVisit,
   useActivity = useAssistantActivity,
 }: FeedProps & {
   userId: string
   acknowledge?: typeof acknowledgeFeedCompletion
+  acknowledgeVisit?: typeof acknowledgeFeedVisit
   useActivity?: typeof useAssistantActivity
 }) {
   const location = useLocation()
   // Separate cache per mount/account: an old query page must not replay a saved receipt on refresh.
   const [visitId] = useState(() => crypto.randomUUID())
   const completed = useInfiniteQuery(feedQueries.updates(userId, visitId, squadIds))
+  const settled = useSettledSinceLastVisit(userId, visitId, squadIds, acknowledgeVisit)
+  const hasSettledLine = settledLineParts(settled).length > 0
   const { receipts, save, active } = useCompletionReceipts(acknowledge)
   const [dismissing, setDismissing] = useState(false)
   const dismissingRef = useRef(false)
@@ -254,7 +262,8 @@ export function AccountFeedVisit({
     squadIds.length > 0 || activity.ownerId !== userId
       ? []
       : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
-  if (dismissed || (!streams.length && !unreadConversations.length && !completed.isError)) return null
+  if (dismissed || (!streams.length && !unreadConversations.length && !hasSettledLine && !completed.isError))
+    return null
   const parts = [
     streams.length
       ? `${completed.hasNextPage ? (completed.data?.pages[0]?.totalCount ?? streams.length) : streams.length} completed`
@@ -314,6 +323,7 @@ export function AccountFeedVisit({
           </button>
         </summary>
         <div className="space-y-3 pb-3 pt-3">
+          <FeedSettledLine summary={settled} squadIds={squadIds} />
           {completed.isError && (
             <p role="alert" className={clsx(FEED_ROW_TEXT_INSET_CLASS, 'text-sm text-muted')}>
               Could not load updates.{' '}
