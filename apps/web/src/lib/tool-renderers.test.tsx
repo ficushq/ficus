@@ -77,6 +77,28 @@ describe('ask_human renderer', () => {
     expect(args).not.toContain('orange')
     expect(result).not.toContain('orange')
   })
+
+  it('marks the recommended option and shows its reason as visible text, not a tooltip', () => {
+    const args = renderToStaticMarkup(
+      <ToolArgsView
+        renderers={agentToolRenderers}
+        toolName="ask_human"
+        args={JSON.stringify({
+          questions: [
+            {
+              id: 'env',
+              type: 'select',
+              question: 'Where?',
+              options: [{ value: 'staging', recommended: true, reason: 'The build passed there.' }, { value: 'prod' }],
+            },
+          ],
+        })}
+      />
+    )
+    expect(args).toContain('staging<span class="ml-1 font-medium text-primary">· Recommended</span>')
+    expect(args).toContain('Recommended because: The build passed there.')
+    expect(args).not.toContain('title=')
+  })
 })
 
 describe('dispatch renderer', () => {

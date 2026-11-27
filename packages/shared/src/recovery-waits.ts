@@ -232,13 +232,14 @@ export function assertHumanAnswerableQuestions(
       return [
         { text: question.question, location: `the text of ${name}` },
         { text: question.context ?? '', location: `the context of ${name}` },
-        ...(question.options ?? []).flatMap((option) =>
-          [option.value, option.label ?? ''].map((text) => ({
+        ...(question.options ?? []).flatMap((option) => [
+          ...[option.value, option.label ?? ''].map((text) => ({
             text,
             location: `option '${option.value}' of ${name}`,
             proposedAction: true,
-          }))
-        ),
+          })),
+          { text: option.reason ?? '', location: `the recommendation reason of option '${option.value}' of ${name}` },
+        ]),
       ]
     })
   )

@@ -166,3 +166,24 @@ test('spoken waiting-input prompts include each question’s context', async () 
   }
   expect(buildAgentWaitingInputPrompt(agent)).toContain('1. Deploy now? Context: Tests passed on main.')
 })
+
+test('spoken waiting-input prompts name the recommended option and its reason', async () => {
+  const { buildAgentWaitingInputPrompt } = await import('./agentInputAnnouncements')
+  const agent = waitingAgent('a1')
+  agent.questionData = {
+    questions: [
+      {
+        id: 'q1',
+        type: 'select',
+        question: 'Where should I deploy?',
+        options: [
+          { value: 'staging', label: 'Staging' },
+          { value: 'prod', label: 'Production', recommended: true, reason: 'The release build passed there.' },
+        ],
+      },
+    ],
+  }
+  expect(buildAgentWaitingInputPrompt(agent)).toContain(
+    '1. Where should I deploy? Options: Staging, Production. Recommended: Production (The release build passed there.).'
+  )
+})

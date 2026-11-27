@@ -1,4 +1,4 @@
-import type { QuestionData, WorkStreamPause } from '@ficus/shared'
+import { recommendedQuestionOption, type QuestionData, type WorkStreamPause } from '@ficus/shared'
 import type { LinearAgentActivityContent } from './write-api'
 
 /**
@@ -9,7 +9,8 @@ import type { LinearAgentActivityContent } from './write-api'
  *
  * Everything written here is public text read in Linear. Bodies are fixed templates; the only
  * interpolated values are the pull request URL and label, the step position, the stream link (with a
- * public URL), and question text and option labels written for the person answering. Step names,
+ * public URL), and question text, option labels and the recommendation reason written for the person
+ * answering. Step names,
  * participants, agent evidence, internal IDs and paths never appear.
  */
 
@@ -147,7 +148,16 @@ export function selectableQuestion(data: QuestionData) {
   return options.length ? { item, options } : undefined
 }
 
-/** The elicitation for a question: its text and context, the options, and how to answer. */
+/** "Recommended: <label>. <reason>" for a question's recommended option, so Linear shows the agent's pick. */
+function recommendationLine(item: QuestionData['questions'][number]): string | undefined {
+  const option = recommendedQuestionOption(item)
+  if (!option) return undefined
+  const label = option.label?.trim() || option.value
+  const reason = option.reason?.trim()
+  return `Recommended: ${label}.${reason ? ` ${reason}` : ''}`
+}
+
+/** The elicitation for a question: its text and context, the options, the recommendation, and how to answer. */
 export function linearElicitation(
   question: ProjectionQuestion,
   authLinkUrl?: string
@@ -158,6 +168,8 @@ export function linearElicitation(
     if (item.context?.trim()) parts.push(item.context.trim())
     if (question.data.questions.length > 1 && item.options?.length)
       parts.push(item.options.map((option) => `- ${option.label?.trim() || option.value}`).join('\n'))
+    const recommendation = recommendationLine(item)
+    if (recommendation) parts.push(recommendation)
   }
   const selectable = selectableQuestion(question.data)
   const hint = LINEAR_PROJECTION_TEXT.replyHint
