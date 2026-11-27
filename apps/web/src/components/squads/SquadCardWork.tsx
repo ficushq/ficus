@@ -1,14 +1,12 @@
 import { Link } from 'react-router'
-import clsx from 'clsx'
-import { WORK_STREAM_STATUS_ROLE, workStreamRef, workStreamTitle, type WorkStream } from '@ficus/shared'
+import { workStreamRef, workStreamTitle, type WorkStream } from '@ficus/shared'
 import { Badge } from '../Badge'
+import { WorkStreamStatusMarker } from '../WorkStreamStatusMarker'
 import {
   getWsDisplayState,
   workStreamStatusLabel,
   WS_STATUS_BADGE_COLORS,
-  WS_STATUS_ICONS,
 } from '../../lib/workStreamStatusPresentation'
-import { webStatus } from '../../lib/statusPresentation'
 import { orderSquadCardWork, SQUAD_CARD_WORK_LIMIT } from './squadCardWorkOrder'
 
 /**
@@ -65,15 +63,8 @@ function SquadCardWorkRow({ workStream, squadSlug }: { workStream: WorkStream; s
       title={title}
       data-testid="squad-card-work-row"
     >
-      <span
-        aria-hidden="true"
-        className={clsx(
-          'w-4 shrink-0 text-center text-sm',
-          webStatus(WORK_STREAM_STATUS_ROLE[state] ?? 'neutral').textClass
-        )}
-      >
-        {WS_STATUS_ICONS[state] ?? '○'}
-      </span>
+      {/* The same status marker as every work stream row; the badge carries the words. */}
+      <WorkStreamStatusMarker workStream={workStream} />
       <span className="min-w-0 flex-1 truncate text-sm text-primary">{title}</span>
       <Badge color={WS_STATUS_BADGE_COLORS[state]} className="shrink-0">
         {label}

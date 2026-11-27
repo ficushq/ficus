@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../../test/domHarness'
+import { afterAnimationFrames } from '../../test/animationFrames'
 import type { ActivityWorkStreamCard, SquadActivityItem } from '@ficus/shared'
 import { ActivityFeedView } from './ActivityFeedView'
 
@@ -772,6 +773,69 @@ test('without agents:read the details panel shows the stream without chat or par
     expect(panel.textContent).not.toContain('Open chat')
     expect(panel.querySelectorAll('[data-testid="activity-work-details-state"] a')).toHaveLength(0)
     await dom.act(() => view.root.unmount())
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('a row that streams in is highlighted; rows of a new filter or a loaded page are not', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const row = (id: string): SquadActivityItem => ({
+    id,
+    at: new Date().toISOString(),
+    agentId: null,
+    agentTypeId: null,
+    kind: 'message',
+    summary: `Row ${id}`,
+    preview: [],
+    ref: { type: 'agent', agentId: 'agent', view: 'chat' },
+  })
+  try {
+    const view = dom.createRoot()
+    const render = async (
+      items: SquadActivityItem[],
+      state: { kinds?: SquadActivityItem['kind'][]; paging?: boolean } = {}
+    ) => {
+      await dom.act(() =>
+        view.root.render(
+          <MemoryRouter>
+            <ActivityFeedView
+              kinds={state.kinds ?? []}
+              onKindsChange={() => {}}
+              isLoading={false}
+              isError={false}
+              items={items}
+              loadingShapeKey="activity:squad:test"
+              workingAgentIds={new Set()}
+              agentDetailFor={() => undefined}
+              hrefFor={() => '/source'}
+              onOpenAgentReference={() => {}}
+              onOpen={() => {}}
+              hasNextPage
+              isFetchingNextPage={state.paging ?? false}
+              onLoadMore={() => {}}
+            />
+          </MemoryRouter>
+        )
+      )
+      await dom.act(() => afterAnimationFrames(dom.window))
+    }
+    const highlighted = () =>
+      [...view.container.querySelectorAll('.ficus-live-arrived')].map((node) => node.getAttribute('data-live-row'))
+
+    await render([row('1')])
+    expect(highlighted()).toEqual([])
+    await render([row('2'), row('1')])
+    expect(highlighted()).toEqual(['2'])
+
+    // Loading the next page is not a live change.
+    await render([row('2'), row('1')], { paging: true })
+    await render([row('2'), row('1'), row('0')])
+    expect(highlighted()).toEqual(['2'])
+
+    // Nor is a kind filter.
+    await render([row('9')], { kinds: ['handoff'] })
+    expect(highlighted()).toEqual([])
   } finally {
     await dom.cleanup()
   }

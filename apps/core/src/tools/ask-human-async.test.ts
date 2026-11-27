@@ -228,6 +228,90 @@ describe('async ask_human without blocking (managers and assistants)', () => {
   })
 })
 
+describe('async ask_human recommended option', () => {
+  function tool() {
+    const createQuestion = mock(async (_origin: unknown, _data: unknown, _options: unknown) => ({
+      ...record,
+      openedWaitWorkStreamIds: [],
+    }))
+    return {
+      createQuestion,
+      tool: createAsyncAskHumanTool(
+        { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+        { createQuestion }
+      ),
+    }
+  }
+  const ask = (t: ReturnType<typeof tool>['tool'], options: unknown[]) =>
+    t.execute(
+      'call-1',
+      { questions: [{ id: 'env', type: 'select', question: 'Where should I deploy?', options }] },
+      undefined,
+      undefined,
+      {} as any
+    )
+
+  test('offers the optional recommended flag and reason on every option', () => {
+    const schema = JSON.stringify(tool().tool.parameters)
+    expect(schema).toContain('"recommended"')
+    expect(schema).toContain('"reason"')
+    expect(schema).toContain('It is not preselected')
+    expect(schema).toContain('One-line plain-text reason for your recommendation (no Markdown)')
+    expect(schema).toContain('Expected whenever you recommend an option')
+    expect(schema).toContain('"maxLength":200')
+  })
+
+  test('records one recommended option with its trimmed reason and leaves the others unmarked', async () => {
+    const { tool: t, createQuestion } = tool()
+    const result = await ask(t, [
+      { value: 'staging', label: 'Staging', recommended: true, reason: '  The release build passed there.  ' },
+      { value: 'prod', recommended: false },
+      { value: 'skip' },
+    ])
+    expect(result.content[0]?.type === 'text' && result.content[0].text).toStartWith('Question recorded')
+    const data = createQuestion.mock.calls[0]?.[1] as { questions: { options: unknown[] }[] }
+    expect(data.questions[0]?.options).toEqual([
+      { value: 'staging', label: 'Staging', recommended: true, reason: 'The release build passed there.' },
+      { value: 'prod' },
+      { value: 'skip' },
+    ])
+  })
+
+  test('rejects more than one recommended option with a clear error', async () => {
+    const { tool: t, createQuestion } = tool()
+    const result = await ask(t, [
+      { value: 'staging', recommended: true },
+      { value: 'prod', recommended: true },
+    ])
+    expect(result.details).toEqual({
+      error: "Question 'env': at most one option can be recommended, but 2 were ('staging', 'prod')",
+    })
+    expect(createQuestion).not.toHaveBeenCalled()
+  })
+
+  test('rejects a reason on an option that is not recommended', async () => {
+    const { tool: t, createQuestion } = tool()
+    const result = await ask(t, [{ value: 'staging' }, { value: 'prod', reason: 'Faster.' }])
+    expect(result.details).toEqual({
+      error:
+        "Question 'env': option 'prod' has a reason but is not recommended; a reason belongs only on the recommended option",
+    })
+    expect(createQuestion).not.toHaveBeenCalled()
+  })
+
+  test('rejects a reason that is not one short line', async () => {
+    const { tool: t } = tool()
+    const multiline = await ask(t, [{ value: 'staging', recommended: true, reason: 'First.\nSecond.' }])
+    expect(result(multiline)).toBe("Error: Question 'env': the reason for option 'staging' must be one line")
+    const long = await ask(t, [{ value: 'staging', recommended: true, reason: 'x'.repeat(201) }])
+    expect(result(long)).toBe("Error: Question 'env': the reason for option 'staging' must be at most 200 characters")
+  })
+
+  function result(r: Awaited<ReturnType<typeof ask>>) {
+    return r.content[0]?.type === 'text' ? r.content[0].text : ''
+  }
+})
+
 describe('async ask_human forensic guard', () => {
   function toolWithSharedGuard() {
     // Runs the same shared check createAgentQuestion applies before persisting.
@@ -274,6 +358,35 @@ describe('async ask_human forensic guard', () => {
     expect(result.content[0]?.type === 'text' && result.content[0].text).toStartWith('Question recorded')
   })
 
+  test('checks the recommendation reason like the other human-facing text', async () => {
+    const { tool } = toolWithSharedGuard()
+    const result = await tool.execute(
+      'call-1',
+      {
+        questions: [
+          {
+            id: 'node',
+            type: 'select',
+            question: 'How should I recover the node?',
+            options: [
+              {
+                value: 'restart',
+                recommended: true,
+                reason: 'Can you run systemctl status xion and paste the output?',
+              },
+              { value: 'leave' },
+            ],
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      {} as any
+    )
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(text).toContain("Rejected text: the recommendation reason of option 'restart' of question 'node'.")
+  })
+
   test('names the rejected question field and suggests a rephrasing', async () => {
     const { tool } = toolWithSharedGuard()
     const result = await tool.execute(
@@ -305,7 +418,8 @@ test('question guidance arrives with the tool and the recorded question', async 
     executionId: 'execution-1',
     flushPersistence: async () => {},
   })
-  expect(tool.description).toContain('trade-off and your recommendation')
+  expect(tool.description).toContain('set recommended true on that one option with a one-line plain-text reason')
+  expect(tool.description).not.toContain('your recommendation, and name the evidence')
   expect(tool.description).toContain('not a manual wait or inbox message')
   expect(tool.description).toContain('Set blocking true when your current step needs the answer')
   expect(tool.description).toContain('independent branches can continue')

@@ -62,3 +62,30 @@ test('each new open request opens the list with an empty search; 0 never opens i
   expect(isOpen()).toBe(true)
   expect(search()!.value).toBe('')
 })
+
+test('the conversation search finds an agent by its name as well as by its title', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const { root } = dom.createRoot()
+  const document = dom.window.document
+  const named = { ...agent, id: 'a2', metadata: { name: 'Quartz', purpose: 'Draft the release notes' } } as Agent
+  await dom.act(async () => {
+    root.render(
+      <MemoryRouter>
+        <AssistantConversationSwitcher
+          agents={[agent, named]}
+          onSelect={() => {}}
+          onNew={() => {}}
+          canCreate
+          openRequest={1}
+        />
+      </MemoryRouter>
+    )
+  })
+  const search = document.querySelector<HTMLInputElement>('input[aria-label="Search assistant conversations"]')!
+  await dom.act(async () => {
+    fireEvent.change(search, { target: { value: 'quartz' } })
+  })
+  const text = document.body.textContent ?? ''
+  expect(text).toContain('Draft the release notes')
+  expect(text).not.toContain('Plan the launch')
+})

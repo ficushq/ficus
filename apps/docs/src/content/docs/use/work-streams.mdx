@@ -56,6 +56,8 @@ A stream's lifecycle is **Queued**, **Active**, **Done**, or **Canceled**. Its d
 
 **Parked** appears as a separate neutral pill alongside the work status, for example **Blocked** + **Parked** or **Paused** + **Parked**. Hover over it for an explanation. The status explains what is holding the work; Parked means it is not using a squad concurrency slot. Clearing a blocker makes the stream eligible to run when capacity permits; a paused stream still requires explicit **Resume**.
 
+Beside the status, each stream shows its **time worked**: the time its agents spent running on this stream. It counts only the executions that did this stream's work, from the moment each one started running, so time spent queued or waiting for capacity adds nothing. It also adds nothing while the stream waits, and an execution that has gone quiet for over 90 minutes stops counting at its last message. While the stream is waiting on a person (a question, a review, an approval, or a blocker only a person can clear), the list shows how long instead. It reads **Waiting on you 7d** when you can act on it, and names the wait otherwise, for example **Waiting on review 7d**. Hover over it for the time worked. The work stream details show both.
+
 Do not infer that a stream is frozen just because no new text is streaming. An agent may be using a tool, waiting on capacity, or waiting for a response. Open its details before sending the same request again.
 
 ## Read and reply in context

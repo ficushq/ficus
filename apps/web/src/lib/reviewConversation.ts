@@ -5,6 +5,8 @@ export interface ReviewConversationProps {
   agentId: string
   sendOptions: () => { reviewConsultation?: ReviewConsultationSend } | undefined
   placeholder: string
+  /** The ask box keeps only its input and send in view; its other actions sit behind More controls. */
+  foldComposerActions: boolean
 }
 
 /**

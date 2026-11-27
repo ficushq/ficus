@@ -60,6 +60,7 @@ import {
   QuestionIcon,
 } from '../icons'
 import {
+  agentTypeLabel,
   inferredConsultantOrigin,
   workStreamLabel,
   workStreamRef,
@@ -69,7 +70,7 @@ import {
 } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
-import { getAgentName, getAgentPrimaryLabel, agentMatchesQuery } from '../../lib/agentDisplay'
+import { agentListLabels, getAgentName, getAgentPurpose, agentMatchesQuery } from '../../lib/agentDisplay'
 
 export interface SquadAgentThreadsDependencies {
   Chat: ComponentType<ComponentProps<typeof Chat>>
@@ -705,10 +706,27 @@ export function SquadAgentThreads({
     )
   }
 
+  // Rows sit under their type's heading, so a row shows the purpose. Without one it reads as the type,
+  // never the name alone; agents of one type with no purpose add their work stream, else their name.
+  const { rowLabels, fullLabels } = useMemo(() => {
+    const typeFirst = agentListLabels(allAgents, (agent) => {
+      const work = activeWorkStreamsByAgent.get(agent.id)?.[0]
+      return work?.number ? `#${work.number}` : undefined
+    })
+    return {
+      rowLabels: new Map(allAgents.map((agent) => [agent.id, getAgentPurpose(agent) ?? typeFirst.get(agent.id)!])),
+      fullLabels: typeFirst,
+    }
+  }, [allAgents, activeWorkStreamsByAgent])
+  // A row outside the loaded list (none today) still reads as its type.
+  const agentRowLabel = (agent: Agent) => rowLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
+  // Recently Completed has no type heading above it, so its rows carry the full type-first label.
+  const completedRowLabel = (agent: Agent) => fullLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
   const renderAgentRow = (agent: Agent, compact = false) => {
     const isSelected = listSelectedAgentId === agent.id
     const stableName = getAgentName(agent)
-    const agentName = agent.agentTypeId === 'manager' ? `Manager (${stableName})` : getAgentPrimaryLabel(agent)
+    // Type first, then the purpose; the name stays in the hover title.
+    const agentName = agent.agentTypeId === 'manager' ? 'Manager' : agentRowLabel(agent)
     const activityAt = agent.lastHumanMessageAt ?? agent.createdAt
     const lastMessageTime = activityAt ? formatRelativeTime(activityAt) : null
     const terminateCheck = canTerminateAgent(agent)
@@ -1003,7 +1021,7 @@ export function SquadAgentThreads({
               : visibleCompletedAgents
             ).map((agent) => {
               const isSelected = listSelectedAgentId === agent.id
-              const agentName = getAgentPrimaryLabel(agent)
+              const agentName = completedRowLabel(agent)
               const stableName = getAgentName(agent)
               const finishedAt = completedAt(agent)
               const finishedTime = finishedAt ? formatRelativeTime(finishedAt) : null
@@ -1230,7 +1248,7 @@ export function SquadAgentThreads({
           <ExpandableChatPanel
             isFullscreen={isFullscreen}
             onExitFullscreen={toggleFullscreen}
-            title={composing ? 'New consultant' : titleParts ? `${titleParts.title} ${titleParts.suffix}` : 'Chats'}
+            title={composing ? 'New consultant' : titleParts ? `${titleParts.title} · ${titleParts.suffix}` : 'Chats'}
             titleContent={!composing && selectedAgent ? <AgentHeaderTitle agent={selectedAgent} /> : undefined}
             headerExtra={tabToggle}
             className="flex-1 min-w-0 min-h-0 border border-th-border rounded-lg bg-surface overflow-hidden flex flex-col"

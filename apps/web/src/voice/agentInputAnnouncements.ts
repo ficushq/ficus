@@ -1,23 +1,28 @@
-import type { Agent, QuestionItem } from '@ficus/shared'
+import { recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
+import { getAgentLabel } from '../lib/agentDisplay'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 
 type WaitingInputState = {
   spokenWaitingInputAgentIds?: string[] | Set<string>
 }
 
+// Spoken the way the app names agents: type first, then the purpose.
 function getAgentDisplayName(agent: Agent): string {
-  const name = agent.metadata?.name
-  if (typeof name === 'string' && name.trim()) return name.trim()
-  return agent.agentTypeId || 'Agent'
+  return getAgentLabel(agent)
 }
 
 function formatQuestion(question: QuestionItem, index: number): string {
   const options = question.options?.map((option) => option.label ?? option.value).filter(Boolean)
   const optionText = options?.length ? ` Options: ${options.join(', ')}.` : ''
+  // Agents now give their recommendation as an option field rather than in the question text.
+  const recommended = recommendedQuestionOption(question)
+  const recommendedText = recommended
+    ? ` Recommended: ${recommended.label ?? recommended.value}${recommended.reason ? ` (${recommended.reason})` : ''}.`
+    : ''
   const optionalText = question.optional ? ' Optional.' : ''
   const contextText = question.context?.trim() ? ` Context: ${question.context.trim()}` : ''
-  return `${index + 1}. ${question.question}${contextText}${optionText}${optionalText}`
+  return `${index + 1}. ${question.question}${contextText}${optionText}${recommendedText}${optionalText}`
 }
 
 export function buildAgentWaitingInputPrompt(agent: Agent): string {

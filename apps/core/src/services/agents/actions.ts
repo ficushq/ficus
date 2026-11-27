@@ -147,15 +147,21 @@ async function listDeliveryGateActions(): Promise<PendingAction[]> {
  * - Work streams in review or blocked status with prompts
  */
 export interface PendingActionListOptions {
-  /**
-   * Include view-only `workstream-delivery` actions. Opt-in: shipped clients
-   * that switch exhaustively over action types must never receive a type they
-   * cannot render, so the default response keeps the historical types only.
-   */
-  includeDeliveryGates?: boolean
+  /** Only list these action types. Omitted or empty lists every type, including view-only `workstream-delivery`. */
+  types?: readonly PendingActionType[]
+}
+
+/** Every pending action type: the values the `types` filter accepts. */
+export const PENDING_ACTION_TYPES = Object.keys(PRIORITY) as PendingActionType[]
+
+const PENDING_ACTION_TYPE_SET: ReadonlySet<string> = new Set(PENDING_ACTION_TYPES)
+
+export function isPendingActionType(value: string): value is PendingActionType {
+  return PENDING_ACTION_TYPE_SET.has(value)
 }
 
 export async function listPendingActions(options: PendingActionListOptions = {}): Promise<PendingAction[]> {
+  const wanted = options.types?.length ? new Set<PendingActionType>(options.types) : null
   const pendingActions: PendingAction[] = []
 
   // 1. Get squad-bound agents waiting for input (context has squadId)
@@ -397,10 +403,12 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       assigneeAgentId = run?.attemptAgents[String(wait.flowAttemptId)] ?? wait.createdByAgentId ?? null
     }
     let assigneeName: string | null = null
+    let assigneeAgentTypeId: string | undefined
     if (assigneeAgentId) {
       const [assignee] = await db.select().from(agents).where(eq(agents.id, assigneeAgentId))
       if (assignee) {
         assigneeName = (assignee.metadata as Record<string, unknown>)?.name as string | null
+        assigneeAgentTypeId = assignee.agentTypeId
       }
     }
 
@@ -417,6 +425,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
       assigneeAgentId,
       assigneeName,
+      ...(assigneeAgentTypeId ? { assigneeAgentTypeId } : {}),
       completionMode: new WorkStream(ws).completionMode,
       prompt,
     }
@@ -434,7 +443,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
   }
 
   // 3. Code-host delivery gates that need a person on the code host (no wait exists).
-  if (options.includeDeliveryGates) pendingActions.push(...(await listDeliveryGateActions()))
+  if (!wanted || wanted.has('workstream-delivery')) pendingActions.push(...(await listDeliveryGateActions()))
 
   // Sort by priority (ascending) then by createdAt (descending - most recent first)
   pendingActions.sort((a, b) => {
@@ -502,7 +511,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     })
   }
 
-  return pendingActions
+  return wanted ? pendingActions.filter((action) => wanted.has(action.type)) : pendingActions
 }
 
 /**

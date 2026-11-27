@@ -17,7 +17,7 @@ test('navigate resolves an agent handle to the unique live agent before offering
   const tools = createAssistantTools({ getAgent, listAgents })
   const navigate = tools.find((tool) => tool.definition.name === 'navigate')!
   const offered = (await navigate.execute({ agentId: 'bbbbbbbb' }, { navigate() {} })) as any
-  expect(offered.conversation).toMatchObject({ agentId: morgan.id, label: 'Morgan' })
+  expect(offered.conversation).toMatchObject({ agentId: morgan.id, label: 'Manager' })
   expect(listAgents).toHaveBeenCalledTimes(1)
 })
 

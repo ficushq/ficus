@@ -81,7 +81,9 @@ export function resolveVmChainDisplay(status: SandboxStatus): VmChainDisplay {
       if (chain && chain.boxProvisioned && chain.boxServer === 'down') {
         return { label: 'Box server down', detail: 'starts on next use', healthy: false }
       }
-      if (chain && !chain.boxProvisioned) return { label: 'Not started', healthy: false }
+      // A box is provisioned on first use, so a squad that has not run anything
+      // yet has none. That is normal, not a fault: neutral, never a warning.
+      if (chain && !chain.boxProvisioned) return { label: 'Not started', healthy: true, role: 'neutral' }
       return { label: 'Not running', healthy: false }
   }
 }

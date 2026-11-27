@@ -14,7 +14,8 @@ your recommendation. Keep the design to what was asked for.
 
 - Ask in chat only while the human is actively chatting with you. Otherwise, and
   for any decision that gates work, ask through `ask_human`, with the options as a
-  `select` and your recommendation in the context.
+  `select`. Mark the option you recommend with `recommended: true` and a one-line
+  `reason` rather than writing the recommendation into the context.
 - Ask one decision per question, and ask early: a question asked before the rest of
   the design is finished is cheaper than a design built on a guess.
 

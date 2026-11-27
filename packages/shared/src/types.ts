@@ -27,6 +27,24 @@ export type QuestionType = 'text' | 'select' | 'multi-select'
 export interface QuestionOption {
   value: string
   label?: string
+  /**
+   * The asking agent's recommended choice, marked "Recommended" on the question card. Display
+   * only: it is never preselected, and the person still chooses. At most one option per question.
+   */
+  recommended?: boolean
+  /** One-line reason for the recommendation, shown with it. Only on the recommended option. */
+  reason?: string
+}
+
+/** Longest one-line recommendation reason ask_human accepts. */
+export const QUESTION_RECOMMENDATION_REASON_MAX_LENGTH = 200
+
+/**
+ * The option a question recommends, if any. ask_human accepts at most one; should stored data
+ * ever carry more, only the first is treated as recommended.
+ */
+export function recommendedQuestionOption(question: Pick<QuestionItem, 'options'>): QuestionOption | undefined {
+  return question.options?.find((option) => option.recommended === true)
 }
 
 export interface QuestionItem {
@@ -983,6 +1001,8 @@ export interface WorkStreamActionData {
   }
   assigneeAgentId: string | null
   assigneeName: string | null
+  /** The assignee's type, so clients lead with it ("Engineer") instead of its name. Omitted by older servers. */
+  assigneeAgentTypeId?: string
   completionMode: WorkStreamCompletionMode
   prompt: WorkStreamPrompt
 }
@@ -1709,9 +1729,21 @@ export interface WorkStream {
   baseBranch?: string
 }
 
+/**
+ * Time worked on a work stream: the summed duration of the executions that did
+ * its work (its flow's bound agents; for a stream from before flows, its listed
+ * agents), with an execution silent for longer than Core's stale bound counted
+ * only up to its last assistant message.
+ */
 export interface WorkStreamRuntime {
   totalMs: number
+  /** Executions waiting for a sandbox, running or stopping. */
   activeCount: number
+  /**
+   * Running executions still accruing time as of `computedAt`, which clients
+   * extrapolate from. Omitted by older servers; fall back to `activeCount`.
+   */
+  workingCount?: number
   computedAt: string // ISO timestamp
 }
 

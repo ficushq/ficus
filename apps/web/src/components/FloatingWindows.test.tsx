@@ -237,8 +237,9 @@ test('the pop-out button opens one floating window per agent, and inside it open
     expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
     const win = t.windowFor(A)!
     expect(win.getAttribute('role')).toBe('dialog')
-    expect(win.querySelector('header')!.textContent).toContain('Researcher')
-    expect(win.querySelector('header')!.textContent).toContain('Consultant · Ficus')
+    // An untitled consultant chat is titled by its type; the agent's name follows as the handle.
+    expect(win.querySelector('header')!.textContent).toStartWith('Consultant')
+    expect(win.querySelector('header')!.textContent).toContain('Researcher · Ficus')
     expect(win.querySelector('[aria-label^="Agent activity"]')).not.toBeNull()
     // Opening again does not duplicate it.
     await t.click(popOut)
@@ -284,7 +285,7 @@ test("a window's title bar links the squad name to the squad's Home, which opens
     expect(link.className).toContain('ficus-button-link')
     expect(link.title).toBe('Open Ficus')
     // The agent type stays plain text before it.
-    expect(link.parentElement!.textContent).toBe('Consultant · Ficus')
+    expect(link.parentElement!.textContent).toBe('Researcher · Ficus')
 
     // Pressing the link and moving never drags the window by its title bar.
     const frame = t.windowFor(A)!

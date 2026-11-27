@@ -4,7 +4,7 @@ import { SquadAgentThreads } from './SquadAgentThreads'
 import { Link } from 'react-router'
 import { ChatIcon, ChevronRightIcon } from '../icons'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
-import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
+import { getConversationTitle } from '../../lib/agentDisplay'
 import type { Agent, AgentStatus, Squad, WorkStream } from '@ficus/shared'
 import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { AgentActivityDot } from '../AgentActivityDot'
@@ -151,7 +151,7 @@ export function SquadHomeTab({
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 <AgentActivityDot status={agent.status} />
               </span>
-              <span className="min-w-0 flex-1 truncate">{getAgentPrimaryLabel(agent)}</span>
+              <span className="min-w-0 flex-1 truncate">{getConversationTitle(agent)}</span>
               <ChevronRightIcon className="h-3.5 w-3.5 shrink-0" />
             </Link>
           ))}

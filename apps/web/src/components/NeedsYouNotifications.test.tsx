@@ -109,7 +109,7 @@ test('items already pending when the app opens raise no notice; only new ones do
   expect(view.cards()).toHaveLength(0)
   await view.setPending([questionAction('old'), questionAction('new', { createdAt: '2026-11-26T12:05:00.000Z' })])
   expect(view.cards()).toHaveLength(1)
-  expect(view.cards()[0]!.textContent).toContain('Payments Engineer has a question')
+  expect(view.cards()[0]!.textContent).toContain('Engineer has a question')
   expect(view.cards()[0]!.textContent).toContain('Retry on 409 as well?')
   expect(view.cards()[0]!.textContent).toContain('#8 · Make every payment retry safe')
 })
@@ -128,9 +128,9 @@ test('the trigger set is exactly new questions and gates the user can act on', a
     otherAction('workstream-delivery', 'pr'),
   ])
   expect(view.headlines()).toEqual([
-    'Payments Engineer has a question',
-    'Payments Engineer requests review',
-    'Payments Engineer needs your input',
+    'Engineer has a question',
+    'Engineer · review needed',
+    'Engineer · blocked on your input',
   ])
 })
 
@@ -139,10 +139,14 @@ test('more than three new items show the newest three', async () => {
   await view.setPending([])
   await view.setPending(
     [1, 2, 3, 4].map((minute) =>
-      questionAction(`q${minute}`, { createdAt: `2026-11-26T12:0${minute}:00.000Z` }, { agentName: `Agent ${minute}` })
+      questionAction(
+        `q${minute}`,
+        { createdAt: `2026-11-26T12:0${minute}:00.000Z` },
+        { agentTypeId: ['engineer', 'designer', 'reviewer', 'writer'][minute - 1]! }
+      )
     )
   )
-  expect(view.headlines()).toEqual(['Agent 4 has a question', 'Agent 3 has a question', 'Agent 2 has a question'])
+  expect(view.headlines()).toEqual(['Writer has a question', 'Reviewer has a question', 'Designer has a question'])
 })
 
 test('no notice for an item the user already has open', async () => {
@@ -206,7 +210,7 @@ test('a workflow gate opens its review over the current page', async () => {
   await view.setPending([
     waitAction('w9', { type: 'workstream-blocked', wait: { resolutionHandler: 'workflow', workflowHumanGate: true } }),
   ])
-  expect(view.headlines()).toEqual(['Payments Engineer requests review'])
+  expect(view.headlines()).toEqual(['Engineer · review needed'])
   await view.act(async () => (view.cards()[0]!.querySelector('button') as HTMLButtonElement).click())
   expect(view.location()).toBe('/squads?review=ws-uuid-8&reviewWait=w9')
 })
@@ -255,7 +259,7 @@ test('notification preferences off shows nothing', async () => {
   const mutedQuestions = await mount({ preferences: { pushEnabled: true, mutedEvents: ['question'] } })
   await mutedQuestions.setPending([])
   await mutedQuestions.setPending([questionAction('q1'), waitAction('w1')])
-  expect(mutedQuestions.headlines()).toEqual(['Payments Engineer requests review'])
+  expect(mutedQuestions.headlines()).toEqual(['Engineer · review needed'])
   await dom!.cleanup()
 
   const unloaded = await mount({ preferences: 'unloaded' })

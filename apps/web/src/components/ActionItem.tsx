@@ -40,6 +40,7 @@ import {
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { pendingActionAgentLabel, pendingActionContextLine } from '../lib/pendingActionWording'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -47,7 +48,7 @@ const NON_WORK_STREAM_ACTION_STATUS: Record<
   ActionStatusPresentation
 > = {
   'agent-error': { icon: '!', role: 'danger', label: 'Agent halted' },
-  'squad-question': { icon: '?', role: 'humanWait', label: 'Needs your input' },
+  'squad-question': { icon: '?', role: 'humanWait', label: 'Needs your answer' },
   'agent-question': { icon: '?', role: 'humanWait', label: 'Needs your answer' },
   'assistant-needs-input': { icon: '?', role: 'humanWait', label: 'Needs your answer' },
 }
@@ -196,8 +197,8 @@ export function ActionItem({
       : assistantTask
         ? assistantTask.taskLabel
         : agentItem
-          ? agentItem.agentName || agentItem.agentTypeId
-          : action.squadName
+          ? (pendingActionAgentLabel(action) ?? agentItem.agentTypeId)
+          : (pendingActionAgentLabel(action) ?? action.squadName)
 
   return (
     <>
@@ -333,82 +334,7 @@ export function ActionItem({
 }
 
 function ActionSubtitle({ action }: { action: PendingAction }) {
-  switch (action.type) {
-    case 'squad-question': {
-      const data = action.data as SquadQuestionActionData
-      const name = data.agentName || data.agentTypeId
-      return <p className="text-xs text-muted truncate">{name} · needs your input</p>
-    }
-    case 'agent-question': {
-      const data = action.data as AgentQuestionActionData
-      return (
-        <p className="text-xs text-muted truncate">
-          {data.squadName ? `${data.squadName} · ` : ''}
-          {data.answerDelivery?.status !== 'failed'
-            ? 'Needs your answer'
-            : data.answerDelivery.refusal
-              ? 'Answer not delivered'
-              : 'Answer delivery unconfirmed'}
-        </p>
-      )
-    }
-    case 'agent-error': {
-      const data = action.data as AgentErrorActionData
-      return <p className="text-xs text-muted truncate">{data.squadName ? `${data.squadName} · ` : ''}Agent halted</p>
-    }
-    case 'assistant-needs-input': {
-      const data = action.data as AssistantTaskActionData
-      return (
-        <p className="text-xs text-muted truncate">
-          Assistant task{data.squadName ? ` · ${data.squadName}` : ''} · needs your answer
-        </p>
-      )
-    }
-    case 'workstream-review': {
-      const data = action.data as WorkStreamActionData
-      const assignee = data.assigneeName || (data.assigneeAgentId ? data.assigneeAgentId.slice(0, 8) : null)
-      return (
-        <p className="text-xs text-muted truncate">
-          {data.squadName}
-          {assignee ? ` · ${assignee} requests review` : ' · ready for review'}
-        </p>
-      )
-    }
-    case 'workstream-blocked': {
-      const data = action.data as WorkStreamActionData
-      const assignee = data.assigneeName || (data.assigneeAgentId ? data.assigneeAgentId.slice(0, 8) : null)
-      return (
-        <p className="text-xs text-muted truncate">
-          {data.squadName}
-          {workStreamActionPresentationState(action) === 'in_review'
-            ? ' · review needed'
-            : data.deliveryApproval
-              ? ' · approve delivery'
-              : data.attemptLimit
-                ? ' · attempt limit reached'
-                : data.wait.resolutionHandler === 'workflow'
-                  ? ' · workflow decision'
-                  : assignee
-                    ? ` · ${assignee} needs input`
-                    : ' · needs input'}
-        </p>
-      )
-    }
-    case 'workstream-delivery': {
-      const data = action.data as WorkStreamDeliveryActionData
-      return (
-        <p className="text-xs text-muted truncate">
-          {data.squadName} · {deliveryGateLabel(data)}
-        </p>
-      )
-    }
-    default:
-      return null
-  }
-}
-
-function deliveryGateLabel(data: WorkStreamDeliveryActionData): string {
-  return data.deliveryKind === 'merge' ? 'Merge pull request' : 'Review pull request'
+  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action)}</p>
 }
 
 type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]

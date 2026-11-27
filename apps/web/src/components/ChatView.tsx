@@ -278,6 +278,12 @@ interface ChatViewProps {
   /** More controls at the end of the composer's bottom-left row (the floating-window button). Desktop only. */
   composerControls?: React.ReactNode
   /**
+   * Keep the composer's actions (attach, voice, auto-scroll, raw text, history search) behind its More
+   * controls trigger at every width, leaving the input and send: a side conversation such as the review
+   * screen's ask box. Each action stays one hover or tap away.
+   */
+  foldComposerActions?: boolean
+  /**
    * Live typing with teammates in this agent's chat: show who else is typing, and tell them when
    * this person is (see useAgentChatTyping). Off for conversations private to one person.
    */
@@ -676,6 +682,7 @@ export function ChatView({
   focusInboxMessageId,
   enableHistorySearch = false,
   composerControls,
+  foldComposerActions = false,
   showTeammateTyping = false,
   dependencies,
 }: ChatViewProps) {
@@ -1157,14 +1164,14 @@ export function ChatView({
       send: composerSendRef,
     },
     {
-      floor: optionsAsSheet ? 'folded' : 'inline',
+      floor: optionsAsSheet || foldComposerActions ? 'folded' : 'inline',
       // The menu belongs to the folded row: once the actions are back inline its trigger is gone.
       onChange: (layout) => {
         if (layout.level === 'inline') setAttachSheetOpen(false)
       },
     }
   )
-  const composerFolded = optionsAsSheet || composerLayout.level !== 'inline'
+  const composerFolded = optionsAsSheet || foldComposerActions || composerLayout.level !== 'inline'
   // The menu opens on hover like the app's other hover menus; the phone sheet stays tap-only.
   const optionsHover = useHoverOpen(optionsMenu, { enabled: !optionsAsSheet })
 

@@ -21,7 +21,7 @@ import {
   type ChatWindowsState,
 } from '../lib/chatWindows'
 import { agentChatTargetOf, isFloatingWindowClick } from '../lib/agentChatLinks'
-import { getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentTitle } from '../lib/agentDisplay'
 import { AgentActivityDot } from './AgentActivityDot'
 import { AgentChatWindow } from './AgentChatWindow'
 import { CloseIcon } from './icons'
@@ -244,7 +244,7 @@ function MinimizedTray() {
 
 function TrayChip({ agentId, unread, onRestore }: { agentId: string; unread: boolean; onRestore: () => void }) {
   const { data: agent } = useQuery(queries.agents.detail(agentId))
-  const label = agent ? (agent.agentTypeId === 'manager' ? 'Manager' : getAgentPrimaryLabel(agent)) : 'Agent chat'
+  const label = agent ? getAgentTitle(agent) : 'Agent chat'
   return (
     <button
       type="button"
