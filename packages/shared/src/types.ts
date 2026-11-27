@@ -1851,9 +1851,12 @@ export interface ResolveWorkStreamWaitInput {
   note?: string
 }
 
-// Work stream metrics (aggregated from executions)
+// Work stream metrics, aggregated from the executions that did this stream's work:
+// the same executions its time worked counts (the flow's bound agents, or the
+// listed agents of a stream from before flows), never a persistent agent's work
+// on other streams.
 export interface WorkStreamMetrics {
-  // Token counts across all executions
+  // Token counts across those executions
   tokens: {
     input: number
     output: number
@@ -1871,7 +1874,7 @@ export interface WorkStreamMetrics {
   }
   // Time metrics
   duration: {
-    totalMs: number // Sum of all execution durations
+    totalMs: number // Time worked: equals the stream's runtime totalMs
     firstStartedAt: string | null
     lastEndedAt: string | null
   }

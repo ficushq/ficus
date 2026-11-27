@@ -55,6 +55,76 @@ A correlated startup failure retains its actual error but is presented as
 than a separate unexplained “Execution failed” notice. This does not classify the new error itself as restart-caused.
 Provider/auth policy and admission fences are unchanged.
 
+## Hard interruptions: no shutdown marker
+
+When Core dies without draining (OOM, SIGKILL, node loss), startup recovery
+(`recoverInterruptedExecutionsForStartup`) or the abandoned-lease sweep
+(`requeueAbandonedLeaseExecutions`) requeues the execution. Their chat notice
+records the cause in metadata as `interruptionCause`: `core_restart` for startup
+recovery, `lease_lapsed` for the sweep. Nothing was drained, so the pi session
+file holds the assistant message with any tool call that was running, but not its
+result. On the next model request pi-ai would fill that gap with a generic
+`No result provided` error.
+
+On pickup, `findHardInterruption` reads the execution's latest recovery notice.
+When it is a hard one (not a graceful pause marker), the base runner:
+
+- records the calls the interruption cut off as a `ficus:interrupted-tool-calls`
+  session custom entry, once per notice
+  (`services/agent/interrupted-tool-calls.ts`). A call counts only when it is in
+  the session's last assistant message, has no result after it, and that message
+  was written after the execution was created and before the notice. Any other
+  missing result keeps pi-ai's placeholder.
+- prefixes the resumed prompt with `interruptedResumeNotice` ("Ficus recovered
+  this run at &lt;time&gt; after an unexpected Core restart. …", or "after the
+  Ficus worker running it stopped unexpectedly" for a lapsed lease) and the
+  shared `RESTART_RECOVERY_BRIEF`. It is sent until a prompt reaches the
+  session, so a pickup that fails before prompting repeats it and a later requeue
+  of the same run does not. Before this, the chat notice was the only trace of a
+  hard interruption, and it never reached the model.
+
+A pi `context` hook (`createInterruptedToolCallsExtension`, registered by
+`FicusResourceLoader`) answers each recorded call that still has no result with
+a specific error result, chosen by the tool's replay class:
+
+| Class        | Result after "The &lt;tool&gt; call was interrupted by an unexpected Core restart before it returned a result (recovered at &lt;time&gt;). No output was kept." |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `safe`       | "&lt;tool&gt; only reads, so it is safe to run again."                                                                                                          |
+| `idempotent` | "It may or may not have completed. Running it again with the same arguments leaves the same final state, so it is safe to repeat."                              |
+| `unsafe`     | "It may have partially run or completed. Inspect the current state before retrying, and do not repeat an external side effect whose outcome is unknown."        |
+
+A call with the same tool and exact arguments that an earlier interruption in the
+same session already cut off gets the cautious wording whatever its class: it was
+interrupted by a restart before, so it may be what caused it (a read or search
+large enough to exhaust memory). The model is told not to run it again as is and
+to narrow it first. Nothing else caps a crash loop yet; requeueing a run does not
+count against the failure budget.
+
+The hook rewrites only pi's copy of the context; the session file keeps the call
+without a result. The Claude Code bridge receives that same context, so a session
+re-seeded after the crash (a pending tool result always re-seeds) shows the same
+result in its transcript. Nothing is rerun automatically.
+
+### Tool replay classes
+
+Every built-in tool has a replay class in one table, `apps/core/src/tools/metadata.ts`:
+`safe` (reads only), `idempotent` (a repeat with the same arguments leaves the same
+final state, or is refused) or `unsafe` (a repeat may duplicate an effect). A tool
+that is not listed, including pi extension and integration tools, is `unsafe`.
+`wrapToolWithRecovery` puts the class on each session tool definition as `ficus`
+and as pi's standard `annotations` hints (`readOnlyHint`, `idempotentHint`).
+
+The recovery wrapper also has a budget rule for the class: a `safe` or
+`idempotent` call that a lost sandbox connection cut off mid-call
+(`BashOutcomeUnknownError`, or a response-phase `SandboxTransportError`) is not
+recorded as an unexplained failure, and its error says it is safe to run again. The
+same interruption of an `unsafe` tool still counts. Today the rule has no effect on
+built-in tools: only the Bash stream reports these errors, and Bash is `unsafe`;
+unary sandbox reads and writes classify every transport failure as `connect`, which
+counts for every tool. It applies once those transports report response-phase
+failures. Restart-tagged cancellations stay free for every tool as before, and a
+hard crash records nothing.
+
 ## Failed resumed runs
 
 A resumed run is one the platform requeued after an interruption: a graceful
@@ -113,6 +183,8 @@ facts and distinct events, not copies of that procedure:
 | Surface                                                 | What it carries                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `restartResumeNotice`, prefixed once by the base runner | Correlation plus the shared `RESTART_RECOVERY_BRIEF` (free retry, safe recovery) for an execution resumed after a **worker** restart.                                                                                                                                     |
+| `interruptedResumeNotice`, prefixed by the base runner  | The cause and recovery time plus the shared `RESTART_RECOVERY_BRIEF`, for an execution resumed after a **hard** interruption (startup recovery or the lease sweep). Never in the same prompt as `restartResumeNotice`.                                                    |
+| Cut-off tool results (context hook)                     | Per-call fact and the tool's replay class (safe to run again, safe to repeat, or inspect first). No general restart procedure.                                                                                                                                            |
 | Command drain errors/refusals                           | Per-command outcome and correlation; unconfirmed cleanup still requires process inspection. No general replay instructions.                                                                                                                                               |
 | Recovery tool wrapper                                   | For a box-only restart (the execution keeps running, so no resumed prompt follows) it appends the same `RESTART_RECOVERY_BRIEF` once to the tool result. For a worker restart it adds nothing. Unknown losses and native holds still carry their own safety instructions. |
 | Startup pause/resume chat rows                          | Status and durable correlation metadata, not another agent procedure.                                                                                                                                                                                                     |
@@ -289,7 +361,8 @@ the same recipient in one bash call are one message; pass distinct
 key is derived and each command is new, as before.
 
 **Limit.** A key only protects against the same call running again. After a hard
-Core restart the model sees no result for the cut-off call and may retry with a
+Core restart the model sees an interruption result for the cut-off call (see
+[Hard interruptions](#hard-interruptions-no-shutdown-marker)) and may retry with a
 new call, which has a new ID and so a new key. Two narrow content guards cover
 the most harmful of those duplicates within the same execution (a restart
 resumes the same execution):
