@@ -1631,7 +1631,8 @@ export abstract class AgentRunner {
       }
       const validationError = providerRequestValidationError(err)
       const errorMsg = validationError?.message ?? (err instanceof Error ? err.message : String(err))
-      // The re-queued run sends this prompt again, images included.
+      // A prompt that never reached the session was released above, so the re-queued run claims
+      // and sends it again, images included; one the session already holds is only continued.
       if (this.leaveForShutdownRequeue(errorMsg)) return
       if (imageIds.length > 0) await Image.markManyFailed(imageIds)
       log.error(`session.prompt() failed for execution ${this.execution.id}:`, validationError ?? err)
