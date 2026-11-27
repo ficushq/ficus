@@ -16,6 +16,7 @@ import { Badge } from './Badge'
 import { SegmentedControl } from './SegmentedControl'
 import { LoadingSurface, SkeletonBlock, SkeletonLine } from './loading/Skeleton'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
+import { WorkStreamStatusMarker } from './WorkStreamStatusMarker'
 import {
   commandCenterSearch,
   consultantConversations,
@@ -24,7 +25,7 @@ import {
   type CommandDestination,
   type CommandResult,
 } from '../lib/commandCenterSearch'
-import { getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentLabel, getAgentTitle, getConversationTitle } from '../lib/agentDisplay'
 import { ALL_SECTIONS, isSectionAllowed } from './settings/settingsSections'
 import { AgentChat } from './AgentChat'
 import { ActionItem } from './ActionItem'
@@ -180,9 +181,7 @@ export function AssistantCommandCenter({
       : entry?.kind === 'work'
         ? data.streams.find((w) => w.id === entry.id || workStreamRef(w) === entry.id)?.title
         : entry?.kind === 'chat' && currentAgent
-          ? currentAgent.agentTypeId === 'manager'
-            ? 'Manager'
-            : getAgentPrimaryLabel(currentAgent)
+          ? getAgentTitle(currentAgent)
           : undefined
   const destination = entry && label ? { ...entry, label } : entry
   const destinationSquad =
@@ -422,27 +421,35 @@ export function AssistantCommandCenter({
                     i === index && 'bg-selection'
                   )}
                 >
-                  {result.status && result.status !== 'idle' && (
-                    <AgentActivityDot status={result.status} className="shrink-0" />
-                  )}
-                  {result.unread && (
-                    <span aria-label="Unread updates" className="inline-block h-2 w-2 shrink-0 rounded-full bg-badge" />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{result.label}</span>
-                    <span className="flex items-center gap-2 text-xs text-muted mt-0.5">
-                      <span className="truncate">{result.detail}</span>
-                      {result.work && <CommandWorkStatus work={result.work} />}
-                      {result.agentTypeId && <CommandAgentType typeId={result.agentTypeId} />}
-                      {result.summary && <span className="shrink-0 truncate max-w-[40%]">{result.summary}</span>}
-                    </span>
-                  </span>
-                  {result.timestamp ? (
-                    <time dateTime={result.timestamp} className="shrink-0 text-[11px] text-muted">
-                      {formatAssistantUpdateTime(result.timestamp)}
-                    </time>
+                  {result.work ? (
+                    <CommandWorkRow work={result.work} title={result.label} context={result.detail} />
                   ) : (
-                    <span className="shrink-0 text-[11px] text-muted">{result.kind}</span>
+                    <>
+                      {result.status && result.status !== 'idle' && (
+                        <AgentActivityDot status={result.status} className="shrink-0" />
+                      )}
+                      {result.unread && (
+                        <span
+                          aria-label="Unread updates"
+                          className="inline-block h-2 w-2 shrink-0 rounded-full bg-badge"
+                        />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{result.label}</span>
+                        <span className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                          <span className="truncate">{result.detail}</span>
+                          {result.agentTypeId && <CommandAgentType typeId={result.agentTypeId} />}
+                          {result.summary && <span className="shrink-0 truncate max-w-[40%]">{result.summary}</span>}
+                        </span>
+                      </span>
+                      {result.timestamp ? (
+                        <time dateTime={result.timestamp} className="shrink-0 text-[11px] text-muted">
+                          {formatAssistantUpdateTime(result.timestamp)}
+                        </time>
+                      ) : (
+                        <span className="shrink-0 text-[11px] text-muted">{result.kind}</span>
+                      )}
+                    </>
                   )}
                   <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
                 </button>
@@ -642,10 +649,9 @@ function SquadPreview({
       <section>
         <h3 className="text-xs text-muted mb-2">Active work</h3>
         {work.map((w) => (
-          <PreviewRow
+          <WorkPreviewRow
             key={w.id}
-            title={workStreamTitle(w)}
-            detail={<CommandWorkStatus work={w} />}
+            work={w}
             onClick={() => onPush({ kind: 'work', id: workStreamRef(w), squadId: id, label: workStreamTitle(w) })}
           />
         ))}
@@ -663,7 +669,7 @@ function SquadPreview({
         {chats.map((a) => (
           <PreviewRow
             key={a.id}
-            title={getAgentPrimaryLabel(a)}
+            title={getConversationTitle(a)}
             status={a.status}
             agentId={a.id}
             detail={
@@ -673,7 +679,7 @@ function SquadPreview({
               </span>
             }
             onClick={() =>
-              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId: id, label: getAgentPrimaryLabel(a) })
+              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId: id, label: getConversationTitle(a) })
             }
           />
         ))}
@@ -713,18 +719,13 @@ function SquadPreview({
               ]}
             />
             {completedWork.map((work) => (
-              <PreviewRow
+              <WorkPreviewRow
                 key={work.id}
-                title={workStreamTitle(work)}
-                detail={
-                  <span className="inline-flex items-center gap-2">
-                    <CommandWorkStatus work={work} />
-                    {new Date(work.completedAt ?? work.updatedAt ?? work.createdAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </span>
-                }
+                work={work}
+                context={new Date(work.completedAt ?? work.updatedAt ?? work.createdAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })}
                 onClick={() =>
                   onPush({ kind: 'work', id: workStreamRef(work), squadId: id, label: workStreamTitle(work) })
                 }
@@ -780,6 +781,19 @@ function PreviewRow({
   )
 }
 
+/** A work stream in a squad's Assistant view: the shared work stream row, as a button. */
+function WorkPreviewRow({ work, context, onClick }: { work: WorkStream; context?: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="ficus-button ficus-button-ghost flex w-full items-center gap-2 px-3 py-2.5 text-left rounded-xl hover:bg-selection focus:bg-selection"
+    >
+      <CommandWorkRow work={work} title={workStreamTitle(work)} context={context} />
+      <ChevronRightIcon className="w-4 h-4 text-muted shrink-0" />
+    </button>
+  )
+}
+
 function WorkPreview({
   id,
   squadId,
@@ -826,7 +840,7 @@ function WorkPreview({
         {assigned.map((a) => (
           <PreviewRow
             key={a.id}
-            title={getAgentPrimaryLabel(a)}
+            title={getAgentLabel(a)}
             status={a.status}
             agentId={a.id}
             detail={
@@ -835,7 +849,7 @@ function WorkPreview({
                 {a.id === row.assigneeAgentId ? 'Assigned' : null}
               </span>
             }
-            onClick={() => onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId, label: getAgentPrimaryLabel(a) })}
+            onClick={() => onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId, label: getAgentLabel(a) })}
           />
         ))}
         {agents.isPending ? (
@@ -855,7 +869,7 @@ function WorkPreview({
         <section>
           <h3 className="text-xs text-muted mb-2">Started here</h3>
           <PreviewRow
-            title={getAgentPrimaryLabel(origin)}
+            title={getConversationTitle(origin)}
             agentId={origin.id}
             detail={
               <span className="inline-flex items-center gap-2">
@@ -869,7 +883,7 @@ function WorkPreview({
                 id: origin.id,
                 agentId: origin.id,
                 squadId: origin.squadId ?? squadId,
-                label: getAgentPrimaryLabel(origin),
+                label: getConversationTitle(origin),
                 readOnly: true,
               })
             }
@@ -947,6 +961,26 @@ function CommandAgentType({ typeId }: { typeId: string }) {
 
 function CommandWorkStatus({ work }: { work: WorkStream }) {
   return <WorkStreamStatusBadges workStream={work} />
+}
+
+/**
+ * A work stream in the Assistant, drawn like the row in every other list: status marker,
+ * "#number · title", one line of context beneath, and the status badge at the right.
+ */
+function CommandWorkRow({ work, title, context }: { work: WorkStream; title: string; context: React.ReactNode }) {
+  return (
+    <>
+      <WorkStreamStatusMarker workStream={work} className="self-start mt-1.5" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">
+          <span className="sr-only">Work stream </span>
+          {title}
+        </span>
+        {context && <span className="mt-0.5 block truncate text-xs text-muted">{context}</span>}
+      </span>
+      <WorkStreamStatusBadges workStream={work} className="max-w-[45%] shrink-0 justify-end" />
+    </>
+  )
 }
 
 function InlineCommandChat({

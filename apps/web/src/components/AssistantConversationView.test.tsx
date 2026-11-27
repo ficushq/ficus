@@ -546,7 +546,9 @@ test('assistant summaries show nested conversations as full rows and task update
   )
   const footer = footerRoot.container
   // A full row: the agent's resolved label as the title and an action subtitle, not a bare text link.
-  const row = footer.querySelector<HTMLButtonElement>('button[aria-label="Open conversation: Fix inline PR rows"]')!
+  const row = footer.querySelector<HTMLButtonElement>(
+    'button[aria-label="Open conversation: Engineer (Fix inline PR rows)"]'
+  )!
   expect(row).not.toBeNull()
   expect(row.textContent).toContain('Fix inline PR rows')
   expect(row.textContent).toContain('Open conversation')

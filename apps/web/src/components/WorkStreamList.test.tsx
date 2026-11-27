@@ -210,7 +210,7 @@ describe('WorkStreamList', () => {
           </MemoryRouter>
         )
       )
-      const row = rendered.container.querySelector('[data-testid="feed-work-row"]')!
+      const row = rendered.container.querySelector('[data-testid="work-stream-row"]')!
       const link = [...row.querySelectorAll('a')].find((element) => element.textContent === label)!
       expect(link).toBeTruthy()
       expect(link.getAttribute('href')).toBe(destination)
@@ -845,15 +845,18 @@ describe('WorkStreamList', () => {
     }
   })
 
-  test('renders assigned agent metadata in a stacked mobile row and linked desktop pill', () => {
+  test('names the assigned agent by type in the row context line, linked to its thread, never by name', () => {
     const html = renderWorkStreamList([workStream({ assigneeAgentId: engineer.id })], {}, '/', [engineer])
-
-    expect(html).toContain('>Engineer</a>')
-    expect(html).toContain('href="/squads/squad-1/agents?agent=agent-1"')
-    expect(html).toContain('bg-badge-accent-1-surface')
-    expect(html).toContain('data-testid="work-stream-mobile-metadata"')
-    expect(html).toContain('>Engineer</span>')
-    expect(html).toContain('>In Progress</span>')
+    const contextStart = html.indexOf('data-testid="work-stream-row-context"')
+    const titleLine = html.slice(html.indexOf('data-testid="work-stream-row"'), contextStart)
+    const context = html.slice(contextStart, html.indexOf('</div>', contextStart))
+    const link = context.slice(context.indexOf('<a '), context.indexOf('</a>'))
+    expect(link).toContain('href="/squads/squad-1/agents?agent=agent-1"')
+    expect(link).toContain('aria-label="Agent activity: Idle"')
+    expect(link).toMatch(/<\/span>Engineer$/)
+    // The status badge sits at the right of the title line, not in the context line.
+    expect(titleLine).toContain('>In Progress</span>')
+    expect(context).not.toContain('In Progress')
     expect(html).not.toContain('Pearl')
   })
 
@@ -964,9 +967,11 @@ describe('WorkStreamList', () => {
 
     expect(html).toContain('title="Active"')
     expect(html).toContain('bg-status-progress-badge-surface')
-    expect(html).toContain('text-status-progress-fg')
-    expect(html).toContain('>●</span>')
-    expect(html).not.toContain('title="Active">○')
+    // The status marker is the progress dot. The badge beside it says the same words, so the dot is
+    // hidden from assistive technology and only carries them as a hover title.
+    expect(html).toMatch(
+      /aria-hidden="true" title="Active" data-testid="work-stream-status-marker" class="[^"]*bg-status-progress-solid/
+    )
     expect(html).not.toContain('bg-placeholder')
   })
 
@@ -1110,7 +1115,7 @@ describe('WorkStreamList feed section headers', () => {
 
   test('indent feed rows so their status dot stays under the header title', () => {
     const feed = renderWorkStreamList(streams, feedProps, '/?collapsed=0')
-    const rows = feed.match(/<li class="[^"]*" data-testid="feed-work-row"/g) ?? []
+    const rows = feed.match(/<li class="[^"]*" data-testid="work-stream-row"/g) ?? []
     expect(rows).toHaveLength(2)
     for (const row of rows) {
       // From sm up: 12px header padding + 16px chevron + 8px gap.
@@ -1124,13 +1129,18 @@ describe('WorkStreamList feed section headers', () => {
   test('space every feed metadata separator the same way', () => {
     const active = workStream({ runtime: { totalMs: 12_000, activeCount: 0, computedAt: now.toISOString() } })
     const done = workStream({ id: 'ws-done', status: 'done', completedAt: now })
-    const feed = renderWorkStreamList([active, done], feedProps, '/?collapsed=0')
+    const feed = renderWorkStreamList([active, done], { ...feedProps, showSquadFilter: true }, '/?collapsed=0')
     // Each dot is its own flex item so the row's gap spaces both sides evenly; no text embeds a dot.
     const separators = feed.match(/<span aria-hidden="true">·<\/span>/g) ?? []
     // One before the active row's runtime and one before the completed row's date.
     expect(separators).toHaveLength(2)
     expect(feed).toContain('<span class="sr-only">Time worked </span>12s</span>')
     expect(feed).not.toMatch(/>· /)
+    // Each dot travels with the item before it, so a wrapped context line never starts with one.
+    expect(feed).toMatch(
+      /12s<\/span><span aria-hidden="true">·<\/span><\/span>|Ficus<\/a><span aria-hidden="true">·<\/span><\/span>/
+    )
+    expect(feed).not.toMatch(/gap-x-2"><span aria-hidden="true">·/)
   })
 })
 
@@ -1148,7 +1158,7 @@ describe('WorkStreamList inline pull request links', () => {
     expect(html).toContain('aria-label="Open PR #32"')
   })
 
-  test('standard rows badge every delivery pull request, codeHost-bound first', () => {
+  test('squad list rows link every delivery pull request, codeHost-bound first', () => {
     const html = renderWorkStreamList([
       workStream({
         metadata: {
@@ -1160,8 +1170,8 @@ describe('WorkStreamList inline pull request links', () => {
     expect(html.indexOf('href="https://github.com/example/product/pull/5"')).toBeGreaterThanOrEqual(0)
     expect(html.indexOf('href="https://github.com/example/product/pull/6"')).toBeGreaterThanOrEqual(0)
     expect(html.indexOf('pull/5"')).toBeLessThan(html.indexOf('pull/6"'))
-    expect(html).toContain('title="Open PR #5"')
-    expect(html).toContain('title="Open PR #6"')
+    expect(html).toContain('aria-label="Open PR #5"')
+    expect(html).toContain('aria-label="Open PR #6"')
   })
 
   test('standard rows link tracked delivery pull requests without a codeHost change request', () => {
@@ -1216,42 +1226,34 @@ describe('WorkStreamList delivery label on the pull request', () => {
       explanation: { codeHostReason: 'ci-failed', ...(pullRequests ? { pullRequests } : {}) },
     }) as const
   const tracked = (...numbers: number[]) => ({ tracked: numbers.map((number) => trackedDeliveryPullRequest(number)) })
-  // The desktop row, then the stacked mobile row, share one list item.
-  const desktopRow = (html: string) => html.slice(html.indexOf('hidden md:flex'), html.indexOf('flex md:hidden'))
-  const mobileRow = (html: string) => html.slice(html.indexOf('flex md:hidden'))
   const prLink = (html: string, number: number) => {
     const start = html.indexOf(`href="https://github.com/example/product/pull/${number}"`)
     return html.slice(start, html.indexOf('</a>', start))
   }
   const feedProps = { feedLayout: true, hideFilters: true }
+  // The row's title line: marker, title and status badge, before the context line.
   const feedStatus = (html: string) =>
-    html.slice(html.indexOf('data-testid="feed-work-row"'), html.indexOf('ml-4 mt-1'))
+    html.slice(html.indexOf('data-testid="work-stream-row"'), html.indexOf('data-testid="work-stream-row-context"'))
+  const row = (html: string) => html.slice(html.indexOf('<li'), html.indexOf('</li>') + 5)
 
-  test('desktop rows put the label on the primary delivery pull request badge in the delivery color', () => {
-    const html = renderWorkStreamList([
+  test('the squad lists draw the same row as the Feed, only inset to their own header', () => {
+    const streams = [
       workStream({
+        assigneeAgentId: engineer.id,
         metadata: tracked(31, 32),
         delivery: ciFailed([
           { number: 32, state: 'open' },
           { number: 31, state: 'open' },
         ]),
+        runtime: { totalMs: 12_000, activeCount: 0, computedAt: now.toISOString() },
       }),
-    ])
-    const desktop = desktopRow(html)
-    const primary = prLink(desktop, 32)
-    expect(primary).toContain('title="Open PR #32 · Delivery: CI failed"')
-    expect(primary).toContain('text-status-danger-badge-fg')
-    expect(primary).toContain('<span class="sr-only">Delivery: </span>CI failed')
-    // Only one badge carries it; the other keeps the plain pull request look.
-    expect(prLink(desktop, 31)).toContain('text-badge-accent-2-fg')
-    expect(prLink(desktop, 31)).not.toContain('CI failed')
-    expect(desktop.match(/CI failed<\/span>/g)).toHaveLength(1)
-    expect(desktop).not.toContain('text-xs text-secondary')
-    expect(desktop).toContain('In Progress')
-    // The mobile row is text by design and keeps the label in its details line.
-    const mobile = mobileRow(html)
-    expect(mobile).toContain('<span class="text-xs text-secondary" title="Delivery: CI failed">')
-    expect(mobile).not.toContain('text-status-danger-badge-fg')
+      workStream({ id: 'queued', status: 'queued', queuePosition: 2, openWaits: [workStreamWait({ type: 'review' })] }),
+    ]
+    for (const stream of streams) {
+      const feed = row(renderWorkStreamList([stream], { ...feedProps, showSquadFilter: true }, '/', [engineer]))
+      const squadList = row(renderWorkStreamList([stream], { showSquadFilter: true }, '/', [engineer]))
+      expect(squadList).toBe(feed.replace('pl-3 sm:pl-9', 'pl-3'))
+    }
   })
 
   test('without designated pull requests the first delivery pull request carries the label', () => {
@@ -1261,28 +1263,24 @@ describe('WorkStreamList delivery label on the pull request', () => {
         delivery: { kind: 'external', explanation: { codeHostReason: 'ci-pending' } },
       }),
     ])
-    const desktop = desktopRow(html)
-    expect(prLink(desktop, 31)).toContain('Awaiting CI')
-    expect(prLink(desktop, 31)).toContain('text-status-external-wait-badge-fg')
-    expect(prLink(desktop, 32)).not.toContain('Awaiting CI')
+    expect(prLink(html, 31)).toContain('Awaiting CI')
+    expect(prLink(html, 32)).not.toContain('Awaiting CI')
   })
 
   test('without a pull request link the label is a colored pill beside the status', () => {
     const html = renderWorkStreamList([workStream({ delivery: { kind: 'approval' } })])
-    const desktop = desktopRow(html)
-    expect(desktop).toMatch(/text-status-review-badge-fg" title="Delivery: Approve Delivery">/)
-    expect(desktop).not.toContain('text-xs text-secondary')
-    expect(desktop.indexOf('In Progress')).toBeLessThan(desktop.indexOf('Approve Delivery'))
+    const status = feedStatus(html)
+    expect(status).toMatch(/text-status-review-badge-fg" title="Delivery: Approve Delivery">/)
+    expect(status.indexOf('In Progress')).toBeLessThan(status.indexOf('Approve Delivery'))
   })
 
-  test('a delivery state that owns the primary pill leaves the pull request badge alone', () => {
+  test('a delivery state that owns the primary pill leaves the pull request link alone', () => {
     const html = renderWorkStreamList([
       workStream({ derivedState: 'idle', metadata: tracked(31), delivery: ciFailed([{ number: 31, state: 'open' }]) }),
     ])
-    const desktop = desktopRow(html)
-    expect(desktop).toContain('CI failed')
-    expect(prLink(desktop, 31)).toContain('text-badge-accent-2-fg')
-    expect(prLink(desktop, 31)).not.toContain('CI failed')
+    expect(feedStatus(html)).toContain('CI failed')
+    expect(prLink(html, 31)).toContain('aria-label="Open PR #31"')
+    expect(prLink(html, 31)).not.toContain('CI failed')
   })
 
   test('feed rows tint the label beside the primary pull request link', () => {
@@ -1313,18 +1311,14 @@ describe('WorkStreamList delivery label on the pull request', () => {
     expect(html).not.toContain('text-xs text-secondary')
   })
 
-  test('desktop and feed rows leave "Review queued" to the peek card', () => {
+  test('every list leaves "Review queued" to the peek card', () => {
     const gate = workStreamWait({ id: 'gate', type: 'manual', flowAttemptId: 2, workflowHumanGate: true })
     const question = workStreamWait({ id: 'question', type: 'question', flowAttemptId: 2 })
     const stream = workStream({ derivedState: 'waiting_on_answer', openWaits: [question, gate] })
-    const html = renderWorkStreamList([stream])
-    expect(desktopRow(html)).toContain('Waiting on Answer')
-    expect(desktopRow(html)).not.toContain('Review queued')
-    // The mobile details line is text and keeps it.
-    expect(mobileRow(html)).toContain('Review queued')
-    const feed = renderWorkStreamList([stream], feedProps)
-    expect(feed).toContain('Waiting on Answer')
-    expect(feed).not.toContain('Review queued')
+    for (const html of [renderWorkStreamList([stream]), renderWorkStreamList([stream], feedProps)]) {
+      expect(html).toContain('Waiting on Answer')
+      expect(html).not.toContain('Review queued')
+    }
   })
 })
 

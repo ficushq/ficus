@@ -8,6 +8,7 @@ import { CollectionSkeleton } from '../loading/Skeleton'
 import { MarkdownContent } from '../MarkdownContent'
 import { CloseIcon } from '../icons'
 import { isWorkspaceVoiceRecipient, type Agent, type InboxMessage, type InboxMessageSenderType } from '@ficus/shared'
+import { getAgentLabel } from '../../lib/agentDisplay'
 
 interface Props {
   agent: Agent
@@ -25,7 +26,7 @@ const senderTypeColors: Record<InboxMessageSenderType, string> = {
 }
 
 export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
-  const agentName = agent.metadata?.name || agent.agentTypeId
+  const agentName = getAgentLabel(agent)
   const agentIds = useMemo(() => [agent.id], [agent.id])
   useAgentInboxInvalidation(agentIds, { includeMessages: true })
 
@@ -49,7 +50,7 @@ export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
       {!fullWidth && (
         <div className="p-4 border-b border-th-border flex items-start justify-between">
           <div>
-            <h3 className="font-semibold text-primary">{agentName}'s Inbox</h3>
+            <h3 className="font-semibold text-primary">{agentName} inbox</h3>
             <p className="text-xs text-muted mt-0.5">
               {agent.agentTypeId} · {agent.id.slice(0, 8)}
             </p>

@@ -1228,7 +1228,8 @@ test('reading updates by id returns full update cards with their task label', as
     content: 'Found the regression.',
     seenAt: null,
   })
-  expect(typeof update.senderName).toBe('string')
+  // The sending agent is named by its type, never by its generated name alone.
+  expect(update.senderName).toBe('System Manager')
   expect(typeof update.createdAt).toBe('string')
   expect((await f.request(`/${f.id}/updates/read`, { messageIds: [message.id] }, f.other.token)).status).toBe(404)
 })

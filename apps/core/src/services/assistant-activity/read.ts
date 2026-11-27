@@ -1,11 +1,12 @@
 import { and, asc, desc, eq, lt, sql } from 'drizzle-orm'
-import type {
-  AssistantActivityCounts,
-  AssistantActivityPage,
-  AssistantActivityUpdate,
-  AssistantConversationActivity,
-  AssistantConversationActivityDetail,
-  AssistantTaskSummary,
+import {
+  agentSenderLabel,
+  type AssistantActivityCounts,
+  type AssistantActivityPage,
+  type AssistantActivityUpdate,
+  type AssistantConversationActivity,
+  type AssistantConversationActivityDetail,
+  type AssistantTaskSummary,
 } from '@ficus/shared'
 import { agents, assistantConversations, assistantTasks, assistantUpdates, db, inbox } from '../../db'
 
@@ -148,9 +149,10 @@ export async function listAssistantActivity(
   }
 }
 
+/** Who sent an update, as people see it: an agent by its type ("Engineer"), never its name alone. */
 function senderName(metadata: Record<string, unknown>): string {
-  const sender = metadata.sender as { name?: string; agentTypeName?: string } | undefined
-  return sender?.name || sender?.agentTypeName || 'Agent'
+  const sender = metadata.sender as { name?: string; agentTypeName?: string; agentTypeId?: string } | undefined
+  return agentSenderLabel(sender) || sender?.name || sender?.agentTypeName || 'Agent'
 }
 
 /** One update card: the tracking row plus its inbox message. */

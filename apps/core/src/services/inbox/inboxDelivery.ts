@@ -12,7 +12,7 @@ import { readOutputCandidate, readOutputInbox } from '../integrations/github/fee
 import { selectGitHubInboxPage } from '../integrations/github/feedback-inbox'
 import { Agent } from '../../entities/Agent'
 import {
-  formatInboxMessageSender,
+  formatInboxMessageSenderForPeople,
   formatInboxMessages,
   InboxMessage,
   isInboxMessageWakeEligible,
@@ -205,7 +205,7 @@ export function prepareInboxDelivery(
           senderId: message.senderId,
           subject: message.subject,
           preview: message.content.slice(0, 160),
-          senderDisplay: formatInboxMessageSender(message),
+          senderDisplay: formatInboxMessageSenderForPeople(message),
           ...(effectiveMode === 'follow-up' ? { deferredUntil: 'next-turn' as const } : {}),
           ...(meta.workStreamId ? { workStreamId: meta.workStreamId } : {}),
           ...(meta.squadId ? { squadId: meta.squadId } : {}),
