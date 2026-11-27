@@ -46,7 +46,8 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
 
   // History is not polled. A stream that finishes without a live event (a dropped socket) leaves the
   // polled open list, so when an open stream of this agent disappears from it and is not already in
-  // the history, the history is refreshed from its first page.
+  // the history, the loaded history pages are refetched (newest first). A fetch already running (a
+  // live event's invalidation) is joined rather than restarted.
   const refetchHistory = history.refetch
   const previousOpen = useRef<{ agentId: string; ids: Set<string> } | null>(null)
   useEffect(() => {
@@ -58,7 +59,8 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
     previousOpen.current = { agentId: agent.id, ids: openIds }
     if (!previous) return
     const finishedIds = new Set(finishedWorkStreams.map((ws) => ws.id))
-    if ([...previous].some((id) => !openIds.has(id) && !finishedIds.has(id))) void refetchHistory()
+    if ([...previous].some((id) => !openIds.has(id) && !finishedIds.has(id)))
+      void refetchHistory({ cancelRefetch: false })
     // Only a change in the open list triggers this; a history refresh alone must not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkStreams, agent.id, refetchHistory])
@@ -129,7 +131,8 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
     )
   }
 
-  if (sortedWorkStreams.length === 0) {
+  // A first page that filters to nothing (an older Core that ignores agentId) may still have older pages.
+  if (sortedWorkStreams.length === 0 && !history.hasNextPage) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted px-6 py-12 text-center">
         <WorkStreamIcon className="w-8 h-8 mb-3 text-placeholder" />
@@ -143,6 +146,9 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto p-3">
+      {sortedWorkStreams.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-muted">No recent work streams for this agent.</p>
+      )}
       <div className="space-y-2">
         {sortedWorkStreams.map((ws) => {
           const pullRequests = workStreamPullRequests(ws.metadata ?? {})

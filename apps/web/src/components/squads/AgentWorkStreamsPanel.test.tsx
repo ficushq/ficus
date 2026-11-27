@@ -521,3 +521,28 @@ test('an open stream that leaves the polled open list refreshes the history, so 
     await panel.dom.cleanup()
   }
 })
+
+test('a first history page that filters to nothing still offers older work streams', async () => {
+  const panel = await mountPanel({
+    '/api/workstreams': ({ url }) => {
+      if (!url.searchParams.has('limit')) return []
+      const older = url.searchParams.get('cursor') === 'page-2'
+      // An older Core that ignores agentId: the first page holds only another agent's work.
+      const items = older
+        ? [workStream({ id: 'mine', title: 'My older work', status: 'done', assigneeAgentId: agent.id })]
+        : [workStream({ id: 'theirs', title: 'Their work', status: 'done', assigneeAgentId: 'agent-2' })]
+      return { items, hasMore: !older, nextCursor: older ? null : 'page-2', totalCount: 2 }
+    },
+  })
+  try {
+    await panel.settle(() => panel.button('Show older work streams') !== undefined)
+    expect(panel.text()).not.toContain('No work streams')
+    expect(panel.text()).not.toContain('Their work')
+    await panel.dom.act(async () => panel.button('Show older work streams')!.click())
+    await panel.settle(() => panel.text().includes('My older work'))
+    expect(panel.text()).toContain('My older work')
+  } finally {
+    await panel.cache.cancelQueries()
+    await panel.dom.cleanup()
+  }
+})
