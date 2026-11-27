@@ -25,7 +25,7 @@ import {
   type CommandDestination,
   type CommandResult,
 } from '../lib/commandCenterSearch'
-import { getAgentLabel, getAgentTitle, getConversationTitle } from '../lib/agentDisplay'
+import { agentTypeDisplayName, getAgentLabel, getAgentTitle, getConversationTitle } from '../lib/agentDisplay'
 import { ALL_SECTIONS, isSectionAllowed } from './settings/settingsSections'
 import { AgentChat } from './AgentChat'
 import { ActionItem } from './ActionItem'
@@ -37,6 +37,7 @@ import { agentChatTarget } from '../lib/agentChatLinks'
 import { SparklesIcon, ChevronRightIcon } from './icons'
 import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@ficus/shared'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 const suggestions = ['What needs my attention?', 'Summarize progress across my squads', 'Help me set up a new project']
 type CompletedPreferences = { expanded: boolean; days: 7 | 30 }
@@ -159,9 +160,10 @@ export function AssistantCommandCenter({
             destination: { kind: 'assistant' as const, id: conversation.id, label: 'Assistant' },
           }))
       : []
+  const typeNames = useAgentTypeNames()
   const results = [
     ...updateRows,
-    ...commandCenterSearch(query, { ...data, squadId: squadScope }).filter(
+    ...commandCenterSearch(query, { ...data, squadId: squadScope, typeNames }).filter(
       (result) => !squadScope || result.kind === 'Conversation' || result.kind === 'Work stream'
     ),
   ]
@@ -181,7 +183,7 @@ export function AssistantCommandCenter({
       : entry?.kind === 'work'
         ? data.streams.find((w) => w.id === entry.id || workStreamRef(w) === entry.id)?.title
         : entry?.kind === 'chat' && currentAgent
-          ? getAgentTitle(currentAgent)
+          ? getAgentTitle(currentAgent, typeNames)
           : undefined
   const destination = entry && label ? { ...entry, label } : entry
   const destinationSquad =
@@ -621,6 +623,7 @@ function SquadPreview({
   workLoading: boolean
   loadFailed: boolean
 }) {
+  const typeNames = useAgentTypeNames()
   const completedWork = recentlyCompletedWork(data.streams, id, completed.days)
   const squad = data.squads.find((s) => s.id === id)
   const chats = consultantConversations(data.consultants)
@@ -669,7 +672,7 @@ function SquadPreview({
         {chats.map((a) => (
           <PreviewRow
             key={a.id}
-            title={getConversationTitle(a)}
+            title={getConversationTitle(a, typeNames)}
             status={a.status}
             agentId={a.id}
             detail={
@@ -679,7 +682,7 @@ function SquadPreview({
               </span>
             }
             onClick={() =>
-              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId: id, label: getConversationTitle(a) })
+              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId: id, label: getConversationTitle(a, typeNames) })
             }
           />
         ))}
@@ -805,6 +808,7 @@ function WorkPreview({
 }) {
   const work = useQuery(queries.squads.workStreamDetail(id))
   const agents = useQuery(queries.squads.agents(squadId))
+  const typeNames = useAgentTypeNames()
   const creatorId = work.data?.creatorAgentId
   const knownCreator = agents.data?.find((agent) => agent.id === creatorId)
   // Archived consultants may be absent from the squad's current agent list.
@@ -840,7 +844,7 @@ function WorkPreview({
         {assigned.map((a) => (
           <PreviewRow
             key={a.id}
-            title={getAgentLabel(a)}
+            title={getAgentLabel(a, undefined, typeNames)}
             status={a.status}
             agentId={a.id}
             detail={
@@ -849,7 +853,9 @@ function WorkPreview({
                 {a.id === row.assigneeAgentId ? 'Assigned' : null}
               </span>
             }
-            onClick={() => onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId, label: getAgentLabel(a) })}
+            onClick={() =>
+              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId, label: getAgentLabel(a, undefined, typeNames) })
+            }
           />
         ))}
         {agents.isPending ? (
@@ -869,7 +875,7 @@ function WorkPreview({
         <section>
           <h3 className="text-xs text-muted mb-2">Started here</h3>
           <PreviewRow
-            title={getConversationTitle(origin)}
+            title={getConversationTitle(origin, typeNames)}
             agentId={origin.id}
             detail={
               <span className="inline-flex items-center gap-2">
@@ -883,7 +889,7 @@ function WorkPreview({
                 id: origin.id,
                 agentId: origin.id,
                 squadId: origin.squadId ?? squadId,
-                label: getConversationTitle(origin),
+                label: getConversationTitle(origin, typeNames),
                 readOnly: true,
               })
             }
@@ -953,9 +959,11 @@ function CommandWorkSkeleton() {
 
 function CommandAgentType({ typeId }: { typeId: string }) {
   const types = useQuery(queries.agentTypes.list())
-  const label =
-    types.data?.find((type) => type.id === typeId)?.name ??
-    typeId.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+  const sharedTypeNames = useAgentTypeNames()
+  const label = agentTypeDisplayName(
+    typeId,
+    (id) => types.data?.find((type) => type.id === id)?.name || sharedTypeNames(id)
+  )
   return <Badge color="accent-1">{label}</Badge>
 }
 

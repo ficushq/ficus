@@ -9,6 +9,7 @@ import { webStatus } from '../lib/statusPresentation'
 import { workflowProgress, type WorkflowProgressState, type WorkflowProgressStep } from '../lib/workflowProgress'
 import { CheckIcon, UndoIcon } from './icons'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** One marker per state, different in shape as well as color so states never rely on color alone. */
 function StepMarker({ state }: { state: WorkflowProgressState }) {
@@ -154,6 +155,7 @@ export function WorkStreamProgress({ stream, onOpenAgent }: { stream: WorkStream
   const hasApproval = !!run?.state.definition.steps.some((step) => step.kind === 'human-approval')
   // Names approvers; without it (loading, refused) they read "Assigned reviewer" or "Reviewer".
   const { data: reviewers } = useQuery({ ...queries.workflows.reviewers(stream.squadId), enabled: hasApproval })
+  const typeNames = useAgentTypeNames()
   if (isPending)
     return (
       <section aria-label="Progress" className="space-y-2">
@@ -171,6 +173,7 @@ export function WorkStreamProgress({ stream, onOpenAgent }: { stream: WorkStream
     assignedReviewerIds: stream.assignedReviewerIds ?? [],
     reviewers,
     viewer: permissionsLoading ? undefined : { can, identity },
+    typeNames,
   })
   const agentHref = (step: WorkflowProgressStep) =>
     step.agentId ? `/squads/${slugFor(stream.squadId)}/agents?agent=${encodeURIComponent(step.agentId)}` : undefined

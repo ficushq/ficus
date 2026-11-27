@@ -10,6 +10,7 @@ import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRo
 import { AgentActivityDot } from '../AgentActivityDot'
 import type { ComponentProps, ComponentType } from 'react'
 import { PendingGitHubEventsSection } from '../integrations/PendingGitHubEventsSection'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 interface SquadHomeTabDependencies {
   WorkStreamList: ComponentType<ComponentProps<typeof WorkStreamList>>
@@ -59,6 +60,7 @@ export function SquadHomeTab({
 }: SquadHomeTabProps) {
   const WorkStreamListComponent = dependencies?.WorkStreamList ?? defaultDependencies.WorkStreamList
   const { slugFor } = useSquadSlugs()
+  const typeNames = useAgentTypeNames()
   const resolvedId = squad?.id ?? squadId!
   const base = `/squads/${squadSlug ?? slugFor(resolvedId)}`
   const recentChats = agents
@@ -151,7 +153,7 @@ export function SquadHomeTab({
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 <AgentActivityDot status={agent.status} />
               </span>
-              <span className="min-w-0 flex-1 truncate">{getConversationTitle(agent)}</span>
+              <span className="min-w-0 flex-1 truncate">{getConversationTitle(agent, typeNames)}</span>
               <ChevronRightIcon className="h-3.5 w-3.5 shrink-0" />
             </Link>
           ))}

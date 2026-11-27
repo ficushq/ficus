@@ -2,7 +2,7 @@
 
 import { isLiveAgentStatus, isUserAssistantAgentType, type Agent } from '@ficus/shared'
 import type { AgentPrivateStatus } from '../../api/agentPrivate'
-import { getAgentLabel } from '../../lib/agentDisplay'
+import { getAgentLabel, noAgentTypeNames, type AgentTypeName } from '../../lib/agentDisplay'
 
 /**
  * Agents with a private box of their own, live agents first. Subagents share
@@ -18,12 +18,12 @@ export function hasPrivateArea(agent: Agent): boolean {
   )
 }
 
-export function privateAreaAgents(agents: Agent[]): Agent[] {
+export function privateAreaAgents(agents: Agent[], typeNames: AgentTypeName = noAgentTypeNames): Agent[] {
   return agents.filter(hasPrivateArea).sort((a, b) => {
     const liveA = isLiveAgentStatus(a.status)
     const liveB = isLiveAgentStatus(b.status)
     if (liveA !== liveB) return liveA ? -1 : 1
-    return getAgentLabel(a).localeCompare(getAgentLabel(b))
+    return getAgentLabel(a, undefined, typeNames).localeCompare(getAgentLabel(b, undefined, typeNames))
   })
 }
 

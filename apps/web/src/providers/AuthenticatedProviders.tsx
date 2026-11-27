@@ -8,6 +8,7 @@ import { ConversationClientProvider } from '@ficus/client-react'
 import { LiveConversationProvider } from './LiveConversationProvider'
 import { client } from '../api/clientInstance'
 import { LoadingShapeScopeProvider } from '../hooks/useLoadingShapeCount'
+import { AgentTypeNamesProvider } from '../hooks/useAgentTypeNames'
 
 export function AuthenticatedProviders({ children }: { children: ReactNode }) {
   const { isAuthenticated, authRequired, needsFirstAdminSetup, needsAdminCompletion } = useAuth()
@@ -35,7 +36,8 @@ export function AuthenticatedProviders({ children }: { children: ReactNode }) {
       <LiveConversationProvider client={client}>
         <LoadingShapeScopeProvider>
           <QueryInvalidator />
-          {children}
+          {/* Every agent label names the type by its configured name; one shared read serves them all. */}
+          <AgentTypeNamesProvider>{children}</AgentTypeNamesProvider>
         </LoadingShapeScopeProvider>
       </LiveConversationProvider>
     </WebSocketProvider>

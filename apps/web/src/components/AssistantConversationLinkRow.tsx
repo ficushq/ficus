@@ -4,6 +4,7 @@ import { agentConversationLink, type AssistantConversationLink } from '../lib/as
 import { AgentActivityDot } from './AgentActivityDot'
 import { agentChatTarget } from '../lib/agentChatLinks'
 import { ChevronRightIcon, ChatBubbleIcon } from './icons'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 export function AssistantConversationLinkRow({
   conversation,
@@ -13,7 +14,8 @@ export function AssistantConversationLinkRow({
   onOpen: (conversation: AssistantConversationLink) => void
 }) {
   const agent = useQuery(queries.agents.detail(conversation.agentId))
-  const resolved = agent.data ? agentConversationLink(agent.data) : conversation
+  const typeNames = useAgentTypeNames()
+  const resolved = agent.data ? agentConversationLink(agent.data, typeNames) : conversation
   return (
     <button
       type="button"

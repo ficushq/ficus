@@ -209,7 +209,7 @@ test('hovering a Feed row opens the peek card after about half a second', async 
   expect(peekCard()).toBeNull()
 })
 
-test('the peek card names a review gate queued behind other waits as next, and Feed rows leave it out', async () => {
+test('the peek card names a review gate queued behind other waits as next, and Feed rows show it only on touch', async () => {
   const question = workStream().openWaits![0]!
   const gate = {
     ...question,
@@ -233,7 +233,10 @@ test('the peek card names a review gate queued behind other waits as next, and F
 
   const { doc, wait, peekCard, mouse } = await render(feedList([queued]))
   const row = doc.querySelector('[data-testid="work-stream-row"]')!
-  expect(row.textContent).not.toContain('Review queued')
+  // A mouse reads it in the peek card; the row's copy is hidden unless the device cannot hover.
+  const label = row.querySelector('[data-testid="queued-review-label"]')!
+  expect(label.textContent).toBe('Review queued')
+  expect(label.className.split(' ')).toEqual(expect.arrayContaining(['hidden', '[@media(hover:none)]:inline']))
   await mouse(row, 'mouseover')
   await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
   expect(peekCard()!.textContent).toContain('Waiting on you: question · review next')

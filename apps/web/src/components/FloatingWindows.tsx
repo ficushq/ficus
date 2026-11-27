@@ -26,6 +26,7 @@ import { AgentActivityDot } from './AgentActivityDot'
 import { AgentChatWindow } from './AgentChatWindow'
 import { CloseIcon } from './icons'
 import { FloatingWindowsContext, useFloatingWindows, type FloatingWindowsApi } from './floatingWindowsContext'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** Floating windows sit between the page (and its popups, up to 50) and modals (60). */
 const WINDOW_Z_BASE = 51
@@ -244,7 +245,8 @@ function MinimizedTray() {
 
 function TrayChip({ agentId, unread, onRestore }: { agentId: string; unread: boolean; onRestore: () => void }) {
   const { data: agent } = useQuery(queries.agents.detail(agentId))
-  const label = agent ? getAgentTitle(agent) : 'Agent chat'
+  const typeNames = useAgentTypeNames()
+  const label = agent ? getAgentTitle(agent, typeNames) : 'Agent chat'
   return (
     <button
       type="button"

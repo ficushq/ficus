@@ -35,6 +35,7 @@ import {
 import { assistantConversations, assistantEntries, assistantTasks, assistantUpdates, db, inbox, agents } from '../db'
 import { assistantActivityRouter } from './assistant-activity'
 import { markAssistantUpdatesProcessed } from '../services/assistant-activity/acknowledge'
+import { assistantUpdateSenderName } from '../services/assistant-activity/read'
 import { resolveActingUser } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 
@@ -285,10 +286,8 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         content: message.content,
         subject: message.subject,
         senderId: message.senderId,
-        senderName:
-          (message.metadata.sender as { name?: string; agentTypeName?: string })?.name ||
-          (message.metadata.sender as { agentTypeName?: string })?.agentTypeName ||
-          'Agent',
+        // Type first, as the update cards show it; this text is also what the Assistant model reads.
+        senderName: assistantUpdateSenderName(message.metadata),
         processedAt: null,
         summarized: update.summarizedMessageId !== null,
         seenAt: update.seenAt?.toISOString() ?? null,
