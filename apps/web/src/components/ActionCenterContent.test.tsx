@@ -6,6 +6,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { afterAnimationFrames } from '../test/animationFrames'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
+import { forgetSettledAnswers } from '../lib/answeredActions'
 
 const continueHaltedAgents = mock(async (_actionIds: string[]) => ({
   resumed: 0,
@@ -306,7 +307,7 @@ describe('ActionCenterContent live motion', () => {
 })
 
 describe('ActionCenterContent answered cards', () => {
-  test('a card answered in this session that a refetch briefly returns is not highlighted again', async () => {
+  test('a card answered in this session is quiet if a refetch briefly returns it, and highlighted once it recurs', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const continueOne = mock(async (actionIds: string[]) => ({
@@ -357,6 +358,16 @@ describe('ActionCenterContent answered cards', () => {
       await renderFeed([answered, other, arriving])
       expect(feed.container.querySelector(`[data-live-row="${answered.id}"]`)).not.toBeNull()
       expect(highlighted()).toEqual([arriving.id])
+
+      // The authoritative list then confirms it gone (the agent resumed)...
+      const refetched = await queryClient.fetchQuery({
+        queryKey: queryKeys.actions.pending(),
+        queryFn: forgetSettledAnswers(async () => [other, arriving]),
+      })
+      await renderFeed(refetched)
+      // ...so when the same agent halts again (the same id), that is a new arrival.
+      await renderFeed([answered, ...refetched])
+      expect(highlighted()).toContain(answered.id)
     } finally {
       await dom.cleanup()
       queryClient.clear()
