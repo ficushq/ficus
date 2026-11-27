@@ -1128,6 +1128,13 @@ describe('work-streams routes', () => {
         `statuses=active,done&limit=50&agentId=${agent.id}`,
       ])
         expect((await apiFetch(`/api/workstreams?squadId=${testSquadId}&${query}`)).status).toBe(400)
+
+      // Without its squad the filter would scan every finished stream the caller can read.
+      for (const scope of ['', `squadIds=${testSquadId}&`, `squadId=${testSquadId.slice(0, 8)}&`]) {
+        const res = await apiFetch(`/api/workstreams?${scope}statuses=done,canceled&limit=50&agentId=${agent.id}`)
+        expect(res.status).toBe(400)
+        expect(await res.json()).toEqual({ error: 'agentId requires a full squadId' })
+      }
     })
 
     it('paginates only the requested squads for an aggregate squadIds filter', async () => {
