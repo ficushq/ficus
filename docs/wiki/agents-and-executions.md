@@ -154,7 +154,7 @@ Agent types are defined as YAML files in `config/agent-types/` and synced to the
 
 ### Current agent types
 
-The templates under `config/agent-types/` are the current source of truth. Each type defines its system prompt, optional model override, optional tool allow/deny lists, and human-readable name and description. Templates are synchronized to the database and may be customized or disabled in the UI.
+The templates under `config/agent-types/` are the current source of truth. Each type defines its system prompt, optional model override, optional tool allow/deny lists, an optional tool-search override (which tools are declared up front and which load on demand; see [tool search](tool-search.md)), and human-readable name and description. Templates are synchronized to the database and may be customized or disabled in the UI.
 
 ## Agent Context
 

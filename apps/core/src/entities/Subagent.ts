@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { LIVE_AGENT_STATUSES, isLiveAgentStatus, type AgentStatus } from '@ficus/shared'
 import { agents, db, recoveryEpisodes, withDedicatedDbTransaction } from '../db'
 import type { DbHandle } from '../services/work-streams/waits'
+import type { ToolSearchPolicy } from '../services/agent/tool-search/labels'
 import { Agent, AgentTargetUnavailableError } from './Agent'
 import { InboxMessage } from './InboxMessage'
 import { createLogger } from '../lib/infra/logger'
@@ -40,6 +41,8 @@ export type SubagentParentExecutionContext = {
   version: 1
   squadId: string | null
   environmentToolNames: string[]
+  /** The parent's tool-search labels, which the subagent inherits with its tools. */
+  toolSearch?: ToolSearchPolicy
   /** The parent's execution that dispatched it, so the child's model spend rolls up to it. */
   executionId?: string
 }
