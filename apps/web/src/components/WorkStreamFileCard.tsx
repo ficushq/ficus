@@ -1,6 +1,8 @@
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { isSandboxProvisioningFailure } from '@ficus/client-core'
+import { SandboxStartingNotice } from './workspace/SandboxStartingNotice'
 import { queries } from '../queryOptions'
 import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
@@ -134,7 +136,7 @@ export function WorkStreamFileCard({ filePath, squadId, detail }: WorkStreamFile
 
   // Only fetch when user has opened the modal
   const queryOpts = queries.squadWorkspace.file(squadId, filePath)
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error, refetch, isFetching, failureReason } = useQuery({
     ...queryOpts,
     enabled: hasOpened,
   })
@@ -176,7 +178,15 @@ export function WorkStreamFileCard({ filePath, squadId, detail }: WorkStreamFile
         maxWidth="readable"
       >
         {detail && <p className="mb-3 break-all font-mono text-xs text-muted">{filePath}</p>}
-        {isLoading && <DocumentSkeleton label="Loading work stream file" lines={10} className="min-h-64" />}
+        {isLoading &&
+          (isSandboxProvisioningFailure(failureReason) ? (
+            <SandboxStartingNotice
+              subject="This file"
+              className="flex min-h-64 flex-col items-center justify-center gap-2 p-4 text-center"
+            />
+          ) : (
+            <DocumentSkeleton label="Loading work stream file" lines={10} className="min-h-64" />
+          ))}
         {error && (
           <WorkspaceFileError fileName={fileName} error={error} retrying={isFetching} onRetry={() => void refetch()} />
         )}

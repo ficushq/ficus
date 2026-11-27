@@ -5,9 +5,12 @@ import {
   BUSY_RETRY_LIMIT,
   BUSY_RETRY_MAX_MS,
   BUSY_RETRY_MIN_MS,
+  isSandboxProvisioningFailure,
   parseRetryAfter,
   QUERY_RETRY_LIMIT,
   queryRetryDelay,
+  SANDBOX_PROVISION_RETRY_LIMIT,
+  SANDBOX_PROVISION_RETRY_MAX_MS,
   shouldRetryQuery,
 } from './retry'
 
@@ -65,5 +68,40 @@ describe('query retry policy', () => {
     expect(queryRetryDelay(0, busy(40_000), () => 0)).toBe(40_000)
     expect(retries(busy(BUSY_RETRY_MAX_MS + 1_000))).toBe(0)
     expect(queryRetryDelay(5, busy(5_000), () => 0)).toBe(BUSY_RETRY_MAX_MS)
+  })
+})
+
+describe('a sandbox that cannot be provisioned yet', () => {
+  // Core's answer to a workspace read while the sandbox's provisioning circuit is open: 503, a
+  // SANDBOX_PROVISION_* code and the cooldown as Retry-After, which can pass the 60-second bound.
+  const provisioning = (retryAfterMs?: number, code = 'SANDBOX_PROVISION_UNAVAILABLE') => ({
+    status: 503,
+    retryAfterMs,
+    payload: { error: 'Sandbox scheduling is temporarily unavailable.', code, retryAfterMs },
+  })
+
+  test('a cooldown over a minute is waited out instead of failing at once', () => {
+    expect(retries(busy(75_000))).toBe(0)
+    // 75, 150 and 300 seconds: each within the five-minute bound.
+    expect(retries(provisioning(75_000))).toBe(3)
+    expect(queryRetryDelay(0, provisioning(75_000), () => 0)).toBe(75_000)
+    expect(queryRetryDelay(1, provisioning(75_000), () => 0)).toBe(150_000)
+  })
+
+  test('shorter cooldowns retry more often, still bounded', () => {
+    expect(retries(provisioning(5_000))).toBe(SANDBOX_PROVISION_RETRY_LIMIT)
+    expect(retries(provisioning(SANDBOX_PROVISION_RETRY_MAX_MS + 1_000))).toBe(0)
+    expect(queryRetryDelay(10, provisioning(5_000), () => 0)).toBe(SANDBOX_PROVISION_RETRY_MAX_MS)
+  })
+
+  test('the code is read from the error itself or from the response body', () => {
+    expect(isSandboxProvisioningFailure(provisioning(75_000))).toBe(true)
+    expect(isSandboxProvisioningFailure({ status: 503, code: 'SANDBOX_PROVISION_BUSY' })).toBe(true)
+    // Any other 503 (a read deadline), or the code on another status, is not provisioning.
+    expect(isSandboxProvisioningFailure(provisioning(5_000, 'read_deadline_exceeded'))).toBe(false)
+    expect(isSandboxProvisioningFailure(busy(75_000))).toBe(false)
+    expect(isSandboxProvisioningFailure({ ...provisioning(5_000), status: 500 })).toBe(false)
+    expect(isSandboxProvisioningFailure(new Error('offline'))).toBe(false)
+    expect(isSandboxProvisioningFailure(null)).toBe(false)
   })
 })
