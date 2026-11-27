@@ -12,6 +12,7 @@ import {
   withDedicatedConnectionSlot,
 } from './connection'
 import { waitForDb } from './wait'
+import { withQueryCancellation } from './query-cancellation'
 import { createLogger } from '../lib/infra/logger'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { migrateDatabase } from './migrator'
@@ -39,14 +40,19 @@ const queryObserverLogger = {
   },
 }
 
-const client = createPostgresConnection(
-  connectionString,
-  { onnotice: () => {} },
-  // The main pool is the ONE connection that opts into the liveness watchdog —
-  // it heals a wedged Bun+postgres.js+TLS pool. Special single-connection
-  // clients (process-liveness, migrations, locks) deliberately do not; see
-  // createPostgresConnection's `resilience` docs.
-  { healthWatchdog: true }
+// A read whose client stopped waiting (its deadline passed or it hung up) cancels the
+// queries it started on this pool, so the connection returns to the pool instead of
+// finishing work nobody will read (db/query-cancellation.ts).
+const client = withQueryCancellation(
+  createPostgresConnection(
+    connectionString,
+    { onnotice: () => {} },
+    // The main pool is the ONE connection that opts into the liveness watchdog —
+    // it heals a wedged Bun+postgres.js+TLS pool. Special single-connection
+    // clients (process-liveness, migrations, locks) deliberately do not; see
+    // createPostgresConnection's `resilience` docs.
+    { healthWatchdog: true }
+  )
 )
 export const db = drizzle(client, { schema, logger: queryObserverLogger })
 

@@ -290,11 +290,9 @@
   min-width: 0;
 }
 
-.g-option-name {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
+/* Inline, not a wrapping row: the tag follows the label's last word and only drops when that line is full. */
+.g-option-name .g-recommended {
+  margin-left: 4px;
 }
 
 .g-recommended {

@@ -832,6 +832,8 @@
   border: var(--g-border-thin) solid var(--g-chat-line);
   border-radius: var(--g-radius-tile);
   background: var(--g-chat-paper);
+  /* The Action Center option's type (.g-option), so both question cards set a label and its tag alike. */
+  font: 600 14px/1.3 var(--g-font-body);
   cursor: pointer;
 }
 

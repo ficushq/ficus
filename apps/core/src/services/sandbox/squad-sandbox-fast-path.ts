@@ -24,6 +24,7 @@
  * - a single command in the box answers within a short bound, resolving the
  *   workspace path.
  */
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { Squad } from '../../entities/Squad'
 import { createLogger } from '../../lib/infra/logger'
 import { assertMaintenanceAdmissionOpen } from '../maintenance/admission'
@@ -129,7 +130,7 @@ async function probe(manager: ISandboxManager, sandboxId: string, workspacePath:
  * Return the squad's workspace path, skipping the full ensure when the box is
  * already tracked and healthy (see the module comment for every condition).
  */
-export async function ensureSquadSandboxForCommands(
+async function ensureSquadSandboxForCommandsInScope(
   squadId: string,
   deps: SquadSandboxFastPathDeps = defaultDeps()
 ): Promise<SquadSandboxCheckResult> {
@@ -150,4 +151,16 @@ export async function ensureSquadSandboxForCommands(
     }
   }
   return { workspacePath: await deps.fullEnsure(squadId), path: 'full', reason }
+}
+
+/**
+ * A sandbox ensure is shared: concurrent callers join the same wake, and its setup
+ * is persisted step by step. It therefore runs outside the cancellation scope of
+ * the read that happened to start it (db/query-cancellation.ts), so a reader who
+ * leaves never stops a wake that others, or the next reader, depend on.
+ */
+export function ensureSquadSandboxForCommands(
+  ...args: Parameters<typeof ensureSquadSandboxForCommandsInScope>
+): ReturnType<typeof ensureSquadSandboxForCommandsInScope> {
+  return shareAcrossRequests(() => ensureSquadSandboxForCommandsInScope(...args))
 }

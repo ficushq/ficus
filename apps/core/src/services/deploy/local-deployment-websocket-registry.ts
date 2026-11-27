@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { getLocalDeployment, isValidLocalDeploymentBrowserToken } from './local-deployment-service'
@@ -52,6 +53,11 @@ let stopWatching: (() => void) | null = null
  */
 function startWatching(): void {
   if (stopWatching) return
+  // Started from whichever relay's request opens first, but it serves every relay.
+  shareAcrossRequests(watch)
+}
+
+function watch(): void {
   const unsubscribe = eventEmitter.on('sandboxLocalDeployment.updated', ({ localDeploymentId }) => {
     void revalidateLocalAppWebSockets(localDeploymentId)
   })

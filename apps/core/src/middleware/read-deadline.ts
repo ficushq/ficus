@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { createLogger } from '../lib/infra/logger'
+import { QueryCancellationScope } from '../db/query-cancellation'
 
 const log = createLogger('read-deadline')
 
@@ -214,34 +215,53 @@ export function holdIdleTimerForBodylessWrites(options: { idleTimeoutSeconds?: n
  * Answer a read that has not produced a response within the deadline with a 503,
  * `Retry-After` and code {@link READ_DEADLINE_CODE}, before Bun's idle timer can
  * drop it. Only the time to the response headers counts: a streamed body that
- * started in time is not cut. The handler is not cancelled; its late result is
- * discarded and logged.
+ * started in time is not cut.
+ *
+ * Nobody reads an abandoned handler's result, so its database work is cancelled
+ * (db/query-cancellation.ts): when the deadline answers for it, and when the client
+ * hangs up before it answered. Only the queries the handler has in flight at that
+ * moment are cancelled (running ones once they have run for a second); they fail
+ * with 57014 and their pool connections are free for the next request. Once the
+ * handler has answered nothing is cancelled, so a streamed body runs its own course,
+ * and work the read shared with other callers runs outside its scope.
  */
 export function readDeadline(options: { seconds?: number } = {}): MiddlewareHandler {
   const seconds = options.seconds ?? READ_DEADLINE_SECONDS
   return async (c, next) => {
     if (!READ_METHODS.has(c.req.method)) return next()
     const started = performance.now()
-    const work = next()
+    const scope = new QueryCancellationScope()
+    const request = c.req.raw
+    const onDisconnect = () => scope.abandon(new Error('the client closed the connection'))
+    if (request.signal.aborted) onDisconnect()
+    else request.signal.addEventListener('abort', onDisconnect, { once: true })
+    const work = scope.run(() => next())
     let timer: ReturnType<typeof setTimeout> | undefined
     const expired = new Promise<'expired'>((resolve) => {
       timer = setTimeout(() => resolve('expired'), seconds * 1000)
     })
     try {
       const first = await Promise.race([work.then(() => 'answered' as const), expired])
-      if (first === 'answered' || ownIdleTimeout.has(c.req.raw)) {
+      if (first === 'answered') return
+      if (ownIdleTimeout.has(request)) {
         await work
         return
       }
+      scope.abandon(new Error(`no answer within the ${seconds}s read deadline`))
     } finally {
       clearTimeout(timer)
+      request.signal.removeEventListener('abort', onDisconnect)
+      // No-op once abandoned; otherwise the handler answered and nothing more is recorded.
+      scope.close()
     }
     const route = `${c.req.method} ${c.req.path}`
-    log.warn(`${route} had no answer after ${seconds}s; answered 503 ${READ_DEADLINE_CODE}`)
+    log.warn(
+      `${route} had no answer after ${seconds}s; answered 503 ${READ_DEADLINE_CODE} and cancelled its database queries`
+    )
     work.then(
       () =>
         log.warn(`${route} finished ${Math.round(performance.now() - started)}ms after it started; result discarded`),
-      (error: unknown) => log.warn(`${route} failed after its read deadline:`, error)
+      (error: unknown) => log.warn(`${route} stopped after its read deadline:`, error)
     )
     // A fresh Response, so headers the abandoned handler may already have set on `c` do not leak into it.
     return new Response(JSON.stringify({ error: readDeadlineMessage(seconds), code: READ_DEADLINE_CODE }), {

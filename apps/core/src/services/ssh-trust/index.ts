@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { createHash, randomUUID } from 'crypto'
 import * as fs from 'fs'
 import { homedir } from 'os'
@@ -479,7 +480,8 @@ const firstUse = new Map<string, Promise<unknown>>()
 async function once(targetId: string, work: () => Promise<unknown>): Promise<void> {
   let inflight = firstUse.get(targetId)
   if (!inflight) {
-    inflight = work().finally(() => firstUse.delete(targetId))
+    // Concurrent first connections join this one, so no single request owns it.
+    inflight = shareAcrossRequests(work).finally(() => firstUse.delete(targetId))
     firstUse.set(targetId, inflight)
   }
   await inflight

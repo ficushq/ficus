@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 /** Only read-only observations belong here. Never put ensure/start/stop in a deadline race. */
 export const LOCAL_DEPLOYMENT_OBSERVATION_TIMEOUT_MS = 5_000
 export type ScheduleObservationTimeout = (callback: () => void, ms: number) => () => void
@@ -36,11 +37,13 @@ export function observeLocalDeployment<T>(
     controller.abort()
     result.reject(new Error('App observation deadline expired'))
   }, LOCAL_DEPLOYMENT_OBSERVATION_TIMEOUT_MS)
-  const settled = Promise.resolve()
-    .then(() => {
+  // Concurrent callers share this observation, so it belongs to none of their requests.
+  const settled = shareAcrossRequests(() =>
+    Promise.resolve().then(() => {
       controller.signal.throwIfAborted()
       return read(controller.signal)
     })
+  )
     .then(
       (value) => {
         if (!controller.signal.aborted) result.resolve(value)

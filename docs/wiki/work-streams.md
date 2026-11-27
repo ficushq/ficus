@@ -126,13 +126,25 @@ went from 0.17 to 6.7 seconds, while `/health` stayed at 0.03 seconds. A few age
 polling `ficus workstream list` that way are enough to push ordinary reads past 30
 seconds.
 
-Two things keep reads bounded, and a third keeps slow writes from losing their answer:
+Four things keep reads bounded, and a fifth keeps slow writes from losing their answer:
 
 - **Open work by default.** `ficus workstream list` asks for `statuses=queued,active`
   unless it gets `--status` or `--all` (see
-  [CLI: workstream list](cli/workstream-commands.md#list)). The API itself is unchanged:
-  without a status filter it still returns everything, and paginated callers (`limit`)
-  are unaffected.
+  [CLI: workstream list](cli/workstream-commands.md#list)).
+- **Capped history.** `GET /api/workstreams` without `limit` still answers with a plain
+  array, and still includes every open (queued or active) stream it matches, but done and
+  canceled streams are capped at the newest 50 by completion (`UNPAGED_HISTORY_LIMIT` in
+  `apps/core/src/routes/work-streams.ts`). When more history exists, the response carries
+  a `Link: </api/workstreams?...&statuses=done,canceled&limit=50&cursor=...>; rel="next"`
+  header. That target is an ordinary paginated request (the same squad filter, the
+  requested terminal statuses and `omitDescription`). Its answer,
+  `{ items, hasMore, nextCursor, totalCount }`, continues the history; repeat with each
+  `nextCursor` until it is `null`. The link asks for `annotations=full`, which gives a
+  terminal page the same row annotations (derived state, priority, step) as the unpaged
+  list, so a list continued from the link has one row shape throughout. A request with `respectAttention` is capped the same way but gets no `Link`,
+  because paginated requests refuse that filter. Requests that already send `limit` are
+  unchanged. The CLI follows the link (`apiGetList`), so `--all` and `--status done` fetch
+  the history page by page.
 - **Read deadline.** Core's listener runs `Bun.serve({ idleTimeout: 30 })`, and Bun's
   idle timer closes a request without a body (a `GET`, or a `POST` without one) about 32
   seconds after it arrives if nothing has been sent, while the handler keeps running. The
@@ -143,11 +155,57 @@ Two things keep reads bounded, and a third keeps slow writes from losing their a
   (`apps/core/src/middleware/read-deadline.ts`). 25 seconds leaves room for the idle
   timer's coarse granularity (on Bun 1.4.2 handlers answering at 28 and 31 seconds still
   got through; the close came at 32). Only the time until the response headers counts:
-  the deadline never cuts a streamed body that has started. The handler is not cancelled:
-  its late result is discarded, and Core logs a `read-deadline` warning for the read and
-  another when it finishes. Routes that set their own idle timeout through
-  `extendIdleTimeout` (workspace transfers, work stream creation) and the local-app
-  proxy are exempt.
+  the deadline never cuts a streamed body that has started. Its late result is discarded,
+  and Core logs a `read-deadline` warning for the read and another when it finishes.
+  Routes that set their own idle timeout through `extendIdleTimeout` (workspace
+  transfers, work stream creation) and the local-app proxy are exempt.
+- **Cancelled abandoned reads.** When the deadline answers for a read, or its client hangs
+  up before it has an answer, Core cancels that read's own database work so its pool
+  connections are free again (`apps/core/src/db/query-cancellation.ts`). The middleware
+  runs the handler in a cancellation scope, and the main pool records the queries started
+  in it (drizzle queries, raw tagged templates and queries inside a transaction). The
+  rule keeps the cancellation inside the abandoned request:
+  - A scope records queries only while its handler is pending. Once the handler has
+    answered, or the scope was abandoned, nothing more is recorded, so a timer or loop a
+    read happened to start never has a later query cancelled, and a read that has
+    answered (a streamed body, say) is never cancelled.
+  - Abandoning cancels only the recorded queries still in flight. One that has no
+    connection yet (waiting in the pool's queue) is dropped at once; nothing was sent, so
+    no cancel request is involved. One already sent on a connection, running or pipelined
+    behind another query, is cancelled only after the server has run it for a second
+    (`MIN_RUNNING_MS_BEFORE_CANCEL`) at the front of its connection, counted from no
+    earlier than the abandonment. A Postgres cancel request targets the backend, not the
+    query: sent for a short query, or for one still pipelined, it can arrive after that
+    query finished and cancel the next query on the connection, which belongs to another
+    request. So a query that finishes within that second is left to finish, and a long
+    one is cancelled about a second late. A cancel can still race a query that finishes
+    in the few milliseconds the cancel takes to arrive after a full second of running;
+    that small window is accepted. A cancelled query fails with `57014` and its transaction
+    rolls back; the error handler answers it with a quiet `503 read_abandoned` instead of
+    logging an unhandled error.
+  - Work shared beyond the request that started it runs in `shareAcrossRequests`, outside
+    any scope: `InflightDeduper` and `KeyedSerialQueue`, the sandbox ensure entry points
+    (`ensureSquadSandbox`, `ensureWorkspaceSandbox`, `ensureAgentSandbox`,
+    `ensureSquadSandboxForCommands`, `getSquadClient`), the VM manager's attach and
+    recovery, the machine tunnel manager's shared setups, the ssh-trust first use, the
+    local-app WebSocket watcher, local-deployment readiness checks, restarts, observations
+    and recoveries, flow decision passes, and the remaining process-wide promise caches.
+    New code that keeps a promise for later callers, or starts a loop or timer lazily,
+    should do the same.
+
+  Dedicated connections (locks, migrations, `withDedicatedDbTransaction`) are never
+  cancelled this way.
+
+  Limits to keep in mind:
+  - A queued query of an abandoned read is dropped with no grace period. Shared work
+    that is not wrapped in `shareAcrossRequests` therefore fails with `57014` exactly
+    when the pool is busy, which is when reads get abandoned. Wrap any new shared loader.
+  - Synchronous fan-out a read triggers still runs in its scope: event-emitter listeners
+    called from a `GET` (`eventEmitter.emit`) and the settings and secret stores'
+    `notifyListeners`. Their queries are cancelled only if they are still in flight when
+    the read is abandoned, and a listener that must always finish should start its work
+    in `shareAcrossRequests`.
+
 - **Body-less writes run to their answer.** Writes with a body (a JSON `POST`) are never
   cut by the idle timer, even after the handler has read the body. A write without one
   (`workstream pause`, `resume`, `cancel` and `reopen` send none, nor does a body-less

@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../../db/query-cancellation'
 import { isLiveAgentStatus } from '@ficus/shared'
 import { randomUUID } from 'crypto'
 import { and, eq, sql } from 'drizzle-orm'
@@ -120,7 +121,7 @@ export class SandboxProvisionRecoveryService {
 
   reconcileOnce(now: Date = new Date()): Promise<void> {
     if (this.inFlight) return this.inFlight
-    this.inFlight = this.reconcile(now).finally(() => {
+    this.inFlight = shareAcrossRequests(() => this.reconcile(now)).finally(() => {
       this.inFlight = null
     })
     return this.inFlight

@@ -208,3 +208,59 @@ test('a read whose connection is dropped says so, and a read deadline answer kee
   expect(result.stderr.toString()).toBe('')
   expect(result.exitCode).toBe(0)
 }, 30_000)
+
+// Real client in a child process (the preload mocks client.ts); fetch is replaced and stays local.
+test('a capped list follows its Link header, then each page cursor, on its own path', () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { strict as assert } from 'node:assert'
+    import { apiGetList } from './src/client.ts'
+    const calls = []
+    const answers = [
+      () => Response.json([{ id: 'open' }, { id: 'h1' }], {
+        headers: { Link: '</api/workstreams?squadId=s&statuses=done%2Ccanceled&limit=2&cursor=c1>; rel="next"' },
+      }),
+      () => Response.json({ items: [{ id: 'h2' }, { id: 'h3' }], hasMore: true, nextCursor: 'c2', totalCount: 4 }),
+      () => Response.json({ items: [{ id: 'h4' }], hasMore: false, nextCursor: null, totalCount: 4 }),
+    ]
+    globalThis.fetch = async (url) => {
+      calls.push(String(url))
+      return answers[calls.length - 1]()
+    }
+    const rows = await apiGetList('/api/workstreams?squadId=s')
+    assert.deepEqual(rows.map((row) => row.id), ['open', 'h1', 'h2', 'h3', 'h4'])
+    assert.deepEqual(calls, [
+      'https://ficus.example/prefix/api/workstreams?squadId=s',
+      'https://ficus.example/prefix/api/workstreams?squadId=s&statuses=done%2Ccanceled&limit=2&cursor=c1',
+      'https://ficus.example/prefix/api/workstreams?squadId=s&statuses=done%2Ccanceled&limit=2&cursor=c2',
+    ])
+
+    // A server that does not cap answers in one request.
+    calls.length = 0
+    answers.splice(0, answers.length, () => Response.json([{ id: 'only' }]))
+    assert.deepEqual(await apiGetList('/api/workstreams'), [{ id: 'only' }])
+    assert.equal(calls.length, 1)
+
+    // A page that repeats its cursor cannot loop forever.
+    calls.length = 0
+    answers.splice(0, answers.length,
+      () => Response.json([], { headers: { Link: '</api/workstreams?limit=1&cursor=x>; rel="next"' } }),
+      () => Response.json({ items: [{ id: 'a' }], nextCursor: 'x' }),
+    )
+    assert.deepEqual(await apiGetList('/api/workstreams'), [{ id: 'a' }])
+    assert.equal(calls.length, 2)
+  `,
+    ],
+    {
+      cwd: new URL('..', import.meta.url).pathname,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, FICUS_API_URL: 'https://ficus.example/prefix', FICUS_TOKEN: 'fixture-token' },
+    }
+  )
+  expect(result.stderr.toString()).toBe('')
+  expect(result.exitCode).toBe(0)
+})

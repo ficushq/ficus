@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../../db/query-cancellation'
 import { createHash } from 'node:crypto'
 import {
   effectiveSquadEventRules,
@@ -137,7 +138,8 @@ async function askRule(
   for (const group of groups.values()) {
     const questions: Record<string, DecisionQuestion> = {}
     group.forEach((entry, index) => (questions[`q${index}`] = entry.predicate.question))
-    const call = (async () => {
+    // Cached for later events, so it runs outside the request that started it.
+    const call = shareAcrossRequests(async () => {
       try {
         // Untrusted event content goes only in `state`; the questions are the squad's own configuration.
         return await decide(
@@ -149,7 +151,7 @@ async function askRule(
         log.warn('Event rule decision failed', { squadId: context.squadId, ruleId: rule.id, error: String(error) })
         return { ok: false as const, reason: 'unavailable' as const, errors: [] }
       }
-    })()
+    })
     group.forEach((entry, index) => {
       const outcome = call.then((result): EventDecisionOutcome => {
         if (!result.ok) return { unavailable: result.reason }

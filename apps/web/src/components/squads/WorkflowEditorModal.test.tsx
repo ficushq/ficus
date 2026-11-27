@@ -5,6 +5,7 @@ import { createBlankWorkflow, type WorkflowDefinition } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { WorkflowEditorModal } from './WorkflowEditorModal'
+import { StaticAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 describe('WorkflowEditorModal', () => {
   let cleanup: (() => Promise<void>) | undefined
@@ -31,6 +32,7 @@ describe('WorkflowEditorModal', () => {
     queryClient.setQueryData(queryKeys.agentTypes.list(), [
       { id: 'general', name: 'General', model: '', systemPrompt: '', includes: [], disabled: false },
       { id: 'sysops', name: 'SysOps', model: '', systemPrompt: '', includes: [], disabled: false },
+      { id: 'auditor', name: 'Release Auditor', model: '', systemPrompt: '', includes: [], disabled: true },
     ])
     cleanup = async () => {
       await dom.cleanup()
@@ -39,15 +41,17 @@ describe('WorkflowEditorModal', () => {
     await dom.act(async () => {
       rendered.root.render(
         <QueryClientProvider client={queryClient}>
-          <div onKeyDown={props.onOuterKeyDown}>
-            <WorkflowEditorModal
-              isOpen
-              squadId="squad-1"
-              initialDefinition={props.initialDefinition}
-              onSave={props.onSave}
-              onClose={props.onClose}
-            />
-          </div>
+          <StaticAgentTypeNames names={{ general: 'General', sysops: 'SysOps', auditor: 'Release Auditor' }}>
+            <div onKeyDown={props.onOuterKeyDown}>
+              <WorkflowEditorModal
+                isOpen
+                squadId="squad-1"
+                initialDefinition={props.initialDefinition}
+                onSave={props.onSave}
+                onClose={props.onClose}
+              />
+            </div>
+          </StaticAgentTypeNames>
         </QueryClientProvider>
       )
     })
@@ -66,6 +70,15 @@ describe('WorkflowEditorModal', () => {
     expect(saved[0].name).toBe(createBlankWorkflow().name)
     expect(saved[0].steps.map((s) => s.id)).toEqual(['execute'])
     expect(closed).toBe(0)
+  })
+
+  test('a participant on a disabled agent type is named by its configured type name, not its id', async () => {
+    const initial = createBlankWorkflow()
+    initial.participants.worker = { ...initial.participants.worker!, agentTypeId: 'auditor' }
+    const body = await render({ initialDefinition: initial, onSave: () => {}, onClose: () => {} })
+    const disabled = [...body.querySelectorAll('option:disabled')].map((option) => option.textContent)
+    expect(disabled).toContain('Release Auditor (unavailable for workers)')
+    expect(disabled.join(' ')).not.toContain('auditor')
   })
 
   test('seeds the editor from an initial definition (a detached copy of a preset)', async () => {

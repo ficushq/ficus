@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../../db/query-cancellation'
 import { reservePhysicalHostCapacity } from '../../machines/host-admission'
 /**
  * VmSandboxManager
@@ -2281,18 +2282,21 @@ export class VmSandboxManager implements ISandboxManager {
 
     const inflight = this.attachInflight.get(sandboxId)
     if (inflight) return inflight
-    const p = this.acquireConnection(sandboxId)
-      .then(async (release) => {
-        try {
-          return await this.attachClient(sandboxId)
-        } finally {
-          release()
-        }
-      })
-      .finally(() => {
-        this.attachInflight.delete(sandboxId)
-        this.attachTombstones.delete(sandboxId)
-      })
+    // Joined by later callers, so it runs outside the request that started it.
+    const p = shareAcrossRequests(() =>
+      this.acquireConnection(sandboxId)
+        .then(async (release) => {
+          try {
+            return await this.attachClient(sandboxId)
+          } finally {
+            release()
+          }
+        })
+        .finally(() => {
+          this.attachInflight.delete(sandboxId)
+          this.attachTombstones.delete(sandboxId)
+        })
+    )
     this.attachInflight.set(sandboxId, p)
     return p
   }
@@ -2350,17 +2354,20 @@ export class VmSandboxManager implements ISandboxManager {
     const existing = this.recoveryInflight.get(sandboxId)
     if (existing) return existing
 
-    const recovery = this.acquireConnection(sandboxId)
-      .then(async (release) => {
-        try {
-          return await this.performClientRecovery(sandboxId, failedClient, cause)
-        } finally {
-          release()
-        }
-      })
-      .finally(() => {
-        if (this.recoveryInflight.get(sandboxId) === recovery) this.recoveryInflight.delete(sandboxId)
-      })
+    // Joined by later callers, so it runs outside the request that started it.
+    const recovery = shareAcrossRequests(() =>
+      this.acquireConnection(sandboxId)
+        .then(async (release) => {
+          try {
+            return await this.performClientRecovery(sandboxId, failedClient, cause)
+          } finally {
+            release()
+          }
+        })
+        .finally(() => {
+          if (this.recoveryInflight.get(sandboxId) === recovery) this.recoveryInflight.delete(sandboxId)
+        })
+    )
     this.recoveryInflight.set(sandboxId, recovery)
     return recovery
   }

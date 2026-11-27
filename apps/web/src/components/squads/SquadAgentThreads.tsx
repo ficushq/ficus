@@ -70,6 +70,7 @@ import {
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import {
+  agentHoverTitle,
   agentListLabels,
   agentTypeDisplayName,
   getAgentName,
@@ -741,7 +742,6 @@ export function SquadAgentThreads({
     fullLabels.get(agent.id) ?? agentTypeDisplayName(agent.agentTypeId, typeNames)
   const renderAgentRow = (agent: Agent, compact = false) => {
     const isSelected = listSelectedAgentId === agent.id
-    const stableName = getAgentName(agent)
     // Type first, then the purpose; the name stays in the hover title.
     const agentName = agent.agentTypeId === 'manager' ? 'Manager' : agentRowLabel(agent)
     const activityAt = agent.lastHumanMessageAt ?? agent.createdAt
@@ -776,7 +776,10 @@ export function SquadAgentThreads({
           // Shift- or Alt/Option-click opens this agent in a floating window instead of selecting it.
           {...agentChatTarget(agent.id)}
           onClick={() => handleAgentRowSelect(agent.id)}
-          title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}${openQuestionLabel ? ` · ${openQuestionLabel}` : ''}`}
+          title={agentHoverTitle(agent, typeNames, {
+            typeNote: viaAssistant ? 'via Assistant' : undefined,
+            details: [openQuestionLabel],
+          })}
           className="ficus-button ficus-button-ghost squad-chat-agent-select absolute inset-0 block w-full rounded-lg text-left"
         />
         <div
@@ -1038,7 +1041,6 @@ export function SquadAgentThreads({
             ).map((agent) => {
               const isSelected = listSelectedAgentId === agent.id
               const agentName = completedRowLabel(agent)
-              const stableName = getAgentName(agent)
               const finishedAt = completedAt(agent)
               const finishedTime = finishedAt ? formatRelativeTime(finishedAt) : null
 
@@ -1053,7 +1055,7 @@ export function SquadAgentThreads({
                     isSelected && 'is-selected'
                   )}
                   onClick={() => handleAgentRowSelect(agent.id)}
-                  title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
+                  title={agentHoverTitle(agent, typeNames)}
                 >
                   <div className="flex items-center gap-2">
                     <span

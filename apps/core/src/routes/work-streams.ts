@@ -101,7 +101,7 @@ import { Agent } from '../entities/Agent'
 import { User } from '../entities/User'
 import { resolveAgentChatSenderUserId } from '../services/inbox/agent-human-recipient'
 import { requirePermission } from '../middleware'
-import { requireEntityPermission, filterToAccessibleSquads } from '../middleware/require-entity-permission'
+import { requireEntityPermission } from '../middleware/require-entity-permission'
 import { hasPermission, getAccessibleSquadIds } from '../services/rbac'
 import { isValidMetadataPath } from '../services/work-streams/metadata-path'
 import type { Identity } from '../services/rbac'
@@ -210,6 +210,14 @@ async function serializeCanonicalWorkStreams(streams: WorkStream[], identity: Id
 }
 
 const ALL_STATUSES: WorkStreamStatus[] = ['active', 'queued', 'done', 'canceled']
+
+/**
+ * How many done and canceled streams a list request without `limit` returns, newest
+ * first. Open work is never capped; history beyond this is paged with `limit` and
+ * `cursor` (the response's `Link` header names the next page). Uncapped, a long
+ * history answered every such request with megabytes (988 streams, 7.7 MB, 2.4 s).
+ */
+export const UNPAGED_HISTORY_LIMIT = 50
 const TERMINAL_STATUSES = new Set<WorkStreamStatus>(['done', 'canceled'])
 const PRIORITIES = new Set<WorkStreamPriority>(['critical', 'high', 'normal', 'low'])
 
@@ -639,6 +647,10 @@ export const workStreamsRouter = new Hono()
     // Rows of a list that never shows descriptions: on a busy instance they were 86% of the
     // active list's bytes, refetched on every invalidation. The detail endpoint still has them.
     const omitDescription = c.req.query('omitDescription') === 'true'
+    // A terminal page normally carries only runtime; `annotations=full` gives its rows the same
+    // annotations (derived state, priority, step) as the unpaged list, so a list that continues
+    // from that list's `Link` header has one row shape throughout.
+    const fullAnnotations = c.req.query('annotations') === 'full'
     const rows = <T extends { description: string | null }>(items: T[]): T[] =>
       omitDescription ? items.map((item) => ({ ...item, description: null })) : items
     const cursor = c.req.query('cursor')
@@ -755,7 +767,11 @@ export const workStreamsRouter = new Hono()
           completedBefore,
           agentId,
         })
-        const items = rows(await serializeTerminalWorkStreams(page.items))
+        const items = rows(
+          fullAnnotations
+            ? await annotateWorkStreams(page.items, identity)
+            : await serializeTerminalWorkStreams(page.items)
+        )
         return c.json({
           items,
           hasMore: page.hasMore,
@@ -928,25 +944,51 @@ export const workStreamsRouter = new Hono()
       return c.json(completeVolatilePage(rows(await serializeCanonicalWorkStreams(streams, identity))))
     }
 
-    if (squadId) {
-      const streams = await WorkStream.list({
-        squadId,
-        status: statuses ? undefined : status,
-        statuses,
-      })
-      const attended = respectAttention ? await filterToAttendedStreams(identity, streams) : streams
-      return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))
-    }
+    // No `limit`: the plain array. Open work (queued and active) comes whole; terminal history,
+    // which only grows, is capped at its newest UNPAGED_HISTORY_LIMIT rows. When more exists, a
+    // `Link: <...>; rel="next"` header names the paginated request that continues it.
+    const requestedStatuses = statuses ?? (status ? [status] : ALL_STATUSES)
+    const openStatuses = requestedStatuses.filter((value) => !TERMINAL_STATUSES.has(value))
+    const terminalStatuses = requestedStatuses.filter((value) => TERMINAL_STATUSES.has(value))
 
-    // No squadId — filtered-list
-    const streams = await WorkStream.list({
-      status: statuses ? undefined : status,
-      statuses,
-    })
-    const requestedSet = requestedSquadIds?.length ? new Set(requestedSquadIds) : null
-    const requestedStreams = requestedSet ? streams.filter((stream) => requestedSet.has(stream.squadId)) : streams
-    const filtered = await filterToAccessibleSquads(identity, requestedStreams, (s) => s.squadId ?? null)
-    const attended = respectAttention ? await filterToAttendedStreams(identity, filtered) : filtered
+    let open = openStatuses.length > 0 ? await WorkStream.list({ squadId, statuses: openStatuses }) : []
+    let historySquadIds: string[] | undefined
+    if (!squadId) {
+      // Filtered-list: only the requested squads the caller may read. History is filtered in
+      // the query, before its cap, so a page is never shortened by squads the caller cannot see.
+      const requestedSet = requestedSquadIds?.length ? new Set(requestedSquadIds) : null
+      const accessible = await getAccessibleSquadIds(identity)
+      if (accessible === 'all') historySquadIds = requestedSquadIds?.length ? requestedSquadIds : undefined
+      else historySquadIds = requestedSet ? accessible.filter((id) => requestedSet.has(id)) : accessible
+      if (historySquadIds) {
+        const visible = new Set(historySquadIds)
+        open = open.filter((stream) => visible.has(stream.squadId))
+      }
+    }
+    const history =
+      terminalStatuses.length > 0 && historySquadIds?.length !== 0
+        ? await WorkStream.listTerminalPage({
+            squadId,
+            squadIds: historySquadIds,
+            statuses: terminalStatuses,
+            limit: UNPAGED_HISTORY_LIMIT,
+          })
+        : { items: [], hasMore: false, totalCount: 0 }
+    const listed = [...open, ...history.items]
+    const attended = respectAttention ? await filterToAttendedStreams(identity, listed) : listed
+    const last = history.items[history.items.length - 1]
+    // Paginated requests refuse respectAttention, so there is no continuation to offer for it.
+    if (history.hasMore && last && !respectAttention) {
+      const next = new URLSearchParams()
+      if (squadId) next.set('squadId', squadId)
+      else if (requestedSquadIds?.length) next.set('squadIds', requestedSquadIds.join(','))
+      next.set('statuses', terminalStatuses.join(','))
+      next.set('limit', String(UNPAGED_HISTORY_LIMIT))
+      next.set('cursor', encodeTerminalCursor(last))
+      if (omitDescription) next.set('omitDescription', 'true')
+      next.set('annotations', 'full')
+      c.header('Link', `<${new URL(c.req.url).pathname}?${next.toString()}>; rel="next"`)
+    }
     return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))
   })
   .post('/:id/feed-seen', zValidator('json', z.object({ completedAt: z.iso.datetime() })), async (c) => {
