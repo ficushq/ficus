@@ -1,6 +1,6 @@
 import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { WorkStreamDetailModal, formatRelativeTime } from '../WorkStreamDetailModal'
@@ -38,8 +38,30 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
   const history = useInfiniteQuery(queries.squads.agentDoneWorkStreams(agent.id, squadId))
   const isLoading = active.isLoading || history.isLoading
   const isSuccess = active.isSuccess && history.isSuccess
+  // A list that never loaded is an error, not an empty panel; one that loaded keeps its rows on a failed refetch.
+  const activeFailed = active.isError && active.data === undefined
+  const historyFailed = history.isError && history.data === undefined
   const activeWorkStreams = active.data
   const finishedWorkStreams = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data])
+
+  // History is not polled. A stream that finishes without a live event (a dropped socket) leaves the
+  // polled open list, so when an open stream of this agent disappears from it and is not already in
+  // the history, the history is refreshed from its first page.
+  const refetchHistory = history.refetch
+  const previousOpen = useRef<{ agentId: string; ids: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!activeWorkStreams) return
+    const openIds = new Set(
+      activeWorkStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id)).map((ws) => ws.id)
+    )
+    const previous = previousOpen.current?.agentId === agent.id ? previousOpen.current.ids : null
+    previousOpen.current = { agentId: agent.id, ids: openIds }
+    if (!previous) return
+    const finishedIds = new Set(finishedWorkStreams.map((ws) => ws.id))
+    if ([...previous].some((id) => !openIds.has(id) && !finishedIds.has(id))) void refetchHistory()
+    // Only a change in the open list triggers this; a history refresh alone must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkStreams, agent.id, refetchHistory])
 
   // Fetch squads and agents for the modal
   const { data: squads = [] } = useQuery(queries.squads.list())
@@ -77,6 +99,32 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
     return (
       <div className="flex-1 p-4">
         <CollectionSkeleton label="Loading agent work streams" count={workStreamSkeletonCount} />
+      </div>
+    )
+  }
+
+  if (activeFailed || historyFailed) {
+    const retrying = active.isFetching || history.isFetching
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-muted px-6 py-12 text-center">
+        <WorkStreamIcon className="w-8 h-8 mb-3 text-placeholder" />
+        <p role="alert" className="text-lg">
+          Could not load work streams
+        </p>
+        <p className="max-w-sm text-sm leading-relaxed mt-2">
+          This agent's work streams did not load. Try again in a moment.
+        </p>
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary mt-4 px-3 py-1.5 text-sm disabled:opacity-50"
+          disabled={retrying}
+          onClick={() => {
+            if (activeFailed) void active.refetch()
+            if (historyFailed) void history.refetch()
+          }}
+        >
+          {retrying ? 'Retrying…' : 'Retry'}
+        </button>
       </div>
     )
   }

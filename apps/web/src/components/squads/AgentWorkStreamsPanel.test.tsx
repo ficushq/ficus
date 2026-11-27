@@ -399,3 +399,125 @@ test("reads the open list and pages the agent history, never the squad's unfilte
     await dom.cleanup()
   }
 })
+
+/** Renders the panel against an API route table in a DOM harness; returns helpers to drive it. */
+async function mountPanel(api: Record<string, (request: { url: URL }) => unknown>) {
+  const { MemoryRouter } = await import('react-router')
+  const { acquireDomHarness } = await import('../../test/domHarness')
+  const dom = await acquireDomHarness({ url: 'http://localhost/', api })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  cache.setQueryData(queryKeys.squads.list(), [squad])
+  cache.setQueryData(queryKeys.squads.agents(squad.id), [agent])
+  const root = dom.createRoot()
+  const text = () => dom.window.document.body.textContent ?? ''
+  const settle = async (done: () => boolean) => {
+    for (let attempt = 0; attempt < 100 && !done(); attempt++)
+      await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+  }
+  await dom.act(async () =>
+    root.root.render(
+      <MemoryRouter>
+        <QueryClientProvider client={cache}>
+          <AgentWorkStreamsPanel agent={agent} squadId={squad.id} />
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+  )
+  const button = (label: string) =>
+    [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)
+  return { dom, cache, text, settle, button }
+}
+
+const emptyPage = { items: [], hasMore: false, nextCursor: null, totalCount: 0 }
+
+test('a failed first load shows an error with Retry instead of an empty panel, and Retry recovers', async () => {
+  let historyFails = true
+  const historyReads: URL[] = []
+  const panel = await mountPanel({
+    '/api/workstreams': ({ url }) => {
+      if (!url.searchParams.has('limit'))
+        return [workStream({ id: 'open', title: 'Open retry work', agentIds: [agent.id] })]
+      historyReads.push(url)
+      if (historyFails) return Response.json({ error: 'Internal error' }, { status: 500 })
+      return emptyPage
+    },
+  })
+  try {
+    await panel.settle(() => panel.text().includes('Could not load work streams'))
+    expect(panel.text()).toContain('Could not load work streams')
+    expect(panel.text()).not.toContain('No work streams')
+    // The open list loaded, but showing it alone would hide that the history is missing.
+    expect(panel.text()).not.toContain('Open retry work')
+    expect(panel.dom.window.document.querySelector('[role="alert"]')?.textContent).toBe('Could not load work streams')
+
+    historyFails = false
+    await panel.dom.act(async () => panel.button('Retry')!.click())
+    await panel.settle(() => panel.text().includes('Open retry work'))
+    expect(panel.text()).toContain('Open retry work')
+    expect(panel.text()).not.toContain('Could not load work streams')
+    expect(historyReads).toHaveLength(2)
+  } finally {
+    await panel.cache.cancelQueries()
+    await panel.dom.cleanup()
+  }
+})
+
+test('a failed open list with no history also shows the error, not "No work streams"', async () => {
+  const panel = await mountPanel({
+    '/api/workstreams': ({ url }) =>
+      url.searchParams.has('limit') ? emptyPage : Response.json({ error: 'busy' }, { status: 500 }),
+  })
+  try {
+    await panel.settle(() => panel.text().includes('Could not load work streams'))
+    expect(panel.text()).toContain('Could not load work streams')
+    expect(panel.text()).not.toContain('No work streams')
+    expect(panel.button('Retry')).toBeDefined()
+  } finally {
+    await panel.cache.cancelQueries()
+    await panel.dom.cleanup()
+  }
+})
+
+test('an open stream that leaves the polled open list refreshes the history, so it shows as finished', async () => {
+  let finished = false
+  const historyReads: URL[] = []
+  const shipped = workStream({ id: 'shipping', title: 'Quietly shipped work', agentIds: [agent.id] })
+  const unrelated = workStream({ id: 'other', title: 'Another agent work', assigneeAgentId: 'agent-2' })
+  const panel = await mountPanel({
+    '/api/workstreams': ({ url }) => {
+      if (!url.searchParams.has('limit')) return finished ? [] : [shipped, unrelated]
+      historyReads.push(url)
+      const items = finished ? [{ ...shipped, status: 'done', derivedState: 'done' }] : []
+      return { items, hasMore: false, nextCursor: null, totalCount: items.length }
+    },
+  })
+  const refetchActive = async () => {
+    await panel.dom.act(async () => {
+      await panel.cache.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(squad.id), exact: true })
+    })
+  }
+  try {
+    await panel.settle(() => panel.text().includes('Quietly shipped work'))
+    expect(historyReads).toHaveLength(1)
+
+    // A poll that still lists the stream (or only drops another agent's) reads no history.
+    await refetchActive()
+    expect(historyReads).toHaveLength(1)
+
+    // The stream finished and no live event arrived: the next poll no longer lists it.
+    finished = true
+    await refetchActive()
+    await panel.settle(() => historyReads.length === 2 && panel.text().includes('Quietly shipped work'))
+    expect(historyReads).toHaveLength(2)
+    expect(historyReads[1]!.searchParams.get('cursor')).toBeNull()
+    expect(panel.text()).toContain('Quietly shipped work')
+    expect(panel.text()).not.toContain('No work streams')
+
+    // Once it is in the history, later polls read no more history.
+    await refetchActive()
+    expect(historyReads).toHaveLength(2)
+  } finally {
+    await panel.cache.cancelQueries()
+    await panel.dom.cleanup()
+  }
+})
