@@ -1,7 +1,7 @@
 import { workStreamRef } from '@ficus/shared'
 import { workStreamTitle } from '@ficus/shared'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router'
 import clsx from 'clsx'
 import { integrationQueries, queries } from '../queryOptions'
@@ -162,6 +162,8 @@ export function AssistantCommandCenter({
   const olderWork = useQuery({
     ...queries.squads.workStreamSearch(searchText, squadScope),
     enabled: enabled && searchText.length > 0,
+    // Keep the last hits while the next query loads, so older-work rows do not blink out as you type.
+    placeholderData: keepPreviousData,
   })
   const data = {
     squads: squads.data ?? [],

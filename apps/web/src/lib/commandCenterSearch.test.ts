@@ -236,13 +236,14 @@ test('server search hits add older work rows, only while searching and only for 
   ]
   const work = (query: string, squadId?: string) =>
     commandCenterSearch(query, { ...data, olderWork, squadId }).filter((r) => r.kind === 'Work stream')
+  // Hits rank on their bare title like loaded streams: a title starting with the query leads.
   expect(work('OAuth').map((r) => [r.id, r.label, r.olderWork ?? false])).toEqual([
+    ['work:elsewhere', '#7 · OAuth elsewhere', true],
     ['work:work', 'Review OAuth', false],
     ['work:ancient', '#7 · Ancient OAuth work', true],
-    ['work:elsewhere', '#7 · OAuth elsewhere', true],
   ])
   expect(work('OAuth', 'tau').map((r) => r.id)).toEqual(['work:work', 'work:ancient'])
-  expect(work('OAuth')[1]?.destination).toEqual({
+  expect(work('OAuth')[2]?.destination).toEqual({
     kind: 'work',
     id: 'ancient',
     squadId: 'tau',
@@ -251,4 +252,48 @@ test('server search hits add older work rows, only while searching and only for 
   // An exact title still leads, even when only the server knows it.
   expect(work('Ancient OAuth work')[0]?.id).toBe('work:ancient')
   expect(work('').some((r) => r.olderWork)).toBe(false)
+})
+
+test('an old stream known only from the server search still ranks first on its exact title', () => {
+  const now = Date.parse('2026-11-27T12:00:00.000Z')
+  const streams = [
+    { id: 'staging', squadId: 'tau', number: 9, title: 'Deploy staging', status: 'active', updatedAt: '2026-11-27' },
+    {
+      id: 'pipeline',
+      squadId: 'tau',
+      number: 8,
+      title: 'Deploy pipeline fixes',
+      status: 'done',
+      completedAt: '2026-11-26T12:00:00.000Z',
+    },
+  ]
+  const olderWork = [
+    {
+      kind: 'work_stream' as const,
+      id: 'deploy',
+      number: 5,
+      label: 'Deploy',
+      detail: '',
+      squadId: 'tau',
+      squadName: 'Ficus',
+      status: 'done',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      agentId: null,
+      score: 1,
+    },
+  ]
+  const ids = (results: ReturnType<typeof commandCenterSearch>) =>
+    results.filter((r) => r.kind === 'Work stream').map((r) => r.id)
+  // The same old stream loaded locally ranks first; known only from the search, it must too.
+  const loaded = { ...olderWork[0]!, title: 'Deploy', status: 'done', completedAt: '2025-01-01T00:00:00.000Z' }
+  expect(ids(commandCenterSearch('Deploy', { ...data, streams: [...streams, loaded] }, now))).toEqual([
+    'work:deploy',
+    'work:staging',
+    'work:pipeline',
+  ])
+  expect(ids(commandCenterSearch('Deploy', { ...data, streams, olderWork }, now))).toEqual([
+    'work:deploy',
+    'work:staging',
+    'work:pipeline',
+  ])
 })

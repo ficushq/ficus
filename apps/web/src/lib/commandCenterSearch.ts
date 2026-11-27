@@ -41,6 +41,8 @@ export interface CommandResult {
   work?: WorkStream
   /** A server search hit for work older than the loaded lists: no stream row to render, ranked as old. */
   olderWork?: boolean
+  /** A work row's bare title when no loaded stream backs it, so the title ranks like `work.title`. */
+  workTitle?: string
   /** Update rows only: unread marker, task summary, and the latest update time. */
   unread?: boolean
   summary?: string
@@ -207,6 +209,7 @@ function olderWorkRows(
         detail: hit.squadName ?? 'Personal',
         keywords: hit.status ?? undefined,
         olderWork: true,
+        workTitle: hit.label,
         destination: { kind: 'work' as const, id: hit.id, squadId: hit.squadId, label },
       },
     ]
@@ -219,7 +222,8 @@ function olderWorkRows(
  */
 function titleMatchRank(query: string, row: CommandResult) {
   const label = settingMatchRank(query, row.label)
-  return row.work ? Math.min(label, settingMatchRank(query, row.work.title)) : label
+  const title = row.work?.title ?? row.workTitle
+  return title === undefined ? label : Math.min(label, settingMatchRank(query, title))
 }
 
 function isOpenWork(work: WorkStream) {
