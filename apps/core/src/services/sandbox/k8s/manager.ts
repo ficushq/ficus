@@ -8,6 +8,7 @@
 import type { IPty } from 'bun-pty'
 import {
   getSquadIdFromSandbox,
+  sandboxExecAbortReason,
   type ISandboxManager,
   type SandboxExecOptions,
   type SandboxOptions,
@@ -487,6 +488,8 @@ export class K8sSandboxManager implements ISandboxManager {
       throw new Error(`Sandbox not found: ${sandboxId}`)
     }
 
+    const signal = options?.signal
+    if (signal?.aborted) throw sandboxExecAbortReason(signal)
     this.podManager.touchPod(sandboxId)
 
     const command = shellCommandFromArgs(args)
@@ -495,6 +498,15 @@ export class K8sSandboxManager implements ISandboxManager {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
       const stream = state.client.bash({ command, cwd: state.workspaceMount, env: options?.env })
+      // An abort stops the command in the pod, not only this wait for it.
+      const onAbort = () => {
+        reject(sandboxExecAbortReason(signal!))
+        stream
+          .cancelAndWait('tool-abort')
+          .catch((error: unknown) => log.warn(`Could not cancel an aborted command in ${sandboxId}:`, error))
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      stream.on('end', () => signal?.removeEventListener('abort', onAbort))
 
       stream.on('data', (response: BashResponse) => {
         if (response.stdout) {

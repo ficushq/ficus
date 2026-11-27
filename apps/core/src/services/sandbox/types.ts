@@ -154,6 +154,17 @@ export type SandboxStopOutcome =
 export interface SandboxExecOptions {
   /** Per-command environment additions; values are passed out of band, never as argv. */
   env?: Record<string, string>
+  /**
+   * Stops the command when aborted: exec rejects with the signal's reason and the
+   * process is cancelled in the box (vm, k8s) or killed (host). Docker exec runs
+   * synchronously, so it only checks the signal before starting.
+   */
+  signal?: AbortSignal
+}
+
+/** The rejection for an aborted exec: the signal's own reason, as fetch does. */
+export function sandboxExecAbortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new DOMException('The command was aborted', 'AbortError')
 }
 
 export interface ISandboxManager {
