@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { MONOREPO_ROOT } from '../lib/paths'
-import { createPostgresConnection, getConnectionString } from './connection'
+import { createPostgresConnection, getDirectConnectionString } from './connection'
 import { applyMigrations, classifyMigration } from './migrator'
 
 const migrations = readMigrationFiles({ migrationsFolder: join(MONOREPO_ROOT, 'apps/core/drizzle') })
@@ -18,8 +18,10 @@ const validate = migrations.find((migration) =>
   migration.sql.join('\n').includes('VALIDATE CONSTRAINT "squad_activity_lane_check"')
 )!
 const predecessors = migrations.filter((migration) => migration.folderMillis < columns.folderMillis)
+// Migrations run on a direct connection: CREATE INDEX CONCURRENTLY through a transaction pooler can
+// wait on the pooler's other backends.
 const urlFor = (name: string) => {
-  const url = new URL(getConnectionString())
+  const url = new URL(getDirectConnectionString())
   url.pathname = `/${name}`
   return url.toString()
 }
@@ -91,10 +93,15 @@ describe('settled-without-you migrations', () => {
     await connection`INSERT INTO squad_activity (squad_id,lane,row_id,source_family,source_group_id,at,kind,summary,
         preview,ref,quiet_eligible,access_scope,payload_hash)
       VALUES (${squadId},32,${crypto.randomUUID()},'workstream','g',now(),'workstream','s','[]','{}',true,'workstreams','h')`
-    await expect(
-      connection`INSERT INTO squad_activity (squad_id,lane,row_id,source_family,source_group_id,at,kind,summary,
+    // postgres.js queries are lazy thenables, which expect().rejects does not drive: await it directly.
+    let refused: unknown
+    try {
+      await connection`INSERT INTO squad_activity (squad_id,lane,row_id,source_family,source_group_id,at,kind,summary,
           preview,ref,quiet_eligible,access_scope,payload_hash)
         VALUES (${squadId},32,${crypto.randomUUID()},'workstream','g',now(),'wait','s','[]','{}',true,'workstreams','h')`
-    ).rejects.toThrow('squad_activity_lane_kind_check')
-  })
+    } catch (error) {
+      refused = error
+    }
+    expect(String((refused as Error | undefined)?.message)).toContain('squad_activity_lane_kind_check')
+  }, 60_000)
 })
