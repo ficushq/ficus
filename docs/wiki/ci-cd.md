@@ -68,7 +68,13 @@ jobs:
   (`fail-fast: false`).
 - `rendered checks` is the verdict. It passes when the plan succeeded and
   selected nothing, or when every shard succeeded. A selected shard that was
-  skipped or cancelled fails it.
+  skipped or cancelled fails it. The required `test` check depends on it, like
+  the other test lanes, so a broken rendered check blocks the merge.
+
+Before it became required, every check ran four times on CI runners (140 runs,
+no failure; the slowest check took 136 seconds against its 600-second cap). A
+check that turns out flaky should be fixed, not retried in a loop: the runner
+deliberately has no retry.
 
 Every check together takes about 16 minutes on a runner, which the plan splits
 into four shards of about four minutes, plus under a minute of installs each:

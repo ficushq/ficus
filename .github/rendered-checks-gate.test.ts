@@ -102,6 +102,12 @@ describe('workflow wiring', () => {
     })
   })
 
+  test('the required `test` check depends on the verdict', () => {
+    expect(jobs.test!.needs).toContain('rendered-checks')
+    const step = jobs.test!.steps!.find((entry) => entry.run === 'bun .github/lane-gate.ts verify-result')!
+    expect(step.env!.LANE_NAMES!.split(',')).toContain('rendered-checks')
+  })
+
   test('the gates lane runs the mapping test', () => {
     const step = jobs['test-gates']!.steps!.find(
       (entry) => entry.name === 'Validate rendered web check mapping and gate'
