@@ -10,8 +10,10 @@ const log = createLogger('read-deadline')
  * POST without one. If such a handler has sent nothing for this long, Bun closes
  * the socket and the client sees "The socket connection was closed unexpectedly"
  * while the handler keeps running. A request with a body (a JSON POST) is never
- * closed by it. Measured on Bun 1.4.2: at 30 s the close comes about 32 s after
- * the request; handlers that answer at 28 s and 31 s still get through.
+ * closed by it, even after the handler has read the body. Measured on Bun 1.4.2:
+ * at 30 s the close comes about 32 s after the request; handlers that answer at
+ * 28 s and 31 s still get through. Reads answer before then ({@link readDeadline});
+ * body-less writes have the timer held off ({@link holdIdleTimerForBodylessWrites}).
  */
 export const CORE_IDLE_TIMEOUT_SECONDS = 30
 
@@ -66,6 +68,33 @@ export function exemptFromReadDeadline(c: RequestContext): void {
 }
 
 const READ_METHODS = new Set(['GET', 'HEAD'])
+
+/**
+ * Keep Bun's idle timer off a write that carries no body (the CLI's pause, resume,
+ * cancel and reopen, or a body-less DELETE) while its handler runs, so a slow
+ * mutation answers with its real result instead of a dropped socket. That is how
+ * Bun already treats a write with a body. A write cannot be answered early the way
+ * a read is, because it may already have changed something.
+ *
+ * The timer comes back once the handler returns, before the response is written:
+ * `server.timeout(request, 0)` lasts for the whole keep-alive socket, so leaving it
+ * off would let that idle connection stay open forever. A route that set its own
+ * idle timeout ({@link extendIdleTimeout}, {@link exemptFromReadDeadline}) keeps it.
+ */
+export function holdIdleTimerForBodylessWrites(options: { idleTimeoutSeconds?: number } = {}): MiddlewareHandler {
+  const idleTimeoutSeconds = options.idleTimeoutSeconds ?? CORE_IDLE_TIMEOUT_SECONDS
+  return async (c, next) => {
+    if (READ_METHODS.has(c.req.method) || c.req.raw.body !== null) return next()
+    const server = bunServer(c)
+    if (!server) return next()
+    server.timeout(c.req.raw, 0)
+    try {
+      await next()
+    } finally {
+      if (!ownIdleTimeout.has(c.req.raw)) server.timeout(c.req.raw, idleTimeoutSeconds)
+    }
+  }
+}
 
 /**
  * Answer a read that has not produced a response within the deadline with a 503,
