@@ -1472,13 +1472,39 @@ describe('async agent questions', () => {
     it('records one question when the same call runs twice concurrently', async () => {
       const agent = await createAgent({ squadId: squad.id })
       const origin = await startExecution(agent)
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
       const results = await Promise.all([
         createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-concurrent' }),
         createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-concurrent' }),
       ])
+      unsubscribe()
       expect(results[0].id).toBe(results[1].id)
       expect(results.filter((result) => result.reused)).toHaveLength(1)
       expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(createdEvents).toEqual([{ questionId: results[0].id, agentId: agent.id, squadId: squad.id }])
+    })
+
+    it('announces a question once when a replay finds its first call stopped before announcing it', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const origin = await startExecution(agent)
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-cut-off' })
+      // As if the first call committed the question and then died before finalizing and announcing it.
+      await db
+        .update(agentQuestions)
+        .set({ audienceResolution: 'pending', audienceResolvedAt: null })
+        .where(eq(agentQuestions.id, first.id))
+
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const replay = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-cut-off' })
+      const again = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-cut-off' })
+      unsubscribe()
+
+      expect(replay).toMatchObject({ id: first.id, reused: 'tool-call' })
+      expect(replay.audienceResolution).not.toBe('pending')
+      expect(again.id).toBe(first.id)
+      expect(createdEvents).toEqual([{ questionId: first.id, agentId: agent.id, squadId: squad.id }])
     })
   })
 

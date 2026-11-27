@@ -242,17 +242,33 @@ function consumedAt(metadata: Record<string, unknown> | null): Date | null {
  * system-inbox notice is sent for it.
  */
 export async function finalizeAgentQuestionAttentionRouting(questionId: string): Promise<Row | null> {
+  return (await finalizeAttentionRoutingOnce(questionId))?.row ?? null
+}
+
+/**
+ * Finalize as above and report whether THIS call moved the question out of `pending`. Exactly one
+ * caller sees `finalizedNow`, and that caller announces the question: the asking call normally, or
+ * a replay of it when the first call stopped before finalizing.
+ */
+async function finalizeAttentionRoutingOnce(questionId: string): Promise<{ row: Row; finalizedNow: boolean } | null> {
   const current = await getAgentQuestionRow(questionId)
   if (!current) return null
+  let finalizedNow = false
   if (current.audienceResolution === 'pending') {
     const attentionRecipientIds = await listAgentQuestionAttentionUserIds(questionId)
     const resolution = attentionRecipientIds.length > 0 ? 'resolved' : 'unroutable'
-    await db
+    const updated = await db
       .update(agentQuestions)
       .set({ audienceResolution: resolution, audienceResolvedAt: new Date() })
       .where(and(eq(agentQuestions.id, questionId), eq(agentQuestions.audienceResolution, 'pending')))
+      .returning({ id: agentQuestions.id })
+    finalizedNow = updated.length > 0
   }
-  return (await getAgentQuestionRow(questionId)) ?? current
+  return { row: (await getAgentQuestionRow(questionId)) ?? current, finalizedNow }
+}
+
+function announceQuestionCreated(row: Row): void {
+  eventEmitter.emit('agent-question.created', { questionId: row.id, agentId: row.agentId, squadId: row.squadId })
 }
 
 /** Work streams on which this question currently holds an open `question` wait. */
@@ -543,15 +559,20 @@ export async function createAgentQuestion(
   })
 
   if (result.reused) {
-    // Nothing new was created, so nothing is announced again (a concurrent first call may still be
-    // announcing it). Finalizing a still-pending attention routing is idempotent.
+    // Nothing new was created. A question still `pending` was never announced (its first call
+    // stopped before finalizing, or is finalizing concurrently): whichever call finalizes it
+    // announces it, so it is announced exactly once.
     let row = result.row
     let openedWaitWorkStreamIds = result.openedWaitWorkStreamIds
     if (result.convertToBlocking) {
       await setQuestionBlocking(row.id, true)
       openedWaitWorkStreamIds = await listOpenQuestionWaitStreamIds(db, row.id)
     }
-    if (row.audienceResolution === 'pending') row = (await finalizeAgentQuestionAttentionRouting(row.id)) ?? row
+    if (row.audienceResolution === 'pending') {
+      const finalized = await finalizeAttentionRoutingOnce(row.id)
+      if (finalized) row = finalized.row
+      if (finalized?.finalizedNow) announceQuestionCreated(row)
+    }
     return { ...toJson(row), openedWaitWorkStreamIds, reused: result.reused }
   }
 
@@ -563,13 +584,10 @@ export async function createAgentQuestion(
 
   let row = result.row
   await opts.testHooks?.beforeAttentionFinalize?.()
-  row = (await finalizeAgentQuestionAttentionRouting(row.id)) ?? row
-
-  eventEmitter.emit('agent-question.created', {
-    questionId: row.id,
-    agentId: row.agentId,
-    squadId: row.squadId,
-  })
+  const finalized = await finalizeAttentionRoutingOnce(row.id)
+  if (finalized) row = finalized.row
+  // A concurrent replay that finalized first has already announced it.
+  if (finalized?.finalizedNow) announceQuestionCreated(row)
   return {
     ...toJson(row),
     openedWaitWorkStreamIds: result.openedWaitWorkStreamIds,
