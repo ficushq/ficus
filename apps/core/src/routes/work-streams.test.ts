@@ -1028,13 +1028,61 @@ describe('work-streams routes', () => {
 
       const page = await (await apiFetch(`${next.pathname}${next.search}`)).json()
       expect(page.items.map((ws: { id: string }) => ws.id)).toEqual(newestHistoryFirst.slice(UNPAGED_HISTORY_LIMIT))
-      // The continued rows have the same shape as the capped list's history rows.
+      // Every continued row has the same shape as the capped list's history rows, annotations included.
       const keys = (row: object) => Object.keys(row).sort()
-      const listedRow = list.find((ws) => ws.status === 'done' || ws.status === 'canceled')!
-      expect(keys(page.items[0])).toEqual(keys(listedRow))
-      expect(page.items[0].derivedState).toEqual(expect.any(String))
+      const listedRows = list.filter((ws) => ws.status === 'done' || ws.status === 'canceled')
+      const listedShape = keys(listedRows[0]!)
+      expect(listedRows.map(keys)).toEqual(listedRows.map(() => listedShape))
+      expect(listedShape).toEqual(expect.arrayContaining(['integrationEventSources', 'derivedState', 'runtime']))
+      expect(page.items.map(keys)).toEqual(page.items.map(() => listedShape))
+      for (const row of page.items) {
+        expect(row.derivedState).toEqual(expect.any(String))
+        expect(row.integrationEventSources).toEqual([])
+      }
       expect(page.hasMore).toBe(false)
       expect(page.totalCount).toBe(newestHistoryFirst.length)
+    })
+
+    it('reads the capped history without counting it, while a page still counts its total', async () => {
+      const { newestHistoryFirst } = await seedPastTheHistoryCap()
+      /** The selects that count rows, as opposed to reading them. */
+      const countSelects = (spy: { mock: { calls: unknown[][] } }) =>
+        spy.mock.calls.filter(([fields]) => !!fields && typeof fields === 'object' && 'count' in fields).length
+      const listTerminalPage = spyOn(WorkStream, 'listTerminalPage')
+      const select = spyOn(db, 'select')
+      try {
+        const res = await apiFetch(`/api/workstreams?squadId=${testSquadId}`)
+        expect(res.status).toBe(200)
+        const list = (await res.json()) as Array<{ id: string; status: string }>
+        expect(list.filter((ws) => ws.status === 'done' || ws.status === 'canceled').map((ws) => ws.id)).toEqual(
+          newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT)
+        )
+        expect(nextPageLink(res).searchParams.get('cursor')).toEqual(expect.any(String))
+        expect(listTerminalPage).toHaveBeenCalledTimes(1)
+        expect(listTerminalPage.mock.calls[0]![0]).toMatchObject({ countTotal: false })
+
+        const uncounted = await WorkStream.listTerminalPage({
+          squadId: testSquadId,
+          statuses: ['done', 'canceled'],
+          limit: UNPAGED_HISTORY_LIMIT,
+          countTotal: false,
+        })
+        expect(uncounted.items.map((row) => row.id)).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+        expect(uncounted.hasMore).toBe(true)
+        expect('totalCount' in uncounted).toBe(false)
+        expect(countSelects(select)).toBe(0)
+
+        const counted = await WorkStream.listTerminalPage({
+          squadId: testSquadId,
+          statuses: ['done', 'canceled'],
+          limit: UNPAGED_HISTORY_LIMIT,
+        })
+        expect(counted.totalCount).toBe(newestHistoryFirst.length)
+        expect(countSelects(select)).toBe(1)
+      } finally {
+        select.mockRestore()
+        listTerminalPage.mockRestore()
+      }
     })
 
     it('caps a history-only and a cross-squad list the same way, inside the requested squads', async () => {

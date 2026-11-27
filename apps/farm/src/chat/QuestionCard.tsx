@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { recommendedQuestionOption, type QuestionData, type QuestionItem } from '@ficus/shared'
 import { OptionText, RecommendedTag } from '../actions/RecommendedOption'
 import {
+  MULTI_SELECT_HINT,
   OTHER,
   OTHER_LABEL,
   answersComplete,
@@ -149,7 +150,7 @@ function Field({
 
       {question.type === 'multi-select' && (
         <div className="g-chat-options">
-          <p className="g-chat-note">Select all that apply:</p>
+          <p className="g-chat-note">{MULTI_SELECT_HINT}</p>
           {[...(question.options ?? []), { value: OTHER, label: OTHER_LABEL }].map((option, i) => {
             const on = selected.includes(option.value)
             return (

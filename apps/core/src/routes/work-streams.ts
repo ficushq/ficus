@@ -979,8 +979,10 @@ export const workStreamsRouter = new Hono()
             squadIds: historySquadIds,
             statuses: terminalStatuses,
             limit: UNPAGED_HISTORY_LIMIT,
+            // This answer is a plain array with no total, so skip the count over all history.
+            countTotal: false,
           })
-        : { items: [], hasMore: false, totalCount: 0 }
+        : { items: [], hasMore: false }
     const listed = [...open, ...history.items]
     const attended = respectAttention ? await filterToAttendedStreams(identity, listed) : listed
     const last = history.items[history.items.length - 1]

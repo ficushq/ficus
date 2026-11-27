@@ -133,7 +133,7 @@ describe('QuestionCard · recommended option', () => {
     expect(submitted).toEqual([JSON.stringify({ crop: 'corn', when: 'dawn' }, null, 2)])
   })
 
-  it('reads like the Action Center card: the tag on the label line, and "Other" for your own answer', async () => {
+  it('reads like the Action Center card: the tag on the label line, "Other" for your own answer, and the multi-select hint', async () => {
     const { container } = await renderCard(recommendedQuestions)
 
     // The tag shares the label's line element, so it flows after the label's last word.
@@ -150,5 +150,11 @@ describe('QuestionCard · recommended option', () => {
 
     await click(otherRadio.input)
     expect(container.querySelector('input[aria-label="Other answer"]')).not.toBeNull()
+
+    // The web card's multi-select hint, once, over the multi-select only.
+    const hints = [...container.querySelectorAll('.g-chat-note')]
+    expect(hints.map((hint) => hint.textContent)).toEqual(['Select all that apply:'])
+    expect(hints[0]!.parentElement?.querySelector('input[type="checkbox"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Pick all that apply')
   })
 })

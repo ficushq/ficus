@@ -134,8 +134,22 @@ function updatedAtMs(stream: Pick<SnapshotSource, 'updatedAt'>): number {
   return new Date(stream.updatedAt).getTime()
 }
 
-/** Canonical attention-first ordering shared by widget and Live Activity projections. */
-export function compareWorkInterest(left: SnapshotSource, right: SnapshotSource): number {
+/**
+ * Canonical attention-first ordering shared by widget and Live Activity projections. With
+ * `waitsOnViewer` (a snapshot built for one user), streams waiting on that user rank first, so
+ * someone else's gate never takes a row from work this user can act on; within each group the
+ * viewer-independent order follows: the `needsYou` bucket, then the most recently updated.
+ */
+export function compareWorkInterest(
+  left: SnapshotSource,
+  right: SnapshotSource,
+  waitsOnViewer?: (stream: SnapshotSource) => boolean
+): number {
+  if (waitsOnViewer) {
+    const leftWaitsOnYou = waitsOnViewer(left)
+    const rightWaitsOnYou = waitsOnViewer(right)
+    if (leftWaitsOnYou !== rightWaitsOnYou) return leftWaitsOnYou ? -1 : 1
+  }
   const leftNeedsYou = workBucket(left) === 'needsYou'
   const rightNeedsYou = workBucket(right) === 'needsYou'
   if (leftNeedsYou !== rightNeedsYou) return leftNeedsYou ? -1 : 1
@@ -181,7 +195,11 @@ export function buildWorkInterestSnapshot(
   streams: SnapshotSource[],
   { now = new Date(), viewerFor }: WorkInterestViewerOptions & { now?: Date } = {}
 ): WorkInterestSnapshot {
-  const ordered = [...streams].sort(compareWorkInterest)
+  // Human actions remain available even when running is the primary bucket. Only streams this user
+  // can act on wait on them, by the same rule as Activity's "N waiting on you".
+  const waitsOnYou = new Map(streams.map((stream) => [stream, workStreamWaitsOnViewer(stream, viewerFor?.(stream))]))
+  const waitsOnViewer = (stream: SnapshotSource) => waitsOnYou.get(stream) === true
+  const ordered = [...streams].sort((left, right) => compareWorkInterest(left, right, waitsOnViewer))
   const bucketCounts: Record<WorkBucket, number> = {
     needsYou: 0,
     running: 0,
@@ -191,9 +209,6 @@ export function buildWorkInterestSnapshot(
     externalWait: 0,
   }
   for (const stream of ordered) bucketCounts[workBucket(stream)] += 1
-  // Human actions remain available even when running is the primary bucket. Only streams this user
-  // can act on wait on them, by the same rule as Activity's "N waiting on you".
-  const waitsOnYou = new Map(ordered.map((stream) => [stream, workStreamWaitsOnViewer(stream, viewerFor?.(stream))]))
   // Rows say so only in a snapshot built for a user; without one they keep today's shape.
   const rowNeedsYou = (stream: SnapshotSource) => (viewerFor ? waitsOnYou.get(stream) : undefined)
 
@@ -204,7 +219,7 @@ export function buildWorkInterestSnapshot(
     top: ordered.slice(0, WIDGET_TOP_LIMIT).map((stream) => toWidgetSummary(stream, rowNeedsYou(stream))),
     liveActivity: {
       activeCount: bucketCounts.running,
-      needsYouCount: ordered.filter((stream) => waitsOnYou.get(stream)).length,
+      needsYouCount: ordered.filter(waitsOnViewer).length,
       top: ordered.slice(0, LIVE_ACTIVITY_TOP_LIMIT).map((stream) => toStreamLite(stream, rowNeedsYou(stream))),
     },
   }
