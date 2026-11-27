@@ -175,7 +175,7 @@ try {
           }
           if (mode === 'return')
             await review
-              .getByRole('button', { name: /^Approved/ })
+              .getByRole('button', { name: /^Approve/ })
               // The Farm keeps its own captions until its review screen is reworded.
               .getByText(surface === 'farm' ? 'Continues to execute' : 'Next: execute (General Purpose agent)', {
                 exact: true,
@@ -189,7 +189,7 @@ try {
             resolve(screenshotDir!, `${surface}-${name}-${width}-${dark ? 'dark' : 'light'}.png`)
           if (screenshotDir) await page.screenshot({ path: path(mode) })
           if (mode === 'blocked') {
-            const approve = review.getByRole('button', { name: /^Approved/ })
+            const approve = review.getByRole('button', { name: /^Approve/ })
             assert.equal(await approve.isDisabled(), true)
             await review.getByText('Wait for staging prerequisite 1.', { exact: false }).waitFor()
             await review.getByText('Wait for staging prerequisite 2.', { exact: false }).waitFor()
@@ -200,7 +200,7 @@ try {
             await page.waitForFunction(
               () =>
                 ![...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-                  button.textContent?.startsWith('Approved')
+                  button.textContent?.startsWith('Approve')
                 )?.disabled
             )
             assert.equal(await approve.isDisabled(), false)

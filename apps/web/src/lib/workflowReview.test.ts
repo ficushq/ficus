@@ -14,7 +14,9 @@ import {
   attemptAuthor,
   humanGateContext,
   openHumanGates,
+  outcomeActionLabel,
   outcomeEffect,
+  outcomeLabel,
   producingAgents,
   revisedLabel,
   waitingLabel,
@@ -159,6 +161,20 @@ function gateRun({
   if (!authored) state.attempts.at(-1)!.reviewBrief = { kind: 'none' }
   return { state, attemptAgents: { '1': 'builder-agent' } } as unknown as WorkflowRunDetail
 }
+
+test('decision buttons name outcomes as present-tense actions; records keep the past tense', () => {
+  expect(outcomeActionLabel('approved')).toBe('Approve')
+  expect(outcomeActionLabel('changes-requested')).toBe('Request changes')
+  expect(outcomeActionLabel('changes_requested')).toBe('Request changes')
+  expect(outcomeActionLabel('rejected')).toBe('Reject')
+  expect(outcomeActionLabel('accepted')).toBe('Accept')
+  // Custom outcomes keep the humanized ID.
+  expect(outcomeActionLabel('ship-it')).toBe('Ship it')
+  expect(outcomeActionLabel('needs_more_info')).toBe('Needs more info')
+  // What already happened reads in the past tense.
+  expect(outcomeLabel('approved')).toBe('Approved')
+  expect(outcomeLabel('changes-requested')).toBe('Changes requested')
+})
 
 test('outcome effects say who gets the work next, in words', () => {
   const run = gateRun({ authored: false })
