@@ -9,7 +9,6 @@ import {
   workflowReviewBlockingWaits,
   workflowReviewBriefForAttempt,
   workflowIncomingAttempts,
-  workflowCompletionTargets,
   workStreamWaitActor,
   isWorkflowHumanGateWait,
   mayDecideWorkflowGate,
@@ -24,13 +23,17 @@ import {
   workflowReviewUnseenMessage,
   workflowSeenRevisionsAtOpen,
   workflowUnseenLabel,
+  workflowApprovalStatement,
+  workflowDecisionNotesHint,
+  workflowOutcomeActionLabel,
+  workflowOutcomeEffect,
+  workflowOutcomeRequiresEvidence,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   type ResolvedTrackedResource,
   type WorkflowAttemptLimitPause,
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowStep,
-  type WorkflowTransition,
   type WorkStream,
 } from '@ficus/shared'
 import { webAppUrl } from '../api/base'
@@ -39,6 +42,7 @@ import { useActionsApi } from './ActionsApiProvider'
 import { refreshWorkflow } from './cache'
 import { usePermissions } from './permissions'
 import { actionQueries } from './queries'
+import { AttemptByline, useReviewPeople, WaitingTime, type AttemptAuthorOf } from './reviewPeople'
 import { ActionText, ErrorNote, VerbButton } from './ui'
 
 /**
@@ -51,32 +55,6 @@ import { ActionText, ErrorNote, VerbButton } from './ui'
 
 const stepOf = (run: WorkflowRun, attempt: WorkflowAttempt): WorkflowStep | undefined =>
   effectiveWorkflowStep(run, attempt)
-
-const stepName = (run: WorkflowRun, stepId: string) =>
-  run.definition.steps.find((entry) => entry.id === stepId)?.name ?? stepId
-
-export function outcomeLabel(outcome: string): string {
-  const words = outcome.replace(/[-_]+/g, ' ').trim()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-
-/** Where an outcome sends the work, so the decider knows the effect first. */
-export function outcomeEffect(
-  run: WorkflowRun,
-  transition: WorkflowTransition,
-  attempt?: WorkflowAttempt,
-  outcome?: string
-): string {
-  if ('returnTo' in transition) return `Sends back to ${stepName(run, transition.returnTo)}`
-  const targets =
-    attempt && outcome
-      ? workflowCompletionTargets(run, attempt, outcome)
-      : 'parallel' in transition
-        ? transition.parallel
-        : [transition.next]
-  if (targets.length === 1 && targets[0] === 'finish') return 'Finishes the flow'
-  return `Continues to ${targets.map((target) => (target === 'finish' ? 'finish' : stepName(run, target))).join(', ')}`
-}
 
 /** Delivery pull requests, codeHost-bound first (mirrors apps/web/src/lib/workStreamGithub.ts). */
 export function streamPullRequests(metadata: unknown): ResolvedTrackedResource[] {
@@ -348,6 +326,7 @@ function HumanGate({
       onDecidedRef.current?.()
     },
   })
+  const people = useReviewPeople(stream.squadId, run)
   const step = stepOf(run.state, attempt)
   if (!step || step.kind === 'agent' || !isPersonGate(run.state, attempt)) return null
   const waits = run.openWaits ?? stream.openWaits ?? []
@@ -365,11 +344,20 @@ function HumanGate({
   const materials = (
     <>
       <ActionText>{step.instructions}</ActionText>
-      <ReviewMaterials stream={stream} run={run} attempts={sources} onOpenAgent={onOpenAgent} />
+      <ReviewMaterials
+        stream={stream}
+        run={run}
+        attempts={sources}
+        authorOf={people.authorOf}
+        onOpenAgent={onOpenAgent}
+      />
     </>
   )
   const firstForward = Object.entries(step.outcomes).find(([, transition]) => !('returnTo' in transition))?.[0]
   const title = step.name ?? step.id
+  const effectOf = (outcome: string) =>
+    workflowOutcomeEffect(run.state, step.outcomes[outcome]!, attempt, outcome, { typeName: people.typeName })
+  const approvalStatement = workflowApprovalStatement(run.state, attempt)
 
   return (
     <section className="g-decision" aria-label={`Review ${title}`}>
@@ -384,13 +372,14 @@ function HumanGate({
             : 'Decision awaiting your choice'}
         </p>
       )}
+      {gateWait && <WaitingTime openedAt={gateWait.openedAt} />}
       {sources.flatMap((source) =>
         unseen
           .filter((entry) => entry.attemptId === source.id)
           .map((entry) => (
             <p key={source.id} role="status" className="g-action-note">
-              {source.stepId} · Attempt {source.id} · Revision {workflowResultRevision(source)} ·{' '}
-              {workflowUnseenLabel(entry, source.resultRevisedAt, now)}
+              <AttemptByline run={run} source={source} authorOf={people.authorOf} /> · Revision{' '}
+              {workflowResultRevision(source)} · {workflowUnseenLabel(entry, source.resultRevisedAt, now)}
             </p>
           ))
       )}
@@ -400,6 +389,8 @@ function HumanGate({
         instructions={step.instructions}
         unseen={unseen}
         inputs={stream.assetAttachments}
+        preparedBy={people.authorOf}
+        approvalShownWithDecision={approvalStatement}
       >
         {materials}
       </WorkflowBriefDocuments>
@@ -430,6 +421,7 @@ function HumanGate({
       )}
       {canDecide ? (
         <>
+          <ApprovalStatement statement={approvalStatement} />
           <label className="g-field" htmlFor={`${notesId}-notes`}>
             Decision notes
           </label>
@@ -443,7 +435,7 @@ function HumanGate({
             onChange={(event) => setEvidence(event.target.value)}
           />
           <p id={`${notesId}-hint`} className="g-action-note">
-            Required. Your notes are recorded with the decision and passed to the next step.
+            {workflowDecisionNotesHint(step, Object.entries(step.outcomes))}
           </p>
           {unseenMessage && (
             <div className="g-action-row">
@@ -463,25 +455,55 @@ function HumanGate({
             {Object.entries(step.outcomes).map(([outcome, transition]) => (
               <VerbButton
                 key={outcome}
-                verb={outcomeLabel(outcome)}
-                busyVerb={`${outcomeLabel(outcome)}…`}
-                help={outcomeEffect(run.state, transition, attempt, outcome)}
+                verb={workflowOutcomeActionLabel(outcome)}
+                busyVerb={`${workflowOutcomeActionLabel(outcome)}…`}
+                help={effectOf(outcome)}
                 tone={outcome === firstForward ? 'harvest' : 'returnTo' in transition ? 'prune' : 'plain'}
                 busy={advance.isPending && advance.variables === outcome}
-                disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0 || unseen.length > 0}
+                disabled={
+                  advance.isPending ||
+                  // Notes are required only where Core requires them: a send-back's rework feedback.
+                  (workflowOutcomeRequiresEvidence(step, transition) && !evidence.trim()) ||
+                  blockingWaits.length > 0 ||
+                  unseen.length > 0
+                }
                 onClick={() => advance.mutate(outcome)}
               />
             ))}
           </div>
         </>
       ) : (
-        <p className="g-action-note">
-          {can('workstreams:review')
-            ? 'Only the reviewers assigned to this work stream can decide.'
-            : 'You need review permission in this squad to decide.'}
-        </p>
+        <>
+          <p className="g-action-note">
+            {can('workstreams:review')
+              ? 'Only the reviewers assigned to this work stream can decide.'
+              : 'You need review permission in this squad to decide.'}
+          </p>
+          <ApprovalStatement statement={approvalStatement} />
+          <ul aria-label="Outcomes" className="g-action-note">
+            {Object.keys(step.outcomes).map((outcome) => (
+              <li key={outcome}>
+                <span className="g-byline-author">{workflowOutcomeActionLabel(outcome)}</span> · {effectOf(outcome)}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       <ErrorNote error={advance.error} />
+    </section>
+  )
+}
+
+/**
+ * What approval allows, word for word, beside the outcomes: a person decides by reading it, on touch
+ * screens too, so it is never shortened or left to a tooltip (a long one scrolls in its box).
+ */
+function ApprovalStatement({ statement }: { statement?: string }) {
+  if (!statement) return null
+  return (
+    <section aria-label="What approval allows" className="g-materials">
+      <h4 className="g-materials-title">What approval allows</h4>
+      <ActionText>{statement}</ActionText>
     </section>
   )
 }
@@ -505,6 +527,7 @@ function DeliveryApproval({
   const [feedback, setFeedback] = useState('')
   const feedbackId = useId()
   const reworkAttempt = workflowReworkAttempt(run.state)
+  const people = useReviewPeople(stream.squadId, run)
   const done = async () => {
     await refreshWorkflow(queryClient, stream.id)
     onDecidedRef.current?.()
@@ -541,6 +564,7 @@ function DeliveryApproval({
         stream={stream}
         run={run}
         attempts={reworkAttempt ? [reworkAttempt] : []}
+        authorOf={people.authorOf}
         onOpenAgent={onOpenAgent}
       />
       {!canDecide ? (
@@ -602,11 +626,13 @@ function ReviewMaterials({
   stream,
   run,
   attempts,
+  authorOf,
   onOpenAgent,
 }: {
   stream: WorkStream
   run: WorkflowRunDetail
   attempts: WorkflowAttempt[]
+  authorOf: AttemptAuthorOf
   onOpenAgent?: (agentId: string) => void
 }) {
   const pullRequests = streamPullRequests(stream.metadata ?? {})
@@ -630,8 +656,7 @@ function ReviewMaterials({
         return (
           <div key={attempt.id} className="g-material">
             <p className="g-material-head">
-              {stepName(run.state, attempt.stepId)} · Attempt {attempt.id}
-              {attempt.outcome ? ` · ${outcomeLabel(attempt.outcome)}` : ''}
+              <AttemptByline run={run} source={attempt} authorOf={authorOf} />
               {agentId && onOpenAgent && (
                 <button
                   type="button"

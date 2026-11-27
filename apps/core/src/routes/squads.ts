@@ -1,7 +1,7 @@
 import { readSandboxHostCapacity } from '../services/machines/host-admission'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { WORKSPACE_MULTIPART_METADATA_BYTES } from '../services/attachments/workspace-multipart-reader'
-import { getBunServer } from 'hono/bun'
+import { extendIdleTimeout } from '../middleware/read-deadline'
 import { stageWorkspaceMultipart, InvalidWorkspaceMultipartError } from '../services/attachments/workspace-multipart'
 import { publishWorkspaceUpload } from '../services/squad/workspace-upload'
 import { publicErrorMessage } from '../db/errors'
@@ -837,8 +837,7 @@ export const squadsRouter = new Hono()
       return c.json({ error: 'archive must be tar.gz or zip' }, 400)
     }
     const range = c.req.header('range')
-    const server = c.env ? getBunServer<{ timeout(request: Request, seconds: number): void }>(c) : undefined
-    server?.timeout(c.req.raw, 0)
+    extendIdleTimeout(c, 0)
 
     // Remote runtimes: stream through the sandbox's raw /download route
     const client = await getSquadClient(squad.id)
@@ -885,8 +884,7 @@ export const squadsRouter = new Hono()
     const archived = archivedGuard(c, squad)
     if (archived) return archived
 
-    const server = c.env ? getBunServer<{ timeout(request: Request, seconds: number): void }>(c) : undefined
-    server?.timeout(c.req.raw, 0)
+    extendIdleTimeout(c, 0)
     let staged: Awaited<ReturnType<typeof stageWorkspaceMultipart>> | undefined
     try {
       staged = await stageWorkspaceMultipart(c.req.raw)

@@ -15,6 +15,17 @@ import {
   type WorktreeOwnership,
 } from '../services/work-streams/repository-setup'
 import { validateAssignedReviewers } from '../services/workflows/reviewers'
+import {
+  createWorkStreamCreateTimer,
+  logWorkStreamCreateTiming,
+  type WorkStreamCreateTimer,
+} from '../services/work-streams/create-timing'
+import {
+  claimCreateRequest,
+  WorkStreamCreateReplayError,
+  type CreateClaim,
+  type CreateIdempotencyInput,
+} from '../services/work-streams/create-idempotency'
 import { parseTrackedMetadata, validateTrackedMetadata } from '../services/work-streams/tracked-resources'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
@@ -745,14 +756,97 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
   /**
    * Create a new work stream.
+   *
+   * Every create logs one per-phase timing line (services/work-streams/create-timing.ts);
+   * a caller that passes `timing` logs it itself. With `idempotency`, a repeat of a
+   * create that already produced a stream throws {@link WorkStreamCreateReplayError}
+   * with that stream's ID instead of creating another (see create-idempotency.ts).
    */
   static async create(
     input: CreateWorkStreamInput,
     options: {
       /** Runs in the creation transaction, after the row exists and before the flow can dispatch. */
       inTransaction?: (tx: DbTransaction, created: typeof workStreams.$inferSelect) => Promise<void>
+      /** Per-phase timer; when absent, create logs its own timing line. */
+      timing?: WorkStreamCreateTimer
+      /** Claim this idempotency key before provisioning anything. */
+      idempotency?: CreateIdempotencyInput
+      /** Stops waiting on another request's in-progress claim when the caller goes away. */
+      signal?: AbortSignal
     } = {}
   ): Promise<WorkStream> {
+    const timing = options.timing ?? createWorkStreamCreateTimer()
+    let outcome = 'failed'
+    let workStreamId: string | undefined
+    try {
+      const created = await WorkStream.createTimed(input, options, timing)
+      outcome = 'created'
+      workStreamId = created.id
+      return created
+    } catch (error) {
+      if (error instanceof WorkStreamCreateReplayError) {
+        outcome = 'reused'
+        workStreamId = error.workStreamId
+      }
+      throw error
+    } finally {
+      if (!options.timing) logWorkStreamCreateTiming(timing, { outcome, squadId: input.squadId, workStreamId })
+    }
+  }
+
+  private static async createTimed(
+    input: CreateWorkStreamInput,
+    options: {
+      inTransaction?: (tx: DbTransaction, created: typeof workStreams.$inferSelect) => Promise<void>
+      idempotency?: CreateIdempotencyInput
+      signal?: AbortSignal
+    },
+    timing: WorkStreamCreateTimer
+  ): Promise<WorkStream> {
+    let claim: CreateClaim | undefined
+    if (options.idempotency) {
+      const idempotency = options.idempotency
+      const result = await timing.time('idempotency', () => claimCreateRequest(idempotency, { signal: options.signal }))
+      if (result.kind === 'existing') throw new WorkStreamCreateReplayError(result.workStreamId)
+      claim = result.claim
+    }
+    // Renew the claim while this request provisions, so a repeat waits instead of taking over.
+    const stopKeepAlive = claim?.keepAlive()
+    let committed = false
+    try {
+      const row = await WorkStream.provisionAndInsert(input, options, timing, claim)
+      committed = true
+      const ws = new WorkStream(row)
+      await timing.time('dispatch', async () => {
+        // Before any participant is dispatched: a stream admitted on a `ready`
+        // dependency starts on that dependency's branch.
+        if (ws.status !== 'queued' && Object.keys(ws.dependencyEdges).length > 0) {
+          const { settleStackDecisionsSafely } = await import('../services/work-streams/dependency-stacking')
+          await settleStackDecisionsSafely(ws.id)
+        }
+        const { ensureFlowDispatch } = await import('../services/workflows/execution')
+        await ensureFlowDispatch(ws.id)
+      })
+      eventEmitter.emit('workStream.created', { workStreamId: ws.id, squadId: ws.squadId })
+      await timing.time('notify', () => notifyWorkStreamOwnerOfNewStream(ws))
+      return await timing.time('respond', () => WorkStream.mustFind(ws.id))
+    } catch (error) {
+      // A failed create frees its key so a retry starts fresh. After the commit the
+      // key is bound to the stream, and a retry gets that stream.
+      if (claim && !committed) await claim.release()
+      throw error
+    } finally {
+      stopKeepAlive?.()
+    }
+  }
+
+  private static async provisionAndInsert(
+    input: CreateWorkStreamInput,
+    options: { inTransaction?: (tx: DbTransaction, created: typeof workStreams.$inferSelect) => Promise<void> },
+    timing: WorkStreamCreateTimer,
+    claim: CreateClaim | undefined
+  ): Promise<typeof workStreams.$inferSelect> {
+    const validateStarted = timing.now()
     const dependencies = await WorkStream.resolveDependencyInputs(input.dependsOn ?? [])
     // Creation has one path. Stored legacy streams retain their existing lifecycle.
     if (
@@ -785,13 +879,24 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     if (input.gitRemote && !input.repository) throw new RepositorySetupError('gitRemote requires repository')
     if (input.baseSource && !input.repository) throw new RepositorySetupError('baseSource requires repository')
     const streamId = crypto.randomUUID()
+    timing.add('validate', timing.now() - validateStarted)
     let ownership: WorktreeOwnership | undefined
     if (input.repository)
-      mergedMetadata = await setupWorkStreamRepository(input.squadId, input, streamId, mergedMetadata, (receipt) => {
-        ownership = receipt
-      })
+      mergedMetadata = await setupWorkStreamRepository(
+        input.squadId,
+        input,
+        streamId,
+        mergedMetadata,
+        (receipt) => {
+          ownership = receipt
+        },
+        { timing }
+      )
 
-    const attachmentCheck = await prepareWorktreeAttachmentCheck(input.squadId, streamId, mergedMetadata)
+    const resolvedMetadata = mergedMetadata
+    const attachmentCheck = await timing.time('validate', () =>
+      prepareWorktreeAttachmentCheck(input.squadId, streamId, resolvedMetadata)
+    )
 
     // An ownerless stream notifies NOBODY at creation (the owner notice below
     // requires an owner), so it sits idle until someone happens to look — the
@@ -810,76 +915,75 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       ownerAgentId = squadRow?.managerAgentId ?? null
     }
 
-    const row = await db.transaction(async (tx) => {
-      await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
-      // One live stream per observed event: concurrent creates serialize on the squad lock.
-      if (input.integrationEventId) {
-        const handled = await streamHandlingEvent(tx, input.squadId, input.integrationEventId)
-        if (handled) throw new WorkStreamEventAlreadyHandledError(handled)
-      }
-      await assertWorktreeAttachmentsAvailable(tx, {
-        id: streamId,
-        squadId: input.squadId,
-        metadata: mergedMetadata,
-        resolved: attachmentCheck,
-        dependsOn: dependencies.ids,
-      })
-      const [created] = await tx
-        .insert(workStreams)
-        .values({
+    const transactionStarted = timing.now()
+    let lockWait = 0
+    const row = await db
+      .transaction(async (tx) => {
+        const lockStarted = timing.now()
+        await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
+        lockWait = timing.now() - lockStarted
+        // One live stream per observed event: concurrent creates serialize on the squad lock.
+        if (input.integrationEventId) {
+          const handled = await streamHandlingEvent(tx, input.squadId, input.integrationEventId)
+          if (handled) throw new WorkStreamEventAlreadyHandledError(handled)
+        }
+        await assertWorktreeAttachmentsAvailable(tx, {
           id: streamId,
-          autoCleanupWorktree: input.autoCleanupWorktree ?? true,
           squadId: input.squadId,
-          title: input.title,
-          description: input.description ?? '',
-          assigneeAgentId: null,
-          ownerAgentId,
-          creatorAgentId: input.creatorAgentId ?? null,
-          requestingUserId: input.requestingUserId ?? null,
-          assignedReviewerIds: input.assignedReviewerIds ?? [],
-          agentIds: null,
-          handoffMessage: input.handoffMessage ?? null,
-          dependsOn: dependencies.ids,
-          dependencyEdges: nextDependencyEdges(dependencies.ids, dependencies.conditions, undefined),
-          priority: input.priority ?? 'normal',
           metadata: mergedMetadata,
+          resolved: attachmentCheck,
+          dependsOn: dependencies.ids,
         })
-        .returning()
-      if (input.observe === 'terminal') {
-        if (!input.creatorAgentId) throw new Error('Agent identity required for observation')
-        await observeWorkStreamInTransaction(tx, created.id, input.creatorAgentId)
-      }
-      if (options.inTransaction) {
-        await options.inTransaction(tx, created)
-      }
-      if (ownership)
-        await tx.insert(workStreamWorktrees).values({ workStreamId: created.id, squadId: created.squadId, ownership })
-      // System-maintained dependency waits: one open record per unsatisfied
-      // dependency, in the same transaction as the edge write.
-      if (created.dependsOn?.length) {
-        await syncDependencyWaits(tx, created.id, created.dependsOn)
-      }
-      const { attachFlow } = await import('../services/workflows/execution')
-      await attachFlow(tx, created, source)
-      // Reserve admission before any participant starts. A full squad retains
-      // the flow snapshot in the queue without spawning its workers.
-      const { admitOrQueueAtCreation } = await import('../services/work-streams/admission')
-      const outcome = await admitOrQueueAtCreation(tx, { squadId: created.squadId, streamId: created.id })
-      return outcome === 'queued' ? { ...created, status: 'queued' as const } : created
-    })
-
-    const ws = new WorkStream(row)
-    // Before any participant is dispatched: a stream admitted on a `ready`
-    // dependency starts on that dependency's branch.
-    if (ws.status !== 'queued' && Object.keys(ws.dependencyEdges).length > 0) {
-      const { settleStackDecisionsSafely } = await import('../services/work-streams/dependency-stacking')
-      await settleStackDecisionsSafely(ws.id)
-    }
-    const { ensureFlowDispatch } = await import('../services/workflows/execution')
-    await ensureFlowDispatch(ws.id)
-    eventEmitter.emit('workStream.created', { workStreamId: ws.id, squadId: ws.squadId })
-    await notifyWorkStreamOwnerOfNewStream(ws)
-    return WorkStream.mustFind(ws.id)
+        const [created] = await tx
+          .insert(workStreams)
+          .values({
+            id: streamId,
+            autoCleanupWorktree: input.autoCleanupWorktree ?? true,
+            squadId: input.squadId,
+            title: input.title,
+            description: input.description ?? '',
+            assigneeAgentId: null,
+            ownerAgentId,
+            creatorAgentId: input.creatorAgentId ?? null,
+            requestingUserId: input.requestingUserId ?? null,
+            assignedReviewerIds: input.assignedReviewerIds ?? [],
+            agentIds: null,
+            handoffMessage: input.handoffMessage ?? null,
+            dependsOn: dependencies.ids,
+            dependencyEdges: nextDependencyEdges(dependencies.ids, dependencies.conditions, undefined),
+            priority: input.priority ?? 'normal',
+            metadata: mergedMetadata,
+          })
+          .returning()
+        // Bind the idempotency key to this stream in the same commit.
+        if (claim) await claim.bind(tx, created.id)
+        if (input.observe === 'terminal') {
+          if (!input.creatorAgentId) throw new Error('Agent identity required for observation')
+          await observeWorkStreamInTransaction(tx, created.id, input.creatorAgentId)
+        }
+        if (options.inTransaction) {
+          await options.inTransaction(tx, created)
+        }
+        if (ownership)
+          await tx.insert(workStreamWorktrees).values({ workStreamId: created.id, squadId: created.squadId, ownership })
+        // System-maintained dependency waits: one open record per unsatisfied
+        // dependency, in the same transaction as the edge write.
+        if (created.dependsOn?.length) {
+          await syncDependencyWaits(tx, created.id, created.dependsOn)
+        }
+        const { attachFlow } = await import('../services/workflows/execution')
+        await attachFlow(tx, created, source)
+        // Reserve admission before any participant starts. A full squad retains
+        // the flow snapshot in the queue without spawning its workers.
+        const { admitOrQueueAtCreation } = await import('../services/work-streams/admission')
+        const outcome = await admitOrQueueAtCreation(tx, { squadId: created.squadId, streamId: created.id })
+        return outcome === 'queued' ? { ...created, status: 'queued' as const } : created
+      })
+      .finally(() => {
+        timing.add('squad-lock-wait', lockWait)
+        timing.add('transaction', timing.now() - transactionStarted - lockWait)
+      })
+    return row
   }
 
   /**

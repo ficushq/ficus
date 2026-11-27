@@ -327,6 +327,9 @@ const farmApi = {
   }),
   downloadWorkflowAttachment: async () =>
     new TextEncoder().encode('# Staging design attachment\n\nKeep the existing reader during rollback.'),
+  // No agents or type names: the review names authors by the participant type each attempt ran as.
+  listSquadAgents: async () => [],
+  listAgentTypes: async () => [],
 } as ActionsApi
 export function Preview() {
   const { data: current = stream } = useQuery({

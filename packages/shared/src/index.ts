@@ -162,4 +162,5 @@ export * from './workflow-review-waits'
 export * from './workflow-gate-deciders'
 
 export * from './workflow-review-presentation'
+export * from './workflow-review-labels'
 export * from './public-voice-progress'

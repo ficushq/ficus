@@ -25,7 +25,7 @@ You can check squad status at any time:
 
 - `ficus squad list` — list all squads
 - `ficus squad agents <squad-id>` — list agents in a squad
-- `ficus workstream list -q <squad-id>` — see what a squad is working on (`ficus workstream list -q <squad-id> --json` for scripts); queued rows show their admission-queue position
+- `ficus workstream list -q <squad-id>` — see what a squad is working on: its queued and active streams (`ficus workstream list -q <squad-id> --json` for scripts); queued rows show their admission-queue position. `--status done` or `--all` adds history, which is slow on a busy squad; use `ficus workstream get <id>` to check one stream
 - `ficus squad update <squad-id> --max-concurrent-streams <N|unlimited>` — cap how many work streams a squad may run at once (excess creations queue and auto-admit by effective priority; lowering never evicts running streams)
 
 ### Dynamic Configuration via CLI

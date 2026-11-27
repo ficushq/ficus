@@ -185,6 +185,7 @@ import { corsAllowOrigins, normalizeOrigin, isAllowedWsOrigin } from './services
 import { extractSessionToken, getSessionCookie } from './services/auth/session-cookie'
 import { csrfProtection } from './middleware/csrf'
 import { managedVaultHostGuard } from './middleware/managed-vault-host'
+import { CORE_IDLE_TIMEOUT_SECONDS, holdIdleTimerForBodylessWrites, readDeadline } from './middleware/read-deadline'
 import { redactHttpLogCredentials } from './lib/infra/http-log'
 import { attachPeerAddress, getClientAddress } from './lib/client-address'
 import { getSandboxProvisionErrorResponse } from './routes/sandbox-provision-error'
@@ -212,6 +213,9 @@ if (heapSnapshotDirectory) {
 export const app = new Hono({ getPath: coreGetPath })
 
 app.use('*', jsonBodyErrorMiddleware)
+// A slow write without a body (the CLI's pause or cancel) must not lose its answer
+// to Bun's idle timer while it runs; writes with a body are already spared.
+app.use('*', holdIdleTimerForBodylessWrites())
 app.onError((error, c) => {
   // Sandbox provisioning back-pressure answers 503 + Retry-After. It must be checked
   // before the shared handler, which would otherwise flatten it into a generic 500 and
@@ -287,6 +291,9 @@ app.route('/health/db', createDatabaseHealthRouter())
 // authenticated inside the handler with the resolved internal event token
 // (explicit, encryption-key-derived, or random fail-closed fallback).
 app.post(INTERNAL_EVENTS_PATH, (c) => handleInternalEventPost(c.req.raw))
+
+// A slow read gets a 503 it can explain before Bun's idle timer would drop its socket.
+app.use('/api/*', readDeadline())
 
 // CSRF protection for cookie-authenticated browser requests (also covers /api/auth).
 app.use('/api/*', csrfProtection)
@@ -1224,6 +1231,8 @@ if (import.meta.main) {
     websocket: coreWebSocketHandler,
     // Every route but the local-app proxy: that one extends its own requests
     // (LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS) so a slow app can still answer.
-    idleTimeout: 30,
+    // Reads answer before it fires and body-less writes hold it off while they run
+    // (middleware/read-deadline.ts).
+    idleTimeout: CORE_IDLE_TIMEOUT_SECONDS,
   })
 }

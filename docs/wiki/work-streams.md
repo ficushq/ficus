@@ -25,6 +25,125 @@ first-colon separator cannot address keys containing colons. Repeated criteria f
 same path retain the last value. These lookups use bound query parameters for every path
 segment and value.
 
+## Creating work streams under load
+
+`POST /api/workstreams` does all of its work before it answers. With `repository`, that
+includes checking the squad box, about twenty commands in the box, a `git fetch` and a
+`git worktree add`, then a transaction that locks the squad row, flow dispatch and the
+owner notification. A create normally takes 8 to 15 seconds and can take minutes when the
+squad is busy. Four things keep that safe:
+
+- **Idempotency key.** A client may send an `Idempotency-Key` header (1 to 200 printable
+  ASCII characters, no spaces). Before anything is provisioned, Core claims the key for
+  the squad, the authenticated identity and the key (`work_stream_create_requests`). A
+  repeat with the same key and the same JSON body (compared by a SHA-256 of the canonical
+  body) returns `200 { ...stream, reusedFromIdempotencyKey: true }`, with the same workflow
+  `warnings` as the original `201`, instead of creating a second stream or worktree.
+  - The comparison ignores `metadata.sources[*].addedAt`. Clients stamp it with the current
+    time (the CLI does for `--from-url`, `--from-slack`, `--from-memory` and
+    `--source-link`), so a re-run of the same command with the same key still matches.
+    Every other field, including the sources themselves, must be identical.
+  - A repeat that arrives while the first request is still running waits for it, up to
+    45 seconds, and then answers `409 { code: "create_in_progress" }`. Retrying later with
+    the same key is safe.
+  - The same key with a different body answers `409 { code: "idempotency_key_conflict" }`;
+    a malformed key answers `400 { code: "invalid_idempotency_key" }`.
+  - A create that fails before its transaction commits deletes its claim, so a retry
+    starts fresh. The claim is bound to the stream inside the creation transaction.
+  - A pending claim holds a 60-second lease that its request renews every 20 seconds. If
+    the Core process dies mid-create, a repeat takes the claim over once the lease
+    expires. A request whose claim was taken over this way rolls its transaction back and
+    answers `409 { code: "create_claim_lost" }`; the repeat that took over returns the
+    stream. Claims are pruned after 30 days.
+  - Without the header, creation behaves as before. `ficus workstream create` always
+    sends one (see [CLI: workstream create](cli/workstream-commands.md#create)).
+- **No idle cutoff.** Core's listener runs `Bun.serve({ idleTimeout: 30 })`. On Bun 1.4.2
+  that timer closes requests without a body (as seen on slow `workstream get` and `list`
+  reads, now answered first by the read deadline described under
+  [Reading work streams under load](#reading-work-streams-under-load)) while their
+  handlers keep running; it does not close a JSON `POST` such as a
+  create. The create route still disables its own per-request timer after authorization
+  (as workspace transfers do; see [Request limits](request-limits.md)), as a defence
+  should Bun start applying the timer to such requests. A connection dropped by anything
+  else on the path (a proxy, the network) is covered by the idempotency key and the CLI's
+  retry with the same key.
+- **Lighter squad-box check.** Repository setup skips the full squad-box ensure (exposure
+  cleanup, env-file regeneration, the runtime ensure behind the per-box gate, the
+  toolchain settle and the watch setup) when the box is already healthy. On a vm or k8s
+  runtime that means: this Core process tracks the box, its spec has not drifted, no
+  toolchain install is running, the recorded toolchain is undeclared or `ready` with the
+  current declaration applied and activated, maintenance admission is open, and one
+  command in the box answers within 10 seconds. Anything else, including an archived
+  squad, a missing or untracked box, a docker or host runtime, or a failed check, runs
+  the full ensure as before (`services/sandbox/squad-sandbox-fast-path.ts`). The same
+  check runs when `PATCH`/`workstream update` sets up a repository on an existing stream.
+- **Per-phase timing.** Every create logs one line under the `work-stream-create` logger:
+
+  ```
+  Work stream create timing: outcome=created total=12.4s slowest=repository-fetch authorize=0.1s validate=0.2s idempotency=0.0s sandbox-ensure=0.3s repository-exec=2.1s(18) repository-fetch=6.0s repository-worktree-add=2.9s squad-lock-wait=0.0s transaction=0.4s dispatch=0.3s notify=0.1s respond=0.1s sandbox=fast squad=<id> stream=<id>
+  ```
+
+  Phases are always listed in this order, and a phase the create never reached shows
+  `0.0s`. `repository-exec` also shows how many box commands ran. `sandbox=` says
+  whether the fast path ran (`fast`) or why the full ensure did (`full:<reason>`).
+  `outcome` is `created`, `reused`, `rejected` (4xx) or `failed`. A create taking 20
+  seconds or more logs at `warn`. Search Core logs for `Work stream create timing` and
+  read `slowest=`.
+
+## Reading work streams under load
+
+A single stream read is cheap: `GET /api/workstreams/<id>` takes 0.2 to 0.3 seconds on the
+server, its flow (`GET /api/workflows/runs/<id>`) 0.06 to 0.17 seconds and an agent's inbox
+about 0.1 seconds (measured 2026-11-27 on an otherwise quiet instance, squad of 988
+streams). The unpaginated list was the heavy read. `GET /api/workstreams?squadId=<id>`
+with no status filter annotates every stream the squad ever had: 2.4 seconds and 7.7 MB for 940
+done, 28 canceled and 20 open streams, against 0.23 seconds and 95 KB for
+`statuses=queued,active`. Core's database pool is small (4 connections unless
+`DATABASE_POOL_MAX` says otherwise), so reads queue behind each other. With three full
+lists running at once, each took 6 seconds and an unrelated `GET /api/workstreams/<id>`
+went from 0.17 to 6.7 seconds, while `/health` stayed at 0.03 seconds. A few agents
+polling `ficus workstream list` that way are enough to push ordinary reads past 30
+seconds.
+
+Two things keep reads bounded, and a third keeps slow writes from losing their answer:
+
+- **Open work by default.** `ficus workstream list` asks for `statuses=queued,active`
+  unless it gets `--status` or `--all` (see
+  [CLI: workstream list](cli/workstream-commands.md#list)). The API itself is unchanged:
+  without a status filter it still returns everything, and paginated callers (`limit`)
+  are unaffected.
+- **Read deadline.** Core's listener runs `Bun.serve({ idleTimeout: 30 })`, and Bun's
+  idle timer closes a request without a body (a `GET`, or a `POST` without one) about 32
+  seconds after it arrives if nothing has been sent, while the handler keeps running. The
+  client only sees "The socket connection was closed unexpectedly". Core therefore
+  answers any `GET` or `HEAD` under `/api` that has no response after 25 seconds itself,
+  with a `503`, `Retry-After: 5` and
+  `{ code: "read_deadline_exceeded", error: "Ficus is busy and did not finish this read within 25 seconds. ..." }`
+  (`apps/core/src/middleware/read-deadline.ts`). 25 seconds leaves room for the idle
+  timer's coarse granularity (on Bun 1.4.2 handlers answering at 28 and 31 seconds still
+  got through; the close came at 32). Only the time until the response headers counts:
+  the deadline never cuts a streamed body that has started. The handler is not cancelled:
+  its late result is discarded, and Core logs a `read-deadline` warning for the read and
+  another when it finishes. Routes that set their own idle timeout through
+  `extendIdleTimeout` (workspace transfers, work stream creation) and the local-app
+  proxy are exempt.
+- **Body-less writes run to their answer.** Writes with a body (a JSON `POST`) are never
+  cut by the idle timer, even after the handler has read the body. A write without one
+  (`workstream pause`, `resume`, `cancel` and `reopen` send none, nor does a body-less
+  `DELETE`) would be, and it cannot be answered early like a read because it may already
+  have changed something. `holdIdleTimerForBodylessWrites` (same file) therefore turns
+  the timer off for any non-`GET`/`HEAD` request without a body while its handler runs,
+  so every client gets the real result, and turns it back on before the response is
+  written. That second step matters: Bun's per-request `timeout(request, 0)` lasts for
+  the whole keep-alive connection, so leaving it off would keep that idle socket open
+  forever. A route that set its own idle timeout keeps it. The fix is in Core rather than
+  in the CLI (which could send `{}` instead) so that browsers, scripts and older CLIs are
+  covered too, and no client depends on how Bun treats request bodies.
+
+The CLI shows the 503's message as is. If a server without the deadline drops a read,
+`apiGet` reports that Ficus closed the connection before answering, probably because it
+was busy for more than 30 seconds, and that nothing was changed.
+
 ## Tracked issues and pull requests
 
 A work stream can track any number of GitHub issues and pull requests, and any

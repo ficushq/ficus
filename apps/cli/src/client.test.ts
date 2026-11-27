@@ -72,3 +72,139 @@ test('preserves structured error payloads and legacy fallbacks across the real c
   expect(result.stderr.toString()).toBe('')
   expect(result.exitCode).toBe(0)
 })
+
+// Real client in a child process (the preload mocks client.ts); fetch is replaced and stays local.
+test('idempotent POST retries dropped connections and in-progress answers with one key, and bounds its time', () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { strict as assert } from 'node:assert'
+    import { apiPostIdempotent, IdempotentRequestIncompleteError } from './src/client.ts'
+    import { ApiRequestError } from './src/client-errors.ts'
+    const sleep = async () => {}
+    const calls = []
+    const answers = [
+      () => { throw new TypeError('The socket connection was closed unexpectedly') },
+      () => Response.json({ code: 'create_in_progress', error: 'still creating' }, { status: 409 }),
+      () => new Response('bad gateway', { status: 502 }),
+      () => Response.json({ id: 'stream-1', reusedFromIdempotencyKey: true }, { status: 200 }),
+    ]
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), key: init.headers['Idempotency-Key'], body: init.body })
+      return answers[calls.length - 1]()
+    }
+    const retries = []
+    const created = await apiPostIdempotent('/api/workstreams', { title: 'T' }, {
+      idempotencyKey: 'key-1', timeoutMs: 60_000, sleep, onRetry: (attempt) => retries.push(attempt),
+    })
+    assert.deepEqual(created, { id: 'stream-1', reusedFromIdempotencyKey: true })
+    assert.equal(calls.length, 4)
+    assert.deepEqual(new Set(calls.map((call) => call.key)), new Set(['key-1']))
+    assert.deepEqual(new Set(calls.map((call) => call.body)), new Set([JSON.stringify({ title: 'T' })]))
+    assert.deepEqual(retries, [1, 2, 3])
+
+    // An answer whose body cannot be read is final, not retried.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      return new Response('not json', { status: 201 })
+    }
+    await assert.rejects(apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, sleep }))
+    assert.equal(calls.length, 1)
+
+    // Any other error answer is final: no retry.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      return Response.json({ error: 'Squad not found' }, { status: 404 })
+    }
+    await assert.rejects(
+      apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, sleep }),
+      (error) => error instanceof ApiRequestError && error.status === 404
+    )
+    assert.equal(calls.length, 1)
+
+    // Retries are bounded.
+    calls.length = 0
+    globalThis.fetch = async (url, init) => {
+      calls.push(init)
+      throw new TypeError('connection refused')
+    }
+    await assert.rejects(
+      apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 60_000, maxRetries: 2, sleep }),
+      (error) => error instanceof IdempotentRequestIncompleteError && error.reason === 'retries' && error.idempotencyKey === 'k'
+    )
+    assert.equal(calls.length, 3)
+
+    // A server that never answers is abandoned at the time budget.
+    globalThis.fetch = (url, init) =>
+      new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)))
+    const started = Date.now()
+    await assert.rejects(
+      apiPostIdempotent('/api/workstreams', {}, { idempotencyKey: 'k', timeoutMs: 200, sleep }),
+      (error) => error instanceof IdempotentRequestIncompleteError && error.reason === 'timeout'
+    )
+    assert(Date.now() - started < 5_000)
+  `,
+    ],
+    { cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe' }
+  )
+  expect(result.stderr.toString()).toBe('')
+  expect(result.exitCode).toBe(0)
+})
+
+// Real client in a child process (the preload mocks client.ts). The server is a local
+// Bun listener whose idle timer drops a slow read, as Core's did before its read deadline.
+test('a read whose connection is dropped says so, and a read deadline answer keeps its code', () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { strict as assert } from 'node:assert'
+    import { apiGet, ReadConnectionDroppedError } from './src/client.ts'
+    import { ApiRequestError } from './src/client-errors.ts'
+    let release
+    const held = new Promise((resolve) => { release = resolve })
+    const server = Bun.serve({
+      port: 0,
+      idleTimeout: 1,
+      async fetch(request) {
+        if (new URL(request.url).pathname === '/slow') await held
+        return Response.json(
+          { error: 'Ficus is busy and did not finish this read within 25 seconds.', code: 'read_deadline_exceeded' },
+          { status: 503, headers: { 'Retry-After': '5' } }
+        )
+      },
+    })
+    // Whatever API address the client resolves, send it to the local listener.
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (url, init) => realFetch('http://127.0.0.1:' + server.port + new URL(String(url)).pathname, init)
+    await assert.rejects(apiGet('/slow'), (error) => {
+      assert(error instanceof ReadConnectionDroppedError)
+      assert.match(error.message, /closed the connection before answering this read/)
+      assert.match(error.message, /Nothing was changed/)
+      return true
+    })
+    await assert.rejects(apiGet('/deadline'), (error) => {
+      assert(error instanceof ApiRequestError)
+      assert.equal(error.status, 503)
+      assert.equal(error.code, 'read_deadline_exceeded')
+      assert.match(error.message, /did not finish this read within 25 seconds/)
+      return true
+    })
+    // Other network failures pass through unchanged.
+    const refused = new TypeError('connection refused')
+    globalThis.fetch = async () => { throw refused }
+    await assert.rejects(apiGet('/x'), (error) => error === refused)
+    release()
+    server.stop(true)
+  `,
+    ],
+    { cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe' }
+  )
+  expect(result.stderr.toString()).toBe('')
+  expect(result.exitCode).toBe(0)
+}, 30_000)

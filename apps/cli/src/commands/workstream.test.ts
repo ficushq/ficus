@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
 import { manualInputRequestSchema, manualWaitDecisionSchema } from '@ficus/shared'
-import { apiDelete, apiGet, apiPatch, apiPost } from '../client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostIdempotent, IdempotentRequestIncompleteError } from '../client'
 import { isJsonMode, output, outputError, outputTable, setOutputOptions } from '../output'
 import {
   buildWorkStreamSourceLinks,
@@ -345,6 +345,26 @@ describe('workstream CLI commands', () => {
   })
 
   describe('list', () => {
+    it('asks for open streams by default, and history only with --status or --all', async () => {
+      const get = apiGet as ReturnType<typeof mock>
+      get.mockResolvedValue([])
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      await run(['workstream', 'list', '--squad', 'squad-1'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?squadId=squad-1&statuses=queued%2Cactive')
+      expect(logSpy).toHaveBeenLastCalledWith('No open work streams found (--all includes done and canceled ones)')
+      await run(['workstream', 'list'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?statuses=queued%2Cactive')
+      await run(['workstream', 'list', '--squad', 'squad-1', '--all'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?squadId=squad-1')
+      expect(logSpy).toHaveBeenLastCalledWith('No work streams found')
+      await run(['workstream', 'list', '--squad', 'squad-1', '--status', 'done'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?squadId=squad-1&status=done')
+      // An explicit status wins over --all.
+      await run(['workstream', 'list', '--status', 'canceled', '--all'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?status=canceled')
+      logSpy.mockRestore()
+    })
+
     it('keeps default table titles user-friendly by truncating long names', async () => {
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([
         {
@@ -884,6 +904,53 @@ describe('workstream CLI commands', () => {
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(reused)
       await run(['workstream', 'create', 'Fix bug', '--squad', 'squad-1', '--from-event', eventId])
       expect(output).toHaveBeenLastCalledWith(reused, 'Reused existing work stream #9 for this event')
+    })
+
+    it('sends one idempotency key per run with a bounded time, and honors an explicit key and timeout', async () => {
+      const idempotent = apiPostIdempotent as ReturnType<typeof mock>
+      idempotent.mockClear()
+      await run(['workstream', 'create', 'First', '--squad', 'squad-1'])
+      await run(['workstream', 'create', 'Second', '--squad', 'squad-1'])
+      const [first, second] = idempotent.mock.calls.map(
+        (call) => call[2] as { idempotencyKey: string; timeoutMs: number }
+      )
+      expect(first.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
+      expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+      expect(first.timeoutMs).toBe(150_000)
+
+      await run([
+        'workstream',
+        'create',
+        'Again',
+        '--squad',
+        'squad-1',
+        '--idempotency-key',
+        'key-7',
+        '--timeout',
+        '30',
+      ])
+      expect(idempotent.mock.calls.at(-1)![2]).toMatchObject({ idempotencyKey: 'key-7', timeoutMs: 30_000 })
+
+      const reused = { id: 'stream-9', number: 9, title: 'Again', reusedFromIdempotencyKey: true }
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(reused)
+      await run(['workstream', 'create', 'Again', '--squad', 'squad-1', '--idempotency-key', 'key-7'])
+      expect(output).toHaveBeenLastCalledWith(
+        reused,
+        'Reused work stream #9: Again (an earlier attempt with this idempotency key created it)'
+      )
+    })
+
+    it('explains how to collect a create that timed out without creating a duplicate', async () => {
+      const idempotent = apiPostIdempotent as ReturnType<typeof mock>
+      idempotent.mockImplementationOnce((_path: string, _body: unknown, options: { idempotencyKey: string }) =>
+        Promise.reject(new IdempotentRequestIncompleteError('timeout', options.idempotencyKey, 150_000))
+      )
+      await run(['workstream', 'create', 'Slow', '--squad', 'squad-1', '--idempotency-key', 'key-slow'])
+      const message = ((outputError as ReturnType<typeof mock>).mock.calls.at(-1)![0] as Error).message
+      expect(message).toContain('did not complete: No answer within 150 seconds')
+      expect(message).toContain('The server may still finish creating it.')
+      expect(message).toContain('re-run the same command with --idempotency-key key-slow')
+      expect(message).toContain('ficus workstream list --squad squad-1')
     })
   })
 
