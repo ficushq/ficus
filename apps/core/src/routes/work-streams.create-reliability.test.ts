@@ -420,6 +420,70 @@ describe('work stream create reliability', () => {
       expect(await branchExists('feature/shared')).toBe(true)
     })
 
+    it('keeps an explicit worktree another create adopted before that create commits', async () => {
+      const explicit = { repository: 'repo', worktree: 'shared/early', branch: 'feature/early' }
+      const streamA = crypto.randomUUID()
+      let ownership: repositorySetup.WorktreeOwnership | undefined
+      await repositorySetup.prepareRepository(
+        exec,
+        root,
+        { ...explicit, baseBranch: 'main', baseSource: 'local' },
+        streamA,
+        {},
+        (receipt) => {
+          ownership = receipt
+        }
+      )
+      // B (same key, took the claim over) adopts the path; it has no receipt and no row yet.
+      let adoptedReceipt = false
+      await repositorySetup.prepareRepository(
+        exec,
+        root,
+        { ...explicit, baseBranch: 'main', baseSource: 'local' },
+        crypto.randomUUID(),
+        {},
+        () => {
+          adoptedReceipt = true
+        }
+      )
+      expect(adoptedReceipt).toBe(false)
+      expect(await streamCount()).toBe(0)
+
+      expect(await rollbackCreateProvisioning(squadId, streamA, ownership!, { exec })).toMatchObject({
+        worktree: 'retained',
+        branch: 'retained',
+      })
+      expect(await worktrees()).toEqual([join(root, 'shared', 'early')])
+      expect(await branchExists('feature/early')).toBe(true)
+    })
+
+    it('bounds the rollback box commands with a deadline signal', async () => {
+      const signals: Array<AbortSignal | undefined> = []
+      manager.mockReturnValue({
+        exec: async (
+          _sandboxId: string,
+          args: string[],
+          options?: { env?: Record<string, string>; signal?: AbortSignal }
+        ) => {
+          signals.push(options?.signal)
+          return Buffer.from(await exec(args, options))
+        },
+      } as unknown as ISandboxManager)
+      const admit = spyOn(admission, 'admitOrQueueAtCreation').mockImplementationOnce(async () => {
+        throw new Error('admission unavailable')
+      })
+      try {
+        expect((await post({ squadId, title: `${prefix} bounded`, repository: 'repo' })).status).toBeGreaterThanOrEqual(
+          400
+        )
+        expect(await worktrees()).toEqual([])
+        expect(signals.length).toBeGreaterThan(0)
+        expect(signals.every((signal) => signal instanceof AbortSignal && !signal.aborted)).toBe(true)
+      } finally {
+        admit.mockRestore()
+      }
+    })
+
     it('keeps a branch another stream is bound to, even at its own default path', async () => {
       let ownership: repositorySetup.WorktreeOwnership | undefined
       setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) =>

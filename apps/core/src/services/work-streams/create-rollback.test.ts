@@ -121,6 +121,35 @@ describe('removeProvisionedWorktree', () => {
     expect(await branchExists(ownership.branch)).toBe(true)
   })
 
+  test('keeps the branch when another create checks it out right before the delete', async () => {
+    const ownership = await provision('loser', 'feature/raced')
+    let adopted: string | undefined
+    // Another create (B) adds its worktree on the branch after A's worktree is gone,
+    // immediately before whichever command A uses to delete the branch.
+    const racing: RepositoryExec = async (args, options) => {
+      // A plain `git update-ref -d`, or the single in-box delete command.
+      const deletesBranch =
+        (args[0] === 'git' && args.includes('update-ref') && args.includes('-d')) ||
+        args.includes('ficus-create-rollback')
+      if (!adopted && deletesBranch) {
+        expect(existsSync(ownership.worktree)).toBe(false)
+        adopted = join(root, 'worktrees', 'winner')
+        await git('worktree', 'add', adopted, 'feature/raced')
+      }
+      return exec(args, options)
+    }
+
+    expect(await removeProvisionedWorktree(racing, ownership)).toMatchObject({
+      worktree: 'removed',
+      branch: 'retained',
+      reason: 'Branch is checked out in another worktree',
+    })
+    expect(adopted).toBeDefined()
+    expect(await git('rev-parse', 'feature/raced')).toBe(ownership.baseCommit!)
+    expect((await exec(['git', '-C', adopted!, 'rev-list', '--count', 'HEAD'])).trim()).toBe('1')
+    expect((await exec(['git', '-C', adopted!, 'symbolic-ref', '--short', 'HEAD'])).trim()).toBe('feature/raced')
+  })
+
   test('touches only the worktree its receipt names', async () => {
     const other = await provision('other-stream')
     const ownership = await provision('rolled-back')

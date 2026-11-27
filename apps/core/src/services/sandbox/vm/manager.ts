@@ -1857,7 +1857,10 @@ export class VmSandboxManager implements ISandboxManager {
           .catch((error: unknown) => log.warn(`Could not cancel an aborted command in ${sandboxId}:`, error))
       }
       signal?.addEventListener('abort', onAbort, { once: true })
-      stream.on('end', () => signal?.removeEventListener('abort', onAbort))
+      // 'end' or 'error' finishes the stream; neither may leave the listener on a long-lived signal.
+      const dropAbortListener = () => signal?.removeEventListener('abort', onAbort)
+      stream.on('end', dropAbortListener)
+      stream.on('error', dropAbortListener)
       stream.on('data', (response: BashResponse) => {
         if (response.stdout) chunks.push(Buffer.from(response.stdout, 'base64'))
         if (response.stderr) chunks.push(Buffer.from(response.stderr, 'base64'))
