@@ -564,7 +564,8 @@ The web chat's history search and `ficus agent search` call this endpoint, and t
 uses the same matching rule, so they cannot drift apart.
 
 - A match is a case-insensitive, literal substring: `%`, `_` and `\` in the query match themselves.
-  `q` is trimmed and limited to 200 characters.
+  `q` is trimmed, limited to 200 characters and may not contain control characters other than tab and
+  line breaks (a NUL is a 400).
 - `in` chooses where to look. `text` (the default, and what the web chat uses) is the visible message
   text (`messages.content`): what people wrote and the agent's reply text. The chat view collapses tool
   calls, so a jump could not show a match inside one. `tools` is every tool call's name, arguments and
@@ -579,9 +580,12 @@ uses the same matching rule, so they cannot drift apart.
   `toolCallId`), a short single-line `snippet` of the matching field with highlight ranges, and
   `newerCount`: how many messages in the whole conversation are newer. The web chat uses it to load
   enough history to reach the message; the CLI uses it as the list offset for `--context`.
-- On `GET /api/agents/:id/messages`, `search` takes the same `in` (default `text`) and `totalCount`
-  on the first page counts the messages matching every active filter (role, time range, search), not
-  the whole conversation.
+- On `GET /api/agents/:id/messages`, `search` follows the same limits as `q` and takes the same `in`
+  (default `text`). `totalCount` on the first page counts the messages matching every active filter
+  (role, time range, search), not the whole conversation; `count=false` skips that query (it is then
+  0, as on later pages).
+- Every search logs its duration, scope and result count (never the query text) under
+  `message-search`, so slow tool searches show up.
 
 There is no dedicated index, and no migration. Text matching scans the agent's rows through the
 `(agent_id, created_at)` index; tool matching is a jsonpath filter
@@ -605,7 +609,8 @@ column kept in step with every metadata write, and a `pg_trgm` extension migrati
 of a message's tool text about 20 times slower (13.5 s against 0.6 s for 2,000 rows). Messages are
 rewritten repeatedly while an agent streams tool calls, so that cost lands on the hottest write path,
 while search is an occasional, interactive read. If conversations grow to where a tool search takes
-more than a couple of seconds, a trigram index over a flattened tool-text column is the next step.
+more than a couple of seconds (the `message-search` log lines show it), a trigram index over a
+flattened tool-text column is the next step.
 
 The web chat view opens the search from a button in the composer controls (in the options sheet on
 phones; in the chat header when the chat has no composer) or with Cmd/Ctrl+Shift+F (Cmd/Ctrl+F stays
@@ -623,13 +628,16 @@ From the CLI (and so from agents, which use the CLI rather than a dedicated tool
   whether the match is in its `args`, `result` or name (`call`), then the snippet. A last line gives the
   `--cursor` for the next page. `--context <n>` (up to 20) prints the n messages before and after each
   hit in conversation order, fetched from the list endpoint at the hit's `newerCount` offset; it
-  tolerates up to 10 messages arriving between the search and that request. `--json` prints the full
+  tolerates up to 10 messages arriving between the search and that request, and otherwise says the
+  context is unavailable rather than showing a shortened window. Put `--` before a query that starts
+  with a dash (`ficus agent search <id> -- --force`). `--json` prints the full
   results (with `context.before` and `context.after` when asked).
 - `ficus agent messages <id> --search <text>` keeps its output (full messages; with `--raw`, the
   metadata including `metadata.sender`) and its `--role`, `--before` and `--after` filters, so
   `--role human --search <text>` still finds who sent a message. It searches the message text unless
   `--in tools` or `--in all` is given, and reports how many messages match.
-- `ficus agent worker-log <id> --search <text>` searches text and tool calls, since it shows tool calls.
+- `ficus agent worker-log <id> --search <text>` searches text and tool calls, since it shows tool calls,
+  and skips the count it never shows.
 
 ## Chat file attachments
 
