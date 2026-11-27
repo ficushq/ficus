@@ -32,7 +32,7 @@ import {
   type WorkStreamWait,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
-import { getAgentLabel } from './agentDisplay'
+import { getAgentLabel, noAgentTypeNames, type AgentTypeName } from './agentDisplay'
 
 export type HumanApprovalStep = Extract<WorkflowStep, { kind: 'human-approval' }>
 /** A step a person decides: an approval, or a decision step that got no automatic decision. */
@@ -47,14 +47,33 @@ export function isHumanGate(run: WorkflowRun, attempt: WorkflowAttempt): boolean
 export const stepName = (run: WorkflowRun, stepId: string) =>
   run.definition.steps.find((entry) => entry.id === stepId)?.name ?? stepId
 
+/** A decided outcome as it reads in records of what happened: "changes-requested" is "Changes requested". */
 export function outcomeLabel(outcome: string): string {
   const words = outcome.replace(/[-_]+/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+/** Present-tense action labels for well-known outcome IDs, keyed by the ID with `_` read as `-`. */
+const OUTCOME_ACTION_LABELS: Record<string, string> = {
+  approved: 'Approve',
+  'changes-requested': 'Request changes',
+  rejected: 'Reject',
+  accepted: 'Accept',
+  declined: 'Decline',
+  denied: 'Deny',
+}
+
+/**
+ * An outcome as a decision button names it, in the present tense: "approved" is "Approve" and
+ * "changes-requested" is "Request changes". Unknown or custom outcomes keep the `outcomeLabel` wording.
+ */
+export function outcomeActionLabel(outcome: string): string {
+  return OUTCOME_ACTION_LABELS[outcome.trim().toLowerCase().replace(/_/g, '-')] ?? outcomeLabel(outcome)
+}
+
 /** The squad's own name for an agent type (`AgentType.name`), when it is known. */
-export type AgentTypeName = (agentTypeId: string) => string | undefined
-const noTypeNames: AgentTypeName = () => undefined
+export type { AgentTypeName }
+const noTypeNames = noAgentTypeNames
 
 /** "Engineer", or "General Purpose agent" for the built-in general type (see `agentTypeNoun`). */
 function agentNoun(type: string, typeName: AgentTypeName): string {
@@ -149,7 +168,7 @@ export function attemptAuthor(
   if (!type) return undefined
   // The shared type-first label, so the review names agents as every other surface does.
   return agent
-    ? getAgentLabel(agent, undefined, typeName(type))
+    ? getAgentLabel(agent, undefined, typeName)
     : typeFirstAgentLabel({ agentTypeId: type, typeName: typeName(type) })
 }
 
@@ -177,7 +196,7 @@ export function decisionNotesHint(step: WorkflowStep, outcomes: Array<[string, W
   const labelsWhere = (required: boolean) =>
     outcomes
       .filter(([, transition]) => outcomeRequiresNotes(step, transition) === required)
-      .map(([outcome]) => outcomeLabel(outcome))
+      .map(([outcome]) => outcomeActionLabel(outcome))
   const requiredFor = labelsWhere(true)
   const optionalFor = labelsWhere(false)
   const rule = !requiredFor.length

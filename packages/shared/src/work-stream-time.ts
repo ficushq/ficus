@@ -139,17 +139,27 @@ export function viewerCanActOnWait(
 }
 
 /**
+ * Whether the stream's delivery waits on its pull request's review or merge at the code host.
+ * Ficus cannot attribute that to anyone, so it waits on every viewer.
+ */
+function deliveryWaitsOnCodeHost(ws: WorkStreamViewerFacts): boolean {
+  return ws.delivery?.kind === 'review' || ws.delivery?.kind === 'merge'
+}
+
+/**
  * Whether the stream waits on this viewer, for "N waiting on you" counts and "Waiting on you"
- * badges: it needs a person ({@link workStreamNeedsHumanAttention}) and one of its open waits on a
- * person is one this viewer can act on ({@link viewerCanActOnWait}). A stream that needs a person
- * with no such wait open (its delivery pull request awaiting review or merge at the code host,
- * which Ficus cannot attribute to anyone) waits on every viewer. False while the viewer is unknown.
+ * badges: it needs a person ({@link workStreamNeedsHumanAttention}) and either its delivery waits
+ * on the code host (a pull request awaiting review or merge, which waits on every viewer whatever
+ * other waits are open) or one of its open waits on a person is one this viewer can act on
+ * ({@link viewerCanActOnWait}). A stream that needs a person with no such wait open (an older
+ * payload that omitted its waits) waits on every viewer too. False while the viewer is unknown.
  */
 export function workStreamWaitsOnViewer(
   ws: WorkStreamViewerFacts & WorkStreamPresentationFacts,
   viewer?: WorkStreamViewer
 ): boolean {
   if (!viewer || !workStreamNeedsHumanAttention(ws)) return false
+  if (deliveryWaitsOnCodeHost(ws)) return true
   const personWaits = (ws.openWaits ?? []).filter((wait) => personWaitKind(wait, ws))
   return personWaits.length === 0 || personWaits.some((wait) => viewerCanActOnWait(wait, ws, viewer))
 }

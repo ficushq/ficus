@@ -500,17 +500,19 @@ export async function claimPendingInterventionForSessionDelivery(
 }
 
 /**
- * Whether this execution has acknowledged any human row from an SDK session
- * entry. acknowledgeSessionDelivery stamps the consuming executionId on every
- * row it acknowledges (the row that queued the execution, with the same text as
- * executions.message, and any steers or follow-ups), so a match means the
- * session already holds this execution's conversation. A resumed or
- * re-dispatched turn then must not send executions.message again; a released,
- * never-appended row stays pending and is re-claimed instead.
+ * SDK session entry ids of the human rows this execution has acknowledged.
+ * acknowledgeSessionDelivery stamps the consuming executionId on every row it
+ * acknowledges (the row that queued the execution, with the same text as
+ * executions.message, and any steers or follow-ups), so a non-empty result means
+ * the session received this execution's conversation. This is only a DB record:
+ * the caller must check that an entry still exists in the live session (the file
+ * can be lost, emptied or left behind on a host move) before it skips re-sending
+ * executions.message. A released, never-appended row stays pending and is
+ * re-claimed instead.
  */
-export async function hasSessionDeliveredExecutionPrompt(agentId: string, executionId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: messages.id })
+export async function sessionDeliveredExecutionPromptEntryIds(agentId: string, executionId: string): Promise<string[]> {
+  const rows = await db
+    .select({ entryId: sql<string>`${jsonbObjectRecovered(messages.metadata)}->>'sessionEntryId'` })
     .from(messages)
     .where(
       and(
@@ -521,8 +523,7 @@ export async function hasSessionDeliveredExecutionPrompt(agentId: string, execut
         sql`${jsonbObjectRecovered(messages.metadata)}->>'sessionEntryId' IS NOT NULL`
       )
     )
-    .limit(1)
-  return row !== undefined
+  return rows.map((row) => row.entryId)
 }
 
 /**

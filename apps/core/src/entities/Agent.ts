@@ -1429,9 +1429,9 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return pendingDelivery.claimPendingInterventionForSessionDelivery(this.id, messageId, owner)
   }
 
-  /** Whether this execution has acknowledged a human row from an SDK session entry; see pending-delivery. */
-  async hasSessionDeliveredExecutionPrompt(executionId: string): Promise<boolean> {
-    return pendingDelivery.hasSessionDeliveredExecutionPrompt(this.id, executionId)
+  /** SDK session entry ids of the human rows this execution has acknowledged; see pending-delivery. */
+  async sessionDeliveredExecutionPromptEntryIds(executionId: string): Promise<string[]> {
+    return pendingDelivery.sessionDeliveredExecutionPromptEntryIds(this.id, executionId)
   }
 
   /**

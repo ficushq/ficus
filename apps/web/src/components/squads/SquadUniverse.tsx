@@ -11,6 +11,7 @@ import { CanvasSkeleton } from '../loading/Skeleton'
 import { AGENT_STATUS_ROLE, type Squad, type SquadRelationship, type Agent } from '@ficus/shared'
 import { getAgentLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 // Lazy load 3D force graph (use standalone package — the combined react-force-graph pulls in aframe)
 const ForceGraph3DLazy = lazy(() => import('react-force-graph-3d'))
@@ -65,6 +66,7 @@ interface GraphData {
 
 export function SquadUniverse({ squads, relationships }: Props) {
   const colors = useThemeColors()
+  const typeNames = useAgentTypeNames()
   const navigate = useNavigate()
   const { slugFor } = useSquadSlugs()
   const spriteTextLoaded = useGraphModulesReady(true, spriteTextReady)
@@ -119,7 +121,7 @@ export function SquadUniverse({ squads, relationships }: Props) {
     allAgents.forEach(({ agent, squadId }) => {
       nodes.push({
         id: agent.id,
-        name: getAgentLabel(agent),
+        name: getAgentLabel(agent, undefined, typeNames),
         type: 'agent',
         status: agent.status,
         squadId,
@@ -153,7 +155,7 @@ export function SquadUniverse({ squads, relationships }: Props) {
     })
 
     return { nodes, links: safeLinks }
-  }, [squads, relationships, allAgents, agentQueries])
+  }, [squads, relationships, allAgents, agentQueries, typeNames])
 
   // Handle node click
   const handleNodeClick = useCallback(

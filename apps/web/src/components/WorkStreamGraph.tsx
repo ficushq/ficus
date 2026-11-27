@@ -14,6 +14,7 @@ import {
   type WorkStreamGraphNodeLayout,
 } from '../lib/workStreamGraphLayout'
 import { useWorkStreamPeek, WorkStreamPeekCard } from './WorkStreamSummary'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 interface WorkStreamGraphProps {
   workStreams: WorkStream[]
@@ -154,11 +155,12 @@ function WorkStreamGraphNode({
 }) {
   const card = useRef<HTMLDivElement>(null)
   const peek = useWorkStreamPeek()
+  const typeNames = useAgentTypeNames()
   const storedPriority = stream.priority ?? 'normal'
   const effectivePriority = stream.effectivePriority ?? storedPriority
   const boosted = effectivePriority !== storedPriority
   const assignee = stream.assigneeAgentId ? agentMap.get(stream.assigneeAgentId) : undefined
-  const assigneeLabel = assignee ? getAgentLabel(assignee) : null
+  const assigneeLabel = assignee ? getAgentLabel(assignee, undefined, typeNames) : null
   const assigneeInitial = assigneeLabel?.charAt(0).toUpperCase() ?? '—'
   const select = () => {
     peek.hover.hide()

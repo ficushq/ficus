@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { WATCH_ATTENTION, type Attention, type WorkStream } from '@ficus/shared'
+import {
+  WATCH_ATTENTION,
+  type Attention,
+  type WorkStream,
+  type WorkStreamDerivedState,
+  type WorkStreamViewer,
+} from '@ficus/shared'
 import { buildUserAttention } from '../attention/resolver'
 import { createWorkInterestLoader, type WorkInterestCandidate } from './work-interest'
 
@@ -27,8 +33,13 @@ function loader(options: {
   attention?: string[]
   slotWaiting?: string[]
   activeUser?: boolean
+  /** The user's permissions in every squad; by default they may act on any wait. */
+  permissions?: string[]
+  /** Open waits by stream, overriding the default question for `attention` streams. */
+  waits?: Record<string, { derivedState: WorkStreamDerivedState; openWaits: NonNullable<WorkStream['openWaits']> }>
 }) {
   const checked: string[] = []
+  const viewersLoaded: string[] = []
   let subscriptionLoads = 0
   const squadRows = new Map<string, Attention>([
     ...(options.watchedSquads ?? []).map((id) => [id, WATCH_ATTENTION] as const),
@@ -50,26 +61,35 @@ function loader(options: {
       checked.push(squadId)
       return !(options.deniedSquads ?? []).includes(squadId)
     },
+    loadViewer: async (userId, squadId): Promise<WorkStreamViewer> => {
+      viewersLoaded.push(squadId)
+      return {
+        can: (permission) => !options.permissions || options.permissions.includes(permission),
+        identity: { type: 'user', userId },
+      }
+    },
     derive: async (streams) =>
       new Map(
         streams.map((stream) => [
           stream.id,
-          (options.attention ?? []).includes(stream.id)
-            ? {
-                derivedState: 'waiting_on_answer' as const,
-                openWaits: [{ type: 'question' }] as NonNullable<WorkStream['openWaits']>,
-              }
-            : {
-                derivedState: (options.slotWaiting?.includes(stream.id) ? 'idle' : 'in_progress') as
-                  'idle' | 'in_progress',
-                hasActiveSlotWait: options.slotWaiting?.includes(stream.id),
-                openWaits: [] as NonNullable<WorkStream['openWaits']>,
-              },
+          options.waits?.[stream.id]
+            ? { ...options.waits[stream.id]! }
+            : (options.attention ?? []).includes(stream.id)
+              ? {
+                  derivedState: 'waiting_on_answer' as const,
+                  openWaits: [{ type: 'question' }] as NonNullable<WorkStream['openWaits']>,
+                }
+              : {
+                  derivedState: (options.slotWaiting?.includes(stream.id) ? 'idle' : 'in_progress') as
+                    'idle' | 'in_progress',
+                  hasActiveSlotWait: options.slotWaiting?.includes(stream.id),
+                  openWaits: [] as NonNullable<WorkStream['openWaits']>,
+                },
         ])
       ),
     now: () => now,
   })
-  return { load, checked, subscriptionLoads: () => subscriptionLoads }
+  return { load, checked, viewersLoaded, subscriptionLoads: () => subscriptionLoads }
 }
 
 describe('work interest selector', () => {
@@ -209,6 +229,7 @@ describe('work interest selector', () => {
         active--
         return true
       },
+      loadViewer: async () => ({ can: () => true }),
       derive: async (streams) =>
         new Map(streams.map((stream) => [stream.id, { derivedState: 'in_progress' as const, openWaits: [] }])),
       now: () => now,
@@ -235,6 +256,47 @@ describe('work interest selector', () => {
     expect(snapshot.totalCount).toBe(1)
     expect(snapshot.liveActivity.top.map((row) => row.id)).toEqual(['shown'])
     expect(checked).toEqual(['squad'])
+  })
+
+  test('"waiting on you" counts only streams this user can act on, as Activity counts them', async () => {
+    const gate = {
+      id: 'gate',
+      type: 'manual',
+      workflowHumanGate: true,
+      flowAttemptId: 2,
+      resolutionHandler: 'workflow',
+      workflowGateApprover: 'assigned-reviewers',
+    } as NonNullable<WorkStream['openWaits']>[number]
+    const fixture = (permissions: string[]) =>
+      loader({
+        permissions,
+        candidates: [
+          candidate('gated', 'squad', { assignedReviewerIds: ['reviewer'] }),
+          candidate('running', 'squad'),
+          candidate('idle', 'quiet-squad'),
+        ],
+        waits: { gated: { derivedState: 'in_review', openWaits: [gate] } },
+      })
+    // A reviewer outside the assigned reviewers cannot decide the gate: nothing waits on them.
+    const outsider = await fixture(['workstreams:review']).load('someone-else')
+    expect(outsider.liveActivity).toMatchObject({ activeCount: 2, needsYouCount: 0 })
+    // The assigned reviewer can.
+    const reviewer = fixture(['workstreams:review'])
+    expect((await reviewer.load('reviewer')).liveActivity).toMatchObject({ activeCount: 2, needsYouCount: 1 })
+    // Only the squad with a stream needing a person resolves the viewer.
+    expect(reviewer.viewersLoaded).toEqual(['squad'])
+  })
+
+  test('a stream whose decisions are muted never waits on the user, as on Activity', async () => {
+    const { load, viewersLoaded } = loader({
+      streamAttention: { asking: { decisions: 'mute', progress: 'show' } },
+      candidates: [candidate('asking', 'squad')],
+      attention: ['asking'],
+    })
+    const snapshot = await load('user-1')
+    expect(snapshot.top.map(({ id }) => id)).toEqual(['asking'])
+    expect(snapshot.liveActivity.needsYouCount).toBe(0)
+    expect(viewersLoaded).toEqual([])
   })
 
   test('empty interest returns widget empty state and an ending APNs state', async () => {

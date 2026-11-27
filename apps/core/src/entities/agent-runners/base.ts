@@ -1542,13 +1542,17 @@ export abstract class AgentRunner {
    * Prompt text when no pending row was claimed. Every execution queued with a message also stores
    * it as its own human row, so nothing claimed usually means that row already reached the session:
    * a resume after a restart or hard interruption, or a failover re-dispatch. Re-sending the text
-   * would give the model the whole task again, so only continue. Without that session witness the
-   * text never reached the session and is sent as before.
+   * would give the model the whole task again, so only continue. The witness is an acknowledged
+   * session entry that the live session still holds; the DB record alone is not enough, because a
+   * lost, emptied or untransferred session file starts a new session without the task. Without a
+   * live witness the text is sent as before.
    */
   private async unclaimedPromptText(): Promise<string> {
     const original = this.execution.message?.trim()
     if (!original) return 'Continue.'
-    return (await this.agent.hasSessionDeliveredExecutionPrompt(this.execution.id)) ? 'Continue.' : original
+    const entryIds = await this.agent.sessionDeliveredExecutionPromptEntryIds(this.execution.id)
+    const sessionManager = this.session.pi.sessionManager
+    return entryIds.some((entryId) => sessionManager.getEntry(entryId) !== undefined) ? 'Continue.' : original
   }
 
   private buildInitialPromptText(messages: Message[]): string {

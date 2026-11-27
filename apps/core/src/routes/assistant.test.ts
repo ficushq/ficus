@@ -197,6 +197,10 @@ test('offline replies persist, one device receives, and lease expiry allows reco
   expect(first.pending).toBe(1)
   expect(first.messages.map((message: { messageId: string }) => message.messageId)).toEqual([reply.id])
   expect(first.messages[0]).toMatchObject({ taskId: receipt.taskId, requestId: receipt.id, sequence: 1 })
+  // The Assistant reads the sender type first, as the update cards show it, never the agent's name alone.
+  const sender = await Agent.mustFind(receipt.agentId)
+  expect(first.messages[0].senderName).toBe('System Manager')
+  expect(first.messages[0].senderName).not.toContain(String(sender.metadata?.name))
   expect((await (await request(`/${id}/inbox`, { consumerId: second })).json()).acquired).toBe(false)
   const response = { id: `inbox:${reply.id}`, role: 'tool', text: 'Task update', final: true }
   const ack = (consumer: string, extra: Record<string, unknown> = {}) =>

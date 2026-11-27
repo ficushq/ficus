@@ -35,6 +35,7 @@ import {
 import { getAgentLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 import { usePermissions } from '../../hooks/usePermissions'
 
 const KANBAN_CALLOUT: Partial<
@@ -484,6 +485,7 @@ function WorkStreamCard({
   onSelect: () => void
 }) {
   const assignee = workStream.assigneeAgentId ? agentMap.get(workStream.assigneeAgentId) : null
+  const typeNames = useAgentTypeNames()
   const displayState = getWsDisplayState(workStream)
   const callout = KANBAN_CALLOUT[displayState]
   const treatment = webStatus(WORK_STREAM_STATUS_ROLE[displayState])
@@ -540,7 +542,7 @@ function WorkStreamCard({
       </div>
 
       {/* Assignee */}
-      {assignee && <p className="text-xs text-muted mt-2">→ {getAgentLabel(assignee)}</p>}
+      {assignee && <p className="text-xs text-muted mt-2">→ {getAgentLabel(assignee, undefined, typeNames)}</p>}
     </div>
   )
 }

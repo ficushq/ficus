@@ -97,13 +97,80 @@ A call with the same tool and exact arguments that an earlier interruption in th
 same session already cut off gets the cautious wording whatever its class: it was
 interrupted by a restart before, so it may be what caused it (a read or search
 large enough to exhaust memory). The model is told not to run it again as is and
-to narrow it first. Nothing else caps a crash loop yet; requeueing a run does not
-count against the failure budget.
+to narrow it first. If the run still keeps being cut off, the crash-loop cap below
+stops resuming it.
 
 The hook rewrites only pi's copy of the context; the session file keeps the call
-without a result. The Claude Code bridge receives that same context, so a session
-re-seeded after the crash (a pending tool result always re-seeds) shows the same
-result in its transcript. Nothing is rerun automatically.
+without a result. Nothing is rerun automatically.
+
+Agents on the Claude Code bridge get the same results with the same wording,
+repeated-call warning included. pi runs `context` hooks before it calls any
+provider, so the bridge (`claude-code/bridge.ts`) receives the answered
+conversation, not the session file. A hard crash also kills the Claude Code
+process, and an answer Claude Code never saw means it cannot resume its own
+session, so the next worker seeds a fresh one with the transcript. Each
+recorded call appears there once, as a `<tool_result>` right after its call.
+Later turns send Claude Code only what is new, whether in the same process or
+after resuming it by session id, so the results are not repeated. The crash-loop
+cap's record works the same way: Continue opens the same session file. The
+bridge test "cut-off tool calls on a real pi session through the bridge" drives
+this end to end through two crashes on a real pi session.
+
+### Crash-loop cap
+
+A call that takes Core down (a read or a command whose output exhausts memory,
+for example) would otherwise be requeued and resumed forever: requeues never
+count against the three-attempt failure budget, because a hard crash records no
+failure. So each hard recovery notice also records `interruptionCount`, the
+number of hard recovery notices this execution has had, this one included. It is
+counted in the same transaction that requeues the execution, from the
+execution's earlier notices (`admissionRecoveryExecutionId`, no `restartPhase`),
+reading only rows written since the execution started.
+Startup recovery and the lease sweep add to the same total.
+
+At the limit (default 5, matching pi-durable's `restartLimit`;
+`FICUS_EXECUTION_REQUEUE_LIMIT` overrides it, `0` turns the cap off, and an
+invalid value warns once and uses 5) the
+execution is still requeued, because that is the fenced way to hand a dead
+owner's admission back. The notice says it will not resume automatically. On its
+next pickup, `Execution.run` sees the count before any recovery delay, sandbox or
+model work and calls `holdExecutionAtRequeueLimit`
+(`services/execution/requeue-limit.ts`). It first records the calls that
+interruption cut off in the agent's session file on Core, with the same
+`recordInterruptedToolCalls` a resumed runner uses, so a call cut off before is
+marked `repeated`. That only reads and appends to the local session file. Then it
+records one failure on the
+existing `execution:run` recovery episode (invocation
+`<execution>:requeue-limit:<notice>`, so a repeated pickup of the same requeue
+counts once). The `requeue-limit` failure kind exhausts the cycle at once rather
+than retrying with backoff, so the episode goes to `waiting-manager`, or to
+`waiting-owner` after the manager's extra cycle. That opens the usual flow wait
+or standalone hold and Continue / Stop notice. The decision text names the
+cut-off calls by tool, marking repeats, or says the run was cut off between tool
+calls, so whoever decides can see what Continue risks. Then the pickup fails the
+execution with `recovery_held`, the same refusal as any held recovery, so the
+interrupted call is never replayed. If the agent still holds a slot claim or flow
+attempt, the stranded-run notice gives `recovery-held` as the reason and links
+the recovery carried on `RecoveryHeldError`, so it is routed like the decision
+(to the owner once escalated). If opening the hold itself fails, the run is still
+refused as `recovery_held` rather than failing as an ordinary counted failure,
+whose automatic retry would start a fresh execution with no count. No new
+execution or recovery state was added.
+
+Continue resumes through the normal recovery continuation, which starts a new
+execution, so the count starts again from zero. That run opens the same session
+file, so the `context` hook answers the capped call with the cut-off result,
+including the repeated-call warning, rather than pi-ai's generic placeholder.
+Stop keeps the scope held.
+
+Graceful restarts are not counted, and they do not reset the count either. A
+shutdown drains at a tool boundary and leaves a `restartPhase: pause` marker. It
+is an operator restart or deploy, not something the run did, so counting it
+would hold long tasks that just span several deploys. A run that is cut off hard
+four times, then restarted gracefully, then cut off hard again still reaches
+the cap on that fifth hard interruption. The count is per execution and never
+resets on progress, so a long run that unrelated crashes cut off five times is
+held too. The manager's Continue is the way out.
 
 ### Tool replay classes
 

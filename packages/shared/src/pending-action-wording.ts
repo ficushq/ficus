@@ -10,6 +10,10 @@ import {
   type WorkStreamDeliveryActionData,
 } from './types'
 
+/** The configured name for an agent type (`AgentType.name`), or undefined when it is not known. */
+export type AgentTypeNameLookup = (agentTypeId: string) => string | null | undefined
+const noAgentTypeNames: AgentTypeNameLookup = () => undefined
+
 /**
  * One phrase for each kind of wait, used by every list that shows a Needs-you item (the web Feed and
  * Action Center cards, the Assistant list, and the mobile app). A routine review or approval is never "blocked": that
@@ -77,24 +81,32 @@ export function pendingActionWaitPhrase(action: PendingAction): string {
  * Null when the action names no agent. Older servers send no type for an assignee; the card then
  * names no agent rather than showing its name alone.
  */
-export function pendingActionAgentLabel(action: PendingAction): string | null {
+export function pendingActionAgentLabel(
+  action: PendingAction,
+  /** The configured agent type names (`useAgentTypeNames`); without them the type id is title-cased. */
+  typeNames: AgentTypeNameLookup = noAgentTypeNames
+): string | null {
+  const typeName = (agentTypeId: string | null | undefined) => (agentTypeId ? typeNames(agentTypeId) : undefined)
   switch (action.type) {
     case 'agent-question': {
       const data = action.data as AgentQuestionActionData
       return typeFirstAgentLabel({
         agentTypeId: data.agentTypeId,
+        typeName: typeName(data.agentTypeId),
         workingOn: data.workStream ? `#${data.workStream.number}` : undefined,
       })
     }
     case 'squad-question':
     case 'agent-error': {
       const data = action.data as SquadQuestionActionData | AgentErrorActionData
-      return typeFirstAgentLabel({ agentTypeId: data.agentTypeId })
+      return typeFirstAgentLabel({ agentTypeId: data.agentTypeId, typeName: typeName(data.agentTypeId) })
     }
     case 'workstream-review':
     case 'workstream-blocked': {
       const data = action.data as WorkStreamActionData
-      return data.assigneeAgentTypeId ? typeFirstAgentLabel({ agentTypeId: data.assigneeAgentTypeId }) : null
+      return data.assigneeAgentTypeId
+        ? typeFirstAgentLabel({ agentTypeId: data.assigneeAgentTypeId, typeName: typeName(data.assigneeAgentTypeId) })
+        : null
     }
     default:
       return null
@@ -112,13 +124,16 @@ function actionSquadName(action: PendingAction): string | null {
  * "Squad · Agent · wait" for a work stream (the stream is the title), "Squad · wait" for an item
  * whose title already names the agent or the question.
  */
-export function pendingActionContextLine(action: PendingAction): string {
+export function pendingActionContextLine(
+  action: PendingAction,
+  typeNames: AgentTypeNameLookup = noAgentTypeNames
+): string {
   const parts: string[] = []
   if (action.type === 'assistant-needs-input') parts.push('Assistant task')
   const squad = actionSquadName(action)
   if (squad) parts.push(squad)
   if (action.type === 'workstream-review' || action.type === 'workstream-blocked') {
-    const agent = pendingActionAgentLabel(action)
+    const agent = pendingActionAgentLabel(action, typeNames)
     if (agent) parts.push(agent)
   }
   parts.push(pendingActionWaitPhrase(action))

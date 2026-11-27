@@ -157,7 +157,7 @@ async function fixture({
     dialog: () => doc.querySelector<HTMLElement>('[role="dialog"][data-state="open"]'),
     decisionButtons: () =>
       [...doc.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].filter((button) =>
-        /^(Approved|Changes requested)/.test(button.textContent ?? '')
+        /^(Approve|Request changes)/.test(button.textContent ?? '')
       ),
     type: async (value: string) => {
       const input = doc.querySelector<HTMLTextAreaElement>('textarea')!
@@ -248,7 +248,7 @@ test('wide screens read the proposal beside the agent chat with the decision pin
     const notes = decision!.querySelector<HTMLTextAreaElement>('textarea[aria-label="Decision and evidence"]')!
     expect(notes.getAttribute('rows')).toBe('3')
     expect(f.doc.getElementById(notes.getAttribute('aria-describedby')!)!.textContent).toContain(
-      'Optional for Approved; required for Changes requested.'
+      'Optional for Approve; required for Request changes.'
     )
     expect(f.decisionButtons().map((button) => decision!.contains(button))).toEqual([true, true])
     // Earlier rounds stay available but collapsed, at the end of the document.
@@ -270,8 +270,8 @@ test('approving needs no notes, sending back does, and each outcome sends the sa
     await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => closed++} />)
     const [approve, sendBack] = f.decisionButtons()
     // Each outcome says what happens: without a brief, that the stream completes or who gets it back.
-    expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
-    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
+    expect(approve!.textContent).toBe('ApproveCompletes the work stream')
+    expect(sendBack!.textContent).toBe('Request changesReturns to the General Purpose agent with your notes')
     expect(sendBack!.title).toBe('Returns to the General Purpose agent with your notes')
     // No brief for this gate, so the decision area makes no claim about what approval allows.
     expect(f.doc.querySelector('[data-approval-statement]')).toBeNull()
@@ -333,7 +333,7 @@ test('read-only viewers see the document and the pending decision without contro
     expect(f.decisionButtons()).toEqual([])
     expect(dialog.textContent).toContain('Awaiting review')
     expect(dialog.textContent).toContain('You need review permission in this squad to decide.')
-    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Approved · Completes the work stream')
+    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Approve · Completes the work stream')
   } finally {
     await f.cleanup()
   }
@@ -488,7 +488,7 @@ test('notes requiredness follows the Core complete contract from one per-outcome
   ]
   expect(outcomes.map(([, transition]) => outcomeRequiresNotes(step, transition))).toEqual([false, true])
   expect(decisionNotesHint(step, outcomes)).toBe(
-    'Optional for Approved; required for Changes requested. Your notes are recorded with the decision and passed to the next step.'
+    'Optional for Approve; required for Request changes. Your notes are recorded with the decision and passed to the next step.'
   )
   expect(decisionNotesHint(step, outcomes.slice(0, 1))).toStartWith('Optional.')
   expect(decisionNotesHint(step, outcomes.slice(1))).toStartWith('Required.')
@@ -849,8 +849,8 @@ test('authored brief leads with repeat-round context and collapses independent e
       'What approval allowsApproval permits staging implementation only, not deployment.'
     )
     const [approve, sendBack] = f.decisionButtons()
-    expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
-    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
+    expect(approve!.textContent).toBe('ApproveCompletes the work stream')
+    expect(sendBack!.textContent).toBe('Request changesReturns to the General Purpose agent with your notes')
     const disclosure = [...f.doc.querySelectorAll('details')].find(
       (d) => d.querySelector('summary')?.textContent === 'Internal handoff'
     )!
@@ -964,8 +964,8 @@ test('a long approval statement starts as a marked preview that Show all opens, 
     expect(statement.querySelector('[data-collapsed]')).toBeNull()
     expect(toggle.textContent).toBe('Show less')
     expect(f.decisionButtons().map((button) => button.textContent)).toEqual([
-      'ApprovedCompletes the work stream',
-      'Changes requestedReturns to the General Purpose agent with your notes',
+      'ApproveCompletes the work stream',
+      'Request changesReturns to the General Purpose agent with your notes',
     ])
   } finally {
     await f.cleanup()
