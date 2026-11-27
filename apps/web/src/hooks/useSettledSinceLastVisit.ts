@@ -157,7 +157,7 @@ function trackTimeAway(doc: Document) {
  * The account watermark is read once when a visit begins. Each time the counts load, the visit
  * records their end (`through`, the server time they were counted up to) as the new watermark, so
  * the next visit starts exactly where this one's line stopped: work settled during a visit is either
- * in this visit's latest counts or in the next visit's, never both and never neither. A failed load
+ * in this visit's latest counts or in the next visit's, except after a filtered dismissal (below). A failed load
  * records nothing and keeps the older start for next time. No watermark yet means no line, and the
  * visit's start, less the same margin the counts keep (ACTIVITY_SETTLED_MARGIN_MS), is recorded as
  * the first watermark.
@@ -168,7 +168,8 @@ function trackTimeAway(doc: Document) {
  * on, the counts (and their `through`) cover only the filtered squads; recording them would move the
  * watermark past other squads' work, which no later line would then count. A filtered Feed still
  * shows its counts from the visit's period but records nothing. Turning the filter off loads the
- * unfiltered counts for the same period and records their end, as it would have from the start.
+ * unfiltered counts for the current period and records their end. If a filtered line was dismissed,
+ * that period starts at its dismissed end: earlier work in other squads is not counted retroactively.
  */
 export function useSettledSinceLastVisit(
   userId: string,
