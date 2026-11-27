@@ -49,13 +49,19 @@ export function createDispatchTool(ctx: {
           ? { idempotencyKey: toolCallIdempotencyKey(ctx.agentId, executionId, toolCallId) }
           : {}),
       })
-      const list = result.subagents.map((s) => `${s.label} (${s.subagentId})`).join(', ')
+      const describe = (children: typeof result.subagents) =>
+        children.map((s) => `${s.label} (${s.subagentId})`).join(', ')
+      const list = describe(result.subagents)
+      const earlier = new Set(result.previouslyStartedSubagentIds ?? [])
+      const started = result.subagents.filter((s) => !earlier.has(s.subagentId))
       const text =
         result.reused === 'tool-call'
-          ? `This tool call was already dispatched, so no new subagents were started: ${list}`
+          ? `This tool call was already dispatched, so no new subagents were started: ${list}. They may have finished already; check_subagents shows their status, and their results arrive by inbox.`
           : result.reused === 'identical-running-dispatch'
             ? `You already dispatched exactly these subagents in this run and they are still running, so no new ones were started: ${list}. Their results arrive by inbox.`
-            : `Dispatched ${result.subagents.length} subagent(s): ${list}`
+            : earlier.size > 0
+              ? `This tool call had already started ${earlier.size} of these subagents: ${describe(result.subagents.filter((s) => earlier.has(s.subagentId)))}. They may have finished already; check_subagents shows their status. Dispatched ${started.length} new subagent(s): ${describe(started)}`
+              : `Dispatched ${result.subagents.length} subagent(s): ${list}`
       return {
         content: [{ type: 'text' as const, text }],
         details: result,

@@ -508,7 +508,9 @@ export const inboxRouter = new Hono()
         previous.recipientType === recipientType &&
         (previous.recipientId === recipientId || previous.recipientId.startsWith(recipientId)) &&
         previous.content === body.content &&
-        (previous.subject ?? null) === (body.subject ?? null)
+        (previous.subject ?? null) === (body.subject ?? null) &&
+        (previous.metadata.url ?? null) === (body.metadata?.url ?? null) &&
+        previous.deliveryMode === body.deliveryMode
       if (!sameMessage) return c.json({ error: 'This idempotency key was already used for a different message' }, 409)
       await InboxAttachment.attachTo([previous])
       return c.json({ ...previous.toJson(), idempotentReplay: true }, 200)

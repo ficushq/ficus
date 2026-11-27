@@ -224,6 +224,8 @@ type CreationTransactionResult = {
   openedWaitWorkStreamIds: string[]
   changedWorkStreams: ChangedWorkStream[]
   reused?: AgentQuestionCreationResult['reused']
+  /** The reused open question must also block, as the repeated ask requested. */
+  convertToBlocking?: boolean
 }
 
 function consumedAt(metadata: Record<string, unknown> | null): Date | null {
@@ -254,7 +256,7 @@ export async function finalizeAgentQuestionAttentionRouting(questionId: string):
 }
 
 /** Work streams on which this question currently holds an open `question` wait. */
-async function listOpenQuestionWaitStreamIds(tx: DbTransaction, questionId: string): Promise<string[]> {
+async function listOpenQuestionWaitStreamIds(tx: DbTransaction | typeof db, questionId: string): Promise<string[]> {
   const rows = await tx
     .select({ workStreamId: workStreamWaits.workStreamId })
     .from(workStreamWaits)
@@ -271,15 +273,17 @@ async function listOpenQuestionWaitStreamIds(tx: DbTransaction, questionId: stri
 /**
  * An open question from the same execution with exactly the same questions. Asking it again would
  * only duplicate it: after a hard restart the model sees no result for its earlier call and may
- * ask again under a new tool call ID. A blocking re-ask reuses it only when it already blocks, or
- * when no work stream could be blocked anyway; otherwise the explicit change of mode wins.
+ * ask again under a new tool call ID. A blocking re-ask of a question that does not block yet
+ * converts it to blocking (`convertToBlocking`) rather than putting a second copy in front of the
+ * person, unless it asked for a stream-wide wait, which conversion does not offer.
  */
 async function findIdenticalOpenQuestion(
   tx: DbTransaction,
   origin: AgentQuestionOrigin,
   questionData: QuestionData,
-  blocking: boolean
-): Promise<{ row: Row; openWaitStreamIds: string[] } | null> {
+  blocking: boolean,
+  waitScope: 'stream' | 'attempt' | undefined
+): Promise<{ row: Row; openWaitStreamIds: string[]; convertToBlocking?: boolean } | null> {
   const candidates = await tx
     .select()
     .from(agentQuestions)
@@ -297,6 +301,7 @@ async function findIdenticalOpenQuestion(
     const openWaitStreamIds = await listOpenQuestionWaitStreamIds(tx, row.id)
     if (!blocking || openWaitStreamIds.length > 0) return { row, openWaitStreamIds }
     if ((await listWaitableOriginStreamIds(tx, row.id, origin.agentId)).length === 0) return { row, openWaitStreamIds }
+    if (waitScope !== 'stream') return { row, openWaitStreamIds, convertToBlocking: true }
   }
   return null
 }
@@ -376,13 +381,14 @@ export async function createAgentQuestion(
       throw new Error('Asking agent is terminating or not live')
     await opts.testHooks?.afterAgentLocked?.()
 
-    const identical = await findIdenticalOpenQuestion(tx, origin, questionData, opts.blocking === true)
+    const identical = await findIdenticalOpenQuestion(tx, origin, questionData, opts.blocking === true, opts.waitScope)
     if (identical)
       return {
         row: identical.row,
         openedWaitWorkStreamIds: identical.openWaitStreamIds,
         changedWorkStreams: [],
         reused: 'identical-open-question',
+        convertToBlocking: identical.convertToBlocking,
       }
 
     const insert = tx.insert(agentQuestions).values({
@@ -537,14 +543,16 @@ export async function createAgentQuestion(
   })
 
   if (result.reused) {
-    // Nothing new was created. Only a question whose first call stopped before finalizing its
-    // attention routing still needs that step and its announcement.
+    // Nothing new was created, so nothing is announced again (a concurrent first call may still be
+    // announcing it). Finalizing a still-pending attention routing is idempotent.
     let row = result.row
-    if (row.audienceResolution === 'pending') {
-      row = (await finalizeAgentQuestionAttentionRouting(row.id)) ?? row
-      eventEmitter.emit('agent-question.created', { questionId: row.id, agentId: row.agentId, squadId: row.squadId })
+    let openedWaitWorkStreamIds = result.openedWaitWorkStreamIds
+    if (result.convertToBlocking) {
+      await setQuestionBlocking(row.id, true)
+      openedWaitWorkStreamIds = await listOpenQuestionWaitStreamIds(db, row.id)
     }
-    return { ...toJson(row), openedWaitWorkStreamIds: result.openedWaitWorkStreamIds, reused: result.reused }
+    if (row.audienceResolution === 'pending') row = (await finalizeAgentQuestionAttentionRouting(row.id)) ?? row
+    return { ...toJson(row), openedWaitWorkStreamIds, reused: result.reused }
   }
 
   // The wait transaction is committed: publish its invalidation before any later attention

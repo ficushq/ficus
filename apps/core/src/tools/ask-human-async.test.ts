@@ -115,6 +115,46 @@ describe('async ask_human tool call idempotency', () => {
   })
 })
 
+describe('async ask_human replay of a closed question', () => {
+  async function replayWith(question: Partial<AgentQuestion>) {
+    const createQuestion = mock(async () => ({
+      ...record,
+      ...question,
+      openedWaitWorkStreamIds: [],
+      reused: 'tool-call' as const,
+    }))
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion }
+    )
+    const result = await tool.execute(
+      'call-1',
+      { blocking: true, questions: [{ id: 'ship', question: 'Ship it?' }] },
+      undefined,
+      undefined,
+      {} as any
+    )
+    return { result, text: result.content[0]?.type === 'text' ? result.content[0].text : '' }
+  }
+
+  test('returns the recorded answer instead of telling the agent to wait', async () => {
+    const { result, text } = await replayWith({ status: 'answered', answer: 'Yes, ship it' })
+    expect(text).toContain('already answered')
+    expect(text).toContain('Yes, ship it')
+    expect(text).not.toContain('will arrive')
+    expect(text).not.toContain('do not ask again')
+    expect(result.details).toMatchObject({ status: 'answered', answer: 'Yes, ship it', reused: 'tool-call' })
+  })
+
+  test('says a dismissed question gets no answer so the agent can decide what to do', async () => {
+    const { result, text } = await replayWith({ status: 'dismissed', dismissalReason: 'user-dismissed' })
+    expect(text).toContain('dismissed (user-dismissed), so no answer is coming')
+    expect(text).toContain('ask a new question only if you still need a decision')
+    expect(text).not.toContain('will arrive')
+    expect(result.details).toMatchObject({ status: 'dismissed', reused: 'tool-call' })
+  })
+})
+
 describe('async ask_human unroutable audience', () => {
   test('records the question and never claims a system-inbox alert', async () => {
     const createQuestion = mock(async () => ({

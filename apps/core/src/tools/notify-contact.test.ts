@@ -133,5 +133,13 @@ describe('notify_contact tool', () => {
     expect(replay.details).toMatchObject({ success: true, routedTo: 'squad_manager', messageId: firstId, reused: true })
     expect(replay.content[0]).toMatchObject({ text: expect.stringContaining('nothing was sent again') })
     expect((other.details as { messageId: string }).messageId).not.toBe(firstId)
+
+    // A reused tool call ID with a different notification is refused, not reported as sent.
+    const mismatch = await notify('tool-call-1', 'Something else')
+    expect(mismatch.content[0]).toMatchObject({
+      text: expect.stringContaining('already sent a different notification'),
+    })
+    expect(mismatch.details).toMatchObject({ error: expect.any(String) })
+    expect(await db.select().from(inbox).where(eq(inbox.senderId, worker.id))).toHaveLength(2)
   })
 })

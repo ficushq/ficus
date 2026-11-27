@@ -296,6 +296,7 @@ describe('Subagent.dispatch', () => {
         idempotencyKey: 'dispatch-call-partial',
       })
       expect(replay.reused).toBeUndefined()
+      expect(replay.previouslyStartedSubagentIds).toEqual([first.subagents[0].subagentId])
       expect(replay.subagents[0]).toEqual(first.subagents[0])
       expect(replay.subagents[1].subagentId).not.toBe(first.subagents[1].subagentId)
       expect(replay.subagents[1].label).toBe('second')

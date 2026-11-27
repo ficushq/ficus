@@ -792,6 +792,20 @@ describe('idempotent agent inbox sends', () => {
 
       const conflicting = await send({ content: 'something else', subject: 'PR', idempotencyKey: 'key-1' })
       expect(conflicting.status).toBe(409)
+      const otherUrl = await send({
+        content: 'review please',
+        subject: 'PR',
+        metadata: { url: 'https://example.com/other' },
+        idempotencyKey: 'key-1',
+      })
+      expect(otherUrl.status).toBe(409)
+      const otherMode = await send({
+        content: 'review please',
+        subject: 'PR',
+        deliveryMode: 'follow-up',
+        idempotencyKey: 'key-1',
+      })
+      expect(otherMode.status).toBe(409)
 
       const otherKey = await send({ content: 'review please', subject: 'PR', idempotencyKey: 'key-2' })
       expect(otherKey.status).toBe(201)

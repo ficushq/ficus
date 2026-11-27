@@ -42,6 +42,11 @@ export type DispatchResult = {
    * these specs and all of those children are still live.
    */
   reused?: 'tool-call' | 'identical-running-dispatch'
+  /**
+   * Set when a repeated call created only the positions its first run had not: the children in
+   * `subagents` that the first run had already started (they may have finished since).
+   */
+  previouslyStartedSubagentIds?: string[]
 }
 
 /** Child metadata recording which dispatch call created it, at which position and with what specs. */
@@ -225,6 +230,7 @@ export class Subagent {
           return {
             rows: subagents.map((_, index) => childRow(existingByIndex.get(index)!)),
             reused: 'tool-call' as const,
+            previouslyStarted: [] as string[],
           }
         }
         if (existingByIndex.size === 0 && fingerprint) {
@@ -248,6 +254,7 @@ export class Subagent {
               return {
                 rows: subagents.map((_, index) => childRow(group.get(index)!)),
                 reused: 'identical-running-dispatch' as const,
+                previouslyStarted: [] as string[],
               }
           }
         }
@@ -296,11 +303,14 @@ export class Subagent {
           await child.queueExecution({ message: spec.instructions })
           rows.push({ subagentId: child.id, label })
         }
-        return { rows, reused: undefined }
+        return { rows, reused: undefined, previouslyStarted: [...existingByIndex.values()].map((child) => child.id) }
       })
       // Idempotent; also repairs a first call that stopped before reaching it.
       await Subagent.reconcileWatchdog(parentAgentId)
-      return created.reused ? { subagents: created.rows, reused: created.reused } : { subagents: created.rows }
+      if (created.reused) return { subagents: created.rows, reused: created.reused }
+      return created.previouslyStarted?.length
+        ? { subagents: created.rows, previouslyStartedSubagentIds: created.previouslyStarted }
+        : { subagents: created.rows }
     } catch (error) {
       // Persist the stronger final target before stopping work. The lifecycle
       // request is sweepable even if an external teardown effect fails.

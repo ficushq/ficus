@@ -1427,7 +1427,7 @@ describe('async agent questions', () => {
       expect(await openWaitsFor(first.id)).toHaveLength(1)
     })
 
-    it('asks again when the identical question is closed, from another execution, or now needs to block', async () => {
+    it('asks again when the identical question is closed, needs a stream-wide wait, or is from another execution', async () => {
       const agent = await createAgent({ squadId: squad.id })
       const ws = await createStreamFor(agent.id, 'identical-not-reused')
       const origin = await startExecution(agent, [ws.id])
@@ -1438,14 +1438,35 @@ describe('async agent questions', () => {
       const afterAnswer = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-2' })
       expect(afterAnswer.id).not.toBe(answered.id)
 
-      const nowBlocking = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-3' })
-      expect(nowBlocking.id).not.toBe(afterAnswer.id)
-      expect(nowBlocking.openedWaitWorkStreamIds).toEqual([ws.id])
+      const streamWide = await createAgentQuestion(origin, QUESTION, {
+        blocking: true,
+        waitScope: 'stream',
+        idempotencyKey: 'call-3',
+      })
+      expect(streamWide.id).not.toBe(afterAnswer.id)
+      expect(streamWide.openedWaitWorkStreamIds).toEqual([ws.id])
 
       const otherExecution = await startExecution(agent)
       const elsewhere = await createAgentQuestion(otherExecution, QUESTION, { idempotencyKey: 'call-4' })
-      expect([answered.id, afterAnswer.id, nowBlocking.id]).not.toContain(elsewhere.id)
+      expect([answered.id, afterAnswer.id, streamWide.id]).not.toContain(elsewhere.id)
       expect(await questionRows(agent.id)).toHaveLength(4)
+    })
+
+    it('makes an open identical question block instead of asking it again as blocking', async () => {
+      const agent = await createAgent({ squadId: squad.id })
+      const ws = await createStreamFor(agent.id, 'identical-convert')
+      const origin = await startExecution(agent, [ws.id])
+      const createdEvents: unknown[] = []
+      const unsubscribe = eventEmitter.on('agent-question.created', (event) => createdEvents.push(event))
+      const first = await createAgentQuestion(origin, QUESTION, { idempotencyKey: 'call-async' })
+      expect(first.openedWaitWorkStreamIds).toEqual([])
+      const again = await createAgentQuestion(origin, QUESTION, { blocking: true, idempotencyKey: 'call-blocking' })
+      unsubscribe()
+      expect(again).toMatchObject({ id: first.id, reused: 'identical-open-question' })
+      expect(again.openedWaitWorkStreamIds).toEqual([ws.id])
+      expect(await openWaitsFor(first.id)).toHaveLength(1)
+      expect(await questionRows(agent.id)).toHaveLength(1)
+      expect(createdEvents).toHaveLength(1)
     })
 
     it('records one question when the same call runs twice concurrently', async () => {

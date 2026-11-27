@@ -295,9 +295,10 @@ the most harmful of those duplicates within the same execution (a restart
 resumes the same execution):
 
 - `ask_human` returns an open question from the same execution with exactly the
-  same questions instead of asking again. A blocking re-ask reuses it only when
-  it already holds waits or no work stream could be blocked; otherwise the
-  explicit change to blocking creates the question.
+  same questions instead of asking again. A blocking re-ask of one that does not
+  block yet makes it block (as `setQuestionBlocking` does) rather than putting a
+  second copy in front of the person; only a re-ask for a stream-wide wait, which
+  that conversion does not offer, creates a new question.
 - `dispatch` returns the children of an earlier dispatch from the same execution
   with exactly the same specs while every one of them is still live. Once any of
   them has finished, an identical dispatch starts new children.
@@ -307,7 +308,15 @@ again later can be intended, and a duplicate notification is less harmful than
 a duplicate question or set of subagents. A call answered by a content guard
 records nothing under its own key, so if that call is itself re-executed after
 the earlier question was answered or the earlier children finished, it creates
-a new record.
+a new record. The dispatch guard needs the earlier call's complete set of
+children: a dispatch cut off partway by a hard restart and retried under a new
+call ID starts all of its children again, so the ones the first call had already
+created run twice.
+
+A replayed `ask_human` whose question was answered returns the recorded answer,
+and one whose question was dismissed says that no answer is coming; only an open
+question tells the agent to wait. A replayed `dispatch` says which children the
+first run had already started and that they may have finished.
 
 ### Confirmed tool outcomes
 

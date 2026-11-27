@@ -16,7 +16,7 @@ import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-
 import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import { Agent } from '../entities/Agent'
-import { InboxMessage } from '../entities/InboxMessage'
+import { InboxMessage, type SendInboxMessageInput } from '../entities/InboxMessage'
 import { WorkStream } from '../entities/WorkStream'
 import { createLogger } from '../lib/infra/logger'
 
@@ -90,7 +90,17 @@ export function createNotifyContactTool(ctx: NotifyContactToolContext): ToolDefi
         ctx.executionId && toolCallId
           ? `notify-contact:${toolCallIdempotencyKey(ctx.agentId, ctx.executionId, toolCallId)}`
           : undefined
+      // Build message content with optional URL
+      let content = params.message
+      if (params.url) {
+        content += `\n\n[Link](${params.url})`
+      }
+
       const previous = idempotencyKey ? await InboxMessage.findByIdempotencyKey(idempotencyKey) : null
+      if (previous && (previous.subject !== params.title || previous.content !== content)) {
+        const error = 'This tool call already sent a different notification; nothing was sent.'
+        return { content: [{ type: 'text' as const, text: `Error: ${error}` }], details: { error } }
+      }
       if (previous) {
         const where =
           previous.recipientType === 'system'
@@ -115,22 +125,16 @@ export function createNotifyContactTool(ctx: NotifyContactToolContext): ToolDefi
         }
       }
 
-      // Build message content with optional URL
-      let content = params.message
-      if (params.url) {
-        content += `\n\n[Link](${params.url})`
-      }
-
       const target = await resolveNotifyTarget(ctx.agentId)
       const recipientType = target.kind === 'agent' ? 'agent' : 'system'
       const recipientId = target.kind === 'agent' ? target.agentId : SYSTEM_RECIPIENT_ID
       const routedTo = target.kind === 'agent' ? target.routedTo : 'system'
       const workStreamId = target.kind === 'agent' ? target.workStreamId : undefined
 
-      const input = {
+      const input: SendInboxMessageInput = {
         recipientType,
         recipientId,
-        senderType: 'agent' as const,
+        senderType: 'agent',
         senderId: ctx.agentId,
         subject: params.title,
         content,
