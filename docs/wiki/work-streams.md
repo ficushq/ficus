@@ -243,11 +243,13 @@ refetches whatever list is on screen:
   would need three btree indexes and a GIN on `agent_ids`, each a write cost on a hot
   table), so the squad bounds it to that squad's history instead of every finished
   stream the caller can read. History is not polled: when one of the agent's open
-  streams leaves the polled open list without a live event, the panel refreshes its
-  history from the first page so the stream reappears as finished. A first load that
-  fails shows "Could not load work streams" with Retry, never "No work streams". The
-  command center loads the 100 most recent completions, reads a squad's "Recently
-  completed" period with `completedAfter`, and asks `GET /api/search`
+  streams leaves the polled open list without a live event, the panel refetches its
+  loaded history pages, newest first, so the stream reappears as finished (it can be in
+  neither list for as long as that takes). A first load that fails shows "Could not
+  load work streams" with Retry, never "No work streams", and a first page that filters
+  to nothing still offers "Show older work streams". The command center loads the 100
+  most recent completions, reads a squad's "Recently completed" period with
+  `completedAfter`, and asks `GET /api/search`
   (`kind=work_stream`) for older work matching what was typed. The voice `get_work`
   tool returns finished work 50 at a time when asked, with `finished.totalCount` and a
   `finished.nextCursor` that it passes back as `finishedCursor` for the next page.
@@ -258,17 +260,22 @@ refetches whatever list is on screen:
   twice, and not at all if the wait would exceed 60 seconds. Every other failure keeps
   three retries with the usual 1, 2 and 4 second backoff.
 - **A sandbox that is still being provisioned is waited for.** While Core cannot
-  provision a squad sandbox, a read served from it (a workspace tree, file or search)
-  answers `503` with a `SANDBOX_PROVISION_*` code and the provisioning
-  cooldown as `Retry-After`, which can pass 60 seconds. `isSandboxProvisioningFailure`
-  recognises it from the code (an `ApiError` keeps the body as `payload`), and the
-  policy retries such a read up to 4 times, waiting up to 5 minutes each time. The file
-  tree, the file viewer and the work stream file card say "The workspace is starting"
-  meanwhile instead of showing an error. The sandbox status endpoints answer `200` with
-  provisioning in the body, so their screens never see this `503`.
+  provision a squad sandbox yet, a read served from it (a workspace tree, file or
+  search) answers `503` with `SANDBOX_PROVISION_BUSY`,
+  `SANDBOX_PROVISION_COORDINATION_UNAVAILABLE` or `SANDBOX_PROVISION_UNAVAILABLE` and
+  the provisioning cooldown as `Retry-After`, which can pass 60 seconds.
+  `isSandboxProvisioningFailure` recognises those codes (an `ApiError` keeps the body as
+  `payload`). Such a read follows the same doubling rule with a 5-minute bound on one
+  wait and at most 4 retries: a 75-second `Retry-After` gives three retries (75, 150
+  and 300 seconds), and one over 300 seconds gives none. The file tree, the file viewer
+  and the work stream file card say "The workspace is starting" meanwhile. A
+  provisioning that failed (`SANDBOX_PROVISION_FAILED`) is not waited for: it keeps the
+  ordinary `503` rule and shows its error. The sandbox status endpoints answer `200`
+  with provisioning in the body, so their screens never see these `503`s.
 - **`@ficus/client-core` has no unfiltered list.** Its two unpaged helpers,
-  `listSquadWorkStreams(squadId, statuses)` and `listAllWorkStreams(statuses)`, need
-  open statuses (`queued`, `active`) and refuse an empty list or a finished status.
+  `listSquadWorkStreams(squadId, statuses)` and `listAllWorkStreams(statuses)`, need a
+  status list and throw at run time on an empty one or a finished status, so only open
+  work (`queued`, `active`) is read unpaged.
   Finished work is read with `listDoneWorkStreamsPage`, and one stream with
   `getWorkStream`.
 
