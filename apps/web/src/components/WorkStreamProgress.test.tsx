@@ -81,9 +81,10 @@ async function renderProgress(
     api: {
       '/api/squads': apiUnavailable,
       '/api/workflows/runs/:id': run,
+      // The server's real labels: "Display Name (email)", or a bare email without a name.
       '/api/workflows/reviewers': [
-        { id: 'user-ana', name: 'Ana' },
-        { id: 'user-ben', name: 'Ben' },
+        { id: 'user-ana', name: 'Ana Lima (ana.lima@example.com)' },
+        { id: 'user-ben', name: 'ben.okafor@example.com' },
       ],
       ...options.api,
     },
@@ -110,7 +111,7 @@ async function renderProgress(
   }
 }
 
-/** A step row reads name, who, then state: "Approve", "Ana or Ben", "Waiting for review". */
+/** A step row reads name, who, then state: "Approve", "Ana Lima or ben.okafor", "Waiting for review". */
 const row = (body: HTMLElement, stepId: string) => body.querySelector(`[data-progress-step="${stepId}"]`)!.textContent
 
 describe('WorkStreamProgress', () => {
@@ -139,11 +140,12 @@ describe('WorkStreamProgress', () => {
     await renderProgress(
       { stream: assigned, permissions: ['workstreams:review'], userId: 'user-ana' },
       async ({ body, settle }) => {
-        await settle(() => expect(row(body, 'approve')).toBe('ApproveYouWaiting for review'))
+        await settle(() => expect(row(body, 'approve')).toBe('ApproveYou or ben.okaforWaiting for review'))
       }
     )
     await renderProgress({ stream: assigned, permissions: ['workstreams:read'] }, async ({ body, settle }) => {
-      await settle(() => expect(row(body, 'approve')).toBe('ApproveAna or BenWaiting for review'))
+      await settle(() => expect(row(body, 'approve')).toBe('ApproveAna Lima or ben.okaforWaiting for review'))
+      expect(body.textContent).not.toContain('@')
     })
   })
 })

@@ -121,6 +121,18 @@ export function workflowListOrder(
   return walk(entry, undefined, false) ? order : null
 }
 
+/**
+ * The name to show for a reviewer. The squad's reviewer list labels people for a picker, as
+ * "Display Name (email)" or a bare email; in a progress line only the name reads well, so this keeps
+ * the display name, or the part of the email before the @ when there is none.
+ */
+function reviewerDisplayName(label: string): string {
+  const named = /^(.+?) \([^()\s]+@[^()\s]+\)$/.exec(label.trim())
+  if (named) return named[1]!
+  const email = /^([^@\s]+)@[^@\s]+$/.exec(label.trim())
+  return email ? email[1]! : label.trim()
+}
+
 /** "Ana", "Ana or Ben", "Ana, Ben or Cy", "Ana, Ben or 2 others": any one of them decides. */
 function anyOf(names: string[], unnamed = 0): string {
   const shown = names.length > 3 || (names.length === 3 && unnamed > 0) ? names.slice(0, 2) : names
@@ -132,7 +144,9 @@ function anyOf(names: string[], unnamed = 0): string {
 /**
  * Who decides a human approval, mirroring Core's mayDecideFlowGate: anyone with review permission,
  * or for an assigned-reviewers step on a stream with assigned reviewers, one of them. "You" is said
- * only before the decision (a finished approval records no decider) and only to a user who may decide.
+ * only before the decision (a finished approval records no decider) and only to a user who may
+ * decide; on an approval limited to several assigned reviewers the others are named beside it
+ * ("You or Ben").
  */
 function approverWho(step: WorkflowStep, state: WorkflowProgressState, context: WorkflowProgressContext): string {
   const assigned = context.assignedReviewerIds ?? []
@@ -140,14 +154,21 @@ function approverWho(step: WorkflowStep, state: WorkflowProgressState, context: 
   const viewer = context.viewer
   const userId = viewer?.identity?.type === 'user' ? viewer.identity.userId : undefined
   const viewerDecides = !!userId && viewer!.can('workstreams:review') && (!limited || assigned.includes(userId))
-  if (viewerDecides && state !== 'done' && state !== 'not-run') return 'You'
-  const nameOf = (id: string) => context.reviewers?.find((person) => person.id === id)?.name
+  const you = viewerDecides && state !== 'done' && state !== 'not-run'
+  if (you && !limited) return 'You'
+  const nameOf = (id: string) => {
+    const label = context.reviewers?.find((person) => person.id === id)?.name
+    return label ? reviewerDisplayName(label) : undefined
+  }
   if (limited) {
-    const names = assigned.map(nameOf).filter((name): name is string => !!name)
-    return names.length ? anyOf(names, assigned.length - names.length) : 'Assigned reviewer'
+    const others = you ? assigned.filter((id) => id !== userId) : assigned
+    const names = others.map(nameOf).filter((name): name is string => !!name)
+    const unnamed = others.length - names.length
+    if (you) return anyOf(['You', ...names], unnamed)
+    return names.length ? anyOf(names, unnamed) : 'Assigned reviewer'
   }
   // Anyone with review permission decides; name them only when there is exactly one.
-  return context.reviewers?.length === 1 ? context.reviewers[0]!.name : 'Reviewer'
+  return context.reviewers?.length === 1 ? reviewerDisplayName(context.reviewers[0]!.name) : 'Reviewer'
 }
 
 function stepWho(
@@ -165,8 +186,9 @@ function stepWho(
  * Steps the work will pass through again: those after a step it has gone back to (a
  * running or queued attempt) in the listing order and reachable from it along forward outcomes. When
  * an open return sends the corrected work straight back to the step that asked for it, the steps in
- * between are skipped, so the count starts from that requester instead. Only a completed step's
- * state changes for it: "Runs again" rather than "Done".
+ * between are skipped, so the count starts from that requester instead. Returns nest: when that
+ * requester was itself sent back by a direct return, the work goes on straight to that return's
+ * requester too. Only a completed step's state changes for it: "Runs again" rather than "Done".
  */
 function stepsRunningAgain(
   run: WorkflowRun,
@@ -181,12 +203,18 @@ function stepsRunningAgain(
     ...(run.pendingStarts ?? []).map((pending) => pending.stepId),
   ]
   for (const stepId of new Set(restarts)) {
-    const obligation = run.returns
+    let obligation = run.returns
       .slice()
       .reverse()
       .find((entry) => entry.status === 'open' && entry.targetStepId === stepId)
-    const from = obligation?.resumeAt ?? stepId
-    if (obligation) again.add(obligation.resumeAt)
+    let from = stepId
+    for (let depth = 0; obligation && depth < run.returns.length; depth++) {
+      from = obligation.resumeAt
+      again.add(from)
+      const parentId = obligation.parentId
+      const parent = run.returns.find((entry) => entry.id === parentId && entry.status === 'open')
+      obligation = parent?.direct && parent.targetStepId === from ? parent : undefined
+    }
     const start = position.get(from)
     if (start === undefined) continue
     for (const entry of order.slice(start + 1)) if (isEarlierWorkflowStep(run, from, entry.id)) again.add(entry.id)

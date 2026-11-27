@@ -191,17 +191,18 @@ moved is at most one click deeper than before.
 without opening the graph, each with its state (done, in progress, waiting, returned for rework,
 queued, upcoming, or not run once the stream has ended) and who does it: the participant's agent
 type, "Decision model", or for a human approval "You" when the viewer may decide it (review
-permission, and being an assigned reviewer when the step is limited to them), else the assigned
-reviewers by name ("Ana or Ben", "Ana, Ben or 2 others"), else the only person with review
-permission, else "Reviewer". An approval already decided never says "You", because Ficus does not
-record who decided it. Steps are listed in the order the flow first reaches them from its entry
+permission, and being an assigned reviewer when the step is limited to them, with the other assigned
+reviewers named beside it: "You or Ben"), else the assigned reviewers by name ("Ana or Ben", "Ana,
+Ben or 2 others"), else the only person with review permission, else "Reviewer". Names are display
+names only, never email addresses (the part of the email before the @ for someone without a display
+name). An approval already decided never says "You", because Ficus does not record who decided it. Steps are listed in the order the flow first reaches them from its entry
 along forward outcomes. Each step appears once with its latest state: a rework edge marks the step
 it sends work back to as "Returned for rework" and is not a step of its own, a loop back to an
 earlier step does not repeat it, parallel branches are listed together and marked "in parallel",
 and an outcome straight to `finish` ends the work early without branching the list. While work
 has gone back to an earlier step, the completed steps after it that it will pass through again read
 "Runs again" instead of "Done"; when the correction goes straight back to the step that asked for
-it (an open return), the steps in between stay done. When one step can lead to two or more
+it (an open return, followed through nested direct returns), the steps in between stay done. When one step can lead to two or more
 different unlisted steps (true alternatives, such as a decision choosing a path), the flow cannot
 be shown honestly as a list, so Progress shows only the current steps and a done count, and the
 graph carries the shape. While the flow loads, Progress shows a three-row skeleton so the modal
