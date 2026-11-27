@@ -311,7 +311,9 @@ the recommendation into the question or context. The web answer form labels that
 rejects a question with more than one recommended option, and a `reason` on an option that is not
 recommended. Both fields are optional, so questions without them render as before; if stored data
 ever carries more than one recommended option, clients mark only the first. The mobile app does not
-show the marker yet.
+show the marker yet. The DB-free browser check renders the real card in every built-in theme at 1280 and
+390 pixels: from `apps/web`, run `CHROMIUM_PATH=/path/to/chromium bun scripts/check-question-recommended.ts`
+(optional `THEMES` runs only some themes and `SCREENSHOT_DIR` saves screenshots).
 
 The stored answer is unchanged: the chosen option value for one question (multi-select values joined by
 `, `, free "Other" text verbatim), a JSON object of question id to that string for several questions,
