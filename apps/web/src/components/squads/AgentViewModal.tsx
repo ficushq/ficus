@@ -10,20 +10,14 @@ import { AgentContextPanel } from './AgentContextPanel'
 import { AgentInfoPanel } from '../AgentInfoPanel'
 import { ChatIcon, InboxIcon, WorkStreamIcon, MemoryIcon } from '../icons'
 import type { Agent } from '@ficus/shared'
-import { getAgentLabel, getAgentName, noAgentTypeNames, type AgentTypeName } from '../../lib/agentDisplay'
+import {
+  formatAgentName,
+  getAgentLabel,
+  getAgentName,
+  noAgentTypeNames,
+  type AgentTypeName,
+} from '../../lib/agentDisplay'
 import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
-
-const titleCase = (id: string) =>
-  id
-    .replace(/[-_]+/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
-
-/** A workflow agent is named `<participant> · <stream title>`: show the participant id title-cased. */
-function displayName(name: string): string {
-  const match = /^([a-z0-9]+(?:[-_][a-z0-9]+)*) · (.+)$/.exec(name)
-  return match ? `${titleCase(match[1]!)} · ${match[2]}` : name
-}
 
 /**
  * The agent chat header: the agent's type first, with its purpose in parentheses ("Engineer
@@ -34,7 +28,7 @@ export function getAgentHeaderTitleParts(
   agent: Agent,
   typeNames: AgentTypeName = noAgentTypeNames
 ): { title: string; suffix: string } {
-  const stableName = displayName(getAgentName(agent))
+  const stableName = formatAgentName(getAgentName(agent))
   if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: stableName }
   return { title: getAgentLabel(agent, undefined, typeNames), suffix: stableName }
 }

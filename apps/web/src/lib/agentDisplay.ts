@@ -43,6 +43,21 @@ export function getAgentName(agent: Agent): string {
   return typeof name === 'string' && name.trim() ? name.trim() : agent.agentTypeId
 }
 
+const titleCase = (id: string) =>
+  id
+    .replace(/[-_]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+
+/**
+ * An agent's name as people read it. A workflow agent is named `<participant> · <stream title>`, so its
+ * participant id is title-cased ("Engineer · Forward the real client IP"); other names are unchanged.
+ */
+export function formatAgentName(name: string): string {
+  const match = /^([a-z0-9]+(?:[-_][a-z0-9]+)*) · (.+)$/.exec(name)
+  return match ? `${titleCase(match[1]!)} · ${match[2]}` : name
+}
+
 function labelParts(agent: Agent) {
   return agentLabelParts({
     name: agent.metadata?.name as string | undefined,
@@ -133,7 +148,7 @@ export function getAgentTitle(
 
 /**
  * Hover detail for an agent's row: the type as people read it first, then the agent's name (the handle
- * used with `ficus inbox send`) and its full ID, then any `details` ("Engineer · Quinn · 1a2b… · 1 pending
+ * used with `ficus inbox send`, as `formatAgentName` shows it) and its full ID, then any `details` ("Engineer · Quinn · 1a2b… · 1 pending
  * question"). `typeNote` qualifies the type ("Consultant via Assistant"). The raw type id is never shown;
  * admins find it on the agent type's settings page.
  */
@@ -146,7 +161,7 @@ export function agentHoverTitle(
   const name = agent.metadata?.name
   return [
     typeNote ? `${type} ${typeNote}` : type,
-    typeof name === 'string' && name.trim() ? name.trim() : undefined,
+    typeof name === 'string' && name.trim() ? formatAgentName(name.trim()) : undefined,
     agent.id,
     ...details,
   ]

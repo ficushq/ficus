@@ -172,6 +172,10 @@ describe('configured agent type names', () => {
     expect(agentHoverTitle(builder, typeNames)).toBe('Builder · Fern · b1')
     expect(agentHoverTitle(unnamed, typeNames)).toBe('Release QA · q1')
     expect(agentHoverTitle(unnamed)).toBe('Qa Bot · q1')
+    // A workflow agent's `<participant> · <stream title>` name reads like the chat header's handle.
+    expect(
+      agentHoverTitle(mk({ id: 'w1', agentTypeId: 'engineer', metadata: { name: 'engineer · Forward the client IP' } }))
+    ).toBe('Engineer · Engineer · Forward the client IP · w1')
     expect(agentHoverTitle(mk({ id: 'g1', agentTypeId: 'general', metadata: { name: 'Gale' } }))).toBe(
       'General Purpose agent · Gale · g1'
     )
