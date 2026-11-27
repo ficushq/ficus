@@ -2719,6 +2719,68 @@ describe('WorkStream entity', () => {
       expect(r.workingCount).toBe(1)
     })
 
+    it('time spent queued before an execution ran is not time worked', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} queued then ran`,
+        agentIds: [agent.id],
+      })
+      const queuedAt = new Date('2026-03-01T10:00:00Z')
+      const ranAt = new Date(queuedAt.getTime() + 3 * 3_600_000)
+      await db.insert(executions).values([
+        // Three hours waiting for a slot, then five minutes of work.
+        {
+          agentId: agent.id,
+          status: 'completed',
+          startedAt: queuedAt,
+          runStartedAt: ranAt,
+          endedAt: new Date(ranAt.getTime() + 5 * 60_000),
+        },
+      ])
+      const runningSince = new Date(Date.now() - 10_000)
+      await db.insert(executions).values({
+        agentId: agent.id,
+        status: 'running',
+        startedAt: new Date(Date.now() - 3 * 3_600_000),
+        runStartedAt: runningSince,
+      })
+      await assistantMessageAt(agent.id, new Date(Date.now() - 5_000))
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBeGreaterThanOrEqual(5 * 60_000 + 9_000)
+      expect(r.totalMs).toBeLessThanOrEqual(5 * 60_000 + 60_000)
+      expect(r.workingCount).toBe(1)
+    })
+
+    it('the interrupt notice is not evidence that a silent run was working', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} interrupted silent`,
+        agentIds: [agent.id],
+      })
+      const started = new Date('2026-03-01T10:00:00Z')
+      const stopped = new Date(started.getTime() + 3 * 24 * 3_600_000)
+      await db.insert(executions).values({
+        agentId: agent.id,
+        status: 'stopped',
+        startedAt: started,
+        runStartedAt: started,
+        endedAt: stopped,
+      })
+      await assistantMessageAt(agent.id, new Date(started.getTime() + 7 * 60_000))
+      await db.insert(schema.messages).values({
+        agentId: agent.id,
+        role: 'assistant',
+        content: '[System] Agent was interrupted.',
+        createdAt: new Date(stopped.getTime() - 1_000),
+      })
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBe(7 * 60_000)
+    })
+
     it('an execution that ended long after its last message is capped at that message', async () => {
       const agent = await createTestAgent()
       const ws = await storedLegacyWorkStream({

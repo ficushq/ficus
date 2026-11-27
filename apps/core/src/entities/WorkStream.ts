@@ -2757,17 +2757,21 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  * - A stream from before flows has no bindings, and its listed agents are the
  *   only record of who worked on it, so it keeps counting their executions.
  *
- * How long each counts: from its start to its end (now, while it runs). Queued
- * and sandbox-waiting executions add nothing. An execution that has been silent
- * (no new assistant message) for more than `RUNTIME_STALE_AFTER_MS` before its
- * end, such as one left open in `running`, counts only up to its last assistant
- * message, and no longer ticks.
+ * How long each counts: from the moment it started running (`run_started_at`,
+ * set when a runner claims it) to its end (now, while it runs), so time spent
+ * queued, waiting for a sandbox or waiting out maintenance adds nothing, even
+ * after the execution runs. Rows from before `run_started_at` existed fall back
+ * to `started_at`. An execution that has been silent (no new assistant message
+ * other than a `[System]` notice, such as the one written when a run is
+ * interrupted) for more than `RUNTIME_STALE_AFTER_MS` before its end, such as one
+ * left open in `running`, counts only up to its last such message, and no longer
+ * ticks.
  *
  * `active_count` keeps its meaning (any queued-for-sandbox, running or stopping
  * execution), which schedule recovery relies on; `working_count` is the subset
  * still accruing time, which clients extrapolate from.
  *
- * Every column read from `executions` is in `idx_executions_agent_runtime`, so
+ * Every column read from `executions` is in `idx_executions_agent_run_runtime`, so
  * the history stays an index-only scan; the message probe runs only for an
  * execution longer than the stale bound.
  */
@@ -2807,7 +2811,7 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
           s.ws_id AS ws_id,
           (SELECT now_ts FROM computed) AS computed_at,
           COALESCE(SUM(
-            GREATEST(0, EXTRACT(EPOCH FROM (w.worked_until - e.started_at)) * 1000)
+            GREATEST(0, EXTRACT(EPOCH FROM (w.worked_until - w.start_ts)) * 1000)
           ), 0)::bigint AS total_ms,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count
@@ -2816,14 +2820,16 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
         LEFT JOIN ${executions} e ON e.agent_id = p.agent_id
         LEFT JOIN LATERAL (
           SELECT
+            x.start_ts,
             CASE
-              WHEN x.end_ts IS NULL OR x.end_ts - e.started_at <= ${staleAfter} THEN x.end_ts
-              WHEN x.end_ts - a.last_at > ${staleAfter} THEN a.last_at
+              WHEN x.end_ts IS NULL OR x.end_ts - x.start_ts <= ${staleAfter} THEN x.end_ts
+              WHEN x.end_ts - GREATEST(x.start_ts, a.last_at) > ${staleAfter} THEN GREATEST(x.start_ts, a.last_at)
               ELSE x.end_ts
             END AS worked_until,
-            x.open AND (x.end_ts - e.started_at <= ${staleAfter} OR x.end_ts - a.last_at <= ${staleAfter}) AS working
+            x.open AND (x.end_ts - x.start_ts <= ${staleAfter} OR x.end_ts - a.last_at <= ${staleAfter}) AS working
           FROM (
             SELECT
+              COALESCE(e.run_started_at, e.started_at::timestamptz) AS start_ts,
               CASE
                 WHEN e.status IN ('queued', 'waiting-sandbox') THEN NULL
                 WHEN e.ended_at IS NOT NULL THEN e.ended_at::timestamptz
@@ -2833,15 +2839,22 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
               e.ended_at IS NULL AND e.status IN ('running', 'stopping') AS open
           ) x
           LEFT JOIN LATERAL (
-            -- The agent's newest assistant message inside this execution's span: one
-            -- execution runs at a time per agent, so the span identifies it.
-            SELECT GREATEST(e.started_at::timestamptz, MAX(m.created_at)::timestamptz) AS last_at
+            -- The agent's newest assistant message inside this execution's run span (one
+            -- execution runs at a time per agent, so the span identifies it), skipping
+            -- system notices: the interrupt notice is written when a silent run is
+            -- stopped and is not evidence that it was working.
+            -- LIMIT keeps this one probe per execution: a scalar subquery here would be
+            -- copied into every expression that reads it.
+            SELECT m.created_at::timestamptz AS last_at
             FROM ${messages} m
-            WHERE x.end_ts - e.started_at > ${staleAfter}
+            WHERE x.end_ts - x.start_ts > ${staleAfter}
               AND m.agent_id = e.agent_id
               AND m.role = 'assistant'
-              AND m.created_at >= e.started_at
+              AND m.created_at >= x.start_ts
               AND m.created_at <= x.end_ts
+              AND m.content NOT LIKE '[System]%'
+            ORDER BY m.created_at DESC
+            LIMIT 1
           ) a ON true
         ) w ON e.agent_id IS NOT NULL
         GROUP BY s.ws_id

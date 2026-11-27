@@ -106,7 +106,7 @@ test('chat repair pages use an execution cursor without rescanning full message 
 
 test('runtime aggregation reads a covering index rather than wide execution rows', async () => {
   await ensureQueryIndex('idx_executions_agent_status_started_at')
-  await ensureQueryIndex('idx_executions_agent_runtime')
+  await ensureQueryIndex('idx_executions_agent_run_runtime')
   const agent = await fixtureAgent()
   await db.execute(sql`INSERT INTO executions(agent_id,status,started_at,ended_at,usage)
     SELECT ${agent.id}::uuid,'completed','2026-01-01'::timestamp+n*interval '1 minute',
@@ -119,11 +119,45 @@ test('runtime aggregation reads a covering index rather than wide execution rows
   expect(Number(total.total_ms)).toBe(12000000)
   expect(Number(total.active_count)).toBe(0)
   const plan = await explain(query)
-  const old = await withoutIndex('idx_executions_agent_runtime', query)
+  const old = await withoutIndex('idx_executions_agent_run_runtime', query)
   if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('runtime plans', JSON.stringify({ plan, old }))
-  expect(JSON.stringify(plan)).toContain('idx_executions_agent_runtime')
+  expect(JSON.stringify(plan)).toContain('idx_executions_agent_run_runtime')
   expect(JSON.stringify(plan)).toContain('Index Only Scan')
   expect(buffers(plan)).toBeLessThan(buffers(old) / 3)
+})
+
+test('the stale cap probes only long executions and stops at their newest message', async () => {
+  await ensureQueryIndex('idx_executions_agent_run_runtime')
+  await ensureQueryIndex('idx_messages_agent_id_role_created_at')
+  const agent = await fixtureAgent()
+  // 2000 short settled runs, then one run that has been open for a week with 6000 messages
+  // early in it and a system notice at the end.
+  await db.execute(sql`INSERT INTO executions(agent_id,status,started_at,run_started_at,ended_at)
+    SELECT ${agent.id}::uuid,'completed','2026-01-01'::timestamp+n*interval '1 minute',
+      '2026-01-01'::timestamptz+n*interval '1 minute','2026-01-01'::timestamp+n*interval '1 minute'+interval '1 second'
+    FROM generate_series(1,2000) n`)
+  const started = new Date(Date.now() - 7 * 24 * 3_600_000)
+  await db.execute(sql`INSERT INTO executions(agent_id,status,started_at,run_started_at)
+    VALUES (${agent.id}::uuid,'running',${started.toISOString()}::timestamptz,${started.toISOString()}::timestamptz)`)
+  await db.execute(sql`INSERT INTO messages(agent_id,role,content,created_at)
+    SELECT ${agent.id}::uuid,'assistant',repeat(md5(n::text),10),${started.toISOString()}::timestamptz + n * interval '100 milliseconds'
+    FROM generate_series(1,6000) n`)
+  await db.execute(sql`INSERT INTO messages(agent_id,role,content,created_at)
+    VALUES (${agent.id}::uuid,'assistant','[System] Agent was interrupted.',now())`)
+  await db.execute(sql`VACUUM (ANALYZE) executions`)
+  await db.execute(sql`VACUUM (ANALYZE) messages`)
+  const query = workStreamRuntimesSql([{ wsId: crypto.randomUUID(), agentIds: [agent.id] }])
+  const [total] = await db.execute(query)
+  // 2000 one-second runs plus the long run up to its last real message (600s in).
+  expect(Number(total.total_ms)).toBe(2000 * 1000 + 600_000)
+  expect(Number(total.working_count)).toBe(0)
+  const plan = await explain(query)
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('stale cap plan', JSON.stringify(plan))
+  const probes = planNodes(plan).filter((node) => node['Index Name'] === 'idx_messages_agent_id_role_created_at')
+  expect(probes).toHaveLength(1)
+  // Probed once, for the one long execution, not for every short one.
+  expect(probes[0]['Actual Loops']).toBe(1)
+  expect(buffers(plan)).toBeLessThan(500)
 })
 
 test('Active work last events probe each participant once instead of scanning its history', async () => {

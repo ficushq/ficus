@@ -343,7 +343,7 @@ describe('query audit follow-up migrations', () => {
   for (const indexName of [
     'idx_agents_top_level_squad_status_created',
     'idx_inbox_work_stream_id',
-    'idx_executions_agent_runtime',
+    'idx_executions_agent_run_runtime',
     'idx_messages_chat_source_page',
   ]) {
     test(`${indexName} has an isolated concurrent migration`, () => {
@@ -363,6 +363,15 @@ describe('query audit follow-up migrations', () => {
     )
     expect(created).toBeGreaterThanOrEqual(0)
     expect(dropped).toBeGreaterThan(created)
+  })
+  test('builds the run-start runtime index before dropping the index it replaces', () => {
+    const at = (needle: string) =>
+      migrations.findIndex((migration) => migration.sql.some((statement) => statement.includes(needle)))
+    const created = at('CREATE INDEX CONCURRENTLY "idx_executions_agent_run_runtime"')
+    const dropped = at('DROP INDEX "idx_executions_agent_runtime"')
+    expect(created).toBeGreaterThanOrEqual(0)
+    expect(dropped).toBeGreaterThan(created)
+    expect(classifyMigration(migrations[dropped]).kind).toBe('transactional')
   })
   test('generated execution IDs backfill old rows and follow metadata changes', async () => {
     const migration = migrations.find((item) =>
