@@ -161,6 +161,12 @@ function trackTimeAway(doc: Document) {
  * records nothing and keeps the older start for next time. No watermark yet means no line, and the
  * visit's start, less the same margin the counts keep (ACTIVITY_SETTLED_MARGIN_MS), is recorded as
  * the first watermark.
+ *
+ * The watermark belongs to the account, so only an unfiltered Feed records it. With a squad filter
+ * on, the counts (and their `through`) cover only the filtered squads; recording them would move the
+ * watermark past other squads' work, which no later line would then count. A filtered Feed still
+ * shows its counts from the visit's period but records nothing. Turning the filter off loads the
+ * unfiltered counts for the same period and records their end, as it would have from the start.
  */
 export function useSettledSinceLastVisit(
   userId: string,
@@ -230,9 +236,11 @@ export function useSettledSinceLastVisit(
   // How far this visit has shown: the end of its latest counts or, with no earlier visit (so no
   // counts), its own start less the counts' margin.
   const through = !observedAt ? undefined : since === null ? beforeMargin(observedAt) : summary?.through
+  // Only counts over every squad may move the account watermark.
+  const unfiltered = squadIds.length === 0
   const recorded = useRef<{ observedAt: string; through: string } | null>(null)
   useEffect(() => {
-    if (!observedAt || !through) return
+    if (!unfiltered || !observedAt || !through) return
     const prior = recorded.current?.observedAt === observedAt ? recorded.current.through : storedThrough
     if (prior !== null && Date.parse(through) <= Date.parse(prior)) return
     recorded.current = { observedAt, through }
@@ -241,7 +249,7 @@ export function useSettledSinceLastVisit(
       () => markSessionVisitRecorded(userId, observedAt, through),
       () => {}
     )
-  }, [observedAt, through, storedThrough, acknowledgeVisit, userId])
+  }, [unfiltered, observedAt, through, storedThrough, acknowledgeVisit, userId])
   const current = summary?.counts ? summary : null
   // Settled for this visit: its counts loaded or failed, or there is no period to count.
   const settledForVisit = !!observedAt && (since === null || settled.isSuccess || settled.isError)
