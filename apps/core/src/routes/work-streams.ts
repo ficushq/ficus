@@ -13,6 +13,22 @@ import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-
 import { HTTPException } from 'hono/http-exception'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { RepositorySetupError } from '../services/work-streams/repository-setup'
+import {
+  createWorkStreamCreateTimer,
+  logWorkStreamCreateTiming,
+  type WorkStreamCreateTimer,
+} from '../services/work-streams/create-timing'
+import {
+  CreateInProgressError,
+  fingerprintCreateRequest,
+  IDEMPOTENCY_KEY_HEADER,
+  IdempotencyKeyConflictError,
+  InvalidIdempotencyKeyError,
+  parseIdempotencyKey,
+  requesterKeyFor,
+  WorkStreamCreateReplayError,
+} from '../services/work-streams/create-idempotency'
+import { getBunServer } from 'hono/bun'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import {
   AssetAttachmentError,
@@ -532,6 +548,28 @@ async function filterToAttendedStreams<T extends { id: string; squadId: string }
   return streams.filter((stream) => attention.forWorkStream(stream.id, stream.squadId).progress !== 'mute')
 }
 
+/** Per-request create timing, shared between {@link logCreateTiming} and the create handler. */
+type CreateTiming = { timer: WorkStreamCreateTimer; squadId?: string; workStreamId?: string }
+const createTimings = new WeakMap<Request, CreateTiming>()
+
+/** Logs one timing line per create request, whatever the handler answered (services/work-streams/create-timing.ts). */
+const logCreateTiming = createMiddleware(async (c, next) => {
+  const timed: CreateTiming = { timer: createWorkStreamCreateTimer() }
+  createTimings.set(c.req.raw, timed)
+  let failed = true
+  try {
+    await next()
+    failed = false
+  } finally {
+    const status = failed ? 500 : c.res.status
+    logWorkStreamCreateTiming(timed.timer, {
+      outcome: status === 201 ? 'created' : status === 200 ? 'reused' : status < 500 ? 'rejected' : 'failed',
+      squadId: timed.squadId,
+      workStreamId: timed.workStreamId,
+    })
+  }
+})
+
 export const workStreamsRouter = new Hono()
   .post(
     '/:id/ci-notification',
@@ -913,8 +951,14 @@ export const workStreamsRouter = new Hono()
     if (!saved) return c.json({ error: 'Completion changed; refresh the Feed' }, 409)
     return c.json({ seen: true })
   })
-  .post('/', zValidator('json', createWorkStreamSchema), async (c) => {
+  .post('/', zValidator('json', createWorkStreamSchema), logCreateTiming, async (c) => {
     const input = c.req.valid('json')
+    const timed = createTimings.get(c.req.raw)!
+    const timing = timed.timer
+    timed.squadId = input.squadId
+    const authorizeStarted = timing.now()
+    // The fingerprint covers the body exactly as the client sent it, before any resolution below.
+    const fingerprint = fingerprintCreateRequest(input)
 
     // Handler-scope check: verify identity has workstreams:create on the target squad
     const identity: Identity | undefined = c.get('identity')
@@ -923,6 +967,18 @@ export const workStreamsRouter = new Hono()
     const allowed = await hasPermission(identity, 'workstreams:create', input.squadId)
     c.set('authzChecked', true)
     if (!allowed) return c.json({ error: await workStreamCreateRefusal(identity) }, 403)
+    // Repository setup can outlast Bun's 30-second idle timer, which would close the
+    // connection while the create still finishes. Answer with the real result instead.
+    const server = c.env ? getBunServer<{ timeout(request: Request, seconds: number): void }>(c) : undefined
+    server?.timeout(c.req.raw, 0)
+    let idempotencyKey: string | undefined
+    try {
+      idempotencyKey = parseIdempotencyKey(c.req.header(IDEMPOTENCY_KEY_HEADER))
+    } catch (error) {
+      if (error instanceof InvalidIdempotencyKeyError)
+        return c.json({ error: error.message, code: error.code }, error.status)
+      throw error
+    }
     if (
       input.observe &&
       (identity.type !== 'agent' || !(await hasPermission(identity, 'workstreams:read', input.squadId)))
@@ -945,6 +1001,8 @@ export const workStreamsRouter = new Hono()
       }
     }
     input.workflow = await resolveCreationWorkflow(input.workflow, squad)
+    timing.add('authorize', timing.now() - authorizeStarted)
+    const validateStarted = timing.now()
     if (
       input.agents !== undefined ||
       input.agentIds !== undefined ||
@@ -1003,26 +1061,47 @@ export const workStreamsRouter = new Hono()
       const prepared = input.assetReferences?.length
         ? await prepareCreationAssets(identity, input.assetReferences, input.squadId)
         : null
+      timing.add('validate', timing.now() - validateStarted)
       const stream = await WorkStream.create(
         { ...input, requestingUserId, creatorAgentId },
-        prepared ? { inTransaction: (tx, created) => insertCreationAssets(tx, identity, created, prepared) } : {}
+        {
+          ...(prepared
+            ? { inTransaction: (tx, created) => insertCreationAssets(tx, identity, created, prepared) }
+            : {}),
+          timing,
+          signal: c.req.raw.signal,
+          ...(idempotencyKey
+            ? {
+                idempotency: {
+                  squadId: input.squadId,
+                  requesterKey: requesterKeyFor(identity),
+                  key: idempotencyKey,
+                  fingerprint,
+                },
+              }
+            : {}),
+        }
       )
+      timed.workStreamId = stream.id
+      const respondStarted = timing.now()
       // A stream started from a Linear agent session's event takes over that session, if it is still free.
       if (input.integrationEventId) await bindLinearSessionForEvent(input.integrationEventId, stream.id)
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
       const { workflowSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
-      return c.json(
-        {
-          ...stream.toJson(),
-          ...withWarnings(input.workflow ? await workflowSourceWarnings(input.workflow) : []),
-          ...(identity.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
-        },
-        201
-      )
+      const body = {
+        ...stream.toJson(),
+        ...withWarnings(input.workflow ? await workflowSourceWarnings(input.workflow) : []),
+        ...(identity.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
+      }
+      timing.add('respond', timing.now() - respondStarted)
+      return c.json(body, 201)
     } catch (error) {
-      if (error instanceof WorkStreamEventAlreadyHandledError) {
+      if (error instanceof WorkStreamEventAlreadyHandledError || error instanceof WorkStreamCreateReplayError) {
+        // A replayed event or idempotency key returns the stream it already created.
+        const replayedKey = error instanceof WorkStreamCreateReplayError
         const existing = await WorkStream.mustFind(error.workStreamId)
+        timed.workStreamId = existing.id
         if (input.observe && identity.type === 'agent') {
           try {
             await observeWorkStream(existing.id, identity.agentId)
@@ -1034,7 +1113,7 @@ export const workStreamsRouter = new Hono()
         return c.json(
           {
             ...existing.toJson(),
-            reusedFromEvent: true,
+            ...(replayedKey ? { reusedFromIdempotencyKey: true } : { reusedFromEvent: true }),
             ...(identity.type === 'agent'
               ? { observing: await isObservingWorkStream(existing.id, identity.agentId) }
               : {}),
@@ -1043,6 +1122,8 @@ export const workStreamsRouter = new Hono()
         )
       }
       if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
+      if (error instanceof IdempotencyKeyConflictError || error instanceof CreateInProgressError)
+        return c.json({ error: error.message, code: error.code }, error.status)
       if (error instanceof AssetAttachmentError) return c.json({ error: error.message }, error.status)
       if (error instanceof SquadArchivedError) return c.json({ error: error.message }, 410)
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)

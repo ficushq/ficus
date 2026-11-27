@@ -25,6 +25,59 @@ first-colon separator cannot address keys containing colons. Repeated criteria f
 same path retain the last value. These lookups use bound query parameters for every path
 segment and value.
 
+## Creating work streams under load
+
+`POST /api/workstreams` does all of its work before it answers. With `repository`, that
+includes checking the squad box, about twenty commands in the box, a `git fetch` and a
+`git worktree add`, then a transaction that locks the squad row, flow dispatch and the
+owner notification. A create normally takes 8 to 15 seconds and can take minutes when the
+squad is busy. Four things keep that safe:
+
+- **Idempotency key.** A client may send an `Idempotency-Key` header (1 to 200 printable
+  ASCII characters, no spaces). Before anything is provisioned, Core claims the key for
+  the squad, the authenticated identity and the key (`work_stream_create_requests`). A
+  repeat with the same key and the same JSON body (compared by a SHA-256 of the canonical
+  body) returns `200 { ...stream, reusedFromIdempotencyKey: true }` instead of creating a
+  second stream or worktree.
+  - A repeat that arrives while the first request is still running waits for it, up to
+    5 minutes, and then answers `409 { code: "create_in_progress" }`. Retrying later with
+    the same key is safe.
+  - The same key with a different body answers `409 { code: "idempotency_key_conflict" }`;
+    a malformed key answers `400 { code: "invalid_idempotency_key" }`.
+  - A create that fails before its transaction commits deletes its claim, so a retry
+    starts fresh. The claim is bound to the stream inside the creation transaction.
+  - A pending claim holds a 60-second lease that its request renews every 20 seconds. If
+    the Core process dies mid-create, a repeat takes the claim over once the lease
+    expires. Claims are pruned after 30 days.
+  - Without the header, creation behaves as before. `ficus workstream create` always
+    sends one (see [CLI: workstream create](cli/workstream-commands.md#create)).
+- **No idle cutoff.** Core's listener closes a connection that stays silent for 30
+  seconds (`Bun.serve({ idleTimeout: 30 })`) while its handler keeps running, so a slow
+  create used to report a dropped connection for a stream that was then created. The
+  create route disables that per-request timer after authorization (as workspace
+  transfers do; see [Request limits](request-limits.md)) and answers with its real result.
+- **Lighter squad-box check.** Repository setup skips the full squad-box ensure (exposure
+  cleanup, env-file regeneration, the runtime ensure behind the per-box gate, the
+  toolchain settle and the watch setup) when the box is already healthy. On a vm or k8s
+  runtime that means: this Core process tracks the box, its spec has not drifted, no
+  toolchain install is running, the recorded toolchain is undeclared or `ready` with the
+  current declaration applied and activated, maintenance admission is open, and one
+  command in the box answers within 10 seconds. Anything else, including an archived
+  squad, a missing or untracked box, a docker or host runtime, or a failed check, runs
+  the full ensure as before (`services/sandbox/squad-sandbox-fast-path.ts`).
+- **Per-phase timing.** Every create logs one line under the `work-stream-create` logger:
+
+  ```
+  Work stream create timing: outcome=created total=12.4s slowest=repository-fetch authorize=0.1s validate=0.2s idempotency=0.0s sandbox-ensure=0.3s repository-exec=2.1s(18) repository-fetch=6.0s repository-worktree-add=2.9s squad-lock-wait=0.0s transaction=0.4s dispatch=0.3s notify=0.1s respond=0.1s sandbox=fast squad=<id> stream=<id>
+  ```
+
+  Phases are always listed in this order, and a phase the create never reached shows
+  `0.0s`. `repository-exec` also shows how many box commands ran. `sandbox=` says
+  whether the fast path ran (`fast`) or why the full ensure did (`full:<reason>`).
+  `outcome` is `created`, `reused`, `rejected` (4xx) or `failed`. A create taking 20
+  seconds or more logs at `warn`. Search Core logs for `Work stream create timing` and
+  read `slowest=`.
+
 ## Tracked issues and pull requests
 
 A work stream can track any number of GitHub issues and pull requests, and any
