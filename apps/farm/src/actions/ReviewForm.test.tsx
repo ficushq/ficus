@@ -210,7 +210,7 @@ describe('WorkflowDecision · delivery approval', () => {
   it('requires respond/update permission and a user identity', async () => {
     const api = setup({
       getMyPermissions: () =>
-        Promise.resolve({ permissions: ['squads:read'], identity: { type: 'user', userId: 'u' } }),
+        Promise.resolve({ permissions: ['workstreams:review'], identity: { type: 'user', userId: 'u' } }),
     })
     const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
     expect(hasButton(container, 'Harvest')).toBe(false)

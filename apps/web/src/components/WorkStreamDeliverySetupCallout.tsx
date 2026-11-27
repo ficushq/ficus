@@ -1,5 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { changeRequestBindCommand, type WorkStream, type WorkStreamPresentationFacts } from '@ficus/shared'
+import {
+  mayRespondToWorkStreamWaits,
+  changeRequestBindCommand,
+  type WorkStream,
+  type WorkStreamPresentationFacts,
+} from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { usePermissions } from '../hooks/usePermissions'
 import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
@@ -164,7 +169,7 @@ function CheckDeliveryButton({ stream }: { stream: Pick<WorkStream, 'id' | 'squa
     mutationFn: (version: number) => client.workflows.finish(stream.id, version),
     onSuccess: refresh,
   })
-  if (!run || !(can('workstreams:update') || can('workstreams:respond'))) return null
+  if (!run || !mayRespondToWorkStreamWaits(can)) return null
   return (
     <div className="space-y-1">
       <button

@@ -1,7 +1,7 @@
 import { useHref } from 'react-router'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { readDeliveryState, type WorkStream } from '@ficus/shared'
+import { mayRespondToWorkStreamWaits, readDeliveryState, type WorkStream } from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { usePermissions } from '../hooks/usePermissions'
 import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
@@ -148,7 +148,7 @@ function useManualDeliveryCheck(stream: WorkStream, report: (message: string) =>
     !PULL_REQUEST_COMPLETION_MODES.has(run.state.definition.completion.mode) ||
     !pullRequests.length ||
     pullRequests.every((pullRequest) => states[pullRequest.key]?.state === 'merged') ||
-    !(can('workstreams:update') || can('workstreams:respond'))
+    !mayRespondToWorkStreamWaits(can)
   )
     return null
   return { isPending: finish.isPending, run: () => finish.mutate(run.version) }

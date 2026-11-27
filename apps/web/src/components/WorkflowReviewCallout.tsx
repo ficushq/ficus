@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
+  mayRespondToWorkStreamWaits,
   codeHostDeliveryLabel,
   readDeliveryState,
   trackedResourceLabel,
@@ -92,7 +93,7 @@ function DeliveryCheck({ stream, run }: { stream: WorkStream; run: RunDetail }) 
     mutationFn: () => client.workflows.finish(stream.id, run.version),
     onSuccess: refresh,
   })
-  const canFinish = can('workstreams:update') || can('workstreams:respond')
+  const canFinish = mayRespondToWorkStreamWaits(can)
   const pullRequests = workStreamPullRequests(stream.metadata ?? {})
   // The squad finishes a PR-mode stream itself when its pull request merges; the person's job is the PR.
   if (PULL_REQUEST_COMPLETION_MODES.has(run.state.definition.completion.mode) && pullRequests.length)
@@ -335,7 +336,7 @@ function DeliveryApproval({
       refresh()
     },
   })
-  const canDecide = identity?.type === 'user' && (can('workstreams:update') || can('workstreams:respond'))
+  const canDecide = identity?.type === 'user' && mayRespondToWorkStreamWaits(can)
   const pending = finish.isPending || sendBack.isPending
   const failure = finish.error ?? sendBack.error
   return (
