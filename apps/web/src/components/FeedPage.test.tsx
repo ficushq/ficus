@@ -51,12 +51,18 @@ const dependencies = {
     actions,
     isLoading,
     showSectionCounts,
+    liveMotionArrived,
   }: {
     actions: PendingAction[]
     isLoading: boolean
     showSectionCounts?: boolean
+    liveMotionArrived?: boolean
   }) => (
-    <div data-test-slot="actions" data-show-section-counts={String(showSectionCounts)}>
+    <div
+      data-test-slot="actions"
+      data-show-section-counts={String(showSectionCounts)}
+      data-live-arrived={String(liveMotionArrived)}
+    >
       {isLoading ? 'Loading actions' : null}
       {actions.map((action) => (
         <div key={action.id}>{action.id}</div>
@@ -457,4 +463,49 @@ test('anchors the Feed heading before Needs you in loading, empty, and pending s
   }
   actionsLoading = false
   pendingActions = []
+})
+
+describe('FeedPage live arrival in Needs you', () => {
+  afterEach(async () => {
+    pendingActions = []
+    actionsLoading = false
+    squadFilters = []
+    await domHarness?.cleanup()
+    domHarness = undefined
+  })
+
+  /** Renders the Feed through a sequence of Needs you states; returns the list's live-arrival flag after the last. */
+  async function arrivedAfter(states: Array<{ actions: PendingAction[]; loading?: boolean; squads?: string[] }>) {
+    const dom = await installDom()
+    const { root, container } = dom.createRoot()
+    currentQueryClient = createTrackingQueryClient()
+    for (const state of states) {
+      pendingActions = state.actions
+      actionsLoading = state.loading ?? false
+      squadFilters = state.squads ?? []
+      await dom.act(async () => {
+        root.render(
+          <ReactQueryHooksProvider hooks={reactQueryOverrides}>
+            <FeedPage dependencies={dependencies} />
+          </ReactQueryHooksProvider>
+        )
+      })
+    }
+    return container.querySelector('[data-test-slot="actions"]')?.getAttribute('data-live-arrived')
+  }
+
+  test('the first item arriving in an empty, loaded Needs you is a live arrival', async () => {
+    expect(await arrivedAfter([{ actions: [] }, { actions: [action()] }])).toBe('true')
+  })
+
+  test('items present on first load, or after loading, are not', async () => {
+    expect(await arrivedAfter([{ actions: [action()] }])).toBe('false')
+    await domHarness?.cleanup()
+    expect(await arrivedAfter([{ actions: [], loading: true }, { actions: [action()] }])).toBe('false')
+  })
+
+  test('items shown because the squad filter changed are not', async () => {
+    // Squad-2 has nothing in Needs you; clearing the filter shows squad-1's item.
+    expect(await arrivedAfter([{ actions: [action()], squads: ['squad-2'] }, { actions: [action()] }])).toBe('false')
+  })
 })

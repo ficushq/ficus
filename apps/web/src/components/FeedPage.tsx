@@ -12,6 +12,7 @@ import { ChevronRightIcon } from './icons'
 import { FEED_DISCLOSURE_CHEVRON_CLASS, FEED_DISCLOSURE_HEADER_CLASS } from './feedSectionLayout'
 import { useURLStringArrayState } from '../hooks/useURLState'
 import { filterPendingActionsBySquads } from '../lib/pendingActionSquads'
+import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 /** The Feed's squad filter, shared through the `squad` URL param with the work stream list's Filters menu. */
 function useFeedSquadFilters(): string[] {
@@ -49,6 +50,22 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
   const { error, refetch } = pendingQuery
   const actionsLoading = actionsStatus === 'loading'
   const actionsError = actionsStatus === 'error'
+  // Needs you shows a disabled header while it is empty, so its list mounts when the first item
+  // arrives. That item arrived live (and is highlighted) only when the loaded list was empty under
+  // the same squad filter just before: not on first load, and not because the filter changed.
+  const squadFilterKey = JSON.stringify(squadFilters)
+  const hasActions = actions.length > 0
+  const [firstActionArrivedLive, setFirstActionArrivedLive] = useState(false)
+  useAdjustOnChange([actionsStatus, hasActions, squadFilterKey] as const, (previous) => {
+    const [previousStatus, previouslyHadActions, previousFilterKey] = previous ?? []
+    setFirstActionArrivedLive(
+      previousStatus === 'ready' &&
+        previouslyHadActions === false &&
+        previousFilterKey === squadFilterKey &&
+        actionsStatus === 'ready' &&
+        hasActions
+    )
+  })
 
   const refreshFeed = useCallback(async () => {
     await Promise.all([
@@ -96,6 +113,8 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
               error={error}
               onRetry={() => void refetch()}
               showSectionCounts={false}
+              liveMotionKey={squadFilterKey}
+              liveMotionArrived={firstActionArrivedLive}
             />
           </div>
         </details>

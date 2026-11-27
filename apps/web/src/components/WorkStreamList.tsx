@@ -19,6 +19,8 @@ import { WorkStreamDetailModal, getWsDisplayState } from './WorkStreamDetailModa
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { deliveryTagPullRequestKey, workStreamDeliveryTag } from '../lib/workStreamStatusPresentation'
 import { AgentActivityDot } from './AgentActivityDot'
+import { LiveListMotion } from './LiveListMotion'
+import { liveRowProps } from '../lib/liveListMotion'
 import { WorkStreamFilterGroup, WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
 import { ChevronDownIcon, ChevronRightIcon, PullRequestIcon } from './icons'
 import {
@@ -485,6 +487,9 @@ function WorkStreamRow({
   const deliveryTag = workStreamDeliveryTag(workStream)
   const deliveryTagKey = deliveryTag ? deliveryTagPullRequestKey(workStream.delivery, pullRequests) : null
   const deliveryLabelMode = deliveryTagKey ? 'none' : 'pill'
+  // What the status badges show (the state, and the delivery pill when there is no pull request
+  // link to carry it): a change while the list is on screen briefly emphasizes them (LiveListMotion).
+  const liveStatus = `${wsFilterState(workStream)}|${deliveryTag && deliveryLabelMode === 'pill' ? (workStream.delivery?.kind ?? '') : ''}`
   const assignee = workStream.assigneeAgentId ? agentMap.get(workStream.assigneeAgentId) : null
   const assigneeTypeName = assignee ? (agentTypeNameMap.get(assignee.agentTypeId) ?? assignee.agentTypeId) : null
   const assigneeTarget = assignee ? `/squads/${slugFor(workStream.squadId)}/agents?agent=${assignee.id}` : null
@@ -596,6 +601,7 @@ function WorkStreamRow({
         feedLayout ? FEED_ROW_INSET_CLASS : 'pl-3'
       )}
       data-testid="work-stream-row"
+      {...liveRowProps(workStream.id, liveStatus)}
       {...peekProps}
     >
       {/* The row's keyboard stop: Enter opens the stream; focus opens the peek. */}
@@ -614,6 +620,7 @@ function WorkStreamRow({
           deliveryLabel={deliveryLabelMode}
           showQueuedReview={false}
           className="max-w-[50%] sm:max-w-none"
+          liveEmphasis
         />
       </button>
       {summaryLine && <div className="ml-4 mt-0.5 min-w-0">{summaryLine}</div>}
@@ -910,6 +917,23 @@ export function WorkStreamList({
   const hasActiveSection = activePending || activeStreams.length > 0
   const hasDoneSection = doneStreams.length > 0 || (pagedDone && (doneTotalCount ?? 0) > 0)
   const isEmpty = !hasActiveSection && !hasDoneSection && !donePending
+  // Rows move, arrive and change status with motion only for live data: any change of scope,
+  // filters, view, loading or paging state is a fresh list (LiveListMotion).
+  const liveMotionResetKey = JSON.stringify([
+    loadingShapeScope,
+    statusFilters,
+    showSquadFilter ? squadFilters : [],
+    activeOnly,
+    bareActiveSection,
+    activeCollapsible && activeCollapsed,
+    doneCollapsed,
+    showSummaries,
+    activePending,
+    donePending,
+    isLoading,
+    isLoadingDone,
+    isFetchingMoreDone,
+  ])
 
   return (
     <div className={clsx('flex flex-col', feedLayout ? 'gap-4' : 'gap-6')}>
@@ -928,144 +952,146 @@ export function WorkStreamList({
           {loadingError}
         </p>
       )}
-      {isEmpty ? (
-        <div className="text-muted py-6 text-center">
-          {workStreams.length === 0 || activeOnly ? emptyMessage : 'No work streams match the current filters'}
-        </div>
-      ) : (
-        <div className={clsx('flex flex-col', feedLayout ? 'gap-4' : 'gap-6')}>
-          {/* Active Section */}
-          {hasActiveSection && bareActiveSection && (
-            <LoadingContent
-              loading={activePending}
-              fallback={
-                <WorkStreamRowsSkeleton
-                  feedLayout={feedLayout}
-                  count={activeLoadingRowCount}
-                  label="Loading active work streams"
-                />
-              }
-            >
-              <ul className="space-y-1">
-                {activeStreams.map((ws) => (
-                  <WorkStreamRow
-                    key={ws.id}
+      <LiveListMotion resetKey={liveMotionResetKey}>
+        {isEmpty ? (
+          <div className="text-muted py-6 text-center">
+            {workStreams.length === 0 || activeOnly ? emptyMessage : 'No work streams match the current filters'}
+          </div>
+        ) : (
+          <div className={clsx('flex flex-col', feedLayout ? 'gap-4' : 'gap-6')}>
+            {/* Active Section */}
+            {hasActiveSection && bareActiveSection && (
+              <LoadingContent
+                loading={activePending}
+                fallback={
+                  <WorkStreamRowsSkeleton
                     feedLayout={feedLayout}
-                    workStream={ws}
-                    squadMap={squadMap}
-                    agentMap={agentMap}
-                    agentTypeNameMap={agentTypeNameMap}
-                    showSquadBadge={showSquadFilter}
-                    showSummary={showSummaries}
-                    onClick={() => setSelectedWsId(workStreamRef(ws))}
+                    count={activeLoadingRowCount}
+                    label="Loading active work streams"
                   />
-                ))}
-              </ul>
-            </LoadingContent>
-          )}
-          {hasActiveSection && !bareActiveSection && (
-            <section className="space-y-2">
-              <SectionHeader
-                title={feedLayout ? 'Active work' : 'Active'}
-                feedLayout={feedLayout}
-                count={activePending ? <SkeletonText className="w-5" /> : activeStreams.length}
-                collapsible={activeCollapsible}
-                collapsed={activeCollapsed}
-                onToggle={() => setActiveCollapsed(!activeCollapsed)}
-                actions={activeActions}
-              />
-              {!activeCollapsed && (
-                <LoadingContent
-                  loading={activePending}
-                  fallback={
-                    <WorkStreamRowsSkeleton
-                      feedLayout={feedLayout}
-                      count={activeLoadingRowCount}
-                      label="Loading active work streams"
-                    />
-                  }
-                >
-                  <ul className="space-y-1">
-                    {activeStreams.map((ws) => (
-                      <WorkStreamRow
-                        key={ws.id}
-                        feedLayout={feedLayout}
-                        workStream={ws}
-                        squadMap={squadMap}
-                        agentMap={agentMap}
-                        agentTypeNameMap={agentTypeNameMap}
-                        showSquadBadge={showSquadFilter}
-                        showSummary={showSummaries}
-                        onClick={() => setSelectedWsId(workStreamRef(ws))}
-                      />
-                    ))}
-                  </ul>
-                </LoadingContent>
-              )}
-            </section>
-          )}
-
-          {/* Done Section */}
-          {!activeOnly && (hasDoneSection || donePending) && (
-            <section className="space-y-2">
-              <SectionHeader
-                title={doneTitle}
-                feedLayout={feedLayout}
-                count={
-                  donePending ? (
-                    <SkeletonText className="w-5" />
-                  ) : doneCountLabel !== undefined ? (
-                    doneCountLabel
-                  ) : pagedDone ? (
-                    (doneTotalCount ?? doneStreams.length)
-                  ) : (
-                    doneStreams.length
-                  )
                 }
-                collapsible
-                collapsed={doneCollapsed}
-                onToggle={() => setDoneCollapsed(!doneCollapsed)}
-              />
-              {donePending && !doneCollapsed && (
-                <WorkStreamRowsSkeleton
+              >
+                <ul className="space-y-1">
+                  {activeStreams.map((ws) => (
+                    <WorkStreamRow
+                      key={ws.id}
+                      feedLayout={feedLayout}
+                      workStream={ws}
+                      squadMap={squadMap}
+                      agentMap={agentMap}
+                      agentTypeNameMap={agentTypeNameMap}
+                      showSquadBadge={showSquadFilter}
+                      showSummary={showSummaries}
+                      onClick={() => setSelectedWsId(workStreamRef(ws))}
+                    />
+                  ))}
+                </ul>
+              </LoadingContent>
+            )}
+            {hasActiveSection && !bareActiveSection && (
+              <section className="space-y-2">
+                <SectionHeader
+                  title={feedLayout ? 'Active work' : 'Active'}
                   feedLayout={feedLayout}
-                  count={doneLoadingRowCount}
-                  label="Loading completed work stream rows"
+                  count={activePending ? <SkeletonText className="w-5" /> : activeStreams.length}
+                  collapsible={activeCollapsible}
+                  collapsed={activeCollapsed}
+                  onToggle={() => setActiveCollapsed(!activeCollapsed)}
+                  actions={activeActions}
                 />
-              )}
-              {!donePending && !doneCollapsed && (
-                <>
-                  <ul className="space-y-1">
-                    {doneStreams.map((ws) => (
-                      <WorkStreamRow
-                        key={ws.id}
+                {!activeCollapsed && (
+                  <LoadingContent
+                    loading={activePending}
+                    fallback={
+                      <WorkStreamRowsSkeleton
                         feedLayout={feedLayout}
-                        workStream={ws}
-                        squadMap={squadMap}
-                        agentMap={agentMap}
-                        agentTypeNameMap={agentTypeNameMap}
-                        showSquadBadge={showSquadFilter}
-                        showSummary={showSummaries}
-                        onClick={() => setSelectedWsId(workStreamRef(ws))}
+                        count={activeLoadingRowCount}
+                        label="Loading active work streams"
                       />
-                    ))}
-                    {pagedDone && hasMoreDone && (
-                      <li
-                        ref={doneLoadMoreRef}
-                        data-testid="done-load-more-sentinel"
-                        className="px-3 py-3 text-center text-sm text-muted"
-                      >
-                        {isFetchingMoreDone ? 'Loading more done work streams…' : 'Scroll to load more'}
-                      </li>
-                    )}
-                  </ul>
-                  {doneFooter}
-                </>
-              )}
-            </section>
-          )}
-        </div>
-      )}
+                    }
+                  >
+                    <ul className="space-y-1">
+                      {activeStreams.map((ws) => (
+                        <WorkStreamRow
+                          key={ws.id}
+                          feedLayout={feedLayout}
+                          workStream={ws}
+                          squadMap={squadMap}
+                          agentMap={agentMap}
+                          agentTypeNameMap={agentTypeNameMap}
+                          showSquadBadge={showSquadFilter}
+                          showSummary={showSummaries}
+                          onClick={() => setSelectedWsId(workStreamRef(ws))}
+                        />
+                      ))}
+                    </ul>
+                  </LoadingContent>
+                )}
+              </section>
+            )}
+
+            {/* Done Section */}
+            {!activeOnly && (hasDoneSection || donePending) && (
+              <section className="space-y-2">
+                <SectionHeader
+                  title={doneTitle}
+                  feedLayout={feedLayout}
+                  count={
+                    donePending ? (
+                      <SkeletonText className="w-5" />
+                    ) : doneCountLabel !== undefined ? (
+                      doneCountLabel
+                    ) : pagedDone ? (
+                      (doneTotalCount ?? doneStreams.length)
+                    ) : (
+                      doneStreams.length
+                    )
+                  }
+                  collapsible
+                  collapsed={doneCollapsed}
+                  onToggle={() => setDoneCollapsed(!doneCollapsed)}
+                />
+                {donePending && !doneCollapsed && (
+                  <WorkStreamRowsSkeleton
+                    feedLayout={feedLayout}
+                    count={doneLoadingRowCount}
+                    label="Loading completed work stream rows"
+                  />
+                )}
+                {!donePending && !doneCollapsed && (
+                  <>
+                    <ul className="space-y-1">
+                      {doneStreams.map((ws) => (
+                        <WorkStreamRow
+                          key={ws.id}
+                          feedLayout={feedLayout}
+                          workStream={ws}
+                          squadMap={squadMap}
+                          agentMap={agentMap}
+                          agentTypeNameMap={agentTypeNameMap}
+                          showSquadBadge={showSquadFilter}
+                          showSummary={showSummaries}
+                          onClick={() => setSelectedWsId(workStreamRef(ws))}
+                        />
+                      ))}
+                      {pagedDone && hasMoreDone && (
+                        <li
+                          ref={doneLoadMoreRef}
+                          data-testid="done-load-more-sentinel"
+                          className="px-3 py-3 text-center text-sm text-muted"
+                        >
+                          {isFetchingMoreDone ? 'Loading more done work streams…' : 'Scroll to load more'}
+                        </li>
+                      )}
+                    </ul>
+                    {doneFooter}
+                  </>
+                )}
+              </section>
+            )}
+          </div>
+        )}
+      </LiveListMotion>
 
       {!activeOnly &&
         showManagerChatMenu &&
