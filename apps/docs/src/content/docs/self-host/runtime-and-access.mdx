@@ -96,6 +96,24 @@ When you move an existing server to a new path:
 
 `APP_BASE_PATH` is no longer needed when the public address carries the path. Servers that set it keep working: it still sets the build-time path of the web app and is the path for origins listed in `FICUS_WEB_ORIGIN`.
 
+## Reach your server from a mobile device
+
+The Ficus app connects to the server's public address, so a mobile device needs an address it can open. `http://localhost:3000` only works on the computer running Ficus.
+
+**Settings → Administration → Server address** has a guide, **Reach this server from a mobile device**. It reads what the machine has and offers each option as an address to use. The same guide is under **Optional setup** on the setup page. Nothing there changes the machine: commands are shown for you to run.
+
+| Option                     | Works from                        | What it needs                                                                                             |
+| -------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| At home, on the same Wi-Fi | Devices on the same network       | The server listening on the network (`HOST=0.0.0.0`). Not encrypted; push and other Pro features are off. |
+| Tailscale                  | Devices signed in to your tailnet | Tailscale on the server and the mobile device, HTTPS certificates on, and `tailscale serve` for Ficus.    |
+| Your own domain            | Anywhere                          | A domain pointed at the machine and a reverse proxy that adds HTTPS (see the Caddy example on this page). |
+
+**At home.** Ficus listens on this computer only unless `HOST` says otherwise. Set `HOST=0.0.0.0` in the server environment and restart, then make one of the offered addresses the public address. On a Mac the guide offers the computer's `.local` name first, because it survives a new IP address. The iPhone and iPad app accepts plain `http` only for home-network addresses.
+
+**Tailscale.** The guide shows the command for the Tailscale tool it found. With the macOS app, `tailscale` is only a command if you installed its command-line tool; otherwise the guide's command names the copy inside the app.
+
+**Check this address** asks the address for a one-time value only this server knows, from the server itself. A pass means the name, port, proxy and certificate lead back to this server. It cannot see a router or firewall that only blocks traffic from outside, so pairing a mobile device on another network is the real test.
+
 ## Where the public address comes from
 
 Ficus uses one public address for links, sign-in, integration OAuth callbacks, webhooks and the Ficus app. It is resolved in this order:

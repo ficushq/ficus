@@ -722,6 +722,15 @@ describe('OnboardingPage — appearance control', () => {
   })
 })
 
+test('mobile setup is two optional steps, the server address before the app, and neither affects completion', () => {
+  const html = renderStatic(seededQueryClient(['settings:read'], coreSettledStatus()))
+  const optional = html.slice(html.indexOf('data-optional-setup'))
+  expect(optional).toContain('Reach Ficus from a mobile device')
+  expect(optional).toContain('Set up the mobile app')
+  expect(optional.indexOf('Reach Ficus from a mobile device')).toBeLessThan(optional.indexOf('Set up the mobile app'))
+  expect(html).toContain('Your workspace is ready.')
+})
+
 test('public voice is optional, permission-gated and leaves ready and core completion unchanged', () => {
   const allowed = renderStatic(seededQueryClient(['settings:read', 'agent-types:update'], coreSettledStatus()))
   expect(allowed.indexOf('Public voice from GitHub')).toBeGreaterThan(allowed.indexOf('Optional setup'))

@@ -11,6 +11,13 @@ import {
   setPublicAppUrl,
 } from '../services/public-url/service'
 import { MAX_PUBLIC_APP_URL_LENGTH } from '../lib/public-app-url-format'
+import { apiBindHost } from '../lib/infra/bind-host'
+import {
+  checkAddress,
+  matchesAddressProbe,
+  phoneReachReport,
+  type AddressCheckResult,
+} from '../services/public-url/reachability'
 import { parseJsonBody } from './json-body'
 
 const urlField = z.string().max(MAX_PUBLIC_APP_URL_LENGTH).nullable()
@@ -32,10 +39,18 @@ async function respond(c: Context, produce: () => Promise<unknown> | unknown) {
 }
 
 /**
+ * `GET /health/address-check/:token`, beside `/health` and likewise open: 204 to this process's own probe
+ * token, an empty 404 to anything else. It lets `checkAddress` tell this server from another site that answers.
+ */
+export function addressProbeHandler(c: Context) {
+  return c.body(null, matchesAddressProbe(c.req.param('token') ?? '') ? 204 : 404)
+}
+
+/**
  * The server's canonical public address (see lib/public-app-url.ts).
  * Writes are CSRF-protected by the global `/api/*` middleware.
  */
-export function createPublicUrlRouter() {
+export function createPublicUrlRouter(deps: { check?: (url: string) => Promise<AddressCheckResult> } = {}) {
   const router = new Hono()
   router.use('*', bodyLimit({ maxSize: 4096 }))
   router.use('*', async (c, next) => {
@@ -52,6 +67,30 @@ export function createPublicUrlRouter() {
   router.get('/status', requirePermission('settings:read'), (c) =>
     isUser(c) ? respond(c, publicAppUrlStatus) : c.json(USER_REQUIRED, 403)
   )
+
+  // What this machine could offer a mobile device: home-network addresses, Tailscale, and whether it is listening.
+  router.get('/reach', requirePermission('settings:read'), (c) =>
+    isUser(c)
+      ? respond(c, () =>
+          phoneReachReport({
+            currentUrl: publicAppUrlRuntime().url ?? publicAppUrlRuntime().localUrl,
+            bindHost: apiBindHost(process.env, !!process.env.KUBERNETES_SERVICE_HOST),
+            port: Number(process.env.PORT) || 3000,
+          })
+        )
+      : c.json(USER_REQUIRED, 403)
+  )
+
+  // Does this address lead back to this server? Tried from the server itself; see checkAddress.
+  router.post('/check', requirePermission('settings:write'), async (c) => {
+    if (!isUser(c)) return c.json(USER_REQUIRED, 403)
+    const body = await parseJsonBody(c)
+    const input = z
+      .strictObject({ url: z.string().min(1).max(MAX_PUBLIC_APP_URL_LENGTH) })
+      .safeParse(body.ok ? body.value : null)
+    if (!input.success) return c.json({ error: 'Send { url }.' }, 400)
+    return c.json(await (deps.check ?? checkAddress)(input.data.url))
+  })
 
   router.post('/preview', requirePermission('settings:write'), async (c) => {
     if (!isUser(c)) return c.json(USER_REQUIRED, 403)

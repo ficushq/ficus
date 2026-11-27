@@ -1,4 +1,5 @@
 import { PublicVoiceStep } from './PublicVoiceStep'
+import { MobileAppStep, ServerAddressStep } from './MobileSetupSteps'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 import { squadSlugMap, type Squad } from '@ficus/shared'
 import { queries } from '../../queryOptions'
@@ -285,6 +286,9 @@ function SetupSteps({
 }
 
 const OPTIONAL_SETUP = [
+  // The server address comes first: pairing a mobile device needs an address the device can open.
+  { id: 'server_address', title: 'Reach Ficus from a mobile device', Content: ServerAddressStep },
+  { id: 'mobile_app', title: 'Set up the mobile app', Content: MobileAppStep },
   { id: 'public_voice', title: 'Public voice from GitHub', Content: PublicVoiceStep },
   { id: 'decision_models', title: 'Decision models', Content: DecisionModelsStep },
   { id: 'voice_memory', title: 'Voice & memory', Content: () => <AssistantMemorySection onboarding /> },

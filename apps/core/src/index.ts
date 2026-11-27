@@ -93,7 +93,7 @@ import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
 import settingsRouter from './routes/settings'
-import { publicUrlRouter } from './routes/public-url'
+import { addressProbeHandler, publicUrlRouter } from './routes/public-url'
 import systemRouter from './routes/system'
 import updatesRouter from './routes/updates'
 import providerAuthRouter from './routes/provider-auth'
@@ -278,6 +278,8 @@ app.use(
 const readiness = new RuntimeReadiness('api', process.env.FICUS_RUNTIME_INSTANCE_ID)
 app.get('/ready', () => readiness.response())
 app.get('/health', (c) => c.json({ status: 'ok' }))
+// Lets Settings → Server address check that an address leads back to this server (routes/public-url.ts).
+app.get('/health/address-check/:token', addressProbeHandler)
 app.route('/health/db', createDatabaseHealthRouter())
 
 // Cross-process events from ficus-worker (see lib/infra/local-events.ts). Not

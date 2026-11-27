@@ -183,6 +183,7 @@ export const publicUrlQueryKeys = {
   all: ['public-url'] as const,
   runtime: () => ['public-url', 'runtime'] as const,
   status: () => ['public-url', 'status'] as const,
+  reach: () => ['public-url', 'reach'] as const,
 }
 
 export const serverConnectionQueryKeys = {

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { classifyServerAddress } from '@ficus/shared'
 import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
@@ -9,6 +10,7 @@ import {
   type PublicAppUrlStatus,
   type UrlChange,
 } from '../../api/publicUrl'
+import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
 import { usePermissions } from '../../hooks/usePermissions'
 import { publicUrlQueries } from '../../queryOptions'
 import { integrationQueryKeys, publicUrlQueryKeys, serverConnectionQueryKeys } from '../../queryKeys'
@@ -32,7 +34,7 @@ function sourceDescription(status: PublicAppUrlStatus): ReactNode {
   if (status.source === 'setting') return 'Configured here.'
   if (status.source === 'local-default')
     return 'Local only. Phones and other computers can’t reach this address. Set a public HTTPS address to connect them.'
-  return 'Not set. Set the HTTPS address people and phones use to reach this server.'
+  return 'Not set. Set the HTTPS address people and mobile devices use to reach this server.'
 }
 
 function LastChange({ change }: { change: NonNullable<PublicAppUrlStatus['lastChange']> }) {
@@ -102,7 +104,14 @@ function UrlChanges({ title, changes }: { title: string; changes: UrlChange[] })
  * links, sign-in, OAuth callbacks, webhooks and the Ficus app. Administrators change it
  * here unless the server environment (APP_URL) or Ficus Cloud sets it.
  */
-export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string) => void }) {
+export function PublicAddressSettings({
+  onSaved,
+  proposed,
+}: {
+  onSaved?: (message: string) => void
+  /** An address offered elsewhere on the page (the mobile device guide). A new `n` proposes again, even the same address. */
+  proposed?: { url: string; n: number }
+}) {
   const permissions = usePermissions()
   const canRead = permissions.identity?.type === 'user' && permissions.can('settings:read')
   const canWrite = canRead && permissions.can('settings:write')
@@ -113,6 +122,17 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
     null
   )
   const [error, setError] = useState('')
+  // Opens the form with the proposed address. Nothing is saved until it is reviewed and confirmed.
+  useAdjustOnChange(
+    [proposed],
+    () => {
+      if (!proposed) return
+      setError('')
+      setPending(null)
+      setDraft(proposed.url)
+    },
+    { onMount: true }
+  )
 
   const preview = useMutation({
     mutationFn: async (input: { url: string | null; version: string }) => ({
@@ -324,7 +344,7 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
                   <li>
                     Passkeys don’t carry over to a new hostname.{' '}
                     {status.localUrl
-                      ? `Existing passkeys keep working at the local address (${status.localUrl}), and you can still pair phones from there.`
+                      ? `Existing passkeys keep working at the local address (${status.localUrl}), and you can still pair mobile devices from there.`
                       : 'Existing passkeys keep working only at the hostname they were made on.'}
                   </li>
                   <li>
@@ -354,7 +374,15 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
                   don’t move to the new one.
                 </li>
               )}
-              {!impact.mobileReady && <li>The Ficus app and Mobile & Pro need an HTTPS address.</li>}
+              {!impact.mobileReady &&
+                (classifyServerAddress(pending?.preview.effectiveUrl).reach === 'home-network' ? (
+                  <li>
+                    On this address the Ficus app works only while the mobile device is on this network, and the
+                    connection is not encrypted. Mobile & Pro needs an HTTPS address.
+                  </li>
+                ) : (
+                  <li>The Ficus app and Mobile & Pro need an HTTPS address.</li>
+                ))}
               <BasePathNotes impact={impact} localUrl={status.localUrl} />
               <li>Ficus checks the address format only. It doesn’t check that the address reaches this server.</li>
             </ul>
