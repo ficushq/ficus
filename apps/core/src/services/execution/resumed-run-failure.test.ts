@@ -257,6 +257,20 @@ test('an explained failure is not retried automatically; the manager is told the
   expect(notice?.content).toContain(`resumed execution ${execution.id} failed`)
 })
 
+test('a resumed run refused at pickup by a recovery hold tells the manager it is held, not uncounted', async () => {
+  const claimId = await holdSlot()
+  const execution = await resumedExecution('unknown-interruption')
+  // The pickup refusal Execution.run records for a held recovery, including the requeue cap.
+  await execution.fail('Recovery is held; an authorized decision is required.', undefined, {
+    failureClass: 'execution_failure',
+    failureReason: 'recovery_held',
+  })
+  expect((await workerInbox()).filter((row) => row.senderType === 'system')).toHaveLength(0)
+  const [notice] = await strandedNotices()
+  expect(notice?.metadata).toMatchObject({ reason: 'recovery-held', slotClaimIds: [claimId] })
+  expect(notice?.content).toContain('needs a Continue or Stop decision on the recovery')
+})
+
 test('a paused stream is not bypassed: the wake waits and the manager is told instead', async () => {
   const claimId = await holdSlot()
   const queued = await worker.queueExecution({ message: 'Ship it' })
