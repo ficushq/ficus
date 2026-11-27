@@ -2,9 +2,11 @@
  * DB-free Chromium check: markdown prose (body, heading, bold, link, inline code, blockquote, list item) meets WCAG AA
  * (4.5:1) against the surface it is drawn on, in every built-in theme and appearance, as the browser renders it.
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-markdown-prose-contrast.ts
+ * A portal case also checks that markdown with no text class of its own draws body text in the theme's primary ink.
  * Optional THEME_FILTER (a regex over "<theme>/<appearance>") narrows the run; SCREENSHOT_DIR saves one shot per theme;
  * REPORT=<file> writes the measured ratios as JSON. NO_DARK_CLASS=1 removes the root `dark` class after applying each
- * theme: prose colours come from theme tokens, so they must not depend on that Tailwind bridge class. Uses Core's declared playwright-core dependency.
+ * theme: prose colours come from theme tokens, so they must not depend on that Tailwind bridge class.
+ * Uses Core's declared playwright-core dependency.
  */
 import { createRequire } from 'node:module'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -50,7 +52,9 @@ try {
     report[key] = measured
     for (const [section, roles] of Object.entries(measured))
       for (const [role, ratio] of Object.entries(roles))
-        if (ratio < MINIMUM) failures.push(`${key} ${section} ${role}: ${ratio.toFixed(2)}`)
+        if (role === 'ink') {
+          if (ratio !== 1) failures.push(`${key} ${section}: body text is not the theme's primary ink`)
+        } else if (ratio < MINIMUM) failures.push(`${key} ${section} ${role}: ${ratio.toFixed(2)}`)
     if (screenshotDir)
       await page
         .locator('#shot')
@@ -124,5 +128,13 @@ function measure() {
       list: pick('li'),
     }
   }
+  // A portal (no text class of its own) must draw body text in the theme's primary ink, inherited from the body,
+  // rather than the browser's default black or white; 1 when it does, 0 when it does not.
+  const primary = document.createElement('span')
+  primary.className = 'text-primary'
+  document.body.append(primary)
+  const portalBody = document.querySelector('[data-case="portal"] .prose > p')!
+  result['portal']!['ink'] = getComputedStyle(portalBody).color === getComputedStyle(primary).color ? 1 : 0
+  primary.remove()
   return result
 }

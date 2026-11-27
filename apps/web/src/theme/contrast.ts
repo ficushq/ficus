@@ -41,7 +41,8 @@ export interface ContrastPair {
 }
 export const contrastPairs: ContrastPair[] = []
 const add = (fg: string, bg: string, minimum = 4.5, under?: string) => contrastPairs.push({ fg, bg, minimum, under })
-const surfaces = ['page', 'surface', 'surface-secondary', 'pill', 'surface-hover', 'inset'].map(
+/** The chrome surfaces every text pair is measured on. */
+export const surfaces = ['page', 'surface', 'surface-secondary', 'pill', 'surface-hover', 'inset'].map(
   (slot) => `--color-bg-${slot}`
 )
 for (const bg of surfaces) {

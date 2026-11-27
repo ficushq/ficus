@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
+import { surfaces } from './contrast'
 import { palettes, pairRatio } from './test/builtins'
 
 // Markdown prose on the app's surfaces (MarkdownContent's non-bubble variants) takes every colour from
@@ -20,9 +21,6 @@ rule.walkDecls((decl) => {
 })
 const token = (value: string) => /^rgb\(var\((--[\w-]+)\)\)$/.exec(value)?.[1]
 
-const surfaces = ['page', 'surface', 'surface-secondary', 'pill', 'surface-hover', 'inset'].map(
-  (slot) => `--color-bg-${slot}`
-)
 // Text drawn directly on the surface (bullets and counters are list markers, also text).
 const textRoles = ['headings', 'lead', 'links', 'bold', 'counters', 'bullets', 'quotes', 'captions', 'kbd']
 

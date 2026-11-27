@@ -419,7 +419,7 @@ function ReviewLayout({
           }}
         />
         {(brief.kind === 'none' || brief.kind === 'carried-forward') && (
-          <MarkdownContent variant="document" className="text-sm text-secondary">
+          <MarkdownContent variant="document" className="text-sm text-primary">
             {gate.step.instructions}
           </MarkdownContent>
         )}
