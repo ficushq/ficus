@@ -440,6 +440,8 @@ describe('GET /api/actions/pending delivery gates', () => {
       expect(narrowed).toEqual(
         actions.filter((action) => action.type === 'agent-error' || action.type === 'workstream-review')
       )
+      // The repeated form is the same filter.
+      expect(await list('?types=agent-error&types=workstream-review')).toEqual(narrowed)
       expect((await list('?types=agent-error')).some((action) => action.id === gateId)).toBe(false)
       // An empty filter is the same as none.
       expect((await list('?types=')).map((action) => action.id)).toEqual(actions.map((action) => action.id))
