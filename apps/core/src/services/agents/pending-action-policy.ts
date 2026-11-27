@@ -13,7 +13,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
 import { hasPermission, type Identity } from '../rbac'
-import { activeWorkflowAttempts, mayDecideWorkflowGate, workflowAttemptLimitPause } from '@ficus/shared'
+import { activeWorkflowAttempts, workflowGateDecisionBasis, workflowAttemptLimitPause } from '@ficus/shared'
 import { canRaiseFlowAttemptLimit } from '../workflows/attempt-limit'
 import { workStreamFlowRuns, workStreams } from '../../db'
 import { isWorkflowReviewer, workflowGateFallbackFor } from '../workflows/reviewers'
@@ -40,6 +40,7 @@ export interface PendingActionAttentionContext {
 export interface PendingActionPolicyDecision {
   visible: boolean
   canRespond: boolean
+  workflowGateFallbackBasis?: PendingAction['workflowGateFallbackBasis']
 }
 
 /** The ids among `questionIds` that `userId` is a direct attention recipient of, in one query. */
@@ -317,21 +318,23 @@ export async function evaluatePendingAction(
     const attempt = run && activeWorkflowAttempts(run.state).find((a) => a.id === data.wait.flowAttemptId)
     const step = attempt?.step ?? run?.state.definition.steps.find((s) => s.id === attempt?.stepId)
     let canRespond = false
+    let workflowGateFallbackBasis: PendingAction['workflowGateFallbackBasis']
     if (identity.type === 'user' && squadId && stream && run?.activated) {
       // A human approval, or a decision step without an automatic decision, waits for a person who may decide it.
       if (step?.kind === 'human-approval' || step?.kind === 'decision') {
         const canReview = await isWorkflowReviewer(identity.userId, squadId)
         // The fallback's reads are needed only when the plain rule says no to a reviewer.
-        canRespond =
-          mayDecideWorkflowGate(identity, canReview, stream.assignedReviewerIds, step) ||
-          (canReview &&
-            mayDecideWorkflowGate(
-              identity,
-              canReview,
-              stream.assignedReviewerIds,
-              step,
-              await workflowGateFallbackFor(identity, stream)
-            ))
+        let basis = workflowGateDecisionBasis(identity, canReview, stream.assignedReviewerIds, step)
+        if (!basis && canReview)
+          basis = workflowGateDecisionBasis(
+            identity,
+            canReview,
+            stream.assignedReviewerIds,
+            step,
+            await workflowGateFallbackFor(identity, stream)
+          )
+        canRespond = basis !== null
+        if (basis === 'owner' || basis === 'admin') workflowGateFallbackBasis = basis
       } else if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval')
         canRespond =
           (await hasPermission(identity, 'workstreams:respond', squadId)) ||
@@ -345,6 +348,7 @@ export async function evaluatePendingAction(
         canRead &&
         (identity.type !== 'user' || context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute'),
       canRespond,
+      ...(workflowGateFallbackBasis ? { workflowGateFallbackBasis } : {}),
     }
   }
   return {

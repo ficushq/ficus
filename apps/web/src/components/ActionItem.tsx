@@ -37,6 +37,7 @@ import type {
 import {
   pendingActionAgentLabel,
   pendingActionContextLine,
+  workflowGateFallbackNote,
   WORK_STREAM_STATUS_ROLE,
   type StatusRole,
 } from '@ficus/shared'
@@ -206,6 +207,10 @@ export function ActionItem({
           ? (pendingActionAgentLabel(action, typeNames) ?? agentItem.agentTypeId)
           : (pendingActionAgentLabel(action, typeNames) ?? action.squadName)
 
+  const gateFallbackNote = action.canRespond
+    ? workflowGateFallbackNote(action.workflowGateFallbackBasis ?? null)
+    : undefined
+
   return (
     <>
       <div
@@ -260,6 +265,11 @@ export function ActionItem({
               </Link>
             )}
             <ActionSubtitle action={action} />
+            {gateFallbackNote && (
+              <p className="mt-1 text-xs text-status-warning-700 dark:text-status-warning-400">
+                {gateFallbackNote} Assign an active reviewer to this work stream.
+              </p>
+            )}
             {/* A gate card has no body, so a viewer who may not decide it learns why here. */}
             {!expandable && !action.canRespond && blockedWait?.workflowHumanGate && (
               <ReadOnlyGateNotice

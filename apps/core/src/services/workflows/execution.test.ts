@@ -2,7 +2,7 @@ import { loadReviewContexts } from './review-context'
 import { brief } from '@ficus/shared/test-fixtures/workflow-review'
 import { getPostgresError } from '../../db/errors'
 import { externalDeliveryStreamIds } from './delivery-state'
-import { listPendingActions } from '../agents/actions'
+import { listPendingActions, listPendingActionsForIdentity } from '../agents/actions'
 import { EMPTY_USER_ATTENTION } from '../attention/resolver'
 import { evaluatePendingAction } from '../agents/pending-action-policy'
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
@@ -2208,6 +2208,8 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
   const context = { attention: EMPTY_USER_ATTENTION }
   const canRespond = async (userId: string) =>
     (await evaluatePendingAction({ type: 'user', userId }, action, context)).canRespond
+  const getViewerAction = async (userId: string) =>
+    (await listPendingActionsForIdentity({ type: 'user', userId })).find((candidate) => candidate.id === action.id)!
   const setDisabled = async (userId: string, disabled: boolean) => {
     await db
       .update(users)
@@ -2231,6 +2233,9 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
   invalidatePermissionCache()
   expect(await inactive()).toEqual([first.id, second.id])
   expect((await getAction()).data).toHaveProperty('noActiveAssignedReviewer', true)
+  expect(await getViewerAction(requester.id)).toMatchObject({ canRespond: true, workflowGateFallbackBasis: 'owner' })
+  expect(await getViewerAction(admin.id)).toMatchObject({ canRespond: true, workflowGateFallbackBasis: 'admin' })
+  expect(await getViewerAction(other.id)).not.toHaveProperty('workflowGateFallbackBasis')
   expect(await canRespond(requester.id)).toBe(true)
   expect(await canRespond(admin.id)).toBe(true)
   expect(await canRespond(other.id)).toBe(false)
@@ -2239,6 +2244,8 @@ test('an assigned-reviewers gate falls back to the owner and admins only while n
   await setDisabled(first.id, false)
   expect(await inactive()).toEqual([second.id])
   expect((await getAction()).data).not.toHaveProperty('noActiveAssignedReviewer')
+  expect(await getViewerAction(requester.id)).not.toHaveProperty('workflowGateFallbackBasis')
+  expect(await getViewerAction(first.id)).not.toHaveProperty('workflowGateFallbackBasis')
   expect(await canRespond(requester.id)).toBe(false)
   expect(await canRespond(admin.id)).toBe(false)
 

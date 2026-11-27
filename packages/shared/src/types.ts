@@ -1,6 +1,6 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { WorkflowAttemptLimitPause } from './workflow-runtime'
-import type { WorkflowGateApprover } from './workflow-gate-deciders'
+import type { WorkflowGateApprover, WorkflowGateDecisionBasis } from './workflow-gate-deciders'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 import type { WorkflowReviewConsultation } from './workflow-result-revisions'
@@ -1099,6 +1099,8 @@ export interface PendingAction {
   priority: number
   createdAt: string
   canRespond: boolean
+  /** The viewer can decide this gate only because no assigned reviewer is active. Presentation only. */
+  workflowGateFallbackBasis?: Extract<WorkflowGateDecisionBasis, 'owner' | 'admin'>
   /**
    * True when this item alerts the viewer (inbox message and push) rather than only being listed:
    * its push audience, before personal push preferences. Set for questions and human gates only;

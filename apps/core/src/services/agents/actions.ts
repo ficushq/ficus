@@ -633,7 +633,14 @@ export async function listPendingActionsForIdentity(
       }
       // A failed answer delivery above is a retry, not a new ask, so only these can alert.
       const alerts = await pendingActionAlertsViewer(identity, action, context)
-      visible.push({ ...action, canRespond: decision.canRespond, ...(alerts ? { alerts } : {}) })
+      visible.push({
+        ...action,
+        canRespond: decision.canRespond,
+        ...(decision.workflowGateFallbackBasis
+          ? { workflowGateFallbackBasis: decision.workflowGateFallbackBasis }
+          : {}),
+        ...(alerts ? { alerts } : {}),
+      })
     }
   }
   return visible
