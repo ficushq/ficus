@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { Hono } from 'hono'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import {
   CORE_IDLE_TIMEOUT_SECONDS,
   READ_DEADLINE_CODE,
@@ -7,7 +10,9 @@ import {
   exemptFromReadDeadline,
   extendIdleTimeout,
   holdIdleTimerForBodylessWrites,
+  holdIdleTimerUntilBodySent,
   readDeadline,
+  restoreExtendedIdleTimeout,
 } from './read-deadline'
 
 const DEADLINE_SECONDS = 0.1
@@ -143,7 +148,7 @@ describe('readDeadline', () => {
 })
 
 describe('holdIdleTimerForBodylessWrites', () => {
-  function buildWriteApp() {
+  function buildWriteApp(options: { failRestore?: boolean } = {}) {
     const timeouts: Array<[string, string, number]> = []
     const app = new Hono()
     app.use('*', holdIdleTimerForBodylessWrites({ idleTimeoutSeconds: 30 }))
@@ -163,8 +168,11 @@ describe('holdIdleTimerForBodylessWrites', () => {
     })
     app.onError((error, c) => c.json({ error: error.message }, 500))
     const server = {
-      timeout: (request: Request, seconds: number) =>
-        timeouts.push([request.method, new URL(request.url).pathname, seconds]),
+      timeout: (request: Request, seconds: number) => {
+        timeouts.push([request.method, new URL(request.url).pathname, seconds])
+        // Bun can throw here for a request whose client has already gone.
+        if (options.failRestore && seconds !== 0) throw new Error('socket already closed')
+      },
     }
     return { timeouts, fetch: (path: string, init?: RequestInit) => app.request(path, init, server) }
   }
@@ -193,6 +201,22 @@ describe('holdIdleTimerForBodylessWrites', () => {
     expect(timeouts).toEqual([
       ['POST', '/fails', 0],
       ['POST', '/fails', 30],
+    ])
+  })
+
+  it('keeps the handler result or error when Bun refuses to restore the timer', async () => {
+    const { fetch, timeouts } = buildWriteApp({ failRestore: true })
+    const paused = await fetch('/pause', { method: 'POST' })
+    expect(paused.status).toBe(200)
+    expect(await paused.json()).toEqual({ paused: true })
+    const failed = await fetch('/fails', { method: 'POST' })
+    expect(failed.status).toBe(500)
+    expect(await failed.json()).toEqual({ error: 'write failed' })
+    expect(timeouts.filter(([, path]) => path !== 'handler').map(([, path, seconds]) => [path, seconds])).toEqual([
+      ['/pause', 0],
+      ['/pause', 30],
+      ['/fails', 0],
+      ['/fails', 30],
     ])
   })
 
@@ -279,4 +303,297 @@ describe('holdIdleTimerForBodylessWrites', () => {
       await Promise.all([guarded.stop(true), unguarded.stop(true)])
     }
   }, 30_000)
+})
+
+/** A body that sends `first`, goes quiet for `pauseMs`, then sends `last`. */
+function pausingBody(first: string, last: string, pauseMs: number): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(first))
+      await Bun.sleep(pauseMs)
+      controller.enqueue(encoder.encode(last))
+      controller.close()
+    },
+  })
+}
+
+/**
+ * Send one request on a raw keep-alive socket and report when the answer arrived
+ * and when the server closed the socket, so a test can see an idle socket that is
+ * never closed (closedAt is Infinity once `giveUpMs` has passed).
+ */
+function keepAliveExchange(
+  port: number,
+  request: string,
+  giveUpMs: number
+): Promise<{ response: string; answeredAt: number; closedAt: number }> {
+  return new Promise((resolve) => {
+    const started = performance.now()
+    let client: { end(): void } | undefined
+    let response = ''
+    let answeredAt = 0
+    const giveUp = setTimeout(() => {
+      resolve({ response, answeredAt, closedAt: Number.POSITIVE_INFINITY })
+      client?.end()
+    }, giveUpMs)
+    void Bun.connect({
+      hostname: '127.0.0.1',
+      port,
+      socket: {
+        open(socket) {
+          client = socket
+          socket.write(request)
+        },
+        data(_socket, chunk) {
+          response += chunk.toString()
+          answeredAt = performance.now() - started
+        },
+        close() {
+          clearTimeout(giveUp)
+          resolve({ response, answeredAt, closedAt: performance.now() - started })
+        },
+      },
+    })
+  })
+}
+
+describe('restoreExtendedIdleTimeout', () => {
+  function buildExtendedApp(options: { failRestore?: boolean } = {}) {
+    const timeouts: Array<[string, number]> = []
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const app = new Hono()
+    app.use('*', restoreExtendedIdleTimeout({ idleTimeoutSeconds: 30 }))
+    app.post('/create', (c) => {
+      extendIdleTimeout(c, 0)
+      timeouts.push(['handler', -1])
+      return c.json({ created: true })
+    })
+    app.post('/fails', (c) => {
+      extendIdleTimeout(c, 0)
+      throw new Error('create failed')
+    })
+    app.get('/download', (c) => {
+      holdIdleTimerUntilBodySent(c)
+      const encoder = new TextEncoder()
+      const body = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(encoder.encode('first,'))
+          await held
+          controller.enqueue(encoder.encode('last'))
+          controller.close()
+        },
+      })
+      return new Response(body, { headers: { 'Content-Type': 'application/gzip', 'Content-Length': '10' } })
+    })
+    app.get('/missing', (c) => {
+      holdIdleTimerUntilBodySent(c)
+      return c.json({ error: 'File not found' }, 404)
+    })
+    app.get('/plain', (c) => c.json({ ok: true }))
+    app.get('/proxied', (c) => {
+      exemptFromReadDeadline(c)
+      return c.json({ ok: true })
+    })
+    app.onError((error, c) => c.json({ error: error.message }, 500))
+    const server = {
+      timeout: (request: Request, seconds: number) => {
+        timeouts.push([`${request.method} ${new URL(request.url).pathname}`, seconds])
+        if (options.failRestore && seconds !== 0) throw new Error('socket already closed')
+      },
+    }
+    return { timeouts, release, fetch: (path: string, init?: RequestInit) => app.request(path, init, server) }
+  }
+
+  it('turns the timer back on once an extending handler returns, before it answers', async () => {
+    const { fetch, timeouts } = buildExtendedApp()
+    const response = await fetch('/create', { method: 'POST', body: '{}' })
+    expect(response.status).toBe(200)
+    expect(timeouts).toEqual([
+      ['POST /create', 0],
+      ['handler', -1],
+      ['POST /create', 30],
+    ])
+  })
+
+  it('turns the timer back on when an extending handler fails', async () => {
+    const { fetch, timeouts } = buildExtendedApp()
+    const response = await fetch('/fails', { method: 'POST', body: '{}' })
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ error: 'create failed' })
+    expect(timeouts).toEqual([
+      ['POST /fails', 0],
+      ['POST /fails', 30],
+    ])
+  })
+
+  it('leaves requests that did not extend their timer alone, including the local-app proxy', async () => {
+    const { fetch, timeouts } = buildExtendedApp()
+    expect((await fetch('/plain')).status).toBe(200)
+    expect((await fetch('/proxied')).status).toBe(200)
+    expect(timeouts).toEqual([])
+  })
+
+  it('keeps the timer off until a streamed body has been sent, then turns it back on', async () => {
+    const { fetch, timeouts, release } = buildExtendedApp()
+    const response = await fetch('/download')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('application/gzip')
+    expect(response.headers.get('Content-Length')).toBe('10')
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    expect(decoder.decode((await reader.read()).value)).toBe('first,')
+    expect(timeouts).toEqual([['GET /download', 0]])
+    release()
+    expect(decoder.decode((await reader.read()).value)).toBe('last')
+    expect((await reader.read()).done).toBe(true)
+    expect(timeouts).toEqual([
+      ['GET /download', 0],
+      ['GET /download', 30],
+    ])
+  })
+
+  it('turns the timer back on when the client stops reading a streamed body', async () => {
+    const { fetch, timeouts } = buildExtendedApp()
+    const response = await fetch('/download')
+    const reader = response.body!.getReader()
+    await reader.read()
+    expect(timeouts).toEqual([['GET /download', 0]])
+    await reader.cancel()
+    expect(timeouts).toEqual([
+      ['GET /download', 0],
+      ['GET /download', 30],
+    ])
+  })
+
+  it('turns the timer back on at once for a HEAD, whose body Bun never sends', async () => {
+    const { fetch, timeouts } = buildExtendedApp()
+    const response = await fetch('/download', { method: 'HEAD' })
+    expect(response.status).toBe(200)
+    expect(timeouts).toEqual([
+      ['HEAD /download', 0],
+      ['HEAD /download', 30],
+    ])
+  })
+
+  it('still sends a short error answer from a route that waits for its body', async () => {
+    const { fetch, timeouts } = buildExtendedApp()
+    const response = await fetch('/missing')
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: 'File not found' })
+    expect(timeouts).toEqual([
+      ['GET /missing', 0],
+      ['GET /missing', 30],
+    ])
+  })
+
+  it('keeps the handler result, error or body when Bun refuses to restore the timer', async () => {
+    const { fetch, release } = buildExtendedApp({ failRestore: true })
+    const created = await fetch('/create', { method: 'POST', body: '{}' })
+    expect(created.status).toBe(200)
+    expect(await created.json()).toEqual({ created: true })
+    const failed = await fetch('/fails', { method: 'POST', body: '{}' })
+    expect(failed.status).toBe(500)
+    expect(await failed.json()).toEqual({ error: 'create failed' })
+    const download = await fetch('/download')
+    release()
+    expect(await download.text()).toBe('first,last')
+    const cancelled = await fetch('/download')
+    await cancelled.body!.cancel()
+  })
+
+  it('leaves a file body to Bun, which sends it with its Content-Length, when the route does not hold the timer', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'read-deadline-'))
+    const file = join(directory, 'download.bin')
+    writeFileSync(file, Buffer.alloc(300_000, 7))
+    const timeouts: number[] = []
+    const app = new Hono()
+    app.use('*', restoreExtendedIdleTimeout({ idleTimeoutSeconds: 30 }))
+    app.get('/file', (c) => {
+      extendIdleTimeout(c, 0)
+      return new Response(Bun.file(file), { headers: { 'Content-Length': '300000' } })
+    })
+    // What a held body costs, and why only bodies that are already streams are held.
+    app.get('/held', (c) => {
+      holdIdleTimerUntilBodySent(c)
+      return new Response(Bun.file(file), { headers: { 'Content-Length': '300000' } })
+    })
+    const server = Bun.serve({
+      port: 0,
+      fetch: (request) =>
+        app.fetch(request, { timeout: (_request: Request, seconds: number) => timeouts.push(seconds) }),
+    })
+    try {
+      const plain = await fetch(`http://127.0.0.1:${server.port}/file`)
+      expect(plain.headers.get('Content-Length')).toBe('300000')
+      expect(plain.headers.get('Transfer-Encoding')).toBeNull()
+      expect((await plain.arrayBuffer()).byteLength).toBe(300_000)
+      expect(timeouts).toEqual([0, 30])
+
+      const held = await fetch(`http://127.0.0.1:${server.port}/held`)
+      expect(held.headers.get('Content-Length')).toBeNull()
+      expect(held.headers.get('Transfer-Encoding')).toBe('chunked')
+      expect((await held.arrayBuffer()).byteLength).toBe(300_000)
+    } finally {
+      await server.stop(true)
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('closes the idle keep-alive socket after an extending route, and keeps a quiet download open until it is sent', async () => {
+    // At idleTimeout 1, Bun 1.4.2 closes a socket that has been idle for about 4 s.
+    const PAUSE_MS = 6_000
+    const GIVE_UP_MS = PAUSE_MS + 12_000
+    const app = new Hono()
+    app.use('*', restoreExtendedIdleTimeout({ idleTimeoutSeconds: 1 }))
+    app.post('/create', async (c) => {
+      extendIdleTimeout(c, 0)
+      return c.json(await c.req.json())
+    })
+    app.get('/download', (c) => {
+      extendIdleTimeout(c, 0)
+      holdIdleTimerUntilBodySent(c)
+      return new Response(pausingBody('first,', 'last', PAUSE_MS))
+    })
+    // The same download, with the timer back on as soon as the handler returns.
+    app.get('/early', (c) => {
+      extendIdleTimeout(c, 0)
+      return new Response(pausingBody('first,', 'last', PAUSE_MS))
+    })
+    const server = Bun.serve({ port: 0, idleTimeout: 1, fetch: (request, bun) => app.fetch(request, bun) })
+    try {
+      const [created, download, early] = await Promise.all([
+        keepAliveExchange(
+          server.port!,
+          'POST /create HTTP/1.1\r\nHost: core\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}',
+          GIVE_UP_MS
+        ),
+        keepAliveExchange(server.port!, 'GET /download HTTP/1.1\r\nHost: core\r\n\r\n', GIVE_UP_MS),
+        keepAliveExchange(server.port!, 'GET /early HTTP/1.1\r\nHost: core\r\n\r\n', GIVE_UP_MS),
+      ])
+
+      expect(created.response.startsWith('HTTP/1.1 200')).toBe(true)
+      expect(created.response.endsWith('{}')).toBe(true)
+      // Left with the timer off, this socket would stay open until the test gave up.
+      expect(created.closedAt - created.answeredAt).toBeLessThan(8_000)
+
+      // The quiet stretch in the body does not cut the download.
+      expect(download.response.startsWith('HTTP/1.1 200')).toBe(true)
+      expect(download.response).toContain('last')
+      expect(download.response.endsWith('0\r\n\r\n')).toBe(true)
+      expect(download.answeredAt).toBeGreaterThanOrEqual(PAUSE_MS)
+      // Once the body has been sent, the idle socket is closed again.
+      expect(download.closedAt - download.answeredAt).toBeLessThan(8_000)
+
+      // Restoring the timer when the handler returns would have cut it mid-body.
+      expect(early.response).toContain('first,')
+      expect(early.response).not.toContain('last')
+      expect(early.closedAt).toBeLessThan(PAUSE_MS)
+    } finally {
+      await server.stop(true)
+    }
+  }, 40_000)
 })

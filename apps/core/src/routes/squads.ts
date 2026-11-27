@@ -1,7 +1,7 @@
 import { readSandboxHostCapacity } from '../services/machines/host-admission'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { WORKSPACE_MULTIPART_METADATA_BYTES } from '../services/attachments/workspace-multipart-reader'
-import { extendIdleTimeout } from '../middleware/read-deadline'
+import { extendIdleTimeout, holdIdleTimerUntilBodySent } from '../middleware/read-deadline'
 import { stageWorkspaceMultipart, InvalidWorkspaceMultipartError } from '../services/attachments/workspace-multipart'
 import { publishWorkspaceUpload } from '../services/squad/workspace-upload'
 import { publicErrorMessage } from '../db/errors'
@@ -77,6 +77,7 @@ import { type K8sSandboxManager } from '../services/sandbox/k8s'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createDownloadResponse, createSandboxFileResponse } from '../lib/utils'
+import { DOWNLOAD_ARCHIVE_HEADER } from '../lib/utils/file-download'
 import { Agent } from '../entities/Agent'
 import { createLogger } from '../lib/infra/logger'
 import { getSandboxProvisionErrorResponse } from './sandbox-provision-error'
@@ -843,6 +844,9 @@ export const squadsRouter = new Hono()
     const client = await getSquadClient(squad.id)
     if (client) {
       if (archive === 'zip') return c.json({ error: 'Sandbox directory downloads are tar.gz archives' }, 400)
+      // The box's body is relayed as a stream and can go quiet (an archive being
+      // packed), so the timer stays off until the whole body has been sent.
+      holdIdleTimerUntilBodySent(c)
       try {
         const target = await resolveSandboxWorkspaceTarget(client, workspaceMount, relativePath)
         if (!target.ok) return workspaceTargetDenial(c, target, 'File not found')
@@ -866,7 +870,15 @@ export const squadsRouter = new Hono()
     try {
       const target = resolveLocalWorkspaceTarget(workspacePath, relativePath)
       if (!target.ok) return workspaceTargetDenial(c, target, 'Path not found')
-      return createDownloadResponse(target.path, 'workspace', { range, archive, omitSettingsDir: target.isRoot })
+      const response = createDownloadResponse(target.path, 'workspace', {
+        range,
+        archive,
+        omitSettingsDir: target.isRoot,
+      })
+      // A directory archive is packed while it streams and can go quiet. A file body is
+      // left to Bun, which sends it from disk with its Content-Length.
+      if (response.headers.has(DOWNLOAD_ARCHIVE_HEADER)) holdIdleTimerUntilBodySent(c)
+      return response
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         return c.json({ error: 'Path not found' }, 404)

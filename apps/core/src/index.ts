@@ -185,7 +185,12 @@ import { corsAllowOrigins, normalizeOrigin, isAllowedWsOrigin } from './services
 import { extractSessionToken, getSessionCookie } from './services/auth/session-cookie'
 import { csrfProtection } from './middleware/csrf'
 import { managedVaultHostGuard } from './middleware/managed-vault-host'
-import { CORE_IDLE_TIMEOUT_SECONDS, holdIdleTimerForBodylessWrites, readDeadline } from './middleware/read-deadline'
+import {
+  CORE_IDLE_TIMEOUT_SECONDS,
+  holdIdleTimerForBodylessWrites,
+  readDeadline,
+  restoreExtendedIdleTimeout,
+} from './middleware/read-deadline'
 import { redactHttpLogCredentials } from './lib/infra/http-log'
 import { attachPeerAddress, getClientAddress } from './lib/client-address'
 import { getSandboxProvisionErrorResponse } from './routes/sandbox-provision-error'
@@ -216,6 +221,9 @@ app.use('*', jsonBodyErrorMiddleware)
 // A slow write without a body (the CLI's pause or cancel) must not lose its answer
 // to Bun's idle timer while it runs; writes with a body are already spared.
 app.use('*', holdIdleTimerForBodylessWrites())
+// Routes that turn the timer off themselves (workspace transfers, work stream creation)
+// get it back when they finish, so their keep-alive sockets still close when idle.
+app.use('*', restoreExtendedIdleTimeout())
 app.onError((error, c) => {
   // Sandbox provisioning back-pressure answers 503 + Retry-After. It must be checked
   // before the shared handler, which would otherwise flatten it into a generic 500 and
