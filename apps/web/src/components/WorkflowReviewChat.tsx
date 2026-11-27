@@ -10,9 +10,9 @@ import { AgentConversation } from './AgentConversation'
  * The agent's own conversation: the same agent and session as its full chat page, unless a stand-in
  * is provided through ReviewConversationContext (tests and the browser fixture).
  */
-function ReviewConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {
+function ReviewConversation({ agentId, sendOptions, placeholder, foldComposerActions }: ReviewConversationProps) {
   const renderStandIn = useContext(ReviewConversationContext)
-  if (renderStandIn) return renderStandIn({ agentId, sendOptions, placeholder })
+  if (renderStandIn) return renderStandIn({ agentId, sendOptions, placeholder, foldComposerActions })
   return (
     <AgentConversation
       agentId={agentId}
@@ -20,6 +20,7 @@ function ReviewConversation({ agentId, sendOptions, placeholder }: ReviewConvers
       enableFullscreen={false}
       sendOptions={sendOptions}
       placeholder={placeholder}
+      foldComposerActions={foldComposerActions}
     />
   )
 }
@@ -35,6 +36,7 @@ export function WorkflowReviewChat({
   run,
   agents,
   consult,
+  authorOf,
 }: {
   workStreamId: string
   gateAttemptId: number
@@ -42,12 +44,17 @@ export function WorkflowReviewChat({
   agents: Array<{ agentId: string; sources: WorkflowAttempt[] }>
   /** Whether the viewer may decide this gate, and so consults the agent as its reviewer. */
   consult: boolean
+  /** Who prepared an attempt ("Engineer (Payments)"): each agent is named by it in the picker. */
+  authorOf?: (attempt: WorkflowAttempt) => string | undefined
 }) {
   const [selected, setSelected] = useState(agents[0]?.agentId)
   const current = agents.find((entry) => entry.agentId === selected) ?? agents[0]
   if (!current) return null
-  const label = (entry: (typeof agents)[number]) =>
-    entry.sources.map((source) => attemptSummary(run.state, source)).join(', ')
+  const label = (entry: (typeof agents)[number]) => {
+    const steps = entry.sources.map((source) => attemptSummary(run.state, source)).join(', ')
+    const author = entry.sources.map((source) => authorOf?.(source)).find(Boolean)
+    return author ? `${author} · ${steps}` : steps
+  }
   return (
     <section aria-label="Agent chat" data-review-chat className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 space-y-2 border-b border-panel-border px-4 py-2">
@@ -81,6 +88,8 @@ export function WorkflowReviewChat({
           agentId={current.agentId}
           placeholder={consult ? 'Ask about this proposal or request a refinement' : 'Message the agent'}
           sendOptions={() => (consult ? { reviewConsultation: { workStreamId, gateAttemptId } } : undefined)}
+          // A reviewer asking a question needs the input and send; the other actions stay behind More controls.
+          foldComposerActions
         />
       </div>
     </section>

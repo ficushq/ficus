@@ -175,8 +175,21 @@ async function fixture({
   }
 }
 
+/** The squad's agents and agent types, so the review names who prepared each attempt. */
+function seedPeople(queryClient: QueryClient, agents = [{ id: 'design-agent', purpose: 'Gate feedback' }]) {
+  queryClient.setQueryData(
+    queryKeys.squads.agents(stream.squadId),
+    agents.map(({ id, purpose }) => ({ id, agentTypeId: 'engineer', squadId: stream.squadId, metadata: { purpose } }))
+  )
+  queryClient.setQueryData(queryKeys.agentTypes.list(), [
+    { id: 'engineer', name: 'Engineer' },
+    { id: 'general', name: 'General Purpose' },
+  ])
+}
+
 test('wide screens read the proposal beside the agent chat with the decision pinned below it', async () => {
   const f = await fixture()
+  seedPeople(f.queryClient)
   try {
     await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
     const dialog = f.dialog()!
@@ -198,7 +211,17 @@ test('wide screens read the proposal beside the agent chat with the decision pin
     expect(rail.getAttribute('aria-label')).toBe('Agent chat and decision')
     expect(rail.className).toContain('w-[clamp(360px,36vw,480px)]')
     expect(rail.textContent).toContain('#438 · Gate GitHub feedback by trusted authors')
-    expect(rail.textContent).toContain('execute · Attempt 3 · Proposal ready')
+    // Who prepared the proposal leads; the step and attempt follow as secondary text.
+    expect(rail.textContent).toContain('Engineer (Gate feedback) · execute · Attempt 3 · Proposal ready')
+    expect([...rail.querySelectorAll('span.font-medium.text-primary')].map((span) => span.textContent)).toEqual([
+      'Engineer (Gate feedback)',
+    ])
+    // How long the review has waited, with the exact time on hover.
+    const waiting = rail.querySelector('time')!
+    expect(waiting.textContent).toMatch(/^Waiting \d+ days$/)
+    expect(waiting.getAttribute('dateTime')).toBe('2026-10-08T10:00:00.000Z')
+    expect(waiting.getAttribute('title')).toBe(`Waiting since ${new Date('2026-10-08T10:00:00.000Z').toLocaleString()}`)
+    expect(rail.textContent).not.toContain('Waiting since')
     expect(rail.querySelector('a[aria-label="Open execute attempt 3 agent chat"]')).not.toBeNull()
     expect(rail.querySelector('a[href="https://github.com/ficushq/ficus/pull/12"]')?.textContent).toBe('PR #12')
     // The same agent as Open chat, consulted as the reviewer of this gate.
@@ -242,8 +265,10 @@ test('approving needs no notes, sending back does, and each outcome sends the sa
   try {
     await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => closed++} />)
     const [approve, sendBack] = f.decisionButtons()
-    expect(approve!.textContent).toBe('ApprovedFinishes the flow')
-    expect(sendBack!.textContent).toBe('Changes requestedSends back to execute')
+    // Each outcome says what happens: without a brief, that the stream completes or who gets it back.
+    expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
+    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General agent with your notes')
+    expect(sendBack!.title).toBe('Returns to the General agent with your notes')
     expect(approve!.className).toContain('ficus-button-primary')
     expect([approve!.disabled, sendBack!.disabled]).toEqual([false, true])
     await f.type('   ')
@@ -302,7 +327,7 @@ test('read-only viewers see the document and the pending decision without contro
     expect(f.decisionButtons()).toEqual([])
     expect(dialog.textContent).toContain('Awaiting review')
     expect(dialog.textContent).toContain('You need review permission in this squad to decide.')
-    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Approved · Finishes the flow')
+    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Approved · Completes the work stream')
   } finally {
     await f.cleanup()
   }
@@ -783,6 +808,7 @@ test('a PDF that cannot be read falls back to the download offer', async () => {
 
 test('authored brief leads with repeat-round context and collapses independent evidence', async () => {
   const f = await fixture()
+  seedPeople(f.queryClient)
   const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(
     new TextEncoder().encode('# Staging attachment\n\nKeep the fallback.')
   )
@@ -809,6 +835,13 @@ test('authored brief leads with repeat-round context and collapses independent e
     expect(tabs(f)[0]?.textContent).toBe('Decision brief')
     expect(tabs(f)[0]?.getAttribute('aria-selected')).toBe('true')
     expect(article.textContent).toContain('What changed since your last review')
+    // Who prepared the brief leads; the step it came from follows.
+    expect(article.textContent).toContain('Prepared by Engineer (Gate feedback) · execute · Attempt 3')
+    // Approving says what the brief says approval allows, in short; sending back says who gets the notes.
+    const [approve, sendBack] = f.decisionButtons()
+    expect(approve!.textContent).toBe('ApprovedPermits staging implementation only, not deployment.')
+    expect(approve!.title).toBe('Approval permits staging implementation only, not deployment.')
+    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
     const disclosure = [...f.doc.querySelectorAll('details')].find(
       (d) => d.querySelector('summary')?.textContent === 'Internal handoff'
     )!
@@ -1314,10 +1347,19 @@ test('a gate fed by two agents offers a picker between their conversations', asy
     run.state.attempts.find((attempt) => attempt.id === 4)!.sourceAttemptIds = [3, 5]
     run.attemptAgents = { '3': 'design-agent', '5': 'branch-agent' }
     f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    seedPeople(f.queryClient, [
+      { id: 'design-agent', purpose: 'Gate feedback' },
+      { id: 'branch-agent', purpose: 'Second branch' },
+    ])
     await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
     const picker = f.dialog()!.querySelector('[role="group"][aria-label="Agent"]')!
     const buttons = [...picker.querySelectorAll('button')]
     expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    // Each agent is named by who it is first, then the attempt it produced.
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Engineer (Gate feedback) · execute · Attempt 3 · Proposal ready',
+      'Engineer (Second branch) · execute · Attempt 5 · Proposal ready',
+    ])
     await f.dom.act(async () => buttons[1]!.click())
     expect(f.dialog()!.querySelector('[data-stub-conversation]')!.getAttribute('data-stub-conversation')).toBe(
       'branch-agent'

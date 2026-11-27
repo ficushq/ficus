@@ -69,7 +69,7 @@ The runtime has no separate global multi-step flow-attempt ID: the boundary is t
 
 ## Review screen
 
-A brief-present review starts with **Human approval · <gate-kind summary>**, then **Decision brief**, **Prepared by <step> · Attempt <n>**, and these fields in order:
+A brief-present review starts with **Human approval · <gate-kind summary>**, then **Decision brief**, **Prepared by <who> · <step> · Attempt <n>**, and these fields in order:
 
 1. **Decision**
 2. **Recommendation**
@@ -78,6 +78,13 @@ A brief-present review starts with **Human approval · <gate-kind summary>**, th
 5. **What changed since your last review**, when supplied
 
 The gate-kind subtitle uses the first plain-text sentence, clamped at a word boundary to 160 characters with an ellipsis. The first and default document tab is **Decision brief**. Attachments are neighboring peer tabs and load only when selected; returning to the first tab restores the brief. Only the internal agent handoff is initially collapsed beneath the brief, labeled **Internal handoff**. Legacy reviews keep their handoff-first layout. Web and Farm show the same brief fields, separate carried-source labels, explicit missing-brief messages and blockers. Actual contributing join briefs retain their individual provenance; only submissions whose contexts name this gate and have not already fed a settled round are authored for it, while the most recent other eligible source is labeled carried forward. **Earlier decisions (<n>)** preserves previous notes and round-bound briefs. All brief fields are read-only. Outcome captions use effective completion routing, so an open return destination can override an ordinary finish edge.
+
+The web review screen names people and effects in plain words:
+
+- **Who prepared it leads.** An attempt is named by its agent's type with the agent's purpose when it has one, such as **Engineer (Payments)**, and the step, attempt and outcome follow as secondary text (**Engineer (Payments) · implement · Attempt 1 · Ready**). The type comes from the squad's agent list and its names for agent types; when either is unavailable, the participant type the attempt ran as still names it. An attempt no agent ran keeps the step name.
+- **Outcome captions say what happens.** When the brief authored for this gate states what approval allows, the primary (first forward) outcome shows a short form of it: the first sentence as plain text, with a leading "Approval lets" or "Approving this permits" reduced to its verb (**Lets the release reviewer merge the change…**), clamped at a word boundary, with the whole statement on hover. A carried-forward brief, or join briefs that disagree, give no short form. Otherwise a send-back says who gets the notes (**Returns to the Engineer with your notes**), a forward outcome names the next step and who gets it (**Moves on to Release with the Engineer**, **Moves on to Product sign-off for review**), and finishing says **Completes the work stream**.
+- **Waiting time is relative.** The summary says **Waiting 7 days** (minutes, hours or days), with the exact time in the tooltip.
+- **The ask box is light.** The chat composer keeps only its input, the More controls trigger and Send in view; attach, file, voice, auto-scroll, raw text and search stay in the More controls menu (see the chat composer in [web-ui.md](web-ui.md)). Stop, Interrupt / Follow up and a state word such as **Queued** show only while the agent has a turn queued, starting or running, as everywhere else.
 
 An older agent-origin gate with no brief retains its existing instructions, handoff and attachment layout. Missing older source links also retain legacy rendering rather than guessing provenance. Known non-agent arrivals use the explicit carry-forward/none behavior above. Reads never mutate an existing gate.
 

@@ -1,10 +1,11 @@
 import { WorkflowDecisionBrief } from './WorkflowDecisionBrief'
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
 import { flushSync } from 'react-dom'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
+  activityAgentLabel,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   workflowDecisionRevisionNote,
   workflowGateRevisions,
@@ -19,6 +20,7 @@ import {
   workStreamRef,
   workStreamTitle,
   type WorkflowAttempt,
+  type WorkflowTransition,
   type WorkStream,
 } from '@ficus/shared'
 import { isHttpResponseError, type WorkflowRunDetail } from '@ficus/client-core'
@@ -26,10 +28,12 @@ import { client } from '../api/clientInstance'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { usePermissions } from '../hooks/usePermissions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
+import { useTick } from '../hooks/useTick'
 import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
 import { actionErrorMessage } from '../lib/actionError'
 import { reviewDocuments } from '../lib/workflowAttachments'
 import {
+  attemptAuthor,
   attemptSummary,
   decisionNotesHint,
   focusedHumanGate,
@@ -48,6 +52,8 @@ import {
   workflowReviewPath,
   writeReviewDraft,
   writeSeenRevisions,
+  waitingLabel,
+  type AgentTypeName,
   type HumanGateContext,
 } from '../lib/workflowReview'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
@@ -70,6 +76,77 @@ interface ReviewNavigation {
   onOpenAgent?: () => void
   /** Show the full work stream. Without it the link navigates to the stream's Work tab. */
   onOpenWorkStream?: () => void
+}
+
+/** Who prepared an attempt ("Engineer (Payments)"), or undefined when no agent did. */
+type AttemptAuthorOf = (attempt: WorkflowAttempt) => string | undefined
+
+/**
+ * Names the review's people: agent types by the squad's names for them, and each attempt by the agent that
+ * prepared it. Either list may be unavailable (no permission, offline); the participant's type still names it.
+ */
+function useReviewPeople(stream: WorkStream, run: WorkflowRunDetail) {
+  const { data: agents } = useQuery({ ...queries.squads.agents(stream.squadId), retry: false })
+  const { data: agentTypes } = useQuery({ ...queries.agentTypes.list(), retry: false })
+  return useMemo(() => {
+    const names = new Map((agentTypes ?? []).map((type) => [type.id, type.name]))
+    const byId = new Map((agents ?? []).map((agent) => [agent.id, agent]))
+    const typeName: AgentTypeName = (id) => names.get(id) ?? activityAgentLabel(id)
+    const authorOf: AttemptAuthorOf = (attempt) => attemptAuthor(run, attempt, { agents: byId, typeName })
+    return { typeName, authorOf }
+  }, [agents, agentTypes, run])
+}
+
+/** "Engineer (Payments) · implement · Attempt 1 · Ready", as one line of text. */
+function attemptByline(run: WorkflowRunDetail, source: WorkflowAttempt, authorOf: AttemptAuthorOf): string {
+  const author = authorOf(source)
+  return author ? `${author} · ${attemptSummary(run.state, source)}` : attemptSummary(run.state, source)
+}
+
+/** Who prepared the attempt leads; its step, attempt and outcome follow as secondary text. */
+function AttemptByline({
+  run,
+  source,
+  authorOf,
+}: {
+  run: WorkflowRunDetail
+  source: WorkflowAttempt
+  authorOf: AttemptAuthorOf
+}) {
+  const author = authorOf(source)
+  if (!author) return <>{attemptSummary(run.state, source)}</>
+  return (
+    <>
+      <span className="font-medium text-primary">{author}</span>
+      <span className="text-muted"> · {attemptSummary(run.state, source)}</span>
+    </>
+  )
+}
+
+/** "Waiting 7 days", kept current, with the exact time on hover. */
+function WaitingTime({ openedAt }: { openedAt: string }) {
+  const now = useTick(60_000)
+  return (
+    <p className="text-xs text-muted">
+      <time dateTime={openedAt} title={`Waiting since ${new Date(openedAt).toLocaleString()}`}>
+        {waitingLabel(openedAt, now)}
+      </time>
+    </p>
+  )
+}
+
+/** An outcome's effect: the primary outcome says what the brief says approval allows, in short. */
+function gateOutcomeEffect(
+  gate: HumanGateContext,
+  run: WorkflowRunDetail,
+  outcome: string,
+  transition: WorkflowTransition,
+  typeName: AgentTypeName
+): { short: string; full: string } {
+  const approval = outcome === gate.primaryOutcome ? gate.approvalEffect : undefined
+  if (approval && !('returnTo' in transition)) return approval
+  const effect = outcomeEffect(run.state, transition, gate.attempt, outcome, { typeName })
+  return { short: effect, full: effect }
 }
 
 /**
@@ -173,6 +250,7 @@ function ReviewLayout({
   const wide = useMediaQuery(REVIEW_COLUMNS_QUERY)
   const chatWide = useMediaQuery(REVIEW_CHAT_COLUMNS_QUERY)
   const agents = producingAgents(run, gate.sources)
+  const people = useReviewPeople(stream, run)
   // Without a producing agent to chat with, the review keeps its document and decision rail layout.
   const layout: ReviewLayoutKind = agents.length
     ? chatWide
@@ -219,7 +297,7 @@ function ReviewLayout({
       onClose()
     },
   })
-  const decision: DecisionState = { gate, run, notes, setNotes, advance, revisions }
+  const decision: DecisionState = { gate, run, notes, setNotes, advance, revisions, typeName: people.typeName }
   const navigation = { onOpenAgent, onOpenWorkStream }
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const reviewSources = [
@@ -256,7 +334,14 @@ function ReviewLayout({
     <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
       {summaryInDocument && !hasBriefDisplay && (
         <div className="mb-6">
-          <ReviewSummary stream={stream} run={run} gate={gate} revisions={revisions} {...navigation} />
+          <ReviewSummary
+            stream={stream}
+            run={run}
+            gate={gate}
+            revisions={revisions}
+            authorOf={people.authorOf}
+            {...navigation}
+          />
         </div>
       )}
       {gate.step.instructions.trim() && (
@@ -276,10 +361,10 @@ function ReviewLayout({
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{gate.decisionNote}</p>
         </section>
       )}
-      <ReviewDocument run={run} sources={reviewSources} />
+      <ReviewDocument run={run} sources={reviewSources} authorOf={people.authorOf} />
       {historyInDocument && gate.history.length > 0 && (
         <div className="mt-10 border-t border-panel-border pt-5">
-          <DecisionHistory gate={gate} run={run} />
+          <DecisionHistory gate={gate} run={run} authorOf={people.authorOf} />
         </div>
       )}
     </div>
@@ -288,7 +373,14 @@ function ReviewLayout({
     <>
       <div className="mx-auto w-full max-w-[72ch] space-y-6 px-5 py-6 sm:px-8 sm:py-8">
         {summaryInDocument && (
-          <ReviewSummary stream={stream} run={run} gate={gate} revisions={revisions} {...navigation} />
+          <ReviewSummary
+            stream={stream}
+            run={run}
+            gate={gate}
+            revisions={revisions}
+            authorOf={people.authorOf}
+            {...navigation}
+          />
         )}
         <p className="text-sm text-muted">
           {humanGateSubtitle(gate.step.instructions, gate.step.name ?? gate.step.id)}
@@ -296,6 +388,7 @@ function ReviewLayout({
         <WorkflowDecisionBrief
           run={run.state}
           attempt={attempt}
+          preparedBy={people.authorOf}
           beforeSource={(source) => {
             const unseen = revisions.unseen.find((entry) => entry.attemptId === source.id)
             return unseen ? (
@@ -375,6 +468,7 @@ function ReviewLayout({
       gateAttemptId={attempt.id}
       run={run}
       agents={agents}
+      authorOf={people.authorOf}
       consult={gate.canDecide}
     />
   )
@@ -388,7 +482,14 @@ function ReviewLayout({
           className="flex w-[clamp(360px,36vw,480px)] shrink-0 flex-col border-l border-panel-border bg-surface-secondary"
         >
           <div className="max-h-[30%] shrink-0 overflow-y-auto border-b border-panel-border p-4">
-            <ReviewSummary stream={stream} run={run} gate={gate} revisions={revisions} {...navigation} />
+            <ReviewSummary
+              stream={stream}
+              run={run}
+              gate={gate}
+              revisions={revisions}
+              authorOf={people.authorOf}
+              {...navigation}
+            />
           </div>
           {chat}
           {/* Pinned: the chat scrolls on its own and never pushes the decision out of reach. */}
@@ -429,10 +530,17 @@ function ReviewLayout({
           className="flex w-[360px] shrink-0 flex-col overflow-y-auto border-l border-panel-border bg-surface-secondary"
         >
           <div className="space-y-6 p-5">
-            <ReviewSummary stream={stream} run={run} gate={gate} revisions={revisions} {...navigation} />
+            <ReviewSummary
+              stream={stream}
+              run={run}
+              gate={gate}
+              revisions={revisions}
+              authorOf={people.authorOf}
+              {...navigation}
+            />
             <div className="border-t border-panel-border" />
             {gate.canDecide ? <DecisionForm layout="rail" {...decision} /> : <ReadOnlyDecision {...decision} />}
-            {gate.history.length > 0 && <DecisionHistory gate={gate} run={run} />}
+            {gate.history.length > 0 && <DecisionHistory gate={gate} run={run} authorOf={people.authorOf} />}
           </div>
         </aside>
       ) : (
@@ -443,14 +551,22 @@ function ReviewLayout({
 }
 
 /** The handoff(s) under review, as the one scrolling reading column. */
-function ReviewDocument({ run, sources }: { run: WorkflowRunDetail; sources: WorkflowAttempt[] }) {
+function ReviewDocument({
+  run,
+  sources,
+  authorOf,
+}: {
+  run: WorkflowRunDetail
+  sources: WorkflowAttempt[]
+  authorOf: AttemptAuthorOf
+}) {
   return (
     <article aria-label="What to review" className="mt-8 space-y-10">
       {sources.length === 0 && <p className="text-sm text-muted">No handoff was recorded for this review.</p>}
       {sources.map((source) => (
-        <section key={source.id} aria-label={attemptSummary(run.state, source)}>
-          <h2 className="mb-4 border-b border-panel-border pb-2 text-xs font-medium text-muted">
-            {attemptSummary(run.state, source)}
+        <section key={source.id} aria-label={attemptByline(run, source, authorOf)}>
+          <h2 className="mb-4 border-b border-panel-border pb-2 text-xs text-muted">
+            <AttemptByline run={run} source={source} authorOf={authorOf} />
           </h2>
           {source.evidence ? (
             <MarkdownContent variant="document" className="prose-base text-primary">
@@ -471,6 +587,7 @@ function ReviewSummary({
   run,
   gate,
   revisions,
+  authorOf,
   onOpenAgent,
   onOpenWorkStream,
 }: {
@@ -478,6 +595,7 @@ function ReviewSummary({
   run: WorkflowRunDetail
   gate: HumanGateContext
   revisions: ReviewRevisions
+  authorOf: AttemptAuthorOf
 } & ReviewNavigation) {
   const { slugFor } = useSquadSlugs()
   const pullRequests = workStreamPullRequests(stream.metadata ?? {})
@@ -504,7 +622,7 @@ function ReviewSummary({
         {gate.sources.map((source) => (
           <p key={source.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">
             <span>
-              {attemptSummary(run.state, source)}
+              <AttemptByline run={run} source={source} authorOf={authorOf} />
               {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
             </span>
             {revisions.unseen
@@ -516,9 +634,7 @@ function ReviewSummary({
               ))}
           </p>
         ))}
-        {gate.gateWait && (
-          <p className="text-xs text-muted">Waiting since {new Date(gate.gateWait.openedAt).toLocaleString()}</p>
-        )}
+        {gate.gateWait && <WaitingTime openedAt={gate.gateWait.openedAt} />}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         {gate.sources.map((source) => {
@@ -580,6 +696,7 @@ interface DecisionState {
   setNotes: (value: string) => void
   advance: { isPending: boolean; error: Error | null; mutate: (outcome: string) => void }
   revisions: ReviewRevisions
+  typeName: AgentTypeName
 }
 
 type ReviewLayoutKind = 'columns' | 'stacked' | 'chat-columns' | 'chat-tabs'
@@ -712,6 +829,7 @@ function DecisionForm({
   setNotes,
   advance,
   revisions,
+  typeName,
 }: DecisionState & { layout: 'rail' | 'pinned' }) {
   const id = useId()
   return (
@@ -732,7 +850,14 @@ function DecisionForm({
       <ReviewBlockers gate={gate} />
       <RevisionNotice revisions={revisions} />
       <div className={clsx(layout === 'pinned' ? 'grid grid-cols-2 gap-2' : 'space-y-2 pt-2')}>
-        <DecisionButtons gate={gate} run={run} notes={notes} advance={advance} revisions={revisions} />
+        <DecisionButtons
+          gate={gate}
+          run={run}
+          notes={notes}
+          advance={advance}
+          revisions={revisions}
+          typeName={typeName}
+        />
       </div>
       <DecisionStatus gate={gate} advance={advance} revisions={revisions} />
     </div>
@@ -860,17 +985,18 @@ function NotesField({
   )
 }
 
-function DecisionButtons({ gate, run, notes, advance, revisions }: Omit<DecisionState, 'setNotes'>) {
+function DecisionButtons({ gate, run, notes, advance, revisions, typeName }: Omit<DecisionState, 'setNotes'>) {
   return (
     <>
       {gate.outcomes.map(([outcome, transition]) => {
         const primary = outcome === gate.primaryOutcome
         const sendsBack = 'returnTo' in transition
+        const effect = gateOutcomeEffect(gate, run, outcome, transition, typeName)
         return (
           <button
             key={outcome}
             type="button"
-            title={outcomeEffect(run.state, transition, gate.attempt, outcome)}
+            title={effect.full}
             className={clsx(
               'ficus-button block w-full px-4 py-2.5 text-sm disabled:opacity-50',
               primary ? 'ficus-button-primary' : sendsBack ? 'ficus-button-danger' : 'ficus-button-secondary'
@@ -885,9 +1011,7 @@ function DecisionButtons({ gate, run, notes, advance, revisions }: Omit<Decision
             onClick={() => advance.mutate(outcome)}
           >
             {outcomeLabel(outcome)}
-            <span className="block text-xs font-normal opacity-80">
-              {outcomeEffect(run.state, transition, gate.attempt, outcome)}
-            </span>
+            <span className="block text-xs font-normal opacity-80 line-clamp-2">{effect.short}</span>
           </button>
         )
       })}
@@ -910,7 +1034,12 @@ function DecisionStatus({ advance, revisions }: Pick<DecisionState, 'gate' | 'ad
 }
 
 /** What a viewer who cannot decide sees: that a decision is pending, why it is not theirs, and its outcomes. */
-function ReadOnlyDecision({ gate, run, revisions }: Pick<DecisionState, 'gate' | 'run' | 'revisions'>) {
+function ReadOnlyDecision({
+  gate,
+  run,
+  revisions,
+  typeName,
+}: Pick<DecisionState, 'gate' | 'run' | 'revisions' | 'typeName'>) {
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-primary">Awaiting a decision</p>
@@ -921,7 +1050,10 @@ function ReadOnlyDecision({ gate, run, revisions }: Pick<DecisionState, 'gate' |
         {gate.outcomes.map(([outcome, transition]) => (
           <li key={outcome}>
             <span className="font-medium">{outcomeLabel(outcome)}</span>
-            <span className="text-muted"> · {outcomeEffect(run.state, transition, gate.attempt, outcome)}</span>
+            <span className="text-muted" title={gateOutcomeEffect(gate, run, outcome, transition, typeName).full}>
+              {' '}
+              · {gateOutcomeEffect(gate, run, outcome, transition, typeName).short}
+            </span>
           </li>
         ))}
       </ul>
@@ -929,7 +1061,15 @@ function ReadOnlyDecision({ gate, run, revisions }: Pick<DecisionState, 'gate' |
   )
 }
 
-function DecisionHistory({ gate, run }: { gate: HumanGateContext; run: WorkflowRunDetail }) {
+function DecisionHistory({
+  gate,
+  run,
+  authorOf,
+}: {
+  gate: HumanGateContext
+  run: WorkflowRunDetail
+  authorOf: AttemptAuthorOf
+}) {
   return (
     <details className="group">
       <summary className="cursor-pointer text-xs font-medium text-secondary hover:text-primary">
@@ -944,7 +1084,7 @@ function DecisionHistory({ gate, run }: { gate: HumanGateContext; run: WorkflowR
             {workflowDecisionRevisionNote(run.state, entry) && (
               <p className="text-muted">{workflowDecisionRevisionNote(run.state, entry)}</p>
             )}
-            <WorkflowDecisionBrief run={run.state} attempt={entry} />
+            <WorkflowDecisionBrief run={run.state} attempt={entry} preparedBy={authorOf} />
             {(entry.evidence || entry.feedback) && (
               <MarkdownContent variant="document" className="mt-1 text-xs text-secondary">
                 {entry.evidence ?? entry.feedback!}
