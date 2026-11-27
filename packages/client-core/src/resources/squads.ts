@@ -20,15 +20,13 @@ import type { ImageContent } from './images'
 export const WS_ACTIVE_STATUSES = ['queued', 'active'] as const satisfies readonly WorkStreamStatus[]
 export const WS_DONE_STATUSES = ['done', 'canceled'] as const satisfies readonly WorkStreamStatus[]
 
-/** A status an unpaged list may ask for: open work, which stays small. Finished work is paged. */
-export type OpenWorkStreamStatus = (typeof WS_ACTIVE_STATUSES)[number]
-
 /**
- * The status filter of an unpaged list. Without one (or with a finished status) Core returns every
- * open stream plus a capped slice of history, so these helpers refuse it; finished work is read with
- * listDoneWorkStreamsPage.
+ * The status filter of an unpaged list, which may only ask for open work (queued, active). Without
+ * one (or with a finished status) Core returns every open stream plus a capped slice of history, so
+ * these helpers refuse it at run time; finished work is read with listDoneWorkStreamsPage. The type
+ * stays WorkStreamStatus so callers holding open statuses in a WorkStreamStatus[] keep compiling.
  */
-function openStatusesParam(statuses: readonly OpenWorkStreamStatus[]): string {
+function openStatusesParam(statuses: readonly WorkStreamStatus[]): string {
   if (statuses.length === 0) throw new Error('An unpaged work stream list needs open statuses (queued or active)')
   const finished = statuses.filter((status) => !(WS_ACTIVE_STATUSES as readonly string[]).includes(status))
   if (finished.length > 0)
@@ -141,7 +139,7 @@ export function squadsResource(t: Transport) {
      * and open-only: the squad's full history is never one read. Page finished work with
      * listDoneWorkStreamsPage, or read one stream with getWorkStream.
      */
-    listSquadWorkStreams: (squadId: string, statuses: readonly OpenWorkStreamStatus[]): Promise<WorkStream[]> =>
+    listSquadWorkStreams: (squadId: string, statuses: readonly WorkStreamStatus[]): Promise<WorkStream[]> =>
       t.request(`/workstreams?squadId=${encodeURIComponent(squadId)}&${openStatusesParam(statuses)}`),
     /**
      * Open work streams across every squad the caller can see (unpaged, so open statuses only, as
@@ -150,7 +148,7 @@ export function squadsResource(t: Transport) {
      * when the list shows none.
      */
     listAllWorkStreams: (
-      statuses: readonly OpenWorkStreamStatus[],
+      statuses: readonly WorkStreamStatus[],
       options: ListAllWorkStreamsOptions = {}
     ): Promise<WorkStream[]> => {
       const params = [openStatusesParam(statuses)]

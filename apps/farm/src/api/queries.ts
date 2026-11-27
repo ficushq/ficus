@@ -1,6 +1,6 @@
-import { queryKeys, type OpenWorkStreamStatus } from '@ficus/client-core'
+import { queryKeys } from '@ficus/client-core'
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
-import type { Agent, LocalDeployment, SquadActivityKind } from '@ficus/shared'
+import type { Agent, LocalDeployment, SquadActivityKind, WorkStreamStatus } from '@ficus/shared'
 import { squadApps as squadAppsOf, type RemoteDeployment } from '../farm/apps'
 import { client } from './client'
 import { assistantApi } from './assistant'
@@ -13,7 +13,7 @@ import { isDemo } from '../app/demo'
  * the web app's. (The web app's own queryOptions.ts lives in apps/web and is
  * not imported here.)
  */
-const LIVE_STATUSES: OpenWorkStreamStatus[] = ['queued', 'active']
+const LIVE_STATUSES: WorkStreamStatus[] = ['queued', 'active']
 
 /** How many field log entries a page brings. */
 export const FIELD_LOG_PAGE = 30

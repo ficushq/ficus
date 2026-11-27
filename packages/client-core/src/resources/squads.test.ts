@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { squadsResource, WS_ACTIVE_STATUSES } from './squads'
-import type { Agent, WorkStream, WorkStreamWait } from '@ficus/shared'
+import type { Agent, WorkStream, WorkStreamStatus, WorkStreamWait } from '@ficus/shared'
 import type { Transport, RequestOptions } from '../transport'
 
 function mockTransport(responder?: (path: string, options?: RequestOptions) => unknown) {
@@ -50,18 +50,30 @@ describe('squadsResource', () => {
     ])
   })
 
+  test('a caller holding open statuses as WorkStreamStatus[] compiles and reads them', async () => {
+    // As mobile declares its own WS_ACTIVE_STATUSES: the element type is not narrowed to open statuses.
+    const open: WorkStreamStatus[] = ['queued', 'active']
+    const { t, calls } = mockTransport(() => [])
+    await squadsResource(t).listSquadWorkStreams('sq-1', open)
+    await squadsResource(t).listAllWorkStreams([...open], { respectAttention: true })
+    expect(calls.map((call) => call.path)).toEqual([
+      '/workstreams?squadId=sq-1&statuses=queued,active',
+      '/workstreams?statuses=queued,active&respectAttention=true',
+    ])
+  })
+
   test('the unpaged lists refuse a read without statuses or with finished statuses', () => {
     const { t, calls } = mockTransport(() => [])
     const squads = squadsResource(t)
-    // Callers outside TypeScript's reach (or a cast) still cannot read the whole history unpaged.
+    expect(() => squads.listSquadWorkStreams('sq-1', [])).toThrow('needs open statuses')
+    expect(() => squads.listAllWorkStreams([])).toThrow('needs open statuses')
+    expect(() => squads.listSquadWorkStreams('sq-1', ['queued', 'done'])).toThrow('cannot ask for done')
+    expect(() => squads.listAllWorkStreams(['canceled'])).toThrow('cannot ask for canceled')
+    // Callers outside TypeScript's reach (or a cast) cannot leave the statuses out either.
     const unchecked = squads as unknown as {
-      listSquadWorkStreams: (squadId: string, statuses?: readonly string[]) => Promise<WorkStream[]>
-      listAllWorkStreams: (statuses?: readonly string[]) => Promise<WorkStream[]>
+      listSquadWorkStreams: (squadId: string) => Promise<WorkStream[]>
+      listAllWorkStreams: () => Promise<WorkStream[]>
     }
-    expect(() => unchecked.listSquadWorkStreams('sq-1', [])).toThrow('needs open statuses')
-    expect(() => unchecked.listAllWorkStreams([])).toThrow('needs open statuses')
-    expect(() => unchecked.listSquadWorkStreams('sq-1', ['queued', 'done'])).toThrow('cannot ask for done')
-    expect(() => unchecked.listAllWorkStreams(['canceled'])).toThrow('cannot ask for canceled')
     expect(() => unchecked.listAllWorkStreams()).toThrow()
     expect(() => unchecked.listSquadWorkStreams('sq-1')).toThrow()
     expect(calls).toEqual([])
