@@ -166,7 +166,6 @@ const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinit
 for (const [key, value] of [
   [queries.squads.list().queryKey, squads],
   [queries.squads.list('active').queryKey, squads],
-  [queries.squads.allWorkStreams().queryKey, workStreams],
   [queries.squads.activeWorkStreams().queryKey, workStreams],
   [queries.agents.summaries({ live: true }).queryKey, agents],
   [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],

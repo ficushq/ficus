@@ -108,7 +108,7 @@ for (const [index, id] of AGENTS.entries())
 for (const [key, value] of [
   [queries.voice.status().queryKey, { enabled: false }],
   [queries.squads.list().queryKey, []],
-  [queries.squads.allWorkStreams().queryKey, []],
+  [queries.squads.activeWorkStreams().queryKey, []],
   [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
   [queries.actions.pending().queryKey, []],
   [queries.agentTypes.list().queryKey, []],
