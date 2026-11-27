@@ -2623,17 +2623,14 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 
   /**
-   * The agents whose executions are this stream's work, by the rule
-   * `workStreamRuntimesSql` applies: the agents its flow bound to it, or, for a
-   * stream from before flows (no bindings), the agents listed on it.
+   * The agents whose executions are this stream's work: see
+   * `workStreamAttributedAgentsSql`, the one rule time worked also reads.
    */
   async attributedAgentIds(): Promise<string[]> {
-    const bound = await db
-      .select({ agentId: workflowBindings.agentId })
-      .from(workflowBindings)
-      .where(eq(workflowBindings.workStreamId, this.id))
-    if (bound.length > 0) return bound.map((row) => row.agentId)
-    return this.agentIds ?? []
+    const rows = (await db.execute(
+      workStreamAttributedAgentsSql([{ wsId: this.id, agentIds: this.agentIds ?? [] }])
+    )) as unknown as Array<{ agent_id: string }>
+    return rows.map((row) => row.agent_id)
   }
 
   /**
@@ -2642,10 +2639,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    *
    * ## Which executions count
    *
-   * The same ones as time worked (see `attributedAgentIds` and
-   * `workStreamRuntimesSql`): a persistent agent listed on a flow stream also
-   * works on other streams, so its executions are not this stream's tokens or
-   * cost. `duration.totalMs` is the stream's time worked itself, with its stale
+   * The same ones as time worked (see `workStreamAttributedAgentsSql`): a
+   * persistent agent listed on a flow stream also works on other streams, so its
+   * executions are not this stream's tokens or cost. `duration.totalMs` is the stream's time worked itself, with its stale
    * cap, so the two figures never disagree. Pass `runtime` when the caller has
    * already computed it.
    *
@@ -2863,20 +2859,67 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 }
 
+type AttributionStream = { wsId: string; agentIds: readonly string[] }
+
+/**
+ * The `streams(ws_id)` and `pairs(ws_id, agent_id)` CTEs (plus their helper
+ * `listed`): `pairs` holds, for each given stream, the agents whose executions
+ * are that stream's work. This is the single statement of the attribution rule;
+ * time worked, `runtime.lastWorkedAt` and `getMetrics` all read it.
+ *
+ * - A stream with a flow (a `work_stream_flow_runs` row) counts the agents its
+ *   flow bound to it. Every bound agent is created for that one stream and never
+ *   rebound, so all of its executions are this stream's work, including delivery
+ *   turns that run without a flow attempt. Other agents listed on the stream (a
+ *   persistent squad member, the owner) never count, not even before the flow's
+ *   first step has bound anyone: their executions serve other work, so a flow
+ *   stream that has not started yet counts nothing.
+ * - A stream from before flows has no flow, and its listed agents are the only
+ *   record of who worked on it, so it counts them.
+ *
+ * `streams` must not be empty.
+ */
+function attributedAgentsCtes(streams: readonly AttributionStream[]): SQL {
+  const listed = streams.flatMap((stream) => stream.agentIds.map((agentId) => ({ wsId: stream.wsId, agentId })))
+  return sql`
+        streams(ws_id) AS (
+          VALUES ${sql.join(
+            streams.map((stream) => sql`(${stream.wsId}::uuid)`),
+            sql`, `
+          )}
+        ),
+        listed(ws_id, agent_id) AS (
+          ${
+            listed.length > 0
+              ? sql`VALUES ${sql.join(
+                  listed.map((pair) => sql`(${pair.wsId}::uuid, ${pair.agentId}::uuid)`),
+                  sql`, `
+                )}`
+              : sql`SELECT NULL::uuid, NULL::uuid WHERE false`
+          }
+        ),
+        pairs(ws_id, agent_id) AS (
+          SELECT b.work_stream_id, b.agent_id
+          FROM ${workflowBindings} b
+          JOIN streams s ON s.ws_id = b.work_stream_id
+          UNION
+          SELECT l.ws_id, l.agent_id
+          FROM listed l
+          WHERE NOT EXISTS (SELECT 1 FROM ${workStreamFlowRuns} f WHERE f.work_stream_id = l.ws_id)
+        )`
+}
+
+/** The attributed `(ws_id, agent_id)` pairs for the given streams: see `attributedAgentsCtes`. */
+export function workStreamAttributedAgentsSql(streams: readonly AttributionStream[]) {
+  return sql`WITH ${attributedAgentsCtes(streams)} SELECT ws_id, agent_id FROM pairs`
+}
+
 /**
  * Time worked per work stream: the summed duration of the executions that did
  * this stream's work. Shared by runtime reads and their plan regression tests.
  *
- * Which executions count:
- * - A stream with a flow counts the executions of the agents its flow bound to
- *   it. Every bound agent is created for that one stream and never rebound, so
- *   all of its executions are this stream's work, including delivery turns that
- *   run without a flow attempt. Other agents listed on the stream (a persistent
- *   squad member, the owner) are not counted: their executions serve other work.
- * - A stream from before flows has no bindings, and its listed agents are the
- *   only record of who worked on it, so it keeps counting their executions.
- *   `WorkStream.attributedAgentIds` applies the same rule for `getMetrics`;
- *   change both together.
+ * Which executions count: those of the agents `attributedAgentsCtes` attributes
+ * to the stream, the same rule `getMetrics` reads.
  *
  * How long each counts: from the moment it started running (`run_started_at`,
  * set when a runner claims it) to its end (now, while it runs), so time spent
@@ -2911,35 +2954,10 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
  * the history stays an index-only scan; the message probe runs only for an
  * execution longer than the stale bound.
  */
-export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds: readonly string[] }[]) {
-  const listed = streams.flatMap((stream) => stream.agentIds.map((agentId) => ({ wsId: stream.wsId, agentId })))
+export function workStreamRuntimesSql(streams: readonly AttributionStream[]) {
   const staleAfter = sql`make_interval(secs => ${RUNTIME_STALE_AFTER_MS / 1000})`
   return sql`
-        WITH streams(ws_id) AS (
-          VALUES ${sql.join(
-            streams.map((stream) => sql`(${stream.wsId}::uuid)`),
-            sql`, `
-          )}
-        ),
-        listed(ws_id, agent_id) AS (
-          ${
-            listed.length > 0
-              ? sql`VALUES ${sql.join(
-                  listed.map((pair) => sql`(${pair.wsId}::uuid, ${pair.agentId}::uuid)`),
-                  sql`, `
-                )}`
-              : sql`SELECT NULL::uuid, NULL::uuid WHERE false`
-          }
-        ),
-        pairs(ws_id, agent_id) AS (
-          SELECT b.work_stream_id, b.agent_id
-          FROM ${workflowBindings} b
-          JOIN streams s ON s.ws_id = b.work_stream_id
-          UNION
-          SELECT l.ws_id, l.agent_id
-          FROM listed l
-          WHERE NOT EXISTS (SELECT 1 FROM ${workflowBindings} b WHERE b.work_stream_id = l.ws_id)
-        ),
+        WITH ${attributedAgentsCtes(streams)},
         computed AS (
           SELECT NOW() AS now_ts
         )

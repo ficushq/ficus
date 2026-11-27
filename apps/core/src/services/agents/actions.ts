@@ -8,6 +8,8 @@ import {
   workStreamTitle,
   workStreamWaitActor,
   workflowAttemptLimitPause,
+  workflowGateApprover,
+  type WorkflowGateApprover,
 } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
@@ -342,10 +344,13 @@ export async function listPendingActions(options: PendingActionListOptions = {})
   ])
   const runsByStream = new Map(candidateRuns.map((run) => [run.workStreamId, run]))
   for (const { ws, squad, wait } of actionableWorkStreams) {
+    // Who decides a workflow gate, so a card can say why its viewer may not.
+    let gateApprover: WorkflowGateApprover | undefined
     if (isHumanFlowWait(wait)) {
       const run = runsByStream.get(ws.id)
       const attempt = run && activeWorkflowAttempts(run.state).find((a) => a.id === wait.flowAttemptId)
       const step = attempt && effectiveWorkflowStep(run!.state, attempt)
+      gateApprover = step ? workflowGateApprover(step) : undefined
       if (
         ws.pause ||
         run?.state.status !== 'running' ||
@@ -422,7 +427,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       squadId: squad.id,
       squadName: squad.name,
       waitId: wait.id,
-      wait: toWaitJson(wait),
+      wait: toWaitJson(wait, gateApprover),
       ...(isDeliveryApprovalWait(ws.id, wait) ? { deliveryApproval: true as const } : {}),
       ...(limitPause ? { attemptLimit: { ...limitPause, flowVersion: limitRun!.version } } : {}),
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },

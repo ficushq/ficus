@@ -764,13 +764,13 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
             const m = ws.metrics
             const costStr = m.cost < 0.01 ? `$${m.cost.toFixed(4)}` : `$${m.cost.toFixed(2)}`
             console.log(`\n\x1b[36mMetrics:\x1b[0m`)
-            console.log(`  Cost:       ${costStr}`)
+            console.log(`  Cost:        ${costStr}`)
             console.log(
-              `  Tokens:     ${formatTokens(m.tokens.total)} (in: ${formatTokens(m.tokens.input)}, out: ${formatTokens(m.tokens.output)})`
+              `  Tokens:      ${formatTokens(m.tokens.total)} (in: ${formatTokens(m.tokens.input)}, out: ${formatTokens(m.tokens.output)})`
             )
-            console.log(`  Executions: ${m.executions.completed}/${m.executions.total} completed`)
+            console.log(`  Executions:  ${m.executions.completed}/${m.executions.total} completed`)
             if (m.duration.totalMs > 0) {
-              console.log(`  Duration:   ${formatDuration(m.duration.totalMs)}`)
+              console.log(`  Time worked: ${formatDuration(m.duration.totalMs)}`)
             }
           }
         }

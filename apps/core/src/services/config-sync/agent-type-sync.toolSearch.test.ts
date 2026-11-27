@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'js-yaml'
@@ -66,5 +66,16 @@ describe('AgentTypeSync tool-search override', () => {
   test('the fast assistant turns tool search off', () => {
     const parsed = sync.parse(readFileSync(join(AGENT_TYPES_DIR, 'assistant.yaml'), 'utf8'), 'assistant.yaml')
     expect(sync.toRecord(parsed).toolSearch).toEqual({ search: 'off' })
+  })
+
+  test.each(['engineer', 'manager'])('the shipped %s turns tool search on, with no warnings', (id) => {
+    const warn = mock()
+    const quiet = new AgentTypeSync()
+    // `log` is a lazy getter on ConfigSync; seed its cache so sync warnings land in the mock.
+    ;(quiet as unknown as { _log: unknown })._log = { warn, info: mock(), debug: mock(), error: mock() }
+    const parsed = quiet.parse(readFileSync(join(AGENT_TYPES_DIR, `${id}.yaml`), 'utf8'), `${id}.yaml`)
+    // A YAML 1.1 parser would read `on` as true; the policy must store the string.
+    expect(quiet.toRecord(parsed).toolSearch).toEqual({ search: 'on' })
+    expect(warn).not.toHaveBeenCalled()
   })
 })
