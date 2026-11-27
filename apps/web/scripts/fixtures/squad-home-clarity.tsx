@@ -4,9 +4,10 @@
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { Squad, WorkStream, WorkStreamWait } from '@ficus/shared'
+import { createBlankWorkflow, createWorkflowRun, type Squad, type WorkStream, type WorkStreamWait } from '@ficus/shared'
 import { SquadDetailPage } from '../../src/components/SquadDetailPage'
 import { WebSocketContext } from '../../src/hooks/useWebSocket'
+import { queries } from '../../src/queryOptions'
 import { queryKeys } from '../../src/queryKeys'
 import { applyResolvedTheme } from '../../src/theme/apply'
 import { BUILT_IN_THEMES, FICUS_THEME } from '../../src/theme/registry'
@@ -124,6 +125,32 @@ client.setQueryData(queryKeys.auth.permissions(squadId), {
 client.setQueryData(queryKeys.squadSubscription.detail(squadId), {
   attention: { decisions: 'show', progress: 'show' },
 })
+// What the detail modal reads besides the stream, so its screenshot shows no loading skeletons.
+const definition = createBlankWorkflow()
+const usage = { tokens: 0, cost: 0, executions: 0, measuredExecutions: 0 }
+for (const item of streams) {
+  client.setQueryData(queryKeys.workflows.run(item.id), {
+    workStreamId: item.id,
+    source: { kind: 'inline', definition },
+    state: createWorkflowRun(definition),
+    version: 0,
+    attemptAgents: {},
+    usage: { total: usage, unattributed: usage, steps: {}, attempts: {} },
+  })
+  client.setQueryData(queryKeys.squads.workStreamMetrics(item.id), {
+    cost: 1.42,
+    tokens: { total: 182_000, input: 150_000, output: 32_000, cacheRead: 0, cacheWrite: 0 },
+    executions: { completed: 6, total: 6, failed: 0 },
+    duration: { totalMs: 0, firstStartedAt: null, lastEndedAt: null },
+    byAgent: {},
+  })
+  client.setQueryData(queryKeys.squads.workStreamTracked(item.id), { resources: [], subscriptions: 'not-following' })
+  client.setQueryData(queryKeys.workStreamSubscription.detail(item.id), {
+    inherited: true,
+    attention: { decisions: 'show', progress: 'show' },
+  })
+  client.setQueryData(queries.activity.workStreamRecent(item.id).queryKey, { items: [], hasMore: false })
+}
 // A VM squad whose box has never been provisioned: normal until the first agent runs.
 client.setQueryData(queryKeys.sandbox.status(squadId), {
   status: 'not_found',

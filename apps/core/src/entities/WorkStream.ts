@@ -2761,7 +2761,10 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  * set when a runner claims it) to its end (now, while it runs), so time spent
  * queued, waiting for a sandbox or waiting out maintenance adds nothing, even
  * after the execution runs. Rows from before `run_started_at` existed fall back
- * to `started_at`. An execution that has been silent (no new assistant message
+ * to `started_at`. `run_started_at` is rewritten each time an execution is
+ * claimed, so one that ran, went back to waiting for maintenance and ran again
+ * counts only from its last claim: a small undercount, never queue time. An
+ * execution that has been silent (no new assistant message
  * other than a `[System]` notice, such as the one written when a run is
  * interrupted) for more than `RUNTIME_STALE_AFTER_MS` before its end, such as one
  * left open in `running`, counts only up to its last such message, and no longer

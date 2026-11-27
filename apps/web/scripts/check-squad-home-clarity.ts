@@ -81,8 +81,22 @@ try {
     await dialog.getByText('Time worked', { exact: true }).waitFor()
     assert.equal(await dialog.getByText('Waiting on you', { exact: true }).count(), 1, `${label}: modal waiting field`)
     assert.equal(await dialog.getByText('Runtime', { exact: true }).count(), 0, `${label}: modal still says Runtime`)
-    // Let the modal finish fading in, or the screenshot catches it half transparent.
-    await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== 'running'))
+    // Let the modal finish fading in, or the screenshot catches it half transparent. Animations that
+    // repeat forever (the in-progress marker's pulse) never finish, so they are not waited for.
+    await page.waitForFunction(() =>
+      document
+        .getAnimations()
+        .every(
+          (animation) =>
+            animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity
+        )
+    )
+    // Every query the modal reads is seeded, so nothing in it is still loading.
+    assert.equal(
+      await dialog.locator('.animate-pulse, [class*="animate-pulse"]').count(),
+      0,
+      `${label}: modal skeleton`
+    )
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `modal-${label}.png`) })
     await page.close()
   }
