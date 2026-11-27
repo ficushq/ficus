@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { agentLabelParts, agentTypeLabel, formatAgentLabel, typeFirstAgentLabel } from './agentLabel'
+import { agentLabelParts, agentSenderLabel, agentTypeLabel, formatAgentLabel, typeFirstAgentLabel } from './agentLabel'
 
 describe('agentLabelParts', () => {
   test('purpose leads, name is secondary', () => {
@@ -41,5 +41,16 @@ describe('typeFirstAgentLabel', () => {
   test('never names the agent; an unknown type reads "Agent"', () => {
     expect(typeFirstAgentLabel({ agentTypeId: null })).toBe('Agent')
     expect(agentTypeLabel('product_lead')).toBe('Product Lead')
+  })
+})
+
+describe('agentSenderLabel', () => {
+  test('names an agent sender type first from its recorded metadata, and nothing else', () => {
+    expect(agentSenderLabel({ name: 'Riley', agentTypeId: 'engineer', purpose: 'Fix inline PR rows' })).toBe(
+      'Engineer (Fix inline PR rows)'
+    )
+    expect(agentSenderLabel({ name: 'Riley', agentTypeName: 'Engineer' }, 'engineer')).toBe('Engineer')
+    expect(agentSenderLabel({ name: 'Noah' })).toBeNull()
+    expect(agentSenderLabel(undefined)).toBeNull()
   })
 })

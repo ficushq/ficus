@@ -8,6 +8,7 @@ import type {
   AssistantTaskSummary,
 } from '@ficus/shared'
 import { agents, assistantConversations, assistantTasks, assistantUpdates, db, inbox } from '../../db'
+import { agentSenderLabel } from '@ficus/shared'
 
 export const ACTIVITY_PREVIEW_LENGTH = 160
 export const ACTIVITY_UPDATE_PAGE_SIZE = 50
@@ -148,9 +149,10 @@ export async function listAssistantActivity(
   }
 }
 
+/** Who sent an update, as people see it: an agent type first ("Engineer (Onboarding)"), never its name alone. */
 function senderName(metadata: Record<string, unknown>): string {
   const sender = metadata.sender as { name?: string; agentTypeName?: string } | undefined
-  return sender?.name || sender?.agentTypeName || 'Agent'
+  return agentSenderLabel(sender) || sender?.name || sender?.agentTypeName || 'Agent'
 }
 
 /** One update card: the tracking row plus its inbox message. */
