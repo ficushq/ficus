@@ -6,7 +6,7 @@ import { useSearchParams } from 'react-router'
 import { AgentInboxPanel } from './AgentInboxPanel'
 import { InboxIcon } from '../icons'
 import { AGENT_STATUS_ROLE, type Agent } from '@ficus/shared'
-import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
+import { getAgentLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { CanvasSkeleton } from '../loading/Skeleton'
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
@@ -71,7 +71,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
 
     const nodes: AgentNode[] = agents.map((agent) => ({
       id: agent.id,
-      name: getAgentPrimaryLabel(agent),
+      name: getAgentLabel(agent),
       type: agent.agentTypeId,
       status: agent.status,
       val: agent.status === 'active' ? 12 : 8,
@@ -340,7 +340,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       {/* Agent details panel */}
       {selectedAgent && !showInbox && (
         <div className="w-full lg:w-72 shrink-0 py-4 lg:px-4 lg:border-l border-panel-border">
-          <h3 className="font-semibold text-primary">{getAgentPrimaryLabel(selectedAgent)}</h3>
+          <h3 className="font-semibold text-primary">{getAgentLabel(selectedAgent)}</h3>
           <p className="text-sm text-muted mt-1">{selectedAgent.agentTypeId}</p>
 
           <dl className="mt-4 space-y-2 text-sm">

@@ -419,13 +419,13 @@ test('work preview has a skeleton until details arrive, then shows the status pi
   }
 })
 
-test('a restored conversation resolves its purpose in the breadcrumb with a single full-chat link', async () => {
+test('a restored conversation resolves its type and purpose in the breadcrumb with a single full-chat link', async () => {
   const f = await fixture(undefined, [
     { kind: 'squad', id: 'ficus', label: 'Squad' },
     { kind: 'chat', id: 'worker', agentId: 'worker', squadId: 'ficus', label: 'Conversation' },
   ])
   try {
-    expect(f.container.querySelector('[title="Fix OAuth implementation"]') !== null).toBe(true)
+    expect(f.container.querySelector('[title="Engineer (Fix OAuth implementation)"]') !== null).toBe(true)
     expect(f.container.querySelectorAll('[aria-label="Open full conversation"]')).toHaveLength(1)
     expect(f.chats.mock.calls.at(-1)![0].header).toBeUndefined()
     // The breadcrumb's squad name links to the squad's Home in the app, and the assistant stays on the chat.
@@ -436,7 +436,7 @@ test('a restored conversation resolves its purpose in the breadcrumb with a sing
     expect(squadLink.target).toBe('')
     await f.click('a[title="Open Ficus"]')
     expect(f.location.current).toBe('/squads/ficus')
-    expect(f.container.querySelector('[title="Fix OAuth implementation"]') !== null).toBe(true)
+    expect(f.container.querySelector('[title="Engineer (Fix OAuth implementation)"]') !== null).toBe(true)
     await f.click('[aria-label="Back to preview"]')
     expect(f.container.querySelector('[title="Ficus"]') !== null).toBe(true)
   } finally {

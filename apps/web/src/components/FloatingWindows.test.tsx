@@ -237,7 +237,9 @@ test('the pop-out button opens one floating window per agent, and inside it open
     expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
     const win = t.windowFor(A)!
     expect(win.getAttribute('role')).toBe('dialog')
-    expect(win.querySelector('header')!.textContent).toContain('Researcher')
+    // An untitled consultant chat is titled by its type, never by the agent's name alone.
+    expect(win.querySelector('header')!.textContent).toStartWith('Consultant')
+    expect(win.querySelector('header')!.textContent).not.toContain('Researcher')
     expect(win.querySelector('header')!.textContent).toContain('Consultant · Ficus')
     expect(win.querySelector('[aria-label^="Agent activity"]')).not.toBeNull()
     // Opening again does not duplicate it.

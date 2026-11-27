@@ -9,7 +9,7 @@ import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import { universeNodePath } from './universeNodePath'
 import { CanvasSkeleton } from '../loading/Skeleton'
 import { AGENT_STATUS_ROLE, type Squad, type SquadRelationship, type Agent } from '@ficus/shared'
-import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
+import { getAgentLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 
 // Lazy load 3D force graph (use standalone package — the combined react-force-graph pulls in aframe)
@@ -119,7 +119,7 @@ export function SquadUniverse({ squads, relationships }: Props) {
     allAgents.forEach(({ agent, squadId }) => {
       nodes.push({
         id: agent.id,
-        name: getAgentPrimaryLabel(agent),
+        name: getAgentLabel(agent),
         type: 'agent',
         status: agent.status,
         squadId,

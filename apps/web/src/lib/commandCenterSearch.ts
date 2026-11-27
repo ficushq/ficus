@@ -1,6 +1,6 @@
 import { workStreamTitle, type Agent, type PendingAction, type Squad, type WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
-import { getAgentPurpose, getAgentLabel } from './agentDisplay'
+import { getConversationTitle } from './agentDisplay'
 import { pendingActionContextLine } from './pendingActionWording'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
@@ -46,11 +46,6 @@ export function consultantConversations(agents: readonly Agent[]) {
         new Date(b.lastHumanMessageAt ?? b.createdAt).getTime() -
         new Date(a.lastHumanMessageAt ?? a.createdAt).getTime()
     )
-}
-
-/** A conversation is titled by its purpose (its topic); untitled ones are named by type, never by name. */
-function conversationLabel(agent: Agent): string {
-  return getAgentPurpose(agent) ?? getAgentLabel(agent)
 }
 
 export function actionTitle(action: PendingAction): string {
@@ -125,14 +120,14 @@ export function commandCenterSearch(
         kind: 'Conversation' as const,
         status: a.status,
         agentTypeId: a.agentTypeId,
-        label: conversationLabel(a),
+        label: getConversationTitle(a),
         detail: `${squadName(a.squadId)} · ${new Date(a.lastHumanMessageAt ?? a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
         destination: {
           kind: 'chat' as const,
           id: a.id,
           agentId: a.id,
           squadId: a.squadId!,
-          label: conversationLabel(a),
+          label: getConversationTitle(a),
         },
       })),
     ...data.streams

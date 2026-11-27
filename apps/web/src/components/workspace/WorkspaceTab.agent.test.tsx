@@ -161,7 +161,7 @@ describe('WorkspaceTab agent target', () => {
       // Nothing reached for the terminal or files while the box is stopped.
       expect(requests.filter((request) => request.includes('/terminal') || request.includes('/tree'))).toEqual([])
 
-      expect(trigger().getAttribute('aria-label')).toBe('Workspace to browse: amy')
+      expect(trigger().getAttribute('aria-label')).toBe('Workspace to browse: Engineer')
 
       const start = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Start sandbox'))!
       await dom.act(async () => start.click())
@@ -176,16 +176,17 @@ describe('WorkspaceTab agent target', () => {
       await dom.act(async () => trigger().click())
       expect(optionLabels()).toEqual([
         expect.stringContaining('Squad workspace'),
-        'amy',
-        'Billing integrationbob',
-        'zed-dormant (dormant)',
+        // Type first, with the name beside it so agents of one type stay distinguishable.
+        'Engineeramy',
+        'Engineer (Billing integration)bob',
+        'Engineer (dormant)zed-dormant',
       ])
       // Search matches purpose as well as name.
       const search = document.querySelector<HTMLInputElement>('input[aria-label="Search agents"]')!
       await dom.act(async () => {
         fireEvent.change(search, { target: { value: 'billing' } })
       })
-      expect(optionLabels()).toEqual(['Billing integrationbob'])
+      expect(optionLabels()).toEqual(['Engineer (Billing integration)bob'])
       await dom.act(async () => {
         fireEvent.change(search, { target: { value: 'nobody' } })
       })

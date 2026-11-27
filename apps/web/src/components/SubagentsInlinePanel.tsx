@@ -6,7 +6,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useURLStringState } from '../hooks/useURLState'
 import { queries } from '../queryOptions'
 import { getAgentConversationStatusRefetchInterval } from '../lib/agentConversationPolling'
-import { getAgentName, getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentLabel, getAgentName } from '../lib/agentDisplay'
 import { AgentConversation } from './AgentConversationBody'
 
 function getSubagentSubtitle(agent: Agent): string {
@@ -60,7 +60,7 @@ export function SubagentsInlinePanel({ parentAgentId }: SubagentsInlinePanelProp
               )}
               aria-current={active ? 'page' : undefined}
             >
-              <div className="text-sm font-medium truncate">{getAgentPrimaryLabel(child)}</div>
+              <div className="text-sm font-medium truncate">{getAgentLabel(child)}</div>
               <div className="text-[11px] text-muted truncate">{getSubagentSubtitle(child)}</div>
             </button>
           )

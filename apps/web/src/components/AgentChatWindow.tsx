@@ -11,7 +11,7 @@ import { currentViewport } from '../hooks/useAssistantPosition'
 import { CHAT_WINDOW_MIN, windowRect, type AgentWindow } from '../lib/chatWindows'
 import { registerFloatingWindow } from '../lib/floatingWindowRegistry'
 import { onDesktopTitleBarChange } from '../lib/desktopTitleBar'
-import { getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentTitle } from '../lib/agentDisplay'
 import type { AgentChatController } from './AgentChat'
 import { AgentActivityDot } from './AgentActivityDot'
 import { AgentConversation } from './AgentConversationBody'
@@ -172,7 +172,7 @@ export function AgentChatWindow({
   }
 
   const data = agent.data
-  const label = data ? (data.agentTypeId === 'manager' ? 'Manager' : getAgentPrimaryLabel(data)) : 'Agent chat'
+  const label = data ? getAgentTitle(data) : 'Agent chat'
   const typeName = data
     ? (types.data?.find((type) => type.id === data.agentTypeId)?.name ?? humanize(data.agentTypeId))
     : undefined

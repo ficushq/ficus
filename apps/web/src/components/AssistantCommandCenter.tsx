@@ -25,7 +25,7 @@ import {
   type CommandDestination,
   type CommandResult,
 } from '../lib/commandCenterSearch'
-import { getAgentPrimaryLabel } from '../lib/agentDisplay'
+import { getAgentLabel, getAgentTitle, getConversationTitle } from '../lib/agentDisplay'
 import { ALL_SECTIONS, isSectionAllowed } from './settings/settingsSections'
 import { AgentChat } from './AgentChat'
 import { ActionItem } from './ActionItem'
@@ -181,9 +181,7 @@ export function AssistantCommandCenter({
       : entry?.kind === 'work'
         ? data.streams.find((w) => w.id === entry.id || workStreamRef(w) === entry.id)?.title
         : entry?.kind === 'chat' && currentAgent
-          ? currentAgent.agentTypeId === 'manager'
-            ? 'Manager'
-            : getAgentPrimaryLabel(currentAgent)
+          ? getAgentTitle(currentAgent)
           : undefined
   const destination = entry && label ? { ...entry, label } : entry
   const destinationSquad =
@@ -671,7 +669,7 @@ function SquadPreview({
         {chats.map((a) => (
           <PreviewRow
             key={a.id}
-            title={getAgentPrimaryLabel(a)}
+            title={getConversationTitle(a)}
             status={a.status}
             agentId={a.id}
             detail={
@@ -681,7 +679,7 @@ function SquadPreview({
               </span>
             }
             onClick={() =>
-              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId: id, label: getAgentPrimaryLabel(a) })
+              onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId: id, label: getConversationTitle(a) })
             }
           />
         ))}
@@ -842,7 +840,7 @@ function WorkPreview({
         {assigned.map((a) => (
           <PreviewRow
             key={a.id}
-            title={getAgentPrimaryLabel(a)}
+            title={getAgentLabel(a)}
             status={a.status}
             agentId={a.id}
             detail={
@@ -851,7 +849,7 @@ function WorkPreview({
                 {a.id === row.assigneeAgentId ? 'Assigned' : null}
               </span>
             }
-            onClick={() => onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId, label: getAgentPrimaryLabel(a) })}
+            onClick={() => onPush({ kind: 'chat', id: a.id, agentId: a.id, squadId, label: getAgentLabel(a) })}
           />
         ))}
         {agents.isPending ? (
@@ -871,7 +869,7 @@ function WorkPreview({
         <section>
           <h3 className="text-xs text-muted mb-2">Started here</h3>
           <PreviewRow
-            title={getAgentPrimaryLabel(origin)}
+            title={getConversationTitle(origin)}
             agentId={origin.id}
             detail={
               <span className="inline-flex items-center gap-2">
@@ -885,7 +883,7 @@ function WorkPreview({
                 id: origin.id,
                 agentId: origin.id,
                 squadId: origin.squadId ?? squadId,
-                label: getAgentPrimaryLabel(origin),
+                label: getConversationTitle(origin),
                 readOnly: true,
               })
             }

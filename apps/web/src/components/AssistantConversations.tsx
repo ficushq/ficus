@@ -2,14 +2,15 @@ import clsx from 'clsx'
 import { useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import type { Agent } from '@ficus/shared'
-import { getAgentPurpose, getAgentName } from '../lib/agentDisplay'
+import { getAgentLabel, getAgentPurpose, getAgentName } from '../lib/agentDisplay'
 import { Panel, usePopover } from './popover'
 import { ChevronDownIcon, PlusIcon } from './icons'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 
 export function assistantConversationTitle(agent: Agent): string {
   return (
-    getAgentPurpose(agent) ?? (getAgentName(agent) === 'system-manager' ? 'Untitled conversation' : getAgentName(agent))
+    getAgentPurpose(agent) ??
+    (getAgentName(agent) === 'system-manager' ? 'Untitled conversation' : getAgentLabel(agent))
   )
 }
 

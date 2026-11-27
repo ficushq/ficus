@@ -32,6 +32,7 @@ import { SUBAGENT_WATCHDOG_KIND } from '../../lib/subagentWatchdog'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
+import { agentListLabels, getAgentLabel } from '../../lib/agentDisplay'
 
 interface SchedulesListDependencies {
   useWebSocket: typeof useWebSocket
@@ -292,7 +293,7 @@ function ActionSummary({ action, agents }: { action: ScheduleAction; agents: Age
         <span className="text-xs text-secondary">
           Message{' '}
           <span className="font-medium text-primary">
-            {(target?.metadata?.name as string | undefined) || action.target.agentId.slice(0, 8)}
+            {target ? getAgentLabel(target) : action.target.agentId.slice(0, 8)}
           </span>
           {action.subject && (
             <>
@@ -1286,9 +1287,9 @@ function EditActionFields({
               className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
             >
               <option value="">Select target agent...</option>
-              {agents.map((agent) => (
+              {agents.map((agent, _index, all) => (
                 <option key={agent.id} value={agent.id}>
-                  {(agent.metadata?.name as string | undefined) || agent.id.slice(0, 8)} ({agent.agentTypeId})
+                  {agentListLabels(all).get(agent.id) ?? getAgentLabel(agent)}
                 </option>
               ))}
             </select>
@@ -1408,10 +1409,11 @@ function ActionDetails({ action, agentMap }: { action: ScheduleAction; agentMap:
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <DetailRow label="Target Agent">
               <p className="text-primary text-xs">
-                {(target?.metadata?.name as string | undefined) || (
+                {target ? (
+                  getAgentLabel(target)
+                ) : (
                   <span className="font-mono">{action.target.agentId.slice(0, 8)}</span>
                 )}
-                {target && <span className="text-muted ml-1">({target.agentTypeId})</span>}
               </p>
             </DetailRow>
             {action.subject && (
@@ -1439,7 +1441,9 @@ function ActionDetails({ action, agentMap }: { action: ScheduleAction; agentMap:
             {action.assigneeAgentId && (
               <DetailRow label="Assignee">
                 <p className="text-primary text-xs">
-                  {(assignee?.metadata?.name as string | undefined) || (
+                  {assignee ? (
+                    getAgentLabel(assignee)
+                  ) : (
                     <span className="font-mono">{action.assigneeAgentId.slice(0, 8)}</span>
                   )}
                 </p>

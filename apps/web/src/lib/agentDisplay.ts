@@ -74,6 +74,24 @@ export function agentListLabels(agents: readonly Agent[]): Map<string, string> {
   return labels
 }
 
+/**
+ * How a conversation with an agent is titled: its topic (the agent's purpose), else the agent named
+ * type first. Consultant chats read as conversations, so their topic leads; never the name alone.
+ */
+export function getConversationTitle(agent: Pick<Agent, 'agentTypeId' | 'metadata'>): string {
+  return getAgentPurpose(agent as Agent) ?? getAgentLabel(agent)
+}
+
+/**
+ * The title of one agent's own view (chat window, tray chip, Assistant header): "Manager" for the
+ * squad's one manager, a consultant chat's topic, otherwise the type-first label.
+ */
+export function getAgentTitle(agent: Pick<Agent, 'agentTypeId' | 'metadata'>): string {
+  if (agent.agentTypeId === 'manager') return 'Manager'
+  if (agent.agentTypeId === 'consultant') return getConversationTitle(agent)
+  return getAgentLabel(agent)
+}
+
 export function agentMatchesQuery(agent: Agent, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
