@@ -156,3 +156,11 @@ The compatibility `--env-secret-ref` option records legacy reference metadata
 only; local apps do not resolve or inject those values. It is not a credential
 delivery path. Use custom app env/files instead. Do not start persistent local
 servers under integration exec: credentials belong only to a bounded command.
+
+## Live Activity relay upgrades
+
+Core and Platform deploy separately. An older Platform relay rejects an entire start or update if any row includes an unknown key. Core therefore keeps sending the old relay row shape, without `waitingOnReview` or `needsYou`. Widget snapshots, foreground Live Activities, and direct APNs do not pass through this relay.
+
+1. Pin Platform to a Core revision whose `@ficus/shared` relay schema accepts both optional booleans and whose device projection preserves them, including `needsYou: false`.
+2. Deploy and verify that revision on **all** receiving relays, including the managed route. Verify both single-source and aggregate delivery preserve the fields with previews disabled.
+3. Only then enable the two fields together in the Core outbox in a separate change. Until then, relayed rows keep their prior labels. If any destination cannot guarantee receiver support, keep sending the legacy shape to it.

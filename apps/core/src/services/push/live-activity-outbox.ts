@@ -206,7 +206,8 @@ export async function pumpActivityRelay(
         : deps.snapshot
           ? await deps.snapshot(claim.userId!)
           : (await loadWorkInterestSnapshot(claim.userId!)).liveActivity,
-      true
+      true,
+      'legacy-receiver'
     )
     const show = shouldShowLiveActivity(fresh)
     const aggregate = Boolean(state.update?.aggregateKey ?? state.start?.aggregateKey)
