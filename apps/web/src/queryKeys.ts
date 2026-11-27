@@ -138,6 +138,10 @@ export const feedQueryKeys = {
   updates: (userId: string, visitId: string, squads: readonly string[]) =>
     ['squads', 'feed-updates', userId, visitId, [...squads].sort()] as const,
   recent: (after: string, squads: readonly string[]) => ['squads', 'feed-recent', after, [...squads].sort()] as const,
+  /** One Feed mount's snapshot of the account's last visit: never refetched while mounted. */
+  visit: (userId: string, visitId: string) => ['auth', 'feed-visit', userId, visitId] as const,
+  settled: (userId: string, since: string, squads: readonly string[]) =>
+    ['activity', 'settled', userId, since, [...squads].sort()] as const,
 }
 
 export const channelLinkQueryKeys = { all: ['channel-links'] as const }

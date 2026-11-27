@@ -12,7 +12,11 @@ export const SQUAD_ACTIVITY_KINDS = [
 ] as const
 export type SquadActivityKind = (typeof SQUAD_ACTIVITY_KINDS)[number]
 
-export const SQUAD_ACTIVITY_LANES = [10, 20, 21, 22, 30, 31, 40, 41, 50, 60, 61, 70, 71] as const
+/**
+ * Row lanes. 32 is a Reviewer agent's flow verdict (approved, changes requested, returned), sourced
+ * from the work stream's recorded flow transitions.
+ */
+export const SQUAD_ACTIVITY_LANES = [10, 20, 21, 22, 30, 31, 32, 40, 41, 50, 60, 61, 70, 71] as const
 export type SquadActivityLane = (typeof SQUAD_ACTIVITY_LANES)[number]
 
 export type SquadActivityRef =
@@ -332,12 +336,51 @@ export interface SquadActivityFilters {
   workStreamId?: string
 }
 
+/**
+ * Work settled without a person, as the Feed's "since your last visit" line counts it. Each kind
+ * names exactly the Activity rows that make up its count (GET /api/activity/settled):
+ * - `questions`: closed task-input waits an agent asked of its stream owner (`request-input` with
+ *   `actor: owner`) and another agent answered, that never asked a person (lane 41). The owner may
+ *   be any agent, not only the squad manager, so the line says "settled by agents".
+ * - `reviews`: verdicts a Reviewer agent submitted on a flow step (lane 32).
+ * Completed streams are not a kind: the Updates header already counts them from the Feed's own list.
+ */
+export const ACTIVITY_SETTLED_KINDS = ['questions', 'reviews'] as const
+export type ActivitySettledKind = (typeof ACTIVITY_SETTLED_KINDS)[number]
+
+/** An Activity filter to the rows behind one settled count, from `since` (inclusive). */
+export interface ActivitySettledFilter {
+  kind: ActivitySettledKind
+  /** ISO time. The server raises it to the Activity retention floor. */
+  since: string
+}
+
+/** GET /api/activity/settled: permission-filtered counts of work settled without a person. */
+export interface ActivitySettledSummary {
+  /** The period start actually counted: the requested time, raised to the retention floor. */
+  since: string
+  /** True when the requested time was older than Activity keeps rows and was raised. */
+  clamped: boolean
+  counts: Record<ActivitySettledKind, number>
+}
+
 export interface NormalizedSquadActivityFilters {
   verbose: boolean
   agentIds: string[]
   kinds: SquadActivityKind[]
   /** Omitted means every stream. */
   workStreamId?: string
+  /** Global feed only: only rows behind one settled count. */
+  settled?: ActivitySettledFilter
+  /** Global feed only: only these squads (still limited to the ones the caller may read). Omitted means all. */
+  squadIds?: string[]
+}
+
+/** "4 questions settled by agents": the count with its noun, singular when it is one. */
+export function activitySettledCountLabel(kind: ActivitySettledKind, count: number): string {
+  const one = count === 1
+  if (kind === 'questions') return `${count} ${one ? 'question' : 'questions'} settled by agents`
+  return `${count} ${one ? 'review' : 'reviews'} done by agents`
 }
 
 /**

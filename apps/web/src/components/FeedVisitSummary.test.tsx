@@ -107,6 +107,7 @@ async function setup() {
               userId={userId}
               squadIds={squadIds}
               acknowledge={acknowledge}
+              acknowledgeVisit={async (visitedAt) => ({ lastVisitedAt: visitedAt })}
               useActivity={useActivity}
             />
           </ReactQueryHooksProvider>
@@ -351,6 +352,8 @@ test('real query cache isolates remounts and accounts while concurrent visits re
   const rows = [stream('visible'), stream('offscreen')]
   let reads = 0
   const hooks = {
+    // No recorded visit: the settled line stays out of this cache-isolation check.
+    useQuery: (() => ({ isSuccess: true, data: { lastVisitedAt: null, observedAt: at } })) as never,
     useInfiniteQuery: ((options: Parameters<typeof useInfiniteQuery>[0]) =>
       useInfiniteQuery({
         ...options,
@@ -380,6 +383,7 @@ test('real query cache isolates remounts and accounts while concurrent visits re
                 key={`${user}:${visit}`}
                 userId={user}
                 acknowledge={user === 'one' ? saveOne : saveTwo}
+                acknowledgeVisit={async (visitedAt) => ({ lastVisitedAt: visitedAt })}
                 useActivity={emptyActivity}
               />
             </ReactQueryHooksProvider>
