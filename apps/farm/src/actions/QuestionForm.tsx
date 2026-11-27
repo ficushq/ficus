@@ -2,7 +2,12 @@ import clsx from 'clsx'
 import { useEffect, useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isHttpResponseError } from '@ficus/client-core'
-import type { AgentQuestionAnswerDelivery, QuestionData, QuestionItem } from '@ficus/shared'
+import {
+  recommendedQuestionOption,
+  type AgentQuestionAnswerDelivery,
+  type QuestionData,
+  type QuestionItem,
+} from '@ficus/shared'
 import { Markdown } from '../chat/Markdown'
 import { useStableRef } from '../hooks/useStableRef'
 import { useActionsApi } from './ActionsApiProvider'
@@ -23,6 +28,7 @@ import {
   settleAgentQuestion,
   settleSquadQuestion,
 } from './cache'
+import { OptionText, RecommendedTag } from './RecommendedOption'
 import { ErrorNote, VerbButton } from './ui'
 import { haptic } from '../embed/embed'
 
@@ -357,6 +363,8 @@ function QuestionField({
     </div>
   ) : null
   const describedBy = question.context ? `${id}-context` : undefined
+  // Marked only, never preselected: the person still chooses.
+  const recommended = recommendedQuestionOption(question)
   const otherInput = (
     <input
       className="g-input g-question-other"
@@ -384,13 +392,26 @@ function QuestionField({
                 type="button"
                 className={clsx('g-chip', textValue === option.value && 'g-chip-on')}
                 aria-pressed={textValue === option.value}
+                aria-describedby={option === recommended && option.reason ? `${id}-recommendation` : undefined}
                 disabled={disabled}
                 onClick={() => onChange(option.value)}
               >
                 {option.label ?? option.value}
+                {option === recommended && (
+                  <>
+                    {' '}
+                    <RecommendedTag />
+                  </>
+                )}
               </button>
             ))}
           </div>
+        )}
+        {/* A chip is too small for the reason, so it sits below the row and describes the chip. */}
+        {suggestions.length > 0 && recommended?.reason && (
+          <p id={`${id}-recommendation`} className="g-recommended-reason">
+            {recommended.reason}
+          </p>
         )}
         <textarea
           id={`${id}-text`}
@@ -416,8 +437,13 @@ function QuestionField({
   const isOn = (option: string) => (multi ? listValue.includes(option) : textValue === option)
   const pick = (option: string) => onChange(multi ? toggleChoice(value, option) : option)
   const choices = [
-    ...(question.options ?? []).map((option) => ({ value: option.value, label: option.label ?? option.value })),
-    { value: OTHER_OPTION, label: 'Something else' },
+    ...(question.options ?? []).map((option) => ({
+      value: option.value,
+      label: option.label ?? option.value,
+      recommended: option === recommended,
+      reason: option.reason,
+    })),
+    { value: OTHER_OPTION, label: 'Something else', recommended: false, reason: undefined },
   ]
   return (
     <fieldset className="g-question" aria-describedby={describedBy}>
@@ -435,7 +461,7 @@ function QuestionField({
               disabled={disabled}
               onChange={() => pick(choice.value)}
             />
-            <span>{choice.label}</span>
+            <OptionText label={choice.label} recommended={choice.recommended} reason={choice.reason} />
           </label>
         ))}
       </div>

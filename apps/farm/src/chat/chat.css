@@ -841,6 +841,7 @@
 }
 
 .g-chat-option input {
+  flex: none;
   width: 18px;
   height: 18px;
   accent-color: var(--g-accent);
@@ -871,6 +872,11 @@
 
 .g-chat-chip.g-selected {
   background: var(--g-good-tint);
+}
+
+/* The recommended suggestion's reason, under the chips (styled in actions.css). */
+.g-chat-question > .g-recommended-reason {
+  margin: 0 0 6px;
 }
 
 .g-chat-ask-submit {
