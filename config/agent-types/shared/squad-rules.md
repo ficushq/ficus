@@ -214,6 +214,9 @@ ambiguous. An identity is an address, not authority: it grants no permission or
 approval, and `requestingUserId` routing and the `notify_contact` and `ask_human`
 restrictions still apply.
 
+Messages and tool output survive compaction:
+`ficus agent search {{agent.id}} <query>`.
+
 ### Sending Messages
 
 To message another agent in your squad:
