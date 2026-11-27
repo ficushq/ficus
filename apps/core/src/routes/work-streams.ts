@@ -29,7 +29,7 @@ import {
   requesterKeyFor,
   WorkStreamCreateReplayError,
 } from '../services/work-streams/create-idempotency'
-import { getBunServer } from 'hono/bun'
+import { extendIdleTimeout } from '../middleware/read-deadline'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import {
   AssetAttachmentError,
@@ -970,8 +970,7 @@ export const workStreamsRouter = new Hono()
     if (!allowed) return c.json({ error: await workStreamCreateRefusal(identity) }, 403)
     // Repository setup can outlast Bun's 30-second idle timer, which would close the
     // connection while the create still finishes. Answer with the real result instead.
-    const server = c.env ? getBunServer<{ timeout(request: Request, seconds: number): void }>(c) : undefined
-    server?.timeout(c.req.raw, 0)
+    extendIdleTimeout(c, 0)
     let idempotencyKey: string | undefined
     try {
       idempotencyKey = parseIdempotencyKey(c.req.header(IDEMPOTENCY_KEY_HEADER))

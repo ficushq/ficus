@@ -185,6 +185,7 @@ import { corsAllowOrigins, normalizeOrigin, isAllowedWsOrigin } from './services
 import { extractSessionToken, getSessionCookie } from './services/auth/session-cookie'
 import { csrfProtection } from './middleware/csrf'
 import { managedVaultHostGuard } from './middleware/managed-vault-host'
+import { CORE_IDLE_TIMEOUT_SECONDS, readDeadline } from './middleware/read-deadline'
 import { redactHttpLogCredentials } from './lib/infra/http-log'
 import { attachPeerAddress, getClientAddress } from './lib/client-address'
 import { getSandboxProvisionErrorResponse } from './routes/sandbox-provision-error'
@@ -287,6 +288,9 @@ app.route('/health/db', createDatabaseHealthRouter())
 // authenticated inside the handler with the resolved internal event token
 // (explicit, encryption-key-derived, or random fail-closed fallback).
 app.post(INTERNAL_EVENTS_PATH, (c) => handleInternalEventPost(c.req.raw))
+
+// A slow read gets a 503 it can explain before Bun's idle timer would drop its socket.
+app.use('/api/*', readDeadline())
 
 // CSRF protection for cookie-authenticated browser requests (also covers /api/auth).
 app.use('/api/*', csrfProtection)
@@ -1224,6 +1228,7 @@ if (import.meta.main) {
     websocket: coreWebSocketHandler,
     // Every route but the local-app proxy: that one extends its own requests
     // (LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS) so a slow app can still answer.
-    idleTimeout: 30,
+    // Reads answer before it fires (middleware/read-deadline.ts).
+    idleTimeout: CORE_IDLE_TIMEOUT_SECONDS,
   })
 }

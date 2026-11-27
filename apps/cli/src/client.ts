@@ -18,10 +18,39 @@ async function throwApiError(response: Response): Promise<never> {
   throw new ApiRequestError(formatApiErrorPayload(payload, fallback), response.status, code, payload)
 }
 
+/**
+ * Bun reports a connection the server closed before answering as `ECONNRESET`, "The
+ * socket connection was closed unexpectedly". A server older than the read deadline
+ * (Core's middleware/read-deadline.ts) does that to a read it took over 30 s to answer.
+ */
+function isDroppedConnection(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return (
+    (error as { code?: unknown }).code === 'ECONNRESET' ||
+    /socket connection was closed unexpectedly/i.test(error.message)
+  )
+}
+
+/** A read whose connection closed before any answer arrived. */
+export class ReadConnectionDroppedError extends Error {
+  constructor(readonly cause: unknown) {
+    super(
+      'Ficus closed the connection before answering this read, most likely because it was busy for more than 30 seconds. Nothing was changed; try again in a few seconds.'
+    )
+    this.name = 'ReadConnectionDroppedError'
+  }
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${config.apiUrl}${path}`, {
-    headers: getAuthHeaders(),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${config.apiUrl}${path}`, {
+      headers: getAuthHeaders(),
+    })
+  } catch (error) {
+    if (isDroppedConnection(error)) throw new ReadConnectionDroppedError(error)
+    throw error
+  }
   if (!response.ok) await throwApiError(response)
   return response.json()
 }

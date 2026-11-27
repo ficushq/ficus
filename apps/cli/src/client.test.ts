@@ -154,3 +154,57 @@ test('idempotent POST retries dropped connections and in-progress answers with o
   expect(result.stderr.toString()).toBe('')
   expect(result.exitCode).toBe(0)
 })
+
+// Real client in a child process (the preload mocks client.ts). The server is a local
+// Bun listener whose idle timer drops a slow read, as Core's did before its read deadline.
+test('a read whose connection is dropped says so, and a read deadline answer keeps its code', () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { strict as assert } from 'node:assert'
+    import { apiGet, ReadConnectionDroppedError } from './src/client.ts'
+    import { ApiRequestError } from './src/client-errors.ts'
+    let release
+    const held = new Promise((resolve) => { release = resolve })
+    const server = Bun.serve({
+      port: 0,
+      idleTimeout: 1,
+      async fetch(request) {
+        if (new URL(request.url).pathname === '/slow') await held
+        return Response.json(
+          { error: 'Ficus is busy and did not finish this read within 25 seconds.', code: 'read_deadline_exceeded' },
+          { status: 503, headers: { 'Retry-After': '5' } }
+        )
+      },
+    })
+    // Whatever API address the client resolves, send it to the local listener.
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (url, init) => realFetch('http://127.0.0.1:' + server.port + new URL(String(url)).pathname, init)
+    await assert.rejects(apiGet('/slow'), (error) => {
+      assert(error instanceof ReadConnectionDroppedError)
+      assert.match(error.message, /closed the connection before answering this read/)
+      assert.match(error.message, /Nothing was changed/)
+      return true
+    })
+    await assert.rejects(apiGet('/deadline'), (error) => {
+      assert(error instanceof ApiRequestError)
+      assert.equal(error.status, 503)
+      assert.equal(error.code, 'read_deadline_exceeded')
+      assert.match(error.message, /did not finish this read within 25 seconds/)
+      return true
+    })
+    // Other network failures pass through unchanged.
+    const refused = new TypeError('connection refused')
+    globalThis.fetch = async () => { throw refused }
+    await assert.rejects(apiGet('/x'), (error) => error === refused)
+    release()
+    server.stop(true)
+  `,
+    ],
+    { cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe' }
+  )
+  expect(result.stderr.toString()).toBe('')
+  expect(result.exitCode).toBe(0)
+}, 30_000)

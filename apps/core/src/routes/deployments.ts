@@ -4,6 +4,7 @@ import { withDeviceStreamRevocation } from '../services/streaming/device-revocat
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { getBunServer } from 'hono/bun'
+import { exemptFromReadDeadline } from '../middleware/read-deadline'
 import { createLogger } from '../lib/infra/logger'
 import { getSandboxProvisionErrorResponse } from './sandbox-provision-error'
 import { and, desc, eq, isNull } from 'drizzle-orm'
@@ -289,6 +290,8 @@ export const deploymentsRouter = new Hono()
    */
   .all('/app/:localDeploymentId/*', async (c) => {
     c.set('publicRoute', true)
+    // The proxy gives each request its own, longer idle timeout for a slow app.
+    exemptFromReadDeadline(c)
     const routeParameter = c.req.param('localDeploymentId')
     const localDeploymentId = c.get('resolvedLocalDeploymentId') ?? routeParameter
     const path = c.req.path.split(`/api/app/${routeParameter}/`)[1] ?? ''

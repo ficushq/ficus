@@ -193,7 +193,8 @@ ficus workstream|ws [command] [options]
 
 ### list
 
-List work streams with optional filters.
+List open work streams (queued and active) with optional filters. Done and canceled
+streams are included only with `--status` or `--all`.
 
 ```bash
 ficus workstream list [options]
@@ -201,26 +202,36 @@ ficus workstream list [options]
 
 **Options:**
 
-| Option                  | Description        |
-| ----------------------- | ------------------ |
-| `-q, --squad <squadId>` | Filter by squad ID |
-| `-t, --task <taskId>`   | Filter by task ID  |
-| `-s, --status <status>` | Filter by status   |
+| Option                  | Description                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `-q, --squad <squadId>` | Filter by squad ID                                                             |
+| `-t, --task <taskId>`   | Filter by task ID                                                              |
+| `-s, --status <status>` | Only this status: `queued`, `active`, `done` or `canceled` (wins over `--all`) |
+| `--all`                 | Include done and canceled streams                                              |
+
+A squad's history grows without bound: on a squad with about a thousand done streams,
+`--all` returns megabytes and takes seconds of server time, against a fraction of a second
+for the default. Use `--status done` or `--all` only when you need the history, and
+`ficus workstream get <id>` to check one stream (see
+[Reading work streams under load](../work-streams.md#reading-work-streams-under-load)).
 
 **Examples:**
 
 ```bash
-# List all work streams
+# List open work streams you can see
 ficus workstream list
 
-# List work streams for a specific squad
+# List open work streams for a specific squad
 ficus workstream list --squad abc123
+
+# Include done and canceled work streams
+ficus workstream list --squad abc123 --all
+
+# List only done work streams
+ficus ws list --squad abc123 --status done
 
 # List work streams for a task
 ficus ws list --task task-456
-
-# List only blocked work streams
-ficus ws list --status blocked
 ```
 
 ---

@@ -59,7 +59,9 @@ squad is busy. Four things keep that safe:
     sends one (see [CLI: workstream create](cli/workstream-commands.md#create)).
 - **No idle cutoff.** Core's listener runs `Bun.serve({ idleTimeout: 30 })`. On Bun 1.4.2
   that timer closes requests without a body (as seen on slow `workstream get` and `list`
-  reads) while their handlers keep running; it does not close a JSON `POST` such as a
+  reads, now answered first by the read deadline described under
+  [Reading work streams under load](#reading-work-streams-under-load)) while their
+  handlers keep running; it does not close a JSON `POST` such as a
   create. The create route still disables its own per-request timer after authorization
   (as workspace transfers do; see [Request limits](request-limits.md)), as a defence
   should Bun start applying the timer to such requests. A connection dropped by anything
@@ -87,6 +89,50 @@ squad is busy. Four things keep that safe:
   `outcome` is `created`, `reused`, `rejected` (4xx) or `failed`. A create taking 20
   seconds or more logs at `warn`. Search Core logs for `Work stream create timing` and
   read `slowest=`.
+
+## Reading work streams under load
+
+A single stream read is cheap: `GET /api/workstreams/<id>` takes 0.2 to 0.3 seconds on the
+server, its flow (`GET /api/workflows/runs/<id>`) 0.06 to 0.17 seconds and an agent's inbox
+about 0.1 seconds (measured 2026-11-27 on an otherwise quiet instance, squad of 988
+streams). The unpaginated list was the heavy read. `GET /api/workstreams?squadId=<id>`
+with no status filter annotates every stream the squad ever had: 2.4 seconds and 7.7 MB for 940
+done, 28 canceled and 20 open streams, against 0.23 seconds and 95 KB for
+`statuses=queued,active`. Core's database pool is small (4 connections unless
+`DATABASE_POOL_MAX` says otherwise), so reads queue behind each other. With three full
+lists running at once, each took 6 seconds and an unrelated `GET /api/workstreams/<id>`
+went from 0.17 to 6.7 seconds, while `/health` stayed at 0.03 seconds. A few agents
+polling `ficus workstream list` that way are enough to push ordinary reads past 30
+seconds.
+
+Two things keep reads bounded:
+
+- **Open work by default.** `ficus workstream list` asks for `statuses=queued,active`
+  unless it gets `--status` or `--all` (see
+  [CLI: workstream list](cli/workstream-commands.md#list)). The API itself is unchanged:
+  without a status filter it still returns everything, and paginated callers (`limit`)
+  are unaffected.
+- **Read deadline.** Core's listener runs `Bun.serve({ idleTimeout: 30 })`, and Bun's
+  idle timer closes a request without a body (a `GET`, or a `POST` without one) about 32
+  seconds after it arrives if nothing has been sent, while the handler keeps running. The
+  client only sees "The socket connection was closed unexpectedly". Core therefore
+  answers any `GET` or `HEAD` under `/api` that has no response after 25 seconds itself,
+  with a `503`, `Retry-After: 5` and
+  `{ code: "read_deadline_exceeded", error: "Ficus is busy and did not finish this read within 25 seconds. ..." }`
+  (`apps/core/src/middleware/read-deadline.ts`). 25 seconds leaves room for the idle
+  timer's coarse granularity (on Bun 1.4.2 handlers answering at 28 and 31 seconds still
+  got through; the close came at 32). Only the time until the response headers counts:
+  the deadline never cuts a streamed body that has started. The handler is not cancelled:
+  its late result is discarded, and Core logs a `read-deadline` warning for the read and
+  another when it finishes. Routes that set their own idle timeout through
+  `extendIdleTimeout` (workspace transfers, work stream creation) and the local-app
+  proxy are exempt. Writes with a JSON body are never cut by the idle timer. A `POST`
+  without a body (for example `workstream pause` or `cancel`) still can be; it is a
+  write, so Core does not answer it early.
+
+The CLI shows the 503's message as is. If a server without the deadline drops a read,
+`apiGet` reports that Ficus closed the connection before answering, probably because it
+was busy for more than 30 seconds, and that nothing was changed.
 
 ## Tracked issues and pull requests
 
