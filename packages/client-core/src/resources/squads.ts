@@ -99,6 +99,13 @@ export interface SquadSubscription {
   attention: Attention
 }
 
+export interface ListAllWorkStreamsOptions {
+  /** Drop streams whose progress the caller muted. The route refuses it with pagination. */
+  respectAttention?: boolean
+  /** Return rows with a null description, for lists that show none. */
+  omitDescription?: boolean
+}
+
 /** Lean squads surface used by mobile (list squads + their agents to find the manager). */
 export function squadsResource(t: Transport) {
   return {
@@ -120,10 +127,20 @@ export function squadsResource(t: Transport) {
       if (statuses && statuses.length > 0) path += `&statuses=${statuses.join(',')}`
       return t.request(path)
     },
-    /** Cross-squad listing — same route without the squadId filter. */
-    listAllWorkStreams: (statuses?: WorkStreamStatus[]): Promise<WorkStream[]> => {
-      const path = statuses && statuses.length > 0 ? `/workstreams?statuses=${statuses.join(',')}` : '/workstreams'
-      return t.request(path)
+    /**
+     * Cross-squad listing — same route without the squadId filter. `respectAttention` drops streams
+     * the caller muted (stream or squad progress level), as a feed wants; `omitDescription` returns
+     * each row with a null description when the list shows none.
+     */
+    listAllWorkStreams: (
+      statuses?: WorkStreamStatus[],
+      options: ListAllWorkStreamsOptions = {}
+    ): Promise<WorkStream[]> => {
+      const params: string[] = []
+      if (statuses && statuses.length > 0) params.push(`statuses=${statuses.join(',')}`)
+      if (options.respectAttention) params.push('respectAttention=true')
+      if (options.omitDescription) params.push('omitDescription=true')
+      return t.request(params.length > 0 ? `/workstreams?${params.join('&')}` : '/workstreams')
     },
     getWorkStream: (id: string): Promise<WorkStream> => t.request(`/workstreams/${encodeURIComponent(id)}`),
     resolveWorkStreamWait: (

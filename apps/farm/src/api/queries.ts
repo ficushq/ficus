@@ -1,6 +1,6 @@
 import { queryKeys } from '@ficus/client-core'
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
-import type { Agent, LocalDeployment, SquadActivityKind, WorkStreamStatus } from '@ficus/shared'
+import type { Agent, LocalDeployment, PendingActionType, SquadActivityKind, WorkStreamStatus } from '@ficus/shared'
 import { squadApps as squadAppsOf, type RemoteDeployment } from '../farm/apps'
 import { client } from './client'
 import { assistantApi } from './assistant'
@@ -14,6 +14,20 @@ import { isDemo } from '../app/demo'
  * not imported here.)
  */
 const LIVE_STATUSES: WorkStreamStatus[] = ['queued', 'active']
+
+/**
+ * The pending action types the farm renders. Core lists every type by default; the farm does not
+ * render view-only `workstream-delivery` gates yet (its forms would read them as "no permission"),
+ * so it asks for the rest explicitly.
+ */
+export const FARM_PENDING_ACTION_TYPES: PendingActionType[] = [
+  'squad-question',
+  'agent-question',
+  'agent-error',
+  'workstream-review',
+  'workstream-blocked',
+  'assistant-needs-input',
+]
 
 /** How many field log entries a page brings. */
 export const FIELD_LOG_PAGE = 30
@@ -131,7 +145,7 @@ export const farmQueries = {
   pendingActions: () =>
     queryOptions({
       queryKey: queryKeys.actions.pending(),
-      queryFn: () => client.actions.listPendingActions(),
+      queryFn: () => client.actions.listPendingActions({ types: FARM_PENDING_ACTION_TYPES }),
       // The live socket is the primary refresh; this is the fallback.
       refetchInterval: 30_000,
     }),
