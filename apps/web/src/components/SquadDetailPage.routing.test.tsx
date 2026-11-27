@@ -304,7 +304,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
     })
 
     const assigneePill = Array.from(window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'manager'
+      (link) => link.textContent === 'Manager'
     ) as HTMLAnchorElement
     expect(assigneePill).toBeDefined()
 
@@ -330,8 +330,8 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
       homeTabDependencies: { SquadAgentThreads: AgentThreadsFixture },
     })
     const pills = Array.from(window.document.querySelectorAll('a'))
-    const managerPill = pills.find((link) => link.textContent === 'manager') as HTMLAnchorElement
-    const engineerPill = pills.find((link) => link.textContent === 'engineer') as HTMLAnchorElement
+    const managerPill = pills.find((link) => link.textContent === 'Manager') as HTMLAnchorElement
+    const engineerPill = pills.find((link) => link.textContent === 'Engineer') as HTMLAnchorElement
 
     await dom.act(async () => managerPill.click())
     await dom.act(async () =>
@@ -342,7 +342,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
       ).click()
     )
     const nextEngineerPill = Array.from(window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'engineer'
+      (link) => link.textContent === 'Engineer'
     ) as HTMLAnchorElement
     await dom.act(async () => nextEngineerPill.click())
     expect(window.document.querySelector('[data-squad-agent-panel]')?.getAttribute('data-selected-agent')).toBe(
@@ -369,7 +369,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
       homeTabDependencies: { SquadAgentThreads: AgentThreadsFixture },
     })
     const pill = Array.from(window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'manager'
+      (link) => link.textContent === 'Manager'
     ) as HTMLAnchorElement
     await dom.act(async () => {
       pill.click()
@@ -391,7 +391,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
       homeTabDependencies: { SquadAgentThreads: AgentThreadsFixture },
     })
     const pill = Array.from(window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'manager'
+      (link) => link.textContent === 'Manager'
     ) as HTMLAnchorElement
     await dom.act(async () => activateLinkWithEnter(window, pill))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 1)))
@@ -410,7 +410,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
     ) as HTMLButtonElement
     await dom.act(async () => homeTab.click())
     const pill = Array.from(window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'manager'
+      (link) => link.textContent === 'Manager'
     ) as HTMLAnchorElement
     await dom.act(async () => pill.click())
     expect(lastTab(locations)).toBe('agents')
@@ -428,7 +428,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
     })
 
     const assigneePill = Array.from(window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'manager'
+      (link) => link.textContent === 'Manager'
     ) as HTMLAnchorElement
     expect(assigneePill.getAttribute('href')).toContain('agent=manager-1')
     expect(assigneePill.getAttribute('href')).not.toContain('tab=')
@@ -445,7 +445,7 @@ describe('SquadDetailPage ?agent= dedicated Chats routing', () => {
       homeTabDependencies: { SquadAgentThreads: AgentThreadsFixture },
     })
     const pill = Array.from(first.window.document.querySelectorAll('a')).find(
-      (link) => link.textContent === 'engineer'
+      (link) => link.textContent === 'Engineer'
     ) as HTMLAnchorElement
     await first.dom.act(async () => pill.click())
     const refreshPath = first.locations.at(-1)!

@@ -31,6 +31,8 @@ import {
 import { WORK_STREAM_SUMMARIES_CHANGED_EVENT, WORK_STREAM_SUMMARIES_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { AgentActivityDot } from './AgentActivityDot'
+import { agentThreadLinkTitle, agentTypeDisplayName } from '../lib/agentDisplay'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 import { HoverCard } from './popover/HoverCard'
 import { useHoverCard, type HoverCardState } from './popover/useHoverCard'
 import { activityCardDeliveryLabel, activityCardWaitLabel } from './squads/squadActivityView'
@@ -326,10 +328,6 @@ export interface PeekAgent {
   status: AgentStatus
 }
 
-function typeLabel(typeId: string, names?: Map<string, string>): string {
-  return names?.get(typeId) ?? typeId.replace(/[-_]+/g, ' ').replace(/^\w/, (letter) => letter.toUpperCase())
-}
-
 /**
  * The peek card for one work stream, plus its always-present screen-reader description. Render it
  * inside the row; it portals the card itself.
@@ -353,6 +351,7 @@ export function WorkStreamPeekCard({
   /** Who is looking, as the row knows them; without one the waits never say "you". */
   viewer?: WorkStreamViewer
 }) {
+  const sharedTypeNames = useAgentTypeNames()
   const summary = workStreamSummaryFor(workStream)
   const facts = workStreamPeekFacts(workStream, viewer)
   const step = activityStepLabel(workStream.step) ?? (workStream.status === 'queued' ? 'Queued' : null)
@@ -426,7 +425,10 @@ export function WorkStreamPeekCard({
               <dt className="w-20 shrink-0 text-muted">Participants</dt>
               <dd className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-secondary">
                 {participants.map((agent) => {
-                  const name = typeLabel(agent.agentTypeId, agentTypeNames)
+                  const name = agentTypeDisplayName(
+                    agent.agentTypeId,
+                    (id) => agentTypeNames?.get(id) || sharedTypeNames(id)
+                  )
                   return (
                     // The same agent chat link as a row's subtitle: a plain click opens the chat, and
                     // Shift- or Alt/Option-click opens it in a floating window (FloatingWindows).
@@ -434,7 +436,7 @@ export function WorkStreamPeekCard({
                       key={agent.id}
                       to={`/squads/${squadSlug ?? workStream.squadId}/agents?agent=${agent.id}`}
                       className="inline-flex cursor-pointer items-center gap-1 rounded-xs hover:text-link-hover hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-                      title={`Open ${name} agent thread`}
+                      title={agentThreadLinkTitle(name)}
                       data-testid="work-stream-peek-participant"
                       onClick={(event) => {
                         // The card is portaled from inside the row: keep the row's own click (open the

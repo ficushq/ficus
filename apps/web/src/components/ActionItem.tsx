@@ -47,6 +47,7 @@ import {
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 import { usePermissions } from '../hooks/usePermissions'
 import { workflowGateReadOnlyReason } from '../lib/workflowReview'
 
@@ -106,6 +107,7 @@ export function ActionItem({
   defaultExpanded = false,
   embedded = false,
 }: ActionItemProps) {
+  const typeNames = useAgentTypeNames()
   const [isExpanded, setExpanded] = useState(defaultExpanded)
   const expanded = embedded || isExpanded
   const itemRef = useRef<HTMLDivElement>(null)
@@ -203,8 +205,8 @@ export function ActionItem({
       : assistantTask
         ? assistantTask.taskLabel
         : agentItem
-          ? (pendingActionAgentLabel(action) ?? agentItem.agentTypeId)
-          : (pendingActionAgentLabel(action) ?? action.squadName)
+          ? (pendingActionAgentLabel(action, typeNames) ?? agentItem.agentTypeId)
+          : (pendingActionAgentLabel(action, typeNames) ?? action.squadName)
 
   return (
     <>
@@ -363,7 +365,8 @@ function ReadOnlyGateNotice({ squadId, wait }: { squadId: string; wait: WorkStre
 }
 
 function ActionSubtitle({ action }: { action: PendingAction }) {
-  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action)}</p>
+  const typeNames = useAgentTypeNames()
+  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action, typeNames)}</p>
 }
 
 type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]

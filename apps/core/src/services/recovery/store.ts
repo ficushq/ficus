@@ -1,6 +1,7 @@
 import { SandboxOutageError } from '../sandbox/outage'
 import { bashOutcomeUnknownForError } from '../sandbox/client/http-client'
 import { ProviderRequestValidationError } from '../execution/provider-request-validation'
+import { ExecutionRequeueLimitError } from '../execution/requeue-limit'
 import { createLogger } from '../../lib/infra/logger'
 import { recoveryRecipients, reportUnroutableRecovery } from './recipients'
 import { z } from 'zod'
@@ -202,7 +203,7 @@ export function recoveryHoldGuidance(record: RecoveryRecord): string {
 }
 
 export class RecoveryHeldError extends Error {
-  constructor(record?: RecoveryRecord) {
+  constructor(readonly record?: RecoveryRecord) {
     super(
       record
         ? recoveryHoldGuidance(record)
@@ -609,7 +610,8 @@ export async function recordRecoveryFailure(
   }
 ): Promise<RecoveryRecord> {
   const requestValidation = input.error instanceof ProviderRequestValidationError
-  const restart = requestValidation ? undefined : restartContextForCommandError(input.error)
+  const requeueLimit = input.error instanceof ExecutionRequeueLimitError
+  const restart = requestValidation || requeueLimit ? undefined : restartContextForCommandError(input.error)
   const outcome = requestValidation ? 'explained' : restart ? 'restart' : 'unknown'
   const error = restart ? null : lastErrorLine(input.error)
   const retryWake =
@@ -689,7 +691,10 @@ export async function recordRecoveryFailure(
             current.state,
             restart
               ? { kind: 'restart' }
-              : { kind: requestValidation ? 'request-validation' : 'unknown', error: error! },
+              : {
+                  kind: requestValidation ? 'request-validation' : requeueLimit ? 'requeue-limit' : 'unknown',
+                  error: error!,
+                },
             await databaseNow(tx)
           )
     if (requestValidation) {

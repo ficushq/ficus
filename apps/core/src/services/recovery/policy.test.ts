@@ -65,3 +65,36 @@ test('deterministic request validation holds on the first actual failure and imm
   expect(state).toMatchObject({ failures: 2, cycleFailures: 1, managerCycles: 1, state: 'waiting-owner' })
   expect(() => continueRecovery(state, 'manager', 4000)).toThrow('owner')
 })
+
+test('an execution at the requeue cap holds on its first counted failure, and a second cap escalates to the owner', async () => {
+  const { initialRecoveryState, failedRecovery, continueRecovery, recoverySummary } = await policy()
+  const error = 'The execution was interrupted 5 times without finishing.'
+  let state = failedRecovery(initialRecoveryState('continue the task'), { kind: 'requeue-limit', error }, 1000)
+  expect(state).toMatchObject({
+    state: 'waiting-manager',
+    failures: 1,
+    cycleFailures: 3,
+    nextRetryAt: null,
+    lastError: error,
+    requestValidation: false,
+    requeueLimit: true,
+    ownerEscalated: false,
+  })
+  expect(recoverySummary(state).text).toBe(
+    `I stopped resuming this run. ${error} Continue starts it again in a new run, which may stop Core again; Stop keeps it held.`
+  )
+  expect(recoverySummary(state).text).not.toContain('1 times')
+  // An earlier unexplained failure in the same cycle does not change it: the cap holds at once.
+  const partial = failedRecovery(initialRecoveryState('continue the task'), { kind: 'unknown', error: 'x' }, 0)
+  expect(failedRecovery(partial, { kind: 'requeue-limit', error }, 1000)).toMatchObject({
+    state: 'waiting-manager',
+    failures: 2,
+    cycleFailures: 3,
+  })
+  state = continueRecovery(state, 'manager', 2000)
+  state = failedRecovery(state, { kind: 'requeue-limit', error }, 3000)
+  expect(state).toMatchObject({ state: 'waiting-owner', ownerEscalated: true, managerCycles: 1 })
+  // A later ordinary failure reads as one again.
+  const later = failedRecovery(continueRecovery(state, 'owner', 4000), { kind: 'unknown', error: 'x' }, 5000)
+  expect(later.requeueLimit).toBe(false)
+})

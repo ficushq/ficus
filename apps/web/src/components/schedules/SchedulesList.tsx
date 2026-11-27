@@ -32,7 +32,8 @@ import { SUBAGENT_WATCHDOG_KIND } from '../../lib/subagentWatchdog'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
-import { agentListLabels, getAgentLabel } from '../../lib/agentDisplay'
+import { agentListLabels, agentTypeDisplayName, getAgentLabel } from '../../lib/agentDisplay'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 interface SchedulesListDependencies {
   useWebSocket: typeof useWebSocket
@@ -261,12 +262,13 @@ export function buildScheduleUpdateFromEditState(state: ScheduleEditState): Para
 
 function ActionSummary({ action, agents }: { action: ScheduleAction; agents: Agent[] }) {
   const agentMap = new Map(agents.map((a) => [a.id, a]))
+  const typeNames = useAgentTypeNames()
 
   switch (action.type) {
     case 'spawn_agent':
       return (
         <span className="text-xs text-secondary">
-          Spawn <span className="font-medium text-primary">{action.agentTypeId}</span>
+          Spawn <span className="font-medium text-primary">{agentTypeDisplayName(action.agentTypeId, typeNames)}</span>
           {action.workStream && (
             <>
               {' → '}
@@ -293,7 +295,7 @@ function ActionSummary({ action, agents }: { action: ScheduleAction; agents: Age
         <span className="text-xs text-secondary">
           Message{' '}
           <span className="font-medium text-primary">
-            {target ? getAgentLabel(target) : action.target.agentId.slice(0, 8)}
+            {target ? getAgentLabel(target, undefined, typeNames) : action.target.agentId.slice(0, 8)}
           </span>
           {action.subject && (
             <>
@@ -1209,7 +1211,8 @@ function EditActionFields({
   scopeId: string
 }) {
   // Type-first option labels, computed once for the list.
-  const agentOptionLabels = agentListLabels(agents)
+  const typeNames = useAgentTypeNames()
+  const agentOptionLabels = agentListLabels(agents, undefined, typeNames)
   // A fresh `session` remounts the editor so each open starts from its own draft.
   const [flowEditor, setFlowEditor] = useState<{ session: number; initial?: WorkflowDefinition } | null>(null)
   return (
@@ -1291,7 +1294,7 @@ function EditActionFields({
               <option value="">Select target agent...</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
-                  {agentOptionLabels.get(agent.id) ?? getAgentLabel(agent)}
+                  {agentOptionLabels.get(agent.id) ?? getAgentLabel(agent, undefined, typeNames)}
                 </option>
               ))}
             </select>
@@ -1359,6 +1362,7 @@ function EditActionFields({
 }
 
 function ActionDetails({ action, agentMap }: { action: ScheduleAction; agentMap: Map<string, Agent> }) {
+  const typeNames = useAgentTypeNames()
   switch (action.type) {
     case 'spawn_agent':
       return (
@@ -1412,7 +1416,7 @@ function ActionDetails({ action, agentMap }: { action: ScheduleAction; agentMap:
             <DetailRow label="Target Agent">
               <p className="text-primary text-xs">
                 {target ? (
-                  getAgentLabel(target)
+                  getAgentLabel(target, undefined, typeNames)
                 ) : (
                   <span className="font-mono">{action.target.agentId.slice(0, 8)}</span>
                 )}
@@ -1444,7 +1448,7 @@ function ActionDetails({ action, agentMap }: { action: ScheduleAction; agentMap:
               <DetailRow label="Assignee">
                 <p className="text-primary text-xs">
                   {assignee ? (
-                    getAgentLabel(assignee)
+                    getAgentLabel(assignee, undefined, typeNames)
                   ) : (
                     <span className="font-mono">{action.assigneeAgentId.slice(0, 8)}</span>
                   )}

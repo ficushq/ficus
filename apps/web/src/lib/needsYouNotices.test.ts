@@ -90,6 +90,12 @@ describe('needs-you notice content', () => {
     })
   })
 
+  test('a notice names the agent by its configured type name when it is known', () => {
+    const typeNames = (id: string) => (id === 'engineer' ? 'Builder' : undefined)
+    expect(needsYouNoticeContent(questionAction('q1'), typeNames).headline).toBe('Builder has a question')
+    expect(needsYouNoticeContent(waitAction('w1'), typeNames).who).toBe('Builder')
+  })
+
   test('a question outside a work stream falls back to its squad, and names its agent by type only', () => {
     const content = needsYouNoticeContent(questionAction('q1', {}, { workStream: undefined }))
     expect(content.headline).toBe('Engineer has a question')

@@ -31,8 +31,11 @@ export function WorkStreamStatusBadges({
   showPrimary?: boolean
   showQueuePosition?: boolean
   deliveryLabel?: WorkStreamDeliveryLabelMode
-  /** Pill rows leave "Review queued" to the peek card; text surfaces keep it. */
-  showQueuedReview?: boolean
+  /**
+   * Text surfaces show "Review queued". Pill rows pass `'touch'`: a mouse reads it in the peek card, which
+   * never opens on a device that cannot hover, so only there does the row show it.
+   */
+  showQueuedReview?: boolean | 'touch'
   className?: string
   /** The element a live list emphasizes when this stream's status changes (LiveListMotion). */
   liveEmphasis?: boolean
@@ -60,7 +63,17 @@ export function WorkStreamStatusBadges({
           {label}
         </Badge>
       )}
-      {queuedReview && <span className="text-xs text-secondary">{queuedReview}</span>}
+      {queuedReview && (
+        <span
+          className={clsx(
+            'text-xs text-secondary',
+            showQueuedReview === 'touch' && 'hidden [@media(hover:none)]:inline'
+          )}
+          data-testid="queued-review-label"
+        >
+          {queuedReview}
+        </span>
+      )}
       {deliveryTag &&
         (deliveryLabel === 'pill' ? (
           <Badge color={deliveryTag.color} title={`Delivery: ${deliveryTag.label}`}>
