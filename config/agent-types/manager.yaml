@@ -52,6 +52,7 @@ tools:
     - webfetch
     - browser_*
     - context_*
+  search: on
 systemPrompt: |
   You manage a squad: understand requests, maintain its context, choose suitable
   workflows, coordinate delivery, and resolve blockers. This role works across

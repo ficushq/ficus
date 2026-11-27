@@ -28,13 +28,13 @@ tools:
   deferred: [webfetch] # may be held back
 ```
 
-`assistant.yaml` (the fast tier) sets `search: off`. A subagent inherits its parent's labels along with the tool names it inherits (`SubagentParentExecutionContext.toolSearch`); without a parent override it uses the global defaults, not its own type's.
+`assistant.yaml` (the fast tier) sets `search: off`; `engineer.yaml` and `manager.yaml` set `search: on`. A subagent inherits its parent's labels along with the tool names it inherits (`SubagentParentExecutionContext.toolSearch`); without a parent override it uses the global defaults, not its own type's.
 
 ## The per-session plan
 
 `AgentSession.create` decides a plan once, when a session starts (`planToolSearch` in `plan.ts`):
 
-- `search: off`, no deferrable tools, or (with `auto`) deferrable schemas under `TOOL_SEARCH_MIN_DEFERRED_TOKENS` (2,500 estimated tokens, pi's characters-divided-by-four estimate): mode `direct`, every tool declared, no `tool_search`. A load costs a round trip and, without cache-safe additions, a cache miss, which a small saving does not pay for. With the default labels the deferrable tools of the shipped engineer and manager come to about 1,630 tokens, so `auto` declares every tool for them; set `search: on` on an agent type to hold its browser, code navigation and checklist tools back.
+- `search: off`, no deferrable tools, or (with `auto`) deferrable schemas under `TOOL_SEARCH_MIN_DEFERRED_TOKENS` (2,500 estimated tokens, pi's characters-divided-by-four estimate): mode `direct`, every tool declared, no `tool_search`. A load costs a round trip and, without cache-safe additions, a cache miss, which a small saving does not pay for. With the default labels the deferrable tools of the shipped engineer and manager come to about 1,630 tokens, so `auto` would declare every tool for them. Both types therefore set `search: on`, which holds their browser, code navigation and checklist tools back (measured at about 1,250 fewer declared tool tokens per request, including `tool_search` and the hidden-tools prompt section); other types can opt in the same way.
 - The session's model cannot add tools mid-conversation: mode `direct`. `supportsMidConversationToolAdditions` checks the same model compat flags pi's transports use: Anthropic inline tool changes, OpenAI Responses `additional_tools` or client tool search, Chat Completions tool additions. Every primary model of the shipped tiers supports it; `zai:glm-5.3` does not.
 - Any session while a Claude Code account is enabled: mode `claude-code` (below), whatever the session's first model, because per-account and model failover can move a turn onto the Claude Code bridge mid-run. The bridge starts a new Claude Code process only when everything new is a user message, so a tool `tool_search` loaded mid-run would not be callable there until the next user message. A Claude Code account enabled after a session started does not change that session's plan.
 - Otherwise mode `search`: the deferrable tools are hidden. `search: on` skips the size check, not the capability check.

@@ -1,13 +1,18 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { rmSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import * as yaml from 'js-yaml'
 import { Type } from 'typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { AgentSession } from './AgentSession'
 import * as modelSelection from '../services/model-selection'
 import { getSessionDir } from '../lib/infra/session-files'
 import { createBrowserTools } from '../tools/browser'
+import { createTodoTools } from '../tools/todo'
+import { AGENT_TYPES_DIR, EXTENSIONS_DIR } from '../lib/paths'
 import type { ToolSearchPolicy } from '../services/agent/tool-search'
+import { parseToolSearchPolicy } from '../services/agent/tool-search/labels'
 
 const bash: ToolDefinition = {
   name: 'bash',
@@ -22,7 +27,15 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
 })
 
-async function create(model: string, options: { toolSearch?: ToolSearchPolicy; agentId?: string } = {}) {
+interface CreateOptions {
+  toolSearch?: ToolSearchPolicy
+  agentId?: string
+  core?: ToolDefinition[]
+  allow?: string[]
+  extensionPaths?: string[]
+}
+
+async function create(model: string, options: CreateOptions = {}) {
   const selection = spyOn(modelSelection, 'selectModelSpecForCurrentEnvWithSwitchBack').mockReturnValue({
     selected: model,
     candidates: [{ spec: model, provider: model.split(':')[0]!, modelId: model.split(':')[1]!, usable: true }],
@@ -32,9 +45,11 @@ async function create(model: string, options: { toolSearch?: ToolSearchPolicy; a
       model,
       systemPrompt: 'You are a test agent.',
       ...(options.agentId ? { storage: { agentId: options.agentId } } : {}),
+      ...(options.extensionPaths ? { extensionPaths: options.extensionPaths } : {}),
       tools: {
-        core: [bash],
+        core: options.core ?? [bash],
         available: createBrowserTools('agent-tool-search-test', 'sandbox-tool-search-test'),
+        ...(options.allow ? { allow: options.allow } : {}),
         toolSearch: options.toolSearch,
       },
     })
@@ -98,6 +113,43 @@ describe('AgentSession tool search', () => {
     async () => {
       const session = await create('zai:glm-5.3', { toolSearch: { search: 'on' } })
       expect(session.pi.getActiveToolNames().sort()).toEqual(['bash', ...browserNames])
+    },
+    TIMEOUT_MS
+  )
+
+  it.each(['engineer', 'manager'])(
+    'a new %s session hides the browser, code navigation and checklist tools',
+    async (id) => {
+      // The shipped type's tools block, as sync stores it: allow list plus `search: on`.
+      const tools = (
+        yaml.load(readFileSync(join(AGENT_TYPES_DIR, `${id}.yaml`), 'utf8')) as { tools: Record<string, unknown> }
+      ).tools
+      const toolSearch = parseToolSearchPolicy(tools)
+      expect(toolSearch).toEqual({ search: 'on' })
+      const todo = createTodoTools({ read: async () => null, write: async () => {} })
+      const session = await create('anthropic:claude-opus-5-5', {
+        toolSearch,
+        allow: tools.allow as string[],
+        core: [bash, ...todo],
+        // The real code-ast extension, which both types load for the ast_* tools.
+        extensionPaths: [join(EXTENSIONS_DIR, 'code-ast')],
+      })
+      const astNames = session.pi
+        .getAllTools()
+        .map((tool) => tool.name)
+        .filter((name) => name.startsWith('ast_'))
+        .sort()
+      const todoNames = todo.map((tool) => tool.name).sort()
+      expect(astNames.length).toBeGreaterThan(0)
+      expect(session.pi.getActiveToolNames().sort()).toEqual(['bash', 'tool_search'])
+      const exposures = Object.fromEntries(session.pi.getAllTools().map((tool) => [tool.name, tool.exposure]))
+      for (const name of [...browserNames, ...astNames, ...todoNames]) expect(exposures[name]).toBe('deferred')
+      const prompt = session.pi.systemPrompt
+      expect(prompt).toContain('## Tools loaded on demand')
+      expect(prompt).toContain(browserNames.join(', '))
+      expect(prompt).toContain(`- Code navigation: list the symbols in a file`)
+      expect(prompt).toContain(astNames.join(', '))
+      expect(prompt).toContain(`- Checklist: add, list, toggle, update and remove todo items: ${todoNames.join(', ')}`)
     },
     TIMEOUT_MS
   )
