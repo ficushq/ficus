@@ -114,9 +114,12 @@ that is not listed, including pi extension and integration tools, is `unsafe`.
 `tool_search` is `idempotent`: a repeat finds the tools it loads already loaded.
 The same table holds each tool's default tool-search label (`direct` or
 `deferrable`, see [tool search](tool-search.md#labels)), so one entry per tool
-carries both. `wrapToolWithRecovery` puts the metadata on each session tool
-definition as `ficus` (`{ replay, label }`) and the class as pi's standard
-`annotations` hints (`readOnlyHint`, `idempotentHint`).
+carries both. `wrapToolWithRecovery` puts the replay class on each session tool
+definition as `ficus` (`{ replay }`) and as pi's standard `annotations` hints
+(`readOnlyHint`, `idempotentHint`). The label is not stamped there, because an
+agent type's `tools.direct` and `tools.deferred` override it; `resolveToolLabel`
+reads it. A test checks that every built-in tool is in the table, including names
+a factory builds from a template, and that every name in the table is a real tool.
 
 The recovery wrapper also has a budget rule for the class: a `safe` or
 `idempotent` call that a lost sandbox connection cut off mid-call

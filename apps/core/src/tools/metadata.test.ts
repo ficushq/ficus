@@ -7,15 +7,41 @@ import { classifiedTools, replayIsHarmless, toolMetadata, toolReplay, withToolMe
 
 const repoRoot = join(import.meta.dir, '../../../..')
 
-/** Tool names declared in a source file: `name: 'x'` on a definition, or the Assistant `tool('x', ...)` helper. */
-function declaredToolNames(path: string): string[] {
-  const source = readFileSync(path, 'utf8')
+interface DeclaredTools {
+  names: string[]
+  /** Tool names built from a template the scan cannot expand, so a new factory cannot slip past. */
+  unresolved: string[]
+}
+
+/** The values a factory maps over: `(['a', 'b'] as const).map((op) =>` gives `a` and `b` for `op`. */
+function mappedValues(source: string, variable: string): string[] | undefined {
+  const list = source.match(
+    new RegExp(`\\[([^\\[\\]]*)\\](?:\\s+as\\s+const)?\\)?\\.(?:map|flatMap)\\(\\(?${variable}\\b[^)]*\\)?\\s*=>`)
+  )?.[1]
+  if (!list) return undefined
+  const values = [...list.matchAll(/['"]([a-z0-9_]+)['"]/g)].map((match) => match[1]!)
+  return values.length > 0 ? values : undefined
+}
+
+/**
+ * Tool names declared in source: `name: 'x'` on a definition, the Assistant `tool('x', ...)`
+ * helper, a `X_TOOL_NAME = 'x'` constant, and a name built from a template in either position. A
+ * template with one `${variable}` is expanded over the list the factory maps it over; any other
+ * template is reported as unresolved.
+ */
+function declaredToolNames(source: string): DeclaredTools {
   const names = [...source.matchAll(/^\s+name: ['"]([a-z][a-z0-9_]*)['"],?$/gm)].map((match) => match[1]!)
   for (const match of source.matchAll(/\btool\(\s*['"]([a-z][a-z0-9_]*)['"]/g)) names.push(match[1]!)
   for (const match of source.matchAll(/_TOOL_NAME = ['"]([a-z][a-z0-9_]*)['"]/g)) names.push(match[1]!)
-  // The Assistant's continue/retry/cancel tools are built from one template.
-  if (source.includes('`${operation}_task`')) names.push('continue_task', 'retry_task', 'cancel_task')
-  return names
+  const unresolved: string[] = []
+  for (const match of source.matchAll(/(?:^\s+name: |\btool\(\s*)`([^`]*)`/gm)) {
+    const template = match[1]!
+    const parts = template.match(/^([a-z0-9_]*)\$\{(\w+)\}([a-z0-9_]*)$/)
+    const values = parts && mappedValues(source, parts[2]!)
+    if (!parts || !values) unresolved.push(template)
+    else names.push(...values.map((value) => `${parts[1]}${value}${parts[3]}`))
+  }
+  return { names, unresolved }
 }
 
 /** The names in a `const NAME = ['a', 'b'] as const` list, read from source so no database module loads. */
@@ -26,16 +52,17 @@ function listedNames(path: string, constant: string): string[] {
   return [...list.matchAll(/'([a-z_]+)'/g)].map((match) => match[1]!)
 }
 
-function builtInToolNames(): string[] {
+function builtInTools(): DeclaredTools {
   const toolsDir = join(repoRoot, 'apps/core/src/tools')
   const files = readdirSync(toolsDir)
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts') && file !== 'metadata.ts')
     .map((file) => join(toolsDir, file))
   files.push(join(repoRoot, 'config/agent/extensions/code-ast/index.ts'))
   files.push(join(repoRoot, 'apps/core/src/services/agent/tool-search/prompt.ts'))
-  return [
+  const declared = files.map((file) => ({ file, ...declaredToolNames(readFileSync(file, 'utf8')) }))
+  const names = [
     ...new Set([
-      ...files.flatMap(declaredToolNames),
+      ...declared.flatMap((tools) => tools.names),
       // Created by pi's coding-agent factories, wrapped for the sandbox.
       'bash',
       'read',
@@ -46,11 +73,16 @@ function builtInToolNames(): string[] {
       ...listedNames('apps/core/src/services/integrations/bigbrain/shared-tools.ts', 'BIGBRAIN_SHARED_TOOL_NAMES'),
     ]),
   ].sort()
+  const unresolved = declared.flatMap(({ file, unresolved }) =>
+    unresolved.map((template) => `${file.slice(repoRoot.length + 1)}: \`${template}\``)
+  )
+  return { names, unresolved }
 }
 
 describe('tool classification', () => {
+  const { names, unresolved } = builtInTools()
+
   test('every built-in tool is classified explicitly', () => {
-    const names = builtInToolNames()
     // Guard the scan itself, so a broken pattern cannot make this pass vacuously.
     expect(names).toEqual(
       expect.arrayContaining([
@@ -61,9 +93,45 @@ describe('tool classification', () => {
         'ast_rename',
         'bigbrain_drop',
         'tool_search',
+        // Built from the `${operation}_task` template in the Assistant's tool factory.
+        'continue_task',
+        'retry_task',
+        'cancel_task',
       ])
     )
     expect(names.filter((name) => !classifiedTools().has(name))).toEqual([])
+  })
+
+  test('every tool name built from a template is expanded by the scan', () => {
+    // A factory that builds names from a template the scan cannot expand would hide its tools from the
+    // check above. Map the template over a literal list, or teach declaredToolNames the new shape.
+    expect(unresolved).toEqual([])
+  })
+
+  test('every name in the table is a real built-in tool', () => {
+    // A stale entry would keep a removed tool's class for any later tool that reuses the name.
+    expect([...classifiedTools().keys()].filter((name) => !names.includes(name))).toEqual([])
+  })
+
+  test('the scan expands factory templates and reports the ones it cannot', () => {
+    const factory = [
+      "const tools = (['pause', 'resume'] as const).map((operation) =>",
+      '  tool(`${operation}_job`, `${operation} a job`, schema, run)',
+      ')',
+      "const more = ['a', 'b'].map((kind) => ({",
+      '  name: `widget_${kind}`,',
+      '}))',
+      'const other = {',
+      '  name: `${prefix}_${suffix}`,',
+      '}',
+      'const loose = {',
+      '  name: `orphan_${missing}`,',
+      '}',
+    ].join('\n')
+    expect(declaredToolNames(factory)).toEqual({
+      names: ['pause_job', 'resume_job', 'widget_a', 'widget_b'],
+      unresolved: ['${prefix}_${suffix}', 'orphan_${missing}'],
+    })
   })
 
   test('the classes follow the research brief, checked per tool', () => {
@@ -164,9 +232,11 @@ describe('metadata on tool definitions', () => {
 
   test('a classified tool carries its class and the matching standard hints', () => {
     expect(withToolMetadata(definition('read'))).toMatchObject({
-      ficus: { replay: 'safe', label: 'direct' },
+      ficus: { replay: 'safe' },
       annotations: { readOnlyHint: true },
     })
+    // The label is not stamped: an agent type's override would make a stamped default wrong.
+    expect(withToolMetadata(definition('browser_open')).ficus).toEqual({ replay: 'unsafe' })
     expect(withToolMetadata(definition('write'))).toMatchObject({
       ficus: { replay: 'idempotent' },
       annotations: { readOnlyHint: false, idempotentHint: true },
@@ -181,7 +251,7 @@ describe('metadata on tool definitions', () => {
     const tool = withToolMetadata(
       definition('ext_tool', { annotations: { readOnlyHint: true }, ficus: { replay: 'safe' } })
     )
-    expect(tool.ficus).toEqual({ replay: 'unsafe', label: 'direct' })
+    expect(tool.ficus).toEqual({ replay: 'unsafe' })
     expect(tool.annotations).toEqual({ readOnlyHint: true })
   })
 })
