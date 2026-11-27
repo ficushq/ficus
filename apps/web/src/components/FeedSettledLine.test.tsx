@@ -46,9 +46,10 @@ describe('settled line text', () => {
     expect(settledPeriodLabel(new Date(2026, 9, 27, 12, 0).toISOString(), now)).toMatch(/^Since Oct 27$/)
   })
 
-  test('each count opens Activity filtered to its rows in the same squads', () => {
-    expect(settledActivityHref('reviews', since, ['s2', 's1'])).toBe(
-      `/activity?settled=reviews&since=${encodeURIComponent(since)}&squad=s1&squad=s2`
+  test('each count opens Activity filtered to its rows in the same squads, up to the end of the count', () => {
+    const through = '2026-11-26T12:00:00.000Z'
+    expect(settledActivityHref('reviews', { since, through }, ['s2', 's1'])).toBe(
+      `/activity?settled=reviews&since=${encodeURIComponent(since)}&until=${encodeURIComponent(through)}&squad=s1&squad=s2`
     )
   })
 })
@@ -188,10 +189,13 @@ describe('Feed Updates with the settled line', () => {
     const links = [...document.querySelector('[data-testid="feed-settled-line"]')!.querySelectorAll('a')].map((link) =>
       link.getAttribute('href')
     )
-    expect(links).toEqual([
-      settledActivityHref('questions', since, ['s1']),
-      settledActivityHref('reviews', since, ['s1']),
-    ])
+    // Each link ends where its count did, the same `through` the visit records.
+    expect(links).toEqual(
+      ['questions', 'reviews'].map(
+        (kind) =>
+          `/activity?settled=${kind}&since=${encodeURIComponent(since)}&until=${encodeURIComponent(endAt(T0 + 3 * HOUR))}&squad=s1`
+      )
+    )
     expect(settledRequests[0]).toEqual(['activity', 'settled', 'u1', since, ['s1']])
     expect(recorded).toEqual([endAt(T0 + 3 * HOUR)])
   })

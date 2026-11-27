@@ -445,7 +445,14 @@ describe('GET /api/activity/settled', () => {
       expect(
         (await activityRequest(`/api/activity/settled?${query}`, { headers: authHeaders(admin.token) })).status
       ).toBe(400)
-    for (const query of ['settled=questions', 'settled=completed&since=2026-01-01T00:00:00Z', 'squadId=nope'])
+    for (const query of [
+      'settled=questions',
+      'settled=completed&since=2026-01-01T00:00:00Z',
+      'squadId=nope',
+      // `until` only bounds a settled filter, and must be an instant.
+      'until=2026-01-02T00:00:00Z',
+      'settled=questions&since=2026-01-01T00:00:00Z&until=later',
+    ])
       expect((await activityRequest(`/api/activity?${query}`, { headers: authHeaders(admin.token) })).status).toBe(400)
   })
 
@@ -511,9 +518,10 @@ describe('GET /api/activity/settled', () => {
     expect(await settled(blind.token)).toEqual({ questions: 0, reviews: 0 })
     expect(await settled(outsider.token)).toEqual({ questions: 0, reviews: 0 })
 
-    const list = async (token: string) => {
+    const list = async (token: string, until?: Date) => {
+      const bound = until ? `&until=${encodeURIComponent(until.toISOString())}` : ''
       const response = await activityRequest(
-        `/api/activity?settled=questions&since=${encodeURIComponent(since)}&squadId=${squad.id}`,
+        `/api/activity?settled=questions&since=${encodeURIComponent(since)}${bound}&squadId=${squad.id}`,
         { headers: authHeaders(token) }
       )
       expect(response.status).toBe(200)
@@ -521,5 +529,11 @@ describe('GET /api/activity/settled', () => {
     }
     expect(await list(reader.token)).toEqual([`41:${wait!.id}`])
     expect(await list(blind.token)).toEqual([])
+    // `until` (the count's `through`) is exclusive: a count that ended before the wait settled lists
+    // nothing, one that ended after lists it, and the bound never widens what a viewer may read.
+    expect(await list(reader.token, new Date(Date.now() - 3 * 60_000))).toEqual([])
+    expect(await list(reader.token, wait!.closedAt!)).toEqual([])
+    expect(await list(reader.token, new Date(Date.now() - 60_000))).toEqual([`41:${wait!.id}`])
+    expect(await list(blind.token, new Date(Date.now() - 60_000))).toEqual([])
   })
 })

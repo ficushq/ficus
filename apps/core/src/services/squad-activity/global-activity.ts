@@ -96,7 +96,15 @@ export function globalActivityPageSql(
       WHERE at>=params.retention_floor
         AND ${globalActivityAccessPredicateSql}
         AND (${input.verbose}::boolean OR quiet_eligible)
-        AND ${input.settled ? settledRowSql(input.settled.kind, new Date(input.settled.since)) : sql`TRUE`}
+        AND ${
+          input.settled
+            ? settledRowSql(
+                input.settled.kind,
+                new Date(input.settled.since),
+                input.settled.until ? new Date(input.settled.until) : undefined
+              )
+            : sql`TRUE`
+        }
         AND ${
           input.kinds.length === 0
             ? sql`TRUE`
