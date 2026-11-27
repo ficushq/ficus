@@ -22,7 +22,19 @@ import {
 } from '../services/agent/account-auth-backend'
 import { registerOpenAICompatibleAccounts } from '../services/agent/auth-backend'
 import { registerAnthropicWithClaudeCode } from '../services/agent/claude-code/anthropic'
-import { primeClaudeCodeStatus } from '../services/agent/claude-code/availability'
+import { claudeCodeOffered, primeClaudeCodeStatus } from '../services/agent/claude-code/availability'
+import { claudeCodeAccount } from '../services/agent/claude-code/account'
+import {
+  activateToolSearch,
+  buildHiddenToolsPromptSection,
+  createToolSearchTool,
+  labelToolForPlan,
+  planToolSearch,
+  registerClaudeCodeToolLabels,
+  resolveSessionPlan,
+  resolveToolSearchCapability,
+  type ToolSearchPolicy,
+} from '../services/agent/tool-search'
 import { selectAccount } from '../services/agent/account-selection'
 import * as accountStore from '../services/agent/account-store'
 import { AGENT_DIR } from '../lib/paths'
@@ -89,6 +101,11 @@ export interface CreateAgentSessionOptions {
     allow?: string[] | null
     /** Denylist of tool names to exclude from available tools. If not provided, no tools are excluded. */
     deny?: string[] | null
+    /**
+     * The agent type's override of the tool-search labels (`tools.search`, `tools.direct`,
+     * `tools.deferred`); a subagent passes its parent's. See services/agent/tool-search.
+     */
+    toolSearch?: ToolSearchPolicy | null
   }
   /** Sandbox configuration */
   sandbox?: {
@@ -231,6 +248,31 @@ export class AgentSession {
     registerOpenAICompatibleAccounts(modelRuntime)
     registerAnthropicWithClaudeCode(modelRuntime)
 
+    // Tool search: decided once per session and recorded in its session file, so the starting tool
+    // set and the system prompt stay the same on every turn and after resume.
+    // Bound once the pi session exists; tool_search only runs after that.
+    const piSession: { current?: PiAgentSession } = {}
+    const registeredTools = [...customTools, ...resourceLoader.getExtensionTools()]
+    const toolSearchPlan = resolveSessionPlan(
+      sessionManager,
+      () =>
+        planToolSearch({
+          tools: registeredTools,
+          policy: tools?.toolSearch,
+          capability: resolveToolSearchCapability({
+            model,
+            claudeCodeEnabled: claudeCodeOffered() && Boolean(claudeCodeAccount()?.enabled),
+          }),
+        }),
+      registeredTools.map((tool) => tool.name)
+    )
+    const sessionTools = customTools.map((tool) => labelToolForPlan(tool, toolSearchPlan))
+    resourceLoader.relabelExtensionTools((tool) => labelToolForPlan(tool, toolSearchPlan))
+    if (toolSearchPlan.mode === 'search') {
+      sessionTools.push(createToolSearchTool(() => piSession.current))
+      resourceLoader.setSystemPromptSuffix(buildHiddenToolsPromptSection(toolSearchPlan.hidden))
+    }
+
     const { session } = await createAgentSession({
       // Used in SettingsManager, SessionManager, and DefaultResourceLoader, all
       // of which we override with our own. So this only affects the Pi
@@ -250,11 +292,14 @@ export class AgentSession {
       // Disable built-in tools.
       noTools: 'builtin',
       // Add custom tools.
-      customTools,
+      customTools: sessionTools,
       resourceLoader,
       sessionManager,
       settingsManager,
     })
+    piSession.current = session
+    activateToolSearch(session, toolSearchPlan)
+    registerClaudeCodeToolLabels(session.sessionManager.getSessionId(), toolSearchPlan)
 
     const wrapper = new AgentSession(session, selected, switchedBack, authBackend, accountId)
     const usageContext = {

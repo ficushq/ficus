@@ -487,8 +487,9 @@ describe('GET /api/activity/settled', () => {
           summary: { attempted: 'Pick one', attemptCount: 0, lastError: null, text: 'Choose' },
           version: 1,
         },
-        openedAt: new Date(Date.now() - 120_000),
-        closedAt: new Date(),
+        openedAt: new Date(Date.now() - 5 * 60_000),
+        // Past the margin a count stops short of the clock by (ACTIVITY_SETTLED_MARGIN_MS).
+        closedAt: new Date(Date.now() - 2 * 60_000),
         resolution: 'cleared',
       })
       .returning()

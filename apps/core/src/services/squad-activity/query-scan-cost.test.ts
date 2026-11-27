@@ -8,6 +8,7 @@ import { chatSourcePageSql, listChatSourcePage } from './source-loaders'
 import { workStreamRuntimesSql } from '../../entities/WorkStream'
 import { workStreamLastEventsSql } from './global-presence'
 import { settledCountSql } from './settled'
+import { globalActivityPageSql } from './global-activity'
 
 const squadIds: string[] = []
 const recipientIds: string[] = []
@@ -236,53 +237,107 @@ test('Active work last events probe each participant once instead of scanning it
   expect(buffers(plan)).toBeLessThan(streams * 6)
 })
 
-test("the Feed's settled count seeks its two row kinds instead of reading every row of the period", async () => {
-  const [squad] = await db
-    .insert(squads)
-    .values({ name: `scan-cost-${crypto.randomUUID()}`, purpose: 'test' })
-    .returning()
-  squadIds.push(squad.id)
-  const since = new Date(Date.now() - 2 * 60 * 60_000)
-  const query = settledCountSql(
-    [{ squadId: squad.id, access: { agentsRead: true, workstreamsRead: true, inbox: { mode: 'all' } } }],
-    since
-  )
-  // Same shadowing as above: a temporary squad_activity with the generated production indexes.
+/**
+ * Plans for `queries` over a temporary squad_activity (same shadowing as above, with the generated
+ * production feed and kind indexes) holding 20,000 rows in the period and a handful of wait rows the
+ * settled queries have to look at. The other rows carry thousands of distinct kinds (the temporary
+ * table has no lane/kind check), so Postgres 18's skip scan cannot reach the wait rows through the
+ * kind index unless the query names the kind: Postgres 16, which production compose runs, has no skip
+ * scan at all.
+ */
+async function settledFixturePlans(squadId: string, queries: SQL[]) {
   const indexes = ['idx_squad_activity_feed', 'idx_squad_activity_kind'].map((name) =>
     generatedIndexStatement(name).replace(' ON "squad_activity" ', ' ON pg_temp."squad_activity" ')
   )
   const rollback = new Error('discard fixture')
-  let plan: any
+  const plans: any[] = []
   await expect(
     db.transaction(async (tx) => {
       await tx.execute(
         sql`CREATE TEMP TABLE squad_activity (LIKE public.squad_activity INCLUDING DEFAULTS) ON COMMIT DROP`
       )
       for (const index of indexes) await tx.execute(sql.raw(index))
-      // 20,000 rows in the period, and a handful of wait rows the count has to look at. The other rows
-      // carry thousands of distinct kinds (the temporary table has no lane/kind check), so Postgres 18's
-      // skip scan cannot reach the wait rows through the kind index unless the query names the kind:
-      // Postgres 16, which production compose runs, has no skip scan at all.
       await tx.execute(sql`INSERT INTO squad_activity(squad_id,lane,row_id,source_family,source_group_id,at,agent_id,
           agent_type_id,kind,summary,preview,ref,quiet_eligible,access_scope,payload_hash)
-        SELECT ${squad.id}::uuid,CASE WHEN n<=5 THEN 41 ELSE 10 END,gen_random_uuid(),
+        SELECT ${squadId}::uuid,CASE WHEN n<=5 THEN 41 ELSE 10 END,gen_random_uuid(),
           CASE WHEN n<=5 THEN 'wait' ELSE 'chat' END,gen_random_uuid()::text,
           now() - (n * interval '300 milliseconds'),NULL,'engineer',CASE WHEN n<=5 THEN 'wait' ELSE 'message-' || n END,
           repeat(md5(n::text),8),'[]'::jsonb,'{}'::jsonb,true,(CASE WHEN n<=5 THEN 'workstreams' ELSE 'agents' END)::squad_activity_access_scope,
           md5(n::text) || md5(n::text)
         FROM generate_series(1,20000) n`)
       await tx.execute(sql`ANALYZE squad_activity`)
-      const [row] = await tx.execute(sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${query}`)
-      plan = (row['QUERY PLAN'] as any)[0].Plan
+      for (const query of queries) {
+        const [row] = await tx.execute(sql`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${query}`)
+        plans.push((row['QUERY PLAN'] as any)[0].Plan)
+      }
       throw rollback
     })
   ).rejects.toBe(rollback)
-  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled count plan', JSON.stringify(plan))
+  return plans
+}
+
+/** The plan seeks the kind index; it never walks the period through the feed index or a sequential scan. */
+function expectKindSeek(plan: any) {
   const indexesUsed = planNodes(plan).map((node) => node['Index Name'])
   expect(indexesUsed).toContain('idx_squad_activity_kind')
   expect(indexesUsed).not.toContain('idx_squad_activity_feed')
   expect(
     planNodes(plan).some((node) => node['Node Type'] === 'Seq Scan' && node['Relation Name'] === 'squad_activity')
   ).toBe(false)
-  expect(buffers(plan)).toBeLessThan(100)
+  // The temporary squad_activity is read through local buffers, so count those as well as shared ones.
+  const blocks = buffers(plan) + plan['Local Hit Blocks'] + plan['Local Read Blocks']
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled blocks', blocks)
+  expect(blocks).toBeLessThan(100)
+}
+
+async function scanCostSquad() {
+  const [squad] = await db
+    .insert(squads)
+    .values({ name: `scan-cost-${crypto.randomUUID()}`, purpose: 'test' })
+    .returning()
+  squadIds.push(squad.id)
+  return squad.id
+}
+
+const FULL_ACCESS = { agentsRead: true, workstreamsRead: true, inbox: { mode: 'all' as const } }
+
+test("the Feed's settled count seeks its two row kinds instead of reading every row of the period", async () => {
+  const squadId = await scanCostSquad()
+  const since = new Date(Date.now() - 2 * 60 * 60_000)
+  const [plan] = await settledFixturePlans(squadId, [settledCountSql([{ squadId, access: FULL_ACCESS }], since)])
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled count plan', JSON.stringify(plan))
+  expectKindSeek(plan)
+})
+
+test('Activity filtered to a settled count (GET /api/activity?settled=) seeks the same rows', async () => {
+  const squadId = await scanCostSquad()
+  const since = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
+  // The first page and a later page (from a cursor) for each kind. Nothing in the fixture matches,
+  // the worst case for a LIMIT: a plan that walked the period newest first would read all of it.
+  const cursor = {
+    at: new Date(Date.now() - 60_000),
+    squadId,
+    lane: 41 as const,
+    rowId: crypto.randomUUID(),
+    retentionFloor: new Date(Date.now() - 30 * 24 * 60 * 60_000),
+  }
+  const queries = (['questions', 'reviews'] as const).flatMap((kind) =>
+    [null, cursor].map((page) =>
+      globalActivityPageSql(
+        {
+          limit: 50,
+          verbose: false,
+          agentIds: [],
+          kinds: [],
+          settled: { kind, since },
+          squadAccess: [{ squadId, access: FULL_ACCESS }],
+        },
+        page
+      )
+    )
+  )
+  const plans = await settledFixturePlans(squadId, queries)
+  if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled list plans', JSON.stringify(plans))
+  expect(plans).toHaveLength(4)
+  for (const plan of plans) expectKindSeek(plan)
 })

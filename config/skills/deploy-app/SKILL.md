@@ -112,7 +112,7 @@ page, and the browser console shows 404s (or Ficus's own HTML) for every
 
 ### Access is token-gated; you do not manage it
 
-For browser tools, prefer `browser_open({ "localDeploymentId": "<full-deployment-uuid>" })`. Ficus checks the calling agent's current deployment-read permission and deployment state, then passes the issued URL directly to the browser backend. You do not need to print or copy a capability through tool output. To inspect a run without its credential URL, use `ficus deploy local get <id> --json | jq '{id, name, status, port}'`. See `frontend-visual-review` for the full loop.
+For browser tools, prefer `browser_open({ "localDeploymentId": "<full-deployment-uuid>" })` (load it with `tool_search` first if your system prompt lists it under tools loaded on demand). Ficus checks the calling agent's current deployment-read permission and deployment state, then passes the issued URL directly to the browser backend. You do not need to print or copy a capability through tool output. To inspect a run without its credential URL, use `ficus deploy local get <id> --json | jq '{id, name, status, port}'`. See `frontend-visual-review` for the full loop.
 
 The URL Ficus gives you carries `?_ficus_token=…`. That token authenticates the
 first request and Ficus then sets a cookie scoped to that one app, so the app's
