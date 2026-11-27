@@ -5,6 +5,7 @@ import {
   type WorkStreamPresentationFacts,
 } from './status-presentation'
 import type { WorkStream, WorkStreamDerivedState, WorkStreamStatus, WorkStreamWaitType } from './types'
+import { workStreamWaitsOnViewer, type WorkStreamViewer } from './work-stream-time'
 
 /** Explicit reduced vocabulary used by WidgetKit and ActivityKit. */
 export type WorkBucket = 'needsYou' | 'running' | 'blocked' | 'queued' | 'paused' | 'externalWait'
@@ -102,7 +103,21 @@ type SnapshotSource = Pick<
   | 'assigneeAgentId'
   | 'openWaits'
   | 'updatedAt'
->
+> &
+  Partial<Pick<WorkStream, 'assignedReviewerIds'>>
+
+/**
+ * Who the snapshot belongs to, for its "waiting on you" count. The Live Activity and widget are
+ * built for one user, so they count by the same viewer rule as Activity (`workStreamWaitsOnViewer`).
+ */
+export interface WorkInterestViewerOptions {
+  /**
+   * The user as a viewer of this stream (their permissions in its squad), or undefined when the
+   * stream must not count as waiting on them (permissions unknown, or decisions muted). Without
+   * it, nothing counts as waiting on the user.
+   */
+  viewerFor?: (stream: SnapshotSource) => WorkStreamViewer | undefined
+}
 
 function updatedAtMs(stream: Pick<SnapshotSource, 'updatedAt'>): number {
   return new Date(stream.updatedAt).getTime()
@@ -149,7 +164,10 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
   return row
 }
 
-export function buildWorkInterestSnapshot(streams: SnapshotSource[], now: Date = new Date()): WorkInterestSnapshot {
+export function buildWorkInterestSnapshot(
+  streams: SnapshotSource[],
+  { now = new Date(), viewerFor }: WorkInterestViewerOptions & { now?: Date } = {}
+): WorkInterestSnapshot {
   const ordered = [...streams].sort(compareWorkInterest)
   const bucketCounts: Record<WorkBucket, number> = {
     needsYou: 0,
@@ -168,21 +186,25 @@ export function buildWorkInterestSnapshot(streams: SnapshotSource[], now: Date =
     top: ordered.slice(0, WIDGET_TOP_LIMIT).map(toWidgetSummary),
     liveActivity: {
       activeCount: bucketCounts.running,
-      // Human actions remain available even when running is the primary bucket.
-      needsYouCount: ordered.filter(workStreamNeedsHumanAttention).length,
+      // Human actions remain available even when running is the primary bucket. Only streams this
+      // user can act on count, by the same rule as Activity's "N waiting on you".
+      needsYouCount: ordered.filter((stream) => workStreamWaitsOnViewer(stream, viewerFor?.(stream))).length,
       top: ordered.slice(0, LIVE_ACTIVITY_TOP_LIMIT).map(toStreamLite),
     },
   }
 }
 
-export function buildLiveActivityState(streams: SnapshotSource[]): LiveActivityState {
-  return buildWorkInterestSnapshot(streams).liveActivity
+export function buildLiveActivityState(
+  streams: SnapshotSource[],
+  options: WorkInterestViewerOptions = {}
+): LiveActivityState {
+  return buildWorkInterestSnapshot(streams, options).liveActivity
 }
 
 export function shouldShowLiveActivity(state: LiveActivityState): boolean {
   return state.activeCount > 0 || state.needsYouCount > 0
 }
 
-export function serializeLiveActivityState(streams: SnapshotSource[]): string {
-  return JSON.stringify(buildLiveActivityState(streams))
+export function serializeLiveActivityState(streams: SnapshotSource[], options: WorkInterestViewerOptions = {}): string {
+  return JSON.stringify(buildLiveActivityState(streams, options))
 }

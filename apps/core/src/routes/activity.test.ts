@@ -476,6 +476,25 @@ describe('GET /api/activity/presence', () => {
     expect(answers.needsYouCount).toBe(1)
     expect(answers.question).toMatchObject({ needsYou: true, waits: [{ needsYou: true, you: true }] })
     expect(answers.gate).toMatchObject({ needsYou: false })
+    // The Live Activity is built for one user by the same rule: for each viewer its count equals
+    // Activity's, so the reviewer outside the gate reads 0 on the lock screen too.
+    const { loadWorkInterestSnapshot } = await import('../services/push/work-interest')
+    for (const [who, presence] of [
+      [assignedReviewer, mine],
+      [otherReviewer, theirs],
+      [answerer, answers],
+    ] as const) {
+      const snapshot = await loadWorkInterestSnapshot(who.id)
+      expect(snapshot.totalCount).toBe(2)
+      expect(snapshot.liveActivity.needsYouCount).toBe(presence.needsYouCount)
+    }
+    // Muting a stream's decisions drops it from both counts, while its progress still shows.
+    await subscribeToSquad(squad.id, answerer.id, { decisions: 'mute', progress: 'show' })
+    expect((await readPresence(answerer.token)).needsYouCount).toBe(0)
+    const muted = await loadWorkInterestSnapshot(answerer.id)
+    expect(muted.totalCount).toBe(2)
+    expect(muted.liveActivity.needsYouCount).toBe(0)
+    await subscribeToSquad(squad.id, answerer.id, { decisions: 'show', progress: 'show' })
     // Cards needing the viewer sort first.
     const first = await activityRequest('/api/activity/presence', { headers: authHeaders(answerer.token) })
     expect(((await first.json()) as GlobalActivityPresence).streams?.[0]?.id).toBe(asking!.id)
