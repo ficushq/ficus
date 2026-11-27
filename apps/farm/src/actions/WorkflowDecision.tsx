@@ -12,6 +12,7 @@ import {
   workflowCompletionTargets,
   workStreamWaitActor,
   isWorkflowHumanGateWait,
+  mayDecideWorkflowGate,
   effectiveWorkflowStep,
   deliveryPullRequests,
   workflowReworkAttempt,
@@ -352,10 +353,7 @@ function HumanGate({
   const waits = run.openWaits ?? stream.openWaits ?? []
   const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
   const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
-  const assigned = stream.assignedReviewerIds ?? []
-  const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
-  const canDecide =
-    can('workstreams:review') && (!restricted || (identity?.type === 'user' && assigned.includes(identity.userId)))
+  const canDecide = mayDecideWorkflowGate(identity, can('workstreams:review'), stream.assignedReviewerIds, step)
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [
     ...new Map(

@@ -6,13 +6,28 @@ import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stre
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, like, inArray } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTypes, executions, squads, workStreams, workStreamWaits } from '../../db/schema'
+import {
+  agents,
+  agentTypes,
+  executions,
+  squads,
+  workStreamFlowRuns,
+  workStreams,
+  workStreamWaits,
+} from '../../db/schema'
 import { Squad } from '../../entities/Squad'
 import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
 import { AgentType } from '../../entities/AgentType'
 import { computeDerivedStates, sortWaitsByDisplayPrecedence } from './derived-state'
-import type { WorkStreamTerminalFailure, WorkStreamWait } from '@ficus/shared'
+import {
+  createBlankWorkflow,
+  createWorkflowRun,
+  resolveWorkflow,
+  workflowDefinitionSchema,
+  type WorkStreamTerminalFailure,
+  type WorkStreamWait,
+} from '@ficus/shared'
 
 describe('work-stream derived state', () => {
   let testPrefix: string
@@ -86,6 +101,58 @@ describe('work-stream derived state', () => {
       await db.delete(workStreamWaits).where(eq(workStreamWaits.id, hold!.id))
     }
     expect((await derived(ws)).openWaits[0]!.id).toBe(gate!.id)
+  })
+
+  it("puts the approver of each workflow gate's step on its wait, so clients apply the same decide rule", async () => {
+    const ws = await createStream('gate approvers')
+    const { flowWaitReference } = await import('../workflows/wait-policy')
+    const definition = createBlankWorkflow()
+    definition.steps[0]!.outcomes = { completed: { parallel: ['design-approval', 'scope-approval'], join: 'finish' } }
+    for (const [id, approver] of [
+      ['design-approval', 'reviewers'],
+      ['scope-approval', 'assigned-reviewers'],
+    ] as const)
+      definition.steps.push({
+        id,
+        kind: 'human-approval',
+        approver,
+        instructions: 'Decide.',
+        output: 'A decision.',
+        outcomes: { approved: { next: 'finish' } },
+      })
+    const state = createWorkflowRun(workflowDefinitionSchema.parse(definition))
+    // Both gates running: attempt 2 is the any-reviewer gate, attempt 3 the assigned-reviewers one.
+    const { step: _agentStep, ...first } = state.attempts[0]!
+    state.attempts.push(
+      { ...first, id: 2, stepId: 'design-approval', status: 'running' },
+      { ...first, id: 3, stepId: 'scope-approval', status: 'running' }
+    )
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: ws.id,
+      activated: true,
+      state,
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    const gate = (attemptId: number) => ({
+      workStreamId: ws.id,
+      type: 'manual' as const,
+      resolutionHandler: 'workflow' as const,
+      flowAttemptId: attemptId,
+      referenceId: flowWaitReference(ws.id, 'human', attemptId),
+      createdBy: 'system' as const,
+    })
+    const rows = await db
+      .insert(workStreamWaits)
+      .values([gate(2), gate(3), { workStreamId: ws.id, type: 'question', flowAttemptId: 2, createdBy: 'agent' }])
+      .returning()
+    const byId = new Map((await derived(ws)).openWaits.map((wait) => [wait.id, wait]))
+    expect(byId.get(rows[0]!.id)?.workflowGateApprover).toBe('reviewers')
+    expect(byId.get(rows[1]!.id)?.workflowGateApprover).toBe('assigned-reviewers')
+    // Only a gate's own wait carries it.
+    expect(byId.get(rows[2]!.id)).not.toHaveProperty('workflowGateApprover')
   })
 
   it('serializes authoritative delivery and projects its approval wait without altering the wait', async () => {
