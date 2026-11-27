@@ -22,6 +22,8 @@ export const relayLiveActivityStateSchema = z.strictObject({
         bucket: z.enum(['needsYou', 'running', 'blocked', 'queued', 'paused', 'externalWait']),
         squadId: uuid,
         agentId: uuid.optional(),
+        needsYou: z.boolean().optional(),
+        waitingOnReview: z.boolean().optional(),
       })
     )
     .max(3),
@@ -150,8 +152,12 @@ export function orderLiveActivityDelivery(
   return 'admit'
 }
 
-/** Safe projection used only when the device has opted into native previews. */
-export function projectRelayLiveActivityState(state: LiveActivityState, previews: boolean): LiveActivityState {
+/** Platform preserves accepted viewer facts. Core must target the old strict receiver until rollout. */
+export function projectRelayLiveActivityState(
+  state: LiveActivityState,
+  previews: boolean,
+  target: 'device' | 'legacy-receiver' = 'device'
+): LiveActivityState {
   return relayLiveActivityStateSchema.parse({
     activeCount: state.activeCount,
     needsYouCount: state.needsYouCount,
@@ -160,6 +166,8 @@ export function projectRelayLiveActivityState(state: LiveActivityState, previews
       ...(row.number ? { number: row.number } : {}),
       title: previews ? [...row.title].slice(0, 100).join('') : row.number ? `Work #${row.number}` : 'Work stream',
       bucket: row.bucket,
+      ...(target === 'device' && row.needsYou !== undefined ? { needsYou: row.needsYou } : {}),
+      ...(target === 'device' && row.waitingOnReview ? { waitingOnReview: true } : {}),
       squadId: row.squadId,
       ...(row.agentId ? { agentId: row.agentId } : {}),
     })),

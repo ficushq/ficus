@@ -371,6 +371,22 @@ describe('the Live Activity "waiting on you" count follows the viewer rule', () 
     expect(reviewer.live.gated).toEqual([true, 'needsYou'])
   })
 
+  test('only a review waiting on someone else gets the review label on both surfaces', () => {
+    for (const who of [viewer(['workstreams:review'], 'someone-else'), viewer(['workstreams:review'], 'reviewer')]) {
+      const { snapshot } = rowsFor(who)
+      for (const rows of [snapshot.top, snapshot.liveActivity.top]) {
+        expect(rows.filter((row) => row.waitingOnReview).map((row) => row.id)).toEqual(
+          who.identity?.userId === 'reviewer' ? [] : ['gated']
+        )
+      }
+    }
+    const external = buildWorkInterestSnapshot([stream({ openWaits: wait('dependency') })], you)
+    for (const row of [...external.top, ...external.liveActivity.top]) {
+      expect(row.bucket).toBe('externalWait')
+      expect(row).not.toHaveProperty('waitingOnReview')
+    }
+  })
+
   test('a delivery waiting on the code host waits on every viewer', () => {
     const nobody = viewer([], 'nobody')
     for (const who of [nobody, viewer(['workstreams:review'], 'someone-else'), viewer(['agents:run'], 'answerer')]) {

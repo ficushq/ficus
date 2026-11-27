@@ -6,6 +6,7 @@ import {
   orderLiveActivityDelivery,
   projectRelayLiveActivityState,
   relayLiveActivityRegistrationSchema,
+  relayLiveActivityStateSchema,
   relayLiveActivitySendSchema,
   type LiveActivityDeliveryHead,
   type RelayLiveActivitySend,
@@ -86,6 +87,30 @@ describe('closed ActivityKit relay protocol', () => {
     const large = { ...state, top: Array(4).fill({ ...state.top[0], title: '🌿'.repeat(201) }) }
     expect(projectRelayLiveActivityState(large, true).top).toHaveLength(3)
     expect(projectRelayLiveActivityState(large, true).top[0].title).toBe('🌿'.repeat(100))
+  })
+  test('the sender projection still parses on a strict relay without viewer fields', () => {
+    const legacyRow = relayLiveActivityStateSchema.shape.top.element.pick({
+      id: true,
+      number: true,
+      title: true,
+      bucket: true,
+      squadId: true,
+      agentId: true,
+    })
+    const legacyState = relayLiveActivityStateSchema.extend({ top: legacyRow.array().max(3) })
+    const row = { ...state.top[0]!, bucket: 'needsYou' as const, needsYou: false, waitingOnReview: true }
+    const snapshot = { ...state, top: [row] }
+    expect(legacyState.safeParse(snapshot).success).toBe(false)
+    const projected = projectRelayLiveActivityState(snapshot, true, 'legacy-receiver')
+    expect(legacyState.parse(projected)).toEqual(projected)
+  })
+  test('review labels survive relay projection with previews disabled', () => {
+    const row = { ...state.top[0]!, bucket: 'needsYou' as const, waitingOnReview: true, needsYou: false }
+    const projected = projectRelayLiveActivityState({ ...state, top: [row] }, false)
+    expect(projected.top[0]).toEqual({ ...row, title: 'Work #12' })
+    expect(relayLiveActivitySendSchema.parse({ ...input, contentState: projected })).toMatchObject({
+      contentState: projected,
+    })
   })
   test('signed registration binds kind, environment, destination, capability and immutable lifecycle', () => {
     const registration = {
