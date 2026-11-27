@@ -122,9 +122,10 @@ describe('work-stream derived state', () => {
       })
     const state = createWorkflowRun(workflowDefinitionSchema.parse(definition))
     // Both gates running: attempt 2 is the any-reviewer gate, attempt 3 the assigned-reviewers one.
+    const { step: _agentStep, ...first } = state.attempts[0]!
     state.attempts.push(
-      { ...state.attempts[0]!, id: 2, stepId: 'design-approval', status: 'running' },
-      { ...state.attempts[0]!, id: 3, stepId: 'scope-approval', status: 'running' }
+      { ...first, id: 2, stepId: 'design-approval', status: 'running' },
+      { ...first, id: 3, stepId: 'scope-approval', status: 'running' }
     )
     await db.insert(workStreamFlowRuns).values({
       workStreamId: ws.id,
