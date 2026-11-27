@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { SessionManager, type Extension, type ContextEvent } from '@earendil-works/pi-coding-agent'
 import {
+  HISTORY_SEARCH_HINT,
+  HISTORY_SEARCH_HINT_TYPE,
   SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
   ShortTermMemoryContext,
   createShortTermMemoryContextExtension,
+  offersHistorySearch,
 } from './short-term-memory-context'
+import { join } from 'path'
 import { FicusResourceLoader } from './resource-loader'
 
-function fixture() {
+function fixture(options: { historySearchHint?: boolean } = {}) {
   const session = SessionManager.inMemory()
   let memory = 'remember the non-obvious constraint'
   let reads = 0
@@ -16,7 +20,7 @@ function fixture() {
     reads++
     return memory
   }
-  const context = new ShortTermMemoryContext(session, read, (error) => errors.push(error))
+  const context = new ShortTermMemoryContext(session, read, (error) => errors.push(error), options)
   const messages = () => context.context(session.buildSessionContext().messages)
   const keep = () => session.appendMessage({ role: 'user', content: 'continue', timestamp: 1 })
   return {
@@ -130,6 +134,87 @@ describe('short-term memory recovery context', () => {
       'compactionSummary',
       'user',
     ])
+  })
+
+  describe('history search hint', () => {
+    const hints = (messages: ReturnType<ReturnType<typeof fixture>['messages']>) =>
+      messages.filter((m) => m.role === 'custom' && m.customType === HISTORY_SEARCH_HINT_TYPE)
+
+    test('names the shipped CLI command and its context flag', async () => {
+      const cli = await Bun.file(join(import.meta.dir, '../../../../cli/src/commands/agent-search.ts')).text()
+      expect(cli).toContain(".command('search <id> <query...>')")
+      expect(cli).toContain("'--context <n>'")
+      expect(HISTORY_SEARCH_HINT).toContain('`ficus agent search <your agent ID> <query>`')
+      expect(HISTORY_SEARCH_HINT).toContain('`--context N`')
+      expect(HISTORY_SEARCH_HINT).toContain('tool calls and tool output are kept')
+    })
+
+    test('follows the compaction summary, next to the snapshot, and stays byte-identical', async () => {
+      const f = fixture({ historySearchHint: true })
+      await f.context.captureInitial()
+      // Before any compaction nothing is out of view, so there is no hint.
+      expect(hints(f.messages())).toHaveLength(0)
+      const keepId = f.keep()
+      f.session.appendCompaction('summary', keepId, 100)
+      await f.context.captureAfterCompaction()
+      const first = f.messages()
+      expect(first.map((m) => (m.role === 'custom' ? m.customType : m.role))).toEqual([
+        'compactionSummary',
+        HISTORY_SEARCH_HINT_TYPE,
+        SHORT_TERM_MEMORY_SNAPSHOT_TYPE,
+        'user',
+      ])
+      expect(hints(first)).toEqual([
+        {
+          role: 'custom',
+          customType: HISTORY_SEARCH_HINT_TYPE,
+          display: false,
+          timestamp: first[0].timestamp,
+          content: HISTORY_SEARCH_HINT,
+        },
+      ])
+      // Context only: the transcript the summarizer and storage see never holds the hint.
+      expect(f.session.buildSessionContext().messages.map((m) => m.role)).toEqual(['compactionSummary', 'user'])
+      // Later turns and a reopened session render exactly the same messages.
+      f.keep()
+      const later = f.messages()
+      expect(later.slice(0, 3)).toEqual(first.slice(0, 3))
+      expect(f.context.context(later)).toEqual(later)
+      const reopened = new ShortTermMemoryContext(f.session, f.read, () => {}, { historySearchHint: true })
+      await reopened.captureInitial()
+      expect(reopened.context(f.session.buildSessionContext().messages)).toEqual(later)
+      // Another agent's session gets the same bytes.
+      const other = fixture({ historySearchHint: true })
+      other.session.appendCompaction('other summary', other.keep(), 50)
+      expect(hints(other.messages()).map((m) => m.content)).toEqual([HISTORY_SEARCH_HINT])
+    })
+
+    test('appears after compaction even when short-term memory is empty', async () => {
+      const f = fixture({ historySearchHint: true })
+      f.write('')
+      f.session.appendCompaction('summary', f.keep(), 100)
+      await f.context.captureAfterCompaction()
+      expect(f.messages().map((m) => (m.role === 'custom' ? m.customType : m.role))).toEqual([
+        'compactionSummary',
+        HISTORY_SEARCH_HINT_TYPE,
+        'user',
+      ])
+    })
+
+    test('agents without a shell never get the hint', async () => {
+      const f = fixture()
+      f.session.appendCompaction('summary', f.keep(), 100)
+      await f.context.captureAfterCompaction()
+      expect(hints(f.messages())).toHaveLength(0)
+      expect(JSON.stringify(f.messages())).not.toContain('ficus agent search')
+    })
+
+    test('is offered only when the session has bash or squad_bash', () => {
+      expect(offersHistorySearch(['read', 'bash'])).toBe(true)
+      expect(offersHistorySearch(['squad_bash', 'memory_search'])).toBe(true)
+      expect(offersHistorySearch(['navigate', 'websearch', 'webfetch', 'short_term_memory_read'])).toBe(false)
+      expect(offersHistorySearch([])).toBe(false)
+    })
   })
 
   test('resource loader presents context without changing its system prompt', async () => {

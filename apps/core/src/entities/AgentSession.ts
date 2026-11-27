@@ -57,7 +57,7 @@ import {
 } from '../services/agent/precompaction/baker'
 import { resolveEarlyMarginTokens, resolveInFlightMarginTokens } from '../services/agent/precompaction/config'
 import { bindPrecompactionController } from '../services/agent/precompaction/registry'
-import { ShortTermMemoryContext } from '../services/agent/short-term-memory-context'
+import { ShortTermMemoryContext, offersHistorySearch } from '../services/agent/short-term-memory-context'
 import { getShortTermMemory } from '../tools/short-term-memory'
 import { createLogger } from '../lib/infra/logger'
 import { attachInferenceUsageRecorder, recordCompactionSummary } from '../services/inference-usage/session-hook'
@@ -315,7 +315,8 @@ export class AgentSession {
       const memoryContext = new ShortTermMemoryContext(
         session.sessionManager,
         () => getShortTermMemory(storage.agentId),
-        (error) => createLogger('short-term-memory').warn('Could not capture recovery snapshot', error)
+        (error) => createLogger('short-term-memory').warn('Could not capture recovery snapshot', error),
+        { historySearchHint: offersHistorySearch(registeredTools.map((tool) => tool.name)) }
       )
       resourceLoader.setShortTermMemoryContext(memoryContext)
       await memoryContext.captureInitial()
