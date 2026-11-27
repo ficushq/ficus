@@ -22,13 +22,14 @@ import {
   workStreamTitle,
   workStreamWaitDisplayType,
   workStreamWaitNeedsHuman,
+  viewerCanActOnWait,
   type AgentStatus,
   type WorkStream,
   type WorkStreamSummary,
+  type WorkStreamViewer,
 } from '@ficus/shared'
 import { WORK_STREAM_SUMMARIES_CHANGED_EVENT, WORK_STREAM_SUMMARIES_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
-import { viewerCanActOnWait, type WorkStreamViewer } from '../lib/workStreamRuntime'
 import { AgentActivityDot } from './AgentActivityDot'
 import { HoverCard } from './popover/HoverCard'
 import { useHoverCard, type HoverCardState } from './popover/useHoverCard'

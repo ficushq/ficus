@@ -64,7 +64,7 @@ ficus.example.com {
 
 ## Serve Ficus under a path prefix
 
-To serve Ficus at a path such as `https://ficus.example.com/ficus`, set the **Public address** (or `APP_URL`) to that address, path included. The same web build serves every path, so nothing needs to be rebuilt, and the server's local address (for example Ficus Desktop's `http://localhost:<port>/`) keeps working at the root at the same time. Links, phone pairing, integration OAuth callbacks and webhook URLs use the path. This documentation is served under the path too, at `https://ficus.example.com/ficus/docs/`, with working links and search.
+To serve Ficus at a path such as `https://ficus.example.com/ficus`, set the **Public address** (or `APP_URL`) to that address, path included. The same web build serves every path, so nothing needs to be rebuilt, and the server's local address (for example Ficus Desktop's `http://localhost:<port>/`) keeps working at the root at the same time. Links, mobile device pairing, integration OAuth callbacks and webhook URLs use the path. This documentation is served under the path too, at `https://ficus.example.com/ficus/docs/`, with working links and search.
 
 Your reverse proxy can either remove the prefix before forwarding or forward it unchanged; Ficus accepts both. With Caddy:
 
@@ -96,6 +96,26 @@ When you move an existing server to a new path:
 
 `APP_BASE_PATH` is no longer needed when the public address carries the path. Servers that set it keep working: it still sets the build-time path of the web app and is the path for origins listed in `FICUS_WEB_ORIGIN`.
 
+## Reach your server from a mobile device
+
+The Ficus app connects to the server's public address, so a mobile device needs an address it can open. `http://localhost:3000` only works on the computer running Ficus.
+
+**Settings → Administration → Server address** has a guide, **Reach this server from a mobile device**. It reads what the machine has and offers each option as an address to use. The same guide is under **Optional setup** on the setup page. Nothing there changes the machine: commands are shown for you to run. The one exception is Ficus Desktop's switch, described below.
+
+| Option                     | Works from                        | What it needs                                                                                             |
+| -------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| At home, on the same Wi-Fi | Devices on the same network       | The server listening on the network (`HOST=0.0.0.0`). Not encrypted; push and other Pro features are off. |
+| Tailscale                  | Devices signed in to your tailnet | Tailscale on the server and the mobile device, HTTPS certificates on, and `tailscale serve` for Ficus.    |
+| Your own domain            | Anywhere                          | A domain pointed at the machine and a reverse proxy that adds HTTPS (see the Caddy example on this page). |
+
+**At home.** Ficus listens on this computer only unless `HOST` says otherwise. Set `HOST=0.0.0.0` in the server environment and restart, then make one of the offered addresses the public address. On a Mac the guide offers the computer's `.local` name first, because it survives a new IP address. The iPhone and iPad app accepts plain `http` only for home-network addresses.
+
+**At home, with Ficus Desktop.** Desktop starts the server itself, so there is no `HOST` to set. Turn on **Let devices on this network connect**, in the guide or under **File → Manage Instances…**. Desktop asks you to confirm and restarts Ficus on the Mac, which stops agents that are working. Turn it off the same way. The address Desktop itself uses does not change.
+
+**Tailscale.** The guide shows the command for the Tailscale tool it found. With the macOS app, `tailscale` is only a command if you installed its command-line tool; otherwise the guide's command names the copy inside the app.
+
+**Check this address** asks the address for a one-time value only this server knows, from the server itself. A pass means the name, port, proxy and certificate lead back to this server. It cannot see a router or firewall that only blocks traffic from outside, so pairing a mobile device on another network is the real test.
+
 ## Where the public address comes from
 
 Ficus uses one public address for links, sign-in, integration OAuth callbacks, webhooks and the Ficus app. It is resolved in this order:
@@ -113,7 +133,7 @@ Ficus checks the address format only (scheme, host, optional port and path; no c
 
 After a change:
 
-- **Passkeys** don't carry over to a new hostname. Existing passkeys keep working at the local address (`FICUS_LOCAL_APP_URL`, for example Ficus Desktop's `http://localhost:<port>`) and at the hostname they were made on while it stays allowed; you can keep signing in and pairing phones from there.
+- **Passkeys** don't carry over to a new hostname. Existing passkeys keep working at the local address (`FICUS_LOCAL_APP_URL`, for example Ficus Desktop's `http://localhost:<port>`) and at the hostname they were made on while it stays allowed; you can keep signing in and pairing mobile devices from there.
 - **To use a passkey at the new address**, add one from an address where your passkeys still work (the address you used to make the change, or the local address):
   1. Open **Settings → Account → Passkeys** and choose **Add a passkey for another address**.
   2. Confirm with one of your passkeys. Ficus shows a one-time link and a code, valid for 15 minutes.

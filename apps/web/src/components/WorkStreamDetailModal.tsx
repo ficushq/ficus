@@ -27,9 +27,6 @@ import { WorkStreamAttachments } from './WorkStreamFileCard'
 import { WaitAge, WorkStreamDependencies } from './WorkStreamDependencies'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
-import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
-import { getAgentPrimaryLabel, typeFirstAgentLabels } from '../lib/agentDisplay'
-import { workflowStepDisplayName } from '../lib/workflowProgress'
 import {
   TIME_WORKED_DEFINITION,
   computeWorkStreamElapsedMs,
@@ -37,7 +34,14 @@ import {
   formatWorkStreamDuration,
   workStreamPersonWait,
   workStreamTimeTickMs,
-} from '../lib/workStreamRuntime'
+  type WorkStream,
+  type WorkStreamPriority,
+  type WorkStreamWait,
+  type Squad,
+  type Agent,
+} from '@ficus/shared'
+import { getAgentPrimaryLabel, typeFirstAgentLabels } from '../lib/agentDisplay'
+import { workflowStepDisplayName } from '../lib/workflowProgress'
 import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'

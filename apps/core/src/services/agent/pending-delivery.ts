@@ -500,6 +500,32 @@ export async function claimPendingInterventionForSessionDelivery(
 }
 
 /**
+ * Whether this execution has acknowledged any human row from an SDK session
+ * entry. acknowledgeSessionDelivery stamps the consuming executionId on every
+ * row it acknowledges (the row that queued the execution, with the same text as
+ * executions.message, and any steers or follow-ups), so a match means the
+ * session already holds this execution's conversation. A resumed or
+ * re-dispatched turn then must not send executions.message again; a released,
+ * never-appended row stays pending and is re-claimed instead.
+ */
+export async function hasSessionDeliveredExecutionPrompt(agentId: string, executionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.agentId, agentId),
+        eq(messages.role, 'human'),
+        eq(messages.pending, false),
+        sql`${jsonbObjectRecovered(messages.metadata)}->>'executionId' = ${executionId}`,
+        sql`${jsonbObjectRecovered(messages.metadata)}->>'sessionEntryId' IS NOT NULL`
+      )
+    )
+    .limit(1)
+  return row !== undefined
+}
+
+/**
  * Reset a claimed pending message so a future queue drain can retry it.
  * Used when the SDK rejects delivery after the injectedAt CAS claim.
  */

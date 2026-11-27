@@ -1429,6 +1429,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     return pendingDelivery.claimPendingInterventionForSessionDelivery(this.id, messageId, owner)
   }
 
+  /** Whether this execution has acknowledged a human row from an SDK session entry; see pending-delivery. */
+  async hasSessionDeliveredExecutionPrompt(executionId: string): Promise<boolean> {
+    return pendingDelivery.hasSessionDeliveredExecutionPrompt(this.id, executionId)
+  }
+
   /**
    * Reset a claimed pending message so a future queue drain can retry it.
    * Used when the SDK rejects delivery after the injectedAt CAS claim.

@@ -8,7 +8,8 @@ import { csrfProtection } from '../middleware/csrf'
 import { SESSION_COOKIE_NAME } from '../services/auth/session-cookie'
 import { getSettingsStore } from '../services/settings/store'
 import { authHeaders, cleanupTestRbac, createTestAdmin, createTestUser, type TestUser } from '../test-utils'
-import { createPublicUrlRouter } from './public-url'
+import { addressProbeHandler, createPublicUrlRouter } from './public-url'
+import { addressProbeToken, type AddressCheckResult } from '../services/public-url/reachability'
 import settingsRouter from './settings'
 import type { PublicAppUrlChangeImpact } from '../services/public-url/impact'
 
@@ -269,5 +270,59 @@ describe('public url routes', () => {
     expect((await app.request('/api/public-url/preview', json(admin.token, 'POST', { url: 'ftp://x' }))).status).toBe(
       400
     )
+  })
+
+  test('the phone-reach report needs settings authority and describes the current address and this machine', async () => {
+    clearEnv()
+    process.env.FICUS_LOCAL_APP_URL = 'http://localhost:61896'
+    expect((await app.request('/api/public-url/reach', { headers: authHeaders(user.token) })).status).toBe(403)
+    const response = await app.request('/api/public-url/reach', { headers: authHeaders(admin.token) })
+    expect(response.status).toBe(200)
+    const report = (await response.json()) as {
+      current: { url: string | null; reach: string; https: boolean }
+      listening: { host: string; port: number; beyondThisComputer: boolean }
+      homeNetwork: { addresses: string[] }
+      tailscale: { state: string; serveCommand: string }
+    }
+    expect(report.current).toEqual({ url: 'http://localhost:61896', reach: 'this-computer', https: false })
+    expect(typeof report.listening.beyondThisComputer).toBe('boolean')
+    expect(Array.isArray(report.homeNetwork.addresses)).toBe(true)
+    expect(report.tailscale.serveCommand).toContain('tailscale serve --bg http://127.0.0.1:')
+  })
+
+  test('checking an address needs write authority and passes the result through', async () => {
+    const asked: string[] = []
+    const result: AddressCheckResult = { ok: false, reason: 'unreachable' }
+    const checking = new Hono()
+      .use('/api/*', csrfProtection)
+      .use('*', identityMiddleware)
+      .route(
+        '/api/public-url',
+        createPublicUrlRouter({
+          check: async (url) => {
+            asked.push(url)
+            return result
+          },
+        })
+      )
+    const denied = await checking.request(
+      '/api/public-url/check',
+      json(user.token, 'POST', { url: 'https://a.example' })
+    )
+    expect(denied.status).toBe(403)
+    const bad = await checking.request('/api/public-url/check', json(admin.token, 'POST', { nope: true }))
+    expect(bad.status).toBe(400)
+    const ok = await checking.request('/api/public-url/check', json(admin.token, 'POST', { url: 'https://a.example' }))
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual(result)
+    expect(asked).toEqual(['https://a.example'])
+  })
+
+  test('the address probe answers 204 only to this process’s own token, and needs no sign-in', async () => {
+    const probe = new Hono().get('/health/address-check/:token', addressProbeHandler)
+    expect((await probe.request(`/health/address-check/${addressProbeToken()}`)).status).toBe(204)
+    const wrong = await probe.request('/health/address-check/not-the-token')
+    expect(wrong.status).toBe(404)
+    expect(await wrong.text()).toBe('')
   })
 })
