@@ -279,7 +279,7 @@ describe('MonitorSupervisor', () => {
     expect(sandbox.streams).toHaveLength(1)
 
     supervisor.onStdoutChunk(monitor.id, 'one\ntwo\n')
-    await Bun.sleep(30)
+    await waitFor(() => sent.length >= 1)
     expect(sent).toHaveLength(1)
     expect(sent[0]).toContain('one')
     expect(sent[0]).toContain('two')
@@ -316,7 +316,7 @@ describe('MonitorSupervisor', () => {
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
     supervisor.onStdoutChunk(monitor.id, 'a\nb\nc\nd\n')
-    await Bun.sleep(50)
+    await waitFor(() => sent.length >= 1)
     expect(sent).toHaveLength(1)
     expect(sent[0]).toContain('> a')
     expect(sent[0]).toContain('> b')
@@ -326,7 +326,7 @@ describe('MonitorSupervisor', () => {
     expect(sent[0]).not.toContain('truncated')
 
     // The minimum 2s inter-batch interval governs delivery of the remaining buffered lines.
-    await Bun.sleep(2100)
+    await waitFor(() => sent.length >= 2, 5000)
     expect(sent).toHaveLength(2)
     expect(sent[1]).toContain('> c')
     expect(sent[1]).toContain('> d')
@@ -340,7 +340,7 @@ describe('MonitorSupervisor', () => {
     })
     await supervisor.start(monitor)
     supervisor.onStdoutChunk(monitor.id, 'one\ntwo\n')
-    await Bun.sleep(30)
+    await waitFor(() => calls.length >= 1)
     expect(calls[0].content).toContain(`Monitor "${monitor.label}" (${monitor.id.slice(0, 8)})`)
     expect(calls[0].content).toContain('2 new line(s):')
     expect(calls[0].content).toContain('> one')
@@ -375,7 +375,7 @@ describe('MonitorSupervisor', () => {
     // ~100 KiB of input against a 64 KiB pending cap forces oldest lines to be dropped.
     const lines = Array.from({ length: 100 }, (_, i) => `${i}-${'x'.repeat(1000)}`)
     supervisor.onStdoutChunk(monitor.id, `${lines.join('\n')}\n`)
-    await Bun.sleep(50)
+    await waitFor(() => sent.length >= 1)
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatch(/\[\+\d+ lines dropped/)
   })
@@ -398,7 +398,7 @@ describe('MonitorSupervisor', () => {
 
     // Two 2s rounds: proves the self-rescheduling timer keeps polling rather
     // than firing once and stopping.
-    await Bun.sleep(4_600)
+    await waitFor(() => sandbox.probes() >= 2, 8_000)
     expect(sandbox.probes()).toBeGreaterThanOrEqual(2)
   }, 10_000)
 
@@ -420,7 +420,7 @@ describe('MonitorSupervisor', () => {
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
     supervisor.onStdoutChunk(monitor.id, `${'x'.repeat(1000)}\n`)
-    await Bun.sleep(30)
+    await waitFor(() => sent.length >= 1)
     expect(Buffer.byteLength(sent[0])).toBeLessThan(500)
     expect(sent[0]).toContain('[line truncated by byte cap]')
   })
@@ -466,7 +466,9 @@ describe('MonitorSupervisor', () => {
     }
     const supervisor = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
     await supervisor.start(monitor)
-    await Bun.sleep(30)
+    // The timeout fires on a timer, so wait for its terminal message (sent
+    // after the row is marked ended) rather than a fixed sleep.
+    await waitFor(() => sent.some((c) => c.includes('timed out.')))
     await monitor.reload()
     expect(monitor.status).toBe('timed-out')
     expect(monitor.endedAt).toBeInstanceOf(Date)
@@ -1254,7 +1256,7 @@ describe('MonitorSupervisor', () => {
       sandbox.probe = TIMED_OUT
 
       await supervisor.pollExit(monitor.id)
-      await Bun.sleep(30)
+      await waitFor(() => timedOutMessages().length >= 1)
 
       await monitor.reload()
       expect(monitor.status).toBe('timed-out')
@@ -1374,7 +1376,7 @@ describe('MonitorSupervisor', () => {
       clock += 60 * 60_000
       sandbox.probe = PROCESS_GONE
       await supervisor.pollExit(monitor.id)
-      await Bun.sleep(30)
+      await waitFor(() => timedOutMessages().length >= 1)
       expect((await monitor.reload()).status).toBe('timed-out')
       expect(sandbox.launches()).toBe(1)
       expect(timedOutMessages()).toHaveLength(1)
