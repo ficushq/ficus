@@ -46,6 +46,8 @@ export interface StreamLite {
   agentId?: string
   /** Whether this row waits on the snapshot's user; see {@link WidgetWorkStreamSummary.needsYou}. */
   needsYou?: boolean
+  /** True only for another person's review. If absent, keep the existing row label. */
+  waitingOnReview?: boolean
 }
 
 export interface LiveActivityState {
@@ -86,6 +88,8 @@ export interface WidgetWorkStreamSummary {
    * clients then fall back to `bucket`.
    */
   needsYou?: boolean
+  /** True only for another person's review. If absent, keep the existing row label. */
+  waitingOnReview?: boolean
 }
 
 export interface WorkInterestSnapshot {
@@ -157,22 +161,31 @@ export function compareWorkInterest(
   return recency || left.id.localeCompare(right.id)
 }
 
+function viewerRowFacts(stream: SnapshotSource, needsYou: boolean | undefined) {
+  if (needsYou === undefined) return {}
+  if (!needsYou && selectWorkStreamPresentationState(stream) === 'in_review') {
+    return { needsYou, waitingOnReview: true }
+  }
+  return { needsYou }
+}
+
 function toStreamLite(stream: SnapshotSource, needsYou: boolean | undefined): StreamLite {
   const row: StreamLite = {
     id: stream.id,
     title: workStreamTitle(stream),
     ...(stream.number ? { number: stream.number } : {}),
     bucket: workBucket(stream),
+    ...viewerRowFacts(stream, needsYou),
     squadId: stream.squadId,
   }
   if (stream.assigneeAgentId) row.agentId = stream.assigneeAgentId
-  if (needsYou !== undefined) row.needsYou = needsYou
   return row
 }
 
 function toWidgetSummary(stream: SnapshotSource, needsYou: boolean | undefined): WidgetWorkStreamSummary {
   const row: WidgetWorkStreamSummary = {
     bucket: workBucket(stream),
+    ...viewerRowFacts(stream, needsYou),
     id: stream.id,
     squadId: stream.squadId,
     title: workStreamTitle(stream),
@@ -187,7 +200,6 @@ function toWidgetSummary(stream: SnapshotSource, needsYou: boolean | undefined):
   if (stream.delivery) row.delivery = stream.delivery
   if (stream.derivedState) row.derivedState = stream.derivedState
   if (stream.assigneeAgentId) row.assigneeAgentId = stream.assigneeAgentId
-  if (needsYou !== undefined) row.needsYou = needsYou
   return row
 }
 

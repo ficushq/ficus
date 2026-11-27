@@ -22,6 +22,7 @@ export const relayLiveActivityStateSchema = z.strictObject({
         bucket: z.enum(['needsYou', 'running', 'blocked', 'queued', 'paused', 'externalWait']),
         squadId: uuid,
         agentId: uuid.optional(),
+        waitingOnReview: z.boolean().optional(),
       })
     )
     .max(3),
@@ -160,6 +161,7 @@ export function projectRelayLiveActivityState(state: LiveActivityState, previews
       ...(row.number ? { number: row.number } : {}),
       title: previews ? [...row.title].slice(0, 100).join('') : row.number ? `Work #${row.number}` : 'Work stream',
       bucket: row.bucket,
+      ...(row.waitingOnReview ? { waitingOnReview: true } : {}),
       squadId: row.squadId,
       ...(row.agentId ? { agentId: row.agentId } : {}),
     })),
