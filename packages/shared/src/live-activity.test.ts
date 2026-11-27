@@ -351,4 +351,55 @@ describe('the Live Activity "waiting on you" count follows the viewer rule', () 
     expect(buildLiveActivityState(streams).needsYouCount).toBe(0)
     expect(shouldShowLiveActivity(buildLiveActivityState([streams[0]!], { viewerFor: () => undefined }))).toBe(false)
   })
+
+  // Widget and Live Activity rows, keyed by id, as `needsYou` / `bucket` pairs for this viewer.
+  const rowsFor = (who: WorkStreamViewer | undefined) => {
+    const snapshot = buildWorkInterestSnapshot(streams, { viewerFor: () => who })
+    const pairs = (rows: Array<{ id: string; bucket?: string; needsYou?: boolean }>) =>
+      Object.fromEntries(rows.map((row) => [row.id, [row.needsYou, row.bucket]]))
+    return { widget: pairs(snapshot.top), live: pairs(snapshot.liveActivity.top), snapshot }
+  }
+
+  test('a row says whether it waits on this user, while its bucket stays the same for everyone', () => {
+    const outsider = rowsFor(viewer(['workstreams:review'], 'someone-else'))
+    const reviewer = rowsFor(viewer(['workstreams:review'], 'reviewer'))
+    // A gate the user cannot decide: needs-you bucket, but not waiting on this user.
+    expect(outsider.widget.gated).toEqual([false, 'needsYou'])
+    expect(outsider.live.gated).toEqual([false, 'needsYou'])
+    // The assigned reviewer can decide it.
+    expect(reviewer.widget.gated).toEqual([true, 'needsYou'])
+    expect(reviewer.live.gated).toEqual([true, 'needsYou'])
+  })
+
+  test('a delivery waiting on the code host waits on every viewer', () => {
+    const nobody = viewer([], 'nobody')
+    for (const who of [nobody, viewer(['workstreams:review'], 'someone-else'), viewer(['agents:run'], 'answerer')]) {
+      const { widget, live } = rowsFor(who)
+      expect(widget.merge).toEqual([true, 'needsYou'])
+      expect(live.merge).toEqual([true, 'needsYou'])
+    }
+    // Not because the viewer may answer the question it also has open.
+    expect(rowsFor(nobody).widget.asking).toEqual([false, 'needsYou'])
+  })
+
+  test('rows agree with the count for the same user', () => {
+    for (const who of [viewer(['workstreams:review'], 'someone-else'), viewer(['agents:run'], 'answerer')]) {
+      const { snapshot } = rowsFor(who)
+      expect(snapshot.top.filter((row) => row.needsYou).length).toBe(snapshot.liveActivity.needsYouCount)
+    }
+  })
+
+  test('a stream with no viewer (its decisions muted) reads false; a snapshot for no user omits the field', () => {
+    expect(Object.values(rowsFor(undefined).widget).map(([needsYou]) => needsYou)).toEqual([false, false, false])
+    expect(Object.values(rowsFor(undefined).live).map(([needsYou]) => needsYou)).toEqual([false, false, false])
+    const anonymous = buildWorkInterestSnapshot(streams)
+    expect([...anonymous.top, ...anonymous.liveActivity.top].some((row) => 'needsYou' in row)).toBe(false)
+  })
+
+  test('a running stream is not waiting on anyone, and says so explicitly', () => {
+    const snapshot = buildWorkInterestSnapshot([stream({ id: 'busy' })], you)
+    const row = JSON.parse(JSON.stringify(snapshot.liveActivity.top[0]))
+    expect(row).toMatchObject({ bucket: 'running', needsYou: false })
+    expect(JSON.parse(JSON.stringify(snapshot.top[0])).needsYou).toBe(false)
+  })
 })
