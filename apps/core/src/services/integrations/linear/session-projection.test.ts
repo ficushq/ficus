@@ -193,6 +193,90 @@ describe('Linear session projection', () => {
     expect(item.collapsible).toBe(false)
   })
 
+  test('the recommended option and its reason follow the context, and the select options stay as they are', () => {
+    const item = byKey(
+      snapshot({
+        questions: [
+          {
+            id: 'q1',
+            status: 'open',
+            data: {
+              questions: [
+                {
+                  id: 'choice',
+                  type: 'select',
+                  question: 'Which database?',
+                  context: 'Postgres is already deployed.',
+                  options: [
+                    { value: 'pg', label: 'Postgres', recommended: true, reason: 'It is already backed up nightly.' },
+                    { value: 'sqlite' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      'question:q1:asked'
+    )!
+    expect(item.payload).toEqual({
+      content: {
+        type: 'elicitation',
+        body:
+          'Which database?\n\nPostgres is already deployed.\n\n' +
+          'Recommended: Postgres. It is already backed up nightly.\n\nReply here or answer in Ficus.',
+      },
+      signal: 'select',
+      signalMetadata: {
+        options: [
+          { value: 'pg', label: 'Postgres' },
+          { value: 'sqlite', label: 'sqlite' },
+        ],
+      },
+    })
+  })
+
+  test('each question of several names its own recommendation, with or without a reason', () => {
+    const item = byKey(
+      snapshot({
+        questions: [
+          {
+            id: 'q3',
+            status: 'open',
+            data: {
+              questions: [
+                {
+                  id: 'env',
+                  type: 'select',
+                  question: 'Where?',
+                  options: [{ value: 'staging', recommended: true }, { value: 'prod' }],
+                },
+                {
+                  id: 'who',
+                  type: 'text',
+                  question: 'Who should I tell?',
+                  context: 'Both teams use it.',
+                  options: [
+                    { value: 'support' },
+                    { value: 'owners', label: 'Team owners', recommended: true, reason: 'They run it.' },
+                  ],
+                },
+                { id: 'notes', type: 'text', question: 'Anything else?' },
+              ],
+            },
+          },
+        ],
+      }),
+      'question:q3:asked'
+    )!
+    expect((item.payload.content as { body: string }).body).toBe(
+      'Where?\n\n- staging\n- prod\n\nRecommended: staging.\n\n' +
+        'Who should I tell?\n\nBoth teams use it.\n\n- support\n- Team owners\n\nRecommended: Team owners. They run it.\n\n' +
+        'Anything else?\n\nReply here or answer in Ficus.'
+    )
+    expect(item.payload).not.toHaveProperty('signal')
+  })
+
   test('the account link request rides on the next elicitation as the auth signal', () => {
     const authLinkUrl = 'https://ficus.example.com/settings?setting=linear-account'
     const item = byKey(

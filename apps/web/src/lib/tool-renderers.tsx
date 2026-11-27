@@ -515,9 +515,8 @@ const askHumanRenderer: ToolRenderer = {
     return (
       <div className="space-y-2">
         {questions.map((q, i) => {
-          const options: Array<{ value?: unknown; label?: unknown }> = Array.isArray(q.options)
-            ? q.options.filter(isPlainObject)
-            : []
+          const options: Array<{ value?: unknown; label?: unknown; recommended?: unknown; reason?: unknown }> =
+            Array.isArray(q.options) ? q.options.filter(isPlainObject) : []
           return (
             <div
               // Ids stream in (and may briefly match another question's), so key by position.
@@ -555,10 +554,18 @@ const askHumanRenderer: ToolRenderer = {
                           className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-secondary text-secondary"
                         >
                           {str(opt.label) || str(opt.value)}
+                          {opt.recommended === true && (
+                            <span className="ml-1 font-medium text-primary">· Recommended</span>
+                          )}
                         </span>
                       ))}
                     </div>
                   )}
+                  {(() => {
+                    // Shown as text, not a tooltip, so touch and keyboard readers see it too.
+                    const reason = str(options.find((opt) => opt.recommended === true)?.reason).trim()
+                    return reason ? <p className="text-xs text-muted mt-1">Recommended because: {reason}</p> : null
+                  })()}
                 </div>
               </div>
             </div>
