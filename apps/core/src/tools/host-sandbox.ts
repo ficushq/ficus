@@ -11,6 +11,7 @@ import { ToolFeedbackError } from './tool-feedback'
  */
 
 import { createHash, randomUUID } from 'crypto'
+import { TOOL_CALL_KEY_ENV, toolCallIdempotencyKey } from '@ficus/shared/node'
 import { access, chmod, readFile, realpath, rename, stat, unlink, writeFile } from 'fs/promises'
 import { basename, dirname, join } from 'path'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
@@ -120,12 +121,23 @@ export function clampHostBashTimeout(timeout?: number): number {
   return normalizeBashTimeoutSeconds(timeout)
 }
 
+/** The command env plus the calling tool call's key, which the `ficus` CLI derives its idempotency keys from. */
+export function withToolCallKey(env: Record<string, string>, toolCallKey: string | undefined): Record<string, string> {
+  return toolCallKey ? { ...env, [TOOL_CALL_KEY_ENV]: toolCallKey } : env
+}
+
 export function createHostBashTool(
   cwd: string,
-  opts: { ficusToken?: string; squadId?: string; agentId?: string } = {}
+  opts: {
+    ficusToken?: string
+    squadId?: string
+    agentId?: string
+    /** The running execution; with the agent and tool call it sets FICUS_TOOL_CALL_KEY. */
+    invocationOwnerId?: string
+  } = {}
 ): AgentTool<any> {
   const local = createLocalBashOperations()
-  const feedback = new AsyncLocalStorage<{ kind?: 'exit' | 'aborted'; exitCode?: number }>()
+  const feedback = new AsyncLocalStorage<{ kind?: 'exit' | 'aborted'; exitCode?: number; toolCallKey?: string }>()
   const tool = createBashTool(cwd, {
     exposeSessionEnvironment: false,
     persistFullOutput: false,
@@ -138,7 +150,10 @@ export function createHostBashTool(
     spawnHook: (ctx) => ({
       command: buildHostPreamble(opts) + ctx.command,
       cwd: ctx.cwd,
-      env: buildHostCommandEnv({ ficusToken: opts.ficusToken, squadId: opts.squadId, agentId: opts.agentId }),
+      env: withToolCallKey(
+        buildHostCommandEnv({ ficusToken: opts.ficusToken, squadId: opts.squadId, agentId: opts.agentId }),
+        feedback.getStore()?.toolCallKey
+      ),
     }),
     operations: {
       exec: async (command, execCwd, options) => {
@@ -180,19 +195,27 @@ export function createHostBashTool(
   })
   const execute = tool.execute.bind(tool)
   tool.execute = (...args) =>
-    feedback.run({}, async () => {
-      try {
-        return await execute(...args)
-      } catch (error) {
-        const current = feedback.getStore()
-        if (current?.kind)
-          throw new ToolFeedbackError(current.kind, error instanceof Error ? error.message : String(error), {
-            cause: error,
-            exitCode: current.exitCode,
-          })
-        throw error
+    feedback.run(
+      {
+        toolCallKey:
+          opts.agentId && opts.invocationOwnerId && args[0]
+            ? toolCallIdempotencyKey(opts.agentId, opts.invocationOwnerId, args[0])
+            : undefined,
+      },
+      async () => {
+        try {
+          return await execute(...args)
+        } catch (error) {
+          const current = feedback.getStore()
+          if (current?.kind)
+            throw new ToolFeedbackError(current.kind, error instanceof Error ? error.message : String(error), {
+              cause: error,
+              exitCode: current.exitCode,
+            })
+          throw error
+        }
       }
-    })
+    )
   tool.description = `Execute a bash command in the current working directory on this machine. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: ${HOST_BASH_DEFAULT_TIMEOUT_S}s, max: ${HOST_BASH_MAX_TIMEOUT_S}s). ${FOREGROUND_BASH_GUIDANCE}`
   return tool
 }
@@ -202,7 +225,7 @@ export function createHostSandboxedCodingTools(
   sandboxId: string,
   ficusToken?: string,
   squadId?: string,
-  _invocationOwnerId?: string,
+  invocationOwnerId?: string,
   agentId?: string
 ): SandboxedToolWithKey[] {
   const workRoot = resolveContainerWorkRoot({ squadId, sandboxId })
@@ -217,6 +240,7 @@ export function createHostSandboxedCodingTools(
     ficusToken,
     squadId,
     agentId: agentId ?? agentIdFromSandboxId(sandboxId),
+    invocationOwnerId,
   })
   return [
     { ...read, key: 'read' },

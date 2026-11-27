@@ -15,6 +15,7 @@ import { readFileSync, accessSync } from 'fs'
 import { open } from 'node:fs/promises'
 import { detectReadImageMimeType, IMAGE_SNIFF_BYTES } from './read-image-mime'
 import { createHash } from 'node:crypto'
+import { TOOL_CALL_KEY_ENV, toolCallIdempotencyKey } from '@ficus/shared/node'
 import { runIdempotentSandboxOperation } from '../services/sandbox/vm/retry'
 import {
   BASH_OUTPUT_TRUNCATION_NOTE,
@@ -582,6 +583,8 @@ export function createHttpBashOperations(
     invocationId?: string
     /** The execution running the command; its current flow attempt is sent with it. */
     executionId?: string
+    /** The calling tool call's idempotency key, exposed to the command as FICUS_TOOL_CALL_KEY. */
+    toolCallKey?: string
     resolveFlowOwnership?: (executionId: string) => Promise<BashFlowOwnership | undefined>
     resolveHeldSlotClaims?: (agentId: string) => Promise<string[] | undefined>
   }
@@ -645,6 +648,8 @@ export function createHttpBashOperations(
               ? manager.resolveToolApiUrl(sandboxId)
               : resolveSandboxApiUrl(manager.podManager!.namespace),
             ...(ficusToken ? { FICUS_TOKEN: ficusToken } : {}),
+            // The `ficus` CLI derives its default idempotency keys from this (tool-call-key.ts).
+            ...(opts?.toolCallKey ? { [TOOL_CALL_KEY_ENV]: opts.toolCallKey } : {}),
           } as Record<string, string>,
           sourceEnv: true,
           activateDevbox: true,
@@ -900,12 +905,13 @@ export function createK8sSandboxedBashTool(
   ficusToken?: string,
   opts?: { agentId?: string; invocationOwnerId?: string }
 ): AgentTool<any> {
-  const makeTool = (invocationId?: string) =>
+  const makeTool = (invocationId?: string, toolCallKey?: string) =>
     createBashTool(cwd, {
       operations: createHttpBashOperations(manager, sandboxId, ficusToken, {
         agentId: opts?.agentId,
         invocationId,
         executionId: opts?.invocationOwnerId,
+        toolCallKey,
       }),
       persistFullOutput: false,
     })
@@ -917,7 +923,11 @@ export function createK8sSandboxedBashTool(
         .update('\0')
         .update(toolCallId)
         .digest('hex')
-      return makeTool(invocationId).execute(toolCallId, params, signal, onUpdate)
+      const toolCallKey =
+        opts.agentId && toolCallId
+          ? toolCallIdempotencyKey(opts.agentId, opts.invocationOwnerId!, toolCallId)
+          : undefined
+      return makeTool(invocationId, toolCallKey).execute(toolCallId, params, signal, onUpdate)
     }
   }
   tool.description = `Execute a bash command in the current working directory. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: 180s / 3 minutes, max: 3600s / 1 hour). ${FOREGROUND_BASH_GUIDANCE} ${LEFTOVER_PROCESS_GUIDANCE}`
