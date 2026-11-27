@@ -858,9 +858,8 @@ export function SquadAgentThreads({
 
   const renderAgentTypeGroups = (groups: Array<{ agentTypeId: string; agents: Agent[] }>) =>
     groups.map((group) => {
-      const sectionName =
-        typeNames(group.agentTypeId) ||
-        group.agentTypeId.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+      // Named as everywhere else, so the general type reads "General Purpose agent", never "General".
+      const sectionName = agentTypeDisplayName(group.agentTypeId, typeNames)
       const isManager = group.agentTypeId === 'manager'
       const collapsible = !isManager && !isSearching && !onlyOneCategory
       const isCollapsed = collapsible && collapsedTypes.has(group.agentTypeId)

@@ -204,6 +204,34 @@ describe('siteOperatorVoiceAssistant', () => {
     expect(runtime.getState().activeInboxAnnouncement).toBeNull()
   })
 
+  test('inbox announcements name an agent sender by its configured type name, not the type id', async () => {
+    const message = {
+      ...createInboxMessage('message-agent'),
+      senderType: 'agent',
+      senderId: 'agent-7',
+      senderAgent: { id: 'agent-7', name: 'Quartz', agentTypeId: 'qa-bot', squadId: 'squad-1', ownerUserId: null },
+    } as InboxMessageResponse
+    getHumanInbox.mockImplementationOnce(async () => [message])
+    const runtime = createRuntime({
+      sessionContext: null,
+      pathHistory: [],
+      inboxQueue: [],
+      activeInboxAnnouncement: null,
+      spokenInboxIds: new Set(),
+      spokenWaitingInputAgentIds: new Set(),
+    })
+
+    await __siteOperatorAssistantTest.enqueueUnreadInboxAnnouncements(
+      runtime,
+      message.id,
+      () => (id) => (id === 'qa-bot' ? 'Release QA' : undefined)
+    )
+
+    const prompt = String((runtime.sendUserText as ReturnType<typeof mock>).mock.calls[0]?.[0])
+    expect(prompt).toContain('Sender: Release QA (agent-7)')
+    expect(prompt).not.toContain('qa-bot')
+  })
+
   test('inbox announcements mark read when queued speech is interrupted', async () => {
     const message = createInboxMessage('message-interrupted')
     getHumanInbox.mockImplementationOnce(async () => [message])
