@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
 import { manualInputRequestSchema, manualWaitDecisionSchema } from '@ficus/shared'
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostIdempotent, IdempotentRequestIncompleteError } from '../client'
+import {
+  apiDelete,
+  apiGet,
+  apiGetList,
+  apiPatch,
+  apiPost,
+  apiPostIdempotent,
+  IdempotentRequestIncompleteError,
+} from '../client'
 import { isJsonMode, output, outputError, outputTable, setOutputOptions } from '../output'
 import {
   buildWorkStreamSourceLinks,
@@ -22,6 +30,7 @@ import {
 describe('workstream CLI commands', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockClear()
+    ;(apiGetList as ReturnType<typeof mock>).mockClear()
     ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(apiPatch as ReturnType<typeof mock>).mockClear()
     ;(apiDelete as ReturnType<typeof mock>).mockClear()
@@ -346,7 +355,7 @@ describe('workstream CLI commands', () => {
 
   describe('list', () => {
     it('asks for open streams by default, and history only with --status or --all', async () => {
-      const get = apiGet as ReturnType<typeof mock>
+      const get = apiGetList as ReturnType<typeof mock>
       get.mockResolvedValue([])
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       await run(['workstream', 'list', '--squad', 'squad-1'])
@@ -366,7 +375,7 @@ describe('workstream CLI commands', () => {
     })
 
     it('keeps default table titles user-friendly by truncating long names', async () => {
-      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([
+      ;(apiGetList as ReturnType<typeof mock>).mockResolvedValue([
         {
           id: '11111111-1111-4111-8111-111111111111',
           title: 'This is an exact long title that should be shortened in the default table',
@@ -405,7 +414,7 @@ describe('workstream CLI commands', () => {
         squadId: 'squad-1',
         dependsOn: [],
       }
-      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([{ ...stream, hasActiveSlotWait: true, slotWait }])
+      ;(apiGetList as ReturnType<typeof mock>).mockResolvedValue([{ ...stream, hasActiveSlotWait: true, slotWait }])
       await run(['workstream', 'list'])
       // Strip the terminal color codes around the state.
       const status = () =>
@@ -415,14 +424,14 @@ describe('workstream CLI commands', () => {
           .map((part) => part.replace(/^\[[0-9;]*m/, ''))
           .join('')
       expect(status()).toBe('Waiting for heavy-work slot (position 2 of 5, host busy) (active)')
-      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([stream])
+      ;(apiGetList as ReturnType<typeof mock>).mockResolvedValue([stream])
       await run(['workstream', 'list'])
       expect(status()).toBe('idle (active)')
     })
 
     it('preserves full titles in the table when --no-truncate is passed', async () => {
       const title = 'This is an exact long title that scripts can safely search for'
-      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([
+      ;(apiGetList as ReturnType<typeof mock>).mockResolvedValue([
         {
           id: '11111111-1111-4111-8111-111111111111',
           title,
@@ -455,7 +464,7 @@ describe('workstream CLI commands', () => {
         },
       ]
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
-      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(streams)
+      ;(apiGetList as ReturnType<typeof mock>).mockResolvedValue(streams)
 
       await run(['workstream', 'list', '--json'])
 

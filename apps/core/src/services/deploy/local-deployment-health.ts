@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import http from 'node:http'
 import { setTimeout as delay } from 'node:timers/promises'
 import { sql } from 'drizzle-orm'
@@ -182,7 +183,7 @@ const readinessChecks = new Map<string, { controller: AbortController; settled: 
 function startReadinessCheck(localDeploymentId: string): void {
   readinessChecks.get(localDeploymentId)?.controller.abort()
   const controller = new AbortController()
-  const settled = waitForLocalDeploymentHealthy(localDeploymentId, controller.signal)
+  const settled = shareAcrossRequests(() => waitForLocalDeploymentHealthy(localDeploymentId, controller.signal))
     .catch(() => {})
     .finally(() => {
       if (readinessChecks.get(localDeploymentId)?.controller === controller) readinessChecks.delete(localDeploymentId)
@@ -307,7 +308,8 @@ function runManagedLocalDeployment(
   // healthy, or its policy is never). An operator restart must relaunch, so it
   // queues behind a non-explicit launch instead of adopting its result, and
   // takes over the slot so later callers join the operator restart.
-  const run = () => restartManagedLocalDeploymentOnce(localDeploymentId, opts, collaborators)
+  // Later callers join this restart, so it runs outside the first caller's request scope.
+  const run = () => shareAcrossRequests(() => restartManagedLocalDeploymentOnce(localDeploymentId, opts, collaborators))
   const restart: Promise<LocalDeployment> = (
     inFlight ? inFlight.restart.catch(() => undefined).then(run) : run()
   ).finally(() => {

@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
 import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
@@ -72,7 +73,7 @@ async function cleanupLostWarmupGeneration(sandboxId: string, generation: string
  * Imports are dynamic to avoid an entity ⇆ sandbox import cycle and to keep the
  * existing resume.ts test spies (which patch the ./ensure module) working.
  */
-export async function ensureAgentSandbox(
+async function ensureAgentSandboxInScope(
   agent: Agent,
   options: {
     /**
@@ -227,4 +228,16 @@ export async function ensureAgentSandbox(
     return 'skipped-agent-unavailable'
   }
   return 'ensured'
+}
+
+/**
+ * A sandbox ensure is shared: concurrent callers join the same wake, and its setup
+ * is persisted step by step. It therefore runs outside the cancellation scope of
+ * the read that happened to start it (db/query-cancellation.ts), so a reader who
+ * leaves never stops a wake that others, or the next reader, depend on.
+ */
+export function ensureAgentSandbox(
+  ...args: Parameters<typeof ensureAgentSandboxInScope>
+): ReturnType<typeof ensureAgentSandboxInScope> {
+  return shareAcrossRequests(() => ensureAgentSandboxInScope(...args))
 }

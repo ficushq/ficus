@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { and, eq } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
@@ -274,18 +275,21 @@ export async function evaluateFlowDecisions(id: string, options: DecisionStepOpt
     again.add(id)
     return current
   }
-  const pass = (async () => {
-    let decided = 0
-    try {
-      do {
-        again.delete(id)
-        decided += await evaluate(id, options)
-      } while (again.has(id))
-    } finally {
-      running.delete(id)
-    }
-    return decided
-  })()
+  // Joined by later callers, so it runs outside the request that started it.
+  const pass = shareAcrossRequests(() =>
+    (async () => {
+      let decided = 0
+      try {
+        do {
+          again.delete(id)
+          decided += await evaluate(id, options)
+        } while (again.has(id))
+      } finally {
+        running.delete(id)
+      }
+      return decided
+    })()
+  )
   running.set(id, pass)
   return pass
 }

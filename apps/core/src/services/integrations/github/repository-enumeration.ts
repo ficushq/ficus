@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../../db/query-cancellation'
 import { eventRepositoryMatches } from '@ficus/shared'
 import { githubRepositoryKey } from '@ficus/shared/integration-relay'
 import type { EventPollingSignal } from '../types'
@@ -134,8 +135,11 @@ export class GitHubRepositoryExpander {
 
     let pending = this.#inflight.get(connectionId)
     if (!pending) {
-      pending = this.#refresh(connectionId, pattern, credential, fresh, now, signal).finally(() =>
-        this.#inflight.delete(connectionId)
+      // Joined by later callers, so it runs outside the request that started it.
+      pending = shareAcrossRequests(() =>
+        this.#refresh(connectionId, pattern, credential, fresh, now, signal).finally(() =>
+          this.#inflight.delete(connectionId)
+        )
       )
       this.#inflight.set(connectionId, pending)
     }

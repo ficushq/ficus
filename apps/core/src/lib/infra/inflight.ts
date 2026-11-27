@@ -14,6 +14,8 @@
  * long-lived processes don't accumulate keys.
  */
 
+import { shareAcrossRequests } from '../../db/query-cancellation'
+
 export class InflightDeduper<T> {
   private readonly inflight = new Map<string, Promise<T>>()
 
@@ -44,13 +46,13 @@ export class InflightDeduper<T> {
     const existing = this.inflight.get(key)
     if (existing) return existing
 
-    const promise = Promise.resolve()
-      .then(fn)
-      .finally(() => {
-        // Identity check: only clear our own entry (a fresh run may have
-        // replaced it if timing interleaves).
-        if (this.inflight.get(key) === promise) this.inflight.delete(key)
-      })
+    // Shared by every caller that joins it, so it belongs to none of them: an abandoned
+    // read that started it must not cancel it for the rest (db/query-cancellation.ts).
+    const promise = shareAcrossRequests(() => Promise.resolve().then(fn)).finally(() => {
+      // Identity check: only clear our own entry (a fresh run may have
+      // replaced it if timing interleaves).
+      if (this.inflight.get(key) === promise) this.inflight.delete(key)
+    })
     this.inflight.set(key, promise)
     return promise
   }
@@ -69,7 +71,8 @@ export class KeyedSerialQueue {
    */
   run<T>(key: string, fn: () => Promise<T> | T): Promise<T> {
     const previous = this.queues.get(key) ?? Promise.resolve()
-    const next = previous.catch(() => undefined).then(fn)
+    // Later tasks chain on this one, so it runs outside the caller's request scope.
+    const next = shareAcrossRequests(() => previous.catch(() => undefined).then(fn))
     this.queues.set(key, next)
     return next.finally(() => {
       if (this.queues.get(key) === next) this.queues.delete(key)

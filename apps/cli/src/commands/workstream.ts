@@ -20,7 +20,15 @@ import {
 } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command, InvalidArgumentError, Option } from 'commander'
-import { apiGet, apiPost, apiPatch, apiDelete, apiPostIdempotent, IdempotentRequestIncompleteError } from '../client'
+import {
+  apiGet,
+  apiGetList,
+  apiPost,
+  apiPatch,
+  apiDelete,
+  apiPostIdempotent,
+  IdempotentRequestIncompleteError,
+} from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
 import {
   WORK_STREAM_COMPLETION_MODES,
@@ -454,7 +462,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('-q, --squad <squadId>', 'Filter by squad ID')
     .option('-t, --task <taskId>', 'Filter by task ID')
     .option('-s, --status <status>', 'Only this status: queued, active, done or canceled')
-    .option('--all', 'Include done and canceled work streams (slow on a squad with a long history)')
+    .option('--all', 'Include done and canceled work streams (history is fetched page by page)')
     .option('--json', 'Output in JSON format')
     .option('--no-truncate', 'Show full table values without shortening titles')
     .action(async (options) => {
@@ -469,7 +477,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         else if (!options.all) params.set('statuses', OPEN_WORK_STREAM_STATUSES.join(','))
         const query = params.toString()
 
-        const streams = await apiGet<WorkStream[]>(`/api/workstreams${query ? `?${query}` : ''}`)
+        // Core caps the history in one answer and links the next page; follow it to the end.
+        const streams = await apiGetList<WorkStream>(`/api/workstreams${query ? `?${query}` : ''}`)
 
         if (isJsonMode()) {
           output(streams)
