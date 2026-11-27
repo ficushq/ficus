@@ -28,7 +28,10 @@ afterEach(async () => {
  * Renders a list whose rows report their place from their index (Happy DOM has no layout), with
  * `animate` recorded instead of run.
  */
-async function renderList(rows: Row[], { resetKey = 'list', reducedMotion = false, hidden = false } = {}) {
+async function renderList(
+  rows: Row[],
+  { resetKey = 'list', reducedMotion = false, hidden = false, arrivedOnMount = false } = {}
+) {
   const animations: AnimateCall[] = []
   dom = await acquireDomHarness({
     url: 'http://localhost/',
@@ -62,7 +65,7 @@ async function renderList(rows: Row[], { resetKey = 'list', reducedMotion = fals
   const { container, root } = dom.createRoot()
   const harness = dom
   const tree = (next: Row[], key: string) => (
-    <LiveListMotion resetKey={key}>
+    <LiveListMotion resetKey={key} arrivedOnMount={arrivedOnMount}>
       <ul>
         {next.map((row, index) => (
           <li key={row.id} data-index={index} {...liveRowProps(row.id, row.status)}>
@@ -211,4 +214,19 @@ test('a frame held back (a hidden or throttled tab) animates nothing', async () 
   }
   expect(list.animations).toEqual([])
   expect(list.arrived()).toEqual([])
+})
+
+test('a list that mounts because its first rows arrived live highlights them', async () => {
+  const list = await renderList([{ id: 'first' }], { arrivedOnMount: true })
+  expect(list.arrived()).toEqual(['first'])
+  expect(list.animations).toEqual([])
+})
+
+test('arrived on mount still respects reduced motion and hidden tabs', async () => {
+  const reduced = await renderList([{ id: 'first' }], { arrivedOnMount: true, reducedMotion: true })
+  expect(reduced.arrived()).toEqual([])
+  await dom?.cleanup()
+  dom = undefined
+  const hidden = await renderList([{ id: 'first' }], { arrivedOnMount: true, hidden: true })
+  expect(hidden.arrived()).toEqual([])
 })

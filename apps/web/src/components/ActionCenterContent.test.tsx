@@ -304,3 +304,39 @@ describe('ActionCenterContent live motion', () => {
     }
   })
 })
+
+describe('ActionCenterContent first live arrival', () => {
+  test('cards it mounts with are highlighted only when they arrived live', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    try {
+      const mount = async (liveMotionArrived: boolean) => {
+        const view = dom.createRoot()
+        await dom.act(async () => {
+          view.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={queryClient}>
+                <ActionCenterContent
+                  actions={[haltedAction('agent-error:first', true)]}
+                  isLoading={false}
+                  continueHaltedActions={continueHaltedAgents}
+                  liveMotionKey="[]"
+                  liveMotionArrived={liveMotionArrived}
+                />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        })
+        await dom.act(() => afterAnimationFrames(dom.window))
+        return [...view.container.querySelectorAll('.ficus-live-arrived')].map((node) =>
+          node.getAttribute('data-live-row')
+        )
+      }
+      expect(await mount(false)).toEqual([])
+      expect(await mount(true)).toEqual(['agent-error:first'])
+    } finally {
+      await dom.cleanup()
+      queryClient.clear()
+    }
+  })
+})

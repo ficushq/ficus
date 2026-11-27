@@ -23,6 +23,12 @@ interface LiveListMotionProps {
    * load, navigation within the same list, filter changes and loading more never move or flash rows.
    */
   resetKey: string
+  /**
+   * The rows this list mounts with arrived live: the list appeared because its first rows did, while
+   * the page was on screen (the Feed's Needs you going from empty to one item). They are highlighted
+   * like any arrival. Leave it off for first load and navigation.
+   */
+  arrivedOnMount?: boolean
   children: ReactNode
 }
 
@@ -38,12 +44,13 @@ const STALE_FRAME_MS = 500
  * Motion for changes that arrive while a list is on screen: rows slide to a new place in about
  * 300 ms (FLIP: measured just before the commit and again in the next animation frame, where the
  * browser lays the page out for that frame anyway, then animated on the compositor with a
- * transform), a row that arrived gets a brief wash, and a changed status badge a brief emphasis. Never on mount or when `resetKey` changes, never under reduced motion or in a hidden
- * tab, and only rows whose new place is on screen move.
+ * transform), a row that arrived fades in with a brief wash, and a changed status badge gets a brief
+ * emphasis. Never on mount (unless `arrivedOnMount`) or when `resetKey` changes, never under reduced
+ * motion or in a hidden tab, and only rows whose new place is on screen move.
  *
  * Rows are found by `liveRowProps` (lib/liveListMotion) anywhere inside, so one wrapper covers a
- * list's sections and a row moving between them. A class component, because only `getSnapshotBeforeUpdate` can read the
- * rows' places before React changes the DOM.
+ * list's sections and a row moving between them. A class component, because only
+ * `getSnapshotBeforeUpdate` can read the rows' places before React changes the DOM.
  */
 export class LiveListMotion extends Component<LiveListMotionProps> {
   private container: HTMLDivElement | null = null
@@ -75,8 +82,17 @@ export class LiveListMotion extends Component<LiveListMotionProps> {
     return before
   }
 
+  componentDidMount() {
+    // Nothing was on screen before: every row is an arrival.
+    if (this.props.arrivedOnMount && this.container && motionAllowed()) this.scheduleMotion(new Map())
+  }
+
   componentDidUpdate(_prevProps: LiveListMotionProps, _prevState: unknown, before: Snapshot) {
     if (!before || !this.container) return
+    this.scheduleMotion(before)
+  }
+
+  private scheduleMotion(before: Map<string, LiveRowBefore>) {
     this.pending ??= { before, since: performance.now() }
     if (this.frame !== null) return
     // Measuring here, inside React's commit, would force a layout the browser then repeats for the

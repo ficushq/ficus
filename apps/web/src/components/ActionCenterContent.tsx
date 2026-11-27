@@ -32,6 +32,11 @@ interface ActionCenterContentProps {
    * view (its filters); when it changes the list is fresh and nothing animates.
    */
   liveMotionKey?: string
+  /**
+   * With `liveMotionKey`: the cards this list mounts with arrived while the page was on screen (the
+   * Feed's Needs you going from empty to one item), so they are highlighted too.
+   */
+  liveMotionArrived?: boolean
 }
 
 export function ActionCenterContent({
@@ -45,6 +50,7 @@ export function ActionCenterContent({
   showSectionCounts = true,
   continueHaltedActions = continueHaltedAgents,
   liveMotionKey,
+  liveMotionArrived = false,
 }: ActionCenterContentProps) {
   const liveMotion = liveMotionKey !== undefined
   const loadingRowCount = useLoadingShapeCount('action-center:list', isLoading ? undefined : actions.length, {
@@ -153,7 +159,9 @@ export function ActionCenterContent({
   )
 
   const shown = liveMotion ? (
-    <LiveListMotion resetKey={JSON.stringify([liveMotionKey, isLoading, isError])}>{content}</LiveListMotion>
+    <LiveListMotion resetKey={JSON.stringify([liveMotionKey, isLoading, isError])} arrivedOnMount={liveMotionArrived}>
+      {content}
+    </LiveListMotion>
   ) : (
     content
   )
