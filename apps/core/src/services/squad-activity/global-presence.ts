@@ -17,7 +17,8 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, workStreams } from '../../db/schema'
-import { permissionMatches, resolvePermissions, type Identity } from '../rbac'
+import type { Identity } from '../rbac'
+import { resolveWorkStreamViewers } from '../rbac/work-stream-viewer'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
 import { resolveGlobalActivityAccess, resolveSquadActivityAccess } from './access'
@@ -68,29 +69,6 @@ function primaryPullRequest(
     (reference.integration === 'github' ? `https://github.com/${reference.repository}/pull/${number}` : undefined)
   const observed = delivery?.explanation?.pullRequests?.find((pr) => pr.number === number)?.state
   return { number, repository: reference.repository, ...(url ? { url } : {}), state: observed ?? 'open' }
-}
-
-/**
- * The identity as the shared viewer rules read it in one squad: its permissions there and who it is.
- * Workflow gates are decided only by users (`mayDecideWorkflowGate`), so other identities never
- * pass on a userId.
- */
-async function squadViewer(identity: Identity, squadId: string): Promise<WorkStreamViewer> {
-  const permissions = await resolvePermissions(identity, squadId)
-  return {
-    can: (permission) => permissions.some((held) => permissionMatches(held, permission)),
-    identity: identity.type === 'user' ? { type: 'user', userId: identity.userId } : { type: identity.type },
-  }
-}
-
-/**
- * The viewer in each of `squadIds`, by squad ID. Only squads with a stream to label resolve
- * permissions, and a user's resolution is cached (the access check just read it).
- */
-async function loadSquadViewers(identity: Identity, squadIds: Iterable<string>) {
-  const ids = [...new Set(squadIds)]
-  const viewers = await Promise.all(ids.map((squadId) => squadViewer(identity, squadId)))
-  return new Map(ids.map((squadId, index) => [squadId, viewers[index]]))
 }
 
 export async function projectActivityPresence(
@@ -154,7 +132,7 @@ export async function projectActivityPresence(
   )
   const needingPerson = activeStreams.filter((stream) => workStreamNeedsHumanAttention(facts.get(stream.id)!))
   // Cards label every open wait for the viewer too, so squads with any open wait need one.
-  const viewers = await loadSquadViewers(identity, [
+  const viewers = await resolveWorkStreamViewers(identity, [
     ...needingPerson.map((stream) => stream.squadId),
     ...activeStreams.filter((stream) => facts.get(stream.id)!.openWaits?.length).map((stream) => stream.squadId),
   ])

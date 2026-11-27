@@ -36,6 +36,16 @@
   font: 500 13px/1.45 var(--g-font-body);
 }
 
+/* A delivery gate's pull requests when there are several, one link each. */
+.g-pr-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .g-action-sub {
   padding-top: 12px;
   border-top: var(--g-border-thin) var(--g-rule-style) var(--g-divider);
@@ -268,6 +278,43 @@
 .g-chip:focus-visible {
   outline: var(--g-focus-width) solid var(--g-highlight);
   outline-offset: 2px;
+}
+
+/*
+ * The asking robot's recommended option, on both question cards (the chat's
+ * QuestionCard too). Display only: nothing is preselected.
+ */
+.g-option-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.g-option-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.g-recommended {
+  display: inline-block;
+  padding: 1px 8px;
+  border: var(--g-border-hair) solid var(--g-outline);
+  border-radius: var(--g-radius-pill);
+  background: var(--g-badge-fill);
+  color: var(--g-on-badge);
+  font: 700 11px/1.4 var(--g-font-body);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.g-recommended-reason {
+  margin: 0;
+  color: var(--g-ink-soft);
+  font: 500 12.5px/1.35 var(--g-font-body);
 }
 
 /* Review confirmation and workflow decisions */

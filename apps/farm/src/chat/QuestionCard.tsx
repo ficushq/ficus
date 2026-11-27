@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import clsx from 'clsx'
-import type { QuestionData, QuestionItem } from '@ficus/shared'
+import { recommendedQuestionOption, type QuestionData, type QuestionItem } from '@ficus/shared'
+import { OptionText, RecommendedTag } from '../actions/RecommendedOption'
 import {
   OTHER,
   answersComplete,
@@ -60,6 +61,9 @@ function Field({
   const text = typeof value === 'string' ? value : ''
   const selected = Array.isArray(value) ? value : []
   const suggestions = question.type === 'text' ? (question.options ?? []) : []
+  // Marked only, never preselected: the person still chooses.
+  const recommended = recommendedQuestionOption(question)
+  const reasonId = `${labelId}-recommendation`
 
   return (
     <fieldset className="g-chat-question" aria-labelledby={labelId}>
@@ -77,13 +81,26 @@ function Field({
               type="button"
               className={clsx('g-chat-chip', text === option.value && 'g-selected')}
               aria-pressed={text === option.value}
+              aria-describedby={option === recommended && option.reason ? reasonId : undefined}
               disabled={disabled}
               onClick={() => onChange(option.value)}
             >
               {option.label ?? option.value}
+              {option === recommended && (
+                <>
+                  {' '}
+                  <RecommendedTag />
+                </>
+              )}
             </button>
           ))}
         </div>
+      )}
+      {/* A chip is too small for the reason, so it sits below the row and describes the chip. */}
+      {suggestions.length > 0 && recommended?.reason && (
+        <p id={reasonId} className="g-recommended-reason">
+          {recommended.reason}
+        </p>
       )}
 
       {question.type === 'text' && (
@@ -118,7 +135,11 @@ function Field({
                 autoFocus={autoFocus && i === 0}
                 onChange={(e) => onChange(e.target.value)}
               />
-              <span>{option.label ?? option.value}</span>
+              <OptionText
+                label={option.label ?? option.value}
+                recommended={option === recommended}
+                reason={option.reason}
+              />
             </label>
           ))}
           {text === OTHER && <OtherInput value={otherText} onChange={onOtherText} disabled={disabled} />}
@@ -141,7 +162,11 @@ function Field({
                     onChange(on ? selected.filter((v) => v !== option.value) : [...selected, option.value])
                   }
                 />
-                <span>{option.label ?? option.value}</span>
+                <OptionText
+                  label={option.label ?? option.value}
+                  recommended={option === recommended}
+                  reason={option.reason}
+                />
               </label>
             )
           })}

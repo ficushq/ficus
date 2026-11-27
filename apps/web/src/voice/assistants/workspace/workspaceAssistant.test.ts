@@ -760,6 +760,58 @@ describe('workspaceVoiceAssistant', () => {
     expect(markAsReadMock).toHaveBeenCalledWith('inbox-1')
   })
 
+  test('agent senders and waiting agents are named by the configured type names the app already read', async () => {
+    agentFixture = {
+      id: 'agent-2',
+      agentTypeId: 'engineer',
+      squadId: 'squad-1',
+      status: 'waiting-input',
+      metadata: { name: 'Quartz' },
+      questionData: { questions: [{ id: 'q1', type: 'text', question: 'Ship it?' }] },
+    }
+    const message = {
+      id: 'inbox-named',
+      content: 'Done.',
+      senderType: 'agent',
+      senderId: 'agent-1',
+      senderAgent: { id: 'agent-1', agentTypeId: 'qa-bot' },
+      recipientType: 'user',
+      recipientId: 'user',
+      readAt: null,
+      createdAt: '2026-05-03T00:00:00.000Z',
+      deliveredAt: null,
+      metadata: {},
+    }
+    const { runtime } = createRuntime()
+    const handlers = new Map<string, (entry: any) => void>()
+    const env = {
+      getWorkspaceState: () => runtime.getState(),
+      setWorkspaceState: mock(() => {}),
+      subscribe: mock((topic: string, handler: (entry: any) => void) => {
+        handlers.set(topic, handler)
+        return mock(() => {})
+      }),
+    }
+    // Names arrive after the session subscribed: each event reads the latest.
+    let typeNames = (_id: string): string | undefined => undefined
+    const cleanup = __workspaceAssistantTest.subscribeWorkspaceVoiceEvents(runtime, env as any, () => typeNames)
+    typeNames = (id) => ({ engineer: 'Builder', 'qa-bot': 'Release QA' })[id]
+
+    handlers.get('agents')?.({ event: 'agent.waiting-input', data: { agentId: 'agent-2' } })
+    handlers.get('inbox')?.({
+      event: 'inbox.messageReceived',
+      data: { messageId: message.id, recipientType: 'user', recipientId: 'user', message },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    cleanup()
+
+    const prompts = (runtime.sendUserText as ReturnType<typeof mock>).mock.calls.map((call) => String(call[0]))
+    expect(prompts.find((prompt) => prompt.includes('Ship it?'))).toStartWith('Agent Builder needs your input')
+    const announcement = prompts.find((prompt) => prompt.includes('inbox-named'))
+    expect(announcement).toContain('Sender: Release QA (agent-1)')
+    expect(announcement).not.toContain('qa-bot')
+  })
+
   test('workspace inbox announcements mark messages read when interrupted', async () => {
     const message = {
       id: 'inbox-interrupted',

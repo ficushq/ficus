@@ -10,6 +10,7 @@ import type {
   SquadQuestionActionData,
   WorkStream,
   WorkStreamActionData,
+  WorkStreamDeliveryActionData,
   WorkStreamWait,
 } from '@ficus/shared'
 
@@ -120,6 +121,30 @@ export function streamAction(
     data,
     { priority: kind === 'review' ? 2 : 3, ...extra }
   )
+}
+
+/** A view-only pull request review or merge gate (the server always sends canRespond: false). */
+export function deliveryAction(
+  deliveryKind: WorkStreamDeliveryActionData['deliveryKind'] = 'review',
+  pullRequests: WorkStreamDeliveryActionData['pullRequests'] = [
+    { repository: 'acme/garden', number: 12, url: 'https://github.com/acme/garden/pull/12' },
+  ],
+  dataExtra: Partial<WorkStreamDeliveryActionData> = {}
+): PendingAction {
+  const data: WorkStreamDeliveryActionData = {
+    workStreamId: 'ws-3',
+    workStreamNumber: 42,
+    workStreamTitle: 'Plant pumpkins',
+    squadId: 'squad-1',
+    squadName: 'Veg Squad',
+    deliveryKind,
+    pullRequests,
+    focus: { kind: 'workstream', workStreamId: 'ws-3' },
+    ...dataExtra,
+  }
+  return action('workstream-delivery', `workstream-delivery:${data.workStreamId}:${deliveryKind}`, data, {
+    canRespond: false,
+  })
 }
 
 export function assistantAction(extra: Partial<PendingAction> = {}): PendingAction {

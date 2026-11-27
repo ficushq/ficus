@@ -1369,7 +1369,7 @@ function ActionDetails({ action, agentMap }: { action: ScheduleAction; agentMap:
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <DetailRow label="Agent Type">
-              <p className="text-primary font-mono text-xs">{action.agentTypeId}</p>
+              <p className="text-primary text-xs">{agentTypeDisplayName(action.agentTypeId, typeNames)}</p>
             </DetailRow>
             {action.workStream && (
               <DetailRow label="Work Stream">

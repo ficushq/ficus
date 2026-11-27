@@ -280,6 +280,25 @@ describe('waiting on a person', () => {
     expect(workStreamWaitsOnViewer(dependency, responder)).toBe(false)
   })
 
+  test('workStreamWaitsOnViewer: a code-host review or merge waits on every viewer whatever other waits are open', () => {
+    // A question this viewer cannot answer (no agents:run) next to the pull request at the code host.
+    const question = wait({ id: 'q', type: 'question', referenceId: 'q' })
+    const cannotAnswer = viewer(['workstreams:read'])
+    for (const kind of ['review', 'merge'] as const) {
+      const mixed = waiting([question], { derivedState: 'waiting_on_answer', delivery: { kind } })
+      expect(viewerCanActOnWait(question, mixed, cannotAnswer)).toBe(false)
+      expect(workStreamWaitsOnViewer(mixed, cannotAnswer)).toBe(true)
+      // The same pull request alone counts for that viewer too.
+      const alone = waiting([], { derivedState: 'in_review', delivery: { kind } })
+      expect(workStreamWaitsOnViewer(alone, cannotAnswer)).toBe(true)
+      // An unknown viewer is still never "you".
+      expect(workStreamWaitsOnViewer(mixed)).toBe(false)
+    }
+    // Without the code host, the unanswerable question alone does not wait on them.
+    const questionOnly = waiting([question], { derivedState: 'waiting_on_answer' })
+    expect(workStreamWaitsOnViewer(questionOnly, cannotAnswer)).toBe(false)
+  })
+
   test('a dependency, an owner hold, a paused or a finished stream is not waiting on a person', () => {
     const dependency = waiting([wait({ type: 'dependency', referenceId: 'x' })], {
       derivedState: 'waiting_on_dependency',

@@ -1,6 +1,5 @@
 import { endsWithSentencePunctuation, recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
-import { listAgentTypes } from '../api/agentTypes'
 import { getAgentLabel, noAgentTypeNames, type AgentTypeName } from '../lib/agentDisplay'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 
@@ -11,16 +10,6 @@ type WaitingInputState = {
 // Spoken the way the app names agents: type first (by its configured name), then the purpose.
 function getAgentDisplayName(agent: Agent, typeNames: AgentTypeName): string {
   return getAgentLabel(agent, undefined, typeNames)
-}
-
-/** The configured agent type names; none when they cannot be read (offline, or no permission). */
-async function loadAgentTypeNames(): Promise<AgentTypeName> {
-  try {
-    const names = new Map((await listAgentTypes()).map((type) => [type.id, type.name]))
-    return (id) => names.get(id)
-  } catch {
-    return noAgentTypeNames
-  }
 }
 
 function formatQuestion(question: QuestionItem, index: number): string {
@@ -74,14 +63,17 @@ function markSpokenWaitingInput<TState extends WaitingInputState>(
   runtime.setState({ ...state, spokenWaitingInputAgentIds: [...ids.slice(-49), agentId] })
 }
 
-export function createHandleAgentWaitingInputEvent(
-  getAgentDependency: typeof getAgent,
-  loadTypeNames: () => Promise<AgentTypeName> = async () => noAgentTypeNames
-) {
+/**
+ * Speaks an agent's waiting-input questions. `typeNames` is the app's shared read of the configured
+ * agent type names (`useAgentTypeNames`, kept in the React Query cache), so an event never reads the
+ * agent types again; without it the type id is title-cased.
+ */
+export function createHandleAgentWaitingInputEvent(getAgentDependency: typeof getAgent) {
   return async function handleAgentWaitingInputEvent<TState extends WaitingInputState>(
     runtime: VoiceAssistantRuntime<TState>,
     agentId: string,
-    isActive: () => boolean = () => true
+    isActive: () => boolean = () => true,
+    typeNames: AgentTypeName = noAgentTypeNames
   ): Promise<void> {
     if (!isActive()) return
 
@@ -89,8 +81,6 @@ export function createHandleAgentWaitingInputEvent(
     if (!isActive()) return
     if (agent.status !== 'waiting-input' || !agent.questionData?.questions?.length) return
     if (hasSpokenWaitingInput(runtime.getState(), agentId)) return
-    const typeNames = await loadTypeNames()
-    if (!isActive() || hasSpokenWaitingInput(runtime.getState(), agentId)) return
 
     const message: PendingVoiceMessage<TState> = {
       id: `agent-waiting-input:${agent.id}`,
@@ -104,4 +94,4 @@ export function createHandleAgentWaitingInputEvent(
   }
 }
 
-export const handleAgentWaitingInputEvent = createHandleAgentWaitingInputEvent(getAgent, loadAgentTypeNames)
+export const handleAgentWaitingInputEvent = createHandleAgentWaitingInputEvent(getAgent)

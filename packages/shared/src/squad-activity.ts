@@ -313,8 +313,9 @@ export interface GlobalActivityPresence {
   workingCount: number
   /**
    * Streams that wait on this viewer (`workStreamWaitsOnViewer`): a stream needing a person counts
-   * only for a viewer who may act on one of its waits. Streams whose decisions the viewer muted
-   * are left out.
+   * only for a viewer who may act on one of its waits, or for every viewer while its delivery waits
+   * on the code host. Streams whose decisions the viewer muted are left out. The Live Activity's
+   * `needsYouCount` for the same user follows the same rule.
    */
   needsYouCount: number
   streamCount: number

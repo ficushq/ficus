@@ -62,7 +62,8 @@ test('default and explicit Show reach widgets and background Live Activities wit
     .values({ squadId: squad!.id, title: 'Visible work', status: 'active' })
     .returning()
   await db.insert(workStreamWaits).values({ workStreamId: stream!.id, type: 'review' })
-  const role = await createTestRole({ prefix, permissions: ['squads:read', 'workstreams:read'] })
+  // workstreams:respond lets the user clear the review, so it waits on them and keeps the card up.
+  const role = await createTestRole({ prefix, permissions: ['squads:read', 'workstreams:read', 'workstreams:respond'] })
   await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: squad!.id })
   const token = `${prefix}-show-update`
   tokens.push(token)
