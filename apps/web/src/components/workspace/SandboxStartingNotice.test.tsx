@@ -117,6 +117,28 @@ test('another 503 is not called a starting workspace', async () => {
   }
 })
 
+test('a provisioning that failed shows its error, not a starting workspace', async () => {
+  let reads = 0
+  const panel = await mount(
+    <FileTree
+      source={sourceOf(async () => {
+        reads++
+        // Core's hard failure; over the general 60-second bound so the ordinary rule fails at once.
+        throw provisioning(75_000, 'SANDBOX_PROVISION_FAILED')
+      })}
+      onSelectFile={() => {}}
+    />
+  )
+  try {
+    await panel.settle(() => panel.text().includes('Failed to load files'))
+    expect(panel.text()).toContain('Failed to load files')
+    expect(panel.text()).not.toContain('The workspace is starting')
+    expect(reads).toBe(1)
+  } finally {
+    await panel.cleanup()
+  }
+})
+
 test('a wait past the sandbox bound fails with Retry, as other errors do', async () => {
   const panel = await mount(
     <FileTree source={sourceOf(async () => Promise.reject(provisioning(10 * 60_000)))} onSelectFile={() => {}} />

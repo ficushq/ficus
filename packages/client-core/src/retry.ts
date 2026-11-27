@@ -7,11 +7,12 @@
  * at least as long as Retry-After asks, backs off from there, and gives up rather than wait longer
  * than a bound. Every other failure keeps TanStack Query's usual three retries and backoff.
  *
- * One 503 has a longer bound. While Core cannot provision a sandbox, a read served from it (a
- * workspace tree or file) answers 503 with a `SANDBOX_PROVISION_*` code and the provisioning
- * circuit's cooldown as Retry-After, which can pass a minute. That read succeeds once the sandbox is
- * up, so it waits up to five minutes per retry, and the screen shows that the workspace is starting
- * (isSandboxProvisioningFailure) rather than an error.
+ * One 503 has a longer bound. While Core cannot provision a sandbox yet, a read served from it (a
+ * workspace tree or file) answers 503 with a "not ready yet" code (SANDBOX_PROVISION_WAIT_CODES) and
+ * the provisioning circuit's cooldown as Retry-After, which can pass a minute. That read succeeds
+ * once the sandbox is up, so a single wait may be up to five minutes, and the screen shows that the
+ * workspace is starting (isSandboxProvisioningFailure) rather than an error. A provisioning that
+ * failed (SANDBOX_PROVISION_FAILED) is not waited for: it keeps the ordinary 503 rule and its error.
  */
 
 /** Retries for an ordinary failed query, as TanStack Query's default. */
@@ -28,8 +29,16 @@ export const BUSY_RETRY_MAX_MS = 60_000
 export const SANDBOX_PROVISION_RETRY_LIMIT = 4
 /** The longest such a read waits before a retry (before jitter): a provisioning cooldown can pass a minute. */
 export const SANDBOX_PROVISION_RETRY_MAX_MS = 5 * 60_000
-/** Core's error codes for a sandbox it cannot provision yet (SandboxProvisionErrorCode). */
-export const SANDBOX_PROVISION_CODE_PREFIX = 'SANDBOX_PROVISION_'
+/**
+ * Core's error codes for a sandbox that is not ready yet: the same transient set Core's own
+ * provision-failure.ts recovers from. SANDBOX_PROVISION_FAILED, a provisioning that failed, is not
+ * one of them.
+ */
+export const SANDBOX_PROVISION_WAIT_CODES: readonly string[] = [
+  'SANDBOX_PROVISION_BUSY',
+  'SANDBOX_PROVISION_COORDINATION_UNAVAILABLE',
+  'SANDBOX_PROVISION_UNAVAILABLE',
+]
 
 /**
  * An HTTP Retry-After value (delta-seconds or an HTTP-date) as milliseconds from `now`, or
@@ -66,11 +75,12 @@ function httpFailure(error: unknown): HttpFailure | undefined {
 
 /**
  * Whether a read was refused (503) because Core cannot provision its sandbox yet. Such a read is
- * retried for longer, and a screen waiting on it can say the workspace is starting.
+ * retried for longer, and a screen waiting on it can say the workspace is starting. A provisioning
+ * that failed is not "yet": it is false for SANDBOX_PROVISION_FAILED.
  */
 export function isSandboxProvisioningFailure(error: unknown): boolean {
   const failure = httpFailure(error)
-  return failure?.status === 503 && !!failure.code?.startsWith(SANDBOX_PROVISION_CODE_PREFIX)
+  return failure?.status === 503 && !!failure.code && SANDBOX_PROVISION_WAIT_CODES.includes(failure.code)
 }
 
 /** How many times, and for how long at most each time, a busy (503) read is retried. */

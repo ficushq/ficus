@@ -94,6 +94,26 @@ describe('a sandbox that cannot be provisioned yet', () => {
     expect(queryRetryDelay(10, provisioning(5_000), () => 0)).toBe(SANDBOX_PROVISION_RETRY_MAX_MS)
   })
 
+  test('a provisioning that failed keeps the ordinary 503 rule', () => {
+    // Core sends SANDBOX_PROVISION_FAILED with a 10-second Retry-After when a box cannot be provisioned.
+    const failed = provisioning(10_000, 'SANDBOX_PROVISION_FAILED')
+    expect(isSandboxProvisioningFailure(failed)).toBe(false)
+    expect(retries(failed)).toBe(retries(busy(10_000)))
+    expect(retries(failed)).toBe(BUSY_RETRY_LIMIT)
+    for (const count of [0, 1]) expect(queryRetryDelay(count, failed, () => 0)).toBe(10_000 * 2 ** count)
+    // Over a minute, it gives up at once, as any other busy read does.
+    expect(retries(provisioning(75_000, 'SANDBOX_PROVISION_FAILED'))).toBe(0)
+  })
+
+  test('every "not ready yet" code gets the longer wait', () => {
+    for (const code of [
+      'SANDBOX_PROVISION_BUSY',
+      'SANDBOX_PROVISION_COORDINATION_UNAVAILABLE',
+      'SANDBOX_PROVISION_UNAVAILABLE',
+    ])
+      expect(retries(provisioning(75_000, code))).toBe(3)
+  })
+
   test('the code is read from the error itself or from the response body', () => {
     expect(isSandboxProvisioningFailure(provisioning(75_000))).toBe(true)
     expect(isSandboxProvisioningFailure({ status: 503, code: 'SANDBOX_PROVISION_BUSY' })).toBe(true)
