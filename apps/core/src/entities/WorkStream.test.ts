@@ -2603,6 +2603,148 @@ describe('WorkStream entity', () => {
       const map = await WorkStream.computeRuntimes([])
       expect(map.size).toBe(0)
     })
+
+    async function bind(agentId: string, workStreamId: string) {
+      await db.insert(schema.workflowBindings).values({
+        agentId,
+        workStreamId,
+        participantId: 'engineer',
+        bindingKey: `engineer:${agentId}`,
+        agentSnapshot: {} as typeof schema.workflowBindings.$inferInsert.agentSnapshot,
+      })
+    }
+
+    async function assistantMessageAt(agentId: string, createdAt: Date) {
+      await db.insert(schema.messages).values({ agentId, role: 'assistant', content: 'step', createdAt })
+    }
+
+    it("a flow stream counts only its bound agents, not a listed agent's other work", async () => {
+      const bound = await createTestAgent()
+      const persistent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} bound`,
+        agentIds: [bound.id, persistent.id],
+      })
+      await bind(bound.id, ws.id)
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db.insert(executions).values([
+        // A delivery turn with no flow attempt still belongs to the stream its agent serves.
+        { agentId: bound.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 20_000) },
+        { agentId: persistent.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 3_600_000) },
+        { agentId: persistent.id, status: 'running', startedAt: new Date(Date.now() - 5_000) },
+      ])
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBe(20_000)
+      expect(r.activeCount).toBe(0)
+      expect(r.workingCount).toBe(0)
+    })
+
+    it('a stream from before flows keeps counting its listed agents', async () => {
+      const listed = await createTestAgent()
+      const other = await createTestAgent()
+      const legacy = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} legacy listed`,
+        agentIds: [listed.id],
+      })
+      const flow = await storedLegacyWorkStream({ squadId: testSquad.id, title: `${testPrefix} flow`, agentIds: [] })
+      await bind(other.id, flow.id)
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db.insert(executions).values([
+        { agentId: listed.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 7_000) },
+        { agentId: other.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 9_000) },
+      ])
+
+      const map = await WorkStream.computeRuntimes([legacy, flow])
+      expect(map.get(legacy.id)!.totalMs).toBe(7_000)
+      expect(map.get(flow.id)!.totalMs).toBe(9_000)
+    })
+
+    it('a running execution silent past the stale bound counts only to its last message and stops ticking', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} stale running`,
+        agentIds: [agent.id],
+      })
+      await bind(agent.id, ws.id)
+      const started = new Date(Date.now() - 7 * 24 * 3_600_000)
+      await db.insert(executions).values({ agentId: agent.id, status: 'running', startedAt: started })
+      await assistantMessageAt(agent.id, new Date(started.getTime() + 10 * 60_000))
+      // A message from before the execution started is not evidence of its activity.
+      await assistantMessageAt(agent.id, new Date(started.getTime() - 60_000))
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBe(10 * 60_000)
+      // Still an active execution for schedule recovery, but no longer accruing time.
+      expect(r.activeCount).toBe(1)
+      expect(r.workingCount).toBe(0)
+    })
+
+    it('a stale running execution with no messages counts nothing', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} stale silent`,
+        agentIds: [agent.id],
+      })
+      await db.insert(executions).values({
+        agentId: agent.id,
+        status: 'running',
+        startedAt: new Date(Date.now() - 3 * 3_600_000),
+      })
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBe(0)
+      expect(r.workingCount).toBe(0)
+    })
+
+    it('a long execution with recent activity counts to now and keeps ticking', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} long active`,
+        agentIds: [agent.id],
+      })
+      const started = new Date(Date.now() - 3 * 3_600_000)
+      await db.insert(executions).values({ agentId: agent.id, status: 'running', startedAt: started })
+      await assistantMessageAt(agent.id, new Date(Date.now() - 20 * 60_000))
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBeGreaterThanOrEqual(3 * 3_600_000 - 1_000)
+      expect(r.totalMs).toBeLessThanOrEqual(3 * 3_600_000 + 60_000)
+      expect(r.activeCount).toBe(1)
+      expect(r.workingCount).toBe(1)
+    })
+
+    it('an execution that ended long after its last message is capped at that message', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} late ended`,
+        agentIds: [agent.id],
+      })
+      const started = new Date('2026-03-01T10:00:00Z')
+      const lateEnd = new Date(started.getTime() + 2 * 24 * 3_600_000)
+      await db.insert(executions).values([
+        // Reaped two days later, after five minutes of real work.
+        { agentId: agent.id, status: 'failed', startedAt: started, endedAt: lateEnd },
+        // A legitimately long run whose last step landed just before it ended counts in full.
+        {
+          agentId: agent.id,
+          status: 'completed',
+          startedAt: new Date(lateEnd.getTime() + 60_000),
+          endedAt: new Date(lateEnd.getTime() + 60_000 + 2 * 3_600_000),
+        },
+      ])
+      await assistantMessageAt(agent.id, new Date(started.getTime() + 5 * 60_000))
+      await assistantMessageAt(agent.id, new Date(lateEnd.getTime() + 60_000 + 2 * 3_600_000 - 30_000))
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.totalMs).toBe(5 * 60_000 + 2 * 3_600_000)
+    })
   })
 
   describe('WorkStream.create creatorAgentId', () => {

@@ -114,7 +114,7 @@ test('runtime aggregation reads a covering index rather than wide execution rows
     FROM generate_series(1,12000) n`)
   // Settled history becomes all-visible under normal autovacuum; model that state.
   await db.execute(sql`VACUUM (ANALYZE) executions`)
-  const query = workStreamRuntimesSql([{ wsId: crypto.randomUUID(), agentId: agent.id }])
+  const query = workStreamRuntimesSql([{ wsId: crypto.randomUUID(), agentIds: [agent.id] }])
   const [total] = await db.execute(query)
   expect(Number(total.total_ms)).toBe(12000000)
   expect(Number(total.active_count)).toBe(0)

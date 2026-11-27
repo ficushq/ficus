@@ -26,6 +26,8 @@ import {
   squadSubscriptions,
   workStreamSubscriptions,
   executions,
+  messages,
+  workflowBindings,
   workStreamWaits,
   workStreamFlowRuns,
   workStreamWorktrees,
@@ -2464,44 +2466,38 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   // ---------------------------------------------------------------------------
 
   /**
-   * Compute aggregated agent runtime for a batch of work streams.
-   * Returns a Map keyed by work stream id.
+   * Time worked for a batch of work streams, keyed by work stream id: see
+   * `workStreamRuntimesSql` for which executions count and for how long.
    */
   static async computeRuntimes(streams: WorkStream[]): Promise<Map<string, WorkStreamRuntime>> {
     const result = new Map<string, WorkStreamRuntime>()
     if (streams.length === 0) return result
 
-    const pairs: { wsId: string; agentId: string }[] = []
-    for (const ws of streams) {
-      for (const agentId of ws.agentIds ?? []) {
-        pairs.push({ wsId: ws.id, agentId })
-      }
-    }
+    const rows = (await db.execute(
+      workStreamRuntimesSql(streams.map((ws) => ({ wsId: ws.id, agentIds: ws.agentIds ?? [] })))
+    )) as unknown as Array<{
+      ws_id: string
+      computed_at: string | Date
+      total_ms: string | number
+      active_count: number
+      working_count: number
+    }>
 
     let computedAtIso = new Date().toISOString()
-
-    if (pairs.length > 0) {
-      const rows = (await db.execute(workStreamRuntimesSql(pairs))) as unknown as Array<{
-        ws_id: string
-        computed_at: string | Date
-        total_ms: string | number
-        active_count: number
-      }>
-
-      for (const row of rows) {
-        const iso = new Date(row.computed_at).toISOString()
-        result.set(row.ws_id, {
-          totalMs: Number(row.total_ms),
-          activeCount: Number(row.active_count),
-          computedAt: iso,
-        })
-        computedAtIso = iso
-      }
+    for (const row of rows) {
+      const iso = new Date(row.computed_at).toISOString()
+      result.set(row.ws_id, {
+        totalMs: Number(row.total_ms),
+        activeCount: Number(row.active_count),
+        workingCount: Number(row.working_count),
+        computedAt: iso,
+      })
+      computedAtIso = iso
     }
 
     for (const ws of streams) {
       if (!result.has(ws.id)) {
-        result.set(ws.id, { totalMs: 0, activeCount: 0, computedAt: computedAtIso })
+        result.set(ws.id, { totalMs: 0, activeCount: 0, workingCount: 0, computedAt: computedAtIso })
       }
     }
 
@@ -2741,34 +2737,113 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 }
 
-/** SQL shared by runtime reads and their plan regression tests. */
-export function workStreamRuntimesSql(pairs: readonly { wsId: string; agentId: string }[]) {
+/**
+ * How long an execution may go without a new assistant message before it stops
+ * counting as work. Longer than the longest single tool call an agent may run in
+ * the foreground (one hour), so a long test run still counts in full.
+ */
+export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
+
+/**
+ * Time worked per work stream: the summed duration of the executions that did
+ * this stream's work. Shared by runtime reads and their plan regression tests.
+ *
+ * Which executions count:
+ * - A stream with a flow counts the executions of the agents its flow bound to
+ *   it. Every bound agent is created for that one stream and never rebound, so
+ *   all of its executions are this stream's work, including delivery turns that
+ *   run without a flow attempt. Other agents listed on the stream (a persistent
+ *   squad member, the owner) are not counted: their executions serve other work.
+ * - A stream from before flows has no bindings, and its listed agents are the
+ *   only record of who worked on it, so it keeps counting their executions.
+ *
+ * How long each counts: from its start to its end (now, while it runs). Queued
+ * and sandbox-waiting executions add nothing. An execution that has been silent
+ * (no new assistant message) for more than `RUNTIME_STALE_AFTER_MS` before its
+ * end, such as one left open in `running`, counts only up to its last assistant
+ * message, and no longer ticks.
+ *
+ * `active_count` keeps its meaning (any queued-for-sandbox, running or stopping
+ * execution), which schedule recovery relies on; `working_count` is the subset
+ * still accruing time, which clients extrapolate from.
+ *
+ * Every column read from `executions` is in `idx_executions_agent_runtime`, so
+ * the history stays an index-only scan; the message probe runs only for an
+ * execution longer than the stale bound.
+ */
+export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds: readonly string[] }[]) {
+  const listed = streams.flatMap((stream) => stream.agentIds.map((agentId) => ({ wsId: stream.wsId, agentId })))
+  const staleAfter = sql`make_interval(secs => ${RUNTIME_STALE_AFTER_MS / 1000})`
   return sql`
-        WITH pairs(ws_id, agent_id) AS (
+        WITH streams(ws_id) AS (
           VALUES ${sql.join(
-            pairs.map((p) => sql`(${p.wsId}::uuid, ${p.agentId}::uuid)`),
+            streams.map((stream) => sql`(${stream.wsId}::uuid)`),
             sql`, `
           )}
+        ),
+        listed(ws_id, agent_id) AS (
+          ${
+            listed.length > 0
+              ? sql`VALUES ${sql.join(
+                  listed.map((pair) => sql`(${pair.wsId}::uuid, ${pair.agentId}::uuid)`),
+                  sql`, `
+                )}`
+              : sql`SELECT NULL::uuid, NULL::uuid WHERE false`
+          }
+        ),
+        pairs(ws_id, agent_id) AS (
+          SELECT b.work_stream_id, b.agent_id
+          FROM ${workflowBindings} b
+          JOIN streams s ON s.ws_id = b.work_stream_id
+          UNION
+          SELECT l.ws_id, l.agent_id
+          FROM listed l
+          WHERE NOT EXISTS (SELECT 1 FROM ${workflowBindings} b WHERE b.work_stream_id = l.ws_id)
         ),
         computed AS (
           SELECT NOW() AS now_ts
         )
         SELECT
-          p.ws_id AS ws_id,
+          s.ws_id AS ws_id,
           (SELECT now_ts FROM computed) AS computed_at,
           COALESCE(SUM(
-            CASE
-              WHEN e.status IN ('queued', 'waiting-sandbox') THEN 0
-              WHEN e.ended_at IS NOT NULL THEN
-                GREATEST(0, EXTRACT(EPOCH FROM (e.ended_at - e.started_at)) * 1000)
-              WHEN e.status IN ('running', 'stopping') THEN
-                GREATEST(0, EXTRACT(EPOCH FROM ((SELECT now_ts FROM computed) - e.started_at)) * 1000)
-              ELSE 0
-            END
+            GREATEST(0, EXTRACT(EPOCH FROM (w.worked_until - e.started_at)) * 1000)
           ), 0)::bigint AS total_ms,
-          COUNT(*) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count
-        FROM pairs p
+          COUNT(e.agent_id) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count,
+          COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count
+        FROM streams s
+        LEFT JOIN pairs p ON p.ws_id = s.ws_id
         LEFT JOIN ${executions} e ON e.agent_id = p.agent_id
-        GROUP BY p.ws_id
+        LEFT JOIN LATERAL (
+          SELECT
+            CASE
+              WHEN x.end_ts IS NULL OR x.end_ts - e.started_at <= ${staleAfter} THEN x.end_ts
+              WHEN x.end_ts - a.last_at > ${staleAfter} THEN a.last_at
+              ELSE x.end_ts
+            END AS worked_until,
+            x.open AND (x.end_ts - e.started_at <= ${staleAfter} OR x.end_ts - a.last_at <= ${staleAfter}) AS working
+          FROM (
+            SELECT
+              CASE
+                WHEN e.status IN ('queued', 'waiting-sandbox') THEN NULL
+                WHEN e.ended_at IS NOT NULL THEN e.ended_at::timestamptz
+                WHEN e.status IN ('running', 'stopping') THEN (SELECT now_ts FROM computed)
+                ELSE NULL
+              END AS end_ts,
+              e.ended_at IS NULL AND e.status IN ('running', 'stopping') AS open
+          ) x
+          LEFT JOIN LATERAL (
+            -- The agent's newest assistant message inside this execution's span: one
+            -- execution runs at a time per agent, so the span identifies it.
+            SELECT GREATEST(e.started_at::timestamptz, MAX(m.created_at)::timestamptz) AS last_at
+            FROM ${messages} m
+            WHERE x.end_ts - e.started_at > ${staleAfter}
+              AND m.agent_id = e.agent_id
+              AND m.role = 'assistant'
+              AND m.created_at >= e.started_at
+              AND m.created_at <= x.end_ts
+          ) a ON true
+        ) w ON e.agent_id IS NOT NULL
+        GROUP BY s.ws_id
       `
 }
