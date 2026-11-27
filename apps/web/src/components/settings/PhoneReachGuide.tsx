@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react'
 import clsx from 'clsx'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   checkPublicAddress,
   type AddressCheckResult,
@@ -8,6 +8,8 @@ import {
   type ServerAddressReach,
 } from '../../api/publicUrl'
 import { usePermissions } from '../../hooks/usePermissions'
+import { desktopNetworkAccess } from '../../lib/desktop'
+import { publicUrlQueryKeys } from '../../queryKeys'
 import { publicUrlQueries } from '../../queryOptions'
 import { CopyButton, ExternalLink, SETTINGS_BUTTON_SIZE, SETTINGS_HEADING } from './SettingsRow'
 
@@ -33,7 +35,9 @@ const CHECKED: Record<Exclude<AddressCheckResult, { ok: true }>['reason'], strin
 /**
  * Administration → Server address: how to give this server an address a mobile device can open. It reads what the
  * machine has (home-network addresses, Tailscale, what the server is listening on) and offers each as an
- * address to put in the field above. Nothing here changes the machine; commands are shown to copy.
+ * address to put in the field above. Nothing here changes the machine; commands are shown to copy. The one
+ * exception is inside Ficus Desktop, which starts this server itself: there a switch asks Desktop to let the
+ * network reach it, and Desktop confirms with the person before it restarts anything.
  */
 export function PhoneReachGuide({ onUse }: { onUse: (url: string) => void }) {
   const permissions = usePermissions()
@@ -41,6 +45,13 @@ export function PhoneReachGuide({ onUse }: { onUse: (url: string) => void }) {
   const canWrite = canRead && permissions.can('settings:write')
   const query = useQuery({ ...publicUrlQueries.reach(), enabled: canRead })
   const check = useMutation({ mutationFn: checkPublicAddress })
+  const queryClient = useQueryClient()
+  const setNetworkAccess = desktopNetworkAccess()
+  const network = useMutation({
+    mutationFn: (enabled: boolean) => setNetworkAccess!(enabled),
+    // Declined, refused or done: show what the server is listening on now.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: publicUrlQueryKeys.reach() }),
+  })
   const report = query.data
   if (!canRead || !report) return null
   return (
@@ -51,8 +62,28 @@ export function PhoneReachGuide({ onUse }: { onUse: (url: string) => void }) {
       checking={check.isPending}
       onUse={onUse}
       onCheck={() => report.current.url && check.mutate(report.current.url)}
+      networkSwitch={
+        setNetworkAccess && canWrite
+          ? {
+              pending: network.isPending,
+              error: network.isError
+                ? network.error instanceof Error
+                  ? network.error.message
+                  : String(network.error)
+                : null,
+              set: (enabled) => network.mutate(enabled),
+            }
+          : undefined
+      }
     />
   )
+}
+
+/** Ficus Desktop's own switch for what this server listens on; present only in its window of the local instance. */
+export interface NetworkSwitch {
+  pending: boolean
+  error: string | null
+  set: (enabled: boolean) => void
 }
 
 export function PhoneReachGuideView({
@@ -62,6 +93,7 @@ export function PhoneReachGuideView({
   checking,
   onUse,
   onCheck,
+  networkSwitch,
 }: {
   report: PhoneReachReport
   canWrite: boolean
@@ -69,6 +101,7 @@ export function PhoneReachGuideView({
   checking: boolean
   onUse: (url: string) => void
   onCheck: () => void
+  networkSwitch?: NetworkSwitch
 }) {
   const { current, listening, homeNetwork, tailscale } = report
   const use = (url: string) =>
@@ -112,6 +145,26 @@ export function PhoneReachGuideView({
           Nothing to install. It works only while the mobile device is on this network, and the connection is not
           encrypted. Push notifications and other Pro features need an HTTPS address.
         </p>
+        {networkSwitch && (
+          <div className="space-y-2">
+            <label className="flex items-center justify-between gap-4 text-sm font-medium text-primary">
+              Let devices on this network connect
+              <input
+                type="checkbox"
+                role="switch"
+                checked={listening.beyondThisComputer}
+                disabled={networkSwitch.pending}
+                onChange={(event) => networkSwitch.set(event.target.checked)}
+              />
+            </label>
+            <p>Ficus Desktop asks you to confirm, then restarts Ficus on this Mac. Agents that are working stop.</p>
+            {networkSwitch.error && (
+              <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
+                {networkSwitch.error}
+              </p>
+            )}
+          </div>
+        )}
         {homeNetwork.addresses.length ? (
           <ul className="space-y-2">
             {homeNetwork.addresses.map((address) => (
@@ -124,12 +177,21 @@ export function PhoneReachGuideView({
         ) : (
           <p>No home-network address was found on this machine.</p>
         )}
-        {!listening.beyondThisComputer && (
-          <p>
-            This server is listening on this computer only ({listening.host}), so other devices cannot connect yet. Set{' '}
-            <code className="font-mono text-xs text-primary">HOST=0.0.0.0</code> in its environment and restart it.
-          </p>
-        )}
+        {!listening.beyondThisComputer &&
+          !networkSwitch &&
+          (listening.desktopManaged ? (
+            <p>
+              Ficus Desktop is listening on this computer only, so other devices cannot connect yet. In Ficus Desktop,
+              choose File → Manage Instances… and turn on “Let devices on this network connect”. If that switch is
+              missing, update Ficus Desktop.
+            </p>
+          ) : (
+            <p>
+              This server is listening on this computer only ({listening.host}), so other devices cannot connect yet.
+              Set <code className="font-mono text-xs text-primary">HOST=0.0.0.0</code> in its environment and restart
+              it.
+            </p>
+          ))}
       </Option>
 
       <Option title="Anywhere, with Tailscale">

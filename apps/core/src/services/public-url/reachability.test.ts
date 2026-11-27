@@ -107,7 +107,12 @@ describe('phoneReachReport', () => {
     })
     expect(report.current).toEqual({ url: 'http://localhost:3000', reach: 'this-computer', https: false })
     // Loopback only: other devices cannot connect until the server listens on the network.
-    expect(report.listening).toEqual({ host: '127.0.0.1', port: 3000, beyondThisComputer: false })
+    expect(report.listening).toEqual({
+      host: '127.0.0.1',
+      port: 3000,
+      beyondThisComputer: false,
+      desktopManaged: false,
+    })
     expect(report.homeNetwork.addresses[0]).toBe('http://studio-mac.local:3000')
     expect(report.tailscale.state).toBe('not-installed')
   })
@@ -124,6 +129,20 @@ describe('phoneReachReport', () => {
     })
     expect(report.listening.beyondThisComputer).toBe(true)
     expect(report.current.reach).toBe('none')
+  })
+
+  test('says when Ficus Desktop decides what the server listens on, since its owner cannot set HOST', async () => {
+    const report = await phoneReachReport({
+      currentUrl: 'http://localhost:61896',
+      bindHost: '127.0.0.1',
+      port: 61896,
+      desktopManaged: true,
+      interfaces: {},
+      hostname: 'studio-mac',
+      platform: 'darwin',
+      tailscaleStatus: async () => null,
+    })
+    expect(report.listening.desktopManaged).toBe(true)
   })
 })
 

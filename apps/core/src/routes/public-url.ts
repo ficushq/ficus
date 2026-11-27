@@ -76,6 +76,7 @@ export function createPublicUrlRouter(deps: { check?: (url: string) => Promise<A
             currentUrl: publicAppUrlRuntime().url ?? publicAppUrlRuntime().localUrl,
             bindHost: apiBindHost(process.env, !!process.env.KUBERNETES_SERVICE_HOST),
             port: Number(process.env.PORT) || 3000,
+            desktopManaged: process.env.FICUS_DESKTOP_MANAGED === '1',
           })
         )
       : c.json(USER_REQUIRED, 403)

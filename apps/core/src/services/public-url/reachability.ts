@@ -11,7 +11,8 @@ import { beyondLoopback } from '../../lib/infra/bind-host'
  */
 export interface PhoneReachReport {
   current: { url: string | null } & ServerAddressClass
-  listening: { host: string; port: number; beyondThisComputer: boolean }
+  /** `desktopManaged`: Ficus Desktop started this server and decides what it listens on; its owner cannot set HOST. */
+  listening: { host: string; port: number; beyondThisComputer: boolean; desktopManaged: boolean }
   homeNetwork: { addresses: string[] }
   tailscale: TailscaleReport
 }
@@ -129,6 +130,7 @@ export async function phoneReachReport(input: {
   currentUrl: string | null | undefined
   bindHost: string
   port: number
+  desktopManaged?: boolean
   interfaces?: Interfaces
   hostname?: string
   platform?: string
@@ -137,7 +139,12 @@ export async function phoneReachReport(input: {
   const { port } = input
   return {
     current: { url: input.currentUrl ?? null, ...classifyServerAddress(input.currentUrl) },
-    listening: { host: input.bindHost, port, beyondThisComputer: beyondLoopback(input.bindHost) },
+    listening: {
+      host: input.bindHost,
+      port,
+      beyondThisComputer: beyondLoopback(input.bindHost),
+      desktopManaged: input.desktopManaged === true,
+    },
     homeNetwork: {
       addresses: homeNetworkAddresses({
         interfaces: input.interfaces ?? os.networkInterfaces(),

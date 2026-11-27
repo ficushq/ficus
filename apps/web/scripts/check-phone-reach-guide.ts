@@ -36,10 +36,14 @@ const expected: Record<string, string[]> = {
     'The current address works for mobile devices on the same network as this server.',
     'Tailscale is installed but not connected.',
   ],
+  desktop: ['Let devices on this network connect', 'Ficus Desktop asks you to confirm'],
+  'desktop-browser': ['File → Manage Instances…', 'Let devices on this network connect'],
 }
 
 let browser: Browser | undefined
 const errors: string[] = []
+let awaitingReread = false
+let rereads = 0
 
 async function open(page: Page, state: string, width: number, appearance: string) {
   await page.setViewportSize({ width, height: 900 })
@@ -82,6 +86,11 @@ try {
     const path = new URL(route.request().url()).pathname
     // Vite serves source modules under /src/api/; only real API calls are refused.
     if (!path.startsWith('/api/')) return route.continue()
+    // After Desktop answers, the page reads again what the server listens on. That one request is expected.
+    if (awaitingReread && path === '/api/public-url/reach') {
+      rereads++
+      return route.fulfill({ status: 503, json: { error: 'not in fixture' } })
+    }
     errors.push(`Unexpected API request: ${route.request().method()} ${path}`)
     return route.fulfill({ status: 404, json: { error: 'not in fixture' } })
   })
@@ -92,8 +101,24 @@ try {
         const text = await page.locator('[data-fixture-scroller]').innerText()
         for (const wanted of texts) assert.ok(text.includes(wanted), `${state}: expected "${wanted}"`)
         assert.ok(!/relay/i.test(text.replace(/Mobile & Pro/g, '')), `${state}: a relay is not offered here`)
+        // Desktop starts the server, so its owner is never told to set an environment variable.
+        if (state.startsWith('desktop')) assert.ok(!text.includes('HOST=0.0.0.0'), `${state}: no HOST advice`)
         await capture(page, state, width, appearance)
       }
+      // Inside Ficus Desktop the switch asks Desktop, which decides; the page changes nothing itself.
+      await open(page, 'desktop', width, appearance)
+      const toggle = page.getByRole('switch', { name: 'Let devices on this network connect' })
+      assert.equal(await toggle.isChecked(), false)
+      awaitingReread = true
+      rereads = 0
+      const reread = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/public-url/reach')
+      await toggle.click()
+      await page.waitForFunction(() => document.documentElement.dataset.networkAccessAsked === 'true')
+      await reread
+      awaitingReread = false
+      assert.equal(rereads, 1, 'The guide reads the listener again after Desktop answers')
+      await open(page, 'desktop-browser', width, appearance)
+      assert.equal(await page.getByRole('switch').count(), 0)
       // Choosing an address opens the form above with it; nothing is saved until it is reviewed.
       await open(page, 'tailscale', width, appearance)
       await page.getByRole('button', { name: 'Use this address' }).last().click()

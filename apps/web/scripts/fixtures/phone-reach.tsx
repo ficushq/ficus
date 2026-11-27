@@ -35,7 +35,7 @@ const machines: Record<string, { status: PublicAppUrlStatus; reach: PhoneReachRe
     status: status({}),
     reach: {
       current: { url: 'http://localhost:3000', reach: 'this-computer', https: false },
-      listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false },
+      listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false, desktopManaged: false },
       homeNetwork: { addresses },
       tailscale: { state: 'not-installed', cli: null, serveCommand },
     },
@@ -45,7 +45,7 @@ const machines: Record<string, { status: PublicAppUrlStatus; reach: PhoneReachRe
     status: status({}),
     reach: {
       current: { url: 'http://localhost:3000', reach: 'this-computer', https: false },
-      listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false },
+      listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false, desktopManaged: false },
       homeNetwork: { addresses },
       tailscale: { state: 'running', cli: 'path', address: 'https://studio-mac.tail1234.ts.net', serveCommand },
     },
@@ -55,12 +55,34 @@ const machines: Record<string, { status: PublicAppUrlStatus; reach: PhoneReachRe
     status: status({ source: 'setting', url: addresses[0], storedUrl: addresses[0] }),
     reach: {
       current: { url: addresses[0]!, reach: 'home-network', https: false },
-      listening: { host: '0.0.0.0', port: 3000, beyondThisComputer: true },
+      listening: { host: '0.0.0.0', port: 3000, beyondThisComputer: true, desktopManaged: false },
       homeNetwork: { addresses },
       tailscale: { state: 'stopped', cli: 'app', serveCommand },
     },
   },
 }
+// Ficus Desktop starts the server itself: in its own window a switch replaces the HOST advice, and the same instance
+// opened in a browser is pointed to Desktop instead.
+const desktopReach: PhoneReachReport = {
+  current: { url: 'http://localhost:3000', reach: 'this-computer', https: false },
+  listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false, desktopManaged: true },
+  homeNetwork: { addresses },
+  tailscale: { state: 'not-installed', cli: null, serveCommand },
+}
+machines.desktop = { status: status({ desktopManaged: true }), reach: desktopReach }
+machines['desktop-browser'] = machines.desktop
+if (state === 'desktop')
+  window.ficusDesktopApp = {
+    version: 1,
+    notificationsEnabled: async () => false,
+    deliverNotifications: async () => {},
+    instance: { kind: 'local', name: 'This Mac' },
+    // The checker reads what the page asked Desktop for.
+    setNetworkAccess: async (enabled) => {
+      document.documentElement.dataset.networkAccessAsked = String(enabled)
+      return false
+    },
+  }
 const chosen = machines[state] ?? machines.local!
 
 const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })

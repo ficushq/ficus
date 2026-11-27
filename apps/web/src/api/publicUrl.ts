@@ -75,7 +75,8 @@ export type ServerAddressReach = 'none' | 'this-computer' | 'home-network' | 'ta
 /** What this machine could offer a mobile device (GET /api/public-url/reach). */
 export interface PhoneReachReport {
   current: { url: string | null; reach: ServerAddressReach; https: boolean }
-  listening: { host: string; port: number; beyondThisComputer: boolean }
+  /** `desktopManaged`: Ficus Desktop started this server and decides what it listens on. */
+  listening: { host: string; port: number; beyondThisComputer: boolean; desktopManaged: boolean }
   homeNetwork: { addresses: string[] }
   tailscale: {
     state: 'not-installed' | 'stopped' | 'running'

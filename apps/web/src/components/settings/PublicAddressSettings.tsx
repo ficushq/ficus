@@ -33,7 +33,7 @@ function sourceDescription(status: PublicAppUrlStatus): ReactNode {
   }
   if (status.source === 'setting') return 'Configured here.'
   if (status.source === 'local-default')
-    return 'Local only. Phones and other computers can’t reach this address. Set a public HTTPS address to connect them.'
+    return 'Local only. Mobile devices and other computers can’t reach this address. Set a public HTTPS address to connect them.'
   return 'Not set. Set the HTTPS address people and mobile devices use to reach this server.'
 }
 
@@ -369,9 +369,9 @@ export function PublicAddressSettings({
               )}
               {impact.relayReconnectRequired && (
                 <li>
-                  If this server is connected to a Ficus account, connect it again afterwards. Phones pair with the new
-                  address again. Devices and Instance Pro slots stay with the old address in your Ficus account; they
-                  don’t move to the new one.
+                  If this server is connected to a Ficus account, connect it again afterwards. Mobile devices pair with
+                  the new address again. Devices and Instance Pro slots stay with the old address in your Ficus account;
+                  they don’t move to the new one.
                 </li>
               )}
               {!impact.mobileReady &&

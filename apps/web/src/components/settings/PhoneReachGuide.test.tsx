@@ -13,7 +13,7 @@ afterEach(async () => {
 
 const report = (patch: Partial<PhoneReachReport> = {}): PhoneReachReport => ({
   current: { url: 'http://localhost:3000', reach: 'this-computer', https: false },
-  listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false },
+  listening: { host: '127.0.0.1', port: 3000, beyondThisComputer: false, desktopManaged: false },
   homeNetwork: { addresses: ['http://studio-mac.local:3000', 'http://192.168.1.20:3000'] },
   tailscale: { state: 'not-installed', cli: null, serveCommand: 'tailscale serve --bg http://127.0.0.1:3000' },
   ...patch,
@@ -25,6 +25,7 @@ async function render(props: {
   check?: AddressCheckResult | null
   onUse?: (url: string) => void
   onCheck?: () => void
+  networkSwitch?: { pending: boolean; error: string | null; set: (enabled: boolean) => void }
 }) {
   const dom = await acquireDomHarness({ url: 'http://localhost:3000/settings?section=server-address' })
   cleanup = () => dom.cleanup()
@@ -40,6 +41,7 @@ async function render(props: {
         checking={false}
         onUse={props.onUse ?? (() => undefined)}
         onCheck={props.onCheck ?? (() => undefined)}
+        networkSwitch={props.networkSwitch}
       />
     )
   })
@@ -74,7 +76,7 @@ test('home network: lists this machine’s addresses to use, and says when the s
 
 test('a server already listening on the network does not get the HOST advice', async () => {
   const container = await render({
-    report: report({ listening: { host: '0.0.0.0', port: 3000, beyondThisComputer: true } }),
+    report: report({ listening: { host: '0.0.0.0', port: 3000, beyondThisComputer: true, desktopManaged: false } }),
   })
   expect(container.textContent).not.toContain('HOST=0.0.0.0')
 })
@@ -118,7 +120,7 @@ test('Tailscale missing or signed out: says which, with where to get it', async 
 
 test('own domain: a proxy snippet with this server’s port, and the guide', async () => {
   const container = await render({
-    report: report({ listening: { host: '127.0.0.1', port: 4100, beyondThisComputer: false } }),
+    report: report({ listening: { host: '127.0.0.1', port: 4100, beyondThisComputer: false, desktopManaged: false } }),
   })
   expect(container.textContent).toContain('reverse_proxy 127.0.0.1:4100')
   expect(getByRole(container, 'link', { name: /Reverse proxy guide/ }).getAttribute('href')).toBe(
@@ -208,4 +210,63 @@ test('the Mac app without its command-line tool: the command uses the copy insid
     }),
   })
   expect(onPath.textContent).not.toContain('command-line tool is not installed')
+})
+
+const desktop = (beyondThisComputer: boolean) =>
+  report({
+    current: { url: 'http://localhost:61896', reach: 'this-computer', https: false },
+    listening: {
+      host: beyondThisComputer ? '0.0.0.0' : '127.0.0.1',
+      port: 61896,
+      beyondThisComputer,
+      desktopManaged: true,
+    },
+  })
+
+test('inside Ficus Desktop the home-network option has a switch instead of HOST advice', async () => {
+  const asked: boolean[] = []
+  const container = await render({
+    report: desktop(false),
+    networkSwitch: { pending: false, error: null, set: (enabled) => asked.push(enabled) },
+  })
+  expect(container.textContent).not.toContain('HOST=0.0.0.0')
+  expect(container.textContent).toContain('Ficus Desktop asks you to confirm, then restarts Ficus on this Mac')
+  const toggle = getByRole(container, 'switch', { name: 'Let devices on this network connect' }) as HTMLInputElement
+  expect(toggle.checked).toBe(false)
+  await act(async () => {
+    fireEvent.click(toggle)
+  })
+  expect(asked).toEqual([true])
+})
+
+test('the switch shows what the server is doing now, and turns it off again', async () => {
+  const asked: boolean[] = []
+  const container = await render({
+    report: desktop(true),
+    networkSwitch: { pending: false, error: null, set: (enabled) => asked.push(enabled) },
+  })
+  const toggle = getByRole(container, 'switch', { name: 'Let devices on this network connect' }) as HTMLInputElement
+  expect(toggle.checked).toBe(true)
+  await act(async () => {
+    fireEvent.click(toggle)
+  })
+  expect(asked).toEqual([false])
+})
+
+test('the switch waits while Desktop is asking, and shows why a change was refused', async () => {
+  const container = await render({
+    report: desktop(false),
+    networkSwitch: { pending: true, error: 'Wait for the current operation to finish, then try again.', set: () => {} },
+  })
+  const toggle = getByRole(container, 'switch', { name: 'Let devices on this network connect' }) as HTMLInputElement
+  expect(toggle.disabled).toBe(true)
+  expect(getByRole(container, 'alert').textContent).toContain('Wait for the current operation to finish')
+})
+
+test('a Desktop instance opened without the switch points to Manage Instances, never to HOST', async () => {
+  const container = await render({ report: desktop(false) })
+  expect(queryByRole(container, 'switch')).toBeNull()
+  expect(container.textContent).not.toContain('HOST=0.0.0.0')
+  expect(container.textContent).toContain('File → Manage Instances…')
+  expect(container.textContent).toContain('Let devices on this network connect')
 })
