@@ -33,7 +33,6 @@ import { reviewDocuments } from '../lib/workflowAttachments'
 import {
   attemptAuthor,
   attemptSummary,
-  defaultAgentTypeName,
   decisionNotesHint,
   focusedHumanGate,
   humanGateContext,
@@ -90,7 +89,7 @@ function useReviewPeople(stream: WorkStream, run: WorkflowRunDetail) {
   return useMemo(() => {
     const names = new Map((agentTypes ?? []).map((type) => [type.id, type.name]))
     const byId = new Map((agents ?? []).map((agent) => [agent.id, agent]))
-    const typeName: AgentTypeName = (id) => names.get(id) ?? defaultAgentTypeName(id)
+    const typeName: AgentTypeName = (id) => names.get(id)
     const authorOf: AttemptAuthorOf = (attempt) => attemptAuthor(run, attempt, { agents: byId, typeName })
     return { typeName, authorOf }
   }, [agents, agentTypes, run])

@@ -16,7 +16,8 @@ import {
   workflowOutcomeRequiresEvidence,
   workflowHistoricalStep,
   workflowReviewBriefForAttempt,
-  activityAgentLabel,
+  agentTypeNoun,
+  typeFirstAgentLabel,
   type Agent,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
@@ -28,7 +29,7 @@ import {
   type WorkStreamWait,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
-import { getAgentPurpose } from './agentDisplay'
+import { getAgentLabel } from './agentDisplay'
 
 export type HumanApprovalStep = Extract<WorkflowStep, { kind: 'human-approval' }>
 /** A step a person decides: an approval, or a decision step that got no automatic decision. */
@@ -48,15 +49,13 @@ export function outcomeLabel(outcome: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** An agent type's display name: the squad's own name for it when known, else its ID in words ("Engineer"). */
-export type AgentTypeName = (agentTypeId: string) => string
-/** Without the squad's names, the built-in general-purpose type still reads as its own name, not "General". */
-export const defaultAgentTypeName: AgentTypeName = (agentTypeId) =>
-  agentTypeId === 'general' ? 'General Purpose' : activityAgentLabel(agentTypeId)
+/** The squad's own name for an agent type (`AgentType.name`), when it is known. */
+export type AgentTypeName = (agentTypeId: string) => string | undefined
+const noTypeNames: AgentTypeName = () => undefined
 
-/** "Engineer"; the general-purpose type is not a role, so it is "General Purpose agent". */
+/** "Engineer", or "General Purpose agent" for the built-in general type (see `agentTypeNoun`). */
 function agentNoun(type: string, typeName: AgentTypeName): string {
-  return `${typeName(type)}${type === 'general' ? ' agent' : ''}`
+  return agentTypeNoun({ agentTypeId: type, typeName: typeName(type) })
 }
 
 /** The agent type a step's participant runs as, when the step is an agent step. */
@@ -79,7 +78,7 @@ export function outcomeEffect(
   transition: WorkflowTransition,
   attempt?: WorkflowAttempt,
   outcome?: string,
-  { typeName = defaultAgentTypeName }: { typeName?: AgentTypeName } = {}
+  { typeName = noTypeNames }: { typeName?: AgentTypeName } = {}
 ): string {
   if ('returnTo' in transition) {
     const type = stepAgentType(run, transition.returnTo)
@@ -131,7 +130,7 @@ export function attemptAuthor(
   attempt: WorkflowAttempt,
   {
     agents,
-    typeName = defaultAgentTypeName,
+    typeName = noTypeNames,
   }: {
     agents?: ReadonlyMap<string, Pick<Agent, 'agentTypeId' | 'metadata'>>
     typeName?: AgentTypeName
@@ -145,8 +144,10 @@ export function attemptAuthor(
     (step?.kind === 'agent' ? run.state.definition.participants[step.participant]?.agentTypeId : undefined)
   const type = agent?.agentTypeId ?? participantType
   if (!type) return undefined
-  const purpose = agent ? getAgentPurpose(agent) : undefined
-  return purpose ? `${agentNoun(type, typeName)} (${purpose})` : agentNoun(type, typeName)
+  // The shared type-first label, so the review names agents as every other surface does.
+  return agent
+    ? getAgentLabel(agent, undefined, typeName(type))
+    : typeFirstAgentLabel({ agentTypeId: type, typeName: typeName(type) })
 }
 
 /** "Waiting 7 days": how long a review has waited, in the largest whole unit. */
