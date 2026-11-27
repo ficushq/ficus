@@ -41,7 +41,12 @@ import { listErrorHaltedAgents, errorHaltReason, ERROR_HALT_QUESTION_IDS } from 
 import { WorkStream } from '../../entities/WorkStream'
 import type { Identity } from '../rbac'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
-import { evaluatePendingAction, loadQuestionWorkStreamOrigins } from './pending-action-policy'
+import {
+  evaluatePendingAction,
+  loadDirectRecipientQuestionIds,
+  loadQuestionWorkStreamOrigins,
+  pendingActionAlertsViewer,
+} from './pending-action-policy'
 import { listOpenWaitsForStreams, toWaitJson } from '../work-streams/waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
 import { flowWaitReference, isDeliveryApprovalWait } from '../workflows/wait-policy'
@@ -198,6 +203,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     const squadIds = [...new Set(openQuestions.map((q) => q.squadId).filter((id): id is string => Boolean(id)))]
     const squadRows = squadIds.length ? await db.select().from(squads).where(inArray(squads.id, squadIds)) : []
     const squadMap = new Map(squadRows.map((s) => [s.id, s]))
+    const questionWorkStreams = await loadSingleOriginWorkStreams(openQuestions.map((q) => q.id))
 
     for (const q of openQuestions) {
       const agent = agentMap.get(q.agentId)
@@ -212,6 +218,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
         ownerUserId: q.ownerUserId,
         questionData: q.questionData,
         ...(q.answerDelivery ? { answerDelivery: q.answerDelivery } : {}),
+        ...(questionWorkStreams.has(q.id) ? { workStream: questionWorkStreams.get(q.id)! } : {}),
       }
       pendingActions.push({
         id: `agent-question:${q.id}`,
@@ -498,6 +505,30 @@ export async function listPendingActions(options: PendingActionListOptions = {})
   return pendingActions
 }
 
+/**
+ * The work stream each question was asked from, for questions with exactly one origin: the same
+ * rule the question's push notification uses to name its work, so the in-app notice and the push
+ * agree. Two batched reads, whatever the number of questions.
+ */
+async function loadSingleOriginWorkStreams(
+  questionIds: readonly string[]
+): Promise<Map<string, NonNullable<AgentQuestionActionData['workStream']>>> {
+  const result = new Map<string, NonNullable<AgentQuestionActionData['workStream']>>()
+  const origins = await loadQuestionWorkStreamOrigins(questionIds)
+  const single = [...origins].filter(([, workStreamIds]) => workStreamIds.length === 1)
+  if (single.length === 0) return result
+  const rows = await db
+    .select({ id: workStreams.id, number: workStreams.number, title: workStreams.title })
+    .from(workStreams)
+    .where(inArray(workStreams.id, [...new Set(single.map(([, workStreamIds]) => workStreamIds[0]!))]))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const [questionId, [workStreamId]] of single) {
+    const row = byId.get(workStreamId!)
+    if (row) result.set(questionId, { id: row.id, number: row.number, title: row.title })
+  }
+  return result
+}
+
 export async function listPendingActionsForIdentity(
   identity: Identity,
   options: PendingActionListOptions = {}
@@ -538,7 +569,16 @@ export async function listPendingActionsForIdentity(
         )
     : []
   const acknowledged = new Map(acknowledgements.map((row) => [row.questionId, row.generation]))
-  const context = { attention, questionOrigins }
+  // One recipient query per request, shared by visibility and the `alerts` flag below.
+  const directRecipientQuestionIds = userId
+    ? await loadDirectRecipientQuestionIds(
+        userId,
+        actions
+          .filter((action) => action.type === 'agent-question')
+          .map((action) => (action.data as AgentQuestionActionData).questionId)
+      )
+    : undefined
+  const context = { attention, questionOrigins, directRecipientQuestionIds }
   const visible: PendingAction[] = []
   for (const action of actions) {
     if (action.type === 'agent-question') {
@@ -565,7 +605,9 @@ export async function listPendingActionsForIdentity(
           continue
         }
       }
-      visible.push({ ...action, canRespond: decision.canRespond })
+      // A failed answer delivery above is a retry, not a new ask, so only these can alert.
+      const alerts = await pendingActionAlertsViewer(identity, action, context)
+      visible.push({ ...action, canRespond: decision.canRespond, ...(alerts ? { alerts } : {}) })
     }
   }
   return visible
