@@ -13,9 +13,11 @@ import {
   type WorkStreamWaitActor,
   type WorkStreamWaitResolution,
   type WorkStreamWaitType,
+  type WorkflowGateApprover,
+  workflowGateApproverForAttempt,
 } from '@ficus/shared'
 import { db } from '../../db'
-import { workStreams, workStreamWaits, recoveryEpisodes } from '../../db/schema'
+import { workStreams, workStreamWaits, workStreamFlowRuns, recoveryEpisodes } from '../../db/schema'
 import { loadReadyDependencyIds, pendingReadyDependencyIds, unlockReadyEdge } from './dependency-edges'
 
 export type WorkStreamWaitRow = InferSelectModel<typeof workStreamWaits>
@@ -25,10 +27,16 @@ type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 /** Either the root client or a transaction — every writer here composes into callers' transactions. */
 export type DbHandle = DbTransaction | typeof db
 
-export function toWaitJson(row: WorkStreamWaitRow): WorkStreamWait {
+/**
+ * The wire shape of a wait. `gateApprover` is who decides the workflow gate a human gate wait
+ * stands for ({@link loadWorkflowGateApprovers}); it is sent only on such a wait.
+ */
+export function toWaitJson(row: WorkStreamWaitRow, gateApprover?: WorkflowGateApprover): WorkStreamWait {
+  const workflowHumanGate = isHumanFlowWait(row)
   return {
     id: row.id,
-    workflowHumanGate: isHumanFlowWait(row),
+    workflowHumanGate,
+    ...(workflowHumanGate && gateApprover ? { workflowGateApprover: gateApprover } : {}),
     ...(isAttemptLimitFlowWait(row) ? { workflowAttemptLimit: true as const } : {}),
     ...(row.structured ? { structured: row.structured } : {}),
     flowAttemptId: row.flowAttemptId ?? null,
@@ -273,6 +281,30 @@ export async function listOpenWaitsForStreams(
     const list = result.get(row.workStreamId)
     if (list) list.push(row)
     else result.set(row.workStreamId, [row])
+  }
+  return result
+}
+
+/**
+ * Who decides each human gate wait among `rows`, by wait ID: the approver of the step its attempt
+ * runs. Reads the flow runs of only the streams holding such a wait.
+ */
+export async function loadWorkflowGateApprovers(
+  rows: readonly WorkStreamWaitRow[],
+  dbx: DbHandle = db
+): Promise<Map<string, WorkflowGateApprover>> {
+  const result = new Map<string, WorkflowGateApprover>()
+  const gates = rows.filter(isHumanFlowWait)
+  if (gates.length === 0) return result
+  const runs = await dbx
+    .select({ workStreamId: workStreamFlowRuns.workStreamId, state: workStreamFlowRuns.state })
+    .from(workStreamFlowRuns)
+    .where(inArray(workStreamFlowRuns.workStreamId, [...new Set(gates.map((gate) => gate.workStreamId))]))
+  const stateByStream = new Map(runs.map((run) => [run.workStreamId, run.state]))
+  for (const gate of gates) {
+    const state = stateByStream.get(gate.workStreamId)
+    const approver = state && gate.flowAttemptId != null && workflowGateApproverForAttempt(state, gate.flowAttemptId)
+    if (approver) result.set(gate.id, approver)
   }
   return result
 }

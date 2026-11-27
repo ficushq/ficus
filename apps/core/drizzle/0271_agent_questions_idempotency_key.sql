@@ -1,0 +1,1 @@
+ALTER TABLE "agent_questions" ADD COLUMN "idempotency_key" varchar(200);

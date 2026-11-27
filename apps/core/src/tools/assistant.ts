@@ -1,5 +1,5 @@
 import { readSquadFile } from '../services/squad/read-file'
-import { createHash } from 'node:crypto'
+import { toolCallIdempotencyKey } from '@ficus/shared/node'
 import { Type, type TSchema, type Static } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm'
@@ -116,18 +116,6 @@ async function summarizeStreams(streams: StreamRow[], squadNames: Map<string, st
   return [...summaries.filter((s) => s.needsHuman), ...summaries.filter((s) => !s.needsHuman)]
 }
 
-/** Stable across provider/tool replay, distinct across executions and conversations. */
-export function assistantToolClientId(agentId: string, executionId: string, toolCallId: string): string {
-  const bytes = createHash('sha256')
-    .update(JSON.stringify([agentId, executionId, toolCallId]))
-    .digest()
-    .subarray(0, 16)
-  bytes[6] = (bytes[6]! & 0x0f) | 0x50
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80
-  const hex = bytes.toString('hex')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
-
 /** Conversation and authority are runner-bound. No model-provided owner or fake HTTP context. */
 export function createAssistantTools(
   agentId: string,
@@ -151,7 +139,7 @@ export function createAssistantTools(
       execute: async (callId, input) => {
         try {
           await access()
-          const result = await run(input as Static<S>, assistantToolClientId(agentId, executionId, callId))
+          const result = await run(input as Static<S>, toolCallIdempotencyKey(agentId, executionId, callId))
           return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result }
         } catch (error) {
           return {

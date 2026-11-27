@@ -2518,8 +2518,31 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 
   /**
+   * The agents whose executions are this stream's work, by the rule
+   * `workStreamRuntimesSql` applies: the agents its flow bound to it, or, for a
+   * stream from before flows (no bindings), the agents listed on it.
+   */
+  async attributedAgentIds(): Promise<string[]> {
+    const bound = await db
+      .select({ agentId: workflowBindings.agentId })
+      .from(workflowBindings)
+      .where(eq(workflowBindings.workStreamId, this.id))
+    if (bound.length > 0) return bound.map((row) => row.agentId)
+    return this.agentIds ?? []
+  }
+
+  /**
    * Get aggregated metrics for this work stream.
    * Computes on-read from executions table.
+   *
+   * ## Which executions count
+   *
+   * The same ones as time worked (see `attributedAgentIds` and
+   * `workStreamRuntimesSql`): a persistent agent listed on a flow stream also
+   * works on other streams, so its executions are not this stream's tokens or
+   * cost. `duration.totalMs` is the stream's time worked itself, with its stale
+   * cap, so the two figures never disagree. Pass `runtime` when the caller has
+   * already computed it.
    *
    * ## Why this is not a plain SUM
    *
@@ -2539,10 +2562,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Casts are `bigint`: a cumulative session total above 2^31 overflows `int`
    * and makes the whole query throw.
    */
-  async getMetrics(): Promise<WorkStreamMetrics | null> {
-    if (!this.agentIds?.length) {
+  async getMetrics(options: { runtime?: WorkStreamRuntime } = {}): Promise<WorkStreamMetrics | null> {
+    const agentIds = await this.attributedAgentIds()
+    if (agentIds.length === 0) {
       return null
     }
+    const runtime = options.runtime ?? (await this.getRuntime())
 
     // The typed `TokenField` parameter is the signature boundary — an arbitrary
     // string is now a type error — and `field` is bound as a parameter on the
@@ -2572,21 +2597,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         totalExecutions: sql<number>`COUNT(*)`,
         completedExecutions: sql<number>`COUNT(*) FILTER (WHERE ${executions.status} = 'completed')`,
         failedExecutions: sql<number>`COUNT(*) FILTER (WHERE ${executions.status} = 'failed')`,
-        totalDurationMs: sql<number>`COALESCE(SUM(
-          CASE
-            WHEN ${executions.status} = 'queued' THEN 0
-            WHEN ${executions.endedAt} IS NOT NULL THEN
-              GREATEST(0, EXTRACT(EPOCH FROM (${executions.endedAt} - ${executions.startedAt})) * 1000)
-            WHEN ${executions.status} IN ('running', 'stopping') THEN
-              GREATEST(0, EXTRACT(EPOCH FROM (NOW() - ${executions.startedAt})) * 1000)
-            ELSE 0
-          END
-        ), 0)`,
         firstStartedAt: sql<string | null>`MIN(${executions.startedAt})`,
         lastEndedAt: sql<string | null>`MAX(${executions.endedAt})`,
       })
       .from(executions)
-      .where(inArray(executions.agentId, this.agentIds))
+      .where(inArray(executions.agentId, agentIds))
       .groupBy(executions.agentId)
 
     // No executions yet is zeroed metrics, NOT null: null means "this stream has
@@ -2602,7 +2617,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       executions: 0,
       completed: 0,
       failed: 0,
-      durationMs: 0,
     }
     let firstStartedAt: number | null = null
     let lastEndedAt: number | null = null
@@ -2617,7 +2631,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       totals.executions += Number(row.totalExecutions)
       totals.completed += Number(row.completedExecutions)
       totals.failed += Number(row.failedExecutions)
-      totals.durationMs += Number(row.totalDurationMs)
       if (row.firstStartedAt) {
         const at = new Date(row.firstStartedAt).getTime()
         if (firstStartedAt === null || at < firstStartedAt) firstStartedAt = at
@@ -2648,7 +2661,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         failed: totals.failed,
       },
       duration: {
-        totalMs: totals.durationMs,
+        totalMs: runtime.totalMs,
         firstStartedAt: firstStartedAt === null ? null : new Date(firstStartedAt).toISOString(),
         lastEndedAt: lastEndedAt === null ? null : new Date(lastEndedAt).toISOString(),
       },
@@ -2764,6 +2777,8 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  *   squad member, the owner) are not counted: their executions serve other work.
  * - A stream from before flows has no bindings, and its listed agents are the
  *   only record of who worked on it, so it keeps counting their executions.
+ *   `WorkStream.attributedAgentIds` applies the same rule for `getMetrics`;
+ *   change both together.
  *
  * How long each counts: from the moment it started running (`run_started_at`,
  * set when a runner claims it) to its end (now, while it runs), so time spent
@@ -2783,10 +2798,16 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  * still accruing time, which clients extrapolate from.
  *
  * `last_worked_at` is the newest moment any counted execution did work: where its
- * counted time ends (now while it works, its last message once it went silent),
- * or its start while it has not run or never recorded an end. It reads the same
- * joined rows, so it costs no extra scan, and unlike `updated_at` an edit to the
- * stream's own fields never moves it.
+ * counted time ends (now while it works, its last message once it went silent).
+ * An execution that has not run (queued or waiting for a sandbox) or never
+ * recorded an end adds no time, so it does not count as work here either. It
+ * reads the same joined rows, so it costs no extra scan, it follows the same
+ * attribution rule as the total, and unlike `updated_at` an edit to the stream's
+ * own fields never moves it.
+ *
+ * `started_at`, `ended_at` and `messages.created_at` are `timestamp` without a
+ * time zone, written in UTC (see `db/clock.ts`), so they are read and compared
+ * `AT TIME ZONE 'utc'` rather than cast, which would apply the session TimeZone.
  *
  * Every column read from `executions` is in `idx_executions_agent_run_runtime`, so
  * the history stays an index-only scan; the message probe runs only for an
@@ -2832,7 +2853,7 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
           ), 0)::bigint AS total_ms,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count,
-          MAX(COALESCE(w.worked_until, w.start_ts)) AS last_worked_at
+          MAX(w.worked_until) AS last_worked_at
         FROM streams s
         LEFT JOIN pairs p ON p.ws_id = s.ws_id
         LEFT JOIN ${executions} e ON e.agent_id = p.agent_id
@@ -2847,10 +2868,10 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             x.open AND (x.end_ts - x.start_ts <= ${staleAfter} OR x.end_ts - a.last_at <= ${staleAfter}) AS working
           FROM (
             SELECT
-              COALESCE(e.run_started_at, e.started_at::timestamptz) AS start_ts,
+              COALESCE(e.run_started_at, e.started_at AT TIME ZONE 'utc') AS start_ts,
               CASE
                 WHEN e.status IN ('queued', 'waiting-sandbox') THEN NULL
-                WHEN e.ended_at IS NOT NULL THEN e.ended_at::timestamptz
+                WHEN e.ended_at IS NOT NULL THEN e.ended_at AT TIME ZONE 'utc'
                 WHEN e.status IN ('running', 'stopping') THEN (SELECT now_ts FROM computed)
                 ELSE NULL
               END AS end_ts,
@@ -2863,13 +2884,13 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             -- stopped and is not evidence that it was working.
             -- LIMIT keeps this one probe per execution: a scalar subquery here would be
             -- copied into every expression that reads it.
-            SELECT m.created_at::timestamptz AS last_at
+            SELECT m.created_at AT TIME ZONE 'utc' AS last_at
             FROM ${messages} m
             WHERE x.end_ts - x.start_ts > ${staleAfter}
               AND m.agent_id = e.agent_id
               AND m.role = 'assistant'
-              AND m.created_at >= x.start_ts
-              AND m.created_at <= x.end_ts
+              AND m.created_at >= x.start_ts AT TIME ZONE 'utc'
+              AND m.created_at <= x.end_ts AT TIME ZONE 'utc'
               AND m.content NOT LIKE '[System]%'
             ORDER BY m.created_at DESC
             LIMIT 1

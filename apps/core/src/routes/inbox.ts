@@ -19,6 +19,7 @@ import {
 import { inboxAttachmentAccess, inboxRecipientDenial, type InboxDenial } from '../services/inbox/access'
 import { InboxMessage } from '../entities/InboxMessage'
 import { InboxAttachment } from '../entities/InboxAttachment'
+import { stableUuidFromParts } from '@ficus/shared/node'
 import { readAttachmentFile as readAttachmentBytes } from '../services/inbox/attachment-storage'
 import { Agent, AgentTargetUnavailableError } from '../entities/Agent'
 import { InstanceIdentity } from '../entities/InstanceIdentity'
@@ -498,8 +499,27 @@ export const inboxRouter = new Hono()
     }
 
     c.set('authzChecked', true)
+    // A client key is scoped to its sender, so one caller's key can never match another's message.
+    const idempotencyKey = body.idempotencyKey
+      ? `inbox-send:${stableUuidFromParts([senderType, senderId ?? null, body.idempotencyKey])}`
+      : undefined
+    const replay = async (previous: InboxMessage) => {
+      const sameMessage =
+        previous.recipientType === recipientType &&
+        (previous.recipientId === recipientId || previous.recipientId.startsWith(recipientId)) &&
+        previous.content === body.content &&
+        (previous.subject ?? null) === (body.subject ?? null) &&
+        (previous.metadata.url ?? null) === (body.metadata?.url ?? null) &&
+        previous.deliveryMode === body.deliveryMode
+      if (!sameMessage) return c.json({ error: 'This idempotency key was already used for a different message' }, 409)
+      await InboxAttachment.attachTo([previous])
+      return c.json({ ...previous.toJson(), idempotentReplay: true }, 200)
+    }
     try {
-      const message = await InboxMessage.send({
+      // A repeated send returns its first message, even if the recipient has since gone dormant.
+      const previous = idempotencyKey ? await InboxMessage.findByIdempotencyKey(idempotencyKey) : null
+      if (previous) return await replay(previous)
+      const input = {
         recipientType,
         recipientId,
         senderType,
@@ -512,7 +532,13 @@ export const inboxRouter = new Hono()
         // A direct send must not wake a finished agent by accident; system-authored sends keep
         // their own wake policy (system messages do not wake unless they opt in).
         refuseDormantRecipient: senderType !== 'system' && body.wake !== true,
-      })
+      }
+      if (idempotencyKey) {
+        const { message, created } = await InboxMessage.sendOnce(input, idempotencyKey)
+        if (!created) return await replay(message)
+        return c.json(message.toJson(), 201)
+      }
+      const message = await InboxMessage.send(input)
       return c.json(message.toJson(), 201)
     } catch (error) {
       if (error instanceof AgentTargetUnavailableError) return c.json({ error: error.message, code: error.code }, 409)

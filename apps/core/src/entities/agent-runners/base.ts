@@ -1,5 +1,6 @@
 import { providerRequestValidationError } from '../../services/execution/provider-request-validation'
-import { restartResumeNotice } from '@ficus/shared/restart-context'
+import { interruptedResumeNotice, restartResumeNotice } from '@ficus/shared/restart-context'
+import { interruptionNoticePending, recordInterruptedToolCalls } from '../../services/agent/interrupted-tool-calls'
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
@@ -1583,6 +1584,31 @@ export abstract class AgentRunner {
   }
 
   /**
+   * After a hard interruption (startup recovery or the lease sweep requeued this run without a
+   * shutdown marker), record the tool calls it cut off so the model gets a specific result for
+   * each, and return the notice for the resumed prompt until a prompt has been sent.
+   */
+  private prepareInterruptionResume(): string | undefined {
+    const interruption = this.execution.interruption
+    if (!interruption) return undefined
+    const sessionManager = this.session.pi.sessionManager
+    try {
+      const record = recordInterruptedToolCalls(sessionManager, interruption)
+      if (record.calls.length > 0)
+        log.warn(
+          `Execution ${this.execution.id} resumed after ${interruption.cause} with ${record.calls.length} cut-off tool call(s): ${record.calls.map((call) => `${call.toolName} (${call.replay})`).join(', ')}`
+        )
+      return interruptionNoticePending(sessionManager, interruption.noticeId)
+        ? interruptedResumeNotice(interruption.cause, interruption.recoveredAt)
+        : undefined
+    } catch (error) {
+      // The notice and results are guidance; a session write failure must not block the resume.
+      log.error(`Could not record cut-off tool calls for execution ${this.execution.id}:`, error)
+      return interruptedResumeNotice(interruption.cause, interruption.recoveredAt)
+    }
+  }
+
+  /**
    * Claim pending human rows first, then use the claimed content as the initial
    * SDK prompt. The running-session drain is started only after prompt dispatch
    * begins so later pending rows use steer/follow-up without racing ahead of the
@@ -1602,9 +1628,10 @@ export abstract class AgentRunner {
     this.noteHumanSenders(claimed)
     const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
     const initialText = prepared.length > 0 ? this.buildInitialPromptText(prepared) : await this.unclaimedPromptText()
-    const text = this.execution.restartContext
-      ? `${restartResumeNotice(this.execution.restartContext)}\n\n${initialText}`
-      : initialText
+    const notice = this.execution.restartContext
+      ? restartResumeNotice(this.execution.restartContext)
+      : this.prepareInterruptionResume()
+    const text = notice ? `${notice}\n\n${initialText}` : initialText
     const { imageIds, images } = await this.loadPendingMessageImages(prepared)
 
     try {

@@ -78,7 +78,7 @@ export function createSquadBashTool(
   // client, so both use the client-based bash tool. Docker execs against the
   // host workspace path.
   if (isHostRuntime()) {
-    tool = dependencies.createHostBashTool(workspaceMount, { ficusToken, squadId, agentId })
+    tool = dependencies.createHostBashTool(workspaceMount, { ficusToken, squadId, agentId, invocationOwnerId })
   } else if (dependencies.isRemoteSandboxRuntime()) {
     const manager = dependencies.getSandboxManager() as unknown as SandboxToolsManager
     tool = dependencies.createK8sSandboxedBashTool(workspaceMount, warmSandboxId, manager, ficusToken, {

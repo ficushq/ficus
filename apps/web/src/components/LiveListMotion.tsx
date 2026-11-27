@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react'
 import {
   LIVE_EMPHASIS_ATTRIBUTE,
+  LIVE_QUIET_ATTRIBUTE,
   LIVE_ROW_ATTRIBUTE,
   LIVE_STATUS_ATTRIBUTE,
   LIVE_MOVE_DURATION_MS,
@@ -46,7 +47,10 @@ const STALE_FRAME_MS = 500
  * browser lays the page out for that frame anyway, then animated on the compositor with a
  * transform), a row that arrived fades in with a brief wash, and a changed status badge gets a brief
  * emphasis. Never on mount (unless `arrivedOnMount`) or when `resetKey` changes, never under reduced
- * motion or in a hidden tab, and only rows whose new place is on screen move.
+ * motion or in a hidden tab, and only rows whose new place is on screen move. A row that is not
+ * rendered (inside a collapsed `<details>`) does not move and gets no arrival or status class, so
+ * nothing plays later when it is shown, and a `quiet` row (`liveRowProps`) is never highlighted as an
+ * arrival.
  *
  * Rows are found by `liveRowProps` (lib/liveListMotion) anywhere inside, so one wrapper covers a
  * list's sections and a row moving between them. A class component, because only
@@ -139,12 +143,14 @@ export class LiveListMotion extends Component<LiveListMotionProps> {
     for (const row of elements.values()) this.moves.get(row)?.cancel()
     const viewportHeight = window.innerHeight
     const after: LiveRowAfter[] = identities.map((identity) => {
-      const rect = elements.get(identity.key)!.getBoundingClientRect()
+      const row = elements.get(identity.key)!
+      const rect = row.getBoundingClientRect()
       return {
         ...identity,
         top: rect.top,
         left: rect.left,
-        visible: rect.height > 0 && rect.bottom > 0 && rect.top < viewportHeight,
+        // A row in a collapsed <details> still reports a box in Chrome: it counts as off screen.
+        visible: rect.height > 0 && rect.bottom > 0 && rect.top < viewportHeight && rendered(row),
       }
     })
     const plan = planLiveListMotion(before, after, { maxDistance: viewportHeight })
@@ -161,10 +167,13 @@ export class LiveListMotion extends Component<LiveListMotionProps> {
         if (this.moves.get(row) === animation) this.moves.delete(row)
       }
     }
-    for (const key of plan.arrivals) restartAnimationClass(elements.get(key)!, LIVE_ARRIVED_CLASS)
+    for (const key of plan.arrivals) {
+      const row = elements.get(key)!
+      if (!row.hasAttribute(LIVE_QUIET_ATTRIBUTE) && rendered(row)) restartAnimationClass(row, LIVE_ARRIVED_CLASS)
+    }
     for (const key of plan.statusChanges) {
       const badge = elements.get(key)!.querySelector<HTMLElement>(`[${LIVE_EMPHASIS_ATTRIBUTE}]`)
-      if (badge) restartAnimationClass(badge, LIVE_EMPHASIS_CLASS)
+      if (badge && rendered(badge)) restartAnimationClass(badge, LIVE_EMPHASIS_CLASS)
     }
   }
 
@@ -179,6 +188,15 @@ export class LiveListMotion extends Component<LiveListMotionProps> {
 
 function liveRows(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(`[${LIVE_ROW_ATTRIBUTE}]`))
+}
+
+/**
+ * False for an element the browser does not render (inside a collapsed `<details>` or another
+ * `display: none` or `content-visibility: hidden` subtree): its animation would wait and play when it
+ * is shown. Browsers without `checkVisibility` count it as rendered.
+ */
+function rendered(element: HTMLElement): boolean {
+  return typeof element.checkVisibility !== 'function' || element.checkVisibility()
 }
 
 function motionAllowed(): boolean {

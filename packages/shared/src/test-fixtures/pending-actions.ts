@@ -4,9 +4,9 @@ import type {
   PendingActionType,
   WorkStreamActionData,
   WorkStreamWait,
-} from '@ficus/shared'
+} from '../types'
 
-/** Pending-action fixtures for the Needs-you notice tests. */
+/** Pending-action fixtures shared by the Needs-you wording and notice tests. */
 
 export function questionAction(
   id: string,

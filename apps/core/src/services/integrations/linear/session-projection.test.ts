@@ -277,6 +277,43 @@ describe('Linear session projection', () => {
     expect(item.payload).not.toHaveProperty('signal')
   })
 
+  test('a recommended label that already ends a sentence gets no extra full stop', () => {
+    const body = (id: string, label: string, reason?: string) =>
+      (
+        byKey(
+          snapshot({
+            questions: [
+              {
+                id,
+                status: 'open',
+                data: {
+                  questions: [
+                    {
+                      id: 'ship',
+                      type: 'select',
+                      question: 'What now?',
+                      options: [
+                        { value: 'ship', label, recommended: true, ...(reason ? { reason } : {}) },
+                        { value: 'wait' },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          `question:${id}:asked`
+        )!.payload.content as { body: string }
+      ).body
+    expect(body('q4', 'Ship it now?', 'Tests passed.')).toBe(
+      'What now?\n\nRecommended: Ship it now? Tests passed.\n\nReply here or answer in Ficus.'
+    )
+    expect(body('q5', 'Ship it!')).toBe('What now?\n\nRecommended: Ship it!\n\nReply here or answer in Ficus.')
+    expect(body('q6', 'Ship it', 'Tests passed.')).toBe(
+      'What now?\n\nRecommended: Ship it. Tests passed.\n\nReply here or answer in Ficus.'
+    )
+  })
+
   test('the account link request rides on the next elicitation as the auth signal', () => {
     const authLinkUrl = 'https://ficus.example.com/settings?setting=linear-account'
     const item = byKey(

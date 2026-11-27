@@ -109,7 +109,10 @@ try {
       assert.match(await settledLine.innerText(), /: 4 questions settled by agents, 2 reviews done by agents$/)
       assert.deepEqual(
         await settledLine.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
-        ['questions', 'reviews'].map((kind) => `/activity?settled=${kind}&since=${encodeURIComponent(lastVisit)}`)
+        ['questions', 'reviews'].map(
+          (kind) =>
+            `/activity?settled=${kind}&since=${encodeURIComponent(lastVisit)}&until=${encodeURIComponent(countedThrough)}`
+        )
       )
       assert.deepEqual(visits, [countedThrough])
       assert.equal(await page.locator('time[aria-label]').count(), 0)

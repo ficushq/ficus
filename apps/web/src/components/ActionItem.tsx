@@ -6,6 +6,7 @@ import { agentChatPath } from '../lib/entityReference'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
+import { removeAnsweredActions } from '../lib/answeredActions'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { QuestionInput } from './QuestionInput'
 import { AgentQuestionCard } from './AgentQuestionCard'
@@ -32,7 +33,12 @@ import type {
   WorkStreamActionData,
   WorkStreamDeliveryActionData,
 } from '@ficus/shared'
-import { WORK_STREAM_STATUS_ROLE, type StatusRole } from '@ficus/shared'
+import {
+  pendingActionAgentLabel,
+  pendingActionContextLine,
+  WORK_STREAM_STATUS_ROLE,
+  type StatusRole,
+} from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import {
   workStreamActionPresentationState,
@@ -40,7 +46,6 @@ import {
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
-import { pendingActionAgentLabel, pendingActionContextLine } from '../lib/pendingActionWording'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -137,9 +142,7 @@ export function ActionItem({
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
   const completeAction = async () => {
-    queryClient.setQueryData<PendingAction[]>(queryKeys.actions.pending(), (current) =>
-      current?.filter((candidate) => candidate.id !== action.id)
-    )
+    removeAnsweredActions(queryClient, [action.id])
 
     const invalidations = [queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })]
     if (action.type === 'workstream-review' || action.type === 'workstream-blocked') {

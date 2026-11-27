@@ -21,6 +21,12 @@ import {
   createClaudeCodeStream,
 } from './bridge'
 import { claudeSystemPrompt, emptyUsage, renderHistoryPrompt } from './convert'
+import {
+  answerInterruptedToolCalls,
+  INTERRUPTED_TOOL_CALLS_TYPE,
+  interruptedToolCalls,
+  interruptedToolResultText,
+} from '../interrupted-tool-calls'
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
@@ -336,6 +342,47 @@ test('a seeded transcript names tool calls the way Claude Code knows them', asyn
   const prompt = renderHistoryPrompt(history)
   expect(prompt).toContain('<tool_call name="mcp__ficus__bash" id="toolu_9">')
   expect(prompt).not.toContain('<tool_call name="bash"')
+})
+
+test('after a hard restart mid tool call, the re-seeded session shows the restart-aware result pi shows', async () => {
+  const before = harness()
+  const first = before.stream(model, context([user('list files')]), { sessionId: 's-crash' })
+  await before.processes[0]!.nextPrompt(1)
+  before.processes[0]!.emit(...toolResponse('msg_1', 'toolu_1', { command: 'ls' }))
+  const call = (await first.result()) as AssistantMessage
+  // Core dies while the call runs: the session keeps the call, never its result. On resume the
+  // context hook answers the recorded call before the conversation reaches the bridge.
+  const recorded = interruptedToolCalls([
+    {
+      type: 'custom',
+      id: 'entry-1',
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      customType: INTERRUPTED_TOOL_CALLS_TYPE,
+      data: {
+        noticeId: 'notice-1',
+        executionId: 'execution-1',
+        cause: 'core_restart',
+        recoveredAt: '2026-11-27T08:05:00.000Z',
+        calls: [{ toolCallId: 'toolu_1', toolName: 'bash', replay: 'unsafe' }],
+      },
+    },
+  ])
+  const resumed = answerInterruptedToolCalls([user('list files'), call, user('Continue.')], recorded) as Message[]
+
+  const after = harness(before.stateDir)
+  const next = after.stream(model, context(resumed), { sessionId: 's-crash' })
+  const claude = after.processes[0]!
+  // Claude Code's own transcript has no answer for the call, so the session is seeded, not resumed.
+  expect(claude.options.resume).toBeUndefined()
+  const [transcript, latest] = (await claude.nextPrompt(1)).message.content
+  expect(transcript.text).toContain(
+    `<tool_result id="toolu_1" error="true">\n${interruptedToolResultText({ toolName: 'bash', replay: 'unsafe' }, { cause: 'core_restart', recoveredAt: '2026-11-27T08:05:00.000Z' })}\n</tool_result>`
+  )
+  expect(transcript.text).not.toContain('No result provided')
+  expect(latest).toEqual({ type: 'text', text: 'Continue.' })
+  claude.emit(...textResponse('msg_2', 'checking state first'))
+  expect((await next.result()).stopReason).toBe('stop')
 })
 
 test('a history Claude Code never saw starts a fresh session seeded with the transcript', async () => {

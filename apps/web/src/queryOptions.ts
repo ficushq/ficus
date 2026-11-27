@@ -73,6 +73,7 @@ import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
 
 import { listPendingActions } from './api/actions'
+import { forgetSettledAnswers } from './lib/answeredActions'
 import { getArtifactContext, listArtifacts, type ListArtifactsParams } from './api/artifacts'
 import {
   getWorkspaceTree,
@@ -512,7 +513,8 @@ export const queries = {
     pending: () =>
       queryOptions({
         queryKey: queryKeys.actions.pending(),
-        queryFn: listPendingActions,
+        // A card answered in this session stays quiet (no arrival highlight) until a fetch shows it gone.
+        queryFn: forgetSettledAnswers(() => listPendingActions()),
       }),
   },
 

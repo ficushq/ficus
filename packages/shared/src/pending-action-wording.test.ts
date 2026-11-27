@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { PendingAction, WorkStreamDeliveryActionData } from '@ficus/shared'
-import { otherAction, questionAction, waitAction } from './needsYouNotices.fixtures'
-import { pendingActionAgentLabel, pendingActionContextLine, pendingActionWaitPhrase } from './pendingActionWording'
+import type { PendingAction, WorkStreamDeliveryActionData } from './types'
+import { otherAction, questionAction, waitAction } from './test-fixtures/pending-actions'
+import { pendingActionAgentLabel, pendingActionContextLine, pendingActionWaitPhrase } from './pending-action-wording'
 
 function deliveryAction(deliveryKind: 'review' | 'merge'): PendingAction {
   return {

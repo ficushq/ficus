@@ -14,11 +14,14 @@ import {
   type WorkStreamGraphNodeLayout,
 } from '../lib/workStreamGraphLayout'
 import { useWorkStreamPeek, WorkStreamPeekCard } from './WorkStreamSummary'
+import type { WorkStreamViewer } from '../lib/workStreamRuntime'
 
 interface WorkStreamGraphProps {
   workStreams: WorkStream[]
   agentMap: Map<string, Agent>
   onSelectWorkStream: (id: string) => void
+  /** Who is looking, so a node's peek says "Waiting on you" only to a viewer who can act. */
+  viewer?: WorkStreamViewer
 }
 
 /** "Waits until its pull request is ready (satisfied)": what an edge waits on and whether it still does. */
@@ -54,7 +57,7 @@ function EdgeLegend({ label, dashed, satisfied }: { label: string; dashed?: bool
   )
 }
 
-export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: WorkStreamGraphProps) {
+export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream, viewer }: WorkStreamGraphProps) {
   const layout = useMemo(() => layoutWorkStreamGraph(workStreams), [workStreams])
   const streamById = useMemo(() => new Map(workStreams.map((stream) => [stream.id, stream])), [workStreams])
 
@@ -106,6 +109,7 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
               stream={streamById.get(node.id)!}
               agentMap={agentMap}
               onSelectWorkStream={onSelectWorkStream}
+              viewer={viewer}
             />
           ))}
         </svg>
@@ -141,11 +145,13 @@ function WorkStreamGraphNode({
   stream,
   agentMap,
   onSelectWorkStream,
+  viewer,
 }: {
   node: WorkStreamGraphNodeLayout
   stream: WorkStream
   agentMap: Map<string, Agent>
   onSelectWorkStream: (id: string) => void
+  viewer?: WorkStreamViewer
 }) {
   const card = useRef<HTMLDivElement>(null)
   const peek = useWorkStreamPeek()
@@ -203,7 +209,7 @@ function WorkStreamGraphNode({
               {assigneeInitial}
             </span>
           </div>
-          <WorkStreamPeekCard peek={peek} workStream={stream} anchor={card} agentMap={agentMap} />
+          <WorkStreamPeekCard peek={peek} workStream={stream} anchor={card} agentMap={agentMap} viewer={viewer} />
         </div>
       </foreignObject>
     </g>

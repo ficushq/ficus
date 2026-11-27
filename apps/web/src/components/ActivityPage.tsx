@@ -87,7 +87,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   const clearSettled = useCallback(() => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
-      for (const key of ['settled', 'since', 'squad']) next.delete(key)
+      for (const key of ['settled', 'since', 'until', 'squad']) next.delete(key)
       return next
     })
   }, [setSearchParams])
@@ -206,6 +206,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         isError={query.isError}
         items={items}
         loadingShapeKey="activity:global"
+        liveMotionScope={JSON.stringify([settled, settledSquadIds])}
         workingAgentIds={workingAgentIds}
         agentDetailFor={agentDetailFor}
         hrefFor={hrefFor}

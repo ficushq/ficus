@@ -9,6 +9,7 @@ import {
   workflowReviewBlockingWaits,
   workflowCompletionTargets,
   isWorkflowHumanGateWait,
+  mayDecideWorkflowGate,
   workflowEarlierHumanDecisions,
   describeWorkflowDecision,
   effectiveWorkflowStep,
@@ -255,13 +256,9 @@ export function humanGateContext(
   const waits = run.openWaits ?? stream.openWaits ?? []
   const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
   const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
-  const assigned = stream.assignedReviewerIds ?? []
   // Any reviewer decides for a decision step; only approvals can be limited to assigned reviewers.
-  const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
   const canReview = permissions.can('workstreams:review')
-  const identity = permissions.identity
-  const canDecide =
-    canReview && (!restricted || (identity?.type === 'user' && !!identity.userId && assigned.includes(identity.userId)))
+  const canDecide = mayDecideWorkflowGate(permissions.identity, canReview, stream.assignedReviewerIds, step)
   // A decision step before this gate passes its own sources through, so the work under review shows.
   const sources = workflowIncomingAttempts(run.state, attempt)
   const declared = Object.entries(step.outcomes)

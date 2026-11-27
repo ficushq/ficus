@@ -158,6 +158,34 @@ describe('squad cards', () => {
     expect(html).not.toContain('No active work')
   })
 
+  test('once the streams load, a squad with nothing to reorder skips the placeholders', () => {
+    // No active work: the quiet line at once, matching the footer's count.
+    const empty = renderCards([], [work(1, '2026-11-20T00:00:00Z', { status: 'done' })], null)
+    expect(empty).toContain('No active work')
+    expect(empty).not.toContain('squad-card-work-placeholder')
+
+    // One active stream: the viewer's actions could not move it, so its row shows now.
+    const single = renderCards([], [work(1, '2026-11-20T00:00:00Z')], null)
+    expect(rowTitles(single)).toEqual(['#1 · Stream 1'])
+    expect(single).not.toContain('squad-card-work-placeholder')
+  })
+
+  test('the placeholders hold the "+N more" line, so the card keeps its height when the rows arrive', () => {
+    const six = [1, 2, 3, 4, 5, 6].map((n) => work(n, `2026-11-2${n}T00:00:00Z`))
+    const moreLine = /<div class="mt-1 flex h-4 items-center">/g
+    const loading = renderCards([], six, null)
+    expect(loading.match(/data-testid="squad-card-work-placeholder"/g)).toHaveLength(4)
+    expect(loading.match(moreLine)).toHaveLength(1)
+    expect(loading).not.toContain('more</a>')
+
+    const loaded = renderCards([], six, [])
+    expect(loaded.match(moreLine)).toHaveLength(1)
+    expect(loaded).toContain('+2 more</a>')
+
+    // Four or fewer streams leave no line to hold.
+    expect(renderCards([], streams, null)).not.toMatch(moreLine)
+  })
+
   test('show the rows in activity order when the viewer’s actions fail to load', () => {
     const html = renderCards([], streams, 'error')
     expect(rowTitles(html)).toEqual(['#1 · Stream 1', '#2 · Stream 2', '#3 · Stream 3'])

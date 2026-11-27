@@ -35,6 +35,28 @@ export function restartResumeNotice(restart: RestartContext): string {
   return `Ficus restarted at ${restart.restartedAt}; any command running then was cancelled by the restart and may have partial effects. ${RESTART_RECOVERY_BRIEF} [restart id: ${restart.restartId}]`
 }
 
+/**
+ * Why recovery requeued a run that had no shutdown marker: startup recovery after Core came back
+ * without one (`core_restart`), or the lease sweep after the owning worker stopped renewing the
+ * run (`lease_lapsed`).
+ */
+export type InterruptionCause = 'core_restart' | 'lease_lapsed'
+
+export function isInterruptionCause(value: unknown): value is InterruptionCause {
+  return value === 'core_restart' || value === 'lease_lapsed'
+}
+
+/**
+ * The AGENT's copy for a run recovered after a hard interruption (no shutdown marker, so nothing
+ * was drained), prepended to the resumed turn's prompt. The chat gets its own notice when the run
+ * is requeued; without this the model saw no sign of the interruption.
+ */
+export function interruptedResumeNotice(cause: InterruptionCause, recoveredAt: string): string {
+  const what =
+    cause === 'lease_lapsed' ? 'the Ficus worker running it stopped unexpectedly' : 'an unexpected Core restart'
+  return `Ficus recovered this run at ${recoveredAt} after ${what}. Work in progress was cut off without being drained and may have partial effects; a tool call that was cut off says so in its result. ${RESTART_RECOVERY_BRIEF}`
+}
+
 // The CHAT copies, for people reading the conversation. `[System]` renders
 // them as system rows (prefix stripped, local time on hover). No correlation
 // id or raw timestamp: the restart context rides in the message's metadata,

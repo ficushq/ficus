@@ -85,7 +85,12 @@ client.setQueryData(queries.squads.list('active').queryKey, squads as never)
 client.setQueryData(queries.squads.list().queryKey, squads as never)
 client.setQueryData(queries.agents.summaries({ live: true }).queryKey, [] as never)
 client.setQueryData(queries.squads.activeWorkStreams().queryKey, workStreams as never)
-client.setQueryData(queries.actions.pending().queryKey, pendingActions as never)
+if (params.get('actions') === 'pending') {
+  // `?actions=pending`: the viewer's actions are still loading (this fetch never settles).
+  void client.prefetchQuery({ ...queries.actions.pending(), queryFn: () => new Promise<never>(() => {}) })
+} else {
+  client.setQueryData(queries.actions.pending().queryKey, pendingActions as never)
+}
 
 function CurrentLocation() {
   const { pathname, search } = useLocation()

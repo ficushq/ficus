@@ -8,6 +8,7 @@ import type {
   ExecutionStatus,
   Message,
   MessageSearchResponse,
+  MessageSearchScope,
 } from '@ficus/shared'
 import { parseSSEStream, type SSECallbacks } from '../sse'
 import type { Transport } from '../transport'
@@ -199,12 +200,21 @@ export function agentsResource(t: Transport) {
     /** Search one conversation's full message history (newest first). */
     searchMessages: (
       agentId: string,
-      options: { q: string; limit?: number; cursor?: string },
+      options: {
+        q: string
+        limit?: number
+        cursor?: string
+        /** Where to look; the server default is the visible message text. */
+        in?: MessageSearchScope
+        role?: 'human' | 'assistant'
+      },
       signal?: AbortSignal
     ): Promise<MessageSearchResponse> => {
       const p = new URLSearchParams({ q: options.q })
       if (options.limit) p.set('limit', String(options.limit))
       if (options.cursor) p.set('cursor', options.cursor)
+      if (options.in) p.set('in', options.in)
+      if (options.role) p.set('role', options.role)
       return t.request(`/agents/${agentId}/messages/search?${p}`, signal ? { signal } : undefined)
     },
     getMessages: (

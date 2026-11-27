@@ -15,7 +15,7 @@ import {
   needsYouPushWindows,
   subscribeNeedsYouPushChecks,
 } from './needsYouPush'
-import { otherAction, questionAction, waitAction } from './needsYouNotices.fixtures'
+import { otherAction, questionAction, waitAction } from '@ficus/shared/test-fixtures/pending-actions'
 
 const at = (path: string) => {
   const url = new URL(path, 'http://ficus.test')

@@ -83,7 +83,10 @@ workflow unchanged). `resolve` accepts a source envelope; workstream/schedule
 inputs additionally accept a raw definition. Create/update presets use an envelope
 with `id` and `definition`, not a source. Update still requires the inspected
 `--revision`; advance still requires the inspected version/attempt and unchanged
-retry `--request-id`. `--json` only controls output.
+retry `--request-id`. Inside an agent's `bash` or `squad_bash` call the request ID
+defaults to one derived from that tool call and the full command, so re-running
+the same command in the same call is the same request (see "Exactly-once
+creating tools" in `restart-recovery.md`). `--json` only controls output.
 
 ```bash
 ficus workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
