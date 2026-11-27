@@ -1755,8 +1755,9 @@ export interface WorkStreamRuntime {
   workingCount?: number
   /**
    * ISO time of the newest work by a counted execution (`computedAt` while one is
-   * working), or null when none has run. Unlike `updatedAt`, edits to the stream's
-   * own fields never move it. Omitted by older servers.
+   * working), or null when none has run. An execution still queued or waiting for a
+   * sandbox has not run, so it does not move this. Unlike `updatedAt`, edits to the
+   * stream's own fields never move it. Omitted by older servers.
    */
   lastWorkedAt?: string | null
   computedAt: string // ISO timestamp

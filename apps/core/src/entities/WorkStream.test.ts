@@ -12,6 +12,7 @@ import {
   WorkStreamNotReopenableError,
   WorkStreamOpenWaitsError,
   WorkStreamWaitResolveError,
+  workStreamRuntimesSql,
 } from './WorkStream'
 import { closeOpenWaits, listReviewHistory, openWait } from '../services/work-streams/waits'
 import { promoteEligibleQueuedStreams } from '../services/work-streams/admission'
@@ -2858,6 +2859,73 @@ describe('WorkStream entity', () => {
         .values({ agentId: agent.id, status: 'running', startedAt: new Date(Date.now() - 5_000) })
       const running = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
       expect(running.lastWorkedAt).toBe(running.computedAt)
+    })
+
+    it('an execution that has not run yet does not move when the stream last worked', async () => {
+      const agent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} queued last worked`,
+        agentIds: [agent.id],
+      })
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db
+        .insert(executions)
+        .values({ agentId: agent.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 20_000) })
+      // Queued and waiting for a sandbox: neither has run, so neither is work yet.
+      await db.insert(executions).values([
+        { agentId: agent.id, status: 'queued', startedAt: new Date(Date.now() - 60_000) },
+        { agentId: agent.id, status: 'waiting-sandbox', startedAt: new Date(Date.now() - 30_000) },
+      ])
+
+      const r = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(r.lastWorkedAt).toBe(new Date(s.getTime() + 20_000).toISOString())
+      expect(r.activeCount).toBe(1)
+
+      const waitingOnly = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} only queued`,
+        agentIds: [(await createTestAgent()).id],
+      })
+      await db
+        .insert(executions)
+        .values({ agentId: waitingOnly.agentIds![0]!, status: 'queued', startedAt: new Date(Date.now() - 60_000) })
+      expect((await WorkStream.computeRuntimes([waitingOnly])).get(waitingOnly.id)!.lastWorkedAt).toBeNull()
+    })
+
+    it('reads the same instants whatever the session time zone', async () => {
+      // A settled run, which last worked at its end.
+      const settled = await createTestAgent()
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db
+        .insert(executions)
+        .values({ agentId: settled.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 20_000) })
+      // A stale run, which last worked at its last message.
+      const stale = await createTestAgent()
+      const started = new Date(Date.now() - 7 * 24 * 3_600_000)
+      const lastMessage = new Date(started.getTime() + 10 * 60_000)
+      await db.insert(executions).values({ agentId: stale.id, status: 'running', startedAt: started })
+      await assistantMessageAt(stale.id, lastMessage)
+      const settledWs = crypto.randomUUID()
+      const staleWs = crypto.randomUUID()
+
+      // The `timestamp` columns hold UTC; a session in another zone must not shift them.
+      const rows = await db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL TimeZone='America/New_York'`)
+        return (await tx.execute(
+          workStreamRuntimesSql([
+            { wsId: settledWs, agentIds: [settled.id] },
+            { wsId: staleWs, agentIds: [stale.id] },
+          ])
+        )) as unknown as Array<{ ws_id: string; total_ms: string | number; last_worked_at: string | Date }>
+      })
+      const byStream = new Map(rows.map((row) => [row.ws_id, row]))
+      expect(new Date(byStream.get(settledWs)!.last_worked_at).toISOString()).toBe(
+        new Date(s.getTime() + 20_000).toISOString()
+      )
+      expect(Number(byStream.get(settledWs)!.total_ms)).toBe(20_000)
+      expect(new Date(byStream.get(staleWs)!.last_worked_at).toISOString()).toBe(lastMessage.toISOString())
+      expect(Number(byStream.get(staleWs)!.total_ms)).toBe(10 * 60_000)
     })
 
     it('a stale running execution last worked at its last message', async () => {
