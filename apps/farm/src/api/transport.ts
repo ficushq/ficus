@@ -1,4 +1,10 @@
-import { HttpResponseError, readApiErrorMessage, type RequestOptions, type Transport } from '@ficus/client-core'
+import {
+  HttpResponseError,
+  parseRetryAfter,
+  readApiErrorMessage,
+  type RequestOptions,
+  type Transport,
+} from '@ficus/client-core'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { apiUrl, wsUrl } from './base'
 
@@ -27,7 +33,12 @@ export function createFarmTransport(fetchImpl: Fetch = (...args) => fetch(...arg
   return {
     async request<T>(path: string, options?: RequestOptions): Promise<T> {
       const res = await fetchImpl(apiUrl(path), toInit(options))
-      if (!res.ok) throw new HttpResponseError(res.status, await readApiErrorMessage(res))
+      if (!res.ok)
+        throw new HttpResponseError(
+          res.status,
+          await readApiErrorMessage(res),
+          parseRetryAfter(res.headers.get('Retry-After'))
+        )
       if (res.status === 204) return undefined as T
       if (!(res.headers.get('Content-Type') ?? '').includes('application/json')) return undefined as T
       return (await res.json()) as T

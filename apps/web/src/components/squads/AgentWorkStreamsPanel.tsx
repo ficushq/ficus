@@ -1,7 +1,7 @@
 import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { WorkStreamDetailModal, formatRelativeTime } from '../WorkStreamDetailModal'
 import { workStreamPullRequests } from '../../lib/workStreamGithub'
@@ -29,15 +29,17 @@ function isAgentAttachedToWorkStream(workStream: WorkStream, agentId: string): b
 export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
   const [selectedWorkStream, setSelectedWorkStream] = useState<WorkStream | null>(null)
 
-  // Fetch work streams for the squad
-  const {
-    data: workStreams = [],
-    isLoading,
-    isSuccess,
-  } = useQuery({
-    ...queries.squads.workStreams(squadId),
+  // Open work is the squad's active list (small, polled); finished work is this agent's own history,
+  // paged on demand. The squad's unfiltered list is every stream it ever had, so it is never read here.
+  const active = useQuery({
+    ...queries.squads.activeWorkStreams(squadId),
     refetchInterval: 10000,
   })
+  const history = useInfiniteQuery(queries.squads.agentDoneWorkStreams(agent.id, squadId))
+  const isLoading = active.isLoading || history.isLoading
+  const isSuccess = active.isSuccess && history.isSuccess
+  const activeWorkStreams = active.data
+  const finishedWorkStreams = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data])
 
   // Fetch squads and agents for the modal
   const { data: squads = [] } = useQuery(queries.squads.list())
@@ -48,12 +50,21 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
   const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
 
   // Filter work streams where this agent is attached, assigned, owns, or created the stream.
+  // The server already narrowed the history to this agent (checked again here, so a Core that
+  // ignores agentId cannot show other agents' work); the squad's open list is narrowed here.
   const relevantWorkStreams = useMemo(() => {
-    return workStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id))
-  }, [workStreams, agent.id])
+    const finished = finishedWorkStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id))
+    // A stream that finished between the two reads appears once, in its finished place.
+    const finishedIds = new Set(finished.map((ws) => ws.id))
+    const open = (activeWorkStreams ?? []).filter(
+      (ws) => !finishedIds.has(ws.id) && isAgentAttachedToWorkStream(ws, agent.id)
+    )
+    return [...open, ...finished]
+  }, [activeWorkStreams, finishedWorkStreams, agent.id])
 
   // The server canonical order (GET /workstreams) is the single ordering
-  // authority: the squad list arrives pre-sorted and the agent filter above
+  // authority: open work arrives pre-sorted, then finished work newest
+  // completion first, as the unpaginated list orders them. The agent filter
   // preserves relative order, so no client re-sort is needed.
   const sortedWorkStreams = relevantWorkStreams
   const workStreamSkeletonCount = useLoadingShapeCount(
@@ -141,6 +152,21 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
           )
         })}
       </div>
+      {history.hasNextPage && (
+        <button
+          type="button"
+          className="ficus-button ficus-button-ghost mt-2 w-full rounded-xl px-4 py-2 text-xs text-muted"
+          disabled={history.isFetchingNextPage}
+          onClick={() => void history.fetchNextPage()}
+        >
+          {history.isFetchingNextPage ? 'Loading…' : 'Show older work streams'}
+        </button>
+      )}
+      {history.isFetchNextPageError && (
+        <p role="alert" className="mt-2 px-4 text-xs text-status-danger-600 dark:text-status-danger-400">
+          Could not load older work streams. Try again.
+        </p>
+      )}
 
       {/* Work Stream Detail Modal */}
       {selectedWorkStream && (

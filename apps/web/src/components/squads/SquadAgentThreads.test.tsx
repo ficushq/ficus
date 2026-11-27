@@ -2247,7 +2247,8 @@ describe('SquadAgentThreads assigned work stream numbers', () => {
 
   function seededClient() {
     const client = makeQueryClient()
-    client.setQueryData(queryKeys.squads.workStreams('squad-1'), streams)
+    // The rows read the squad's open list; the done stream stays in it to prove it is still skipped.
+    client.setQueryData(queryKeys.squads.activeWorkStreams('squad-1'), streams)
     client.setQueryData(queryKeys.squads.list(), [{ id: 'squad-1', name: 'Ficus', createdAt: now }])
     return client
   }
@@ -2307,6 +2308,24 @@ describe('SquadAgentThreads assigned work stream numbers', () => {
 
       // The row's chat button keeps a full accessible name.
       expect(getByRole(doc.body, 'button', { name: /^Build UI, Working, / })).toBeTruthy()
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('reads only the open work stream list, never the squad history', async () => {
+    const dom = await installDom()
+    try {
+      const client = seededClient()
+      const { root } = dom.createRoot()
+      await dom.act(async () => renderThreadsDom(root, client, rosterAgents))
+      const keys = client
+        .getQueryCache()
+        .getAll()
+        .map((query) => JSON.stringify(query.queryKey))
+      expect(keys).toContain(JSON.stringify(queryKeys.squads.activeWorkStreams('squad-1')))
+      expect(keys).not.toContain(JSON.stringify(queryKeys.squads.workStreams('squad-1')))
+      expect(keys).not.toContain(JSON.stringify(queryKeys.squads.allWorkStreams()))
     } finally {
       await dom.cleanup()
     }

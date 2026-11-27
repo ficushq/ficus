@@ -996,6 +996,43 @@ describe('work-streams routes', () => {
       expect(second.items.some((ws: { id: string }) => firstIds.has(ws.id))).toBe(false)
     })
 
+    it("pages one agent's finished work: assigned, owned, created or attached", async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId: testSquadId })
+      const finished = async (title: string, input: Record<string, unknown>, status: 'done' | 'canceled' = 'done') => {
+        const ws = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} ${title}`, ...input })
+        await ws.update({ status })
+        return ws
+      }
+      const assigned = await finished('agent assigned', { assigneeAgentId: agent.id })
+      const owned = await finished('agent owned', { ownerAgentId: agent.id })
+      const created = await finished('agent created', { creatorAgentId: agent.id })
+      const attached = await finished('agent attached', { agentIds: [agent.id] }, 'canceled')
+      await finished('agent unrelated', {})
+      await storedLegacyWorkStream({
+        squadId: testSquadId,
+        title: `${testPrefix} agent open`,
+        assigneeAgentId: agent.id,
+      })
+
+      const path = `/api/workstreams?squadId=${testSquadId}&statuses=done,canceled&agentId=${agent.id}`
+      const first = await (await apiFetch(`${path}&limit=3`)).json()
+      expect(first.totalCount).toBe(4)
+      expect(first.hasMore).toBe(true)
+      const second = await (await apiFetch(`${path}&limit=3&cursor=${first.nextCursor}`)).json()
+      expect(second.hasMore).toBe(false)
+      expect([...first.items, ...second.items].map((row: { id: string }) => row.id).sort()).toEqual(
+        [assigned.id, owned.id, created.id, attached.id].sort()
+      )
+
+      for (const query of [
+        `statuses=done&limit=50&agentId=not-a-uuid`,
+        `statuses=done&agentId=${agent.id}`,
+        `statuses=done&limit=50&countOnly=true&agentId=${agent.id}`,
+        `statuses=active,done&limit=50&agentId=${agent.id}`,
+      ])
+        expect((await apiFetch(`/api/workstreams?squadId=${testSquadId}&${query}`)).status).toBe(400)
+    })
+
     it('paginates only the requested squads for an aggregate squadIds filter', async () => {
       const secondSquad = await Squad.create({ name: `${testPrefix} Second Squad`, purpose: 'Included' })
       const excludedSquad = await Squad.create({ name: `${testPrefix} Excluded Squad`, purpose: 'Excluded' })

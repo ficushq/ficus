@@ -1128,10 +1128,19 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     completedBefore?: Date
     completedAfter?: Date
     feedUserId?: string
+    /** Only streams this agent is assigned to, owns, created, or is attached to. */
+    agentId?: string
   }): Promise<TerminalWorkStreamPage> {
     const conditions: SQL[] = [inArray(workStreams.status, options.statuses)]
     if (options.squadId) conditions.push(uuidPrefixCondition(workStreams.squadId, options.squadId))
     if (options.squadIds) conditions.push(inArray(workStreams.squadId, options.squadIds))
+    if (options.agentId) {
+      const agentId = options.agentId
+      conditions.push(sql`(${workStreams.assigneeAgentId} = ${agentId}::uuid
+        OR ${workStreams.ownerAgentId} = ${agentId}::uuid
+        OR ${workStreams.creatorAgentId} = ${agentId}::uuid
+        OR ${agentId}::uuid = ANY(${workStreams.agentIds}))`)
+    }
     if (options.completedBefore)
       conditions.push(sql`${terminalCompletionTimeSql} <= ${options.completedBefore.toISOString()}::timestamptz`)
     if (options.completedAfter)

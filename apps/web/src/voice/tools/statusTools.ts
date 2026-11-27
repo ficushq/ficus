@@ -1,7 +1,13 @@
 import { workStreamRef } from '@ficus/shared'
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getActiveExecution, getAgent } from '../../api/agents'
-import { getWorkStream, listAllWorkStreams, listSquadAgents, listSquads, listWorkStreams } from '../../api/squads'
+import {
+  getWorkStream,
+  listActiveWorkStreams,
+  listDoneWorkStreams,
+  listSquadAgents,
+  listSquads,
+} from '../../api/squads'
 import { selectWorkStreamPresentationState, type WorkStream } from '@ficus/shared'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
@@ -10,6 +16,9 @@ export function voiceWorkStreamStatus(workStream: WorkStream) {
 }
 
 const FINISHED = new Set(['done', 'canceled'])
+
+/** Finished work per page with includeFinished: newest completions first, paged by finishedCursor. */
+export const VOICE_FINISHED_LIMIT = 50
 
 function summarize(workStream: WorkStream) {
   return {
@@ -25,9 +34,9 @@ export function createStatusTools(deps: {
   getAgent: typeof getAgent
   getActiveExecution: typeof getActiveExecution
   listSquads: typeof listSquads
-  listAllWorkStreams: typeof listAllWorkStreams
+  listActiveWorkStreams: typeof listActiveWorkStreams
+  listDoneWorkStreams: typeof listDoneWorkStreams
   listSquadAgents: typeof listSquadAgents
-  listWorkStreams: typeof listWorkStreams
   getWorkStream: typeof getWorkStream
 }) {
   const getWorkTool: VoiceAssistantTool<VoiceToolExecutor> = {
@@ -46,19 +55,53 @@ export function createStatusTools(deps: {
           },
           includeFinished: {
             type: 'boolean',
-            description: 'Include done and canceled work in list results. Default false.',
+            description: `Also list done and canceled work, ${VOICE_FINISHED_LIMIT} per page, newest first, with finished.totalCount. Default false.`,
+          },
+          finishedCursor: {
+            type: 'string',
+            description: 'A finished.nextCursor: the next finished page for the same squadId.',
           },
         },
       },
     },
     async execute(args) {
-      const { squadId, workStreamId, includeFinished } = args as {
+      const { squadId, workStreamId, finishedCursor } = args as {
         squadId?: string
         workStreamId?: string
         includeFinished?: boolean
+        finishedCursor?: string
       }
+      const includeFinished = Boolean((args as { includeFinished?: boolean }).includeFinished || finishedCursor)
       const keep = (workStream: WorkStream) => includeFinished || !FINISHED.has(voiceWorkStreamStatus(workStream))
+      // Open work, plus finished work a page at a time on request: the unfiltered list is every
+      // stream a squad ever had and is the heaviest read Core serves. A cursor asks for only the
+      // next finished page; the open work came with the first one.
+      const listWork = async (squad?: string) => {
+        const [open, finished] = await Promise.all([
+          finishedCursor ? [] : deps.listActiveWorkStreams(squad),
+          includeFinished
+            ? deps.listDoneWorkStreams({
+                squadId: squad,
+                limit: VOICE_FINISHED_LIMIT,
+                omitDescription: true,
+                cursor: finishedCursor,
+              })
+            : undefined,
+        ])
+        return {
+          workStreams: [...open, ...(finished?.items ?? [])].filter(keep).map(summarize),
+          ...(finished
+            ? {
+                finished: {
+                  totalCount: finished.totalCount,
+                  nextCursor: finished.hasMore ? finished.nextCursor : null,
+                },
+              }
+            : {}),
+        }
+      }
       if (squadId && workStreamId) return { error: 'Pass squadId or workStreamId, not both' }
+      if (finishedCursor && workStreamId) return { error: 'finishedCursor pages a list, not one work stream' }
       if (workStreamId) {
         const id = workStreamId.replace(/^work:/, '')
         return { workStream: await deps.getWorkStream(id) }
@@ -69,7 +112,8 @@ export function createStatusTools(deps: {
           return {
             error: `Unknown or ambiguous squad reference: ${squadId}. Use a full squad ID from your instructions.`,
           }
-        const [agents, streams] = await Promise.all([deps.listSquadAgents(resolved), deps.listWorkStreams(resolved)])
+        if (finishedCursor) return listWork(resolved)
+        const [agents, work] = await Promise.all([deps.listSquadAgents(resolved), listWork(resolved)])
         return {
           agents: agents.map((agent) => ({
             id: agent.id,
@@ -77,11 +121,10 @@ export function createStatusTools(deps: {
             status: agent.status,
             name: agent.metadata?.name,
           })),
-          workStreams: streams.filter(keep).map(summarize),
+          ...work,
         }
       }
-      const streams = await deps.listAllWorkStreams()
-      return { workStreams: streams.filter(keep).map(summarize) }
+      return listWork()
     },
   }
   return { getWorkTool, statusTools: [getWorkTool] }
@@ -91,8 +134,8 @@ export const { getWorkTool, statusTools } = createStatusTools({
   getAgent,
   getActiveExecution,
   listSquads,
-  listAllWorkStreams,
+  listActiveWorkStreams,
+  listDoneWorkStreams,
   listSquadAgents,
-  listWorkStreams,
   getWorkStream,
 })

@@ -227,14 +227,6 @@ export interface DoneWorkStreamsPage {
   totalCount: number
 }
 
-export async function listWorkStreams(squadId: string): Promise<WorkStream[]> {
-  return apiFetch<WorkStream[]>(`/workstreams?squadId=${squadId}`)
-}
-
-export async function listAllWorkStreams(): Promise<WorkStream[]> {
-  return apiFetch<WorkStream[]>('/workstreams')
-}
-
 export async function listActiveWorkStreams(
   squadId?: string,
   fetch: typeof apiFetch = apiFetch
@@ -267,6 +259,8 @@ export async function listDoneWorkStreams(
     cursor?: string | null
     /** For lists whose rows show no description: it is most of a row's bytes. */
     omitDescription?: boolean
+    /** Only work this agent is assigned to, owns, created or is attached to. */
+    agentId?: string
   },
   fetch: typeof apiFetch = apiFetch
 ): Promise<DoneWorkStreamsPage> {
@@ -280,6 +274,7 @@ export async function listDoneWorkStreams(
   if (opts.completedBefore) params.set('completedBefore', opts.completedBefore)
   if (opts.feedUpdates) params.set('feedUpdates', 'true')
   if (opts.omitDescription) params.set('omitDescription', 'true')
+  if (opts.agentId) params.set('agentId', opts.agentId)
   if (opts.cursor) params.set('cursor', opts.cursor)
   return fetch<DoneWorkStreamsPage>(`/workstreams?${params.toString()}`)
 }

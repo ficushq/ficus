@@ -13,6 +13,7 @@ import { listIntegrationOutputs } from './api/integrations'
 import { getSquadGitAuthorDefaults } from './api/integrations'
 import { feedQueryKeys } from './queryKeys'
 import { listDoneWorkStreams } from './api/squads'
+import { searchEntities } from './api/search'
 import { client } from './api/clientInstance'
 import { assistantApi } from './api/assistant'
 import { assistantQueryKeys } from './queryKeys'
@@ -146,8 +147,6 @@ import {
   listSquadAgents,
   listSquadAgentsWithRecent,
   listSquadActivity,
-  listWorkStreams,
-  listAllWorkStreams,
   listActiveWorkStreams,
   listAttentionWorkStreams,
   getWorkStream,
@@ -189,6 +188,15 @@ function squadStorageRemovalPending(data: SquadStorageView | undefined): boolean
     data?.machines.some((machine) => machine.storage.folders.some((folder) => folder.agent?.removalPending))
   )
 }
+
+/** Finished work the command center searches locally; older work comes from the server's search. */
+export const RECENT_DONE_WORK_STREAMS_LIMIT = 100
+/** One page of an agent's finished work in its Work streams panel. */
+export const AGENT_DONE_WORK_STREAMS_PAGE = 25
+/** The squad preview's completed work for its 7 or 30 day period: the server's largest page. */
+export const COMPLETED_WORK_STREAMS_LIMIT = 200
+/** Older work the command center adds to a search from the server. */
+export const WORK_STREAM_SEARCH_LIMIT = 20
 
 export const queries = {
   desktop: {
@@ -662,15 +670,46 @@ export const queries = {
         queryKey: queryKeys.squads.agentsWithRecent(squadId),
         queryFn: () => listSquadAgentsWithRecent(squadId, { terminatedLimit: 20, terminatedOffset: 0 }),
       }),
-    workStreams: (squadId: string) =>
+    // There is deliberately no unfiltered list here: GET /workstreams without a status filter or
+    // limit returns every stream a squad ever had (seconds and megabytes on a busy squad), and every
+    // work stream event refetches whatever list is on screen. Read open work, or page finished work.
+    /** The most recent finished work, one page and no descriptions: the command center's history. */
+    recentDoneWorkStreams: (squadId?: string) =>
       queryOptions({
-        queryKey: queryKeys.squads.workStreams(squadId),
-        queryFn: () => listWorkStreams(squadId),
+        queryKey: queryKeys.squads.recentDoneWorkStreams(squadId),
+        queryFn: () => listDoneWorkStreams({ squadId, limit: RECENT_DONE_WORK_STREAMS_LIMIT, omitDescription: true }),
+        staleTime: 30_000,
       }),
-    allWorkStreams: () =>
+    /** A squad's work completed since `completedAfter` (an ISO time), newest first, up to one large page. */
+    completedWorkStreamsSince: (squadId: string, completedAfter: string) =>
       queryOptions({
-        queryKey: queryKeys.squads.allWorkStreams(),
-        queryFn: listAllWorkStreams,
+        queryKey: queryKeys.squads.completedWorkStreamsSince(squadId, completedAfter),
+        queryFn: () =>
+          listDoneWorkStreams({
+            squadId,
+            statuses: ['done'],
+            completedAfter,
+            limit: COMPLETED_WORK_STREAMS_LIMIT,
+            omitDescription: true,
+          }),
+        staleTime: 30_000,
+      }),
+    /** Work streams matching `query` by the server's search, older ones included. */
+    workStreamSearch: (query: string, squadId?: string) =>
+      queryOptions({
+        queryKey: queryKeys.squads.workStreamSearch(query, squadId),
+        queryFn: () => searchEntities(query, WORK_STREAM_SEARCH_LIMIT, { kind: 'work_stream', squadId }),
+        staleTime: 30_000,
+      }),
+    /** One agent's finished work, newest completion first, a page at a time. */
+    agentDoneWorkStreams: (agentId: string, squadId: string) =>
+      infiniteQueryOptions({
+        queryKey: queryKeys.squads.agentDoneWorkStreamsInfinite(agentId),
+        queryFn: ({ pageParam }) =>
+          listDoneWorkStreams({ squadId, agentId, limit: AGENT_DONE_WORK_STREAMS_PAGE, cursor: pageParam }),
+        initialPageParam: null as string | null,
+        getNextPageParam: (last) => (last.hasMore ? (last.nextCursor ?? undefined) : undefined),
+        staleTime: 30_000,
       }),
     activeWorkStreams: (squadId?: string) =>
       queryOptions({

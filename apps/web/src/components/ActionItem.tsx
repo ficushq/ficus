@@ -154,8 +154,6 @@ export function ActionItem({
       const data = action.data as WorkStreamActionData
       invalidations.push(
         queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreamDetail(data.workStreamId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(data.squadId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() }),
         queryClient.invalidateQueries({ queryKey: [...queryKeys.squads.all, 'doneWorkStreams'] })
       )

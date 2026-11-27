@@ -1,7 +1,9 @@
 export class HttpResponseError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    /** How long the server asked the client to wait (Retry-After), in milliseconds. */
+    public readonly retryAfterMs?: number
   ) {
     super(message)
     this.name = 'HttpResponseError'
