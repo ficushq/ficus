@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { squadsResource } from './squads'
+import { squadsResource, WS_ACTIVE_STATUSES } from './squads'
 import type { Agent, WorkStream, WorkStreamWait } from '@ficus/shared'
 import type { Transport, RequestOptions } from '../transport'
 
@@ -20,33 +20,57 @@ function mockTransport(responder?: (path: string, options?: RequestOptions) => u
 }
 
 describe('squadsResource', () => {
-  test('listSquadWorkStreams hits the squad-scoped workstreams route', async () => {
-    const { t, calls } = mockTransport(() => [])
-    await squadsResource(t).listSquadWorkStreams('sq-1')
-    expect(calls[0].path).toBe('/workstreams?squadId=sq-1')
-  })
-
-  test('listSquadWorkStreams filters by statuses when provided', async () => {
+  test('listSquadWorkStreams reads the squad-scoped route with its open statuses', async () => {
     const { t, calls } = mockTransport(() => [])
     await squadsResource(t).listSquadWorkStreams('sq-1', ['queued', 'active'])
-    expect(calls[0].path).toBe('/workstreams?squadId=sq-1&statuses=queued,active')
+    await squadsResource(t).listSquadWorkStreams('sq-1', WS_ACTIVE_STATUSES)
+    expect(calls.map((call) => call.path)).toEqual([
+      '/workstreams?squadId=sq-1&statuses=queued,active',
+      '/workstreams?squadId=sq-1&statuses=queued,active',
+    ])
   })
 
-  test('listAllWorkStreams lists across squads with optional statuses', async () => {
+  test('listAllWorkStreams lists open work across squads', async () => {
     const { t, calls } = mockTransport(() => [])
-    await squadsResource(t).listAllWorkStreams()
     await squadsResource(t).listAllWorkStreams(['queued', 'active'])
-    expect(calls.map((call) => call.path)).toEqual(['/workstreams', '/workstreams?statuses=queued,active'])
+    await squadsResource(t).listAllWorkStreams(['active'])
+    expect(calls.map((call) => call.path)).toEqual([
+      '/workstreams?statuses=queued,active',
+      '/workstreams?statuses=active',
+    ])
   })
 
   test('listAllWorkStreams can respect attention and omit descriptions, as a feed does', async () => {
     const { t, calls } = mockTransport(() => [])
     await squadsResource(t).listAllWorkStreams(['queued', 'active'], { respectAttention: true, omitDescription: true })
-    await squadsResource(t).listAllWorkStreams(undefined, { respectAttention: true })
+    await squadsResource(t).listAllWorkStreams(['queued'], { respectAttention: true })
     expect(calls.map((call) => call.path)).toEqual([
       '/workstreams?statuses=queued,active&respectAttention=true&omitDescription=true',
-      '/workstreams?respectAttention=true',
+      '/workstreams?statuses=queued&respectAttention=true',
     ])
+  })
+
+  test('the unpaged lists refuse a read without statuses or with finished statuses', () => {
+    const { t, calls } = mockTransport(() => [])
+    const squads = squadsResource(t)
+    // Callers outside TypeScript's reach (or a cast) still cannot read the whole history unpaged.
+    const unchecked = squads as unknown as {
+      listSquadWorkStreams: (squadId: string, statuses?: readonly string[]) => Promise<WorkStream[]>
+      listAllWorkStreams: (statuses?: readonly string[]) => Promise<WorkStream[]>
+    }
+    expect(() => unchecked.listSquadWorkStreams('sq-1', [])).toThrow('needs open statuses')
+    expect(() => unchecked.listAllWorkStreams([])).toThrow('needs open statuses')
+    expect(() => unchecked.listSquadWorkStreams('sq-1', ['queued', 'done'])).toThrow('cannot ask for done')
+    expect(() => unchecked.listAllWorkStreams(['canceled'])).toThrow('cannot ask for canceled')
+    expect(() => unchecked.listAllWorkStreams()).toThrow()
+    expect(() => unchecked.listSquadWorkStreams('sq-1')).toThrow()
+    expect(calls).toEqual([])
+  })
+
+  test('finished work is read through the paged list, with a limit', async () => {
+    const { t, calls } = mockTransport(() => ({ items: [], hasMore: false, nextCursor: null, totalCount: 0 }))
+    await squadsResource(t).listDoneWorkStreamsPage({ squadId: 'sq-1' })
+    expect(calls[0].path).toBe('/workstreams?statuses=done,canceled&limit=50&squadId=sq-1')
   })
 
   test('getWorkStream fetches a single work stream by ID', async () => {
