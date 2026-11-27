@@ -2,7 +2,8 @@
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-squad-cards.ts
  * Every built-in theme (light and dark for dual themes) at 1280 and 390 pixels: a work row opens its
  * stream, "+N more" opens the squad's Work tab, the rest of the card opens the squad, and the drag
- * handle stays on top. Optional SCREENSHOT_DIR saves one screenshot per theme, appearance and width;
+ * handle stays on top. While the viewer's actions load, each card's placeholders take the same height
+ * as its rows ("+N more" included) and a squad with no active work already says so. Optional SCREENSHOT_DIR saves one screenshot per theme, appearance and width;
  * optional THEMES (comma-separated theme ids, for example `ficus,iris`) runs only those themes.
  */
 import assert from 'node:assert/strict'
@@ -35,6 +36,13 @@ async function clickAt(page: Page, x: number, y: number) {
     })
     .catch(() => {})
   return page.getByTestId('location').textContent()
+}
+
+/** Each card's work section (rows, placeholders or the empty line, below the description) height. */
+function workSectionHeights(page: Page) {
+  return page
+    .locator('.ficus-panel p.line-clamp-2 + *')
+    .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height))
 }
 
 let browser: Browser | undefined
@@ -92,6 +100,7 @@ try {
         assert.ok(box.left >= card.x && box.right <= card.x + card.width + 0.5, `${label}: row fits the card`)
       }
       if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `${label}.png`), fullPage: true })
+      const workHeights = await workSectionHeights(page)
 
       // Theme tokens only: the row marker and badge resolve to colors, and hover fills the row.
       const firstRow = rows.first()
@@ -146,7 +155,20 @@ try {
         '2 more active work streams in Product Engineering',
         'Drag to reorder Product Engineering',
       ])
-      console.log(`PASS ${label}: order, empty line, row fit, hover, clicks and keyboard order`)
+
+      // While the viewer's actions load: placeholders as tall as the rows they stand for, and
+      // the squad with no active work says so at once.
+      await page.goto(`${url}&actions=pending`)
+      await product.getByTestId('squad-card-work-placeholder').first().waitFor()
+      assert.equal(await product.getByTestId('squad-card-work-placeholder').count(), 4, `${label}: placeholders`)
+      assert.equal(await research.getByText('No active work', { exact: true }).isVisible(), true)
+      assert.equal(await research.getByTestId('squad-card-work-placeholder').count(), 0)
+      if (screenshotDir) {
+        await page.screenshot({ path: resolve(screenshotDir, `${label}-loading.png`), fullPage: true })
+      }
+      assert.deepEqual(await workSectionHeights(page), workHeights, `${label}: work heights while loading`)
+
+      console.log(`PASS ${label}: order, empty line, row fit, hover, clicks, keyboard order and loading heights`)
       await page.close()
     }
   }
