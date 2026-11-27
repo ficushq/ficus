@@ -243,3 +243,61 @@ describe('ActionCenterContent bulk continuation', () => {
     })
   })
 })
+
+describe('ActionCenterContent live motion', () => {
+  test('only with a live motion key: a card that arrives is highlighted, unless the view changed', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { root, container } = dom.createRoot()
+    const render = (actions: PendingAction[], liveMotionKey?: string) =>
+      dom.act(async () => {
+        root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={queryClient}>
+              <ActionCenterContent
+                actions={actions}
+                isLoading={false}
+                continueHaltedActions={continueHaltedAgents}
+                liveMotionKey={liveMotionKey}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+    try {
+      // The Action Center panel and /actions pass no key: their cards stay as they are.
+      await render([haltedAction('agent-error:one', true)])
+      expect(container.querySelector('[data-live-row]')).toBeNull()
+      await dom.act(async () => root.unmount())
+
+      const feed = dom.createRoot()
+      const renderFeed = (actions: PendingAction[], key: string) =>
+        dom.act(async () => {
+          feed.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={queryClient}>
+                <ActionCenterContent
+                  actions={actions}
+                  isLoading={false}
+                  continueHaltedActions={continueHaltedAgents}
+                  liveMotionKey={key}
+                />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        })
+      const feedHighlighted = () =>
+        [...feed.container.querySelectorAll('.ficus-live-arrived')].map((node) => node.getAttribute('data-live-row'))
+      await renderFeed([haltedAction('agent-error:one', true)], '[]')
+      expect(feedHighlighted()).toEqual([])
+      await renderFeed([haltedAction('agent-error:one', true), haltedAction('agent-error:two', true)], '[]')
+      expect(feedHighlighted()).toEqual(['agent-error:two'])
+      // A squad filter change is a new view.
+      await renderFeed([haltedAction('agent-error:three', true)], '["squad-2"]')
+      expect(feedHighlighted()).toEqual([])
+    } finally {
+      await dom.cleanup()
+      queryClient.clear()
+    }
+  })
+})

@@ -1985,3 +1985,53 @@ test.each([false, true])('list rows share primary and secondary delivery labels 
     queryClient.clear()
   }
 })
+
+describe('WorkStreamList live motion', () => {
+  test('first load is still; a stream that arrives is highlighted and a changed status is emphasized', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
+    const rendered = dom.createRoot()
+    const client = createTestQueryClient()
+    const render = (workStreams: WorkStream[], isLoading = false) =>
+      dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter initialEntries={['/feed']}>
+            <QueryClientProvider client={client}>
+              <WorkStreamList
+                workStreams={workStreams}
+                squadMap={new Map([[squad.id, squad]])}
+                agentMap={new Map()}
+                feedLayout
+                hideFilters
+                activeOnly
+                isLoading={isLoading}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+    const row = (id: string) => rendered.container.querySelector<HTMLElement>(`[data-live-row="${id}"]`)!
+    const badge = (id: string) => row(id).querySelector<HTMLElement>('[data-live-emphasis]')!
+    try {
+      await render([], true)
+      // The data arriving after the skeleton is the first load, not a live change.
+      await render([workStream()])
+      expect(row('ws-1').classList.contains('ficus-live-arrived')).toBe(false)
+      expect(row('ws-1').getAttribute('data-live-status')).toBe('in_progress|')
+
+      await render([workStream({ id: 'ws-2', number: 2, title: 'New stream' }), workStream()])
+      expect(row('ws-2').classList.contains('ficus-live-arrived')).toBe(true)
+      expect(row('ws-1').classList.contains('ficus-live-arrived')).toBe(false)
+      expect(badge('ws-1').classList.contains('ficus-live-emphasis')).toBe(false)
+
+      await render([
+        workStream({ id: 'ws-2', number: 2, title: 'New stream' }),
+        workStream({ derivedState: 'in_review' }),
+      ])
+      expect(badge('ws-1').classList.contains('ficus-live-emphasis')).toBe(true)
+      expect(badge('ws-2').classList.contains('ficus-live-emphasis')).toBe(false)
+    } finally {
+      await dom.cleanup()
+      client.clear()
+    }
+  })
+})

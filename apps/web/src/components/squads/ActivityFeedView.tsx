@@ -15,6 +15,8 @@ import {
   type SquadActivityKind,
 } from '@ficus/shared'
 import { useStableRef } from '../../hooks/useStableRef'
+import { liveRowProps } from '../../lib/liveListMotion'
+import { LiveListMotion } from '../LiveListMotion'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { agentTypeColor } from '../../lib/agentTypeColor'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonText, SkeletonRows } from '../loading/Skeleton'
@@ -198,6 +200,19 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   // under the list; entering the viewport (with a page of pre-fetch margin)
   // pulls the next page. Guarded: the SSR/static test harness has no
   // IntersectionObserver, and the ref re-observes when pagination state flips.
+  // New rows highlight briefly only when they stream in while the feed is on screen: a change of
+  // scope, filters, loading or paging state is a fresh list (LiveListMotion).
+  const liveMotionResetKey = JSON.stringify([
+    loadingShapeKey,
+    kinds,
+    workStreamFilter,
+    showEverything,
+    isLoading,
+    isError,
+    filtersPending,
+    isFetchingNextPage,
+  ])
+
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
   const loadMoreRef = useStableRef({ onLoadMore, hasNextPage, isFetchingNextPage })
   useEffect(() => {
@@ -392,194 +407,199 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
             {squadActivityStatusMessage(isLoading, isError, shownItems.length)}
           </p>
         )}
-        <ol className="space-y-1 text-[13px]">
-          {(() => {
-            // Top-most row per WORKING agent gets a pulsing live dot. Items
-            // render newest-first, so first-seen wins; recomputed per render.
-            const liveDotted = new Set<string>()
-            return shownItems.map((item) => {
-              const subjectAgentId = item.ref.type === 'agent' ? item.ref.agentId : null
-              const showLiveDot =
-                !!subjectAgentId && workingAgentIds.has(subjectAgentId) && !liveDotted.has(subjectAgentId)
-              if (showLiveDot) liveDotted.add(subjectAgentId!)
-              const chip = showSquadColumn ? squadChipFor?.(item) : null
-              const rowStream = item.ref.type === 'agent' ? item.context?.workStream : undefined
-              // Filtered to one stream, every participant row would repeat its title and step: the
-              // details panel above says it once.
-              const repeatsFilter = !!workStreamFilter && rowStream?.id === workStreamFilter
-              const contextLabel = repeatsFilter ? null : activityRowContextLabel(item)
-              const contextStream = repeatsFilter ? undefined : rowStream
-              const contextStreamItem = contextStream ? openStreamOf(item, contextStream) : null
-              // Issue rows point at the code host; when the server resolved the
-              // stream they also offer an in-app jump to it. Reusing `hrefFor`
-              // with a work-stream ref keeps the spread's squadId, so the global
-              // feed resolves each row's OWN squad slug.
-              const workStreamChip =
-                item.ref.type === 'issue' && item.ref.workStreamNumber !== undefined
-                  ? {
-                      number: item.ref.workStreamNumber,
-                      href: hrefFor({
-                        ...item,
-                        ref: {
-                          type: 'workstream',
-                          workStreamId: item.ref.workStreamId ?? '',
-                          workStreamNumber: item.ref.workStreamNumber,
-                        },
-                      } as T),
-                    }
-                  : null
-              const content = (
-                <>
-                  {/* Responsive rows keep identity and time on one compact line. Global rows give
+        <LiveListMotion resetKey={liveMotionResetKey}>
+          <ol className="space-y-1 text-[13px]">
+            {(() => {
+              // Top-most row per WORKING agent gets a pulsing live dot. Items
+              // render newest-first, so first-seen wins; recomputed per render.
+              const liveDotted = new Set<string>()
+              return shownItems.map((item) => {
+                const subjectAgentId = item.ref.type === 'agent' ? item.ref.agentId : null
+                const showLiveDot =
+                  !!subjectAgentId && workingAgentIds.has(subjectAgentId) && !liveDotted.has(subjectAgentId)
+                if (showLiveDot) liveDotted.add(subjectAgentId!)
+                const chip = showSquadColumn ? squadChipFor?.(item) : null
+                const rowStream = item.ref.type === 'agent' ? item.context?.workStream : undefined
+                // Filtered to one stream, every participant row would repeat its title and step: the
+                // details panel above says it once.
+                const repeatsFilter = !!workStreamFilter && rowStream?.id === workStreamFilter
+                const contextLabel = repeatsFilter ? null : activityRowContextLabel(item)
+                const contextStream = repeatsFilter ? undefined : rowStream
+                const contextStreamItem = contextStream ? openStreamOf(item, contextStream) : null
+                // Issue rows point at the code host; when the server resolved the
+                // stream they also offer an in-app jump to it. Reusing `hrefFor`
+                // with a work-stream ref keeps the spread's squadId, so the global
+                // feed resolves each row's OWN squad slug.
+                const workStreamChip =
+                  item.ref.type === 'issue' && item.ref.workStreamNumber !== undefined
+                    ? {
+                        number: item.ref.workStreamNumber,
+                        href: hrefFor({
+                          ...item,
+                          ref: {
+                            type: 'workstream',
+                            workStreamId: item.ref.workStreamId ?? '',
+                            workStreamNumber: item.ref.workStreamNumber,
+                          },
+                        } as T),
+                      }
+                    : null
+                const content = (
+                  <>
+                    {/* Responsive rows keep identity and time on one compact line. Global rows give
                       squad and agent independent shrinking boundaries; lg+ dissolves the
                       wrapper so all cells align to the row's desktop grid. */}
-                  <div
-                    className={clsx(
-                      'pointer-events-none min-w-0 items-center lg:contents',
-                      showSquadColumn ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
-                    )}
-                    data-activity-mobile-header={showSquadColumn ? 'global' : 'squad'}
-                  >
-                    <time
-                      dateTime={item.at}
-                      dir="ltr"
+                    <div
                       className={clsx(
-                        'tabular-nums whitespace-nowrap lg:col-start-1',
-                        showSquadColumn
-                          ? 'col-start-3 row-start-1 lg:col-start-1'
-                          : 'order-last ml-auto lg:order-0 lg:ml-0',
-                        ACTIVITY_SMALL_TEXT_CLASS
+                        'pointer-events-none min-w-0 items-center lg:contents',
+                        showSquadColumn ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
                       )}
+                      data-activity-mobile-header={showSquadColumn ? 'global' : 'squad'}
                     >
-                      {formatActivityTimestamp(item.at)}
-                    </time>
-                    {chip && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          navigate(chip.href)
-                        }}
-                        className="pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
-                        data-activity-column="squad"
-                        aria-label={`Open activity for ${chip.label}`}
-                        title={chip.label}
+                      <time
+                        dateTime={item.at}
+                        dir="ltr"
+                        className={clsx(
+                          'tabular-nums whitespace-nowrap lg:col-start-1',
+                          showSquadColumn
+                            ? 'col-start-3 row-start-1 lg:col-start-1'
+                            : 'order-last ml-auto lg:order-0 lg:ml-0',
+                          ACTIVITY_SMALL_TEXT_CLASS
+                        )}
                       >
-                        <span className="block truncate">{chip.label}</span>
-                      </button>
-                    )}
+                        {formatActivityTimestamp(item.at)}
+                      </time>
+                      {chip && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            navigate(chip.href)
+                          }}
+                          className="pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
+                          data-activity-column="squad"
+                          aria-label={`Open activity for ${chip.label}`}
+                          title={chip.label}
+                        >
+                          <span className="block truncate">{chip.label}</span>
+                        </button>
+                      )}
+                      <span
+                        className={clsx(
+                          'min-w-0 truncate',
+                          showSquadColumn
+                            ? 'col-start-1 row-start-1 justify-self-start text-left lg:col-start-3'
+                            : 'lg:col-start-2',
+                          agentTypeColor(item.ref.type === 'agent' ? item.agentTypeId : null)
+                        )}
+                        data-activity-column="agent"
+                        title={item.ref.type === 'agent' ? agentDetailFor(item) : activitySubjectLabel(item)}
+                      >
+                        {showLiveDot && (
+                          <span
+                            title="Working now"
+                            // Intentional exception: the newest live activity row inherits the
+                            // adjacent agent-type identity color rather than a semantic status role.
+                            className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle"
+                          />
+                        )}
+                        {activitySubjectLabel(item)}
+                      </span>
+                    </div>
                     <span
                       className={clsx(
-                        'min-w-0 truncate',
-                        showSquadColumn
-                          ? 'col-start-1 row-start-1 justify-self-start text-left lg:col-start-3'
-                          : 'lg:col-start-2',
-                        agentTypeColor(item.ref.type === 'agent' ? item.agentTypeId : null)
+                        'pointer-events-none relative z-10 min-w-0 wrap-break-word lg:col-span-1',
+                        showSquadColumn ? 'lg:col-start-4' : 'lg:col-start-3',
+                        item.kind !== 'message' && ACTIVITY_SMALL_TEXT_CLASS
                       )}
-                      data-activity-column="agent"
-                      title={item.ref.type === 'agent' ? agentDetailFor(item) : activitySubjectLabel(item)}
+                      data-activity-column="summary"
                     >
-                      {showLiveDot && (
-                        <span
-                          title="Working now"
-                          // Intentional exception: the newest live activity row inherits the
-                          // adjacent agent-type identity color rather than a semantic status role.
-                          className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle"
-                        />
-                      )}
-                      {activitySubjectLabel(item)}
-                    </span>
-                  </div>
-                  <span
-                    className={clsx(
-                      'pointer-events-none relative z-10 min-w-0 wrap-break-word lg:col-span-1',
-                      showSquadColumn ? 'lg:col-start-4' : 'lg:col-start-3',
-                      item.kind !== 'message' && ACTIVITY_SMALL_TEXT_CLASS
-                    )}
-                    data-activity-column="summary"
-                  >
-                    {/* Agent rows say what the agent works on: its bound work stream (number,
+                      {/* Agent rows say what the agent works on: its bound work stream (number,
                         title, step; opens the stream in place) or else its purpose. */}
-                    {contextLabel && (
-                      <span
-                        className="block truncate text-xs text-muted"
-                        data-activity-context={contextStream ? 'work-stream' : 'purpose'}
-                        title={contextLabel}
-                      >
-                        {contextStream && contextStreamItem ? (
-                          <a
-                            href={hrefFor(contextStreamItem)}
-                            className="pointer-events-auto relative z-10 hover:text-link-hover hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-                            aria-label={`Open work stream #${contextStream.number} ${contextStream.title}`}
-                            onClick={(event) => {
-                              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
-                              event.preventDefault()
-                              onOpen(contextStreamItem)
-                            }}
-                          >
-                            {contextLabel}
-                          </a>
-                        ) : (
-                          contextLabel
-                        )}
-                      </span>
-                    )}
-                    {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
-                      <span>By {activityAgentLabel(item.agentTypeId)} · </span>
-                    )}
-                    <ActivityRowText item={item} onOpenAgent={onOpenAgentReference} />
-                    {workStreamChip && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          navigate(workStreamChip.href)
-                        }}
-                        className="pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
-                        aria-label={`Open work stream #${workStreamChip.number}`}
-                      >
-                        #{workStreamChip.number}
-                      </button>
-                    )}
-                  </span>
-                </>
-              )
-              const external = item.ref.type === 'pr' || item.ref.type === 'issue'
-              const sourceHref =
-                item.ref.type === 'pr' || item.ref.type === 'issue' ? activityExternalHref(item.ref.url) : hrefFor(item)
-              return (
-                <li key={item.id}>
-                  <div className={rowClassName} data-activity-layout={showSquadColumn ? 'global' : 'squad'}>
-                    {/* A sibling stretched anchor owns the non-interactive row area.
+                      {contextLabel && (
+                        <span
+                          className="block truncate text-xs text-muted"
+                          data-activity-context={contextStream ? 'work-stream' : 'purpose'}
+                          title={contextLabel}
+                        >
+                          {contextStream && contextStreamItem ? (
+                            <a
+                              href={hrefFor(contextStreamItem)}
+                              className="pointer-events-auto relative z-10 hover:text-link-hover hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+                              aria-label={`Open work stream #${contextStream.number} ${contextStream.title}`}
+                              onClick={(event) => {
+                                if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+                                event.preventDefault()
+                                onOpen(contextStreamItem)
+                              }}
+                            >
+                              {contextLabel}
+                            </a>
+                          ) : (
+                            contextLabel
+                          )}
+                        </span>
+                      )}
+                      {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
+                        <span>By {activityAgentLabel(item.agentTypeId)} · </span>
+                      )}
+                      <ActivityRowText item={item} onOpenAgent={onOpenAgentReference} />
+                      {workStreamChip && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            navigate(workStreamChip.href)
+                          }}
+                          className="pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
+                          aria-label={`Open work stream #${workStreamChip.number}`}
+                        >
+                          #{workStreamChip.number}
+                        </button>
+                      )}
+                    </span>
+                  </>
+                )
+                const external = item.ref.type === 'pr' || item.ref.type === 'issue'
+                const sourceHref =
+                  item.ref.type === 'pr' || item.ref.type === 'issue'
+                    ? activityExternalHref(item.ref.url)
+                    : hrefFor(item)
+                return (
+                  // Positioned and rounded like the row, for the arrival wash.
+                  <li key={item.id} className="relative rounded-lg" {...liveRowProps(item.id)}>
+                    <div className={rowClassName} data-activity-layout={showSquadColumn ? 'global' : 'squad'}>
+                      {/* A sibling stretched anchor owns the non-interactive row area.
                         Inline links/chips sit above it, never inside another control. */}
-                    {sourceHref &&
-                      (external ? (
-                        <a
-                          className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
-                          href={sourceHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
-                        />
-                      ) : (
-                        <Link
-                          className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
-                          to={sourceHref}
-                          // Shift- or Alt/Option-click on an agent row opens its chat in a floating window.
-                          {...agentChatTarget(item.ref.type === 'agent' ? item.ref.agentId : undefined)}
-                          onClick={interceptRowClick(item)}
-                          aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
-                        />
-                      ))}
-                    {content}
-                  </div>
-                </li>
-              )
-            })
-          })()}
-        </ol>
+                      {sourceHref &&
+                        (external ? (
+                          <a
+                            className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
+                            href={sourceHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
+                          />
+                        ) : (
+                          <Link
+                            className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
+                            to={sourceHref}
+                            // Shift- or Alt/Option-click on an agent row opens its chat in a floating window.
+                            {...agentChatTarget(item.ref.type === 'agent' ? item.ref.agentId : undefined)}
+                            onClick={interceptRowClick(item)}
+                            aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
+                          />
+                        ))}
+                      {content}
+                    </div>
+                  </li>
+                )
+              })
+            })()}
+          </ol>
+        </LiveListMotion>
         {hasNextPage && (
           <div ref={loadMoreSentinelRef} aria-hidden className="py-4 text-center text-sm text-muted">
             {isFetchingNextPage ? 'Loading more…' : ' '}

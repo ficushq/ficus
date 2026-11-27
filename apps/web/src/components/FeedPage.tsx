@@ -96,6 +96,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
               error={error}
               onRetry={() => void refetch()}
               showSectionCounts={false}
+              liveMotionKey={JSON.stringify(squadFilters)}
             />
           </div>
         </details>

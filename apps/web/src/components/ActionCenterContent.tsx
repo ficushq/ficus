@@ -8,6 +8,8 @@ import { WORK_STREAM_STATUS_ROLE, type PendingAction, type AgentErrorActionData 
 import { workStreamActionPresentationState } from '../lib/workStreamStatusPresentation'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
+import { LiveListMotion } from './LiveListMotion'
+import { liveRowProps } from '../lib/liveListMotion'
 
 interface ActionCenterContentProps {
   actions: PendingAction[]
@@ -24,6 +26,12 @@ interface ActionCenterContentProps {
   showSectionCounts?: boolean
   /** Injectable transport seam for isolated component tests. */
   continueHaltedActions?: typeof continueHaltedAgents
+  /**
+   * Turns on motion for live changes (the Feed's Needs you): cards that arrive while the list is on
+   * screen highlight briefly and the others slide to their new place. The value names the list's
+   * view (its filters); when it changes the list is fresh and nothing animates.
+   */
+  liveMotionKey?: string
 }
 
 export function ActionCenterContent({
@@ -36,7 +44,9 @@ export function ActionCenterContent({
   focusActionId,
   showSectionCounts = true,
   continueHaltedActions = continueHaltedAgents,
+  liveMotionKey,
 }: ActionCenterContentProps) {
+  const liveMotion = liveMotionKey !== undefined
   const loadingRowCount = useLoadingShapeCount('action-center:list', isLoading ? undefined : actions.length, {
     fallbackCount: 3,
     maxCount: 8,
@@ -100,6 +110,7 @@ export function ActionCenterContent({
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
           showCount={showSectionCounts}
+          liveMotion={liveMotion}
         />
       )}
       {questions.length > 0 && (
@@ -111,6 +122,7 @@ export function ActionCenterContent({
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
           showCount={showSectionCounts}
+          liveMotion={liveMotion}
         />
       )}
       {workstreamReviews.length > 0 && (
@@ -122,6 +134,7 @@ export function ActionCenterContent({
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
           showCount={showSectionCounts}
+          liveMotion={liveMotion}
         />
       )}
       {workstreamBlocked.length > 0 && (
@@ -133,16 +146,53 @@ export function ActionCenterContent({
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
           showCount={showSectionCounts}
+          liveMotion={liveMotion}
         />
       )}
     </div>
   )
 
+  const shown = liveMotion ? (
+    <LiveListMotion resetKey={JSON.stringify([liveMotionKey, isLoading, isError])}>{content}</LiveListMotion>
+  ) : (
+    content
+  )
+
   if (onClose) {
-    return <ActionCenterContext.Provider value={{ closeActionCenter: onClose }}>{content}</ActionCenterContext.Provider>
+    return <ActionCenterContext.Provider value={{ closeActionCenter: onClose }}>{shown}</ActionCenterContext.Provider>
   }
 
-  return content
+  return shown
+}
+
+/** One card; with live motion, inside a positioned, rounded row LiveListMotion can move and highlight. */
+function ActionRow({
+  action,
+  continueHaltedActions,
+  focused,
+  defaultExpanded,
+  liveMotion,
+}: {
+  action: PendingAction
+  continueHaltedActions: typeof continueHaltedAgents
+  focused: boolean
+  defaultExpanded: boolean
+  liveMotion: boolean
+}) {
+  const item = (
+    <ActionItem
+      action={action}
+      continueHaltedActions={continueHaltedActions}
+      focused={focused}
+      defaultExpanded={defaultExpanded}
+    />
+  )
+  if (!liveMotion) return item
+  return (
+    <div className="relative rounded-xl" {...liveRowProps(action.id)}>
+      {item}
+    </div>
+  )
 }
 
 // Halted agents get a bulk "Continue all" — when a provider recovers, resume everything at once.
@@ -152,12 +202,14 @@ function AgentErrorSection({
   focusActionId,
   showHeading,
   showCount,
+  liveMotion,
 }: {
   actions: PendingAction[]
   continueHaltedActions: typeof continueHaltedAgents
   focusActionId?: string
   showHeading: boolean
   showCount: boolean
+  liveMotion: boolean
 }) {
   const queryClient = useQueryClient()
   const respondableErrors = actions.filter(
@@ -203,12 +255,13 @@ function AgentErrorSection({
       )}
       <div className="space-y-2">
         {actions.map((action) => (
-          <ActionItem
+          <ActionRow
             key={action.id}
             action={action}
             continueHaltedActions={continueHaltedActions}
             focused={focusActionId === action.id}
             defaultExpanded={!showHeading && action.type !== 'agent-question' && action.type !== 'squad-question'}
+            liveMotion={liveMotion}
           />
         ))}
       </div>
@@ -224,6 +277,7 @@ function ActionSection({
   focusActionId,
   showHeading,
   showCount,
+  liveMotion,
 }: {
   title: string
   count: number
@@ -232,6 +286,7 @@ function ActionSection({
   focusActionId?: string
   showHeading: boolean
   showCount: boolean
+  liveMotion: boolean
 }) {
   return (
     <section>
@@ -243,12 +298,13 @@ function ActionSection({
       )}
       <div className="space-y-2">
         {actions.map((action) => (
-          <ActionItem
+          <ActionRow
             key={action.id}
             action={action}
             continueHaltedActions={continueHaltedActions}
             focused={focusActionId === action.id}
             defaultExpanded={!showHeading && action.type !== 'agent-question' && action.type !== 'squad-question'}
+            liveMotion={liveMotion}
           />
         ))}
       </div>
