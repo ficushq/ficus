@@ -312,8 +312,11 @@ test("the Feed's settled count seeks its two row kinds instead of reading every 
 test('Activity filtered to a settled count (GET /api/activity?settled=) seeks the same rows', async () => {
   const squadId = await scanCostSquad()
   const since = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
-  // The first page and a later page (from a cursor) for each kind. Nothing in the fixture matches,
-  // the worst case for a LIMIT: a plan that walked the period newest first would read all of it.
+  // The Feed's links also carry the count's end (`until`, its `through`), a minute behind the clock.
+  const until = new Date(Date.now() - 60_000).toISOString()
+  // The first page and a later page (from a cursor) for each kind, with and without the end. Nothing
+  // in the fixture matches, the worst case for a LIMIT: a plan that walked the period newest first
+  // would read all of it.
   const cursor = {
     at: new Date(Date.now() - 60_000),
     squadId,
@@ -322,22 +325,27 @@ test('Activity filtered to a settled count (GET /api/activity?settled=) seeks th
     retentionFloor: new Date(Date.now() - 30 * 24 * 60 * 60_000),
   }
   const queries = (['questions', 'reviews'] as const).flatMap((kind) =>
-    [null, cursor].map((page) =>
-      globalActivityPageSql(
-        {
-          limit: 50,
-          verbose: false,
-          agentIds: [],
-          kinds: [],
-          settled: { kind, since },
-          squadAccess: [{ squadId, access: FULL_ACCESS }],
-        },
-        page
+    [
+      { kind, since },
+      { kind, since, until },
+    ].flatMap((settled) =>
+      [null, cursor].map((page) =>
+        globalActivityPageSql(
+          {
+            limit: 50,
+            verbose: false,
+            agentIds: [],
+            kinds: [],
+            settled,
+            squadAccess: [{ squadId, access: FULL_ACCESS }],
+          },
+          page
+        )
       )
     )
   )
   const plans = await settledFixturePlans(squadId, queries)
   if (process.env.CORE_DB_PRINT_EXPLAIN === '1') console.log('settled list plans', JSON.stringify(plans))
-  expect(plans).toHaveLength(4)
+  expect(plans).toHaveLength(8)
   for (const plan of plans) expectKindSeek(plan)
 })

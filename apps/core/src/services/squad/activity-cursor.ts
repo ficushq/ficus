@@ -74,7 +74,7 @@ export interface GlobalActivityCursorContext {
   agentIds: string[]
   kinds: readonly (SquadActivityKind | string)[]
   workStreamId?: string
-  /** Part of the digest only when set, so cursors issued without it stay valid. */
+  /** Part of the digest only when set (and its `until` only when set), so cursors issued without it stay valid. */
   settled?: ActivitySettledFilter
 }
 export interface GlobalActivityCursorKeyset {
@@ -93,7 +93,15 @@ const globalDigest = (context: GlobalActivityCursorContext, floor: Date) =>
         agentIds: unique(context.agentIds),
         kinds: unique(context.kinds),
         ...(context.workStreamId ? { workStreamId: context.workStreamId } : {}),
-        ...(context.settled ? { settled: { kind: context.settled.kind, since: context.settled.since } } : {}),
+        ...(context.settled
+          ? {
+              settled: {
+                kind: context.settled.kind,
+                since: context.settled.since,
+                ...(context.settled.until ? { until: context.settled.until } : {}),
+              },
+            }
+          : {}),
         retentionFloor: floor.toISOString(),
       })
     )

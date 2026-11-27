@@ -167,6 +167,23 @@ describe('global activity cursor', () => {
       ).toThrow(InvalidActivityCursorError)
   })
 
+  it("binds a settled filter's end, and an unbounded settled cursor still decodes", () => {
+    const since = '2026-08-26T09:00:00.000Z'
+    const until = '2026-08-26T12:00:00.000Z'
+    const bounded = { ...globalContext, settled: { kind: 'questions' as const, since, until } }
+    const unbounded = { ...globalContext, settled: { kind: 'questions' as const, since } }
+    const cursor = encodeGlobalActivityCursor(globalKeyset, bounded)
+    expect(decodeGlobalActivityCursor(cursor, bounded)).toEqual(globalKeyset)
+    for (const changed of [unbounded, { ...globalContext, settled: { ...bounded.settled, until: since } }])
+      expect(() => decodeGlobalActivityCursor(cursor, changed)).toThrow(InvalidActivityCursorError)
+    // Without `until` the digest is the one cursors had before the bound existed.
+    const plain = encodeGlobalActivityCursor(globalKeyset, unbounded)
+    expect(
+      decodeGlobalActivityCursor(plain, { ...unbounded, settled: { ...unbounded.settled, until: undefined } })
+    ).toEqual(globalKeyset)
+    expect(() => decodeGlobalActivityCursor(plain, bounded)).toThrow(InvalidActivityCursorError)
+  })
+
   it('never decodes a per-squad cursor, and vice versa (distinct key sets)', () => {
     const perSquadCursor = encodeActivityCursor(keyset, context)
     expect(() =>
