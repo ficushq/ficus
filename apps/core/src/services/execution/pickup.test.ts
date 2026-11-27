@@ -1140,6 +1140,110 @@ describeSubprocess('attemptPickup result matrix', () => {
     }
   })
 
+  test('a hard crash mid tool call gives each cut-off call a restart-aware result, never on a graceful restart', async () => {
+    const { findHardInterruption } = await import('./startup-recovery')
+    const { createInterruptedToolCallsExtension, recordInterruptedToolCalls } =
+      await import('../agent/interrupted-tool-calls')
+    const { SessionManager, convertToLlm } = await import('@earendil-works/pi-coding-agent')
+    const { transformMessages } = await import('@earendil-works/pi-ai/api/transform-messages')
+    const { anthropicProvider } = await import('@earendil-works/pi-ai/providers/anthropic')
+    const model = anthropicProvider()
+      .getModels()
+      .find((candidate) => candidate.id === 'claude-opus-5-5')!
+
+    // By default a dead owner: no process holds a random incarnation's liveness lock.
+    async function runningExecution(message: string, ownerIncarnation: string = randomUUID()) {
+      const agent = await createSquadAgent('zai:glm-5.2')
+      const execution = await agent.queueExecution({ message })
+      createdExecutionIds.push(execution.id)
+      const lease = await seedStrandedQueuedAdmission(agent, execution, ownerIncarnation)
+      await db
+        .update(executions)
+        .set({ status: 'running', runnerClaimToken: lease.token, runnerClaimGeneration: lease.admittedGeneration })
+        .where(eq(executions.id, execution.id))
+      // The worker's pi session at the moment Core died: the calls are saved, their results are not.
+      const session = SessionManager.inMemory()
+      session.appendMessage({ role: 'user', content: message, timestamp: Date.now() })
+      session.appendMessage({
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', id: 'call-read', name: 'read', arguments: { path: 'notes.md' } },
+          { type: 'toolCall', id: 'call-bash', name: 'bash', arguments: { command: 'deploy' } },
+        ],
+        api: 'anthropic-messages',
+        provider: 'anthropic',
+        model: 'claude-opus-5-5',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'toolUse',
+        timestamp: Date.now(),
+      })
+      return { agent, execution, session }
+    }
+
+    async function resumedResults(session: InstanceType<typeof SessionManager>) {
+      // The resumed prompt, then the context the next model request is built from.
+      session.appendMessage({ role: 'user', content: 'Continue.', timestamp: Date.now() })
+      const [handler] = createInterruptedToolCallsExtension().handlers.get('context')!
+      const messages = session.buildSessionContext().messages
+      const hooked = (await handler!({ type: 'context', messages }, { sessionManager: session } as never)) as
+        { messages: typeof messages } | undefined
+      return Object.fromEntries(
+        transformMessages(convertToLlm(hooked?.messages ?? messages), model)
+          .filter((message) => message.role === 'toolResult')
+          .map((message) => [message.toolCallId, (message.content[0] as { text: string }).text])
+      )
+    }
+
+    // Startup recovery after Core came back without a shutdown marker.
+    const crashed = await runningExecution('hard crash mid tool call')
+    expect(await recoverInterruptedExecutionsForStartup()).toContain(crashed.execution.id)
+    const interruption = await findHardInterruption(crashed.execution.id, crashed.agent.id)
+    expect(interruption).toMatchObject({ executionId: crashed.execution.id, cause: 'core_restart' })
+    expect(recordInterruptedToolCalls(crashed.session, interruption!).calls).toEqual([
+      { toolCallId: 'call-read', toolName: 'read', replay: 'safe' },
+      { toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' },
+    ])
+    const results = await resumedResults(crashed.session)
+    expect(results['call-read']).toContain('interrupted by an unexpected Core restart')
+    expect(results['call-read']).toContain('safe to run again')
+    expect(results['call-bash']).toContain('It may have partially run or completed. Inspect the current state')
+    expect(Object.values(results)).not.toContain('No result provided')
+
+    // The lease sweep: the owner stopped renewing; no restart is claimed.
+    const lapsed = await runningExecution('lease lapsed mid tool call')
+    await db
+      .update(executionAdmissionReservations)
+      .set({ leaseExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(executionAdmissionReservations.executionId, lapsed.execution.id))
+    expect(await requeueAbandonedLeaseExecutions()).toContain(lapsed.execution.id)
+    const lapse = await findHardInterruption(lapsed.execution.id, lapsed.agent.id)
+    expect(lapse).toMatchObject({ cause: 'lease_lapsed' })
+    recordInterruptedToolCalls(lapsed.session, lapse!)
+    expect((await resumedResults(lapsed.session))['call-bash']).toContain(
+      'interrupted by an unexpected stop of the Ficus worker running it'
+    )
+
+    // A graceful restart drains instead; its resume has its own brief, and missing results are not rewritten.
+    const graceful = await runningExecution('graceful restart mid tool call', admissionProcessIncarnation)
+    const restart = { restartId: 'restart-graceful', restartedAt: new Date().toISOString() }
+    expect(await requeueOwnedExecutionsForShutdown([graceful.execution.id], { restart })).toContain(
+      graceful.execution.id
+    )
+    expect(await findHardInterruption(graceful.execution.id, graceful.agent.id)).toBeUndefined()
+    // An execution that was never interrupted has no interruption either.
+    const fresh = await createSquadAgent('zai:glm-5.2')
+    const untouched = await fresh.queueExecution({ message: 'never interrupted' })
+    createdExecutionIds.push(untouched.id)
+    expect(await findHardInterruption(untouched.id, fresh.id)).toBeUndefined()
+  })
+
   test('shutdown requeues a running execution this process owns whose session already died', async () => {
     // gracefulShutdown's session sweep only sees executions with a LIVE session.
     // A fence abort kills the session while leaving the row `running`, so without

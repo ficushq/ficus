@@ -1,4 +1,10 @@
-import { bashOutcomeUnknownForError } from '../sandbox/client/http-client'
+import { bashOutcomeUnknownForError, SandboxTransportError } from '../sandbox/client/http-client'
+import {
+  replayIsHarmless,
+  withToolMetadata,
+  type ClassifiedToolDefinition,
+  type ToolReplay,
+} from '../../tools/metadata'
 import { recoveryInvocationKey, recoveryOperationKey } from './operation'
 import { ToolFeedbackError } from '../../tools/tool-feedback'
 import { createHash } from 'node:crypto'
@@ -49,6 +55,31 @@ function explainedFailure(error: unknown): boolean {
   return status !== undefined && [400, 401, 403, 404, 409, 422].includes(status)
 }
 
+/**
+ * A call cut off mid-flight by a lost sandbox connection: the stream ended before a result, or the
+ * response broke off. A call that could not reach its box is not interrupted; that keeps counting.
+ * Restart-tagged errors have their own path (a restart is already free).
+ */
+function interruptedMidCall(error: unknown): boolean {
+  if (bashOutcomeUnknownForError(error)) return true
+  const seen = new Set<unknown>()
+  while (error instanceof Error && !seen.has(error)) {
+    if (error instanceof SandboxTransportError && error.phase === 'response') return true
+    seen.add(error)
+    error = error.cause
+  }
+  return false
+}
+
+/** Guidance for an interrupted call that is harmless to run again; it does not spend the budget. */
+export function harmlessInterruptionGuidance(replay: ToolReplay): string {
+  const why =
+    replay === 'safe'
+      ? 'This tool only reads, so it is safe to run again.'
+      : 'Running it again with the same arguments leaves the same final state, so it is safe to repeat.'
+  return `The call was interrupted before it returned a result. ${why} This interruption does not count toward the recovery budget.`
+}
+
 // One non-locking progress probe per execution, shared by all tools. Bounded
 // retention avoids retaining completed executions in long-lived workers.
 const modelProgress = new Map<string, Promise<void>>()
@@ -82,14 +113,21 @@ async function exclusiveOperation<T>(key: string, run: () => Promise<T>): Promis
   }
 }
 
-/** Observes real calls; it never blindly repeats Bash or external side effects. */
+/**
+ * Observes real calls; it never blindly repeats Bash or external side effects. Also puts the tool's
+ * replay class on its definition (`tools/metadata.ts`): a call to a `safe` or `idempotent` tool
+ * that a lost connection cut off is not counted as an unexplained failure.
+ */
 export function wrapToolWithRecovery<T extends ToolDefinition>(
   tool: T,
   origin: () => RecoveryOrigin | undefined
-): Omit<T, 'execute'> & { execute: ToolDefinition['execute'] } {
+): Omit<ClassifiedToolDefinition<T>, 'execute'> & { execute: ToolDefinition['execute'] } {
   const execute: ToolDefinition['execute'] = tool.execute.bind(tool)
+  const classified = withToolMetadata(tool)
+  const harmlessInterruption = (error: unknown) =>
+    replayIsHarmless(classified.ficus.replay) && !restartContextForCommandError(error) && interruptedMidCall(error)
   return {
-    ...tool,
+    ...classified,
     execute: async (...args: Parameters<ToolDefinition['execute']>) => {
       const source = origin()
       if (!source) return execute(...args)
@@ -114,6 +152,8 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
             }
           },
           failed: async (error) => {
+            // Inner transport retries report here too; a harmless interruption spends nothing.
+            if (harmlessInterruption(error)) return undefined
             const record = await recordRecoveryFailure(source, {
               operationKey: operation,
               attempted: attemptedAction(tool.name),
@@ -158,6 +198,12 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
             const restart = restartContextForCommandError(error)
             if ((!restart && signal?.aborted) || explainedFailure(error)) {
               throw error
+            }
+            if (harmlessInterruption(error)) {
+              const message = error instanceof Error ? error.message : String(error)
+              throw new Error(`${message}\n\n${harmlessInterruptionGuidance(classified.ficus.replay)}`, {
+                cause: error,
+              })
             }
             let record = context.latest
             if (!context.observed(error)) {

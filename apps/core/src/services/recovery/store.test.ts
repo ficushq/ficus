@@ -506,7 +506,8 @@ test('inner idempotent transport retries spend the same tool budget instead of m
           recoverClient: async (client) => client,
           operation: async () => {
             calls++
-            throw new SandboxTransportError('connection_reset', 'response', new Error('fixture'))
+            // The box cannot be reached at all: not an interrupted call, so a read spends the budget too.
+            throw new SandboxTransportError('connection_refused', 'connect', new Error('fixture'))
           },
         }),
     },
@@ -519,6 +520,68 @@ test('inner idempotent transport retries spend the same tool budget instead of m
   await expect(executeTool(tool, 'read-again', {})).rejects.toThrow('authorized decision')
   expect(calls).toBe(3)
 }, 10000) // Three real read attempts plus the mandatory 1s/2s backoff.
+
+test('an interrupted call to a safe tool spends no budget; the same interruption of an unsafe tool still does', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { runIdempotentSandboxOperation } = await import('../sandbox/vm/retry')
+  const { BashOutcomeUnknownError, SandboxTransportError } = await import('../sandbox/client/http-client')
+  const { recoveryEpisodes } = await import('../../db')
+  const origin = () => ({ agentId: worker.id, executionId: execution.id })
+  let reads = 0
+  const read = wrapToolWithRecovery(
+    {
+      name: 'read',
+      label: 'Read',
+      description: 'fixture',
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async () =>
+        runIdempotentSandboxOperation({
+          sandboxId: 'fixture',
+          operationClass: 'read',
+          getClient: () => ({}),
+          recoverClient: async (client) => client,
+          sleep: async () => {},
+          operation: async () => {
+            reads++
+            // The connection breaks off while the response streams.
+            throw new SandboxTransportError('connection_reset', 'response', new Error('fixture'))
+          },
+        }),
+    },
+    origin
+  )
+  expect(read.ficus).toEqual({ replay: 'safe' })
+  // More interruptions than the budget allows, and still no hold: each one is free.
+  for (const id of ['read-1', 'read-2'])
+    await expect(executeTool(read, id, { path: 'notes.md' })).rejects.toThrow(
+      'This tool only reads, so it is safe to run again. This interruption does not count toward the recovery budget.'
+    )
+  expect(reads).toBe(6)
+  expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(0)
+
+  let commands = 0
+  const bash = wrapToolWithRecovery(
+    {
+      name: 'bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Object({ command: Type.String() }),
+      execute: async () => {
+        commands++
+        throw new BashOutcomeUnknownError('invocation-fixture', 'connection_reset')
+      },
+    },
+    origin
+  )
+  expect(bash.ficus).toEqual({ replay: 'unsafe' })
+  const failure = await executeTool(bash, 'bash-1', { command: 'deploy' }).catch((error: Error) => error)
+  expect(String(failure)).toContain('Inspect the affected state')
+  expect(String(failure)).not.toContain('does not count toward the recovery budget')
+  expect(commands).toBe(1)
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record?.state).toMatchObject({ state: 'recovering', failures: 1 })
+})
 
 test('parallel duplicate operations cannot overrun a recovery budget or duplicate an unknown side effect', async () => {
   const { Type } = await import('@sinclair/typebox')

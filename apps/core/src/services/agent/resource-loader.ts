@@ -15,6 +15,7 @@ import { createLogger } from '../../lib/infra/logger'
 import type { PrecompactionController } from './precompaction/controller'
 import { createPrecompactionExtension } from './precompaction/extension'
 import { createShortTermMemoryContextExtension, type ShortTermMemoryContext } from './short-term-memory-context'
+import { createInterruptedToolCallsExtension } from './interrupted-tool-calls'
 
 const log = createLogger('resource-loader')
 
@@ -48,6 +49,7 @@ export class FicusResourceLoader implements ResourceLoader {
   private fitCompactionFallback?: (event: SessionBeforeCompactEvent) => Promise<CompactionResult | undefined>
   private shortTermMemoryContext?: ShortTermMemoryContext
   private readonly shortTermMemoryExtension = createShortTermMemoryContextExtension(() => this.shortTermMemoryContext)
+  private readonly interruptedToolCallsExtension = createInterruptedToolCallsExtension()
   private readonly precompactionExtension: Extension = createPrecompactionExtension(
     () => this.precompactionController,
     () => this.fitCompactionFallback
@@ -140,7 +142,15 @@ export class FicusResourceLoader implements ResourceLoader {
         runtime: createExtensionRuntime(),
       } satisfies LoadExtensionsResult)
 
-    return { ...base, extensions: [...base.extensions, this.precompactionExtension, this.shortTermMemoryExtension] }
+    return {
+      ...base,
+      extensions: [
+        ...base.extensions,
+        this.precompactionExtension,
+        this.shortTermMemoryExtension,
+        this.interruptedToolCallsExtension,
+      ],
+    }
   }
 
   getSkills() {
