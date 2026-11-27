@@ -117,6 +117,9 @@ describe('activity subject identity', () => {
   it('missing or redacted attribution is an agent, never system', () => {
     expect(activityAgentLabel(null)).toBe('Agent')
     expect(activityAgentLabel('code_review-bot')).toBe('Code Review Bot')
+    // The configured type name wins, custom types included; the general type is never a bare "General".
+    expect(activityAgentLabel('code_review-bot', 'Reviewer')).toBe('Reviewer')
+    expect(activityAgentLabel('general')).toBe('General Purpose agent')
     expect(
       activitySubjectLabel({
         ...item('20:a'),
@@ -124,6 +127,13 @@ describe('activity subject identity', () => {
         ref: { type: 'agent', agentId: 'recipient', view: 'inbox' },
       })
     ).toBe('Agent')
+    const engineerRow = {
+      ...item('20:b'),
+      agentTypeId: 'engineer',
+      ref: { type: 'agent' as const, agentId: 'a', view: 'chat' as const },
+    }
+    expect(activitySubjectLabel(engineerRow)).toBe('Engineer')
+    expect(activitySubjectLabel(engineerRow, (id) => (id === 'engineer' ? 'Builder' : undefined))).toBe('Builder')
   })
   it('work variants identify the work destination with a stable fallback', () => {
     for (const kind of ['workstream', 'wait', 'handoff'] as const) {

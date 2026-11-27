@@ -1,6 +1,6 @@
 import { workStreamTitle, type Agent, type PendingAction, type Squad, type WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
-import { getAgentName, getConversationTitle } from './agentDisplay'
+import { getAgentName, getConversationTitle, type AgentTypeName } from './agentDisplay'
 import { pendingActionContextLine } from './pendingActionWording'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
@@ -69,6 +69,8 @@ export function commandCenterSearch(
     actions: readonly PendingAction[]
     allowedSettings: ReadonlySet<string>
     squadId?: string
+    /** The configured agent type names, so conversations read as every other surface names them. */
+    typeNames?: AgentTypeName
   },
   now = Date.now()
 ): CommandResult[] {
@@ -101,7 +103,7 @@ export function commandCenterSearch(
         id: `action:${a.id}`,
         kind: 'Needs you' as const,
         label: actionTitle(a),
-        detail: pendingActionContextLine(a),
+        detail: pendingActionContextLine(a, data.typeNames),
         destination: { kind: 'action' as const, id: a.id, label: actionTitle(a) },
       })),
     ...data.squads
@@ -120,7 +122,7 @@ export function commandCenterSearch(
         kind: 'Conversation' as const,
         status: a.status,
         agentTypeId: a.agentTypeId,
-        label: getConversationTitle(a),
+        label: getConversationTitle(a, data.typeNames),
         // The agent's name stays searchable even though the title leads with its type or topic.
         keywords: getAgentName(a),
         detail: `${squadName(a.squadId)} · ${new Date(a.lastHumanMessageAt ?? a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
@@ -129,7 +131,7 @@ export function commandCenterSearch(
           id: a.id,
           agentId: a.id,
           squadId: a.squadId!,
-          label: getConversationTitle(a),
+          label: getConversationTitle(a, data.typeNames),
         },
       })),
     ...data.streams

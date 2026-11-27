@@ -29,7 +29,7 @@ import {
   type WorkStreamWait,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
-import { getAgentLabel } from './agentDisplay'
+import { getAgentLabel, noAgentTypeNames, type AgentTypeName } from './agentDisplay'
 
 export type HumanApprovalStep = Extract<WorkflowStep, { kind: 'human-approval' }>
 /** A step a person decides: an approval, or a decision step that got no automatic decision. */
@@ -50,8 +50,8 @@ export function outcomeLabel(outcome: string): string {
 }
 
 /** The squad's own name for an agent type (`AgentType.name`), when it is known. */
-export type AgentTypeName = (agentTypeId: string) => string | undefined
-const noTypeNames: AgentTypeName = () => undefined
+export type { AgentTypeName }
+const noTypeNames = noAgentTypeNames
 
 /** "Engineer", or "General Purpose agent" for the built-in general type (see `agentTypeNoun`). */
 function agentNoun(type: string, typeName: AgentTypeName): string {
@@ -146,7 +146,7 @@ export function attemptAuthor(
   if (!type) return undefined
   // The shared type-first label, so the review names agents as every other surface does.
   return agent
-    ? getAgentLabel(agent, undefined, typeName(type))
+    ? getAgentLabel(agent, undefined, typeName)
     : typeFirstAgentLabel({ agentTypeId: type, typeName: typeName(type) })
 }
 

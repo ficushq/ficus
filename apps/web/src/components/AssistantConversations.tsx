@@ -2,15 +2,16 @@ import clsx from 'clsx'
 import { useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import type { Agent } from '@ficus/shared'
-import { getAgentLabel, getAgentPurpose, getAgentName } from '../lib/agentDisplay'
+import { getAgentLabel, getAgentPurpose, getAgentName, noAgentTypeNames, type AgentTypeName } from '../lib/agentDisplay'
 import { Panel, usePopover } from './popover'
 import { ChevronDownIcon, PlusIcon } from './icons'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
-export function assistantConversationTitle(agent: Agent): string {
+export function assistantConversationTitle(agent: Agent, typeNames: AgentTypeName = noAgentTypeNames): string {
   return (
     getAgentPurpose(agent) ??
-    (getAgentName(agent) === 'system-manager' ? 'Untitled conversation' : getAgentLabel(agent))
+    (getAgentName(agent) === 'system-manager' ? 'Untitled conversation' : getAgentLabel(agent, undefined, typeNames))
   )
 }
 
@@ -40,6 +41,7 @@ export function AssistantConversationList({
   limit?: number
 }) {
   const location = useLocation()
+  const typeNames = useAgentTypeNames()
   const ordered = [...agents].sort((a, b) => updatedAt(b) - updatedAt(a)).slice(0, limit)
   return (
     <div className="space-y-1">
@@ -70,7 +72,7 @@ export function AssistantConversationList({
               aria-label={working ? 'Working' : 'Idle'}
             />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-primary">{assistantConversationTitle(agent)}</span>
+              <span className="block truncate text-primary">{assistantConversationTitle(agent, typeNames)}</span>
               <time
                 className="block mt-0.5 text-xs text-muted"
                 dateTime={new Date(updatedAt(agent)).toISOString()}
@@ -106,6 +108,7 @@ export function AssistantConversationSwitcher({
 }) {
   // Open state lives here so a new openRequest can open the list while rendering.
   const [open, setOpenState] = useState(false)
+  const typeNames = useAgentTypeNames()
   const popover = usePopover({ kind: 'dialog', id: 'assistant-conversations', open, onOpenChange: setOpenState })
   const { setOpen } = popover
   const [filter, setFilter] = useState('')
@@ -124,7 +127,9 @@ export function AssistantConversationSwitcher({
   // The title leads; the agent's name stays searchable as its secondary handle.
   const needle = filter.trim().toLowerCase()
   const filtered = agents.filter((agent) =>
-    [assistantConversationTitle(agent), getAgentName(agent)].some((text) => text.toLowerCase().includes(needle))
+    [assistantConversationTitle(agent, typeNames), getAgentName(agent)].some((text) =>
+      text.toLowerCase().includes(needle)
+    )
   )
   return (
     <div className="relative w-full min-w-0 px-3 pb-3 pt-2">
@@ -135,7 +140,9 @@ export function AssistantConversationSwitcher({
           className="ficus-button ficus-button-ghost flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-primary"
           title="Switch conversation"
         >
-          <span className="truncate">{selected ? assistantConversationTitle(selected) : 'New conversation'}</span>
+          <span className="truncate">
+            {selected ? assistantConversationTitle(selected, typeNames) : 'New conversation'}
+          </span>
           <ChevronDownIcon className="w-4 h-4 text-muted shrink-0" />
         </button>
         <button

@@ -29,6 +29,7 @@ import {
   formatActivityTimestamp,
   squadActivityStatusMessage,
 } from './squadActivityView'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivityItem> {
   kinds: SquadActivityKind[]
@@ -114,6 +115,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   onLoadMore,
 }: ActivityFeedViewProps<T>) {
   const navigate = useNavigate()
+  const typeNames = useAgentTypeNames()
   const isGlobalFeed = squadChipFor !== undefined
   // Default-view cleanup: a sender's own row hides while a received row for the same
   // message is among the rows shown (already server-filtered and permission-redacted).
@@ -164,7 +166,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
       }) as unknown as T
     const labelFor = (agentId: string) => {
       const type = agentTypeIdByAgent.get(agentId)
-      return agentLabelFor?.(agentId) ?? (type ? activityAgentLabel(type) : undefined)
+      return agentLabelFor?.(agentId) ?? (type ? activityAgentLabel(type, typeNames(type)) : undefined)
     }
     const streamRow = rowFor({ type: 'workstream', workStreamId: card.id, workStreamNumber: card.number })
     // Chat with whoever works on it now, else the participant with the newest row in this view.
@@ -494,7 +496,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           agentTypeColor(item.ref.type === 'agent' ? item.agentTypeId : null)
                         )}
                         data-activity-column="agent"
-                        title={item.ref.type === 'agent' ? agentDetailFor(item) : activitySubjectLabel(item)}
+                        title={item.ref.type === 'agent' ? agentDetailFor(item) : activitySubjectLabel(item, typeNames)}
                       >
                         {showLiveDot && (
                           <span
@@ -504,7 +506,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                             className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle"
                           />
                         )}
-                        {activitySubjectLabel(item)}
+                        {activitySubjectLabel(item, typeNames)}
                       </span>
                     </div>
                     <span
@@ -542,7 +544,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                         </span>
                       )}
                       {item.ref.type === 'workstream' && item.kind !== 'handoff' && item.agentTypeId && (
-                        <span>By {activityAgentLabel(item.agentTypeId)} · </span>
+                        <span>By {activityAgentLabel(item.agentTypeId, typeNames(item.agentTypeId))} · </span>
                       )}
                       <ActivityRowText item={item} onOpenAgent={onOpenAgentReference} />
                       {workStreamChip && (
@@ -580,7 +582,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                             href={sourceHref}
                             target="_blank"
                             rel="noopener noreferrer"
-                            aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
+                            aria-label={`Open activity source: ${activitySubjectLabel(item, typeNames)} — ${item.summary}`}
                           />
                         ) : (
                           <Link
@@ -589,7 +591,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                             // Shift- or Alt/Option-click on an agent row opens its chat in a floating window.
                             {...agentChatTarget(item.ref.type === 'agent' ? item.ref.agentId : undefined)}
                             onClick={interceptRowClick(item)}
-                            aria-label={`Open activity source: ${activitySubjectLabel(item)} — ${item.summary}`}
+                            aria-label={`Open activity source: ${activitySubjectLabel(item, typeNames)} — ${item.summary}`}
                           />
                         ))}
                       {content}

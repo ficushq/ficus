@@ -22,6 +22,7 @@ import {
 } from '../lib/needsYouNotices'
 import { FicusLogo } from './FicusLogo'
 import { CloseIcon } from './icons'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** After a pause, a card stays at least this long so it does not vanish as the pointer leaves. */
 const MIN_REMAINING_AFTER_PAUSE_MS = 2000
@@ -253,7 +254,8 @@ function NeedsYouNoticeCard({
     }
   }, [paused, onDismiss, id])
 
-  const content = needsYouNoticeContent(action)
+  const typeNames = useAgentTypeNames()
+  const content = needsYouNoticeContent(action, typeNames)
   return (
     <div
       data-testid="needs-you-notice"

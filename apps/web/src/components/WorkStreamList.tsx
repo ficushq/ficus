@@ -42,6 +42,8 @@ import {
   WorkStreamSummaryLine,
   type WorkStreamSummarySurface,
 } from './WorkStreamSummary'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
+import { agentThreadLinkTitle, agentTypeDisplayName } from '../lib/agentDisplay'
 
 // --- Status constants ---
 
@@ -76,6 +78,10 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 // elapsed time, even if the link box ends up taller than the 16px text row.
 const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-xs text-muted hover:text-link hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent'
+
+// Plain row metadata with a tooltip (runtime, queue position) sits above the stretched button too, or the
+// button would take the hover and the tooltip would never show. A click on it still opens the stream.
+const ROW_TOOLTIP_TARGET_CLASS = 'relative z-10 cursor-pointer'
 
 // --- Filter types ---
 
@@ -114,9 +120,22 @@ function wsFilterState(ws: WorkStream): WorkStreamPresentationState {
 // --- Helper components ---
 
 /** A row's time: time worked, or "Waiting on you 7d" while a person is waited on. */
-function WorkStreamTime({ time, className }: { time: WorkStreamTimeDisplay; className?: string }) {
+function WorkStreamTime({
+  time,
+  className,
+  onClick,
+}: {
+  time: WorkStreamTimeDisplay
+  className?: string
+  onClick?: () => void
+}) {
   return (
-    <span className={clsx('tabular-nums', className)} title={time.title} data-testid="work-stream-time">
+    <span
+      className={clsx('tabular-nums', className)}
+      title={time.title}
+      data-testid="work-stream-time"
+      onClick={onClick}
+    >
       {time.kind === 'worked' && <span className="sr-only">Time worked </span>}
       {time.text}
     </span>
@@ -491,7 +510,11 @@ function WorkStreamRow({
   // link to carry it): a change while the list is on screen briefly emphasizes them (LiveListMotion).
   const liveStatus = `${wsFilterState(workStream)}|${deliveryTag && deliveryLabelMode === 'pill' ? (workStream.delivery?.kind ?? '') : ''}`
   const assignee = workStream.assigneeAgentId ? agentMap.get(workStream.assigneeAgentId) : null
-  const assigneeTypeName = assignee ? (agentTypeNameMap.get(assignee.agentTypeId) ?? assignee.agentTypeId) : null
+  const sharedTypeNames = useAgentTypeNames()
+  // The type as every other surface names it: the configured name, else the title-cased id, never the raw id.
+  const assigneeTypeName = assignee
+    ? agentTypeDisplayName(assignee.agentTypeId, (id) => agentTypeNameMap.get(id) || sharedTypeNames(id))
+    : null
   const assigneeTarget = assignee ? `/squads/${slugFor(workStream.squadId)}/agents?agent=${assignee.id}` : null
 
   const queuePositionText =
@@ -537,7 +560,7 @@ function WorkStreamRow({
           to={assigneeTarget}
           onClick={onAssigneeClick}
           className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
-          title={`Open ${assigneeTypeName} agent thread`}
+          title={agentThreadLinkTitle(assigneeTypeName)}
         >
           {!isDone && <AgentActivityDot status={assignee.status} />}
           {assigneeTypeName}
@@ -548,7 +571,11 @@ function WorkStreamRow({
   if (queuePositionText) {
     context.push({
       key: 'queue',
-      node: <span title="Position in the squad's admission queue">{queuePositionText}</span>,
+      node: (
+        <span title="Position in the squad's admission queue" className={ROW_TOOLTIP_TARGET_CLASS} onClick={open}>
+          {queuePositionText}
+        </span>
+      ),
     })
   }
   if (isDone && Number.isFinite(completedAt.getTime())) {
@@ -562,7 +589,11 @@ function WorkStreamRow({
     })
   }
   // Time worked, or how long a person has been waited on, which replaces it while they are.
-  if (time) context.push({ key: 'time', node: <WorkStreamTime time={time} /> })
+  if (time)
+    context.push({
+      key: 'time',
+      node: <WorkStreamTime time={time} className={ROW_TOOLTIP_TARGET_CLASS} onClick={open} />,
+    })
   for (const pullRequest of pullRequests) {
     if (!pullRequest.url) continue
     const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null
@@ -618,8 +649,9 @@ function WorkStreamRow({
         <WorkStreamStatusBadges
           workStream={workStream}
           deliveryLabel={deliveryLabelMode}
-          showQueuedReview={false}
-          className="max-w-[50%] sm:max-w-none"
+          showQueuedReview="touch"
+          // Above the stretched button so the badges' tooltips show; a click still reaches the button.
+          className="relative z-10 max-w-[50%] sm:max-w-none"
           liveEmphasis
         />
       </button>

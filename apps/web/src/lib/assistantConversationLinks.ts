@@ -2,7 +2,7 @@ import type { RenderItem } from '@ficus/client-core'
 import type { Agent } from '@ficus/shared'
 import { z } from 'zod'
 import type { VoiceTranscriptEntry } from '../voice/types'
-import { getAgentTitle } from './agentDisplay'
+import { getAgentTitle, noAgentTypeNames, type AgentTypeName } from './agentDisplay'
 
 const conversationSchema = z.object({
   agentId: z.string().min(1).max(200),
@@ -12,8 +12,15 @@ const conversationSchema = z.object({
 })
 export type AssistantConversationLink = z.infer<typeof conversationSchema>
 
-export function agentConversationLink(agent: Agent): AssistantConversationLink {
-  return { agentId: agent.id, ...(agent.squadId ? { squadId: agent.squadId } : {}), label: getAgentTitle(agent) }
+export function agentConversationLink(
+  agent: Agent,
+  typeNames: AgentTypeName = noAgentTypeNames
+): AssistantConversationLink {
+  return {
+    agentId: agent.id,
+    ...(agent.squadId ? { squadId: agent.squadId } : {}),
+    label: getAgentTitle(agent, typeNames),
+  }
 }
 
 const messageTools = new Set([

@@ -9,6 +9,7 @@ import { MarkdownContent } from '../MarkdownContent'
 import { CloseIcon } from '../icons'
 import { isWorkspaceVoiceRecipient, type Agent, type InboxMessage, type InboxMessageSenderType } from '@ficus/shared'
 import { getAgentLabel } from '../../lib/agentDisplay'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 interface Props {
   agent: Agent
@@ -26,7 +27,7 @@ const senderTypeColors: Record<InboxMessageSenderType, string> = {
 }
 
 export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
-  const agentName = getAgentLabel(agent)
+  const agentName = getAgentLabel(agent, undefined, useAgentTypeNames())
   const agentIds = useMemo(() => [agent.id], [agent.id])
   useAgentInboxInvalidation(agentIds, { includeMessages: true })
 

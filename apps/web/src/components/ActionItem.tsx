@@ -41,6 +41,7 @@ import {
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 import { pendingActionAgentLabel, pendingActionContextLine } from '../lib/pendingActionWording'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -98,6 +99,7 @@ export function ActionItem({
   defaultExpanded = false,
   embedded = false,
 }: ActionItemProps) {
+  const typeNames = useAgentTypeNames()
   const [isExpanded, setExpanded] = useState(defaultExpanded)
   const expanded = embedded || isExpanded
   const itemRef = useRef<HTMLDivElement>(null)
@@ -197,8 +199,8 @@ export function ActionItem({
       : assistantTask
         ? assistantTask.taskLabel
         : agentItem
-          ? (pendingActionAgentLabel(action) ?? agentItem.agentTypeId)
-          : (pendingActionAgentLabel(action) ?? action.squadName)
+          ? (pendingActionAgentLabel(action, typeNames) ?? agentItem.agentTypeId)
+          : (pendingActionAgentLabel(action, typeNames) ?? action.squadName)
 
   return (
     <>
@@ -334,7 +336,8 @@ export function ActionItem({
 }
 
 function ActionSubtitle({ action }: { action: PendingAction }) {
-  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action)}</p>
+  const typeNames = useAgentTypeNames()
+  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action, typeNames)}</p>
 }
 
 type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]

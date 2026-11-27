@@ -40,6 +40,23 @@ function createRuntime(initialIds: string[] = []) {
 }
 
 describe('createHandleAgentWaitingInputEvent', () => {
+  test('names the waiting agent by its configured type name', async () => {
+    const handle = createHandleAgentWaitingInputEvent(
+      mock(async (id: string) => waitingAgent(id)) as never,
+      async () => (id) => (id === 'engineer' ? 'Builder' : undefined)
+    )
+    const { runtime, announcements } = createRuntime()
+    await handle(runtime, 'agent-1')
+    expect(announcements[0]).toStartWith('Agent Builder needs your input')
+    // Without the names (no permission, offline) the type id is title-cased.
+    const fallback = createRuntime()
+    await createHandleAgentWaitingInputEvent(mock(async (id: string) => waitingAgent(id)) as never)(
+      fallback.runtime,
+      'agent-1'
+    )
+    expect(fallback.announcements[0]).toStartWith('Agent Engineer needs your input')
+  })
+
   test('suppresses an identical event replay already spoken in this execution', async () => {
     const getAgent = mock(async (id: string) => waitingAgent(id))
     const handle = createHandleAgentWaitingInputEvent(getAgent as never)

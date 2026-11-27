@@ -62,6 +62,15 @@ describe('pendingActionAgentLabel', () => {
     expect(pendingActionAgentLabel(waitAction('r'))).toBe('Engineer')
     expect(pendingActionAgentLabel(waitAction('r', {}, { assigneeAgentTypeId: undefined }))).toBeNull()
   })
+
+  test('uses the configured type name when it is known', () => {
+    const typeNames = (id: string) => (id === 'engineer' ? 'Builder' : undefined)
+    expect(pendingActionAgentLabel(questionAction('q'), typeNames)).toBe('Builder (#8)')
+    expect(pendingActionAgentLabel(waitAction('r'), typeNames)).toBe('Builder')
+    expect(pendingActionContextLine(waitAction('r', {}, { assigneeAgentTypeId: 'engineer' }), typeNames)).toBe(
+      'Product Engineering · Builder · review needed'
+    )
+  })
 })
 
 describe('pendingActionContextLine', () => {

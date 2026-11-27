@@ -10,6 +10,7 @@ import {
   type WorkStreamWait,
 } from '@ficus/shared'
 import type { WorkStreamViewer } from './workStreamRuntime'
+import type { AgentTypeName } from './agentDisplay'
 
 /**
  * The compact Progress list in the work stream modal.
@@ -70,6 +71,8 @@ export interface WorkflowProgressContext {
   reviewers?: Array<{ id: string; name: string }>
   /** Who is looking; undefined while their permissions load, which never says "You". */
   viewer?: WorkStreamViewer
+  /** The configured agent type names; without them a participant's type id is title-cased. */
+  typeNames?: AgentTypeName
 }
 
 /** `design-approval` → `Design approval`, unless the step has a display name. */
@@ -179,7 +182,8 @@ function stepWho(
 ): string {
   if (step.kind === 'human-approval') return approverWho(step, state, context)
   if (step.kind === 'decision') return 'Decision model'
-  return activityAgentLabel(run.definition.participants[step.participant]?.agentTypeId ?? null)
+  const agentTypeId = run.definition.participants[step.participant]?.agentTypeId ?? null
+  return activityAgentLabel(agentTypeId, agentTypeId ? context.typeNames?.(agentTypeId) : null)
 }
 
 /**

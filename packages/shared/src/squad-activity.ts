@@ -1,4 +1,4 @@
-import { agentTypeLabel } from './agentLabel'
+import { agentTypeNoun } from './agentLabel'
 
 export const SQUAD_ACTIVITY_KINDS = [
   'message',
@@ -116,16 +116,26 @@ export interface SquadActivityItem {
   senderActivityId?: string
 }
 
-/** Agent identity only; a missing/redacted type is not evidence of a system sender. */
-export function activityAgentLabel(agentTypeId: string | null): string {
-  return agentTypeLabel(agentTypeId)
+/**
+ * Agent identity only; a missing/redacted type is not evidence of a system sender. The type reads by
+ * its configured name (`AgentType.name`) when the caller knows it, else as the title-cased id.
+ */
+export function activityAgentLabel(agentTypeId: string | null, typeName?: string | null): string {
+  return agentTypeNoun({ agentTypeId, typeName })
 }
 
-/** The primary identity always names the navigation destination, never its actor. */
-export function activitySubjectLabel(item: SquadActivityItem): string {
+/**
+ * The primary identity always names the navigation destination, never its actor. `typeName` gives an
+ * agent type's configured name (`AgentType.name`) when the caller knows it.
+ */
+export function activitySubjectLabel(
+  item: SquadActivityItem,
+  typeName: (agentTypeId: string) => string | null | undefined = () => undefined
+): string {
   const ref = item.ref
   if (!ref || typeof ref !== 'object') return 'Activity'
-  if (ref.type === 'agent') return activityAgentLabel(item.agentTypeId)
+  if (ref.type === 'agent')
+    return activityAgentLabel(item.agentTypeId, item.agentTypeId ? typeName(item.agentTypeId) : null)
   if (ref.type === 'workstream')
     return ref.workStreamNumber !== undefined
       ? `Work stream #${ref.workStreamNumber}`
