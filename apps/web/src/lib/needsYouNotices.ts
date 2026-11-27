@@ -7,6 +7,7 @@ import {
   type WorkStreamActionData,
 } from '@ficus/shared'
 import { workStreamActionPresentationState } from './workStreamStatusPresentation'
+import { pendingActionWaitPhrase } from './pendingActionWording'
 import { workflowReviewPath } from './workflowReview'
 
 /**
@@ -127,12 +128,14 @@ export function needsYouNoticeContent(action: PendingAction): NeedsYouNoticeCont
     }
     default: {
       const data = action.data as WorkStreamActionData
-      const who = data.assigneeAgentTypeId ? typeFirstAgentLabel({ agentTypeId: data.assigneeAgentTypeId }) : 'An agent'
+      const agent = data.assigneeAgentTypeId ? typeFirstAgentLabel({ agentTypeId: data.assigneeAgentTypeId }) : null
       const state = workStreamActionPresentationState(action)
       const review = state !== null && WORK_STREAM_STATUS_ROLE[state] === 'review'
+      // The same wait phrase the Needs-you lists use ("Engineer · review needed").
+      const phrase = pendingActionWaitPhrase(action)
       return {
-        who,
-        headline: review ? `${who} requests review` : `${who} needs your input`,
+        who: agent ?? 'An agent',
+        headline: agent ? `${agent} · ${phrase}` : phrase[0]!.toUpperCase() + phrase.slice(1),
         detail: review ? null : data.wait.message?.trim() || null,
         context: workStreamLabel({ number: data.workStreamNumber, title: data.workStreamTitle }),
       }

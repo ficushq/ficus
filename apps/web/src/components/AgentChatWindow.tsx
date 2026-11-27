@@ -173,8 +173,11 @@ export function AgentChatWindow({
 
   const data = agent.data
   const label = data ? getAgentTitle(data) : 'Agent chat'
+  // The title already leads with the type, so the subtitle carries the agent's name, the handle
+  // people use with `ficus inbox send`; the type stands in when the agent has no name.
+  const agentName = typeof data?.metadata?.name === 'string' ? data.metadata.name.trim() : ''
   const typeName = data
-    ? (types.data?.find((type) => type.id === data.agentTypeId)?.name ?? humanize(data.agentTypeId))
+    ? agentName || (types.data?.find((type) => type.id === data.agentTypeId)?.name ?? humanize(data.agentTypeId))
     : undefined
   const squad = data?.squadId ? squads.data?.find((candidate) => candidate.id === data.squadId) : undefined
   const unread = windows.unread.has(agentId)

@@ -121,8 +121,10 @@ export function AssistantConversationSwitcher({
   )
   const row = useRef<HTMLDivElement>(null)
   const selected = agents.find((agent) => agent.id === selectedId)
+  // The title leads; the agent's name stays searchable as its secondary handle.
+  const needle = filter.trim().toLowerCase()
   const filtered = agents.filter((agent) =>
-    assistantConversationTitle(agent).toLowerCase().includes(filter.trim().toLowerCase())
+    [assistantConversationTitle(agent), getAgentName(agent)].some((text) => text.toLowerCase().includes(needle))
   )
   return (
     <div className="relative w-full min-w-0 px-3 pb-3 pt-2">

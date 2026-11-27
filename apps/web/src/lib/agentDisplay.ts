@@ -54,22 +54,26 @@ export function getAgentLabel(agent: Pick<Agent, 'agentTypeId' | 'metadata'>, wo
 
 /**
  * Labels for a list of agents shown together: each is `getAgentLabel` ("Engineer (Onboarding)"). An
- * agent with no purpose that shares its type with another agent in the list adds its name in
- * parentheses ("Consultant (Quartz)") so the rows stay distinguishable; the type still leads.
+ * agent with no purpose that shares its type with another agent in the list adds what it is working
+ * on (`workingOn`, such as "#12"), else its name, else a short ID ("Engineer (#12)", "Consultant
+ * (Quartz)", "Engineer (1a2b3c4d)") so the rows stay distinguishable; the type always leads.
  */
-export function agentListLabels(agents: readonly Agent[]): Map<string, string> {
+export function agentListLabels(
+  agents: readonly Agent[],
+  workingOn: (agent: Agent) => string | undefined = () => undefined
+): Map<string, string> {
   const typeCounts = new Map<string, number>()
   for (const agent of agents) typeCounts.set(agent.agentTypeId, (typeCounts.get(agent.agentTypeId) ?? 0) + 1)
   const labels = new Map<string, string>()
   for (const agent of agents) {
     const shared = (typeCounts.get(agent.agentTypeId) ?? 0) > 1
+    if (getAgentPurpose(agent) || !shared) {
+      labels.set(agent.id, getAgentLabel(agent))
+      continue
+    }
     const name = agent.metadata?.name
-    labels.set(
-      agent.id,
-      getAgentPurpose(agent) || !shared || typeof name !== 'string' || !name.trim()
-        ? getAgentLabel(agent)
-        : getAgentLabel(agent, name.trim())
-    )
+    const detail = workingOn(agent) ?? (typeof name === 'string' && name.trim() ? name.trim() : agent.id.slice(0, 8))
+    labels.set(agent.id, getAgentLabel(agent, detail))
   }
   return labels
 }

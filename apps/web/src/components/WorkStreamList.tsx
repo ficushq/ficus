@@ -4,7 +4,7 @@ import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { WorkStreamStatusMarker } from './WorkStreamStatusMarker'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
-import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { useURLStringState, useURLStringArrayState, useURLBooleanState } from '../hooks/useURLState'
@@ -630,11 +630,12 @@ function WorkStreamRow({
           data-testid="work-stream-row-context"
           className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted"
         >
+          {/* Each separator stays with the item before it, so a wrapped line never starts with "·". */}
           {context.map((item, index) => (
-            <Fragment key={item.key}>
-              {index > 0 && <span aria-hidden="true">·</span>}
+            <span key={item.key} className="inline-flex min-w-0 items-center gap-x-2">
               {item.node}
-            </Fragment>
+              {index < context.length - 1 && <span aria-hidden="true">·</span>}
+            </span>
           ))}
         </div>
       )}

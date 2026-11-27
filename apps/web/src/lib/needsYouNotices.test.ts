@@ -97,10 +97,10 @@ describe('needs-you notice content', () => {
     expect(content.context).toBe('Product Engineering')
   })
 
-  test('a review gate reads "<agent type> requests review" with the work stream number and title', () => {
+  test('a review gate reads "<agent type> · review needed", as the lists do, with the work stream number and title', () => {
     expect(needsYouNoticeContent(waitAction('w1'))).toEqual({
       who: 'Engineer',
-      headline: 'Engineer requests review',
+      headline: 'Engineer · review needed',
       detail: null,
       context: '#8 · Make every payment retry safe',
     })
@@ -115,7 +115,7 @@ describe('needs-you notice content', () => {
       )
     )
     // An older server sends only the assignee's name, which is never shown alone.
-    expect(content.headline).toBe('An agent needs your input')
+    expect(content.headline).toBe('Blocked on your input')
     expect(content.detail).toBe('Pick the retry budget')
   })
 })

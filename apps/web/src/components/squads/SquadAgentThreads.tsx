@@ -707,13 +707,21 @@ export function SquadAgentThreads({
   }
 
   // Rows sit under their type's heading, so a row shows the purpose. Without one it reads as the type,
-  // never the name alone; agents of one type with no purpose add their name to tell them apart.
-  const rowLabels = useMemo(() => {
-    const typeFirst = agentListLabels(allAgents)
-    return new Map(allAgents.map((agent) => [agent.id, getAgentPurpose(agent) ?? typeFirst.get(agent.id)!]))
-  }, [allAgents])
+  // never the name alone; agents of one type with no purpose add their work stream, else their name.
+  const { rowLabels, fullLabels } = useMemo(() => {
+    const typeFirst = agentListLabels(allAgents, (agent) => {
+      const work = activeWorkStreamsByAgent.get(agent.id)?.[0]
+      return work?.number ? `#${work.number}` : undefined
+    })
+    return {
+      rowLabels: new Map(allAgents.map((agent) => [agent.id, getAgentPurpose(agent) ?? typeFirst.get(agent.id)!])),
+      fullLabels: typeFirst,
+    }
+  }, [allAgents, activeWorkStreamsByAgent])
   // A row outside the loaded list (none today) still reads as its type.
   const agentRowLabel = (agent: Agent) => rowLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
+  // Recently Completed has no type heading above it, so its rows carry the full type-first label.
+  const completedRowLabel = (agent: Agent) => fullLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
   const renderAgentRow = (agent: Agent, compact = false) => {
     const isSelected = listSelectedAgentId === agent.id
     const stableName = getAgentName(agent)
@@ -1013,7 +1021,7 @@ export function SquadAgentThreads({
               : visibleCompletedAgents
             ).map((agent) => {
               const isSelected = listSelectedAgentId === agent.id
-              const agentName = agentRowLabel(agent)
+              const agentName = completedRowLabel(agent)
               const stableName = getAgentName(agent)
               const finishedAt = completedAt(agent)
               const finishedTime = finishedAt ? formatRelativeTime(finishedAt) : null

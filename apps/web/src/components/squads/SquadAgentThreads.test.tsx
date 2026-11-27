@@ -969,7 +969,8 @@ describe('SquadAgentThreads search behavior', () => {
         changeSearchInput(window, searchInput, 'Old')
       })
 
-      expect(window.document.body.textContent).toContain('Old Engineer')
+      // Recently Completed has no type heading, so its rows lead with the type.
+      expect(window.document.body.textContent).toContain('Engineer (Old Engineer)')
 
       await dom.act(async () => {
         root.unmount()

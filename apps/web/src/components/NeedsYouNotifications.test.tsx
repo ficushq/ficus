@@ -127,7 +127,11 @@ test('the trigger set is exactly new questions and gates the user can act on', a
     otherAction('assistant-needs-input', 'task'),
     otherAction('workstream-delivery', 'pr'),
   ])
-  expect(view.headlines()).toEqual(['Engineer has a question', 'Engineer requests review', 'Engineer needs your input'])
+  expect(view.headlines()).toEqual([
+    'Engineer has a question',
+    'Engineer · review needed',
+    'Engineer · blocked on your input',
+  ])
 })
 
 test('more than three new items show the newest three', async () => {
@@ -206,7 +210,7 @@ test('a workflow gate opens its review over the current page', async () => {
   await view.setPending([
     waitAction('w9', { type: 'workstream-blocked', wait: { resolutionHandler: 'workflow', workflowHumanGate: true } }),
   ])
-  expect(view.headlines()).toEqual(['Engineer requests review'])
+  expect(view.headlines()).toEqual(['Engineer · review needed'])
   await view.act(async () => (view.cards()[0]!.querySelector('button') as HTMLButtonElement).click())
   expect(view.location()).toBe('/squads?review=ws-uuid-8&reviewWait=w9')
 })
@@ -255,7 +259,7 @@ test('notification preferences off shows nothing', async () => {
   const mutedQuestions = await mount({ preferences: { pushEnabled: true, mutedEvents: ['question'] } })
   await mutedQuestions.setPending([])
   await mutedQuestions.setPending([questionAction('q1'), waitAction('w1')])
-  expect(mutedQuestions.headlines()).toEqual(['Engineer requests review'])
+  expect(mutedQuestions.headlines()).toEqual(['Engineer · review needed'])
   await dom!.cleanup()
 
   const unloaded = await mount({ preferences: 'unloaded' })

@@ -1174,9 +1174,6 @@ export class InboxMessage
 // ---------------------------------------------------------------------------
 
 /**
- * Format sender info for display.
- */
-/**
  * The sender line people read in a transcript's inbox summary: type first, the name as the handle
  * ("Engineer · Riley [abc12345]"). Inbox payloads carry identity only, so the agent's purpose,
  * which needs its own read authorization, is never added here.
@@ -1184,13 +1181,17 @@ export class InboxMessage
 export function formatInboxMessageSenderForPeople(m: InboxMessage): string {
   if (m.senderType !== 'agent') return formatInboxMessageSender(m)
   const senderMetadata = m.metadata?.sender as Record<string, unknown> | undefined
-  const label = agentSenderLabel({ agentTypeId: senderMetadata?.agentTypeId }, m.senderAgent?.agentTypeId)
+  const label = agentSenderLabel(
+    { agentTypeId: senderMetadata?.agentTypeId, agentTypeName: senderMetadata?.agentTypeName },
+    m.senderAgent?.agentTypeId
+  )
   if (!label) return formatInboxMessageSender(m)
   const name = participantSummary(m.senderAgent)?.name || (senderMetadata?.name as string | undefined)
   const id = m.senderId ? `[${m.senderId.slice(0, 8)}]` : ''
   return [label, name ? `· ${name}` : '', id].filter(Boolean).join(' ')
 }
 
+/** Format sender info for an agent's own prompt: the name agents address each other by leads. */
 export function formatInboxMessageSender(m: InboxMessage): string {
   const senderMetadata = m.metadata?.sender as Record<string, string> | undefined
   const isWorkspaceVoiceSender = m.senderType === 'voice_assistant' && isWorkspaceVoiceRecipient(m.senderId)

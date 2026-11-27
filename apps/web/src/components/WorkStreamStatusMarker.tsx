@@ -4,8 +4,9 @@ import { webStatus } from '../lib/statusPresentation'
 import { getWsDisplayState, workStreamStatusLabel } from '../lib/workStreamStatusPresentation'
 
 /**
- * The status marker that leads every work stream row: a dot in the state's color, labelled with the
- * same words as the row's status badge so color is never the only cue.
+ * The status marker that leads every work stream row: a dot in the state's color. Every row that
+ * draws it also shows the status badge with the same words, so the dot is hidden from assistive
+ * technology (the badge is read once) and carries the words only as a hover title.
  */
 export function WorkStreamStatusMarker({
   workStream,
@@ -18,8 +19,7 @@ export function WorkStreamStatusMarker({
   const role = WORK_STREAM_STATUS_ROLE[getWsDisplayState(workStream)] ?? 'neutral'
   return (
     <span
-      role="img"
-      aria-label={label}
+      aria-hidden="true"
       title={label}
       data-testid="work-stream-status-marker"
       className={clsx('h-2 w-2 shrink-0 rounded-full', webStatus(role).markerClass, className)}

@@ -1,6 +1,6 @@
 import { workStreamTitle, type Agent, type PendingAction, type Squad, type WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
-import { getConversationTitle } from './agentDisplay'
+import { getAgentName, getConversationTitle } from './agentDisplay'
 import { pendingActionContextLine } from './pendingActionWording'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
@@ -121,6 +121,8 @@ export function commandCenterSearch(
         status: a.status,
         agentTypeId: a.agentTypeId,
         label: getConversationTitle(a),
+        // The agent's name stays searchable even though the title leads with its type or topic.
+        keywords: getAgentName(a),
         detail: `${squadName(a.squadId)} · ${new Date(a.lastHumanMessageAt ?? a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
         destination: {
           kind: 'chat' as const,
@@ -159,8 +161,8 @@ export function commandCenterSearch(
   return rows
     .filter((row) => matchesSetting(query, row.label, row.detail, row.kind, row.keywords ?? ''))
     .sort((a, b) => {
-      const aMatch = settingMatchRank(query, a.label)
-      const bMatch = settingMatchRank(query, b.label)
+      const aMatch = titleMatchRank(query, a)
+      const bMatch = titleMatchRank(query, b)
       // An exact title remains the best way to retrieve older work. Otherwise,
       // blend title relevance with completion age, keeping keyword-only hits last.
       if (aMatch === 0 || bMatch === 0) {
@@ -171,6 +173,15 @@ export function commandCenterSearch(
         (a.work && b.work ? workTimestamp(b.work) - workTimestamp(a.work) : 0)
       )
     })
+}
+
+/**
+ * A work stream's label is "#number · title", so rank on its title as well: an exact or prefix
+ * title still finds older work first, and a "#12" search still matches the number.
+ */
+function titleMatchRank(query: string, row: CommandResult) {
+  const label = settingMatchRank(query, row.label)
+  return row.work ? Math.min(label, settingMatchRank(query, row.work.title)) : label
 }
 
 function isOpenWork(work: WorkStream) {

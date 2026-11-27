@@ -183,4 +183,34 @@ test('an untitled conversation is named by its agent type, never by the agent na
   const untitled = { ...data.consultants[0], id: 'untitled', metadata: { name: 'Quartz' } }
   const row = commandCenterSearch('', { ...data, consultants: [untitled] }).find((r) => r.id === 'chat:untitled')
   expect(row!.label).toBe('Consultant')
+  // The name is secondary, not unsearchable.
+  const found = commandCenterSearch('Quartz', { ...data, consultants: [untitled] })
+  expect(found.map((r) => r.id)).toEqual(['chat:untitled'])
+})
+test('an exact work stream title still finds older work first when streams are numbered', () => {
+  const now = Date.parse('2026-11-27T00:00:00Z')
+  const streams = [
+    {
+      id: 'recent',
+      number: 30,
+      squadId: 'tau',
+      title: 'Plan the OAuth migration rollout',
+      status: 'active',
+      updatedAt: '2026-11-26',
+    },
+    {
+      id: 'old',
+      number: 12,
+      squadId: 'tau',
+      title: 'OAuth migration',
+      status: 'done',
+      completedAt: '2026-08-01',
+      updatedAt: '2026-08-01',
+    },
+  ]
+  const results = commandCenterSearch('OAuth migration', { ...data, consultants: [], streams }, now)
+  expect(results[0]!.id).toBe('work:old')
+  expect(results[0]!.label).toBe('#12 · OAuth migration')
+  // The number stays searchable through the label.
+  expect(commandCenterSearch('#30', { ...data, consultants: [], streams }, now)[0]!.id).toBe('work:recent')
 })
