@@ -8,7 +8,7 @@ import { CollectionSkeleton } from '../loading/Skeleton'
 import { MarkdownContent } from '../MarkdownContent'
 import { CloseIcon } from '../icons'
 import { isWorkspaceVoiceRecipient, type Agent, type InboxMessage, type InboxMessageSenderType } from '@ficus/shared'
-import { getAgentLabel } from '../../lib/agentDisplay'
+import { agentTypeDisplayName, getAgentLabel } from '../../lib/agentDisplay'
 import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 interface Props {
@@ -27,7 +27,8 @@ const senderTypeColors: Record<InboxMessageSenderType, string> = {
 }
 
 export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
-  const agentName = getAgentLabel(agent, undefined, useAgentTypeNames())
+  const typeNames = useAgentTypeNames()
+  const agentName = getAgentLabel(agent, undefined, typeNames)
   const agentIds = useMemo(() => [agent.id], [agent.id])
   useAgentInboxInvalidation(agentIds, { includeMessages: true })
 
@@ -53,7 +54,7 @@ export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {
           <div>
             <h3 className="font-semibold text-primary">{agentName} inbox</h3>
             <p className="text-xs text-muted mt-0.5">
-              {agent.agentTypeId} · {agent.id.slice(0, 8)}
+              {agentTypeDisplayName(agent.agentTypeId, typeNames)} · {agent.id.slice(0, 8)}
             </p>
           </div>
           <button onClick={onClose} className="ficus-button ficus-button-ghost p-1 rounded">

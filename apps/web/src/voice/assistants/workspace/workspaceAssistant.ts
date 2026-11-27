@@ -2,7 +2,9 @@ import { isWorkspaceVoiceRecipient } from '@ficus/shared'
 import { useEffect, useMemo } from 'react'
 import { prewarmArtifactBuilder } from '../../../api/artifacts'
 import { getMyInbox, getVoiceAssistantInbox, markAsRead, type InboxMessageResponse } from '../../../api/inbox'
+import { useAgentTypeNames } from '../../../hooks/useAgentTypeNames'
 import { useStableRef } from '../../../hooks/useStableRef'
+import { noAgentTypeNames, type AgentTypeName } from '../../../lib/agentDisplay'
 import { useWebSocket } from '../../../hooks/useWebSocket'
 import { handleAgentWaitingInputEvent } from '../../agentInputAnnouncements'
 import { buildInboxAnnouncementPrompt } from '../../inboxAnnouncements'
@@ -295,7 +297,9 @@ async function handleWorkspaceInboxAnnouncementEvent(
   deps: WorkspaceAssistantDependencies,
   runtime: VoiceAssistantRuntime<WorkspaceVoiceState>,
   entry: InboxMessageReceivedEntry,
-  isActive: () => boolean = () => true
+  isActive: () => boolean = () => true,
+  /** Read when the message is in hand, so a name that arrives meanwhile is used. */
+  typeNames: () => AgentTypeName = () => noAgentTypeNames
 ): Promise<void> {
   if (entry.event !== 'inbox.messageReceived') return
   // The WS layer scopes inbox events to this user, so a 'user' recipient is always ours.
@@ -312,7 +316,7 @@ async function handleWorkspaceInboxAnnouncementEvent(
   runtime.enqueueMessage({
     id: `inbox:${message.id}`,
     dedupeKey: `inbox:${message.id}`,
-    text: buildInboxAnnouncementPrompt(message),
+    text: buildInboxAnnouncementPrompt(message, typeNames()),
     onStart: (queuedRuntime) => {
       const queuedState = queuedRuntime.getState()
       const queuedSpokenIds = queuedState.spokenInboxIds ?? []
@@ -449,7 +453,9 @@ function readArtifactUpdatePayload(data: unknown): ArtifactUpdatePayload | undef
 function subscribeWorkspaceVoiceEvents(
   deps: WorkspaceAssistantDependencies,
   runtime: VoiceAssistantRuntime<WorkspaceVoiceState>,
-  env: WorkspaceVoiceEnvironment & { subscribe: ReturnType<typeof useWebSocket>['subscribe'] }
+  env: WorkspaceVoiceEnvironment & { subscribe: ReturnType<typeof useWebSocket>['subscribe'] },
+  /** The app's shared read of the configured agent type names (`useAgentTypeNames`), read per event. */
+  typeNames: () => AgentTypeName = () => noAgentTypeNames
 ): () => void {
   let active = true
   const isActive = () => active
@@ -458,7 +464,7 @@ function subscribeWorkspaceVoiceEvents(
     if (event === 'agent.waiting-input') {
       const agentId = typeof data?.agentId === 'string' ? data.agentId : undefined
       if (!agentId) return
-      void deps.handleAgentWaitingInputEvent(runtime, agentId, isActive).catch((error) => {
+      void deps.handleAgentWaitingInputEvent(runtime, agentId, isActive, typeNames()).catch((error) => {
         console.warn('[voice] failed to announce waiting-input agent:', error)
       })
       return
@@ -493,7 +499,7 @@ function subscribeWorkspaceVoiceEvents(
     void handleWorkspaceVoiceInboxEvent(deps, runtime, entry, isActive).catch((error) => {
       console.warn('[voice] failed to announce voice inbox response:', error)
     })
-    void handleWorkspaceInboxAnnouncementEvent(deps, runtime, entry, isActive).catch((error) => {
+    void handleWorkspaceInboxAnnouncementEvent(deps, runtime, entry, isActive, typeNames).catch((error) => {
       console.warn('[voice] failed to announce inbox message:', error)
     })
   })
@@ -512,12 +518,14 @@ function useWorkspaceEffects(
   status: string
 ): void {
   const runtimeRef = useStableRef(runtime)
+  // The app's shared read of the configured type names; events read the latest without re-subscribing.
+  const typeNamesRef = useStableRef(useAgentTypeNames())
 
   useEffect(() => {
     const isConnected = status === 'listening' || status === 'processing' || status === 'speaking'
     if (!isConnected) return
-    return subscribeWorkspaceVoiceEvents(deps, runtimeRef.current, env)
-  }, [env, runtimeRef, status])
+    return subscribeWorkspaceVoiceEvents(deps, runtimeRef.current, env, () => typeNamesRef.current)
+  }, [env, runtimeRef, status, typeNamesRef])
 }
 
 export type WorkspaceAssistantDependencies = {
@@ -619,8 +627,9 @@ export function createWorkspaceAssistant(deps: WorkspaceAssistantDependencies) {
       handleWorkspaceInboxAnnouncementEvent: (
         runtime: VoiceAssistantRuntime<WorkspaceVoiceState>,
         entry: InboxMessageReceivedEntry,
-        isActive?: () => boolean
-      ) => handleWorkspaceInboxAnnouncementEvent(deps, runtime, entry, isActive),
+        isActive?: () => boolean,
+        typeNames?: () => AgentTypeName
+      ) => handleWorkspaceInboxAnnouncementEvent(deps, runtime, entry, isActive, typeNames),
       handleWorkspaceVoiceInboxEvent: (
         runtime: VoiceAssistantRuntime<WorkspaceVoiceState>,
         entry: InboxMessageReceivedEntry,
@@ -633,8 +642,9 @@ export function createWorkspaceAssistant(deps: WorkspaceAssistantDependencies) {
       handleAgentWaitingInputEvent: deps.handleAgentWaitingInputEvent,
       subscribeWorkspaceVoiceEvents: (
         runtime: VoiceAssistantRuntime<WorkspaceVoiceState>,
-        env: WorkspaceVoiceEnvironment & { subscribe: ReturnType<typeof useWebSocket>['subscribe'] }
-      ) => subscribeWorkspaceVoiceEvents(deps, runtime, env),
+        env: WorkspaceVoiceEnvironment & { subscribe: ReturnType<typeof useWebSocket>['subscribe'] },
+        typeNames?: () => AgentTypeName
+      ) => subscribeWorkspaceVoiceEvents(deps, runtime, env, typeNames),
     },
   }
 }

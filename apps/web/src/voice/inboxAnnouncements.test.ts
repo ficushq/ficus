@@ -49,4 +49,17 @@ describe('buildInboxAnnouncementPrompt', () => {
     expect(prompt).toContain('Summarize it naturally in your own words')
     expect(prompt).toContain('The OAuth fix is deployed and verified.')
   })
+
+  test('names an agent sender by its type as the app shows it, never the raw type id', () => {
+    const sender = { id: 'agent-9', name: 'Quartz', agentTypeId: 'qa-bot', squadId: null, ownerUserId: null }
+    const named = buildInboxAnnouncementPrompt(message({ senderAgent: sender }), (id) =>
+      id === 'qa-bot' ? 'Release QA' : undefined
+    )
+    expect(named).toContain('Sender: Release QA (agent-9)')
+    expect(named).not.toContain('qa-bot')
+
+    expect(buildInboxAnnouncementPrompt(message({ senderAgent: sender }))).toContain('Sender: Qa Bot (agent-9)')
+    const general = buildInboxAnnouncementPrompt(message({ senderAgent: { ...sender, agentTypeId: 'general' } }))
+    expect(general).toContain('Sender: General Purpose agent (agent-9)')
+  })
 })

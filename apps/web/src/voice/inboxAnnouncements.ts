@@ -1,4 +1,5 @@
 import type { InboxMessageResponse } from '../api/inbox'
+import { agentTypeDisplayName, noAgentTypeNames, type AgentTypeName } from '../lib/agentDisplay'
 
 export function enqueueUniqueInboxMessages(
   queue: InboxMessageResponse[],
@@ -15,9 +16,16 @@ export function enqueueUniqueInboxMessages(
   return next
 }
 
-export function buildInboxAnnouncementPrompt(message: InboxMessageResponse): string {
+/**
+ * The prompt that has the voice assistant speak an inbox message. An agent sender is named by its type
+ * as the app shows it (the configured name from `useAgentTypeNames`), never the raw type id.
+ */
+export function buildInboxAnnouncementPrompt(
+  message: InboxMessageResponse,
+  typeNames: AgentTypeName = noAgentTypeNames
+): string {
   const sender = message.senderAgent
-    ? `${message.senderAgent.agentTypeId} (${message.senderAgent.id})`
+    ? `${agentTypeDisplayName(message.senderAgent.agentTypeId, typeNames)} (${message.senderAgent.id})`
     : message.senderId
       ? `${message.senderType} ${message.senderId}`
       : message.senderType

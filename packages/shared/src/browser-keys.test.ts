@@ -17,6 +17,7 @@ test('browser storage keys use the ficus names', () => {
   expect(keys.WORK_STREAM_SUMMARIES_STORAGE_PREFIX).toBe('ficus.wsSummaries.')
   expect(keys.LOADING_SHAPE_STORAGE_PREFIX).toBe('ficus.loadingShape.v1')
   expect(keys.DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY).toBe('ficus.devBackend.shapeScope')
+  expect(keys.AGENT_TYPE_NAMES_STORAGE_KEY).toBe('ficus.agentTypeNames.v1')
   expect(keys.ASSISTANT_POSITION_STORAGE_KEY).toBe('ficus-assistant-position')
   expect(keys.SQUAD_CHAT_CONSULTANTS_COLLAPSED_STORAGE_KEY).toBe('ficus-squad-chat-consultants-collapsed')
   expect(keys.VOICE_INPUT_MODE_STORAGE_KEY).toBe('ficus_voice_workspace_input_mode')

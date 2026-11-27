@@ -1268,6 +1268,21 @@ describe('SquadAgentThreads section ordering', () => {
   })
 })
 
+describe('SquadAgentThreads section headings', () => {
+  test('without configured names the general type heading reads as the type is named everywhere', () => {
+    const html = renderThreads([
+      agent({ id: 'm1', agentTypeId: 'manager' }),
+      agent({ id: 'g1', agentTypeId: 'general', metadata: { name: 'Gale' } }),
+      agent({ id: 'e1', agentTypeId: 'qa-bot', metadata: { name: 'Quin' } }),
+    ])
+    const general = html.slice(html.indexOf('data-agent-type-section="general"'))
+    expect(general).toContain('<span>General Purpose agent</span>')
+    expect(general).not.toContain('<span>General</span>')
+    const custom = html.slice(html.indexOf('data-agent-type-section="qa-bot"'))
+    expect(custom).toContain('<span>Qa Bot</span>')
+  })
+})
+
 describe('SquadAgentThreads agent-specific modes', () => {
   test('agentTypeFilter restricts the view to that agent type', () => {
     const html = renderThreads(
