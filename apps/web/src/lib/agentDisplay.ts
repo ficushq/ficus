@@ -11,7 +11,7 @@ export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
   terminated: 'Terminated',
 }
 
-export function getAgentPurpose(agent: Agent): string | undefined {
+export function getAgentPurpose(agent: Pick<Agent, 'metadata'>): string | undefined {
   const purpose = agent.metadata?.purpose
   return typeof purpose === 'string' && purpose.trim() ? purpose.trim() : undefined
 }
@@ -44,10 +44,16 @@ export function getAgentSecondaryLabel(agent: Agent): string | undefined {
  * no work stream ("Engineer (#12 · Implement)", "Engineer (Onboarding)", "Engineer"). Never the name
  * alone; surfaces that need the stable handle show `getAgentName` beside it.
  */
-export function getAgentLabel(agent: Pick<Agent, 'agentTypeId' | 'metadata'>, workingOn?: string): string {
+export function getAgentLabel(
+  agent: Pick<Agent, 'agentTypeId' | 'metadata'>,
+  workingOn?: string,
+  /** The squad's name for the agent's type (`AgentType.name`), when known. */
+  typeName?: string
+): string {
   return typeFirstAgentLabel({
     agentTypeId: agent.agentTypeId,
-    purpose: getAgentPurpose(agent as Agent),
+    typeName,
+    purpose: getAgentPurpose(agent),
     workingOn,
   })
 }

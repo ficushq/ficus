@@ -121,7 +121,7 @@ test('approving needs no notes; human outcomes send the displayed version and at
     const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
       node.textContent?.startsWith('Approved')
     )!
-    expect(button.textContent).toContain('Finishes the flow')
+    expect(button.textContent).toContain('Completes the work stream')
     // A forward-only gate never needs notes.
     expect(button.disabled).toBe(false)
     expect(f.dom.window.document.body.textContent).toContain('Optional. Your notes are recorded')
@@ -586,8 +586,8 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
     )
     // The forward outcome is the primary action, listed first, even when a rework outcome is declared first.
     expect(buttons.map((button) => button.textContent)).toEqual([
-      'ApproveFinishes the flow',
-      'Request changesSends back to execute',
+      'ApproveCompletes the work stream',
+      'Request changesReturns to the General Purpose agent with your notes',
     ])
     expect(buttons[0]!.className).toContain('ficus-button-primary')
     expect(buttons[1]!.className).not.toContain('ficus-button-primary')

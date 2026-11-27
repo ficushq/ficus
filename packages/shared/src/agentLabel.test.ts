@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { agentLabelParts, agentSenderLabel, agentTypeLabel, formatAgentLabel, typeFirstAgentLabel } from './agentLabel'
+import {
+  agentLabelParts,
+  agentSenderLabel,
+  agentTypeLabel,
+  agentTypeNoun,
+  formatAgentLabel,
+  typeFirstAgentLabel,
+} from './agentLabel'
 
 describe('agentLabelParts', () => {
   test('purpose leads, name is secondary', () => {
@@ -36,6 +43,24 @@ describe('typeFirstAgentLabel', () => {
     )
     expect(typeFirstAgentLabel({ agentTypeId: 'engineer', purpose: ' Onboarding ' })).toBe('Engineer (Onboarding)')
     expect(typeFirstAgentLabel({ agentTypeId: 'general-purpose', purpose: '' })).toBe('General Purpose')
+  })
+
+  test('uses the squad’s name for the type when it is known', () => {
+    expect(typeFirstAgentLabel({ agentTypeId: 'engineer', typeName: 'Builder', purpose: 'Payments' })).toBe(
+      'Builder (Payments)'
+    )
+    expect(typeFirstAgentLabel({ agentTypeId: 'engineer', typeName: '  ' })).toBe('Engineer')
+  })
+
+  test('the built-in general type reads "General Purpose agent", never a bare "General"', () => {
+    expect(agentTypeNoun({ agentTypeId: 'general' })).toBe('General Purpose agent')
+    expect(agentTypeNoun({ agentTypeId: 'general', typeName: 'General Purpose' })).toBe('General Purpose agent')
+    expect(agentTypeNoun({ agentTypeId: 'general', typeName: 'Helper' })).toBe('Helper agent')
+    expect(agentTypeNoun({ agentTypeId: 'general', typeName: 'Helper Agent' })).toBe('Helper Agent')
+    expect(typeFirstAgentLabel({ agentTypeId: 'general', purpose: 'Docs' })).toBe('General Purpose agent (Docs)')
+    expect(agentSenderLabel({ agentTypeId: 'general', agentTypeName: 'General Purpose' })).toBe('General Purpose agent')
+    // Other types are unchanged.
+    expect(agentTypeNoun({ agentTypeId: 'engineer' })).toBe('Engineer')
   })
 
   test('never names the agent; an unknown type reads "Agent"', () => {

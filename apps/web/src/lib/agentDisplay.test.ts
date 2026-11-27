@@ -82,6 +82,11 @@ describe('getAgentLabel', () => {
     expect(getAgentLabel(agent({ name: 'Quartz' }))).toBe('Engineer')
     expect(getAgentLabel(agent({ name: 'Quartz' }, 'general-purpose'))).toBe('General Purpose')
   })
+
+  it('uses the squad’s name for the type, and reads the general type as "General Purpose agent"', () => {
+    expect(getAgentLabel(agent({ purpose: 'Payments' }), undefined, 'Builder')).toBe('Builder (Payments)')
+    expect(getAgentLabel(agent({ purpose: 'Docs' }, 'general'))).toBe('General Purpose agent (Docs)')
+  })
 })
 
 describe('agentListLabels', () => {

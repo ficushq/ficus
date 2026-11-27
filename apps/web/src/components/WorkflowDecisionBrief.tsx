@@ -17,10 +17,13 @@ export function WorkflowDecisionBrief({
   run,
   attempt,
   beforeSource,
+  preparedBy,
 }: {
   run: WorkflowRun
   attempt: WorkflowAttempt
   beforeSource?: (source: WorkflowAttempt) => ReactNode
+  /** Who prepared a source ("Engineer (Payments)"); without one the brief names the step that did. */
+  preparedBy?: (source: WorkflowAttempt) => string | undefined
 }) {
   const brief = workflowReviewBriefForAttempt(run, attempt)
   if (brief.kind === 'legacy') return null
@@ -36,10 +39,7 @@ export function WorkflowDecisionBrief({
               <p>Prepared for an earlier step; this is not a new decision brief for this gate.</p>
             </div>
           )}
-          <p className="text-xs text-muted">
-            Prepared by {workflowHistoricalStep(run, source)?.name ?? source.stepId} · Attempt {source.id}
-            {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
-          </p>
+          <PreparedBy run={run} source={source} author={preparedBy?.(source)} />
           {beforeSource?.(source)}
           {DECISION_BRIEF_FIELD_LABELS.map(([field, label]) =>
             source.decisionBrief?.value[field] ? (
@@ -54,5 +54,20 @@ export function WorkflowDecisionBrief({
         </section>
       ))}
     </article>
+  )
+}
+
+/** "Prepared by Engineer (Payments)", then the step, attempt and revision as secondary text. */
+function PreparedBy({ run, source, author }: { run: WorkflowRun; source: WorkflowAttempt; author?: string }) {
+  const step = workflowHistoricalStep(run, source)?.name ?? source.stepId
+  const detail = [
+    ...(author ? [step] : []),
+    `Attempt ${source.id}`,
+    ...(workflowResultRevision(source) > 1 ? [`Revision ${workflowResultRevision(source)}`] : []),
+  ].join(' · ')
+  return (
+    <p className="text-xs text-muted">
+      Prepared by <span className="font-medium text-secondary">{author ?? step}</span> · {detail}
+    </p>
   )
 }

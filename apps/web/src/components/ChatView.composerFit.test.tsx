@@ -261,6 +261,35 @@ describe('ChatView composer fit', () => {
     expect(wrapped()).toBe(false)
   })
 
+  test('a side conversation keeps its actions behind More controls at any width, and Stop only while a turn runs', async () => {
+    rowWidth = idleNeeds + 400
+    const side: Props = { foldComposerActions: true, onToggleRawText: () => undefined }
+    const { dom, document, show, resize, folded } = await render(side)
+    // Room for every action inline, yet only the input, More controls and Send show.
+    expect(folded()).toBe(true)
+    expect(document.querySelector('.chat-composer-actions-slot')!.hasAttribute('inert')).toBe(true)
+    expect(document.querySelector('button[aria-label="More controls"]')).not.toBeNull()
+    expect(document.querySelector('.chat-composer-stop')).toBeNull()
+    expect(document.querySelector('.chat-composer-delivery')).toBeNull()
+    // Each action stays reachable from the menu.
+    const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="More controls"]')!
+    await dom.act(async () => fireEvent.click(trigger))
+    const options = [...document.querySelectorAll('[data-chat-composer-options] button')].map(
+      (button) => button.textContent
+    )
+    expect(options).toEqual(['Attach image', 'Attach file', 'Auto-scroll on', 'Show raw text'])
+    await dom.act(async () => fireEvent.click(trigger))
+    await show({ ...side, ...running })
+    await resize()
+    expect(folded()).toBe(true)
+    expect(document.querySelector('.chat-composer-stop')).not.toBeNull()
+    expect(document.querySelector('.chat-composer-delivery')).not.toBeNull()
+    await show({ ...side, executionStatus: 'completed', onStop: () => undefined })
+    await resize()
+    expect(document.querySelector('.chat-composer-stop')).toBeNull()
+    expect(folded()).toBe(true)
+  })
+
   test('a composer that is not laid out keeps its actions inline', async () => {
     rowWidth = 0
     const { folded } = await render(running)

@@ -96,6 +96,8 @@ interface AgentChatProps {
   showTeammateTyping?: boolean
   /** More controls at the end of the composer's bottom-left row (the floating-window button). */
   composerControls?: React.ReactNode
+  /** Keep the composer's actions behind its More controls trigger at every width (see ChatView). */
+  foldComposerActions?: boolean
 }
 
 /** Live conversation state exposed to a `header` render function. */
@@ -148,6 +150,7 @@ export function AgentChat({
   afterConversation,
   renderMessageFooter,
   composerControls,
+  foldComposerActions,
 }: AgentChatProps) {
   const ChatViewComponent = dependencies?.ChatViewComponent ?? ChatView
   const api = useChatApi()
@@ -527,6 +530,7 @@ export function AgentChat({
       focusInboxMessageId={focusInboxMessageId}
       enableHistorySearch
       composerControls={composerControls}
+      foldComposerActions={foldComposerActions}
     />
   )
 }
