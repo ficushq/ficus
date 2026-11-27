@@ -136,6 +136,8 @@ function WaitingTime({ openedAt }: { openedAt: string }) {
 
 /** A statement this long starts as a marked preview, so the outcomes below it stay in reach. */
 const APPROVAL_STATEMENT_LIMIT = { characters: 360, lines: 10 }
+/** On the phone sheet, about what its two-line preview shows; anything shorter shows whole, with no Show all. */
+const APPROVAL_STATEMENT_SHEET_LIMIT = { characters: 90, lines: 2 }
 
 /**
  * What approval allows, word for word, right above the outcomes: a person decides by reading this, on
@@ -153,9 +155,9 @@ function ApprovalStatement({ gate, collapsed = false }: { gate: HumanGateContext
       <h3 className="mb-1 text-xs font-medium text-muted">What approval allows</h3>
       <ExpandableMarkdown
         label="of what approval allows"
-        // On the phone sheet it always starts as a preview: the brief above shows it too, and the document
-        // keeps its room. The cut is marked and Show all opens it in place.
-        limit={collapsed ? { characters: 0, lines: 0 } : APPROVAL_STATEMENT_LIMIT}
+        // On the phone sheet anything past two lines starts as a preview: the brief above shows it too, and
+        // the document keeps its room. The cut is marked and Show all opens it in place.
+        limit={collapsed ? APPROVAL_STATEMENT_SHEET_LIMIT : APPROVAL_STATEMENT_LIMIT}
         previewClassName={collapsed ? 'max-h-12' : 'max-h-24'}
         markdownClassName="text-sm leading-relaxed text-primary"
       >

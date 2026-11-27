@@ -1225,6 +1225,32 @@ test('without a producing agent the review keeps the decision rail and the stack
   }
 })
 
+test('on the phone sheet a short statement shows whole, with no Show all to reveal nothing', async () => {
+  const f = await fixture({ width: 390, height: 844 })
+  try {
+    const run = gateRun()
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staging migration.',
+        recommendation: 'Approve because the migration is tested.',
+        approvalEffect: 'Approval runs the staging migration only.',
+        risks: 'The migration locks one table briefly.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const statement = f.doc.querySelector<HTMLElement>('[data-review-sheet] [data-approval-statement]')!
+    expect(statement.textContent).toBe('What approval allowsApproval runs the staging migration only.')
+    expect(statement.querySelector('[data-collapsed]')).toBeNull()
+    expect(statement.querySelector('button')).toBeNull()
+  } finally {
+    await f.cleanup()
+  }
+})
+
 test('beside a statement the rail starts its notes shorter, so both outcomes stay in view', async () => {
   const f = await fixture({ width: 1280, height: 900 })
   try {
