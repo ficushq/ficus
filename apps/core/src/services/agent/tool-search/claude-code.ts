@@ -36,7 +36,7 @@ export function registerClaudeCodeToolLabels(sessionId: string, plan: ToolSearch
   const deferred = new Set(plan.mode === 'claude-code' ? plan.hidden : [])
   labels.delete(sessionId)
   labels.set(sessionId, { deferred, enableToolSearch: deferred.size > 0 ? 'true' : 'false' })
-  // Oldest first: drop sessions no longer in use. A dropped live session falls back to the default.
+  // Least recently used first (see claudeCodeToolLabels).
   while (labels.size > MAX_SESSIONS) labels.delete(labels.keys().next().value!)
 }
 
@@ -45,7 +45,14 @@ export function registerClaudeCodeToolLabels(sessionId: string, plan: ToolSearch
  * gets every tool loaded up front and Claude Code's tool search off.
  */
 export function claudeCodeToolLabels(sessionId: string | undefined): ClaudeCodeToolLabels {
-  return (sessionId ? labels.get(sessionId) : undefined) ?? { deferred: new Set(), enableToolSearch: 'false' }
+  const found = sessionId ? labels.get(sessionId) : undefined
+  if (!found) return { deferred: new Set(), enableToolSearch: 'false' }
+  // Least recently used eviction: every bridge turn refreshes its session, so a live session is
+  // only dropped if 2,000 other sessions were used since. A dropped live session would fall back
+  // to the default, change its signature and restart its Claude Code process once.
+  labels.delete(sessionId!)
+  labels.set(sessionId!, found)
+  return found
 }
 
 /**

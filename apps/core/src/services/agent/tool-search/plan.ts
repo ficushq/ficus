@@ -78,7 +78,7 @@ export interface ToolSearchPlan {
 }
 
 export interface ToolSearchCapability {
-  /** The session's model, and every failover candidate, can add tools mid-conversation. */
+  /** The session's model can add tools mid-conversation (failover candidates are not checked; see capability.ts). */
   supportsToolAdditions: boolean
   /** The session runs through the Claude Code bridge. */
   claudeCode: boolean
