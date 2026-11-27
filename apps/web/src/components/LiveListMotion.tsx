@@ -29,26 +29,41 @@ interface LiveListMotionProps {
 type Snapshot = Map<string, LiveRowBefore> | null
 
 /**
+ * A frame that comes later than this after the update was held back (a hidden or throttled tab): the
+ * change did not arrive while the list was on screen, so it does not animate.
+ */
+const STALE_FRAME_MS = 500
+
+/**
  * Motion for changes that arrive while a list is on screen: rows slide to a new place in about
- * 300 ms (FLIP: measured just before and just after the commit, then animated on the compositor
- * with a transform), a row that arrived gets a brief wash, and a changed status badge a brief
- * emphasis. Never on mount or when `resetKey` changes, never under reduced motion or in a hidden
+ * 300 ms (FLIP: measured just before the commit and again in the next animation frame, where the
+ * browser lays the page out for that frame anyway, then animated on the compositor with a
+ * transform), a row that arrived gets a brief wash, and a changed status badge a brief emphasis. Never on mount or when `resetKey` changes, never under reduced motion or in a hidden
  * tab, and only rows whose new place is on screen move.
  *
- * Rows are found by `liveRowProps` (lib/liveListMotion) anywhere inside, so one wrapper covers a list's sections and a
- * row moving between them. A class component, because only `getSnapshotBeforeUpdate` can read the
+ * Rows are found by `liveRowProps` (lib/liveListMotion) anywhere inside, so one wrapper covers a
+ * list's sections and a row moving between them. A class component, because only `getSnapshotBeforeUpdate` can read the
  * rows' places before React changes the DOM.
  */
 export class LiveListMotion extends Component<LiveListMotionProps> {
   private container: HTMLDivElement | null = null
   private moves = new WeakMap<HTMLElement, Animation>()
+  /** What the screen still shows while an update waits for its frame, and since when. */
+  private pending: { before: Map<string, LiveRowBefore>; since: number } | null = null
+  private frame: number | null = null
 
   private setContainer = (node: HTMLDivElement | null) => {
     this.container = node
   }
 
   getSnapshotBeforeUpdate(prevProps: LiveListMotionProps): Snapshot {
-    if (prevProps.resetKey !== this.props.resetKey || !this.container || !motionAllowed()) return null
+    if (prevProps.resetKey !== this.props.resetKey || !this.container || !motionAllowed()) {
+      this.cancelFrame()
+      return null
+    }
+    // Another update before the frame: nothing was painted in between, so the screen still shows
+    // the places measured before the first one (kept by componentDidUpdate). No need to measure.
+    if (this.pending) return this.pending.before
     const before = new Map<string, LiveRowBefore>()
     for (const row of liveRows(this.container)) {
       const key = row.getAttribute(LIVE_ROW_ATTRIBUTE)
@@ -62,6 +77,36 @@ export class LiveListMotion extends Component<LiveListMotionProps> {
 
   componentDidUpdate(_prevProps: LiveListMotionProps, _prevState: unknown, before: Snapshot) {
     if (!before || !this.container) return
+    this.pending ??= { before, since: performance.now() }
+    if (this.frame !== null) return
+    // Measuring here, inside React's commit, would force a layout the browser then repeats for the
+    // frame after effects run. The next animation frame comes before that frame is painted.
+    if (typeof requestAnimationFrame !== 'function') {
+      this.playMotion()
+      return
+    }
+    this.frame = requestAnimationFrame(() => {
+      this.frame = null
+      this.playMotion()
+    })
+  }
+
+  componentWillUnmount() {
+    this.cancelFrame()
+  }
+
+  private cancelFrame() {
+    if (this.frame !== null) cancelAnimationFrame(this.frame)
+    this.frame = null
+    this.pending = null
+  }
+
+  private playMotion() {
+    const pending = this.pending
+    this.pending = null
+    if (!pending || !this.container || !motionAllowed()) return
+    if (performance.now() - pending.since > STALE_FRAME_MS) return
+    const { before } = pending
     const elements = new Map<string, HTMLElement>()
     const identities: LiveRowIdentity[] = []
     for (const row of liveRows(this.container)) {

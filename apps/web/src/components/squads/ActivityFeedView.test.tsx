@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { MemoryRouter } from 'react-router'
 import { acquireDomHarness } from '../../test/domHarness'
+import { afterAnimationFrames } from '../../test/animationFrames'
 import type { ActivityWorkStreamCard, SquadActivityItem } from '@ficus/shared'
 import { ActivityFeedView } from './ActivityFeedView'
 
@@ -791,11 +792,11 @@ test('a row that streams in is highlighted; rows of a new filter or a loaded pag
   })
   try {
     const view = dom.createRoot()
-    const render = (
+    const render = async (
       items: SquadActivityItem[],
       state: { kinds?: SquadActivityItem['kind'][]; paging?: boolean } = {}
-    ) =>
-      dom.act(() =>
+    ) => {
+      await dom.act(() =>
         view.root.render(
           <MemoryRouter>
             <ActivityFeedView
@@ -817,6 +818,8 @@ test('a row that streams in is highlighted; rows of a new filter or a loaded pag
           </MemoryRouter>
         )
       )
+      await dom.act(() => afterAnimationFrames(dom.window))
+    }
     const highlighted = () =>
       [...view.container.querySelectorAll('.ficus-live-arrived')].map((node) => node.getAttribute('data-live-row'))
 

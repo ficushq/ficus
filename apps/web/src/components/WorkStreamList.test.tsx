@@ -6,6 +6,7 @@ import { queryKeys } from '../queryKeys'
 import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from '@ficus/shared'
 import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'
+import { afterAnimationFrames } from '../test/animationFrames'
 import { workStreamReads } from '../test/workStreamApi'
 
 const { WorkStreamList } = await import('./WorkStreamList')
@@ -1997,8 +1998,8 @@ describe('WorkStreamList live motion', () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/feed', api })
     const rendered = dom.createRoot()
     const client = createTestQueryClient()
-    const render = (workStreams: WorkStream[], isLoading = false) =>
-      dom.act(async () =>
+    const render = async (workStreams: WorkStream[], isLoading = false) => {
+      await dom.act(async () =>
         rendered.root.render(
           <MemoryRouter initialEntries={['/feed']}>
             <QueryClientProvider client={client}>
@@ -2015,6 +2016,8 @@ describe('WorkStreamList live motion', () => {
           </MemoryRouter>
         )
       )
+      await dom.act(() => afterAnimationFrames(dom.window))
+    }
     const row = (id: string) => rendered.container.querySelector<HTMLElement>(`[data-live-row="${id}"]`)!
     const badge = (id: string) => row(id).querySelector<HTMLElement>('[data-live-emphasis]')!
     try {

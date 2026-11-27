@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
+import { flushSync } from 'react-dom'
 import { acquireDomHarness } from '../test/domHarness'
+import { afterAnimationFrames } from '../test/animationFrames'
 import { liveEmphasisProps, liveRowProps, LIVE_MOVE_DURATION_MS } from '../lib/liveListMotion'
 import { LiveListMotion, LIVE_ARRIVED_CLASS, LIVE_EMPHASIS_CLASS } from './LiveListMotion'
 
@@ -59,21 +61,29 @@ async function renderList(rows: Row[], { resetKey = 'list', reducedMotion = fals
   })
   const { container, root } = dom.createRoot()
   const harness = dom
-  const render = async (next: Row[], key = resetKey) => {
-    await harness.act(async () =>
-      root.render(
-        <LiveListMotion resetKey={key}>
-          <ul>
-            {next.map((row, index) => (
-              <li key={row.id} data-index={index} {...liveRowProps(row.id, row.status)}>
-                {row.id}
-                {row.status && <span {...liveEmphasisProps}>{row.status}</span>}
-              </li>
-            ))}
-          </ul>
-        </LiveListMotion>
-      )
-    )
+  const tree = (next: Row[], key: string) => (
+    <LiveListMotion resetKey={key}>
+      <ul>
+        {next.map((row, index) => (
+          <li key={row.id} data-index={index} {...liveRowProps(row.id, row.status)}>
+            {row.id}
+            {row.status && <span {...liveEmphasisProps}>{row.status}</span>}
+          </li>
+        ))}
+      </ul>
+    </LiveListMotion>
+  )
+  /**
+   * Commits each list in turn, synchronously (no frame can run between them), then lets the next
+   * animation frame run: rows are measured again, and animated, there.
+   */
+  const render = async (next: Row[], key = resetKey, { afterCommit = () => {} } = {}, ...earlier: Row[][]) => {
+    await harness.act(async () => {
+      for (const list of earlier) flushSync(() => root.render(tree(list, key)))
+      flushSync(() => root.render(tree(next, key)))
+      afterCommit()
+    })
+    await harness.act(() => afterAnimationFrames(harness.window))
   }
   await render(rows)
   const row = (id: string) => container.querySelector<HTMLElement>(`[data-live-row="${id}"]`)!
@@ -169,6 +179,36 @@ test('reduced motion: nothing moves, arrives or swells', async () => {
 test('a hidden tab animates nothing', async () => {
   const list = await renderList(ABC, { hidden: true })
   await list.render([{ id: 'new' }, { id: 'c' }, { id: 'a' }])
+  expect(list.animations).toEqual([])
+  expect(list.arrived()).toEqual([])
+})
+
+test('two updates before a frame animate from the places still on screen', async () => {
+  const list = await renderList(ABC)
+  await list.render([{ id: 'b' }, { id: 'c' }, { id: 'a' }], 'list', {}, [{ id: 'c' }, { id: 'a' }, { id: 'b' }])
+  // From A, B, C (painted), not from C, A, B (never painted).
+  expect(list.animations.map(({ key, keyframes }) => [key, keyframes[0]!.transform])).toEqual([
+    ['b', 'translate(0px, 40px)'],
+    ['c', 'translate(0px, 40px)'],
+    ['a', 'translate(0px, -80px)'],
+  ])
+})
+
+test('a frame held back (a hidden or throttled tab) animates nothing', async () => {
+  const list = await renderList(ABC)
+  const realNow = performance.now.bind(performance)
+  let offset = 0
+  performance.now = () => realNow() + offset
+  try {
+    // The update is committed now; its frame comes two seconds later.
+    await list.render([{ id: 'new' }, { id: 'c' }, { id: 'a' }], 'list', {
+      afterCommit: () => {
+        offset = 2000
+      },
+    })
+  } finally {
+    performance.now = realNow
+  }
   expect(list.animations).toEqual([])
   expect(list.arrived()).toEqual([])
 })

@@ -5,8 +5,14 @@
 
 @layer utilities {
   @media (prefers-reduced-motion: no-preference) {
-    /* A row that arrived while the list was on screen: a brief accent wash that fades out. The row
-       is positioned (relative) by its list, and the wash follows its rounded corners. */
+    /* A row that arrived while the list was on screen fades in while the rows around it slide (so
+       it does not sit on top of a row still leaving its place), then keeps a brief accent wash
+       that fades out. The row is positioned (relative) by its list, and the wash follows its
+       rounded corners. */
+    .ficus-live-arrived {
+      animation: ficus-live-enter 300ms ease-out;
+    }
+
     .ficus-live-arrived::after {
       content: '';
       position: absolute;
@@ -20,6 +26,16 @@
     /* A status badge whose status changed: a short swell with an accent glow. */
     .ficus-live-emphasis {
       animation: ficus-live-emphasis 700ms cubic-bezier(0.2, 0, 0, 1);
+    }
+  }
+
+  @keyframes ficus-live-enter {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
     }
   }
 

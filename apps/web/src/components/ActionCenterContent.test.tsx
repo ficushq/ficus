@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { afterAnimationFrames } from '../test/animationFrames'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
 
@@ -271,8 +272,8 @@ describe('ActionCenterContent live motion', () => {
       await dom.act(async () => root.unmount())
 
       const feed = dom.createRoot()
-      const renderFeed = (actions: PendingAction[], key: string) =>
-        dom.act(async () => {
+      const renderFeed = async (actions: PendingAction[], key: string) => {
+        await dom.act(async () => {
           feed.root.render(
             <MemoryRouter>
               <QueryClientProvider client={queryClient}>
@@ -286,6 +287,8 @@ describe('ActionCenterContent live motion', () => {
             </MemoryRouter>
           )
         })
+        await dom.act(() => afterAnimationFrames(dom.window))
+      }
       const feedHighlighted = () =>
         [...feed.container.querySelectorAll('.ficus-live-arrived')].map((node) => node.getAttribute('data-live-row'))
       await renderFeed([haltedAction('agent-error:one', true)], '[]')
