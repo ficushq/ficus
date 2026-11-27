@@ -1061,6 +1061,56 @@ describe('AgentRunner (base class)', () => {
       expect(events.some((event) => event.type === 'error')).toBe(false)
     })
 
+    it('after a hard interruption, records the cut-off calls and tells the model once in the resumed prompt', async () => {
+      const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+      const { INTERRUPTED_TOOL_CALLS_TYPE } = await import('../../services/agent/interrupted-tool-calls')
+      // The session as the crashed worker left it.
+      const session = SessionManager.inMemory()
+      session.appendMessage({ role: 'user', content: 'deploy it', timestamp: Date.now() - 5000 })
+      session.appendMessage({
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'call-bash', name: 'bash', arguments: { command: 'deploy' } }],
+        stopReason: 'toolUse',
+        timestamp: Date.now() - 4000,
+      } as any)
+      Object.assign(mockSession.pi.sessionManager, {
+        getBranch: () => session.getBranch(),
+        appendCustomEntry: (type: string, data: unknown) => session.appendCustomEntry(type, data),
+      })
+      execution.interruption = {
+        noticeId: 'notice-1',
+        executionId: execution.id,
+        cause: 'core_restart',
+        recoveredAt: new Date().toISOString(),
+        executionStartedAt: new Date(Date.now() - 60_000).toISOString(),
+      }
+      await runner.run()
+      const text = mockSession.pi.promptCalls[0].text
+      expect(text).toStartWith(
+        `Ficus recovered this run at ${execution.interruption.recoveredAt} after an unexpected Core restart.`
+      )
+      expect(text.match(/safe, idempotent work/g)).toHaveLength(1)
+      const records = session
+        .getBranch()
+        .filter((entry) => entry.type === 'custom' && entry.customType === INTERRUPTED_TOOL_CALLS_TYPE)
+      expect(records.map((entry) => (entry as any).data.calls)).toEqual([
+        [expect.objectContaining({ toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' })],
+      ])
+      // Once the resumed prompt is in the conversation, a later pickup of the same run does not repeat it.
+      session.appendMessage({ role: 'user', content: text, timestamp: Date.now() })
+      expect((runner as any).prepareInterruptionResume()).toBeUndefined()
+      expect(
+        session
+          .getBranch()
+          .filter((entry) => entry.type === 'custom' && entry.customType === INTERRUPTED_TOOL_CALLS_TYPE)
+      ).toHaveLength(1)
+    })
+
+    it('a run with no interruption gets no notice', async () => {
+      await runner.run()
+      expect(mockSession.pi.promptCalls[0].text).not.toContain('Ficus recovered this run')
+    })
+
     it('emits a system_message when the session reports a switch-back', async () => {
       const buffer = new StreamBuffer()
       const events: any[] = []

@@ -18,6 +18,7 @@ import { Execution as ExecutionJson, ExecutionStatus, SessionUsage, AgentStatus,
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
 import type { ProvisionFailureCode } from '../services/sandbox/k8s/provision-failure'
 import type { AdmissionLease } from '../services/maintenance/admission-reservation'
+import type { HardInterruption } from '../services/agent/interrupted-tool-calls'
 import {
   admissionLeaseFromError,
   isExactAdmissionLeaseTerminal,
@@ -259,6 +260,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   declare maintenanceQueuedAt: Date | null
   /** Loaded from an exact shutdown marker, not inferred from error text or clock proximity. */
   restartContext?: RestartContext
+  /** Loaded from a startup-recovery or lease-sweep notice when there is no shutdown marker. */
+  interruption?: HardInterruption
 
   declare runnerClaimToken: string | null
   declare runnerClaimGeneration: number | null
@@ -1428,8 +1431,9 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * Requires the agent relation to be loaded (via setAgent or mustGetAgent).
    */
   async run(): Promise<void> {
-    const { prepareRestartResume } = await import('../services/execution/startup-recovery')
+    const { findHardInterruption, prepareRestartResume } = await import('../services/execution/startup-recovery')
     this.restartContext = await prepareRestartResume(this.id, this.agentId)
+    this.interruption = this.restartContext ? undefined : await findHardInterruption(this.id, this.agentId)
     const { reserveSession, removeSessionForExecution } = await import('../services/execution/session-state')
     const removeOwnSession = () => removeSessionForExecution(this.agentId, this.id)
 

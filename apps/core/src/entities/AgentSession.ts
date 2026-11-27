@@ -266,7 +266,7 @@ export class AgentSession {
         }),
       registeredTools.map((tool) => tool.name)
     )
-    const sessionTools = customTools.map((tool) => labelToolForPlan(tool, toolSearchPlan))
+    const sessionTools: ToolDefinition[] = customTools.map((tool) => labelToolForPlan(tool, toolSearchPlan))
     resourceLoader.relabelExtensionTools((tool) => labelToolForPlan(tool, toolSearchPlan))
     if (toolSearchPlan.mode === 'search') {
       sessionTools.push(createToolSearchTool(() => piSession.current))

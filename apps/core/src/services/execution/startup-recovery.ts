@@ -1,9 +1,12 @@
 import {
+  isInterruptionCause,
   isRestartContext,
   restartPauseChatNotice,
   restartResumeChatNotice,
+  type InterruptionCause,
   type RestartContext,
 } from '@ficus/shared/restart-context'
+import type { HardInterruption } from '../agent/interrupted-tool-calls'
 import { createRestartContext } from '../sandbox/command-drain'
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { agents, db, executionAdmissionReservations, executions, messages } from '../../db'
@@ -46,7 +49,7 @@ export async function recoverInterruptedExecutionsForStartup(options?: {
     .select({ id: executions.id })
     .from(executions)
     .where(inArray(executions.status, ['running', 'queued']))
-  return recoverExecutions(candidates, { ...options, requireLivenessProof: true })
+  return recoverExecutions(candidates, { ...options, requireLivenessProof: true, cause: 'core_restart' })
 }
 
 /**
@@ -107,6 +110,7 @@ export async function requeueAbandonedLeaseExecutions(options?: {
     // The startup wording here once sent a live debugging session hunting for a
     // restart that never occurred.
     notice: ABANDONED_LEASE_NOTICE,
+    cause: 'lease_lapsed',
   })
 }
 
@@ -163,6 +167,8 @@ async function recoverExecutions(
     /** The system notice posted to the agent's chat. Defaults to the unknown-interruption wording. */
     notice?: string
     restart?: RestartContext
+    /** A hard interruption's cause, for the resumed run's prompt and cut-off tool results. */
+    cause?: InterruptionCause
   }
 ): Promise<string[]> {
   const notice = options.notice ?? PROCESS_RESTART_NOTICE
@@ -223,6 +229,7 @@ async function recoverExecutions(
           metadata: {
             isSystem: true,
             ...(options.restart ? { restart: options.restart, restartPhase: 'pause' } : {}),
+            ...(options.cause ? { interruptionCause: options.cause } : {}),
             admissionRecoveryExecutionId: execution.id,
             executionId: execution.id,
           },
@@ -269,6 +276,50 @@ async function recoverExecutions(
     eventEmitter.emit('agent.updated', { agentId: result.execution.agentId, squadId: agent?.squadId ?? null })
   }
   return recovered
+}
+
+/**
+ * The hard interruption this execution is resuming from, if its latest recovery notice came from
+ * startup recovery or the lease sweep. A graceful shutdown's pause marker is handled by
+ * {@link prepareRestartResume} instead, so it returns undefined here.
+ */
+export async function findHardInterruption(
+  executionId: string,
+  agentId: string
+): Promise<HardInterruption | undefined> {
+  const [notice] = await db
+    .select({ id: messages.id, content: messages.content, metadata: messages.metadata, createdAt: messages.createdAt })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.agentId, agentId),
+        sql`${messages.metadata}->>'admissionRecoveryExecutionId' = ${executionId}`,
+        sql`${messages.metadata}->>'isSystem' = 'true'`
+      )
+    )
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(1)
+  if (!notice) return undefined
+  const metadata = (notice.metadata ?? {}) as { restartPhase?: unknown; restart?: unknown; interruptionCause?: unknown }
+  if (metadata.restartPhase !== undefined || metadata.restart !== undefined) return undefined
+  const [execution] = await db
+    .select({ startedAt: executions.startedAt })
+    .from(executions)
+    .where(and(eq(executions.id, executionId), eq(executions.agentId, agentId)))
+  if (!execution) return undefined
+  // Notices written before the cause was recorded: the lease sweep's wording names it.
+  const cause = isInterruptionCause(metadata.interruptionCause)
+    ? metadata.interruptionCause
+    : notice.content === ABANDONED_LEASE_NOTICE
+      ? 'lease_lapsed'
+      : 'core_restart'
+  return {
+    noticeId: notice.id,
+    executionId,
+    cause,
+    recoveredAt: notice.createdAt.toISOString(),
+    executionStartedAt: execution.startedAt.toISOString(),
+  }
 }
 
 /**
