@@ -32,13 +32,14 @@ export async function runIdempotentSandboxOperation<Client, Result>(input: {
   const sleep = input.sleep ?? ((ms) => Bun.sleep(ms))
   const delays = retryDelays(input.sandboxId, input.operationClass, 3)
   let client = input.getClient()
-  // Whether the previous attempt's failure was recorded, so the recovery backoff applies to it.
-  // A harmless interruption is not recorded (see services/recovery/runtime.ts) and keeps the jitter.
-  let recorded = recovery !== undefined
+  // Whether the previous attempt's failure was recorded, so the recovery backoff applies to it. A
+  // harmless interruption is not recorded (see services/recovery/runtime.ts) and keeps the jitter;
+  // the hold and abort checks in beforeAttempt run either way.
+  let recorded = true
 
   for (let attempt = 0; attempt < delays.length; attempt++) {
-    if (attempt > 0 && recovery && recorded) await recovery.beforeAttempt()
-    else if (delays[attempt] > 0) await sleep(delays[attempt])
+    if (attempt > 0 && recovery) await recovery.beforeAttempt()
+    if ((!recovery || !recorded) && delays[attempt] > 0) await sleep(delays[attempt])
     try {
       return await input.operation(client)
     } catch (error) {

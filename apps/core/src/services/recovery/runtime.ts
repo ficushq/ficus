@@ -59,6 +59,10 @@ function explainedFailure(error: unknown): boolean {
  * A call cut off mid-flight by a lost sandbox connection: the stream ended before a result, or the
  * response broke off. A call that could not reach its box is not interrupted; that keeps counting.
  * Restart-tagged errors have their own path (a restart is already free).
+ *
+ * Today only the Bash stream reports these (`BashOutcomeUnknownError`), and Bash is `unsafe`; unary
+ * sandbox reads and writes classify every transport failure as `connect`. The rule takes effect for
+ * safe tools once their transport reports response-phase failures.
  */
 function interruptedMidCall(error: unknown): boolean {
   if (bashOutcomeUnknownForError(error)) return true

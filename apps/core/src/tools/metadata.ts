@@ -106,12 +106,10 @@ const TOOL_METADATA_GROUPS: readonly ToolMetadataGroup[] = [
       'short_term_memory_write',
       'set_agent_purpose',
       'im_done',
-      'artifact_publish',
       'artifact_status',
       'channel_edit',
-      // Navigation to a given place
-      'browser_open',
-      'navigate',
+      // Loads tools into the session; a repeat finds them already loaded
+      'tool_search',
       // A repeat is refused or has nothing left to do
       'stop_subagent',
       'mark_read',
@@ -147,6 +145,12 @@ const TOOL_METADATA_GROUPS: readonly ToolMetadataGroup[] = [
       'channel_respond',
       'channel_send',
       'artifact_question',
+      // Appends to the artifact's publish history and announces it again
+      'artifact_publish',
+      // Navigation reloads the page and drops the state earlier steps built; navigate with a
+      // prompt shows the person another link
+      'browser_open',
+      'navigate',
       'delegate_task',
       'message_agent',
       'bigbrain_drop',

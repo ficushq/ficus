@@ -93,6 +93,13 @@ a specific error result, chosen by the tool's replay class:
 | `idempotent` | "It may or may not have completed. Running it again with the same arguments leaves the same final state, so it is safe to repeat."                              |
 | `unsafe`     | "It may have partially run or completed. Inspect the current state before retrying, and do not repeat an external side effect whose outcome is unknown."        |
 
+A call with the same tool and exact arguments that an earlier interruption in the
+same session already cut off gets the cautious wording whatever its class: it was
+interrupted by a restart before, so it may be what caused it (a read or search
+large enough to exhaust memory). The model is told not to run it again as is and
+to narrow it first. Nothing else caps a crash loop yet; requeueing a run does not
+count against the failure budget.
+
 The hook rewrites only pi's copy of the context; the session file keeps the call
 without a result. The Claude Code bridge receives that same context, so a session
 re-seeded after the crash (a pending tool result always re-seeds) shows the same
@@ -107,12 +114,16 @@ that is not listed, including pi extension and integration tools, is `unsafe`.
 `wrapToolWithRecovery` puts the class on each session tool definition as `ficus`
 and as pi's standard `annotations` hints (`readOnlyHint`, `idempotentHint`).
 
-The class also drives recovery accounting. A `safe` or `idempotent` call that a
-lost sandbox connection cut off mid-call (`BashOutcomeUnknownError`, or a
-response-phase `SandboxTransportError`) is not recorded as an unexplained failure;
-its error says it is safe to run again and does not count toward the budget. The
-same interruption of an `unsafe` tool still counts. A box that cannot be reached at
-all still counts for every tool, and restart-tagged cancellations stay free as before.
+The recovery wrapper also has a budget rule for the class: a `safe` or
+`idempotent` call that a lost sandbox connection cut off mid-call
+(`BashOutcomeUnknownError`, or a response-phase `SandboxTransportError`) is not
+recorded as an unexplained failure, and its error says it is safe to run again. The
+same interruption of an `unsafe` tool still counts. Today the rule has no effect on
+built-in tools: only the Bash stream reports these errors, and Bash is `unsafe`;
+unary sandbox reads and writes classify every transport failure as `connect`, which
+counts for every tool. It applies once those transports report response-phase
+failures. Restart-tagged cancellations stay free for every tool as before, and a
+hard crash records nothing.
 
 ## Failed resumed runs
 
@@ -350,7 +361,8 @@ the same recipient in one bash call are one message; pass distinct
 key is derived and each command is new, as before.
 
 **Limit.** A key only protects against the same call running again. After a hard
-Core restart the model sees no result for the cut-off call and may retry with a
+Core restart the model sees an interruption result for the cut-off call (see
+[Hard interruptions](#hard-interruptions-no-shutdown-marker)) and may retry with a
 new call, which has a new ID and so a new key. Two narrow content guards cover
 the most harmful of those duplicates within the same execution (a restart
 resumes the same execution):

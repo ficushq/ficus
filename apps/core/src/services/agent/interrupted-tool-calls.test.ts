@@ -138,7 +138,7 @@ describe('orphan detection', () => {
     ])
     session.appendMessage(result('call-done', 'read', 'file contents'))
     expect(findTrailingOrphanedToolCalls(session.getBranch(), window)).toEqual([
-      { toolCallId: 'call-cut', toolName: 'bash' },
+      { toolCallId: 'call-cut', toolName: 'bash', arguments: {} },
     ])
   })
 
@@ -181,12 +181,13 @@ describe('recording and answering cut-off calls', () => {
       { id: 'call-extension', name: 'some_extension_tool' },
     ])
     const record = recordInterruptedToolCalls(session, interruption())
-    expect(record.calls).toEqual([
+    expect(record.calls.map(({ argumentsKey: _key, ...call }) => call)).toEqual([
       { toolCallId: 'call-read', toolName: 'read', replay: 'safe' },
       { toolCallId: 'call-write', toolName: 'write', replay: 'idempotent' },
       { toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' },
       { toolCallId: 'call-extension', toolName: 'some_extension_tool', replay: 'unsafe' },
     ])
+    expect(record.calls.every((call) => typeof call.argumentsKey === 'string')).toBe(true)
     const entries = session.getBranch().length
     expect(recordInterruptedToolCalls(session, interruption())).toEqual(record)
     expect(session.getBranch()).toHaveLength(entries)
@@ -237,6 +238,41 @@ describe('recording and answering cut-off calls', () => {
     const texts = resultTexts(await modelContext(answered))
     expect(texts['call-read']).toBe('file contents')
     expect(texts['call-bash']).toContain('interrupted by an unexpected Core restart')
+  })
+
+  test('the same call cut off a second time gets the cautious wording, whatever its class', async () => {
+    const huge = { path: 'huge.log' }
+    const session = SessionManager.inMemory()
+    session.appendMessage(user('read the log'))
+    session.appendMessage({
+      ...callsMessage([{ id: 'call-1', name: 'read' }]),
+      content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: huge }],
+    })
+    expect(recordInterruptedToolCalls(session, interruption()).calls[0]).not.toHaveProperty('repeated')
+    // Resumed, the model reads the same file again, and Core goes down again.
+    session.appendMessage(user('Continue.', T0 + 400_000))
+    session.appendMessage({
+      ...callsMessage([{ id: 'call-2', name: 'read' }], { timestamp: T0 + 401_000 }),
+      content: [
+        { type: 'toolCall', id: 'call-2', name: 'read', arguments: { ...huge } },
+        { type: 'toolCall', id: 'call-3', name: 'read', arguments: { path: 'huge.log', limit: 200 } },
+      ],
+    })
+    const second = recordInterruptedToolCalls(
+      session,
+      interruption({ noticeId: 'notice-2', recoveredAt: '2026-11-27T08:20:00.000Z' })
+    )
+    expect(second.calls.map((call) => [call.toolCallId, call.repeated ?? false])).toEqual([
+      ['call-2', true],
+      ['call-3', false],
+    ])
+    session.appendMessage(user('Continue.', T0 + 1_300_000))
+    const texts = resultTexts(await modelContext(session))
+    expect(texts['call-1']).toContain('safe to run again')
+    expect(texts['call-2']).toContain('was interrupted by a restart before, so it may be what caused it')
+    expect(texts['call-2']).not.toContain('safe to run again')
+    // A narrowed call is a different call.
+    expect(texts['call-3']).toContain('safe to run again')
   })
 
   test('answering returns the same array when nothing is recorded', () => {

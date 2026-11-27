@@ -521,6 +521,8 @@ test('inner idempotent transport retries spend the same tool budget instead of m
   expect(calls).toBe(3)
 }, 10000) // Three real read attempts plus the mandatory 1s/2s backoff.
 
+// Unary sandbox reads label every transport failure `connect` today, so this response-phase loss is
+// the rule's contract for when they report one, not something a read produces yet.
 test('an interrupted call to a safe tool spends no budget; the same interruption of an unsafe tool still does', async () => {
   const { Type } = await import('@sinclair/typebox')
   const { wrapToolWithRecovery } = await import('./runtime')

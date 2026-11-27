@@ -1207,8 +1207,8 @@ describeSubprocess('attemptPickup result matrix', () => {
     const interruption = await findHardInterruption(crashed.execution.id, crashed.agent.id)
     expect(interruption).toMatchObject({ executionId: crashed.execution.id, cause: 'core_restart' })
     expect(recordInterruptedToolCalls(crashed.session, interruption!).calls).toEqual([
-      { toolCallId: 'call-read', toolName: 'read', replay: 'safe' },
-      { toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' },
+      expect.objectContaining({ toolCallId: 'call-read', toolName: 'read', replay: 'safe' }),
+      expect.objectContaining({ toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' }),
     ])
     const results = await resumedResults(crashed.session)
     expect(results['call-read']).toContain('interrupted by an unexpected Core restart')

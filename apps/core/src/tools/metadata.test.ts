@@ -12,6 +12,7 @@ function declaredToolNames(path: string): string[] {
   const source = readFileSync(path, 'utf8')
   const names = [...source.matchAll(/^\s+name: ['"]([a-z][a-z0-9_]*)['"],?$/gm)].map((match) => match[1]!)
   for (const match of source.matchAll(/\btool\(\s*['"]([a-z][a-z0-9_]*)['"]/g)) names.push(match[1]!)
+  for (const match of source.matchAll(/_TOOL_NAME = ['"]([a-z][a-z0-9_]*)['"]/g)) names.push(match[1]!)
   // The Assistant's continue/retry/cancel tools are built from one template.
   if (source.includes('`${operation}_task`')) names.push('continue_task', 'retry_task', 'cancel_task')
   return names
@@ -31,6 +32,7 @@ function builtInToolNames(): string[] {
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts') && file !== 'metadata.ts')
     .map((file) => join(toolsDir, file))
   files.push(join(repoRoot, 'config/agent/extensions/code-ast/index.ts'))
+  files.push(join(repoRoot, 'apps/core/src/services/agent/tool-search/prompt.ts'))
   return [
     ...new Set([
       ...files.flatMap(declaredToolNames),
@@ -51,7 +53,15 @@ describe('tool classification', () => {
     const names = builtInToolNames()
     // Guard the scan itself, so a broken pattern cannot make this pass vacuously.
     expect(names).toEqual(
-      expect.arrayContaining(['ask_human', 'dispatch', 'memory_get', 'todo_add', 'ast_rename', 'bigbrain_drop'])
+      expect.arrayContaining([
+        'ask_human',
+        'dispatch',
+        'memory_get',
+        'todo_add',
+        'ast_rename',
+        'bigbrain_drop',
+        'tool_search',
+      ])
     )
     expect(names.filter((name) => !classifiedTools().has(name))).toEqual([])
   })
@@ -59,7 +69,14 @@ describe('tool classification', () => {
   test('the classes follow the research brief, checked per tool', () => {
     for (const name of ['read', 'memory_search', 'sandbox_status', 'webfetch', 'browser_screenshot', 'todo_list'])
       expect(toolReplay(name)).toBe('safe')
-    for (const name of ['write', 'memory_write', 'short_term_memory_write', 'set_agent_purpose', 'stop_subagent'])
+    for (const name of [
+      'write',
+      'memory_write',
+      'short_term_memory_write',
+      'set_agent_purpose',
+      'stop_subagent',
+      'tool_search',
+    ])
       expect(toolReplay(name)).toBe('idempotent')
     for (const name of [
       'bash',
@@ -74,6 +91,10 @@ describe('tool classification', () => {
       'browser_click',
       'browser_type',
       'monitor',
+      // A repeat publishes again, reloads the page, or shows the person another link.
+      'artifact_publish',
+      'browser_open',
+      'navigate',
     ])
       expect(toolReplay(name)).toBe('unsafe')
   })

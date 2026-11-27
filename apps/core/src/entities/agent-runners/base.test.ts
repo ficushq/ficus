@@ -1094,7 +1094,7 @@ describe('AgentRunner (base class)', () => {
         .getBranch()
         .filter((entry) => entry.type === 'custom' && entry.customType === INTERRUPTED_TOOL_CALLS_TYPE)
       expect(records.map((entry) => (entry as any).data.calls)).toEqual([
-        [{ toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' }],
+        [expect.objectContaining({ toolCallId: 'call-bash', toolName: 'bash', replay: 'unsafe' })],
       ])
       // Once the resumed prompt is in the conversation, a later pickup of the same run does not repeat it.
       session.appendMessage({ role: 'user', content: text, timestamp: Date.now() })

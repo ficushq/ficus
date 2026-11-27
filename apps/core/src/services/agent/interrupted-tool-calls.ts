@@ -32,6 +32,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { InterruptionCause } from '@ficus/shared/restart-context'
 import { toolReplay, type ToolReplay } from '../../tools/metadata'
+import { recoveryInvocationKey } from '../recovery/operation'
 
 /** The session custom-entry type the cut-off calls are recorded under. */
 export const INTERRUPTED_TOOL_CALLS_TYPE = 'ficus:interrupted-tool-calls'
@@ -54,6 +55,14 @@ export interface InterruptedToolCall {
   toolName: string
   /** The class when the call was recorded, so a later reclassification does not change history. */
   replay: ToolReplay
+  /** Hash of the tool name and exact arguments, to recognize the same call cut off again. */
+  argumentsKey?: string
+  /**
+   * The same tool with the same arguments was already cut off by an earlier interruption in this
+   * session. The call may be what brings Core down (a read or search large enough to exhaust
+   * memory), so it gets the cautious wording whatever its class.
+   */
+  repeated?: boolean
 }
 
 export interface InterruptedToolCallsRecord {
@@ -82,7 +91,7 @@ function isRecord(entry: SessionEntry): entry is Extract<SessionEntry, { type: '
 export function findTrailingOrphanedToolCalls(
   branch: SessionEntry[],
   window: { since: number; until: number }
-): { toolCallId: string; toolName: string }[] {
+): { toolCallId: string; toolName: string; arguments: unknown }[] {
   const answered = new Set<string>()
   for (let index = branch.length - 1; index >= 0; index--) {
     const entry = branch[index]!
@@ -96,12 +105,15 @@ export function findTrailingOrphanedToolCalls(
     if (message.role === 'user') return []
     if (message.role !== 'assistant') continue
     if (message.stopReason === 'error' || message.stopReason === 'aborted') return []
+    // The message time is this host's clock; the window comes from the database's. If the host runs
+    // behind, a call made right as the run started falls outside it and keeps pi-ai's placeholder,
+    // which is the safe side.
     if (message.timestamp < window.since || message.timestamp > window.until) return []
     return message.content
       .filter((part) => part.type === 'toolCall' && !answered.has(part.id))
       .map((part) => {
         const call = part as Extract<typeof part, { type: 'toolCall' }>
-        return { toolCallId: call.id, toolName: call.name }
+        return { toolCallId: call.id, toolName: call.name, arguments: call.arguments }
       })
   }
   return []
@@ -118,15 +130,23 @@ export function recordInterruptedToolCalls(
   const branch = session.getBranch()
   const existing = branch.find((entry) => isRecord(entry) && entry.data.noticeId === interruption.noticeId)
   if (existing && isRecord(existing)) return existing.data
-  const recorded = new Set(
-    branch.flatMap((entry) => (isRecord(entry) ? entry.data.calls.map((call) => call.toolCallId) : []))
-  )
+  const earlier = branch.flatMap((entry) => (isRecord(entry) ? entry.data.calls : []))
+  const recorded = new Set(earlier.map((call) => call.toolCallId))
+  const earlierKeys = new Set(earlier.map((call) => call.argumentsKey).filter(Boolean))
   const calls = findTrailingOrphanedToolCalls(branch, {
     since: Date.parse(interruption.executionStartedAt),
     until: Date.parse(interruption.recoveredAt),
   })
     .filter((call) => !recorded.has(call.toolCallId))
-    .map((call) => ({ ...call, replay: toolReplay(call.toolName) }))
+    .map(({ arguments: args, ...call }) => {
+      const argumentsKey = recoveryInvocationKey(call.toolName, args ?? {})
+      return {
+        ...call,
+        replay: toolReplay(call.toolName),
+        argumentsKey,
+        ...(earlierKeys.has(argumentsKey) ? { repeated: true } : {}),
+      }
+    })
   const record: InterruptedToolCallsRecord = {
     noticeId: interruption.noticeId,
     executionId: interruption.executionId,
@@ -155,10 +175,12 @@ function causeText(cause: InterruptionCause): string {
 
 /** The result the model sees for a call a hard interruption cut off. */
 export function interruptedToolResultText(
-  call: Pick<InterruptedToolCall, 'toolName' | 'replay'>,
+  call: Pick<InterruptedToolCall, 'toolName' | 'replay' | 'repeated'>,
   interruption: Pick<InterruptedToolCallsRecord, 'cause' | 'recoveredAt'>
 ): string {
   const lead = `The ${call.toolName} call was interrupted by ${causeText(interruption.cause)} before it returned a result (recovered at ${interruption.recoveredAt}). No output was kept.`
+  if (call.repeated)
+    return `${lead} This same call, with the same arguments, was interrupted by a restart before, so it may be what caused it (for example by running out of memory). Do not run it again as is: inspect the current state, then narrow it, such as a smaller read, search or command, before retrying.`
   if (call.replay === 'safe') return `${lead} ${call.toolName} only reads, so it is safe to run again.`
   if (call.replay === 'idempotent')
     return `${lead} It may or may not have completed. Running it again with the same arguments leaves the same final state, so it is safe to repeat.`
