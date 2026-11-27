@@ -191,15 +191,24 @@ moved is at most one click deeper than before.
 
 **Progress** (`WorkStreamProgress`, rule in `lib/workflowProgress.ts`) lists the flow's steps
 without opening the graph, each with its state (done, in progress, waiting, returned for rework,
-queued, upcoming, or not run once the stream has ended) and who does it (the participant's agent
-type, "Reviewer" or "Assigned reviewer" for a human approval, "Decision model"). Steps are listed
-in the order the flow first reaches them from its entry along forward outcomes. Each step appears
-once with its latest state: a rework edge marks the step it sends work back to as "Returned for
-rework" and is not a step of its own, a loop back to an earlier step does not repeat it, parallel
-branches are listed together and marked "in parallel", and an outcome straight to `finish` ends the
-work early without branching the list. When one step can lead to two or more different unlisted
-steps (true alternatives, such as a decision choosing a path), the flow cannot be shown honestly as
-a list, so Progress shows only the current steps and a done count, and the graph carries the shape.
+queued, upcoming, or not run once the stream has ended) and who does it: the participant's agent
+type, "Decision model", or for a human approval "You" when the viewer may decide it (review
+permission, and being an assigned reviewer when the step is limited to them, with the other assigned
+reviewers named beside it: "You or Ben"), else the assigned reviewers by name ("Ana or Ben", "Ana,
+Ben or 2 others"), else the only person with review permission, else "Reviewer". Names are display
+names only, never email addresses (the part of the email before the @ for someone without a display
+name). An approval already decided never says "You", because Ficus does not record who decided it. Steps are listed in the order the flow first reaches them from its entry
+along forward outcomes. Each step appears once with its latest state: a rework edge marks the step
+it sends work back to as "Returned for rework" and is not a step of its own, a loop back to an
+earlier step does not repeat it, parallel branches are listed together and marked "in parallel",
+and an outcome straight to `finish` ends the work early without branching the list. While work
+has gone back to an earlier step, the completed steps after it that it will pass through again read
+"Runs again" instead of "Done"; when the correction goes straight back to the step that asked for
+it (an open return, followed through nested direct returns), the steps in between stay done. When one step can lead to two or more
+different unlisted steps (true alternatives, such as a decision choosing a path), the flow cannot
+be shown honestly as a list, so Progress shows only the current steps and a done count, and the
+graph carries the shape. While the flow loads, Progress shows a three-row skeleton so the modal
+does not shift.
 
 **Recent activity** (`WorkStreamRecentActivity`) shows the stream's newest five Activity rows,
 fetched from the Activity feed's own endpoint with the default filters and worded the same way. It
@@ -210,9 +219,20 @@ links to `/activity?workStream=<id>`, which opens the Activity page filtered to 
 "From chat" (stored inputs shared by ID), "From inbox" (stored inbox attachments), "From
 handoff" (files a step handed off) and "Workspace file" (paths into the squad workspace, with the
 full path on hover and in the viewer). A stored input with a label shows the label as its title and
-the filename beside its source on the line below. A workspace
-file that cannot be read says "This file could not be read. It may have been moved or deleted from
-the squad workspace." The mobile work stream page uses the same strings.
+the filename beside its source on the line below. A workspace file that cannot be loaded says why
+(`workspaceFileLoadError` in `lib/workflowAttachments.ts`):
+
+- refused (403): "You don’t have access to this squad’s workspace."
+- not there (400, 404 or 410): "This file could not be read. It may have been moved or deleted
+  from the squad workspace."
+- any other server answer: "This file could not be loaded right now. Try again in a moment."
+- no answer at all: "This file could not be loaded. Check your connection and try again."
+
+The last two offer **Try again**. The mobile work stream page uses the same strings for a refusal, a
+missing file and no answer; it still reads a server failure as a missing file.
+
+In Details, the form to track an issue, PR or alert (and its heading) shows only to someone with
+`workstreams:update`.
 
 Agents in the modal are named type first ("Engineer"). Two agents of the same type add the stream
 and step they work on ("Engineer (#12 · Implement)"), or else their purpose; the name and purpose

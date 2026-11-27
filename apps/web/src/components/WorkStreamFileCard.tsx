@@ -13,7 +13,7 @@ import {
   handoffDocument,
   storedDocument,
   storedInputPresentation,
-  WORKSPACE_FILE_MISSING,
+  workspaceFileLoadError,
   type ReviewDocument,
 } from '../lib/workflowAttachments'
 import { AttachmentView } from './WorkflowReviewAttachments'
@@ -94,6 +94,36 @@ function isImageFile(name: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext ?? '')
 }
 
+/** Why the file could not be loaded, with Try again when another attempt could help. */
+function WorkspaceFileError({
+  fileName,
+  error,
+  retrying,
+  onRetry,
+}: {
+  fileName: string
+  error: unknown
+  retrying: boolean
+  onRetry: () => void
+}) {
+  const { message, retry } = workspaceFileLoadError(error)
+  return (
+    <FilePreview fileName={fileName} kind="unavailable">
+      <span role="alert">{message}</span>
+      {retry && (
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary px-2.5 py-1 text-xs disabled:opacity-50"
+          disabled={retrying}
+          onClick={onRetry}
+        >
+          {retrying ? 'Trying again…' : 'Try again'}
+        </button>
+      )}
+    </FilePreview>
+  )
+}
+
 export function WorkStreamFileCard({ filePath, squadId, detail }: WorkStreamFileCardProps) {
   const { isFullscreen, toggleFullscreen, exitFullscreen } = useFullscreen()
   const [hasOpened, setHasOpened] = useState(false)
@@ -104,7 +134,7 @@ export function WorkStreamFileCard({ filePath, squadId, detail }: WorkStreamFile
 
   // Only fetch when user has opened the modal
   const queryOpts = queries.squadWorkspace.file(squadId, filePath)
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     ...queryOpts,
     enabled: hasOpened,
   })
@@ -148,9 +178,7 @@ export function WorkStreamFileCard({ filePath, squadId, detail }: WorkStreamFile
         {detail && <p className="mb-3 break-all font-mono text-xs text-muted">{filePath}</p>}
         {isLoading && <DocumentSkeleton label="Loading work stream file" lines={10} className="min-h-64" />}
         {error && (
-          <FilePreview fileName={fileName} kind="unavailable">
-            <span>{WORKSPACE_FILE_MISSING}</span>
-          </FilePreview>
+          <WorkspaceFileError fileName={fileName} error={error} retrying={isFetching} onRetry={() => void refetch()} />
         )}
         {data && !data.error && isImageFile(fileName) && (
           <FilePreview

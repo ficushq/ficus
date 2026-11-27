@@ -4,9 +4,11 @@ import { Link } from 'react-router'
 import type { WorkStream } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
+import { usePermissions } from '../hooks/usePermissions'
 import { webStatus } from '../lib/statusPresentation'
 import { workflowProgress, type WorkflowProgressState, type WorkflowProgressStep } from '../lib/workflowProgress'
 import { CheckIcon, UndoIcon } from './icons'
+import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
 
 /** One marker per state, different in shape as well as color so states never rely on color alone. */
 function StepMarker({ state }: { state: WorkflowProgressState }) {
@@ -122,13 +124,43 @@ function StepRow({
   )
 }
 
+/** Three placeholder rows shaped like steps, so the section keeps its place while the flow loads. */
+function ProgressSkeleton() {
+  return (
+    <LoadingSurface label="Loading progress">
+      <ol className="space-y-2">
+        <SkeletonRows count={3}>
+          {(index) => (
+            <li key={index} className="flex items-center gap-2.5">
+              <SkeletonBlock className="h-4 w-4 shrink-0 rounded-full" />
+              <SkeletonLine className={index % 2 ? 'w-1/2' : 'w-2/3'} />
+            </li>
+          )}
+        </SkeletonRows>
+      </ol>
+    </LoadingSurface>
+  )
+}
+
 /**
  * Where the stream is up to: its flow as a compact step list, above the workflow graph disclosure.
  * The listing rule (and when a flow shows only its current steps) is documented on workflowProgress.
+ * While the flow loads it holds its place with a skeleton; a stream without one shows nothing.
  */
 export function WorkStreamProgress({ stream, onOpenAgent }: { stream: WorkStream; onOpenAgent?: () => void }) {
-  const { data: run } = useQuery(queries.workflows.run(stream.id))
+  const { data: run, isPending } = useQuery(queries.workflows.run(stream.id))
   const { slugFor } = useSquadSlugs()
+  const { can, identity, isLoading: permissionsLoading } = usePermissions(stream.squadId)
+  const hasApproval = !!run?.state.definition.steps.some((step) => step.kind === 'human-approval')
+  // Names approvers; without it (loading, refused) they read "Assigned reviewer" or "Reviewer".
+  const { data: reviewers } = useQuery({ ...queries.workflows.reviewers(stream.squadId), enabled: hasApproval })
+  if (isPending)
+    return (
+      <section aria-label="Progress" className="space-y-2">
+        <h3 className="text-xs font-medium text-secondary">Progress</h3>
+        <ProgressSkeleton />
+      </section>
+    )
   if (!run) return null
   const progress = workflowProgress(run.state, {
     status: stream.status,
@@ -136,7 +168,9 @@ export function WorkStreamProgress({ stream, onOpenAgent }: { stream: WorkStream
     attemptAgents: run.attemptAgents,
     paused: !!stream.pause,
     slotWait: stream.slotWait,
-    hasAssignedReviewers: !!stream.assignedReviewerIds?.length,
+    assignedReviewerIds: stream.assignedReviewerIds ?? [],
+    reviewers,
+    viewer: permissionsLoading ? undefined : { can, identity },
   })
   const agentHref = (step: WorkflowProgressStep) =>
     step.agentId ? `/squads/${slugFor(stream.squadId)}/agents?agent=${encodeURIComponent(step.agentId)}` : undefined

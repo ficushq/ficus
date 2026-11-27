@@ -63,6 +63,11 @@ test('user-bubble markdown inherits the on-accent ink instead of fixed inverted 
   expect(html).toContain('prose-on-accent')
   expect(html).not.toContain('prose-invert')
   expect(html).not.toContain('syntax-human')
-  // Assistant markdown keeps its page prose colours.
-  expect(renderToStaticMarkup(<MarkdownContent>{'Hi'}</MarkdownContent>)).toContain('dark:prose-invert')
+  // Assistant and document markdown take their colours from the theme, never the fixed gray or inverted palette.
+  for (const variant of ['assistant', 'document'] as const) {
+    const page = renderToStaticMarkup(<MarkdownContent variant={variant}>{'Hi'}</MarkdownContent>)
+    expect(page).toContain('prose-themed')
+    expect(page).not.toContain('prose-gray')
+    expect(page).not.toContain('prose-invert')
+  }
 })

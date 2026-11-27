@@ -41,7 +41,8 @@ const resourceIdentity = (resource: TrackedRow) => ({
  *
  * `part` splits the section for the work stream modal: `list` shows what is
  * tracked and renders nothing while nothing is; `add` is the form to track a
- * link (or "Nothing tracked" for someone who cannot add one). `all` is both.
+ * link and renders nothing for someone who cannot add one. `all` is both, and
+ * says "Nothing tracked" to a read-only viewer when nothing is.
  */
 export function WorkStreamTrackedResources({
   workStreamId,
@@ -85,6 +86,8 @@ export function WorkStreamTrackedResources({
   const showAdd = part !== 'list'
   const hasTracked = resources.length > 0 || deliveryPullRequests.length > 0
   if (part === 'list' && !hasTracked) return null
+  // A read-only viewer cannot track a link: no heading over an empty form.
+  if (part === 'add' && !canUpdate) return null
   const shownError = part === 'list' ? (remove.error ?? designate.error) : part === 'add' ? add.error : error
 
   return (
