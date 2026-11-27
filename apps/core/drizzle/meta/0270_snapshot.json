@@ -1,5 +1,5 @@
 {
-  "id": "0c7b4aca-322c-42f4-95bc-253a4422dc01",
+  "id": "d8d36d7c-d29c-4491-a8da-d2b66c071be3",
   "prevId": "ba5341a9-4819-4131-8819-5fdfa6523885",
   "version": "7",
   "dialect": "postgresql",
@@ -724,12 +724,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "varchar(200)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -1140,6 +1134,12 @@
         "tools_deny": {
           "name": "tools_deny",
           "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tool_search": {
+          "name": "tool_search",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

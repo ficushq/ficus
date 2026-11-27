@@ -682,6 +682,7 @@ export abstract class AgentRunner {
         available: [...(opts.tools.available ?? []), ...integrationTools.available],
         allow: this.agentType.toolsAllow ?? undefined,
         deny: this.agentType.toolsDeny ?? undefined,
+        toolSearch: this.agentType.toolSearch ?? undefined,
       },
       sandbox:
         opts.sandboxId && opts.workspacePath

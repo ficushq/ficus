@@ -47,7 +47,7 @@ export function MarkdownContent({
       className={clsx(
         'prose max-w-none',
         !sized && 'prose-sm',
-        variant === 'human' ? 'prose-on-accent' : 'prose-gray dark:prose-invert',
+        variant === 'human' ? 'prose-on-accent' : 'prose-themed',
         variant === 'document' && 'prose-document',
         className
       )}

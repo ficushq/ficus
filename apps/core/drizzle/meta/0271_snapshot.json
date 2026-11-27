@@ -1,6 +1,6 @@
 {
-  "id": "12ddebf1-5cdf-48f6-b981-40391748f516",
-  "prevId": "0c7b4aca-322c-42f4-95bc-253a4422dc01",
+  "id": "fa07bc41-d7ce-424f-948c-01eac6a245b6",
+  "prevId": "d8d36d7c-d29c-4491-a8da-d2b66c071be3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -754,21 +754,6 @@
           "method": "btree",
           "with": {}
         },
-        "uq_agent_questions_idempotency_key": {
-          "name": "uq_agent_questions_idempotency_key",
-          "columns": [
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": true,
-          "method": "btree",
-          "with": {}
-        },
         "idx_agent_questions_answer_delivery_due": {
           "name": "idx_agent_questions_answer_delivery_due",
           "columns": [
@@ -1155,6 +1140,12 @@
         "tools_deny": {
           "name": "tools_deny",
           "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tool_search": {
+          "name": "tool_search",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

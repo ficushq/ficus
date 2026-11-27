@@ -15,7 +15,7 @@ description: Use when previewing a UI, capturing screenshots, or iterating visua
 
 ## Prerequisites
 
-- The `browser_*` tools (`browser_open`, `browser_click`, `browser_type`, `browser_scroll`, `browser_screenshot`, `browser_read`, `browser_console`) are available in your agent type.
+- The `browser_*` tools (`browser_open`, `browser_click`, `browser_type`, `browser_scroll`, `browser_screenshot`, `browser_read`, `browser_console`) are available in your agent type. If your system prompt lists them under tools loaded on demand, load them first with `tool_search` (for example the query `browser screenshot`); they then stay loaded for the rest of the session.
 - The instance has a browser-reachable `APP_URL` configured for path-based local apps (hosted app URLs already have their own origin).
 - A working dev server command (e.g. `bun run dev`, `npm run dev`, `python3 -m http.server`).
 

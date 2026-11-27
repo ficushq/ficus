@@ -47,6 +47,7 @@ export class FicusResourceLoader implements ResourceLoader {
   private precompactionController?: PrecompactionController
   private fitCompactionFallback?: (event: SessionBeforeCompactEvent) => Promise<CompactionResult | undefined>
   private shortTermMemoryContext?: ShortTermMemoryContext
+  private systemPromptSuffix = ''
   private readonly shortTermMemoryExtension = createShortTermMemoryContextExtension(() => this.shortTermMemoryContext)
   private readonly precompactionExtension: Extension = createPrecompactionExtension(
     () => this.precompactionController,
@@ -131,6 +132,34 @@ export class FicusResourceLoader implements ResourceLoader {
     this.fitCompactionFallback = fn
   }
 
+  /** The tools the loaded extensions registered, as pi will register them. */
+  getExtensionTools(): ToolDefinition[] {
+    return (this.extensions?.extensions ?? []).flatMap((extension) =>
+      [...extension.tools.values()].map((registered) => registered.definition as ToolDefinition)
+    )
+  }
+
+  /**
+   * Replace the definition of every tool the loaded extensions registered so far, without
+   * wrapping it again (the definitions are already wrapped). Used to label tools for tool search
+   * before the pi session reads them.
+   */
+  relabelExtensionTools(relabel: (tool: ToolDefinition) => ToolDefinition): void {
+    for (const extension of this.extensions?.extensions ?? []) {
+      const tools = extension.tools
+      for (const [name, registered] of tools) {
+        type Registered = typeof registered
+        const definition = relabel(registered.definition as ToolDefinition) as Registered['definition']
+        if (definition !== registered.definition) Map.prototype.set.call(tools, name, { ...registered, definition })
+      }
+    }
+  }
+
+  /** Text appended to the system prompt (the hidden-tools section). Set before the session is created. */
+  setSystemPromptSuffix(suffix: string): void {
+    this.systemPromptSuffix = suffix
+  }
+
   getExtensions() {
     const base =
       this.extensions ||
@@ -160,7 +189,7 @@ export class FicusResourceLoader implements ResourceLoader {
   }
 
   getSystemPrompt() {
-    return this.systemPrompt
+    return this.systemPromptSuffix ? `${this.systemPrompt}\n\n${this.systemPromptSuffix}` : this.systemPrompt
   }
 
   /**

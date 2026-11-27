@@ -39,6 +39,8 @@ try {
       const saved = new Set<string>()
       const lastVisit = '2026-10-27T09:00:00.000Z'
       const observedAt = '2026-10-28T12:30:00.000Z'
+      // The counts end a moment after the visit began; the visit records where they ended.
+      const countedThrough = '2026-10-28T12:30:00.250Z'
       const visits: string[] = []
       let refreshed = false
       let arrived = false
@@ -86,7 +88,7 @@ try {
         if (url.pathname === '/api/activity/settled') {
           assert.equal(url.searchParams.get('since'), lastVisit)
           return route.fulfill({
-            json: { since: lastVisit, clamped: false, counts: { questions: 4, reviews: 2 } },
+            json: { since: lastVisit, clamped: false, through: countedThrough, counts: { questions: 4, reviews: 2 } },
           })
         }
         if (url.pathname.includes('/inbox')) return route.fulfill({ json: { count: 0 } })
@@ -109,7 +111,7 @@ try {
         await settledLine.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
         ['questions', 'reviews'].map((kind) => `/activity?settled=${kind}&since=${encodeURIComponent(lastVisit)}`)
       )
-      assert.deepEqual(visits, [observedAt])
+      assert.deepEqual(visits, [countedThrough])
       assert.equal(await page.locator('time[aria-label]').count(), 0)
       assert.ok((await page.locator('time[title] .sr-only').count()) > 0)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)

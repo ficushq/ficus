@@ -684,6 +684,18 @@ export interface AgentTypeIntegrationPolicyV1 {
   allow: Record<string, IntegrationCapability[]>
 }
 
+/**
+ * An agent type's override of the tool-search labels (YAML `tools.search`, `tools.direct`,
+ * `tools.deferred`): `auto` decides per session, `on` skips the size check, `off` declares every tool.
+ */
+export interface AgentTypeToolSearchPolicy {
+  search?: 'auto' | 'on' | 'off'
+  /** Name patterns (`*` wildcard) always declared up front. Wins over `deferred`. */
+  direct?: string[]
+  /** Name patterns that may be loaded on demand. */
+  deferred?: string[]
+}
+
 // Agent type definition
 export interface AgentType {
   /** Reserved for a Ficus-managed role, not a work-flow participant. */
@@ -702,6 +714,7 @@ export interface AgentType {
   extensions: string[] | null
   toolsAllow: string[] | null
   toolsDeny: string[] | null
+  toolSearch?: AgentTypeToolSearchPolicy | null
   integrationCapabilities?: AgentTypeIntegrationPolicyV1 | null
   earlyMarginTokens: number | null
   inFlightMarginTokens: number | null
@@ -1731,6 +1744,12 @@ export interface WorkStreamRuntime {
    * extrapolate from. Omitted by older servers; fall back to `activeCount`.
    */
   workingCount?: number
+  /**
+   * ISO time of the newest work by a counted execution (`computedAt` while one is
+   * working), or null when none has run. Unlike `updatedAt`, edits to the stream's
+   * own fields never move it. Omitted by older servers.
+   */
+  lastWorkedAt?: string | null
   computedAt: string // ISO timestamp
 }
 

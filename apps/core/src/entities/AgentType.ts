@@ -2,6 +2,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { db, agentTypes } from '../db'
 import type { AgentType as AgentTypeJson, AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
 import type { InferSelectModel } from 'drizzle-orm'
+import type { ToolSearchPolicy } from '../services/agent/tool-search/labels'
 
 export type AgentTypeRow = InferSelectModel<typeof agentTypes>
 
@@ -18,6 +19,8 @@ export interface CreateAgentTypeInput {
   extensions?: string[]
   toolsAllow?: string[]
   toolsDeny?: string[]
+  /** Tool-search override. Omitted on upsert: the stored value is kept. */
+  toolSearch?: ToolSearchPolicy | null
   integrationCapabilities?: AgentTypeIntegrationPolicyV1 | null
   earlyMarginTokens?: number | null
   inFlightMarginTokens?: number | null
@@ -47,6 +50,7 @@ export class AgentType implements AgentTypeRow {
   declare extensions: string[] | null
   declare toolsAllow: string[] | null
   declare toolsDeny: string[] | null
+  declare toolSearch: ToolSearchPolicy | null
   declare integrationCapabilities: AgentTypeIntegrationPolicyV1 | null
   declare earlyMarginTokens: number | null
   declare extraScopes: string[] | null
@@ -193,6 +197,7 @@ export class AgentType implements AgentTypeRow {
       extensions: input.extensions ?? null,
       toolsAllow: input.toolsAllow ?? null,
       toolsDeny: input.toolsDeny ?? null,
+      toolSearch: input.toolSearch ?? null,
       integrationCapabilities: input.integrationCapabilities ?? null,
       earlyMarginTokens: input.earlyMarginTokens ?? null,
       inFlightMarginTokens: input.inFlightMarginTokens ?? null,
@@ -221,6 +226,7 @@ export class AgentType implements AgentTypeRow {
         extensions: input.extensions ?? null,
         toolsAllow: input.toolsAllow ?? null,
         toolsDeny: input.toolsDeny ?? null,
+        toolSearch: input.toolSearch ?? null,
         integrationCapabilities: input.integrationCapabilities ?? null,
         earlyMarginTokens: input.earlyMarginTokens ?? null,
         inFlightMarginTokens: input.inFlightMarginTokens ?? null,
@@ -239,6 +245,7 @@ export class AgentType implements AgentTypeRow {
           extensions: input.extensions ?? null,
           toolsAllow: input.toolsAllow ?? null,
           toolsDeny: input.toolsDeny ?? null,
+          ...(input.toolSearch !== undefined ? { toolSearch: input.toolSearch } : {}),
           integrationCapabilities: input.integrationCapabilities ?? null,
           earlyMarginTokens: input.earlyMarginTokens ?? null,
           inFlightMarginTokens: input.inFlightMarginTokens ?? null,
@@ -280,6 +287,7 @@ export class AgentType implements AgentTypeRow {
       extensions: this.extensions,
       toolsAllow: this.toolsAllow,
       toolsDeny: this.toolsDeny,
+      toolSearch: this.toolSearch,
       integrationCapabilities: this.integrationCapabilities,
       earlyMarginTokens: this.earlyMarginTokens,
       inFlightMarginTokens: this.inFlightMarginTokens,
