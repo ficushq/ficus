@@ -103,6 +103,18 @@ describe('WorkStream entity', () => {
     return agent
   }
 
+  /** Give a stored fixture the flow run row every stream with a flow has. */
+  async function withFlow(workStreamId: string) {
+    await db.insert(schema.workStreamFlowRuns).values({
+      workStreamId,
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'a'.repeat(64),
+      source: {} as never,
+      state: { attempts: [] } as never,
+      createdBy: 'test',
+    })
+  }
+
   async function countWorkStreamInbox(workStreamId: string, event: string, recipientId?: string): Promise<number> {
     const rows = await db
       .select({ id: inbox.id })
@@ -296,7 +308,8 @@ describe('WorkStream entity', () => {
           expect.objectContaining({ repository: 'repo' }),
           stream.id,
           {},
-          expect.any(Function)
+          expect.any(Function),
+          { timing: expect.objectContaining({ time: expect.any(Function) }) }
         )
         expect(stream.metadata).toMatchObject(metadata)
         const stored = await WorkStream.mustFind(stream.id)
@@ -2513,6 +2526,8 @@ describe('WorkStream entity', () => {
         title: `${testPrefix} metrics other`,
         agentIds: [otherBound.id, persistent.id],
       })
+      await withFlow(ws.id)
+      await withFlow(other.id)
       await bindTo(bound.id, ws.id)
       await bindTo(otherBound.id, other.id)
       const s = new Date('2026-03-01T10:00:00Z')
@@ -2560,6 +2575,7 @@ describe('WorkStream entity', () => {
     it('a flow stream whose agent list is empty still reports its bound agents', async () => {
       const bound = await createTestAgent()
       const ws = await storedLegacyWorkStream({ squadId: testSquad.id, title: `${testPrefix} metrics unlisted` })
+      await withFlow(ws.id)
       await bindTo(bound.id, ws.id)
       await db.insert(executions).values({
         agentId: bound.id,
@@ -2581,6 +2597,7 @@ describe('WorkStream entity', () => {
         title: `${testPrefix} metrics stale`,
         agentIds: [agent.id],
       })
+      await withFlow(ws.id)
       await bindTo(agent.id, ws.id)
       const started = new Date(Date.now() - 7 * 24 * 3_600_000)
       await db.insert(executions).values({ agentId: agent.id, status: 'running', startedAt: started })
@@ -2593,6 +2610,49 @@ describe('WorkStream entity', () => {
 
       const metrics = (await ws.getMetrics())!
       expect(metrics.duration.totalMs).toBe(600_000)
+    })
+
+    it("a flow stream whose first step has not started reports no metrics, not a listed agent's history", async () => {
+      const persistent = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} metrics not started`,
+        agentIds: [persistent.id],
+      })
+      await withFlow(ws.id)
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db.insert(executions).values({
+        agentId: persistent.id,
+        status: 'completed',
+        startedAt: s,
+        endedAt: new Date(s.getTime() + 3_600_000),
+        usage: usedTokens(50_000, 25),
+      })
+
+      expect(await ws.attributedAgentIds()).not.toContain(persistent.id)
+      expect(await ws.getMetrics()).toBeNull()
+    })
+
+    it('a stream from before flows reports the metrics of its listed agents', async () => {
+      const listed = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} metrics legacy listed`,
+        agentIds: [listed.id],
+      })
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db.insert(executions).values({
+        agentId: listed.id,
+        status: 'completed',
+        startedAt: s,
+        endedAt: new Date(s.getTime() + 8_000),
+        usage: usedTokens(800, 0.4),
+      })
+
+      expect(await ws.attributedAgentIds()).toEqual([listed.id])
+      const metrics = (await ws.getMetrics())!
+      expect(metrics.tokens.total).toBe(800)
+      expect(metrics.duration.totalMs).toBe(8_000)
     })
 
     it('reuses a runtime the caller already computed', async () => {
@@ -2759,6 +2819,7 @@ describe('WorkStream entity', () => {
         title: `${testPrefix} bound`,
         agentIds: [bound.id, persistent.id],
       })
+      await withFlow(ws.id)
       await bind(bound.id, ws.id)
       const s = new Date('2026-03-01T10:00:00Z')
       await db.insert(executions).values([
@@ -2783,6 +2844,7 @@ describe('WorkStream entity', () => {
         agentIds: [listed.id],
       })
       const flow = await storedLegacyWorkStream({ squadId: testSquad.id, title: `${testPrefix} flow`, agentIds: [] })
+      await withFlow(flow.id)
       await bind(other.id, flow.id)
       const s = new Date('2026-03-01T10:00:00Z')
       await db.insert(executions).values([
@@ -2793,6 +2855,44 @@ describe('WorkStream entity', () => {
       const map = await WorkStream.computeRuntimes([legacy, flow])
       expect(map.get(legacy.id)!.totalMs).toBe(7_000)
       expect(map.get(flow.id)!.totalMs).toBe(9_000)
+    })
+
+    it('a flow stream whose first step has not started counts nothing of a listed agent, then only its bound agents', async () => {
+      const persistent = await createTestAgent()
+      const listedElsewhere = await createTestAgent()
+      const ws = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} flow not started`,
+        agentIds: [persistent.id],
+      })
+      const legacy = await storedLegacyWorkStream({
+        squadId: testSquad.id,
+        title: `${testPrefix} legacy beside a flow`,
+        agentIds: [listedElsewhere.id],
+      })
+      await withFlow(ws.id)
+      const s = new Date('2026-03-01T10:00:00Z')
+      await db.insert(executions).values([
+        { agentId: persistent.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 3_600_000) },
+        { agentId: persistent.id, status: 'running', startedAt: new Date(Date.now() - 5_000) },
+        { agentId: listedElsewhere.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 4_000) },
+      ])
+
+      const before = await WorkStream.computeRuntimes([ws, legacy])
+      expect(before.get(ws.id)).toMatchObject({ totalMs: 0, activeCount: 0, workingCount: 0, lastWorkedAt: null })
+      // The rule is per stream: the legacy stream in the same batch keeps its listed agent.
+      expect(before.get(legacy.id)!.totalMs).toBe(4_000)
+
+      const bound = await createTestAgent()
+      await bind(bound.id, ws.id)
+      await db
+        .insert(executions)
+        .values({ agentId: bound.id, status: 'completed', startedAt: s, endedAt: new Date(s.getTime() + 6_000) })
+
+      const after = (await WorkStream.computeRuntimes([ws])).get(ws.id)!
+      expect(after.totalMs).toBe(6_000)
+      expect(after.activeCount).toBe(0)
+      expect(after.lastWorkedAt).toBe(new Date(s.getTime() + 6_000).toISOString())
     })
 
     it('a running execution silent past the stale bound counts only to its last message and stops ticking', async () => {

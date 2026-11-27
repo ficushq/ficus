@@ -44,6 +44,11 @@ export const WORK_STREAM_SUMMARIES_STORAGE_PREFIX = 'ficus.wsSummaries.'
 /** Remembered skeleton counts: `${prefix}.${scope}.${surface}`. */
 export const LOADING_SHAPE_STORAGE_PREFIX = 'ficus.loadingShape.v1'
 export const DEV_BACKEND_SHAPE_SCOPE_STORAGE_KEY = 'ficus.devBackend.shapeScope'
+/**
+ * The squad's configured agent type names (`{ [typeId]: name }`) from the last read, per backend:
+ * `${key}:${apiUrl}`. Labels use them until the next read answers, so a page load does not flip.
+ */
+export const AGENT_TYPE_NAMES_STORAGE_KEY = 'ficus.agentTypeNames.v1'
 export const ASSISTANT_POSITION_STORAGE_KEY = 'ficus-assistant-position'
 export const SQUAD_CHAT_SIDEBAR_WIDTH_STORAGE_KEY = 'ficus-squad-chat-sidebar-width'
 /** '1' when the squad chat sidebar's Recent chats (consultants) group is collapsed. */

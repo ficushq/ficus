@@ -157,13 +157,15 @@ const start = Date.parse('2026-10-30T10:05:00Z')
 const items: RenderItem[] = Array.from({ length: 24 }, (_, index) => {
   const message: Message = {
     id: `m${index}`,
+    agentId: 'agent-fixture',
     role: index % 2 ? 'assistant' : 'human',
     content:
       index % 2
         ? `The fallback reader stays enabled until the staging checks pass. ${sentence('answer', 2)}`
         : 'Why does the rollout keep the existing reader during rollback?',
     metadata: null,
-    createdAt: new Date(start + index * 60_000).toISOString(),
+    pending: false,
+    createdAt: new Date(start + index * 60_000),
   }
   return { kind: 'persisted', id: message.id, message, mergedFrom: [message], blocks: [] }
 })
@@ -189,7 +191,13 @@ createRoot(document.getElementById('root')!).render(
   <MemoryRouter>
     <QueryClientProvider client={cache}>
       <PermissionsProvider
-        usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
+        usePermissions={() => ({
+          permissions: ['*'],
+          identity: { type: 'user', userId: 'synthetic-reviewer' },
+          can: () => true,
+          isLoading: false,
+          isError: false,
+        })}
       >
         <ReviewConversationContext.Provider value={renderFixtureConversation}>
           <WorkflowReviewModal stream={stream} attemptId={2} onClose={() => {}} />

@@ -146,7 +146,8 @@ try {
       await capture(page, 'setup-confirm', width, appearance)
       await page.getByRole('button', { name: 'Confirm and connect' }).click()
       await page.getByText('BigBrain connected:').waitFor()
-      await page.getByText('Enabled · healthy').waitFor()
+      // The connection row's status badge (connectionStatus.ts).
+      await page.getByText('Healthy', { exact: true }).waitFor()
       await capture(page, 'setup-connected', width, appearance)
 
       // No vault detected: a typed folder, and an existing hand-written file to adopt.

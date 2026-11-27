@@ -1,15 +1,15 @@
 import { endsWithSentencePunctuation, recommendedQuestionOption, type Agent, type QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
-import { getAgentLabel } from '../lib/agentDisplay'
+import { getAgentLabel, noAgentTypeNames, type AgentTypeName } from '../lib/agentDisplay'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 
 type WaitingInputState = {
   spokenWaitingInputAgentIds?: string[] | Set<string>
 }
 
-// Spoken the way the app names agents: type first, then the purpose.
-function getAgentDisplayName(agent: Agent): string {
-  return getAgentLabel(agent)
+// Spoken the way the app names agents: type first (by its configured name), then the purpose.
+function getAgentDisplayName(agent: Agent, typeNames: AgentTypeName): string {
+  return getAgentLabel(agent, undefined, typeNames)
 }
 
 function formatQuestion(question: QuestionItem, index: number): string {
@@ -29,8 +29,8 @@ function formatQuestion(question: QuestionItem, index: number): string {
   return `${index + 1}. ${question.question}${contextText}${optionText}${recommendedText}${optionalText}`
 }
 
-export function buildAgentWaitingInputPrompt(agent: Agent): string {
-  const displayName = getAgentDisplayName(agent)
+export function buildAgentWaitingInputPrompt(agent: Agent, typeNames: AgentTypeName = noAgentTypeNames): string {
+  const displayName = getAgentDisplayName(agent, typeNames)
   const questions = agent.questionData?.questions ?? []
   const questionText = questions.length
     ? questions.map(formatQuestion).join('\n')
@@ -63,11 +63,17 @@ function markSpokenWaitingInput<TState extends WaitingInputState>(
   runtime.setState({ ...state, spokenWaitingInputAgentIds: [...ids.slice(-49), agentId] })
 }
 
+/**
+ * Speaks an agent's waiting-input questions. `typeNames` is the app's shared read of the configured
+ * agent type names (`useAgentTypeNames`, kept in the React Query cache), so an event never reads the
+ * agent types again; without it the type id is title-cased.
+ */
 export function createHandleAgentWaitingInputEvent(getAgentDependency: typeof getAgent) {
   return async function handleAgentWaitingInputEvent<TState extends WaitingInputState>(
     runtime: VoiceAssistantRuntime<TState>,
     agentId: string,
-    isActive: () => boolean = () => true
+    isActive: () => boolean = () => true,
+    typeNames: AgentTypeName = noAgentTypeNames
   ): Promise<void> {
     if (!isActive()) return
 
@@ -79,7 +85,7 @@ export function createHandleAgentWaitingInputEvent(getAgentDependency: typeof ge
     const message: PendingVoiceMessage<TState> = {
       id: `agent-waiting-input:${agent.id}`,
       dedupeKey: `agent-waiting-input:${agent.id}`,
-      text: buildAgentWaitingInputPrompt(agent),
+      text: buildAgentWaitingInputPrompt(agent, typeNames),
       onStart: (queuedRuntime) => {
         markSpokenWaitingInput(queuedRuntime, agent.id)
       },

@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router'
 import { getMyInbox, markAsRead } from '../../../api/inbox'
 import { listSquads, listSquadAgents } from '../../../api/squads'
+import { useAgentTypeNames } from '../../../hooks/useAgentTypeNames'
 import { useStableRef } from '../../../hooks/useStableRef'
+import { noAgentTypeNames, type AgentTypeName } from '../../../lib/agentDisplay'
 import { useWebSocket } from '../../../hooks/useWebSocket'
 import { handleAgentWaitingInputEvent } from '../../agentInputAnnouncements'
 import { buildInboxAnnouncementPrompt } from '../../inboxAnnouncements'
@@ -86,7 +88,8 @@ function markActiveInboxAnnouncementRead(
 function enqueueInboxAnnouncement(
   deps: SiteOperatorAssistantDependencies,
   runtime: VoiceAssistantRuntime<SiteOperatorAssistantState>,
-  message: Awaited<ReturnType<typeof getMyInbox>>[number]
+  message: Awaited<ReturnType<typeof getMyInbox>>[number],
+  typeNames: AgentTypeName
 ): void {
   const state = runtime.getState()
   if (state.spokenInboxIds.has(message.id)) return
@@ -94,7 +97,7 @@ function enqueueInboxAnnouncement(
   runtime.enqueueMessage({
     id: `inbox:${message.id}`,
     dedupeKey: `inbox:${message.id}`,
-    text: buildInboxAnnouncementPrompt(message),
+    text: buildInboxAnnouncementPrompt(message, typeNames),
     onStart: (queuedRuntime) => {
       updateSiteOperatorState(queuedRuntime, (draft) => {
         draft.activeInboxAnnouncement = message
@@ -119,7 +122,9 @@ function enqueueInboxAnnouncement(
 async function enqueueUnreadInboxAnnouncements(
   deps: SiteOperatorAssistantDependencies,
   runtime: VoiceAssistantRuntime<SiteOperatorAssistantState>,
-  preferredMessageId?: string
+  preferredMessageId?: string,
+  /** Read when the inbox answers, so a name that arrives meanwhile is used. */
+  typeNames: () => AgentTypeName = () => noAgentTypeNames
 ): Promise<void> {
   const messages = await deps.getMyInbox(false)
   const ordered = preferredMessageId
@@ -131,7 +136,7 @@ async function enqueueUnreadInboxAnnouncements(
     : messages
 
   for (const message of ordered) {
-    enqueueInboxAnnouncement(deps, runtime, message)
+    enqueueInboxAnnouncement(deps, runtime, message, typeNames())
   }
 }
 
@@ -169,6 +174,8 @@ function useSiteOperatorEffects(
   status: string
 ): void {
   const runtimeRef = useStableRef(runtime)
+  // The app's shared read of the configured type names; events read the latest without re-subscribing.
+  const typeNamesRef = useStableRef(useAgentTypeNames())
   useEffect(() => {
     if (env.pageEditor?.context && ['listening', 'processing', 'speaking', 'user-speaking'].includes(status))
       runtimeRef.current.updateInstructions(`${env.pageEditor.instructions}\n\n${env.pageEditor.context}`)
@@ -207,24 +214,28 @@ function useSiteOperatorEffects(
       // WS scopes inbox events to this user, so a 'user' recipient is always ours.
       if (data.recipientType !== 'user') return
 
-      void enqueueUnreadInboxAnnouncements(deps, runtimeRef.current, data.messageId).catch((err) => {
-        console.warn('[voice] failed to enqueue inbox announcement:', err)
-      })
+      void enqueueUnreadInboxAnnouncements(deps, runtimeRef.current, data.messageId, () => typeNamesRef.current).catch(
+        (err) => {
+          console.warn('[voice] failed to enqueue inbox announcement:', err)
+        }
+      )
     })
     const unsubscribeAgents = env.subscribe('agents', ({ event, data }) => {
       if (event !== 'agent.waiting-input') return
       const agentId = typeof data?.agentId === 'string' ? data.agentId : undefined
       if (!agentId) return
-      void deps.handleAgentWaitingInputEvent(runtimeRef.current, agentId).catch((err) => {
-        console.warn('[voice] failed to announce waiting-input agent:', err)
-      })
+      void deps
+        .handleAgentWaitingInputEvent(runtimeRef.current, agentId, undefined, typeNamesRef.current)
+        .catch((err) => {
+          console.warn('[voice] failed to announce waiting-input agent:', err)
+        })
     })
 
     return () => {
       unsubscribeInbox()
       unsubscribeAgents()
     }
-  }, [env, runtimeRef, status])
+  }, [env, runtimeRef, status, typeNamesRef])
 }
 
 export type SiteOperatorAssistantDependencies = {
@@ -354,8 +365,9 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
     __siteOperatorAssistantTest: {
       enqueueUnreadInboxAnnouncements: (
         runtime: VoiceAssistantRuntime<SiteOperatorAssistantState>,
-        preferredMessageId?: string
-      ) => enqueueUnreadInboxAnnouncements(deps, runtime, preferredMessageId),
+        preferredMessageId?: string,
+        typeNames?: () => AgentTypeName
+      ) => enqueueUnreadInboxAnnouncements(deps, runtime, preferredMessageId, typeNames),
       handleAgentWaitingInputEvent: deps.handleAgentWaitingInputEvent,
     },
   }

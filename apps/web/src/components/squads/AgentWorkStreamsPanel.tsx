@@ -1,7 +1,7 @@
 import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { WorkStreamDetailModal, formatRelativeTime } from '../WorkStreamDetailModal'
 import { workStreamPullRequests } from '../../lib/workStreamGithub'
@@ -29,15 +29,41 @@ function isAgentAttachedToWorkStream(workStream: WorkStream, agentId: string): b
 export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
   const [selectedWorkStream, setSelectedWorkStream] = useState<WorkStream | null>(null)
 
-  // Fetch work streams for the squad
-  const {
-    data: workStreams = [],
-    isLoading,
-    isSuccess,
-  } = useQuery({
-    ...queries.squads.workStreams(squadId),
+  // Open work is the squad's active list (small, polled); finished work is this agent's own history,
+  // paged on demand. The squad's unfiltered list is every stream it ever had, so it is never read here.
+  const active = useQuery({
+    ...queries.squads.activeWorkStreams(squadId),
     refetchInterval: 10000,
   })
+  const history = useInfiniteQuery(queries.squads.agentDoneWorkStreams(agent.id, squadId))
+  const isLoading = active.isLoading || history.isLoading
+  const isSuccess = active.isSuccess && history.isSuccess
+  // A list that never loaded is an error, not an empty panel; one that loaded keeps its rows on a failed refetch.
+  const activeFailed = active.isError && active.data === undefined
+  const historyFailed = history.isError && history.data === undefined
+  const activeWorkStreams = active.data
+  const finishedWorkStreams = useMemo(() => history.data?.pages.flatMap((page) => page.items) ?? [], [history.data])
+
+  // History is not polled. A stream that finishes without a live event (a dropped socket) leaves the
+  // polled open list, so when an open stream of this agent disappears from it and is not already in
+  // the history, the loaded history pages are refetched (newest first). A fetch already running (a
+  // live event's invalidation) is joined rather than restarted.
+  const refetchHistory = history.refetch
+  const previousOpen = useRef<{ agentId: string; ids: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!activeWorkStreams) return
+    const openIds = new Set(
+      activeWorkStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id)).map((ws) => ws.id)
+    )
+    const previous = previousOpen.current?.agentId === agent.id ? previousOpen.current.ids : null
+    previousOpen.current = { agentId: agent.id, ids: openIds }
+    if (!previous) return
+    const finishedIds = new Set(finishedWorkStreams.map((ws) => ws.id))
+    if ([...previous].some((id) => !openIds.has(id) && !finishedIds.has(id)))
+      void refetchHistory({ cancelRefetch: false })
+    // Only a change in the open list triggers this; a history refresh alone must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkStreams, agent.id, refetchHistory])
 
   // Fetch squads and agents for the modal
   const { data: squads = [] } = useQuery(queries.squads.list())
@@ -48,12 +74,21 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
   const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
 
   // Filter work streams where this agent is attached, assigned, owns, or created the stream.
+  // The server already narrowed the history to this agent (checked again here, so a Core that
+  // ignores agentId cannot show other agents' work); the squad's open list is narrowed here.
   const relevantWorkStreams = useMemo(() => {
-    return workStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id))
-  }, [workStreams, agent.id])
+    const finished = finishedWorkStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id))
+    // A stream that finished between the two reads appears once, in its finished place.
+    const finishedIds = new Set(finished.map((ws) => ws.id))
+    const open = (activeWorkStreams ?? []).filter(
+      (ws) => !finishedIds.has(ws.id) && isAgentAttachedToWorkStream(ws, agent.id)
+    )
+    return [...open, ...finished]
+  }, [activeWorkStreams, finishedWorkStreams, agent.id])
 
   // The server canonical order (GET /workstreams) is the single ordering
-  // authority: the squad list arrives pre-sorted and the agent filter above
+  // authority: open work arrives pre-sorted, then finished work newest
+  // completion first, as the unpaginated list orders them. The agent filter
   // preserves relative order, so no client re-sort is needed.
   const sortedWorkStreams = relevantWorkStreams
   const workStreamSkeletonCount = useLoadingShapeCount(
@@ -70,7 +105,34 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
     )
   }
 
-  if (sortedWorkStreams.length === 0) {
+  if (activeFailed || historyFailed) {
+    const retrying = active.isFetching || history.isFetching
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-muted px-6 py-12 text-center">
+        <WorkStreamIcon className="w-8 h-8 mb-3 text-placeholder" />
+        <p role="alert" className="text-lg">
+          Could not load work streams
+        </p>
+        <p className="max-w-sm text-sm leading-relaxed mt-2">
+          This agent's work streams did not load. Try again in a moment.
+        </p>
+        <button
+          type="button"
+          className="ficus-button ficus-button-secondary mt-4 px-3 py-1.5 text-sm disabled:opacity-50"
+          disabled={retrying}
+          onClick={() => {
+            if (activeFailed) void active.refetch()
+            if (historyFailed) void history.refetch()
+          }}
+        >
+          {retrying ? 'Retrying…' : 'Retry'}
+        </button>
+      </div>
+    )
+  }
+
+  // A first page that filters to nothing (an older Core that ignores agentId) may still have older pages.
+  if (sortedWorkStreams.length === 0 && !history.hasNextPage) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted px-6 py-12 text-center">
         <WorkStreamIcon className="w-8 h-8 mb-3 text-placeholder" />
@@ -84,6 +146,9 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto p-3">
+      {sortedWorkStreams.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-muted">No recent work streams for this agent.</p>
+      )}
       <div className="space-y-2">
         {sortedWorkStreams.map((ws) => {
           const pullRequests = workStreamPullRequests(ws.metadata ?? {})
@@ -141,6 +206,21 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
           )
         })}
       </div>
+      {history.hasNextPage && (
+        <button
+          type="button"
+          className="ficus-button ficus-button-ghost mt-2 w-full rounded-xl px-4 py-2 text-xs text-muted"
+          disabled={history.isFetchingNextPage}
+          onClick={() => void history.fetchNextPage()}
+        >
+          {history.isFetchingNextPage ? 'Loading…' : 'Show older work streams'}
+        </button>
+      )}
+      {history.isFetchNextPageError && (
+        <p role="alert" className="mt-2 px-4 text-xs text-status-danger-600 dark:text-status-danger-400">
+          Could not load older work streams. Try again.
+        </p>
+      )}
 
       {/* Work Stream Detail Modal */}
       {selectedWorkStream && (

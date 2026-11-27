@@ -8,6 +8,7 @@ import { queries } from '../queryOptions'
 import { getAgentConversationStatusRefetchInterval } from '../lib/agentConversationPolling'
 import { getAgentLabel, getAgentName } from '../lib/agentDisplay'
 import { AgentConversation } from './AgentConversationBody'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 function getSubagentSubtitle(agent: Agent): string {
   const pieces = [getAgentName(agent), agent.status, agent.id].filter(Boolean)
@@ -20,6 +21,7 @@ interface SubagentsInlinePanelProps {
 
 export function SubagentsInlinePanel({ parentAgentId }: SubagentsInlinePanelProps) {
   const [selectedId, setSelectedId] = useURLStringState<string>('subagent', '')
+  const typeNames = useAgentTypeNames()
   const { isConnected: wsConnected } = useWebSocket()
   const { data: children = [] } = useQuery({
     ...queries.agents.children(parentAgentId),
@@ -60,7 +62,7 @@ export function SubagentsInlinePanel({ parentAgentId }: SubagentsInlinePanelProp
               )}
               aria-current={active ? 'page' : undefined}
             >
-              <div className="text-sm font-medium truncate">{getAgentLabel(child)}</div>
+              <div className="text-sm font-medium truncate">{getAgentLabel(child, undefined, typeNames)}</div>
               <div className="text-[11px] text-muted truncate">{getSubagentSubtitle(child)}</div>
             </button>
           )

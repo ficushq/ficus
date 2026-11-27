@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import {
   ACTIVITY_PRESENCE_ROW_KINDS,
   compareSquadActivityItems,
-  workStreamNeedsHumanAttention,
+  workStreamWaitsOnViewer,
   type Agent,
   type NormalizedSquadActivityFilters,
   type SquadActivityItem,
@@ -27,6 +27,7 @@ import {
   squadActivityItemHref,
 } from './squadActivityView'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 /** Hover detail for the label column: the purpose/name the label no longer shows. */
 function activityAgentDetail(agent: Agent | undefined): string | undefined {
@@ -93,7 +94,11 @@ export function SquadActivityTab({
     () => new Set(agents.filter((candidate) => candidate.status === 'active').map((candidate) => candidate.id)),
     [agents]
   )
-  const needsYouCount = useMemo(() => presenceStreams.filter(workStreamNeedsHumanAttention).length, [presenceStreams])
+  // "N waiting on you" counts only streams this viewer can act on (the rule Core's presence uses).
+  const needsYouCount = useMemo(() => {
+    const viewer = accessResolved ? { can, identity } : undefined
+    return presenceStreams.filter((ws) => workStreamWaitsOnViewer(ws, viewer)).length
+  }, [presenceStreams, accessResolved, can, identity])
   // Active work cards come from the server (step, waits, PR/CI, working participants, last event).
   const { data: squadPresence } = useQuery(
     queries.activity.squadPresence(squadId, activityEnabled && canReadWorkStreams)
@@ -380,6 +385,7 @@ export function SquadActivityTab({
     return [...byId.values()].sort(compareSquadActivityItems)
   }, [accessResolved, accessSignature, filterKey, liveHead, liveOverlay, query.data, squadId])
   const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents])
+  const typeNames = useAgentTypeNames()
 
   // In-place viewing (2026-08-27): rows open modals instead of navigating, so
   // Activity works as a stay-put dashboard. Modified clicks (cmd/ctrl/shift,
@@ -396,37 +402,43 @@ export function SquadActivityTab({
       }
     | null
   >(null)
-  const openActivityItem = useCallback((item: SquadActivityItem) => {
-    if (item.ref.type === 'workstream') {
-      setOpenItem({ type: 'workstream', workStreamId: item.ref.workStreamId })
-    } else if (item.ref.type === 'agent') {
+  const openActivityItem = useCallback(
+    (item: SquadActivityItem) => {
+      if (item.ref.type === 'workstream') {
+        setOpenItem({ type: 'workstream', workStreamId: item.ref.workStreamId })
+      } else if (item.ref.type === 'agent') {
+        setOpenItem({
+          type: 'agent',
+          agentId: item.ref.agentId,
+          label: activitySubjectLabel(item, typeNames),
+          view: item.ref.view,
+          messageId: item.ref.messageId,
+        })
+      }
+    },
+    [typeNames]
+  )
+
+  const openAgentReference = useCallback(
+    (agent: Agent) => {
       setOpenItem({
         type: 'agent',
-        agentId: item.ref.agentId,
-        label: activitySubjectLabel(item),
-        view: item.ref.view,
-        messageId: item.ref.messageId,
+        agentId: agent.id,
+        label: activityAgentLabel(agent.agentTypeId, typeNames(agent.agentTypeId)),
+        view: 'chat',
+        resolvedAgent: agent,
       })
-    }
-  }, [])
-
-  const openAgentReference = useCallback((agent: Agent) => {
-    setOpenItem({
-      type: 'agent',
-      agentId: agent.id,
-      label: activityAgentLabel(agent.agentTypeId),
-      view: 'chat',
-      resolvedAgent: agent,
-    })
-  }, [])
+    },
+    [typeNames]
+  )
 
   const hrefFor = useCallback((item: SquadActivityItem) => squadActivityItemHref(item, squadSlug), [squadSlug])
   const agentLabelFor = useCallback(
     (agentId: string) => {
       const agent = agentById.get(agentId)
-      return agent ? activityAgentLabel(agent.agentTypeId) : undefined
+      return agent ? activityAgentLabel(agent.agentTypeId, typeNames(agent.agentTypeId)) : undefined
     },
-    [agentById]
+    [agentById, typeNames]
   )
   const agentDetailFor = useCallback(
     (item: SquadActivityItem) => activityAgentDetail(item.agentId ? agentById.get(item.agentId) : undefined),

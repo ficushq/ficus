@@ -9,6 +9,10 @@ import type { QuestionData, QuestionItem } from '@ficus/shared'
 
 /** Placeholder value of the "Other" choice on select / multi-select questions. */
 export const OTHER_OPTION = '__other__'
+/** What both farm question cards call that choice: the web card's word, so every surface says the same. */
+export const OTHER_LABEL = 'Other'
+/** The hint above a multi-select question's choices in both farm question cards, worded like the web card's. */
+export const MULTI_SELECT_HINT = 'Select all that apply:'
 /** Sent when every (optional) question was skipped. */
 export const EMPTY_ANSWER = '(empty)'
 

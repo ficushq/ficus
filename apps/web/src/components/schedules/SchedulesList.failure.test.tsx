@@ -7,6 +7,7 @@ import { SUBAGENT_WATCHDOG_KIND } from '../../lib/subagentWatchdog'
 import { acquireDomHarness } from '../../test/domHarness'
 import { apiUnavailable } from '../../test/apiMock'
 import { PermissionsProvider } from '../../hooks/usePermissions'
+import { StaticAgentTypeNames } from '../../hooks/useAgentTypeNames'
 import { SchedulesList } from './SchedulesList'
 
 // Refreshing the seeded schedule list fails, so the list keeps the schedules each test seeds; the
@@ -48,7 +49,7 @@ const base: Schedule = {
   updatedAt: new Date('2026-08-26T12:00:00Z'),
 }
 
-async function renderSchedules(schedules: Schedule[], entry = '/') {
+async function renderSchedules(schedules: Schedule[], entry = '/', typeNames: Record<string, string> = {}) {
   const dom = await acquireDomHarness({ url: `http://localhost${entry}`, api })
   const rendered = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -62,7 +63,9 @@ async function renderSchedules(schedules: Schedule[], entry = '/') {
           <PermissionsProvider
             usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
           >
-            <SchedulesList scopeType="agent" scopeId="parent-1" dependencies={dependencies} />
+            <StaticAgentTypeNames names={typeNames}>
+              <SchedulesList scopeType="agent" scopeId="parent-1" dependencies={dependencies} />
+            </StaticAgentTypeNames>
           </PermissionsProvider>
         </QueryClientProvider>
       </MemoryRouter>
@@ -230,6 +233,34 @@ describe('SchedulesList schedule health', () => {
       expect(dialog?.textContent).toContain('A transport error interrupted the scheduled action.')
     } finally {
       await dom.cleanup()
+    }
+  })
+})
+
+describe('SchedulesList schedule details', () => {
+  test('a spawn schedule names its agent type by the configured name, not the raw type id', async () => {
+    const spawning: Schedule = {
+      ...base,
+      id: 'spawning',
+      name: 'Spawning schedule',
+      action: { type: 'spawn_agent', agentTypeId: 'qa-bot', prompt: 'Check the release' },
+    }
+    for (const [names, shown] of [
+      [{ 'qa-bot': 'Release QA' }, 'Release QA'],
+      [{}, 'Qa Bot'],
+    ] as const) {
+      const dom = await renderSchedules([spawning], '/?schedule=spawning', names)
+      try {
+        const label = [...dom.window.document.querySelectorAll('label')].find(
+          (element) => element.textContent?.trim() === 'Agent Type'
+        )
+        expect(label).toBeDefined()
+        const row = label!.parentElement!
+        expect(row.textContent).toContain(shown)
+        expect(row.textContent).not.toContain('qa-bot')
+      } finally {
+        await dom.cleanup()
+      }
     }
   })
 })

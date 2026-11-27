@@ -8,6 +8,9 @@ import {
   workStreamTitle,
   workStreamWaitActor,
   workflowAttemptLimitPause,
+  workflowGateApprover,
+  workflowGateHasNoActiveAssignedReviewer,
+  type WorkflowGateApprover,
 } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
@@ -48,6 +51,7 @@ import {
   pendingActionAlertsViewer,
 } from './pending-action-policy'
 import { listOpenWaitsForStreams, toWaitJson } from '../work-streams/waits'
+import { loadInactiveAssignedReviewers } from '../workflows/reviewers'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
 import { flowWaitReference, isDeliveryApprovalWait } from '../workflows/wait-policy'
 import { deliveryView } from '../work-streams/delivery-pull-requests'
@@ -334,18 +338,24 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     .orderBy(desc(workStreamWaits.openedAt))
 
   const candidateIds = [...new Set(actionableWorkStreams.map((row) => row.ws.id))]
-  const [allWaits, candidateRuns] = await Promise.all([
+  const [allWaits, candidateRuns, inactiveReviewers] = await Promise.all([
     listOpenWaitsForStreams(candidateIds),
     candidateIds.length
       ? db.select().from(workStreamFlowRuns).where(inArray(workStreamFlowRuns.workStreamId, candidateIds))
       : [],
+    loadInactiveAssignedReviewers(
+      actionableWorkStreams.filter(({ wait }) => isHumanFlowWait(wait)).map(({ ws }) => ws)
+    ),
   ])
   const runsByStream = new Map(candidateRuns.map((run) => [run.workStreamId, run]))
   for (const { ws, squad, wait } of actionableWorkStreams) {
+    // Who decides a workflow gate, so a card can say why its viewer may not.
+    let gateApprover: WorkflowGateApprover | undefined
     if (isHumanFlowWait(wait)) {
       const run = runsByStream.get(ws.id)
       const attempt = run && activeWorkflowAttempts(run.state).find((a) => a.id === wait.flowAttemptId)
       const step = attempt && effectiveWorkflowStep(run!.state, attempt)
+      gateApprover = step ? workflowGateApprover(step) : undefined
       if (
         ws.pause ||
         run?.state.status !== 'running' ||
@@ -422,7 +432,11 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       squadId: squad.id,
       squadName: squad.name,
       waitId: wait.id,
-      wait: toWaitJson(wait),
+      wait: toWaitJson(wait, gateApprover),
+      ...(gateApprover === 'assigned-reviewers' &&
+      workflowGateHasNoActiveAssignedReviewer(ws.assignedReviewerIds, inactiveReviewers.get(ws.id))
+        ? { noActiveAssignedReviewer: true as const }
+        : {}),
       ...(isDeliveryApprovalWait(ws.id, wait) ? { deliveryApproval: true as const } : {}),
       ...(limitPause ? { attemptLimit: { ...limitPause, flowVersion: limitRun!.version } } : {}),
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },

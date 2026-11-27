@@ -65,7 +65,7 @@ The selected flow creates participants as their steps become active. Do not spaw
 ### 4. Monitor Progress
 
 ```bash
-# List work streams and their status
+# List open work streams and their status (--all adds done and canceled ones)
 ficus workstream list --squad <squad-id>
 
 # Get details about a specific work stream

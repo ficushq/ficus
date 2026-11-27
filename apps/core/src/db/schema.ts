@@ -1360,6 +1360,37 @@ export const workStreamWorktrees = pgTable(
   (table) => [uniqueIndex('idx_owned_worktree_path').on(table.squadId, sql`(${table.ownership}->>'worktree')`)]
 )
 
+/**
+ * Idempotency claims for `POST /api/workstreams` (see
+ * services/work-streams/create-idempotency.ts). A claim is pending while
+ * `workStreamId` is null: its owner renews `leaseExpiresAt` and binds the
+ * created stream in the creation transaction, or deletes the claim on failure.
+ */
+export const workStreamCreateRequests = pgTable(
+  'work_stream_create_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    /** `user:<id>`, `agent:<id>`, `system:<tokenId>` or `legacy`. */
+    requesterKey: varchar('requester_key', { length: 100 }).notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
+    /** SHA-256 of the canonical request body; a different body under the same key is refused. */
+    requestFingerprint: varchar('request_fingerprint', { length: 64 }).notNull(),
+    claimToken: uuid('claim_token').notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at').notNull(),
+    workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_work_stream_create_requests_key').on(table.squadId, table.requesterKey, table.idempotencyKey),
+    index('idx_work_stream_create_requests_created_at').on(table.createdAt),
+    // Deleting a stream cascades here; without this every delete would scan the table.
+    index('idx_work_stream_create_requests_work_stream').on(table.workStreamId),
+  ]
+)
+
 /** Durable done-transition outbox; a removing operation is never released merely by lease expiry. */
 export const worktreeCleanupJobs = pgTable(
   'worktree_cleanup_jobs',

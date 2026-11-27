@@ -1,5 +1,5 @@
 import type { Transport, RequestOptions } from '@ficus/client-core'
-import { HttpResponseError, readApiErrorMessage } from '@ficus/client-core'
+import { HttpResponseError, parseRetryAfter, readApiErrorMessage } from '@ficus/client-core'
 import { authFetch, apiUrl, getWsUrl } from './client'
 
 /** Translate a client-core RequestOptions into a browser fetch init (cookie + CSRF added by authFetch). */
@@ -29,7 +29,12 @@ function toFetchInit(options?: RequestOptions): RequestInit {
 export const webTransport: Transport = {
   async request<T>(path: string, options?: RequestOptions): Promise<T> {
     const res = await authFetch(path, toFetchInit(options))
-    if (!res.ok) throw new HttpResponseError(res.status, await readApiErrorMessage(res))
+    if (!res.ok)
+      throw new HttpResponseError(
+        res.status,
+        await readApiErrorMessage(res),
+        parseRetryAfter(res.headers.get('Retry-After'))
+      )
     if (res.status === 204) return undefined as T
     const contentType = res.headers.get('Content-Type') ?? ''
     if (!contentType.includes('application/json')) return undefined as T

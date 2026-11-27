@@ -3,6 +3,8 @@ import {
   formatAnswer as formatQuestionData,
   initialAnswers as initialFor,
   isAnswerComplete,
+  MULTI_SELECT_HINT,
+  OTHER_LABEL,
   OTHER_OPTION,
   type Answers,
   type AnswerValue,
@@ -14,6 +16,7 @@ import {
  * (the web's QuestionInput answer format) live once, in actions/answerFormat.
  */
 export const OTHER = OTHER_OPTION
+export { MULTI_SELECT_HINT, OTHER_LABEL }
 export type { Answers, AnswerValue, OtherTexts }
 
 export function initialAnswers(questions: QuestionItem[]): Answers {

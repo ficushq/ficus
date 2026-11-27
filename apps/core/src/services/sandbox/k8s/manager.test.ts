@@ -75,6 +75,46 @@ describe('K8sSandboxManager', () => {
     await expect(manager.stopSandbox('agent_x')).resolves.toEqual({ kind: 'not-found' })
   })
 
+  test('an aborted exec cancels the command in the pod and rejects with the abort reason', async () => {
+    const manager = new K8sSandboxManager('test')
+    ;(manager as any).podManager.touchPod = () => {}
+    const cancels: string[] = []
+    let bashCalls = 0
+    const stream = new EventEmitter() as any
+    stream.cancelAndWait = async (reason: string) => {
+      cancels.push(reason)
+      stream.emit('end')
+    }
+    ;(manager as any).sandboxes.set('agent_x', {
+      sandboxId: 'agent_x',
+      workspaceMount: '/workspace',
+      client: {
+        bash: () => {
+          bashCalls++
+          return stream
+        },
+      },
+    })
+    const controller = new AbortController()
+    const run = manager.exec('agent_x', ['sh', '-c', 'pwd'], { signal: controller.signal })
+    controller.abort(new Error('probe abandoned'))
+    await expect(run).rejects.toThrow('probe abandoned')
+    expect(cancels).toEqual(['tool-abort'])
+
+    // An already-aborted signal never starts a command.
+    await expect(manager.exec('agent_x', ['true'], { signal: controller.signal })).rejects.toThrow('probe abandoned')
+    expect(bashCalls).toBe(1)
+
+    // An abort after the exit code arrived cancels nothing.
+    const late = new AbortController()
+    const done = manager.exec('agent_x', ['true'], { signal: late.signal })
+    stream.emit('data', { stdout: Buffer.from('ok').toString('base64'), exitCode: 0 })
+    late.abort(new Error('late'))
+    stream.emit('end')
+    expect((await done).toString()).toBe('ok')
+    expect(cancels).toEqual(['tool-abort'])
+  })
+
   test('no-create attachment adopts only an existing ready pod', async () => {
     const attached: string[] = []
     const self = {

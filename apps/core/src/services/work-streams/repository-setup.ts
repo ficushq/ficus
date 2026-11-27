@@ -1,5 +1,6 @@
 import { posix as path } from 'node:path'
 import type { CreateWorkStreamInput, WorktreeOwnership } from '@ficus/shared'
+import type { CreatePhase, WorkStreamCreateTimer } from './create-timing'
 
 export class RepositorySetupError extends Error {}
 
@@ -287,21 +288,42 @@ export async function prepareRepository(
   }
 }
 
+/** Which create phase a repository-setup command belongs to (see create-timing.ts). */
+export function repositoryCommandPhase(args: string[]): CreatePhase {
+  if (args[0] !== 'git') return 'repository-exec'
+  // Skip `-C <dir>` and `-c <config>` pairs to find the subcommand.
+  let index = 1
+  while (args[index] === '-C' || args[index] === '-c') index += 2
+  if (args[index] === 'fetch') return 'repository-fetch'
+  if (args[index] === 'worktree' && args[index + 1] === 'add') return 'repository-worktree-add'
+  return 'repository-exec'
+}
+
 export async function setupWorkStreamRepository(
   squadId: string,
   input: RepositorySetupInput,
   key: string,
   metadata: Record<string, unknown>,
-  recordOwnership?: RecordOwnership
+  recordOwnership?: RecordOwnership,
+  options: { timing?: WorkStreamCreateTimer } = {}
 ) {
-  const { ensureSquadSandbox } = await import('../sandbox/ensure')
+  const { ensureSquadSandboxForCommands } = await import('../sandbox/squad-sandbox-fast-path')
   const { getSandboxManager } = await import('../sandbox/factory')
   const { Squad } = await import('../../entities/Squad')
-  const workspace = await ensureSquadSandbox(squadId)
+  const timing = options.timing
+  // A tracked, healthy squad box skips the full ensure; anything else still runs it.
+  const check = timing
+    ? await timing.time('sandbox-ensure', () => ensureSquadSandboxForCommands(squadId))
+    : await ensureSquadSandboxForCommands(squadId)
+  timing?.note('sandbox', check.reason ? `${check.path}:${check.reason}` : check.path)
+  const workspace = check.workspacePath
   const manager = getSandboxManager()
+  const sandboxId = Squad.getSandboxId(squadId)
+  const exec: RepositoryExec = async (args, execOptions) =>
+    (await manager.exec(sandboxId, args, execOptions)).toString()
   try {
     return await prepareRepository(
-      async (args, options) => (await manager.exec(Squad.getSandboxId(squadId), args, options)).toString(),
+      timing ? (args, execOptions) => timing.time(repositoryCommandPhase(args), () => exec(args, execOptions)) : exec,
       workspace,
       input,
       key,

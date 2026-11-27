@@ -1,6 +1,7 @@
 import type { AuthIdentity } from '@ficus/client-core'
 import {
   ACTIVITY_WORK_STREAM_CARD_STATE_LABELS,
+  PERSON_WAIT_NOUN,
   activityStepLabel,
   activityWorkStreamCardState,
   workStreamSlotWaitLabel,
@@ -159,17 +160,19 @@ const WAIT_LABELS: Record<WorkStreamWaitType, string> = {
 
 /** What a person is waited on for, as "Waiting on review" reads it to someone who cannot act. */
 const PERSON_WAIT_NOUNS: Record<WorkStreamWaitType, string> = {
-  review: 'review',
-  question: 'an answer',
+  review: PERSON_WAIT_NOUN.review,
+  question: PERSON_WAIT_NOUN.answer,
+  // A dependency never waits on a person; named only so every wait type reads.
   dependency: 'a dependency',
-  manual: 'a person',
+  manual: PERSON_WAIT_NOUN.blocker,
 }
 
 /**
  * One wait as the label reads it. `you` narrows "a person must act" (`needsYou`) to the viewer:
- * false when this viewer cannot act on it. Server-built cards omit it and read as the viewer's.
+ * false when this viewer cannot act on it. Core sets it on Active work cards for the viewer; cards
+ * from older servers omit it and read as the viewer's.
  */
-export type ActivityCardLabelWait = ActivityWorkStreamCardWait & { you?: boolean }
+export type ActivityCardLabelWait = ActivityWorkStreamCardWait
 
 /**
  * "Waiting on you: review" when the viewer must act, "Waiting on review" when someone else must,

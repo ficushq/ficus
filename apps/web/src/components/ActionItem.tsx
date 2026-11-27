@@ -32,6 +32,7 @@ import type {
   AssistantTaskActionData,
   WorkStreamActionData,
   WorkStreamDeliveryActionData,
+  WorkStreamWait,
 } from '@ficus/shared'
 import {
   pendingActionAgentLabel,
@@ -46,6 +47,9 @@ import {
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
+import { usePermissions } from '../hooks/usePermissions'
+import { workflowGateReadOnlyReason } from '../lib/workflowReview'
 
 /** Icon/role/label for actions that are not about a work stream. */
 const NON_WORK_STREAM_ACTION_STATUS: Record<
@@ -103,6 +107,7 @@ export function ActionItem({
   defaultExpanded = false,
   embedded = false,
 }: ActionItemProps) {
+  const typeNames = useAgentTypeNames()
   const [isExpanded, setExpanded] = useState(defaultExpanded)
   const expanded = embedded || isExpanded
   const itemRef = useRef<HTMLDivElement>(null)
@@ -149,8 +154,6 @@ export function ActionItem({
       const data = action.data as WorkStreamActionData
       invalidations.push(
         queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreamDetail(data.workStreamId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(data.squadId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() }),
         queryClient.invalidateQueries({ queryKey: [...queryKeys.squads.all, 'doneWorkStreams'] })
       )
@@ -200,8 +203,8 @@ export function ActionItem({
       : assistantTask
         ? assistantTask.taskLabel
         : agentItem
-          ? (pendingActionAgentLabel(action) ?? agentItem.agentTypeId)
-          : (pendingActionAgentLabel(action) ?? action.squadName)
+          ? (pendingActionAgentLabel(action, typeNames) ?? agentItem.agentTypeId)
+          : (pendingActionAgentLabel(action, typeNames) ?? action.squadName)
 
   return (
     <>
@@ -257,6 +260,14 @@ export function ActionItem({
               </Link>
             )}
             <ActionSubtitle action={action} />
+            {/* A gate card has no body, so a viewer who may not decide it learns why here. */}
+            {!expandable && !action.canRespond && blockedWait?.workflowHumanGate && (
+              <ReadOnlyGateNotice
+                squadId={wsData!.squadId}
+                wait={blockedWait}
+                noActiveAssignedReviewer={wsData?.noActiveAssignedReviewer}
+              />
+            )}
             {continueMutation.isError && (
               <p role="alert" className="mt-1 text-xs text-status-danger-600">
                 {actionErrorMessage(continueMutation.error)}
@@ -306,7 +317,7 @@ export function ActionItem({
                 (action.data as AgentQuestionActionData).answerDelivery?.status === 'failed') ? (
               <ActionContent action={action} onComplete={completeAction} />
             ) : (
-              <p className="text-xs text-muted">You can view this action but do not have permission to respond.</p>
+              <ReadOnlyActionNotice action={action} />
             )}
           </div>
         )}
@@ -336,8 +347,45 @@ export function ActionItem({
   )
 }
 
+const READ_ONLY_ACTION = 'You can view this action but do not have permission to respond.'
+
+/** What a viewer who may not respond sees; for a workflow gate, why it is not theirs to decide. */
+function ReadOnlyActionNotice({ action }: { action: PendingAction }) {
+  if (action.type === 'workstream-blocked' || action.type === 'workstream-review') {
+    const data = action.data as WorkStreamActionData
+    if (data.wait?.workflowHumanGate)
+      return (
+        <ReadOnlyGateNotice
+          squadId={data.squadId}
+          wait={data.wait}
+          noActiveAssignedReviewer={data.noActiveAssignedReviewer}
+        />
+      )
+  }
+  return <p className="text-xs text-muted">{READ_ONLY_ACTION}</p>
+}
+
+function ReadOnlyGateNotice({
+  squadId,
+  wait,
+  noActiveAssignedReviewer,
+}: {
+  squadId: string
+  wait: WorkStreamWait
+  noActiveAssignedReviewer?: true
+}) {
+  const { can, isLoading, isError } = usePermissions(squadId)
+  // Core decides who may respond; the card only words why, once the viewer's permissions are known.
+  const reason =
+    isLoading || isError
+      ? undefined
+      : workflowGateReadOnlyReason(wait.workflowGateApprover, can('workstreams:review'), noActiveAssignedReviewer)
+  return <p className="mt-1 text-xs text-muted">{reason ?? READ_ONLY_ACTION}</p>
+}
+
 function ActionSubtitle({ action }: { action: PendingAction }) {
-  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action)}</p>
+  const typeNames = useAgentTypeNames()
+  return <p className="text-xs text-muted truncate">{pendingActionContextLine(action, typeNames)}</p>
 }
 
 type DeliveryPullRequest = WorkStreamDeliveryActionData['pullRequests'][number]

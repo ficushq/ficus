@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { advisoryLock } from '@ficus/shared/advisory-lock'
 import { createHash, randomUUID } from 'crypto'
 import { access, chmod, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'fs/promises'
@@ -232,10 +233,13 @@ export class MachineTunnelManager {
     const path = this.ownerSocketPath(ownerPid, ownerId)
     const existing = OWNER_SOCKET_READY.get(path)
     if (existing) return existing
-    const ready = this.startOwnerSocket(ownerPid, ownerId).catch((error) => {
-      OWNER_SOCKET_READY.delete(path)
-      throw error
-    })
+    // Joined by later callers, so it runs outside the request that started it.
+    const ready = shareAcrossRequests(() =>
+      this.startOwnerSocket(ownerPid, ownerId).catch((error) => {
+        OWNER_SOCKET_READY.delete(path)
+        throw error
+      })
+    )
     OWNER_SOCKET_READY.set(path, ready)
     return ready
   }
@@ -570,9 +574,12 @@ export class MachineTunnelManager {
     const inflight = this.masterInflight.get(machine.id)
     if (inflight) return inflight
 
-    const p = this.establishMaster(machine).finally(() => {
-      this.masterInflight.delete(machine.id)
-    })
+    // Joined by later callers, so it runs outside the request that started it.
+    const p = shareAcrossRequests(() =>
+      this.establishMaster(machine).finally(() => {
+        this.masterInflight.delete(machine.id)
+      })
+    )
     this.masterInflight.set(machine.id, p)
     return p
   }
@@ -719,9 +726,12 @@ export class MachineTunnelManager {
     const inflight = this.forwardInflight.get(key)
     if (inflight) return inflight
 
-    const p = this.establishForward(machine, remotePort, key).finally(() => {
-      this.forwardInflight.delete(key)
-    })
+    // Joined by later callers, so it runs outside the request that started it.
+    const p = shareAcrossRequests(() =>
+      this.establishForward(machine, remotePort, key).finally(() => {
+        this.forwardInflight.delete(key)
+      })
+    )
     this.forwardInflight.set(key, p)
     return p
   }
@@ -742,9 +752,12 @@ export class MachineTunnelManager {
     const key = `${machine.id}:${remotePort}`
     const existingRepair = this.forwardRepairInflight.get(key)
     if (existingRepair) return existingRepair
-    const repair = this.repairForward(machine, remotePort, key).finally(() => {
-      if (this.forwardRepairInflight.get(key) === repair) this.forwardRepairInflight.delete(key)
-    })
+    // Joined by later callers, so it runs outside the request that started it.
+    const repair = shareAcrossRequests(() =>
+      this.repairForward(machine, remotePort, key).finally(() => {
+        if (this.forwardRepairInflight.get(key) === repair) this.forwardRepairInflight.delete(key)
+      })
+    )
     this.forwardRepairInflight.set(key, repair)
     return repair
   }
@@ -911,9 +924,12 @@ export class MachineTunnelManager {
     const key = `${machine.id}:R${localPort}`
     const inflight = this.reverseInflight.get(key)
     if (inflight) return inflight
-    const binding = this.establishReverse(machine, localPort, key).finally(() => {
-      this.reverseInflight.delete(key)
-    })
+    // Joined by later callers, so it runs outside the request that started it.
+    const binding = shareAcrossRequests(() =>
+      this.establishReverse(machine, localPort, key).finally(() => {
+        this.reverseInflight.delete(key)
+      })
+    )
     this.reverseInflight.set(key, binding)
     return binding
   }
@@ -1096,9 +1112,12 @@ export class MachineTunnelManager {
   async cancelMachineForwards(machineId: string): Promise<void> {
     const existing = this.forwardCleanupInflight.get(machineId)
     if (existing) return existing
-    const cleanup = this.performCancelMachineForwards(machineId).finally(() => {
-      if (this.forwardCleanupInflight.get(machineId) === cleanup) this.forwardCleanupInflight.delete(machineId)
-    })
+    // Joined by later callers, so it runs outside the request that started it.
+    const cleanup = shareAcrossRequests(() =>
+      this.performCancelMachineForwards(machineId).finally(() => {
+        if (this.forwardCleanupInflight.get(machineId) === cleanup) this.forwardCleanupInflight.delete(machineId)
+      })
+    )
     this.forwardCleanupInflight.set(machineId, cleanup)
     return cleanup
   }

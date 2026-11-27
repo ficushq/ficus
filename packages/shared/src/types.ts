@@ -993,6 +993,8 @@ export interface WorkStreamActionData {
   /** The open review/manual wait this action resolves (POST /workstreams/:id/waits/:waitId/resolve). */
   waitId: string
   wait: WorkStreamWait
+  /** True when an assigned-reviewer gate names reviewers but none is active. Presentation only. */
+  noActiveAssignedReviewer?: true
   /**
    * Server-classified: this wait is the stream's final delivery approval (a
    * workflow `review-approval` completion gate). Clients present it as a review,

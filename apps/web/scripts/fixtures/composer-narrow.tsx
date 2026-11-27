@@ -72,10 +72,12 @@ const lines: Array<[Message['role'], string]> = [
 const items: RenderItem[] = lines.map(([role, content], index) => {
   const message: Message = {
     id: `m${index}`,
+    agentId: AGENT,
     role,
     content,
     metadata: null,
-    createdAt: new Date(now.getTime() + index * 60_000).toISOString(),
+    pending: false,
+    createdAt: new Date(now.getTime() + index * 60_000),
   }
   return { kind: 'persisted', id: message.id, message, mergedFrom: [message], blocks: [] }
 })
@@ -143,8 +145,8 @@ if (layout === 'window') {
 const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
 cache.setQueryData(queries.agents.detail(AGENT).queryKey, agent)
 cache.setQueryData(queries.squads.list().queryKey, [squad])
-cache.setQueryData(queries.agentTypes.list().queryKey, [{ id: 'engineer', name: 'Engineer' }])
-cache.setQueryData(queries.agents.activeExecution(AGENT).queryKey, null)
+cache.setQueryData(queries.agentTypes.list().queryKey, [{ id: 'engineer', name: 'Engineer' }] as never)
+cache.setQueryData(queries.agents.activeExecution(AGENT).queryKey, { active: false })
 
 /** Stand-in page content behind and beside the chat. */
 const pageContent = (

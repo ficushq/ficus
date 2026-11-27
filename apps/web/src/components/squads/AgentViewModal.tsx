@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { Modal } from '../Modal'
@@ -10,34 +10,36 @@ import { AgentContextPanel } from './AgentContextPanel'
 import { AgentInfoPanel } from '../AgentInfoPanel'
 import { ChatIcon, InboxIcon, WorkStreamIcon, MemoryIcon } from '../icons'
 import type { Agent } from '@ficus/shared'
-import { getAgentLabel, getAgentName } from '../../lib/agentDisplay'
-
-const titleCase = (id: string) =>
-  id
-    .replace(/[-_]+/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
-
-/** A workflow agent is named `<participant> · <stream title>`: show the participant id title-cased. */
-function displayName(name: string): string {
-  const match = /^([a-z0-9]+(?:[-_][a-z0-9]+)*) · (.+)$/.exec(name)
-  return match ? `${titleCase(match[1]!)} · ${match[2]}` : name
-}
+import {
+  agentTypeDisplayName,
+  formatAgentNameAfterType,
+  getAgentLabel,
+  getAgentName,
+  noAgentTypeNames,
+  type AgentTypeName,
+} from '../../lib/agentDisplay'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 /**
  * The agent chat header: the agent's type first, with its purpose in parentheses ("Engineer
  * (Onboarding)"), then its name as the secondary handle. A squad has one manager, so it is
- * "Manager". A workflow agent's name leads with its participant, title-cased.
+ * "Manager". A workflow agent's name leads with its participant, title-cased, unless the participant
+ * reads as the type already leading the title ("Engineer · Forward the client IP", not "Engineer ·
+ * Engineer · Forward the client IP").
  */
-export function getAgentHeaderTitleParts(agent: Agent): { title: string; suffix: string } {
-  const stableName = displayName(getAgentName(agent))
+export function getAgentHeaderTitleParts(
+  agent: Agent,
+  typeNames: AgentTypeName = noAgentTypeNames
+): { title: string; suffix: string } {
+  const type = agent.agentTypeId === 'manager' ? 'Manager' : agentTypeDisplayName(agent.agentTypeId, typeNames)
+  const stableName = formatAgentNameAfterType(getAgentName(agent), type)
   if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: stableName }
-  return { title: getAgentLabel(agent), suffix: stableName }
+  return { title: getAgentLabel(agent, undefined, typeNames), suffix: stableName }
 }
 
 /** Keep the full desktop title and a compact two-line identity on phones. */
 export function AgentHeaderTitle({ agent }: { agent: Agent }) {
-  const { title, suffix } = getAgentHeaderTitleParts(agent)
+  const { title, suffix } = getAgentHeaderTitleParts(agent, useAgentTypeNames())
   return (
     <span className="block min-w-0">
       <span className="hidden md:block truncate">
@@ -98,8 +100,14 @@ export function AgentViewModal({
   const hasSubagents = subagents.length > 0
   const activeSubagentCount = subagents.filter((child) => child.status === 'active').length
   const effectiveTab = activeTab === 'subagents' && !hasSubagents ? 'chat' : activeTab
+  const sharedTypeNames = useAgentTypeNames()
+  // This agent's own type is loaded here anyway, so its name shows even without the shared list.
+  const typeNames = useMemo<AgentTypeName>(
+    () => (id) => sharedTypeNames(id) ?? (id === agentType?.id ? agentType.name : undefined),
+    [sharedTypeNames, agentType]
+  )
 
-  const { title, suffix } = getAgentHeaderTitleParts(agent)
+  const { title, suffix } = getAgentHeaderTitleParts(agent, typeNames)
 
   const tabToggle = (
     <AgentViewTabs

@@ -24,7 +24,7 @@ const data = {
           title: 'Completed update',
           squadId: 'example-squad',
           completedAt: '2026-10-29T12:00:00Z',
-        } as WorkStream,
+        } as unknown as WorkStream,
       ],
       totalCount: 1,
     },

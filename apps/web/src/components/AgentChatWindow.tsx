@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router'
 import { isHttpResponseError } from '@ficus/client-core'
@@ -11,7 +11,7 @@ import { currentViewport } from '../hooks/useAssistantPosition'
 import { CHAT_WINDOW_MIN, windowRect, type AgentWindow } from '../lib/chatWindows'
 import { registerFloatingWindow } from '../lib/floatingWindowRegistry'
 import { onDesktopTitleBarChange } from '../lib/desktopTitleBar'
-import { getAgentTitle } from '../lib/agentDisplay'
+import { agentTypeDisplayName, getAgentTitle, type AgentTypeName } from '../lib/agentDisplay'
 import type { AgentChatController } from './AgentChat'
 import { AgentActivityDot } from './AgentActivityDot'
 import { AgentConversation } from './AgentConversationBody'
@@ -21,6 +21,7 @@ import { FloatingWindowFrame } from './FloatingWindowFrame'
 import { FloatingWindowAgentContext, useFloatingWindows } from './floatingWindowsContext'
 import { agentFullPagePath } from './FloatingChatButton'
 import { CloseIcon, ExpandIcon, MinusIcon } from './icons'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 interface AgentChatWindowDependencies {
   ConversationComponent?: typeof AgentConversation
@@ -67,10 +68,6 @@ const KEY_STEPS: Record<string, [number, number]> = {
   ArrowDown: [0, 16],
 }
 
-function humanize(id: string) {
-  return id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-}
-
 /** What a conversation's latest arrival is, to notice new activity (the user's own sends excluded). */
 function latestActivity(conversation: AgentChatController): string | undefined {
   for (let index = conversation.items.length - 1; index >= 0; index--) {
@@ -114,6 +111,11 @@ export function AgentChatWindow({
     retry: (count, error) => (isHttpResponseError(error, 403) || !isGone(error)) && count < 2,
   })
   const types = useQuery(queries.agentTypes.list())
+  const sharedTypeNames = useAgentTypeNames()
+  const typeNames = useMemo<AgentTypeName>(
+    () => (id) => types.data?.find((type) => type.id === id)?.name || sharedTypeNames(id),
+    [types.data, sharedTypeNames]
+  )
   const squads = useQuery(queries.squads.list())
   // An agent that no longer exists, or that this account cannot see, closes its window quietly.
   const gone = agent.isError && isGone(agent.error)
@@ -172,13 +174,11 @@ export function AgentChatWindow({
   }
 
   const data = agent.data
-  const label = data ? getAgentTitle(data) : 'Agent chat'
+  const label = data ? getAgentTitle(data, typeNames) : 'Agent chat'
   // The title already leads with the type, so the subtitle carries the agent's name, the handle
   // people use with `ficus inbox send`; the type stands in when the agent has no name.
   const agentName = typeof data?.metadata?.name === 'string' ? data.metadata.name.trim() : ''
-  const typeName = data
-    ? agentName || (types.data?.find((type) => type.id === data.agentTypeId)?.name ?? humanize(data.agentTypeId))
-    : undefined
+  const typeName = data ? agentName || agentTypeDisplayName(data.agentTypeId, typeNames) : undefined
   const squad = data?.squadId ? squads.data?.find((candidate) => candidate.id === data.squadId) : undefined
   const unread = windows.unread.has(agentId)
 

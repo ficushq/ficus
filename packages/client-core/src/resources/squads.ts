@@ -20,6 +20,20 @@ import type { ImageContent } from './images'
 export const WS_ACTIVE_STATUSES = ['queued', 'active'] as const satisfies readonly WorkStreamStatus[]
 export const WS_DONE_STATUSES = ['done', 'canceled'] as const satisfies readonly WorkStreamStatus[]
 
+/**
+ * The status filter of an unpaged list, which may only ask for open work (queued, active). Without
+ * one (or with a finished status) Core returns every open stream plus a capped slice of history, so
+ * these helpers refuse it at run time; finished work is read with listDoneWorkStreamsPage. The type
+ * stays WorkStreamStatus so callers holding open statuses in a WorkStreamStatus[] keep compiling.
+ */
+function openStatusesParam(statuses: readonly WorkStreamStatus[]): string {
+  if (statuses.length === 0) throw new Error('An unpaged work stream list needs open statuses (queued or active)')
+  const finished = statuses.filter((status) => !(WS_ACTIVE_STATUSES as readonly string[]).includes(status))
+  if (finished.length > 0)
+    throw new Error(`An unpaged work stream list cannot ask for ${finished.join(', ')}; page finished work instead`)
+  return `statuses=${statuses.join(',')}`
+}
+
 export type ResolveWorkStreamWaitResult = WorkStream & { wait: WorkStreamWait }
 
 export interface WorkStreamsPage {
@@ -120,27 +134,27 @@ export function squadsResource(t: Transport) {
     // Agent.tryTerminate() safety (managers, persist, idle, active work streams).
     terminateSquadAgent: (squadId: string, agentId: string): Promise<void> =>
       t.request(`/squads/${squadId}/agents/${agentId}`, { method: 'DELETE' }),
-    // Squad-scoped work streams. Optional statuses filter (comma-joined) for the active-count use case.
-    // Route returns WorkStream[] directly (no limit → not paginated).
-    listSquadWorkStreams: (squadId: string, statuses?: WorkStreamStatus[]): Promise<WorkStream[]> => {
-      let path = `/workstreams?squadId=${squadId}`
-      if (statuses && statuses.length > 0) path += `&statuses=${statuses.join(',')}`
-      return t.request(path)
-    },
     /**
-     * Cross-squad listing — same route without the squadId filter. `respectAttention` drops streams
-     * the caller muted (stream or squad progress level), as a feed wants; `omitDescription` returns
-     * each row with a null description when the list shows none.
+     * A squad's open work streams (unpaged; the route returns WorkStream[]). `statuses` is required
+     * and open-only: the squad's full history is never one read. Page finished work with
+     * listDoneWorkStreamsPage, or read one stream with getWorkStream.
+     */
+    listSquadWorkStreams: (squadId: string, statuses: readonly WorkStreamStatus[]): Promise<WorkStream[]> =>
+      t.request(`/workstreams?squadId=${encodeURIComponent(squadId)}&${openStatusesParam(statuses)}`),
+    /**
+     * Open work streams across every squad the caller can see (unpaged, so open statuses only, as
+     * listSquadWorkStreams). `respectAttention` drops streams the caller muted (stream or squad
+     * progress level), as a feed wants; `omitDescription` returns each row with a null description
+     * when the list shows none.
      */
     listAllWorkStreams: (
-      statuses?: WorkStreamStatus[],
+      statuses: readonly WorkStreamStatus[],
       options: ListAllWorkStreamsOptions = {}
     ): Promise<WorkStream[]> => {
-      const params: string[] = []
-      if (statuses && statuses.length > 0) params.push(`statuses=${statuses.join(',')}`)
+      const params = [openStatusesParam(statuses)]
       if (options.respectAttention) params.push('respectAttention=true')
       if (options.omitDescription) params.push('omitDescription=true')
-      return t.request(params.length > 0 ? `/workstreams?${params.join('&')}` : '/workstreams')
+      return t.request(`/workstreams?${params.join('&')}`)
     },
     getWorkStream: (id: string): Promise<WorkStream> => t.request(`/workstreams/${encodeURIComponent(id)}`),
     resolveWorkStreamWait: (

@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, setSystemTime, spyOn } from 'bun:test'
 import { like, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { workStreamsRouter } from './work-streams'
+import { UNPAGED_HISTORY_LIMIT, workStreamsRouter } from './work-streams'
 import { squadsRouter } from './squads'
 import { agentsRouter } from './agents'
 import { identityMiddleware } from '../middleware/identity'
@@ -954,6 +954,8 @@ describe('work-streams routes', () => {
       expect(Array.isArray(list)).toBe(true)
       expect(list.length).toBe(2)
       expect(list.every((ws: { status: string }) => ws.status === 'done' || ws.status === 'canceled')).toBe(true)
+      // All of the history fits under the cap, so there is no next page.
+      expect(res.headers.get('Link')).toBeNull()
     })
 
     it('lets statuses take precedence over status', async () => {
@@ -968,6 +970,149 @@ describe('work-streams routes', () => {
       expect(list.map((ws: { id: string }) => ws.id)).toContain(done.id)
       expect(list.map((ws: { id: string }) => ws.id)).not.toContain(pending.id)
       expect(list.every((ws: { status: string }) => ws.status === 'done' || ws.status === 'canceled')).toBe(true)
+    })
+
+    /** The `Link: <...>; rel="next"` target of an unpaged list whose history was capped. */
+    function nextPageLink(response: Response): URL {
+      const link = response.headers.get('Link')
+      expect(link).not.toBeNull()
+      return new URL(link!.slice(1, link!.indexOf('>')), 'http://localhost')
+    }
+
+    /** More open streams and more history than the unpaged cap, history completed newest last. */
+    async function seedPastTheHistoryCap(squadId = testSquadId) {
+      const open = await db
+        .insert(workStreams)
+        .values(
+          Array.from({ length: UNPAGED_HISTORY_LIMIT + 2 }, (_, index) => ({
+            squadId,
+            title: `${testPrefix} open ${index}`,
+            status: index % 2 === 0 ? ('active' as const) : ('queued' as const),
+          }))
+        )
+        .returning({ id: workStreams.id })
+      const history = await db
+        .insert(workStreams)
+        .values(
+          Array.from({ length: UNPAGED_HISTORY_LIMIT + 3 }, (_, index) => ({
+            squadId,
+            title: `${testPrefix} history ${index}`,
+            status: index % 3 === 0 ? ('canceled' as const) : ('done' as const),
+            updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
+          }))
+        )
+        .returning({ id: workStreams.id })
+      return { open: open.map((row) => row.id), newestHistoryFirst: history.map((row) => row.id).reverse() }
+    }
+
+    it('caps history without limit at the newest rows, keeps all open work, and links the next page', async () => {
+      const { open, newestHistoryFirst } = await seedPastTheHistoryCap()
+
+      const res = await apiFetch(`/api/workstreams?squadId=${testSquadId}&omitDescription=true`)
+      expect(res.status).toBe(200)
+      const list = (await res.json()) as Array<{ id: string; status: string }>
+      expect(Array.isArray(list)).toBe(true)
+      const listedOpen = list.filter((ws) => ws.status === 'active' || ws.status === 'queued').map((ws) => ws.id)
+      expect(new Set(listedOpen)).toEqual(new Set(open))
+      const listedHistory = list.filter((ws) => ws.status === 'done' || ws.status === 'canceled').map((ws) => ws.id)
+      expect(listedHistory).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+
+      expect(res.headers.get('Link')).toMatch(/^<\/api\/workstreams\?[^>]+>; rel="next"$/)
+      const next = nextPageLink(res)
+      expect(next.searchParams.get('squadId')).toBe(testSquadId)
+      expect(next.searchParams.get('statuses')).toBe('done,canceled')
+      expect(next.searchParams.get('limit')).toBe(String(UNPAGED_HISTORY_LIMIT))
+      expect(next.searchParams.get('omitDescription')).toBe('true')
+
+      expect(next.searchParams.get('annotations')).toBe('full')
+
+      const page = await (await apiFetch(`${next.pathname}${next.search}`)).json()
+      expect(page.items.map((ws: { id: string }) => ws.id)).toEqual(newestHistoryFirst.slice(UNPAGED_HISTORY_LIMIT))
+      // Every continued row has the same shape as the capped list's history rows, annotations included.
+      const keys = (row: object) => Object.keys(row).sort()
+      const listedRows = list.filter((ws) => ws.status === 'done' || ws.status === 'canceled')
+      const listedShape = keys(listedRows[0]!)
+      expect(listedRows.map(keys)).toEqual(listedRows.map(() => listedShape))
+      expect(listedShape).toEqual(expect.arrayContaining(['integrationEventSources', 'derivedState', 'runtime']))
+      expect(page.items.map(keys)).toEqual(page.items.map(() => listedShape))
+      for (const row of page.items) {
+        expect(row.derivedState).toEqual(expect.any(String))
+        expect(row.integrationEventSources).toEqual([])
+      }
+      expect(page.hasMore).toBe(false)
+      expect(page.totalCount).toBe(newestHistoryFirst.length)
+    })
+
+    it('reads the capped history without counting it, while a page still counts its total', async () => {
+      const { newestHistoryFirst } = await seedPastTheHistoryCap()
+      /** The selects that count rows, as opposed to reading them. */
+      const countSelects = (spy: { mock: { calls: unknown[][] } }) =>
+        spy.mock.calls.filter(([fields]) => !!fields && typeof fields === 'object' && 'count' in fields).length
+      const listTerminalPage = spyOn(WorkStream, 'listTerminalPage')
+      const select = spyOn(db, 'select')
+      try {
+        const res = await apiFetch(`/api/workstreams?squadId=${testSquadId}`)
+        expect(res.status).toBe(200)
+        const list = (await res.json()) as Array<{ id: string; status: string }>
+        expect(list.filter((ws) => ws.status === 'done' || ws.status === 'canceled').map((ws) => ws.id)).toEqual(
+          newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT)
+        )
+        expect(nextPageLink(res).searchParams.get('cursor')).toEqual(expect.any(String))
+        expect(listTerminalPage).toHaveBeenCalledTimes(1)
+        expect(listTerminalPage.mock.calls[0]![0]).toMatchObject({ countTotal: false })
+
+        const uncounted = await WorkStream.listTerminalPage({
+          squadId: testSquadId,
+          statuses: ['done', 'canceled'],
+          limit: UNPAGED_HISTORY_LIMIT,
+          countTotal: false,
+        })
+        expect(uncounted.items.map((row) => row.id)).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+        expect(uncounted.hasMore).toBe(true)
+        expect('totalCount' in uncounted).toBe(false)
+        expect(countSelects(select)).toBe(0)
+
+        const counted = await WorkStream.listTerminalPage({
+          squadId: testSquadId,
+          statuses: ['done', 'canceled'],
+          limit: UNPAGED_HISTORY_LIMIT,
+        })
+        expect(counted.totalCount).toBe(newestHistoryFirst.length)
+        expect(countSelects(select)).toBe(1)
+      } finally {
+        select.mockRestore()
+        listTerminalPage.mockRestore()
+      }
+    })
+
+    it('caps a history-only and a cross-squad list the same way, inside the requested squads', async () => {
+      const { newestHistoryFirst } = await seedPastTheHistoryCap()
+      const other = await Squad.create({ name: `${testPrefix} Other Squad`, purpose: 'Excluded' })
+      await db.insert(workStreams).values({
+        squadId: other.id,
+        title: `${testPrefix} other history`,
+        status: 'done',
+        updatedAt: new Date(Date.UTC(2027, 0, 1)),
+      })
+
+      const historyOnly = await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=canceled,done`)
+      const terminal = (await historyOnly.json()) as Array<{ id: string; status: string }>
+      expect(terminal.map((ws) => ws.id)).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+      expect(nextPageLink(historyOnly).searchParams.get('statuses')).toBe('canceled,done')
+      // Only done: 35 of the 53 fit under the cap, so nothing to continue.
+      const doneOnly = await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=done`)
+      expect(((await doneOnly.json()) as unknown[]).length).toBe(newestHistoryFirst.length - 18)
+      expect(doneOnly.headers.get('Link')).toBeNull()
+
+      const crossSquad = await apiFetch(`/api/workstreams?squadIds=${testSquadId}`)
+      const listed = (await crossSquad.json()) as Array<{ id: string; status: string }>
+      const history = listed.filter((ws) => ws.status === 'done' || ws.status === 'canceled')
+      // The other squad's newer stream is not counted against the cap.
+      expect(history.map((ws) => ws.id)).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+      expect(listed).toHaveLength(UNPAGED_HISTORY_LIMIT + 2 + UNPAGED_HISTORY_LIMIT)
+      const next = nextPageLink(crossSquad)
+      expect(next.searchParams.get('squadIds')).toBe(testSquadId)
+      expect(next.searchParams.get('squadId')).toBeNull()
     })
 
     it('returns a paginated envelope when limit is present', async () => {
@@ -994,6 +1139,50 @@ describe('work-streams routes', () => {
       const firstIds = new Set(first.items.map((ws: { id: string }) => ws.id))
       expect(second.items.length).toBe(2)
       expect(second.items.some((ws: { id: string }) => firstIds.has(ws.id))).toBe(false)
+    })
+
+    it("pages one agent's finished work: assigned, owned, created or attached", async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId, squadId: testSquadId })
+      const finished = async (title: string, input: Record<string, unknown>, status: 'done' | 'canceled' = 'done') => {
+        const ws = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} ${title}`, ...input })
+        await ws.update({ status })
+        return ws
+      }
+      const assigned = await finished('agent assigned', { assigneeAgentId: agent.id })
+      const owned = await finished('agent owned', { ownerAgentId: agent.id })
+      const created = await finished('agent created', { creatorAgentId: agent.id })
+      const attached = await finished('agent attached', { agentIds: [agent.id] }, 'canceled')
+      await finished('agent unrelated', {})
+      await storedLegacyWorkStream({
+        squadId: testSquadId,
+        title: `${testPrefix} agent open`,
+        assigneeAgentId: agent.id,
+      })
+
+      const path = `/api/workstreams?squadId=${testSquadId}&statuses=done,canceled&agentId=${agent.id}`
+      const first = await (await apiFetch(`${path}&limit=3`)).json()
+      expect(first.totalCount).toBe(4)
+      expect(first.hasMore).toBe(true)
+      const second = await (await apiFetch(`${path}&limit=3&cursor=${first.nextCursor}`)).json()
+      expect(second.hasMore).toBe(false)
+      expect([...first.items, ...second.items].map((row: { id: string }) => row.id).sort()).toEqual(
+        [assigned.id, owned.id, created.id, attached.id].sort()
+      )
+
+      for (const query of [
+        `statuses=done&limit=50&agentId=not-a-uuid`,
+        `statuses=done&agentId=${agent.id}`,
+        `statuses=done&limit=50&countOnly=true&agentId=${agent.id}`,
+        `statuses=active,done&limit=50&agentId=${agent.id}`,
+      ])
+        expect((await apiFetch(`/api/workstreams?squadId=${testSquadId}&${query}`)).status).toBe(400)
+
+      // Without its squad the filter would scan every finished stream the caller can read.
+      for (const scope of ['', `squadIds=${testSquadId}&`, `squadId=${testSquadId.slice(0, 8)}&`]) {
+        const res = await apiFetch(`/api/workstreams?${scope}statuses=done,canceled&limit=50&agentId=${agent.id}`)
+        expect(res.status).toBe(400)
+        expect(await res.json()).toEqual({ error: 'agentId requires a full squadId' })
+      }
     })
 
     it('paginates only the requested squads for an aggregate squadIds filter', async () => {

@@ -160,6 +160,19 @@ describe('workflowProgress', () => {
     expect(progress.steps[1]!.agentId).toBe('agent-engineer')
   })
 
+  it('names each step agent by the configured type name when it is known', () => {
+    const progress = workflowProgress(
+      run(planned, [{ stepId: 'design' }, { stepId: 'implement', status: 'running', sourceAttemptIds: [1] }], {
+        completedStepIds: ['design'],
+      }),
+      context({
+        attemptAgents: { '2': 'agent-engineer' },
+        typeNames: (id) => (id === 'engineer' ? 'Builder' : undefined),
+      })
+    )
+    expect(progress.steps.map((step) => step.who)).toEqual(['Architect', 'Builder', 'Reviewer'])
+  })
+
   it('marks a step sent back by review as returned for rework, and the reviewer as running again', () => {
     const progress = workflowProgress(
       run(

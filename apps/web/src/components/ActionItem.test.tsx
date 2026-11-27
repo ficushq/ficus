@@ -19,6 +19,7 @@ import { ActionItem } from './ActionItem'
 import { assistantAgentChatPath } from '@ficus/shared'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
+import { PermissionsProvider } from '../hooks/usePermissions'
 
 // Reads the cards make for themselves (voice input status, the caller's permissions and the work
 // stream's own detail reads) stay unavailable unless a test serves them.
@@ -170,8 +171,8 @@ describe('ActionItem work-stream approval', () => {
       expect(queryClient.getQueryData<PendingAction[]>(queryKeys.actions.pending())).toEqual([siblingAction])
       expect(invalidated).toContainEqual([...queryKeys.actions.pending()])
       expect(invalidated).toContainEqual([...queryKeys.squads.workStreamDetail('ws-1')])
-      expect(invalidated).toContainEqual([...queryKeys.squads.workStreams('squad-1')])
-      expect(invalidated).toContainEqual([...queryKeys.squads.allWorkStreams()])
+      expect(invalidated).toContainEqual([...queryKeys.squads.activeWorkStreamsPrefix()])
+      expect(invalidated).toContainEqual([...queryKeys.squads.all, 'doneWorkStreams'])
     } finally {
       globalThis.fetch = originalFetch
       await dom.cleanup()
@@ -1887,5 +1888,96 @@ describe('ActionItem attempt-limit pause', () => {
     } finally {
       await view.cleanup()
     }
+  })
+})
+
+describe('ActionItem read-only workflow gate', () => {
+  const gate = (approver?: 'reviewers' | 'assigned-reviewers', canRespond = false): PendingAction => ({
+    ...action,
+    id: 'workstream-blocked:ws-1:gate-1',
+    type: 'workstream-blocked',
+    canRespond,
+    data: {
+      ...(action.data as WorkStreamActionData),
+      waitId: 'gate-1',
+      prompt: { type: 'text', message: 'Approve the scope' },
+      wait: {
+        ...(action.data as WorkStreamActionData).wait,
+        id: 'gate-1',
+        type: 'manual',
+        message: 'Approve the scope',
+        resolutionHandler: 'workflow',
+        flowAttemptId: 2,
+        workflowHumanGate: true,
+        ...(approver ? { workflowGateApprover: approver } : {}),
+      },
+      focus: { kind: 'workstream-wait', workStreamId: 'ws-1', waitId: 'gate-1' },
+    },
+  })
+
+  async function cardText(pending: PendingAction, canReview: boolean) {
+    const dom = await acquireDomHarness({ url: 'http://localhost/', api })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <PermissionsProvider
+                usePermissions={() => ({
+                  permissions: canReview ? ['workstreams:review'] : [],
+                  identity: { type: 'user', userId: 'viewer' },
+                  can: (permission) => canReview && permission === 'workstreams:review',
+                  isLoading: false,
+                  isError: false,
+                })}
+              >
+                <ActionItem action={pending} />
+              </PermissionsProvider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      return dom.window.document.body.textContent ?? ''
+    } finally {
+      await dom.cleanup()
+    }
+  }
+
+  test('says a gate limited to assigned reviewers is theirs to decide', async () => {
+    const text = await cardText(gate('assigned-reviewers'), true)
+    expect(text).toContain('Only the reviewers assigned to this work stream can decide.')
+    expect(text).not.toContain('do not have permission')
+  })
+
+  test('names the owner or an admin when no assigned reviewer is active', async () => {
+    const pending = gate('assigned-reviewers')
+    const text = await cardText(
+      { ...pending, data: { ...pending.data, noActiveAssignedReviewer: true } as WorkStreamActionData },
+      true
+    )
+    expect(text).toContain('only its owner or an admin can decide.')
+    expect(text).not.toContain('Only the reviewers assigned')
+  })
+
+  test('says a viewer without review permission needs it, whoever the gate is for', async () => {
+    for (const approver of ['reviewers', 'assigned-reviewers'] as const)
+      expect(await cardText(gate(approver), false)).toContain('You need review permission in this squad to decide.')
+  })
+
+  test('falls back to the plain notice when the approver does not explain it', async () => {
+    // An older server omits the approver; a reviewer of an any-reviewer gate is refused for another reason.
+    for (const approver of [undefined, 'reviewers'] as const) {
+      const text = await cardText(gate(approver), true)
+      expect(text).toContain('You can view this action but do not have permission to respond.')
+      expect(text).not.toContain('Only the reviewers assigned')
+    }
+  })
+
+  test('shows no notice to a viewer who may decide', async () => {
+    const text = await cardText(gate('assigned-reviewers', true), true)
+    expect(text).toContain('Review')
+    expect(text).not.toContain('Only the reviewers assigned')
+    expect(text).not.toContain('do not have permission')
   })
 })

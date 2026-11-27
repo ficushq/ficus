@@ -60,7 +60,6 @@ import {
   QuestionIcon,
 } from '../icons'
 import {
-  agentTypeLabel,
   inferredConsultantOrigin,
   workStreamLabel,
   workStreamRef,
@@ -70,7 +69,16 @@ import {
 } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
-import { agentListLabels, getAgentName, getAgentPurpose, agentMatchesQuery } from '../../lib/agentDisplay'
+import {
+  agentHoverTitle,
+  agentListLabels,
+  agentTypeDisplayName,
+  getAgentName,
+  getAgentPurpose,
+  agentMatchesQuery,
+  type AgentTypeName,
+} from '../../lib/agentDisplay'
+import { useAgentTypeNames } from '../../hooks/useAgentTypeNames'
 
 export interface SquadAgentThreadsDependencies {
   Chat: ComponentType<ComponentProps<typeof Chat>>
@@ -316,9 +324,14 @@ export function SquadAgentThreads({
   // Fetch agent types for display names
   const { data: agentTypes = [] } = useQuery(queries.agentTypes.list())
   const agentTypeMap = useMemo(() => new Map(agentTypes.map((at) => [at.id, at])), [agentTypes])
+  const sharedTypeNames = useAgentTypeNames()
+  const typeNames = useMemo<AgentTypeName>(
+    () => (id) => agentTypeMap.get(id)?.name || sharedTypeNames(id),
+    [agentTypeMap, sharedTypeNames]
+  )
 
-  // Fetch work streams to check if agents have active ones
-  const { data: workStreams = [] } = useQuery(queries.squads.workStreams(squadId))
+  // Open work only: the rows show each agent's active work streams, never finished ones.
+  const { data: workStreams = [] } = useQuery(queries.squads.activeWorkStreams(squadId))
 
   // Open work streams each agent is assigned to or bound to, most relevant first.
   const activeWorkStreamsByAgent = useMemo(
@@ -393,19 +406,19 @@ export function SquadAgentThreads({
       (a) =>
         a.status !== 'dormant' &&
         a.status !== 'terminated' &&
-        (a.agentTypeId === 'manager' || agentMatchesQuery(a, agentSearch))
+        (a.agentTypeId === 'manager' || agentMatchesQuery(a, agentSearch, typeNames))
     )
-  }, [agents, agentSearch, agentTypeFilter, lockedAgentId])
+  }, [agents, agentSearch, agentTypeFilter, lockedAgentId, typeNames])
   const isSearching = agentSearch.trim().length > 0
   const filteredDormantAgents = useMemo(() => {
     let list = agents.filter((agent) => agent.status === 'dormant')
     if (lockedAgentId) list = list.filter((agent) => agent.id === lockedAgentId)
     else if (agentTypeFilter) list = list.filter((agent) => agent.agentTypeId === agentTypeFilter)
-    return list.filter((agent) => agentMatchesQuery(agent, agentSearch))
-  }, [agents, agentSearch, agentTypeFilter, lockedAgentId])
+    return list.filter((agent) => agentMatchesQuery(agent, agentSearch, typeNames))
+  }, [agents, agentSearch, agentTypeFilter, lockedAgentId, typeNames])
   const filteredTerminatedAgents = useMemo(
-    () => recentlyTerminatedAgents.filter((agent) => agentMatchesQuery(agent, agentSearch)),
-    [recentlyTerminatedAgents, agentSearch]
+    () => recentlyTerminatedAgents.filter((agent) => agentMatchesQuery(agent, agentSearch, typeNames)),
+    [recentlyTerminatedAgents, agentSearch, typeNames]
   )
 
   /**
@@ -709,22 +722,26 @@ export function SquadAgentThreads({
   // Rows sit under their type's heading, so a row shows the purpose. Without one it reads as the type,
   // never the name alone; agents of one type with no purpose add their work stream, else their name.
   const { rowLabels, fullLabels } = useMemo(() => {
-    const typeFirst = agentListLabels(allAgents, (agent) => {
-      const work = activeWorkStreamsByAgent.get(agent.id)?.[0]
-      return work?.number ? `#${work.number}` : undefined
-    })
+    const typeFirst = agentListLabels(
+      allAgents,
+      (agent) => {
+        const work = activeWorkStreamsByAgent.get(agent.id)?.[0]
+        return work?.number ? `#${work.number}` : undefined
+      },
+      typeNames
+    )
     return {
       rowLabels: new Map(allAgents.map((agent) => [agent.id, getAgentPurpose(agent) ?? typeFirst.get(agent.id)!])),
       fullLabels: typeFirst,
     }
-  }, [allAgents, activeWorkStreamsByAgent])
+  }, [allAgents, activeWorkStreamsByAgent, typeNames])
   // A row outside the loaded list (none today) still reads as its type.
-  const agentRowLabel = (agent: Agent) => rowLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
+  const agentRowLabel = (agent: Agent) => rowLabels.get(agent.id) ?? agentTypeDisplayName(agent.agentTypeId, typeNames)
   // Recently Completed has no type heading above it, so its rows carry the full type-first label.
-  const completedRowLabel = (agent: Agent) => fullLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
+  const completedRowLabel = (agent: Agent) =>
+    fullLabels.get(agent.id) ?? agentTypeDisplayName(agent.agentTypeId, typeNames)
   const renderAgentRow = (agent: Agent, compact = false) => {
     const isSelected = listSelectedAgentId === agent.id
-    const stableName = getAgentName(agent)
     // Type first, then the purpose; the name stays in the hover title.
     const agentName = agent.agentTypeId === 'manager' ? 'Manager' : agentRowLabel(agent)
     const activityAt = agent.lastHumanMessageAt ?? agent.createdAt
@@ -759,7 +776,10 @@ export function SquadAgentThreads({
           // Shift- or Alt/Option-click opens this agent in a floating window instead of selecting it.
           {...agentChatTarget(agent.id)}
           onClick={() => handleAgentRowSelect(agent.id)}
-          title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}${openQuestionLabel ? ` · ${openQuestionLabel}` : ''}`}
+          title={agentHoverTitle(agent, typeNames, {
+            typeNote: viaAssistant ? 'via Assistant' : undefined,
+            details: [openQuestionLabel],
+          })}
           className="ficus-button ficus-button-ghost squad-chat-agent-select absolute inset-0 block w-full rounded-lg text-left"
         />
         <div
@@ -841,9 +861,8 @@ export function SquadAgentThreads({
 
   const renderAgentTypeGroups = (groups: Array<{ agentTypeId: string; agents: Agent[] }>) =>
     groups.map((group) => {
-      const agentType = agentTypeMap.get(group.agentTypeId)
-      const sectionName =
-        agentType?.name || group.agentTypeId.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+      // Named as everywhere else, so the general type reads "General Purpose agent", never "General".
+      const sectionName = agentTypeDisplayName(group.agentTypeId, typeNames)
       const isManager = group.agentTypeId === 'manager'
       const collapsible = !isManager && !isSearching && !onlyOneCategory
       const isCollapsed = collapsible && collapsedTypes.has(group.agentTypeId)
@@ -1022,7 +1041,6 @@ export function SquadAgentThreads({
             ).map((agent) => {
               const isSelected = listSelectedAgentId === agent.id
               const agentName = completedRowLabel(agent)
-              const stableName = getAgentName(agent)
               const finishedAt = completedAt(agent)
               const finishedTime = finishedAt ? formatRelativeTime(finishedAt) : null
 
@@ -1037,7 +1055,7 @@ export function SquadAgentThreads({
                     isSelected && 'is-selected'
                   )}
                   onClick={() => handleAgentRowSelect(agent.id)}
-                  title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
+                  title={agentHoverTitle(agent, typeNames)}
                 >
                   <div className="flex items-center gap-2">
                     <span
@@ -1243,7 +1261,7 @@ export function SquadAgentThreads({
           </div>
         ) : null
 
-        const titleParts = selectedAgent && getAgentHeaderTitleParts(selectedAgent)
+        const titleParts = selectedAgent && getAgentHeaderTitleParts(selectedAgent, typeNames)
         return (
           <ExpandableChatPanel
             isFullscreen={isFullscreen}

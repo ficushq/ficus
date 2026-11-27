@@ -553,7 +553,7 @@ test('an interrupted call to a safe tool spends no budget; the same interruption
     },
     origin
   )
-  expect(read.ficus).toEqual({ replay: 'safe', label: 'direct' })
+  expect(read.ficus).toEqual({ replay: 'safe' })
   // More interruptions than the budget allows, and still no hold: each one is free.
   for (const id of ['read-1', 'read-2'])
     await expect(executeTool(read, id, { path: 'notes.md' })).rejects.toThrow(
@@ -576,7 +576,7 @@ test('an interrupted call to a safe tool spends no budget; the same interruption
     },
     origin
   )
-  expect(bash.ficus).toEqual({ replay: 'unsafe', label: 'direct' })
+  expect(bash.ficus).toEqual({ replay: 'unsafe' })
   const failure = await executeTool(bash, 'bash-1', { command: 'deploy' }).catch((error: Error) => error)
   expect(String(failure)).toContain('Inspect the affected state')
   expect(String(failure)).not.toContain('does not count toward the recovery budget')
@@ -2116,3 +2116,147 @@ test.each(['flow', 'standalone'] as const)(
     ).rejects.toThrow('End your turn')
   }
 )
+
+test('an execution at the requeue cap opens the native recovery hold at once, counted once per recovery notice', async () => {
+  const { holdExecutionAtRequeueLimit } = await import('../execution/requeue-limit')
+  const { recoveryAttempts } = await import('../../db')
+  const api = await store()
+  const hold = (noticeId: string) =>
+    holdExecutionAtRequeueLimit({
+      agentId: worker.id,
+      interruption: {
+        noticeId,
+        executionId: execution.id,
+        cause: 'core_restart',
+        recoveredAt: new Date().toISOString(),
+        executionStartedAt: new Date(0).toISOString(),
+        interruptionCount: 5,
+      },
+    })
+  let record = await hold('notice-5')
+  // No retries with backoff first: running it again could take Core down again.
+  expect(record.state).toMatchObject({ state: 'waiting-manager', failures: 1, cycleFailures: 3, nextRetryAt: null })
+  expect(record.state).toMatchObject({ requestValidation: false, requeueLimit: true })
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record.waitId!))
+  expect(wait!.actor).toBe('manager')
+  // This agent has no session file, so nothing was running a tool when it was cut off.
+  const lastError =
+    'The run was cut off 5 times without finishing, most recently because Core stopped unexpectedly. It was cut off between tool calls.'
+  expect(wait!.structured?.summary).toEqual({
+    attempted: 'continue the task',
+    attemptCount: 1,
+    lastError,
+    text: `I stopped resuming this run. ${lastError} Continue starts it again in a new run, which may stop Core again; Stop keeps it held.`,
+  })
+  // A repeated pickup of the same requeue does not count again or notify again.
+  expect((await hold('notice-5')).state.failures).toBe(1)
+  const attempts = await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record.id))
+  expect(attempts.map((attempt) => [attempt.invocationId, attempt.outcome])).toEqual([
+    [`${execution.id}:requeue-limit:notice-5`, 'unknown'],
+  ])
+  const notices = await db
+    .select()
+    .from(inbox)
+    .where(sql`${inbox.metadata}->>'recoveryId' = ${record.id}`)
+  expect(notices.map((notice) => notice.recipientId)).toEqual([squad.managerAgentId!])
+  // The hold refuses the run until someone decides.
+  await expect(
+    api.recoveryRetryDelay({ agentId: worker.id, executionId: execution.id }, 'execution:run')
+  ).rejects.toThrow('Recovery is held')
+  // Continue grants one cycle; reaching the cap again in it goes to the owner, as for any recovery.
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  expect(record.state.state).toBe('recovering')
+  record = await hold('notice-6')
+  expect(record.state).toMatchObject({ state: 'waiting-owner', ownerEscalated: true, failures: 2 })
+})
+
+test('Continue after the requeue cap hands the continued run the repeated cut-off call, never a generic result', async () => {
+  const { holdExecutionAtRequeueLimit } = await import('../execution/requeue-limit')
+  const { openOrCreateSession } = await import('../../lib/infra/session-files')
+  const { recordInterruptedToolCalls, createInterruptedToolCallsExtension } =
+    await import('../agent/interrupted-tool-calls')
+  const { findHardInterruption } = await import('../execution/startup-recovery')
+  const { executions } = await import('../../db')
+  const api = await store()
+  const [{ startedAt }] = await db
+    .select({ startedAt: executions.startedAt })
+    .from(executions)
+    .where(eq(executions.id, execution.id))
+  const usage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  }
+  // The agent's session on Core, as its runner leaves it each time Core dies mid call.
+  let session = openOrCreateSession(worker.id)
+  session.appendMessage({ role: 'user', content: 'Summarize the log', timestamp: Date.now() })
+  const interruptions = []
+  for (let n = 1; n <= 5; n++) {
+    // The model makes the same call again each time it resumes, and Core dies running it.
+    session.appendMessage({
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: `call-${n}`, name: 'read', arguments: { path: 'huge.log' } }],
+      api: 'anthropic-messages',
+      provider: 'anthropic',
+      model: 'claude-opus-5-5',
+      usage,
+      stopReason: 'toolUse',
+      timestamp: Date.now(),
+    })
+    await Bun.sleep(5)
+    const interruption = {
+      noticeId: `notice-${n}-${crypto.randomUUID()}`,
+      executionId: execution.id,
+      cause: 'core_restart' as const,
+      recoveredAt: new Date().toISOString(),
+      executionStartedAt: startedAt.toISOString(),
+      interruptionCount: n,
+    }
+    interruptions.push(interruption)
+    if (n === 5) break
+    // Interruptions 1 to 4 resume: the runner records the cut-off call, then prompts.
+    recordInterruptedToolCalls(session, interruption)
+    session.appendMessage({ role: 'user', content: 'Continue.', timestamp: Date.now() })
+  }
+  // The fifth is held at pickup; nothing starts, but the cut-off call is recorded and named.
+  let record = await holdExecutionAtRequeueLimit({ agentId: worker.id, interruption: interruptions[4]! })
+  expect(record.state.state).toBe('waiting-manager')
+  expect(record.state.lastError).toBe(
+    'The run was cut off 5 times without finishing, most recently because Core stopped unexpectedly. It cut off read (cut off before too).'
+  )
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  expect(record.state.state).toBe('recovering')
+
+  // Continue starts a new execution, which has no interruption of its own...
+  await execution.stop()
+  const continued = await worker.queueExecution({ message: 'Continue the task.' })
+  expect(await findHardInterruption(continued.id, worker.id)).toBeUndefined()
+  // ...and opens the same session file, whose context answers the fifth call as a repeat.
+  session = openOrCreateSession(worker.id)
+  session.appendMessage({ role: 'user', content: 'Continue the task.', timestamp: Date.now() })
+  const [handler] = createInterruptedToolCallsExtension().handlers.get('context')!
+  const messages = session.buildSessionContext().messages
+  const hooked = (await handler!({ type: 'context', messages }, { sessionManager: session } as never)) as {
+    messages: typeof messages
+  }
+  const results = Object.fromEntries(
+    hooked.messages
+      .filter((message) => message.role === 'toolResult')
+      .map((message) => [message.toolCallId, (message.content[0] as { text: string }).text])
+  )
+  expect(results['call-5']).toContain('This same call, with the same arguments, was interrupted by a restart before')
+  expect(results['call-5']).toContain('Do not run it again as is')
+  expect(Object.keys(results).sort()).toEqual(['call-1', 'call-2', 'call-3', 'call-4', 'call-5'])
+  await continued.stop()
+})

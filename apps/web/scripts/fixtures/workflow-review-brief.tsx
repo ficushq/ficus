@@ -1,5 +1,4 @@
 // Isolated synthetic state only. Unexpected network requests fail in the browser runner.
-import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
@@ -193,7 +192,7 @@ if (mode.startsWith('decision-')) {
   const decisionStep = current.step
   if (decisionStep?.kind !== 'decision') throw new Error('Expected a decision fixture')
   current.decision = routeWorkflowDecision(
-    current.step,
+    decisionStep,
     { ok: false, reason: mode === 'decision-restarted' ? 'unavailable' : 'unconfigured', errors: [] },
     '2026-10-29T00:00:00Z'
   )
@@ -327,7 +326,10 @@ const farmApi = {
   }),
   downloadWorkflowAttachment: async () =>
     new TextEncoder().encode('# Staging design attachment\n\nKeep the existing reader during rollback.'),
-} as ActionsApi
+  // No agents or type names: the review names authors by the participant type each attempt ran as.
+  listSquadAgents: async () => [],
+  listAgentTypes: async () => [],
+} as unknown as ActionsApi
 export function Preview() {
   const { data: current = stream } = useQuery({
     queryKey: queryKeys.squads.workStreamDetail(stream.id),

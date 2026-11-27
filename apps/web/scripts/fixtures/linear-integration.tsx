@@ -61,7 +61,7 @@ const base = {
   adapterVersion: 1,
   credentialConfigured: true,
   authState: 'authenticated',
-  grantedScopes: [],
+  grantedScopes: [] as string[],
   validatedAt: '2026-11-20T09:40:00.000Z',
   validationExpiresAt: null,
   lastErrorCode: null,

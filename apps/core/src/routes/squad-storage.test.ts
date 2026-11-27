@@ -187,6 +187,9 @@ async function userToken(permissions: string[], squadId?: string) {
   return user.token
 }
 
+// Generated UUIDs are hex, so a digit-only marker can turn up inside one by chance.
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
 const read = (squadId: string, token?: string) =>
   app.request(`/api/squads/${squadId}/storage`, token ? { headers: authHeaders(token) } : {})
 
@@ -211,11 +214,6 @@ function expectOnlyOwnSquad(view: SquadStorageView) {
     OTHER_WORKSPACE,
     OTHER_AGENT,
     'other-secret',
-    '868686',
-    '535353',
-    '97531',
-    '7777777777',
-    '9999999999',
     'usedBytes',
     'totalBytes',
     'unattributedBytes',
@@ -224,6 +222,11 @@ function expectOnlyOwnSquad(view: SquadStorageView) {
     'missingHomes',
   ])
     expect(text).not.toContain(leaked)
+  // The other squad's byte counts and the host totals are plain digits, so they are matched with
+  // every UUID masked out; anywhere else in the response they still fail the check.
+  const withoutIds = text.replace(UUID_PATTERN, '<uuid>')
+  for (const leaked of ['868686', '535353', '97531', '7777777777', '9999999999'])
+    expect(withoutIds).not.toContain(leaked)
 }
 
 describe('GET /api/squads/:id/storage', () => {

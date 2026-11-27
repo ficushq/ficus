@@ -1,5 +1,6 @@
 import {
   pendingActionContextLine,
+  type EntitySearchResult,
   workStreamTitle,
   type Agent,
   type PendingAction,
@@ -7,7 +8,7 @@ import {
   type WorkStream,
 } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
-import { getAgentName, getConversationTitle } from './agentDisplay'
+import { getAgentName, getConversationTitle, type AgentTypeName } from './agentDisplay'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
 export type CommandDestination =
@@ -38,6 +39,10 @@ export interface CommandResult {
   agentTypeId?: string
   status?: Agent['status']
   work?: WorkStream
+  /** A server search hit for work older than the loaded lists: no stream row to render, ranked as old. */
+  olderWork?: boolean
+  /** A work row's bare title when no loaded stream backs it, so the title ranks like `work.title`. */
+  workTitle?: string
   /** Update rows only: unread marker, task summary, and the latest update time. */
   unread?: boolean
   summary?: string
@@ -71,10 +76,14 @@ export function commandCenterSearch(
   data: {
     squads: readonly Squad[]
     streams: readonly WorkStream[]
+    /** Server search hits for the query; those not already in `streams` become plain work rows. */
+    olderWork?: readonly EntitySearchResult[]
     consultants: readonly Agent[]
     actions: readonly PendingAction[]
     allowedSettings: ReadonlySet<string>
     squadId?: string
+    /** The configured agent type names, so conversations read as every other surface names them. */
+    typeNames?: AgentTypeName
   },
   now = Date.now()
 ): CommandResult[] {
@@ -107,7 +116,7 @@ export function commandCenterSearch(
         id: `action:${a.id}`,
         kind: 'Needs you' as const,
         label: actionTitle(a),
-        detail: pendingActionContextLine(a),
+        detail: pendingActionContextLine(a, data.typeNames),
         destination: { kind: 'action' as const, id: a.id, label: actionTitle(a) },
       })),
     ...data.squads
@@ -126,7 +135,7 @@ export function commandCenterSearch(
         kind: 'Conversation' as const,
         status: a.status,
         agentTypeId: a.agentTypeId,
-        label: getConversationTitle(a),
+        label: getConversationTitle(a, data.typeNames),
         // The agent's name stays searchable even though the title leads with its type or topic.
         keywords: getAgentName(a),
         detail: `${squadName(a.squadId)} · ${new Date(a.lastHumanMessageAt ?? a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
@@ -135,7 +144,7 @@ export function commandCenterSearch(
           id: a.id,
           agentId: a.id,
           squadId: a.squadId!,
-          label: getConversationTitle(a),
+          label: getConversationTitle(a, data.typeNames),
         },
       })),
     ...data.streams
@@ -153,6 +162,7 @@ export function commandCenterSearch(
         keywords: w.derivedState ?? w.status,
         destination: { kind: 'work' as const, id: w.id, squadId: w.squadId, label: workStreamTitle(w) },
       })),
+    ...(query.trim() ? olderWorkRows(data.olderWork ?? [], data.streams, scoped) : []),
     ...(!data.squadId ? assistantSearch(query, [], [], data.allowedSettings) : []),
   ]
   if (!query.trim()) {
@@ -181,13 +191,39 @@ export function commandCenterSearch(
     })
 }
 
+/** Search hits for work the loaded lists do not hold (older history), as rows that open the stream. */
+function olderWorkRows(
+  hits: readonly EntitySearchResult[],
+  streams: readonly WorkStream[],
+  scoped: (squadId: string | null | undefined) => boolean
+): CommandResult[] {
+  const loaded = new Set(streams.map((w) => w.id))
+  return hits.flatMap((hit) => {
+    if (hit.kind !== 'work_stream' || !hit.squadId || !scoped(hit.squadId) || loaded.has(hit.id)) return []
+    const label = workStreamTitle({ title: hit.label, number: hit.number })
+    return [
+      {
+        id: `work:${hit.id}`,
+        kind: 'Work stream' as const,
+        label,
+        detail: hit.squadName ?? 'Personal',
+        keywords: hit.status ?? undefined,
+        olderWork: true,
+        workTitle: hit.label,
+        destination: { kind: 'work' as const, id: hit.id, squadId: hit.squadId, label },
+      },
+    ]
+  })
+}
+
 /**
  * A work stream's label is "#number · title", so rank on its title as well: an exact or prefix
  * title still finds older work first, and a "#12" search still matches the number.
  */
 function titleMatchRank(query: string, row: CommandResult) {
   const label = settingMatchRank(query, row.label)
-  return row.work ? Math.min(label, settingMatchRank(query, row.work.title)) : label
+  const title = row.work?.title ?? row.workTitle
+  return title === undefined ? label : Math.min(label, settingMatchRank(query, title))
 }
 
 function isOpenWork(work: WorkStream) {
@@ -208,6 +244,8 @@ function workAgeDays(work: WorkStream, now: number) {
 
 function resultScore(result: CommandResult, match: number, now: number) {
   const relevance = match === 4 ? 50 : match * 3
+  // Older than every finished stream loaded locally, so it sits with month-old completions.
+  if (result.olderWork) return relevance + 12
   if (!result.work || isOpenWork(result.work)) return relevance
   if (result.work.status === 'canceled') return relevance + 14
   const age = workAgeDays(result.work, now)

@@ -175,11 +175,9 @@ try {
           }
           if (mode === 'return')
             await review
-              .getByRole('button', { name: /^Approved/ })
-              // The Farm keeps its own captions until its review screen is reworded.
-              .getByText(surface === 'farm' ? 'Continues to execute' : 'Next: execute (General Purpose agent)', {
-                exact: true,
-              })
+              .getByRole('button', { name: /^Approve/ })
+              // Web and Farm caption outcomes with the same shared words.
+              .getByText('Next: execute (General Purpose agent)', { exact: true })
               .waitFor()
           await review.evaluate((el) => {
             el.querySelector('[data-review-document]')?.scrollTo(0, 0)
@@ -189,18 +187,18 @@ try {
             resolve(screenshotDir!, `${surface}-${name}-${width}-${dark ? 'dark' : 'light'}.png`)
           if (screenshotDir) await page.screenshot({ path: path(mode) })
           if (mode === 'blocked') {
-            const approve = review.getByRole('button', { name: /^Approved/ })
+            const approve = review.getByRole('button', { name: /^Approve/ })
             assert.equal(await approve.isDisabled(), true)
             await review.getByText('Wait for staging prerequisite 1.', { exact: false }).waitFor()
             await review.getByText('Wait for staging prerequisite 2.', { exact: false }).waitFor()
             await review.getByText('Review queued', { exact: true }).waitFor()
-            if (surface === 'farm') await review.getByLabel('Decision notes').fill('Read the synthetic staging design.')
+            // Approving needs no notes on either surface, so only the blockers hold the button.
             assert.equal(await approve.isDisabled(), true)
             await page.evaluate(() => (window as unknown as { clearReviewBlockers: () => void }).clearReviewBlockers())
             await page.waitForFunction(
               () =>
                 ![...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-                  button.textContent?.startsWith('Approved')
+                  button.textContent?.startsWith('Approve')
                 )?.disabled
             )
             assert.equal(await approve.isDisabled(), false)

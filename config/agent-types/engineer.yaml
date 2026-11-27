@@ -30,6 +30,7 @@ tools:
     - webfetch
     - browser_*
     - context_*
+  search: on
 systemPrompt: |
   You are a senior software engineer. You implement changes from requirements
   and designs in the stream's worktree, and hand back evidence a reviewer can check.

@@ -1,4 +1,4 @@
-import type { PendingAction } from '@ficus/shared'
+import { pendingActionWaitPhrase, type PendingAction } from '@ficus/shared'
 import { typedAction } from './match'
 
 /** Headline for an action (the web ActionItem's title rules). */
@@ -7,6 +7,7 @@ export function actionTitle(action: PendingAction): string {
   switch (typed.type) {
     case 'workstream-review':
     case 'workstream-blocked':
+    case 'workstream-delivery':
       return typed.data.workStreamTitle
     case 'assistant-needs-input':
       return typed.data.taskLabel
@@ -47,6 +48,9 @@ export function actionSubtitle(action: PendingAction): string {
         return `${squadName} · ${wait.flowAttemptId != null ? 'review needed' : 'workflow decision'}`
       return `${squadName}${assignee ? ` · ${assignee} needs input` : ' · needs input'}`
     }
+    case 'workstream-delivery':
+      // "review pull request" / "merge pull request", the words every other list uses.
+      return `${squadPrefix(typed.data.squadName)}${pendingActionWaitPhrase(action)}`
     case 'unknown':
       return action.type
   }
@@ -66,7 +70,7 @@ const GROUPS: Array<Omit<MailboxGroup, 'actions'>> = [
   { id: 'halted', title: 'Halted robots', subtitle: 'Stopped by a provider error' },
   { id: 'questions', title: 'Questions', subtitle: 'Robots waiting on your answer' },
   { id: 'assistant', title: 'Assistant', subtitle: 'Delegated tasks waiting on you' },
-  { id: 'harvest', title: 'Ready to harvest', subtitle: 'Work stream reviews' },
+  { id: 'harvest', title: 'Ready to harvest', subtitle: 'Work stream reviews and pull requests' },
   { id: 'weeds', title: 'Weeds', subtitle: 'Blocked work streams needing input' },
   { id: 'other', title: 'Other', subtitle: 'Open these in Ficus' },
 ]
@@ -81,6 +85,7 @@ export function groupOf(action: PendingAction): MailboxGroupId {
     case 'assistant-needs-input':
       return 'assistant'
     case 'workstream-review':
+    case 'workstream-delivery':
       return 'harvest'
     case 'workstream-blocked':
       return 'weeds'

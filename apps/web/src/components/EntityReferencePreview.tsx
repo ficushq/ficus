@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { workStreamTitle, type Agent, type WorkStream } from '@ficus/shared'
-import type { RefObject, MouseEvent } from 'react'
-import { getAgentLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
+import { useMemo, type RefObject, type MouseEvent } from 'react'
+import { agentTypeDisplayName, getAgentLabel, AGENT_STATUS_LABELS, type AgentTypeName } from '../lib/agentDisplay'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 import { agentChatPath, type EntityReference } from '../lib/entityReference'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { Link } from 'react-router'
@@ -123,18 +124,19 @@ function WorkSummary({ work, onNavigate, onOpenAgent }: { work: WorkStream } & A
   )
 }
 
-function useAgentTypeName(id: string | undefined) {
-  const types = useQuery({ ...queries.agentTypes.list(), staleTime, retry: false, enabled: !!id })
-  return (
-    types.data?.find((type) => type.id === id)?.name ??
-    id?.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) ??
-    ''
-  )
+/** The configured agent type names: the preview reads them itself, so it also works outside the app shell. */
+function usePreviewTypeNames(enabled: boolean): AgentTypeName {
+  const shared = useAgentTypeNames()
+  const types = useQuery({ ...queries.agentTypes.list(), staleTime, retry: false, enabled })
+  return useMemo(() => {
+    const names = new Map((types.data ?? []).map((type) => [type.id, type.name]))
+    return (id) => names.get(id) ?? shared(id)
+  }, [types.data, shared])
 }
 
 function AssignedAgent({ id, onNavigate, onOpenAgent }: { id: string } & AgentNavigationProps) {
   const { data, isError } = useQuery({ ...queries.agents.detail(id), staleTime, retry: false })
-  const type = useAgentTypeName(data?.agentTypeId)
+  const typeNames = usePreviewTypeNames(!!data)
   if (!data)
     return <span className="truncate text-xs text-muted">{isError ? 'Agent unavailable' : 'Loading agent…'}</span>
   return (
@@ -142,11 +144,11 @@ function AssignedAgent({ id, onNavigate, onOpenAgent }: { id: string } & AgentNa
       to={agentChatPath(data)}
       onClick={agentNavigation(data, onNavigate, onOpenAgent)}
       className={quickLinkClass}
-      title={getAgentLabel(data)}
-      aria-label={`Assigned agent: ${type}`}
+      title={getAgentLabel(data, undefined, typeNames)}
+      aria-label={`Assigned agent: ${agentTypeDisplayName(data.agentTypeId, typeNames)}`}
     >
       <AgentActivityDot status={data.status} />
-      <span className="truncate">{type}</span>
+      <span className="truncate">{agentTypeDisplayName(data.agentTypeId, typeNames)}</span>
     </Link>
   )
 }
@@ -164,7 +166,8 @@ function AgentSummary({ agent, onNavigate, onOpenAgent }: { agent: Agent } & Age
     staleTime,
     retry: false,
   })
-  const type = useAgentTypeName(data.agentTypeId)
+  const typeNames = usePreviewTypeNames(true)
+  const type = agentTypeDisplayName(data.agentTypeId, typeNames)
   if (isError) return <Unavailable />
   // Type first; the name is the secondary handle above it.
   const name = data.metadata?.name
@@ -173,7 +176,7 @@ function AgentSummary({ agent, onNavigate, onOpenAgent }: { agent: Agent } & Age
     <div className="space-y-2">
       <div className="space-y-1">
         {secondary && <p className="truncate text-xs text-muted">{secondary}</p>}
-        <p className="line-clamp-2 wrap-break-word font-semibold">{getAgentLabel(data)}</p>
+        <p className="line-clamp-2 wrap-break-word font-semibold">{getAgentLabel(data, undefined, typeNames)}</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <Badge color="accent-1">{type}</Badge>

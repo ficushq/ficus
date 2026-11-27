@@ -80,7 +80,7 @@ describe('QuestionForm · agent question', () => {
     const { container } = await render(<QuestionForm questionData={threeQuestions} source={agentSource} />, api)
 
     await typeInto(byLabel(container, 'Name the crop'), 'Tomato')
-    await click(radio(container, 'Something else'))
+    await click(radio(container, 'Other'))
     const [sizeOther] = container.querySelectorAll('.g-question-other')
     await typeInto(sizeOther!, 'Enormous')
     expect(button(container, 'Answer').disabled).toBe(true)
@@ -263,6 +263,136 @@ describe('QuestionForm · in-chat blocking question', () => {
     expect(container.textContent).toContain('Answer sent')
     expect(api.answerAgentQuestion).not.toHaveBeenCalled()
     expect(api.sendAgentMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('QuestionForm · recommended option', () => {
+  const recommendedQuestions: QuestionData = {
+    questions: [
+      {
+        id: 'size',
+        type: 'select',
+        question: 'How big?',
+        options: [
+          { value: 'small' },
+          { value: 'large', label: 'Large', recommended: true, reason: 'The beds are already dug for it.' },
+        ],
+      },
+      {
+        id: 'extras',
+        type: 'multi-select',
+        question: 'Extras?',
+        // ask_human allows one; should stored data carry two, only the first is marked.
+        options: [
+          { value: 'basil', recommended: true },
+          { value: 'mint', recommended: true, reason: 'Second flag' },
+        ],
+      },
+      {
+        id: 'when',
+        type: 'text',
+        question: 'Water when?',
+        options: [
+          { value: 'dawn', label: 'At dawn' },
+          { value: 'dusk', recommended: true, reason: 'Less evaporation.' },
+        ],
+      },
+    ],
+  }
+
+  const optionFor = (container: HTMLElement, value: string) => {
+    const input = container.querySelector<HTMLInputElement>(`input[value="${value}"]`)
+    if (!input) throw new Error(`No option ${value}`)
+    return { input, label: input.closest('label')! }
+  }
+  const chip = (container: HTMLElement, value: string) => {
+    const found = [...container.querySelectorAll<HTMLButtonElement>('.g-chip')].find((el) =>
+      el.textContent?.startsWith(value)
+    )
+    if (!found) throw new Error(`No chip ${value}`)
+    return found
+  }
+
+  it('tags the recommended option with its reason, without preselecting anything', async () => {
+    const { container } = await render(
+      <QuestionForm questionData={recommendedQuestions} source={agentSource} />,
+      fakeApi()
+    )
+
+    const large = optionFor(container, 'large')
+    expect(large.label.querySelector('.g-recommended')?.textContent).toBe('Recommended')
+    expect(large.label.querySelector('.g-recommended-reason')?.textContent).toBe('The beds are already dug for it.')
+    expect(optionFor(container, 'small').label.querySelector('.g-recommended')).toBeNull()
+
+    // Only the first flagged option is marked, and an option with no reason shows just the tag.
+    const basil = optionFor(container, 'basil')
+    expect(basil.label.querySelector('.g-recommended')).not.toBeNull()
+    expect(basil.label.querySelector('.g-recommended-reason')).toBeNull()
+    expect(optionFor(container, 'mint').label.querySelector('.g-recommended')).toBeNull()
+    expect(container.textContent).not.toContain('Second flag')
+
+    // The text question's chip carries the tag; its reason sits below the chips and describes it.
+    const dusk = chip(container, 'dusk')
+    expect(dusk.querySelector('.g-recommended')?.textContent).toBe('Recommended')
+    const reason = container.ownerDocument.getElementById(dusk.getAttribute('aria-describedby')!)
+    expect(reason?.textContent).toBe('Less evaporation.')
+    expect(chip(container, 'At dawn').querySelector('.g-recommended')).toBeNull()
+    expect(chip(container, 'At dawn').hasAttribute('aria-describedby')).toBe(false)
+
+    expect(container.querySelectorAll('.g-recommended')).toHaveLength(3)
+    expect([...container.querySelectorAll('input')].some((input) => input.checked)).toBe(false)
+    expect(dusk.getAttribute('aria-pressed')).toBe('false')
+    expect(byLabel(container, 'Water when?').value).toBe('')
+    expect(button(container, 'Answer').disabled).toBe(true)
+  })
+
+  it('submits exactly the chosen values, whichever option is recommended', async () => {
+    const api = fakeApi({ answerAgentQuestion: () => Promise.resolve({} as AgentQuestion) })
+    const { container } = await render(<QuestionForm questionData={recommendedQuestions} source={agentSource} />, api)
+
+    await click(optionFor(container, 'small').input)
+    await click(optionFor(container, 'mint').input)
+    await click(chip(container, 'dusk'))
+    expect(byLabel(container, 'Water when?').value).toBe('dusk')
+    await click(button(container, 'Answer'))
+
+    expect(api.answerAgentQuestion).toHaveBeenCalledWith(
+      'q-1',
+      JSON.stringify({ size: 'small', extras: 'mint', when: 'dusk' }, null, 2)
+    )
+  })
+
+  it('renders questions without a recommendation as before', async () => {
+    const { container } = await render(<QuestionForm questionData={threeQuestions} source={agentSource} />, fakeApi())
+    expect(container.querySelector('.g-recommended')).toBeNull()
+    expect(container.querySelector('.g-recommended-reason')).toBeNull()
+    expect(container.querySelector('.g-option-text')).toBeNull()
+    expect(radio(container, 'Large').checked).toBe(false)
+    expect(container.querySelector('[aria-describedby$="-recommendation"]')).toBeNull()
+  })
+
+  it('reads like the chat card: the tag on the label line, "Other" for your own answer, and the multi-select hint', async () => {
+    const { container } = await render(
+      <QuestionForm questionData={recommendedQuestions} source={agentSource} />,
+      fakeApi()
+    )
+
+    // The tag shares the label's line element, so it flows after the label's last word.
+    const name = optionFor(container, 'large').label.querySelector('.g-option-name')
+    expect(name?.textContent).toBe('Large Recommended')
+    expect(name?.querySelector('.g-recommended')).not.toBeNull()
+
+    // The web card's word, on select and multi-select alike.
+    const others = [...container.querySelectorAll<HTMLInputElement>('input[value="__other__"]')]
+    expect(others.map((input) => input.type)).toEqual(['radio', 'checkbox'])
+    expect(others.map((input) => input.closest('label')!.textContent)).toEqual(['Other', 'Other'])
+    expect(container.textContent).not.toContain('Something else')
+
+    // The web card's multi-select hint, once, over the multi-select only.
+    const hints = [...container.querySelectorAll('.g-question-hint')]
+    expect(hints.map((hint) => hint.textContent)).toEqual(['Select all that apply:'])
+    expect(hints[0]!.closest('fieldset')?.querySelector('input[value="mint"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Pick all that apply')
   })
 })
 

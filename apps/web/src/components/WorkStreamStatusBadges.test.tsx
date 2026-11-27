@@ -7,6 +7,7 @@ import {
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { getWsDisplayState, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { webStatus } from '../lib/statusPresentation'
+import { compileUtilities } from '../test/tailwind'
 
 for (const row of [...WORK_STREAM_PRESENTATION_CASES, ...CODE_HOST_DELIVERY_PRESENTATION_CASES]) {
   test(`visible status matrix: ${row.name}`, () => {
@@ -135,4 +136,22 @@ test('"Review queued" stays on text surfaces and leaves pill rows', () => {
   const row = renderToStaticMarkup(<WorkStreamStatusBadges workStream={facts} showQueuedReview={false} />)
   expect(row).toContain('Waiting on Answer')
   expect(row).not.toContain('Review queued')
+})
+
+test('pill rows show "Review queued" only on a device that cannot hover', async () => {
+  const gate = { id: 'gate', type: 'manual' as const, flowAttemptId: 2, workflowHumanGate: true }
+  const question = { id: 'question', type: 'question' as const, flowAttemptId: 2 }
+  const facts = { status: 'active' as const, openWaits: [question, gate] }
+  const html = renderToStaticMarkup(<WorkStreamStatusBadges workStream={facts} showQueuedReview="touch" />)
+  const classes = html.match(/class="([^"]*)" data-testid="queued-review-label">Review queued</)?.[1].split(' ')
+  expect(classes).toEqual(['text-xs', 'text-secondary', 'hidden', '[@media(hover:none)]:inline'])
+  // The production Tailwind build turns the variant into a hover:none media query that shows it again.
+  const shown: string[] = []
+  ;(await compileUtilities(classes!)).walkAtRules('media', (media) => {
+    if (media.params === '(hover:none)') media.walkDecls('display', (decl) => void shown.push(decl.value))
+  })
+  expect(shown).toEqual(['inline'])
+  expect(renderToStaticMarkup(<WorkStreamStatusBadges workStream={facts} />)).toContain(
+    '<span class="text-xs text-secondary" data-testid="queued-review-label">Review queued</span>'
+  )
 })

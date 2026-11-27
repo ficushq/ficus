@@ -13,6 +13,23 @@ import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-
 import { HTTPException } from 'hono/http-exception'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { RepositorySetupError } from '../services/work-streams/repository-setup'
+import {
+  createWorkStreamCreateTimer,
+  logWorkStreamCreateTiming,
+  type WorkStreamCreateTimer,
+} from '../services/work-streams/create-timing'
+import {
+  CreateClaimLostError,
+  CreateInProgressError,
+  fingerprintCreateRequest,
+  IDEMPOTENCY_KEY_HEADER,
+  IdempotencyKeyConflictError,
+  InvalidIdempotencyKeyError,
+  parseIdempotencyKey,
+  requesterKeyFor,
+  WorkStreamCreateReplayError,
+} from '../services/work-streams/create-idempotency'
+import { extendIdleTimeout } from '../middleware/read-deadline'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { loadInactiveAssignedReviewers } from '../services/workflows/reviewers'
 import {
@@ -85,7 +102,7 @@ import { Agent } from '../entities/Agent'
 import { User } from '../entities/User'
 import { resolveAgentChatSenderUserId } from '../services/inbox/agent-human-recipient'
 import { requirePermission } from '../middleware'
-import { requireEntityPermission, filterToAccessibleSquads } from '../middleware/require-entity-permission'
+import { requireEntityPermission } from '../middleware/require-entity-permission'
 import { hasPermission, getAccessibleSquadIds } from '../services/rbac'
 import { isValidMetadataPath } from '../services/work-streams/metadata-path'
 import type { Identity } from '../services/rbac'
@@ -212,6 +229,14 @@ async function serializeCanonicalWorkStreams(streams: WorkStream[], identity: Id
 }
 
 const ALL_STATUSES: WorkStreamStatus[] = ['active', 'queued', 'done', 'canceled']
+
+/**
+ * How many done and canceled streams a list request without `limit` returns, newest
+ * first. Open work is never capped; history beyond this is paged with `limit` and
+ * `cursor` (the response's `Link` header names the next page). Uncapped, a long
+ * history answered every such request with megabytes (988 streams, 7.7 MB, 2.4 s).
+ */
+export const UNPAGED_HISTORY_LIMIT = 50
 const TERMINAL_STATUSES = new Set<WorkStreamStatus>(['done', 'canceled'])
 const PRIORITIES = new Set<WorkStreamPriority>(['critical', 'high', 'normal', 'low'])
 
@@ -551,6 +576,28 @@ async function filterToAttendedStreams<T extends { id: string; squadId: string }
   return streams.filter((stream) => attention.forWorkStream(stream.id, stream.squadId).progress !== 'mute')
 }
 
+/** Per-request create timing, shared between {@link logCreateTiming} and the create handler. */
+type CreateTiming = { timer: WorkStreamCreateTimer; squadId?: string; workStreamId?: string }
+const createTimings = new WeakMap<Request, CreateTiming>()
+
+/** Logs one timing line per create request, whatever the handler answered (services/work-streams/create-timing.ts). */
+const logCreateTiming = createMiddleware(async (c, next) => {
+  const timed: CreateTiming = { timer: createWorkStreamCreateTimer() }
+  createTimings.set(c.req.raw, timed)
+  let failed = true
+  try {
+    await next()
+    failed = false
+  } finally {
+    const status = failed ? 500 : c.res.status
+    logWorkStreamCreateTiming(timed.timer, {
+      outcome: status === 201 ? 'created' : status === 200 ? 'reused' : status < 500 ? 'rejected' : 'failed',
+      squadId: timed.squadId,
+      workStreamId: timed.workStreamId,
+    })
+  }
+})
+
 export const workStreamsRouter = new Hono()
   .post(
     '/:id/ci-notification',
@@ -619,9 +666,30 @@ export const workStreamsRouter = new Hono()
     // Rows of a list that never shows descriptions: on a busy instance they were 86% of the
     // active list's bytes, refetched on every invalidation. The detail endpoint still has them.
     const omitDescription = c.req.query('omitDescription') === 'true'
+    // A terminal page normally carries only runtime; `annotations=full` gives its rows the same
+    // annotations (derived state, priority, step) as the unpaged list, so a list that continues
+    // from that list's `Link` header has one row shape throughout.
+    const fullAnnotations = c.req.query('annotations') === 'full'
     const rows = <T extends { description: string | null }>(items: T[]): T[] =>
       omitDescription ? items.map((item) => ({ ...item, description: null })) : items
     const cursor = c.req.query('cursor')
+    // One agent's finished history (the agent panel pages it): assignee, owner, creator or attached.
+    const agentIdParam = c.req.query('agentId')
+    const agentFilter = z
+      .uuid()
+      .optional()
+      .safeParse(agentIdParam || undefined)
+    if (!agentFilter.success) return c.json({ error: 'Invalid agentId' }, 400)
+    const agentId = agentFilter.data
+    if (agentId && (limitParam === undefined || countOnly))
+      return c.json({ error: 'agentId requires a paginated terminal-status query' }, 400)
+    // The agent predicate (assignee, owner, creator or any attached agent) has no index: serving it
+    // would take three btree indexes and a GIN on agent_ids, each a write cost on a hot table, and
+    // the page still sorts by completion time. An agent belongs to one squad, so the page is scoped
+    // to that squad's history (idx_work_streams_squad_created_at) instead of every finished stream
+    // the caller can read. A full ID: a prefix compares as text and uses no index.
+    if (agentId && !z.uuid().safeParse(squadId).success)
+      return c.json({ error: 'agentId requires a full squadId' }, 400)
     const completionRange = z
       .object({
         completedAfter: z.iso.datetime().optional(),
@@ -686,6 +754,7 @@ export const workStreamsRouter = new Hono()
       const terminalOnly = terminalStatuses.length > 0 && nonTerminalStatuses.length === 0
       if ((completedAfter || completedBefore) && !terminalOnly)
         return c.json({ error: 'Completion dates require terminal statuses' }, 400)
+      if (agentId && !terminalOnly) return c.json({ error: 'agentId requires terminal statuses' }, 400)
       let accessibleSquadIds: string[] | undefined
       const accessible = await getAccessibleSquadIds(identity)
       if (accessible === 'all') {
@@ -722,8 +791,13 @@ export const workStreamsRouter = new Hono()
           feedUserId: feedUpdates && identity.type === 'user' ? identity.userId : undefined,
           completedAfter,
           completedBefore,
+          agentId,
         })
-        const items = rows(await serializeTerminalWorkStreams(page.items))
+        const items = rows(
+          fullAnnotations
+            ? await annotateWorkStreams(page.items, identity)
+            : await serializeTerminalWorkStreams(page.items)
+        )
         return c.json({
           items,
           hasMore: page.hasMore,
@@ -896,25 +970,53 @@ export const workStreamsRouter = new Hono()
       return c.json(completeVolatilePage(rows(await serializeCanonicalWorkStreams(streams, identity))))
     }
 
-    if (squadId) {
-      const streams = await WorkStream.list({
-        squadId,
-        status: statuses ? undefined : status,
-        statuses,
-      })
-      const attended = respectAttention ? await filterToAttendedStreams(identity, streams) : streams
-      return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))
-    }
+    // No `limit`: the plain array. Open work (queued and active) comes whole; terminal history,
+    // which only grows, is capped at its newest UNPAGED_HISTORY_LIMIT rows. When more exists, a
+    // `Link: <...>; rel="next"` header names the paginated request that continues it.
+    const requestedStatuses = statuses ?? (status ? [status] : ALL_STATUSES)
+    const openStatuses = requestedStatuses.filter((value) => !TERMINAL_STATUSES.has(value))
+    const terminalStatuses = requestedStatuses.filter((value) => TERMINAL_STATUSES.has(value))
 
-    // No squadId — filtered-list
-    const streams = await WorkStream.list({
-      status: statuses ? undefined : status,
-      statuses,
-    })
-    const requestedSet = requestedSquadIds?.length ? new Set(requestedSquadIds) : null
-    const requestedStreams = requestedSet ? streams.filter((stream) => requestedSet.has(stream.squadId)) : streams
-    const filtered = await filterToAccessibleSquads(identity, requestedStreams, (s) => s.squadId ?? null)
-    const attended = respectAttention ? await filterToAttendedStreams(identity, filtered) : filtered
+    let open = openStatuses.length > 0 ? await WorkStream.list({ squadId, statuses: openStatuses }) : []
+    let historySquadIds: string[] | undefined
+    if (!squadId) {
+      // Filtered-list: only the requested squads the caller may read. History is filtered in
+      // the query, before its cap, so a page is never shortened by squads the caller cannot see.
+      const requestedSet = requestedSquadIds?.length ? new Set(requestedSquadIds) : null
+      const accessible = await getAccessibleSquadIds(identity)
+      if (accessible === 'all') historySquadIds = requestedSquadIds?.length ? requestedSquadIds : undefined
+      else historySquadIds = requestedSet ? accessible.filter((id) => requestedSet.has(id)) : accessible
+      if (historySquadIds) {
+        const visible = new Set(historySquadIds)
+        open = open.filter((stream) => visible.has(stream.squadId))
+      }
+    }
+    const history =
+      terminalStatuses.length > 0 && historySquadIds?.length !== 0
+        ? await WorkStream.listTerminalPage({
+            squadId,
+            squadIds: historySquadIds,
+            statuses: terminalStatuses,
+            limit: UNPAGED_HISTORY_LIMIT,
+            // This answer is a plain array with no total, so skip the count over all history.
+            countTotal: false,
+          })
+        : { items: [], hasMore: false }
+    const listed = [...open, ...history.items]
+    const attended = respectAttention ? await filterToAttendedStreams(identity, listed) : listed
+    const last = history.items[history.items.length - 1]
+    // Paginated requests refuse respectAttention, so there is no continuation to offer for it.
+    if (history.hasMore && last && !respectAttention) {
+      const next = new URLSearchParams()
+      if (squadId) next.set('squadId', squadId)
+      else if (requestedSquadIds?.length) next.set('squadIds', requestedSquadIds.join(','))
+      next.set('statuses', terminalStatuses.join(','))
+      next.set('limit', String(UNPAGED_HISTORY_LIMIT))
+      next.set('cursor', encodeTerminalCursor(last))
+      if (omitDescription) next.set('omitDescription', 'true')
+      next.set('annotations', 'full')
+      c.header('Link', `<${new URL(c.req.url).pathname}?${next.toString()}>; rel="next"`)
+    }
     return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))
   })
   .post('/:id/feed-seen', zValidator('json', z.object({ completedAt: z.iso.datetime() })), async (c) => {
@@ -932,8 +1034,14 @@ export const workStreamsRouter = new Hono()
     if (!saved) return c.json({ error: 'Completion changed; refresh the Feed' }, 409)
     return c.json({ seen: true })
   })
-  .post('/', zValidator('json', createWorkStreamSchema), async (c) => {
+  .post('/', zValidator('json', createWorkStreamSchema), logCreateTiming, async (c) => {
     const input = c.req.valid('json')
+    const timed = createTimings.get(c.req.raw)!
+    const timing = timed.timer
+    timed.squadId = input.squadId
+    const authorizeStarted = timing.now()
+    // The fingerprint covers the body exactly as the client sent it, before any resolution below.
+    const fingerprint = fingerprintCreateRequest(input)
 
     // Handler-scope check: verify identity has workstreams:create on the target squad
     const identity: Identity | undefined = c.get('identity')
@@ -942,6 +1050,17 @@ export const workStreamsRouter = new Hono()
     const allowed = await hasPermission(identity, 'workstreams:create', input.squadId)
     c.set('authzChecked', true)
     if (!allowed) return c.json({ error: await workStreamCreateRefusal(identity) }, 403)
+    // Repository setup can outlast Bun's 30-second idle timer, which would close the
+    // connection while the create still finishes. Answer with the real result instead.
+    extendIdleTimeout(c, 0)
+    let idempotencyKey: string | undefined
+    try {
+      idempotencyKey = parseIdempotencyKey(c.req.header(IDEMPOTENCY_KEY_HEADER))
+    } catch (error) {
+      if (error instanceof InvalidIdempotencyKeyError)
+        return c.json({ error: error.message, code: error.code }, error.status)
+      throw error
+    }
     if (
       input.observe &&
       (identity.type !== 'agent' || !(await hasPermission(identity, 'workstreams:read', input.squadId)))
@@ -964,6 +1083,8 @@ export const workStreamsRouter = new Hono()
       }
     }
     input.workflow = await resolveCreationWorkflow(input.workflow, squad)
+    timing.add('authorize', timing.now() - authorizeStarted)
+    const validateStarted = timing.now()
     if (
       input.agents !== undefined ||
       input.agentIds !== undefined ||
@@ -1022,26 +1143,47 @@ export const workStreamsRouter = new Hono()
       const prepared = input.assetReferences?.length
         ? await prepareCreationAssets(identity, input.assetReferences, input.squadId)
         : null
+      timing.add('validate', timing.now() - validateStarted)
       const stream = await WorkStream.create(
         { ...input, requestingUserId, creatorAgentId },
-        prepared ? { inTransaction: (tx, created) => insertCreationAssets(tx, identity, created, prepared) } : {}
+        {
+          ...(prepared
+            ? { inTransaction: (tx, created) => insertCreationAssets(tx, identity, created, prepared) }
+            : {}),
+          timing,
+          signal: c.req.raw.signal,
+          ...(idempotencyKey
+            ? {
+                idempotency: {
+                  squadId: input.squadId,
+                  requesterKey: requesterKeyFor(identity),
+                  key: idempotencyKey,
+                  fingerprint,
+                },
+              }
+            : {}),
+        }
       )
+      timed.workStreamId = stream.id
+      const respondStarted = timing.now()
       // A stream started from a Linear agent session's event takes over that session, if it is still free.
       if (input.integrationEventId) await bindLinearSessionForEvent(input.integrationEventId, stream.id)
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
       const { workflowSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
-      return c.json(
-        {
-          ...stream.toJson(),
-          ...withWarnings(input.workflow ? await workflowSourceWarnings(input.workflow) : []),
-          ...(identity.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
-        },
-        201
-      )
+      const body = {
+        ...stream.toJson(),
+        ...withWarnings(input.workflow ? await workflowSourceWarnings(input.workflow) : []),
+        ...(identity.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
+      }
+      timing.add('respond', timing.now() - respondStarted)
+      return c.json(body, 201)
     } catch (error) {
-      if (error instanceof WorkStreamEventAlreadyHandledError) {
+      if (error instanceof WorkStreamEventAlreadyHandledError || error instanceof WorkStreamCreateReplayError) {
+        // A replayed event or idempotency key returns the stream it already created.
+        const replayedKey = error instanceof WorkStreamCreateReplayError
         const existing = await WorkStream.mustFind(error.workStreamId)
+        timed.workStreamId = existing.id
         if (input.observe && identity.type === 'agent') {
           try {
             await observeWorkStream(existing.id, identity.agentId)
@@ -1050,10 +1192,13 @@ export const workStreamsRouter = new Hono()
             throw error
           }
         }
+        // A key replay answers like the original 201 did, including the workflow's warnings.
+        const { workflowSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
         return c.json(
           {
             ...existing.toJson(),
-            reusedFromEvent: true,
+            ...(replayedKey ? withWarnings(input.workflow ? await workflowSourceWarnings(input.workflow) : []) : {}),
+            ...(replayedKey ? { reusedFromIdempotencyKey: true } : { reusedFromEvent: true }),
             ...(identity.type === 'agent'
               ? { observing: await isObservingWorkStream(existing.id, identity.agentId) }
               : {}),
@@ -1062,6 +1207,12 @@ export const workStreamsRouter = new Hono()
         )
       }
       if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
+      if (
+        error instanceof IdempotencyKeyConflictError ||
+        error instanceof CreateInProgressError ||
+        error instanceof CreateClaimLostError
+      )
+        return c.json({ error: error.message, code: error.code }, error.status)
       if (error instanceof AssetAttachmentError) return c.json({ error: error.message }, error.status)
       if (error instanceof SquadArchivedError) return c.json({ error: error.message }, 410)
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)

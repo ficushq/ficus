@@ -93,7 +93,7 @@ import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
 import settingsRouter from './routes/settings'
-import { publicUrlRouter } from './routes/public-url'
+import { addressProbeHandler, publicUrlRouter } from './routes/public-url'
 import systemRouter from './routes/system'
 import updatesRouter from './routes/updates'
 import providerAuthRouter from './routes/provider-auth'
@@ -185,6 +185,12 @@ import { corsAllowOrigins, normalizeOrigin, isAllowedWsOrigin } from './services
 import { extractSessionToken, getSessionCookie } from './services/auth/session-cookie'
 import { csrfProtection } from './middleware/csrf'
 import { managedVaultHostGuard } from './middleware/managed-vault-host'
+import {
+  CORE_IDLE_TIMEOUT_SECONDS,
+  holdIdleTimerForBodylessWrites,
+  readDeadline,
+  restoreExtendedIdleTimeout,
+} from './middleware/read-deadline'
 import { redactHttpLogCredentials } from './lib/infra/http-log'
 import { attachPeerAddress, getClientAddress } from './lib/client-address'
 import { getSandboxProvisionErrorResponse } from './routes/sandbox-provision-error'
@@ -212,6 +218,12 @@ if (heapSnapshotDirectory) {
 export const app = new Hono({ getPath: coreGetPath })
 
 app.use('*', jsonBodyErrorMiddleware)
+// A slow write without a body (the CLI's pause or cancel) must not lose its answer
+// to Bun's idle timer while it runs; writes with a body are already spared.
+app.use('*', holdIdleTimerForBodylessWrites())
+// Routes that turn the timer off themselves (workspace transfers, work stream creation)
+// get it back when they finish, so their keep-alive sockets still close when idle.
+app.use('*', restoreExtendedIdleTimeout())
 app.onError((error, c) => {
   // Sandbox provisioning back-pressure answers 503 + Retry-After. It must be checked
   // before the shared handler, which would otherwise flatten it into a generic 500 and
@@ -278,6 +290,8 @@ app.use(
 const readiness = new RuntimeReadiness('api', process.env.FICUS_RUNTIME_INSTANCE_ID)
 app.get('/ready', () => readiness.response())
 app.get('/health', (c) => c.json({ status: 'ok' }))
+// Lets Settings → Server address check that an address leads back to this server (routes/public-url.ts).
+app.get('/health/address-check/:token', addressProbeHandler)
 app.route('/health/db', createDatabaseHealthRouter())
 
 // Cross-process events from ficus-worker (see lib/infra/local-events.ts). Not
@@ -285,6 +299,9 @@ app.route('/health/db', createDatabaseHealthRouter())
 // authenticated inside the handler with the resolved internal event token
 // (explicit, encryption-key-derived, or random fail-closed fallback).
 app.post(INTERNAL_EVENTS_PATH, (c) => handleInternalEventPost(c.req.raw))
+
+// A slow read gets a 503 it can explain before Bun's idle timer would drop its socket.
+app.use('/api/*', readDeadline())
 
 // CSRF protection for cookie-authenticated browser requests (also covers /api/auth).
 app.use('/api/*', csrfProtection)
@@ -1222,6 +1239,8 @@ if (import.meta.main) {
     websocket: coreWebSocketHandler,
     // Every route but the local-app proxy: that one extends its own requests
     // (LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS) so a slow app can still answer.
-    idleTimeout: 30,
+    // Reads answer before it fires and body-less writes hold it off while they run
+    // (middleware/read-deadline.ts).
+    idleTimeout: CORE_IDLE_TIMEOUT_SECONDS,
   })
 }

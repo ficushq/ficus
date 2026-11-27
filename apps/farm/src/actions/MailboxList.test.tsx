@@ -6,6 +6,7 @@ import {
   agentErrorAction,
   agentQuestionAction,
   assistantAction,
+  deliveryAction,
   squadQuestionAction,
   stream,
   streamAction,
@@ -78,6 +79,74 @@ describe('ActionView', () => {
     expect(container.querySelector('a')?.getAttribute('href')).toBe('/actions/robot-sings%3A1')
   })
 
+  it('links a view-only unknown type to the web app instead of the permission line', async () => {
+    const future = {
+      ...agentErrorAction(),
+      id: 'robot-sings:2',
+      type: 'robot-sings',
+      canRespond: false,
+    } as unknown as PendingAction
+    const { container } = await render(<ActionView action={future} />, fakeApi())
+    expect(container.textContent).not.toContain("don't have permission")
+    expect(container.textContent).toContain("doesn't know this kind of request")
+    expect(container.textContent).toContain('See it in the web app')
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('/actions/robot-sings%3A2')
+  })
+
+  describe('pull request review and merge gates', () => {
+    const links = (container: HTMLElement) =>
+      [...container.querySelectorAll('a')].map((a) => ({ text: a.textContent, href: a.getAttribute('href') }))
+
+    it('says the stream waits on a review and links its one pull request inline', async () => {
+      const onFocusStream = mock((_id: string) => {})
+      const { container } = await render(
+        <ActionView action={deliveryAction('review')} onFocusStream={onFocusStream} />,
+        fakeApi()
+      )
+      expect(container.textContent).not.toContain("don't have permission")
+      expect(container.textContent).toContain('Waiting on someone to review its pull request on the code host')
+      expect(container.querySelector('ul')).toBeNull()
+      expect(links(container)).toEqual([
+        { text: 'Review #12acme/garden#12 on the code host', href: 'https://github.com/acme/garden/pull/12' },
+      ])
+      const link = container.querySelector('a')!
+      expect(link.getAttribute('target')).toBe('_blank')
+      expect(link.getAttribute('rel')).toBe('noreferrer')
+      await click(button(container, 'Go to plot'))
+      expect(onFocusStream).toHaveBeenCalledWith('ws-3')
+    })
+
+    it('says Open, not Merge, for a merge gate', async () => {
+      const { container } = await render(<ActionView action={deliveryAction('merge')} />, fakeApi())
+      expect(container.textContent).toContain('Waiting on someone to merge its pull request on the code host')
+      expect(container.textContent).toContain('Open #12')
+      expect(hasButton(container, 'Merge')).toBe(false)
+    })
+
+    it('lists several pull requests and skips ones without a link', async () => {
+      const action = deliveryAction('review', [
+        { repository: 'acme/garden', number: 12, url: 'https://github.com/acme/garden/pull/12' },
+        { repository: 'acme/shed', number: 3, url: 'https://github.com/acme/shed/pull/3' },
+        { repository: 'acme/barn', number: 7 },
+      ])
+      const { container } = await render(<ActionView action={action} />, fakeApi())
+      expect(container.textContent).toContain('review its pull requests')
+      const items = [...container.querySelectorAll('ul[aria-label="Pull requests"] li a')]
+      expect(items.map((a) => a.getAttribute('href'))).toEqual([
+        'https://github.com/acme/garden/pull/12',
+        'https://github.com/acme/shed/pull/3',
+      ])
+    })
+
+    it('opens the work stream in Ficus without a plot callback, and explains a missing link', async () => {
+      const { container } = await render(<ActionView action={deliveryAction('review', [])} />, fakeApi())
+      expect(container.textContent).toContain('Open the work stream in Ficus to find its pull request')
+      expect(links(container)).toEqual([
+        { text: 'Open work streamSee it in Ficus', href: '/squads/squad-1/work?ws=42' },
+      ])
+    })
+  })
+
   it('does not offer controls without permission to respond', async () => {
     const { container } = await render(
       <ActionView action={streamAction('review', {}, {}, { canRespond: false })} />,
@@ -102,14 +171,21 @@ describe('MailboxList', () => {
       agentQuestionAction(),
       agentErrorAction('a'),
       agentErrorAction('b'),
+      deliveryAction('merge'),
     ]
     const { container } = await render(<MailboxList actions={actions} />, fakeApi())
     const headings = [...container.querySelectorAll('h3')].map((h) => h.textContent)
-    expect(headings).toEqual(['Halted robots 2', 'Questions 1', 'Assistant 1', 'Ready to harvest 1', 'Weeds 1'])
+    expect(headings).toEqual(['Halted robots 2', 'Questions 1', 'Assistant 1', 'Ready to harvest 2', 'Weeds 1'])
     expect(hasButton(container, 'Wake them all (2)')).toBe(true)
 
     const toggles = [...container.querySelectorAll<HTMLButtonElement>('button.g-mail-toggle')]
-    expect(toggles).toHaveLength(6)
+    expect(toggles).toHaveLength(7)
+    const delivery = toggles.find((toggle) => toggle.textContent?.includes('merge pull request'))!
+    expect(delivery.textContent).toContain('Plant pumpkins')
+    await click(delivery)
+    expect(container.textContent).toContain('Open #12')
+    expect(container.textContent).not.toContain("don't have permission")
+    await click(delivery)
     expect(toggles.every((toggle) => toggle.getAttribute('aria-expanded') === 'false')).toBe(true)
     const review = toggles.find((toggle) => toggle.textContent?.includes('Sprout requests review'))!
     await click(review)

@@ -4,6 +4,7 @@ import {
   agentErrorAction,
   agentQuestionAction,
   assistantAction,
+  deliveryAction,
   squadQuestionAction,
   streamAction,
   wait,
@@ -23,12 +24,14 @@ const squadQ = squadQuestionAction()
 const agentQ = agentQuestionAction()
 const halted = agentErrorAction('agent-3')
 const assistant = assistantAction()
-const all = [review, otherStreamBlocked, squadQ, agentQ, halted, assistant]
+const delivery = deliveryAction('review')
+const all = [review, otherStreamBlocked, squadQ, agentQ, halted, assistant, delivery]
 
 describe('actionsForStream', () => {
   it('matches review and blocked waits by workStreamId', () => {
     expect(ids(actionsForStream(all, 'ws-1'))).toEqual([review.id])
     expect(ids(actionsForStream(all, 'ws-2'))).toEqual([otherStreamBlocked.id])
+    expect(ids(actionsForStream(all, 'ws-3'))).toEqual([delivery.id])
     expect(actionsForStream(all, 'ws-404')).toEqual([])
   })
 
@@ -70,6 +73,15 @@ describe('presentation', () => {
     expect(actionTitle(assistant)).toBe('Book the barn')
     expect(actionTitle(agentQ)).toBe('Bean')
     expect(actionTitle(squadQ)).toBe('Veg Squad')
+    expect(actionTitle(delivery)).toBe('Plant pumpkins')
+  })
+
+  it('narrows pull request gates and names what they wait on', () => {
+    const typed = typedAction(delivery)
+    expect(typed.type).toBe('workstream-delivery')
+    expect(actionSubtitle(delivery)).toBe('Veg Squad · review pull request')
+    expect(actionSubtitle(deliveryAction('merge'))).toBe('Veg Squad · merge pull request')
+    expect(groupActions([delivery]).map((group) => group.id)).toEqual(['harvest'])
   })
 
   it('says plainly what each needs', () => {

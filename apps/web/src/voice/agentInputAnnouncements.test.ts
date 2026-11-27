@@ -40,6 +40,20 @@ function createRuntime(initialIds: string[] = []) {
 }
 
 describe('createHandleAgentWaitingInputEvent', () => {
+  test('names the waiting agent by the configured type names it is given, and reads nothing else', async () => {
+    const getAgent = mock(async (id: string) => waitingAgent(id))
+    const handle = createHandleAgentWaitingInputEvent(getAgent as never)
+    const { runtime, announcements } = createRuntime()
+    await handle(runtime, 'agent-1', undefined, (id) => (id === 'engineer' ? 'Builder' : undefined))
+    expect(announcements[0]).toStartWith('Agent Builder needs your input')
+    // The names come from the app's shared read; the event itself only reads the agent.
+    expect(getAgent).toHaveBeenCalledTimes(1)
+    // Without the names (no permission, offline) the type id is title-cased.
+    const fallback = createRuntime()
+    await handle(fallback.runtime, 'agent-2')
+    expect(fallback.announcements[0]).toStartWith('Agent Engineer needs your input')
+  })
+
   test('suppresses an identical event replay already spoken in this execution', async () => {
     const getAgent = mock(async (id: string) => waitingAgent(id))
     const handle = createHandleAgentWaitingInputEvent(getAgent as never)

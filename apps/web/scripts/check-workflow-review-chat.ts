@@ -3,14 +3,14 @@
  * stays reachable beside a long transcript, review messages carry the consultation, phones switch
  * between Brief and Chat, and an amendment shows the revised marker and what changed.
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-workflow-review-chat.ts
- * Optional SCREENSHOT_DIR saves screenshots. Owns and closes its exact browser and Vite server.
+ * Optional SCREENSHOT_DIR saves screenshots. Owns and closes its exact browser and the shared fixture server.
  */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createServer } from 'vite'
 import type { Browser, Locator, Page } from 'playwright-core'
+import { startFixtureServer } from './fixture-server'
 
 const root = resolve(import.meta.dir, '..')
 // Run from apps/web like the other checks (Tailwind reads its sources from src/tailwind.css).
@@ -20,24 +20,9 @@ const { chromium } = createRequire(resolve(root, '../core/package.json'))(
 ) as typeof import('playwright-core')
 const screenshotDir = process.env.SCREENSHOT_DIR
 if (screenshotDir) await mkdir(screenshotDir, { recursive: true })
-const server = await createServer({
-  configFile: false,
-  root,
-  server: { host: '127.0.0.1', port: 0 },
-  esbuild: { jsx: 'automatic' },
-  plugins: [
-    {
-      name: 'review-chat-fixture',
-      configureServer(server) {
-        server.middlewares.use('/review-chat-fixture', (_req, res) => {
-          res.setHeader('Content-Type', 'text/html')
-          res.end(
-            '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/workflow-review-chat.tsx"></script></body></html>'
-          )
-        })
-      },
-    },
-  ],
+const server = await startFixtureServer({
+  path: '/review-chat-fixture',
+  entry: '/scripts/fixtures/workflow-review-chat.tsx',
 })
 
 /** Fully inside the viewport, so it can be reached without scrolling the page. */
@@ -51,7 +36,6 @@ let browser: Browser | undefined
 const errors: string[] = []
 let passed = 0
 try {
-  await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const page = await browser.newPage()
   page.setDefaultTimeout(10000)
@@ -80,8 +64,8 @@ try {
       const review = page.getByRole('dialog')
       await review.waitFor()
       const layout = review.locator('[data-review-layout]')
-      const approve = review.getByRole('button', { name: /^Approved/ })
-      const sendBack = review.getByRole('button', { name: /^Changes requested/ })
+      const approve = review.getByRole('button', { name: /^Approve/ })
+      const sendBack = review.getByRole('button', { name: /^Request changes/ })
       const composer = review.locator('[data-review-chat] textarea')
       if (width >= 1024) {
         assert.equal(await layout.getAttribute('data-review-layout'), 'chat-columns')
@@ -155,7 +139,7 @@ try {
       await page.waitForFunction(
         () =>
           ![...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-            button.textContent?.startsWith('Approved')
+            button.textContent?.startsWith('Approve')
           )?.disabled
       )
       assert.equal(await review.locator('[data-revision-changes]').count(), 0)

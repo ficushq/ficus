@@ -1,5 +1,5 @@
 import { eq, isNull, inArray } from 'drizzle-orm'
-import type { WorkflowGateFallback } from '@ficus/shared'
+import type { WorkflowGateFallback, WorkStreamWait } from '@ficus/shared'
 import { db, users } from '../../db'
 import { getUserIdsWithPermission, hasPermission, type Identity } from '../rbac'
 
@@ -37,7 +37,7 @@ export async function validateAssignedReviewers(ids: string[], squadId: string) 
 interface ReviewedStream {
   id: string
   squadId: string
-  assignedReviewerIds: readonly string[] | null
+  assignedReviewerIds?: readonly string[] | null
   requestingUserId?: string | null
 }
 
@@ -67,6 +67,18 @@ export async function loadInactiveAssignedReviewers(
     if (inactive.length) result.set(stream.id, inactive)
   }
   return result
+}
+
+/** Reviewer facts for Activity counters are needed only for streams with an open assigned-reviewer gate. */
+export function loadInactiveAssignedReviewersForOpenGates(
+  streams: readonly ReviewedStream[],
+  derived: ReadonlyMap<string, { openWaits: WorkStreamWait[] }>
+): Promise<Map<string, string[]>> {
+  return loadInactiveAssignedReviewers(
+    streams.filter((stream) =>
+      derived.get(stream.id)?.openWaits.some((wait) => wait.workflowGateApprover === 'assigned-reviewers')
+    )
+  )
 }
 
 /**

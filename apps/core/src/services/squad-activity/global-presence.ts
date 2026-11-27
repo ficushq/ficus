@@ -3,20 +3,26 @@ import {
   DELIVERY_STATUS_LABELS,
   codeHostDeliveryLabel,
   resolveCodeHostReference,
+  viewerCanActOnWait,
   workStreamNeedsHumanAttention,
   workStreamWaitDisplayType,
   workStreamWaitNeedsHuman,
+  workStreamWaitsOnViewer,
   type ActivityWorkStreamCard,
   type GlobalActivityPresence,
   type WorkStreamDeliveryPresentation,
+  type WorkStreamViewer,
+  type WorkStreamViewerFacts,
   workStreamDeliveryCiState,
 } from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, workStreams } from '../../db/schema'
 import type { Identity } from '../rbac'
+import { resolveWorkStreamViewers } from '../rbac/work-stream-viewer'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
+import { loadInactiveAssignedReviewersForOpenGates } from '../workflows/reviewers'
 import { resolveGlobalActivityAccess, resolveSquadActivityAccess } from './access'
 import type { GlobalActivitySquadAccess } from './global-activity'
 import { loadWorkStreamSteps } from './row-context'
@@ -95,6 +101,8 @@ export async function projectActivityPresence(
             updatedAt: workStreams.updatedAt,
             assigneeAgentId: workStreams.assigneeAgentId,
             agentIds: workStreams.agentIds,
+            assignedReviewerIds: workStreams.assignedReviewerIds,
+            requestingUserId: workStreams.requestingUserId,
           })
           .from(workStreams)
           .where(
@@ -104,21 +112,41 @@ export async function projectActivityPresence(
   ])
 
   const derived = await computeDerivedStates(activeStreams)
+  const inactiveReviewers = await loadInactiveAssignedReviewersForOpenGates(activeStreams, derived)
   const workingAgentIds = workingAgents.map((agent) => agent.id).sort()
   // The strip is a personal summary: muting a kind removes that squad's work from ITS count and
   // from nobody else's. Agents are not attention-scoped — the working count is about the instance.
-  const needsYou = new Set(
-    activeStreams
-      .filter((stream) => {
-        if (attention.forWorkStream(stream.id, stream.squadId).decisions === 'mute') return false
-        const presentation = derived.get(stream.id)
-        return workStreamNeedsHumanAttention({
+  // "Waiting on you" is about this viewer, applied here per request: a stream needing a person
+  // counts only when the viewer may act on one of its waits, by the shared rule every client shows.
+  const facts = new Map(
+    activeStreams.map((stream) => {
+      const presentation = derived.get(stream.id)
+      return [
+        stream.id,
+        {
           status: stream.status,
           pause: stream.pause,
           delivery: presentation?.delivery,
           derivedState: presentation?.derivedState,
           openWaits: presentation?.openWaits,
-        })
+          assignedReviewerIds: stream.assignedReviewerIds,
+          inactiveAssignedReviewerIds: inactiveReviewers.get(stream.id),
+          requestingUserId: stream.requestingUserId,
+        },
+      ]
+    })
+  )
+  const needingPerson = activeStreams.filter((stream) => workStreamNeedsHumanAttention(facts.get(stream.id)!))
+  // Cards label every open wait for the viewer too, so squads with any open wait need one.
+  const viewers = await resolveWorkStreamViewers(identity, [
+    ...needingPerson.map((stream) => stream.squadId),
+    ...activeStreams.filter((stream) => facts.get(stream.id)!.openWaits?.length).map((stream) => stream.squadId),
+  ])
+  const needsYou = new Set(
+    needingPerson
+      .filter((stream) => {
+        if (attention.forWorkStream(stream.id, stream.squadId).decisions === 'mute') return false
+        return workStreamWaitsOnViewer(facts.get(stream.id)!, viewers.get(stream.squadId))
       })
       .map((stream) => stream.id)
   )
@@ -131,7 +159,7 @@ export async function projectActivityPresence(
     workingCount: workingAgentIds.length,
     needsYouCount: needsYou.size,
     streamCount: shownStreams.length,
-    streams: await buildWorkStreamCards(shownStreams, derived, needsYou, new Set(agentSquadIds)),
+    streams: await buildWorkStreamCards(shownStreams, derived, facts, needsYou, new Set(agentSquadIds), viewers),
   }
 }
 
@@ -146,8 +174,10 @@ async function buildWorkStreamCards(
     updatedAt: Date
   }>,
   derived: Awaited<ReturnType<typeof computeDerivedStates>>,
+  factsByStream: ReadonlyMap<string, WorkStreamViewerFacts>,
   needsYou: Set<string>,
-  agentReadableSquads: Set<string>
+  agentReadableSquads: Set<string>,
+  viewers: Map<string, WorkStreamViewer>
 ): Promise<ActivityWorkStreamCard[]> {
   if (!streams.length) return []
   const agentStreamIds = streams.filter((stream) => agentReadableSquads.has(stream.squadId)).map((stream) => stream.id)
@@ -190,7 +220,8 @@ async function buildWorkStreamCards(
 
   return shown.map((stream): ActivityWorkStreamCard => {
     const presentation = derived.get(stream.id)
-    const openWaits = presentation?.openWaits ?? []
+    const facts = factsByStream.get(stream.id)!
+    const openWaits = facts.openWaits ?? []
     const delivery = presentation?.delivery
     const step = steps.get(stream.id) ?? null
     // The summary paraphrases participants' chat, so it needs agents:read like their Activity rows.
@@ -204,10 +235,15 @@ async function buildWorkStreamCards(
       title: stream.title,
       status: stream.status,
       step,
-      waits: openWaits.map((wait) => ({
-        type: workStreamWaitDisplayType(wait),
-        needsYou: workStreamWaitNeedsHuman(wait, { openWaits, delivery }),
-      })),
+      waits: openWaits.map((wait) => {
+        const needsPerson = workStreamWaitNeedsHuman(wait, { openWaits, delivery })
+        return {
+          type: workStreamWaitDisplayType(wait),
+          needsYou: needsPerson,
+          // Whether this viewer is that person (the shared rule): "Waiting on you: review" only then.
+          you: needsPerson && viewerCanActOnWait(wait, facts, viewers.get(stream.squadId)),
+        }
+      }),
       needsYou: needsYou.has(stream.id),
       pullRequest: primaryPullRequest(stream.metadata, delivery),
       ci: deliveryCiState(delivery),

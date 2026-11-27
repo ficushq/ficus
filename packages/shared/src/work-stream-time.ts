@@ -6,6 +6,7 @@
  * with workflow gates following the shared {@link mayDecideWorkflowGate} rule.
  */
 import {
+  type WorkStreamPresentationFacts,
   workStreamNeedsHumanAttention,
   workStreamWaitDisplayType,
   workStreamWaitNeedsHuman,
@@ -85,10 +86,18 @@ export interface WorkStreamViewer {
   identity?: { type: string; userId?: string }
 }
 
+/** The parts of a stream the viewer rules read for waits and reviewer eligibility. */
+export type WorkStreamViewerFacts = Pick<
+  WorkStream,
+  'openWaits' | 'delivery' | 'assignedReviewerIds' | 'inactiveAssignedReviewerIds'
+> &
+  Partial<Pick<WorkStream, 'requestingUserId'>>
+
 /** What a person is being waited on for. */
 export type PersonWaitKind = 'answer' | 'review' | 'approval' | 'blocker'
 
-const PERSON_WAIT_NOUN: Record<PersonWaitKind, string> = {
+/** What a person is waited on for, as "Waiting on review" reads it to someone who cannot act. */
+export const PERSON_WAIT_NOUN: Readonly<Record<PersonWaitKind, string>> = {
   answer: 'an answer',
   review: 'review',
   approval: 'approval',
@@ -96,7 +105,7 @@ const PERSON_WAIT_NOUN: Record<PersonWaitKind, string> = {
 }
 
 /** What this open wait waits on a person for; null when it does not wait on a person. */
-function personWaitKind(wait: WorkStreamWait, ws: WorkStream): PersonWaitKind | null {
+function personWaitKind(wait: WorkStreamWait, ws: WorkStreamViewerFacts): PersonWaitKind | null {
   // The delivery approval is a wait on a person too; the shared rule leaves it to delivery.
   if (ws.delivery?.kind === 'approval' && wait.id === ws.delivery.approvalWaitId) return 'approval'
   if (!workStreamWaitNeedsHuman(wait, ws)) return null
@@ -105,11 +114,20 @@ function personWaitKind(wait: WorkStreamWait, ws: WorkStream): PersonWaitKind | 
 }
 
 /**
+ * Whether these permissions may resolve a work stream's waits that are not questions or workflow
+ * gates (a manual review, a blocker, the delivery approval): workstreams:respond or
+ * workstreams:update, mirroring the server's wait resolution check.
+ */
+export function mayRespondToWorkStreamWaits(can: (permission: string) => boolean): boolean {
+  return can('workstreams:respond') || can('workstreams:update')
+}
+
+/**
  * Whether this viewer can clear the wait, mirroring the server's checks: answering a question
  * takes agents:run, a workflow gate is the shared {@link mayDecideWorkflowGate} rule for the
- * approver Core puts on the wait, anything else workstreams:respond or workstreams:update.
+ * approver Core puts on the wait, anything else {@link mayRespondToWorkStreamWaits}.
  */
-function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream, viewer: WorkStreamViewer) {
+function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStreamViewerFacts, viewer: WorkStreamViewer) {
   if (kind === 'answer') return viewer.can('agents:run')
   if (isWorkflowHumanGateWait(wait))
     return mayDecideWorkflowGate(
@@ -117,18 +135,48 @@ function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream
       viewer.can('workstreams:review'),
       ws.assignedReviewerIds,
       workflowGateOfWait(wait),
-      workflowGateFallbackForViewer(ws, viewer.can)
+      wait.workflowGateApprover === 'assigned-reviewers' ? workflowGateFallbackForViewer(ws, viewer.can) : undefined
     )
-  return viewer.can('workstreams:respond') || viewer.can('workstreams:update')
+  return mayRespondToWorkStreamWaits((permission) => viewer.can(permission))
 }
 
 /**
  * Whether this viewer can act on one open wait: it asks a person (including the delivery approval)
  * and the viewer is someone who may clear it. False while the viewer is unknown.
  */
-export function viewerCanActOnWait(wait: WorkStreamWait, ws: WorkStream, viewer?: WorkStreamViewer): boolean {
+export function viewerCanActOnWait(
+  wait: WorkStreamWait,
+  ws: WorkStreamViewerFacts,
+  viewer?: WorkStreamViewer
+): boolean {
   const kind = personWaitKind(wait, ws)
   return !!kind && !!viewer && viewerCanAct(kind, wait, ws, viewer)
+}
+
+/**
+ * Whether the stream's delivery waits on its pull request's review or merge at the code host.
+ * Ficus cannot attribute that to anyone, so it waits on every viewer.
+ */
+function deliveryWaitsOnCodeHost(ws: WorkStreamViewerFacts): boolean {
+  return ws.delivery?.kind === 'review' || ws.delivery?.kind === 'merge'
+}
+
+/**
+ * Whether the stream waits on this viewer, for "N waiting on you" counts and "Waiting on you"
+ * badges: it needs a person ({@link workStreamNeedsHumanAttention}) and either its delivery waits
+ * on the code host (a pull request awaiting review or merge, which waits on every viewer whatever
+ * other waits are open) or one of its open waits on a person is one this viewer can act on
+ * ({@link viewerCanActOnWait}). A stream that needs a person with no such wait open (an older
+ * payload that omitted its waits) waits on every viewer too. False while the viewer is unknown.
+ */
+export function workStreamWaitsOnViewer(
+  ws: WorkStreamViewerFacts & WorkStreamPresentationFacts,
+  viewer?: WorkStreamViewer
+): boolean {
+  if (!viewer || !workStreamNeedsHumanAttention(ws)) return false
+  if (deliveryWaitsOnCodeHost(ws)) return true
+  const personWaits = (ws.openWaits ?? []).filter((wait) => personWaitKind(wait, ws))
+  return personWaits.length === 0 || personWaits.some((wait) => viewerCanActOnWait(wait, ws, viewer))
 }
 
 export interface WorkStreamPersonWait {

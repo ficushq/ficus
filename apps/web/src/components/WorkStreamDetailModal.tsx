@@ -33,6 +33,7 @@ import {
   computeWorkStreamElapsedMs,
   formatWaitedDuration,
   formatWorkStreamDuration,
+  mayRespondToWorkStreamWaits,
   workStreamPersonWait,
   workStreamTimeTickMs,
   type WorkStream,
@@ -52,6 +53,7 @@ import { WorkStreamProgress } from './WorkStreamProgress'
 import { WorkStreamRecentActivity } from './WorkStreamRecentActivity'
 import { actionErrorMessage } from '../lib/actionError'
 import { LoadingSurface, SkeletonBlock, SkeletonRows } from './loading/Skeleton'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 // --- Helpers (exported for use by WorkStreamListAll) ---
 
@@ -171,7 +173,7 @@ export function WorkStreamDetailModal({
   const squad = squadMap.get(workStream.squadId)
   const metadata = workStream.metadata ?? {}
   const { can, identity: permissionIdentity, isLoading: permissionsLoading } = usePermissions(workStream.squadId)
-  const permissionCanRespond = !permissionsLoading && (can('workstreams:respond') || can('workstreams:update'))
+  const permissionCanRespond = !permissionsLoading && mayRespondToWorkStreamWaits(can)
   const canRespondToWait = actionCanRespond ?? permissionCanRespond
 
   // Fetch metrics separately (lazy load when modal opens)
@@ -224,6 +226,7 @@ export function WorkStreamDetailModal({
     Array.from(resolvedAgentMap.values()).find((agent) => agent.id.startsWith(idOrPrefix))
   // Agents are named type first; two of one type add the step they work on here, else their purpose.
   const { data: run } = useQuery(queries.workflows.run(workStream.id))
+  const typeNames = useAgentTypeNames()
   const stepOfAgent = new Map<string, string>()
   for (const attempt of run?.state.attempts ?? []) {
     const agentId = run?.attemptAgents[attempt.id]
@@ -236,10 +239,14 @@ export function WorkStreamDetailModal({
     ...(workStream.agentIds ?? []).map(matchAgent),
     ...Object.keys(metrics?.byAgent ?? {}).map((agentId) => resolvedAgentMap.get(agentId)),
   ].filter((agent): agent is Agent => !!agent)
-  const agentLabels = typeFirstAgentLabels(shownAgents, (agent) => {
-    const step = stepOfAgent.get(agent.id)
-    return step ? [workStream.number ? `#${workStream.number}` : null, step].filter(Boolean).join(' · ') : undefined
-  })
+  const agentLabels = typeFirstAgentLabels(
+    shownAgents,
+    (agent) => {
+      const step = stepOfAgent.get(agent.id)
+      return step ? [workStream.number ? `#${workStream.number}` : null, step].filter(Boolean).join(' · ') : undefined
+    },
+    typeNames
+  )
   const agentLabel = (agent: Agent) => agentLabels.get(agent.id) ?? getAgentPrimaryLabel(agent)
   /** The name and purpose a type-first label leaves out, on hover. */
   const agentTitle = (agent: Agent) =>
@@ -288,8 +295,6 @@ export function WorkStreamDetailModal({
       const actionType = variables.resolution === 'cleared' ? 'workstream-blocked' : 'workstream-review'
       removeAnsweredActions(queryClient, [`${actionType}:${workStream.id}:${variables.waitId}`])
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(workStream.squadId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(workStream.squadId) })
       queryClient.invalidateQueries({ queryKey: [...queryKeys.squads.all, 'doneWorkStreams'] })

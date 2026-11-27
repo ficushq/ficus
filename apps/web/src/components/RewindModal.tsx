@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Modal } from './Modal'
+import { agentTypeDisplayName } from '../lib/agentDisplay'
+import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 interface StepOption {
   agentTypeId: string
@@ -17,6 +19,7 @@ interface RewindModalProps {
 export function RewindModal({ isOpen, onClose, onConfirm, isLoading, steps }: RewindModalProps) {
   const [selectedStep, setSelectedStep] = useState('')
   const [reason, setReason] = useState('')
+  const typeNames = useAgentTypeNames()
 
   const handleConfirm = () => {
     if (!selectedStep || !reason.trim()) return
@@ -41,7 +44,7 @@ export function RewindModal({ isOpen, onClose, onConfirm, isLoading, steps }: Re
           <option value="">Select a step to rewind to...</option>
           {steps.map((step) => (
             <option key={step.agentTypeId} value={step.agentTypeId}>
-              Step {step.index + 1}: {step.agentTypeId}
+              Step {step.index + 1}: {agentTypeDisplayName(step.agentTypeId, typeNames)}
             </option>
           ))}
         </select>

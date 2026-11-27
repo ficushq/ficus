@@ -19,7 +19,7 @@ import * as path from 'path'
 import { MONOREPO_ROOT } from '../../../lib/paths'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
-import { getSquadIdFromSandbox } from '../types'
+import { getSquadIdFromSandbox, sandboxExecAbortReason } from '../types'
 import type {
   ISandboxManager,
   ManagedToolchainRequest,
@@ -1846,6 +1846,8 @@ export class DockerSandboxManager implements ISandboxManager {
   async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const sandbox = this.sandboxes.get(sandboxId)
     if (!sandbox) throw new Error(`No sandbox found for ${sandboxId}`)
+    // Synchronous, so an abort can only stop a command that has not started.
+    if (options?.signal?.aborted) throw sandboxExecAbortReason(options.signal)
 
     const userArgs = this.getSandboxUserArgs(sandbox.containerId)
     const env = options?.env ?? {}

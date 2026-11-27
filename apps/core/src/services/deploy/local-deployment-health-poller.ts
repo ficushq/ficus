@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { createLogger } from '../../lib/infra/logger'
 import { listLiveLocalDeployments } from './local-deployment-service'
@@ -77,8 +78,9 @@ function scheduleRecovery(
   lastRestartAttempts.set(deployment.id, Date.now())
   // Own, do not race or abandon, mutating ensure/start. At most two such jobs
   // may be pending; health observation and future ticks never wait on them.
-  const recovery = Promise.resolve()
-    .then(() => deps.restartManagedLocalDeployment(deployment.id, { onlyIfNeeded: true }))
+  const recovery = shareAcrossRequests(() =>
+    Promise.resolve().then(() => deps.restartManagedLocalDeployment(deployment.id, { onlyIfNeeded: true }))
+  )
     .then(
       () => {},
       (error) => log.warn(`Managed localDeployment ${deployment.id} recovery failed:`, error)

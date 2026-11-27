@@ -44,7 +44,7 @@ try {
     const [theme, appearance] = variant.split(':')
     const label = `${theme}-${appearance}`
     const base = `${server.resolvedUrls!.local[0]!}squad-home-clarity-fixture?theme=${theme}&appearance=${appearance}`
-    const page = await browser.newPage()
+    const page: Page = await browser.newPage()
     page.setDefaultTimeout(10000)
     page.on('pageerror', (error) => errors.push(`${label}: ${error.message}`))
     await page.setViewportSize({ width: 1280, height: 760 })

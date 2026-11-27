@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdtemp, rm } from 'fs/promises'
@@ -232,7 +233,8 @@ export function memoizeBuild<T>(build: () => Promise<T>): () => Promise<T> {
   let cached: Promise<T> | null = null
   return () => {
     if (!cached) {
-      cached = build().catch((err) => {
+      // Cached for every later caller, so it runs outside the request that started it.
+      cached = shareAcrossRequests(build).catch((err) => {
         cached = null
         throw err
       })

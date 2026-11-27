@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../../db/query-cancellation'
 import { reservePhysicalHostCapacity } from '../../machines/host-admission'
 /**
  * VmSandboxManager
@@ -39,6 +40,7 @@ import type { IPty } from 'bun-pty'
 import type { SandboxPressure, SandboxRuntimeHealth } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
+  sandboxExecAbortReason,
   type ISandboxManager,
   type SandboxExecOptions,
   type SandboxOptions,
@@ -1835,6 +1837,8 @@ export class VmSandboxManager implements ISandboxManager {
   async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
     const state = this.requireSandbox(sandboxId)
+    const signal = options?.signal
+    if (signal?.aborted) throw sandboxExecAbortReason(signal)
     this.touch(state)
 
     const command = shellCommandFromArgs(args)
@@ -1844,6 +1848,20 @@ export class VmSandboxManager implements ISandboxManager {
       let terminal = false
       let settled = false
       const stream = launchingClient.bash({ command, cwd: state.workRoot, env: options?.env })
+      // An abort stops the command in the box, not only this wait for it.
+      const onAbort = () => {
+        if (settled || terminal) return
+        settled = true
+        reject(sandboxExecAbortReason(signal!))
+        stream
+          .cancelAndWait('tool-abort')
+          .catch((error: unknown) => log.warn(`Could not cancel an aborted command in ${sandboxId}:`, error))
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      // 'end' or 'error' finishes the stream; neither may leave the listener on a long-lived signal.
+      const dropAbortListener = () => signal?.removeEventListener('abort', onAbort)
+      stream.on('end', dropAbortListener)
+      stream.on('error', dropAbortListener)
       stream.on('data', (response: BashResponse) => {
         if (response.stdout) chunks.push(Buffer.from(response.stdout, 'base64'))
         if (response.stderr) chunks.push(Buffer.from(response.stderr, 'base64'))
@@ -2264,18 +2282,21 @@ export class VmSandboxManager implements ISandboxManager {
 
     const inflight = this.attachInflight.get(sandboxId)
     if (inflight) return inflight
-    const p = this.acquireConnection(sandboxId)
-      .then(async (release) => {
-        try {
-          return await this.attachClient(sandboxId)
-        } finally {
-          release()
-        }
-      })
-      .finally(() => {
-        this.attachInflight.delete(sandboxId)
-        this.attachTombstones.delete(sandboxId)
-      })
+    // Joined by later callers, so it runs outside the request that started it.
+    const p = shareAcrossRequests(() =>
+      this.acquireConnection(sandboxId)
+        .then(async (release) => {
+          try {
+            return await this.attachClient(sandboxId)
+          } finally {
+            release()
+          }
+        })
+        .finally(() => {
+          this.attachInflight.delete(sandboxId)
+          this.attachTombstones.delete(sandboxId)
+        })
+    )
     this.attachInflight.set(sandboxId, p)
     return p
   }
@@ -2333,17 +2354,20 @@ export class VmSandboxManager implements ISandboxManager {
     const existing = this.recoveryInflight.get(sandboxId)
     if (existing) return existing
 
-    const recovery = this.acquireConnection(sandboxId)
-      .then(async (release) => {
-        try {
-          return await this.performClientRecovery(sandboxId, failedClient, cause)
-        } finally {
-          release()
-        }
-      })
-      .finally(() => {
-        if (this.recoveryInflight.get(sandboxId) === recovery) this.recoveryInflight.delete(sandboxId)
-      })
+    // Joined by later callers, so it runs outside the request that started it.
+    const recovery = shareAcrossRequests(() =>
+      this.acquireConnection(sandboxId)
+        .then(async (release) => {
+          try {
+            return await this.performClientRecovery(sandboxId, failedClient, cause)
+          } finally {
+            release()
+          }
+        })
+        .finally(() => {
+          if (this.recoveryInflight.get(sandboxId) === recovery) this.recoveryInflight.delete(sandboxId)
+        })
+    )
     this.recoveryInflight.set(sandboxId, recovery)
     return recovery
   }

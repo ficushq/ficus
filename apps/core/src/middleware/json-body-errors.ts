@@ -3,8 +3,12 @@ import { createMiddleware } from 'hono/factory'
 import { HTTPException } from 'hono/http-exception'
 import { createLogger } from '../lib/infra/logger'
 import { WorkspaceDotDirConflictError } from '../services/workspace/dot-dir'
+import { isAbandonedQueryError } from '../db/query-cancellation'
 
 export const INVALID_JSON_BODY_MESSAGE = 'Invalid JSON body'
+
+/** The answer to a read stopped because its client left (rarely seen: it is gone). */
+export const ABANDONED_READ_CODE = 'read_abandoned'
 
 const HONO_MALFORMED_JSON_MESSAGE = 'Malformed JSON in request body'
 const log = createLogger('json-body')
@@ -61,6 +65,13 @@ export const jsonBodyErrorHandler: ErrorHandler = (error, c) => {
   if (error instanceof WorkspaceDotDirConflictError) {
     log.warn(`Refused ${c.req.method} ${c.req.path}: ${error.root}: ${error.detail}`)
     return c.json({ error: error.message, code: error.code }, 409)
+  }
+  // A read whose client left or whose deadline already answered had its queries
+  // cancelled on purpose (db/query-cancellation.ts). Nobody reads this answer, and
+  // browsers cancel fetches all the time, so it is not an error worth logging.
+  if (isAbandonedQueryError(error)) {
+    log.debug(`Stopped ${c.req.method} ${c.req.path}: nobody was waiting for its answer`)
+    return c.json({ error: 'Nobody was waiting for this read, so it was stopped.', code: ABANDONED_READ_CODE }, 503)
   }
 
   log.error('Unhandled request error', error)

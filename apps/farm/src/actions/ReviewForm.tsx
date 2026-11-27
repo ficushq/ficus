@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { WorkStreamCompletionMode, WorkStreamWait } from '@ficus/shared'
+import { mayRespondToWorkStreamWaits, type WorkStreamCompletionMode, type WorkStreamWait } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 import { useActionsApi } from './ActionsApiProvider'
 import { settleStreamWait } from './cache'
@@ -74,7 +74,7 @@ function ManualReview({
   const queryClient = useQueryClient()
   const onResolvedRef = useStableRef(onResolved)
   const { can, isLoading } = usePermissions(squadId)
-  const canRespond = actionCanRespond ?? (!isLoading && (can('workstreams:respond') || can('workstreams:update')))
+  const canRespond = actionCanRespond ?? (!isLoading && mayRespondToWorkStreamWaits(can))
   const [mode, setMode] = useState<'idle' | 'confirm' | 'prune'>('idle')
   const [note, setNote] = useState('')
   const noteId = useId()

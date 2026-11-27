@@ -5,9 +5,12 @@ import {
   computeWorkStreamElapsedMs,
   formatWaitedDuration,
   formatWorkStreamDuration,
+  mayRespondToWorkStreamWaits,
+  PERSON_WAIT_NOUN,
   viewerCanActOnWait,
   workStreamPersonWait,
   workStreamTimeTickMs,
+  workStreamWaitsOnViewer,
   type WorkStreamViewer,
 } from './work-stream-time'
 
@@ -114,6 +117,29 @@ describe('formatting', () => {
     expect(formatWaitedDuration(5 * 3_600_000 + 59 * 60_000)).toBe('5h')
     expect(formatWaitedDuration((7 * 24 + 2) * 3_600_000)).toBe('7d')
     expect(formatWaitedDuration(-5)).toBe('<1m')
+  })
+
+  test('names what a person is waited on for', () => {
+    expect(PERSON_WAIT_NOUN).toEqual({
+      answer: 'an answer',
+      review: 'review',
+      approval: 'approval',
+      blocker: 'a person',
+    })
+  })
+})
+
+describe('mayRespondToWorkStreamWaits', () => {
+  const holding =
+    (...held: string[]) =>
+    (permission: string) =>
+      held.includes(permission)
+
+  test('takes workstreams:respond or workstreams:update', () => {
+    expect(mayRespondToWorkStreamWaits(holding('workstreams:respond'))).toBe(true)
+    expect(mayRespondToWorkStreamWaits(holding('workstreams:update'))).toBe(true)
+    expect(mayRespondToWorkStreamWaits(holding('workstreams:read', 'workstreams:review', 'agents:run'))).toBe(false)
+    expect(mayRespondToWorkStreamWaits(holding())).toBe(false)
   })
 })
 
@@ -264,6 +290,62 @@ describe('waiting on a person', () => {
     expect(workStreamPersonWait(ws, viewer([]))?.label).toBe('Waiting on approval')
   })
 
+  test('workStreamWaitsOnViewer counts a stream only for a viewer who can act on one of its person waits', () => {
+    const gate = wait({
+      type: 'manual',
+      workflowHumanGate: true,
+      flowAttemptId: 2,
+      resolutionHandler: 'workflow',
+      workflowGateApprover: 'assigned-reviewers',
+    })
+    const review = waiting([gate], { assignedReviewerIds: ['reviewer-1'] })
+    expect(workStreamWaitsOnViewer(review, viewer(['workstreams:review'], 'reviewer-1'))).toBe(true)
+    expect(workStreamWaitsOnViewer(review, viewer(['workstreams:review'], 'someone-else'))).toBe(false)
+    expect(workStreamWaitsOnViewer(review)).toBe(false)
+    // A question and a gate: the viewer who can answer is waited on, a reviewer outside the gate is not.
+    const both = waiting([gate, wait({ id: 'q', type: 'question', referenceId: 'q' })], {
+      assignedReviewerIds: ['reviewer-1'],
+    })
+    expect(workStreamWaitsOnViewer(both, viewer(['agents:run'], 'someone-else'))).toBe(true)
+    expect(workStreamWaitsOnViewer(both, viewer(['workstreams:review'], 'someone-else'))).toBe(false)
+    // The delivery approval follows its wait too.
+    const approval = waiting([wait({ id: 'approval', type: 'manual', actor: 'human' })], {
+      derivedState: 'blocked',
+      delivery: { kind: 'approval', approvalWaitId: 'approval' },
+    })
+    expect(workStreamWaitsOnViewer(approval, responder)).toBe(true)
+    expect(workStreamWaitsOnViewer(approval, viewer([]))).toBe(false)
+  })
+
+  test('workStreamWaitsOnViewer: a code-host review or merge with no open wait waits on every viewer', () => {
+    const merge = waiting([], { derivedState: 'in_review', delivery: { kind: 'merge' } })
+    expect(workStreamWaitsOnViewer(merge, viewer([]))).toBe(true)
+    expect(workStreamWaitsOnViewer(merge)).toBe(false)
+    const dependency = waiting([wait({ type: 'dependency', referenceId: 'x' })], {
+      derivedState: 'waiting_on_dependency',
+    })
+    expect(workStreamWaitsOnViewer(dependency, responder)).toBe(false)
+  })
+
+  test('workStreamWaitsOnViewer: a code-host review or merge waits on every viewer whatever other waits are open', () => {
+    // A question this viewer cannot answer (no agents:run) next to the pull request at the code host.
+    const question = wait({ id: 'q', type: 'question', referenceId: 'q' })
+    const cannotAnswer = viewer(['workstreams:read'])
+    for (const kind of ['review', 'merge'] as const) {
+      const mixed = waiting([question], { derivedState: 'waiting_on_answer', delivery: { kind } })
+      expect(viewerCanActOnWait(question, mixed, cannotAnswer)).toBe(false)
+      expect(workStreamWaitsOnViewer(mixed, cannotAnswer)).toBe(true)
+      // The same pull request alone counts for that viewer too.
+      const alone = waiting([], { derivedState: 'in_review', delivery: { kind } })
+      expect(workStreamWaitsOnViewer(alone, cannotAnswer)).toBe(true)
+      // An unknown viewer is still never "you".
+      expect(workStreamWaitsOnViewer(mixed)).toBe(false)
+    }
+    // Without the code host, the unanswerable question alone does not wait on them.
+    const questionOnly = waiting([question], { derivedState: 'waiting_on_answer' })
+    expect(workStreamWaitsOnViewer(questionOnly, cannotAnswer)).toBe(false)
+  })
+
   test('a dependency, an owner hold, a paused or a finished stream is not waiting on a person', () => {
     const dependency = waiting([wait({ type: 'dependency', referenceId: 'x' })], {
       derivedState: 'waiting_on_dependency',
@@ -273,6 +355,7 @@ describe('waiting on a person', () => {
     const done = waiting([wait({})], { status: 'done', derivedState: 'done' })
     for (const ws of [dependency, ownerHold, paused, done]) {
       expect(workStreamPersonWait(ws, responder)).toBeNull()
+      expect(workStreamWaitsOnViewer(ws, responder)).toBe(false)
       expect(workStreamTimeTickMs(ws)).toBeNull()
     }
   })

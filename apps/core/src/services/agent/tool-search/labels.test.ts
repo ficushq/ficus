@@ -128,4 +128,18 @@ describe('unknownToolSearchNames', () => {
       })
     ).toEqual(['brwoser_open', 'dispach'])
   })
+
+  it('knows every tool in the metadata table, including ones outside the groups', () => {
+    const names = [...classifiedTools().keys()]
+    expect(names).toEqual(expect.arrayContaining(['tool_search', 'artifact_publish', 'navigate', 'continue_task']))
+    expect(unknownToolSearchNames({ direct: names, deferred: ['bigbrain_*', 'memory_*', 'artifact_*'] })).toEqual([])
+  })
+
+  it('reports a pattern that matches no tool in the table', () => {
+    // No built-in tool starts with context_; an extension that adds one is still allowed, with a warning.
+    expect(unknownToolSearchNames({ direct: ['context_*'], deferred: ['mcp__github__*'] })).toEqual([
+      'context_*',
+      'mcp__github__*',
+    ])
+  })
 })
