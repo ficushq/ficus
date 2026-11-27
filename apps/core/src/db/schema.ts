@@ -324,6 +324,8 @@ export const agentTypes = pgTable('agent_types', {
   extensions: text('extensions').array(),
   toolsAllow: text('tools_allow').array(),
   toolsDeny: text('tools_deny').array(),
+  /** Tool-search override (`tools.search`, `tools.direct`, `tools.deferred`); see services/agent/tool-search. */
+  toolSearch: jsonb('tool_search').$type<import('@ficus/shared').AgentTypeToolSearchPolicy>(),
   extraScopes: text('extra_scopes').array(),
   integrationCapabilities: jsonb('integration_capabilities'),
   earlyMarginTokens: integer('early_margin_tokens'),

@@ -9,6 +9,7 @@ import {
   decodeGlobalActivityCursor,
   encodeGlobalActivityCursor,
   type GlobalActivityCursorContext,
+  type GlobalActivityCursorKeyset,
 } from '../squad/activity-cursor'
 import { settledRowSql } from './settled'
 
@@ -74,33 +75,12 @@ export const globalActivityAccessPredicateSql = sql`((access_scope='agents' AND 
   OR (access_scope='inbox' AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id))
   OR (access_scope='workstreams_inbox' AND squad_access.workstreams_read AND (squad_access.inbox_all OR inbox_recipient_id=squad_access.own_recipient_id)))`
 
-/**
- * Cross-squad sibling of projectSquadActivity (services/squad/activity.ts):
- * same indexed `squad_activity` projection, generalized to many
- * {squadId, access} pairs at once via a joined VALUES table instead of a
- * single scalar access input. Shares that function's row-shaping tail
- * (`shapeActivityPage`) byte-for-byte — retention-floor expiry, hasMore, page
- * slicing all behave identically; only the WHERE clause (and the
- * squad_id-tiebroken ORDER BY / cursor) differ, because access here is
- * per-squad rather than a single scalar.
- */
-export async function projectGlobalActivity(input: ProjectGlobalActivityInput): Promise<ProjectGlobalActivityResult> {
-  const context: GlobalActivityCursorContext = {
-    squadIds: input.squadAccess.map((entry) => entry.squadId),
-    verbose: input.verbose,
-    agentIds: input.agentIds,
-    kinds: input.kinds,
-    ...(input.workStreamId ? { workStreamId: input.workStreamId } : {}),
-    ...(input.settled ? { settled: input.settled } : {}),
-  }
-  // Cursor validation always runs, even with zero accessible squads — an
-  // invalid/malformed cursor is a client error regardless of what the caller
-  // can see, mirroring the per-squad route's error-before-access-check order.
-  const cursor =
-    input.cursor !== undefined && input.cursor !== null ? decodeGlobalActivityCursor(input.cursor, context) : null
-  if (input.squadAccess.length === 0) return { items: [], hasMore: false, nextCursor: null }
-
-  const rows = await db.execute<GlobalRow>(sql`
+/** One page of the cross-squad feed (limit + 1 rows), exported for its scan-cost test. */
+export function globalActivityPageSql(
+  input: Omit<ProjectGlobalActivityInput, 'cursor'>,
+  cursor: GlobalActivityCursorKeyset | null
+): SQL {
+  return sql`
     WITH params AS (
       SELECT date_trunc('day',clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
         - interval '30 days' retention_floor
@@ -149,7 +129,36 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     )
     SELECT params.retention_floor,page.* FROM params LEFT JOIN page ON true
     ORDER BY page.at DESC NULLS LAST,page.squad_id DESC NULLS LAST,page.lane DESC NULLS LAST,page.row_id DESC NULLS LAST
-  `)
+  `
+}
+
+/**
+ * Cross-squad sibling of projectSquadActivity (services/squad/activity.ts):
+ * same indexed `squad_activity` projection, generalized to many
+ * {squadId, access} pairs at once via a joined VALUES table instead of a
+ * single scalar access input. Shares that function's row-shaping tail
+ * (`shapeActivityPage`) byte-for-byte — retention-floor expiry, hasMore, page
+ * slicing all behave identically; only the WHERE clause (and the
+ * squad_id-tiebroken ORDER BY / cursor) differ, because access here is
+ * per-squad rather than a single scalar.
+ */
+export async function projectGlobalActivity(input: ProjectGlobalActivityInput): Promise<ProjectGlobalActivityResult> {
+  const context: GlobalActivityCursorContext = {
+    squadIds: input.squadAccess.map((entry) => entry.squadId),
+    verbose: input.verbose,
+    agentIds: input.agentIds,
+    kinds: input.kinds,
+    ...(input.workStreamId ? { workStreamId: input.workStreamId } : {}),
+    ...(input.settled ? { settled: input.settled } : {}),
+  }
+  // Cursor validation always runs, even with zero accessible squads — an
+  // invalid/malformed cursor is a client error regardless of what the caller
+  // can see, mirroring the per-squad route's error-before-access-check order.
+  const cursor =
+    input.cursor !== undefined && input.cursor !== null ? decodeGlobalActivityCursor(input.cursor, context) : null
+  if (input.squadAccess.length === 0) return { items: [], hasMore: false, nextCursor: null }
+
+  const rows = await db.execute<GlobalRow>(globalActivityPageSql(input, cursor))
 
   const { retentionFloor, selected, hasMore } = shapeActivityPage(rows, input.limit, cursor?.retentionFloor)
   const items: GlobalSquadActivityItem[] = selected.map((row) => ({
