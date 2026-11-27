@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { queryRetryDelay, shouldRetryQuery } from '@ficus/client-core'
 import '@fontsource-variable/fraunces'
 import '@fontsource-variable/instrument-sans'
 import '@fontsource-variable/jetbrains-mono'
@@ -14,7 +15,10 @@ import { resumeLastApp } from './app/appSurface'
 import { exchangeHandoff, startEmbed } from './embed/embed'
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: true } },
+  // A busy Core's 503 waits for its Retry-After instead of retrying at once (see client-core retry.ts).
+  defaultOptions: {
+    queries: { staleTime: 10_000, refetchOnWindowFocus: true, retry: shouldRetryQuery, retryDelay: queryRetryDelay },
+  },
 })
 
 // In Ficus Mobile's web view: sign in with the code the app injected before the first query.

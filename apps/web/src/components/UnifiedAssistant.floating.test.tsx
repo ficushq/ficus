@@ -64,7 +64,8 @@ async function setup({ floating = false }: { floating?: boolean } = {}) {
   for (const [key, value] of [
     [queries.voice.status().queryKey, { enabled: false }],
     [queries.squads.list().queryKey, []],
-    [queries.squads.allWorkStreams().queryKey, []],
+    [queries.squads.activeWorkStreams().queryKey, []],
+    [queries.squads.recentDoneWorkStreams().queryKey, { items: [], hasMore: false, nextCursor: null, totalCount: 0 }],
     [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
     [queries.agents.detail(A).queryKey, researcher],
     [queries.actions.pending().queryKey, []],

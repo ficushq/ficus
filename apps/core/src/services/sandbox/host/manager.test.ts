@@ -180,6 +180,26 @@ describe('HostSandboxManager', () => {
     expect(await manager.execStatus('agent_a1', ['true'])).toBe(0)
   })
 
+  test('an aborted exec kills the command and rejects with the abort reason', async () => {
+    await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
+    const marker = join(home, 'workspaces', 'squads', SQUAD, 'finished')
+    const controller = new AbortController()
+    const started = Date.now()
+    const run = manager.exec('agent_a1', ['bash', '-c', `sleep 2; touch ${marker}`], { signal: controller.signal })
+    setTimeout(() => controller.abort(new Error('probe abandoned')), 100)
+    await expect(run).rejects.toThrow('probe abandoned')
+    expect(Date.now() - started).toBeLessThan(1_500)
+    await Bun.sleep(2_300)
+    expect(existsSync(marker)).toBe(false)
+
+    const already = new AbortController()
+    already.abort(new Error('gone before start'))
+    await expect(manager.exec('agent_a1', ['touch', marker], { signal: already.signal })).rejects.toThrow(
+      'gone before start'
+    )
+    expect(existsSync(marker)).toBe(false)
+  })
+
   test('exec on an untracked sandbox rejects; execStatus on an untracked sandbox returns 1', async () => {
     await expect(manager.exec('agent_nope', ['true'])).rejects.toThrow('No host sandbox tracked')
     expect(await manager.execStatus('agent_nope', ['true'])).toBe(1)

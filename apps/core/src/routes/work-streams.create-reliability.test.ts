@@ -4,7 +4,10 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { createBlankWorkflow } from '@ficus/shared'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { eq, like, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db } from '../db'
@@ -12,6 +15,10 @@ import { squads, workStreamCreateRequests, workStreams } from '../db/schema'
 import { AgentType } from '../entities/AgentType'
 import { Squad } from '../entities/Squad'
 import { identityMiddleware } from '../middleware/identity'
+import * as sandboxFactory from '../services/sandbox/factory'
+import type { ISandboxManager } from '../services/sandbox/types'
+import * as admission from '../services/work-streams/admission'
+import { rollbackCreateProvisioning } from '../services/work-streams/create-rollback'
 import * as createTiming from '../services/work-streams/create-timing'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { authHeaders, cleanupTestRbac, createTestAdmin, type TestUser } from '../test-utils'
@@ -241,5 +248,295 @@ describe('work stream create reliability', () => {
     const conflict = await post(changed, 'key-sourced')
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toMatchObject({ code: 'idempotency_key_conflict' })
+  })
+
+  // Real Git in a temporary workspace stands in for the squad box, for both provisioning
+  // (prepareRepository) and the rollback's native cleanup runner.
+  describe('rolling back what an uncommitted create provisioned', () => {
+    let root: string
+    let repo: string
+    let manager: ReturnType<typeof spyOn<typeof sandboxFactory, 'getSandboxManager'>>
+    const exec: repositorySetup.RepositoryExec = async (args, options) => {
+      const child = Bun.spawn(args, {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: { ...process.env, ...options?.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+      })
+      const [out, err, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      if (code !== 0) throw new Error(`exit ${code}: ${err || out}`)
+      return out
+    }
+    const git = (...args: string[]) => exec(['git', '-C', repo, ...args]).then((out) => out.trim())
+    const branchExists = (branch: string) =>
+      git('show-ref', '--verify', `refs/heads/${branch}`).then(
+        () => true,
+        () => false
+      )
+    const worktrees = async () =>
+      (await git('worktree', 'list', '--porcelain'))
+        .split('\n')
+        .filter((line) => line.startsWith('worktree '))
+        .map((line) => line.slice('worktree '.length))
+        .filter((path) => path !== repo)
+
+    beforeEach(async () => {
+      root = await realpath(await mkdtemp(join(tmpdir(), 'ficus-create-rollback-route-')))
+      repo = join(root, 'repo')
+      await mkdir(repo)
+      await exec(['git', 'init', '-b', 'main', repo])
+      await writeFile(join(repo, 'README'), 'base\n')
+      await git('add', '.')
+      await git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'initial')
+      await git('remote', 'add', 'origin', 'git@github.com:example/repo.git')
+      setup.mockImplementation(async (_squadId, input, key, metadata, record) =>
+        repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          record
+        )
+      )
+      manager = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
+        exec: async (_sandboxId: string, args: string[], options?: { env?: Record<string, string> }) =>
+          Buffer.from(await exec(args, options)),
+      } as unknown as ISandboxManager)
+    })
+    afterEach(async () => {
+      manager.mockRestore()
+      await rm(root, { recursive: true, force: true })
+    })
+
+    it('removes the worktree and branch when the transaction fails, so a retry with the same branch succeeds', async () => {
+      const admit = spyOn(admission, 'admitOrQueueAtCreation').mockImplementationOnce(async () => {
+        throw new Error('admission unavailable')
+      })
+      try {
+        const body = { squadId, title: `${prefix} tx failure`, repository: 'repo', branch: 'feature/tx-retry' }
+        const failed = await post(body, 'key-tx-failure')
+        expect(failed.status).toBeGreaterThanOrEqual(400)
+        expect(await streamCount()).toBe(0)
+        expect(await worktrees()).toEqual([])
+        expect(await branchExists('feature/tx-retry')).toBe(false)
+
+        manager.mockRestore()
+        const retried = await post(body, 'key-tx-failure')
+        expect(retried.status).toBe(201)
+        const { id } = (await retried.json()) as { id: string }
+        expect(await worktrees()).toEqual([join(root, 'worktrees', id)])
+        expect(await branchExists('feature/tx-retry')).toBe(true)
+      } finally {
+        admit.mockRestore()
+      }
+    })
+
+    it('removes only its own worktree and branch when it loses its claim, so a retry with the same branch succeeds', async () => {
+      const kept = await post({ squadId, title: `${prefix} other stream`, repository: 'repo' }, 'key-other')
+      expect(kept.status).toBe(201)
+      const { id: keptId } = (await kept.json()) as { id: string }
+      const keptWorktree = join(root, 'worktrees', keptId)
+      expect(existsSync(keptWorktree)).toBe(true)
+
+      // The claim disappears mid-provisioning, as when a repeat took it over and then gave it up.
+      setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) => {
+        const result = await repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          record
+        )
+        await db.delete(workStreamCreateRequests).where(eq(workStreamCreateRequests.idempotencyKey, 'key-lost'))
+        return result
+      })
+      const body = { squadId, title: `${prefix} claim lost`, repository: 'repo', branch: 'feature/claim-retry' }
+      const lost = await post(body, 'key-lost')
+      expect(lost.status).toBe(409)
+      expect(await lost.json()).toMatchObject({ code: 'create_claim_lost' })
+      expect(await streamCount()).toBe(1)
+      expect(await worktrees()).toEqual([keptWorktree])
+      expect(await branchExists('feature/claim-retry')).toBe(false)
+      expect(await branchExists(`work/${keptId}`)).toBe(true)
+
+      manager.mockRestore()
+      const retried = await post(body, 'key-lost')
+      expect(retried.status).toBe(201)
+      expect(await branchExists('feature/claim-retry')).toBe(true)
+      expect(await streamCount()).toBe(2)
+    })
+
+    it('keeps a pre-existing branch when it rolls back', async () => {
+      await git('branch', 'existing')
+      const tip = await git('rev-parse', 'existing')
+      const admit = spyOn(admission, 'admitOrQueueAtCreation').mockImplementationOnce(async () => {
+        throw new Error('admission unavailable')
+      })
+      try {
+        const failed = await post({ squadId, title: `${prefix} existing`, repository: 'repo', branch: 'existing' })
+        expect(failed.status).toBeGreaterThanOrEqual(400)
+        expect(await worktrees()).toEqual([])
+        expect(await git('rev-parse', 'existing')).toBe(tip)
+      } finally {
+        admit.mockRestore()
+      }
+    })
+
+    it('keeps an explicit worktree that the repeat which took over its claim adopted', async () => {
+      const body = {
+        squadId,
+        title: `${prefix} explicit worktree`,
+        repository: 'repo',
+        worktree: 'shared/wt',
+        branch: 'feature/shared',
+      }
+      let taker: Response | undefined
+      // The claim expires mid-provisioning; a repeat with the same key takes it over,
+      // adopts the worktree this request just made, and commits.
+      setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) => {
+        const result = await repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          record
+        )
+        await db.delete(workStreamCreateRequests).where(eq(workStreamCreateRequests.idempotencyKey, 'key-race'))
+        taker = await post(body, 'key-race')
+        return result
+      })
+      const lost = await post(body, 'key-race')
+      expect(lost.status).toBe(409)
+      expect(await lost.json()).toMatchObject({ code: 'create_claim_lost' })
+      expect(taker!.status).toBe(201)
+      expect(await streamCount()).toBe(1)
+      expect(await worktrees()).toEqual([join(root, 'shared', 'wt')])
+      expect(await branchExists('feature/shared')).toBe(true)
+    })
+
+    it('keeps an explicit worktree another create adopted before that create commits', async () => {
+      const explicit = { repository: 'repo', worktree: 'shared/early', branch: 'feature/early' }
+      const streamA = crypto.randomUUID()
+      let ownership: repositorySetup.WorktreeOwnership | undefined
+      await repositorySetup.prepareRepository(
+        exec,
+        root,
+        { ...explicit, baseBranch: 'main', baseSource: 'local' },
+        streamA,
+        {},
+        (receipt) => {
+          ownership = receipt
+        }
+      )
+      // B (same key, took the claim over) adopts the path; it has no receipt and no row yet.
+      let adoptedReceipt = false
+      await repositorySetup.prepareRepository(
+        exec,
+        root,
+        { ...explicit, baseBranch: 'main', baseSource: 'local' },
+        crypto.randomUUID(),
+        {},
+        () => {
+          adoptedReceipt = true
+        }
+      )
+      expect(adoptedReceipt).toBe(false)
+      expect(await streamCount()).toBe(0)
+
+      expect(await rollbackCreateProvisioning(squadId, streamA, ownership!, { exec })).toMatchObject({
+        worktree: 'retained',
+        branch: 'retained',
+      })
+      expect(await worktrees()).toEqual([join(root, 'shared', 'early')])
+      expect(await branchExists('feature/early')).toBe(true)
+    })
+
+    it('bounds the rollback box commands with a deadline signal', async () => {
+      const signals: Array<AbortSignal | undefined> = []
+      manager.mockReturnValue({
+        exec: async (
+          _sandboxId: string,
+          args: string[],
+          options?: { env?: Record<string, string>; signal?: AbortSignal }
+        ) => {
+          signals.push(options?.signal)
+          return Buffer.from(await exec(args, options))
+        },
+      } as unknown as ISandboxManager)
+      const admit = spyOn(admission, 'admitOrQueueAtCreation').mockImplementationOnce(async () => {
+        throw new Error('admission unavailable')
+      })
+      try {
+        expect((await post({ squadId, title: `${prefix} bounded`, repository: 'repo' })).status).toBeGreaterThanOrEqual(
+          400
+        )
+        expect(await worktrees()).toEqual([])
+        expect(signals.length).toBeGreaterThan(0)
+        expect(signals.every((signal) => signal instanceof AbortSignal && !signal.aborted)).toBe(true)
+      } finally {
+        admit.mockRestore()
+      }
+    })
+
+    it('keeps a branch another stream is bound to, even at its own default path', async () => {
+      let ownership: repositorySetup.WorktreeOwnership | undefined
+      setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) =>
+        repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          (receipt) => {
+            ownership = receipt
+            return record?.(receipt)
+          }
+        )
+      )
+      const created = await post({ squadId, title: `${prefix} bound`, repository: 'repo' })
+      expect(created.status).toBe(201)
+      const other = crypto.randomUUID()
+      const result = await rollbackCreateProvisioning(
+        squadId,
+        other,
+        { ...ownership!, worktree: join(root, 'worktrees', other) },
+        { exec }
+      )
+      expect(result).toMatchObject({ worktree: 'retained', branch: 'retained' })
+      expect(result.reason).toContain('references this worktree or branch')
+      expect(existsSync(ownership!.worktree)).toBe(true)
+      expect(await branchExists(ownership!.branch)).toBe(true)
+    })
+
+    it('never removes the worktree of a stream that committed', async () => {
+      let ownership: repositorySetup.WorktreeOwnership | undefined
+      setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) =>
+        repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          (receipt) => {
+            ownership = receipt
+            return record?.(receipt)
+          }
+        )
+      )
+      const created = await post({ squadId, title: `${prefix} committed`, repository: 'repo' })
+      expect(created.status).toBe(201)
+      const { id } = (await created.json()) as { id: string }
+      expect(await rollbackCreateProvisioning(squadId, id, ownership!, { exec })).toMatchObject({
+        worktree: 'retained',
+      })
+      expect(existsSync(ownership!.worktree)).toBe(true)
+      expect(await branchExists(ownership!.branch)).toBe(true)
+    })
   })
 })

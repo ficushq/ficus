@@ -40,7 +40,7 @@ async function renderSetting(
   const { root, container } = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(queries.settings.list().queryKey, [setting(value)])
-  client.setQueryData(queryKeys.squads.workStreams('squad-1'), [])
+  client.setQueryData(queryKeys.squads.activeWorkStreams('squad-1'), [])
   client.setQueryData(queryKeys.activity.presence(), {})
   client.setQueryData(queryKeys.agents.detail('agent-1'), { id: 'agent-1' })
   const setSetting = mock((_key: string, next: string) => {
@@ -78,7 +78,7 @@ test('shows the switch on, and turning it off saves the setting and refreshes wo
   await dom!.act(async () => toggle().click())
   expect(setSetting.mock.calls).toEqual([[STREAM_SUMMARIES_SETTING, 'false']])
   // Saved summaries are left out while the switch is off, so stream rows and cards are refetched.
-  expect(client.getQueryState(queryKeys.squads.workStreams('squad-1'))?.isInvalidated).toBe(true)
+  expect(client.getQueryState(queryKeys.squads.activeWorkStreams('squad-1'))?.isInvalidated).toBe(true)
   expect(client.getQueryState(queryKeys.activity.presence())?.isInvalidated).toBe(true)
   expect(client.getQueryState(queryKeys.agents.detail('agent-1'))?.isInvalidated).toBe(false)
 })

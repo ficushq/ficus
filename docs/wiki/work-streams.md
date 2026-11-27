@@ -50,6 +50,24 @@ squad is busy. Four things keep that safe:
     a malformed key answers `400 { code: "invalid_idempotency_key" }`.
   - A create that fails before its transaction commits deletes its claim, so a retry
     starts fresh. The claim is bound to the stream inside the creation transaction.
+  - Before it deletes the claim, a create that provisioned a worktree and then failed
+    (its transaction failed, or it answered `create_claim_lost`) removes what it
+    provisioned (`services/work-streams/create-rollback.ts`). Only a worktree at the
+    stream's own default path (`worktrees/<id>`) named in its ownership receipt is
+    removed, through the same runner as delivered-worktree cleanup: it keeps a worktree
+    with uncommitted changes, and archives commits that only the worktree's reflog
+    holds under `refs/ficus-archive/` before it removes the tree. A caller-chosen `--worktree` path is
+    kept with its branch, because a repeat that took over the claim may have adopted it
+    (a retry adopts it the same way), and nothing is removed while any stream in the squad
+    references the worktree path or the repository and branch. The branch is
+    deleted only when this create made it and it still points at the commit it was made
+    from, in one box command that uses `git branch -D`, which refuses a branch any worktree
+    has checked out (another create may have just checked it out); a branch that existed
+    before the create is never deleted. A retry with the same explicit `--branch`
+    therefore succeeds. The checks for a committed or referencing stream run under the
+    squad row lock, so a create commit still in flight lands first, and the box commands
+    run under a 60-second deadline. Anything that cannot be removed safely is left in
+    place and logged under `work-stream-create`.
   - A pending claim holds a 60-second lease that its request renews every 20 seconds. If
     the Core process dies mid-create, a repeat takes the claim over once the lease
     expires. A request whose claim was taken over this way rolls its transaction back and
@@ -73,7 +91,8 @@ squad is busy. Four things keep that safe:
   runtime that means: this Core process tracks the box, its spec has not drifted, no
   toolchain install is running, the recorded toolchain is undeclared or `ready` with the
   current declaration applied and activated, maintenance admission is open, and one
-  command in the box answers within 10 seconds. Anything else, including an archived
+  command in the box answers within 10 seconds (a command that does not is cancelled in
+  the box through the exec `signal` option, not left running). Anything else, including an archived
   squad, a missing or untracked box, a docker or host runtime, or a failed check, runs
   the full ensure as before (`services/sandbox/squad-sandbox-fast-path.ts`). The same
   check runs when `PATCH`/`workstream update` sets up a repository on an existing stream.
@@ -184,6 +203,28 @@ Four things keep reads bounded, and a fifth keeps slow writes from losing their 
 The CLI shows the 503's message as is. If a server without the deadline drops a read,
 `apiGet` reports that Ficus closed the connection before answering, probably because it
 was busy for more than 30 seconds, and that nothing was changed.
+
+The web app never reads the unfiltered list either, because every work stream event
+refetches whatever list is on screen:
+
+- **Open work comes from `statuses=queued,active`.** The agent Chats rows, the agent's
+  Work streams panel (still polled every 10 seconds) and the Assistant's command center
+  all use it.
+- **Finished work is paged.** The agent panel pages its history with
+  `statuses=done,canceled&limit=25&agentId=<id>` and a "Show older work streams"
+  button. `agentId` keeps the streams the agent is assigned to, owns, created or is
+  attached to, and is accepted only on a paginated terminal-status query (anything else
+  is a `400`). The command center loads the 100 most recent completions, reads a squad's
+  "Recently completed" period with `completedAfter`, and asks `GET /api/search`
+  (`kind=work_stream`) for older work matching what was typed. The voice `get_work`
+  tool returns finished work 50 at a time when asked, with `finished.totalCount` and a
+  `finished.nextCursor` that it passes back as `finishedCursor` for the next page.
+- **A 503 waits for its Retry-After.** The web and Farm query clients use
+  `shouldRetryQuery` and `queryRetryDelay` from `packages/client-core/src/retry.ts`. A
+  `503` is retried no sooner than its `Retry-After` (5 seconds when the header is
+  missing, never under 1 second), doubled per retry with up to 10% jitter, at most
+  twice, and not at all if the wait would exceed 60 seconds. Every other failure keeps
+  three retries with the usual 1, 2 and 4 second backoff.
 
 ## Tracked issues and pull requests
 

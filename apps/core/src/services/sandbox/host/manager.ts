@@ -20,7 +20,7 @@ import { mkdirSync } from 'fs'
 import { spawn as ptySpawn, type IPty } from 'bun-pty'
 import { WorkspaceWatcher, isSafeWatchPattern } from '@ficus/sandbox-server/watcher'
 import type { ISandboxManager, SandboxExecOptions, SandboxOptions, SandboxRuntime, SpawnHook } from '../types'
-import { getSquadIdFromSandbox } from '../types'
+import { getSquadIdFromSandbox, sandboxExecAbortReason } from '../types'
 import { hostWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
 import { buildHostCommandEnv, ensureCliShim, getHostBaseEnv } from './env'
 import { ensureHostTerminalBootstrap } from './terminal-bootstrap'
@@ -274,6 +274,8 @@ export class HostSandboxManager implements ISandboxManager {
    *  the returned buffer verbatim and a login shell's profile routinely writes to stderr. */
   async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
     const state = this.requireSandbox(sandboxId)
+    const signal = options?.signal
+    if (signal?.aborted) throw sandboxExecAbortReason(signal)
     const outChunks: Buffer[] = []
     const errChunks: Buffer[] = []
     const child = this.spawnArgv(state, args, options?.env)
@@ -281,7 +283,27 @@ export class HostSandboxManager implements ISandboxManager {
     child.stderr?.on('data', (c: Buffer) => errChunks.push(c))
     let spawnError: Error | null = null
     child.once('error', (err: Error) => (spawnError = err))
-    await whenChildSettles(child, 'close')
+    let onAbort = () => {}
+    let abortedRun = false
+    // After a kill, wait for 'exit', not 'close': a grandchild can hold the pipes (see streamExec).
+    const killed = new Promise<void>((resolve) => {
+      onAbort = () => {
+        abortedRun = true
+        killTree(child)
+        void whenChildSettles(child, 'exit').then(resolve)
+      }
+    })
+    signal?.addEventListener('abort', onAbort, { once: true })
+    try {
+      await Promise.race([whenChildSettles(child, 'close'), killed])
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+    }
+    if (abortedRun) {
+      child.stdout?.destroy()
+      child.stderr?.destroy()
+      throw sandboxExecAbortReason(signal!)
+    }
     if (spawnError) throw spawnError
     const out = Buffer.concat(outChunks)
     // Read the code off the child rather than the event argument: the backstop

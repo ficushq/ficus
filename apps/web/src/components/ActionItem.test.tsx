@@ -171,8 +171,8 @@ describe('ActionItem work-stream approval', () => {
       expect(queryClient.getQueryData<PendingAction[]>(queryKeys.actions.pending())).toEqual([siblingAction])
       expect(invalidated).toContainEqual([...queryKeys.actions.pending()])
       expect(invalidated).toContainEqual([...queryKeys.squads.workStreamDetail('ws-1')])
-      expect(invalidated).toContainEqual([...queryKeys.squads.workStreams('squad-1')])
-      expect(invalidated).toContainEqual([...queryKeys.squads.allWorkStreams()])
+      expect(invalidated).toContainEqual([...queryKeys.squads.activeWorkStreamsPrefix()])
+      expect(invalidated).toContainEqual([...queryKeys.squads.all, 'doneWorkStreams'])
     } finally {
       globalThis.fetch = originalFetch
       await dom.cleanup()

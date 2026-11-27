@@ -102,12 +102,22 @@ async function fastPathBlocker(
 }
 
 async function probe(manager: ISandboxManager, sandboxId: string, workspacePath: string, timeoutMs: number) {
+  // The timeout aborts the command itself, so a hung probe stops in the box
+  // instead of running on beside the full ensure that takes over. The race only
+  // bounds the wait if a runtime cannot stop the command.
+  const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const answer = await Promise.race([
-      manager.exec(sandboxId, ['sh', '-c', 'cd -- "$1" && pwd -P', 'ficus-box-check', workspacePath]),
+      manager.exec(sandboxId, ['sh', '-c', 'cd -- "$1" && pwd -P', 'ficus-box-check', workspacePath], {
+        signal: controller.signal,
+      }),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs)
+        timer = setTimeout(() => {
+          const error = new Error(`no answer within ${timeoutMs} ms`)
+          controller.abort(error)
+          reject(error)
+        }, timeoutMs)
       }),
     ])
     if (!answer.toString().trim()) throw new Error('empty answer')

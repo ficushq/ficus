@@ -2042,6 +2042,44 @@ describe('VmSandboxManager', () => {
     await expect(mgr.execStatus('squad_s1', ['unknown'])).rejects.toThrow('ended without a terminal exit code')
   })
 
+  test('an aborted exec cancels the command in the box and rejects with the abort reason', async () => {
+    const h = makeHarness()
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const client = [...h.clients.values()][0]
+    const hung = new EventEmitter() as any
+    hung.invocationId = 'hung-probe'
+    const cancels: string[] = []
+    hung.cancelAndWait = async (reason: string) => {
+      cancels.push(reason)
+      hung.emit('end')
+    }
+    client.bash = () => hung
+
+    const controller = new AbortController()
+    const run = mgr.exec('squad_s1', ['sh', '-c', 'pwd'], { signal: controller.signal })
+    controller.abort(new Error('probe abandoned'))
+    await expect(run).rejects.toThrow('probe abandoned')
+    expect(cancels).toEqual(['tool-abort'])
+
+    const before = client.bashCalls.length
+    client.bash = (req: any) => {
+      client.bashCalls.push({ command: req.command })
+      return hung
+    }
+    await expect(mgr.exec('squad_s1', ['true'], { signal: controller.signal })).rejects.toThrow('probe abandoned')
+    expect(client.bashCalls.length).toBe(before)
+  })
+
+  test('an abort after the command exits changes nothing', async () => {
+    const h = makeHarness({ bashScript: { stdout: 'done', exitCode: 0 } })
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const controller = new AbortController()
+    expect((await mgr.exec('squad_s1', ['true'], { signal: controller.signal })).toString()).toBe('done')
+    controller.abort(new Error('late'))
+  })
+
   test('exec throws on non-zero exit code', async () => {
     const h = makeHarness({ bashScript: { stdout: 'boom', exitCode: 3 } })
     const mgr = new VmSandboxManager(h.deps)

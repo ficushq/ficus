@@ -654,6 +654,16 @@ export const workStreamsRouter = new Hono()
     const rows = <T extends { description: string | null }>(items: T[]): T[] =>
       omitDescription ? items.map((item) => ({ ...item, description: null })) : items
     const cursor = c.req.query('cursor')
+    // One agent's finished history (the agent panel pages it): assignee, owner, creator or attached.
+    const agentIdParam = c.req.query('agentId')
+    const agentFilter = z
+      .uuid()
+      .optional()
+      .safeParse(agentIdParam || undefined)
+    if (!agentFilter.success) return c.json({ error: 'Invalid agentId' }, 400)
+    const agentId = agentFilter.data
+    if (agentId && (limitParam === undefined || countOnly))
+      return c.json({ error: 'agentId requires a paginated terminal-status query' }, 400)
     const completionRange = z
       .object({
         completedAfter: z.iso.datetime().optional(),
@@ -718,6 +728,7 @@ export const workStreamsRouter = new Hono()
       const terminalOnly = terminalStatuses.length > 0 && nonTerminalStatuses.length === 0
       if ((completedAfter || completedBefore) && !terminalOnly)
         return c.json({ error: 'Completion dates require terminal statuses' }, 400)
+      if (agentId && !terminalOnly) return c.json({ error: 'agentId requires terminal statuses' }, 400)
       let accessibleSquadIds: string[] | undefined
       const accessible = await getAccessibleSquadIds(identity)
       if (accessible === 'all') {
@@ -754,6 +765,7 @@ export const workStreamsRouter = new Hono()
           feedUserId: feedUpdates && identity.type === 'user' ? identity.userId : undefined,
           completedAfter,
           completedBefore,
+          agentId,
         })
         const items = rows(
           fullAnnotations

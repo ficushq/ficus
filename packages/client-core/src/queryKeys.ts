@@ -168,6 +168,18 @@ export const queryKeys = {
         squadId ?? (squadIds?.length ? [...squadIds].sort().join(',') : 'all'),
         statuses,
       ] as const,
+    /** One agent's finished work, paged by the server's agentId filter (the agent panel's history). */
+    agentDoneWorkStreamsInfinite: (agentId: string) =>
+      [...queryKeys.squads.all, 'doneWorkStreams', 'agent', agentId] as const,
+    /** The command center's most recent finished work, across squads or in one squad. */
+    recentDoneWorkStreams: (squadId?: string) =>
+      [...queryKeys.squads.all, 'doneWorkStreams', 'recent', squadId ?? 'all'] as const,
+    /** A squad's work completed since `completedAfter`, newest first. */
+    completedWorkStreamsSince: (squadId: string, completedAfter: string) =>
+      [...queryKeys.squads.all, 'doneWorkStreams', 'since', squadId, completedAfter] as const,
+    /** The server's work stream search, for older work no loaded list holds. */
+    workStreamSearch: (query: string, squadId?: string) =>
+      [...queryKeys.squads.all, 'workStreamSearch', squadId ?? 'all', query] as const,
     workStreamDetail: (id: string) => [...queryKeys.squads.all, 'workStreamDetail', id] as const,
     workStreamTracked: (id: string) => [...queryKeys.squads.all, 'workStreamTracked', id] as const,
     workStreamMetrics: (id: string) => [...queryKeys.squads.all, 'workStreamMetrics', id] as const,

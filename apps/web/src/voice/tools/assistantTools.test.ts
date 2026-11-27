@@ -112,11 +112,11 @@ test('search requests bounded backend results and retains explicit work context'
       },
     ],
   }))
-  const listAllWorkStreams = mock(async () => [])
-  const tools = createAssistantTools({ searchEntities, squads: { ...squadDeps, listAllWorkStreams } })
+  const listActiveWorkStreams = mock(async () => [])
+  const tools = createAssistantTools({ searchEntities, squads: { ...squadDeps, listActiveWorkStreams } })
   const result = (await find(tools, 'search_ficus').execute({ query: 'Ship Ficus', limit: 3 }, env)) as any
   expect(searchEntities.mock.calls).toEqual([['Ship Ficus', 3]])
-  expect(listAllWorkStreams).not.toHaveBeenCalled()
+  expect(listActiveWorkStreams).not.toHaveBeenCalled()
   expect(result.results[0]).toMatchObject({
     id,
     workStreamId: id,

@@ -337,7 +337,6 @@ function QueryInvalidatorEffects({
           // Execution state affects scheduler order. The prefix reaches every
           // global, squad-scoped, and infinite active work-stream list.
           invalidate(queryKeys.squads.activeWorkStreamsPrefix())
-          invalidate(queryKeys.squads.allWorkStreams())
 
           // Completed and aborted tool-result patches emit `message.updated`, but
           // terminal execution events remain an authoritative backstop for missed

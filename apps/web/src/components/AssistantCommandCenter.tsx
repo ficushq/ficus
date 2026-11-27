@@ -1,7 +1,7 @@
 import { workStreamRef } from '@ficus/shared'
 import { workStreamTitle } from '@ficus/shared'
-import { Fragment, useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router'
 import clsx from 'clsx'
 import { integrationQueries, queries } from '../queryOptions'
@@ -38,10 +38,36 @@ import { SparklesIcon, ChevronRightIcon } from './icons'
 import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@ficus/shared'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
 import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import type { DoneWorkStreamsPage } from '../api/squads'
 
 const suggestions = ['What needs my attention?', 'Summarize progress across my squads', 'Help me set up a new project']
 type CompletedPreferences = { expanded: boolean; days: 7 | 30 }
 const defaultCompletedPreferences: CompletedPreferences = { expanded: false, days: 7 }
+/** How long typing pauses before the server is asked for older matching work. */
+const WORK_SEARCH_DEBOUNCE_MS = 250
+const HOUR_MS = 3_600_000
+
+/** Open work followed by the latest finished work, each stream once, as one list query's state. */
+function useMergedWorkStreams(
+  open: { data?: WorkStream[]; isLoading: boolean; isError: boolean },
+  done: { data?: DoneWorkStreamsPage; isLoading: boolean; isError: boolean }
+) {
+  const data = useMemo(() => {
+    const finished = done.data?.items ?? []
+    const finishedIds = new Set(finished.map((w) => w.id))
+    return [...(open.data ?? []).filter((w) => !finishedIds.has(w.id)), ...finished]
+  }, [open.data, done.data])
+  return { data, isLoading: open.isLoading || done.isLoading, isError: open.isError || done.isError }
+}
+
+/**
+ * The start of a completed-work period, rounded down to the hour so the query key holds still while
+ * the preview stays open; the rows are then narrowed to the exact rolling period.
+ */
+function completedPeriodStart(days: 7 | 30, now = Date.now()) {
+  return new Date(Math.floor(now / HOUR_MS) * HOUR_MS - days * 86_400_000).toISOString()
+}
 type ChatDestination = Extract<CommandDestination, { kind: 'chat' }>
 
 export function AssistantCommandCenter({
@@ -109,7 +135,11 @@ export function AssistantCommandCenter({
   const { can, isLoading, isError } = usePermissions()
   const enabled = active && !isLoading && !isError
   const squads = useQuery({ ...queries.squads.list(), enabled })
-  const streams = useQuery({ ...queries.squads.allWorkStreams(), enabled })
+  // Open work, the latest finished work, and server search hits for anything older: never the
+  // unfiltered list, which is every stream ever and refetched on every work stream event.
+  const openStreams = useQuery({ ...queries.squads.activeWorkStreams(), enabled })
+  const recentDone = useQuery({ ...queries.squads.recentDoneWorkStreams(squadScope), enabled })
+  const streams = useMergedWorkStreams(openStreams, recentDone)
   const consultants = useQuery({ ...queries.agents.list({ agentTypeId: 'consultant' }), enabled })
   const actions = useQuery({ ...queries.actions.pending(), enabled })
   const catalog = useQuery({ ...integrationQueries.catalog(), enabled })
@@ -128,9 +158,17 @@ export function AssistantCommandCenter({
   useEffect(() => {
     if (entry?.kind === 'squad') void client.invalidateQueries({ queryKey: queryKeys.agents.listPrefix() })
   }, [client, entry?.kind, entry?.id])
+  const searchText = useDebouncedValue(query.trim(), WORK_SEARCH_DEBOUNCE_MS)
+  const olderWork = useQuery({
+    ...queries.squads.workStreamSearch(searchText, squadScope),
+    enabled: enabled && searchText.length > 0,
+    // Keep the last hits while the next query loads, so older-work rows do not blink out as you type.
+    placeholderData: keepPreviousData,
+  })
   const data = {
     squads: squads.data ?? [],
-    streams: streams.data ?? [],
+    streams: streams.data,
+    olderWork: query.trim() && olderWork.data ? olderWork.data.results : undefined,
     consultants: consultants.data ?? [],
     actions: actions.data ?? [],
     allowedSettings,
@@ -472,7 +510,8 @@ export function AssistantCommandCenter({
               <button
                 className="text-accent-light"
                 onClick={() => {
-                  for (const q of [squads, streams, consultants, actions]) if (q.isError) void q.refetch()
+                  for (const q of [squads, openStreams, recentDone, consultants, actions])
+                    if (q.isError) void q.refetch()
                 }}
               >
                 Retry
@@ -493,10 +532,9 @@ export function AssistantCommandCenter({
           onCompletedChange={(preferences) =>
             setCompletedPreferences((current) => ({ ...current, [destination.id]: preferences }))
           }
-          workFailed={streams.isError}
           chatsLoading={consultants.isLoading}
-          workLoading={streams.isLoading}
-          loadFailed={consultants.isError || streams.isError}
+          workLoading={openStreams.isLoading}
+          loadFailed={consultants.isError || openStreams.isError}
           onPush={push}
         />
       )}
@@ -608,7 +646,6 @@ function SquadPreview({
   onPush,
   completed,
   onCompletedChange,
-  workFailed,
   chatsLoading,
   workLoading,
   loadFailed,
@@ -618,13 +655,17 @@ function SquadPreview({
   onPush: (d: CommandDestination) => void
   completed: CompletedPreferences
   onCompletedChange: (preferences: CompletedPreferences) => void
-  workFailed: boolean
   chatsLoading: boolean
   workLoading: boolean
   loadFailed: boolean
 }) {
   const typeNames = useAgentTypeNames()
-  const completedWork = recentlyCompletedWork(data.streams, id, completed.days)
+  // Its own bounded read: a 30-day period can hold more completions than the search lists load.
+  const completedQuery = useQuery(queries.squads.completedWorkStreamsSince(id, completedPeriodStart(completed.days)))
+  const completedWork = recentlyCompletedWork(completedQuery.data?.items ?? [], id, completed.days)
+  const completedCount = completedQuery.data?.hasMore ? completedQuery.data.totalCount : completedWork.length
+  const completedLoading = completedQuery.isLoading
+  const completedFailed = completedQuery.isError
   const squad = data.squads.find((s) => s.id === id)
   const chats = consultantConversations(data.consultants)
     .filter((a) => a.squadId === id)
@@ -707,7 +748,7 @@ function SquadPreview({
         >
           <ChevronRightIcon className={clsx('h-4 w-4 transition-transform', completed.expanded && 'rotate-90')} />
           Recently completed
-          {!workLoading && !workFailed && <span className="text-xs">{completedWork.length}</span>}
+          {!completedLoading && !completedFailed && <span className="text-xs">{completedCount}</span>}
         </button>
         {completed.expanded && (
           <div id="command-completed-work" className="space-y-2">
@@ -734,11 +775,14 @@ function SquadPreview({
                 }
               />
             ))}
-            {workLoading ? (
+            {completedLoading ? (
               <CommandRowsSkeleton label="Loading completed work" />
-            ) : workFailed ? (
+            ) : completedFailed ? (
               <p role="status" className="py-2 text-sm text-muted">
-                Completed work could not be loaded. Return to search to retry.
+                Completed work could not be loaded.{' '}
+                <button type="button" className="text-accent-light" onClick={() => void completedQuery.refetch()}>
+                  Retry
+                </button>
               </p>
             ) : (
               !completedWork.length && (
