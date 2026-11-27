@@ -2518,8 +2518,31 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   }
 
   /**
+   * The agents whose executions are this stream's work, by the rule
+   * `workStreamRuntimesSql` applies: the agents its flow bound to it, or, for a
+   * stream from before flows (no bindings), the agents listed on it.
+   */
+  async attributedAgentIds(): Promise<string[]> {
+    const bound = await db
+      .select({ agentId: workflowBindings.agentId })
+      .from(workflowBindings)
+      .where(eq(workflowBindings.workStreamId, this.id))
+    if (bound.length > 0) return bound.map((row) => row.agentId)
+    return this.agentIds ?? []
+  }
+
+  /**
    * Get aggregated metrics for this work stream.
    * Computes on-read from executions table.
+   *
+   * ## Which executions count
+   *
+   * The same ones as time worked (see `attributedAgentIds` and
+   * `workStreamRuntimesSql`): a persistent agent listed on a flow stream also
+   * works on other streams, so its executions are not this stream's tokens or
+   * cost. `duration.totalMs` is the stream's time worked itself, with its stale
+   * cap, so the two figures never disagree. Pass `runtime` when the caller has
+   * already computed it.
    *
    * ## Why this is not a plain SUM
    *
@@ -2539,10 +2562,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Casts are `bigint`: a cumulative session total above 2^31 overflows `int`
    * and makes the whole query throw.
    */
-  async getMetrics(): Promise<WorkStreamMetrics | null> {
-    if (!this.agentIds?.length) {
+  async getMetrics(options: { runtime?: WorkStreamRuntime } = {}): Promise<WorkStreamMetrics | null> {
+    const agentIds = await this.attributedAgentIds()
+    if (agentIds.length === 0) {
       return null
     }
+    const runtime = options.runtime ?? (await this.getRuntime())
 
     // The typed `TokenField` parameter is the signature boundary — an arbitrary
     // string is now a type error — and `field` is bound as a parameter on the
@@ -2572,21 +2597,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         totalExecutions: sql<number>`COUNT(*)`,
         completedExecutions: sql<number>`COUNT(*) FILTER (WHERE ${executions.status} = 'completed')`,
         failedExecutions: sql<number>`COUNT(*) FILTER (WHERE ${executions.status} = 'failed')`,
-        totalDurationMs: sql<number>`COALESCE(SUM(
-          CASE
-            WHEN ${executions.status} = 'queued' THEN 0
-            WHEN ${executions.endedAt} IS NOT NULL THEN
-              GREATEST(0, EXTRACT(EPOCH FROM (${executions.endedAt} - ${executions.startedAt})) * 1000)
-            WHEN ${executions.status} IN ('running', 'stopping') THEN
-              GREATEST(0, EXTRACT(EPOCH FROM (NOW() - ${executions.startedAt})) * 1000)
-            ELSE 0
-          END
-        ), 0)`,
         firstStartedAt: sql<string | null>`MIN(${executions.startedAt})`,
         lastEndedAt: sql<string | null>`MAX(${executions.endedAt})`,
       })
       .from(executions)
-      .where(inArray(executions.agentId, this.agentIds))
+      .where(inArray(executions.agentId, agentIds))
       .groupBy(executions.agentId)
 
     // No executions yet is zeroed metrics, NOT null: null means "this stream has
@@ -2602,7 +2617,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       executions: 0,
       completed: 0,
       failed: 0,
-      durationMs: 0,
     }
     let firstStartedAt: number | null = null
     let lastEndedAt: number | null = null
@@ -2617,7 +2631,6 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       totals.executions += Number(row.totalExecutions)
       totals.completed += Number(row.completedExecutions)
       totals.failed += Number(row.failedExecutions)
-      totals.durationMs += Number(row.totalDurationMs)
       if (row.firstStartedAt) {
         const at = new Date(row.firstStartedAt).getTime()
         if (firstStartedAt === null || at < firstStartedAt) firstStartedAt = at
@@ -2648,7 +2661,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         failed: totals.failed,
       },
       duration: {
-        totalMs: totals.durationMs,
+        totalMs: runtime.totalMs,
         firstStartedAt: firstStartedAt === null ? null : new Date(firstStartedAt).toISOString(),
         lastEndedAt: lastEndedAt === null ? null : new Date(lastEndedAt).toISOString(),
       },
@@ -2764,6 +2777,8 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  *   squad member, the owner) are not counted: their executions serve other work.
  * - A stream from before flows has no bindings, and its listed agents are the
  *   only record of who worked on it, so it keeps counting their executions.
+ *   `WorkStream.attributedAgentIds` applies the same rule for `getMetrics`;
+ *   change both together.
  *
  * How long each counts: from the moment it started running (`run_started_at`,
  * set when a runner claims it) to its end (now, while it runs), so time spent
