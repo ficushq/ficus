@@ -60,7 +60,7 @@ jobs:
   the locked `playwright-core` (`--with-deps`, so its fonts and libraries come
   with it) and runs its share with `bun scripts/run-rendered-checks.ts`. The
   plan balances the checks into at most five shards of about five minutes each,
-  using the rough `seconds` in the mapping. Within a shard the checks run one at
+  using each check's measured `seconds` in the mapping. Within a shard the checks run one at
   a time, because they share Vite's dependency cache and measure layout and
   motion that a busy machine would skew. Each check runs in its own process
   group and is killed with its browser after ten minutes; a failure, a timeout
@@ -70,12 +70,14 @@ jobs:
   selected nothing, or when every shard succeeded. A selected shard that was
   skipped or cancelled fails it.
 
-Running every check takes about 25 job-minutes, so a pull request runs only what
-it touches. Replayed over the 150 merges to `main` before this was added, a
-third of them selected no check, and the average was about 20 check-minutes,
-mostly because a change to `packages/shared` or a shared stylesheet reaches
-nearly every page. The wall-clock cost is one shard, about six minutes
-including installs, in parallel with the other lanes.
+Every check together takes about 16 minutes on a runner, which the plan splits
+into four shards of about four minutes, plus under a minute of installs each:
+about 21 job-minutes, and about five minutes of wall clock in parallel with the
+other lanes. A pull request runs only what it touches. Replayed over the 150
+merges to `main` before this was added, a third selected no check, and the
+average was about 9 check-minutes (about 12 job-minutes with installs), mostly
+because a change to `packages/shared` or a shared stylesheet reaches nearly
+every page.
 
 `test / gates` runs `apps/web/scripts/rendered-checks.test.ts`, which fails
 when a `check-*.ts` file is missing from the mapping, a mapped script no longer

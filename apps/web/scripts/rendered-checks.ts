@@ -9,8 +9,8 @@
  * CSS changing therefore selects every check that renders it, and a new import is covered the
  * moment it is added.
  *
- * `seconds` is the check's rough duration on a CI runner. It only balances the CI shards; a wrong
- * value makes a shard slower, never skips a check.
+ * `seconds` is the check's duration on a CI runner (rounded up to 5 from a full run on 27 November
+ * 2026). It only balances the CI shards; a wrong value makes a shard slower, never skips a check.
  *
  * Run them locally with `bun scripts/run-rendered-checks.ts` (see that file).
  */
@@ -30,57 +30,57 @@ export interface RenderedCheck {
 }
 
 export const RENDERED_CHECKS: readonly RenderedCheck[] = [
-  { script: 'check-activity-work.ts', fixture: 'scripts/fixtures/activity-work.tsx', seconds: 30 },
-  { script: 'check-composer-narrow.ts', fixture: 'scripts/fixtures/composer-narrow.tsx', seconds: 180 },
+  { script: 'check-activity-work.ts', fixture: 'scripts/fixtures/activity-work.tsx', seconds: 10 },
+  { script: 'check-composer-narrow.ts', fixture: 'scripts/fixtures/composer-narrow.tsx', seconds: 95 },
   {
     script: 'check-desktop-floating-windows.ts',
     fixture: 'scripts/fixtures/desktop-floating-windows.tsx',
-    seconds: 35,
+    seconds: 15,
   },
-  { script: 'check-desktop-history.ts', fixture: 'scripts/fixtures/desktop-history.tsx', seconds: 15 },
-  { script: 'check-desktop-modal.ts', fixture: 'scripts/fixtures/desktop-modal.tsx', seconds: 15 },
-  { script: 'check-feed-dismiss-layout.ts', fixture: 'scripts/fixtures/feed-dismiss.tsx', seconds: 20 },
-  { script: 'check-feed-updates.ts', fixture: 'scripts/fixtures/feed-updates.tsx', seconds: 50 },
+  { script: 'check-desktop-history.ts', fixture: 'scripts/fixtures/desktop-history.tsx', seconds: 10 },
+  { script: 'check-desktop-modal.ts', fixture: 'scripts/fixtures/desktop-modal.tsx', seconds: 5 },
+  { script: 'check-feed-dismiss-layout.ts', fixture: 'scripts/fixtures/feed-dismiss.tsx', seconds: 15 },
+  { script: 'check-feed-updates.ts', fixture: 'scripts/fixtures/feed-updates.tsx', seconds: 15 },
   {
     script: 'check-history-search-placement.ts',
     fixture: 'scripts/fixtures/history-search-placement.tsx',
-    seconds: 25,
+    seconds: 15,
   },
-  { script: 'check-integration-rows-layout.ts', fixture: 'scripts/fixtures/integration-rows.tsx', seconds: 55 },
-  { script: 'check-linear-integration-layout.ts', fixture: 'scripts/fixtures/linear-integration.tsx', seconds: 90 },
-  { script: 'check-live-list-motion.ts', fixture: 'scripts/fixtures/live-list-motion.tsx', seconds: 200 },
-  { script: 'check-local-bigbrain-layout.ts', fixture: 'scripts/fixtures/local-bigbrain.tsx', seconds: 35 },
-  { script: 'check-managed-bigbrain-layout.ts', fixture: 'scripts/fixtures/managed-bigbrain.tsx', seconds: 100 },
-  { script: 'check-markdown-prose-contrast.ts', fixture: 'scripts/fixtures/markdown-prose.tsx', seconds: 40 },
-  { script: 'check-mobile-touch-targets.ts', fixture: 'scripts/fixtures/mobile-touch-targets.tsx', seconds: 20 },
+  { script: 'check-integration-rows-layout.ts', fixture: 'scripts/fixtures/integration-rows.tsx', seconds: 30 },
+  { script: 'check-linear-integration-layout.ts', fixture: 'scripts/fixtures/linear-integration.tsx', seconds: 20 },
+  { script: 'check-live-list-motion.ts', fixture: 'scripts/fixtures/live-list-motion.tsx', seconds: 135 },
+  { script: 'check-local-bigbrain-layout.ts', fixture: 'scripts/fixtures/local-bigbrain.tsx', seconds: 15 },
+  { script: 'check-managed-bigbrain-layout.ts', fixture: 'scripts/fixtures/managed-bigbrain.tsx', seconds: 20 },
+  { script: 'check-markdown-prose-contrast.ts', fixture: 'scripts/fixtures/markdown-prose.tsx', seconds: 10 },
+  { script: 'check-mobile-touch-targets.ts', fixture: 'scripts/fixtures/mobile-touch-targets.tsx', seconds: 10 },
   {
     script: 'check-needs-you-notifications.ts',
     fixture: 'scripts/fixtures/needs-you-notifications.tsx',
-    seconds: 30,
+    seconds: 15,
   },
-  { script: 'check-phone-reach-guide.ts', fixture: 'scripts/fixtures/phone-reach.tsx', seconds: 45 },
-  { script: 'check-public-voice-setup.ts', fixture: 'scripts/fixtures/public-voice-setup.tsx', seconds: 20 },
-  { script: 'check-question-recommended.ts', fixture: 'scripts/fixtures/question-recommended.tsx', seconds: 90 },
-  { script: 'check-reply-suggestions-layout.ts', fixture: 'scripts/fixtures/reply-suggestions.tsx', seconds: 20 },
-  { script: 'check-sandbox-processes.ts', fixture: 'scripts/fixtures/sandbox-processes.tsx', seconds: 25 },
-  { script: 'check-spend-layout.ts', fixture: 'scripts/fixtures/spend.tsx', seconds: 15 },
-  { script: 'check-squad-cards.ts', fixture: 'scripts/fixtures/squad-cards.tsx', seconds: 200 },
-  { script: 'check-squad-chat-header-layout.ts', fixture: 'scripts/fixtures/squad-chat-header.tsx', seconds: 45 },
-  { script: 'check-squad-home-clarity.ts', fixture: 'scripts/fixtures/squad-home-clarity.tsx', seconds: 110 },
-  { script: 'check-storage-banner-layout.ts', fixture: 'scripts/fixtures/storage-banner.tsx', seconds: 40 },
-  { script: 'check-system-logs-layout.ts', fixture: 'scripts/fixtures/system-logs.tsx', seconds: 60 },
-  { script: 'check-teammates-typing-layout.ts', fixture: 'scripts/fixtures/teammates-typing.tsx', seconds: 20 },
-  { script: 'check-voice-progress.ts', fixture: 'scripts/fixtures/voice-progress.tsx', seconds: 10 },
+  { script: 'check-phone-reach-guide.ts', fixture: 'scripts/fixtures/phone-reach.tsx', seconds: 15 },
+  { script: 'check-public-voice-setup.ts', fixture: 'scripts/fixtures/public-voice-setup.tsx', seconds: 10 },
+  { script: 'check-question-recommended.ts', fixture: 'scripts/fixtures/question-recommended.tsx', seconds: 30 },
+  { script: 'check-reply-suggestions-layout.ts', fixture: 'scripts/fixtures/reply-suggestions.tsx', seconds: 15 },
+  { script: 'check-sandbox-processes.ts', fixture: 'scripts/fixtures/sandbox-processes.tsx', seconds: 15 },
+  { script: 'check-spend-layout.ts', fixture: 'scripts/fixtures/spend.tsx', seconds: 10 },
+  { script: 'check-squad-cards.ts', fixture: 'scripts/fixtures/squad-cards.tsx', seconds: 120 },
+  { script: 'check-squad-chat-header-layout.ts', fixture: 'scripts/fixtures/squad-chat-header.tsx', seconds: 15 },
+  { script: 'check-squad-home-clarity.ts', fixture: 'scripts/fixtures/squad-home-clarity.tsx', seconds: 35 },
+  { script: 'check-storage-banner-layout.ts', fixture: 'scripts/fixtures/storage-banner.tsx', seconds: 20 },
+  { script: 'check-system-logs-layout.ts', fixture: 'scripts/fixtures/system-logs.tsx', seconds: 25 },
+  { script: 'check-teammates-typing-layout.ts', fixture: 'scripts/fixtures/teammates-typing.tsx', seconds: 10 },
+  { script: 'check-voice-progress.ts', fixture: 'scripts/fixtures/voice-progress.tsx', seconds: 5 },
   {
     script: 'check-work-stream-dependencies-layout.ts',
     fixture: 'scripts/fixtures/work-stream-detail.tsx',
-    seconds: 40,
+    seconds: 25,
   },
-  { script: 'check-work-stream-detail-layout.ts', fixture: 'scripts/fixtures/work-stream-detail.tsx', seconds: 40 },
-  { script: 'check-work-stream-rows.ts', fixture: 'scripts/fixtures/work-stream-rows.tsx', seconds: 70 },
-  { script: 'check-work-stream-summaries.ts', fixture: 'scripts/fixtures/work-stream-summaries.tsx', seconds: 45 },
-  { script: 'check-workflow-review-brief.ts', fixture: 'scripts/fixtures/workflow-review-brief.tsx', seconds: 300 },
-  { script: 'check-workflow-review-chat.ts', fixture: 'scripts/fixtures/workflow-review-chat.tsx', seconds: 25 },
+  { script: 'check-work-stream-detail-layout.ts', fixture: 'scripts/fixtures/work-stream-detail.tsx', seconds: 15 },
+  { script: 'check-work-stream-rows.ts', fixture: 'scripts/fixtures/work-stream-rows.tsx', seconds: 50 },
+  { script: 'check-work-stream-summaries.ts', fixture: 'scripts/fixtures/work-stream-summaries.tsx', seconds: 15 },
+  { script: 'check-workflow-review-brief.ts', fixture: 'scripts/fixtures/workflow-review-brief.tsx', seconds: 105 },
+  { script: 'check-workflow-review-chat.ts', fixture: 'scripts/fixtures/workflow-review-chat.tsx', seconds: 10 },
 ]
 
 /**
