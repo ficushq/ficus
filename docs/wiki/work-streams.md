@@ -64,7 +64,9 @@ squad is busy. Four things keep that safe:
   handlers keep running; it does not close a JSON `POST` such as a
   create. The create route still disables its own per-request timer after authorization
   (as workspace transfers do; see [Request limits](request-limits.md)), as a defence
-  should Bun start applying the timer to such requests. A connection dropped by anything
+  should Bun start applying the timer to such requests, and `restoreExtendedIdleTimeout`
+  turns it back on when the handler returns, so the keep-alive connection is still
+  closed once it sits idle. A connection dropped by anything
   else on the path (a proxy, the network) is covered by the idempotency key and the CLI's
   retry with the same key.
 - **Lighter squad-box check.** Repository setup skips the full squad-box ensure (exposure
@@ -136,7 +138,11 @@ Two things keep reads bounded, and a third keeps slow writes from losing their a
   so every client gets the real result, and turns it back on before the response is
   written. That second step matters: Bun's per-request `timeout(request, 0)` lasts for
   the whole keep-alive connection, so leaving it off would keep that idle socket open
-  forever. A route that set its own idle timeout keeps it. The fix is in Core rather than
+  forever. A route that set its own idle timeout keeps it here; `restoreExtendedIdleTimeout`
+  (same file) turns an `extendIdleTimeout` timer back on when that handler returns, or, for
+  a workspace download, once its streamed body has been sent. Every restore is guarded: if
+  Bun throws because the client has already gone, Core logs it instead of letting it
+  replace the handler's own result or error. The fix is in Core rather than
   in the CLI (which could send `{}` instead) so that browsers, scripts and older CLIs are
   covered too, and no client depends on how Bun treats request bodies.
 

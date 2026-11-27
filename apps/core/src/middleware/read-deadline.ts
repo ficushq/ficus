@@ -37,6 +37,13 @@ export function readDeadlineMessage(seconds: number): string {
 /** Requests whose route set its own idle timeout: the read deadline leaves them alone. */
 const ownIdleTimeout = new WeakSet<Request>()
 
+/**
+ * Requests that turned their idle timer off or up through {@link extendIdleTimeout},
+ * and when {@link restoreExtendedIdleTimeout} turns it back on: once the handler
+ * returns, or once the response body has been sent.
+ */
+const extendedIdleTimeouts = new WeakMap<Request, { untilBodySent: boolean }>()
+
 type IdleTimeoutServer = { timeout(request: Request, seconds: number): void }
 
 /** The part of a Hono context these helpers use, so any route's context fits. */
@@ -56,9 +63,17 @@ function bunServer(c: RequestContext): IdleTimeoutServer | undefined {
  * listener's 30 seconds, for routes that legitimately work longer before they
  * answer (workspace transfers, work stream creation). The read deadline then
  * does not answer for them either.
+ *
+ * Bun applies `server.timeout(request, seconds)` to the whole keep-alive socket,
+ * not just this request, so {@link restoreExtendedIdleTimeout} puts the listener's
+ * timeout back once the handler returns. A route whose response body can go quiet
+ * for longer than that timeout while it streams (a download) passes
+ * `untilBodySent`, and the timer comes back only once the body has been sent or
+ * the client has gone.
  */
-export function extendIdleTimeout(c: RequestContext, seconds: number): void {
+export function extendIdleTimeout(c: RequestContext, seconds: number, options: { untilBodySent?: boolean } = {}): void {
   exemptFromReadDeadline(c)
+  extendedIdleTimeouts.set(c.req.raw, { untilBodySent: options.untilBodySent ?? false })
   bunServer(c)?.timeout(c.req.raw, seconds)
 }
 
@@ -70,6 +85,88 @@ export function exemptFromReadDeadline(c: RequestContext): void {
 const READ_METHODS = new Set(['GET', 'HEAD'])
 
 /**
+ * Turn the listener's idle timer back on for a request. Bun may throw here for a
+ * request whose client has already gone; that is logged rather than allowed to
+ * replace the handler's own result or error.
+ */
+function restoreIdleTimer(server: IdleTimeoutServer, request: Request, seconds: number): void {
+  try {
+    server.timeout(request, seconds)
+  } catch (error) {
+    log.warn(`Could not restore the idle timer for ${request.method} ${new URL(request.url).pathname}:`, error)
+  }
+}
+
+/**
+ * The same response, with a body that calls `restore` once it has been read to
+ * the end, has failed, or has been cancelled (the client went away). It runs
+ * before the end of the body is handed to Bun, while the request still owns its
+ * socket: Bun ignores a timeout set after it has finished the response.
+ */
+function restoreWhenBodySent(response: Response, body: ReadableStream<Uint8Array>, restore: () => void): Response {
+  let restored = false
+  const restoreOnce = () => {
+    if (restored) return
+    restored = true
+    restore()
+  }
+  const reader = body.getReader()
+  const tracked = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let chunk: Awaited<ReturnType<typeof reader.read>>
+      try {
+        chunk = await reader.read()
+      } catch (error) {
+        restoreOnce()
+        controller.error(error)
+        return
+      }
+      if (chunk.done) {
+        restoreOnce()
+        controller.close()
+        return
+      }
+      controller.enqueue(chunk.value)
+    },
+    cancel(reason) {
+      restoreOnce()
+      return reader.cancel(reason)
+    },
+  })
+  return new Response(tracked, response)
+}
+
+/**
+ * Put the listener's idle timeout back on a request whose route turned it off or
+ * up with {@link extendIdleTimeout}. Without this, every keep-alive connection that
+ * once made such a request would never be closed for idleness.
+ *
+ * The timer comes back once the handler returns, before the response is written,
+ * or, for a route that asked for `untilBodySent`, once its response body has been
+ * sent. The local-app proxy ({@link exemptFromReadDeadline}) manages its own.
+ */
+export function restoreExtendedIdleTimeout(options: { idleTimeoutSeconds?: number } = {}): MiddlewareHandler {
+  const idleTimeoutSeconds = options.idleTimeoutSeconds ?? CORE_IDLE_TIMEOUT_SECONDS
+  return async (c, next) => {
+    let answered = false
+    try {
+      await next()
+      answered = true
+    } finally {
+      const extension = extendedIdleTimeouts.get(c.req.raw)
+      const server = extension ? bunServer(c) : undefined
+      if (extension && server) {
+        const restore = () => restoreIdleTimer(server, c.req.raw, idleTimeoutSeconds)
+        // Bun sends no body for a HEAD, so it would never be read to the end.
+        const body = answered && extension.untilBodySent && c.req.method !== 'HEAD' ? c.res.body : null
+        if (body) c.res = restoreWhenBodySent(c.res, body, restore)
+        else restore()
+      }
+    }
+  }
+}
+
+/**
  * Keep Bun's idle timer off a write that carries no body (the CLI's pause, resume,
  * cancel and reopen, or a body-less DELETE) while its handler runs, so a slow
  * mutation answers with its real result instead of a dropped socket. That is how
@@ -79,7 +176,8 @@ const READ_METHODS = new Set(['GET', 'HEAD'])
  * The timer comes back once the handler returns, before the response is written:
  * `server.timeout(request, 0)` lasts for the whole keep-alive socket, so leaving it
  * off would let that idle connection stay open forever. A route that set its own
- * idle timeout ({@link extendIdleTimeout}, {@link exemptFromReadDeadline}) keeps it.
+ * idle timeout ({@link extendIdleTimeout}, {@link exemptFromReadDeadline}) keeps it
+ * here; {@link restoreExtendedIdleTimeout} restores an extended one.
  */
 export function holdIdleTimerForBodylessWrites(options: { idleTimeoutSeconds?: number } = {}): MiddlewareHandler {
   const idleTimeoutSeconds = options.idleTimeoutSeconds ?? CORE_IDLE_TIMEOUT_SECONDS
@@ -91,7 +189,7 @@ export function holdIdleTimerForBodylessWrites(options: { idleTimeoutSeconds?: n
     try {
       await next()
     } finally {
-      if (!ownIdleTimeout.has(c.req.raw)) server.timeout(c.req.raw, idleTimeoutSeconds)
+      if (!ownIdleTimeout.has(c.req.raw)) restoreIdleTimer(server, c.req.raw, idleTimeoutSeconds)
     }
   }
 }

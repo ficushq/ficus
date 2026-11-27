@@ -837,7 +837,9 @@ export const squadsRouter = new Hono()
       return c.json({ error: 'archive must be tar.gz or zip' }, 400)
     }
     const range = c.req.header('range')
-    extendIdleTimeout(c, 0)
+    // A streamed archive can go quiet while the box packs a large file, so the timer
+    // stays off until the whole body has been sent.
+    extendIdleTimeout(c, 0, { untilBodySent: true })
 
     // Remote runtimes: stream through the sandbox's raw /download route
     const client = await getSquadClient(squad.id)
