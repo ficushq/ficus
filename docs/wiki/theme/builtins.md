@@ -171,6 +171,10 @@ The gate checks every text/UI-accent/focus/scrollbar/graph-link pair per concret
 
 These are defined-token-pair checks, not certification of every rendered page, text opacity utility, terminal SGR combination or third-party chart scheme.
 
+### Markdown prose
+
+Markdown on the app's own surfaces (chat, descriptions, handoffs, wait messages and review documents) does not use the typography plugin's fixed gray palette or `dark:prose-invert`. `MarkdownContent` adds `prose-themed`, whose `--tw-prose-*` colours in `design-system.css` are theme tokens: body text is the ink the caller sets on or around the markdown (`text-primary`, `text-secondary` or `text-muted`), headings, bold, links and quotes are `--color-text-primary`, and inline code is `--color-code-text` on `--color-code-bg`. Every one of those is a gated text pair, so prose follows the gate, and it no longer depends on the `dark` class. Under the old palette the mid-tone BigBrain ports fell below 4.5:1 (moegiiro body 3.78, asagiiro 3.87, yamabukiiro 4.28), and any page without the `dark` class drew near-black prose on the dark built-ins (about 1.0–1.5:1). `src/theme/proseColors.test.ts` checks the mapping for every palette, and `scripts/check-markdown-prose-contrast.ts` measures the rendered prose (body, heading, bold, link, inline code, blockquote, list item) in Chromium for every built-in; `NO_DARK_CLASS=1` repeats it without the `dark` class. User bubbles keep `prose-on-accent`.
+
 ## Cold-load matrix
 
 The shipped inline script contains a minimal surface map, checked against the registry and actual CSS, so missing/corrupt/stale snapshots and an OS scheme flip cannot paint a default white surface over a stored dark/recolored theme. A matching state-keyed snapshot still wins. Unknown IDs retain the Ficus fallback. Unified themes omit data-appearance and remove the dark migration class.
