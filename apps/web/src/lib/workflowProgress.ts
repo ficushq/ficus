@@ -1,6 +1,7 @@
 import {
   activeWorkflowAttempts,
   activityAgentLabel,
+  isEarlierWorkflowStep,
   workStreamSlotWaitLabel,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -8,6 +9,7 @@ import {
   type WorkStreamSlotWait,
   type WorkStreamWait,
 } from '@ficus/shared'
+import type { WorkStreamViewer } from './workStreamRuntime'
 
 /**
  * The compact Progress list in the work stream modal.
@@ -16,7 +18,9 @@ import {
  * each step's forward outcomes (`next` and `parallel`). Each step appears once and shows its latest
  * state, so:
  * - a rework edge (`returnTo`) is not a step of its own: the step it sends work back to shows
- *   "Returned for rework" while it runs again;
+ *   "Returned for rework" while it runs again, and completed steps after it that the work will pass
+ *   through again read "Runs again" rather than "Done" (unless the correction goes straight back to
+ *   the step that asked for it, which skips the steps in between);
  * - a loop (an outcome back to a step already listed) does not repeat that step;
  * - parallel branches are listed one after another, each marked as running in parallel, and the
  *   list continues at their join;
@@ -37,7 +41,10 @@ export interface WorkflowProgressStep {
   state: WorkflowProgressState
   /** Plain words for the state, shown beside the step. */
   label: string
-  /** Who does the step: an agent role, or a person or decision model for the non-agent kinds. */
+  /**
+   * Who does the step: an agent role, the decision model, or for a human approval "You" when the
+   * viewer decides it, else the assigned reviewers by name, else "Reviewer".
+   */
   who: string
   /** The agent bound to the step's latest attempt, when one is. */
   agentId?: string
@@ -57,8 +64,12 @@ export interface WorkflowProgressContext {
   attemptAgents: Record<string, string>
   paused?: boolean
   slotWait?: WorkStreamSlotWait
-  /** The stream has assigned reviewers, which decide its assigned-reviewers approvals. */
-  hasAssignedReviewers?: boolean
+  /** The stream's assigned reviewers (user IDs), who decide its assigned-reviewers approvals. */
+  assignedReviewerIds?: string[]
+  /** People with review permission in the squad, to name approvers; absent while unknown. */
+  reviewers?: Array<{ id: string; name: string }>
+  /** Who is looking; undefined while their permissions load, which never says "You". */
+  viewer?: WorkStreamViewer
 }
 
 /** `design-approval` → `Design approval`, unless the step has a display name. */
@@ -110,11 +121,77 @@ export function workflowListOrder(
   return walk(entry, undefined, false) ? order : null
 }
 
-function stepWho(step: WorkflowStep, run: WorkflowRun, context: WorkflowProgressContext): string {
-  if (step.kind === 'human-approval')
-    return step.approver === 'assigned-reviewers' && context.hasAssignedReviewers ? 'Assigned reviewer' : 'Reviewer'
+/** "Ana", "Ana or Ben", "Ana, Ben or Cy", "Ana, Ben or 2 others": any one of them decides. */
+function anyOf(names: string[], unnamed = 0): string {
+  const shown = names.length > 3 || (names.length === 3 && unnamed > 0) ? names.slice(0, 2) : names
+  const others = names.length - shown.length + unnamed
+  if (others > 0) return `${shown.join(', ')} or ${others} ${others === 1 ? 'other' : 'others'}`
+  return shown.length > 1 ? `${shown.slice(0, -1).join(', ')} or ${shown.at(-1)}` : shown[0]!
+}
+
+/**
+ * Who decides a human approval, mirroring Core's mayDecideFlowGate: anyone with review permission,
+ * or for an assigned-reviewers step on a stream with assigned reviewers, one of them. "You" is said
+ * only before the decision (a finished approval records no decider) and only to a user who may decide.
+ */
+function approverWho(step: WorkflowStep, state: WorkflowProgressState, context: WorkflowProgressContext): string {
+  const assigned = context.assignedReviewerIds ?? []
+  const limited = step.kind === 'human-approval' && step.approver !== 'reviewers' && assigned.length > 0
+  const viewer = context.viewer
+  const userId = viewer?.identity?.type === 'user' ? viewer.identity.userId : undefined
+  const viewerDecides = !!userId && viewer!.can('workstreams:review') && (!limited || assigned.includes(userId))
+  if (viewerDecides && state !== 'done' && state !== 'not-run') return 'You'
+  const nameOf = (id: string) => context.reviewers?.find((person) => person.id === id)?.name
+  if (limited) {
+    const names = assigned.map(nameOf).filter((name): name is string => !!name)
+    return names.length ? anyOf(names, assigned.length - names.length) : 'Assigned reviewer'
+  }
+  // Anyone with review permission decides; name them only when there is exactly one.
+  return context.reviewers?.length === 1 ? context.reviewers[0]!.name : 'Reviewer'
+}
+
+function stepWho(
+  step: WorkflowStep,
+  state: WorkflowProgressState,
+  run: WorkflowRun,
+  context: WorkflowProgressContext
+): string {
+  if (step.kind === 'human-approval') return approverWho(step, state, context)
   if (step.kind === 'decision') return 'Decision model'
   return activityAgentLabel(run.definition.participants[step.participant]?.agentTypeId ?? null)
+}
+
+/**
+ * Steps the work will pass through again: those after a step it has gone back to (a
+ * running or queued attempt) in the listing order and reachable from it along forward outcomes. When
+ * an open return sends the corrected work straight back to the step that asked for it, the steps in
+ * between are skipped, so the count starts from that requester instead. Only a completed step's
+ * state changes for it: "Runs again" rather than "Done".
+ */
+function stepsRunningAgain(
+  run: WorkflowRun,
+  order: Array<{ id: string }>,
+  context: WorkflowProgressContext
+): Set<string> {
+  const again = new Set<string>()
+  if (['done', 'canceled'].includes(context.status)) return again
+  const position = new Map(order.map((entry, index) => [entry.id, index]))
+  const restarts = [
+    ...activeWorkflowAttempts(run).map((attempt) => attempt.stepId),
+    ...(run.pendingStarts ?? []).map((pending) => pending.stepId),
+  ]
+  for (const stepId of new Set(restarts)) {
+    const obligation = run.returns
+      .slice()
+      .reverse()
+      .find((entry) => entry.status === 'open' && entry.targetStepId === stepId)
+    const from = obligation?.resumeAt ?? stepId
+    if (obligation) again.add(obligation.resumeAt)
+    const start = position.get(from)
+    if (start === undefined) continue
+    for (const entry of order.slice(start + 1)) if (isEarlierWorkflowStep(run, from, entry.id)) again.add(entry.id)
+  }
+  return again
 }
 
 /** Whether this attempt was started because a later step sent the work back. */
@@ -128,7 +205,8 @@ function isRework(run: WorkflowRun, attempt: WorkflowAttempt): boolean {
 function stepState(
   step: WorkflowStep,
   run: WorkflowRun,
-  context: WorkflowProgressContext
+  context: WorkflowProgressContext,
+  runsAgain: ReadonlySet<string> = new Set()
 ): Pick<WorkflowProgressStep, 'state' | 'label' | 'agentId'> {
   const pass = run.attempts.slice(run.attemptEpoch ?? 0).filter((attempt) => attempt.stepId === step.id)
   const latest = pass.at(-1)
@@ -165,7 +243,10 @@ function stepState(
     .reverse()
     .find((entry) => entry.join === step.id && entry.status === 'open')
   if (join) return withAgent('waiting', `Waiting for branches (${join.arrived.length}/${join.branches.length})`)
-  if (run.completedStepIds.includes(step.id)) return withAgent('done', 'Done')
+  if (run.completedStepIds.includes(step.id)) {
+    if (!runsAgain.has(step.id)) return withAgent('done', 'Done')
+    return withAgent('upcoming', latest?.status === 'returned' ? 'Sent back; runs again' : 'Runs again')
+  }
   if (['done', 'canceled'].includes(context.status)) return withAgent('not-run', 'Not run')
   if (latest?.status === 'returned') return withAgent('upcoming', 'Sent back; runs again')
   return withAgent('upcoming', 'Upcoming')
@@ -173,14 +254,18 @@ function stepState(
 
 export function workflowProgress(run: WorkflowRun, context: WorkflowProgressContext): WorkflowProgress {
   const steps = run.definition.steps
-  const describe = (step: WorkflowStep, parallel = false): WorkflowProgressStep => ({
-    id: step.id,
-    name: workflowStepDisplayName(step),
-    who: stepWho(step, run, context),
-    ...stepState(step, run, context),
-    ...(parallel ? { parallel } : {}),
-  })
   const order = workflowListOrder(steps, run.definition.entry)
+  const runsAgain = order ? stepsRunningAgain(run, order, context) : new Set<string>()
+  const describe = (step: WorkflowStep, parallel = false): WorkflowProgressStep => {
+    const state = stepState(step, run, context, runsAgain)
+    return {
+      id: step.id,
+      name: workflowStepDisplayName(step),
+      who: stepWho(step, state.state, run, context),
+      ...state,
+      ...(parallel ? { parallel } : {}),
+    }
+  }
   if (!order) {
     const described = steps.map((step) => describe(step))
     return {

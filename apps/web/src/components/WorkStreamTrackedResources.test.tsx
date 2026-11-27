@@ -109,6 +109,7 @@ async function renderTracked<T>(
   options: {
     view?: TrackedResourcesView
     canUpdate?: boolean
+    part?: 'all' | 'list' | 'add'
     respond?: (call: Call, dom: Awaited<ReturnType<typeof acquireDomHarness>>) => Response | undefined
   },
   inspect: (context: {
@@ -146,7 +147,11 @@ async function renderTracked<T>(
     await dom.act(async () =>
       rendered.root.render(
         <QueryClientProvider client={cache}>
-          <WorkStreamTrackedResources workStreamId="ws-1" canUpdate={options.canUpdate ?? true} />
+          <WorkStreamTrackedResources
+            workStreamId="ws-1"
+            canUpdate={options.canUpdate ?? true}
+            part={options.part ?? 'all'}
+          />
         </QueryClientProvider>
       )
     )
@@ -213,6 +218,19 @@ test('hides every update affordance and shows the empty state without workstream
     expect(dom.window.document.body.textContent).not.toContain('Nothing tracked')
     expect(buttonWithLabel(dom.window.document, 'Stop tracking acme/api#12')).toBeUndefined()
     expect(dom.window.document.querySelector('input')).toBeNull()
+  })
+})
+
+test('the add part shows its heading and form only to someone who can track a link', async () => {
+  // A read-only viewer would otherwise see the heading with nothing under it, tracked links or not.
+  for (const resources of [[], [trackedIssue]])
+    await renderTracked({ view: view({ resources }), canUpdate: false, part: 'add' }, ({ dom }) => {
+      expect(dom.window.document.body.textContent).toBe('')
+    })
+  await renderTracked({ view: view({ resources: [] }), part: 'add' }, ({ dom }) => {
+    const { document } = dom.window
+    expect(document.querySelector('h3')!.textContent).toBe('Track an issue, PR or alert')
+    expect(document.querySelector('input[aria-label="Link to track"]')).not.toBeNull()
   })
 })
 
