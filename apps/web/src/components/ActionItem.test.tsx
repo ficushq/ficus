@@ -1950,6 +1950,16 @@ describe('ActionItem read-only workflow gate', () => {
     expect(text).not.toContain('do not have permission')
   })
 
+  test('names the owner or an admin when no assigned reviewer is active', async () => {
+    const pending = gate('assigned-reviewers')
+    const text = await cardText(
+      { ...pending, data: { ...pending.data, noActiveAssignedReviewer: true } as WorkStreamActionData },
+      true
+    )
+    expect(text).toContain('Only an admin or the owner with squad review permission can decide.')
+    expect(text).not.toContain('Only the reviewers assigned')
+  })
+
   test('says a viewer without review permission needs it, whoever the gate is for', async () => {
     for (const approver of ['reviewers', 'assigned-reviewers'] as const)
       expect(await cardText(gate(approver), false)).toContain('You need review permission in this squad to decide.')
@@ -1964,9 +1974,21 @@ describe('ActionItem read-only workflow gate', () => {
     }
   })
 
-  test('shows no notice to a viewer who may decide', async () => {
+  test.each(['owner', 'admin'] as const)('explains why the %s can decide and prompts reassignment', async (basis) => {
+    const pending = { ...gate('assigned-reviewers', true), workflowGateFallbackBasis: basis }
+    const text = await cardText(pending, true)
+    expect(text).toContain(
+      `No active assigned reviewer; you can decide as ${basis === 'owner' ? 'the owner' : 'an admin'}.`
+    )
+    expect(text).toContain('Assign an active reviewer to this work stream.')
+    expect(text).not.toContain('Only the reviewers assigned')
+  })
+
+  test('shows no fallback notice when an active assigned reviewer can decide', async () => {
     const text = await cardText(gate('assigned-reviewers', true), true)
     expect(text).toContain('Review')
+    expect(text).not.toContain('No active assigned reviewer')
+    expect(text).not.toContain('Assign an active reviewer')
     expect(text).not.toContain('Only the reviewers assigned')
     expect(text).not.toContain('do not have permission')
   })

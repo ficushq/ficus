@@ -12,7 +12,7 @@ import {
   workStreamWaitNeedsHuman,
 } from './status-presentation'
 import type { WorkStream, WorkStreamWait } from './types'
-import { mayDecideWorkflowGate, workflowGateOfWait } from './workflow-gate-deciders'
+import { mayDecideWorkflowGate, workflowGateFallbackForViewer, workflowGateOfWait } from './workflow-gate-deciders'
 import { isWorkflowHumanGateWait } from './workflow-review-waits'
 
 /**
@@ -86,8 +86,12 @@ export interface WorkStreamViewer {
   identity?: { type: string; userId?: string }
 }
 
-/** The parts of a stream the viewer rules read: its open waits, delivery and assigned reviewers. */
-export type WorkStreamViewerFacts = Pick<WorkStream, 'openWaits' | 'delivery' | 'assignedReviewerIds'>
+/** The parts of a stream the viewer rules read for waits and reviewer eligibility. */
+export type WorkStreamViewerFacts = Pick<
+  WorkStream,
+  'openWaits' | 'delivery' | 'assignedReviewerIds' | 'inactiveAssignedReviewerIds'
+> &
+  Partial<Pick<WorkStream, 'requestingUserId'>>
 
 /** What a person is being waited on for. */
 export type PersonWaitKind = 'answer' | 'review' | 'approval' | 'blocker'
@@ -130,7 +134,8 @@ function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream
       viewer.identity,
       viewer.can('workstreams:review'),
       ws.assignedReviewerIds,
-      workflowGateOfWait(wait)
+      workflowGateOfWait(wait),
+      wait.workflowGateApprover === 'assigned-reviewers' ? workflowGateFallbackForViewer(ws, viewer.can) : undefined
     )
   return mayRespondToWorkStreamWaits((permission) => viewer.can(permission))
 }

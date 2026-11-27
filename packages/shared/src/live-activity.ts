@@ -119,7 +119,7 @@ type SnapshotSource = Pick<
   | 'openWaits'
   | 'updatedAt'
 > &
-  Partial<Pick<WorkStream, 'assignedReviewerIds'>>
+  Partial<Pick<WorkStream, 'assignedReviewerIds' | 'inactiveAssignedReviewerIds' | 'requestingUserId'>>
 
 /**
  * Who the snapshot belongs to, for its "waiting on you" count. The Live Activity and widget are

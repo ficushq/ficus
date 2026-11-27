@@ -1,9 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WorkStream } from '@ficus/shared'
+import {
+  WORKFLOW_GATE_FALLBACK_ELIGIBILITY,
+  workflowGateHasNoActiveAssignedReviewer,
+  type WorkStream,
+} from '@ficus/shared'
 import { client } from '../api/clientInstance'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
+
+/** Warn only on an open stream with an assigned-reviewer gate. Only editors get setup directions. */
+export function NoActiveReviewerNotice({
+  stream,
+  hasAssignedReviewerGate,
+  canUpdate,
+}: {
+  stream: WorkStream
+  hasAssignedReviewerGate: boolean
+  canUpdate: boolean
+}) {
+  if (!hasAssignedReviewerGate || stream.status === 'done' || stream.status === 'canceled') return null
+  if (!workflowGateHasNoActiveAssignedReviewer(stream.assignedReviewerIds, stream.inactiveAssignedReviewerIds))
+    return null
+  return (
+    <p
+      role="status"
+      aria-label="No active assigned reviewer"
+      className="rounded border border-th-border p-3 text-xs text-status-warning-700 dark:text-status-warning-400"
+    >
+      No assigned reviewer of this work stream is still active. {WORKFLOW_GATE_FALLBACK_ELIGIBILITY}{' '}
+      {canUpdate
+        ? 'Assign an active reviewer under Workflow, then Manage workflow.'
+        : 'Ask a work stream editor to assign an active reviewer.'}
+    </p>
+  )
+}
 
 export function WorkStreamReviewers({ stream }: { stream: WorkStream }) {
   if (stream.status === 'done' || stream.status === 'canceled') return null
@@ -22,6 +53,8 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
     },
   })
   const ids = stream.assignedReviewerIds ?? []
+  // The stream's NoActiveReviewerNotice carries the warning; the list only marks who is inactive.
+  const inactive = stream.inactiveAssignedReviewerIds ?? []
   return (
     <div className="space-y-2 text-sm" aria-label="Assigned reviewers">
       <div className="font-medium">Assigned reviewers</div>
@@ -31,7 +64,10 @@ function ActiveWorkStreamReviewers({ stream }: { stream: WorkStream }) {
       </p>
       {ids.map((id) => (
         <div key={id} className="flex items-center justify-between gap-2">
-          <span>{people.find((person) => person.id === id)?.name ?? 'Unavailable reviewer'}</span>
+          <span>
+            {people.find((person) => person.id === id)?.name ?? 'Unavailable reviewer'}
+            {inactive.includes(id) && <span className="text-muted"> · no longer active</span>}
+          </span>
           {can('workstreams:update') && (
             <button
               type="button"

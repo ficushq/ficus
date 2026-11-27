@@ -41,7 +41,7 @@ definition.steps.push({
   name: 'Staging design review',
   instructions: 'Review the staging design before implementation starts.',
   output: 'Decision.',
-  approver: 'reviewers',
+  approver: mode === 'stale-reviewers' ? 'assigned-reviewers' : 'reviewers',
   outcomes: { approved: { next: 'second' }, retry: { returnTo: 'execute', afterRework: 'return-to-requester' } },
 })
 definition.steps.push({
@@ -276,7 +276,10 @@ const stream = {
   title: 'Staging migration design',
   status: 'active',
   agentIds: [],
-  assignedReviewerIds: [],
+  assignedReviewerIds: mode === 'stale-reviewers' ? ['inactive-reviewer'] : [],
+  ...(mode === 'stale-reviewers'
+    ? { inactiveAssignedReviewerIds: ['inactive-reviewer'], requestingUserId: 'synthetic-reviewer' }
+    : {}),
   metadata: {},
   openWaits: [gate, ...blockers],
 } as unknown as WorkStream

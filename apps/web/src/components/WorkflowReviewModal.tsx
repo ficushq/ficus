@@ -883,6 +883,7 @@ function DecisionForm({
           {decisionNotesHint(gate.step, gate.outcomes)}
         </p>
         <ReviewBlockers gate={gate} />
+        <GateReviewersNotice gate={gate} />
         <RevisionNotice revisions={revisions} />
       </div>
       <div className={clsx(pinned ? 'grid shrink-0 grid-cols-2 gap-2' : 'space-y-2 pt-2')}>
@@ -958,6 +959,7 @@ function DecisionSheet(state: DecisionState) {
             )}
           </div>
           <ReviewBlockers gate={gate} />
+          <GateReviewersNotice gate={gate} />
           <RevisionNotice revisions={state.revisions} />
           <ApprovalStatement gate={gate} collapsed />
           <div className="grid grid-cols-2 gap-2">
@@ -1082,6 +1084,7 @@ function ReadOnlyDecision({
       <p className="text-sm font-medium text-primary">Awaiting a decision</p>
       {gate.readOnlyReason && <p className="text-xs text-muted">{gate.readOnlyReason}</p>}
       <ReviewBlockers gate={gate} />
+      <GateReviewersNotice gate={gate} />
       <RevisionNotice revisions={revisions} />
       <ApprovalStatement gate={gate} />
       <ul className="space-y-1 pt-1 text-xs text-secondary">
@@ -1220,6 +1223,25 @@ export function WorkflowReviewRoute() {
   const { workStreamId = '' } = useParams<{ workStreamId: string }>()
   const [params] = useSearchParams()
   return <Navigate to={workflowReviewPath(workStreamId, params.get('wait') ?? undefined)} replace />
+}
+
+/**
+ * When none of the stream's assigned reviewers is still active: says why this viewer may decide
+ * (as the owner or an admin), or who can, and asks for an active reviewer to be assigned.
+ */
+function GateReviewersNotice({ gate }: { gate: HumanGateContext }) {
+  if (!gate.noActiveAssignedReviewer) return null
+  return (
+    <p
+      role="note"
+      aria-label="Assigned reviewers"
+      className="text-xs text-status-warning-700 dark:text-status-warning-400"
+    >
+      {gate.fallbackNote
+        ? `${gate.fallbackNote} Assign an active reviewer to this work stream.`
+        : 'Its assigned reviewers are no longer active. Ask a work stream editor to assign an active reviewer.'}
+    </p>
+  )
 }
 
 /** Blockers remain visible to readers as well as designated deciders. */

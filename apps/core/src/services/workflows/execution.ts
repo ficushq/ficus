@@ -2,7 +2,7 @@ import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
 import { deliveryInstructionsForFlow } from './completion-prompt'
 import { completionDeliveryOwner } from '../integrations/outputs/routing-audience'
-import { isWorkflowReviewer } from './reviewers'
+import { isWorkflowReviewer, workflowGateFallbackFor } from './reviewers'
 import {
   attemptLimitResolutionHint,
   attemptLimitWaitMessage,
@@ -77,7 +77,7 @@ import {
   stackedDependencyNotice,
   WorkStreamStackedDeliveryHoldError,
 } from '../work-streams/dependency-edges'
-import { mayDecideWorkflowGate, resolveBranchChangeRequest } from '@ficus/shared'
+import { mayDecideWorkflowGate, resolveBranchChangeRequest, type WorkflowGateFallback } from '@ficus/shared'
 import { flowWorkerName } from './worker-name'
 import { endedAgentAttempts, stopLeftoversForEndedAttempts } from '../sandbox/leftover-processes'
 
@@ -100,16 +100,19 @@ export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: numbe
 
 /**
  * Whether a person may decide a human approval step: review permission, and for a gate limited to
- * assigned reviewers, being one of them. `canReview` is {@link isWorkflowReviewer} for the squad.
- * The rule itself is the shared `mayDecideWorkflowGate`, which every client shows.
+ * assigned reviewers, being one of them, or when none of them is still active, the stream's
+ * requester or an admin. `canReview` is {@link isWorkflowReviewer} for the squad and `fallback` is
+ * {@link workflowGateFallbackFor}; without it the fallback never applies. The rule itself is the
+ * shared `mayDecideWorkflowGate`, which every client shows.
  */
 export function mayDecideFlowGate(
   identity: Identity,
   canReview: boolean,
   stream: Pick<Stream, 'assignedReviewerIds'>,
-  step: Pick<WorkflowStep, 'kind'> & { approver?: string }
+  step: Pick<WorkflowStep, 'kind'> & { approver?: string },
+  fallback?: WorkflowGateFallback
 ): boolean {
-  return mayDecideWorkflowGate(identity, canReview, stream.assignedReviewerIds, step)
+  return mayDecideWorkflowGate(identity, canReview, stream.assignedReviewerIds, step, fallback)
 }
 
 /** A paused stream takes no handoffs (only revisions), and a finished one takes nothing. */
@@ -548,6 +551,9 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   const canRevise = await hasPermission(identity, 'workstreams:revise-flow', streamBefore.squadId)
   const canRespond = await hasPermission(identity, 'workstreams:respond', streamBefore.squadId)
   const canReview = identity.type === 'user' && (await isWorkflowReviewer(identity.userId, streamBefore.squadId))
+  // Read before the transaction, from the stream as it was: a reviewer assigned since is not in
+  // this inactive list, so the fallback fails closed rather than outliving the reassignment.
+  const gateFallback = canReview ? await workflowGateFallbackFor(identity, streamBefore) : undefined
   const canUpdate = await hasPermission(identity, 'workstreams:update', streamBefore.squadId)
   // A human who may approve delivery (finishFlow) may also send it back.
   const canDecideDelivery = identity.type === 'user' && (canRespond || canUpdate)
@@ -655,7 +661,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         if (identity.type !== 'user' || !canReview)
           throw new WorkflowError('A person with review permission must choose this outcome', 403)
       } else if (step?.kind === 'human-approval') {
-        if (!mayDecideFlowGate(identity, canReview, stream, step))
+        if (!mayDecideFlowGate(identity, canReview, stream, step, gateFallback))
           throw new WorkflowError('This step requires its designated human approver', 403)
       } else if (identity.type === 'agent' && !isAttemptAgent(run, command.attemptId, identity))
         throw new WorkflowError('Only the active participant can advance this attempt', 403)

@@ -13,7 +13,7 @@ import { WorkStream } from '../../entities/WorkStream'
 import { hasPermission, type Identity } from '../rbac'
 import { listOpenWaits } from '../work-streams/waits'
 import { getFlow, mayDecideFlowGate } from './execution'
-import { isWorkflowReviewer } from './reviewers'
+import { isWorkflowReviewer, workflowGateFallbackFor } from './reviewers'
 import { flowWaitReference } from './wait-policy'
 
 /** What the review screen sends with a chat message to the producing agent. */
@@ -66,7 +66,15 @@ export async function resolveReviewConsultation(
   if (!gate || !step || gate.status !== 'running' || !isWorkflowHumanDecisionAttempt(run.state, gate)) throw notOpen()
   const waitReference = flowWaitReference(stream.id, 'human', gate.id)
   if (!(await listOpenWaits(db, stream.id)).some((wait) => wait.referenceId === waitReference)) throw notOpen()
-  if (!mayDecideFlowGate(identity, await isWorkflowReviewer(identity.userId, stream.squadId), stream, step))
+  if (
+    !mayDecideFlowGate(
+      identity,
+      await isWorkflowReviewer(identity.userId, stream.squadId),
+      stream,
+      step,
+      await workflowGateFallbackFor(identity, stream)
+    )
+  )
     throw forbidden()
   const sources = workflowIncomingAttempts(run.state, gate).filter(
     (source) =>

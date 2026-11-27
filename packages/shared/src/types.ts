@@ -1,6 +1,6 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { WorkflowAttemptLimitPause } from './workflow-runtime'
-import type { WorkflowGateApprover } from './workflow-gate-deciders'
+import type { WorkflowGateApprover, WorkflowGateDecisionBasis } from './workflow-gate-deciders'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 import type { WorkflowReviewConsultation } from './workflow-result-revisions'
@@ -993,6 +993,8 @@ export interface WorkStreamActionData {
   /** The open review/manual wait this action resolves (POST /workstreams/:id/waits/:waitId/resolve). */
   waitId: string
   wait: WorkStreamWait
+  /** True when an assigned-reviewer gate names reviewers but none is active. Presentation only. */
+  noActiveAssignedReviewer?: true
   /**
    * Server-classified: this wait is the stream's final delivery approval (a
    * workflow `review-approval` completion gate). Clients present it as a review,
@@ -1097,6 +1099,8 @@ export interface PendingAction {
   priority: number
   createdAt: string
   canRespond: boolean
+  /** The viewer can decide this gate only because no assigned reviewer is active. Presentation only. */
+  workflowGateFallbackBasis?: Extract<WorkflowGateDecisionBasis, 'owner' | 'admin'>
   /**
    * True when this item alerts the viewer (inbox message and push) rather than only being listed:
    * its push audience, before personal push preferences. Set for questions and human gates only;
@@ -1679,6 +1683,14 @@ export interface WorkStream {
   /** The human user who requested this work stream (provenance). Null for agent-created streams. */
   requestingUserId: string | null
   assignedReviewerIds?: string[]
+  /**
+   * Read-only, computed by list and detail endpoints: the assigned reviewers who can no longer
+   * decide (disabled or deleted account, or no review permission in the squad any more). When it
+   * holds every assigned reviewer, the stream's owner and admins decide its assigned-reviewers gates
+   * (`workflowGateHasNoActiveAssignedReviewer`). Omitted when every assigned reviewer is active, and
+   * by older servers.
+   */
+  inactiveAssignedReviewerIds?: string[]
   /** Resolved display name of the requesting user; populated by the detail endpoint, not stored. */
   requestingUserName?: string | null
   agentIds: string[] | null

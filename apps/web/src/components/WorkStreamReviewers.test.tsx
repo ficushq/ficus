@@ -5,7 +5,8 @@ import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { client } from '../api/clientInstance'
-import { WorkStreamReviewers } from './WorkStreamReviewers'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { NoActiveReviewerNotice, WorkStreamReviewers } from './WorkStreamReviewers'
 
 test('work-stream editors assign and clear reviewer filters without granting review permissions', async () => {
   const reviewers = [{ id: 'reviewer', name: 'Riley' }]
@@ -73,3 +74,40 @@ for (const status of ['done', 'canceled'] as const) {
     }
   })
 }
+
+test('the stream warns to reassign while no assigned reviewer is active, and marks the inactive ones', () => {
+  const stream = {
+    id: 'stream',
+    squadId: 'squad',
+    status: 'active',
+    assignedReviewerIds: ['gone', 'left'],
+  } as unknown as WorkStream
+  const notice = (fields: Partial<WorkStream>, canUpdate = true, hasAssignedReviewerGate = true) => {
+    const props = { stream: { ...stream, ...fields }, canUpdate, hasAssignedReviewerGate }
+    return renderToStaticMarkup(<NoActiveReviewerNotice {...props} />)
+  }
+  const stale = { inactiveAssignedReviewerIds: ['gone', 'left'] }
+  expect(notice(stale)).toContain('Assign an active reviewer under Workflow, then Manage workflow.')
+  expect(notice(stale, false)).toContain('Only an admin or the owner with squad review permission can decide.')
+  expect(notice(stale, false)).not.toContain('Manage workflow')
+  expect(notice(stale, true, false)).toBe('')
+  // One still active, an older server that sends nothing, or a finished stream: no warning.
+  expect(notice({ inactiveAssignedReviewerIds: ['gone'] })).toBe('')
+  expect(notice({})).toBe('')
+  expect(notice({ inactiveAssignedReviewerIds: ['gone', 'left'], status: 'done' })).toBe('')
+  // Reassigned: an active reviewer joins the list, so the warning clears.
+  expect(notice({ assignedReviewerIds: ['gone', 'left', 'new'], inactiveAssignedReviewerIds: ['gone', 'left'] })).toBe(
+    ''
+  )
+
+  const cache = new QueryClient()
+  cache.setQueryData(queryKeys.workflows.reviewers('squad'), [])
+  const list = renderToStaticMarkup(
+    <QueryClientProvider client={cache}>
+      <WorkStreamReviewers stream={{ ...stream, inactiveAssignedReviewerIds: ['gone', 'left'] }} />
+    </QueryClientProvider>
+  )
+  expect(list.match(/no longer active/g)).toHaveLength(2)
+  // The warning is the stream's notice, not repeated in the list.
+  expect(list).not.toContain('No assigned reviewer')
+})

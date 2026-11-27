@@ -9,6 +9,7 @@ import {
   workStreamWaitActor,
   workflowAttemptLimitPause,
   workflowGateApprover,
+  workflowGateHasNoActiveAssignedReviewer,
   type WorkflowGateApprover,
 } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
@@ -50,6 +51,7 @@ import {
   pendingActionAlertsViewer,
 } from './pending-action-policy'
 import { listOpenWaitsForStreams, toWaitJson } from '../work-streams/waits'
+import { loadInactiveAssignedReviewers } from '../workflows/reviewers'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
 import { flowWaitReference, isDeliveryApprovalWait } from '../workflows/wait-policy'
 import { deliveryView } from '../work-streams/delivery-pull-requests'
@@ -336,11 +338,14 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     .orderBy(desc(workStreamWaits.openedAt))
 
   const candidateIds = [...new Set(actionableWorkStreams.map((row) => row.ws.id))]
-  const [allWaits, candidateRuns] = await Promise.all([
+  const [allWaits, candidateRuns, inactiveReviewers] = await Promise.all([
     listOpenWaitsForStreams(candidateIds),
     candidateIds.length
       ? db.select().from(workStreamFlowRuns).where(inArray(workStreamFlowRuns.workStreamId, candidateIds))
       : [],
+    loadInactiveAssignedReviewers(
+      actionableWorkStreams.filter(({ wait }) => isHumanFlowWait(wait)).map(({ ws }) => ws)
+    ),
   ])
   const runsByStream = new Map(candidateRuns.map((run) => [run.workStreamId, run]))
   for (const { ws, squad, wait } of actionableWorkStreams) {
@@ -428,6 +433,10 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       squadName: squad.name,
       waitId: wait.id,
       wait: toWaitJson(wait, gateApprover),
+      ...(gateApprover === 'assigned-reviewers' &&
+      workflowGateHasNoActiveAssignedReviewer(ws.assignedReviewerIds, inactiveReviewers.get(ws.id))
+        ? { noActiveAssignedReviewer: true as const }
+        : {}),
       ...(isDeliveryApprovalWait(ws.id, wait) ? { deliveryApproval: true as const } : {}),
       ...(limitPause ? { attemptLimit: { ...limitPause, flowVersion: limitRun!.version } } : {}),
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
@@ -624,7 +633,14 @@ export async function listPendingActionsForIdentity(
       }
       // A failed answer delivery above is a retry, not a new ask, so only these can alert.
       const alerts = await pendingActionAlertsViewer(identity, action, context)
-      visible.push({ ...action, canRespond: decision.canRespond, ...(alerts ? { alerts } : {}) })
+      visible.push({
+        ...action,
+        canRespond: decision.canRespond,
+        ...(decision.workflowGateFallbackBasis
+          ? { workflowGateFallbackBasis: decision.workflowGateFallbackBasis }
+          : {}),
+        ...(alerts ? { alerts } : {}),
+      })
     }
   }
   return visible

@@ -2477,6 +2477,37 @@ describe('work-streams routes', () => {
       expect(detail.terminalFailure?.failureClass).toBe('platform_pre_tool_refusal')
     })
 
+    it('lists the assigned reviewers who can no longer decide, on list and detail, and only while any is inactive', async () => {
+      const reviewRole = await createTestRole({ prefix: wsPrefix, permissions: ['workstreams:review'] })
+      const active = await createTestUser({ prefix: wsPrefix })
+      const deactivated = await createTestUser({ prefix: wsPrefix })
+      for (const user of [active, deactivated])
+        await assignRole({ userId: user.id, roleId: reviewRole.id, scope: 'squad', squadId: testSquadId })
+      const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} stale reviewers` })
+      await db
+        .update(workStreams)
+        .set({ assignedReviewerIds: [active.id, deactivated.id] })
+        .where(eq(workStreams.id, stream.id))
+      const fetchBoth = async () => {
+        const rows = (await (
+          await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=active`)
+        ).json()) as Array<{
+          id: string
+          inactiveAssignedReviewerIds?: string[]
+        }>
+        const detail = (await (await apiFetch(`/api/workstreams/${stream.id}`)).json()) as {
+          inactiveAssignedReviewerIds?: string[]
+        }
+        return [
+          rows.find((row) => row.id === stream.id)?.inactiveAssignedReviewerIds,
+          detail.inactiveAssignedReviewerIds,
+        ]
+      }
+      expect(await fetchBoth()).toEqual([undefined, undefined])
+      await db.execute(sql`update users set disabled_at = now() where id = ${deactivated.id}`)
+      expect(await fetchBoth()).toEqual([[deactivated.id], [deactivated.id]])
+    })
+
     it('orders terminal history by immutable completion time', async () => {
       const completedLast = await storedLegacyWorkStream({
         squadId: testSquadId,

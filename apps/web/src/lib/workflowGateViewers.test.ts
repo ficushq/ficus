@@ -23,7 +23,7 @@ import { workflowProgress } from './workflowProgress'
 import { humanGateContext } from './workflowReview'
 
 /** execute (agent) → design-approval (human approval with this approver), waiting on the approval. */
-function gatedRun(approver: WorkflowGateApprover) {
+function gatedRun(approver: WorkflowGateApprover, streamFields: Partial<WorkStream> = {}) {
   const definition = createBlankWorkflow()
   definition.steps[0]!.outcomes = { completed: { next: 'design-approval' } }
   definition.steps.push({
@@ -74,6 +74,8 @@ function gatedRun(approver: WorkflowGateApprover) {
     assignedReviewerIds: ['assigned'],
     openWaits: [gateWait],
     metadata: {},
+    requestingUserId: 'requester',
+    ...streamFields,
   } as unknown as WorkStream
   const run = { state, version: state.version, openWaits: [gateWait] } as unknown as WorkflowRunDetail
   return { stream, run }
@@ -91,11 +93,16 @@ const viewers: Record<string, WorkStreamViewer> = {
     identity: { type: 'user', userId: 'unassigned' },
   },
   'viewer with no rights': { can: () => false, identity: { type: 'user', userId: 'reader' } },
+  // The person who requested the stream: its owner among people, with review permission.
+  requester: {
+    can: (permission) => permission === 'workstreams:review',
+    identity: { type: 'user', userId: 'requester' },
+  },
 }
 
 /** What each surface tells this viewer about the open gate. */
-function surfaces(approver: WorkflowGateApprover, viewer: WorkStreamViewer) {
-  const { stream, run } = gatedRun(approver)
+function surfaces(approver: WorkflowGateApprover, viewer: WorkStreamViewer, streamFields: Partial<WorkStream> = {}) {
+  const { stream, run } = gatedRun(approver, streamFields)
   const gate = run.state.attempts[1]!
   return {
     row: workStreamPersonWait(stream, viewer)?.label,
@@ -104,6 +111,8 @@ function surfaces(approver: WorkflowGateApprover, viewer: WorkStreamViewer) {
       openWaits: run.openWaits!,
       attemptAgents: {},
       assignedReviewerIds: stream.assignedReviewerIds,
+      inactiveAssignedReviewerIds: stream.inactiveAssignedReviewerIds,
+      requestingUserId: stream.requestingUserId,
       viewer,
     }).steps.find((step) => step.id === 'design-approval')?.who,
     reviewScreen: humanGateContext(stream, run, gate, viewer)?.canDecide,
@@ -137,7 +146,43 @@ describe('a gate for the assigned reviewers (approver: assigned-reviewers)', () 
     ['assigned reviewer', yours],
     ['unassigned reviewer', notYours('Assigned reviewer')],
     ['viewer with no rights', notYours('Assigned reviewer')],
+    ['requester', notYours('Assigned reviewer')],
   ])('%s', (name, expected) => {
     expect(surfaces('assigned-reviewers', viewers[name]!)).toEqual(expected)
+  })
+})
+
+describe('a gate for the assigned reviewers when none of them is still active', () => {
+  const stale = { inactiveAssignedReviewerIds: ['assigned'] }
+  test.each([
+    // The owner (all permissions, so an admin) and the requester decide instead.
+    ['owner', yours],
+    ['requester', yours],
+    ['unassigned reviewer', notYours('Admin or owner with review permission')],
+    ['viewer with no rights', notYours('Admin or owner with review permission')],
+  ])('%s', (name, expected) => {
+    expect(surfaces('assigned-reviewers', viewers[name]!, stale)).toEqual(expected)
+  })
+
+  test('the review screen says why the requester may decide and asks for a reassignment', () => {
+    const { stream, run } = gatedRun('assigned-reviewers', stale)
+    const gate = humanGateContext(stream, run, run.state.attempts[1]!, viewers.requester!)!
+    expect(gate.fallbackNote).toBe('No active assigned reviewer; you can decide as the owner.')
+    expect(gate.noActiveAssignedReviewer).toBe(true)
+    const admin = humanGateContext(stream, run, run.state.attempts[1]!, viewers.owner!)!
+    expect(admin.fallbackNote).toBe('No active assigned reviewer; you can decide as an admin.')
+    const other = humanGateContext(stream, run, run.state.attempts[1]!, viewers['unassigned reviewer']!)!
+    expect(other.readOnlyReason).toBe(
+      'No assigned reviewer of this work stream is still active. Only an admin or the owner with squad review permission can decide.'
+    )
+  })
+
+  test('with an active reviewer assigned again, the fallback and warning end', () => {
+    const reassigned = { assignedReviewerIds: ['assigned', 'new'], inactiveAssignedReviewerIds: ['assigned'] }
+    expect(surfaces('assigned-reviewers', viewers.requester!, reassigned)).toEqual(notYours('Assigned reviewer'))
+    const { stream, run } = gatedRun('assigned-reviewers', reassigned)
+    const gate = humanGateContext(stream, run, run.state.attempts[1]!, viewers.requester!)!
+    expect(gate.noActiveAssignedReviewer).toBe(false)
+    expect(gate.fallbackNote).toBeUndefined()
   })
 })

@@ -12,6 +12,7 @@ import {
   type GlobalActivityPresence,
   type WorkStreamDeliveryPresentation,
   type WorkStreamViewer,
+  type WorkStreamViewerFacts,
   workStreamDeliveryCiState,
 } from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
@@ -21,6 +22,7 @@ import type { Identity } from '../rbac'
 import { resolveWorkStreamViewers } from '../rbac/work-stream-viewer'
 import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
+import { loadInactiveAssignedReviewersForOpenGates } from '../workflows/reviewers'
 import { resolveGlobalActivityAccess, resolveSquadActivityAccess } from './access'
 import type { GlobalActivitySquadAccess } from './global-activity'
 import { loadWorkStreamSteps } from './row-context'
@@ -100,6 +102,7 @@ export async function projectActivityPresence(
             assigneeAgentId: workStreams.assigneeAgentId,
             agentIds: workStreams.agentIds,
             assignedReviewerIds: workStreams.assignedReviewerIds,
+            requestingUserId: workStreams.requestingUserId,
           })
           .from(workStreams)
           .where(
@@ -109,6 +112,7 @@ export async function projectActivityPresence(
   ])
 
   const derived = await computeDerivedStates(activeStreams)
+  const inactiveReviewers = await loadInactiveAssignedReviewersForOpenGates(activeStreams, derived)
   const workingAgentIds = workingAgents.map((agent) => agent.id).sort()
   // The strip is a personal summary: muting a kind removes that squad's work from ITS count and
   // from nobody else's. Agents are not attention-scoped — the working count is about the instance.
@@ -126,6 +130,8 @@ export async function projectActivityPresence(
           derivedState: presentation?.derivedState,
           openWaits: presentation?.openWaits,
           assignedReviewerIds: stream.assignedReviewerIds,
+          inactiveAssignedReviewerIds: inactiveReviewers.get(stream.id),
+          requestingUserId: stream.requestingUserId,
         },
       ]
     })
@@ -153,7 +159,7 @@ export async function projectActivityPresence(
     workingCount: workingAgentIds.length,
     needsYouCount: needsYou.size,
     streamCount: shownStreams.length,
-    streams: await buildWorkStreamCards(shownStreams, derived, needsYou, new Set(agentSquadIds), viewers),
+    streams: await buildWorkStreamCards(shownStreams, derived, facts, needsYou, new Set(agentSquadIds), viewers),
   }
 }
 
@@ -166,9 +172,9 @@ async function buildWorkStreamCards(
     status: 'queued' | 'active' | 'done' | 'canceled'
     metadata: unknown
     updatedAt: Date
-    assignedReviewerIds: string[]
   }>,
   derived: Awaited<ReturnType<typeof computeDerivedStates>>,
+  factsByStream: ReadonlyMap<string, WorkStreamViewerFacts>,
   needsYou: Set<string>,
   agentReadableSquads: Set<string>,
   viewers: Map<string, WorkStreamViewer>
@@ -214,7 +220,8 @@ async function buildWorkStreamCards(
 
   return shown.map((stream): ActivityWorkStreamCard => {
     const presentation = derived.get(stream.id)
-    const openWaits = presentation?.openWaits ?? []
+    const facts = factsByStream.get(stream.id)!
+    const openWaits = facts.openWaits ?? []
     const delivery = presentation?.delivery
     const step = steps.get(stream.id) ?? null
     // The summary paraphrases participants' chat, so it needs agents:read like their Activity rows.
@@ -230,7 +237,6 @@ async function buildWorkStreamCards(
       step,
       waits: openWaits.map((wait) => {
         const needsPerson = workStreamWaitNeedsHuman(wait, { openWaits, delivery })
-        const facts = { openWaits, delivery, assignedReviewerIds: stream.assignedReviewerIds }
         return {
           type: workStreamWaitDisplayType(wait),
           needsYou: needsPerson,

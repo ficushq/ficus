@@ -16,6 +16,7 @@ import { getAccessibleSquadIds, hasPermission } from '../rbac/permissions'
 import { resolveWorkStreamViewer } from '../rbac/work-stream-viewer'
 import { loadUserAttention, type UserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
+import { loadInactiveAssignedReviewersForOpenGates } from '../workflows/reviewers'
 
 export interface WorkInterestCandidate {
   pause?: WorkStream['pause']
@@ -27,6 +28,7 @@ export interface WorkInterestCandidate {
   agentIds: string[] | null
   /** Who may decide an assigned-reviewers gate: read by the "waiting on you" viewer rule. */
   assignedReviewerIds?: string[]
+  requestingUserId?: string | null
   updatedAt: Date
 }
 
@@ -34,6 +36,7 @@ interface DerivedFacts {
   hasActiveSlotWait?: boolean
   hasActiveMonitor?: boolean
   delivery?: WorkStream['delivery']
+  inactiveAssignedReviewerIds?: string[]
   derivedState: WorkStreamDerivedState
   openWaits: WorkStreamWait[]
 }
@@ -131,6 +134,7 @@ async function loadCandidates(userId: string): Promise<WorkInterestCandidate[]> 
       assigneeAgentId: workStreams.assigneeAgentId,
       agentIds: workStreams.agentIds,
       assignedReviewerIds: workStreams.assignedReviewerIds,
+      requestingUserId: workStreams.requestingUserId,
       updatedAt: workStreams.updatedAt,
     })
     .from(workStreams)
@@ -155,7 +159,13 @@ const loadSnapshot = createWorkInterestLoader({
   loadCandidates,
   canReadSquad: (userId, squadId) => hasPermission({ type: 'user', userId }, 'workstreams:read', squadId),
   loadViewer: (userId, squadId) => resolveWorkStreamViewer({ type: 'user', userId }, squadId),
-  derive: computeDerivedStates,
+  derive: async (streams) => {
+    const derived = await computeDerivedStates(streams)
+    const inactiveReviewers = await loadInactiveAssignedReviewersForOpenGates(streams, derived)
+    return new Map(
+      [...derived].map(([id, facts]) => [id, { ...facts, inactiveAssignedReviewerIds: inactiveReviewers.get(id) }])
+    )
+  },
   now: () => new Date(),
 })
 

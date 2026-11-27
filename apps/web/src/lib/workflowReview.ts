@@ -20,7 +20,12 @@ import {
   workflowReviewPlainText as plainText,
   workflowReviewBlockingWaits,
   isWorkflowHumanGateWait,
-  mayDecideWorkflowGate,
+  workflowGateAssignedDeciders,
+  workflowGateDecisionBasis,
+  workflowGateFallbackForViewer,
+  workflowGateFallbackNote,
+  workflowGateHasNoActiveAssignedReviewer,
+  WORKFLOW_GATE_FALLBACK_ELIGIBILITY,
   workflowEarlierHumanDecisions,
   describeWorkflowDecision,
   effectiveWorkflowStep,
@@ -99,6 +104,13 @@ export interface HumanGateContext {
   canDecide: boolean
   /** Why the viewer cannot decide, when they cannot. */
   readOnlyReason?: string
+  /** Why the viewer may decide, when it is only because no assigned reviewer is still active. */
+  fallbackNote?: string
+  /**
+   * The gate is limited to the stream's assigned reviewers and none of them is still active, so
+   * admins and the owner with squad review permission can decide.
+   */
+  noActiveAssignedReviewer: boolean
   /** The attempts whose handoffs are under review. */
   sources: WorkflowAttempt[]
   /** The first forward outcome: the primary action even when a rework outcome is declared first. */
@@ -116,7 +128,7 @@ export function humanGateContext(
   run: WorkflowRunDetail,
   attempt: WorkflowAttempt,
   permissions: {
-    can: (permission: 'workstreams:review') => boolean
+    can: (permission: string) => boolean
     identity?: { type: string; userId?: string }
   }
 ): HumanGateContext | undefined {
@@ -127,7 +139,17 @@ export function humanGateContext(
   const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
   // Any reviewer decides for a decision step; only approvals can be limited to assigned reviewers.
   const canReview = permissions.can('workstreams:review')
-  const canDecide = mayDecideWorkflowGate(permissions.identity, canReview, stream.assignedReviewerIds, step)
+  const basis = workflowGateDecisionBasis(
+    permissions.identity,
+    canReview,
+    stream.assignedReviewerIds,
+    step,
+    workflowGateFallbackForViewer(stream, permissions.can)
+  )
+  const canDecide = basis !== null
+  const noActiveAssignedReviewer =
+    !!workflowGateAssignedDeciders(stream.assignedReviewerIds, step) &&
+    workflowGateHasNoActiveAssignedReviewer(stream.assignedReviewerIds, stream.inactiveAssignedReviewerIds)
   // A decision step before this gate passes its own sources through, so the work under review shows.
   const sources = workflowIncomingAttempts(run.state, attempt)
   const declared = Object.entries(step.outcomes)
@@ -146,7 +168,11 @@ export function humanGateContext(
     gateWait,
     blockingWaits,
     canDecide,
-    readOnlyReason: canDecide ? undefined : workflowGateReadOnlyReason(workflowGateApprover(step), canReview),
+    readOnlyReason: canDecide
+      ? undefined
+      : workflowGateReadOnlyReason(workflowGateApprover(step), canReview, noActiveAssignedReviewer),
+    fallbackNote: workflowGateFallbackNote(basis),
+    noActiveAssignedReviewer,
     sources,
     primaryOutcome,
     outcomes,
@@ -162,10 +188,14 @@ export function humanGateContext(
  */
 export function workflowGateReadOnlyReason(
   approver: WorkflowGateApprover | undefined,
-  canReview: boolean
+  canReview: boolean,
+  noActiveAssignedReviewer = false
 ): string | undefined {
   if (!canReview) return 'You need review permission in this squad to decide.'
-  if (approver === 'assigned-reviewers') return 'Only the reviewers assigned to this work stream can decide.'
+  if (approver === 'assigned-reviewers')
+    return noActiveAssignedReviewer
+      ? `No assigned reviewer of this work stream is still active. ${WORKFLOW_GATE_FALLBACK_ELIGIBILITY}`
+      : 'Only the reviewers assigned to this work stream can decide.'
   return undefined
 }
 

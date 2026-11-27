@@ -12,7 +12,12 @@ import {
   workflowIncomingAttempts,
   workStreamWaitActor,
   isWorkflowHumanGateWait,
-  mayDecideWorkflowGate,
+  workflowGateAssignedDeciders,
+  workflowGateDecisionBasis,
+  workflowGateFallbackForViewer,
+  workflowGateFallbackNote,
+  workflowGateHasNoActiveAssignedReviewer,
+  WORKFLOW_GATE_FALLBACK_ELIGIBILITY,
   effectiveWorkflowStep,
   deliveryPullRequests,
   workflowReworkAttempt,
@@ -333,7 +338,19 @@ function HumanGate({
   const waits = run.openWaits ?? stream.openWaits ?? []
   const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
   const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
-  const canDecide = mayDecideWorkflowGate(identity, can('workstreams:review'), stream.assignedReviewerIds, step)
+  // The shared rule Core enforces: when no assigned reviewer is active, fallback still requires review permission.
+  const basis = workflowGateDecisionBasis(
+    identity,
+    can('workstreams:review'),
+    stream.assignedReviewerIds,
+    step,
+    workflowGateFallbackForViewer(stream, can)
+  )
+  const canDecide = basis !== null
+  const fallbackNote = workflowGateFallbackNote(basis)
+  const noActiveAssignedReviewer =
+    !!workflowGateAssignedDeciders(stream.assignedReviewerIds, step) &&
+    workflowGateHasNoActiveAssignedReviewer(stream.assignedReviewerIds, stream.inactiveAssignedReviewerIds)
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [
     ...new Map(
@@ -420,6 +437,11 @@ function HumanGate({
           </ul>
         </section>
       )}
+      {fallbackNote && (
+        <p role="note" className="g-action-note">
+          {fallbackNote} Assign an active reviewer to this work stream.
+        </p>
+      )}
       {canDecide ? (
         <>
           <ApprovalStatement statement={approvalStatement} />
@@ -476,9 +498,11 @@ function HumanGate({
       ) : (
         <>
           <p className="g-action-note">
-            {can('workstreams:review')
-              ? 'Only the reviewers assigned to this work stream can decide.'
-              : 'You need review permission in this squad to decide.'}
+            {!can('workstreams:review')
+              ? 'You need review permission in this squad to decide.'
+              : noActiveAssignedReviewer
+                ? `No assigned reviewer of this work stream is still active. ${WORKFLOW_GATE_FALLBACK_ELIGIBILITY} Ask a work stream editor to assign an active reviewer.`
+                : 'Only the reviewers assigned to this work stream can decide.'}
           </p>
           <ApprovalStatement statement={approvalStatement} />
           <ul aria-label="Outcomes" className="g-action-note">

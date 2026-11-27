@@ -580,6 +580,58 @@ describe('WorkflowDecision · human-approval gate', () => {
     expect(container.textContent).toContain('Only the reviewers assigned')
   })
 
+  describe('with no active assigned reviewer', () => {
+    const viewing = async (
+      permissions: string[],
+      userId: string,
+      fields: Partial<WorkStream> = { inactiveAssignedReviewerIds: ['gone-1', 'gone-2'] }
+    ) => {
+      const run = workflowRun('gate')
+      const steps = run.state.definition.steps as Array<{ approver?: string }>
+      steps[1]!.approver = 'assigned-reviewers'
+      const api = fakeApi({
+        workflowRun: () => Promise.resolve(run),
+        getWorkStream: () =>
+          Promise.resolve(
+            stream({
+              assignedReviewerIds: ['gone-1', 'gone-2'],
+              requestingUserId: 'owner',
+              ...fields,
+            } as Partial<WorkStream>)
+          ),
+        getMyPermissions: () => Promise.resolve({ permissions, identity: { type: 'user', userId } }),
+      })
+      return (await render(<WorkflowDecision workStreamId="ws-1" />, api)).container
+    }
+
+    it('lets the owner decide and says why', async () => {
+      const container = await viewing(['workstreams:review'], 'owner')
+      expect(hasButton(container, 'Approve')).toBe(true)
+      expect(container.textContent).toContain('No active assigned reviewer; you can decide as the owner.')
+      expect(container.textContent).toContain('Assign an active reviewer')
+    })
+
+    it('lets an admin decide and says why', async () => {
+      const container = await viewing(['*'], 'admin')
+      expect(hasButton(container, 'Approve')).toBe(true)
+      expect(container.textContent).toContain('No active assigned reviewer; you can decide as an admin.')
+    })
+
+    it('tells another reviewer only the owner or an admin can decide', async () => {
+      const container = await viewing(['workstreams:review'], 'other')
+      expect(hasButton(container, 'Approve')).toBe(false)
+      expect(container.textContent).toContain('Only an admin or the owner with squad review permission can decide.')
+      expect(container.querySelector('ul[aria-label="Outcomes"]')?.textContent).toContain('Approve')
+    })
+
+    it('opens no fallback while one of several assigned reviewers is active', async () => {
+      const container = await viewing(['*'], 'owner', { inactiveAssignedReviewerIds: ['gone-1'] })
+      expect(hasButton(container, 'Approve')).toBe(false)
+      expect(container.textContent).toContain('Only the reviewers assigned')
+      expect(container.textContent).not.toContain('No active assigned reviewer')
+    })
+  })
+
   it('shows nothing for a paused stream, but explains when asked to', async () => {
     const api = fakeApi({
       workflowRun: () => Promise.resolve(workflowRun('gate')),

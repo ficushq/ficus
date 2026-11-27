@@ -1,13 +1,19 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import type { GlobalActivityPresence } from '@ficus/shared'
+import {
+  createBlankWorkflow,
+  createWorkflowRun,
+  resolveWorkflow,
+  workflowDefinitionSchema,
+  type GlobalActivityPresence,
+} from '@ficus/shared'
 import { activityRouter } from './activity'
 import { materializeActivityFixtures } from '../test-utils/activity-fixtures'
 import { identityMiddleware } from '../middleware/identity'
 import { subscribeToSquad } from '../services/squad/subscriptions'
 import { db } from '../db'
-import { agents, inbox, squads, workStreams, workStreamWaits } from '../db/schema'
+import { agents, inbox, squads, users, workStreams, workStreamFlowRuns, workStreamWaits } from '../db/schema'
 import {
   assignRole,
   authHeaders,
@@ -421,6 +427,7 @@ describe('GET /api/activity/presence', () => {
     const squad = await seedSquad('presence-viewer')
     const reviewerPermissions = ['squads:read', 'agents:read', 'workstreams:read', 'workstreams:review']
     const assignedReviewer = await scopedUser(squad.id, reviewerPermissions)
+    const requester = await scopedUser(squad.id, reviewerPermissions)
     const otherReviewer = await scopedUser(squad.id, reviewerPermissions)
     const answerer = await scopedUser(squad.id, ['squads:read', 'workstreams:read', 'agents:run'])
     const [gated, asking] = await db
@@ -431,20 +438,37 @@ describe('GET /api/activity/presence', () => {
           title: 'Gate for assigned reviewers',
           status: 'active',
           assignedReviewerIds: [assignedReviewer.id],
+          requestingUserId: requester.id,
         },
         { squadId: squad.id, title: 'Question', status: 'active' },
       ])
       .returning()
     const { flowWaitReference } = await import('../services/workflows/wait-policy')
-    // A human approval wait with no flow run to name its approver reads as limited to the
-    // stream's assigned reviewers, the narrowest reading of the shared mayDecideWorkflowGate rule.
+    const definition = createBlankWorkflow()
+    definition.steps[0] = {
+      id: definition.steps[0]!.id,
+      kind: 'human-approval',
+      approver: 'assigned-reviewers',
+      instructions: 'Approve the scope.',
+      output: 'A decision.',
+      outcomes: { approved: { next: 'finish' } },
+    }
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: gated!.id,
+      activated: true,
+      state: createWorkflowRun(workflowDefinitionSchema.parse(definition)),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
     await db.insert(workStreamWaits).values([
       {
         workStreamId: gated!.id,
         type: 'manual',
         resolutionHandler: 'workflow',
-        flowAttemptId: 2,
-        referenceId: flowWaitReference(gated!.id, 'human', 2),
+        flowAttemptId: 1,
+        referenceId: flowWaitReference(gated!.id, 'human', 1),
         createdBy: 'system',
       },
       { workStreamId: asking!.id, type: 'question', createdBy: 'agent' },
@@ -488,6 +512,17 @@ describe('GET /api/activity/presence', () => {
       expect(snapshot.totalCount).toBe(2)
       expect(snapshot.liveActivity.needsYouCount).toBe(presence.needsYouCount)
     }
+    // Only when the assigned reviewer becomes inactive does the requester get the fallback.
+    expect((await readPresence(requester.token)).needsYouCount).toBe(0)
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, assignedReviewer.id))
+    const fallback = await readPresence(requester.token)
+    expect(fallback.needsYouCount).toBe(1)
+    expect(fallback.gate).toMatchObject({ needsYou: true, waits: [{ type: 'review', needsYou: true, you: true }] })
+    expect((await readPresence(otherReviewer.token)).needsYouCount).toBe(0)
+    expect((await loadWorkInterestSnapshot(requester.id)).liveActivity.needsYouCount).toBe(1)
+    await db.update(users).set({ disabledAt: null }).where(eq(users.id, assignedReviewer.id))
+    expect((await readPresence(requester.token)).needsYouCount).toBe(0)
+    expect((await loadWorkInterestSnapshot(requester.id)).liveActivity.needsYouCount).toBe(0)
     // Muting a stream's decisions drops it from both counts, while its progress still shows.
     await subscribeToSquad(squad.id, answerer.id, { decisions: 'mute', progress: 'show' })
     expect((await readPresence(answerer.token)).needsYouCount).toBe(0)
