@@ -9,6 +9,7 @@ import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workS
 import { WorkStreamPauseControls, useWorkStreamPauseControls } from './WorkStreamPauseControls'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
+import { NoActiveReviewerNotice } from './WorkStreamReviewers'
 import { WorkStreamDeliverySetupCallout } from './WorkStreamDeliverySetupCallout'
 import clsx from 'clsx'
 import { useState } from 'react'
@@ -338,6 +339,8 @@ export function WorkStreamDetailModal({
         {workStream.status !== 'done' && workStream.status !== 'canceled' && (
           <WorkStreamPauseControls stream={workStream} controls={pauseControls} />
         )}
+
+        <NoActiveReviewerNotice stream={workStream} />
 
         {/* Review/manual wait respond panel */}
         {missingFocusedWait && (

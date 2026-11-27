@@ -14,6 +14,7 @@ import { HTTPException } from 'hono/http-exception'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { RepositorySetupError } from '../services/work-streams/repository-setup'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
+import { loadInactiveAssignedReviewers } from '../services/workflows/reviewers'
 import {
   AssetAttachmentError,
   AssetUnavailableError,
@@ -144,13 +145,30 @@ async function routeWorkStreamSquadId(c: Context): Promise<string | null> {
   }
 }
 
+/**
+ * The assigned reviewers who can no longer decide, for streams still open (a finished stream has
+ * no gate left to decide). Sent as `inactiveAssignedReviewerIds` so every client applies the shared
+ * gate fallback and warns the owner to reassign.
+ */
+function loadOpenStreamInactiveReviewers(streams: WorkStream[]) {
+  return loadInactiveAssignedReviewers(
+    streams.filter((stream) => stream.status !== 'done' && stream.status !== 'canceled')
+  )
+}
+
+function inactiveReviewerField(inactive: Map<string, string[]>, streamId: string) {
+  const ids = inactive.get(streamId)
+  return ids ? { inactiveAssignedReviewerIds: ids } : {}
+}
+
 /** `identity` is the viewer: some annotations (the stream summary) depend on what it may read. */
 async function annotateWorkStreams(streams: WorkStream[], identity: Identity | undefined) {
-  const [runtimes, priorityAnnotations, derived, steps] = await Promise.all([
+  const [runtimes, priorityAnnotations, derived, steps, inactiveReviewers] = await Promise.all([
     WorkStream.computeRuntimes(streams),
     computePriorityAnnotations(streams),
     computeDerivedStates(streams),
     loadWorkStreamStepPresentation(streams, identity),
+    loadOpenStreamInactiveReviewers(streams),
   ])
   // Only the integrations a flow subscribes to, not the whole flow state: this runs for every
   // row of every list.
@@ -183,6 +201,7 @@ async function annotateWorkStreams(streams: WorkStream[], identity: Identity | u
     runtime: runtimes.get(stream.id),
     ...(priorityAnnotations.get(stream.id) ?? {}),
     ...(derived.get(stream.id) ?? {}),
+    ...inactiveReviewerField(inactiveReviewers, stream.id),
     ...(automatedReviewGates.has(stream.id) ? { automatedReviewGate: true } : {}),
     ...(steps.get(stream.id) ?? {}),
   }))
@@ -1090,6 +1109,7 @@ export const workStreamsRouter = new Hono()
       const runtime = (await WorkStream.computeRuntimes([stream])).get(stream.id)
       const priorityAnnotations = (await computePriorityAnnotations([stream])).get(stream.id) ?? {}
       const derived = (await computeDerivedStates([stream])).get(stream.id) ?? {}
+      const inactiveReviewers = await loadOpenStreamInactiveReviewers([stream])
       const stepPresentation =
         (await loadWorkStreamStepPresentation([stream], c.get('identity') as Identity | undefined)).get(stream.id) ?? {}
       // Full audit trail (every wait, open + closed, newest first); reviewHistory
@@ -1108,6 +1128,7 @@ export const workStreamsRouter = new Hono()
         ...(identity?.type === 'agent' ? { observing: await isObservingWorkStream(stream.id, identity.agentId) } : {}),
         runtime,
         requestingUserName,
+        ...inactiveReviewerField(inactiveReviewers, stream.id),
         ...priorityAnnotations,
         ...derived,
         ...stepPresentation,

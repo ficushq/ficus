@@ -11,7 +11,7 @@ import {
   workStreamWaitNeedsHuman,
 } from './status-presentation'
 import type { WorkStream, WorkStreamWait } from './types'
-import { mayDecideWorkflowGate, workflowGateOfWait } from './workflow-gate-deciders'
+import { mayDecideWorkflowGate, workflowGateFallbackForViewer, workflowGateOfWait } from './workflow-gate-deciders'
 import { isWorkflowHumanGateWait } from './workflow-review-waits'
 
 /**
@@ -116,7 +116,8 @@ function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream
       viewer.identity,
       viewer.can('workstreams:review'),
       ws.assignedReviewerIds,
-      workflowGateOfWait(wait)
+      workflowGateOfWait(wait),
+      workflowGateFallbackForViewer(ws, viewer.can)
     )
   return viewer.can('workstreams:respond') || viewer.can('workstreams:update')
 }

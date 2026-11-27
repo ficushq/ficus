@@ -32,12 +32,17 @@ import {
   messages as chatMessages,
   workStreamWaits,
   workStreamFlowTransitions,
+  users,
+  roles,
+  roleAssignments,
 } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
 import { Schedule } from '../../entities/Schedule'
 import * as githubApi from '../github/api-client'
-import { createTestUser, createTestRole, assignRole, cleanupTestRbac } from '../../test-utils/rbac'
+import { createTestUser, createTestRole, createTestAdmin, assignRole, cleanupTestRbac } from '../../test-utils/rbac'
+import { invalidatePermissionCache } from '../rbac/permissions'
+import { loadInactiveAssignedReviewers } from './reviewers'
 import { validateSquadWorkflows } from './access'
 import { openWait, closeOpenWaits, listOpenWaits, toWaitJson } from '../work-streams/waits'
 import {
@@ -2150,6 +2155,100 @@ test('action center human gates use review permission and assigned reviewer filt
     .set({ assignedReviewerIds: [responder.id] })
     .where(eq(workStreams.id, id))
   expect((await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).canRespond).toBe(false)
+})
+
+test('an assigned-reviewers gate falls back to the owner and admins only while no assigned reviewer is active', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[0] = {
+    id: 'build',
+    kind: 'human-approval',
+    approver: 'assigned-reviewers',
+    instructions: 'Approve scope',
+    output: 'Decision',
+    outcomes: { completed: { next: 'review' } },
+  }
+  const id = await create('active', definition)
+  const reviewRole = await createTestRole({ prefix, permissions: ['actions:read', 'workstreams:review'] })
+  const first = await createTestUser({ prefix })
+  const second = await createTestUser({ prefix })
+  const requester = await createTestUser({ prefix })
+  const other = await createTestUser({ prefix })
+  const admin = await createTestAdmin({ prefix })
+  for (const user of [first, requester, other])
+    await assignRole({ userId: user.id, roleId: reviewRole.id, scope: 'squad', squadId })
+  // The second reviewer's own role, so it can lose the permission without touching the others.
+  const secondRole = await createTestRole({ prefix, permissions: ['actions:read', 'workstreams:review'] })
+  const secondAssignment = await assignRole({ userId: second.id, roleId: secondRole.id, scope: 'squad', squadId })
+  await db
+    .update(workStreams)
+    .set({ assignedReviewerIds: [first.id, second.id], requestingUserId: requester.id })
+    .where(eq(workStreams.id, id))
+  const stream = { id, squadId, assignedReviewerIds: [first.id, second.id], requestingUserId: requester.id }
+  const inactive = async () => (await loadInactiveAssignedReviewers([stream])).get(id) ?? []
+  const action = (await listPendingActions()).find((a) => 'workStreamId' in a.data && a.data.workStreamId === id)!
+  const context = { attention: EMPTY_USER_ATTENTION }
+  const canRespond = async (userId: string) =>
+    (await evaluatePendingAction({ type: 'user', userId }, action, context)).canRespond
+  const setDisabled = async (userId: string, disabled: boolean) => {
+    await db
+      .update(users)
+      .set({ disabledAt: disabled ? new Date() : null })
+      .where(eq(users.id, userId))
+    invalidatePermissionCache()
+  }
+
+  // Everyone active: only the assigned reviewers decide.
+  expect(await inactive()).toEqual([])
+  expect(await canRespond(first.id)).toBe(true)
+  for (const user of [requester, admin, other]) expect(await canRespond(user.id)).toBe(false)
+
+  // A deactivated account is inactive; one of two inactive opens no fallback.
+  await setDisabled(first.id, true)
+  expect(await inactive()).toEqual([first.id])
+  for (const user of [requester, admin]) expect(await canRespond(user.id)).toBe(false)
+
+  // Removed from the squad (its squad role taken away): now none is active, so the owner and admins decide.
+  await db.delete(roleAssignments).where(eq(roleAssignments.id, secondAssignment))
+  invalidatePermissionCache()
+  expect(await inactive()).toEqual([first.id, second.id])
+  expect(await canRespond(requester.id)).toBe(true)
+  expect(await canRespond(admin.id)).toBe(true)
+  expect(await canRespond(other.id)).toBe(false)
+
+  // Reactivated: the fallback ends.
+  await setDisabled(first.id, false)
+  expect(await inactive()).toEqual([second.id])
+  expect(await canRespond(requester.id)).toBe(false)
+  expect(await canRespond(admin.id)).toBe(false)
+
+  // Back in the squad, but its role lost the review permission: inactive again.
+  await assignRole({ userId: second.id, roleId: secondRole.id, scope: 'squad', squadId })
+  expect(await inactive()).toEqual([])
+  await db
+    .update(roles)
+    .set({ permissions: ['actions:read'] })
+    .where(eq(roles.id, secondRole.id))
+  invalidatePermissionCache()
+  expect(await inactive()).toEqual([second.id])
+
+  // A deleted account counts as inactive too.
+  const gone = { ...stream, assignedReviewerIds: [randomUUID()] }
+  expect((await loadInactiveAssignedReviewers([gone])).get(id)).toEqual(gone.assignedReviewerIds)
+
+  // With both inactive again, the server enforces the same fallback on the decision itself.
+  await setDisabled(first.id, true)
+  const command = (version: number) => ({
+    action: 'complete' as const,
+    expectedVersion: version,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: '',
+  })
+  await expect(advanceFlow(id, command(0), randomUUID(), { type: 'user', userId: other.id })).rejects.toThrow(
+    'designated human approver'
+  )
+  await advanceFlow(id, command(0), randomUUID(), { type: 'user', userId: requester.id })
+  expect((await getFlow(id))!.state.attempts[0]!.status).not.toBe('running')
 })
 
 test('a worker without a participant tier runs the snapshot model as the workflow model, not an agent override', async () => {

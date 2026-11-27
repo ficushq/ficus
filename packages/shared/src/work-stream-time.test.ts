@@ -233,6 +233,28 @@ describe('waiting on a person', () => {
     expect(workStreamPersonWait(waiting([gate('reviewers')]), agent)?.label).toBe('Waiting on review')
   })
 
+  test('a gate with no active assigned reviewer waits on its owner and admins', () => {
+    const gate = wait({
+      type: 'manual',
+      workflowHumanGate: true,
+      flowAttemptId: 2,
+      resolutionHandler: 'workflow',
+      workflowGateApprover: 'assigned-reviewers',
+    })
+    const stale = waiting([gate], {
+      assignedReviewerIds: ['reviewer-1'],
+      inactiveAssignedReviewerIds: ['reviewer-1'],
+      requestingUserId: 'owner',
+    })
+    expect(workStreamPersonWait(stale, viewer(['workstreams:review'], 'owner'))?.label).toBe('Waiting on you')
+    const admin: WorkStreamViewer = { can: () => true, identity: { type: 'user', userId: 'admin' } }
+    expect(workStreamPersonWait(stale, admin)?.label).toBe('Waiting on you')
+    expect(workStreamPersonWait(stale, viewer(['workstreams:review'], 'someone-else'))?.label).toBe('Waiting on review')
+    // Once an active reviewer is assigned, the server stops listing them all as inactive.
+    const reassigned = { ...stale, assignedReviewerIds: ['reviewer-1', 'reviewer-2'] }
+    expect(workStreamPersonWait(reassigned, viewer(['workstreams:review'], 'owner'))?.label).toBe('Waiting on review')
+  })
+
   test('the delivery approval is a wait on a person too', () => {
     const ws = waiting([wait({ id: 'approval', type: 'manual', actor: 'human' })], {
       derivedState: 'blocked',

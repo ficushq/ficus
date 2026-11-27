@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
   mayDecideWorkflowGate,
+  workflowGateDecisionBasis,
+  workflowGateFallbackForViewer,
+  workflowGateFallbackNote,
+  workflowGateHasNoActiveAssignedReviewer,
   workflowGateApprover,
   workflowGateApproverForAttempt,
   workflowGateOfWait,
@@ -41,6 +45,70 @@ describe('mayDecideWorkflowGate', () => {
       expect(mayDecideWorkflowGate(undefined, true, [], gate)).toBe(false)
       expect(mayDecideWorkflowGate({ type: 'user' }, true, [], gate)).toBe(false)
     }
+  })
+})
+
+describe('a gate whose assigned reviewers are no longer active', () => {
+  const owner = 'requester'
+  const fallback = (inactive: string[], isAdmin = false) => ({
+    inactiveAssignedReviewerIds: inactive,
+    requestingUserId: owner,
+    isAdmin,
+  })
+
+  test('with every assigned reviewer inactive, the owner and admins decide, and say why', () => {
+    const allGone = fallback(assigned)
+    expect(workflowGateDecisionBasis(user(owner), true, assigned, limited, allGone)).toBe('owner')
+    expect(workflowGateDecisionBasis(user('admin'), true, assigned, limited, fallback(assigned, true))).toBe('admin')
+    expect(mayDecideWorkflowGate(user(owner), true, assigned, limited, allGone)).toBe(true)
+    // Anyone else with review permission still may not.
+    expect(mayDecideWorkflowGate(user('other'), true, assigned, limited, allGone)).toBe(false)
+    expect(workflowGateFallbackNote('owner')).toBe('No active assigned reviewer; you can decide as the owner.')
+    expect(workflowGateFallbackNote('admin')).toBe('No active assigned reviewer; you can decide as an admin.')
+    expect(workflowGateFallbackNote('assigned-reviewer')).toBeUndefined()
+    expect(workflowGateFallbackNote(null)).toBeUndefined()
+  })
+
+  test('with one of several assigned reviewers inactive, there is no fallback', () => {
+    const oneGone = fallback(['assigned-1'], true)
+    expect(workflowGateHasNoActiveAssignedReviewer(assigned, ['assigned-1'])).toBe(false)
+    expect(mayDecideWorkflowGate(user(owner), true, assigned, limited, oneGone)).toBe(false)
+    expect(mayDecideWorkflowGate(user('admin'), true, assigned, limited, oneGone)).toBe(false)
+    expect(workflowGateDecisionBasis(user('assigned-2'), true, assigned, limited, oneGone)).toBe('assigned-reviewer')
+  })
+
+  test('once a reviewer is active again (or a new one assigned), the fallback ends', () => {
+    // The server stops listing the reactivated reviewer as inactive.
+    expect(mayDecideWorkflowGate(user(owner), true, assigned, limited, fallback(['assigned-2'], true))).toBe(false)
+    expect(mayDecideWorkflowGate(user(owner), true, assigned, limited, fallback([], true))).toBe(false)
+    // A newly assigned active reviewer joins the list, so the old inactive ones no longer cover it.
+    expect(mayDecideWorkflowGate(user(owner), true, [...assigned, 'new'], limited, fallback(assigned, true))).toBe(
+      false
+    )
+  })
+
+  test('the fallback still needs review permission, a person, and a gate limited to assigned reviewers', () => {
+    expect(mayDecideWorkflowGate(user(owner), false, assigned, limited, fallback(assigned, true))).toBe(false)
+    expect(mayDecideWorkflowGate({ type: 'agent' }, true, assigned, limited, fallback(assigned, true))).toBe(false)
+    // Gates any reviewer decides read as `reviewer`, never as the fallback.
+    expect(workflowGateDecisionBasis(user(owner), true, assigned, anyReviewer, fallback(assigned))).toBe('reviewer')
+    expect(workflowGateDecisionBasis(user(owner), true, assigned, decision, fallback(assigned))).toBe('reviewer')
+    // With nobody assigned, there is nothing stale: any reviewer decides as before.
+    expect(workflowGateHasNoActiveAssignedReviewer([], [])).toBe(false)
+    expect(workflowGateDecisionBasis(user('other'), true, [], limited, fallback([]))).toBe('reviewer')
+  })
+
+  test('an older server that sends no inactive list never opens the fallback', () => {
+    expect(
+      mayDecideWorkflowGate(user(owner), true, assigned, limited, { requestingUserId: owner, isAdmin: true })
+    ).toBe(false)
+  })
+
+  test('a viewer is an admin only when they hold every permission', () => {
+    const stream = { inactiveAssignedReviewerIds: assigned, requestingUserId: owner }
+    expect(workflowGateFallbackForViewer(stream, (permission) => permission === '*').isAdmin).toBe(true)
+    expect(workflowGateFallbackForViewer(stream, () => false)).toEqual({ ...stream, isAdmin: false })
+    expect(workflowGateFallbackForViewer(stream, undefined).isAdmin).toBe(false)
   })
 })
 

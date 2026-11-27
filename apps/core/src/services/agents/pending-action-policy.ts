@@ -16,7 +16,7 @@ import { hasPermission, type Identity } from '../rbac'
 import { activeWorkflowAttempts, mayDecideWorkflowGate, workflowAttemptLimitPause } from '@ficus/shared'
 import { canRaiseFlowAttemptLimit } from '../workflows/attempt-limit'
 import { workStreamFlowRuns, workStreams } from '../../db'
-import { isWorkflowReviewer } from '../workflows/reviewers'
+import { isWorkflowReviewer, workflowGateFallbackFor } from '../workflows/reviewers'
 import type { UserAttention } from '../attention/resolver'
 import { canAnswerAgentQuestion } from './question-authorization'
 
@@ -319,14 +319,20 @@ export async function evaluatePendingAction(
     let canRespond = false
     if (identity.type === 'user' && squadId && stream && run?.activated) {
       // A human approval, or a decision step without an automatic decision, waits for a person who may decide it.
-      if (step?.kind === 'human-approval' || step?.kind === 'decision')
-        canRespond = mayDecideWorkflowGate(
-          identity,
-          await isWorkflowReviewer(identity.userId, squadId),
-          stream.assignedReviewerIds,
-          step
-        )
-      else if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval')
+      if (step?.kind === 'human-approval' || step?.kind === 'decision') {
+        const canReview = await isWorkflowReviewer(identity.userId, squadId)
+        // The fallback's reads are needed only when the plain rule says no to a reviewer.
+        canRespond =
+          mayDecideWorkflowGate(identity, canReview, stream.assignedReviewerIds, step) ||
+          (canReview &&
+            mayDecideWorkflowGate(
+              identity,
+              canReview,
+              stream.assignedReviewerIds,
+              step,
+              await workflowGateFallbackFor(identity, stream)
+            ))
+      } else if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval')
         canRespond =
           (await hasPermission(identity, 'workstreams:respond', squadId)) ||
           (await hasPermission(identity, 'workstreams:update', squadId))

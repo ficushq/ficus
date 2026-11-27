@@ -169,6 +169,8 @@ export function WorkStreamProgress({ stream, onOpenAgent }: { stream: WorkStream
     paused: !!stream.pause,
     slotWait: stream.slotWait,
     assignedReviewerIds: stream.assignedReviewerIds ?? [],
+    inactiveAssignedReviewerIds: stream.inactiveAssignedReviewerIds,
+    requestingUserId: stream.requestingUserId,
     reviewers,
     viewer: permissionsLoading ? undefined : { can, identity },
   })

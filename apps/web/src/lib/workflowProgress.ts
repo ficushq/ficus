@@ -4,6 +4,8 @@ import {
   isEarlierWorkflowStep,
   mayDecideWorkflowGate,
   workflowGateAssignedDeciders,
+  workflowGateFallbackForViewer,
+  workflowGateHasNoActiveAssignedReviewer,
   workStreamSlotWaitLabel,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -68,6 +70,10 @@ export interface WorkflowProgressContext {
   slotWait?: WorkStreamSlotWait
   /** The stream's assigned reviewers (user IDs), who decide its assigned-reviewers approvals. */
   assignedReviewerIds?: string[]
+  /** Those of them who can no longer decide; when that is all of them, the owner and admins decide. */
+  inactiveAssignedReviewerIds?: string[]
+  /** The stream's requester: its owner, who decides when no assigned reviewer is active. */
+  requestingUserId?: string | null
   /** People with review permission in the squad, to name approvers; absent while unknown. */
   reviewers?: Array<{ id: string; name: string }>
   /** Who is looking; undefined while their permissions load, which never says "You". */
@@ -148,7 +154,8 @@ function anyOf(names: string[], unnamed = 0): string {
  * anyone with review permission, or for an assigned-reviewers step on a stream with assigned
  * reviewers, one of them. "You" is said only before the decision (a finished approval records no
  * decider) and only to a user who may decide; on an approval limited to several assigned reviewers
- * the others are named beside it ("You or Ben").
+ * the others are named beside it ("You or Ben"). When none of the assigned reviewers is still
+ * active, the owner and admins decide, and it says so.
  */
 function approverWho(step: WorkflowStep, state: WorkflowProgressState, context: WorkflowProgressContext): string {
   const limitedTo = workflowGateAssignedDeciders(context.assignedReviewerIds, step)
@@ -156,9 +163,18 @@ function approverWho(step: WorkflowStep, state: WorkflowProgressState, context: 
   const userId = viewer?.identity?.type === 'user' ? viewer.identity.userId : undefined
   const viewerDecides =
     !!viewer &&
-    mayDecideWorkflowGate(viewer.identity, viewer.can('workstreams:review'), context.assignedReviewerIds, step)
+    mayDecideWorkflowGate(
+      viewer.identity,
+      viewer.can('workstreams:review'),
+      context.assignedReviewerIds,
+      step,
+      workflowGateFallbackForViewer(context, viewer.can)
+    )
   const you = viewerDecides && state !== 'done' && state !== 'not-run'
   if (you && !limitedTo) return 'You'
+  // No assigned reviewer is still active: the owner and admins decide instead.
+  if (limitedTo && workflowGateHasNoActiveAssignedReviewer(limitedTo, context.inactiveAssignedReviewerIds))
+    return you ? 'You' : 'Owner or admin'
   const nameOf = (id: string) => {
     const label = context.reviewers?.find((person) => person.id === id)?.name
     return label ? reviewerDisplayName(label) : undefined

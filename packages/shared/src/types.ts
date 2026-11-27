@@ -1679,6 +1679,14 @@ export interface WorkStream {
   /** The human user who requested this work stream (provenance). Null for agent-created streams. */
   requestingUserId: string | null
   assignedReviewerIds?: string[]
+  /**
+   * Read-only, computed by list and detail endpoints: the assigned reviewers who can no longer
+   * decide (disabled or deleted account, or no review permission in the squad any more). When it
+   * holds every assigned reviewer, the stream's owner and admins decide its assigned-reviewers gates
+   * (`workflowGateHasNoActiveAssignedReviewer`). Omitted when every assigned reviewer is active, and
+   * by older servers.
+   */
+  inactiveAssignedReviewerIds?: string[]
   /** Resolved display name of the requesting user; populated by the detail endpoint, not stored. */
   requestingUserName?: string | null
   agentIds: string[] | null

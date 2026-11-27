@@ -5,7 +5,8 @@ import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { client } from '../api/clientInstance'
-import { WorkStreamReviewers } from './WorkStreamReviewers'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { NoActiveReviewerNotice, WorkStreamReviewers } from './WorkStreamReviewers'
 
 test('work-stream editors assign and clear reviewer filters without granting review permissions', async () => {
   const reviewers = [{ id: 'reviewer', name: 'Riley' }]
@@ -73,3 +74,33 @@ for (const status of ['done', 'canceled'] as const) {
     }
   })
 }
+
+test('the stream warns to reassign while no assigned reviewer is active, and marks the inactive ones', () => {
+  const stream = {
+    id: 'stream',
+    squadId: 'squad',
+    status: 'active',
+    assignedReviewerIds: ['gone', 'left'],
+  } as unknown as WorkStream
+  const notice = (fields: Partial<WorkStream>) =>
+    renderToStaticMarkup(<NoActiveReviewerNotice stream={{ ...stream, ...fields }} />)
+  expect(notice({ inactiveAssignedReviewerIds: ['gone', 'left'] })).toContain('Assign an active reviewer')
+  // One still active, an older server that sends nothing, or a finished stream: no warning.
+  expect(notice({ inactiveAssignedReviewerIds: ['gone'] })).toBe('')
+  expect(notice({})).toBe('')
+  expect(notice({ inactiveAssignedReviewerIds: ['gone', 'left'], status: 'done' })).toBe('')
+  // Reassigned: an active reviewer joins the list, so the warning clears.
+  expect(notice({ assignedReviewerIds: ['gone', 'left', 'new'], inactiveAssignedReviewerIds: ['gone', 'left'] })).toBe(
+    ''
+  )
+
+  const cache = new QueryClient()
+  cache.setQueryData(queryKeys.workflows.reviewers('squad'), [])
+  const list = renderToStaticMarkup(
+    <QueryClientProvider client={cache}>
+      <WorkStreamReviewers stream={{ ...stream, inactiveAssignedReviewerIds: ['gone', 'left'] }} />
+    </QueryClientProvider>
+  )
+  expect(list.match(/no longer active/g)).toHaveLength(2)
+  expect(list).toContain('No assigned reviewer is still active')
+})

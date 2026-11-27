@@ -290,6 +290,8 @@ function HumanGateCard({
           {gate.blockingWaits.length ? 'Read review' : gate.canDecide ? 'Review and decide' : 'Read proposal'}
         </button>
         {gate.readOnlyReason && <p className="text-xs text-muted">{gate.readOnlyReason}</p>}
+        {/* The stream's reviewers notice above asks for a reassignment; this says why you may decide. */}
+        {gate.fallbackNote && <p className="text-xs text-muted">{gate.fallbackNote}</p>}
       </div>
       {reviewing && (
         <WorkflowReviewModal
