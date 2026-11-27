@@ -1,13 +1,48 @@
 import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import clsx from 'clsx'
 import { useCallback, useRef, useState } from 'react'
-import type { QuestionData, QuestionItem } from '@ficus/shared'
+import { recommendedQuestionOption, type QuestionData, type QuestionItem, type QuestionOption } from '@ficus/shared'
 import { useVoiceRecorder, type RecorderState } from '../hooks/useVoiceRecorder'
 import { useVoiceKeyboardShortcuts } from '../hooks/useVoiceKeyboardShortcuts'
 import { useStableRef } from '../hooks/useStableRef'
 import { transcribeAudio } from '../api/transcribe'
 import { VoiceMicButton } from './VoiceMicButton'
 import { MarkdownContent } from './MarkdownContent'
+import { Badge } from './Badge'
+
+/** Marks the agent's recommended option. It is display only: nothing is preselected. */
+function RecommendedTag() {
+  return (
+    <Badge color="accent-1" className="shrink-0">
+      Recommended
+    </Badge>
+  )
+}
+
+/** An option's label, with the Recommended tag and its one-line reason when it is the recommended one. */
+function OptionLabel({
+  option,
+  recommended,
+  reasonId,
+}: {
+  option: QuestionOption
+  recommended: boolean
+  reasonId: string
+}) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-sm text-primary">{option.label ?? option.value}</span>
+        {recommended && <RecommendedTag />}
+      </span>
+      {recommended && option.reason && (
+        <span id={reasonId} className="mt-0.5 block text-xs text-muted">
+          {option.reason}
+        </span>
+      )}
+    </span>
+  )
+}
 
 interface QuestionInputProps {
   questionData: QuestionData
@@ -359,6 +394,9 @@ function QuestionField({
   const [meFocused, setMeFocused] = useState(false)
   const localTextarea = useRef<HTMLTextAreaElement | null>(null)
   const suggestions = question.type === 'text' ? (question.options ?? []) : []
+  const recommended = recommendedQuestionOption(question)
+  const reasonId = `question-${question.id}-recommendation`
+  const describedBy = (option: QuestionOption) => (option === recommended && option.reason ? reasonId : undefined)
 
   return (
     <div className="space-y-2">
@@ -396,6 +434,7 @@ function QuestionField({
               key={option.value}
               type="button"
               aria-pressed={textValue === option.value}
+              aria-describedby={describedBy(option)}
               disabled={disabled}
               onClick={() => {
                 // A suggestion fills the answer; the text stays editable before submitting.
@@ -411,9 +450,20 @@ function QuestionField({
               )}
             >
               {option.label ?? option.value}
+              {option === recommended && (
+                <>
+                  {' '}
+                  <RecommendedTag />
+                </>
+              )}
             </button>
           ))}
         </div>
+      )}
+      {suggestions.length > 0 && recommended?.reason && (
+        <p id={reasonId} className="text-xs text-muted">
+          {recommended.reason}
+        </p>
       )}
 
       {question.type === 'text' && (
@@ -500,9 +550,10 @@ function QuestionField({
                 checked={textValue === option.value}
                 onChange={(e) => onChange(e.target.value)}
                 disabled={disabled}
+                aria-describedby={describedBy(option)}
                 className="text-accent focus:ring-accent"
               />
-              <span className="text-sm text-primary">{option.label ?? option.value}</span>
+              <OptionLabel option={option} recommended={option === recommended} reasonId={reasonId} />
             </label>
           ))}
           <label
@@ -565,9 +616,10 @@ function QuestionField({
                   checked={isSelected}
                   onChange={toggle}
                   disabled={disabled}
+                  aria-describedby={describedBy(option)}
                   className="text-accent focus:ring-accent rounded"
                 />
-                <span className="text-sm text-primary">{option.label ?? option.value}</span>
+                <OptionLabel option={option} recommended={option === recommended} reasonId={reasonId} />
               </label>
             )
           })}

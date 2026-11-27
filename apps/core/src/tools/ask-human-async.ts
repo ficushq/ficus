@@ -1,6 +1,11 @@
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-agent'
-import type { QuestionItem, QuestionType } from '@ficus/shared'
+import {
+  QUESTION_RECOMMENDATION_REASON_MAX_LENGTH,
+  type QuestionItem,
+  type QuestionOption,
+  type QuestionType,
+} from '@ficus/shared'
 import { createAgentQuestion } from '../services/agents/questions'
 
 const QUESTION_CONTEXT_MAX_LENGTH = 2000
@@ -8,6 +13,19 @@ const QUESTION_CONTEXT_MAX_LENGTH = 2000
 const QuestionOptionSchema = Type.Object({
   value: Type.String({ description: 'The value returned when this option is selected' }),
   label: Type.Optional(Type.String({ description: 'Display label (defaults to value if not provided)' })),
+  recommended: Type.Optional(
+    Type.Boolean({
+      description:
+        'Mark the one option you recommend; the card labels it Recommended. It is not preselected. ' +
+        'At most one option per question.',
+    })
+  ),
+  reason: Type.Optional(
+    Type.String({
+      maxLength: QUESTION_RECOMMENDATION_REASON_MAX_LENGTH,
+      description: 'One-line reason for your recommendation, shown with it. Only on the recommended option.',
+    })
+  ),
 })
 
 const QuestionItemSchema = Type.Object({
@@ -71,12 +89,57 @@ type AskParams = {
     type?: QuestionType
     question: string
     context?: string
-    options?: { value: string; label?: string }[]
+    options?: QuestionOption[]
     default?: string | string[]
     optional?: boolean
   }>
   blocking?: boolean
   waitScope?: 'attempt' | 'stream'
+}
+
+/**
+ * Validates and normalizes a question's options: `recommended` is kept only when true, `reason`
+ * is trimmed and kept only on the recommended option. Returns an error message when the
+ * recommendation is malformed.
+ */
+function normalizeOptions(
+  questionId: string,
+  options: QuestionOption[] | undefined
+): { options: QuestionOption[] | undefined } | { error: string } {
+  if (!options) return { options }
+  const recommended = options.filter((option) => option.recommended === true)
+  if (recommended.length > 1) {
+    return {
+      error:
+        `Question '${questionId}': at most one option can be recommended, but ${recommended.length} were ` +
+        `(${recommended.map((option) => `'${option.value}'`).join(', ')})`,
+    }
+  }
+  const normalized: QuestionOption[] = []
+  for (const option of options) {
+    const reason = typeof option.reason === 'string' ? option.reason.trim() : ''
+    const isRecommended = option.recommended === true
+    if (reason && !isRecommended) {
+      return {
+        error: `Question '${questionId}': option '${option.value}' has a reason but is not recommended; a reason belongs only on the recommended option`,
+      }
+    }
+    if (/[\r\n]/.test(reason)) {
+      return { error: `Question '${questionId}': the reason for option '${option.value}' must be one line` }
+    }
+    if (reason.length > QUESTION_RECOMMENDATION_REASON_MAX_LENGTH) {
+      return {
+        error: `Question '${questionId}': the reason for option '${option.value}' must be at most ${QUESTION_RECOMMENDATION_REASON_MAX_LENGTH} characters`,
+      }
+    }
+    normalized.push({
+      value: option.value,
+      ...(option.label !== undefined ? { label: option.label } : {}),
+      ...(isRecommended ? { recommended: true } : {}),
+      ...(reason ? { reason } : {}),
+    })
+  }
+  return { options: normalized }
 }
 
 function errorResult(message: string): AgentToolResult<unknown> {
@@ -119,7 +182,9 @@ const DESCRIPTION_TAIL =
   'such questions are rejected. To get approval for an action you will perform yourself, describe that action ' +
   'in plain words (for example "May I restart the service once?"). ' +
   "For simple questions use type 'text', optionally with options as suggested answers; for choices " +
-  "use 'select' or 'multi-select' with options, the trade-off and your recommendation, and name the evidence."
+  "use 'select' or 'multi-select' with options and the trade-off, and name the evidence. " +
+  'When you recommend a choice, set recommended true on that one option with a one-line reason, ' +
+  'instead of writing the recommendation into the question or context.'
 
 const BLOCKING_DESCRIPTION =
   COMMON_DESCRIPTION +
@@ -171,12 +236,17 @@ export function createAsyncAskHumanTool(
           errors.push(`Question '${q.id}': context must be at most ${QUESTION_CONTEXT_MAX_LENGTH} characters`)
           continue
         }
+        const normalized = normalizeOptions(q.id, q.options)
+        if ('error' in normalized) {
+          errors.push(normalized.error)
+          continue
+        }
         items.push({
           id: q.id,
           type,
           question: q.question,
           ...(context ? { context } : {}),
-          options: q.options,
+          options: normalized.options,
           default: q.default,
           optional: q.optional,
         })

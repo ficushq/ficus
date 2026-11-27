@@ -27,6 +27,24 @@ export type QuestionType = 'text' | 'select' | 'multi-select'
 export interface QuestionOption {
   value: string
   label?: string
+  /**
+   * The asking agent's recommended choice, marked "Recommended" on the question card. Display
+   * only: it is never preselected, and the person still chooses. At most one option per question.
+   */
+  recommended?: boolean
+  /** One-line reason for the recommendation, shown with it. Only on the recommended option. */
+  reason?: string
+}
+
+/** Longest one-line recommendation reason ask_human accepts. */
+export const QUESTION_RECOMMENDATION_REASON_MAX_LENGTH = 200
+
+/**
+ * The option a question recommends, if any. ask_human accepts at most one; should stored data
+ * ever carry more, only the first is treated as recommended.
+ */
+export function recommendedQuestionOption(question: Pick<QuestionItem, 'options'>): QuestionOption | undefined {
+  return question.options?.find((option) => option.recommended === true)
 }
 
 export interface QuestionItem {

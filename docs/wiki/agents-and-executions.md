@@ -304,6 +304,15 @@ notification, or a phone rather than the agent's conversation, so `context` (Mar
 characters) carries the background shown beneath the question. On `text` questions, `options` are
 suggested answers: the answer form shows them as chips that fill the editable answer.
 
+An option may set `recommended: true` with an optional one-line `reason` (at most 200 characters) to
+mark the agent's recommendation; the tool guidance asks agents to use these fields instead of writing
+the recommendation into the question or context. The web answer form labels that option
+"Recommended" and shows the reason, but never preselects it: the person still chooses. `ask_human`
+rejects a question with more than one recommended option, and a `reason` on an option that is not
+recommended. Both fields are optional, so questions without them render as before; if stored data
+ever carries more than one recommended option, clients mark only the first. The mobile app does not
+show the marker yet.
+
 The stored answer is unchanged: the chosen option value for one question (multi-select values joined by
 `, `, free "Other" text verbatim), a JSON object of question id to that string for several questions,
 and `(empty)` when every optional question was skipped. The answer delivered back to the agent is
