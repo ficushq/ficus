@@ -984,6 +984,11 @@ export interface AgentQuestionActionData {
   ownerUserId: string | null
   questionData: QuestionData
   answerDelivery?: AgentQuestionAnswerDelivery
+  /**
+   * The work stream the question was asked from, when it has exactly one origin (the same rule its
+   * push notification uses). Omitted for questions outside a work stream and by older servers.
+   */
+  workStream?: { id: string; number: number; title: string }
 }
 
 // An agent halted by a provider/rate-limit error (status waiting-input with an exhaustion question).
@@ -1049,6 +1054,12 @@ export interface PendingAction {
   priority: number
   createdAt: string
   canRespond: boolean
+  /**
+   * True when this item alerts the viewer (inbox message and push) rather than only being listed:
+   * its push audience, before personal push preferences. Set for questions and human gates only;
+   * omitted otherwise and by older servers.
+   */
+  alerts?: boolean
   // Squad actions
   squadId?: string
   squadName?: string
