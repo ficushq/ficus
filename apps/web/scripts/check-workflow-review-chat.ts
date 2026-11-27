@@ -80,8 +80,8 @@ try {
       const review = page.getByRole('dialog')
       await review.waitFor()
       const layout = review.locator('[data-review-layout]')
-      const approve = review.getByRole('button', { name: /^Approved/ })
-      const sendBack = review.getByRole('button', { name: /^Changes requested/ })
+      const approve = review.getByRole('button', { name: /^Approve/ })
+      const sendBack = review.getByRole('button', { name: /^Request changes/ })
       const composer = review.locator('[data-review-chat] textarea')
       if (width >= 1024) {
         assert.equal(await layout.getAttribute('data-review-layout'), 'chat-columns')
@@ -155,7 +155,7 @@ try {
       await page.waitForFunction(
         () =>
           ![...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
-            button.textContent?.startsWith('Approved')
+            button.textContent?.startsWith('Approve')
           )?.disabled
       )
       assert.equal(await review.locator('[data-revision-changes]').count(), 0)

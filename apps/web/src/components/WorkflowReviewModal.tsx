@@ -39,6 +39,7 @@ import {
   humanGateSubtitle,
   openHumanGates,
   outcomeEffect,
+  outcomeActionLabel,
   outcomeLabel,
   outcomeRequiresNotes,
   producingAgents,
@@ -1046,7 +1047,7 @@ function DecisionButtons({ gate, run, notes, advance, revisions, typeName }: Omi
             aria-describedby={revisions.unseen.length ? 'review-revised-notice' : undefined}
             onClick={() => advance.mutate(outcome)}
           >
-            {outcomeLabel(outcome)}
+            {outcomeActionLabel(outcome)}
             <span className="block text-xs font-normal opacity-80">{effect}</span>
           </button>
         )
@@ -1086,7 +1087,7 @@ function ReadOnlyDecision({
       <ul className="space-y-1 pt-1 text-xs text-secondary">
         {gate.outcomes.map(([outcome, transition]) => (
           <li key={outcome}>
-            <span className="font-medium">{outcomeLabel(outcome)}</span>
+            <span className="font-medium">{outcomeActionLabel(outcome)}</span>
             <span className="text-muted">
               {' '}
               · {outcomeEffect(run.state, transition, gate.attempt, outcome, { typeName })}

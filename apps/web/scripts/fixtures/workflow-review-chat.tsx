@@ -189,7 +189,13 @@ createRoot(document.getElementById('root')!).render(
   <MemoryRouter>
     <QueryClientProvider client={cache}>
       <PermissionsProvider
-        usePermissions={() => ({ permissions: ['*'], can: () => true, isLoading: false, isError: false })}
+        usePermissions={() => ({
+          permissions: ['*'],
+          identity: { type: 'user', userId: 'synthetic-reviewer' },
+          can: () => true,
+          isLoading: false,
+          isError: false,
+        })}
       >
         <ReviewConversationContext.Provider value={renderFixtureConversation}>
           <WorkflowReviewModal stream={stream} attemptId={2} onClose={() => {}} />

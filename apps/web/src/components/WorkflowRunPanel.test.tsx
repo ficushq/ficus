@@ -119,9 +119,9 @@ test('approving needs no notes; human outcomes send the displayed version and at
     await f.render(<WorkflowReviewCallout stream={stream} />)
     await openReview(f)
     const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
-      node.textContent?.startsWith('Approved')
+      node.textContent?.startsWith('Approve')
     )!
-    expect(button.textContent).toContain('Completes the work stream')
+    expect(button.textContent).toBe('ApproveCompletes the work stream')
     // A forward-only gate never needs notes.
     expect(button.disabled).toBe(false)
     expect(f.dom.window.document.body.textContent).toContain('Optional. Your notes are recorded')
@@ -186,7 +186,7 @@ test('read-only viewers can inspect human work without approval or revision cont
     expect(dialog.querySelector('[data-review-document]')!.textContent).toContain('Approve this draft')
     expect(dialog.querySelector('textarea')).toBeNull()
     expect(dialog.textContent).toContain('Awaiting a decision')
-    expect([...dialog.querySelectorAll('button')].some((node) => node.textContent?.startsWith('Approved'))).toBe(false)
+    expect([...dialog.querySelectorAll('button')].some((node) => node.textContent?.startsWith('Approve'))).toBe(false)
   } finally {
     await f.cleanup()
   }
@@ -607,7 +607,7 @@ test('approving without notes submits an empty decision note', async () => {
     await f.render(<WorkflowReviewCallout stream={stream} />)
     await openReview(f)
     const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
-      node.textContent?.startsWith('Approved')
+      node.textContent?.startsWith('Approve')
     )!
     await f.dom.act(async () => {
       button.click()
@@ -646,7 +646,11 @@ test('kept human gates show only the effective outcomes and retain their initial
     await f.render(<WorkflowReviewCallout stream={stream} />)
     await openReview(f)
     const text = f.dom.window.document.body.textContent!
-    expect(text).toContain('Accepted')
+    // Only the effective outcome is offered, named as an action.
+    const decisions = [...f.dom.window.document.querySelectorAll('[role="dialog"] button')].map(
+      (node) => node.textContent ?? ''
+    )
+    expect(decisions.filter((label) => /^(Accept|Approve)/.test(label))).toEqual(['AcceptCompletes the work stream'])
     expect(text).not.toContain('Approved')
     expect(text).toContain('Approve this draft')
     expect(text).not.toContain('Future brief')
