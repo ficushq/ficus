@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { withStoredPublicAppUrl } from '../../test-utils/public-app-url'
 import { buildNotificationEvent, getAppOrigin } from './event-builders'
 import { pushPreview } from '../push/preview'
@@ -7,6 +7,7 @@ import { WorkStream } from '../../entities/WorkStream'
 import { Squad } from '../../entities/Squad'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { Agent } from '../../entities/Agent'
+import { AgentType } from '../../entities/AgentType'
 import * as questionsModule from '../agents/questions'
 import * as waitsModule from '../work-streams/waits'
 
@@ -19,6 +20,17 @@ function track<T extends { mockRestore: () => void }>(spy: T): T {
 
 describe('notification event builders', () => {
   const originalAppUrl = process.env.APP_URL
+  // No configured type names unless a test sets them: labels title-case the type id.
+  let typeNames: Record<string, string> = {}
+
+  beforeEach(() => {
+    typeNames = {}
+    track(
+      spyOn(AgentType, 'find').mockImplementation(async (id: string) =>
+        typeNames[id] ? ({ id, name: typeNames[id] } as any) : null
+      )
+    )
+  })
 
   afterEach(() => {
     while (spies.length) spies.pop()?.mockRestore()
@@ -259,6 +271,50 @@ describe('notification event builders', () => {
     })
     const failed = await buildNotificationEvent('execution.failed', { executionId: 'e1', agentId: 'a1' })
     expect(pushPreview(failed!).body).toBe('Engineer agent failed: details')
+  })
+
+  test('execution pushes name the type by its configured name and never say "agent" twice', async () => {
+    const { Execution } = await import('../../entities/Execution')
+    const agents: Record<string, unknown> = {
+      general: { id: 'general', agentTypeId: 'general', squadId: null, metadata: { name: 'Quill' } },
+      ops: { id: 'ops', agentTypeId: 'sysops', squadId: null, metadata: { name: 'Pike' } },
+      helper: { id: 'helper', agentTypeId: 'general', squadId: null, metadata: {} },
+    }
+    track(spyOn(Agent, 'find').mockImplementation(async (id: string) => agents[id] as any))
+    track(spyOn(Execution, 'find').mockResolvedValue({ id: 'e1', error: 'boom' } as any))
+    const body = async (type: string, agentId: string) =>
+      (await buildNotificationEvent(type, { executionId: 'e1', agentId }))!.body
+
+    expect(await body('execution.completed', 'general')).toBe('General Purpose agent finished execution')
+    expect(await body('execution.failed', 'general')).toBe('General Purpose agent failed: boom')
+    expect(await body('execution.completed', 'ops')).toBe('Sysops agent finished execution')
+
+    typeNames = { sysops: 'SysOps', general: 'Helper Agent' }
+    expect(await body('execution.completed', 'ops')).toBe('SysOps agent finished execution')
+    expect(await body('execution.failed', 'ops')).toBe('SysOps agent failed: boom')
+    expect(await body('execution.completed', 'helper')).toBe('Helper Agent finished execution')
+  })
+
+  test('a question push names the asker by its configured type name', async () => {
+    track(
+      spyOn(questionsModule, 'getAgentQuestion').mockResolvedValue({
+        id: 'q1',
+        agentId: 'a1',
+        squadId: null,
+        ownerUserId: 'u1',
+        questionData: { questions: [{ id: '1', type: 'text', question: 'Ship it?' }] },
+        status: 'open',
+        answer: null,
+        answeredByUserId: null,
+        createdAt: new Date().toISOString(),
+        answeredAt: null,
+      } as any)
+    )
+    track(spyOn(Agent, 'find').mockResolvedValue({ id: 'a1', agentTypeId: 'system-manager', metadata: {} } as any))
+    typeNames = { 'system-manager': 'User Assistant' }
+    expect((await buildNotificationEvent('agent-question.created', { questionId: 'q1' }))!.title).toBe(
+      '❓ User Assistant has a question'
+    )
   })
 
   test('links execution notifications to the squad Chats tab, or the Assistant view for squadless agents', async () => {
