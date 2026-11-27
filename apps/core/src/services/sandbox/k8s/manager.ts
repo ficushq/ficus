@@ -499,7 +499,10 @@ export class K8sSandboxManager implements ISandboxManager {
       const chunks: Buffer[] = []
       const stream = state.client.bash({ command, cwd: state.workspaceMount, env: options?.env })
       // An abort stops the command in the pod, not only this wait for it.
+      // A command that already reported its exit code is not cancelled.
+      let exited = false
       const onAbort = () => {
+        if (exited) return
         reject(sandboxExecAbortReason(signal!))
         stream
           .cancelAndWait('tool-abort')
@@ -518,6 +521,7 @@ export class K8sSandboxManager implements ISandboxManager {
         if (response.error) {
           reject(new Error(response.error))
         }
+        if (response.exitCode !== undefined) exited = true
         if (response.exitCode !== undefined && response.exitCode !== 0) {
           const output = Buffer.concat(chunks).toString()
           reject(new Error(`Command failed with exit code ${response.exitCode}: ${output}`))

@@ -52,9 +52,13 @@ squad is busy. Four things keep that safe:
     starts fresh. The claim is bound to the stream inside the creation transaction.
   - Before it deletes the claim, a create that provisioned a worktree and then failed
     (its transaction failed, or it answered `create_claim_lost`) removes what it
-    provisioned (`services/work-streams/create-rollback.ts`). Only the worktree named in
-    its ownership receipt is removed, through the same runner as delivered-worktree
-    cleanup, which keeps a worktree with uncommitted or unpublished work. The branch is
+    provisioned (`services/work-streams/create-rollback.ts`). Only a worktree at the
+    stream's own default path (`worktrees/<id>`) named in its ownership receipt is
+    removed, through the same runner as delivered-worktree cleanup, which keeps a
+    worktree with uncommitted or unpublished work. A caller-chosen `--worktree` path is
+    kept with its branch, because a repeat that took over the claim may have adopted it
+    (a retry adopts it the same way), and nothing is removed while any stream in the squad
+    references the worktree path or the repository and branch. The branch is
     deleted only when this create made it, nothing has it checked out and it still points
     at the commit it was made from; a branch that existed before the create is never
     deleted. A retry with the same explicit `--branch` therefore succeeds. Anything that

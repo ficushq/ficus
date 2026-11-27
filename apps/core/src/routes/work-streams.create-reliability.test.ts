@@ -387,6 +387,69 @@ describe('work stream create reliability', () => {
       }
     })
 
+    it('keeps an explicit worktree that the repeat which took over its claim adopted', async () => {
+      const body = {
+        squadId,
+        title: `${prefix} explicit worktree`,
+        repository: 'repo',
+        worktree: 'shared/wt',
+        branch: 'feature/shared',
+      }
+      let taker: Response | undefined
+      // The claim expires mid-provisioning; a repeat with the same key takes it over,
+      // adopts the worktree this request just made, and commits.
+      setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) => {
+        const result = await repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          record
+        )
+        await db.delete(workStreamCreateRequests).where(eq(workStreamCreateRequests.idempotencyKey, 'key-race'))
+        taker = await post(body, 'key-race')
+        return result
+      })
+      const lost = await post(body, 'key-race')
+      expect(lost.status).toBe(409)
+      expect(await lost.json()).toMatchObject({ code: 'create_claim_lost' })
+      expect(taker!.status).toBe(201)
+      expect(await streamCount()).toBe(1)
+      expect(await worktrees()).toEqual([join(root, 'shared', 'wt')])
+      expect(await branchExists('feature/shared')).toBe(true)
+    })
+
+    it('keeps a branch another stream is bound to, even at its own default path', async () => {
+      let ownership: repositorySetup.WorktreeOwnership | undefined
+      setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) =>
+        repositorySetup.prepareRepository(
+          exec,
+          root,
+          { ...input, repository: 'repo', baseBranch: 'main', baseSource: 'local' },
+          key,
+          metadata,
+          (receipt) => {
+            ownership = receipt
+            return record?.(receipt)
+          }
+        )
+      )
+      const created = await post({ squadId, title: `${prefix} bound`, repository: 'repo' })
+      expect(created.status).toBe(201)
+      const other = crypto.randomUUID()
+      const result = await rollbackCreateProvisioning(
+        squadId,
+        other,
+        { ...ownership!, worktree: join(root, 'worktrees', other) },
+        { exec }
+      )
+      expect(result).toMatchObject({ worktree: 'retained', branch: 'retained' })
+      expect(result.reason).toContain('references this worktree or branch')
+      expect(existsSync(ownership!.worktree)).toBe(true)
+      expect(await branchExists(ownership!.branch)).toBe(true)
+    })
+
     it('never removes the worktree of a stream that committed', async () => {
       let ownership: repositorySetup.WorktreeOwnership | undefined
       setup.mockImplementationOnce(async (_squadId, input, key, metadata, record) =>

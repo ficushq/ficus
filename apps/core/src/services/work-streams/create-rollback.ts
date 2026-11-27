@@ -2,7 +2,14 @@
  * Undo the repository provisioning of a work stream create that never
  * committed (its transaction failed, or it lost its idempotency claim).
  *
- * Only what that create's ownership receipt names is touched:
+ * Only a worktree at the stream-unique default path (`worktrees/<streamId>`) is
+ * removed. A caller-chosen `--worktree` path is kept with its branch: a repeat
+ * with the same key may have taken the claim over and adopted that very path
+ * (repository-setup.ts reuses an existing worktree on the requested branch),
+ * and a retry adopts it the same way. Nothing is removed while any stream in
+ * the squad references the worktree path, or the repository and branch.
+ *
+ * Within those limits, only what that create's ownership receipt names is touched:
  * - the worktree, through the native cleanup runner (worktree-cleanup-runtime.ts),
  *   which checks the directory identity and registration and refuses
  *   uncommitted or unpublished work;
@@ -13,7 +20,8 @@
  * Anything that cannot be proven safe is left in place and logged; rollback
  * never replaces the create's own error.
  */
-import { eq } from 'drizzle-orm'
+import { posix as path } from 'node:path'
+import { and, eq, or, sql } from 'drizzle-orm'
 import { db, workStreams } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import type { RepositoryExec, WorktreeOwnership } from './repository-setup'
@@ -63,10 +71,38 @@ async function squadRepositoryExec(squadId: string): Promise<RepositoryExec> {
   return async (args, options) => (await manager.exec(sandboxId, args, options)).toString()
 }
 
+/** Why this create's provisioning must stay, or undefined when it may be removed. */
+async function keepReason(
+  squadId: string,
+  workStreamId: string,
+  ownership: WorktreeOwnership
+): Promise<string | undefined> {
+  // A commit whose outcome was unknown (the connection dropped at COMMIT) may still have landed.
+  const [landed] = await db.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, workStreamId))
+  if (landed) return 'The work stream committed; its worktree is kept'
+  if (ownership.worktree !== path.join(ownership.workspace, 'worktrees', workStreamId))
+    return 'A caller-chosen worktree path is kept with its branch; another create with the same key may have adopted it, and a retry adopts it'
+  const git = sql`${workStreams.metadata}->'git'`
+  const [referenced] = await db
+    .select({ id: workStreams.id })
+    .from(workStreams)
+    .where(
+      and(
+        eq(workStreams.squadId, squadId),
+        or(
+          sql`${git}->>'worktree' = ${ownership.worktree}`,
+          sql`${git}->>'repository' = ${ownership.repository} AND ${git}->>'branch' = ${ownership.branch}`
+        )
+      )
+    )
+    .limit(1)
+  if (referenced) return `Work stream ${referenced.id} references this worktree or branch; both are kept`
+  return undefined
+}
+
 /**
- * Best effort: logs and returns the outcome, never throws. A commit whose outcome
- * was unknown (the connection dropped at COMMIT) may still have landed, so a
- * stream row with this ID leaves everything in place.
+ * Best effort: logs and returns the outcome, never throws. Removes nothing that
+ * another work stream (or this one, if it did commit) may use; see the module comment.
  */
 export async function rollbackCreateProvisioning(
   squadId: string,
@@ -76,10 +112,10 @@ export async function rollbackCreateProvisioning(
 ): Promise<ProvisioningRollback> {
   let result: ProvisioningRollback
   try {
-    const [landed] = await db.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, workStreamId))
-    if (landed) {
-      result = { worktree: 'retained', branch: 'retained', reason: 'The work stream committed; its worktree is kept' }
-      log.warn(`Kept provisioning of work stream ${workStreamId}: ${result.reason}`)
+    const reason = await keepReason(squadId, workStreamId, ownership)
+    if (reason) {
+      result = { worktree: 'retained', branch: ownership.baseCommit ? 'retained' : 'pre-existing', reason }
+      log.warn(`Kept provisioning of work stream ${workStreamId}: ${reason}`)
       return result
     }
     result = await removeProvisionedWorktree(options.exec ?? (await squadRepositoryExec(squadId)), ownership)
