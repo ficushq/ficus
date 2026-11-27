@@ -6,14 +6,24 @@
 export const LIVE_ROW_ATTRIBUTE = 'data-live-row'
 export const LIVE_STATUS_ATTRIBUTE = 'data-live-status'
 export const LIVE_EMPHASIS_ATTRIBUTE = 'data-live-emphasis'
+export const LIVE_QUIET_ATTRIBUTE = 'data-live-quiet'
 
 /**
  * Marks a row for LiveListMotion. `status` is what the row's status badge says; a change to it
  * emphasizes the row's `liveEmphasisProps` element. The row must be positioned (`relative`) and
- * rounded like its hover fill, so the arrival wash fits it.
+ * rounded like its hover fill, so the arrival wash fits it. A `quiet` row still slides, but is never
+ * highlighted when it arrives (a Needs you card the user already answered that a refetch briefly
+ * returns).
  */
-export function liveRowProps(key: string, status?: string | null): Record<string, string> {
-  return status == null ? { [LIVE_ROW_ATTRIBUTE]: key } : { [LIVE_ROW_ATTRIBUTE]: key, [LIVE_STATUS_ATTRIBUTE]: status }
+export function liveRowProps(
+  key: string,
+  status?: string | null,
+  { quiet = false }: { quiet?: boolean } = {}
+): Record<string, string> {
+  const props: Record<string, string> = { [LIVE_ROW_ATTRIBUTE]: key }
+  if (status != null) props[LIVE_STATUS_ATTRIBUTE] = status
+  if (quiet) props[LIVE_QUIET_ATTRIBUTE] = ''
+  return props
 }
 
 /** Marks the element inside a row that gets the brief emphasis when the row's status changes. */

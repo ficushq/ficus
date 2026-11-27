@@ -58,6 +58,11 @@ export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivi
   isError: boolean
   items: T[]
   loadingShapeKey: string
+  /**
+   * Any other filter that scopes the rows, as a string (the global Activity's settled filter). A
+   * change to it is a fresh list, so it animates nothing (LiveListMotion's reset key).
+   */
+  liveMotionScope?: string
   /** Agent ids currently 'active' — the top-most row per id gets a pulsing live dot. */
   workingAgentIds: Set<string>
   /** Hover-tooltip detail for the label column (purpose/name); undefined renders no title. */
@@ -103,6 +108,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   isError,
   items,
   loadingShapeKey,
+  liveMotionScope = '',
   workingAgentIds,
   agentDetailFor,
   hrefFor,
@@ -204,6 +210,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   // scope, filters, loading or paging state is a fresh list (LiveListMotion).
   const liveMotionResetKey = JSON.stringify([
     loadingShapeKey,
+    liveMotionScope,
     kinds,
     workStreamFilter,
     showEverything,

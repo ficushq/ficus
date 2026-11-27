@@ -206,6 +206,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         isError={query.isError}
         items={items}
         loadingShapeKey="activity:global"
+        liveMotionScope={JSON.stringify([settled, settledSquadIds])}
         workingAgentIds={workingAgentIds}
         agentDetailFor={agentDetailFor}
         hrefFor={hrefFor}

@@ -2,7 +2,7 @@
 // components and theme styles. `window.liveStep()` applies one live update: a stream moves to the top, a
 // stream arrives, a status changes, a card arrives in Needs you and a row streams into Activity.
 // `?section=feed|squad|activity` picks the surface, `rows=N` the number of active streams (default 5),
-// `theme` and `appearance` the theme.
+// `collapsed=1` starts the Feed's Needs you collapsed, `theme` and `appearance` the theme.
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -56,6 +56,7 @@ applyResolvedTheme(
 )
 const section = params.get('section') ?? 'feed'
 const rowCount = Number(params.get('rows') ?? 5)
+const needsYouCollapsed = params.get('collapsed') === '1'
 
 const squads = [
   { id: 'product', name: 'Product Engineering', purpose: 'Build a product customers love.' },
@@ -206,7 +207,11 @@ function Surface() {
     )
   return (
     <section data-testid="feed-surface" className="mx-auto max-w-5xl space-y-6">
-      <ActionCenterContent actions={actions} isLoading={false} showSectionCounts={false} liveMotionKey="[]" />
+      {/* Like the Feed's Needs you: a disclosure the viewer can collapse. */}
+      <details open={!needsYouCollapsed} data-testid="needs-you">
+        <summary>Needs you</summary>
+        <ActionCenterContent actions={actions} isLoading={false} showSectionCounts={false} liveMotionKey="[]" />
+      </details>
       <WorkStreamList
         workStreams={streams}
         squadMap={squadMap}
