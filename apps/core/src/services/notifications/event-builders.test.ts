@@ -298,7 +298,7 @@ describe('notification event builders', () => {
   test('a question push names the asker by its configured type name', async () => {
     track(
       spyOn(questionsModule, 'getAgentQuestion').mockResolvedValue({
-        id: 'q1',
+        id: '00000000-0000-4000-8000-000000000003',
         agentId: 'a1',
         squadId: null,
         ownerUserId: 'u1',
@@ -312,9 +312,10 @@ describe('notification event builders', () => {
     )
     track(spyOn(Agent, 'find').mockResolvedValue({ id: 'a1', agentTypeId: 'system-manager', metadata: {} } as any))
     typeNames = { 'system-manager': 'User Assistant' }
-    expect((await buildNotificationEvent('agent-question.created', { questionId: 'q1' }))!.title).toBe(
-      '❓ User Assistant has a question'
-    )
+    expect(
+      (await buildNotificationEvent('agent-question.created', { questionId: '00000000-0000-4000-8000-000000000003' }))!
+        .title
+    ).toBe('❓ User Assistant has a question')
   })
 
   test('links execution notifications to the squad Chats tab, or the Assistant view for squadless agents', async () => {
