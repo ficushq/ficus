@@ -119,6 +119,12 @@ async function render({ admin = false, devices = [], connection, availability, t
   return { container, client, requests, dom }
 }
 
+test('"Don’t have the app?" goes to the download section on ficus.sh from a desktop browser', async () => {
+  const { container } = await render()
+  const get = getByRole(container, 'link', { name: /Get it from ficus\.sh/ })
+  expect(get.getAttribute('href')).toBe('https://ficus.sh/mobile#download')
+})
+
 test('personal Mobile is a plain settings page without the marketing grid', async () => {
   const { container } = await render()
   const text = container.textContent ?? ''

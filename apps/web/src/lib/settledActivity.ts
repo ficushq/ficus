@@ -25,9 +25,17 @@ export function settledPeriodLabel(since: string, now = new Date()): string {
   return `Since ${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
 }
 
-/** Activity filtered to exactly the rows behind one count, in the same squads. */
-export function settledActivityHref(kind: ActivitySettledKind, since: string, squadIds: readonly string[]): string {
-  const params = new URLSearchParams({ settled: kind, since })
+/**
+ * Activity filtered to exactly the rows behind one count, in the same squads: from the count's
+ * `since` up to its `through`, so rows that settled after the count are not listed under it.
+ */
+export function settledActivityHref(
+  kind: ActivitySettledKind,
+  summary: Pick<ActivitySettledSummary, 'since' | 'through'>,
+  squadIds: readonly string[]
+): string {
+  const params = new URLSearchParams({ settled: kind, since: summary.since })
+  if (summary.through) params.set('until', summary.through)
   for (const squadId of [...new Set(squadIds)].sort()) params.append('squad', squadId)
   return `/activity?${params.toString()}`
 }
@@ -48,8 +56,9 @@ export const SETTLED_FILTER_TITLES: Record<ActivitySettledKind, string> = {
 }
 
 /**
- * The Feed's settled counts link to Activity as `?settled=<kind>&since=<ISO>&squad=<id>`: the rows
- * behind one count, in the same squads. Anything malformed is ignored, so the page shows everything.
+ * The Feed's settled counts link to Activity as `?settled=<kind>&since=<ISO>&until=<ISO>&squad=<id>`:
+ * the rows behind one count, in the same squads. Anything malformed is ignored, so the page shows
+ * everything; a link without a usable `until` (an older bookmark) lists from `since` with no end.
  */
 export function parseSettledActivityParams(params: URLSearchParams): {
   settled?: ActivitySettledFilter
@@ -65,8 +74,14 @@ export function parseSettledActivityParams(params: URLSearchParams): {
     isNaN(sinceDate.valueOf())
   )
     return { squadIds: [] }
+  const until = params.get('until')
+  const untilDate = until ? new Date(until) : null
   return {
-    settled: { kind: kind as ActivitySettledKind, since: sinceDate.toISOString() },
+    settled: {
+      kind: kind as ActivitySettledKind,
+      since: sinceDate.toISOString(),
+      ...(untilDate && !isNaN(untilDate.valueOf()) ? { until: untilDate.toISOString() } : {}),
+    },
     squadIds: [...new Set(params.getAll('squad'))].sort(),
   }
 }

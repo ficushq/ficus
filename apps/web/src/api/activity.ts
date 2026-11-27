@@ -47,6 +47,7 @@ export async function listGlobalActivity(
   if (options.settled) {
     params.set('settled', options.settled.kind)
     params.set('since', options.settled.since)
+    if (options.settled.until) params.set('until', options.settled.until)
   }
   const query = params.toString()
   return fetch<GlobalSquadActivityPage>(

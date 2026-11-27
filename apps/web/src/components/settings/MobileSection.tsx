@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { getApiUrl } from '../../api/client'
+import { FICUS_MOBILE_URL, mobileAppInstall } from '../../lib/ficusMobileApp'
 import { usePermissions } from '../../hooks/usePermissions'
 import { serverConnectionQueries } from '../../queryOptions'
 import { devicePlatformLabel } from './deviceAuthorizationApprovalLogic'
@@ -16,7 +17,6 @@ import {
 } from './SettingsRow'
 import { usePhonePairing } from './usePhonePairing'
 
-const FICUS_MOBILE_URL = 'https://ficus.sh/mobile'
 const MOBILE_PLATFORMS = new Set(['ios', 'android'])
 
 /**
@@ -29,6 +29,7 @@ export function MobileSection() {
   const permissions = usePermissions()
   const isAdmin = permissions.identity?.type === 'user' && permissions.can('settings:read')
   const { devicesQuery, pairing, error, start, starting, clear } = usePhonePairing()
+  const install = mobileAppInstall()
   const phones = (devicesQuery.data ?? []).filter(
     (device) => MOBILE_PLATFORMS.has(device.platform) && !device.revokedAt
   )
@@ -78,6 +79,7 @@ export function MobileSection() {
                 onRegenerate={start}
                 regenerating={starting}
                 hint="Scan with the Ficus app, or open it on this phone."
+                getAppLink={false}
               />
             </div>
           )}
@@ -88,7 +90,7 @@ export function MobileSection() {
           )}
           {isAdmin ? <AdminServerAddressRow /> : <MemberServerAddressRow />}
           <p className="text-xs text-muted">
-            Don’t have the app? <ExternalLink href={FICUS_MOBILE_URL}>Get it from ficus.sh</ExternalLink>
+            Don’t have the app? <ExternalLink href={install.url}>{install.label}</ExternalLink>
           </p>
         </div>
       </section>

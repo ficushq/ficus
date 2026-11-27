@@ -839,12 +839,27 @@ describe('ActivityPage Active work strip and Show everything', () => {
 describe('ActivityPage settled filter from the Feed', () => {
   test('parses only well-formed links', () => {
     const since = '2026-11-25T09:00:00.000Z'
+    const until = '2026-11-26T12:00:00.000Z'
     expect(
       parseSettledActivityParams(
         new URLSearchParams(`settled=reviews&since=${since}&squad=${squadBId}&squad=${squadAId}`)
       )
     ).toEqual({ settled: { kind: 'reviews', since }, squadIds: [squadAId, squadBId] })
-    for (const query of ['settled=reviews', `settled=everything&since=${since}`, 'settled=questions&since=soon'])
+    // The count's end bounds the list; a malformed one is dropped, leaving the link as it was before `until`.
+    expect(parseSettledActivityParams(new URLSearchParams(`settled=reviews&since=${since}&until=${until}`))).toEqual({
+      settled: { kind: 'reviews', since, until },
+      squadIds: [],
+    })
+    expect(parseSettledActivityParams(new URLSearchParams(`settled=reviews&since=${since}&until=later`))).toEqual({
+      settled: { kind: 'reviews', since },
+      squadIds: [],
+    })
+    for (const query of [
+      'settled=reviews',
+      `settled=everything&since=${since}`,
+      'settled=questions&since=soon',
+      `until=${until}`,
+    ])
       expect(parseSettledActivityParams(new URLSearchParams(query))).toEqual({ squadIds: [] })
   })
 
@@ -853,6 +868,7 @@ describe('ActivityPage settled filter from the Feed', () => {
     const rendered = dom.createRoot()
     const client = seedClient([workItem])
     const since = '2026-11-25T09:00:00.000Z'
+    const until = '2026-11-26T12:00:00.000Z'
     const originalFetch = globalThis.fetch
     const requested: string[] = []
     let location = ''
@@ -876,7 +892,9 @@ describe('ActivityPage settled filter from the Feed', () => {
       await dom.act(async () => {
         rendered.root.render(
           <MemoryRouter
-            initialEntries={[`/activity?settled=questions&since=${encodeURIComponent(since)}&squad=${squadAId}`]}
+            initialEntries={[
+              `/activity?settled=questions&since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&squad=${squadAId}`,
+            ]}
           >
             <QueryClientProvider client={client}>
               <WebSocketContext.Provider value={socket}>
@@ -897,6 +915,7 @@ describe('ActivityPage settled filter from the Feed', () => {
               (url) =>
                 url.includes('settled=questions') &&
                 url.includes(`since=${encodeURIComponent(since)}`) &&
+                url.includes(`until=${encodeURIComponent(until)}`) &&
                 url.includes(`squadId=${squadAId}`)
             )
           ).toBe(true)

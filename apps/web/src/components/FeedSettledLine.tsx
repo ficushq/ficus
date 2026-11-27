@@ -28,7 +28,7 @@ export function FeedSettledLine({
         <Fragment key={part.kind}>
           {index > 0 && ', '}
           <Link
-            to={settledActivityHref(part.kind, summary.since, squadIds)}
+            to={settledActivityHref(part.kind, summary, squadIds)}
             className="rounded-sm underline decoration-dotted underline-offset-2 hover:text-secondary hover:decoration-solid focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent"
           >
             {part.label}

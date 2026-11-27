@@ -74,6 +74,9 @@ export const activityRouter = new Hono()
     const squadIds = [...new Set(c.req.queries('squadId') ?? [])].sort()
     const settledKind = c.req.query('settled')
     const settledSince = parseInstant(c.req.query('since'))
+    // The count's `through`: only with `settled`, so the list stops where the count did.
+    const rawSettledUntil = c.req.query('until')
+    const settledUntil = parseInstant(rawSettledUntil)
     if (
       !Number.isInteger(limit) ||
       limit < 1 ||
@@ -84,7 +87,8 @@ export const activityRouter = new Hono()
       kinds.some((kind) => !SQUAD_ACTIVITY_KINDS.includes(kind as SquadActivityKind)) ||
       squadIds.some((id) => !UUID.test(id)) ||
       (settledKind !== undefined &&
-        (!ACTIVITY_SETTLED_KINDS.includes(settledKind as ActivitySettledKind) || !settledSince))
+        (!ACTIVITY_SETTLED_KINDS.includes(settledKind as ActivitySettledKind) || !settledSince)) ||
+      (rawSettledUntil !== undefined && (settledKind === undefined || !settledUntil))
     )
       return c.json({ error: 'Invalid activity query' }, 400)
 
@@ -92,7 +96,11 @@ export const activityRouter = new Hono()
     // The same raised start as the count, so the rows listed are exactly the rows counted.
     const settled =
       settledKind && settledSince
-        ? { kind: settledKind as ActivitySettledKind, since: settledPeriodStart(settledSince).since.toISOString() }
+        ? {
+            kind: settledKind as ActivitySettledKind,
+            since: settledPeriodStart(settledSince).since.toISOString(),
+            ...(settledUntil ? { until: settledUntil.toISOString() } : {}),
+          }
         : undefined
     try {
       const page = await projectGlobalActivity({
