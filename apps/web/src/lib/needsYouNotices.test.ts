@@ -91,7 +91,9 @@ describe('needs-you notice content', () => {
   })
 
   test('a question outside a work stream falls back to its squad, and adds the agent purpose to its type', () => {
-    const content = needsYouNoticeContent(questionAction('q1', {}, { agentPurpose: 'Onboarding', workStream: undefined }))
+    const content = needsYouNoticeContent(
+      questionAction('q1', {}, { agentPurpose: 'Onboarding', workStream: undefined })
+    )
     expect(content.headline).toBe('Engineer (Onboarding) has a question')
     expect(content.context).toBe('Product Engineering')
     const unnamed = needsYouNoticeContent(questionAction('q1', {}, { agentName: null, workStream: undefined }))

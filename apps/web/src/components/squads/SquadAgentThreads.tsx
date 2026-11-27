@@ -69,7 +69,13 @@ import {
 } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
-import { getAgentName, getAgentPrimaryLabel, agentMatchesQuery } from '../../lib/agentDisplay'
+import {
+  agentListLabels,
+  getAgentLabel,
+  getAgentName,
+  getAgentPurpose,
+  agentMatchesQuery,
+} from '../../lib/agentDisplay'
 
 export interface SquadAgentThreadsDependencies {
   Chat: ComponentType<ComponentProps<typeof Chat>>
@@ -530,6 +536,11 @@ export function SquadAgentThreads({
   const allAgents = [...agents, ...recentlyTerminatedAgents].filter((agent) =>
     lockedAgentId ? agent.id === lockedAgentId : !agentTypeFilter || agent.agentTypeId === agentTypeFilter
   )
+  // Rows sit under their type's heading, so a row shows the purpose. Without one it reads as the type,
+  // never the name alone; agents of one type with no purpose add their name to tell them apart.
+  const typeFirstLabels = agentListLabels(allAgents)
+  const agentRowLabel = (agent: Agent) =>
+    getAgentPurpose(agent) ?? typeFirstLabels.get(agent.id) ?? getAgentLabel(agent)
   const potentialAgents = allAgents.filter(
     (agent) => effectiveAgentId && (agent.id === effectiveAgentId || agent.id.startsWith(effectiveAgentId))
   )
@@ -708,7 +719,8 @@ export function SquadAgentThreads({
   const renderAgentRow = (agent: Agent, compact = false) => {
     const isSelected = listSelectedAgentId === agent.id
     const stableName = getAgentName(agent)
-    const agentName = agent.agentTypeId === 'manager' ? `Manager (${stableName})` : getAgentPrimaryLabel(agent)
+    // Type first, then the purpose; the name stays in the hover title.
+    const agentName = agent.agentTypeId === 'manager' ? 'Manager' : agentRowLabel(agent)
     const activityAt = agent.lastHumanMessageAt ?? agent.createdAt
     const lastMessageTime = activityAt ? formatRelativeTime(activityAt) : null
     const terminateCheck = canTerminateAgent(agent)
@@ -1003,7 +1015,7 @@ export function SquadAgentThreads({
               : visibleCompletedAgents
             ).map((agent) => {
               const isSelected = listSelectedAgentId === agent.id
-              const agentName = getAgentPrimaryLabel(agent)
+              const agentName = agentRowLabel(agent)
               const stableName = getAgentName(agent)
               const finishedAt = completedAt(agent)
               const finishedTime = finishedAt ? formatRelativeTime(finishedAt) : null
@@ -1230,7 +1242,7 @@ export function SquadAgentThreads({
           <ExpandableChatPanel
             isFullscreen={isFullscreen}
             onExitFullscreen={toggleFullscreen}
-            title={composing ? 'New consultant' : titleParts ? `${titleParts.title} ${titleParts.suffix}` : 'Chats'}
+            title={composing ? 'New consultant' : titleParts ? `${titleParts.title} · ${titleParts.suffix}` : 'Chats'}
             titleContent={!composing && selectedAgent ? <AgentHeaderTitle agent={selectedAgent} /> : undefined}
             headerExtra={tabToggle}
             className="flex-1 min-w-0 min-h-0 border border-th-border rounded-lg bg-surface overflow-hidden flex flex-col"

@@ -1,4 +1,4 @@
-import type { Agent, PendingAction, Squad, WorkStream } from '@ficus/shared'
+import { workStreamTitle, type Agent, type PendingAction, type Squad, type WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
 import { getAgentPurpose, getAgentLabel } from './agentDisplay'
 import { pendingActionContextLine } from './pendingActionWording'
@@ -144,10 +144,11 @@ export function commandCenterSearch(
         id: `work:${w.id}`,
         kind: 'Work stream' as const,
         work: w,
-        label: w.title,
+        // "#number · title", as every work stream row shows it; the number stays searchable.
+        label: workStreamTitle(w),
         detail: squadName(w.squadId),
         keywords: w.derivedState ?? w.status,
-        destination: { kind: 'work' as const, id: w.id, squadId: w.squadId, label: w.title },
+        destination: { kind: 'work' as const, id: w.id, squadId: w.squadId, label: workStreamTitle(w) },
       })),
     ...(!data.squadId ? assistantSearch(query, [], [], data.allowedSettings) : []),
   ]

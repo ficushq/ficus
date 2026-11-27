@@ -176,7 +176,7 @@ test('lists a pending approval in the same words as the Feed, not by its action 
     wait: { type: 'manual', workflowHumanGate: true, resolutionHandler: 'workflow' },
   })
   const [row] = commandCenterSearch('', { ...data, actions: [approval] }).filter((r) => r.kind === 'Needs you')
-  expect(row!.detail).toBe('Product Engineering · review needed')
+  expect(row!.detail).toBe('Product Engineering · Engineer · review needed')
   expect(row!.detail).not.toContain('blocked')
 })
 test('an untitled conversation is named by its agent type, never by the agent name alone', () => {

@@ -181,7 +181,7 @@ function LocationProbe() {
 
 test('hovering a Feed row opens the peek card after about half a second', async () => {
   const { doc, wait, peekCard, mouse } = await render(feedList([workStream()]))
-  const row = doc.querySelector('[data-testid="feed-work-row"]')!
+  const row = doc.querySelector('[data-testid="work-stream-row"]')!
   await mouse(row, 'mouseover')
   await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS - 200)
   expect(peekCard()).toBeNull()
@@ -215,7 +215,7 @@ test('the peek card names a review gate queued behind other waits as next, and F
   expect(workStreamPeekFacts(workStream({ openWaits: [gate] })).waitLabel).toBe('Waiting on you: review')
 
   const { doc, wait, peekCard, mouse } = await render(feedList([queued]))
-  const row = doc.querySelector('[data-testid="feed-work-row"]')!
+  const row = doc.querySelector('[data-testid="work-stream-row"]')!
   expect(row.textContent).not.toContain('Review queued')
   await mouse(row, 'mouseover')
   await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
@@ -224,7 +224,7 @@ test('the peek card names a review gate queued behind other waits as next, and F
 
 test('keyboard focus opens the peek at once; Escape and blur dismiss it; the row is described by it', async () => {
   const { doc, peekCard, key, keyboardFocus, wait } = await render(feedList([workStream()]))
-  const button = doc.querySelector<HTMLButtonElement>('[data-testid="feed-work-row"] button')!
+  const button = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-row"] button')!
   const description = doc.getElementById(button.getAttribute('aria-describedby')!)!
   expect(description.textContent).toContain(`Generated summary: ${SUMMARY}`)
   expect(description.textContent).toContain('Step: Implement')
@@ -244,7 +244,7 @@ test('keyboard focus opens the peek at once; Escape and blur dismiss it; the row
 
 test('touch never opens the peek on hover', async () => {
   const { doc, wait, peekCard } = await render(feedList([workStream()]))
-  const row = doc.querySelector('[data-testid="feed-work-row"]')!
+  const row = doc.querySelector('[data-testid="work-stream-row"]')!
   await dom!.act(async () => {
     const enter = new dom!.window.MouseEvent('pointerover', { bubbles: true }) as MouseEvent & { pointerType: string }
     Object.defineProperty(enter, 'pointerType', { value: 'touch' })
@@ -321,7 +321,7 @@ test('a summary generated for an older step is not shown', async () => {
   const toggle = await feedSwitch(doc)
   expect(toggle.getAttribute('aria-checked')).toBe('true')
   expect(doc.querySelector('[data-testid="work-stream-summary-line"]')).toBeNull()
-  const button = doc.querySelector<HTMLButtonElement>('[data-testid="feed-work-row"] button')!
+  const button = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-row"] button')!
   expect(doc.getElementById(button.getAttribute('aria-describedby')!)!.textContent).not.toContain(SUMMARY)
 })
 
@@ -330,9 +330,9 @@ test('Home puts the switch in the Active header; the Work list rows peek on focu
     <SquadWorkStreamList workStreams={[workStream()]} squadId={squad.id} squad={squad} compact activeOnly />
   )
   expect(doc.querySelector('[data-testid="show-summaries-home"]')).not.toBeNull()
-  const title = [...doc.querySelectorAll<HTMLButtonElement>('li button')].find((button) =>
-    button.textContent?.endsWith('Work stream summaries')
-  )!
+  // Home draws the same row as the Feed: the row's one button is its keyboard stop.
+  const title = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-row"] button')!
+  expect(title.textContent).toContain('Work stream summaries')
   await keyboardFocus(title)
   expect(peekCard()?.textContent).toContain(SUMMARY)
 })
@@ -439,7 +439,7 @@ test('peek card participants link to their chats: click navigates, Shift/Alt-cli
       />
     </>
   )
-  const row = doc.querySelector('[data-testid="feed-work-row"]')!
+  const row = doc.querySelector('[data-testid="work-stream-row"]')!
   await mouse(row, 'mouseover')
   await wait(WORK_STREAM_PEEK_OPEN_DELAY_MS + 100)
   const card = peekCard()!
@@ -466,7 +466,7 @@ test('peek card participants link to their chats: click navigates, Shift/Alt-cli
   expect(doc.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
 
   // Keyboard: focus the row (the card opens), then the links are in the card's tab order.
-  const button = doc.querySelector<HTMLButtonElement>('[data-testid="feed-work-row"] button')!
+  const button = doc.querySelector<HTMLButtonElement>('[data-testid="work-stream-row"] button')!
   await keyboardFocus(button)
   const again = peekCard()!
   const link = again.querySelector<HTMLAnchorElement>('[data-testid="work-stream-peek-participant"]')!

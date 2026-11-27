@@ -52,6 +52,28 @@ export function getAgentLabel(agent: Pick<Agent, 'agentTypeId' | 'metadata'>, wo
   })
 }
 
+/**
+ * Labels for a list of agents shown together: each is `getAgentLabel` ("Engineer (Onboarding)"). An
+ * agent with no purpose that shares its type with another agent in the list adds its name in
+ * parentheses ("Consultant (Quartz)") so the rows stay distinguishable; the type still leads.
+ */
+export function agentListLabels(agents: readonly Agent[]): Map<string, string> {
+  const typeCounts = new Map<string, number>()
+  for (const agent of agents) typeCounts.set(agent.agentTypeId, (typeCounts.get(agent.agentTypeId) ?? 0) + 1)
+  const labels = new Map<string, string>()
+  for (const agent of agents) {
+    const shared = (typeCounts.get(agent.agentTypeId) ?? 0) > 1
+    const name = agent.metadata?.name
+    labels.set(
+      agent.id,
+      getAgentPurpose(agent) || !shared || typeof name !== 'string' || !name.trim()
+        ? getAgentLabel(agent)
+        : getAgentLabel(agent, name.trim())
+    )
+  }
+  return labels
+}
+
 export function agentMatchesQuery(agent: Agent, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true

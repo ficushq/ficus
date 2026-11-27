@@ -10,7 +10,7 @@ import { AgentContextPanel } from './AgentContextPanel'
 import { AgentInfoPanel } from '../AgentInfoPanel'
 import { ChatIcon, InboxIcon, WorkStreamIcon, MemoryIcon } from '../icons'
 import type { Agent } from '@ficus/shared'
-import { getAgentName, getAgentPurpose } from '../../lib/agentDisplay'
+import { getAgentLabel, getAgentName } from '../../lib/agentDisplay'
 
 const titleCase = (id: string) =>
   id
@@ -25,15 +25,14 @@ function displayName(name: string): string {
 }
 
 /**
- * The agent chat header: its purpose (else its type) as the title, then its
- * name. The type isn't repeated beside the name: the agent list already groups
- * agents by type, and a workflow agent's name leads with its participant.
+ * The agent chat header: the agent's type first, with its purpose in parentheses ("Engineer
+ * (Onboarding)"), then its name as the secondary handle. A squad has one manager, so it is
+ * "Manager". A workflow agent's name leads with its participant, title-cased.
  */
 export function getAgentHeaderTitleParts(agent: Agent): { title: string; suffix: string } {
   const stableName = displayName(getAgentName(agent))
-  if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: `(${stableName})` }
-  const purpose = getAgentPurpose(agent)
-  return { title: purpose ?? titleCase(agent.agentTypeId), suffix: `(${stableName})` }
+  if (agent.agentTypeId === 'manager') return { title: 'Manager', suffix: stableName }
+  return { title: getAgentLabel(agent), suffix: stableName }
 }
 
 /** Keep the full desktop title and a compact two-line identity on phones. */
@@ -42,11 +41,11 @@ export function AgentHeaderTitle({ agent }: { agent: Agent }) {
   return (
     <span className="block min-w-0">
       <span className="hidden md:block truncate">
-        {title} <span className="font-normal text-secondary">{suffix}</span>
+        {title} <span className="font-normal text-secondary">· {suffix}</span>
       </span>
       <span className="block md:hidden">
         <span className="block truncate">{title}</span>
-        <span className="block truncate text-xs font-normal text-secondary">{suffix.slice(1, -1)}</span>
+        <span className="block truncate text-xs font-normal text-secondary">{suffix}</span>
       </span>
     </span>
   )
