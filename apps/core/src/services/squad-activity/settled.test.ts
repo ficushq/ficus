@@ -238,7 +238,7 @@ describe('settled without you', () => {
   })
 
   test('counts up to `through`, a margin behind the clock, so the next period counts what settled since', async () => {
-    await closedWait({ resolvedByAgentId: owner })
+    const counted = await closedWait({ resolvedByAgentId: owner })
     // Settled seconds ago: its row may still be being written while a count runs, so it is left to
     // the period that starts at `through` rather than lost between the two.
     const recent = await closedWait({ resolvedByAgentId: owner, closedAt: new Date(Date.now() - 5_000) })
@@ -252,6 +252,22 @@ describe('settled without you', () => {
       .from(squadActivity)
       .where(and(eq(squadActivity.rowId, recent.id), eq(squadActivity.lane, 41)))
     expect(row!.at.getTime()).toBeGreaterThan(Date.parse(summary.through))
+
+    // The count's link lists up to `through`, so it shows the one row counted; without the end it
+    // would also list the row settled after the count.
+    const list = async (settled: { since: string; until?: string }) =>
+      (
+        await projectGlobalActivity({
+          limit: 50,
+          verbose: false,
+          agentIds: [],
+          kinds: [],
+          settled: { kind: 'questions', ...settled },
+          squadAccess: [{ squadId, access: FULL }],
+        })
+      ).items.map((item) => item.id)
+    expect(await list({ since: summary.since, until: summary.through })).toEqual([`41:${counted.id}`])
+    expect(await list({ since: summary.since })).toEqual([`41:${recent.id}`, `41:${counted.id}`])
 
     // The next visit starts at `through` and counts it: once, and not dropped.
     const next = await countSettledActivity([{ squadId, access: FULL }], new Date(summary.through), new Date())

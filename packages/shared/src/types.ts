@@ -1,5 +1,6 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { WorkflowAttemptLimitPause } from './workflow-runtime'
+import type { WorkflowGateApprover } from './workflow-gate-deciders'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 import type { WorkflowReviewConsultation } from './workflow-result-revisions'
@@ -1431,6 +1432,12 @@ export interface WorkStreamWait {
   /** Read-only exact-reference annotation; never writable by clients. */
   workflowHumanGate?: boolean
   /**
+   * Read-only, on a workflow gate's wait: who decides the gate (its step's approver; `reviewers`
+   * for a decision step). Clients pass it to `mayDecideWorkflowGate`. Omitted on other waits and by
+   * older servers.
+   */
+  workflowGateApprover?: WorkflowGateApprover
+  /**
    * Read-only: the flow paused at its attempt limit. The stream presents as blocked on a person;
    * Raise limit (the `raise-limit` flow command) clears it. Omitted otherwise and by older servers.
    */
@@ -1755,8 +1762,9 @@ export interface WorkStreamRuntime {
   workingCount?: number
   /**
    * ISO time of the newest work by a counted execution (`computedAt` while one is
-   * working), or null when none has run. Unlike `updatedAt`, edits to the stream's
-   * own fields never move it. Omitted by older servers.
+   * working), or null when none has run. An execution still queued or waiting for a
+   * sandbox has not run, so it does not move this. Unlike `updatedAt`, edits to the
+   * stream's own fields never move it. Omitted by older servers.
    */
   lastWorkedAt?: string | null
   computedAt: string // ISO timestamp

@@ -15,6 +15,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
+import { removeAnsweredActions } from '../lib/answeredActions'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { resolveWorkStreamWait } from '../api/squads'
@@ -286,10 +287,7 @@ export function WorkStreamDetailModal({
     }) => resolveWorkStreamWait(workStream.id, waitId, { resolution, note }),
     onSuccess: (_result, variables) => {
       const actionType = variables.resolution === 'cleared' ? 'workstream-blocked' : 'workstream-review'
-      const actionId = `${actionType}:${workStream.id}:${variables.waitId}`
-      queryClient.setQueryData<import('@ficus/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
-        current?.filter((action) => action.id !== actionId)
-      )
+      removeAnsweredActions(queryClient, [`${actionType}:${workStream.id}:${variables.waitId}`])
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(workStream.squadId) })

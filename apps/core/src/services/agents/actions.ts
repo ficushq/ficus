@@ -109,7 +109,7 @@ async function listDeliveryGateActions(): Promise<PendingAction[]> {
     const delivery = deliveries.get(ws.id)
     const state = selectWorkStreamPresentationState({
       status: ws.status,
-      openWaits: (waits.get(ws.id) ?? []).map(toWaitJson),
+      openWaits: (waits.get(ws.id) ?? []).map((row) => toWaitJson(row)),
       delivery,
     })
     if (state !== 'delivery_review' && state !== 'delivery_merge') continue
@@ -351,7 +351,10 @@ export async function listPendingActions(options: PendingActionListOptions = {})
         run?.state.status !== 'running' ||
         !attempt ||
         !(step?.kind === 'human-approval' || (step?.kind === 'decision' && attempt.decision?.awaitingPerson)) ||
-        workflowReviewBlockingWaits(toWaitJson(wait), (allWaits.get(ws.id) ?? []).map(toWaitJson)).length
+        workflowReviewBlockingWaits(
+          toWaitJson(wait),
+          (allWaits.get(ws.id) ?? []).map((row) => toWaitJson(row))
+        ).length
       )
         continue
     }

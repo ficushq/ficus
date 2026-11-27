@@ -10,6 +10,7 @@ import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
 import { LiveListMotion } from './LiveListMotion'
 import { liveRowProps } from '../lib/liveListMotion'
+import { removeAnsweredActions, wasActionAnswered } from '../lib/answeredActions'
 
 interface ActionCenterContentProps {
   actions: PendingAction[]
@@ -197,7 +198,8 @@ function ActionRow({
   )
   if (!liveMotion) return item
   return (
-    <div className="relative rounded-xl" {...liveRowProps(action.id)}>
+    // A card answered in this session that a refetch briefly returns did not arrive: no highlight.
+    <div className="relative rounded-xl" {...liveRowProps(action.id, null, { quiet: wasActionAnswered(action.id) })}>
       {item}
     </div>
   )
@@ -226,10 +228,7 @@ function AgentErrorSection({
   const mutation = useMutation({
     mutationFn: () => continueHaltedActions(respondableErrors.map((action) => action.id)),
     onSuccess: async (result) => {
-      const removedIds = new Set([...result.resumedActionIds, ...result.staleActionIds])
-      queryClient.setQueryData<PendingAction[]>(queryKeys.actions.pending(), (current) =>
-        current?.filter((action) => !removedIds.has(action.id))
-      )
+      removeAnsweredActions(queryClient, [...result.resumedActionIds, ...result.staleActionIds])
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.listPrefix() }),

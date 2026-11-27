@@ -366,11 +366,19 @@ export type ActivitySettledKind = (typeof ACTIVITY_SETTLED_KINDS)[number]
  */
 export const ACTIVITY_SETTLED_MARGIN_MS = 60_000
 
-/** An Activity filter to the rows behind one settled count, from `since` (inclusive). */
+/**
+ * An Activity filter to the rows behind one settled count, from `since` (inclusive) to `until`
+ * (exclusive) when it is given.
+ */
 export interface ActivitySettledFilter {
   kind: ActivitySettledKind
   /** ISO time. The server raises it to the Activity retention floor. */
   since: string
+  /**
+   * ISO time, exclusive: the count's `through`, so the list holds exactly the rows counted and
+   * nothing that settled after the count. Omitted means no upper bound.
+   */
+  until?: string
 }
 
 /** GET /api/activity/settled: permission-filtered counts of work settled without a person. */

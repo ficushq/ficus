@@ -3,8 +3,9 @@
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-live-list-motion.ts
  * Every built-in theme (light and dark for dual themes), every surface: first load is still; after one live
  * update the moved rows slide (300 ms transforms), the arrived row gets a visible theme-colored wash, the
- * changed status badge swells, and all of it is gone again afterwards. Under reduced motion nothing
- * animates. With 200 rows, one live update is measured for long tasks and slow frames.
+ * changed status badge swells, and all of it is gone again afterwards. An arrived row stays clear for
+ * 120 ms while the rows around it slide, then fades in. A change that arrives while Needs you is collapsed
+ * plays nothing when it is opened. Under reduced motion nothing animates. With 200 rows, one live update is measured for long tasks and slow frames.
  * Optional SCREENSHOT_DIR saves the Feed mid-update per theme and appearance; THEMES (comma-separated ids)
  * limits the themes; MOTION=0 skips the motion assertions (for a "before" run on a branch without it).
  */
@@ -90,7 +91,26 @@ try {
         const first = await liveMotion(page)
         assert.deepEqual([first.moves, first.css, first.arrived], [[], [], []], `${label}: first load is still`)
       }
-      await page.evaluate(() => window.liveStep())
+      // The arrived rows' fade-in, as soon as the frame that started the motion has run.
+      const entering = await page.evaluate(async (count) => {
+        window.liveStep()
+        const frame = () => new Promise((done) => requestAnimationFrame(done))
+        for (let frames = 0; frames < 60 && document.querySelectorAll('.ficus-live-arrived').length < count; frames++)
+          await frame()
+        return document
+          .getAnimations()
+          .filter((animation) => (animation as CSSAnimation).animationName === 'ficus-live-enter')
+          .map((animation) => {
+            const timing = animation.effect!.getComputedTiming()
+            const target = (animation.effect as KeyframeEffect).target as HTMLElement
+            return {
+              delay: timing.delay,
+              fill: timing.fill,
+              currentTime: Number(animation.currentTime),
+              opacity: getComputedStyle(target).opacity,
+            }
+          })
+      }, surface.arrived.length)
       await page.waitForTimeout(120)
       const during = await liveMotion(page)
       if (screenshotDir && surface.section === 'feed')
@@ -98,6 +118,11 @@ try {
       if (screenshotDir && surface.section === 'activity' && theme === 'ficus')
         await page.screenshot({ path: resolve(screenshotDir, `activity-${theme}-${appearance}.png`) })
       if (checkMotion) {
+        assert.equal(entering.length, surface.arrived.length, `${label}: each arrived row fades in`)
+        for (const enter of entering) {
+          assert.deepEqual([enter.delay, enter.fill], [120, 'both'], `${label}: the fade-in waits 120 ms`)
+          if (enter.currentTime < 120) assert.equal(enter.opacity, '0', `${label}: clear while rows slide past`)
+        }
         assert.deepEqual(during.arrived.sort(), [...surface.arrived].sort(), `${label}: the arrived rows are washed`)
         for (const wash of during.washes)
           assert.ok(wash && wash !== 'rgba(0, 0, 0, 0)' && wash !== 'transparent', `${label}: wash has a color`)
@@ -116,6 +141,30 @@ try {
   }
 
   if (checkMotion) {
+    // A card that arrives while Needs you is collapsed: nothing waits to play when it is opened. The work
+    // list below it still animates.
+    const collapsed = await open('section=feed&collapsed=1')
+    await collapsed.evaluate(() => window.liveStep())
+    await collapsed.waitForTimeout(120)
+    const whileCollapsed = await liveMotion(collapsed)
+    assert.deepEqual(whileCollapsed.arrived, ['ws-99999'], 'collapsed Needs you: only the visible arrival')
+    await collapsed.evaluate(() => {
+      document.querySelector<HTMLDetailsElement>('[data-testid="needs-you"]')!.open = true
+    })
+    await collapsed.waitForTimeout(120)
+    const opened = await collapsed.evaluate(() =>
+      document
+        .querySelector('[data-testid="needs-you"]')!
+        .getAnimations({ subtree: true })
+        .map((animation) => (animation as CSSAnimation).animationName)
+    )
+    assert.deepEqual(opened, [], 'collapsed Needs you: opening it plays nothing')
+    assert.ok(
+      await collapsed.locator('[data-live-row="agent-question:q-2"]').isVisible(),
+      'collapsed Needs you: the new card is there once opened'
+    )
+    await collapsed.close()
+
     for (const surface of SURFACES) {
       const page = await open(`section=${surface.section}`, { reducedMotion: true })
       await page.evaluate(() => window.liveStep())

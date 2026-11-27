@@ -2,6 +2,8 @@ import {
   activeWorkflowAttempts,
   activityAgentLabel,
   isEarlierWorkflowStep,
+  mayDecideWorkflowGate,
+  workflowGateAssignedDeciders,
   workStreamSlotWaitLabel,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -145,26 +147,27 @@ function anyOf(names: string[], unnamed = 0): string {
 }
 
 /**
- * Who decides a human approval, mirroring Core's mayDecideFlowGate: anyone with review permission,
- * or for an assigned-reviewers step on a stream with assigned reviewers, one of them. "You" is said
- * only before the decision (a finished approval records no decider) and only to a user who may
- * decide; on an approval limited to several assigned reviewers the others are named beside it
- * ("You or Ben").
+ * Who decides a human approval, by the shared {@link mayDecideWorkflowGate} rule Core enforces:
+ * anyone with review permission, or for an assigned-reviewers step on a stream with assigned
+ * reviewers, one of them. "You" is said only before the decision (a finished approval records no
+ * decider) and only to a user who may decide; on an approval limited to several assigned reviewers
+ * the others are named beside it ("You or Ben").
  */
 function approverWho(step: WorkflowStep, state: WorkflowProgressState, context: WorkflowProgressContext): string {
-  const assigned = context.assignedReviewerIds ?? []
-  const limited = step.kind === 'human-approval' && step.approver !== 'reviewers' && assigned.length > 0
+  const limitedTo = workflowGateAssignedDeciders(context.assignedReviewerIds, step)
   const viewer = context.viewer
   const userId = viewer?.identity?.type === 'user' ? viewer.identity.userId : undefined
-  const viewerDecides = !!userId && viewer!.can('workstreams:review') && (!limited || assigned.includes(userId))
+  const viewerDecides =
+    !!viewer &&
+    mayDecideWorkflowGate(viewer.identity, viewer.can('workstreams:review'), context.assignedReviewerIds, step)
   const you = viewerDecides && state !== 'done' && state !== 'not-run'
-  if (you && !limited) return 'You'
+  if (you && !limitedTo) return 'You'
   const nameOf = (id: string) => {
     const label = context.reviewers?.find((person) => person.id === id)?.name
     return label ? reviewerDisplayName(label) : undefined
   }
-  if (limited) {
-    const others = you ? assigned.filter((id) => id !== userId) : assigned
+  if (limitedTo) {
+    const others = you ? limitedTo.filter((id) => id !== userId) : limitedTo
     const names = others.map(nameOf).filter((name): name is string => !!name)
     const unnamed = others.length - names.length
     if (you) return anyOf(['You', ...names], unnamed)

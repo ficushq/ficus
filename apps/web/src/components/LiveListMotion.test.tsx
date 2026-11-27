@@ -10,6 +10,9 @@ const ROW_HEIGHT = 40
 interface Row {
   id: string
   status?: string
+  /** Not rendered (as if inside a collapsed `<details>`): `checkVisibility()` is false. */
+  unrendered?: boolean
+  quiet?: boolean
 }
 
 interface AnimateCall {
@@ -52,6 +55,9 @@ async function renderList(
         const top = index * ROW_HEIGHT
         return { top, bottom: top + ROW_HEIGHT, left: 0, right: 300, width: 300, height: ROW_HEIGHT } as DOMRect
       }
+      prototype.checkVisibility = function (this: HTMLElement) {
+        return this.closest('[data-unrendered]') === null
+      }
       prototype.animate = function (this: HTMLElement, keyframes, options) {
         animations.push({
           key: this.getAttribute('data-live-row'),
@@ -68,7 +74,12 @@ async function renderList(
     <LiveListMotion resetKey={key} arrivedOnMount={arrivedOnMount}>
       <ul>
         {next.map((row, index) => (
-          <li key={row.id} data-index={index} {...liveRowProps(row.id, row.status)}>
+          <li
+            key={row.id}
+            data-index={index}
+            data-unrendered={row.unrendered ? '' : undefined}
+            {...liveRowProps(row.id, row.status, { quiet: row.quiet })}
+          >
             {row.id}
             {row.status && <span {...liveEmphasisProps}>{row.status}</span>}
           </li>
@@ -146,6 +157,30 @@ test('a status change briefly emphasizes that row’s badge', async () => {
   expect(list.emphasized()).toEqual(['a'])
   expect(list.animations).toEqual([])
   expect(list.arrived()).toEqual([])
+})
+
+test('rows that are not rendered (a collapsed list) do not move or get a class to play later', async () => {
+  const list = await renderList([
+    { id: 'a', status: 'queued', unrendered: true },
+    { id: 'b', status: 'queued' },
+  ])
+  await list.render([
+    { id: 'hidden-new', unrendered: true },
+    { id: 'shown-new' },
+    { id: 'a', status: 'in_progress', unrendered: true },
+    { id: 'b', status: 'in_progress' },
+  ])
+  expect(list.arrived()).toEqual(['shown-new'])
+  expect(list.emphasized()).toEqual(['b'])
+  // Both old rows moved down two places; only the rendered one slides.
+  expect(list.animations.map(({ key }) => key)).toEqual(['b'])
+})
+
+test('a quiet row that arrives still lets the others slide but is not highlighted', async () => {
+  const list = await renderList(ABC)
+  await list.render([{ id: 'returned', quiet: true }, { id: 'new' }, ...ABC])
+  expect(list.arrived()).toEqual(['new'])
+  expect(list.animations.map(({ key }) => key)).toEqual(['a', 'b', 'c'])
 })
 
 test('an update that changes nothing the rows show does nothing', async () => {

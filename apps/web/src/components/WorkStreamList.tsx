@@ -481,6 +481,9 @@ function WorkStreamRow({
     peek.hover.hide()
     onClick()
   }
+  // "Waiting on you" only when this viewer can act on the wait; anyone else reads what it waits on.
+  const viewerPermissions = usePermissions(workStream.squadId)
+  const viewer = viewerPermissions.isLoading ? undefined : viewerPermissions
   const peekCard = !isDone && (
     <WorkStreamPeekCard
       peek={peek}
@@ -489,6 +492,7 @@ function WorkStreamRow({
       agentMap={agentMap}
       agentTypeNames={agentTypeNameMap}
       squadSlug={slugFor(workStream.squadId)}
+      viewer={viewer}
     />
   )
   const summaryLine = showSummary && !isDone && <WorkStreamSummaryLine workStream={workStream} />
@@ -496,9 +500,6 @@ function WorkStreamRow({
   // Time worked, or how long a person has been waited on (which replaces it while they are).
   const timeTickMs = workStreamTimeTickMs(workStream)
   const now = useTick(timeTickMs ?? 60_000, timeTickMs !== null)
-  // "Waiting on you" only when this viewer can act on the wait; anyone else reads what it waits on.
-  const viewerPermissions = usePermissions(workStream.squadId)
-  const viewer = viewerPermissions.isLoading ? undefined : viewerPermissions
   const time = workStreamTimeDisplay(workStream, now, viewer)
   const pullRequests = workStreamPullRequests(workStream.metadata ?? {})
   // Desktop and feed rows attach the in-progress delivery state to one pull request: the

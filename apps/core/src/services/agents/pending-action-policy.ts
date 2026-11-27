@@ -13,7 +13,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
 import { hasPermission, type Identity } from '../rbac'
-import { activeWorkflowAttempts, workflowAttemptLimitPause } from '@ficus/shared'
+import { activeWorkflowAttempts, mayDecideWorkflowGate, workflowAttemptLimitPause } from '@ficus/shared'
 import { canRaiseFlowAttemptLimit } from '../workflows/attempt-limit'
 import { workStreamFlowRuns, workStreams } from '../../db'
 import { isWorkflowReviewer } from '../workflows/reviewers'
@@ -301,7 +301,7 @@ export async function evaluatePendingAction(
     if (
       isHumanFlowWait({ ...data.wait, flowAttemptId: data.wait.flowAttemptId ?? null, resolutionHandler: 'workflow' })
     ) {
-      const waits = (await listOpenWaits(db, workStreamId)).map(toWaitJson)
+      const waits = (await listOpenWaits(db, workStreamId)).map((row) => toWaitJson(row))
       const gate = waits.find((wait) => wait.id === data.wait.id)
       if (
         !gate ||
@@ -318,14 +318,14 @@ export async function evaluatePendingAction(
     const step = attempt?.step ?? run?.state.definition.steps.find((s) => s.id === attempt?.stepId)
     let canRespond = false
     if (identity.type === 'user' && squadId && stream && run?.activated) {
-      if (step?.kind === 'human-approval')
-        canRespond =
-          (await isWorkflowReviewer(identity.userId, squadId)) &&
-          (step.approver !== 'assigned-reviewers' ||
-            !stream.assignedReviewerIds.length ||
-            stream.assignedReviewerIds.includes(identity.userId))
-      // A decision step without an automatic decision waits for any reviewer to choose.
-      else if (step?.kind === 'decision') canRespond = await isWorkflowReviewer(identity.userId, squadId)
+      // A human approval, or a decision step without an automatic decision, waits for a person who may decide it.
+      if (step?.kind === 'human-approval' || step?.kind === 'decision')
+        canRespond = mayDecideWorkflowGate(
+          identity,
+          await isWorkflowReviewer(identity.userId, squadId),
+          stream.assignedReviewerIds,
+          step
+        )
       else if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval')
         canRespond =
           (await hasPermission(identity, 'workstreams:respond', squadId)) ||
