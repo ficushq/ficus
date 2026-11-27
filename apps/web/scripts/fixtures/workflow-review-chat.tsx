@@ -169,12 +169,13 @@ const items: RenderItem[] = Array.from({ length: 24 }, (_, index) => {
 })
 
 /** The real chat view with synthetic messages; sending records what the review attached. */
-function FixtureConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {
+function FixtureConversation({ agentId, sendOptions, placeholder, foldComposerActions }: ReviewConversationProps) {
   return (
     <ChatView
       items={items}
       agentId={agentId}
       placeholder={placeholder}
+      foldComposerActions={foldComposerActions}
       onSend={() => {
         window.lastSendOptions = sendOptions()
       }}

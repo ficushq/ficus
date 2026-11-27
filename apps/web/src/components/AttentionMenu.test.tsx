@@ -68,10 +68,10 @@ const summaryLabel = (html: string) => html.match(/<summary[^>]*>.*?<span>([^<]*
 
 describe('AttentionMenu', () => {
   test('summarizes equal levels in one word and a mix as Custom', () => {
-    expect(summaryLabel(renderSquad({ decisions: 'notify', progress: 'notify' }))).toBe('Notify')
-    expect(summaryLabel(renderSquad({ decisions: 'show', progress: 'show' }, false))).toBe('Show')
-    expect(summaryLabel(renderSquad({ decisions: 'mute', progress: 'mute' }))).toBe('Muted')
-    expect(summaryLabel(renderSquad({ decisions: 'notify', progress: 'mute' }))).toBe('Custom')
+    expect(summaryLabel(renderSquad({ decisions: 'notify', progress: 'notify' }))).toBe('Notifications: Notify')
+    expect(summaryLabel(renderSquad({ decisions: 'show', progress: 'show' }, false))).toBe('Notifications: Show')
+    expect(summaryLabel(renderSquad({ decisions: 'mute', progress: 'mute' }))).toBe('Notifications: Muted')
+    expect(summaryLabel(renderSquad({ decisions: 'notify', progress: 'mute' }))).toBe('Notifications: Custom')
   })
 
   test('offers both kinds with their helper text and checks the current level of each', () => {

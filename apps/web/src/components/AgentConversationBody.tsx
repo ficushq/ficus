@@ -43,6 +43,8 @@ interface AgentConversationProps {
   onConversation?: ComponentProps<typeof AgentChat>['onConversation']
   /** Offer the floating-window button in the composer (default: unless embedded). */
   floatingWindowButton?: boolean
+  /** Keep the composer's actions behind its More controls trigger at every width (see ChatView). */
+  foldComposerActions?: boolean
 }
 
 export function AgentConversation({
@@ -60,6 +62,7 @@ export function AgentConversation({
   draftKey,
   onConversation,
   floatingWindowButton = !embedded,
+  foldComposerActions,
 }: AgentConversationProps) {
   const AgentChatComponent = dependencies?.AgentChatComponent ?? AgentChat
   const api = useChatApi()
@@ -151,6 +154,7 @@ export function AgentConversation({
       placeholder={placeholder}
       onConversation={onConversation}
       composerControls={floatingWindowButton ? <FloatingChatButton agentId={agentId} /> : undefined}
+      foldComposerActions={foldComposerActions}
     />
   )
 }

@@ -43,6 +43,25 @@ export function agentTypeLabel(agentTypeId: string | null | undefined): string {
     .join(' ')
 }
 
+/** The built-in general-purpose type: not a role, so people read it as "General Purpose agent". */
+export const GENERAL_AGENT_TYPE_ID = 'general'
+
+/**
+ * An agent type as a noun for one agent: its configured name (`AgentType.name`) when known, else the
+ * title-cased id ("Engineer"). The built-in general type is not a role, so it reads "General Purpose
+ * agent" (or "<configured name> agent"), never a bare "General".
+ */
+export function agentTypeNoun(input: { agentTypeId?: string | null; typeName?: string | null }): string {
+  const id = input.agentTypeId?.trim()
+  const named = input.typeName?.trim()
+  if (id === GENERAL_AGENT_TYPE_ID) {
+    const type = named || 'General Purpose'
+    // A configured name that already says "agent" ("Helper Agent") is not doubled.
+    return /\bagent$/i.test(type) ? type : `${type} agent`
+  }
+  return named || agentTypeLabel(id)
+}
+
 export interface TypeFirstAgentLabelInput {
   agentTypeId?: string | null
   /** The type's configured name (`AgentType.name`), when known; else the type id is title-cased. */
@@ -56,10 +75,11 @@ export interface TypeFirstAgentLabelInput {
  * How the app refers to one agent: its type leads, because a type means more to people than a
  * name. What the agent is working on follows in parentheses, or its purpose when there is no work
  * stream: "Engineer (#12 · Implement)", "Engineer (Onboarding)", "Engineer". A name is never shown
- * alone; a surface that needs the stable handle shows it beside this label.
+ * alone; a surface that needs the stable handle shows it beside this label. The type reads as
+ * `agentTypeNoun` gives it, so the general type is "General Purpose agent (Docs)".
  */
 export function typeFirstAgentLabel(input: TypeFirstAgentLabelInput): string {
-  const type = input.typeName?.trim() || agentTypeLabel(input.agentTypeId)
+  const type = agentTypeNoun(input)
   const detail = input.workingOn?.trim() || input.purpose?.trim()
   return detail ? `${type} (${detail})` : type
 }

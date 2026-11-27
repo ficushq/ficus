@@ -10,8 +10,9 @@ import { Link, useLocation, useSearchParams } from 'react-router'
 import { useURLStringState, useURLStringArrayState, useURLBooleanState } from '../hooks/useURLState'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { useTick } from '../hooks/useTick'
+import { usePermissions } from '../hooks/usePermissions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
-import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
+import { workStreamTimeDisplay, workStreamTimeTickMs, type WorkStreamTimeDisplay } from '../lib/workStreamRuntime'
 import { webStatus } from '../lib/statusPresentation'
 import { queries } from '../queryOptions'
 import { WorkStreamDetailModal, getWsDisplayState } from './WorkStreamDetailModal'
@@ -110,22 +111,17 @@ function wsFilterState(ws: WorkStream): WorkStreamPresentationState {
   return getWsDisplayState(ws)
 }
 
-// --- Helper functions ---
-
-function formatDuration(ms: number): string {
-  const seconds = Math.floor(ms / 1000)
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
-  if (hours < 24) return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`
-  const days = Math.floor(hours / 24)
-  const remainingHours = hours % 24
-  return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`
-}
-
 // --- Helper components ---
+
+/** A row's time: time worked, or "Waiting on you 7d" while a person is waited on. */
+function WorkStreamTime({ time, className }: { time: WorkStreamTimeDisplay; className?: string }) {
+  return (
+    <span className={clsx('tabular-nums', className)} title={time.title} data-testid="work-stream-time">
+      {time.kind === 'worked' && <span className="sr-only">Time worked </span>}
+      {time.text}
+    </span>
+  )
+}
 
 function SectionHeader({
   title,
@@ -478,9 +474,13 @@ function WorkStreamRow({
   )
   const summaryLine = showSummary && !isDone && <WorkStreamSummaryLine workStream={workStream} />
   const squad = squadMap.get(workStream.squadId)
-  const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
-  const now = useTick(1000, hasActiveRuntime)
-  const elapsed = computeWorkStreamElapsedMs(workStream, now)
+  // Time worked, or how long a person has been waited on (which replaces it while they are).
+  const timeTickMs = workStreamTimeTickMs(workStream)
+  const now = useTick(timeTickMs ?? 60_000, timeTickMs !== null)
+  // "Waiting on you" only when this viewer can act on the wait; anyone else reads what it waits on.
+  const viewerPermissions = usePermissions(workStream.squadId)
+  const viewer = viewerPermissions.isLoading ? undefined : viewerPermissions
+  const time = workStreamTimeDisplay(workStream, now, viewer)
   const pullRequests = workStreamPullRequests(workStream.metadata ?? {})
   // Desktop and feed rows attach the in-progress delivery state to one pull request: the
   // primary delivery PR. Without a PR link it falls back to a colored pill beside the status.
@@ -561,16 +561,8 @@ function WorkStreamRow({
       ),
     })
   }
-  if (elapsed > 1000) {
-    context.push({
-      key: 'runtime',
-      node: (
-        <span className="tabular-nums" title="Total agent execution runtime">
-          {formatDuration(elapsed)}
-        </span>
-      ),
-    })
-  }
+  // Time worked, or how long a person has been waited on, which replaces it while they are.
+  if (time) context.push({ key: 'time', node: <WorkStreamTime time={time} /> })
   for (const pullRequest of pullRequests) {
     if (!pullRequest.url) continue
     const tag = pullRequest.key === deliveryTagKey ? deliveryTag : null

@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_executions_agent_run_runtime" ON "executions" USING btree ("agent_id","status","started_at","ended_at","run_started_at");

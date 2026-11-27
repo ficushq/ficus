@@ -463,9 +463,10 @@ export const executions = pgTable(
   },
   (table) => [
     index('idx_executions_status_started_at').on(table.status, table.startedAt),
-    // Covers runtime totals without fetching execution history from the heap.
-    index('idx_executions_agent_runtime')
-      .on(table.agentId, table.status, table.startedAt, table.endedAt)
+    // Covers runtime totals without fetching execution history from the heap. Time worked
+    // measures from the run start, so it carries run_started_at too.
+    index('idx_executions_agent_run_runtime')
+      .on(table.agentId, table.status, table.startedAt, table.endedAt, table.runStartedAt)
       .concurrently(),
     index('idx_executions_waiting_maintenance_fifo')
       .on(table.startedAt, table.id)

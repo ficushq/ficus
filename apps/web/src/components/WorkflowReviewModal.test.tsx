@@ -175,8 +175,21 @@ async function fixture({
   }
 }
 
+/** The squad's agents and agent types, so the review names who prepared each attempt. */
+function seedPeople(queryClient: QueryClient, agents = [{ id: 'design-agent', purpose: 'Gate feedback' }]) {
+  queryClient.setQueryData(
+    queryKeys.squads.agents(stream.squadId),
+    agents.map(({ id, purpose }) => ({ id, agentTypeId: 'engineer', squadId: stream.squadId, metadata: { purpose } }))
+  )
+  queryClient.setQueryData(queryKeys.agentTypes.list(), [
+    { id: 'engineer', name: 'Engineer' },
+    { id: 'general', name: 'General Purpose' },
+  ])
+}
+
 test('wide screens read the proposal beside the agent chat with the decision pinned below it', async () => {
   const f = await fixture()
+  seedPeople(f.queryClient)
   try {
     await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
     const dialog = f.dialog()!
@@ -198,7 +211,17 @@ test('wide screens read the proposal beside the agent chat with the decision pin
     expect(rail.getAttribute('aria-label')).toBe('Agent chat and decision')
     expect(rail.className).toContain('w-[clamp(360px,36vw,480px)]')
     expect(rail.textContent).toContain('#438 · Gate GitHub feedback by trusted authors')
-    expect(rail.textContent).toContain('execute · Attempt 3 · Proposal ready')
+    // Who prepared the proposal leads; the step and attempt follow as secondary text.
+    expect(rail.textContent).toContain('Engineer (Gate feedback) · execute · Attempt 3 · Proposal ready')
+    expect([...rail.querySelectorAll('span.font-medium.text-primary')].map((span) => span.textContent)).toEqual([
+      'Engineer (Gate feedback)',
+    ])
+    // How long the review has waited, with the exact time on hover.
+    const waiting = rail.querySelector('time')!
+    expect(waiting.textContent).toMatch(/^Waiting \d+ days$/)
+    expect(waiting.getAttribute('dateTime')).toBe('2026-10-08T10:00:00.000Z')
+    expect(waiting.getAttribute('title')).toBe(`Waiting since ${new Date('2026-10-08T10:00:00.000Z').toLocaleString()}`)
+    expect(rail.textContent).not.toContain('Waiting since')
     expect(rail.querySelector('a[aria-label="Open execute attempt 3 agent chat"]')).not.toBeNull()
     expect(rail.querySelector('a[href="https://github.com/ficushq/ficus/pull/12"]')?.textContent).toBe('PR #12')
     // The same agent as Open chat, consulted as the reviewer of this gate.
@@ -216,7 +239,11 @@ test('wide screens read the proposal beside the agent chat with the decision pin
     expect(decision!.hasAttribute('data-review-decision')).toBe(true)
     expect(decision!.className).toContain('shrink-0')
     expect(decision!.className).toContain('max-h-[50%]')
-    expect(decision!.className).toContain('overflow-y-auto')
+    // Within it, the outcomes stay at the bottom and what is above them scrolls.
+    const scroll = decision!.querySelector<HTMLElement>('[data-decision-scroll]')!
+    expect(scroll.className).toContain('overflow-y-auto')
+    expect(scroll.className).toContain('min-h-0')
+    expect(f.decisionButtons().every((button) => !scroll.contains(button))).toBe(true)
     expect(rail.lastElementChild).toBe(decision!)
     const notes = decision!.querySelector<HTMLTextAreaElement>('textarea[aria-label="Decision and evidence"]')!
     expect(notes.getAttribute('rows')).toBe('3')
@@ -242,8 +269,12 @@ test('approving needs no notes, sending back does, and each outcome sends the sa
   try {
     await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => closed++} />)
     const [approve, sendBack] = f.decisionButtons()
-    expect(approve!.textContent).toBe('ApprovedFinishes the flow')
-    expect(sendBack!.textContent).toBe('Changes requestedSends back to execute')
+    // Each outcome says what happens: without a brief, that the stream completes or who gets it back.
+    expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
+    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
+    expect(sendBack!.title).toBe('Returns to the General Purpose agent with your notes')
+    // No brief for this gate, so the decision area makes no claim about what approval allows.
+    expect(f.doc.querySelector('[data-approval-statement]')).toBeNull()
     expect(approve!.className).toContain('ficus-button-primary')
     expect([approve!.disabled, sendBack!.disabled]).toEqual([false, true])
     await f.type('   ')
@@ -302,7 +333,7 @@ test('read-only viewers see the document and the pending decision without contro
     expect(f.decisionButtons()).toEqual([])
     expect(dialog.textContent).toContain('Awaiting review')
     expect(dialog.textContent).toContain('You need review permission in this squad to decide.')
-    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Approved · Finishes the flow')
+    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Approved · Completes the work stream')
   } finally {
     await f.cleanup()
   }
@@ -783,6 +814,7 @@ test('a PDF that cannot be read falls back to the download offer', async () => {
 
 test('authored brief leads with repeat-round context and collapses independent evidence', async () => {
   const f = await fixture()
+  seedPeople(f.queryClient)
   const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(
     new TextEncoder().encode('# Staging attachment\n\nKeep the fallback.')
   )
@@ -809,6 +841,16 @@ test('authored brief leads with repeat-round context and collapses independent e
     expect(tabs(f)[0]?.textContent).toBe('Decision brief')
     expect(tabs(f)[0]?.getAttribute('aria-selected')).toBe('true')
     expect(article.textContent).toContain('What changed since your last review')
+    // Who prepared the brief leads; the step it came from follows.
+    expect(article.textContent).toContain('Prepared by Engineer (Gate feedback) · execute · Attempt 3')
+    // What approval allows shows whole beside the outcomes; the buttons keep plain captions.
+    const statement = f.doc.querySelector('[data-review-decision] [data-approval-statement]')!
+    expect(statement.textContent).toBe(
+      'What approval allowsApproval permits staging implementation only, not deployment.'
+    )
+    const [approve, sendBack] = f.decisionButtons()
+    expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
+    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
     const disclosure = [...f.doc.querySelectorAll('details')].find(
       (d) => d.querySelector('summary')?.textContent === 'Internal handoff'
     )!
@@ -830,6 +872,106 @@ test('authored brief leads with repeat-round context and collapses independent e
     await f.cleanup()
   }
 })
+test('the decision shows what approval allows whole: every sentence, list step and code block, on every layout', async () => {
+  const approvalEffect = [
+    '```sh',
+    'bun run migrate --target staging',
+    '```',
+    '',
+    'Approval runs the command above on staging only. It also turns the flag on in three stages:',
+    '',
+    '1. Ten percent of traffic.',
+    '2. Half of traffic after a day without errors.',
+    '3. All traffic after a week.',
+  ].join('\n')
+  for (const { width, permissions } of [
+    { width: 1440, permissions: ['workstreams:review'] },
+    { width: 390, permissions: ['workstreams:review'] },
+    { width: 1440, permissions: [] },
+  ]) {
+    const f = await fixture({ width, height: 844, permissions })
+    try {
+      const run = gateRun()
+      run.state.attempts[2]!.decisionBrief = {
+        submittedVersion: 7,
+        contexts: [],
+        value: {
+          decision: 'Approve the staging migration.',
+          recommendation: 'Approve because the migration is tested.',
+          approvalEffect,
+          risks: 'The migration locks one table briefly.',
+        },
+      }
+      run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+      f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+      await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+      const area = f.doc.querySelector('[data-review-decision], [data-review-sheet]')!
+      const statement = area.querySelector<HTMLElement>('[data-approval-statement]')!
+      if (area.hasAttribute('data-review-sheet')) {
+        // The phone sheet starts it as a marked preview, so the document keeps its room; a tap opens it.
+        expect(statement.querySelector('[data-collapsed]')).not.toBeNull()
+        await f.dom.act(async () => statement.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      }
+      expect(statement.querySelector('code')!.textContent).toContain('bun run migrate --target staging')
+      expect(statement.textContent).toContain('It also turns the flag on in three stages')
+      expect([...statement.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
+        'Ten percent of traffic.',
+        'Half of traffic after a day without errors.',
+        'All traffic after a week.',
+      ])
+      // Nothing clamps or hides it: no part of the promise is left to a hover.
+      for (const node of [statement, ...statement.querySelectorAll<HTMLElement>('*')])
+        expect(node.className.toString()).not.toMatch(/line-clamp|truncate|overflow-hidden|max-h-/)
+      // The outcomes' captions stay plain and never restate the brief.
+      expect(area.textContent).toContain('Completes the work stream')
+      expect(area.querySelectorAll('[data-approval-statement]').length).toBe(1)
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('a long approval statement starts as a marked preview that Show all opens, keeping the outcomes in reach', async () => {
+  const f = await fixture({ width: 390, height: 844 })
+  try {
+    const sentences = Array.from(
+      { length: 12 },
+      (_, index) => `Stage ${index + 1} raises the rollout a little further.`
+    )
+    const approvalEffect = `Approval starts a staged rollout. ${sentences.join(' ')} The last stage also deletes the old reader.`
+    const run = gateRun()
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staged rollout.',
+        recommendation: 'Approve because every stage is tested.',
+        approvalEffect,
+        risks: 'Each stage takes a day.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const statement = f.doc.querySelector<HTMLElement>('[data-review-sheet] [data-approval-statement]')!
+    // The whole statement is there, the preview is marked as cut, and a tap (no hover) opens it.
+    expect(statement.textContent).toContain('The last stage also deletes the old reader.')
+    expect(statement.querySelector('[data-collapsed]')).not.toBeNull()
+    const toggle = statement.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    expect(toggle.textContent).toBe('Show all')
+    expect(toggle.getAttribute('aria-label')).toBe('Show all of what approval allows')
+    await f.dom.act(async () => toggle.click())
+    expect(statement.querySelector('[data-collapsed]')).toBeNull()
+    expect(toggle.textContent).toBe('Show less')
+    expect(f.decisionButtons().map((button) => button.textContent)).toEqual([
+      'ApprovedCompletes the work stream',
+      'Changes requestedReturns to the General Purpose agent with your notes',
+    ])
+  } finally {
+    await f.cleanup()
+  }
+})
+
 test('non-agent no-brief notice and carried-forward label preserve the current gate message', async () => {
   for (const carry of [false, true]) {
     const f = await fixture()
@@ -1072,11 +1214,65 @@ test('without a producing agent the review keeps the decision rail and the stack
       const layout = f.dialog()!.querySelector<HTMLElement>('[data-review-layout]')!
       expect(layout.getAttribute('data-review-layout')).toBe(expected)
       expect(layout.querySelector('[data-review-chat]')).toBeNull()
-      if (expected === 'columns') expect(layout.querySelector('[data-review-rail]')!.className).toContain('w-[360px]')
+      if (expected === 'columns') {
+        expect(layout.querySelector('[data-review-rail]')!.className).toContain('w-[360px]')
+        expect(layout.querySelector('textarea')!.getAttribute('rows')).toBe('8')
+      }
       expect(f.decisionButtons()).toHaveLength(2)
     } finally {
       await f.cleanup()
     }
+  }
+})
+
+test('on the phone sheet a short statement shows whole, with no Show all to reveal nothing', async () => {
+  const f = await fixture({ width: 390, height: 844 })
+  try {
+    const run = gateRun()
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staging migration.',
+        recommendation: 'Approve because the migration is tested.',
+        approvalEffect: 'Approval runs the staging migration only.',
+        risks: 'The migration locks one table briefly.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const statement = f.doc.querySelector<HTMLElement>('[data-review-sheet] [data-approval-statement]')!
+    expect(statement.textContent).toBe('What approval allowsApproval runs the staging migration only.')
+    expect(statement.querySelector('[data-collapsed]')).toBeNull()
+    expect(statement.querySelector('button')).toBeNull()
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('beside a statement the rail starts its notes shorter, so both outcomes stay in view', async () => {
+  const f = await fixture({ width: 1280, height: 900 })
+  try {
+    const run = { ...gateRun(), attemptAgents: {} }
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staging migration.',
+        recommendation: 'Approve because the migration is tested.',
+        approvalEffect: 'Approval runs the staging migration and turns the new reader on for staging only.',
+        risks: 'The migration locks one table briefly.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const rail = f.dialog()!.querySelector<HTMLElement>('[data-review-rail]')!
+    expect(rail.querySelector('[data-approval-statement]')!.textContent).toContain('turns the new reader on')
+    expect(rail.querySelector('textarea')!.getAttribute('rows')).toBe('4')
+  } finally {
+    await f.cleanup()
   }
 })
 
@@ -1314,10 +1510,19 @@ test('a gate fed by two agents offers a picker between their conversations', asy
     run.state.attempts.find((attempt) => attempt.id === 4)!.sourceAttemptIds = [3, 5]
     run.attemptAgents = { '3': 'design-agent', '5': 'branch-agent' }
     f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    seedPeople(f.queryClient, [
+      { id: 'design-agent', purpose: 'Gate feedback' },
+      { id: 'branch-agent', purpose: 'Second branch' },
+    ])
     await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
     const picker = f.dialog()!.querySelector('[role="group"][aria-label="Agent"]')!
     const buttons = [...picker.querySelectorAll('button')]
     expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    // Each agent is named by who it is first, then the attempt it produced.
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Engineer (Gate feedback) · execute · Attempt 3 · Proposal ready',
+      'Engineer (Second branch) · execute · Attempt 5 · Proposal ready',
+    ])
     await f.dom.act(async () => buttons[1]!.click())
     expect(f.dialog()!.querySelector('[data-stub-conversation]')!.getAttribute('data-stub-conversation')).toBe(
       'branch-agent'
