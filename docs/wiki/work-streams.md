@@ -134,7 +134,9 @@ Four things keep reads bounded, and a fifth keeps slow writes from losing their 
 - **Capped history.** `GET /api/workstreams` without `limit` still answers with a plain
   array, and still includes every open (queued or active) stream it matches, but done and
   canceled streams are capped at the newest 50 by completion (`UNPAGED_HISTORY_LIMIT` in
-  `apps/core/src/routes/work-streams.ts`). When more history exists, the response carries
+  `apps/core/src/routes/work-streams.ts`). That answer has no total, so Core reads the
+  capped history without counting it (`countTotal: false` on `WorkStream.listTerminalPage`).
+  When more history exists, the response carries
   a `Link: </api/workstreams?...&statuses=done,canceled&limit=50&cursor=...>; rel="next"`
   header. That target is an ordinary paginated request (the same squad filter, the
   requested terminal statuses and `omitDescription`). Its answer,

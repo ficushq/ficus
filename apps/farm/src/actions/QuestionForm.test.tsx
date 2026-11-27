@@ -371,7 +371,7 @@ describe('QuestionForm · recommended option', () => {
     expect(container.querySelector('[aria-describedby$="-recommendation"]')).toBeNull()
   })
 
-  it('reads like the chat card: the tag on the label line, and "Other" for your own answer', async () => {
+  it('reads like the chat card: the tag on the label line, "Other" for your own answer, and the multi-select hint', async () => {
     const { container } = await render(
       <QuestionForm questionData={recommendedQuestions} source={agentSource} />,
       fakeApi()
@@ -387,6 +387,12 @@ describe('QuestionForm · recommended option', () => {
     expect(others.map((input) => input.type)).toEqual(['radio', 'checkbox'])
     expect(others.map((input) => input.closest('label')!.textContent)).toEqual(['Other', 'Other'])
     expect(container.textContent).not.toContain('Something else')
+
+    // The web card's multi-select hint, once, over the multi-select only.
+    const hints = [...container.querySelectorAll('.g-question-hint')]
+    expect(hints.map((hint) => hint.textContent)).toEqual(['Select all that apply:'])
+    expect(hints[0]!.closest('fieldset')?.querySelector('input[value="mint"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Pick all that apply')
   })
 })
 
