@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { moveHostResourceClaims } from './host-capacity-store'
 import { randomBytes, randomUUID } from 'crypto'
 import { and, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
@@ -1161,7 +1162,10 @@ let migrationFenceRecovery: Promise<number> | null = null
  */
 export function recoverMigrationFencesOnce(): Promise<number> {
   if (!migrationFenceRecovery) {
-    migrationFenceRecovery = Promise.all([clearAllMigratingFences(), cancelInterruptedForceMigrationAudits()])
+    // One recovery for the whole process, whichever caller starts it.
+    migrationFenceRecovery = shareAcrossRequests(() =>
+      Promise.all([clearAllMigratingFences(), cancelInterruptedForceMigrationAudits()])
+    )
       .then(([cleared]) => cleared)
       .catch((err) => {
         migrationFenceRecovery = null

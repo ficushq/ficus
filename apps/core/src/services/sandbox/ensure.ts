@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
 import { sandboxHasActiveExecution } from '../machines/sandbox-activity'
@@ -367,7 +368,7 @@ async function doEnsureAgentIdentityForSandbox(sandboxId: string): Promise<void>
 /** In-flight agent-box drift recreates, keyed by sandboxId (see the drift block below). */
 const inflightDriftRecreates = new Map<string, Promise<void>>()
 
-export async function ensureWorkspaceSandbox(
+async function ensureWorkspaceSandboxInScope(
   {
     sandboxId,
     workspaceId: _workspaceId,
@@ -505,8 +506,10 @@ export async function ensureWorkspaceSandbox(
                 : `Agent sandbox spec drifted and no active session; recreating sandbox: ${sandboxId}`
             )
             const phase = firstProvision ? 'sandbox-ensure' : 'sandbox-drift-recreate'
-            const recreate = runSandboxEffect(admissionScope, phase, sandboxId, (signal) =>
-              manager.recreateSandbox!(sandboxId, { ...sandboxOpts, signal })
+            const recreate = shareAcrossRequests(() =>
+              runSandboxEffect(admissionScope, phase, sandboxId, (signal) =>
+                manager.recreateSandbox!(sandboxId, { ...sandboxOpts, signal })
+              )
             ).finally(() => inflightDriftRecreates.delete(sandboxId))
             inflightDriftRecreates.set(
               sandboxId,
@@ -621,6 +624,18 @@ export async function ensureWorkspaceSandbox(
 }
 
 /**
+ * A sandbox ensure is shared: concurrent callers join the same wake, and its setup
+ * is persisted step by step. It therefore runs outside the cancellation scope of
+ * the read that happened to start it (db/query-cancellation.ts), so a reader who
+ * leaves never stops a wake that others, or the next reader, depend on.
+ */
+export function ensureWorkspaceSandbox(
+  ...args: Parameters<typeof ensureWorkspaceSandboxInScope>
+): ReturnType<typeof ensureWorkspaceSandboxInScope> {
+  return shareAcrossRequests(() => ensureWorkspaceSandboxInScope(...args))
+}
+
+/**
  * Ensure a sandbox is running for a squad workspace.
  *
  * Unlike task sandboxes which mount individual skill directories based on
@@ -629,7 +644,7 @@ export async function ensureWorkspaceSandbox(
  *
  * Returns the workspace path.
  */
-export async function ensureSquadSandbox(
+async function ensureSquadSandboxInScope(
   squadOrId: string | Squad,
   options: {
     restartManagedLocalDeployments?: boolean
@@ -765,6 +780,18 @@ export async function ensureSquadSandbox(
   }
 
   return workspacePath
+}
+
+/**
+ * A sandbox ensure is shared: concurrent callers join the same wake, and its setup
+ * is persisted step by step. It therefore runs outside the cancellation scope of
+ * the read that happened to start it (db/query-cancellation.ts), so a reader who
+ * leaves never stops a wake that others, or the next reader, depend on.
+ */
+export function ensureSquadSandbox(
+  ...args: Parameters<typeof ensureSquadSandboxInScope>
+): ReturnType<typeof ensureSquadSandboxInScope> {
+  return shareAcrossRequests(() => ensureSquadSandboxInScope(...args))
 }
 
 /**

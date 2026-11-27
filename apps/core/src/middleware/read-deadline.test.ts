@@ -9,7 +9,7 @@ import {
   holdIdleTimerForBodylessWrites,
   readDeadline,
 } from './read-deadline'
-import { currentQueryCancellationSignal } from '../db/query-cancellation'
+import { currentQueryCancellationScope, type QueryCancellationScope } from '../db/query-cancellation'
 
 const DEADLINE_SECONDS = 0.1
 
@@ -146,7 +146,7 @@ describe('readDeadline', () => {
 describe('readDeadline query cancellation', () => {
   /** A handler that records the cancellation signal its queries would carry, then waits. */
   function signalApp(options: { waitMs?: number; seconds?: number } = {}) {
-    const seen: Array<AbortSignal | undefined> = []
+    const seen: Array<QueryCancellationScope | undefined> = []
     let answered!: () => void
     const handlerAnswered = new Promise<void>((resolve) => {
       answered = resolve
@@ -154,10 +154,10 @@ describe('readDeadline query cancellation', () => {
     const app = new Hono()
     app.use('*', readDeadline({ seconds: options.seconds ?? DEADLINE_SECONDS }))
     const handler = async () => {
-      seen.push(currentQueryCancellationSignal())
+      seen.push(currentQueryCancellationScope())
       await Bun.sleep(options.waitMs ?? 0)
       // After an await, as a handler's second query would see it.
-      seen.push(currentQueryCancellationSignal())
+      seen.push(currentQueryCancellationScope())
       answered()
       return new Response('ok')
     }
@@ -170,8 +170,7 @@ describe('readDeadline query cancellation', () => {
     const { app, seen } = signalApp({ waitMs: 300 })
     const response = await app.request('/read')
     expect(response.status).toBe(503)
-    expect(seen[0]).toBeInstanceOf(AbortSignal)
-    expect(seen[0]!.aborted).toBe(true)
+    expect(seen[0]?.state).toBe('abandoned')
     expect(String(seen[0]!.reason)).toContain('read deadline')
   })
 
@@ -180,9 +179,9 @@ describe('readDeadline query cancellation', () => {
     const client = new AbortController()
     const pending = app.request(new Request('http://localhost/read', { signal: client.signal }))
     await Bun.sleep(10)
-    expect(seen[0]!.aborted).toBe(false)
+    expect(seen[0]!.state).toBe('live')
     client.abort()
-    expect(seen[0]!.aborted).toBe(true)
+    expect(seen[0]!.state).toBe('abandoned')
     expect(String(seen[0]!.reason)).toContain('closed the connection')
     await pending
   })
@@ -194,7 +193,9 @@ describe('readDeadline query cancellation', () => {
     expect(response.status).toBe(200)
     client.abort()
     expect(seen).toHaveLength(2)
-    expect(seen.every((signal) => signal !== undefined && !signal.aborted)).toBe(true)
+    // Closed once it answered: a later disconnect cancels nothing, and nothing more is recorded.
+    expect(seen[0]).toBe(seen[1])
+    expect(seen[0]!.state).toBe('closed')
   })
 
   it('never ties a write to a cancellation signal', async () => {
@@ -211,11 +212,11 @@ describe('readDeadline query cancellation', () => {
       const client = new AbortController()
       const request = fetch(`http://127.0.0.1:${server.port}/read`, { signal: client.signal }).catch(() => undefined)
       for (let i = 0; i < 100 && seen.length === 0; i += 1) await Bun.sleep(10)
-      expect(seen[0]!.aborted).toBe(false)
+      expect(seen[0]!.state).toBe('live')
       client.abort()
       await request
-      for (let i = 0; i < 100 && !seen[0]!.aborted; i += 1) await Bun.sleep(10)
-      expect(seen[0]!.aborted).toBe(true)
+      for (let i = 0; i < 100 && seen[0]!.state === 'live'; i += 1) await Bun.sleep(10)
+      expect(seen[0]!.state).toBe('abandoned')
     } finally {
       await server.stop(true)
     }

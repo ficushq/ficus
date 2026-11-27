@@ -1,3 +1,4 @@
+import { shareAcrossRequests } from '../../db/query-cancellation'
 import { bashOutcomeUnknownForError, SandboxTransportError } from '../sandbox/client/http-client'
 import {
   replayIsHarmless,
@@ -90,7 +91,8 @@ const modelProgress = new Map<string, Promise<void>>()
 async function observeModelProgress(origin: RecoveryOrigin) {
   let pending = modelProgress.get(origin.executionId)
   if (!pending) {
-    pending = settleRecoveryOnModelTool(origin).catch((error) => {
+    // Later callers for the same execution join it, so it is nobody's request work.
+    pending = shareAcrossRequests(() => settleRecoveryOnModelTool(origin)).catch((error) => {
       modelProgress.delete(origin.executionId)
       log.warn('Unable to record model progress', error)
     })

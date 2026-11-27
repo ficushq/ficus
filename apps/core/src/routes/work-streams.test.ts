@@ -1024,8 +1024,15 @@ describe('work-streams routes', () => {
       expect(next.searchParams.get('limit')).toBe(String(UNPAGED_HISTORY_LIMIT))
       expect(next.searchParams.get('omitDescription')).toBe('true')
 
+      expect(next.searchParams.get('annotations')).toBe('full')
+
       const page = await (await apiFetch(`${next.pathname}${next.search}`)).json()
       expect(page.items.map((ws: { id: string }) => ws.id)).toEqual(newestHistoryFirst.slice(UNPAGED_HISTORY_LIMIT))
+      // The continued rows have the same shape as the capped list's history rows.
+      const keys = (row: object) => Object.keys(row).sort()
+      const listedRow = list.find((ws) => ws.status === 'done' || ws.status === 'canceled')!
+      expect(keys(page.items[0])).toEqual(keys(listedRow))
+      expect(page.items[0].derivedState).toEqual(expect.any(String))
       expect(page.hasMore).toBe(false)
       expect(page.totalCount).toBe(newestHistoryFirst.length)
     })

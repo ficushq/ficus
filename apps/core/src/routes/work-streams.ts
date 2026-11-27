@@ -647,6 +647,10 @@ export const workStreamsRouter = new Hono()
     // Rows of a list that never shows descriptions: on a busy instance they were 86% of the
     // active list's bytes, refetched on every invalidation. The detail endpoint still has them.
     const omitDescription = c.req.query('omitDescription') === 'true'
+    // A terminal page normally carries only runtime; `annotations=full` gives its rows the same
+    // annotations (derived state, priority, step) as the unpaged list, so a list that continues
+    // from that list's `Link` header has one row shape throughout.
+    const fullAnnotations = c.req.query('annotations') === 'full'
     const rows = <T extends { description: string | null }>(items: T[]): T[] =>
       omitDescription ? items.map((item) => ({ ...item, description: null })) : items
     const cursor = c.req.query('cursor')
@@ -751,7 +755,11 @@ export const workStreamsRouter = new Hono()
           completedAfter,
           completedBefore,
         })
-        const items = rows(await serializeTerminalWorkStreams(page.items))
+        const items = rows(
+          fullAnnotations
+            ? await annotateWorkStreams(page.items, identity)
+            : await serializeTerminalWorkStreams(page.items)
+        )
         return c.json({
           items,
           hasMore: page.hasMore,
@@ -966,6 +974,7 @@ export const workStreamsRouter = new Hono()
       next.set('limit', String(UNPAGED_HISTORY_LIMIT))
       next.set('cursor', encodeTerminalCursor(last))
       if (omitDescription) next.set('omitDescription', 'true')
+      next.set('annotations', 'full')
       c.header('Link', `<${new URL(c.req.url).pathname}?${next.toString()}>; rel="next"`)
     }
     return c.json(rows(await serializeCanonicalWorkStreams(attended, identity)))

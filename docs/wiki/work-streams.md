@@ -118,7 +118,9 @@ Four things keep reads bounded, and a fifth keeps slow writes from losing their 
   header. That target is an ordinary paginated request (the same squad filter, the
   requested terminal statuses and `omitDescription`). Its answer,
   `{ items, hasMore, nextCursor, totalCount }`, continues the history; repeat with each
-  `nextCursor` until it is `null`. A request with `respectAttention` is capped the same way but gets no `Link`,
+  `nextCursor` until it is `null`. The link asks for `annotations=full`, which gives a
+  terminal page the same row annotations (derived state, priority, step) as the unpaged
+  list, so a list continued from the link has one row shape throughout. A request with `respectAttention` is capped the same way but gets no `Link`,
   because paginated requests refuse that filter. Requests that already send `limit` are
   unchanged. The CLI follows the link (`apiGetList`), so `--all` and `--status done` fetch
   the history page by page.
@@ -137,16 +139,35 @@ Four things keep reads bounded, and a fifth keeps slow writes from losing their 
   Routes that set their own idle timeout through `extendIdleTimeout` (workspace
   transfers, work stream creation) and the local-app proxy are exempt.
 - **Cancelled abandoned reads.** When the deadline answers for a read, or its client hangs
-  up before it has an answer, Core cancels the read's database work so its pool connection
-  is free again (`apps/core/src/db/query-cancellation.ts`). The middleware runs the handler
-  in a cancellation scope, and every query the main pool starts in it (drizzle queries, raw
-  tagged templates and queries inside a transaction) carries the scope's abort signal.
-  postgres.js then drops a query still waiting for a connection, or sends Postgres a cancel
-  request for one that is running; the query fails with `57014` ("canceling statement due
-  to user request") and a transaction rolls back. A read that has answered is never
-  cancelled, so a streamed body runs on after a disconnect. Dedicated connections (locks,
-  migrations, `withDedicatedDbTransaction`) are not tied to the scope, and work a read
-  starts that must outlive it can opt out with `runDetachedFromQueryCancellation`.
+  up before it has an answer, Core cancels that read's own database work so its pool
+  connections are free again (`apps/core/src/db/query-cancellation.ts`). The middleware
+  runs the handler in a cancellation scope, and the main pool records the queries started
+  in it (drizzle queries, raw tagged templates and queries inside a transaction). The
+  rule keeps the cancellation inside the abandoned request:
+  - A scope records queries only while its handler is pending. Once the handler has
+    answered, or the scope was abandoned, nothing more is recorded, so a timer or loop a
+    read happened to start never has a later query cancelled, and a read that has
+    answered (a streamed body, say) is never cancelled.
+  - Abandoning cancels only the recorded queries still in flight. One waiting for a pool
+    connection is dropped at once. One the server is running is cancelled only after it
+    has run for a second (`MIN_RUNNING_MS_BEFORE_CANCEL`), because a Postgres cancel
+    request targets the backend rather than the query and on a pipelined connection could
+    land on the next query. A cancelled query fails with `57014` and its transaction
+    rolls back; the error handler answers it with a quiet `503 read_abandoned` instead of
+    logging an unhandled error.
+  - Work shared beyond the request that started it runs in `shareAcrossRequests`, outside
+    any scope: `InflightDeduper` and `KeyedSerialQueue`, the sandbox ensure entry points
+    (`ensureSquadSandbox`, `ensureWorkspaceSandbox`, `ensureAgentSandbox`,
+    `ensureSquadSandboxForCommands`, `getSquadClient`), the VM manager's attach and
+    recovery, the machine tunnel manager's shared setups, the ssh-trust first use, the
+    local-app WebSocket watcher, local-deployment readiness checks, restarts, observations
+    and recoveries, flow decision passes, and the remaining process-wide promise caches.
+    New code that keeps a promise for later callers, or starts a loop or timer lazily,
+    should do the same.
+
+  Dedicated connections (locks, migrations, `withDedicatedDbTransaction`) are never
+  cancelled this way.
+
 - **Body-less writes run to their answer.** Writes with a body (a JSON `POST`) are never
   cut by the idle timer, even after the handler has read the body. A write without one
   (`workstream pause`, `resume`, `cancel` and `reopen` send none, nor does a body-less
