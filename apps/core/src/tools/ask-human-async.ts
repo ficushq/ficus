@@ -23,7 +23,9 @@ const QuestionOptionSchema = Type.Object({
   reason: Type.Optional(
     Type.String({
       maxLength: QUESTION_RECOMMENDATION_REASON_MAX_LENGTH,
-      description: 'One-line reason for your recommendation, shown with it. Only on the recommended option.',
+      description:
+        'One-line plain-text reason for your recommendation (no Markdown), shown with it. Expected whenever ' +
+        'you recommend an option. Only on the recommended option.',
     })
   ),
 })
@@ -183,7 +185,7 @@ const DESCRIPTION_TAIL =
   'in plain words (for example "May I restart the service once?"). ' +
   "For simple questions use type 'text', optionally with options as suggested answers; for choices " +
   "use 'select' or 'multi-select' with options and the trade-off, and name the evidence. " +
-  'When you recommend a choice, set recommended true on that one option with a one-line reason, ' +
+  'When you recommend a choice, set recommended true on that one option with a one-line plain-text reason, ' +
   'instead of writing the recommendation into the question or context.'
 
 const BLOCKING_DESCRIPTION =

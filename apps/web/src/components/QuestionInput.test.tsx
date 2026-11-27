@@ -124,9 +124,9 @@ test('a select question marks the recommended option and its reason without pres
     ])
     const radios = [...document.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
     expect(radios.every((radio) => !radio.checked)).toBe(true)
-    const reason = document.getElementById(radios[1]!.getAttribute('aria-describedby') ?? '')
-    expect(reason?.textContent).toBe('The release build passed there.')
-    expect(radios[0]!.hasAttribute('aria-describedby')).toBe(false)
+    // The reason is inside the option's label, so it is read once, as part of the name, not again as a description.
+    expect(radios[1]!.closest('label')?.textContent).toContain('The release build passed there.')
+    expect(radios.some((radio) => radio.hasAttribute('aria-describedby'))).toBe(false)
 
     // The person still chooses: the recommendation is not an answer.
     const submit = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Submit Answer')

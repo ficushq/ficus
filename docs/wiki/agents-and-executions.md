@@ -304,14 +304,16 @@ notification, or a phone rather than the agent's conversation, so `context` (Mar
 characters) carries the background shown beneath the question. On `text` questions, `options` are
 suggested answers: the answer form shows them as chips that fill the editable answer.
 
-An option may set `recommended: true` with an optional one-line `reason` (at most 200 characters) to
+An option may set `recommended: true` with a one-line plain-text `reason` (at most 200 characters; the
+guidance asks for one, but it is optional) to
 mark the agent's recommendation; the tool guidance asks agents to use these fields instead of writing
 the recommendation into the question or context. The web answer form labels that option
 "Recommended" and shows the reason, but never preselects it: the person still chooses. `ask_human`
 rejects a question with more than one recommended option, and a `reason` on an option that is not
 recommended. Both fields are optional, so questions without them render as before; if stored data
-ever carries more than one recommended option, clients mark only the first. The mobile app does not
-show the marker yet. The DB-free browser check renders the real card in every built-in theme at 1280 and
+ever carries more than one recommended option, clients mark only the first. A Linear agent session
+adds a `Recommended: <label>. <reason>` line to the question's elicitation, and the voice assistant
+reads it out. The mobile app and the Farm's question cards do not show the marker yet. The DB-free browser check renders the real card in every built-in theme at 1280 and
 390 pixels: from `apps/web`, run `CHROMIUM_PATH=/path/to/chromium bun scripts/check-question-recommended.ts`
 (optional `THEMES` runs only some themes and `SCREENSHOT_DIR` saves screenshots).
 

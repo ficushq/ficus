@@ -552,9 +552,6 @@ const askHumanRenderer: ToolRenderer = {
                           // Option values stream in (or are still missing), so key by position.
                           key={optionIndex}
                           className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-secondary text-secondary"
-                          title={
-                            opt.recommended === true && str(opt.reason).trim() ? str(opt.reason).trim() : undefined
-                          }
                         >
                           {str(opt.label) || str(opt.value)}
                           {opt.recommended === true && (
@@ -564,6 +561,11 @@ const askHumanRenderer: ToolRenderer = {
                       ))}
                     </div>
                   )}
+                  {(() => {
+                    // Shown as text, not a tooltip, so touch and keyboard readers see it too.
+                    const reason = str(options.find((opt) => opt.recommended === true)?.reason).trim()
+                    return reason ? <p className="text-xs text-muted mt-1">Recommended because: {reason}</p> : null
+                  })()}
                 </div>
               </div>
             </div>

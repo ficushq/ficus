@@ -256,6 +256,8 @@ describe('async ask_human recommended option', () => {
     expect(schema).toContain('"recommended"')
     expect(schema).toContain('"reason"')
     expect(schema).toContain('It is not preselected')
+    expect(schema).toContain('One-line plain-text reason for your recommendation (no Markdown)')
+    expect(schema).toContain('Expected whenever you recommend an option')
     expect(schema).toContain('"maxLength":200')
   })
 
@@ -416,7 +418,7 @@ test('question guidance arrives with the tool and the recorded question', async 
     executionId: 'execution-1',
     flushPersistence: async () => {},
   })
-  expect(tool.description).toContain('set recommended true on that one option with a one-line reason')
+  expect(tool.description).toContain('set recommended true on that one option with a one-line plain-text reason')
   expect(tool.description).not.toContain('your recommendation, and name the evidence')
   expect(tool.description).toContain('not a manual wait or inbox message')
   expect(tool.description).toContain('Set blocking true when your current step needs the answer')

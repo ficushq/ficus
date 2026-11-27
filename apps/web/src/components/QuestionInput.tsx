@@ -19,27 +19,18 @@ function RecommendedTag() {
   )
 }
 
-/** An option's label, with the Recommended tag and its one-line reason when it is the recommended one. */
-function OptionLabel({
-  option,
-  recommended,
-  reasonId,
-}: {
-  option: QuestionOption
-  recommended: boolean
-  reasonId: string
-}) {
+/**
+ * An option's label, with the Recommended tag and its one-line reason when it is the recommended one.
+ * The reason sits inside the option's label, so it is already part of the control's accessible name.
+ */
+function OptionLabel({ option, recommended }: { option: QuestionOption; recommended: boolean }) {
   return (
     <span className="min-w-0 flex-1">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-sm text-primary">{option.label ?? option.value}</span>
         {recommended && <RecommendedTag />}
       </span>
-      {recommended && option.reason && (
-        <span id={reasonId} className="mt-0.5 block text-xs text-muted">
-          {option.reason}
-        </span>
-      )}
+      {recommended && option.reason && <span className="mt-0.5 block text-xs text-muted">{option.reason}</span>}
     </span>
   )
 }
@@ -395,8 +386,8 @@ function QuestionField({
   const localTextarea = useRef<HTMLTextAreaElement | null>(null)
   const suggestions = question.type === 'text' ? (question.options ?? []) : []
   const recommended = recommendedQuestionOption(question)
+  // Suggestion chips show the reason below the row, outside the button, so it is linked as a description.
   const reasonId = `question-${question.id}-recommendation`
-  const describedBy = (option: QuestionOption) => (option === recommended && option.reason ? reasonId : undefined)
 
   return (
     <div className="space-y-2">
@@ -434,7 +425,7 @@ function QuestionField({
               key={option.value}
               type="button"
               aria-pressed={textValue === option.value}
-              aria-describedby={describedBy(option)}
+              aria-describedby={option === recommended && option.reason ? reasonId : undefined}
               disabled={disabled}
               onClick={() => {
                 // A suggestion fills the answer; the text stays editable before submitting.
@@ -550,10 +541,9 @@ function QuestionField({
                 checked={textValue === option.value}
                 onChange={(e) => onChange(e.target.value)}
                 disabled={disabled}
-                aria-describedby={describedBy(option)}
                 className="text-accent focus:ring-accent"
               />
-              <OptionLabel option={option} recommended={option === recommended} reasonId={reasonId} />
+              <OptionLabel option={option} recommended={option === recommended} />
             </label>
           ))}
           <label
@@ -616,10 +606,9 @@ function QuestionField({
                   checked={isSelected}
                   onChange={toggle}
                   disabled={disabled}
-                  aria-describedby={describedBy(option)}
                   className="text-accent focus:ring-accent rounded"
                 />
-                <OptionLabel option={option} recommended={option === recommended} reasonId={reasonId} />
+                <OptionLabel option={option} recommended={option === recommended} />
               </label>
             )
           })}
