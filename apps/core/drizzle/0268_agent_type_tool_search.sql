@@ -1,1 +1,0 @@
-ALTER TABLE "agent_types" ADD COLUMN "tool_search" jsonb;
