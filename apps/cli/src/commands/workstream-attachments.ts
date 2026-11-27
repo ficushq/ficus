@@ -68,6 +68,8 @@ export function registerWorkstreamAttachmentCommands(ws: Command): void {
     .action(async (id: string, options: SourceOptions & { label?: string }) => {
       try {
         const source = sourceFrom(options)
+        if (options.label !== undefined && !options.label.trim())
+          throw new Error('A label cannot be empty; leave out --label to share without one')
         const result = await apiPost<WorkStreamAssetAttachment>(path(id), {
           source,
           ...(options.label !== undefined ? { label: options.label } : {}),
@@ -113,6 +115,8 @@ export function registerWorkstreamAttachmentCommands(ws: Command): void {
       try {
         if (Boolean(options.clear) === (label !== undefined))
           throw new Error('Give a label, or --clear to remove the current one')
+        if (label !== undefined && !label.trim())
+          throw new Error('A label cannot be empty; use --clear to remove the current one')
         const result = await apiPatch<WorkStreamAssetAttachment>(path(id, `/${encodeURIComponent(attachmentId)}`), {
           label: options.clear ? null : label,
         })

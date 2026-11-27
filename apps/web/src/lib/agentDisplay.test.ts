@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import type { Agent } from '@ficus/shared'
-import { getAgentName, getAgentPrimaryLabel, getAgentPurpose, agentMatchesQuery } from './agentDisplay'
+import {
+  getAgentName,
+  getAgentPrimaryLabel,
+  getAgentPurpose,
+  agentMatchesQuery,
+  typeFirstAgentLabels,
+} from './agentDisplay'
 
 function agent(metadata: Agent['metadata'], agentTypeId = 'engineer'): Agent {
   return {
@@ -43,5 +49,24 @@ describe('agent display helpers', () => {
   it('trims purpose and name', () => {
     expect(getAgentPurpose(agent({ purpose: '  Deploy verifier  ' }))).toBe('Deploy verifier')
     expect(getAgentName(agent({ name: '  Nova  ' }))).toBe('Nova')
+  })
+})
+
+describe('typeFirstAgentLabels', () => {
+  it('names a lone agent by its type, never by its name', () => {
+    const labels = typeFirstAgentLabels([mk({ id: 'e', agentTypeId: 'engineer', metadata: { name: 'Fern' } })])
+    expect(labels.get('e')).toBe('Engineer')
+  })
+
+  it('tells two agents of one type apart by what they work on, else their purpose', () => {
+    const one = mk({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Fern', purpose: 'Onboarding' } })
+    const two = mk({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Moss', purpose: 'Billing' } })
+    const manager = mk({ id: 'm', agentTypeId: 'manager', metadata: { name: 'Cascade' } })
+    const labels = typeFirstAgentLabels([one, two, manager, one], (agent) =>
+      agent.id === 'e1' ? '#12 · Implement' : undefined
+    )
+    expect(labels.get('e1')).toBe('Engineer (#12 · Implement)')
+    expect(labels.get('e2')).toBe('Engineer (Billing)')
+    expect(labels.get('m')).toBe('Manager')
   })
 })

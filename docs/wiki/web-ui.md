@@ -76,6 +76,8 @@ The Activity feed (global page and squad tab) shares one body, `ActivityFeedView
 
 Work lists (Feed, squad Home, Work list and graph) show a stream's one-line summary in a peek card on hover (about half a second) or keyboard focus, built once in `WorkStreamSummary.tsx`; the card's participants link to their chats like a row's subtitle. Every list has the same "Summaries" control (`ShowSummariesSwitch`): a compact switch the height of the List / Kanban / Graph control, labelled "Summaries" with the accessible name "Show work stream summaries", on by default and remembered per surface, in the list's Active section header beside its other view controls (the Work tab hides it on Kanban and Graph); on the Feed, whose filters sit in its page header, it is the "View" row of the Filters panel (`variant="row"`). It adds one muted summary line under active rows; board cards show the summary clamped to two lines, and the detail modal shows it as a "Now" line under the title. See [Work stream summaries](work-stream-summaries.md).
 
+Squads page cards show each squad's active work under its description, never its agents. Each row is the stream's status marker, "#number · title" (truncated to one line) and its status badge, and opens that stream in the squad's Work tab. Streams the viewer's Needs you list points at come first (a review, blocker or delivery action names its stream; a blocking agent question matches the stream's open question wait), then the rest by most recent activity. A card shows at most four rows, then a "+N more" link to the squad's Work tab; a squad with no active work says "No active work" in one muted line. The squad name is the card's link, stretched over the whole card, so clicking anywhere else still opens the squad; the rows, "+N more" and the drag handle sit above it, so the card holds no nested links and stays reorderable by drag. The rows reuse the active work streams the page already loads, which the server limits to squads the viewer can read. The DB-free browser check renders the real cards in every built-in theme at 1280 and 390 pixels and checks the order, the click targets and the keyboard order: from `apps/web`, run `CHROMIUM_PATH=/path/to/chromium bun scripts/check-squad-cards.ts` (optional `THEMES` runs only some themes and `SCREENSHOT_DIR` saves screenshots).
+
 The Feed and the squad Work tab share one Filters dropdown (`WorkStreamFiltersPopover`): status (and, on the Feed, squad) choices in an even grid, a trigger that names the active filter ("Filters · In Review", or a count for several), and a Clear button beside it. Filter state stays in the URL (`status`, `squad`).
 
 The primary action sits at the trailing side of its heading/toolbar. Avoid competing filled actions. Secondary and overflow actions are quieter. Keep actions in a group aligned in height; the desktop chat search and activity toggle are both 26px high.
@@ -163,6 +165,46 @@ Respect `prefers-reduced-motion` and `prefers-reduced-transparency`. Skeleton pu
 Target WCAG 2.2 AA, without treating this guide as a compliance certification. Normal text requires 4.5:1 contrast and qualifying large text 3:1; check the composited result for glass. See [W3C contrast guidance](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). Keep focus visible and aim for comfortable touch targets; WCAG's [minimum target size criterion](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) is 24 CSS pixels subject to its exceptions, while 44px is a useful product target for primary phone controls.
 
 ## Work stream details
+
+The detail modal (`WorkStreamDetailModal`) is ordered by what someone opening a stream wants to
+know: the title and status (with the "Now" summary line and pause state); then anything waiting on
+the reader (review, manual and delivery callouts, and pending questions); the description and next
+steps; **Progress**; **Recent activity**; and then everything else. Everything else is the people
+and timing facts (squad, assignee, owner, requester name, runtime, priority), tracked issues, PRs
+and alerts and pull request links (only when there are any), one **Attachments** list, and a
+collapsed **Details** section. Details holds the completion mode, repository, requester ID, branches,
+cost, tokens, executions and the usage breakdown, assigned agents, the form to track a link,
+worktree cleanup, raw metadata and the wait history. Nothing is dropped from the modal: anything
+moved is at most one click deeper than before.
+
+**Progress** (`WorkStreamProgress`, rule in `lib/workflowProgress.ts`) lists the flow's steps
+without opening the graph, each with its state (done, in progress, waiting, returned for rework,
+queued, upcoming, or not run once the stream has ended) and who does it (the participant's agent
+type, "Reviewer" or "Assigned reviewer" for a human approval, "Decision model"). Steps are listed
+in the order the flow first reaches them from its entry along forward outcomes. Each step appears
+once with its latest state: a rework edge marks the step it sends work back to as "Returned for
+rework" and is not a step of its own, a loop back to an earlier step does not repeat it, parallel
+branches are listed together and marked "in parallel", and an outcome straight to `finish` ends the
+work early without branching the list. When one step can lead to two or more different unlisted
+steps (true alternatives, such as a decision choosing a path), the flow cannot be shown honestly as
+a list, so Progress shows only the current steps and a done count, and the graph carries the shape.
+
+**Recent activity** (`WorkStreamRecentActivity`) shows the stream's newest five Activity rows,
+fetched from the Activity feed's own endpoint with the default filters and worded the same way. It
+stays live through the squad's `squadActivity` topic, with a 30 second poll as the fallback, and
+links to `/activity?workStream=<id>`, which opens the Activity page filtered to the stream.
+
+**Attachments** is one list of every file the stream carries, each with a muted source line:
+"From chat" (stored inputs shared by ID), "From inbox" (stored inbox attachments), "From
+handoff" (files a step handed off) and "Workspace file" (paths into the squad workspace, with the
+full path on hover and in the viewer). A stored input with a label shows the label as its title and
+the filename beside its source on the line below. A workspace
+file that cannot be read says "This file could not be read. It may have been moved or deleted from
+the squad workspace." The mobile work stream page uses the same strings.
+
+Agents in the modal are named type first ("Engineer"). Two agents of the same type add the stream
+and step they work on ("Engineer (#12 · Implement)"), or else their purpose; the name and purpose
+show on hover (`typeFirstAgentLabels` in `lib/agentDisplay.ts`).
 
 Workflow previews start collapsed. The disclosure visibly says **Workflow · actual name**
 (including custom inline names); missing names show **Workflow**, not a guessed preset.

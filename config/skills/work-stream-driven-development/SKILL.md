@@ -82,9 +82,10 @@ editing concurrently. A declared join waits for its branches.
 Images and files Ficus already stores need no workspace copy. Delivered chat images,
 chat files and inbox attachments name their IDs; share one as an input with
 `ficus workstream attachment add STREAM_ID` and `--image IMAGE_ID`,
-`--agent-file FILE_ATTACHMENT_ID` or `--inbox-attachment INBOX_ATTACHMENT_ID`, with an
-optional `--label 'short name'` (pass the same option to `ficus workstream create` so
-the first assignment has it), or attach one to your result with `advance` and
+`--agent-file FILE_ATTACHMENT_ID` or `--inbox-attachment INBOX_ATTACHMENT_ID` and an
+optional `--label 'short name'` (`ficus workstream create` takes the same three source
+options, without a label, so the first assignment has them), or attach one to your
+result with `advance` and
 `--attach-image`, `--attach-agent-file` or `--attach-inbox-attachment`. A file that
 exists only in the shared workspace is recorded by path instead:
 `ficus workstream update STREAM_ID -f PATH` (this replaces the stream's path list, so

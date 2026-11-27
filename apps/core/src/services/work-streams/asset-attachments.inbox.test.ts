@@ -306,6 +306,15 @@ test('control characters are dropped from a sender’s filename, and a long one 
     source: { kind: 'inbox-attachment', attachmentId: long.id },
   })
   expect(first.attachment.filename).toBe('shot.png')
+  // Markup in a sender's name is escaped where agents read it, as inbox delivery escapes it.
+  const marked = await inboxFile(manager.agentId, { filename: '[click](x)_*.png' })
+  const third = await attachStreamAsset({
+    identity: manager,
+    streamId: target.id,
+    source: { kind: 'inbox-attachment', attachmentId: marked.id },
+  })
+  expect(third.attachment.filename).toBe('[click](x)_*.png')
+  expect(assetManifestLines([third.attachment])[0]).toStartWith('- \\[click\\]\\(x\\)\\_\\*.png (image/png')
   expect(second.attachment.filename).toHaveLength(255)
   expect(second.attachment.filename.endsWith('.png')).toBe(true)
   expect(second.attachment.contentType).toBe('image/png')

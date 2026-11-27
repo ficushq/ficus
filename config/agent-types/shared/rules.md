@@ -56,5 +56,5 @@ Images and files Ficus already stores (chat images and files, handoff and inbox
 attachments) need no workspace copy: view them with `read_attachment`, and share one
 with a stream by ID: `ficus workstream attachment add STREAM_ID` with `--image`,
 `--agent-file` or `--inbox-attachment` (`advance` takes `--attach-*`). Record a
-workspace-only file with `ficus workstream update STREAM_ID -f PATH`. Details are in
-the work-stream-driven-development skill.
+workspace-only file with `ficus workstream update STREAM_ID -f PATH` (it replaces
+the path list). Details are in the work-stream-driven-development skill.

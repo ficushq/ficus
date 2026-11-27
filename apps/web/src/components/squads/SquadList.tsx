@@ -29,6 +29,9 @@ import { SquadIcon, DragHandleIcon } from '../icons'
 import { isLiveAgentStatus, type Squad, type Agent, type AgentSummary, type WorkStream } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
+import { usePendingActions } from '../../hooks/usePendingActions'
+import { SquadCardWork } from './SquadCardWork'
+import { workStreamIdsNeedingViewer } from './squadCardWorkOrder'
 
 const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
   active: 'success',
@@ -51,6 +54,12 @@ export function SquadList() {
   // Head counts only: summary rows of the agents that can still act, not every agent's full record.
   const { data: allAgents = [] } = useQuery(queries.agents.summaries({ live: true }))
   const { data: allWorkStreams = [] } = useQuery(queries.squads.activeWorkStreams())
+  // The same Needs you list the Feed shows: streams it points at lead each card's work rows.
+  const { data: pendingActions } = usePendingActions()
+  const needsViewer = useMemo(
+    () => workStreamIdsNeedingViewer(pendingActions ?? [], allWorkStreams),
+    [pendingActions, allWorkStreams]
+  )
 
   // Filter out anonymous squads
   const visibleSquads = squads.filter((s) => !s.isAnonymous)
@@ -182,6 +191,7 @@ export function SquadList() {
             squad={squad}
             agents={agentsBySquad.get(squad.id) || []}
             workStreams={workStreamsBySquad.get(squad.id) || []}
+            needsViewer={needsViewer}
           />
         ))}
       </div>
@@ -198,6 +208,7 @@ export function SquadList() {
               squad={squad}
               agents={agentsBySquad.get(squad.id) || []}
               workStreams={workStreamsBySquad.get(squad.id) || []}
+              needsViewer={needsViewer}
             />
           ))}
         </div>
@@ -215,24 +226,36 @@ function SquadCardContent({
   squad,
   agents,
   workStreams,
+  needsViewer,
 }: {
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
+  needsViewer: ReadonlySet<string>
 }) {
   const activeWorkStreams = workStreams.filter((ws) => ws.status !== 'done' && ws.status !== 'canceled').length
   const activeAgents = agents.filter((a) => a.status === 'active').length
   const hasActiveAgent = hasWorkingAgent(agents)
+  const { slugFor } = useSquadSlugs()
+  const squadSlug = slugFor(squad.id)
 
   return (
     <>
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           <SquadAvatar name={squad.name} avatarUrl={squad.avatarUrl} size={28} />
-          <h3 className="font-semibold text-primary truncate">{squad.name}</h3>
+          <h3 className="font-semibold text-primary truncate">
+            {/* The card opens the squad: this link stretches over it, below the work rows and the drag handle. */}
+            <Link
+              to={`/squads/${squadSlug}`}
+              className="rounded focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-accent"
+            >
+              {squad.name}
+            </Link>
+          </h3>
           {hasActiveAgent && (
             <span
-              className="relative flex h-2 w-2 shrink-0"
+              className="pointer-events-none relative flex h-2 w-2 shrink-0"
               title="Agent activity in progress"
               aria-label="Agent activity in progress"
             >
@@ -246,6 +269,7 @@ function SquadCardContent({
         )}
       </div>
       <p className="text-sm text-secondary line-clamp-2 mb-3">{squad.purpose}</p>
+      <SquadCardWork squadName={squad.name} squadSlug={squadSlug} workStreams={workStreams} needsViewer={needsViewer} />
       {/* Pinned to the card's bottom, so a short description still lines it up across a row. */}
       <div className="mt-auto flex items-center gap-3 text-xs text-muted">
         <span>
@@ -263,12 +287,13 @@ function SortableSquadCard({
   squad,
   agents,
   workStreams,
+  needsViewer,
 }: {
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
+  needsViewer: ReadonlySet<string>
 }) {
-  const { slugFor } = useSquadSlugs()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: squad.id })
 
   const baseTransition = 'opacity 150ms ease, border-color 150ms ease, box-shadow 150ms ease'
@@ -282,21 +307,19 @@ function SortableSquadCard({
       ref={setNodeRef}
       style={style}
       className={clsx(
-        'ficus-panel ficus-interactive-card relative',
+        'ficus-panel ficus-interactive-card relative isolate flex min-w-0 flex-col p-5',
         isDragging && 'opacity-50 shadow-lg scale-105 z-10'
       )}
     >
+      <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} needsViewer={needsViewer} />
       <button
         {...attributes}
         {...listeners}
-        className="ficus-button ficus-button-ghost absolute bottom-2 right-2 p-1.5 cursor-grab active:cursor-grabbing rounded hover:bg-surface-secondary transition-colors touch-none"
-        aria-label="Drag to reorder"
+        className="ficus-button ficus-button-ghost absolute bottom-2 right-2 z-10 p-1.5 cursor-grab active:cursor-grabbing rounded hover:bg-surface-secondary transition-colors touch-none"
+        aria-label={`Drag to reorder ${squad.name}`}
       >
         <DragHandleIcon className="w-4 h-4" />
       </button>
-      <Link to={`/squads/${slugFor(squad.id)}`} className="flex h-full flex-col p-5">
-        <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} />
-      </Link>
     </div>
   )
 }
@@ -305,15 +328,16 @@ function SquadCard({
   squad,
   agents,
   workStreams,
+  needsViewer,
 }: {
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
+  needsViewer: ReadonlySet<string>
 }) {
-  const { slugFor } = useSquadSlugs()
   return (
-    <Link to={`/squads/${slugFor(squad.id)}`} className="ficus-panel ficus-interactive-card flex flex-col p-5">
-      <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} />
-    </Link>
+    <div className="ficus-panel ficus-interactive-card relative isolate flex min-w-0 flex-col p-5">
+      <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} needsViewer={needsViewer} />
+    </div>
   )
 }

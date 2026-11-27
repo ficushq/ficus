@@ -55,7 +55,7 @@ function questionWorkStream(): WorkStream {
     id: 'ws-1',
     squadId: squad.id,
     title: 'Health check',
-    description: '',
+    description: 'Pick a deployment region.',
     status: 'active',
     derivedState: 'waiting_on_answer',
     openWaits: [
@@ -86,6 +86,11 @@ function questionWorkStream(): WorkStream {
     createdAt: now,
     updatedAt: now,
   }
+}
+
+/** Whether `first` comes before `second` in document order. */
+function isBefore(first: Node, second: Node): boolean {
+  return !!(first.compareDocumentPosition(second) & 4)
 }
 
 describe('WorkStreamDetailModal question waits', () => {
@@ -230,7 +235,7 @@ describe('WorkStreamDetailModal question waits', () => {
     expect([...body.querySelectorAll('button')].some((b) => /Submit Answer/.test(b.textContent ?? ''))).toBe(false)
   })
 
-  test('places the question section immediately after top details and before metrics and other waits', async () => {
+  test('places the question section with the callouts, before the description, dependencies and Details', async () => {
     const workStream = questionWorkStream()
     const questionWait = { ...workStream.openWaits![0]!, flowAttemptId: 2 }
     workStream.openWaits = [
@@ -242,15 +247,17 @@ describe('WorkStreamDetailModal question waits', () => {
       await waitFor(() => expect(queryByRole(body, 'button', { name: 'Submit Answer' })).not.toBeNull())
     })
     const section = getByRole(body, 'region', { name: 'Pending questions' })
-    const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
-    expect(topDetails.nextElementSibling).toBe(section)
-    // The dependency wait is a Blocking row in Dependencies (above the details), not an Open Waits row.
+    // The dependency wait is a Blocking row in Dependencies (after the question), not an Open Waits row.
     const dependencies = getByRole(body, 'region', { name: 'Dependencies' })
-    expect(topDetails.previousElementSibling).toBe(dependencies)
+    expect(isBefore(section, getByText(body, 'Description'))).toBe(true)
+    expect(isBefore(section, dependencies)).toBe(true)
     expect(within(dependencies).getByText('Waiting for prerequisite')).toBeTruthy()
     expect(dependencies.textContent).toContain('Blocking · waiting')
     expect(queryByText(body, 'Open Waits')).toBeNull()
-    expect(section.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
+    // Usage metrics sit in the collapsed Details section, well below the question.
+    const details = body.querySelector('details[aria-label="Work stream details"]')!
+    expect(details.contains(getByText(body, 'Cost:'))).toBe(true)
+    expect(isBefore(section, details)).toBe(true)
     expect(within(section).getAllByRole('button', { name: 'Submit Answer' })).toHaveLength(1)
     expect(within(body).getAllByRole('button', { name: 'Submit Answer' })).toHaveLength(1)
     expect(within(section).getByText('Attempt 2')).toBeTruthy()
@@ -265,12 +272,13 @@ describe('WorkStreamDetailModal question waits', () => {
       await waitFor(() => expect(queryByRole(body, 'button', { name: 'Submit Answer' })).not.toBeNull())
     })
     const section = getByRole(body, 'region', { name: 'Pending questions' })
-    const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
-    expect(topDetails.nextElementSibling).toBe(section)
+    const details = body.querySelector('details[aria-label="Work stream details"]')!
+    expect(isBefore(section, getByText(body, 'Description'))).toBe(true)
+    expect(isBefore(section, details)).toBe(true)
     expect(queryByText(body, 'Cost:')).toBeNull()
     expect(queryByText(body, 'Open Waits')).toBeNull()
     if (metrics === 'loading') {
-      expect(section.nextElementSibling?.getAttribute('aria-label')).toBe('Loading work stream metrics')
+      expect(details.querySelector('[aria-label="Loading work stream metrics"]')).not.toBeNull()
     }
   })
 
@@ -282,10 +290,11 @@ describe('WorkStreamDetailModal question waits', () => {
     const { body } = await render([], { workStream, metrics: 'present' })
     expect(queryByRole(body, 'region', { name: 'Pending questions' })).toBeNull()
     expect(queryByRole(body, 'button', { name: 'Submit Answer' })).toBeNull()
-    const topDetails = getByText(body, 'Completion').parentElement!.parentElement!
     // A stream whose only open wait is a dependency has no Open Waits section: Dependencies says it.
     expect(queryByText(body, 'Open Waits')).toBeNull()
-    expect(topDetails.nextElementSibling?.contains(getByText(body, 'Cost:'))).toBe(true)
+    expect(body.querySelector('details[aria-label="Work stream details"]')!.contains(getByText(body, 'Cost:'))).toBe(
+      true
+    )
     expect(getByRole(body, 'region', { name: 'Dependencies' }).textContent).toContain('Prerequisite')
     expect(getByText(body, 'Wait history (1)').parentElement!.textContent).toContain('Answered')
   })

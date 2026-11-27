@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode }
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workflowAttachmentContentType } from '@ficus/shared'
 import { actionErrorMessage } from '../lib/actionError'
-import { attachmentPreviewMode, documentTitle, type ReviewDocument } from '../lib/workflowAttachments'
+import { attachmentPreviewMode, attachmentTitle, type ReviewDocument } from '../lib/workflowAttachments'
 import { queries } from '../queryOptions'
 import { FilePreview } from './FilePreview'
 import { PdfPreview } from './PdfPreview'
@@ -36,7 +36,7 @@ export function ReviewTabs({
     { ...primary, title: undefined as string | undefined },
     ...attachments.map((attachment) => ({
       id: attachment.id,
-      label: documentTitle({ filename: attachment.filename, label: attachment.label ?? null }),
+      label: attachmentTitle({ filename: attachment.filename, label: attachment.label ?? null }),
       title: attachment.detail,
     })),
   ]
@@ -133,7 +133,7 @@ function decodeText(bytes: Uint8Array): string | null {
  */
 export function AttachmentView({ workStreamId, attachment }: { workStreamId: string; attachment: ReviewDocument }) {
   const mode = attachmentPreviewMode(attachment)
-  const title = documentTitle(attachment)
+  const title = attachmentTitle(attachment)
   const options = queries.workflows.document(workStreamId, attachment)
   const { data: bytes, error } = useQuery({ ...options, enabled: mode !== 'download' })
   const queryClient = useQueryClient()

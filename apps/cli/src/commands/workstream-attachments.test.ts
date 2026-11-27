@@ -68,6 +68,13 @@ describe('ficus workstream attachment', () => {
     expect((apiPost as ReturnType<typeof mock>).mock.calls.length).toBe(calls)
   })
 
+  it('add refuses an empty label before sending anything', async () => {
+    const calls = (apiPost as ReturnType<typeof mock>).mock.calls.length
+    await run(['attachment', 'add', stream, '--inbox-attachment', imageId, '--label', ''])
+    expect(lastError()?.message).toBe('A label cannot be empty; leave out --label to share without one')
+    expect((apiPost as ReturnType<typeof mock>).mock.calls.length).toBe(calls)
+  })
+
   it('add sends an optional label, and list shows it before the filename', async () => {
     const labelled = { ...share, label: 'Today’s squads page' }
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValueOnce(labelled)
@@ -102,6 +109,9 @@ describe('ficus workstream attachment', () => {
     expect(lastError()?.message).toBe('Give a label, or --clear to remove the current one')
     await run(['attachment', 'label', stream, share.id, 'Both', '--clear'])
     expect(lastError()?.message).toBe('Give a label, or --clear to remove the current one')
+    // An empty label is not a way to clear: the CLI names --clear, not the API's null.
+    await run(['attachment', 'label', stream, share.id, '  '])
+    expect(lastError()?.message).toBe('A label cannot be empty; use --clear to remove the current one')
     expect((apiPatch as ReturnType<typeof mock>).mock.calls.length).toBe(calls)
   })
 
