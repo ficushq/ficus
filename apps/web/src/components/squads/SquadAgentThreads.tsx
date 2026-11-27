@@ -60,6 +60,7 @@ import {
   QuestionIcon,
 } from '../icons'
 import {
+  agentTypeLabel,
   inferredConsultantOrigin,
   workStreamLabel,
   workStreamRef,
@@ -69,13 +70,7 @@ import {
 } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
-import {
-  agentListLabels,
-  getAgentLabel,
-  getAgentName,
-  getAgentPurpose,
-  agentMatchesQuery,
-} from '../../lib/agentDisplay'
+import { agentListLabels, getAgentName, getAgentPurpose, agentMatchesQuery } from '../../lib/agentDisplay'
 
 export interface SquadAgentThreadsDependencies {
   Chat: ComponentType<ComponentProps<typeof Chat>>
@@ -536,11 +531,6 @@ export function SquadAgentThreads({
   const allAgents = [...agents, ...recentlyTerminatedAgents].filter((agent) =>
     lockedAgentId ? agent.id === lockedAgentId : !agentTypeFilter || agent.agentTypeId === agentTypeFilter
   )
-  // Rows sit under their type's heading, so a row shows the purpose. Without one it reads as the type,
-  // never the name alone; agents of one type with no purpose add their name to tell them apart.
-  const typeFirstLabels = agentListLabels(allAgents)
-  const agentRowLabel = (agent: Agent) =>
-    getAgentPurpose(agent) ?? typeFirstLabels.get(agent.id) ?? getAgentLabel(agent)
   const potentialAgents = allAgents.filter(
     (agent) => effectiveAgentId && (agent.id === effectiveAgentId || agent.id.startsWith(effectiveAgentId))
   )
@@ -716,6 +706,14 @@ export function SquadAgentThreads({
     )
   }
 
+  // Rows sit under their type's heading, so a row shows the purpose. Without one it reads as the type,
+  // never the name alone; agents of one type with no purpose add their name to tell them apart.
+  const rowLabels = useMemo(() => {
+    const typeFirst = agentListLabels(allAgents)
+    return new Map(allAgents.map((agent) => [agent.id, getAgentPurpose(agent) ?? typeFirst.get(agent.id)!]))
+  }, [allAgents])
+  // A row outside the loaded list (none today) still reads as its type.
+  const agentRowLabel = (agent: Agent) => rowLabels.get(agent.id) ?? agentTypeLabel(agent.agentTypeId)
   const renderAgentRow = (agent: Agent, compact = false) => {
     const isSelected = listSelectedAgentId === agent.id
     const stableName = getAgentName(agent)

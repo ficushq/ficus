@@ -127,11 +127,7 @@ test('the trigger set is exactly new questions and gates the user can act on', a
     otherAction('assistant-needs-input', 'task'),
     otherAction('workstream-delivery', 'pr'),
   ])
-  expect(view.headlines()).toEqual([
-    'Engineer has a question',
-    'Engineer requests review',
-    'Engineer needs your input',
-  ])
+  expect(view.headlines()).toEqual(['Engineer has a question', 'Engineer requests review', 'Engineer needs your input'])
 })
 
 test('more than three new items show the newest three', async () => {
@@ -139,7 +135,11 @@ test('more than three new items show the newest three', async () => {
   await view.setPending([])
   await view.setPending(
     [1, 2, 3, 4].map((minute) =>
-      questionAction(`q${minute}`, { createdAt: `2026-11-26T12:0${minute}:00.000Z` }, { agentPurpose: `Task ${minute}`, workStream: undefined })
+      questionAction(
+        `q${minute}`,
+        { createdAt: `2026-11-26T12:0${minute}:00.000Z` },
+        { agentPurpose: `Task ${minute}`, workStream: undefined }
+      )
     )
   )
   expect(view.headlines()).toEqual([
