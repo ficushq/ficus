@@ -207,11 +207,14 @@ ficus workstream list [options]
 | `-q, --squad <squadId>` | Filter by squad ID                                                             |
 | `-t, --task <taskId>`   | Filter by task ID                                                              |
 | `-s, --status <status>` | Only this status: `queued`, `active`, `done` or `canceled` (wins over `--all`) |
-| `--all`                 | Include done and canceled streams                                              |
+| `--all`                 | Include done and canceled streams, fetched page by page                        |
 
-A squad's history grows without bound: on a squad with about a thousand done streams,
-`--all` returns megabytes and takes seconds of server time, against a fraction of a second
-for the default. Use `--status done` or `--all` only when you need the history, and
+A squad's history grows without bound: on a squad with about a thousand done streams, the
+whole history is megabytes and seconds of server time, against a fraction of a second for
+the default. Core answers one request with at most 50 done and canceled streams and links
+the next page; `--all` and `--status done` follow those links, so the history arrives in
+bounded requests but still takes one request per 50 streams. Use them only when you need
+the history, and
 `ficus workstream get <id>` to check one stream (see
 [Reading work streams under load](../work-streams.md#reading-work-streams-under-load)).
 

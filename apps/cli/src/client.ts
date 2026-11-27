@@ -41,7 +41,7 @@ export class ReadConnectionDroppedError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+async function readResponse(path: string): Promise<Response> {
   let response: Response
   try {
     response = await fetch(`${config.apiUrl}${path}`, {
@@ -52,7 +52,47 @@ export async function apiGet<T>(path: string): Promise<T> {
     throw error
   }
   if (!response.ok) await throwApiError(response)
-  return response.json()
+  return response
+}
+
+export async function apiGet<T>(path: string): Promise<T> {
+  return (await readResponse(path)).json()
+}
+
+/** The target of a `Link: <...>; rel="next"` header, if the response has one. */
+function nextLink(response: Response): string | undefined {
+  for (const part of (response.headers.get('Link') ?? '').split(',')) {
+    const match = /^\s*<([^>]+)>\s*;(.*)$/.exec(part)
+    if (match && /\brel="?next"?/.test(match[2]!)) return match[1]
+  }
+  return undefined
+}
+
+/**
+ * A list that may come in pages: the first answer is an array, and a `Link: <...>;
+ * rel="next"` header names the paginated request for the rest (Core caps work stream
+ * history that way). Each later page is `{ items, nextCursor }` and is fetched in
+ * turn, so no single request carries the whole history. A server without the header
+ * answers in one request, as before.
+ */
+export async function apiGetList<T>(path: string): Promise<T[]> {
+  const first = await readResponse(path)
+  const rows = (await first.json()) as T[]
+  const link = nextLink(first)
+  if (!link) return rows
+  // Only the link's query is used, on this request's own path, so a path prefix the
+  // server does not see (a proxy in front of it) still applies.
+  const pathname = path.split('?')[0]!
+  const query = new URL(link, 'http://link.invalid').searchParams
+  const seen = new Set<string>()
+  while (!seen.has(query.toString())) {
+    seen.add(query.toString())
+    const page = (await apiGet<{ items?: T[]; nextCursor?: string | null }>(`${pathname}?${query}`)) ?? {}
+    rows.push(...(page.items ?? []))
+    if (!page.nextCursor) break
+    query.set('cursor', page.nextCursor)
+  }
+  return rows
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {

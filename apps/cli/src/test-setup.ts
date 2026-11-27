@@ -27,6 +27,7 @@ mock.module('./output', () => ({
 const apiPostMock = mock((_path: string, _body?: unknown): Promise<unknown> => Promise.resolve({}))
 mock.module('./client', () => ({
   apiGet: mock(() => Promise.resolve({})),
+  apiGetList: mock(() => Promise.resolve([])),
   apiPostResponse: mock(() => Promise.resolve(Response.json({}))),
   apiPost: apiPostMock,
   apiPostIdempotent: mock((path: string, body: unknown) => apiPostMock(path, body)),

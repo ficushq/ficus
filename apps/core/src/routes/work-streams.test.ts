@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, setSystemTime, spyOn } from 'bun:test'
 import { like, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { workStreamsRouter } from './work-streams'
+import { UNPAGED_HISTORY_LIMIT, workStreamsRouter } from './work-streams'
 import { squadsRouter } from './squads'
 import { agentsRouter } from './agents'
 import { identityMiddleware } from '../middleware/identity'
@@ -954,6 +954,8 @@ describe('work-streams routes', () => {
       expect(Array.isArray(list)).toBe(true)
       expect(list.length).toBe(2)
       expect(list.every((ws: { status: string }) => ws.status === 'done' || ws.status === 'canceled')).toBe(true)
+      // All of the history fits under the cap, so there is no next page.
+      expect(res.headers.get('Link')).toBeNull()
     })
 
     it('lets statuses take precedence over status', async () => {
@@ -968,6 +970,94 @@ describe('work-streams routes', () => {
       expect(list.map((ws: { id: string }) => ws.id)).toContain(done.id)
       expect(list.map((ws: { id: string }) => ws.id)).not.toContain(pending.id)
       expect(list.every((ws: { status: string }) => ws.status === 'done' || ws.status === 'canceled')).toBe(true)
+    })
+
+    /** The `Link: <...>; rel="next"` target of an unpaged list whose history was capped. */
+    function nextPageLink(response: Response): URL {
+      const link = response.headers.get('Link')
+      expect(link).not.toBeNull()
+      return new URL(link!.slice(1, link!.indexOf('>')), 'http://localhost')
+    }
+
+    /** More open streams and more history than the unpaged cap, history completed newest last. */
+    async function seedPastTheHistoryCap(squadId = testSquadId) {
+      const open = await db
+        .insert(workStreams)
+        .values(
+          Array.from({ length: UNPAGED_HISTORY_LIMIT + 2 }, (_, index) => ({
+            squadId,
+            title: `${testPrefix} open ${index}`,
+            status: index % 2 === 0 ? ('active' as const) : ('queued' as const),
+          }))
+        )
+        .returning({ id: workStreams.id })
+      const history = await db
+        .insert(workStreams)
+        .values(
+          Array.from({ length: UNPAGED_HISTORY_LIMIT + 3 }, (_, index) => ({
+            squadId,
+            title: `${testPrefix} history ${index}`,
+            status: index % 3 === 0 ? ('canceled' as const) : ('done' as const),
+            updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
+          }))
+        )
+        .returning({ id: workStreams.id })
+      return { open: open.map((row) => row.id), newestHistoryFirst: history.map((row) => row.id).reverse() }
+    }
+
+    it('caps history without limit at the newest rows, keeps all open work, and links the next page', async () => {
+      const { open, newestHistoryFirst } = await seedPastTheHistoryCap()
+
+      const res = await apiFetch(`/api/workstreams?squadId=${testSquadId}&omitDescription=true`)
+      expect(res.status).toBe(200)
+      const list = (await res.json()) as Array<{ id: string; status: string }>
+      expect(Array.isArray(list)).toBe(true)
+      const listedOpen = list.filter((ws) => ws.status === 'active' || ws.status === 'queued').map((ws) => ws.id)
+      expect(new Set(listedOpen)).toEqual(new Set(open))
+      const listedHistory = list.filter((ws) => ws.status === 'done' || ws.status === 'canceled').map((ws) => ws.id)
+      expect(listedHistory).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+
+      expect(res.headers.get('Link')).toMatch(/^<\/api\/workstreams\?[^>]+>; rel="next"$/)
+      const next = nextPageLink(res)
+      expect(next.searchParams.get('squadId')).toBe(testSquadId)
+      expect(next.searchParams.get('statuses')).toBe('done,canceled')
+      expect(next.searchParams.get('limit')).toBe(String(UNPAGED_HISTORY_LIMIT))
+      expect(next.searchParams.get('omitDescription')).toBe('true')
+
+      const page = await (await apiFetch(`${next.pathname}${next.search}`)).json()
+      expect(page.items.map((ws: { id: string }) => ws.id)).toEqual(newestHistoryFirst.slice(UNPAGED_HISTORY_LIMIT))
+      expect(page.hasMore).toBe(false)
+      expect(page.totalCount).toBe(newestHistoryFirst.length)
+    })
+
+    it('caps a history-only and a cross-squad list the same way, inside the requested squads', async () => {
+      const { newestHistoryFirst } = await seedPastTheHistoryCap()
+      const other = await Squad.create({ name: `${testPrefix} Other Squad`, purpose: 'Excluded' })
+      await db.insert(workStreams).values({
+        squadId: other.id,
+        title: `${testPrefix} other history`,
+        status: 'done',
+        updatedAt: new Date(Date.UTC(2027, 0, 1)),
+      })
+
+      const historyOnly = await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=canceled,done`)
+      const terminal = (await historyOnly.json()) as Array<{ id: string; status: string }>
+      expect(terminal.map((ws) => ws.id)).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+      expect(nextPageLink(historyOnly).searchParams.get('statuses')).toBe('canceled,done')
+      // Only done: 35 of the 53 fit under the cap, so nothing to continue.
+      const doneOnly = await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=done`)
+      expect(((await doneOnly.json()) as unknown[]).length).toBe(newestHistoryFirst.length - 18)
+      expect(doneOnly.headers.get('Link')).toBeNull()
+
+      const crossSquad = await apiFetch(`/api/workstreams?squadIds=${testSquadId}`)
+      const listed = (await crossSquad.json()) as Array<{ id: string; status: string }>
+      const history = listed.filter((ws) => ws.status === 'done' || ws.status === 'canceled')
+      // The other squad's newer stream is not counted against the cap.
+      expect(history.map((ws) => ws.id)).toEqual(newestHistoryFirst.slice(0, UNPAGED_HISTORY_LIMIT))
+      expect(listed).toHaveLength(UNPAGED_HISTORY_LIMIT + 2 + UNPAGED_HISTORY_LIMIT)
+      const next = nextPageLink(crossSquad)
+      expect(next.searchParams.get('squadIds')).toBe(testSquadId)
+      expect(next.searchParams.get('squadId')).toBeNull()
     })
 
     it('returns a paginated envelope when limit is present', async () => {
