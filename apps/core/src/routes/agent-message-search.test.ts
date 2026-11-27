@@ -29,6 +29,21 @@ let squad: Squad
 let otherSquad: Squad
 let squadAgent: Agent
 let otherAgent: Agent
+let toolAgent: Agent
+
+function toolUse(toolCallId: string, toolName: string, args: unknown, result: string) {
+  return {
+    type: 'tool_use',
+    id: toolCallId,
+    toolCall: { toolCallId, toolName, args: JSON.stringify(args), result, isError: false },
+  }
+}
+
+async function searchBody(agentId: string, params: Record<string, string>) {
+  const res = await search(agentId, admin.token, params)
+  expect(res.status).toBe(200)
+  return (await res.json()) as MessageSearchResponse
+}
 const createdAgentIds: string[] = []
 
 async function search(agentId: string, token: string, params: Record<string, string>) {
@@ -64,6 +79,48 @@ beforeAll(async () => {
   await squadAgent.recordMessage({ role: 'human', content: '100% done_now', metadata: { source: 'inbox' } })
   await squadAgent.recordMessage({ role: 'assistant', content: 'Unrelated reply' })
   await otherAgent.recordMessage({ role: 'human', content: 'deploy from another conversation' })
+
+  // A conversation with tool calls, oldest first: newerCount 4, 3, 2, 1, 0.
+  toolAgent = await createAgent({ agentTypeId, squadId: squad.id })
+  const at = (minute: number) => new Date(Date.UTC(2026, 10, 1, 10, minute))
+  const toolRows = [
+    {
+      role: 'human' as const,
+      content: 'find the backup path',
+      metadata: { sender: { userId: admin.id, name: 'Admin' } },
+    },
+    {
+      role: 'assistant' as const,
+      content: 'Checking the disk.',
+      metadata: {
+        content: [
+          { type: 'thinking', id: 'th1', content: 'thinkonlyword' },
+          toolUse(
+            'call-1',
+            'bash',
+            { command: 'ls C:\\backups\\50%_off' },
+            'found "quoted" archive_v2.tar\nsecond line'
+          ),
+          toolUse('call-2', 'read', { path: '/etc/argsonlyword.conf' }, 'resultonlyword: 1 GiB used'),
+          toolUse('call-4', 'bash', { command: 'git commit -m "fix it"' }, ''),
+        ],
+      },
+    },
+    { role: 'human' as const, content: 'Is archive_v2 the newest?', metadata: { source: 'inbox' } },
+    {
+      role: 'assistant' as const,
+      content: 'Yes, archive_v2 is newest.',
+      metadata: { content: [toolUse('call-3', 'memory_search', { query: 'retention' }, 'archive_v2 kept 30 days')] },
+    },
+    { role: 'assistant' as const, content: 'Done.', metadata: { content: [] } },
+  ]
+  for (const [minute, row] of toolRows.entries()) {
+    const message = await toolAgent.recordMessage(row as unknown as Parameters<Agent['recordMessage']>[0])
+    await db
+      .update(messages)
+      .set({ createdAt: at(minute) })
+      .where(eq(messages.id, message.id))
+  }
 })
 
 afterAll(async () => {
@@ -197,5 +254,119 @@ describe('GET /api/agents/:id/messages/search', () => {
       expect((await search(assistant.id, other.token, { q: 'taxes' })).status).toBe(403)
       expect((await search(assistant.id, admin.token, { q: 'taxes' })).status).toBe(403)
     })
+  })
+})
+
+describe('GET /api/agents/:id/messages/search with tool calls', () => {
+  it('keeps the default scope on visible text, so tool-only strings are not found', async () => {
+    for (const params of [
+      { q: 'resultonlyword' },
+      { q: 'resultonlyword', in: 'text' },
+      { q: 'thinkonlyword', in: 'all' },
+    ]) {
+      expect((await searchBody(toolAgent.id, params)).results).toEqual([])
+    }
+    const text = await searchBody(toolAgent.id, { q: 'archive_v2' })
+    expect(text.results.map((r) => r.match)).toEqual([{ field: 'text' }, { field: 'text' }])
+  })
+
+  it('finds a string that only appears in a tool result and names the tool', async () => {
+    for (const scope of ['tools', 'all']) {
+      const body = await searchBody(toolAgent.id, { q: 'RESULTONLYWORD', in: scope })
+      expect(body.results).toHaveLength(1)
+      const [hit] = body.results
+      expect(hit.role).toBe('assistant')
+      expect(hit.match).toEqual({ field: 'tool_result', toolName: 'read', toolCallId: 'call-2' })
+      expect(hit.snippet.text).toBe('resultonlyword: 1 GiB used')
+      expect(hit.snippet.highlights).toEqual([[0, 14]])
+      expect(hit.newerCount).toBe(3)
+    }
+  })
+
+  it('finds a string that only appears in tool arguments, and a tool by its name', async () => {
+    const args = await searchBody(toolAgent.id, { q: 'argsonlyword', in: 'all' })
+    expect(args.results.map((r) => r.match)).toEqual([{ field: 'tool_args', toolName: 'read', toolCallId: 'call-2' }])
+    expect(args.results[0].snippet.text).toContain('argsonlyword.conf')
+    const name = await searchBody(toolAgent.id, { q: 'memory_search', in: 'tools' })
+    expect(name.results.map((r) => r.match)).toEqual([
+      { field: 'tool_name', toolName: 'memory_search', toolCallId: 'call-3' },
+    ])
+  })
+
+  it('prefers the visible text for a message that matches in both, and tools-only skips text', async () => {
+    const all = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'all' })
+    expect(all.results.map((r) => [r.newerCount, r.match.field])).toEqual([
+      [1, 'text'],
+      [2, 'text'],
+      [3, 'tool_result'],
+    ])
+    const tools = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'tools' })
+    expect(tools.results.map((r) => [r.newerCount, r.match])).toEqual([
+      [1, { field: 'tool_result', toolName: 'memory_search', toolCallId: 'call-3' }],
+      [3, { field: 'tool_result', toolName: 'bash', toolCallId: 'call-1' }],
+    ])
+  })
+
+  it('matches %, _, \\ and quotes literally in tool content', async () => {
+    const literal = async (q: string) => (await searchBody(toolAgent.id, { q, in: 'tools' })).results.length
+    expect(await literal('50%_off')).toBe(1)
+    expect(await literal('50x_off')).toBe(0)
+    expect(await literal('50%xoff')).toBe(0)
+    expect(await literal('archive.v2')).toBe(0)
+    expect(await literal('"quoted"')).toBe(1)
+    expect(await literal('tar\\nsecond')).toBe(0)
+    expect(await literal('%')).toBe(1)
+    expect(await literal('_')).toBe(2)
+    expect(await literal('.*')).toBe(0)
+    // Arguments are stored as JSON text; the query matches them as typed and in its JSON-escaped form.
+    expect(await literal('C:\\backups\\50%_off')).toBe(1)
+    expect(await literal('C:\\\\backups')).toBe(1)
+    expect(await literal('C:\\xbackups')).toBe(0)
+    const quoted = await searchBody(toolAgent.id, { q: '-m "fix it"', in: 'tools' })
+    expect(quoted.results.map((r) => r.match)).toEqual([{ field: 'tool_args', toolName: 'bash', toolCallId: 'call-4' }])
+    expect(quoted.results[0].snippet.text).toBe('{"command":"git commit -m \\"fix it\\""}')
+    expect(quoted.results[0].snippet.highlights).toEqual([[23, 36]])
+  })
+
+  it('filters by role, keeping the requester-identity lookup by human sender working', async () => {
+    const human = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'all', role: 'human' })
+    expect(human.results.map((r) => [r.role, r.source])).toEqual([['human', 'inbox']])
+    const sender = await searchBody(toolAgent.id, { q: 'backup', role: 'human' })
+    expect(sender.results.map((r) => r.sender)).toEqual([{ userId: admin.id, name: 'Admin' }])
+    const assistant = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'all', role: 'assistant' })
+    expect(assistant.results.map((r) => r.role)).toEqual(['assistant', 'assistant'])
+    expect((await search(toolAgent.id, admin.token, { q: 'x', role: 'system' })).status).toBe(400)
+  })
+
+  it('filters by time range', async () => {
+    const body = await searchBody(toolAgent.id, {
+      q: 'archive_v2',
+      in: 'all',
+      after: '2026-11-01T10:01:30.000Z',
+      before: '2026-11-01T10:03:30.000Z',
+    })
+    expect(body.results.map((r) => r.newerCount)).toEqual([1, 2])
+    expect((await search(toolAgent.id, admin.token, { q: 'x', before: 'not a date' })).status).toBe(400)
+  })
+
+  it('rejects an unknown scope and binds cursors to the scope and filters', async () => {
+    expect((await search(toolAgent.id, admin.token, { q: 'x', in: 'thinking' })).status).toBe(400)
+    const first = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'all', limit: '1' })
+    expect(first.nextCursor).toBeString()
+    const next = await searchBody(toolAgent.id, { q: 'archive_v2', in: 'all', limit: '2', cursor: first.nextCursor! })
+    expect(next.results.map((r) => r.newerCount)).toEqual([2, 3])
+    for (const changed of [
+      { in: 'text' },
+      { in: 'all', role: 'assistant' },
+      { in: 'all', after: '2026-01-01T00:00:00Z' },
+    ]) {
+      const res = await search(toolAgent.id, admin.token, {
+        q: 'archive_v2',
+        limit: '1',
+        cursor: first.nextCursor!,
+        ...changed,
+      })
+      expect(res.status).toBe(400)
+    }
   })
 })

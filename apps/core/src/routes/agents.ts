@@ -12,6 +12,7 @@ import {
   chatRequestSchema,
   manualWaitDecisionSchema,
   messageSearchQuerySchema,
+  messageSearchScopeSchema,
 } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { AgentModelApplyError, applyAgentModelNow } from '../services/agent/model-apply'
@@ -946,7 +947,8 @@ export const agentsRouter = new Hono()
     }
   )
   // GET /api/agents/:id/messages — get messages for agent
-  // Supports pagination with ?beforeId=<cursor>&limit=50
+  // Supports pagination with ?cursor=<opaque>&limit=50 and filters role, before, after, and search with in=text|tools|all
+  // (the shared conversation search; see services/agent/message-search.ts). totalCount counts the filtered messages.
   .get('/:id/messages', requireAgentReadPermission, async (c) => {
     const agent = await Agent.find(c.req.param('id'))
     if (!agent) return c.json({ error: 'Agent not found' }, 404)
@@ -958,6 +960,7 @@ export const agentsRouter = new Hono()
     const beforeId = c.req.query('beforeId')
     const after = c.req.query('after')
     const search = c.req.query('search')
+    const searchIn = c.req.query('in')
     const role = c.req.query('role')
 
     if (limit) options.limit = parseInt(limit)
@@ -967,6 +970,11 @@ export const agentsRouter = new Hono()
     else if (beforeId) options.beforeId = beforeId
     if (after) options.after = after
     if (search) options.search = search
+    if (searchIn !== undefined) {
+      const scope = messageSearchScopeSchema.safeParse(searchIn)
+      if (!scope.success) return c.json({ error: 'in must be one of text, tools, all' }, 400)
+      options.searchIn = scope.data
+    }
     if (role === 'human' || role === 'assistant') options.role = role
 
     try {
@@ -979,8 +987,9 @@ export const agentsRouter = new Hono()
       throw error
     }
   })
-  // GET /api/agents/:id/messages/search?q=<text>&limit=N&cursor=<opaque> — search this one conversation's
-  // full history. Same authorization as reading its messages (owner-only for private agents).
+  // GET /api/agents/:id/messages/search?q=<text>&in=text|tools|all&role=&before=&after=&limit=N&cursor=<opaque> — search
+  // this one conversation's full history, including tool calls and results with in=tools or in=all. The chat view and
+  // `ficus agent search` both use it. Same authorization as reading its messages (owner-only for private agents).
   .get('/:id/messages/search', requireAgentReadPermission, zValidator('query', messageSearchQuerySchema), async (c) => {
     const agent = await Agent.find(c.req.param('id'))
     if (!agent) return c.json({ error: 'Agent not found' }, 404)

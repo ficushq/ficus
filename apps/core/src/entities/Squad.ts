@@ -37,6 +37,7 @@ import * as squadSsh from '../services/squad/ssh'
 // Forward declaration to avoid circular import at module load time
 import type { Agent } from './Agent'
 import { mapMessage } from './message-mapper'
+import { escapeLike } from '../services/agent/message-search'
 import { deepMergeMetadata } from './metadata'
 import { setHostWorkspaceOverride } from '../services/sandbox/host/workspace-overrides'
 
@@ -998,7 +999,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
 
     if (agentIds.length === 0) return []
 
-    const conditions: SQL[] = [inArray(messages.agentId, agentIds), ilike(messages.content, `%${search}%`)]
+    const conditions: SQL[] = [inArray(messages.agentId, agentIds), ilike(messages.content, `%${escapeLike(search)}%`)]
 
     if (options?.role) {
       conditions.push(eq(messages.role, options.role))

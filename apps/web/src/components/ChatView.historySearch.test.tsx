@@ -53,6 +53,7 @@ function result(id: string, newerCount: number): MessageSearchResult {
     sender: { userId: 'u1', name: 'Noah' },
     source: null,
     isSystem: false,
+    match: { field: 'text' },
     snippet: { text: 'Check the deploy pipeline', truncatedStart: false, truncatedEnd: false, highlights: [[10, 16]] },
     newerCount,
   }

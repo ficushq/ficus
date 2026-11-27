@@ -237,6 +237,74 @@ describe('agent messages route', () => {
       expect(result.messages.every((m: any) => m.role === 'human')).toBe(true)
     })
 
+    it('searches with the shared conversation search: literal wildcards and a filtered totalCount', async () => {
+      await testAgent.recordMessage({ role: 'human', content: 'pi-durable notes' })
+      await testAgent.recordMessage({ role: 'human', content: 'pi_durable 100% ready' })
+      await testAgent.recordMessage({ role: 'assistant', content: 'path C:\\pi_durable' })
+      await testAgent.recordMessage({ role: 'assistant', content: 'unrelated' })
+      const list = async (query: string) => {
+        const res = await app.request(`/api/agents/${testAgentId}/messages?${query}`, {
+          headers: authHeaders(admin.token),
+        })
+        expect(res.status).toBe(200)
+        return (await res.json()) as { messages: Array<{ content: string }>; pagination: { totalCount: number } }
+      }
+
+      const underscore = await list('search=pi_durable')
+      expect(underscore.messages.map((m) => m.content)).toEqual(['pi_durable 100% ready', 'path C:\\pi_durable'])
+      expect(underscore.pagination.totalCount).toBe(2)
+      expect((await list(`search=${encodeURIComponent('pi%ready')}`)).messages).toEqual([])
+      expect((await list(`search=${encodeURIComponent('100%')}`)).messages).toHaveLength(1)
+      expect((await list(`search=${encodeURIComponent('C:\\pi')}`)).messages).toHaveLength(1)
+      expect((await list(`search=${encodeURIComponent('C:\\\\pi')}`)).messages).toHaveLength(0)
+
+      const human = await list('search=durable&role=human&limit=1')
+      expect(human.messages).toHaveLength(1)
+      expect(human.pagination.totalCount).toBe(2)
+      const none = await list('search=zzzznotfound')
+      expect(none.pagination.totalCount).toBe(0)
+      expect((await list('role=assistant')).pagination.totalCount).toBe(2)
+      expect((await list('')).pagination.totalCount).toBe(4)
+    })
+
+    it('searches tool calls and results with in=tools or in=all', async () => {
+      await testAgent.recordMessage({ role: 'human', content: 'run it' })
+      await testAgent.recordMessage({
+        role: 'assistant',
+        content: 'Ran it.',
+        metadata: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'c1',
+              toolCall: {
+                toolCallId: 'c1',
+                toolName: 'bash',
+                args: '{"command":"make"}',
+                result: 'onlyintoolresult',
+                isError: false,
+              },
+            },
+          ],
+        },
+      })
+      const list = async (query: string) => {
+        const res = await app.request(`/api/agents/${testAgentId}/messages?${query}`, {
+          headers: authHeaders(admin.token),
+        })
+        return { status: res.status, body: (await res.json()) as any }
+      }
+      expect((await list('search=onlyintoolresult')).body.messages).toEqual([])
+      expect((await list('search=onlyintoolresult&in=text')).body.messages).toEqual([])
+      for (const scope of ['tools', 'all']) {
+        const found = await list(`search=onlyintoolresult&in=${scope}`)
+        expect(found.body.messages.map((m: any) => m.content)).toEqual(['Ran it.'])
+        expect(found.body.pagination.totalCount).toBe(1)
+      }
+      expect((await list('search=Ran&in=tools')).body.messages).toEqual([])
+      expect((await list('search=x&in=everything')).status).toBe(400)
+    })
+
     it('ignores invalid role filter', async () => {
       await testAgent.recordMessage({ role: 'human', content: 'Hello' })
 
