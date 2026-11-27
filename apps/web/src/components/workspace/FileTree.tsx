@@ -8,6 +8,7 @@
 
 import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { isSandboxProvisioningFailure } from '@ficus/client-core'
 import clsx from 'clsx'
 import type { TreeNode } from '../../api/workspace'
 import { FolderIcon } from '../icons/FolderIcon'
@@ -19,6 +20,7 @@ import type { WorkspaceSource } from './workspaceSource'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 import { useAdjustOnChange } from '../../hooks/useAdjustOnChange'
+import { SandboxStartingNotice } from './SandboxStartingNotice'
 
 export interface FileTreeProps {
   source: WorkspaceSource
@@ -342,10 +344,14 @@ export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) 
     error,
     isSuccess,
     refetch,
+    failureReason,
   } = useQuery({
     ...source.treeQuery(''),
     staleTime: 30000,
   })
+  // The tree is read from the sandbox. While Core cannot provision it, the read is retried for
+  // minutes (client-core retry.ts); say so instead of showing a skeleton that never resolves.
+  const waitingForSandbox = isLoading && !rootTree && isSandboxProvisioningFailure(failureReason)
   const rootSkeletonCount = useLoadingShapeCount(
     `${source.id}:workspace-tree-root`,
     isSuccess ? (rootTree?.children?.length ?? 0) : undefined,
@@ -424,17 +430,24 @@ export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) 
         <LoadingContent
           loading={isLoading && !rootTree}
           fallback={
-            <LoadingSurface label={source.loadingLabel}>
-              <SkeletonRows count={Math.max(1, rootSkeletonCount)}>
-                {(index) => (
-                  <div key={index} className="flex min-h-9 items-center gap-2 px-2 py-1.5">
-                    <span className="w-4" />
-                    <SkeletonBlock className="h-4 w-4" />
-                    <SkeletonBlock className={index % 3 ? 'h-3 w-28' : 'h-3 w-36'} />
-                  </div>
-                )}
-              </SkeletonRows>
-            </LoadingSurface>
+            waitingForSandbox ? (
+              <SandboxStartingNotice
+                subject="Files"
+                className="flex flex-col items-center gap-2 px-3 py-8 text-center"
+              />
+            ) : (
+              <LoadingSurface label={source.loadingLabel}>
+                <SkeletonRows count={Math.max(1, rootSkeletonCount)}>
+                  {(index) => (
+                    <div key={index} className="flex min-h-9 items-center gap-2 px-2 py-1.5">
+                      <span className="w-4" />
+                      <SkeletonBlock className="h-4 w-4" />
+                      <SkeletonBlock className={index % 3 ? 'h-3 w-28' : 'h-3 w-36'} />
+                    </div>
+                  )}
+                </SkeletonRows>
+              </LoadingSurface>
+            )
           }
         >
           {isError ? (

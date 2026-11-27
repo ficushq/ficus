@@ -664,6 +664,13 @@ export const workStreamsRouter = new Hono()
     const agentId = agentFilter.data
     if (agentId && (limitParam === undefined || countOnly))
       return c.json({ error: 'agentId requires a paginated terminal-status query' }, 400)
+    // The agent predicate (assignee, owner, creator or any attached agent) has no index: serving it
+    // would take three btree indexes and a GIN on agent_ids, each a write cost on a hot table, and
+    // the page still sorts by completion time. An agent belongs to one squad, so the page is scoped
+    // to that squad's history (idx_work_streams_squad_created_at) instead of every finished stream
+    // the caller can read. A full ID: a prefix compares as text and uses no index.
+    if (agentId && !z.uuid().safeParse(squadId).success)
+      return c.json({ error: 'agentId requires a full squadId' }, 400)
     const completionRange = z
       .object({
         completedAfter: z.iso.datetime().optional(),

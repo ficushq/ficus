@@ -5,6 +5,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
+import { isSandboxProvisioningFailure } from '@ficus/client-core'
 import type { FileContent } from '../../api/workspace'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { syntaxTheme } from '../../theme/syntax'
@@ -14,6 +15,7 @@ import { WorkspaceImageViewer } from '../SquadWorkspaceImageViewer'
 import { DocumentSkeleton, SkeletonBlock, SkeletonLine } from '../loading/Skeleton'
 import { CopyPathButton } from './CopyPathButton'
 import type { WorkspaceSource } from './workspaceSource'
+import { SandboxStartingNotice } from './SandboxStartingNotice'
 
 // Image file extensions
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp'])
@@ -141,11 +143,22 @@ export function FileViewer({ source, filePath }: FileViewerProps) {
     isLoading,
     isError,
     error,
+    failureReason,
   } = useQuery<FileContent>({
     queryKey: queryOpts.queryKey as any,
     queryFn: queryOpts.queryFn as any,
     staleTime: 10000, // Cache for 10 seconds
   })
+
+  // Read from the sandbox: while Core cannot provision it, the read keeps retrying for minutes.
+  if (isLoading && isSandboxProvisioningFailure(failureReason)) {
+    return (
+      <SandboxStartingNotice
+        subject="This file"
+        className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center"
+      />
+    )
+  }
 
   if (isLoading) {
     return (

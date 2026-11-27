@@ -11,15 +11,16 @@ import {
   WORKSPACE_FILE_SERVER_ERROR,
 } from '../lib/workflowAttachments'
 import { WorkStreamFileCard } from './WorkStreamFileCard'
+import { createAppQueryClient } from '../lib/appQueryClient'
 
 const refusal = (status: number, error: string) => () => Response.json({ error }, { status })
 
 /** Opens the viewer for a workspace file the server answers with `answer`, then hands over the page. */
 async function openFile(
   answer: ApiRoutes[string],
-  inspect: (page: { body: HTMLElement; act: (fn: () => Promise<void>) => Promise<void> }) => Promise<void>
+  inspect: (page: { body: HTMLElement; act: (fn: () => Promise<void>) => Promise<void> }) => Promise<void>,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 ) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const routes: ApiRoutes = { '/api/squads/:id/workspace/file': answer }
   const dom = await acquireDomHarness({
     url: 'http://localhost/',
@@ -85,6 +86,30 @@ describe('WorkStreamFileCard load errors', () => {
         })
         expect(page.body.querySelector('[role="alert"]')).toBeNull()
       }
+    )
+  })
+
+  test('waits for a sandbox that cannot be provisioned yet instead of failing', async () => {
+    let reads = 0
+    const provisioning = () => {
+      reads++
+      return Response.json(
+        { error: 'Sandbox scheduling is temporarily unavailable.', code: 'SANDBOX_PROVISION_UNAVAILABLE' },
+        { status: 503, headers: { 'Retry-After': '75' } }
+      )
+    }
+    // The app's own client: its retry policy waits out the 75-second cooldown Core asked for.
+    await openFile(
+      provisioning,
+      async (page) => {
+        await page.act(async () => {
+          await waitFor(() => expect(page.body.textContent).toContain('The workspace is starting'))
+        })
+        expect(page.body.textContent).toContain('This file will load as soon as it is ready')
+        expect(page.body.querySelector('[role="alert"]')).toBeNull()
+        expect(reads).toBe(1)
+      },
+      createAppQueryClient()
     )
   })
 
