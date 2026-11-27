@@ -158,6 +158,9 @@ const LEGACY_STATUS_MAP: Record<string, string> = {
   review: 'active',
 }
 
+/** What `workstream list` shows unless asked for a status or for everything. */
+const OPEN_WORK_STREAM_STATUSES = ['queued', 'active'] as const
+
 function mapLegacyStatusFilter(status: string): string {
   const mapped = LEGACY_STATUS_MAP[status]
   if (mapped) {
@@ -445,12 +448,13 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
   registerWorkstreamCleanupCommands(ws)
   registerWorkstreamAttachmentCommands(ws)
 
-  // ficus workstream list [--squad <id>] [--task <id>] [--status <status>]
+  // ficus workstream list [--squad <id>] [--task <id>] [--status <status> | --all]
   ws.command('list')
-    .description('List work streams')
+    .description('List open work streams (queued and active); --status or --all for done and canceled ones')
     .option('-q, --squad <squadId>', 'Filter by squad ID')
     .option('-t, --task <taskId>', 'Filter by task ID')
-    .option('-s, --status <status>', 'Filter by status')
+    .option('-s, --status <status>', 'Only this status: queued, active, done or canceled')
+    .option('--all', 'Include done and canceled work streams (slow on a squad with a long history)')
     .option('--json', 'Output in JSON format')
     .option('--no-truncate', 'Show full table values without shortening titles')
     .action(async (options) => {
@@ -460,6 +464,9 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         if (options.squad) params.set('squadId', options.squad)
         if (options.task) params.set('taskId', options.task)
         if (options.status) params.set('status', mapLegacyStatusFilter(options.status))
+        // History grows without bound (a busy squad has a thousand done streams, megabytes
+        // each time), and most callers want the open work, so that is the default.
+        else if (!options.all) params.set('statuses', OPEN_WORK_STREAM_STATUSES.join(','))
         const query = params.toString()
 
         const streams = await apiGet<WorkStream[]>(`/api/workstreams${query ? `?${query}` : ''}`)
@@ -468,7 +475,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           output(streams)
         } else {
           if (streams.length === 0) {
-            console.log('No work streams found')
+            console.log(
+              options.status || options.all
+                ? 'No work streams found'
+                : 'No open work streams found (--all includes done and canceled ones)'
+            )
             return
           }
           outputTable(

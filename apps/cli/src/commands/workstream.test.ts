@@ -345,6 +345,26 @@ describe('workstream CLI commands', () => {
   })
 
   describe('list', () => {
+    it('asks for open streams by default, and history only with --status or --all', async () => {
+      const get = apiGet as ReturnType<typeof mock>
+      get.mockResolvedValue([])
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      await run(['workstream', 'list', '--squad', 'squad-1'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?squadId=squad-1&statuses=queued%2Cactive')
+      expect(logSpy).toHaveBeenLastCalledWith('No open work streams found (--all includes done and canceled ones)')
+      await run(['workstream', 'list'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?statuses=queued%2Cactive')
+      await run(['workstream', 'list', '--squad', 'squad-1', '--all'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?squadId=squad-1')
+      expect(logSpy).toHaveBeenLastCalledWith('No work streams found')
+      await run(['workstream', 'list', '--squad', 'squad-1', '--status', 'done'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?squadId=squad-1&status=done')
+      // An explicit status wins over --all.
+      await run(['workstream', 'list', '--status', 'canceled', '--all'])
+      expect(get).toHaveBeenLastCalledWith('/api/workstreams?status=canceled')
+      logSpy.mockRestore()
+    })
+
     it('keeps default table titles user-friendly by truncating long names', async () => {
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([
         {
