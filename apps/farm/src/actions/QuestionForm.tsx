@@ -12,6 +12,7 @@ import { Markdown } from '../chat/Markdown'
 import { useStableRef } from '../hooks/useStableRef'
 import { useActionsApi } from './ActionsApiProvider'
 import {
+  OTHER_LABEL,
   OTHER_OPTION,
   formatAnswer,
   initialAnswers,
@@ -443,7 +444,7 @@ function QuestionField({
       recommended: option === recommended,
       reason: option.reason,
     })),
-    { value: OTHER_OPTION, label: 'Something else', recommended: false, reason: undefined },
+    { value: OTHER_OPTION, label: OTHER_LABEL, recommended: false, reason: undefined },
   ]
   return (
     <fieldset className="g-question" aria-describedby={describedBy}>

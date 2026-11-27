@@ -80,7 +80,7 @@ describe('QuestionForm · agent question', () => {
     const { container } = await render(<QuestionForm questionData={threeQuestions} source={agentSource} />, api)
 
     await typeInto(byLabel(container, 'Name the crop'), 'Tomato')
-    await click(radio(container, 'Something else'))
+    await click(radio(container, 'Other'))
     const [sizeOther] = container.querySelectorAll('.g-question-other')
     await typeInto(sizeOther!, 'Enormous')
     expect(button(container, 'Answer').disabled).toBe(true)
@@ -369,6 +369,24 @@ describe('QuestionForm · recommended option', () => {
     expect(container.querySelector('.g-option-text')).toBeNull()
     expect(radio(container, 'Large').checked).toBe(false)
     expect(container.querySelector('[aria-describedby$="-recommendation"]')).toBeNull()
+  })
+
+  it('reads like the chat card: the tag on the label line, and "Other" for your own answer', async () => {
+    const { container } = await render(
+      <QuestionForm questionData={recommendedQuestions} source={agentSource} />,
+      fakeApi()
+    )
+
+    // The tag shares the label's line element, so it flows after the label's last word.
+    const name = optionFor(container, 'large').label.querySelector('.g-option-name')
+    expect(name?.textContent).toBe('Large Recommended')
+    expect(name?.querySelector('.g-recommended')).not.toBeNull()
+
+    // The web card's word, on select and multi-select alike.
+    const others = [...container.querySelectorAll<HTMLInputElement>('input[value="__other__"]')]
+    expect(others.map((input) => input.type)).toEqual(['radio', 'checkbox'])
+    expect(others.map((input) => input.closest('label')!.textContent)).toEqual(['Other', 'Other'])
+    expect(container.textContent).not.toContain('Something else')
   })
 })
 
