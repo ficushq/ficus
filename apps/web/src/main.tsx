@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './providers/AuthProvider'
 import { AuthenticatedProviders } from './providers/AuthenticatedProviders'
 import { ThemeAccountSync } from './providers/ThemeAccountSync'
@@ -17,6 +17,7 @@ import { prepareOAuthCallbackHistory } from './lib/oauthCallbackBootstrap'
 import { resumeLastApp } from './lib/appSurface'
 import { initializeDesktopHistory } from './lib/desktopHistory'
 import { appBasePrefix } from './lib/basePath'
+import { createAppQueryClient } from './lib/appQueryClient'
 
 // OAuth callback capabilities and codes must leave the URL before service
 // worker registration, auth bootstrap, or any other network-capable work.
@@ -37,23 +38,7 @@ function boot() {
   // (window focus, tab visible, or PWA/bfcache resume).
   setupFocusManager()
 
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        // Refetch when window regains focus
-        refetchOnWindowFocus: true,
-        // Refetch when reconnecting to network - critical for offline support
-        refetchOnReconnect: true,
-        // Keep data fresh for 5 minutes before considering stale
-        staleTime: 5 * 60 * 1000,
-        // Keep unused data in cache for 30 minutes
-        gcTime: 30 * 60 * 1000,
-        // Retry failed requests 3 times with exponential backoff
-        retry: 3,
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      },
-    },
-  })
+  const queryClient = createAppQueryClient()
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

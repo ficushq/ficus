@@ -1,5 +1,6 @@
 export * from './transport'
 export * from './errors'
+export * from './retry'
 export * from './sse'
 export * from './ws'
 export * from './queryKeys'

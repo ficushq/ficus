@@ -1,4 +1,4 @@
-import { readApiErrorMessage } from '@ficus/client-core'
+import { parseRetryAfter, readApiErrorMessage } from '@ficus/client-core'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { AUTH_TOKEN_STORAGE_KEY } from '@ficus/shared/browser-keys'
 export { readApiErrorMessage } from '@ficus/client-core'
@@ -87,7 +87,9 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly payload?: unknown
+    readonly payload?: unknown,
+    /** How long the server asked the client to wait (Retry-After), in milliseconds. */
+    readonly retryAfterMs?: number
   ) {
     super(message)
     this.name = 'ApiError'
@@ -109,7 +111,12 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
       .clone()
       .json()
       .catch(() => undefined)
-    throw new ApiError(response.status, await readApiErrorMessage(response), payload)
+    throw new ApiError(
+      response.status,
+      await readApiErrorMessage(response),
+      payload,
+      parseRetryAfter(response.headers.get('Retry-After'))
+    )
   }
 
   if (response.status === 204) {

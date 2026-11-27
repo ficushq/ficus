@@ -41,4 +41,16 @@ describe('farm transport', () => {
       .catch((e: unknown) => e)
     expect(isHttpResponseError(error, 401)).toBe(true)
   })
+
+  it("carries a busy 503's Retry-After so queries wait for it", async () => {
+    const busy = new Response(JSON.stringify({ error: 'Ficus is busy' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
+    })
+    const error = await createFarmTransport(recordingFetch(busy).impl)
+      .request('/workstreams')
+      .catch((e: unknown) => e)
+    expect(isHttpResponseError(error, 503)).toBe(true)
+    expect(error).toMatchObject({ retryAfterMs: 5_000 })
+  })
 })
