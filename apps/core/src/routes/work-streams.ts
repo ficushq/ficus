@@ -1118,7 +1118,7 @@ export const workStreamsRouter = new Hono()
       }
 
       if (includeMetrics) {
-        const metrics = await stream.getMetrics()
+        const metrics = await stream.getMetrics({ runtime })
         return c.json({ ...json, metrics })
       }
 
