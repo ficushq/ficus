@@ -36,6 +36,15 @@ export interface TailscaleProbe {
   kind: 'path' | 'app'
 }
 
+/**
+ * Interfaces that hold private addresses a mobile device cannot route to: container and VM bridges, virtual
+ * pairs and tunnels. A machine running Docker or a VM manager has many, and each would read as a home-network
+ * address.
+ */
+const VIRTUAL_INTERFACE =
+  /^(bridge|br-|docker|veth|vmnet|vnic|virbr|cni|flannel|cali|podman|lxc|utun|tun|tap|wg|zt|awdl|llw)/i
+const MAX_HOME_ADDRESSES = 3
+
 type Interfaces = Record<string, readonly { address: string; family: string | number; internal: boolean }[] | undefined>
 
 /**
@@ -53,13 +62,15 @@ export function homeNetworkAddresses(input: {
     const name = input.hostname.toLowerCase().replace(/\.local$/, '')
     if (/^[a-z0-9-]+$/.test(name)) addresses.push(`http://${name}.local:${input.port}`)
   }
-  for (const list of Object.values(input.interfaces))
+  for (const [name, list] of Object.entries(input.interfaces)) {
+    if (VIRTUAL_INTERFACE.test(name)) continue
     for (const entry of list ?? []) {
       if (entry.internal || (entry.family !== 'IPv4' && entry.family !== 4)) continue
       const url = `http://${entry.address}:${input.port}`
       if (classifyServerAddress(url).reach === 'home-network' && !addresses.includes(url)) addresses.push(url)
     }
-  return addresses
+  }
+  return addresses.slice(0, MAX_HOME_ADDRESSES)
 }
 
 function readStatus(

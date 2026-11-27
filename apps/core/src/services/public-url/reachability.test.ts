@@ -27,8 +27,32 @@ describe('homeNetworkAddresses', () => {
       platform: 'linux',
       port: 8080,
     })
-    // Public and Tailscale addresses are not home-network addresses.
-    expect(addresses).toEqual(['http://10.0.0.7:8080', 'http://172.17.0.1:8080'])
+    // Public addresses are not home-network addresses, and docker0 is a bridge on this machine, not the network.
+    expect(addresses).toEqual(['http://10.0.0.7:8080'])
+  })
+
+  test('virtual interfaces (container and VM bridges, tunnels) are left out: a phone cannot route to them', () => {
+    const addresses = homeNetworkAddresses({
+      interfaces: {
+        en0: [lan('192.168.1.20')],
+        bridge100: [lan('192.168.215.1')],
+        bridge103: [lan('10.248.0.1')],
+        'br-4f2a': [lan('172.18.0.1')],
+        veth12: [lan('172.19.0.1')],
+        vmnet8: [lan('192.168.64.1')],
+        virbr0: [lan('192.168.122.1')],
+        en1: [lan('192.168.1.21')],
+      },
+      hostname: 'box',
+      platform: 'linux',
+      port: 3000,
+    })
+    expect(addresses).toEqual(['http://192.168.1.20:3000', 'http://192.168.1.21:3000'])
+  })
+
+  test('at most three addresses are offered', () => {
+    const interfaces = Object.fromEntries([1, 2, 3, 4, 5].map((n) => [`en${n}`, [lan(`192.168.${n}.2`)]]))
+    expect(homeNetworkAddresses({ interfaces, hostname: 'box', platform: 'linux', port: 3000 })).toHaveLength(3)
   })
 })
 
