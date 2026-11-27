@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ActivityWorkStreamCard, SquadActivityItem, SquadActivityKind } from '@ficus/shared'
 import { ActivityFeedView } from '../../src/components/squads/ActivityFeedView'
+import { settledPeriodTitle } from '../../src/lib/settledActivity'
 import '../../src/index.css'
 import { applyResolvedTheme } from '../../src/theme/apply'
 import { FICUS_THEME } from '../../src/theme/registry'
@@ -168,7 +169,10 @@ function App() {
               settled
                 ? {
                     label: 'Reviews done by agents · since Nov 6 · 2 squads',
-                    period: 'From 2026-11-06T12:00:00.000Z until 2026-11-27T12:00:00.000Z',
+                    period: settledPeriodTitle({
+                      since: '2026-11-06T12:00:00.000Z',
+                      until: '2026-11-27T12:00:00.000Z',
+                    }),
                     onRemove: () => setSettled(false),
                   }
                 : undefined

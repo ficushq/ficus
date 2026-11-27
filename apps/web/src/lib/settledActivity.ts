@@ -91,3 +91,8 @@ export function withoutSettledParams(current: URLSearchParams): URLSearchParams 
   for (const key of ['settled', 'since', 'until', 'squad']) next.delete(key)
   return next
 }
+
+/** Exact bounds in the viewer's locale, matching Feed timestamp tooltips. */
+export function settledPeriodTitle({ since, until }: Pick<ActivitySettledFilter, 'since' | 'until'>): string {
+  return `From ${new Date(since).toLocaleString()}${until ? ` until ${new Date(until).toLocaleString()}` : ''}`
+}

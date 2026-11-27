@@ -930,8 +930,8 @@ describe('ActivityPage settled filter from the Feed', () => {
         'button[aria-label^="Remove Questions settled by agents"]'
       )!
       expect(chip.textContent).toContain('Questions settled by agents · since Nov 6 · 1 squad')
-      expect(chip.title).toContain(since)
-      expect(chip.title).toContain(until)
+      expect(chip.title).toContain(new Date(since).toLocaleString())
+      expect(chip.title).toContain(new Date(until).toLocaleString())
       await dom.act(async () => {
         await waitFor(() =>
           expect(

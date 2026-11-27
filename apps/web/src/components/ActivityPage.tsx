@@ -22,6 +22,7 @@ import {
   parseSettledActivityParams,
   SETTLED_FILTER_TITLES,
   settledPeriodLabel,
+  settledPeriodTitle,
 } from '../lib/settledActivity'
 import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
@@ -184,7 +185,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
           settled
             ? {
                 label: `${SETTLED_FILTER_TITLES[settled.kind]} · ${settledPeriodLabel(settled.since).replace(/^Since/, 'since')}${settledSquadIds.length ? ` · ${settledSquadIds.length} squad${settledSquadIds.length === 1 ? '' : 's'}` : ''}`,
-                period: `From ${settled.since}${settled.until ? ` until ${settled.until}` : ''}`,
+                period: settledPeriodTitle(settled),
                 onRemove: clearSettled,
               }
             : undefined

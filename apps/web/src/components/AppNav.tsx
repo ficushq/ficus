@@ -161,11 +161,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
                 return (
                   <NavLink
                     key={item.to}
-                    to={
-                      item.to === '/activity'
-                        ? getTabNavigationTarget(location.pathname + location.search, item.to)
-                        : item.to
-                    }
+                    to={item.to}
                     className={clsx(
                       'ficus-nav-item relative px-4 py-2 rounded-md text-sm font-medium transition-colors',
                       isActive ? 'bg-selection text-accent-light' : 'text-secondary  hover:text-accent-light'
