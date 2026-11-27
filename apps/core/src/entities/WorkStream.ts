@@ -2798,10 +2798,16 @@ export const RUNTIME_STALE_AFTER_MS = 90 * 60_000
  * still accruing time, which clients extrapolate from.
  *
  * `last_worked_at` is the newest moment any counted execution did work: where its
- * counted time ends (now while it works, its last message once it went silent),
- * or its start while it has not run or never recorded an end. It reads the same
- * joined rows, so it costs no extra scan, and unlike `updated_at` an edit to the
- * stream's own fields never moves it.
+ * counted time ends (now while it works, its last message once it went silent).
+ * An execution that has not run (queued or waiting for a sandbox) or never
+ * recorded an end adds no time, so it does not count as work here either. It
+ * reads the same joined rows, so it costs no extra scan, it follows the same
+ * attribution rule as the total, and unlike `updated_at` an edit to the stream's
+ * own fields never moves it.
+ *
+ * `started_at`, `ended_at` and `messages.created_at` are `timestamp` without a
+ * time zone, written in UTC (see `db/clock.ts`), so they are read and compared
+ * `AT TIME ZONE 'utc'` rather than cast, which would apply the session TimeZone.
  *
  * Every column read from `executions` is in `idx_executions_agent_run_runtime`, so
  * the history stays an index-only scan; the message probe runs only for an
@@ -2847,7 +2853,7 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
           ), 0)::bigint AS total_ms,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('waiting-sandbox', 'running', 'stopping'))::int AS active_count,
           COUNT(e.agent_id) FILTER (WHERE e.status IN ('running', 'stopping') AND w.working)::int AS working_count,
-          MAX(COALESCE(w.worked_until, w.start_ts)) AS last_worked_at
+          MAX(w.worked_until) AS last_worked_at
         FROM streams s
         LEFT JOIN pairs p ON p.ws_id = s.ws_id
         LEFT JOIN ${executions} e ON e.agent_id = p.agent_id
@@ -2862,10 +2868,10 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             x.open AND (x.end_ts - x.start_ts <= ${staleAfter} OR x.end_ts - a.last_at <= ${staleAfter}) AS working
           FROM (
             SELECT
-              COALESCE(e.run_started_at, e.started_at::timestamptz) AS start_ts,
+              COALESCE(e.run_started_at, e.started_at AT TIME ZONE 'utc') AS start_ts,
               CASE
                 WHEN e.status IN ('queued', 'waiting-sandbox') THEN NULL
-                WHEN e.ended_at IS NOT NULL THEN e.ended_at::timestamptz
+                WHEN e.ended_at IS NOT NULL THEN e.ended_at AT TIME ZONE 'utc'
                 WHEN e.status IN ('running', 'stopping') THEN (SELECT now_ts FROM computed)
                 ELSE NULL
               END AS end_ts,
@@ -2878,13 +2884,13 @@ export function workStreamRuntimesSql(streams: readonly { wsId: string; agentIds
             -- stopped and is not evidence that it was working.
             -- LIMIT keeps this one probe per execution: a scalar subquery here would be
             -- copied into every expression that reads it.
-            SELECT m.created_at::timestamptz AS last_at
+            SELECT m.created_at AT TIME ZONE 'utc' AS last_at
             FROM ${messages} m
             WHERE x.end_ts - x.start_ts > ${staleAfter}
               AND m.agent_id = e.agent_id
               AND m.role = 'assistant'
-              AND m.created_at >= x.start_ts
-              AND m.created_at <= x.end_ts
+              AND m.created_at >= x.start_ts AT TIME ZONE 'utc'
+              AND m.created_at <= x.end_ts AT TIME ZONE 'utc'
               AND m.content NOT LIKE '[System]%'
             ORDER BY m.created_at DESC
             LIMIT 1

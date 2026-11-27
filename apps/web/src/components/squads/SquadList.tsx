@@ -196,6 +196,7 @@ export function SquadList() {
             squad={squad}
             agents={agentsBySquad.get(squad.id) || []}
             workStreams={workStreamsBySquad.get(squad.id) || []}
+            workStreamsLoaded={!workStreamsPending}
             needsViewer={needsViewer}
           />
         ))}
@@ -213,6 +214,7 @@ export function SquadList() {
               squad={squad}
               agents={agentsBySquad.get(squad.id) || []}
               workStreams={workStreamsBySquad.get(squad.id) || []}
+              workStreamsLoaded={!workStreamsPending}
               needsViewer={needsViewer}
             />
           ))}
@@ -231,11 +233,13 @@ function SquadCardContent({
   squad,
   agents,
   workStreams,
+  workStreamsLoaded,
   needsViewer,
 }: {
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
+  workStreamsLoaded: boolean
   needsViewer: ReadonlySet<string> | null
 }) {
   const activeWorkStreams = workStreams.filter((ws) => ws.status !== 'done' && ws.status !== 'canceled').length
@@ -274,7 +278,13 @@ function SquadCardContent({
         )}
       </div>
       <p className="text-sm text-secondary line-clamp-2 mb-3">{squad.purpose}</p>
-      <SquadCardWork squadName={squad.name} squadSlug={squadSlug} workStreams={workStreams} needsViewer={needsViewer} />
+      <SquadCardWork
+        squadName={squad.name}
+        squadSlug={squadSlug}
+        workStreams={workStreams}
+        workStreamsLoaded={workStreamsLoaded}
+        needsViewer={needsViewer}
+      />
       {/* Pinned to the card's bottom, so a short description still lines it up across a row. */}
       <div className="mt-auto flex items-center gap-3 text-xs text-muted">
         <span>
@@ -292,11 +302,13 @@ function SortableSquadCard({
   squad,
   agents,
   workStreams,
+  workStreamsLoaded,
   needsViewer,
 }: {
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
+  workStreamsLoaded: boolean
   needsViewer: ReadonlySet<string> | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: squad.id })
@@ -316,7 +328,13 @@ function SortableSquadCard({
         isDragging && 'opacity-50 shadow-lg scale-105 z-10'
       )}
     >
-      <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} needsViewer={needsViewer} />
+      <SquadCardContent
+        squad={squad}
+        agents={agents}
+        workStreams={workStreams}
+        workStreamsLoaded={workStreamsLoaded}
+        needsViewer={needsViewer}
+      />
       <button
         {...attributes}
         {...listeners}
@@ -333,16 +351,24 @@ function SquadCard({
   squad,
   agents,
   workStreams,
+  workStreamsLoaded,
   needsViewer,
 }: {
   squad: Squad
   agents: AgentSummary[]
   workStreams: WorkStream[]
+  workStreamsLoaded: boolean
   needsViewer: ReadonlySet<string> | null
 }) {
   return (
     <div className="ficus-panel ficus-interactive-card relative isolate flex min-w-0 flex-col p-5">
-      <SquadCardContent squad={squad} agents={agents} workStreams={workStreams} needsViewer={needsViewer} />
+      <SquadCardContent
+        squad={squad}
+        agents={agents}
+        workStreams={workStreams}
+        workStreamsLoaded={workStreamsLoaded}
+        needsViewer={needsViewer}
+      />
     </div>
   )
 }
