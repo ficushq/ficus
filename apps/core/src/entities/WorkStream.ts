@@ -813,8 +813,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     // Renew the claim while this request provisions, so a repeat waits instead of taking over.
     const stopKeepAlive = claim?.keepAlive()
     let committed = false
+    let provisioned: { streamId: string; ownership: WorktreeOwnership } | undefined
     try {
-      const row = await WorkStream.provisionAndInsert(input, options, timing, claim)
+      const row = await WorkStream.provisionAndInsert(input, options, timing, claim, (receipt) => {
+        provisioned = receipt
+      })
       committed = true
       const ws = new WorkStream(row)
       await timing.time('dispatch', async () => {
@@ -831,6 +834,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       await timing.time('notify', () => notifyWorkStreamOwnerOfNewStream(ws))
       return await timing.time('respond', () => WorkStream.mustFind(ws.id))
     } catch (error) {
+      // An uncommitted create removes the worktree and branch it provisioned, while it
+      // still holds its key, so a retry (even with the same explicit branch) starts clean.
+      if (!committed && provisioned) await WorkStream.rollbackUncommittedProvisioning(input.squadId, provisioned)
       // A failed create frees its key so a retry starts fresh. After the commit the
       // key is bound to the stream, and a retry gets that stream.
       if (claim && !committed) await claim.release()
@@ -840,11 +846,25 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     }
   }
 
+  /** Remove what a create provisioned when its row did not commit (see create-rollback.ts). Never throws. */
+  private static async rollbackUncommittedProvisioning(
+    squadId: string,
+    provisioned: { streamId: string; ownership: WorktreeOwnership }
+  ): Promise<void> {
+    try {
+      const { rollbackCreateProvisioning } = await import('../services/work-streams/create-rollback')
+      await rollbackCreateProvisioning(squadId, provisioned.streamId, provisioned.ownership)
+    } catch {
+      // Best effort: the create's own error is what the caller sees.
+    }
+  }
+
   private static async provisionAndInsert(
     input: CreateWorkStreamInput,
     options: { inTransaction?: (tx: DbTransaction, created: typeof workStreams.$inferSelect) => Promise<void> },
     timing: WorkStreamCreateTimer,
-    claim: CreateClaim | undefined
+    claim: CreateClaim | undefined,
+    onProvisioned: (provisioned: { streamId: string; ownership: WorktreeOwnership }) => void
   ): Promise<typeof workStreams.$inferSelect> {
     const validateStarted = timing.now()
     const dependencies = await WorkStream.resolveDependencyInputs(input.dependsOn ?? [])
@@ -889,6 +909,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         mergedMetadata,
         (receipt) => {
           ownership = receipt
+          onProvisioned({ streamId, ownership: receipt })
         },
         { timing }
       )

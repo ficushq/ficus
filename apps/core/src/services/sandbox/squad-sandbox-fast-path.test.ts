@@ -96,6 +96,39 @@ describe('squad sandbox fast path for repository setup', () => {
       expect(fullEnsure).toHaveBeenCalledWith(SQUAD_ID)
     })
 
+  it('stops a hung probe before the full ensure takes over', async () => {
+    let probeSignal: AbortSignal | undefined
+    const exec = mock(
+      (_sandboxId: string, _args: string[], options?: { signal?: AbortSignal }) =>
+        new Promise<Buffer>((_, reject) => {
+          probeSignal = options?.signal
+          probeSignal?.addEventListener('abort', () => reject(probeSignal!.reason))
+        })
+    )
+    let abortedWhenFullEnsureRan: boolean | undefined
+    const { deps } = harness(
+      {
+        fullEnsure: mock(async () => {
+          abortedWhenFullEnsureRan = probeSignal?.aborted
+          return '/full/workspace'
+        }),
+      },
+      { exec: exec as unknown as ISandboxManager['exec'] }
+    )
+    expect((await ensureSquadSandboxForCommands(SQUAD_ID, deps)).reason).toBe('probe-failed')
+    expect(probeSignal).toBeInstanceOf(AbortSignal)
+    expect(abortedWhenFullEnsureRan).toBe(true)
+    expect(String(probeSignal!.reason)).toContain('no answer within 50 ms')
+  })
+
+  it('leaves the probe signal untouched when the box answers', async () => {
+    const { deps, exec } = harness()
+    await ensureSquadSandboxForCommands(SQUAD_ID, deps)
+    const options = (exec.mock.calls[0] as unknown[])[2] as { signal: AbortSignal }
+    await Bun.sleep(80)
+    expect(options.signal.aborted).toBe(false)
+  })
+
   it('falls back to the full ensure (which refuses or creates it) when the squad row is missing', async () => {
     const { deps, fullEnsure } = harness({ findSquad: async () => null })
     expect((await ensureSquadSandboxForCommands(SQUAD_ID, deps)).reason).toBe('squad-missing')
