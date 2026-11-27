@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { workStreamTitle, type Agent, type WorkStream } from '@ficus/shared'
 import type { RefObject, MouseEvent } from 'react'
-import { getAgentPrimaryLabel, getAgentSecondaryLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
+import { getAgentLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
 import { agentChatPath, type EntityReference } from '../lib/entityReference'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { Link } from 'react-router'
@@ -142,7 +142,7 @@ function AssignedAgent({ id, onNavigate, onOpenAgent }: { id: string } & AgentNa
       to={agentChatPath(data)}
       onClick={agentNavigation(data, onNavigate, onOpenAgent)}
       className={quickLinkClass}
-      title={getAgentPrimaryLabel(data)}
+      title={getAgentLabel(data)}
       aria-label={`Assigned agent: ${type}`}
     >
       <AgentActivityDot status={data.status} />
@@ -166,12 +166,14 @@ function AgentSummary({ agent, onNavigate, onOpenAgent }: { agent: Agent } & Age
   })
   const type = useAgentTypeName(data.agentTypeId)
   if (isError) return <Unavailable />
-  const secondary = getAgentSecondaryLabel(data)
+  // Type first; the name is the secondary handle above it.
+  const name = data.metadata?.name
+  const secondary = typeof name === 'string' && name.trim() ? name.trim() : undefined
   return (
     <div className="space-y-2">
       <div className="space-y-1">
         {secondary && <p className="truncate text-xs text-muted">{secondary}</p>}
-        <p className="line-clamp-2 wrap-break-word font-semibold">{getAgentPrimaryLabel(data)}</p>
+        <p className="line-clamp-2 wrap-break-word font-semibold">{getAgentLabel(data)}</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <Badge color="accent-1">{type}</Badge>

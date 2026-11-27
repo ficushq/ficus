@@ -83,7 +83,10 @@ test('ActionsPage shows a 403 retry and then renders an owned action without a p
 
     const retry = [...dom.window.document.querySelectorAll('button')].find((button) => button.textContent === 'Retry')
     await dom.act(async () => retry?.click())
-    await waitFor(() => dom.window.document.body.textContent?.includes('Owned agent') ?? false, dom.act)
+    // The question card names its agent by type, never by name alone.
+    await waitFor(() => dom.window.document.body.textContent?.includes('Engineer') ?? false, dom.act)
+    expect(dom.window.document.body.textContent).toContain('Needs your answer')
+    expect(dom.window.document.body.textContent).not.toContain('Owned agent')
 
     expect(actionRequests).toBe(2)
     expect(urls.some((url) => url.includes('/permissions'))).toBe(false)

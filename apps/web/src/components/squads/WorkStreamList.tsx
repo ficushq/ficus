@@ -32,7 +32,7 @@ import {
   type Agent,
   type Squad,
 } from '@ficus/shared'
-import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
+import { getAgentLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 
@@ -535,11 +535,7 @@ function WorkStreamCard({
       </div>
 
       {/* Assignee */}
-      {assignee && (
-        <p className="text-xs text-muted mt-2">
-          → {getAgentPrimaryLabel(assignee)} ({assignee.agentTypeId})
-        </p>
-      )}
+      {assignee && <p className="text-xs text-muted mt-2">→ {getAgentLabel(assignee)}</p>}
     </div>
   )
 }

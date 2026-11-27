@@ -1,6 +1,7 @@
-import type { Agent, PendingAction, Squad, WorkStream } from '@ficus/shared'
+import { workStreamTitle, type Agent, type PendingAction, type Squad, type WorkStream } from '@ficus/shared'
 import { assistantSearch } from './assistantSearch'
-import { getAgentPurpose, getAgentName } from './agentDisplay'
+import { getAgentName, getConversationTitle } from './agentDisplay'
+import { pendingActionContextLine } from './pendingActionWording'
 import { matchesSetting, settingMatchRank } from '../components/settings/settingsSearch'
 
 export type CommandDestination =
@@ -100,7 +101,7 @@ export function commandCenterSearch(
         id: `action:${a.id}`,
         kind: 'Needs you' as const,
         label: actionTitle(a),
-        detail: `${a.squadName ?? squadName(a.data.squadId)} · ${a.type.replaceAll('-', ' ')}`,
+        detail: pendingActionContextLine(a),
         destination: { kind: 'action' as const, id: a.id, label: actionTitle(a) },
       })),
     ...data.squads
@@ -119,14 +120,16 @@ export function commandCenterSearch(
         kind: 'Conversation' as const,
         status: a.status,
         agentTypeId: a.agentTypeId,
-        label: getAgentPurpose(a) || getAgentName(a),
+        label: getConversationTitle(a),
+        // The agent's name stays searchable even though the title leads with its type or topic.
+        keywords: getAgentName(a),
         detail: `${squadName(a.squadId)} · ${new Date(a.lastHumanMessageAt ?? a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
         destination: {
           kind: 'chat' as const,
           id: a.id,
           agentId: a.id,
           squadId: a.squadId!,
-          label: getAgentPurpose(a) || getAgentName(a),
+          label: getConversationTitle(a),
         },
       })),
     ...data.streams
@@ -138,10 +141,11 @@ export function commandCenterSearch(
         id: `work:${w.id}`,
         kind: 'Work stream' as const,
         work: w,
-        label: w.title,
+        // "#number · title", as every work stream row shows it; the number stays searchable.
+        label: workStreamTitle(w),
         detail: squadName(w.squadId),
         keywords: w.derivedState ?? w.status,
-        destination: { kind: 'work' as const, id: w.id, squadId: w.squadId, label: w.title },
+        destination: { kind: 'work' as const, id: w.id, squadId: w.squadId, label: workStreamTitle(w) },
       })),
     ...(!data.squadId ? assistantSearch(query, [], [], data.allowedSettings) : []),
   ]
@@ -157,8 +161,8 @@ export function commandCenterSearch(
   return rows
     .filter((row) => matchesSetting(query, row.label, row.detail, row.kind, row.keywords ?? ''))
     .sort((a, b) => {
-      const aMatch = settingMatchRank(query, a.label)
-      const bMatch = settingMatchRank(query, b.label)
+      const aMatch = titleMatchRank(query, a)
+      const bMatch = titleMatchRank(query, b)
       // An exact title remains the best way to retrieve older work. Otherwise,
       // blend title relevance with completion age, keeping keyword-only hits last.
       if (aMatch === 0 || bMatch === 0) {
@@ -169,6 +173,15 @@ export function commandCenterSearch(
         (a.work && b.work ? workTimestamp(b.work) - workTimestamp(a.work) : 0)
       )
     })
+}
+
+/**
+ * A work stream's label is "#number · title", so rank on its title as well: an exact or prefix
+ * title still finds older work first, and a "#12" search still matches the number.
+ */
+function titleMatchRank(query: string, row: CommandResult) {
+  const label = settingMatchRank(query, row.label)
+  return row.work ? Math.min(label, settingMatchRank(query, row.work.title)) : label
 }
 
 function isOpenWork(work: WorkStream) {

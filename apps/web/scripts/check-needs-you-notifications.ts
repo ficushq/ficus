@@ -89,7 +89,7 @@ try {
     )
     assert.deepEqual(
       facts.map((fact) => fact.headline),
-      ['Payments Engineer has a question', 'Payments Engineer requests review'],
+      ['Engineer has a question', 'Engineer · review needed'],
       `${label}: newest first`
     )
     assert.ok(facts[0]!.top < 120, `${label}: newest card at the top`)

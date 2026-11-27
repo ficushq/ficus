@@ -133,7 +133,7 @@ test('the Action Center lists a pull request awaiting review from the slimmed re
   await stream(squadId, connectionId, 'running', 8)
   await cursor(squadId, connectionId, 7, { reviewDecision: 'required', mergeState: 'blocked', checksState: 'pending' })
 
-  const actions = (await listPendingActions({ includeDeliveryGates: true })).filter(
+  const actions = (await listPendingActions()).filter(
     (action) => action.type === 'workstream-delivery' && action.squadId === squadId
   )
   expect(actions).toHaveLength(1)
@@ -152,7 +152,5 @@ test('the Action Center lists a pull request awaiting review from the slimmed re
     .update(workStreams)
     .set({ pause: { reason: 'test' } as never })
     .where(eq(workStreams.id, ready))
-  expect(
-    (await listPendingActions({ includeDeliveryGates: true })).filter((action) => action.squadId === squadId)
-  ).toEqual([])
+  expect((await listPendingActions()).filter((action) => action.squadId === squadId)).toEqual([])
 })

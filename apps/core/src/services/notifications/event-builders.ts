@@ -5,6 +5,7 @@ import {
   assistantConversationPath,
   parseAssistantInboxConversationId,
   parseInboxPushPresentation,
+  typeFirstAgentLabel,
   workStreamTitle,
 } from '@ficus/shared'
 import { eq } from 'drizzle-orm'
@@ -92,7 +93,12 @@ export const eventBuilders: Record<string, EventBuilder> = {
       .where(eq(agentQuestionWorkStreamOrigins.questionId, questionId))
       .limit(2)
     const work = origins.length === 1 ? await WorkStream.find(origins[0]!.id) : null
-    const agentLabel = (agent.metadata?.name as string | undefined) || agent.agentTypeId
+    // Type first, as the app names agents, with the work stream it asked from. Push recipients may
+    // not read the agent, so its purpose is never included.
+    const agentLabel = typeFirstAgentLabel({
+      agentTypeId: agent.agentTypeId,
+      workingOn: work ? `#${work.number}` : undefined,
+    })
     const questionText = question.questionData.questions
       .map((item) => item.question.trim())
       .filter(Boolean)
@@ -354,8 +360,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const [agent, execution] = await Promise.all([Agent.find(agentId), Execution.find(executionId)])
     if (!agent || !execution) return null
 
-    const agentName = (agent.metadata as Record<string, unknown>)?.name as string | undefined
-    const agentLabel = agentName || agent.agentTypeId
+    const agentLabel = typeFirstAgentLabel({ agentTypeId: agent.agentTypeId })
 
     // Squad agents link to their squad Chats tab, squadless agents to the Assistant's view of them.
     let url: string | undefined
@@ -396,8 +401,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const [agent, execution] = await Promise.all([Agent.find(agentId), Execution.find(executionId)])
     if (!agent || !execution) return null
 
-    const agentName = (agent.metadata as Record<string, unknown>)?.name as string | undefined
-    const agentLabel = agentName || agent.agentTypeId
+    const agentLabel = typeFirstAgentLabel({ agentTypeId: agent.agentTypeId })
     const errorMsg = execution.error || 'Unknown error'
 
     // Squad agents link to their squad Chats tab, squadless agents to the Assistant's view of them.

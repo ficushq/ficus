@@ -234,8 +234,8 @@ describe('SquadAgentThreads mobile agent picker layout', () => {
   test('groups same-type agents inside a single collapsible section', () => {
     const html = renderThreads([
       agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
-      agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI' } }),
-      agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Fix API' } }),
+      agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI', purpose: 'Build UI' } }),
+      agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Fix API', purpose: 'Fix API' } }),
     ])
 
     const engineerSectionStart = html.indexOf('data-agent-type-section="engineer"')
@@ -314,7 +314,14 @@ describe('SquadAgentThreads completed agents', () => {
         agent({ id: 'd1', agentTypeId: 'engineer', status: 'dormant', metadata: { name: 'Dozing One' } }),
         agent({ id: 'd2', agentTypeId: 'engineer', status: 'dormant', metadata: { name: 'Dozing Two' } }),
       ],
-      [agent({ id: 'old1', agentTypeId: 'engineer', metadata: { name: 'Old Engineer' }, terminatedAt: now })],
+      [
+        agent({
+          id: 'old1',
+          agentTypeId: 'engineer',
+          metadata: { name: 'Old Engineer', purpose: 'Old Engineer' },
+          terminatedAt: now,
+        }),
+      ],
       false,
       57
     )
@@ -418,7 +425,14 @@ describe('SquadAgentThreads terminated agent collapse', () => {
   test('collapses recently completed agents by default', () => {
     const html = renderThreads(
       [agent({ id: 'm1', agentTypeId: 'manager' })],
-      [agent({ id: 'old1', agentTypeId: 'engineer', metadata: { name: 'Old Engineer' }, terminatedAt: now })]
+      [
+        agent({
+          id: 'old1',
+          agentTypeId: 'engineer',
+          metadata: { name: 'Old Engineer', purpose: 'Old Engineer' },
+          terminatedAt: now,
+        }),
+      ]
     )
 
     expect(html).toContain('Recently Completed (1)')
@@ -428,24 +442,24 @@ describe('SquadAgentThreads terminated agent collapse', () => {
 })
 
 describe('SquadAgentThreads header', () => {
-  test('uses Manager (name), including when the manager has a purpose', () => {
+  test('uses Manager, then the name, including when the manager has a purpose', () => {
     for (const purpose of [undefined, 'Review PRs']) {
       expect(getAgentHeaderTitleParts(agent({ metadata: { name: 'Pearl', purpose } }))).toEqual({
         title: 'Manager',
-        suffix: '(Pearl)',
+        suffix: 'Pearl',
       })
     }
-    expect(renderThreads([agent()])).toContain('Manager <span class="font-normal text-secondary">(Pearl)</span>')
+    expect(renderThreads([agent()])).toContain('Manager <span class="font-normal text-secondary">· Pearl</span>')
   })
 
-  test('shows purpose with the name, not the type again (the agent list groups by type)', () => {
+  test('leads with the type, then the purpose, with the name as the secondary handle', () => {
     expect(
       getAgentHeaderTitleParts(
         agent({ agentTypeId: 'code-reviewer', metadata: { name: 'Pearl', purpose: 'Review PRs' } })
       )
     ).toEqual({
-      title: 'Review PRs',
-      suffix: '(Pearl)',
+      title: 'Code Reviewer (Review PRs)',
+      suffix: 'Pearl',
     })
   })
 
@@ -458,22 +472,22 @@ describe('SquadAgentThreads header', () => {
         })
       )
     ).toEqual({
-      title: 'Fix local-app client IP forwarding',
-      suffix: '(Engineer · Forward the real client IP)',
+      title: 'Engineer (Fix local-app client IP forwarding)',
+      suffix: 'Engineer · Forward the real client IP',
     })
     expect(
       getAgentHeaderTitleParts(agent({ agentTypeId: 'engineer', metadata: { name: 'code-reviewer · Check the diff' } }))
         .suffix
-    ).toBe('(Code Reviewer · Check the diff)')
+    ).toBe('Code Reviewer · Check the diff')
   })
 
-  test('shows title-cased type followed by name when purpose is absent or blank', () => {
+  test('shows the title-cased type followed by the name when purpose is absent or blank', () => {
     for (const purpose of [undefined, '  ']) {
       expect(
         getAgentHeaderTitleParts(agent({ agentTypeId: 'engineer', metadata: { name: 'Pearl', purpose } }))
       ).toEqual({
         title: 'Engineer',
-        suffix: '(Pearl)',
+        suffix: 'Pearl',
       })
     }
   })
@@ -489,7 +503,7 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
     expect(html).toContain('hidden md:flex items-baseline')
   })
 
-  test('shows the selected agent purpose with its name in the mobile header trigger', async () => {
+  test('leads the mobile header trigger with the agent type, then its purpose and name', async () => {
     const dom = await installDom()
     const { window } = dom
     try {
@@ -504,9 +518,8 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
 
       const trigger = window.document.querySelector('[aria-label="Choose agent"]') as HTMLButtonElement
       expect(trigger).toBeTruthy()
-      expect(trigger.textContent).toContain('Review PRs')
-      expect(trigger.textContent).toContain('(Pearl)')
-      expect(trigger.textContent).not.toContain('Engineer')
+      expect(trigger.textContent).toContain('Engineer (Review PRs)')
+      expect(trigger.textContent).toContain('Pearl')
 
       await dom.act(async () => {
         root.unmount()
@@ -545,7 +558,7 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
       const queryClient = makeQueryClient()
       const agents = [
         agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
-        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI' } }),
+        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI', purpose: 'Build UI' } }),
       ]
 
       await dom.act(async () => {
@@ -589,8 +602,8 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
       const queryClient = makeQueryClient()
       const agents = [
         agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
-        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI' } }),
-        agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Fix API' } }),
+        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI', purpose: 'Build UI' } }),
+        agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Fix API', purpose: 'Fix API' } }),
       ]
 
       await dom.act(async () => {
@@ -658,6 +671,7 @@ describe('SquadAgentThreads pending question indicator', () => {
   const indicatorFor = (window: Window, name: string) =>
     rowFor(window, name).parentElement!.querySelector('[data-testid="agent-row-open-questions"]')
 
+  // Two engineers without a purpose keep their names after the type; the lone consultant is its type.
   test('flags manager, role and consultant rows with open questions, and clears when they close', async () => {
     const dom = await installDom()
     const { window } = dom
@@ -678,23 +692,25 @@ describe('SquadAgentThreads pending question indicator', () => {
       await dom.act(async () => renderThreadsDom(root, queryClient, agents))
 
       // Compact manager row: the count joins its accessible label and tooltip.
-      expect(rowFor(window, 'Manager (Pearl)').getAttribute('aria-label')).toBe('Manager (Pearl), 1 pending question')
-      expect(rowFor(window, 'Manager (Pearl)').title).toEndWith(' · 1 pending question')
-      const managerIndicator = indicatorFor(window, 'Manager (Pearl)')!
+      expect(rowFor(window, 'Manager').getAttribute('aria-label')).toBe('Manager, 1 pending question')
+      expect(rowFor(window, 'Manager').title).toEndWith(' · 1 pending question')
+      const managerIndicator = indicatorFor(window, 'Manager')!
       expect(managerIndicator.getAttribute('aria-hidden')).toBe('true')
       expect(managerIndicator.className).toContain('text-status-attention-badge-fg')
       expect(managerIndicator.className).toContain('bg-status-attention-badge-surface')
       expect(managerIndicator.className).toContain('shrink-0')
       // A single question shows just the icon; more show the count.
       expect(managerIndicator.textContent).toBe('')
-      expect(indicatorFor(window, 'Edda')!.textContent).toBe('3')
-      expect(rowFor(window, 'Edda').getAttribute('aria-label')).toStartWith('Edda, 3 pending questions, ')
-      expect(indicatorFor(window, 'Cassius')).not.toBeNull()
-      expect(rowFor(window, 'Cassius').getAttribute('aria-label')).toContain('1 pending question')
+      expect(indicatorFor(window, 'Engineer (Edda)')!.textContent).toBe('3')
+      expect(rowFor(window, 'Engineer (Edda)').getAttribute('aria-label')).toStartWith(
+        'Engineer (Edda), 3 pending questions, '
+      )
+      expect(indicatorFor(window, 'Consultant')).not.toBeNull()
+      expect(rowFor(window, 'Consultant').getAttribute('aria-label')).toContain('1 pending question')
 
-      expect(indicatorFor(window, 'Quinn')).toBeNull()
-      expect(rowFor(window, 'Quinn').getAttribute('aria-label')).not.toContain('pending question')
-      expect(rowFor(window, 'Quinn').title).not.toContain('pending question')
+      expect(indicatorFor(window, 'Engineer (Quinn)')).toBeNull()
+      expect(rowFor(window, 'Engineer (Quinn)').getAttribute('aria-label')).not.toContain('pending question')
+      expect(rowFor(window, 'Engineer (Quinn)').title).not.toContain('pending question')
 
       // Answered or dismissed: the refreshed counts omit the agent and its marker goes away.
       await dom.act(async () => {
@@ -702,10 +718,10 @@ describe('SquadAgentThreads pending question indicator', () => {
         // Query observers notify on a scheduled tick; let it render.
         await new Promise((resolve) => setTimeout(resolve, 10))
       })
-      expect(indicatorFor(window, 'Manager (Pearl)')).toBeNull()
-      expect(indicatorFor(window, 'Cassius')).toBeNull()
-      expect(rowFor(window, 'Manager (Pearl)').getAttribute('aria-label')).toBe('Manager (Pearl)')
-      expect(indicatorFor(window, 'Edda')!.textContent).toBe('')
+      expect(indicatorFor(window, 'Manager')).toBeNull()
+      expect(indicatorFor(window, 'Consultant')).toBeNull()
+      expect(rowFor(window, 'Manager').getAttribute('aria-label')).toBe('Manager')
+      expect(indicatorFor(window, 'Engineer (Edda)')!.textContent).toBe('')
       await dom.act(async () => root.unmount())
     } finally {
       await dom.cleanup()
@@ -801,8 +817,8 @@ async function toggleManagingChats(dom: Awaited<ReturnType<typeof installDom>>) 
 describe('SquadAgentThreads consultant terminate-all', () => {
   test('does not render the terminate-all control for non-consultant sections', () => {
     const html = renderThreads([
-      agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI' } }),
-      agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Fix API' } }),
+      agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI', purpose: 'Build UI' } }),
+      agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Fix API', purpose: 'Fix API' } }),
     ])
 
     expect(html).not.toContain('data-testid="terminate-all-consultant"')
@@ -900,7 +916,7 @@ describe('SquadAgentThreads search behavior', () => {
       const agents = [
         agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
         agent({ id: 'k1', agentTypeId: 'consultant', metadata: { name: 'Cassius', purpose: 'Plan auth' } }),
-        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI' } }),
+        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI', purpose: 'Build UI' } }),
       ]
 
       await dom.act(async () => {
@@ -933,7 +949,12 @@ describe('SquadAgentThreads search behavior', () => {
       const queryClient = makeQueryClient()
       const agents = [agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } })]
       const terminated = [
-        agent({ id: 'old1', agentTypeId: 'engineer', metadata: { name: 'Old Engineer' }, terminatedAt: now }),
+        agent({
+          id: 'old1',
+          agentTypeId: 'engineer',
+          metadata: { name: 'Old Engineer', purpose: 'Old Engineer' },
+          terminatedAt: now,
+        }),
       ]
 
       await dom.act(async () => {
@@ -948,7 +969,8 @@ describe('SquadAgentThreads search behavior', () => {
         changeSearchInput(window, searchInput, 'Old')
       })
 
-      expect(window.document.body.textContent).toContain('Old Engineer')
+      // Recently Completed has no type heading, so its rows lead with the type.
+      expect(window.document.body.textContent).toContain('Engineer (Old Engineer)')
 
       await dom.act(async () => {
         root.unmount()
@@ -966,8 +988,18 @@ describe('SquadAgentThreads search behavior', () => {
       const queryClient = makeQueryClient()
       const agents = [agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } })]
       const terminated = [
-        agent({ id: 'old1', agentTypeId: 'engineer', metadata: { name: 'Alpha Agent' }, terminatedAt: now }),
-        agent({ id: 'old2', agentTypeId: 'engineer', metadata: { name: 'Beta Agent' }, terminatedAt: now }),
+        agent({
+          id: 'old1',
+          agentTypeId: 'engineer',
+          metadata: { name: 'Alpha Agent', purpose: 'Alpha Agent' },
+          terminatedAt: now,
+        }),
+        agent({
+          id: 'old2',
+          agentTypeId: 'engineer',
+          metadata: { name: 'Beta Agent', purpose: 'Beta Agent' },
+          terminatedAt: now,
+        }),
       ]
 
       await dom.act(async () => {
@@ -996,7 +1028,7 @@ describe('SquadAgentThreads new consultant chat', () => {
   test('places one primary New chat action in the header before search and the pinned manager', () => {
     const html = renderThreads([
       agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
-      agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI' } }),
+      agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Build UI', purpose: 'Build UI' } }),
     ])
 
     const manager = html.indexOf('Pearl')
@@ -1067,7 +1099,7 @@ describe('SquadAgentThreads new consultant chat', () => {
 
       expect(window.document.querySelector('[data-testid="consultant-chat-composer"]')).toBeNull()
       expect(window.document.body.textContent).toContain('Cassius')
-      expect(window.document.body.textContent).toContain('(Cassius)')
+      expect(window.document.body.textContent).toContain('Consultant · Cassius')
 
       await dom.act(async () => {
         root.unmount()
@@ -1836,7 +1868,7 @@ describe('SquadAgentThreads consultant recency', () => {
         expect(new Set(names()).size).toBe(12)
         await dom.act(async () => getByRole(section, 'button', { name: 'Show recent' }).click())
         expect(names()).toEqual(expectedNames)
-        await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: /Manager \(Pearl\)/ }).click())
+        await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: /^Manager\b/ }).click())
         expect(names()).toEqual(recentNames)
         expect(rows().every((row) => row.getAttribute('aria-pressed') === 'false')).toBe(true)
       } finally {
@@ -1955,7 +1987,7 @@ describe('SquadAgentThreads consultant recency', () => {
       expect(getByRole(section, 'button', { name: /Chat 00/ }).getAttribute('aria-pressed')).toBe('true')
       expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(1)
       expect(dom.window.document.querySelector('[data-testid="agent-picker-static"]')?.textContent).toContain('Chat 00')
-      await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: /Manager \(Pearl\)/ }).click())
+      await dom.act(async () => getByRole(dom.window.document.body, 'button', { name: /^Manager\b/ }).click())
       expect(section.querySelectorAll('.squad-chat-agent')).toHaveLength(0)
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
     } finally {
@@ -2058,7 +2090,7 @@ describe('SquadAgentThreads sidebar actions', () => {
     const html = renderThreads([agent()])
     expect(html).not.toContain('aria-label="New consultant chat"')
     expect(html).toContain('aria-label="Chat options"')
-    expect(html).toContain('Manager (Pearl)')
+    expect(html).toContain('>Manager</span>')
     expect(html).toContain('Search conversations')
   })
 
@@ -2080,7 +2112,10 @@ test('archiving a recent consultant requires confirmation without selecting its 
   try {
     const { root } = dom.createRoot()
     await dom.act(async () =>
-      renderThreadsDom(root, makeQueryClient(), [agent(), agent({ id: 'archive-me', agentTypeId: 'consultant' })])
+      renderThreadsDom(root, makeQueryClient(), [
+        agent(),
+        agent({ id: 'archive-me', agentTypeId: 'consultant', metadata: { name: 'Pearl', purpose: 'Plan auth' } }),
+      ])
     )
     const section = dom.window.document.querySelector('[data-agent-type-section="consultant"]')!
     expect(section.querySelector('[aria-label="Archive conversation"]')).toBeNull()
@@ -2165,8 +2200,13 @@ describe('SquadAgentThreads assigned work stream numbers', () => {
 
   const rosterAgents = [
     agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
-    agent({ id: 'eng-1', agentTypeId: 'engineer', status: 'active', metadata: { name: 'Build UI' } }),
-    agent({ id: 'eng-2', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Fix API' } }),
+    agent({
+      id: 'eng-1',
+      agentTypeId: 'engineer',
+      status: 'active',
+      metadata: { name: 'Build UI', purpose: 'Build UI' },
+    }),
+    agent({ id: 'eng-2', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Fix API', purpose: 'Fix API' } }),
     agent({ id: 'ops-1', agentTypeId: 'sysops', status: 'idle', metadata: { name: 'Box watch' } }),
   ]
   const streams = [

@@ -1,15 +1,15 @@
 import type { Agent, QuestionItem } from '@ficus/shared'
 import { getAgent } from '../api/agents'
+import { getAgentLabel } from '../lib/agentDisplay'
 import type { PendingVoiceMessage, VoiceAssistantRuntime } from './useRealtimeVoiceAssistant'
 
 type WaitingInputState = {
   spokenWaitingInputAgentIds?: string[] | Set<string>
 }
 
+// Spoken the way the app names agents: type first, then the purpose.
 function getAgentDisplayName(agent: Agent): string {
-  const name = agent.metadata?.name
-  if (typeof name === 'string' && name.trim()) return name.trim()
-  return agent.agentTypeId || 'Agent'
+  return getAgentLabel(agent)
 }
 
 function formatQuestion(question: QuestionItem, index: number): string {
