@@ -1077,7 +1077,7 @@ function ReadOnlyDecision({
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-primary">Awaiting a decision</p>
-      <p className="text-xs text-muted">{gate.readOnlyReason}</p>
+      {gate.readOnlyReason && <p className="text-xs text-muted">{gate.readOnlyReason}</p>}
       <ReviewBlockers gate={gate} />
       <RevisionNotice revisions={revisions} />
       <ApprovalStatement gate={gate} />
