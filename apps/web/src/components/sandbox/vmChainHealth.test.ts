@@ -47,15 +47,14 @@ describe('resolveVmChainDisplay', () => {
     expect(result).toEqual({ label: 'Running', healthy: true })
   })
 
-  test('a never-provisioned box (first use) reads as "Not started", not a scary failure', () => {
+  test('a never-provisioned box (first use) reads as a neutral "Not started", not a fault', () => {
     const result = resolveVmChainDisplay(
       vmStatus({
         status: 'not_found',
         chain: { boxProvisioned: false, machine: 'unknown', boxServer: 'unknown' },
       })
     )
-    expect(result.label).toBe('Not started')
-    expect(result.healthy).toBe(false)
+    expect(result).toEqual({ label: 'Not started', healthy: true, role: 'neutral' })
   })
 
   test('a parked/stopped box reads as "Box server down — starts on next use" (the operator-reported case)', () => {

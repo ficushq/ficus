@@ -1698,9 +1698,21 @@ export interface WorkStream {
   baseBranch?: string
 }
 
+/**
+ * Time worked on a work stream: the summed duration of the executions that did
+ * its work (its flow's bound agents; for a stream from before flows, its listed
+ * agents), with an execution silent for longer than Core's stale bound counted
+ * only up to its last assistant message.
+ */
 export interface WorkStreamRuntime {
   totalMs: number
+  /** Executions waiting for a sandbox, running or stopping. */
   activeCount: number
+  /**
+   * Running executions still accruing time as of `computedAt`, which clients
+   * extrapolate from. Omitted by older servers; fall back to `activeCount`.
+   */
+  workingCount?: number
   computedAt: string // ISO timestamp
 }
 
