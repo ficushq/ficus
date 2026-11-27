@@ -32,7 +32,12 @@ import type {
   WorkStreamActionData,
   WorkStreamDeliveryActionData,
 } from '@ficus/shared'
-import { WORK_STREAM_STATUS_ROLE, type StatusRole } from '@ficus/shared'
+import {
+  pendingActionAgentLabel,
+  pendingActionContextLine,
+  WORK_STREAM_STATUS_ROLE,
+  type StatusRole,
+} from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import {
   workStreamActionPresentationState,
@@ -40,7 +45,6 @@ import {
   WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 import { useAdjustOnChange } from '../hooks/useAdjustOnChange'
-import { pendingActionAgentLabel, pendingActionContextLine } from '../lib/pendingActionWording'
 import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 /** Icon/role/label for actions that are not about a work stream. */

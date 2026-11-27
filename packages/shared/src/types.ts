@@ -47,6 +47,15 @@ export function recommendedQuestionOption(question: Pick<QuestionItem, 'options'
   return question.options?.find((option) => option.recommended === true)
 }
 
+/**
+ * Whether text already ends a sentence (. ? ! … and their full-width forms, also before a closing
+ * quote or bracket), so a formatter that adds a full stop after an option label can skip it
+ * instead of printing "Ship it now?.".
+ */
+export function endsWithSentencePunctuation(text: string): boolean {
+  return /[.?!…‽。？！]["'”’)\]]*$/.test(text.trimEnd())
+}
+
 export interface QuestionItem {
   id: string
   type: QuestionType

@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import type { InboxAttachment, InboxMessage, MessageMetadata, StreamEvent } from './types'
+import { endsWithSentencePunctuation } from './types'
 
 describe('InboxAttachment type', () => {
   test('an InboxMessage can carry attachments', () => {
@@ -33,5 +34,26 @@ describe('streaming reconciliation type additions', () => {
     const meta: MessageMetadata = { clientId: 'c-123', consumedAt: '2026-06-25T00:00:00.000Z' }
     expect(meta.clientId).toBe('c-123')
     expect(meta.consumedAt).toBe('2026-06-25T00:00:00.000Z')
+  })
+})
+
+describe('endsWithSentencePunctuation', () => {
+  test('is true for labels that already end a sentence', () => {
+    for (const label of [
+      'Ship it now?',
+      'Ship it!',
+      'Done.',
+      'Wait…',
+      'Ship it now? ',
+      'Say "yes."',
+      '(Later.)',
+      '今すぐ？',
+    ])
+      expect(endsWithSentencePunctuation(label)).toBe(true)
+  })
+
+  test('is false for labels that do not', () => {
+    for (const label of ['Ship it', 'Postgres', 'v1.2 build', 'Options:', '', 'Say "yes"'])
+      expect(endsWithSentencePunctuation(label)).toBe(false)
   })
 })

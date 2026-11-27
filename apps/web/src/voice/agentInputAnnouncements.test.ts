@@ -204,3 +204,34 @@ test('spoken waiting-input prompts name the recommended option and its reason', 
     '1. Where should I deploy? Options: Staging, Production. Recommended: Production (The release build passed there.).'
   )
 })
+
+test('spoken waiting-input prompts add no full stop after a recommended label that already ends a sentence', async () => {
+  const { buildAgentWaitingInputPrompt } = await import('./agentInputAnnouncements')
+  const agent = waitingAgent('a1')
+  agent.questionData = {
+    questions: [
+      {
+        id: 'q1',
+        type: 'select',
+        question: 'What now?',
+        options: [
+          { value: 'ship', label: 'Ship it now?', recommended: true },
+          { value: 'wait', label: 'Wait' },
+        ],
+      },
+      {
+        id: 'q2',
+        type: 'select',
+        question: 'Where?',
+        options: [
+          { value: 'staging', label: 'Staging', recommended: true },
+          { value: 'prod', label: 'Production' },
+        ],
+      },
+    ],
+  }
+  const prompt = buildAgentWaitingInputPrompt(agent)
+  expect(prompt).toContain('1. What now? Options: Ship it now?, Wait. Recommended: Ship it now?\n')
+  expect(prompt).not.toContain('Ship it now?.')
+  expect(prompt).toContain('2. Where? Options: Staging, Production. Recommended: Staging.')
+})

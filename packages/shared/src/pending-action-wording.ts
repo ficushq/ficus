@@ -1,5 +1,6 @@
+import { typeFirstAgentLabel } from './agentLabel'
+import { WORK_STREAM_WAIT_STATE, workStreamWaitDisplayType } from './status-presentation'
 import {
-  typeFirstAgentLabel,
   workStreamWaitActor,
   type AgentErrorActionData,
   type AgentQuestionActionData,
@@ -7,13 +8,15 @@ import {
   type SquadQuestionActionData,
   type WorkStreamActionData,
   type WorkStreamDeliveryActionData,
-} from '@ficus/shared'
-import { workStreamActionPresentationState } from './workStreamStatusPresentation'
-import { noAgentTypeNames, type AgentTypeName } from './agentDisplay'
+} from './types'
+
+/** The configured name for an agent type (`AgentType.name`), or undefined when it is not known. */
+export type AgentTypeNameLookup = (agentTypeId: string) => string | null | undefined
+const noAgentTypeNames: AgentTypeNameLookup = () => undefined
 
 /**
- * One phrase for each kind of wait, used by every list that shows a Needs-you item (the Feed and
- * Action Center cards, the Assistant list). A routine review or approval is never "blocked": that
+ * One phrase for each kind of wait, used by every list that shows a Needs-you item (the web Feed and
+ * Action Center cards, the Assistant list, and the mobile app). A routine review or approval is never "blocked": that
  * word is kept for a manual hold a person must clear.
  */
 export const WAIT_PHRASES = {
@@ -49,7 +52,8 @@ export function pendingActionWaitPhrase(action: PendingAction): string {
       return WAIT_PHRASES.review
     case 'workstream-blocked': {
       const data = action.data as WorkStreamActionData
-      if (workStreamActionPresentationState(action) === 'in_review') return WAIT_PHRASES.review
+      // A workflow approval gate is stored as a manual wait but presents as a review.
+      if (WORK_STREAM_WAIT_STATE[workStreamWaitDisplayType(data.wait)] === 'in_review') return WAIT_PHRASES.review
       if (data.deliveryApproval) return WAIT_PHRASES.approveDelivery
       if (data.attemptLimit) return WAIT_PHRASES.attemptLimit
       if (data.wait.resolutionHandler === 'workflow') return WAIT_PHRASES.decision
@@ -80,7 +84,7 @@ export function pendingActionWaitPhrase(action: PendingAction): string {
 export function pendingActionAgentLabel(
   action: PendingAction,
   /** The configured agent type names (`useAgentTypeNames`); without them the type id is title-cased. */
-  typeNames: AgentTypeName = noAgentTypeNames
+  typeNames: AgentTypeNameLookup = noAgentTypeNames
 ): string | null {
   const typeName = (agentTypeId: string | null | undefined) => (agentTypeId ? typeNames(agentTypeId) : undefined)
   switch (action.type) {
@@ -120,7 +124,10 @@ function actionSquadName(action: PendingAction): string | null {
  * "Squad · Agent · wait" for a work stream (the stream is the title), "Squad · wait" for an item
  * whose title already names the agent or the question.
  */
-export function pendingActionContextLine(action: PendingAction, typeNames: AgentTypeName = noAgentTypeNames): string {
+export function pendingActionContextLine(
+  action: PendingAction,
+  typeNames: AgentTypeNameLookup = noAgentTypeNames
+): string {
   const parts: string[] = []
   if (action.type === 'assistant-needs-input') parts.push('Assistant task')
   const squad = actionSquadName(action)

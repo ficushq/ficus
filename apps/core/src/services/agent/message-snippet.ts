@@ -6,6 +6,11 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 
 const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
 
+/** Whether text contains the query as a literal, case-insensitive substring (the snippet's matching rule). */
+export function containsQuery(text: string, query: string): boolean {
+  return new RegExp(escapeRegExp(query), 'iu').test(text)
+}
+
 /** Build a short, single-line excerpt around the first match with every match in it marked. */
 export function buildMessageSnippet(content: string, query: string, context = SNIPPET_CONTEXT): MessageSearchSnippet {
   const pattern = new RegExp(escapeRegExp(query), 'giu')
