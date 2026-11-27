@@ -1065,7 +1065,13 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     error: string,
     admissionLease?: AdmissionLease,
     failure?: ExecutionFailure,
-    recovery?: { safeStartupRetry?: boolean; explained?: boolean; cause?: unknown }
+    recovery?: {
+      safeStartupRetry?: boolean
+      explained?: boolean
+      cause?: unknown
+      /** The held recovery that refused this run at pickup, so a stranded notice links and routes by it. */
+      heldRecord?: import('../services/recovery/store').RecoveryRecord
+    }
   ): Promise<boolean> {
     const requestValidation =
       failure?.failureClass === 'provider_model' && failure.failureReason === REQUEST_VALIDATION_REASON
@@ -1084,7 +1090,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       const resumed = await this.resumedRunFailureContext()
       const counted =
         requestValidation || (!recovery?.explained && isUnexplainedExecutionFailure(error, failure, cause))
-      let record: import('../services/recovery/store').RecoveryRecord | undefined
+      let record: import('../services/recovery/store').RecoveryRecord | undefined = recovery?.heldRecord
       if (counted) {
         const { recordRecoveryFailure } = await import('../services/recovery/store')
         // A resumed run is never replay-safe: the interrupted segment may have
@@ -1474,16 +1480,18 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         // Crash-loop cap: an execution cut off this many times may be what is stopping Core, so it
         // is not resumed again. It opens the native recovery hold before any runner or model work.
         const { requeueLimitReached, holdExecutionAtRequeueLimit } = await import('../services/execution/requeue-limit')
-        if (requeueLimitReached(interruption.interruptionCount))
-          throw new RecoveryHeldError(
-            await holdExecutionAtRequeueLimit({
-              agentId: this.agentId,
-              executionId: this.id,
-              noticeId: interruption.noticeId,
-              interruptions: interruption.interruptionCount,
-              cause: interruption.cause,
-            })
-          )
+        if (requeueLimitReached(interruption.interruptionCount)) {
+          let held: import('../services/recovery/store').RecoveryRecord
+          try {
+            held = await holdExecutionAtRequeueLimit({ agentId: this.agentId, interruption })
+          } catch (holdError) {
+            // Still refuse the run: a failure to open the hold must not become an ordinary
+            // counted failure, whose retry wake would start a fresh execution with no count.
+            log.error(`Could not open the requeue-limit hold for execution ${this.id}:`, holdError)
+            throw new RecoveryHeldError()
+          }
+          throw new RecoveryHeldError(held)
+        }
       }
       const retryDelay = await recoveryRetryDelay(
         { agentId: this.agentId, executionId: this.id },
@@ -1633,7 +1641,12 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
       const errorMsg = err instanceof Error ? err.message : String(err)
       const { RecoveryHeldError } = await import('../services/recovery/store')
       if (err instanceof RecoveryHeldError) {
-        await this.fail(errorMsg, undefined, { failureClass: 'execution_failure', failureReason: 'recovery_held' })
+        await this.fail(
+          errorMsg,
+          undefined,
+          { failureClass: 'execution_failure', failureReason: 'recovery_held' },
+          err.record ? { heldRecord: err.record } : undefined
+        )
         return
       }
       log.error(`Failed to run agent (${agent.id}) execution ${this.id}:`, err)

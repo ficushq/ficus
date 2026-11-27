@@ -1,5 +1,6 @@
 import type { InterruptionCause } from '@ficus/shared/restart-context'
 import { createLogger } from '../../lib/infra/logger'
+import type { HardInterruption, InterruptedToolCall } from '../agent/interrupted-tool-calls'
 import type { RecoveryRecord } from '../recovery/store'
 
 const log = createLogger('requeue-limit')
@@ -12,18 +13,26 @@ const log = createLogger('requeue-limit')
 export const DEFAULT_EXECUTION_REQUEUE_LIMIT = 5
 export const EXECUTION_REQUEUE_LIMIT_ENV = 'FICUS_EXECUTION_REQUEUE_LIMIT'
 
-/** A non-negative integer from the environment; 0 turns the cap off. Anything else uses the default. */
+let warnedInvalid: string | undefined
+
+/**
+ * A non-negative integer from the environment; 0 turns the cap off. A whole number too large to
+ * represent exactly still means "practically never". Anything else uses the default, with one
+ * warning per distinct invalid value rather than one per recovered execution.
+ */
 export function executionRequeueLimit(value: string | undefined = process.env[EXECUTION_REQUEUE_LIMIT_ENV]): number {
   const raw = value?.trim()
   if (!raw) return DEFAULT_EXECUTION_REQUEUE_LIMIT
-  const limit = Number(raw)
-  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(limit)) {
-    log.warn(
-      `Ignoring invalid ${EXECUTION_REQUEUE_LIMIT_ENV} '${raw}'; using the default of ${DEFAULT_EXECUTION_REQUEUE_LIMIT}`
-    )
+  if (!/^\d+$/.test(raw)) {
+    if (warnedInvalid !== raw) {
+      warnedInvalid = raw
+      log.warn(
+        `Ignoring invalid ${EXECUTION_REQUEUE_LIMIT_ENV} '${raw}'; using the default of ${DEFAULT_EXECUTION_REQUEUE_LIMIT}`
+      )
+    }
     return DEFAULT_EXECUTION_REQUEUE_LIMIT
   }
-  return limit
+  return Math.min(Number(raw), Number.MAX_SAFE_INTEGER)
 }
 
 /** Whether an execution with this many hard interruptions must not run again. */
@@ -32,24 +41,60 @@ export function requeueLimitReached(interruptions: number, limit: number = execu
 }
 
 function causeText(cause: InterruptionCause): string {
-  return cause === 'lease_lapsed' ? 'its admission lease lapsed' : 'an interruption of unknown cause'
+  return cause === 'lease_lapsed' ? 'the worker running it stopped renewing its lease' : 'Core stopped unexpectedly'
 }
 
 /** The chat notice startup recovery or the lease sweep posts for the interruption that reaches the cap. */
 export function requeueLimitNotice(interruptions: number, cause: InterruptionCause): string {
-  return `[System] Agent's execution was interrupted ${interruptions} times without finishing, most recently because ${causeText(cause)}. It will not resume automatically: something it runs may be what stops Core. The squad manager or owner decides through the recovery hold.`
+  return `[System] Agent's execution was cut off ${interruptions} times without finishing, most recently because ${causeText(cause)}. It will not resume automatically: something it runs may be what stops Core. The squad manager or owner decides through the recovery hold.`
+}
+
+/** What the last interruption cut off, for whoever decides Continue or Stop; undefined when it could not be read. */
+function cutOffText(calls: Pick<InterruptedToolCall, 'toolName' | 'repeated'>[] | undefined): string {
+  if (!calls) return 'The calls it cut off could not be read.'
+  if (calls.length === 0) return 'It was cut off between tool calls.'
+  const shown = calls.slice(0, 3).map((call) => `${call.toolName}${call.repeated ? ' (cut off before too)' : ''}`)
+  const more = calls.length > shown.length ? ` and ${calls.length - shown.length} more` : ''
+  return `It cut off ${shown.join(', ')}${more}.`
 }
 
 /** The failure recorded on the native recovery hold; one line, so it survives `lastErrorLine`. */
 export class ExecutionRequeueLimitError extends Error {
   constructor(
     readonly interruptions: number,
-    readonly interruptionCause: InterruptionCause
+    readonly interruptionCause: InterruptionCause,
+    calls?: Pick<InterruptedToolCall, 'toolName' | 'repeated'>[]
   ) {
     super(
-      `The execution was interrupted ${interruptions} times without finishing, most recently because ${causeText(interruptionCause)}, so it was not resumed again.`
+      `The run was cut off ${interruptions} times without finishing, most recently because ${causeText(interruptionCause)}. ${cutOffText(calls)}`
     )
     this.name = 'ExecutionRequeueLimitError'
+  }
+}
+
+/**
+ * Record the calls the capped interruption cut off in the agent's session file on Core, exactly as
+ * a resumed runner would (`recordInterruptedToolCalls`, once per notice, `repeated` for a call cut
+ * off before). The run is not resumed, so without this the continued run after Continue would see
+ * pi-ai's generic placeholder for the call most likely to be stopping Core. This only reads and
+ * appends to the local session file: no sandbox, model call or tool starts.
+ */
+export async function recordCappedInterruption(
+  agentId: string,
+  interruption: HardInterruption
+): Promise<InterruptedToolCall[] | undefined> {
+  try {
+    const { findSessionFile, getSessionDir } = await import('../../lib/infra/session-files')
+    const dir = getSessionDir(agentId)
+    const file = findSessionFile(dir)
+    if (!file) return []
+    const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+    const { recordInterruptedToolCalls } = await import('../agent/interrupted-tool-calls')
+    return recordInterruptedToolCalls(SessionManager.open(file, dir, dir), interruption).calls
+  } catch (error) {
+    // The hold matters more than its wording; open it even when the session cannot be read.
+    log.error(`Could not record the calls cut off for capped execution ${interruption.executionId}:`, error)
+    return undefined
   }
 }
 
@@ -61,25 +106,24 @@ export class ExecutionRequeueLimitError extends Error {
  */
 export async function holdExecutionAtRequeueLimit(input: {
   agentId: string
-  executionId: string
-  noticeId: string
-  interruptions: number
-  cause: InterruptionCause
+  interruption: HardInterruption & { interruptionCount: number }
 }): Promise<RecoveryRecord> {
   const { recordRecoveryFailure } = await import('../recovery/store')
   const { EXECUTION_RECOVERY_OPERATION } = await import('../recovery/executions')
+  const { interruption } = input
   log.warn('Execution reached the requeue limit; holding it for a recovery decision', {
     agentId: input.agentId,
-    executionId: input.executionId,
-    interruptions: input.interruptions,
+    executionId: interruption.executionId,
+    interruptions: interruption.interruptionCount,
   })
+  const calls = await recordCappedInterruption(input.agentId, interruption)
   return recordRecoveryFailure(
-    { agentId: input.agentId, executionId: input.executionId },
+    { agentId: input.agentId, executionId: interruption.executionId },
     {
       operationKey: EXECUTION_RECOVERY_OPERATION,
       attempted: 'continue the task',
-      invocationId: `${input.executionId}:requeue-limit:${input.noticeId}`,
-      error: new ExecutionRequeueLimitError(input.interruptions, input.cause),
+      invocationId: `${interruption.executionId}:requeue-limit:${interruption.noticeId}`,
+      error: new ExecutionRequeueLimitError(interruption.interruptionCount, interruption.cause, calls),
     }
   )
 }

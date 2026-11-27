@@ -203,7 +203,7 @@ export function recoveryHoldGuidance(record: RecoveryRecord): string {
 }
 
 export class RecoveryHeldError extends Error {
-  constructor(record?: RecoveryRecord) {
+  constructor(readonly record?: RecoveryRecord) {
     super(
       record
         ? recoveryHoldGuidance(record)

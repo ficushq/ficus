@@ -17,6 +17,8 @@ export interface RecoveryState {
   requestValidation?: boolean
   /** Runtime-issued version that opened this validation hold, for notice deduplication. */
   validationHoldVersion?: number
+  /** The latest failure was an execution reaching the requeue (crash-loop) cap. */
+  requeueLimit?: boolean
 }
 
 export function initialRecoveryState(attempted: string): RecoveryState {
@@ -63,6 +65,7 @@ export function failedRecovery(
     cycleFailures,
     lastError: failure.error,
     requestValidation,
+    requeueLimit: failure.kind === 'requeue-limit',
     ownerEscalated,
     state: exhausted ? (ownerEscalated ? 'waiting-owner' : 'waiting-manager') : 'recovering',
     nextRetryAt: exhausted ? null : now + 1000 * 2 ** (cycleFailures - 1),
@@ -90,8 +93,10 @@ export function recoverySummary(state: RecoveryState): RecoverySummary {
     attempted: state.attempted,
     attemptCount: state.failures,
     lastError: state.lastError,
-    text: state.requestValidation
-      ? `The provider rejected the tool-search function name in the model request. Recovery is held after ${state.failures} actual failure${state.failures === 1 ? '' : 's'}. Correct the request or safely re-plan before Continue; do not replay the unchanged invalid request. The last error was: ${state.lastError}`
-      : `I tried to ${state.attempted.charAt(0).toLowerCase()}${state.attempted.slice(1)} ${state.failures} times. The last error was: ${state.lastError ?? 'No unexplained failure was recorded.'}`,
+    text: state.requeueLimit
+      ? `I stopped resuming this run. ${state.lastError} Continue starts it again in a new run, which may stop Core again; Stop keeps it held.`
+      : state.requestValidation
+        ? `The provider rejected the tool-search function name in the model request. Recovery is held after ${state.failures} actual failure${state.failures === 1 ? '' : 's'}. Correct the request or safely re-plan before Continue; do not replay the unchanged invalid request. The last error was: ${state.lastError}`
+        : `I tried to ${state.attempted.charAt(0).toLowerCase()}${state.attempted.slice(1)} ${state.failures} times. The last error was: ${state.lastError ?? 'No unexplained failure was recorded.'}`,
   }
 }

@@ -8,7 +8,7 @@ import {
 } from '@ficus/shared/restart-context'
 import type { HardInterruption } from '../agent/interrupted-tool-calls'
 import { createRestartContext } from '../sandbox/command-drain'
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm'
 import { agents, db, executionAdmissionReservations, executions, messages } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { mapMessage } from '../../entities/message-mapper'
@@ -230,6 +230,9 @@ async function recoverExecutions(
           .where(
             and(
               eq(messages.agentId, execution.agentId),
+              // Bounded to this execution's own rows (idx_messages_agent_execution), not the agent's history.
+              sql`${messages.metadata}->>'executionId' = ${execution.id}`,
+              gte(messages.createdAt, execution.startedAt),
               sql`${messages.metadata}->>'admissionRecoveryExecutionId' = ${execution.id}`,
               sql`${messages.metadata}->>'isSystem' = 'true'`,
               sql`${messages.metadata}->'restartPhase' IS NULL`,

@@ -1289,10 +1289,40 @@ describeSubprocess('attemptPickup result matrix', () => {
       const agent = await createSquadAgent('zai:glm-5.2')
       const execution = await agent.queueExecution({ message: 'a call that crashes Core' })
       createdExecutionIds.push(execution.id)
+      const { openOrCreateSession } = await import('../../lib/infra/session-files')
+      const { recordInterruptedToolCalls, INTERRUPTED_TOOL_CALLS_TYPE } =
+        await import('../agent/interrupted-tool-calls')
+      // The agent's session on Core: each time, the model runs the same command and Core dies in it.
+      const session = openOrCreateSession(agent.id)
+      session.appendMessage({ role: 'user', content: 'a call that crashes Core', timestamp: Date.now() })
       try {
         // Both hard paths count toward the same per-execution total.
-        for (const path of ['startup', 'lease', 'startup', 'lease', 'startup'] as const)
+        let round = 0
+        for (const path of ['startup', 'lease', 'startup', 'lease', 'startup'] as const) {
+          round++
+          session.appendMessage({
+            role: 'assistant',
+            content: [{ type: 'toolCall', id: `call-${round}`, name: 'bash', arguments: { command: 'cat huge.log' } }],
+            api: 'anthropic-messages',
+            provider: 'anthropic',
+            model: 'claude-opus-5-5',
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'toolUse',
+            timestamp: Date.now(),
+          })
           await hardInterrupt(agent, execution, path)
+          if (round === 5) break
+          // What the resumed runner does before its prompt on interruptions 1 to 4.
+          recordInterruptedToolCalls(session, (await findHardInterruption(execution.id, agent.id))!)
+          session.appendMessage({ role: 'user', content: 'Continue.', timestamp: Date.now() })
+        }
         const notices = await recoveryNotices(agent.id, execution.id)
         expect(notices.map((notice) => notice.count)).toEqual([1, 2, 3, 4, 5])
         expect(notices.slice(0, 4).map((notice) => notice.content)).toEqual([
@@ -1301,7 +1331,7 @@ describeSubprocess('attemptPickup result matrix', () => {
           PROCESS_RESTART_NOTICE,
           '[System] Agent recovered after its execution was interrupted (admission lease lapsed).',
         ])
-        expect(notices[4]!.content).toContain('interrupted 5 times without finishing')
+        expect(notices[4]!.content).toContain('cut off 5 times without finishing')
         expect(notices[4]!.content).toContain('will not resume automatically')
         expect(await findHardInterruption(execution.id, agent.id)).toMatchObject({
           cause: 'core_restart',
@@ -1316,7 +1346,19 @@ describeSubprocess('attemptPickup result matrix', () => {
         })
         const failed = await Execution.mustFind(execution.id)
         expect(failed.failureReason).toBe('recovery_held')
-        expect(failed.error).toContain('interrupted 5 times without finishing')
+        // The hold names the call the fifth interruption cut off, flagged as a repeat.
+        expect(failed.error).toContain(
+          'The run was cut off 5 times without finishing, most recently because Core stopped unexpectedly. It cut off bash (cut off before too).'
+        )
+        // And records it in the session, as a resumed runner would, for the run Continue starts.
+        const fifth = openOrCreateSession(agent.id)
+          .getBranch()
+          .filter((entry) => entry.type === 'custom' && entry.customType === INTERRUPTED_TOOL_CALLS_TYPE)
+          .at(-1) as { data: { noticeId: string; calls: unknown[] } } | undefined
+        expect(fifth?.data.noticeId).toBe((await findHardInterruption(execution.id, agent.id))!.noticeId)
+        expect(fifth?.data.calls).toEqual([
+          expect.objectContaining({ toolCallId: 'call-5', toolName: 'bash', repeated: true }),
+        ])
         // Held before any runner or model work: the crashing call is not replayed.
         expect(createSessionSpy).not.toHaveBeenCalled()
         expect(createdSessions).toHaveLength(0)
@@ -1375,7 +1417,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       await hardInterrupt(agent, execution, 'startup')
       const notices = await recoveryNotices(agent.id, execution.id)
       expect(notices.at(-1)).toMatchObject({ count: 5, graceful: false })
-      expect(notices.at(-1)!.content).toContain('interrupted 5 times without finishing')
+      expect(notices.at(-1)!.content).toContain('cut off 5 times without finishing')
     })
   })
 
