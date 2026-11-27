@@ -395,14 +395,12 @@ export class ModelFailoverCoordinator {
     })
     this.deps.getCollector().reset()
 
-    // The caller re-dispatches the same turn. Note: the Pi SDK persists the user message
-    // to the session file before the API call, so the original failed prompt
-    // already has the user message in context. Re-dispatching via sendPrompt
-    // adds a second user message to the Pi session (not user-visible —
-    // tryConfirmPendingMessage deduplicates in the DB/UI), but the agent sees
-    // the prompt twice, wasting some tokens. This is consistent with the v1
-    // design doc; a future iteration could use pi.continue() or remove the
-    // error assistant message to avoid the duplicate.
+    // The caller re-dispatches the same turn. The Pi SDK persists the user message
+    // to the session file before the API call, so the failed prompt is already in
+    // context. sendPrompt lets that delivery be acknowledged before releasing its
+    // claim, and then sends a short continuation instead of the original text
+    // (AgentRunner.unclaimedPromptText), so the model never sees the task twice.
+    // A prompt that failed before it reached the session is released and re-sent.
     return true
   }
 }
