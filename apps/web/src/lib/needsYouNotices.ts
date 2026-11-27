@@ -1,4 +1,5 @@
 import {
+  pendingActionWaitPhrase,
   typeFirstAgentLabel,
   WORK_STREAM_STATUS_ROLE,
   type AgentQuestionActionData,
@@ -7,7 +8,6 @@ import {
   type WorkStreamActionData,
 } from '@ficus/shared'
 import { workStreamActionPresentationState } from './workStreamStatusPresentation'
-import { pendingActionWaitPhrase } from './pendingActionWording'
 import { workflowReviewPath } from './workflowReview'
 
 /**
