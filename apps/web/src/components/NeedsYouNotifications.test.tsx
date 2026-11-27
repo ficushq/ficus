@@ -316,7 +316,39 @@ describe('confirming a card to the service worker, so it skips the OS notificati
     expect(view.cards()).toHaveLength(1)
   })
 
-  test('a card already shown, or dismissed, stays confirmed', async () => {
+  test("a later push reusing a shown card's id for an item with no card is not confirmed", async () => {
+    // Card shown for the question, then the user answers it and delivery fails: the failure alert
+    // carries the same agent-question id, and the refetched item no longer gets a card.
+    const view = await mount()
+    await view.setPending([])
+    await view.setPending([questionAction('q1')])
+    expect(view.cards()).toHaveLength(1)
+    const failed = questionAction(
+      'q1',
+      {},
+      {
+        answerDelivery: {
+          status: 'failed',
+          generation: 1,
+          attemptCount: 3,
+          nextAttemptAt: null,
+          lastError: 'gone',
+          deliveredAt: null,
+        } as never,
+      }
+    )
+    expect(await view.askAboutPush('agent-question:q1', [failed])).toBe(false)
+    expect(view.cards()).toHaveLength(0)
+  })
+
+  test('a shown card whose item was settled elsewhere is not confirmed', async () => {
+    const view = await mount()
+    await view.setPending([])
+    await view.setPending([questionAction('q1')])
+    expect(await view.askAboutPush('agent-question:q1', [])).toBe(false)
+  })
+
+  test('a card already shown, or dismissed, stays confirmed while its item is still pending', async () => {
     const view = await mount()
     await view.setPending([])
     await view.setPending([questionAction('q1')])

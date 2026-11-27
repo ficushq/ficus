@@ -13,6 +13,7 @@ import {
   NEEDS_YOU_PUSH_CHECK,
   needsYouPushActionId,
   needsYouPushWindows,
+  subscribeNeedsYouPushChecks,
 } from './needsYouPush'
 import { otherAction, questionAction, waitAction } from './needsYouNotices.fixtures'
 
@@ -228,5 +229,44 @@ describe('push notifications while a Ficus window is focused', () => {
     expect(Date.now() - started).toBeLessThan(450)
     expect(await confirmNeedsYouCard([windowAnswering('throws')], 'agent-question:q', 500)).toBe(false)
     expect(await confirmNeedsYouCard([], 'agent-question:q', 500)).toBe(false)
+  })
+
+  test('the page answers only its own service worker', async () => {
+    const controller = { id: 'own worker' }
+    const listeners: Array<(event: MessageEvent) => void> = []
+    const container = {
+      controller,
+      addEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.push(listener),
+      removeEventListener: () => {},
+    }
+    const original = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker')
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: container })
+    try {
+      const asked: string[] = []
+      const unsubscribe = subscribeNeedsYouPushChecks(async (actionId) => {
+        asked.push(actionId)
+        return true
+      })
+      const ask = (source: unknown) => {
+        const channel = new MessageChannel()
+        const answer = new Promise<unknown>((resolve) => {
+          channel.port1.onmessage = (event) => resolve(event.data)
+        })
+        const message = { type: NEEDS_YOU_PUSH_CHECK, actionId: 'agent-question:q' }
+        for (const listener of listeners)
+          listener({ data: message, ports: [channel.port2], source } as unknown as MessageEvent)
+        return Promise.race([answer, new Promise((resolve) => setTimeout(() => resolve('no answer'), 50))]).finally(
+          () => channel.port1.close()
+        )
+      }
+      expect(await ask(controller)).toEqual({ shown: true })
+      expect(await ask({ id: 'another worker' })).toBe('no answer')
+      expect(await ask(null)).toBe('no answer')
+      expect(asked).toEqual(['agent-question:q'])
+      unsubscribe()
+    } finally {
+      if (original) Object.defineProperty(navigator, 'serviceWorker', original)
+      else Reflect.deleteProperty(navigator, 'serviceWorker')
+    }
   })
 })

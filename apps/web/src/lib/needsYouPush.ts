@@ -122,6 +122,9 @@ export function subscribeNeedsYouPushChecks(handler: (actionId: string) => Promi
     const message = event.data as { type?: unknown; actionId?: unknown } | null
     const port = event.ports[0]
     if (message?.type !== NEEDS_YOU_PUSH_CHECK || typeof message.actionId !== 'string' || !port) return
+    // Only this page's own service worker may ask. Anything else (or an uncontrolled page, whose
+    // controller is null) gets no answer, so the asking worker times out and shows its notification.
+    if (!event.source || event.source !== container.controller) return
     void handler(message.actionId)
       .catch(() => false)
       .then((shown) => port.postMessage({ shown }))

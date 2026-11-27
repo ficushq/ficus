@@ -156,36 +156,43 @@ export function NeedsYouNotifications({
     { onMount: true }
   )
 
-  // A card leaves once its item is settled elsewhere, opened, or its category muted.
-  const pendingIds = new Set(actions?.map((action) => action.id))
-  const visible = state.notices.filter((action) => {
-    const category = needsYouNoticeCategory(action)
-    return (
-      pendingIds.has(action.id) &&
-      category !== null &&
-      needsYouNoticesAllowed(preferences, category) &&
-      !isNeedsYouItemOpen(action, location)
-    )
-  })
+  // A card shows its item as it is now, and leaves once the item is settled elsewhere, opened, no
+  // longer card-eligible (an answered question whose delivery failed), or its category muted.
+  const current = new Map(actions?.map((action) => [action.id, action]))
+  const visible = state.notices
+    .flatMap((notice) => {
+      const action = current.get(notice.id)
+      return action ? [action] : []
+    })
+    .filter((action) => {
+      const category = needsYouNoticeCategory(action)
+      return category !== null && needsYouNoticesAllowed(preferences, category) && !isNeedsYouItemOpen(action, location)
+    })
 
-  // Every item this page has put on screen, dismissed or not: the service worker skips a push's OS
-  // notification only for these.
+  // Every item this page has put on screen, dismissed or not. The service worker skips a push's OS
+  // notification only for one of these that is STILL a card-eligible item in the current list: a
+  // later push can reuse the id for something that never gets a card (an answered question whose
+  // delivery failed carries the question's own `agent-question:<id>`), and that must still alert.
   const shown = useRef(new Set<string>())
   useEffect(() => {
     for (const action of visible) shown.current.add(action.id)
   })
   const refetchRef = useStableRef(refetch)
-  useEffect(
-    () =>
-      subscribePushChecks(async (actionId) => {
-        // The push usually lands before the next poll: fetch the list, then let it render.
-        await refetchRef.current?.()
-        for (let attempt = 0; attempt < CONFIRM_ATTEMPTS && !shown.current.has(actionId); attempt++)
-          await new Promise((resolve) => setTimeout(resolve, CONFIRM_POLL_MS))
-        return shown.current.has(actionId)
-      }),
-    [subscribePushChecks, refetchRef]
-  )
+  const actionsRef = useStableRef(actions)
+  useEffect(() => {
+    const confirmed = (actionId: string) => {
+      if (!shown.current.has(actionId)) return false
+      const current = actionsRef.current?.find((action) => action.id === actionId)
+      return current !== undefined && needsYouNoticeCategory(current) !== null
+    }
+    return subscribePushChecks(async (actionId) => {
+      // The push usually lands before the next poll: fetch the list, then let it render.
+      await refetchRef.current?.()
+      for (let attempt = 0; attempt < CONFIRM_ATTEMPTS && !confirmed(actionId); attempt++)
+        await new Promise((resolve) => setTimeout(resolve, CONFIRM_POLL_MS))
+      return confirmed(actionId)
+    })
+  }, [subscribePushChecks, refetchRef, actionsRef])
 
   const dismiss = useCallback(
     (id: string) => setState((current) => ({ ...current, notices: current.notices.filter((n) => n.id !== id) })),
