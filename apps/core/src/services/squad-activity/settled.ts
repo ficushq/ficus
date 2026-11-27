@@ -50,14 +50,25 @@ export function settledRowSql(kind: ActivitySettledKind, since: Date): SQL {
       WHERE settled_wait.id=squad_activity.row_id AND ${settledQuestionWaitSql(sql`settled_wait`)}))`
 }
 
-/** The count query, exported for its scan-cost test. */
+/**
+ * The count query, exported for its scan-cost test. It counts up to `through`, the database clock
+ * when it ran (to the millisecond, so the ISO string round-trips exactly) and returns that time: a
+ * Feed visit records it, so the next visit starts where these counts ended, with nothing counted
+ * twice and nothing skipped.
+ */
 export function settledCountSql(squadAccess: GlobalActivitySquadAccess[], since: Date): SQL {
+  // In the counts' filters rather than the scan's WHERE: an upper bound the planner cannot see
+  // until the query runs makes it misjudge the period and walk it through the feed index.
+  const before = sql`squad_activity.at<(SELECT through FROM params)`
   return sql`
-    WITH squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id) AS (
+    WITH params AS MATERIALIZED (
+      SELECT date_trunc('milliseconds',clock_timestamp()) through
+    ), squad_access(squad_id,agents_read,workstreams_read,inbox_all,own_recipient_id) AS (
       VALUES ${globalActivityAccessRowsSql(squadAccess)}
     )
-    SELECT count(*) FILTER (WHERE ${settledRowSql('questions', since)})::int questions,
-      count(*) FILTER (WHERE ${settledRowSql('reviews', since)})::int reviews
+    SELECT to_char((SELECT through FROM params) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') through,
+      count(*) FILTER (WHERE ${settledRowSql('questions', since)} AND ${before})::int questions,
+      count(*) FILTER (WHERE ${settledRowSql('reviews', since)} AND ${before})::int reviews
     FROM squad_activity JOIN squad_access ON squad_activity.squad_id=squad_access.squad_id
     WHERE squad_activity.kind IN ('wait','workstream') AND squad_activity.lane IN (32,41)
       AND squad_activity.at>=${since.toISOString()}::timestamptz
@@ -71,10 +82,16 @@ export async function countSettledActivity(
   now = new Date()
 ): Promise<ActivitySettledSummary> {
   const { since, clamped } = settledPeriodStart(requestedSince, now)
-  const counts = { questions: 0, reviews: 0 }
-  if (squadAccess.length > 0) {
-    const [row] = await db.execute<{ questions: number; reviews: number }>(settledCountSql(squadAccess, since))
-    Object.assign(counts, row)
+  if (squadAccess.length === 0) {
+    return { since: since.toISOString(), clamped, through: now.toISOString(), counts: { questions: 0, reviews: 0 } }
   }
-  return { since: since.toISOString(), clamped, counts }
+  const [row] = await db.execute<{ through: string; questions: number; reviews: number }>(
+    settledCountSql(squadAccess, since)
+  )
+  return {
+    since: since.toISOString(),
+    clamped,
+    through: row!.through,
+    counts: { questions: row!.questions, reviews: row!.reviews },
+  }
 }

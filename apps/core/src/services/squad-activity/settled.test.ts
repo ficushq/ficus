@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { manualInputRequestSchema, taskInputSummary } from '@ficus/shared'
 import { db } from '../../db'
 import {
@@ -231,6 +231,28 @@ describe('settled without you', () => {
     const old = await countSettledActivity([{ squadId, access: FULL }], new Date(Date.now() - 90 * 24 * HOUR))
     expect(old.clamped).toBe(true)
     expect(old.since).toBe(activityRetentionFloor(new Date()).toISOString())
+  })
+
+  test('counts up to the time it reports as `through`, so the next period starts there', async () => {
+    await closedWait({ resolvedByAgentId: owner })
+    // Recorded with a time after the count runs: left for the period that starts at `through`.
+    const later = await closedWait({ resolvedByAgentId: owner, closedAt: new Date(Date.now() + HOUR) })
+    const before = Date.now()
+    const summary = await countSettledActivity([{ squadId, access: FULL }], since)
+    expect(summary.through).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(Math.abs(Date.parse(summary.through) - before)).toBeLessThan(60_000)
+    expect(summary.counts).toEqual({ questions: 1, reviews: 0 })
+    // The later row is recorded and in the period; only the upper bound leaves it out of this count.
+    const [row] = await db
+      .select({ at: squadActivity.at })
+      .from(squadActivity)
+      .where(and(eq(squadActivity.rowId, later.id), eq(squadActivity.lane, 41)))
+    expect(row!.at.getTime()).toBeGreaterThan(Date.parse(summary.through))
+    // The next period starts at `through` and so picks up the row once it is no longer in the future.
+    const next = await countSettledActivity([{ squadId, access: FULL }], new Date(summary.through))
+    expect(next.since).toBe(summary.through)
+    expect(next.counts).toEqual({ questions: 0, reviews: 0 })
+    expect(await countSettledActivity([], since)).toMatchObject({ through: expect.any(String) })
   })
 
   test('counts only rows the viewer may read', async () => {

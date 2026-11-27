@@ -363,6 +363,11 @@ export interface ActivitySettledSummary {
   since: string
   /** True when the requested time was older than Activity keeps rows and was raised. */
   clamped: boolean
+  /**
+   * Server time the counts run up to (exclusive). The Feed records it as the end of what a visit
+   * has shown, so the next visit starts here: nothing is counted twice and nothing is skipped.
+   */
+  through: string
   counts: Record<ActivitySettledKind, number>
 }
 

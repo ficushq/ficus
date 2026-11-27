@@ -6,14 +6,23 @@ import { feedQueries } from '../queryOptions'
 
 /** A visit ends after this long away from the tab, the usual web analytics session timeout. */
 export const FEED_VISIT_IDLE_MS = 30 * 60_000
+/**
+ * A visit also ends this long after it began, even in a window that never leaves the screen (as a
+ * Desktop window usually doesn't): about a working day, so a window left open overnight starts a new
+ * visit by morning, and a whole day of checking in stays one visit.
+ */
+export const FEED_VISIT_MAX_MS = 8 * 60 * 60_000
 
 const VISIT_KEY_PREFIX = 'ficus:feed-visit:'
 /** When the tab was last hidden, while it still is (or was when the page unloaded). */
 export const FEED_VISIT_HIDDEN_KEY = 'ficus:feed-visit-hidden-at'
 
-/** This tab's visit: the period start read when it began, and whether it was recorded yet. */
+/** This tab's visit: the period read when it began, when it began here, and how far it was recorded. */
 export interface SessionFeedVisit extends FeedVisit {
-  recorded: boolean
+  /** This client's clock when the visit began, for FEED_VISIT_MAX_MS (the server's clock may differ). */
+  startedAt: number
+  /** The latest time recorded as this visit's end, or null before the first record. */
+  recordedThrough: string | null
 }
 
 function sessionStore(): Storage | null {
@@ -24,16 +33,45 @@ function sessionStore(): Storage | null {
   }
 }
 
-function endSessionVisits(store: Storage) {
-  for (let index = store.length - 1; index >= 0; index--) {
-    const key = store.key(index)
-    if (key?.startsWith(VISIT_KEY_PREFIX)) store.removeItem(key)
+function endSessionVisits(store: Storage | null = sessionStore()) {
+  if (!store) return
+  try {
+    for (let index = store.length - 1; index >= 0; index--) {
+      const key = store.key(index)
+      if (key?.startsWith(VISIT_KEY_PREFIX)) store.removeItem(key)
+    }
+  } catch {
+    // Storage refused: the stored visit is ignored once it is too old anyway.
+  }
+}
+
+/** Past the maximum age. A clock moved back by more than that counts too, so a visit cannot get stuck. */
+function visitTooOld(startedAt: number, now: number) {
+  return Math.abs(now - startedAt) > FEED_VISIT_MAX_MS
+}
+
+function parseSessionFeedVisit(raw: string | null): SessionFeedVisit | null {
+  const value = JSON.parse(raw ?? 'null') as Partial<SessionFeedVisit> | null
+  if (
+    !value ||
+    typeof value.observedAt !== 'string' ||
+    (value.lastVisitedAt !== null && typeof value.lastVisitedAt !== 'string') ||
+    typeof value.startedAt !== 'number' ||
+    (value.recordedThrough !== null && typeof value.recordedThrough !== 'string')
+  )
+    return null
+  return {
+    lastVisitedAt: value.lastVisitedAt,
+    observedAt: value.observedAt,
+    startedAt: value.startedAt,
+    recordedThrough: value.recordedThrough,
   }
 }
 
 /**
  * The visit this tab already started for `userId`, so leaving the Feed for Activity and coming back
- * keeps the same period. A tab away for longer than FEED_VISIT_IDLE_MS starts a new visit.
+ * keeps the same period. A tab away for longer than FEED_VISIT_IDLE_MS, or a visit older than
+ * FEED_VISIT_MAX_MS, starts a new visit.
  */
 export function readSessionFeedVisit(userId: string, now = Date.now()): SessionFeedVisit | null {
   const store = sessionStore()
@@ -44,15 +82,12 @@ export function readSessionFeedVisit(userId: string, now = Date.now()): SessionF
       endSessionVisits(store)
       return null
     }
-    const value = JSON.parse(store.getItem(VISIT_KEY_PREFIX + userId) ?? 'null') as Partial<SessionFeedVisit> | null
-    if (
-      !value ||
-      typeof value.observedAt !== 'string' ||
-      (value.lastVisitedAt !== null && typeof value.lastVisitedAt !== 'string') ||
-      typeof value.recorded !== 'boolean'
-    )
+    const visit = parseSessionFeedVisit(store.getItem(VISIT_KEY_PREFIX + userId))
+    if (visit && visitTooOld(visit.startedAt, now)) {
+      store.removeItem(VISIT_KEY_PREFIX + userId)
       return null
-    return { lastVisitedAt: value.lastVisitedAt, observedAt: value.observedAt, recorded: value.recorded }
+    }
+    return visit
   } catch {
     return null
   }
@@ -63,6 +98,18 @@ function writeSessionFeedVisit(userId: string, visit: SessionFeedVisit) {
     sessionStore()?.setItem(VISIT_KEY_PREFIX + userId, JSON.stringify(visit))
   } catch {
     // Without session storage each Feed open is its own visit, as before.
+  }
+}
+
+/** Note a recorded end on the stored visit, unless that visit has since been replaced. */
+function markSessionVisitRecorded(userId: string, observedAt: string, through: string) {
+  try {
+    const visit = parseSessionFeedVisit(sessionStore()?.getItem(VISIT_KEY_PREFIX + userId) ?? null)
+    if (!visit || visit.observedAt !== observedAt) return
+    if (visit.recordedThrough && Date.parse(visit.recordedThrough) >= Date.parse(through)) return
+    writeSessionFeedVisit(userId, { ...visit, recordedThrough: through })
+  } catch {
+    // Unreadable storage: the next Feed mount records the same end again, which changes nothing.
   }
 }
 
@@ -84,17 +131,24 @@ function trackTimeAway(doc: Document) {
       store.removeItem(FEED_VISIT_HIDDEN_KEY)
       if (hiddenAt && Date.now() - hiddenAt > FEED_VISIT_IDLE_MS) endSessionVisits(store)
     } catch {
-      // Storage refused: the visit simply lasts until the tab closes.
+      // Storage refused: the visit simply lasts until the tab closes or reaches its maximum age.
     }
   })
 }
 
 /**
  * The account's last Feed visit and the work settled without a person since then. A visit lasts
- * for the tab session (until the tab closes or has been away for FEED_VISIT_IDLE_MS), so following
- * a count to Activity and coming back keeps every count. The account watermark is read once when a
- * visit begins and recorded (at the server time of that read) only after the counts loaded, so a
- * failed load keeps the older start for next time. No watermark yet means no line.
+ * for the tab session, until the tab closes, has been away for FEED_VISIT_IDLE_MS, or the visit is
+ * FEED_VISIT_MAX_MS old, so following a count to Activity and coming back keeps every count. A Feed
+ * that stays mounted starts the new visit when the person comes back (the tab is shown again or the
+ * window regains focus) or, on screen, when the visit reaches its maximum age.
+ *
+ * The account watermark is read once when a visit begins. Each time the counts load, the visit
+ * records their end (`through`, the server time they were counted up to) as the new watermark, so
+ * the next visit starts exactly where this one's line stopped: work settled during a visit is either
+ * in this visit's latest counts or in the next visit's, never both and never neither. A failed load
+ * records nothing and keeps the older start for next time. No watermark yet means no line, and the
+ * visit's start is recorded as the first watermark.
  */
 export function useSettledSinceLastVisit(
   userId: string,
@@ -102,30 +156,76 @@ export function useSettledSinceLastVisit(
   squadIds: readonly string[],
   acknowledgeVisit: typeof acknowledgeFeedVisit = acknowledgeFeedVisit
 ): ActivitySettledSummary | null {
-  const [stored] = useState(() => readSessionFeedVisit(userId))
+  // `stored` is the visit this tab already had when this mount (or this new visit) began.
+  const [visit, setVisit] = useState(() => ({ generation: 0, stored: readSessionFeedVisit(userId) }))
+  const read = useQuery({
+    ...feedQueries.visit(userId, `${visitId}:${visit.generation}`),
+    enabled: !visit.stored,
+  })
+  const snapshot: FeedVisit | undefined = visit.stored ?? (read.isSuccess ? read.data : undefined)
+  const observedAt = snapshot?.observedAt
+  const lastVisitedAt = snapshot?.lastVisitedAt ?? null
+  const storedStart = visit.stored?.startedAt
+  const storedThrough = visit.stored?.recordedThrough ?? null
+  // When the visit on screen began on this client.
+  const started = useRef<{ observedAt: string; at: number } | null>(null)
+  useEffect(() => {
+    if (!observedAt || started.current?.observedAt === observedAt) return
+    if (storedStart !== undefined) {
+      started.current = { observedAt, at: storedStart }
+      return
+    }
+    started.current = { observedAt, at: Date.now() }
+    writeSessionFeedVisit(userId, { lastVisitedAt, observedAt, startedAt: started.current.at, recordedThrough: null })
+  }, [observedAt, lastVisitedAt, storedStart, userId])
+
   useEffect(() => {
     if (typeof document !== 'undefined') trackTimeAway(document)
   }, [])
-  const visit = useQuery({ ...feedQueries.visit(userId, visitId), enabled: !stored })
-  const read = !stored && visit.isSuccess ? visit.data : undefined
+  // Coming back after the idle timeout, or to a visit past its maximum age, starts a new visit here.
   useEffect(() => {
-    if (read) writeSessionFeedVisit(userId, { ...read, recorded: false })
-  }, [read, userId])
-  const snapshot = stored ?? read
-  const since = snapshot?.lastVisitedAt ?? null
+    if (!observedAt || typeof document === 'undefined') return
+    let hiddenAt: number | null = document.visibilityState === 'hidden' ? Date.now() : null
+    const startedAt = () => (started.current?.observedAt === observedAt ? started.current.at : Date.now())
+    const check = () => {
+      const now = Date.now()
+      if (document.visibilityState === 'hidden') {
+        hiddenAt ??= now
+        return
+      }
+      const away = hiddenAt !== null && now - hiddenAt > FEED_VISIT_IDLE_MS
+      hiddenAt = null
+      if (!away && !visitTooOld(startedAt(), now)) return
+      endSessionVisits()
+      setVisit((current) => ({ generation: current.generation + 1, stored: null }))
+    }
+    const timer = window.setTimeout(check, Math.max(0, startedAt() + FEED_VISIT_MAX_MS - Date.now()) + 1_000)
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('focus', check)
+    }
+  }, [observedAt])
+
+  const since = lastVisitedAt
   const settled = useQuery({ ...feedQueries.settled(userId, since ?? '', squadIds), enabled: since !== null })
-  const loaded = !!snapshot && (since === null || settled.isSuccess)
-  const recorded = useRef(stored?.recorded ?? false)
+  const summary = since !== null && settled.isSuccess ? (settled.data as ActivitySettledSummary | undefined) : undefined
+  // How far this visit has shown: the end of its latest counts or, with no earlier visit (so no
+  // counts), its own start.
+  const through = !observedAt ? undefined : since === null ? observedAt : summary?.through
+  const recorded = useRef<{ observedAt: string; through: string } | null>(null)
   useEffect(() => {
-    if (recorded.current || !loaded || !snapshot) return
-    recorded.current = true
-    const { lastVisitedAt, observedAt } = snapshot
+    if (!observedAt || !through) return
+    const prior = recorded.current?.observedAt === observedAt ? recorded.current.through : storedThrough
+    if (prior !== null && Date.parse(through) <= Date.parse(prior)) return
+    recorded.current = { observedAt, through }
     // A lost write only keeps the older start for the next visit; nothing is shown or hidden by it.
-    void acknowledgeVisit(observedAt).then(
-      () => writeSessionFeedVisit(userId, { lastVisitedAt, observedAt, recorded: true }),
+    void acknowledgeVisit(through).then(
+      () => markSessionVisitRecorded(userId, observedAt, through),
       () => {}
     )
-  }, [loaded, snapshot, acknowledgeVisit, userId])
-  const summary = settled.data as ActivitySettledSummary | undefined
-  return since !== null && summary?.counts ? summary : null
+  }, [observedAt, through, storedThrough, acknowledgeVisit, userId])
+  return summary?.counts ? summary : null
 }

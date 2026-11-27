@@ -31,6 +31,7 @@ const data = {
   ],
 }
 const since = new Date(Date.now() - 26 * 3_600_000).toISOString()
+const countedThrough = new Date().toISOString()
 const hooks = {
   useInfiniteQuery: (() => ({ isSuccess: true, isFetchedAfterMount: true, data, hasNextPage: false })) as never,
   // The last-visit read and the settled counts; without `?settled` the account has no recorded visit.
@@ -42,7 +43,7 @@ const hooks = {
         }
       : {
           isSuccess: true,
-          data: { since, clamped: false, counts: { questions: 4, reviews: 2 } },
+          data: { since, clamped: false, through: countedThrough, counts: { questions: 4, reviews: 2 } },
         }) as never,
 }
 const useActivity = (() => ({ ownerId: 'example-user', activity: { conversations: [] } })) as never
