@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
+  mayRespondToWorkStreamWaits,
   activeWorkflowAttempts,
   describeWorkflowAttemptLimitPause,
   humanGateSubtitle,
@@ -549,7 +550,7 @@ function DeliveryApproval({
       await done()
     },
   })
-  const canDecide = identity?.type === 'user' && (can('workstreams:update') || can('workstreams:respond'))
+  const canDecide = identity?.type === 'user' && mayRespondToWorkStreamWaits(can)
   const pending = finish.isPending || sendBack.isPending
 
   return (

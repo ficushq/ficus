@@ -539,7 +539,7 @@ test('delivery approval sits in the review callout with the pull request, the de
 })
 
 test('delivery approval explains missing permission and is absent for other completion modes', async () => {
-  const f = await fixture(deliveryRun())
+  const f = await fixture(deliveryRun(), ['workstreams:review'])
   try {
     await f.render(<WorkflowReviewCallout stream={deliveredStream} />)
     expect(f.dom.window.document.body.textContent).toContain('You need permission to respond')
