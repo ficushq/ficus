@@ -13,8 +13,10 @@ import { resolveToolLabel, resolveToolSearchMode, type ToolSearchPolicy } from '
  * A `tool_search` load costs a round trip (one extra model call that re-reads the cached prompt)
  * and, on providers without cache-safe additions, a cache miss. Holding back fewer than about
  * 2,500 tokens saves less per request than one such round trip costs, so it is not worth it.
- * 2,500 sits in the middle of the 2,000 to 3,000 range agreed for this check; the browser tools
- * alone are above it, a session with only a few small deferrable tools is below it.
+ * 2,500 sits in the middle of the 2,000 to 3,000 range agreed for this check. Measured on the real
+ * tool factories (estimated tokens): browser 584, ast about 400, subagents 479, monitor 824,
+ * todo 641. No single group reaches it; an engineer or manager with every default deferrable
+ * group (2,930) does.
  */
 export const TOOL_SEARCH_MIN_DEFERRED_TOKENS = 2_500
 

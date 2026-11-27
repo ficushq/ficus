@@ -23,7 +23,7 @@ import {
 import { registerOpenAICompatibleAccounts } from '../services/agent/auth-backend'
 import { registerAnthropicWithClaudeCode } from '../services/agent/claude-code/anthropic'
 import { claudeCodeOffered, primeClaudeCodeStatus } from '../services/agent/claude-code/availability'
-import { CLAUDE_CODE_PROVIDER, claudeCodeAccount } from '../services/agent/claude-code/account'
+import { claudeCodeAccount } from '../services/agent/claude-code/account'
 import {
   activateToolSearch,
   buildHiddenToolsPromptSection,
@@ -261,8 +261,7 @@ export class AgentSession {
           policy: tools?.toolSearch,
           capability: resolveToolSearchCapability({
             model,
-            claudeCodeEnabledFor: (candidate) =>
-              candidate === CLAUDE_CODE_PROVIDER && claudeCodeOffered() && Boolean(claudeCodeAccount()?.enabled),
+            claudeCodeEnabled: claudeCodeOffered() && Boolean(claudeCodeAccount()?.enabled),
           }),
         }),
       registeredTools.map((tool) => tool.name)

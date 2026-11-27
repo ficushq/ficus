@@ -8,7 +8,7 @@ import { AgentType } from '../../entities/AgentType'
 import { ConfigSync, type SyncResult } from './ConfigSync'
 import { loadSharedPromptFiles } from './shared-prompt-sync'
 import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
-import { parseToolSearchPolicy, type ToolSearchPolicy } from '../agent/tool-search/labels'
+import { parseToolSearchPolicy, unknownToolSearchNames, type ToolSearchPolicy } from '../agent/tool-search/labels'
 
 /** The tool-search keys of a parsed `tools` object, or null when it sets none. */
 function toolSearchOf(tools: AgentTypeYaml['tools']): ToolSearchPolicy | null {
@@ -243,7 +243,15 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
       } catch (error) {
         throw new YamlValidationError(`AgentType: ${(error as Error).message}`)
       }
-      if (toolSearch) Object.assign(agentType.tools, toolSearch)
+      if (toolSearch) {
+        Object.assign(agentType.tools, toolSearch)
+        const unknown = unknownToolSearchNames(toolSearch)
+        if (unknown.length > 0) {
+          this.log.warn(
+            `agent type '${agentType.id}': tools.direct/tools.deferred name no known Ficus tool: ${unknown.join(', ')} (ignored unless an integration or extension provides it)`
+          )
+        }
+      }
     }
 
     if (parsed.earlyMarginTokens !== undefined && parsed.earlyMarginTokens !== null) {

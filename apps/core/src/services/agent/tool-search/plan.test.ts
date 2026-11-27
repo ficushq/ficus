@@ -120,10 +120,13 @@ describe('supportsMidConversationToolAdditions', () => {
     expect(supports('anthropic', 'claude-opus-4-5')).toBe(false)
   })
 
-  it('marks an Anthropic session with an enabled Claude Code account as Claude Code', () => {
-    const model = { api: 'anthropic-messages', provider: 'anthropic', compat: {} } as never
-    expect(resolveToolSearchCapability({ model, claudeCodeEnabledFor: (p) => p === 'anthropic' }).claudeCode).toBe(true)
-    expect(resolveToolSearchCapability({ model, claudeCodeEnabledFor: () => false }).claudeCode).toBe(false)
+  it('plans Claude Code for any model while a Claude Code account is enabled, since failover can reach it', () => {
+    const codex = { api: 'openai-codex-responses', compat: { supportsToolSearch: true } } as never
+    expect(resolveToolSearchCapability({ model: codex, claudeCodeEnabled: true })).toEqual({
+      supportsToolAdditions: true,
+      claudeCode: true,
+    })
+    expect(resolveToolSearchCapability({ model: codex, claudeCodeEnabled: false }).claudeCode).toBe(false)
   })
 })
 

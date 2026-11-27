@@ -18,7 +18,7 @@ The global defaults are the tool groups in `labels.ts`. Each group has a name an
 
 Every other tool is `direct`, including the tools the system prompt tells every agent to use by name: `bash`, `squad_bash`, `read`, `write`, `edit`, `ask_human`, `notify_contact`, the memory tools, the short-term memory tools, `sandbox_status`, `set_agent_purpose`, `websearch` and `webfetch`.
 
-An agent type overrides the defaults in its YAML, next to `allow` and `deny` (stored in `agent_types.tool_search`):
+An agent type overrides the defaults in its YAML, next to `allow` and `deny` (stored in `agent_types.tool_search`). Sync warns about names in `direct` or `deferred` that match no known Ficus tool:
 
 ```yaml
 tools:
@@ -36,10 +36,10 @@ tools:
 
 - `search: off`, no deferrable tools, or (with `auto`) deferrable schemas under `TOOL_SEARCH_MIN_DEFERRED_TOKENS` (2,500 estimated tokens, pi's characters-divided-by-four estimate): mode `direct`, every tool declared, no `tool_search`. A load costs a round trip and, without cache-safe additions, a cache miss, which a small saving does not pay for.
 - The session's model cannot add tools mid-conversation: mode `direct`. `supportsMidConversationToolAdditions` checks the same model compat flags pi's transports use: Anthropic inline tool changes, OpenAI Responses `additional_tools` or client tool search, Chat Completions tool additions. Every primary model of the shipped tiers supports it; `zai:glm-5.3` does not.
-- An Anthropic session whose Claude Code account is enabled: mode `claude-code` (below).
+- Any session while a Claude Code account is enabled: mode `claude-code` (below), whatever the session's first model, because per-account and model failover can move a turn onto the Claude Code bridge mid-run. The bridge starts a new Claude Code process only when everything new is a user message, so a tool `tool_search` loaded mid-run would not be callable there until the next user message. A Claude Code account enabled after a session started does not change that session's plan.
 - Otherwise mode `search`: the deferrable tools are hidden. `search: on` skips the size check, not the capability check.
 
-The plan is recorded as a `ficus.tool-search` custom entry in the session file and read back on every later turn, resume and compaction, so the starting tool set and the system prompt never change within a session. A session that already has a conversation but no recorded plan started before this feature and keeps every tool declared. A recorded hidden tool the session no longer has is dropped; a tool added since is declared directly.
+The plan is recorded as a `ficus.tool-search` custom entry in the session file and read back on every later turn, resume and compaction, so the starting tool set and the system prompt never change within a session. The same holds for configuration: a change to an agent type's `tools.search`, `tools.direct` or `tools.deferred` reaches only new sessions. Long-lived agents keep one session file, so they pick it up after a session reset. Flow participants built from snapshots taken before this feature carry no override and use the global defaults. A session that already has a conversation but no recorded plan started before this feature and keeps every tool declared. A recorded hidden tool the session no longer has is dropped; a tool added since is declared directly.
 
 Model failover is not part of the decision. On a failover model without cache-safe additions, pi sends the current tools in the top-level tool list, so `tool_search` keeps working and each load costs a cache miss there (a provider switch starts a new cache anyway).
 
@@ -48,7 +48,7 @@ Model failover is not part of the decision. On a failover model without cache-sa
 - Hidden tools get `exposure: 'deferred'` and their group as `namespace`. The labels are applied to the already wrapped definitions (custom tools and extension tools such as `ast_*`), so the firewall, recovery, output redaction and content-safety wrappers run for a tool whether it was declared up front or loaded later.
 - `tool_search` comes from pi's `createToolSearchExtension()`, bound lazily to the session. It ranks the hidden tools with BM25 and activates the matches, which pi records in the transcript as a `toolsAdded` system message; the Responses tool-name adapter (`responses-tool-names.ts`) already rewrites those messages.
 - Ficus passes `noTools: 'builtin'`, so pi does not restore a session's active tools from its transcript. `activateToolSearch` does it: `tool_search` plus every hidden tool the transcript declares. The result equals the transcript's tool set, so a resumed turn records no tool change.
-- The system prompt gets a "Tools loaded on demand" section (`buildHiddenToolsPromptSection`) that names every hidden tool by exact name, grouped, and says to load them with `tool_search` first, including when instructions or a skill name one of them. It depends only on the set of hidden names, so it is identical on every turn. Prompt sections and skills that name a deferrable tool (`subagents.md`, `frontend-visual-review`, `deploy-app`) say to load it first if it is listed there.
+- The system prompt gets a "Tools loaded on demand" section (`buildHiddenToolsPromptSection`) that names every hidden tool by exact name, grouped, and says to load them with `tool_search` first, including when instructions or a skill name one of them. It depends only on the set of hidden names, so it is identical on every turn. The section itself says to load a listed tool first when instructions or a skill name it, so the shared prompt includes are not changed (they count against the agent prompt size budgets); the `frontend-visual-review` and `deploy-app` skills repeat it where they name browser tools.
 
 ## Claude Code sessions
 

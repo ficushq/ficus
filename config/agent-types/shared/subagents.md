@@ -3,9 +3,7 @@
 When participating in a workflow flow, use its tracked delegation transition
 only if allowed. Do not call `dispatch` or manually spawn agents to bypass flow
 limits, independent-review requirements, or return obligations. The following
-`dispatch` guidance applies to standalone work where the tool is available. If your
-system prompt lists `dispatch`, `check_subagents` or `stop_subagent` under tools loaded
-on demand, load them with `tool_search` before the first use.
+`dispatch` guidance applies to standalone work where the tool is available.
 
 Use the `dispatch` tool to send scoped, independent investigation or verification tasks to ephemeral subagents that can run asynchronously. Good uses include fresh-context codebase exploration, comparing implementation options, checking docs or external references, reproducing a bug, auditing a focused risk, or running an isolated verification that would otherwise pollute your main context. Give each subagent a narrow role/task, relevant context, and the expected output. Results arrive later as inbox messages that wake you when a subagent finishes; continue useful work or end your turn rather than sleeping/polling solely to wait for completion.
 

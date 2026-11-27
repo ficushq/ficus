@@ -15,7 +15,7 @@
  * ```
  */
 import type { AgentTypeToolSearchPolicy } from '@ficus/shared'
-import { toolNameMatchesAny } from '../../../lib/tools'
+import { toolNameMatchesAny, toolNameMatchesPattern } from '../../../lib/tools'
 
 export type ToolLabel = 'direct' | 'deferrable'
 
@@ -89,6 +89,41 @@ export function resolveToolLabel(name: string, policy?: ToolSearchPolicy | null)
   if (policy?.direct && toolNameMatchesAny(policy.direct, name)) return 'direct'
   if (policy?.deferred && toolNameMatchesAny(policy.deferred, name)) return 'deferrable'
   return toolGroup(name)?.label ?? 'direct'
+}
+
+/**
+ * Built-in Ficus tool names outside the groups, so `tools.direct`/`tools.deferred` can be checked
+ * for typos. Integration and extension tools are not listed; a pattern that matches only those
+ * is reported too, which is why the check warns rather than fails.
+ */
+const KNOWN_DIRECT_TOOLS = [
+  'bash',
+  'squad_bash',
+  'read',
+  'write',
+  'edit',
+  'read_attachment',
+  'websearch',
+  'webfetch',
+  'ask_human',
+  'notify_contact',
+  'sandbox_status',
+  'set_agent_purpose',
+  'im_done',
+  'memory_*',
+  'short_term_memory_*',
+  'bigbrain_*',
+  'context_*',
+]
+
+/** Patterns in the override's `direct` and `deferred` lists that match no known Ficus tool. */
+export function unknownToolSearchNames(policy: ToolSearchPolicy): string[] {
+  const known = [...KNOWN_DIRECT_TOOLS, ...TOOL_GROUPS.flatMap((group) => group.tools)]
+  const matchesKnown = (pattern: string) =>
+    known.some(
+      (name) => toolNameMatchesPattern(pattern, name.replace(/\*$/, '')) || toolNameMatchesPattern(name, pattern)
+    )
+  return [...(policy.direct ?? []), ...(policy.deferred ?? [])].filter((pattern) => !matchesKnown(pattern))
 }
 
 /** The tool's search mode, `auto` when the agent type does not set one. */

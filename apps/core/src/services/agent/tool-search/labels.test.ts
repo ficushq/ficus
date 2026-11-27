@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test'
-import { isToolSearchPolicy, parseToolSearchPolicy, resolveToolLabel, resolveToolSearchMode, toolGroup } from './labels'
+import {
+  isToolSearchPolicy,
+  parseToolSearchPolicy,
+  resolveToolLabel,
+  resolveToolSearchMode,
+  toolGroup,
+  unknownToolSearchNames,
+} from './labels'
 
 describe('resolveToolLabel', () => {
   it('keeps core tools direct and rarely used heavy tools deferrable by default', () => {
@@ -87,5 +94,16 @@ describe('parseToolSearchPolicy', () => {
     expect(isToolSearchPolicy({ search: 'maybe' })).toBe(false)
     expect(isToolSearchPolicy(['off'])).toBe(false)
     expect(isToolSearchPolicy(null)).toBe(false)
+  })
+})
+
+describe('unknownToolSearchNames', () => {
+  it('reports typos and accepts known names and patterns', () => {
+    expect(
+      unknownToolSearchNames({
+        direct: ['browser_*', 'browser_open', 'bash', 'memory_search', 'brwoser_open'],
+        deferred: ['webfetch', 'todo_*', 'todo_add', 'dispach', '*'],
+      })
+    ).toEqual(['brwoser_open', 'dispach'])
   })
 })
