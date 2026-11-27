@@ -176,7 +176,7 @@ try {
           if (mode === 'return')
             await review
               .getByRole('button', { name: /^Approved/ })
-              .getByText('Continues to execute', { exact: true })
+              .getByText('Next: execute (General Purpose agent)', { exact: true })
               .waitFor()
           await review.evaluate((el) => {
             el.querySelector('[data-review-document]')?.scrollTo(0, 0)

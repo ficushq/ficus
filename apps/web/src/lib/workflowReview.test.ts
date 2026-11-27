@@ -10,7 +10,7 @@ import {
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
-  approvalEffectSummary,
+  approvalStatement,
   attemptAuthor,
   humanGateContext,
   openHumanGates,
@@ -96,50 +96,53 @@ test('human return review captions name the effective resume destination instead
     attempt,
     { can: () => true }
   )!
-  expect(outcomeEffect(state, gate.outcomes[0]![1], gate.attempt, 'yes')).toBe(
-    'Moves on to execute with the General agent'
-  )
+  expect(outcomeEffect(state, gate.outcomes[0]![1], gate.attempt, 'yes')).toBe('Next: execute (General Purpose agent)')
 })
 
 /** execute (an engineer) → review (another engineer) → gate → finish, with the gate open on attempt 3. */
-function gateRun(approvalEffect = 'Approval permits the release.', authored = true) {
+function gateRun({
+  approvalEffect = 'Approval permits the release.',
+  authored = true,
+  oneForward = false,
+}: { approvalEffect?: string; authored?: boolean; oneForward?: boolean } = {}) {
   const definition = createBlankWorkflow()
   definition.participants.builder = { agentTypeId: 'engineer', session: 'reuse-within-stream' }
   definition.participants.checker = { agentTypeId: 'reviewer', session: 'reuse-within-stream' }
   definition.steps[0]!.participant = 'builder'
   definition.steps[0]!.outcomes = { completed: { next: 'gate' } }
-  definition.steps.push(
-    {
-      id: 'gate',
-      kind: 'human-approval',
-      name: 'Release approval',
-      instructions: 'Review before release.',
-      output: 'Decision.',
-      approver: 'reviewers',
-      outcomes: {
-        approved: { next: 'finish' },
-        'needs-review': { parallel: ['check', 'sign-off'], join: 'finish' },
-        'changes-requested': { returnTo: 'execute' },
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    name: 'Release approval',
+    instructions: 'Review before release.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: {
+      approved: { next: 'finish' },
+      ...(oneForward ? {} : { 'needs-review': { parallel: ['check', 'sign-off'], join: 'finish' as const } }),
+      'changes-requested': { returnTo: 'execute' },
+    },
+  })
+  if (!oneForward)
+    definition.steps.push(
+      {
+        id: 'check',
+        participant: 'checker',
+        kind: 'agent',
+        instructions: 'Check it.',
+        output: 'Findings.',
+        outcomes: { done: { next: 'finish' } },
       },
-    },
-    {
-      id: 'check',
-      participant: 'checker',
-      kind: 'agent',
-      instructions: 'Check it.',
-      output: 'Findings.',
-      outcomes: { done: { next: 'finish' } },
-    },
-    {
-      id: 'sign-off',
-      name: 'Product sign-off',
-      kind: 'human-approval',
-      approver: 'reviewers',
-      instructions: 'Sign off.',
-      output: 'Decision.',
-      outcomes: { yes: { next: 'finish' } },
-    }
-  )
+      {
+        id: 'sign-off',
+        name: 'Product sign-off',
+        kind: 'human-approval',
+        approver: 'reviewers',
+        instructions: 'Sign off.',
+        output: 'Decision.',
+        outcomes: { yes: { next: 'finish' } },
+      }
+    )
   const state = advanceWorkflowRun(createWorkflowRun(workflowDefinitionSchema.parse(definition)), {
     action: 'complete',
     expectedVersion: 0,
@@ -158,7 +161,7 @@ function gateRun(approvalEffect = 'Approval permits the release.', authored = tr
 }
 
 test('outcome effects say who gets the work next, in words', () => {
-  const run = gateRun(undefined, false)
+  const run = gateRun({ authored: false })
   const gate = run.state.attempts.at(-1)!
   const outcomes = (gate.step as { outcomes: Record<string, Parameters<typeof outcomeEffect>[1]> }).outcomes
   const typeName = (id: string) => ({ engineer: 'Engineer', reviewer: 'Reviewer' })[id] ?? id
@@ -167,42 +170,42 @@ test('outcome effects say who gets the work next, in words', () => {
   )
   expect(outcomeEffect(run.state, outcomes.approved!, gate, 'approved', { typeName })).toBe('Completes the work stream')
   expect(outcomeEffect(run.state, outcomes['needs-review']!, gate, 'needs-review', { typeName })).toBe(
-    'Moves on to check with the Reviewer and Product sign-off for review'
+    'Next: check (Reviewer) and Product sign-off'
   )
-  // Said in place of where the work goes, when the brief states it; never for a send-back.
-  expect(outcomeEffect(run.state, outcomes.approved!, gate, 'approved', { approvalEffect: 'Lets it ship.' })).toBe(
-    'Lets it ship.'
-  )
-  expect(
-    outcomeEffect(run.state, outcomes['changes-requested']!, gate, 'changes-requested', {
-      approvalEffect: 'Lets it ship.',
-    })
-  ).toBe('Returns to the Engineer with your notes')
 })
 
-test('approval effects shorten to the first sentence, led by what approval does', () => {
-  const short = (text: string) => {
-    const { state } = gateRun(text)
-    return approvalEffectSummary(state, state.attempts.at(-1)!)
+test('what approval allows is the brief’s whole statement, never a part that reads as the whole', () => {
+  const statement = (approvalEffect: string) => {
+    const { state } = gateRun({ approvalEffect, oneForward: true })
+    return approvalStatement(state, state.attempts.at(-1)!)
   }
-  expect(
-    short(
-      'Approval lets the release reviewer merge the `payment-retries` change. Going beyond 10% needs a separate go-ahead.'
-    )
-  ).toEqual({
-    short: 'Lets the release reviewer merge the payment-retries change.',
-    full: 'Approval lets the release reviewer merge the payment-retries change. Going beyond 10% needs a separate go-ahead.',
-  })
-  expect(short('Approving this permits staging only.')?.short).toBe('Permits staging only.')
-  // A statement that does not open with approval's verb is kept as written.
-  expect(short('Approval of the design starts implementation.')?.short).toBe(
-    'Approval of the design starts implementation.'
-  )
-  expect(short('Merges the change. ' + 'And more words. '.repeat(3))?.short).toBe('Merges the change.')
-  expect(short(`Merges ${'word '.repeat(60)}`)?.short).toMatch(/^Merges (word ){20,}word…$/)
-  // No brief authored for this gate, no short form.
-  const none = gateRun(undefined, false).state
-  expect(approvalEffectSummary(none, none.attempts.at(-1)!)).toBeUndefined()
+  // Two sentences: the second is part of the promise, so it stays.
+  const twoSentences = 'Approval merges the pull request. It also deploys the change to production immediately.'
+  expect(statement(twoSentences)).toBe(twoSentences)
+  // A list keeps every step, as markdown.
+  const list = [
+    'Approval starts the rollout in three stages:',
+    '',
+    '1. Merge the change to main.',
+    '2. Turn the flag on for 10% of traffic.',
+    '3. Raise it to all traffic after a day without errors.',
+  ].join('\n')
+  expect(statement(list)).toBe(list)
+  // A leading code block is kept, so the sentence after it still has the command it refers to.
+  const code = [
+    '```sh',
+    'bun run migrate --target staging',
+    '```',
+    '',
+    'Approval runs the command above on staging only.',
+  ].join('\n')
+  expect(statement(code)).toBe(code)
+  // Two forward outcomes: which one the statement describes is unknown, so neither carries it.
+  const { state: twoForward } = gateRun({ approvalEffect: twoSentences })
+  expect(approvalStatement(twoForward, twoForward.attempts.at(-1)!)).toBeUndefined()
+  // No brief authored for this gate, no statement.
+  const { state: none } = gateRun({ authored: false, oneForward: true })
+  expect(approvalStatement(none, none.attempts.at(-1)!)).toBeUndefined()
 })
 
 test('an attempt is prepared by its agent type, with the agent’s purpose when it has one', () => {
@@ -215,6 +218,10 @@ test('an attempt is prepared by its agent type, with the agent’s purpose when 
   expect(attemptAuthor(run, execute, { agents: agent('  '), typeName })).toBe('Engineer')
   // The agent list may be unavailable: the participant the attempt ran as still names it.
   expect(attemptAuthor(run, execute)).toBe('Engineer')
+  // Without the squad's type names, the general type is not shortened to "General".
+  const general = { ...run, attemptAgents: { '1': 'general-agent' } }
+  const generalAgent = new Map([['general-agent', { agentTypeId: 'general', metadata: { purpose: 'Docs' } }]])
+  expect(attemptAuthor(general, execute, { agents: generalAgent })).toBe('General Purpose agent (Docs)')
   // No agent prepared a person's gate decision.
   expect(attemptAuthor(run, run.state.attempts.at(-1)!)).toBeUndefined()
 })

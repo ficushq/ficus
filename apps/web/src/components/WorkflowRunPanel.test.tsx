@@ -587,7 +587,7 @@ test('a human gate shows the handoff it reviews and labels each outcome with whe
     // The forward outcome is the primary action, listed first, even when a rework outcome is declared first.
     expect(buttons.map((button) => button.textContent)).toEqual([
       'ApproveCompletes the work stream',
-      'Request changesReturns to the General agent with your notes',
+      'Request changesReturns to the General Purpose agent with your notes',
     ])
     expect(buttons[0]!.className).toContain('ficus-button-primary')
     expect(buttons[1]!.className).not.toContain('ficus-button-primary')

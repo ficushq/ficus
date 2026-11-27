@@ -239,7 +239,11 @@ test('wide screens read the proposal beside the agent chat with the decision pin
     expect(decision!.hasAttribute('data-review-decision')).toBe(true)
     expect(decision!.className).toContain('shrink-0')
     expect(decision!.className).toContain('max-h-[50%]')
-    expect(decision!.className).toContain('overflow-y-auto')
+    // Within it, the outcomes stay at the bottom and what is above them scrolls.
+    const scroll = decision!.querySelector<HTMLElement>('[data-decision-scroll]')!
+    expect(scroll.className).toContain('overflow-y-auto')
+    expect(scroll.className).toContain('min-h-0')
+    expect(f.decisionButtons().every((button) => !scroll.contains(button))).toBe(true)
     expect(rail.lastElementChild).toBe(decision!)
     const notes = decision!.querySelector<HTMLTextAreaElement>('textarea[aria-label="Decision and evidence"]')!
     expect(notes.getAttribute('rows')).toBe('3')
@@ -267,8 +271,10 @@ test('approving needs no notes, sending back does, and each outcome sends the sa
     const [approve, sendBack] = f.decisionButtons()
     // Each outcome says what happens: without a brief, that the stream completes or who gets it back.
     expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
-    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General agent with your notes')
-    expect(sendBack!.title).toBe('Returns to the General agent with your notes')
+    expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
+    expect(sendBack!.title).toBe('Returns to the General Purpose agent with your notes')
+    // No brief for this gate, so the decision area makes no claim about what approval allows.
+    expect(f.doc.querySelector('[data-approval-statement]')).toBeNull()
     expect(approve!.className).toContain('ficus-button-primary')
     expect([approve!.disabled, sendBack!.disabled]).toEqual([false, true])
     await f.type('   ')
@@ -837,10 +843,13 @@ test('authored brief leads with repeat-round context and collapses independent e
     expect(article.textContent).toContain('What changed since your last review')
     // Who prepared the brief leads; the step it came from follows.
     expect(article.textContent).toContain('Prepared by Engineer (Gate feedback) · execute · Attempt 3')
-    // Approving says what the brief says approval allows, in short; sending back says who gets the notes.
+    // What approval allows shows whole beside the outcomes; the buttons keep plain captions.
+    const statement = f.doc.querySelector('[data-review-decision] [data-approval-statement]')!
+    expect(statement.textContent).toBe(
+      'What approval allowsApproval permits staging implementation only, not deployment.'
+    )
     const [approve, sendBack] = f.decisionButtons()
-    expect(approve!.textContent).toBe('ApprovedPermits staging implementation only, not deployment.')
-    expect(approve!.title).toBe('Approval permits staging implementation only, not deployment.')
+    expect(approve!.textContent).toBe('ApprovedCompletes the work stream')
     expect(sendBack!.textContent).toBe('Changes requestedReturns to the General Purpose agent with your notes')
     const disclosure = [...f.doc.querySelectorAll('details')].find(
       (d) => d.querySelector('summary')?.textContent === 'Internal handoff'
@@ -863,6 +872,101 @@ test('authored brief leads with repeat-round context and collapses independent e
     await f.cleanup()
   }
 })
+test('the decision shows what approval allows whole: every sentence, list step and code block, on every layout', async () => {
+  const approvalEffect = [
+    '```sh',
+    'bun run migrate --target staging',
+    '```',
+    '',
+    'Approval runs the command above on staging only. It also turns the flag on in three stages:',
+    '',
+    '1. Ten percent of traffic.',
+    '2. Half of traffic after a day without errors.',
+    '3. All traffic after a week.',
+  ].join('\n')
+  for (const { width, permissions } of [
+    { width: 1440, permissions: ['workstreams:review'] },
+    { width: 390, permissions: ['workstreams:review'] },
+    { width: 1440, permissions: [] },
+  ]) {
+    const f = await fixture({ width, height: 844, permissions })
+    try {
+      const run = gateRun()
+      run.state.attempts[2]!.decisionBrief = {
+        submittedVersion: 7,
+        contexts: [],
+        value: {
+          decision: 'Approve the staging migration.',
+          recommendation: 'Approve because the migration is tested.',
+          approvalEffect,
+          risks: 'The migration locks one table briefly.',
+        },
+      }
+      run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+      f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+      await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+      const area = f.doc.querySelector('[data-review-decision], [data-review-sheet]')!
+      const statement = area.querySelector<HTMLElement>('[data-approval-statement]')!
+      expect(statement.querySelector('code')!.textContent).toContain('bun run migrate --target staging')
+      expect(statement.textContent).toContain('It also turns the flag on in three stages')
+      expect([...statement.querySelectorAll('li')].map((item) => item.textContent)).toEqual([
+        'Ten percent of traffic.',
+        'Half of traffic after a day without errors.',
+        'All traffic after a week.',
+      ])
+      // Nothing clamps or hides it: no part of the promise is left to a hover.
+      for (const node of [statement, ...statement.querySelectorAll<HTMLElement>('*')])
+        expect(node.className.toString()).not.toMatch(/line-clamp|truncate|overflow-hidden|max-h-/)
+      // The outcomes' captions stay plain and never restate the brief.
+      expect(area.textContent).toContain('Completes the work stream')
+      expect(area.querySelectorAll('[data-approval-statement]').length).toBe(1)
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('a long approval statement starts as a marked preview that Show all opens, keeping the outcomes in reach', async () => {
+  const f = await fixture({ width: 390, height: 844 })
+  try {
+    const sentences = Array.from(
+      { length: 12 },
+      (_, index) => `Stage ${index + 1} raises the rollout a little further.`
+    )
+    const approvalEffect = `Approval starts a staged rollout. ${sentences.join(' ')} The last stage also deletes the old reader.`
+    const run = gateRun()
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staged rollout.',
+        recommendation: 'Approve because every stage is tested.',
+        approvalEffect,
+        risks: 'Each stage takes a day.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const statement = f.doc.querySelector<HTMLElement>('[data-review-sheet] [data-approval-statement]')!
+    // The whole statement is there, the preview is marked as cut, and a tap (no hover) opens it.
+    expect(statement.textContent).toContain('The last stage also deletes the old reader.')
+    expect(statement.querySelector('[data-collapsed]')).not.toBeNull()
+    const toggle = statement.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    expect(toggle.textContent).toBe('Show all')
+    expect(toggle.getAttribute('aria-label')).toBe('Show all of what approval allows')
+    await f.dom.act(async () => toggle.click())
+    expect(statement.querySelector('[data-collapsed]')).toBeNull()
+    expect(toggle.textContent).toBe('Show less')
+    expect(f.decisionButtons().map((button) => button.textContent)).toEqual([
+      'ApprovedCompletes the work stream',
+      'Changes requestedReturns to the General Purpose agent with your notes',
+    ])
+  } finally {
+    await f.cleanup()
+  }
+})
+
 test('non-agent no-brief notice and carried-forward label preserve the current gate message', async () => {
   for (const carry of [false, true]) {
     const f = await fixture()

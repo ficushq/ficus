@@ -11,7 +11,7 @@ export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
   terminated: 'Terminated',
 }
 
-export function getAgentPurpose(agent: Agent): string | undefined {
+export function getAgentPurpose(agent: Pick<Agent, 'metadata'>): string | undefined {
   const purpose = agent.metadata?.purpose
   return typeof purpose === 'string' && purpose.trim() ? purpose.trim() : undefined
 }

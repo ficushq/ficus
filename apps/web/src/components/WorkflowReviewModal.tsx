@@ -5,7 +5,6 @@ import { Link, Navigate, useParams, useSearchParams } from 'react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  activityAgentLabel,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   workflowDecisionRevisionNote,
   workflowGateRevisions,
@@ -20,7 +19,6 @@ import {
   workStreamRef,
   workStreamTitle,
   type WorkflowAttempt,
-  type WorkflowTransition,
   type WorkStream,
 } from '@ficus/shared'
 import { isHttpResponseError, type WorkflowRunDetail } from '@ficus/client-core'
@@ -35,6 +33,7 @@ import { reviewDocuments } from '../lib/workflowAttachments'
 import {
   attemptAuthor,
   attemptSummary,
+  defaultAgentTypeName,
   decisionNotesHint,
   focusedHumanGate,
   humanGateContext,
@@ -91,7 +90,7 @@ function useReviewPeople(stream: WorkStream, run: WorkflowRunDetail) {
   return useMemo(() => {
     const names = new Map((agentTypes ?? []).map((type) => [type.id, type.name]))
     const byId = new Map((agents ?? []).map((agent) => [agent.id, agent]))
-    const typeName: AgentTypeName = (id) => names.get(id) ?? activityAgentLabel(id)
+    const typeName: AgentTypeName = (id) => names.get(id) ?? defaultAgentTypeName(id)
     const authorOf: AttemptAuthorOf = (attempt) => attemptAuthor(run, attempt, { agents: byId, typeName })
     return { typeName, authorOf }
   }, [agents, agentTypes, run])
@@ -135,18 +134,33 @@ function WaitingTime({ openedAt }: { openedAt: string }) {
   )
 }
 
-/** An outcome's effect: the primary outcome says what the brief says approval allows, in short. */
-function gateOutcomeEffect(
-  gate: HumanGateContext,
-  run: WorkflowRunDetail,
-  outcome: string,
-  transition: WorkflowTransition,
-  typeName: AgentTypeName
-): { short: string; full: string } {
-  const approval = outcome === gate.primaryOutcome ? gate.approvalEffect : undefined
-  if (approval && !('returnTo' in transition)) return approval
-  const effect = outcomeEffect(run.state, transition, gate.attempt, outcome, { typeName })
-  return { short: effect, full: effect }
+/** A statement this long starts as a marked preview, so the outcomes below it stay in reach. */
+const APPROVAL_STATEMENT_LIMIT = { characters: 360, lines: 10 }
+
+/**
+ * What approval allows, word for word, right above the outcomes: a person decides by reading this, on
+ * touch screens too, so it is never shortened, line-clamped or left to a tooltip. A long one starts as a
+ * faded preview with a visible Show all control, so the cut is marked and the decision stays in reach.
+ */
+function ApprovalStatement({ gate }: { gate: HumanGateContext }) {
+  if (!gate.approvalStatement) return null
+  return (
+    <section
+      aria-label="What approval allows"
+      data-approval-statement
+      className="rounded-md border border-th-border px-3 py-2.5"
+    >
+      <h3 className="mb-1 text-xs font-medium text-muted">What approval allows</h3>
+      <ExpandableMarkdown
+        label="of what approval allows"
+        limit={APPROVAL_STATEMENT_LIMIT}
+        previewClassName="max-h-24"
+        markdownClassName="text-sm leading-relaxed text-primary"
+      >
+        {gate.approvalStatement}
+      </ExpandableMarkdown>
+    </section>
+  )
 }
 
 /**
@@ -496,9 +510,15 @@ function ReviewLayout({
           <section
             aria-label="Decision"
             data-review-decision
-            className="max-h-[50%] shrink-0 overflow-y-auto border-t border-panel-border p-4"
+            className="flex max-h-[50%] shrink-0 flex-col border-t border-panel-border p-4"
           >
-            {gate.canDecide ? <DecisionForm layout="pinned" {...decision} /> : <ReadOnlyDecision {...decision} />}
+            {gate.canDecide ? (
+              <DecisionForm layout="pinned" {...decision} />
+            ) : (
+              <div className="min-h-0 overflow-y-auto">
+                <ReadOnlyDecision {...decision} />
+              </div>
+            )}
           </section>
         </aside>
       </div>
@@ -832,24 +852,33 @@ function DecisionForm({
   typeName,
 }: DecisionState & { layout: 'rail' | 'pinned' }) {
   const id = useId()
+  const pinned = layout === 'pinned'
   return (
-    <div className="space-y-3" data-layout={layout}>
-      <label htmlFor={`${id}-notes`} className="block text-sm font-medium text-primary">
-        Decision notes
-      </label>
-      <NotesField
-        id={`${id}-notes`}
-        hintId={`${id}-hint`}
-        rows={layout === 'pinned' ? 3 : 8}
-        value={notes}
-        onChange={setNotes}
-      />
-      <p id={`${id}-hint`} className="text-xs text-muted">
-        {decisionNotesHint(gate.step, gate.outcomes)}
-      </p>
-      <ReviewBlockers gate={gate} />
-      <RevisionNotice revisions={revisions} />
-      <div className={clsx(layout === 'pinned' ? 'grid grid-cols-2 gap-2' : 'space-y-2 pt-2')}>
+    // Pinned under the chat, the outcomes stay at the bottom and what is above them scrolls, so a long
+    // statement or a revision notice never pushes them out of reach.
+    <div className={pinned ? 'flex min-h-0 flex-col gap-3' : 'space-y-3'} data-layout={layout}>
+      <div
+        className={clsx('space-y-3', pinned && 'min-h-0 overflow-y-auto')}
+        data-decision-scroll={pinned || undefined}
+      >
+        <ApprovalStatement gate={gate} />
+        <label htmlFor={`${id}-notes`} className="block text-sm font-medium text-primary">
+          Decision notes
+        </label>
+        <NotesField
+          id={`${id}-notes`}
+          hintId={`${id}-hint`}
+          rows={layout === 'pinned' ? 3 : 8}
+          value={notes}
+          onChange={setNotes}
+        />
+        <p id={`${id}-hint`} className="text-xs text-muted">
+          {decisionNotesHint(gate.step, gate.outcomes)}
+        </p>
+        <ReviewBlockers gate={gate} />
+        <RevisionNotice revisions={revisions} />
+      </div>
+      <div className={clsx(pinned ? 'grid shrink-0 grid-cols-2 gap-2' : 'space-y-2 pt-2')}>
         <DecisionButtons
           gate={gate}
           run={run}
@@ -923,6 +952,7 @@ function DecisionSheet(state: DecisionState) {
           </div>
           <ReviewBlockers gate={gate} />
           <RevisionNotice revisions={state.revisions} />
+          <ApprovalStatement gate={gate} />
           <div className="grid grid-cols-2 gap-2">
             <DecisionButtons {...state} />
           </div>
@@ -991,12 +1021,12 @@ function DecisionButtons({ gate, run, notes, advance, revisions, typeName }: Omi
       {gate.outcomes.map(([outcome, transition]) => {
         const primary = outcome === gate.primaryOutcome
         const sendsBack = 'returnTo' in transition
-        const effect = gateOutcomeEffect(gate, run, outcome, transition, typeName)
+        const effect = outcomeEffect(run.state, transition, gate.attempt, outcome, { typeName })
         return (
           <button
             key={outcome}
             type="button"
-            title={effect.full}
+            title={effect}
             className={clsx(
               'ficus-button block w-full px-4 py-2.5 text-sm disabled:opacity-50',
               primary ? 'ficus-button-primary' : sendsBack ? 'ficus-button-danger' : 'ficus-button-secondary'
@@ -1011,7 +1041,7 @@ function DecisionButtons({ gate, run, notes, advance, revisions, typeName }: Omi
             onClick={() => advance.mutate(outcome)}
           >
             {outcomeLabel(outcome)}
-            <span className="line-clamp-2 text-xs font-normal opacity-80">{effect.short}</span>
+            <span className="block text-xs font-normal opacity-80">{effect}</span>
           </button>
         )
       })}
@@ -1046,13 +1076,14 @@ function ReadOnlyDecision({
       <p className="text-xs text-muted">{gate.readOnlyReason}</p>
       <ReviewBlockers gate={gate} />
       <RevisionNotice revisions={revisions} />
+      <ApprovalStatement gate={gate} />
       <ul className="space-y-1 pt-1 text-xs text-secondary">
         {gate.outcomes.map(([outcome, transition]) => (
           <li key={outcome}>
             <span className="font-medium">{outcomeLabel(outcome)}</span>
-            <span className="text-muted" title={gateOutcomeEffect(gate, run, outcome, transition, typeName).full}>
+            <span className="text-muted">
               {' '}
-              · {gateOutcomeEffect(gate, run, outcome, transition, typeName).short}
+              · {outcomeEffect(run.state, transition, gate.attempt, outcome, { typeName })}
             </span>
           </li>
         ))}

@@ -28,6 +28,7 @@ import {
   type WorkStreamWait,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
+import { getAgentPurpose } from './agentDisplay'
 
 export type HumanApprovalStep = Extract<WorkflowStep, { kind: 'human-approval' }>
 /** A step a person decides: an approval, or a decision step that got no automatic decision. */
@@ -49,7 +50,14 @@ export function outcomeLabel(outcome: string): string {
 
 /** An agent type's display name: the squad's own name for it when known, else its ID in words ("Engineer"). */
 export type AgentTypeName = (agentTypeId: string) => string
-const defaultTypeName: AgentTypeName = (agentTypeId) => activityAgentLabel(agentTypeId)
+/** Without the squad's names, the built-in general-purpose type still reads as its own name, not "General". */
+export const defaultAgentTypeName: AgentTypeName = (agentTypeId) =>
+  agentTypeId === 'general' ? 'General Purpose' : activityAgentLabel(agentTypeId)
+
+/** "Engineer"; the general-purpose type is not a role, so it is "General Purpose agent". */
+function agentNoun(type: string, typeName: AgentTypeName): string {
+  return `${typeName(type)}${type === 'general' ? ' agent' : ''}`
+}
 
 /** The agent type a step's participant runs as, when the step is an agent step. */
 function stepAgentType(run: WorkflowRun, stepId: string): string | undefined {
@@ -57,40 +65,28 @@ function stepAgentType(run: WorkflowRun, stepId: string): string | undefined {
   return step?.kind === 'agent' ? run.definition.participants[step.participant]?.agentTypeId : undefined
 }
 
-/** "the Engineer"; the general-purpose type is not a role, so it is "the General Purpose agent". */
-function theAgent(type: string, typeName: AgentTypeName): string {
-  return `the ${typeName(type)}${type === 'general' ? ' agent' : ''}`
-}
-
 function joinWords(parts: string[]): string {
   return parts.length < 2 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
 }
 
-export interface OutcomeEffectOptions {
-  /** What approval allows, in short, from the brief under review: said instead of where the work goes. */
-  approvalEffect?: string
-  typeName?: AgentTypeName
-}
-
 /**
- * What an outcome does, in plain words, so a reviewer knows the effect before deciding: the brief's own
- * account of what approval allows when it gives one, else who gets the work next ("Returns to the Engineer
- * with your notes", "Moves on to Release with the Engineer"), else that the work stream completes.
+ * What an outcome does, in plain words, so a reviewer knows the effect before deciding: who gets the work
+ * next ("Returns to the Engineer with your notes", "Next: Release (Engineer)"), or that the work stream
+ * completes. It never restates the brief: what approval allows is shown whole beside the buttons.
  */
 export function outcomeEffect(
   run: WorkflowRun,
   transition: WorkflowTransition,
   attempt?: WorkflowAttempt,
   outcome?: string,
-  { approvalEffect, typeName = defaultTypeName }: OutcomeEffectOptions = {}
+  { typeName = defaultAgentTypeName }: { typeName?: AgentTypeName } = {}
 ): string {
   if ('returnTo' in transition) {
     const type = stepAgentType(run, transition.returnTo)
     return type
-      ? `Returns to ${theAgent(type, typeName)} with your notes`
+      ? `Returns to the ${agentNoun(type, typeName)} with your notes`
       : `Returns to ${stepName(run, transition.returnTo)} with your notes`
   }
-  if (approvalEffect) return approvalEffect
   const targets =
     attempt && outcome
       ? workflowCompletionTargets(run, attempt, outcome)
@@ -100,40 +96,29 @@ export function outcomeEffect(
   if (targets.every((target) => target === 'finish')) return 'Completes the work stream'
   const described = targets.map((target) => {
     if (target === 'finish') return 'completion'
-    const step = run.definition.steps.find((entry) => entry.id === target)
-    const name = stepName(run, target)
     const type = stepAgentType(run, target)
-    if (type) return `${name} with ${theAgent(type, typeName)}`
-    return step?.kind === 'human-approval' ? `${name} for review` : name
+    return type ? `${stepName(run, target)} (${agentNoun(type, typeName)})` : stepName(run, target)
   })
-  return `Moves on to ${joinWords(described)}`
+  return `Next: ${joinWords(described)}`
 }
 
 /**
- * A short form of what approval allows, from a brief authored for this gate: its first sentence, as plain
- * text, with a leading "Approval lets" or "Approving this permits" reduced to its verb ("Lets the release
- * reviewer merge…"). A carried-forward brief is not fresh authorization for this gate, and briefs that
- * disagree (a join) are not summed up in one line, so neither gives one. `full` is the whole statement.
+ * What approval allows, word for word, from a brief authored for this gate, when the gate has exactly one
+ * forward outcome for it to describe. It is never shortened: a first sentence, a list's first step or a
+ * statement without its code block can read as the whole promise. A carried-forward brief is not fresh
+ * authorization for this gate, and join briefs that disagree are not merged, so neither gives one.
  */
-export function approvalEffectSummary(
-  run: WorkflowRun,
-  gateAttempt: WorkflowAttempt
-): { short: string; full: string } | undefined {
+export function approvalStatement(run: WorkflowRun, gateAttempt: WorkflowAttempt): string | undefined {
+  const step = effectiveWorkflowStep(run, gateAttempt)
+  if (!step || step.kind === 'agent') return undefined
+  const forward = Object.values(step.outcomes).filter((transition) => !('returnTo' in transition))
+  if (forward.length !== 1) return undefined
   const brief = workflowReviewBriefForAttempt(run, gateAttempt)
   if (brief.kind !== 'authored') return undefined
-  const effects = [
-    ...new Set(
-      brief.sources.map((source) => plainText(source.decisionBrief?.value.approvalEffect ?? '')).filter(Boolean)
-    ),
+  const statements = [
+    ...new Set(brief.sources.map((source) => source.decisionBrief?.value.approvalEffect?.trim() ?? '').filter(Boolean)),
   ]
-  if (effects.length !== 1) return undefined
-  const full = effects[0]!
-  const sentence = [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(full)][0]?.segment.trim() || full
-  const verb = sentence.match(
-    /^(?:approval|approving(?: this| it)?)\s+(lets|allows|permits|authori[sz]es|enables|means|starts|ships|merges|deploys|sends|unblocks|releases)\b(.*)$/is
-  )
-  const short = verb ? `${verb[1]!.charAt(0).toUpperCase()}${verb[1]!.slice(1).toLowerCase()}${verb[2]}` : sentence
-  return { short: short.length <= 160 ? short : `${short.slice(0, 160).replace(/\s+\S*$/, '')}…`, full }
+  return statements.length === 1 ? statements[0] : undefined
 }
 
 /**
@@ -146,7 +131,7 @@ export function attemptAuthor(
   attempt: WorkflowAttempt,
   {
     agents,
-    typeName = defaultTypeName,
+    typeName = defaultAgentTypeName,
   }: {
     agents?: ReadonlyMap<string, Pick<Agent, 'agentTypeId' | 'metadata'>>
     typeName?: AgentTypeName
@@ -160,8 +145,8 @@ export function attemptAuthor(
     (step?.kind === 'agent' ? run.state.definition.participants[step.participant]?.agentTypeId : undefined)
   const type = agent?.agentTypeId ?? participantType
   if (!type) return undefined
-  const purpose = typeof agent?.metadata?.purpose === 'string' ? agent.metadata.purpose.trim() : ''
-  return purpose ? `${typeName(type)} (${purpose})` : typeName(type)
+  const purpose = agent ? getAgentPurpose(agent) : undefined
+  return purpose ? `${agentNoun(type, typeName)} (${purpose})` : agentNoun(type, typeName)
 }
 
 /** "Waiting 7 days": how long a review has waited, in the largest whole unit. */
@@ -249,8 +234,8 @@ export interface HumanGateContext {
   primaryOutcome?: string
   /** Outcomes in display order: the primary action first, then the rest as declared. */
   outcomes: Array<[string, WorkflowTransition]>
-  /** What the brief under review says approval allows; the primary outcome says it in short. */
-  approvalEffect?: { short: string; full: string }
+  /** What the brief under review says approval allows, whole, when one forward outcome can carry it. */
+  approvalStatement?: string
   /** Earlier decisions on this gate, newest first. */
   history: WorkflowAttempt[]
 }
@@ -302,7 +287,7 @@ export function humanGateContext(
     sources,
     primaryOutcome,
     outcomes,
-    approvalEffect: approvalEffectSummary(run.state, attempt),
+    approvalStatement: approvalStatement(run.state, attempt),
     history,
   }
 }
