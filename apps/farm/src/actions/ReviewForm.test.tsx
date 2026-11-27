@@ -130,6 +130,20 @@ describe('ReviewForm', () => {
     expect(container.textContent).toContain("don't have permission")
   })
 
+  for (const permission of ['workstreams:respond', 'workstreams:update']) {
+    it(`lets ${permission} harvest when no action capability is given`, async () => {
+      const api = fakeApi({
+        getMyPermissions: () => Promise.resolve({ permissions: [permission], identity: { type: 'user', userId: 'u' } }),
+      })
+      const { container } = await render(
+        <ReviewForm workStreamId="ws-1" squadId="squad-1" wait={wait()} completionMode="pr-merge" />,
+        api
+      )
+      expect(hasButton(container, 'Harvest')).toBe(true)
+      expect(container.textContent).not.toContain("don't have permission")
+    })
+  }
+
   it('hands a workflow-owned wait to the workflow instead of resolving it', async () => {
     const api = fakeApi({
       workflowRun: () => Promise.resolve(workflowRun('delivery')),
@@ -598,6 +612,22 @@ describe('UnblockForm', () => {
       note: 'Use compost',
     })
     for (const key of streamKeys) expect(hasKey(invalidated(), key)).toBe(true)
+  })
+
+  it('checks squad permissions when no action capability is given', async () => {
+    for (const [permissions, allowed] of [
+      [['squads:read'], false],
+      [['workstreams:respond'], true],
+      [['workstreams:update'], true],
+    ] as const) {
+      const api = fakeApi({
+        getMyPermissions: () =>
+          Promise.resolve({ permissions: [...permissions], identity: { type: 'user', userId: 'u' } }),
+      })
+      const { container } = await render(<UnblockForm workStreamId="ws-1" squadId="squad-1" wait={manual} />, api)
+      expect(hasButton(container, 'Clear the weeds')).toBe(allowed)
+      cleanup()
+    }
   })
 
   it('offers select prompt options as one-tap answers', async () => {

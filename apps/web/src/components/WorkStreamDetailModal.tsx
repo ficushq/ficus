@@ -32,6 +32,7 @@ import {
   computeWorkStreamElapsedMs,
   formatWaitedDuration,
   formatWorkStreamDuration,
+  mayRespondToWorkStreamWaits,
   workStreamPersonWait,
   workStreamTimeTickMs,
   type WorkStream,
@@ -171,7 +172,7 @@ export function WorkStreamDetailModal({
   const squad = squadMap.get(workStream.squadId)
   const metadata = workStream.metadata ?? {}
   const { can, identity: permissionIdentity, isLoading: permissionsLoading } = usePermissions(workStream.squadId)
-  const permissionCanRespond = !permissionsLoading && (can('workstreams:respond') || can('workstreams:update'))
+  const permissionCanRespond = !permissionsLoading && mayRespondToWorkStreamWaits(can)
   const canRespondToWait = actionCanRespond ?? permissionCanRespond
 
   // Fetch metrics separately (lazy load when modal opens)
