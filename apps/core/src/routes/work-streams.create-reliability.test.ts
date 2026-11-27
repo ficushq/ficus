@@ -4,7 +4,8 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { createBlankWorkflow } from '@ficus/shared'
-import { eq, like } from 'drizzle-orm'
+import { readFileSync } from 'node:fs'
+import { eq, like, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db } from '../db'
 import { squads, workStreamCreateRequests, workStreams } from '../db/schema'
@@ -25,6 +26,18 @@ let admin: TestUser
 
 beforeAll(async () => {
   admin = await createTestAdmin({ prefix: rbacPrefix })
+  // The test database is push-built and push can omit indexes (docs/wiki/database.md);
+  // establish the migration's uniqueness fence exactly, as production has it.
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_work_stream_create_requests_key" ON "work_stream_create_requests" USING btree ("squad_id","requester_key","idempotency_key")`
+  )
+})
+
+it('ships the uniqueness fence the claims rely on in its migration', () => {
+  const migration = readFileSync(new URL('../../drizzle/0275_work_stream_create_requests.sql', import.meta.url), 'utf8')
+  expect(migration).toContain(
+    'CREATE UNIQUE INDEX "uq_work_stream_create_requests_key" ON "work_stream_create_requests" USING btree ("squad_id","requester_key","idempotency_key")'
+  )
 })
 afterAll(async () => {
   await cleanupTestRbac(rbacPrefix)
@@ -141,7 +154,7 @@ describe('work stream create reliability', () => {
   })
 
   it('logs one timing line per create, naming the slow phase', async () => {
-    setupDelayMs = 200
+    setupDelayMs = 1_500
     const logged = spyOn(createTiming, 'logWorkStreamCreateTiming')
     try {
       const response = await post({ squadId, title: `${prefix} timed`, repository: 'repo' })
@@ -152,7 +165,7 @@ describe('work stream create reliability', () => {
       expect(context).toEqual({ outcome: 'created', squadId, workStreamId: id })
       const line = createTiming.formatWorkStreamCreateTiming(timer, context)
       expect(line).toContain('slowest=repository-worktree-add')
-      expect(timer.phases['repository-worktree-add'].ms).toBeGreaterThanOrEqual(150)
+      expect(timer.phases['repository-worktree-add'].ms).toBeGreaterThanOrEqual(1_400)
       expect(timer.phases['squad-lock-wait'].count).toBe(1)
       expect(timer.phases.transaction.count).toBe(1)
       expect(timer.phases.dispatch.count).toBe(1)

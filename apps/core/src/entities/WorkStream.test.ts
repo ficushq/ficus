@@ -308,7 +308,8 @@ describe('WorkStream entity', () => {
           expect.objectContaining({ repository: 'repo' }),
           stream.id,
           {},
-          expect.any(Function)
+          expect.any(Function),
+          { timing: expect.objectContaining({ time: expect.any(Function) }) }
         )
         expect(stream.metadata).toMatchObject(metadata)
         const stored = await WorkStream.mustFind(stream.id)
