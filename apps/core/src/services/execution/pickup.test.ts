@@ -1187,7 +1187,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       return { agent, execution, session }
     }
 
-    async function resumedResults(session: InstanceType<typeof SessionManager>) {
+    async function resumedResults(session: ReturnType<typeof SessionManager.inMemory>) {
       // The resumed prompt, then the context the next model request is built from.
       session.appendMessage({ role: 'user', content: 'Continue.', timestamp: Date.now() })
       const [handler] = createInterruptedToolCallsExtension().handlers.get('context')!
