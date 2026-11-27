@@ -227,6 +227,45 @@ describe('WorkStreamList', () => {
     expect(html).not.toContain('1h')
   })
 
+  test('a stream waiting on a person shows how long it has waited instead of time worked', () => {
+    const opened = new Date(Date.now() - (7 * 24 + 2) * 60 * 60 * 1000)
+    const ws = workStream({
+      id: 'rt-waiting',
+      status: 'active',
+      derivedState: 'in_review',
+      openWaits: [workStreamWait({ workStreamId: 'rt-waiting', openedAt: opened.toISOString() })],
+      runtime: { totalMs: 12_000, activeCount: 0, workingCount: 0, computedAt: now.toISOString() },
+    })
+    for (const html of [renderWorkStreamList([ws]), renderWorkStreamList([ws], { feedLayout: true })]) {
+      const times = html.match(/data-testid="work-stream-time">[^<]*</g) ?? []
+      expect(times.length).toBeGreaterThan(0)
+      for (const time of times) expect(time).toBe('data-testid="work-stream-time">Waiting on you 7d<')
+      // Time worked moves to the tooltip rather than disappearing.
+      expect(html).toContain('Time worked: 12s')
+      expect(html).not.toContain('Time worked </span>')
+    }
+  })
+
+  test('a stream waiting only on an agent keeps showing time worked', () => {
+    const ws = workStream({
+      id: 'rt-dependency',
+      status: 'active',
+      derivedState: 'waiting_on_dependency',
+      openWaits: [
+        workStreamWait({
+          workStreamId: 'rt-dependency',
+          type: 'dependency',
+          referenceId: 'other-stream',
+          openedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ],
+      runtime: { totalMs: 12_000, activeCount: 0, workingCount: 0, computedAt: now.toISOString() },
+    })
+    const html = renderWorkStreamList([ws])
+    expect(html).toContain('Time worked </span>12s</span>')
+    expect(html).not.toContain('Waiting on you')
+  })
+
   test('renders active work streams in the server canonical order without re-sorting', () => {
     // The fixture is pre-sorted to mirror the server contract (GET /workstreams);
     // the component must render that order as-is.
@@ -1028,7 +1067,7 @@ describe('WorkStreamList feed section headers', () => {
     const separators = feed.match(/<span aria-hidden="true">·<\/span>/g) ?? []
     // One before the active row's runtime and one before the completed row's date.
     expect(separators).toHaveLength(2)
-    expect(feed).toContain('<span>12s</span>')
+    expect(feed).toContain('<span class="sr-only">Time worked </span>12s</span>')
     expect(feed).not.toMatch(/>· /)
   })
 })
@@ -1564,18 +1603,35 @@ describe('WorkStreamDetailModal', async () => {
       runtime: { totalMs: 45_000, activeCount: 0, computedAt: oldCreated.toISOString() },
     })
     const html = await renderWorkStreamDetailModal(ws)
-    expect(html).toContain('>Runtime</label>')
+    expect(html).toContain('>Time worked</label>')
     expect(html).toContain('>45s</p>')
     expect(html).not.toContain('>1h<')
+    expect(html).not.toContain('>Waiting on you</label>')
   })
 
-  test('headline elapsed reads "Runtime" even for done work streams', async () => {
+  test('shows time worked and how long a person has been waited on', async () => {
+    const opened = new Date(Date.now() - (7 * 24 + 2) * 60 * 60 * 1000)
+    const ws = workStream({
+      status: 'active',
+      derivedState: 'in_review',
+      openWaits: [workStreamWait({ openedAt: opened.toISOString() })],
+      runtime: { totalMs: 45_000, activeCount: 0, workingCount: 0, computedAt: now.toISOString() },
+    })
+    const html = await renderWorkStreamDetailModal(ws)
+    expect(html).toContain('>Time worked</label>')
+    expect(html).toContain('>45s</p>')
+    expect(html).toContain('>Waiting on you</label>')
+    expect(html).toContain(`datetime="${opened.toISOString()}"`)
+    expect(html).toMatch(/>7d<\/time>/)
+  })
+
+  test('headline elapsed reads "Time worked" even for done work streams', async () => {
     const ws = workStream({
       status: 'done',
       runtime: { totalMs: 3_000, activeCount: 0, computedAt: now.toISOString() },
     })
     const html = await renderWorkStreamDetailModal(ws)
-    expect(html).toContain('>Runtime</label>')
+    expect(html).toContain('>Time worked</label>')
     expect(html).toContain('>3s</p>')
   })
 

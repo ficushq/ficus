@@ -249,7 +249,8 @@ export function AttentionMenu({
         {...(inline ? {} : hover.triggerProps)}
       >
         {inline ? <span>Notifications…</span> : <SummaryIcon summary={summary} />}
-        {!inline && <span>{SUMMARY_LABEL[summary]}</span>}
+        {/* The level alone ("Show") reads as a button, not a setting: name what it sets. */}
+        {!inline && <span>{`Notifications: ${SUMMARY_LABEL[summary]}`}</span>}
       </summary>
       {inline ? (
         <div className="p-3">{panel}</div>

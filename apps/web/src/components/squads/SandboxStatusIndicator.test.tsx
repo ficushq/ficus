@@ -30,9 +30,32 @@ describe('SandboxStatusIndicator (VM runtime)', () => {
       runtime: 'vm',
       chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'up' },
     })
-    expect(html).toContain('Running')
+    expect(html).toContain('Workspace running')
     expect(html).not.toContain('>Stop<')
     expect(html).not.toContain('>Start<')
+  })
+
+  test('a never-provisioned box names its subject and reads as neutral, not a warning', () => {
+    // Boxes are provisioned on first use, so a squad that has not run anything has none.
+    const html = render('squad-vm-not-started', {
+      status: 'not_found',
+      runtime: 'vm',
+      chain: { boxProvisioned: false, machine: 'unknown', boxServer: 'unknown' },
+    })
+    expect(html).toContain('>Workspace not started<')
+    expect(html).toContain('bg-status-neutral-solid')
+    expect(html).not.toContain('status-attention')
+  })
+
+  test('a fault keeps the attention treatment', () => {
+    const html = render('squad-vm-fault', {
+      status: 'failed',
+      reason: 'box machine is gone or no longer ready',
+      runtime: 'vm',
+      chain: { boxProvisioned: true, machine: 'unreachable', boxServer: 'unknown' },
+    })
+    expect(html).toContain('Workspace machine unreachable')
+    expect(html).toContain('bg-status-attention-solid')
   })
 
   test('an unreachable machine surfaces "Machine unreachable"', () => {
@@ -42,7 +65,7 @@ describe('SandboxStatusIndicator (VM runtime)', () => {
       runtime: 'vm',
       chain: { boxProvisioned: true, machine: 'unreachable', boxServer: 'unknown' },
     })
-    expect(html).toContain('Machine unreachable')
+    expect(html).toContain('Workspace machine unreachable')
     expect(html).not.toContain('>Stop<')
   })
 
@@ -52,15 +75,15 @@ describe('SandboxStatusIndicator (VM runtime)', () => {
       runtime: 'vm',
       chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'down' },
     })
-    expect(html).toContain('Box server down')
+    expect(html).toContain('Workspace box server down')
     expect(html).toContain('starts on next use')
   })
 
   test.each([
-    ['failed', 'pending', 'Machine unreachable'],
-    ['failed', 'installing', 'Machine unreachable'],
-    ['failed', 'failed', 'Machine unreachable'],
-    ['not_found', 'pending', 'Box server down'],
+    ['failed', 'pending', 'Workspace machine unreachable'],
+    ['failed', 'installing', 'Workspace machine unreachable'],
+    ['failed', 'failed', 'Workspace machine unreachable'],
+    ['not_found', 'pending', 'Workspace box server down'],
   ] as const)('keeps %s physical state primary over %s toolchain state', (physical, toolchain, primary) => {
     const html = render(`squad-vm-${physical}-${toolchain}`, {
       status: physical,
@@ -84,8 +107,8 @@ describe('SandboxStatusIndicator (VM runtime)', () => {
       chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'up' },
       toolchain: { status: 'installing' },
     })
-    expect(html).toContain('Installing packages')
-    expect(html).not.toContain('Running —')
+    expect(html).toContain('Workspace installing packages')
+    expect(html).not.toContain('running —')
   })
 
   test('VM health stays visible without a Restart action', () => {
@@ -94,7 +117,7 @@ describe('SandboxStatusIndicator (VM runtime)', () => {
       runtime: 'vm',
       chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'up' },
     })
-    expect(html).toContain('Running')
+    expect(html).toContain('Workspace running')
     expect(html).not.toContain('>Restart<')
   })
 })
@@ -153,7 +176,7 @@ describe('deferred assets header', () => {
       assetsRefreshPending: true,
       chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
     })
-    expect(html).toContain('Idle')
+    expect(html).toContain('Workspace idle')
     expect(html).toContain('bg-status-neutral-solid')
     expect(html).toContain('assets refresh on next start')
     expect(html).not.toContain('Starting')

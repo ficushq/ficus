@@ -132,14 +132,14 @@ test('hover warning preserves runtime and legacy reasons alongside pressure even
 })
 
 test.each([
-  ['healthy legacy', healthy, 'Running'],
+  ['healthy legacy', healthy, 'Workspace running'],
   [
     'healthy current',
     { ...healthy, pressure: { ...pressure, load: [2, 2, 2] }, runtimeHealth: { status: 'ready' } },
-    'Running',
+    'Workspace running',
   ],
-  ['normal starting', { status: 'starting', runtime: 'vm', reason: 'ContainerCreating' }, 'Starting'],
-  ['normal running reason', { ...healthy, reason: 'Running' }, 'Running'],
+  ['normal starting', { status: 'starting', runtime: 'vm', reason: 'ContainerCreating' }, 'Workspace starting'],
+  ['normal running reason', { ...healthy, reason: 'Running' }, 'Workspace running'],
   ['legacy non-VM', { status: 'starting', runtime: 'docker', reason: 'Scheduling' }, 'Sandbox starting'],
 ] satisfies Array<[string, SandboxStatus, string]>)('%s does not acquire a false warning', async (_, status, label) => {
   await withIndicator(status, async ({ doc, warning }) => {
@@ -158,7 +158,7 @@ const vmStartupReasons = [
 test.each(vmStartupReasons)('normal VM startup does not warn for "%s"', async (reason) => {
   await withIndicator({ ...healthy, status: 'starting', reason }, async ({ doc, warning }) => {
     expect(Boolean(warning())).toBe(false)
-    expect(doc.body.textContent).toContain('Starting')
+    expect(doc.body.textContent).toContain('Workspace starting')
   })
 })
 
@@ -175,9 +175,9 @@ test('idle setup-pending VM shows deferred assets without a health warning', asy
     },
     async ({ doc, warning }) => {
       expect(Boolean(warning())).toBe(false)
-      expect(doc.body.textContent).toContain('Idle')
+      expect(doc.body.textContent).toContain('Workspace idle')
       expect(doc.body.textContent).toContain('assets refresh on next start')
-      expect(doc.body.textContent).not.toContain('Starting')
+      expect(doc.body.textContent).not.toContain('starting')
     }
   )
 })
@@ -249,7 +249,7 @@ test.each([
         ...diagnostics,
       },
       async ({ dom, doc, warning, card }) => {
-        expect(doc.body.textContent).toContain('Idle')
+        expect(doc.body.textContent).toContain('Workspace idle')
         expect(doc.body.textContent).toContain('assets refresh on next start')
         expect(warning()).not.toBeNull()
         await dom.act(async () => warning()!.focus())

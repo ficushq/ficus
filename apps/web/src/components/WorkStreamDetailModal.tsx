@@ -29,7 +29,14 @@ import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
 import type { WorkStream, WorkStreamPriority, WorkStreamWait, Squad, Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel, typeFirstAgentLabels } from '../lib/agentDisplay'
 import { workflowStepDisplayName } from '../lib/workflowProgress'
-import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
+import {
+  TIME_WORKED_DEFINITION,
+  computeWorkStreamElapsedMs,
+  formatWaitedDuration,
+  formatWorkStreamDuration,
+  workStreamTimeTickMs,
+  workStreamWaitingOnPersonSince,
+} from '../lib/workStreamRuntime'
 import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
@@ -63,19 +70,6 @@ export function formatTokenBreakdown(tokens: {
   if (tokens.cacheRead > 0) parts.push(`cache read: ${formatTokens(tokens.cacheRead)}`)
   if (tokens.cacheWrite > 0) parts.push(`cache write: ${formatTokens(tokens.cacheWrite)}`)
   return `(${parts.join(', ')})`
-}
-
-export function formatElapsed(ms: number): string {
-  const seconds = Math.floor(ms / 1000)
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
-  if (hours < 24) return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`
-  const days = Math.floor(hours / 24)
-  const remainingHours = hours % 24
-  return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`
 }
 
 export function formatRelativeTime(date: Date | string): string {
@@ -316,9 +310,10 @@ export function WorkStreamDetailModal({
 
   const headerExtra = <WorkStreamStatusBadges workStream={workStream} showQueuePosition />
 
-  const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
-  const now = useTick(1000, hasActiveRuntime)
+  const timeTickMs = workStreamTimeTickMs(workStream)
+  const now = useTick(timeTickMs ?? 60_000, timeTickMs !== null)
   const elapsed = computeWorkStreamElapsedMs(workStream, now)
+  const waitingOnPersonSince = workStreamWaitingOnPersonSince(workStream)
   const githubRepository = workStreamGithubRepository(metadata)
   const pullRequests = workStreamPullRequests(metadata)
   const nextSteps = getWorkStreamNextSteps(metadata)
@@ -633,11 +628,24 @@ export function WorkStreamDetailModal({
             </div>
           )}
           <div>
-            <label className="text-xs font-medium text-secondary">Runtime</label>
-            <p className="text-primary mt-0.5" title="Total agent execution runtime">
-              {formatElapsed(elapsed)}
+            <label className="text-xs font-medium text-secondary">Time worked</label>
+            <p className="text-primary mt-0.5 tabular-nums" title={TIME_WORKED_DEFINITION}>
+              {formatWorkStreamDuration(elapsed)}
             </p>
           </div>
+          {waitingOnPersonSince && (
+            <div>
+              <label className="text-xs font-medium text-secondary">Waiting on you</label>
+              <p className="text-primary mt-0.5 tabular-nums">
+                <time
+                  dateTime={waitingOnPersonSince.toISOString()}
+                  title={`Since ${waitingOnPersonSince.toLocaleString()}`}
+                >
+                  {formatWaitedDuration(now - waitingOnPersonSince.getTime())}
+                </time>
+              </p>
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-secondary">Priority</label>
             <p className="text-primary mt-0.5">

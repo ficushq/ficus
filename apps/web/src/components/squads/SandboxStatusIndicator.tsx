@@ -16,6 +16,11 @@ import { SandboxHealthWarning } from '../sandbox/SandboxHealthWarning'
  */
 const PILL = 'px-2 py-0.5 rounded-md bg-surface-secondary inline-flex flex-wrap items-center gap-1.5 text-xs'
 
+/** "Not started" → "Workspace not started". */
+function workspaceLabel(status: string): string {
+  return `Workspace ${status.charAt(0).toLowerCase()}${status.slice(1)}`
+}
+
 interface SandboxStatusIndicatorProps {
   squadId: string
 }
@@ -61,7 +66,9 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
     const chain = resolveVmChainDisplay(status)
     const toolchainStyle = resolveSandboxStyle(status)
     const provisioning = status.status === 'running' && status.toolchain && status.toolchain.status !== 'ready'
-    const label = provisioning ? toolchainStyle.config.label : chain.label
+    // The header pill sits beside other squad counts, so it names its subject:
+    // "Workspace not started", not a bare "Not started".
+    const label = workspaceLabel(provisioning ? toolchainStyle.config.label : chain.label)
     const detail = provisioning ? toolchainStyle.reason.replace(/^ \(|\)$/g, '') : chain.detail
     const healthy = !provisioning && chain.healthy
     const semanticTreatment = webStatus(chain.role ?? (healthy ? 'success' : 'attention'))
