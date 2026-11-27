@@ -7,6 +7,7 @@ import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from
 import { apiUnavailable } from '../test/apiMock'
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'
 import { workStreamReads } from '../test/workStreamApi'
+import { PermissionsProvider } from '../hooks/usePermissions'
 
 const { WorkStreamList } = await import('./WorkStreamList')
 const { WorkStreamDetailModal } = await import('./WorkStreamDetailModal')
@@ -133,13 +134,33 @@ async function renderClient(element: React.ReactNode) {
   }
 }
 
+/** A viewer holding exactly these permissions in every squad, for "Waiting on you" checks. */
+function viewerWith(permissions: string[], userId = 'user-1') {
+  return () => ({
+    permissions,
+    identity: { type: 'user' as const, userId },
+    can: (requested: string) => permissions.includes(requested),
+    isLoading: false,
+    isError: false,
+  })
+}
+
 function renderWorkStreamList(
   workStreams: WorkStream[],
   props: Partial<Parameters<typeof WorkStreamList>[0]> = {},
   initialEntry = '/',
   agents: Agent[] = []
 ) {
-  return renderToStaticMarkup(
+  return renderToStaticMarkup(renderListElement(workStreams, props, initialEntry, agents))
+}
+
+function renderListElement(
+  workStreams: WorkStream[],
+  props: Partial<Parameters<typeof WorkStreamList>[0]> = {},
+  initialEntry = '/',
+  agents: Agent[] = []
+) {
+  return (
     <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={createTestQueryClient(agents)}>
         <WorkStreamList
@@ -236,14 +257,55 @@ describe('WorkStreamList', () => {
       openWaits: [workStreamWait({ workStreamId: 'rt-waiting', openedAt: opened.toISOString() })],
       runtime: { totalMs: 12_000, activeCount: 0, workingCount: 0, computedAt: now.toISOString() },
     })
-    for (const html of [renderWorkStreamList([ws]), renderWorkStreamList([ws], { feedLayout: true })]) {
+    const render = (props: Partial<Parameters<typeof WorkStreamList>[0]>, permissions: string[]) =>
+      renderToStaticMarkup(
+        <PermissionsProvider usePermissions={viewerWith(permissions)}>
+          {renderListElement([ws], props)}
+        </PermissionsProvider>
+      )
+    for (const props of [{}, { feedLayout: true }]) {
+      const html = render(props, ['workstreams:respond'])
       const times = html.match(/data-testid="work-stream-time">[^<]*</g) ?? []
       expect(times.length).toBeGreaterThan(0)
       for (const time of times) expect(time).toBe('data-testid="work-stream-time">Waiting on you 7d<')
       // Time worked moves to the tooltip rather than disappearing.
       expect(html).toContain('Time worked: 12s')
       expect(html).not.toContain('Time worked </span>')
+
+      // A read-only member is not the one being waited on: the row names the wait instead.
+      const readOnly = render(props, ['workstreams:read'])
+      const readOnlyTimes = readOnly.match(/data-testid="work-stream-time">[^<]*</g) ?? []
+      expect(readOnlyTimes.length).toBeGreaterThan(0)
+      for (const time of readOnlyTimes) expect(time).toBe('data-testid="work-stream-time">Waiting on review 7d<')
+      expect(readOnly).not.toContain('Waiting on you 7d')
     }
+  })
+
+  test('a workflow gate limited to assigned reviewers says "you" only to them', () => {
+    const opened = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    const ws = workStream({
+      id: 'rt-gate',
+      derivedState: 'in_review',
+      assignedReviewerIds: ['reviewer-1'],
+      openWaits: [
+        workStreamWait({
+          workStreamId: 'rt-gate',
+          type: 'manual',
+          workflowHumanGate: true,
+          flowAttemptId: 2,
+          resolutionHandler: 'workflow',
+          openedAt: opened.toISOString(),
+        }),
+      ],
+    })
+    const time = (userId: string) =>
+      renderToStaticMarkup(
+        <PermissionsProvider usePermissions={viewerWith(['workstreams:review'], userId)}>
+          {renderListElement([ws])}
+        </PermissionsProvider>
+      ).match(/data-testid="work-stream-time">([^<]*)</)?.[1]
+    expect(time('reviewer-1')).toBe('Waiting on you 2d')
+    expect(time('someone-else')).toBe('Waiting on review 2d')
   })
 
   test('a stream waiting only on an agent keeps showing time worked', () => {
@@ -1617,12 +1679,31 @@ describe('WorkStreamDetailModal', async () => {
       openWaits: [workStreamWait({ openedAt: opened.toISOString() })],
       runtime: { totalMs: 45_000, activeCount: 0, workingCount: 0, computedAt: now.toISOString() },
     })
-    const html = await renderWorkStreamDetailModal(ws)
+    const html = await renderClient(
+      <PermissionsProvider usePermissions={viewerWith(['workstreams:respond'])}>
+        <MemoryRouter>
+          <QueryClientProvider client={createTestQueryClient()}>
+            <WorkStreamDetailModal
+              workStream={ws}
+              squadMap={new Map([[squad.id, squad]])}
+              agentMap={new Map()}
+              onClose={() => undefined}
+            />
+          </QueryClientProvider>
+        </MemoryRouter>
+      </PermissionsProvider>
+    )
     expect(html).toContain('>Time worked</label>')
     expect(html).toContain('>45s</p>')
     expect(html).toContain('>Waiting on you</label>')
     expect(html).toContain(`datetime="${opened.toISOString()}"`)
     expect(html).toMatch(/>7d<\/time>/)
+
+    // Without permission to respond (this harness answers the permissions read as unavailable),
+    // the field names the wait instead of claiming the viewer.
+    const readOnly = await renderWorkStreamDetailModal(ws)
+    expect(readOnly).toContain('>Waiting on review</label>')
+    expect(readOnly).not.toContain('Waiting on you')
   })
 
   test('headline elapsed reads "Time worked" even for done work streams', async () => {

@@ -9,6 +9,7 @@ import { Link, useLocation, useSearchParams } from 'react-router'
 import { useURLStringState, useURLStringArrayState, useURLBooleanState } from '../hooks/useURLState'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { useTick } from '../hooks/useTick'
+import { usePermissions } from '../hooks/usePermissions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { workStreamTimeDisplay, workStreamTimeTickMs, type WorkStreamTimeDisplay } from '../lib/workStreamRuntime'
 import { webStatus } from '../lib/statusPresentation'
@@ -479,7 +480,10 @@ function WorkStreamRow({
   // Time worked, or how long a person has been waited on (which replaces it while they are).
   const timeTickMs = workStreamTimeTickMs(workStream)
   const now = useTick(timeTickMs ?? 60_000, timeTickMs !== null)
-  const time = workStreamTimeDisplay(workStream, now)
+  // "Waiting on you" only when this viewer can act on the wait; anyone else reads what it waits on.
+  const viewerPermissions = usePermissions(workStream.squadId)
+  const viewer = viewerPermissions.isLoading ? undefined : viewerPermissions
+  const time = workStreamTimeDisplay(workStream, now, viewer)
   const pullRequests = workStreamPullRequests(workStream.metadata ?? {})
   // Desktop and feed rows attach the in-progress delivery state to one pull request: the
   // primary delivery PR. Without a PR link it falls back to a colored pill beside the status.

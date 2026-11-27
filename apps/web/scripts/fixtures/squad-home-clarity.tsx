@@ -118,7 +118,7 @@ client.setQueryData(queryKeys.squads.activeWorkStreams(squadId), streams)
 client.setQueryData(queryKeys.squads.workStreams(squadId), streams)
 for (const item of streams) client.setQueryData(queryKeys.squads.workStreamDetail(item.id), item)
 client.setQueryData(queryKeys.auth.permissions(squadId), {
-  permissions: ['workstreams:read', 'workstreams:respond'],
+  permissions: ['workstreams:read', 'workstreams:respond', 'agents:run'],
   identity: { type: 'user', userId: 'fixture-user' },
 })
 client.setQueryData(queryKeys.squadSubscription.detail(squadId), {

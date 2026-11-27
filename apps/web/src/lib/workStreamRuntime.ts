@@ -1,4 +1,14 @@
-import { workStreamNeedsHumanAttention, workStreamWaitNeedsHuman, type WorkStream } from '@ficus/shared'
+import {
+  isWorkflowHumanGateWait,
+  workStreamNeedsHumanAttention,
+  workStreamWaitDisplayType,
+  workStreamWaitNeedsHuman,
+  type WorkStream,
+  type WorkStreamWait,
+} from '@ficus/shared'
+
+/** Core's stale bound for time worked (`RUNTIME_STALE_AFTER_MS` in the WorkStream entity). */
+const RUNTIME_STALE_AFTER_MS = 90 * 60_000
 
 /**
  * Running executions still accruing time. Older servers send only
@@ -24,7 +34,9 @@ export function computeWorkStreamElapsedMs(ws: WorkStream, now: number): number 
   const working = workingCount(ws)
   if (working <= 0) return rt.totalMs
   const computedAt = new Date(rt.computedAt).getTime()
-  const delta = Math.max(0, now - computedAt)
+  // Core stops counting an execution after this long without a message, so local ticking never
+  // runs past it before the next refetch would.
+  const delta = Math.min(Math.max(0, now - computedAt), RUNTIME_STALE_AFTER_MS)
   return rt.totalMs + working * delta
 }
 
@@ -56,21 +68,86 @@ export function formatWaitedDuration(ms: number): string {
 }
 
 /**
- * When the stream started waiting on a person: the oldest open wait that asks
- * a human to act (a question, an actionable review, or a human blocker).
- * Null when nobody is being waited on — including paused or finished streams,
- * and delivery states that carry no open wait to date them from.
+ * Who is looking: the permissions they hold in the stream's squad, and who they are. Undefined
+ * while permissions load, which never claims "you".
  */
-export function workStreamWaitingOnPersonSince(ws: WorkStream): Date | null {
-  if (!workStreamNeedsHumanAttention(ws)) return null
-  let oldest: number | null = null
-  for (const wait of ws.openWaits ?? []) {
-    if (!workStreamWaitNeedsHuman(wait, ws)) continue
-    const openedAt = new Date(wait.openedAt).getTime()
-    if (!Number.isFinite(openedAt)) continue
-    if (oldest === null || openedAt < oldest) oldest = openedAt
+export interface WorkStreamViewer {
+  can: (permission: string) => boolean
+  identity?: { type: string; userId?: string }
+}
+
+/** What a person is being waited on for. */
+export type PersonWaitKind = 'answer' | 'review' | 'approval' | 'blocker'
+
+const PERSON_WAIT_NOUN: Record<PersonWaitKind, string> = {
+  answer: 'an answer',
+  review: 'review',
+  approval: 'approval',
+  blocker: 'a person',
+}
+
+function personWaitKind(wait: WorkStreamWait, ws: WorkStream): PersonWaitKind | null {
+  // The delivery approval is a wait on a person too; the shared rule leaves it to delivery.
+  if (ws.delivery?.kind === 'approval' && wait.id === ws.delivery.approvalWaitId) return 'approval'
+  if (!workStreamWaitNeedsHuman(wait, ws)) return null
+  if (wait.type === 'question') return 'answer'
+  return workStreamWaitDisplayType(wait) === 'review' ? 'review' : 'blocker'
+}
+
+/**
+ * Whether this viewer can clear the wait, mirroring the server's checks: answering a question
+ * takes agents:run, a workflow gate takes workstreams:review (and, when the stream names
+ * reviewers, being one of them), anything else workstreams:respond or workstreams:update. A gate
+ * on a stream with assigned reviewers is treated as limited to them even when its step allows
+ * any reviewer: that reads "Waiting on review" to the others, never a false "you".
+ */
+function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream, viewer: WorkStreamViewer) {
+  if (kind === 'answer') return viewer.can('agents:run')
+  if (isWorkflowHumanGateWait(wait)) {
+    const assigned = ws.assignedReviewerIds ?? []
+    const userId = viewer.identity?.type === 'user' ? viewer.identity.userId : undefined
+    return viewer.can('workstreams:review') && (assigned.length === 0 || (!!userId && assigned.includes(userId)))
   }
-  return oldest === null ? null : new Date(oldest)
+  return viewer.can('workstreams:respond') || viewer.can('workstreams:update')
+}
+
+export interface WorkStreamPersonWait {
+  /** When the oldest wait shown started. */
+  since: Date
+  /** True when the viewer can act on it: "Waiting on you". */
+  you: boolean
+  kind: PersonWaitKind
+  /** "Waiting on you", or for someone else's wait "Waiting on review". */
+  label: string
+}
+
+/**
+ * How long the stream has waited on a person: the oldest open wait that asks a person to act (a
+ * question, an actionable review, a blocker only a person can clear, or the delivery approval).
+ * It says "you" only for a wait this viewer can act on; for anyone else it names the wait.
+ * Null when nobody is being waited on, including paused or finished streams and delivery states
+ * that carry no open wait to date them from (a human merge at the code host).
+ */
+export function workStreamPersonWait(ws: WorkStream, viewer?: WorkStreamViewer): WorkStreamPersonWait | null {
+  if (!workStreamNeedsHumanAttention(ws)) return null
+  let oldest: { at: number; kind: PersonWaitKind } | null = null
+  let mine: { at: number; kind: PersonWaitKind } | null = null
+  for (const wait of ws.openWaits ?? []) {
+    const kind = personWaitKind(wait, ws)
+    if (!kind) continue
+    const at = new Date(wait.openedAt).getTime()
+    if (!Number.isFinite(at)) continue
+    if (!oldest || at < oldest.at) oldest = { at, kind }
+    if (viewer && viewerCanAct(kind, wait, ws, viewer) && (!mine || at < mine.at)) mine = { at, kind }
+  }
+  const shown = mine ?? oldest
+  if (!shown) return null
+  return {
+    since: new Date(shown.at),
+    you: !!mine,
+    kind: shown.kind,
+    label: mine ? 'Waiting on you' : `Waiting on ${PERSON_WAIT_NOUN[shown.kind]}`,
+  }
 }
 
 export type WorkStreamTimeDisplay =
@@ -78,16 +155,20 @@ export type WorkStreamTimeDisplay =
   | { kind: 'worked'; text: string; title: string; workedMs: number }
 
 /**
- * The one time a work stream row shows. While a person is being waited on,
- * how long they have been waited on ("Waiting on you 7d") replaces time worked,
- * which stays in the tooltip; otherwise time worked, once it passes a second.
+ * The one time a work stream row shows. While a person is being waited on, how long
+ * ("Waiting on you 7d", or "Waiting on review 7d" to someone who cannot act on it) replaces time
+ * worked, which stays in the tooltip; otherwise time worked, once it passes a second.
  */
-export function workStreamTimeDisplay(ws: WorkStream, now: number): WorkStreamTimeDisplay | null {
+export function workStreamTimeDisplay(
+  ws: WorkStream,
+  now: number,
+  viewer?: WorkStreamViewer
+): WorkStreamTimeDisplay | null {
   const workedMs = computeWorkStreamElapsedMs(ws, now)
-  const waitingSince = workStreamWaitingOnPersonSince(ws)
-  if (waitingSince) {
-    const waitingMs = Math.max(0, now - waitingSince.getTime())
-    const since = waitingSince.toLocaleString(undefined, {
+  const waiting = workStreamPersonWait(ws, viewer)
+  if (waiting) {
+    const waitingMs = Math.max(0, now - waiting.since.getTime())
+    const since = waiting.since.toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
       hour: 'numeric',
@@ -95,8 +176,8 @@ export function workStreamTimeDisplay(ws: WorkStream, now: number): WorkStreamTi
     })
     return {
       kind: 'waiting',
-      text: `Waiting on you ${formatWaitedDuration(waitingMs)}`,
-      title: `Waiting on you since ${since}. Time worked: ${formatWorkStreamDuration(workedMs)}`,
+      text: `${waiting.label} ${formatWaitedDuration(waitingMs)}`,
+      title: `${waiting.label} since ${since}. Time worked: ${formatWorkStreamDuration(workedMs)}`,
       waitingMs,
       workedMs,
     }
@@ -111,6 +192,6 @@ export function workStreamTimeDisplay(ws: WorkStream, now: number): WorkStreamTi
  */
 export function workStreamTimeTickMs(ws: WorkStream): number | null {
   if (workingCount(ws) > 0) return 1000
-  if (workStreamWaitingOnPersonSince(ws)) return 60_000
+  if (workStreamPersonWait(ws)) return 60_000
   return null
 }

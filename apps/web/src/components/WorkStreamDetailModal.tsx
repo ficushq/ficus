@@ -34,8 +34,8 @@ import {
   computeWorkStreamElapsedMs,
   formatWaitedDuration,
   formatWorkStreamDuration,
+  workStreamPersonWait,
   workStreamTimeTickMs,
-  workStreamWaitingOnPersonSince,
 } from '../lib/workStreamRuntime'
 import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
@@ -164,7 +164,7 @@ export function WorkStreamDetailModal({
   const { slugFor } = useSquadSlugs()
   const squad = squadMap.get(workStream.squadId)
   const metadata = workStream.metadata ?? {}
-  const { can, isLoading: permissionsLoading } = usePermissions(workStream.squadId)
+  const { can, identity: permissionIdentity, isLoading: permissionsLoading } = usePermissions(workStream.squadId)
   const permissionCanRespond = !permissionsLoading && (can('workstreams:respond') || can('workstreams:update'))
   const canRespondToWait = actionCanRespond ?? permissionCanRespond
 
@@ -313,7 +313,10 @@ export function WorkStreamDetailModal({
   const timeTickMs = workStreamTimeTickMs(workStream)
   const now = useTick(timeTickMs ?? 60_000, timeTickMs !== null)
   const elapsed = computeWorkStreamElapsedMs(workStream, now)
-  const waitingOnPersonSince = workStreamWaitingOnPersonSince(workStream)
+  const personWait = workStreamPersonWait(
+    workStream,
+    permissionsLoading ? undefined : { can, identity: permissionIdentity }
+  )
   const githubRepository = workStreamGithubRepository(metadata)
   const pullRequests = workStreamPullRequests(metadata)
   const nextSteps = getWorkStreamNextSteps(metadata)
@@ -633,15 +636,12 @@ export function WorkStreamDetailModal({
               {formatWorkStreamDuration(elapsed)}
             </p>
           </div>
-          {waitingOnPersonSince && (
+          {personWait && (
             <div>
-              <label className="text-xs font-medium text-secondary">Waiting on you</label>
+              <label className="text-xs font-medium text-secondary">{personWait.label}</label>
               <p className="text-primary mt-0.5 tabular-nums">
-                <time
-                  dateTime={waitingOnPersonSince.toISOString()}
-                  title={`Since ${waitingOnPersonSince.toLocaleString()}`}
-                >
-                  {formatWaitedDuration(now - waitingOnPersonSince.getTime())}
+                <time dateTime={personWait.since.toISOString()} title={`Since ${personWait.since.toLocaleString()}`}>
+                  {formatWaitedDuration(now - personWait.since.getTime())}
                 </time>
               </p>
             </div>

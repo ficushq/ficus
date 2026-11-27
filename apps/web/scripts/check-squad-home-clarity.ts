@@ -81,6 +81,8 @@ try {
     await dialog.getByText('Time worked', { exact: true }).waitFor()
     assert.equal(await dialog.getByText('Waiting on you', { exact: true }).count(), 1, `${label}: modal waiting field`)
     assert.equal(await dialog.getByText('Runtime', { exact: true }).count(), 0, `${label}: modal still says Runtime`)
+    // Let the modal finish fading in, or the screenshot catches it half transparent.
+    await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== 'running'))
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `modal-${label}.png`) })
     await page.close()
   }

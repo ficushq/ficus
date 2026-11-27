@@ -4,8 +4,9 @@ import {
   formatWaitedDuration,
   formatWorkStreamDuration,
   workStreamTimeDisplay,
+  workStreamPersonWait,
   workStreamTimeTickMs,
-  workStreamWaitingOnPersonSince,
+  type WorkStreamViewer,
 } from './workStreamRuntime'
 import type { WorkStream, WorkStreamWait } from '@ficus/shared'
 
@@ -71,6 +72,14 @@ describe('time worked extrapolation', () => {
     expect(workStreamTimeTickMs(ws)).toBeNull()
   })
 
+  test('never extrapolates past the server stale bound before the next refetch', () => {
+    const ws: WorkStream = {
+      ...baseWs,
+      runtime: { totalMs: 1000, activeCount: 1, workingCount: 1, computedAt: '2026-01-01T00:00:00Z' },
+    }
+    expect(computeWorkStreamElapsedMs(ws, Date.parse('2026-01-01T05:00:00Z'))).toBe(1000 + 90 * 60_000)
+  })
+
   test('extrapolates from workingCount when the server sends it', () => {
     const ws: WorkStream = {
       ...baseWs,
@@ -124,24 +133,73 @@ describe('waiting on a person', () => {
     ...overrides,
   })
 
+  const viewer = (permissions: string[], userId = 'user-1'): WorkStreamViewer => ({
+    can: (permission) => permissions.includes(permission),
+    identity: { type: 'user', userId },
+  })
+  const responder = viewer(['workstreams:respond', 'agents:run'])
+
   test('dates from the oldest open wait that asks a person to act', () => {
     const ws = waiting([
       wait({ id: 'newer', type: 'manual', actor: 'human', openedAt: '2026-01-05T00:00:00Z' }),
       wait({ id: 'older', type: 'question', referenceId: 'q', openedAt: '2026-01-01T00:00:00Z' }),
       wait({ id: 'agent', type: 'dependency', referenceId: 'x', openedAt: '2025-12-01T00:00:00Z' }),
     ])
-    expect(workStreamWaitingOnPersonSince(ws)?.toISOString()).toBe('2026-01-01T00:00:00.000Z')
+    expect(workStreamPersonWait(ws, responder)).toEqual({
+      since: new Date('2026-01-01T00:00:00Z'),
+      you: true,
+      kind: 'answer',
+      label: 'Waiting on you',
+    })
   })
 
   test('replaces time worked in the row, which moves to the tooltip', () => {
-    const display = workStreamTimeDisplay(waiting([wait({})]), now)
+    const display = workStreamTimeDisplay(waiting([wait({})]), now, responder)
     expect(display?.kind).toBe('waiting')
     expect(display?.text).toBe('Waiting on you 7d')
     expect(display?.title).toContain('Time worked: 2h')
     expect(workStreamTimeTickMs(waiting([wait({})]))).toBe(60_000)
   })
 
-  test('a dependency, an owner hold, a paused or a finished stream is not waiting on you', () => {
+  test('says "you" only for a wait the viewer can act on, and names the wait otherwise', () => {
+    const review = waiting([wait({})])
+    expect(workStreamTimeDisplay(review, now, viewer(['workstreams:read']))?.text).toBe('Waiting on review 7d')
+    // Permissions still loading never claims the viewer.
+    expect(workStreamTimeDisplay(review, now)?.text).toBe('Waiting on review 7d')
+    // Answering a question takes agents:run, not workstreams:respond.
+    const question = waiting([wait({ type: 'question', referenceId: 'q' })], { derivedState: 'waiting_on_answer' })
+    expect(workStreamTimeDisplay(question, now, viewer(['workstreams:respond']))?.text).toBe('Waiting on an answer 7d')
+    expect(workStreamTimeDisplay(question, now, viewer(['agents:run']))?.text).toBe('Waiting on you 7d')
+    const blocker = waiting([wait({ type: 'manual', actor: 'human' })], { derivedState: 'blocked' })
+    expect(workStreamTimeDisplay(blocker, now, viewer([]))?.text).toBe('Waiting on a person 7d')
+  })
+
+  test('prefers the wait the viewer can act on over an older one they cannot', () => {
+    const ws = waiting([
+      wait({ id: 'question', type: 'question', referenceId: 'q', openedAt: '2026-01-01T00:00:00Z' }),
+      wait({ id: 'blocker', type: 'manual', actor: 'human', openedAt: '2026-01-07T02:00:00Z' }),
+    ])
+    expect(workStreamTimeDisplay(ws, now, viewer(['workstreams:respond']))?.text).toBe('Waiting on you 1d')
+  })
+
+  test('a workflow gate on a stream with assigned reviewers is "you" only to them', () => {
+    const gate = wait({ type: 'manual', workflowHumanGate: true, flowAttemptId: 2, resolutionHandler: 'workflow' })
+    const ws = waiting([gate], { assignedReviewerIds: ['reviewer-1'] })
+    expect(workStreamPersonWait(ws, viewer(['workstreams:review'], 'reviewer-1'))?.label).toBe('Waiting on you')
+    expect(workStreamPersonWait(ws, viewer(['workstreams:review'], 'someone-else'))?.label).toBe('Waiting on review')
+    expect(workStreamPersonWait(ws, viewer(['workstreams:respond'], 'reviewer-1'))?.label).toBe('Waiting on review')
+  })
+
+  test('the delivery approval is a wait on a person too', () => {
+    const ws = waiting([wait({ id: 'approval', type: 'manual', actor: 'human' })], {
+      derivedState: 'blocked',
+      delivery: { kind: 'approval', approvalWaitId: 'approval' },
+    })
+    expect(workStreamPersonWait(ws, responder)).toMatchObject({ kind: 'approval', label: 'Waiting on you' })
+    expect(workStreamPersonWait(ws, viewer([]))?.label).toBe('Waiting on approval')
+  })
+
+  test('a dependency, an owner hold, a paused or a finished stream is not waiting on a person', () => {
     const dependency = waiting([wait({ type: 'dependency', referenceId: 'x' })], {
       derivedState: 'waiting_on_dependency',
     })
@@ -149,8 +207,8 @@ describe('waiting on a person', () => {
     const paused = waiting([wait({})], { pause: { pausedAt: '2026-01-02T00:00:00Z' } as WorkStream['pause'] })
     const done = waiting([wait({})], { status: 'done', derivedState: 'done' })
     for (const ws of [dependency, ownerHold, paused, done]) {
-      expect(workStreamWaitingOnPersonSince(ws)).toBeNull()
-      expect(workStreamTimeDisplay(ws, now)).toEqual({
+      expect(workStreamPersonWait(ws, responder)).toBeNull()
+      expect(workStreamTimeDisplay(ws, now, responder)).toEqual({
         kind: 'worked',
         text: '2h',
         title: expect.stringContaining('Time worked'),
