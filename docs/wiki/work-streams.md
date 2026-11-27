@@ -167,11 +167,18 @@ Four things keep reads bounded, and a fifth keeps slow writes from losing their 
     answered, or the scope was abandoned, nothing more is recorded, so a timer or loop a
     read happened to start never has a later query cancelled, and a read that has
     answered (a streamed body, say) is never cancelled.
-  - Abandoning cancels only the recorded queries still in flight. One waiting for a pool
-    connection is dropped at once. One the server is running is cancelled only after it
-    has run for a second (`MIN_RUNNING_MS_BEFORE_CANCEL`), because a Postgres cancel
-    request targets the backend rather than the query and on a pipelined connection could
-    land on the next query. A cancelled query fails with `57014` and its transaction
+  - Abandoning cancels only the recorded queries still in flight. One that has no
+    connection yet (waiting in the pool's queue) is dropped at once; nothing was sent, so
+    no cancel request is involved. One already sent on a connection, running or pipelined
+    behind another query, is cancelled only after the server has run it for a second
+    (`MIN_RUNNING_MS_BEFORE_CANCEL`) at the front of its connection, counted from no
+    earlier than the abandonment. A Postgres cancel request targets the backend, not the
+    query: sent for a short query, or for one still pipelined, it can arrive after that
+    query finished and cancel the next query on the connection, which belongs to another
+    request. So a query that finishes within that second is left to finish, and a long
+    one is cancelled about a second late. A cancel can still race a query that finishes
+    in the few milliseconds the cancel takes to arrive after a full second of running;
+    that small window is accepted. A cancelled query fails with `57014` and its transaction
     rolls back; the error handler answers it with a quiet `503 read_abandoned` instead of
     logging an unhandled error.
   - Work shared beyond the request that started it runs in `shareAcrossRequests`, outside
@@ -186,6 +193,16 @@ Four things keep reads bounded, and a fifth keeps slow writes from losing their 
 
   Dedicated connections (locks, migrations, `withDedicatedDbTransaction`) are never
   cancelled this way.
+
+  Limits to keep in mind:
+  - A queued query of an abandoned read is dropped with no grace period. Shared work
+    that is not wrapped in `shareAcrossRequests` therefore fails with `57014` exactly
+    when the pool is busy, which is when reads get abandoned. Wrap any new shared loader.
+  - Synchronous fan-out a read triggers still runs in its scope: event-emitter listeners
+    called from a `GET` (`eventEmitter.emit`) and the settings and secret stores'
+    `notifyListeners`. Their queries are cancelled only if they are still in flight when
+    the read is abandoned, and a listener that must always finish should start its work
+    in `shareAcrossRequests`.
 
 - **Body-less writes run to their answer.** Writes with a body (a JSON `POST`) are never
   cut by the idle timer, even after the handler has read the body. A write without one

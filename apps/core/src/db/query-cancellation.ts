@@ -18,15 +18,23 @@ import type postgres from 'postgres'
  *    or loop that a read happened to start (and that inherits its async context)
  *    is never touched by a later abandonment, and the scope holds no queries.
  * 2. Abandoning a scope cancels only the queries it recorded that are still in
- *    flight at that moment. One still waiting for a pool connection is dropped from
- *    the queue at once, and postgres.js handles one pipelined behind another query
- *    itself (it cancels it only if it is still running once it reaches the server).
- *    A query the server is running is cancelled only once it has
- *    run for {@link MIN_RUNNING_MS_BEFORE_CANCEL}: a Postgres cancel request is sent
- *    to the backend, not to the query, so on a pipelined connection a cancel aimed
- *    at a query that has just finished can land on the next one, and short queries
- *    are not worth that risk. A cancelled query fails with 57014 ("canceling
- *    statement due to user request"); a transaction around it rolls back.
+ *    flight at that moment, in a way that keeps the cancel off other requests:
+ *    - A query that has no connection yet (waiting in the pool's queue) is dropped
+ *      from the queue at once. Nothing was sent, so no cancel request is involved.
+ *    - A query already sent on a connection is cancelled only once the server has
+ *      run it for {@link MIN_RUNNING_MS_BEFORE_CANCEL}, counted from when it is
+ *      seen at the front of its connection (no earlier than the abandonment). A
+ *      Postgres cancel request targets the backend, not a query: sent for a short
+ *      query, or for one still pipelined behind another (postgres.js would send it
+ *      the moment that query reaches the front), it can arrive after the query
+ *      finished and cancel the next query on the connection, which belongs to
+ *      someone else. A query that finishes within the second is simply left to
+ *      finish, and its connection is freed then.
+ *    A cancelled query fails with 57014 ("canceling statement due to user
+ *    request"); a transaction around it rolls back. A long query is cancelled about
+ *    a second late, and a cancel can still race a query that finishes in the few
+ *    milliseconds the cancel takes to arrive after it has run a full second; that
+ *    residual window is accepted.
  * 3. Work that is shared beyond the request that started it (a promise other
  *    callers join, such as a sandbox ensure behind an InflightDeduper) must not
  *    belong to that request: start it in {@link shareAcrossRequests}, which runs it
@@ -44,11 +52,16 @@ type TrackedQuery = Promise<unknown> & {
   cancel(): Promise<void>
   readonly executed?: boolean
   readonly settled?: boolean
+  /** Set once postgres.js has placed it on a connection (sent or pipelined). */
+  readonly connection?: unknown
   /** True while it is the query its connection's backend is running (not queued or pipelined behind). */
   readonly active?: boolean
 }
 
-type Recorded = { query: TrackedQuery; createdAt: number }
+type Recorded = { query: TrackedQuery }
+
+/** How often a sent query of an abandoned scope is checked until it may be cancelled or settles. */
+const SENT_QUERY_CHECK_MS = 50
 
 /** Drop settled queries once a long handler has recorded this many. */
 const PRUNE_AT = 256
@@ -86,19 +99,14 @@ export class QueryCancellationScope {
     this.#reason = reason
     const recorded = this.#recorded
     this.#recorded = []
-    for (const { query, createdAt } of recorded) {
+    for (const { query } of recorded) {
       if (!query.executed || query.settled) continue
-      // Not running on the server yet (waiting for a connection, or pipelined behind
-      // another query): postgres.js drops or defers it without touching other queries.
-      if (!query.active) {
+      // Not on a connection: postgres.js drops it from the pool queue, no cancel request.
+      if (!query.connection) {
         query.cancel().catch(noop)
         continue
       }
-      const wait = Math.max(0, MIN_RUNNING_MS_BEFORE_CANCEL - (now() - createdAt))
-      const timer = setTimeout(() => {
-        if (!query.settled) query.cancel().catch(noop)
-      }, wait)
-      timer.unref?.()
+      cancelOnceRunLongEnough(query, now)
     }
   }
 
@@ -106,13 +114,40 @@ export class QueryCancellationScope {
   record(query: TrackedQuery): void {
     if (this.#state !== 'live') return
     if (this.#recorded.length >= PRUNE_AT) this.#recorded = this.#recorded.filter(({ query: q }) => !q.settled)
-    this.#recorded.push({ query, createdAt: performance.now() })
+    this.#recorded.push({ query })
   }
 }
 
 const scopes = new AsyncLocalStorage<QueryCancellationScope>()
 
 function noop(): void {}
+
+/**
+ * Cancel a query already sent on a connection only after the server has run it for
+ * {@link MIN_RUNNING_MS_BEFORE_CANCEL} as the front query of that connection. Until
+ * then nothing is sent, so a query that finishes, or that is still pipelined behind
+ * another request's query, is never the target of a cancel request.
+ */
+function cancelOnceRunLongEnough(query: TrackedQuery, now: () => number): void {
+  let frontSince: number | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const stop = () => clearTimeout(timer)
+  const check = () => {
+    timer = undefined
+    if (query.settled) return
+    if (!query.active) frontSince = undefined
+    else frontSince ??= now()
+    if (frontSince !== undefined && now() - frontSince >= MIN_RUNNING_MS_BEFORE_CANCEL) {
+      query.cancel().catch(noop)
+      return
+    }
+    timer = setTimeout(check, SENT_QUERY_CHECK_MS)
+    timer.unref?.()
+  }
+  check()
+  // Stop checking as soon as it settles, so nothing holds the query longer than needed.
+  query.then(stop, stop)
+}
 
 /**
  * Run `fn` outside any request's cancellation scope. Use it where work is started

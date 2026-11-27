@@ -91,6 +91,36 @@ describe('query cancellation', () => {
     expect(row!.kept).toBe('kept')
   })
 
+  it('never cancels the next request query when its own query is pipelined behind another', async () => {
+    // Y (another request) runs, X (the abandoned read) is pipelined behind it, Z (another
+    // request) behind X. A cancel sent for a short X would land on Z.
+    const cancelledZ: string[] = []
+    await single`select 1` // connected, so the queries below pipeline instead of waiting in the pool
+    for (const seconds of [0, 0.002, 0.005, 0.01, 0.05]) {
+      for (let round = 0; round < 10; round += 1) {
+        const yQuery = single`select pg_sleep(0.05), 'y' as id`
+        const y = started(yQuery)
+        const scope = new QueryCancellationScope()
+        const xQuery = scope.run(() => single`select pg_sleep(${seconds}), 'x' as id`)
+        const x = started(xQuery)
+        const z = started(single`select 'z' as id`)
+        for (let i = 0; i < 100 && !(yQuery as unknown as { active?: boolean }).active; i += 1) await Bun.sleep(1)
+        await Bun.sleep(5)
+        // X is already on the connection, queued behind Y: the race the rule must avoid.
+        expect((xQuery as unknown as { connection?: unknown }).connection).toBeTruthy()
+        scope.abandon()
+        await y
+        const [xRow] = await x
+        expect(xRow!.id).toBe('x')
+        await z.then(
+          () => undefined,
+          (error: unknown) => cancelledZ.push(`${seconds}s round ${round}: ${pgCode(error) ?? String(error)}`)
+        )
+      }
+    }
+    expect(cancelledZ).toEqual([])
+  }, 30_000)
+
   it('never touches a query started after the scope closed or was abandoned', async () => {
     const closed = new QueryCancellationScope()
     closed.close()
