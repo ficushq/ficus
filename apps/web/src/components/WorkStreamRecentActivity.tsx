@@ -21,7 +21,7 @@ import { LoadingSurface, SkeletonLine, SkeletonRows } from './loading/Skeleton'
 export const WORK_STREAM_RECENT_ACTIVITY_LIMIT = 5
 
 /** Changes arriving together (an agent's burst of steps) refetch once. */
-const REFRESH_DEBOUNCE_MS = 400
+export const REFRESH_DEBOUNCE_MS = 400
 
 /**
  * Keeps one stream's recent rows live: its squad's `squadActivity` topic (the same topic the Activity

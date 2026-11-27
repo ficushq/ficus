@@ -10,3 +10,21 @@ export function untilRendered(dom: { act: (callback: () => Promise<void>) => Pro
     check()
   })
 }
+
+/**
+ * Like {@link untilRendered}, for state a mocked request settles on a later task: each poll sleeps
+ * briefly inside act before asserting. Fails with the check's own error after about two seconds.
+ */
+export async function untilSettled(
+  dom: { act: (callback: () => Promise<void>) => Promise<unknown> },
+  check: () => void
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    await dom.act(async () => void (await Bun.sleep(10)))
+    try {
+      return check()
+    } catch (error) {
+      if (attempt >= 200) throw error
+    }
+  }
+}

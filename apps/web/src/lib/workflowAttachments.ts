@@ -140,6 +140,28 @@ export function storedInputPresentation(asset: Pick<WorkStreamAssetAttachment, '
   return title ? { title, detail: `${asset.filename} · ${source}` } : { title: asset.filename, detail: source }
 }
 
-/** What the viewer says when a workspace file cannot be read: it is a live path, not a stored copy. */
+/** What the viewer says when a workspace file is not there: it is a live path, not a stored copy. */
 export const WORKSPACE_FILE_MISSING =
   'This file could not be read. It may have been moved or deleted from the squad workspace.'
+/** A refusal is about access, not the file. The mobile viewer uses the same words. */
+export const WORKSPACE_FILE_FORBIDDEN = 'You don’t have access to this squad’s workspace.'
+/** The server failed to read it (or answered oddly): nothing says the file is gone. */
+export const WORKSPACE_FILE_SERVER_ERROR = 'This file could not be loaded right now. Try again in a moment.'
+/** No answer came back at all: offline, connection lost or timed out. */
+export const WORKSPACE_FILE_NETWORK_ERROR = 'This file could not be loaded. Check your connection and try again.'
+
+/**
+ * Why a workspace file could not be loaded, in words the viewer shows: a refusal (403), a path that
+ * is not a readable file (400, 404, 410: moved, deleted or a folder), a server failure (any other
+ * answer) or no answer at all. `retry` is whether trying again could help.
+ */
+export function workspaceFileLoadError(error: unknown): { message: string; retry: boolean } {
+  const status =
+    error && typeof error === 'object' && 'status' in error && typeof error.status === 'number'
+      ? error.status
+      : undefined
+  if (status === undefined) return { message: WORKSPACE_FILE_NETWORK_ERROR, retry: true }
+  if (status === 403) return { message: WORKSPACE_FILE_FORBIDDEN, retry: false }
+  if ([400, 404, 410].includes(status)) return { message: WORKSPACE_FILE_MISSING, retry: false }
+  return { message: WORKSPACE_FILE_SERVER_ERROR, retry: true }
+}
