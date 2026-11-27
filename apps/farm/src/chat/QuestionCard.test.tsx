@@ -132,4 +132,23 @@ describe('QuestionCard · recommended option', () => {
     await click(byText(container, 'button[type="submit"]', 'Submit answers'))
     expect(submitted).toEqual([JSON.stringify({ crop: 'corn', when: 'dawn' }, null, 2)])
   })
+
+  it('reads like the Action Center card: the tag on the label line, and "Other" for your own answer', async () => {
+    const { container } = await renderCard(recommendedQuestions)
+
+    // The tag shares the label's line element, so it flows after the label's last word.
+    const name = optionFor(container, 'corn').label.querySelector('.g-option-name')
+    expect(name?.textContent).toBe('Corn Recommended')
+    expect(name?.querySelector('.g-recommended')).not.toBeNull()
+
+    // The web card's word, on select and multi-select alike.
+    const otherRadio = optionFor(container, '__other__')
+    expect(otherRadio.input.type).toBe('radio')
+    expect(otherRadio.label.textContent).toBe('Other')
+    const otherBoxes = [...container.querySelectorAll('label.g-chat-option')].filter((el) => el.textContent === 'Other')
+    expect(otherBoxes.map((label) => label.querySelector('input')!.type)).toEqual(['radio', 'checkbox'])
+
+    await click(otherRadio.input)
+    expect(container.querySelector('input[aria-label="Other answer"]')).not.toBeNull()
+  })
 })

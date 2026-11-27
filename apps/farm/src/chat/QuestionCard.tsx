@@ -4,6 +4,7 @@ import { recommendedQuestionOption, type QuestionData, type QuestionItem } from 
 import { OptionText, RecommendedTag } from '../actions/RecommendedOption'
 import {
   OTHER,
+  OTHER_LABEL,
   answersComplete,
   formatAnswer,
   initialAnswers,
@@ -124,7 +125,7 @@ function Field({
 
       {question.type === 'select' && (
         <div className="g-chat-options">
-          {[...(question.options ?? []), { value: OTHER, label: 'Other' }].map((option, i) => (
+          {[...(question.options ?? []), { value: OTHER, label: OTHER_LABEL }].map((option, i) => (
             <label key={option.value} className={clsx('g-chat-option', text === option.value && 'g-selected')}>
               <input
                 type="radio"
@@ -149,7 +150,7 @@ function Field({
       {question.type === 'multi-select' && (
         <div className="g-chat-options">
           <p className="g-chat-note">Select all that apply:</p>
-          {[...(question.options ?? []), { value: OTHER, label: 'Other' }].map((option, i) => {
+          {[...(question.options ?? []), { value: OTHER, label: OTHER_LABEL }].map((option, i) => {
             const on = selected.includes(option.value)
             return (
               <label key={option.value} className={clsx('g-chat-option', on && 'g-selected')}>
