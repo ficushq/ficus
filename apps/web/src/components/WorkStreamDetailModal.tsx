@@ -366,7 +366,7 @@ export function WorkStreamDetailModal({
                 </span>
               )}
             </div>
-            <div className="text-sm text-secondary max-h-64 overflow-y-auto">
+            <div className="text-sm text-primary max-h-64 overflow-y-auto">
               <MarkdownContent variant="document">
                 {(reviewWait
                   ? (reviewWait.message ?? workStream.handoffMessage)
@@ -499,7 +499,7 @@ export function WorkStreamDetailModal({
         {workStream.description && (
           <div className="min-w-0 wrap-anywhere">
             <label className="text-xs font-medium text-secondary">Description</label>
-            <div className="mt-3 text-sm leading-relaxed text-secondary">
+            <div className="mt-3 text-sm leading-relaxed text-primary">
               <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
             </div>
           </div>
@@ -509,7 +509,7 @@ export function WorkStreamDetailModal({
         {nextSteps && (
           <div>
             <label className="text-xs font-medium text-secondary">Next Steps</label>
-            <div className="mt-3 text-sm leading-relaxed text-secondary">
+            <div className="mt-3 text-sm leading-relaxed text-primary">
               <MarkdownContent variant="document">{nextSteps}</MarkdownContent>
             </div>
           </div>

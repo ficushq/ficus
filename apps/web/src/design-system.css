@@ -647,6 +647,51 @@
     }
   }
 
+  /* Markdown on the app's own surfaces (chat, descriptions, handoffs, reviews). The typography plugin's gray palette
+     is fixed Tailwind gray, not the theme, so prose follows theme tokens instead. Body text is the ink the caller
+     sets around or on the markdown (text-primary, text-secondary or text-muted); emphasis is text-primary; every
+     colour is a gated text token, so prose meets 4.5:1 on the theme's surfaces. The invert set repeats the same
+     values (an alias would be a cycle under prose-invert), so a dark:prose-invert cannot bring the fixed palette
+     back. Guarded by theme/proseColors.test.ts and scripts/check-markdown-prose-contrast.ts. */
+  .prose.prose-themed {
+    --tw-prose-body: currentColor;
+    --tw-prose-headings: rgb(var(--color-text-primary));
+    --tw-prose-lead: rgb(var(--color-text-secondary));
+    --tw-prose-links: rgb(var(--color-text-primary));
+    --tw-prose-bold: rgb(var(--color-text-primary));
+    --tw-prose-counters: rgb(var(--color-text-secondary));
+    --tw-prose-bullets: rgb(var(--color-text-muted));
+    --tw-prose-hr: rgb(var(--color-border));
+    --tw-prose-quotes: rgb(var(--color-text-primary));
+    --tw-prose-quote-borders: rgb(var(--color-border-hover));
+    --tw-prose-captions: rgb(var(--color-text-secondary));
+    --tw-prose-kbd: rgb(var(--color-text-primary));
+    --tw-prose-kbd-shadows: color-mix(in srgb, rgb(var(--color-text-primary)) 10%, transparent);
+    --tw-prose-code: rgb(var(--color-code-text));
+    --tw-prose-pre-code: rgb(var(--syntax-fg));
+    --tw-prose-pre-bg: rgb(var(--syntax-bg));
+    --tw-prose-th-borders: rgb(var(--color-border-hover));
+    --tw-prose-td-borders: rgb(var(--color-border));
+    --tw-prose-invert-body: currentColor;
+    --tw-prose-invert-headings: rgb(var(--color-text-primary));
+    --tw-prose-invert-lead: rgb(var(--color-text-secondary));
+    --tw-prose-invert-links: rgb(var(--color-text-primary));
+    --tw-prose-invert-bold: rgb(var(--color-text-primary));
+    --tw-prose-invert-counters: rgb(var(--color-text-secondary));
+    --tw-prose-invert-bullets: rgb(var(--color-text-muted));
+    --tw-prose-invert-hr: rgb(var(--color-border));
+    --tw-prose-invert-quotes: rgb(var(--color-text-primary));
+    --tw-prose-invert-quote-borders: rgb(var(--color-border-hover));
+    --tw-prose-invert-captions: rgb(var(--color-text-secondary));
+    --tw-prose-invert-kbd: rgb(var(--color-text-primary));
+    --tw-prose-invert-kbd-shadows: color-mix(in srgb, rgb(var(--color-text-primary)) 10%, transparent);
+    --tw-prose-invert-code: rgb(var(--color-code-text));
+    --tw-prose-invert-pre-code: rgb(var(--syntax-fg));
+    --tw-prose-invert-pre-bg: rgb(var(--syntax-bg));
+    --tw-prose-invert-th-borders: rgb(var(--color-border-hover));
+    --tw-prose-invert-td-borders: rgb(var(--color-border));
+  }
+
   /* Markdown inside a user bubble (bg-accent + text-on-accent). Every prose colour inherits the bubble's
      on-accent ink, so text stays legible on any theme's primary; links are marked by underline and inline code
      by a tint of that same ink. These selectors out-rank the page-level link, entity-reference and code colours. */

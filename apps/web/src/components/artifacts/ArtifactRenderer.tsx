@@ -63,9 +63,7 @@ function MarkdownArtifact({ content }: { content: unknown }) {
 
   return (
     <div className="p-5 text-primary">
-      <MarkdownContent className="dark:prose-invert" variant="assistant">
-        {content}
-      </MarkdownContent>
+      <MarkdownContent variant="assistant">{content}</MarkdownContent>
     </div>
   )
 }

@@ -39,6 +39,9 @@
        page color so that area reads as the page and never as a mismatched band. The
        token cascades from :root, so built-in, custom and previewed themes all follow it live. */
     background-color: rgb(var(--color-bg-page));
+    /* Theme ink for anything without its own text colour, including portals (modals, popovers) that
+       render straight into the body: markdown body text inherits it instead of the browser's black. */
+    color: rgb(var(--color-text-primary));
   }
 
   :root,
