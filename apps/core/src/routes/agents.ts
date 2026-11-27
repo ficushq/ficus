@@ -278,7 +278,7 @@ export const agentsRouter = new Hono()
       if (!parsed.success) return c.json({ error: 'actionIds must be a non-empty array of at most 100 IDs' }, 400)
 
       const requestedIds = [...new Set(parsed.data.actionIds)]
-      const visible = await listPendingActionsForIdentity(identity)
+      const visible = await listPendingActionsForIdentity(identity, { types: ['agent-error'] })
       const byId = new Map(
         visible.filter((action) => action.type === 'agent-error').map((action) => [action.id, action] as const)
       )

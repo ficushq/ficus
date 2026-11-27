@@ -1208,6 +1208,8 @@ function EditActionFields({
   scopeType: string
   scopeId: string
 }) {
+  // Type-first option labels, computed once for the list.
+  const agentOptionLabels = agentListLabels(agents)
   // A fresh `session` remounts the editor so each open starts from its own draft.
   const [flowEditor, setFlowEditor] = useState<{ session: number; initial?: WorkflowDefinition } | null>(null)
   return (
@@ -1287,9 +1289,9 @@ function EditActionFields({
               className="ficus-field w-full px-2 py-1 text-xs bg-surface-secondary border border-th-border rounded focus:border-accent  text-primary"
             >
               <option value="">Select target agent...</option>
-              {agents.map((agent, _index, all) => (
+              {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
-                  {agentListLabels(all).get(agent.id) ?? getAgentLabel(agent)}
+                  {agentOptionLabels.get(agent.id) ?? getAgentLabel(agent)}
                 </option>
               ))}
             </select>

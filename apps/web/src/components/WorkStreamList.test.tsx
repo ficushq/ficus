@@ -866,9 +866,10 @@ describe('WorkStreamList', () => {
 
     expect(html).toContain('title="Active"')
     expect(html).toContain('bg-status-progress-badge-surface')
-    // The status marker is the progress dot, labelled with the same state as the badge.
+    // The status marker is the progress dot. The badge beside it says the same words, so the dot is
+    // hidden from assistive technology and only carries them as a hover title.
     expect(html).toMatch(
-      /role="img" aria-label="Active" title="Active" data-testid="work-stream-status-marker" class="[^"]*bg-status-progress-solid/
+      /aria-hidden="true" title="Active" data-testid="work-stream-status-marker" class="[^"]*bg-status-progress-solid/
     )
     expect(html).not.toContain('bg-placeholder')
   })
@@ -1034,6 +1035,11 @@ describe('WorkStreamList feed section headers', () => {
     expect(separators).toHaveLength(2)
     expect(feed).toContain('title="Total agent execution runtime">12s</span>')
     expect(feed).not.toMatch(/>· /)
+    // Each dot travels with the item before it, so a wrapped context line never starts with one.
+    expect(feed).toMatch(
+      /12s<\/span><span aria-hidden="true">·<\/span><\/span>|Ficus<\/a><span aria-hidden="true">·<\/span><\/span>/
+    )
+    expect(feed).not.toMatch(/gap-x-2"><span aria-hidden="true">·/)
   })
 })
 

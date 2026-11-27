@@ -56,7 +56,7 @@ try {
     // delay early.
     await page.mouse.move(0, 0)
     await page.goto(`${base}?view=feed&nosummaries${theme}`)
-    const row = page.locator('[data-testid="feed-work-row"]').first()
+    const row = page.locator('[data-testid="work-stream-row"]').first()
     await row.waitFor()
     assert.equal(await page.locator('[data-testid="work-stream-summary-line"]').count(), 0, 'rows changed while off')
     await row.hover({ position: { x: 200, y: 12 } })
@@ -73,7 +73,7 @@ try {
 
     // "Summaries", on by default: one muted, truncated line under active rows only.
     await page.goto(`${base}?view=feed${theme}`)
-    await page.locator('[data-testid="feed-work-row"]').first().waitFor()
+    await page.locator('[data-testid="work-stream-row"]').first().waitFor()
     const lines = page.locator('[data-testid="work-stream-summary-line"]')
     assert.equal(await lines.count(), 3, 'expected a line for each active stream with a summary')
     const overflow = await lines.first().evaluate((el) => getComputedStyle(el).textOverflow)

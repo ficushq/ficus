@@ -49,7 +49,11 @@ describe('agentSenderLabel', () => {
     expect(agentSenderLabel({ name: 'Riley', agentTypeId: 'engineer', purpose: 'Fix inline PR rows' })).toBe(
       'Engineer (Fix inline PR rows)'
     )
-    expect(agentSenderLabel({ name: 'Riley', agentTypeName: 'Engineer' }, 'engineer')).toBe('Engineer')
+    expect(agentSenderLabel({ name: 'Riley' }, 'engineer')).toBe('Engineer')
+    // The configured type name wins over the title-cased id.
+    expect(agentSenderLabel({ name: 'Ava', agentTypeId: 'system-manager', agentTypeName: 'User Assistant' })).toBe(
+      'User Assistant'
+    )
     expect(agentSenderLabel({ name: 'Noah' })).toBeNull()
     expect(agentSenderLabel(undefined)).toBeNull()
   })

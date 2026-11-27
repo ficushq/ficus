@@ -399,7 +399,7 @@ describe('GET /api/actions/pending policy matrix', () => {
 })
 
 describe('GET /api/actions/pending delivery gates', () => {
-  test('lists a PR awaiting human review only for clients that opt into workstream-delivery', async () => {
+  test('lists a PR awaiting human review by default, and the types filter narrows the response', async () => {
     const stream = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} pr review gate` })
     const resourceKey = `${prefix}:delivery-gate`
     await db
@@ -444,16 +444,19 @@ describe('GET /api/actions/pending delivery gates', () => {
       },
     })
     try {
-      const legacy = (await (
-        await app.request('/api/actions/pending', { headers: authHeaders(responder.token) })
-      ).json()) as Array<{ type: string }>
-      expect(legacy.some((action) => action.type === 'workstream-delivery')).toBe(false)
+      const list = async (query: string, token = responder.token) => {
+        const response = await app.request(`/api/actions/pending${query}`, { headers: authHeaders(token) })
+        expect(response.status).toBe(200)
+        return (await response.json()) as Array<{ id: string; type: string; canRespond: boolean; data: unknown }>
+      }
+      const gateId = `workstream-delivery:${stream.id}:review`
 
-      const response = await app.request('/api/actions/pending?include=workstream-delivery', {
-        headers: authHeaders(responder.token),
-      })
-      expect(response.status).toBe(200)
-      const actions = (await response.json()) as Array<{ id: string; type: string; canRespond: boolean; data: unknown }>
+      // No query: every type, delivery gates alongside the wait-backed and question actions.
+      const actions = await list('')
+      const types = new Set(actions.map((action) => action.type))
+      for (const type of ['agent-error', 'agent-question', 'workstream-review', 'workstream-delivery']) {
+        expect(types.has(type)).toBe(true)
+      }
       expect(actions.find((action) => action.type === 'workstream-delivery')).toMatchObject({
         id: `workstream-delivery:${stream.id}:review`,
         canRespond: false,
@@ -463,11 +466,44 @@ describe('GET /api/actions/pending delivery gates', () => {
           pullRequests: [{ repository: 'acme/widgets', number: 7 }],
         },
       })
-      // A reader without actions:read never sees it.
-      const hidden = (await (
-        await app.request('/api/actions/pending?include=workstream-delivery', { headers: authHeaders(ownerOnly.token) })
-      ).json()) as Array<{ type: string }>
-      expect(hidden.some((action) => action.type === 'workstream-delivery')).toBe(false)
+
+      // The retired opt-in no longer changes the response: a stale client gets every type.
+      expect((await list('?include=workstream-delivery')).map((action) => action.id)).toEqual(
+        actions.map((action) => action.id)
+      )
+      expect((await list('?include=agent-error')).map((action) => action.id)).toEqual(
+        actions.map((action) => action.id)
+      )
+
+      // types narrows to exactly the listed types, keeping the server's order.
+      expect(await list('?types=workstream-delivery')).toEqual(
+        actions.filter((action) => action.type === 'workstream-delivery')
+      )
+      const narrowed = await list('?types=agent-error,%20workstream-review')
+      expect(narrowed.length).toBeGreaterThan(0)
+      expect(narrowed).toEqual(
+        actions.filter((action) => action.type === 'agent-error' || action.type === 'workstream-review')
+      )
+      // The repeated form is the same filter.
+      expect(await list('?types=agent-error&types=workstream-review')).toEqual(narrowed)
+      expect((await list('?types=agent-error')).some((action) => action.id === gateId)).toBe(false)
+      // An empty filter is the same as none.
+      expect((await list('?types=')).map((action) => action.id)).toEqual(actions.map((action) => action.id))
+
+      // An unknown type is rejected rather than read as an empty list.
+      const invalid = await app.request('/api/actions/pending?types=workstream-delivery,nope', {
+        headers: authHeaders(responder.token),
+      })
+      expect(invalid.status).toBe(400)
+      expect(await invalid.json()).toMatchObject({
+        code: 'invalid_action_type',
+        error: 'Unknown pending action type: nope',
+        validTypes: expect.arrayContaining(['workstream-delivery', 'agent-error']),
+      })
+
+      // A reader without actions:read never sees it, filtered or not.
+      expect((await list('', ownerOnly.token)).some((action) => action.type === 'workstream-delivery')).toBe(false)
+      expect(await list('?types=workstream-delivery', ownerOnly.token)).toEqual([])
     } finally {
       await db.delete(integrationEventPollingCursors).where(eq(integrationEventPollingCursors.resourceKey, resourceKey))
     }

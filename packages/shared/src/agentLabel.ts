@@ -45,6 +45,8 @@ export function agentTypeLabel(agentTypeId: string | null | undefined): string {
 
 export interface TypeFirstAgentLabelInput {
   agentTypeId?: string | null
+  /** The type's configured name (`AgentType.name`), when known; else the type id is title-cased. */
+  typeName?: string | null
   purpose?: string | null
   /** What the agent is working on, such as a work stream reference and step ("#12 · Implement"). */
   workingOn?: string | null
@@ -57,7 +59,7 @@ export interface TypeFirstAgentLabelInput {
  * alone; a surface that needs the stable handle shows it beside this label.
  */
 export function typeFirstAgentLabel(input: TypeFirstAgentLabelInput): string {
-  const type = agentTypeLabel(input.agentTypeId)
+  const type = input.typeName?.trim() || agentTypeLabel(input.agentTypeId)
   const detail = input.workingOn?.trim() || input.purpose?.trim()
   return detail ? `${type} (${detail})` : type
 }
@@ -69,10 +71,15 @@ export function typeFirstAgentLabel(input: TypeFirstAgentLabelInput): string {
  * name-first form they address each other by.
  */
 export function agentSenderLabel(sender: unknown, agentTypeId?: string | null): string | null {
-  const meta = (sender ?? {}) as { agentTypeId?: unknown; purpose?: unknown }
+  const meta = (sender ?? {}) as { agentTypeId?: unknown; agentTypeName?: unknown; purpose?: unknown }
   const typeId = typeof meta.agentTypeId === 'string' && meta.agentTypeId ? meta.agentTypeId : agentTypeId
   if (!typeId) return null
-  return typeFirstAgentLabel({ agentTypeId: typeId, purpose: typeof meta.purpose === 'string' ? meta.purpose : null })
+  return typeFirstAgentLabel({
+    agentTypeId: typeId,
+    // The type's configured name, recorded with the message when it was sent.
+    typeName: typeof meta.agentTypeName === 'string' ? meta.agentTypeName : null,
+    purpose: typeof meta.purpose === 'string' ? meta.purpose : null,
+  })
 }
 
 /** One-line "Purpose · Name" form for compact, single-line spots. */
