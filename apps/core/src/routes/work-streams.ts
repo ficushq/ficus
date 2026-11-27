@@ -1094,7 +1094,7 @@ export const workStreamsRouter = new Hono()
         (await loadWorkStreamStepPresentation([stream], c.get('identity') as Identity | undefined)).get(stream.id) ?? {}
       // Full audit trail (every wait, open + closed, newest first); reviewHistory
       // is the review-typed subset, so one query feeds both.
-      const waitHistory = (await listWaitHistory(db, stream.id)).map(toWaitJson)
+      const waitHistory = (await listWaitHistory(db, stream.id)).map((row) => toWaitJson(row))
       const reviewHistory = waitHistory.filter((w) => w.type === 'review')
       const reviewRounds = reviewHistory.filter((w) => w.closedAt !== null).length
       const requestingUserName = stream.requestingUserId
@@ -1623,7 +1623,7 @@ export const workStreamsRouter = new Hono()
       if (closed.length === 0) {
         return c.json({ error: 'Work stream has no open manual wait to clear' }, 409)
       }
-      return c.json({ ...existing.toJson(), closedWaits: closed.map(toWaitJson) })
+      return c.json({ ...existing.toJson(), closedWaits: closed.map((row) => toWaitJson(row)) })
     } catch (error) {
       return c.json({ error: publicErrorMessage(error) }, 400)
     }

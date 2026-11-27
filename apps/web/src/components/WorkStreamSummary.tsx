@@ -28,6 +28,8 @@ import {
 } from '@ficus/shared'
 import { WORK_STREAM_SUMMARIES_CHANGED_EVENT, WORK_STREAM_SUMMARIES_STORAGE_PREFIX } from '@ficus/shared/browser-keys'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
+import { viewerCanActOnWait, type WorkStreamViewer } from '../lib/workStreamRuntime'
+import { usePermissions } from '../hooks/usePermissions'
 import { AgentActivityDot } from './AgentActivityDot'
 import { HoverCard } from './popover/HoverCard'
 import { useHoverCard, type HoverCardState } from './popover/useHoverCard'
@@ -232,13 +234,21 @@ export function WorkStreamNowLine({ workStream }: { workStream: WorkStream }) {
   )
 }
 
-/** The stream's open waits and delivery, as the Active work card labels them. */
-export function workStreamPeekFacts(workStream: WorkStream) {
+/**
+ * The stream's open waits and delivery, as the Active work card labels them. A wait reads "Waiting
+ * on you" only when this viewer can act on it (the rule rows use); while the viewer is unknown, or
+ * to anyone else, it names what it waits on ("Waiting on review").
+ */
+export function workStreamPeekFacts(workStream: WorkStream, viewer?: WorkStreamViewer) {
   const openWaits = workStream.openWaits ?? []
-  const waits = openWaits.map((wait) => ({
-    type: workStreamWaitDisplayType(wait),
-    needsYou: workStreamWaitNeedsHuman(wait, { openWaits, delivery: workStream.delivery }),
-  }))
+  const waits = openWaits.map((wait) => {
+    const needsYou = workStreamWaitNeedsHuman(wait, { openWaits, delivery: workStream.delivery })
+    return {
+      type: workStreamWaitDisplayType(wait),
+      needsYou,
+      you: needsYou && viewerCanActOnWait(wait, workStream, viewer),
+    }
+  })
   const primary = workStreamPullRequests(workStream.metadata ?? {}).find((pullRequest) => pullRequest.number)
   const pullRequest = primary?.number
     ? {
@@ -250,7 +260,7 @@ export function workStreamPeekFacts(workStream: WorkStream) {
   return {
     waits,
     waitLabel: activityCardWaitLabel({ waits }),
-    needsYou: waits.some((wait) => wait.needsYou),
+    needsYou: waits.some((wait) => wait.you),
     deliveryLabel: activityCardDeliveryLabel({
       pullRequest: pullRequest as Parameters<typeof activityCardDeliveryLabel>[0]['pullRequest'],
       ci: workStreamDeliveryCiState(workStream.delivery),
@@ -341,7 +351,8 @@ export function WorkStreamPeekCard({
   squadSlug?: string
 }) {
   const summary = workStreamSummaryFor(workStream)
-  const facts = workStreamPeekFacts(workStream)
+  const permissions = usePermissions(workStream.squadId)
+  const facts = workStreamPeekFacts(workStream, permissions.isLoading ? undefined : permissions)
   const step = activityStepLabel(workStream.step) ?? (workStream.status === 'queued' ? 'Queued' : null)
   const participants = (workStream.agentIds ?? []).flatMap((id) => {
     const agent = agentMap?.get(id)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { WorkflowAttempt, WorkflowDefinition, WorkflowRun, WorkflowStep, WorkStreamWait } from '@ficus/shared'
+import { workflowDefinitionSchema } from '@ficus/shared'
 import {
   workflowListOrder,
   workflowProgress,
@@ -98,10 +99,13 @@ describe('workflowListOrder', () => {
   })
 
   it('lists a loop back to an earlier step once', () => {
+    // A flow loops back only through a rework edge: a forward `next` to an earlier step is a cycle
+    // the definition schema rejects.
     const looped = definition([
       agent('implement', 'engineer', { completed: { next: 'review' } }),
-      agent('review', 'reviewer', { approved: { next: 'finish' }, 'changes-requested': { next: 'implement' } }),
+      agent('review', 'reviewer', { approved: { next: 'finish' }, 'changes-requested': { returnTo: 'implement' } }),
     ])
+    expect(workflowDefinitionSchema.safeParse(looped).error).toBeUndefined()
     expect(workflowListOrder(looped.steps, looped.entry)?.map((entry) => entry.id)).toEqual(['implement', 'review'])
   })
 

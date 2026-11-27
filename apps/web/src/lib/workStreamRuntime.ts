@@ -1,5 +1,7 @@
 import {
   isWorkflowHumanGateWait,
+  mayDecideWorkflowGate,
+  workflowGateOfWait,
   workStreamNeedsHumanAttention,
   workStreamWaitDisplayType,
   workStreamWaitNeedsHuman,
@@ -96,19 +98,28 @@ function personWaitKind(wait: WorkStreamWait, ws: WorkStream): PersonWaitKind | 
 
 /**
  * Whether this viewer can clear the wait, mirroring the server's checks: answering a question
- * takes agents:run, a workflow gate takes workstreams:review (and, when the stream names
- * reviewers, being one of them), anything else workstreams:respond or workstreams:update. A gate
- * on a stream with assigned reviewers is treated as limited to them even when its step allows
- * any reviewer: that reads "Waiting on review" to the others, never a false "you".
+ * takes agents:run, a workflow gate is the shared {@link mayDecideWorkflowGate} rule for the
+ * approver Core puts on the wait, anything else workstreams:respond or workstreams:update.
  */
 function viewerCanAct(kind: PersonWaitKind, wait: WorkStreamWait, ws: WorkStream, viewer: WorkStreamViewer) {
   if (kind === 'answer') return viewer.can('agents:run')
-  if (isWorkflowHumanGateWait(wait)) {
-    const assigned = ws.assignedReviewerIds ?? []
-    const userId = viewer.identity?.type === 'user' ? viewer.identity.userId : undefined
-    return viewer.can('workstreams:review') && (assigned.length === 0 || (!!userId && assigned.includes(userId)))
-  }
+  if (isWorkflowHumanGateWait(wait))
+    return mayDecideWorkflowGate(
+      viewer.identity,
+      viewer.can('workstreams:review'),
+      ws.assignedReviewerIds,
+      workflowGateOfWait(wait)
+    )
   return viewer.can('workstreams:respond') || viewer.can('workstreams:update')
+}
+
+/**
+ * Whether this viewer can act on one open wait: it asks a person (including the delivery approval)
+ * and the viewer is someone who may clear it. False while the viewer is unknown.
+ */
+export function viewerCanActOnWait(wait: WorkStreamWait, ws: WorkStream, viewer?: WorkStreamViewer): boolean {
+  const kind = personWaitKind(wait, ws)
+  return !!kind && !!viewer && viewerCanAct(kind, wait, ws, viewer)
 }
 
 export interface WorkStreamPersonWait {

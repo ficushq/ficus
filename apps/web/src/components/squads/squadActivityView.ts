@@ -5,6 +5,7 @@ import {
   activityWorkStreamCardState,
   workStreamSlotWaitLabel,
   type ActivityWorkStreamCard,
+  type ActivityWorkStreamCardWait,
   type SquadActivityItem,
   type SquadActivityKind,
   type WorkStreamWaitType,
@@ -156,19 +157,37 @@ const WAIT_LABELS: Record<WorkStreamWaitType, string> = {
   manual: 'blocker',
 }
 
+/** What a person is waited on for, as "Waiting on review" reads it to someone who cannot act. */
+const PERSON_WAIT_NOUNS: Record<WorkStreamWaitType, string> = {
+  review: 'review',
+  question: 'an answer',
+  dependency: 'a dependency',
+  manual: 'a person',
+}
+
 /**
- * "Waiting on you: review" when a person must act, else "Waiting: dependency". A review the
- * person cannot act on yet is a workflow gate queued behind the other waits, so it trails as
- * "· review next" ("Waiting on you: question · review next") instead of reading as current.
+ * One wait as the label reads it. `you` narrows "a person must act" (`needsYou`) to the viewer:
+ * false when this viewer cannot act on it. Server-built cards omit it and read as the viewer's.
  */
-export function activityCardWaitLabel(card: Pick<ActivityWorkStreamCard, 'waits'>): string | null {
+export type ActivityCardLabelWait = ActivityWorkStreamCardWait & { you?: boolean }
+
+/**
+ * "Waiting on you: review" when the viewer must act, "Waiting on review" when someone else must,
+ * else "Waiting: dependency". A review no person can act on yet is a workflow gate queued behind
+ * the other waits, so it trails as "· review next" ("Waiting on you: question · review next")
+ * instead of reading as current.
+ */
+export function activityCardWaitLabel(card: { waits: readonly ActivityCardLabelWait[] }): string | null {
   const queuedReview = card.waits.some((wait) => wait.type === 'review' && !wait.needsYou)
   const current = queuedReview ? card.waits.filter((wait) => wait.type !== 'review' || wait.needsYou) : card.waits
   const suffix = queuedReview ? ' · review next' : ''
-  const mine = [...new Set(current.filter((wait) => wait.needsYou).map((wait) => WAIT_LABELS[wait.type]))]
-  if (mine.length) return `Waiting on you: ${mine.join(', ')}${suffix}`
-  const other = [...new Set(current.map((wait) => WAIT_LABELS[wait.type]))]
-  if (other.length) return `Waiting: ${other.join(', ')}${suffix}`
+  const named = (waits: readonly ActivityCardLabelWait[], words: Record<WorkStreamWaitType, string>) =>
+    [...new Set(waits.map((wait) => words[wait.type]))].join(', ')
+  const mine = current.filter((wait) => wait.needsYou && wait.you !== false)
+  if (mine.length) return `Waiting on you: ${named(mine, WAIT_LABELS)}${suffix}`
+  const people = current.filter((wait) => wait.needsYou)
+  if (people.length) return `Waiting on ${named(people, PERSON_WAIT_NOUNS)}${suffix}`
+  if (current.length) return `Waiting: ${named(current, WAIT_LABELS)}${suffix}`
   return queuedReview ? 'Waiting: review' : null
 }
 

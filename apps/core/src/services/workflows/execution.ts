@@ -77,7 +77,7 @@ import {
   stackedDependencyNotice,
   WorkStreamStackedDeliveryHoldError,
 } from '../work-streams/dependency-edges'
-import { resolveBranchChangeRequest } from '@ficus/shared'
+import { mayDecideWorkflowGate, resolveBranchChangeRequest } from '@ficus/shared'
 import { flowWorkerName } from './worker-name'
 import { endedAgentAttempts, stopLeftoversForEndedAttempts } from '../sandbox/leftover-processes'
 
@@ -101,6 +101,7 @@ export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: numbe
 /**
  * Whether a person may decide a human approval step: review permission, and for a gate limited to
  * assigned reviewers, being one of them. `canReview` is {@link isWorkflowReviewer} for the squad.
+ * The rule itself is the shared `mayDecideWorkflowGate`, which every client shows.
  */
 export function mayDecideFlowGate(
   identity: Identity,
@@ -108,13 +109,7 @@ export function mayDecideFlowGate(
   stream: Pick<Stream, 'assignedReviewerIds'>,
   step: Pick<WorkflowStep, 'kind'> & { approver?: string }
 ): boolean {
-  if (identity.type !== 'user' || !canReview) return false
-  return !(
-    step.kind === 'human-approval' &&
-    step.approver === 'assigned-reviewers' &&
-    stream.assignedReviewerIds.length > 0 &&
-    !stream.assignedReviewerIds.includes(identity.userId)
-  )
+  return mayDecideWorkflowGate(identity, canReview, stream.assignedReviewerIds, step)
 }
 
 /** A paused stream takes no handoffs (only revisions), and a finished one takes nothing. */

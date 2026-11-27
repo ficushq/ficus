@@ -1,5 +1,6 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { WorkflowAttemptLimitPause } from './workflow-runtime'
+import type { WorkflowGateApprover } from './workflow-gate-deciders'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 import type { WorkflowReviewConsultation } from './workflow-result-revisions'
@@ -1421,6 +1422,12 @@ export function workStreamWaitActor(wait: { actor?: string | null }): WorkStream
 export interface WorkStreamWait {
   /** Read-only exact-reference annotation; never writable by clients. */
   workflowHumanGate?: boolean
+  /**
+   * Read-only, on a workflow gate's wait: who decides the gate (its step's approver; `reviewers`
+   * for a decision step). Clients pass it to `mayDecideWorkflowGate`. Omitted on other waits and by
+   * older servers.
+   */
+  workflowGateApprover?: WorkflowGateApprover
   /**
    * Read-only: the flow paused at its attempt limit. The stream presents as blocked on a person;
    * Raise limit (the `raise-limit` flow command) clears it. Omitted otherwise and by older servers.

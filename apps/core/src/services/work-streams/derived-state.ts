@@ -17,7 +17,7 @@ import { db } from '../../db'
 import { executions } from '../../db/schema'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { collectWorkStreamAgentIds } from './agent-ids'
-import { listOpenWaitsForStreams, toWaitJson } from './waits'
+import { listOpenWaitsForStreams, loadWorkflowGateApprovers, toWaitJson } from './waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
 import { loadStreamSlotWaits } from './slot-waits'
 import { loadAgentsWithActiveMonitors } from './active-monitors'
@@ -192,6 +192,9 @@ export async function computeDerivedStates(
     )
   }
 
+  // Who decides each workflow gate, so clients say "Waiting on you" only to a person who may.
+  const gateApprovers = await loadWorkflowGateApprovers([...waitsByStream.values()].flat())
+
   const executionCandidates = streams.filter(
     (s) => !s.pause && s.status === 'active' && (waitsByStream.get(s.id)?.length ?? 0) === 0
   )
@@ -206,7 +209,9 @@ export async function computeDerivedStates(
   const surfacedFailures = await loadSurfaced(idleProbeAgentIds)
 
   for (const stream of streams) {
-    const openWaits = sortWaitsByDisplayPrecedence((waitsByStream.get(stream.id) ?? []).map(toWaitJson))
+    const openWaits = sortWaitsByDisplayPrecedence(
+      (waitsByStream.get(stream.id) ?? []).map((wait) => toWaitJson(wait, gateApprovers.get(wait.id)))
+    )
 
     let delivery = deliveryByStream.get(stream.id)
     if (delivery?.kind === 'approval') {
