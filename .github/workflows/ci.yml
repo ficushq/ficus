@@ -518,6 +518,10 @@ jobs:
         run: bun test ./ci-web-test-gate.test.ts
         working-directory: .github
 
+      - name: Validate rendered web check mapping and gate
+        run: bun test ./rendered-checks-gate.test.ts ../apps/web/scripts/rendered-checks.test.ts
+        working-directory: .github
+
       - name: Validate sterile secret-boundary gate
         run: bun test ./ci-secret-boundary-gate.test.ts
         working-directory: .github
@@ -875,6 +879,92 @@ jobs:
       # The farm (apps/farm) ships inside the web build, so its tests gate it here too.
       - name: Run farm tests
         run: bun run --cwd apps/farm test
+
+  # Rendered web checks (apps/web/scripts/check-*.ts): real components and stylesheet in headless
+  # Chromium with made-up data, no database. A pull request runs the checks whose import graph it
+  # touches (apps/web/scripts/rendered-checks.ts), split into up to five shards; the nightly run
+  # runs all of them. `rendered checks` is the verdict, so a run with nothing to check still reports.
+  rendered-checks-plan:
+    name: Plan rendered web checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # The import graph follows the workspace packages through node_modules.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - id: plan
+        name: Select rendered checks from the diff
+        run: bun .github/rendered-checks-gate.ts plan
+
+  rendered-checks-run:
+    name: rendered checks (shard ${{ matrix.shard.name }})
+    needs: rendered-checks-plan
+    if: ${{ needs.rendered-checks-plan.result == 'success' && needs.rendered-checks-plan.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    # A shard is planned at about five minutes and each check is capped at ten by the runner.
+    timeout-minutes: 30
+    strategy:
+      # Every shard reports, so one failure does not hide another.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.rendered-checks-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      # The headless shell matching the locked playwright-core, with its system libraries and fonts.
+      - name: Install Chromium
+        run: node node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+      - name: Run rendered checks
+        working-directory: apps/web
+        env:
+          CHECKS: ${{ matrix.shard.checks }}
+        run: bun scripts/run-rendered-checks.ts $CHECKS
+
+  rendered-checks:
+    name: rendered checks
+    needs: [rendered-checks-plan, rendered-checks-run]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Require every selected rendered check
+        env:
+          PLAN_RESULT: ${{ needs.rendered-checks-plan.result }}
+          RUN_CHECKS: ${{ needs.rendered-checks-plan.outputs.run }}
+          CHECKS_RESULT: ${{ needs.rendered-checks-run.result }}
+        run: bun .github/rendered-checks-gate.ts verify-result
 
   test:
     # The required check. It runs no tests itself: it fails unless every lane
