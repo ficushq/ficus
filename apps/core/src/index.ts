@@ -185,7 +185,7 @@ import { corsAllowOrigins, normalizeOrigin, isAllowedWsOrigin } from './services
 import { extractSessionToken, getSessionCookie } from './services/auth/session-cookie'
 import { csrfProtection } from './middleware/csrf'
 import { managedVaultHostGuard } from './middleware/managed-vault-host'
-import { CORE_IDLE_TIMEOUT_SECONDS, readDeadline } from './middleware/read-deadline'
+import { CORE_IDLE_TIMEOUT_SECONDS, holdIdleTimerForBodylessWrites, readDeadline } from './middleware/read-deadline'
 import { redactHttpLogCredentials } from './lib/infra/http-log'
 import { attachPeerAddress, getClientAddress } from './lib/client-address'
 import { getSandboxProvisionErrorResponse } from './routes/sandbox-provision-error'
@@ -213,6 +213,9 @@ if (heapSnapshotDirectory) {
 export const app = new Hono({ getPath: coreGetPath })
 
 app.use('*', jsonBodyErrorMiddleware)
+// A slow write without a body (the CLI's pause or cancel) must not lose its answer
+// to Bun's idle timer while it runs; writes with a body are already spared.
+app.use('*', holdIdleTimerForBodylessWrites())
 app.onError((error, c) => {
   // Sandbox provisioning back-pressure answers 503 + Retry-After. It must be checked
   // before the shared handler, which would otherwise flatten it into a generic 500 and
@@ -1228,7 +1231,8 @@ if (import.meta.main) {
     websocket: coreWebSocketHandler,
     // Every route but the local-app proxy: that one extends its own requests
     // (LOCAL_APP_PROXY_IDLE_TIMEOUT_SECONDS) so a slow app can still answer.
-    // Reads answer before it fires (middleware/read-deadline.ts).
+    // Reads answer before it fires and body-less writes hold it off while they run
+    // (middleware/read-deadline.ts).
     idleTimeout: CORE_IDLE_TIMEOUT_SECONDS,
   })
 }

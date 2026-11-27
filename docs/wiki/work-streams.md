@@ -105,7 +105,7 @@ went from 0.17 to 6.7 seconds, while `/health` stayed at 0.03 seconds. A few age
 polling `ficus workstream list` that way are enough to push ordinary reads past 30
 seconds.
 
-Two things keep reads bounded:
+Two things keep reads bounded, and a third keeps slow writes from losing their answer:
 
 - **Open work by default.** `ficus workstream list` asks for `statuses=queued,active`
   unless it gets `--status` or `--all` (see
@@ -126,9 +126,19 @@ Two things keep reads bounded:
   its late result is discarded, and Core logs a `read-deadline` warning for the read and
   another when it finishes. Routes that set their own idle timeout through
   `extendIdleTimeout` (workspace transfers, work stream creation) and the local-app
-  proxy are exempt. Writes with a JSON body are never cut by the idle timer. A `POST`
-  without a body (for example `workstream pause` or `cancel`) still can be; it is a
-  write, so Core does not answer it early.
+  proxy are exempt.
+- **Body-less writes run to their answer.** Writes with a body (a JSON `POST`) are never
+  cut by the idle timer, even after the handler has read the body. A write without one
+  (`workstream pause`, `resume`, `cancel` and `reopen` send none, nor does a body-less
+  `DELETE`) would be, and it cannot be answered early like a read because it may already
+  have changed something. `holdIdleTimerForBodylessWrites` (same file) therefore turns
+  the timer off for any non-`GET`/`HEAD` request without a body while its handler runs,
+  so every client gets the real result, and turns it back on before the response is
+  written. That second step matters: Bun's per-request `timeout(request, 0)` lasts for
+  the whole keep-alive connection, so leaving it off would keep that idle socket open
+  forever. A route that set its own idle timeout keeps it. The fix is in Core rather than
+  in the CLI (which could send `{}` instead) so that browsers, scripts and older CLIs are
+  covered too, and no client depends on how Bun treats request bodies.
 
 The CLI shows the 503's message as is. If a server without the deadline drops a read,
 `apiGet` reports that Ficus closed the connection before answering, probably because it
