@@ -30,6 +30,18 @@ import {
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
+import { fauxProvider } from '@earendil-works/pi-ai/providers/faux'
+import {
+  createAgentSession,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type AgentSession as PiAgentSession,
+  type ToolDefinition,
+} from '@earendil-works/pi-coding-agent'
+import { Type } from 'typebox'
+import { recordInterruptedToolCalls } from '../interrupted-tool-calls'
+import { FicusResourceLoader } from '../resource-loader'
 import { clearClaudeCodeToolLabelsForTest, registerClaudeCodeToolLabels } from '../tool-search/claude-code'
 
 const model = anthropicProvider()
@@ -383,6 +395,140 @@ test('after a hard restart mid tool call, the re-seeded session shows the restar
   expect(latest).toEqual({ type: 'text', text: 'Continue.' })
   claude.emit(...textResponse('msg_2', 'checking state first'))
   expect((await next.result()).stopReason).toBe('stop')
+})
+
+describe('cut-off tool calls on a real pi session through the bridge', () => {
+  const sessions: PiAgentSession[] = []
+  afterEach(() => {
+    for (const session of sessions.splice(0)) session.dispose()
+  })
+
+  /** One worker's pi session over the agent's session file, with Ficus's own extensions. */
+  async function startSession(
+    sessionManager: SessionManager,
+    stream: ReturnType<typeof harness>['stream'],
+    toolStarted: () => void
+  ) {
+    const faux = fauxProvider({ provider: 'faux-claude-code', models: [{ id: 'claude-opus-5-5' }] })
+    const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false })
+    modelRuntime.registerNativeProvider({ ...faux.provider, stream, streamSimple: stream } as any)
+    // A read that never returns: Core dies while it runs.
+    const read: ToolDefinition = {
+      name: 'read',
+      label: 'read',
+      description: 'Read a file',
+      parameters: Type.Object({ path: Type.String() }),
+      execute: () => {
+        toolStarted()
+        return new Promise(() => {})
+      },
+    }
+    const { session } = await createAgentSession({
+      cwd: process.cwd(),
+      agentDir: '/tmp/ficus-claude-code-bridge-test',
+      modelRuntime,
+      model: faux.getModel(),
+      thinkingLevel: 'off',
+      noTools: 'builtin',
+      customTools: [read],
+      resourceLoader: await FicusResourceLoader.create('You are a Ficus worker.'),
+      sessionManager,
+      settingsManager: SettingsManager.inMemory({
+        retry: { enabled: false },
+        compaction: { enabled: false, keepRecentTokens: 1 },
+      }),
+    })
+    sessions.push(session)
+    return session
+  }
+
+  /** The Claude Code process a pi prompt starts; pi calls the provider asynchronously. */
+  async function claudeProcess(processes: FakeClaude[]) {
+    for (let waited = 0; !processes[0] && waited < 5000; waited += 10) await Bun.sleep(10)
+    return processes[0]!
+  }
+
+  test('each worker after a crash seeds Claude Code with the same results pi shows, a repeated call marked, and never again', async () => {
+    const sessionManager = SessionManager.inMemory(process.cwd())
+    const huge = { path: 'huge.log' }
+    const startedAt = new Date(Date.now() - 1000).toISOString()
+    let toolStarted = () => {}
+    const toolRan = () => new Promise<void>((resolve) => (toolStarted = resolve))
+
+    // Worker 1: Claude Code calls read on a huge log, and Core dies while it runs.
+    const first = harness()
+    const session1 = await startSession(sessionManager, first.stream, () => toolStarted())
+    let ran = toolRan()
+    void session1.prompt('read the log')
+    const claude1 = await claudeProcess(first.processes)
+    await claude1.nextPrompt(1)
+    claude1.emit(...toolResponse('msg_1', 'toolu_1', huge, 'mcp__ficus__read'))
+    await ran
+
+    // Worker 2 picks the run up after startup recovery and records the cut-off call.
+    const notice1 = {
+      noticeId: 'notice-1',
+      executionId: 'execution-1',
+      cause: 'core_restart' as const,
+      recoveredAt: new Date().toISOString(),
+      executionStartedAt: startedAt,
+    }
+    expect(recordInterruptedToolCalls(sessionManager, notice1).calls).toMatchObject([
+      { toolCallId: 'toolu_1', toolName: 'read', replay: 'safe' },
+    ])
+    const firstResult = `<tool_result id="toolu_1" error="true">\n${interruptedToolResultText({ toolName: 'read', replay: 'safe' }, notice1)}\n</tool_result>`
+    const second = harness(first.stateDir)
+    const session2 = await startSession(sessionManager, second.stream, () => toolStarted())
+    ran = toolRan()
+    void session2.prompt('Continue.')
+    const claude2 = await claudeProcess(second.processes)
+    // Claude Code's transcript has no answer for the call, so it is seeded, not resumed.
+    expect(claude2.options.resume).toBeUndefined()
+    const [seed2, latest2] = (await claude2.nextPrompt(1)).message.content
+    expect(seed2.text).toContain(firstResult)
+    expect(seed2.text).not.toContain('No result provided')
+    expect(latest2).toEqual({ type: 'text', text: 'Continue.' })
+    // The model reads the same file again, and Core goes down again.
+    claude2.emit(...toolResponse('msg_2', 'toolu_2', { ...huge }, 'mcp__ficus__read'))
+    await ran
+
+    // Worker 3: the same call cut off a second time gets the cautious wording, whatever its class.
+    const notice2 = { ...notice1, noticeId: 'notice-2', recoveredAt: new Date(Date.now() + 1).toISOString() }
+    expect(recordInterruptedToolCalls(sessionManager, notice2).calls).toMatchObject([
+      { toolCallId: 'toolu_2', toolName: 'read', replay: 'safe', repeated: true },
+    ])
+    const repeatedText = interruptedToolResultText({ toolName: 'read', replay: 'safe', repeated: true }, notice2)
+    expect(repeatedText).toContain('Do not run it again as is')
+    const third = harness(first.stateDir)
+    const session3 = await startSession(sessionManager, third.stream, () => toolStarted())
+    const resumed = session3.prompt('Continue.')
+    const claude3 = await claudeProcess(third.processes)
+    expect(claude3.options.resume).toBeUndefined()
+    const [seed3] = (await claude3.nextPrompt(1)).message.content
+    expect(seed3.text).toContain(firstResult)
+    expect(seed3.text).toContain(`<tool_result id="toolu_2" error="true">\n${repeatedText}\n</tool_result>`)
+    // Each result once: answered where pi answers it, not repeated anywhere else.
+    expect(seed3.text.split('<tool_result ').length - 1).toBe(2)
+    expect(seed3.text.split('was interrupted by an unexpected Core restart').length - 1).toBe(2)
+    claude3.emit(...textResponse('msg_3', 'I will read the log in smaller parts.'))
+    await resumed
+
+    // Later turns carry only what is new, in the same process and after a worker restart.
+    const later = session3.prompt('thanks')
+    expect((await claude3.nextPrompt(2)).message.content).toEqual([{ type: 'text', text: 'thanks' }])
+    claude3.emit(...textResponse('msg_4', 'Any time'))
+    await later
+    expect(third.processes).toHaveLength(1)
+
+    const fourth = harness(first.stateDir)
+    const session4 = await startSession(sessionManager, fourth.stream, () => toolStarted())
+    const again = session4.prompt('and again')
+    const claude4 = await claudeProcess(fourth.processes)
+    expect(claude4.options.resume).toBe('cc-1')
+    expect((await claude4.nextPrompt(1)).message.content).toEqual([{ type: 'text', text: 'and again' }])
+    claude4.emit(...textResponse('msg_5', 'Sure'))
+    await again
+  }, 30_000)
 })
 
 test('a history Claude Code never saw starts a fresh session seeded with the transcript', async () => {

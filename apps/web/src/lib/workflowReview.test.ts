@@ -9,7 +9,14 @@ import {
   type WorkStream,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
-import { humanGateContext, openHumanGates, producingAgents, revisedLabel } from './workflowReview'
+import {
+  humanGateContext,
+  openHumanGates,
+  outcomeActionLabel,
+  outcomeLabel,
+  producingAgents,
+  revisedLabel,
+} from './workflowReview'
 
 const stream = { id: 'decided', status: 'active', assignedReviewerIds: ['someone-else'] } as unknown as WorkStream
 
@@ -88,6 +95,20 @@ test('human return review captions name the effective resume destination instead
     { can: () => true }
   )!
   expect(outcomeEffect(state, gate.outcomes[0]![1], gate.attempt, 'yes')).toBe('Next: execute (General Purpose agent)')
+})
+
+test('decision buttons name outcomes as present-tense actions; records keep the past tense', () => {
+  expect(outcomeActionLabel('approved')).toBe('Approve')
+  expect(outcomeActionLabel('changes-requested')).toBe('Request changes')
+  expect(outcomeActionLabel('changes_requested')).toBe('Request changes')
+  expect(outcomeActionLabel('rejected')).toBe('Reject')
+  expect(outcomeActionLabel('accepted')).toBe('Accept')
+  // Custom outcomes keep the humanized ID.
+  expect(outcomeActionLabel('ship-it')).toBe('Ship it')
+  expect(outcomeActionLabel('needs_more_info')).toBe('Needs more info')
+  // What already happened reads in the past tense.
+  expect(outcomeLabel('approved')).toBe('Approved')
+  expect(outcomeLabel('changes-requested')).toBe('Changes requested')
 })
 
 test('revised labels count minutes and hours since the revision', () => {

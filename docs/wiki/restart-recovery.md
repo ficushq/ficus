@@ -101,9 +101,20 @@ to narrow it first. If the run still keeps being cut off, the crash-loop cap bel
 stops resuming it.
 
 The hook rewrites only pi's copy of the context; the session file keeps the call
-without a result. The Claude Code bridge receives that same context, so a session
-re-seeded after the crash (a pending tool result always re-seeds) shows the same
-result in its transcript. Nothing is rerun automatically.
+without a result. Nothing is rerun automatically.
+
+Agents on the Claude Code bridge get the same results with the same wording,
+repeated-call warning included. pi runs `context` hooks before it calls any
+provider, so the bridge (`claude-code/bridge.ts`) receives the answered
+conversation, not the session file. A hard crash also kills the Claude Code
+process, and an answer Claude Code never saw means it cannot resume its own
+session, so the next worker seeds a fresh one with the transcript. Each
+recorded call appears there once, as a `<tool_result>` right after its call.
+Later turns send Claude Code only what is new, whether in the same process or
+after resuming it by session id, so the results are not repeated. The crash-loop
+cap's record works the same way: Continue opens the same session file. The
+bridge test "cut-off tool calls on a real pi session through the bridge" drives
+this end to end through two crashes on a real pi session.
 
 ### Crash-loop cap
 
