@@ -1,6 +1,7 @@
 import { workStreamQueuedReviewLabel, type WorkStreamPresentationFacts } from '@ficus/shared'
 import clsx from 'clsx'
 import { Badge } from './Badge'
+import { liveEmphasisProps } from '../lib/liveListMotion'
 import {
   getWsDisplayState,
   isWorkStreamParked,
@@ -24,6 +25,7 @@ export function WorkStreamStatusBadges({
   deliveryLabel = 'text',
   showQueuedReview = true,
   className,
+  liveEmphasis = false,
 }: {
   workStream: WorkStreamPresentationFacts & { queuePosition?: number | null }
   showPrimary?: boolean
@@ -32,6 +34,8 @@ export function WorkStreamStatusBadges({
   /** Pill rows leave "Review queued" to the peek card; text surfaces keep it. */
   showQueuedReview?: boolean
   className?: string
+  /** The element a live list emphasizes when this stream's status changes (LiveListMotion). */
+  liveEmphasis?: boolean
 }) {
   const state = getWsDisplayState(workStream)
   const parked = isWorkStreamParked(workStream)
@@ -47,7 +51,10 @@ export function WorkStreamStatusBadges({
       ? `${label} (${workStream.queuePosition})`
       : label
   return (
-    <span className={clsx('inline-flex flex-wrap items-center gap-1.5 min-w-0', className)}>
+    <span
+      className={clsx('inline-flex flex-wrap items-center gap-1.5 min-w-0', className)}
+      {...(liveEmphasis ? liveEmphasisProps : {})}
+    >
       {showPrimary && (
         <Badge color={WS_STATUS_BADGE_COLORS[state]} title={title}>
           {label}

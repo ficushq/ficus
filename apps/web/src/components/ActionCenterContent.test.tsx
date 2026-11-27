@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { afterAnimationFrames } from '../test/animationFrames'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
 
@@ -241,5 +242,101 @@ describe('ActionCenterContent bulk continuation', () => {
       expect(focused).toHaveLength(1)
       expect(focused[0]?.textContent).toContain('Use option B')
     })
+  })
+})
+
+describe('ActionCenterContent live motion', () => {
+  test('only with a live motion key: a card that arrives is highlighted, unless the view changed', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { root, container } = dom.createRoot()
+    const render = (actions: PendingAction[], liveMotionKey?: string) =>
+      dom.act(async () => {
+        root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={queryClient}>
+              <ActionCenterContent
+                actions={actions}
+                isLoading={false}
+                continueHaltedActions={continueHaltedAgents}
+                liveMotionKey={liveMotionKey}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+    try {
+      // The Action Center panel and /actions pass no key: their cards stay as they are.
+      await render([haltedAction('agent-error:one', true)])
+      expect(container.querySelector('[data-live-row]')).toBeNull()
+      await dom.act(async () => root.unmount())
+
+      const feed = dom.createRoot()
+      const renderFeed = async (actions: PendingAction[], key: string) => {
+        await dom.act(async () => {
+          feed.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={queryClient}>
+                <ActionCenterContent
+                  actions={actions}
+                  isLoading={false}
+                  continueHaltedActions={continueHaltedAgents}
+                  liveMotionKey={key}
+                />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        })
+        await dom.act(() => afterAnimationFrames(dom.window))
+      }
+      const feedHighlighted = () =>
+        [...feed.container.querySelectorAll('.ficus-live-arrived')].map((node) => node.getAttribute('data-live-row'))
+      await renderFeed([haltedAction('agent-error:one', true)], '[]')
+      expect(feedHighlighted()).toEqual([])
+      await renderFeed([haltedAction('agent-error:one', true), haltedAction('agent-error:two', true)], '[]')
+      expect(feedHighlighted()).toEqual(['agent-error:two'])
+      // A squad filter change is a new view.
+      await renderFeed([haltedAction('agent-error:three', true)], '["squad-2"]')
+      expect(feedHighlighted()).toEqual([])
+    } finally {
+      await dom.cleanup()
+      queryClient.clear()
+    }
+  })
+})
+
+describe('ActionCenterContent first live arrival', () => {
+  test('cards it mounts with are highlighted only when they arrived live', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    try {
+      const mount = async (liveMotionArrived: boolean) => {
+        const view = dom.createRoot()
+        await dom.act(async () => {
+          view.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={queryClient}>
+                <ActionCenterContent
+                  actions={[haltedAction('agent-error:first', true)]}
+                  isLoading={false}
+                  continueHaltedActions={continueHaltedAgents}
+                  liveMotionKey="[]"
+                  liveMotionArrived={liveMotionArrived}
+                />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        })
+        await dom.act(() => afterAnimationFrames(dom.window))
+        return [...view.container.querySelectorAll('.ficus-live-arrived')].map((node) =>
+          node.getAttribute('data-live-row')
+        )
+      }
+      expect(await mount(false)).toEqual([])
+      expect(await mount(true)).toEqual(['agent-error:first'])
+    } finally {
+      await dom.cleanup()
+      queryClient.clear()
+    }
   })
 })
