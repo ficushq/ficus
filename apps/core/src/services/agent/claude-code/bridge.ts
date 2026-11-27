@@ -32,6 +32,7 @@ import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
 import { claudeChildEnv, claudeCodeExecutable } from './availability'
 import { describeClaudeCodeFailure } from './failures'
+import { claudeCodeToolLabels, claudeCodeToolMeta, type ClaudeCodeToolLabels } from '../tool-search/claude-code'
 import {
   CLAUDE_TOOL_PREFIX,
   TOOL_SERVER,
@@ -141,6 +142,7 @@ class Bridge {
     readonly key: string,
     readonly signature: string,
     tools: Tool[],
+    toolLabels: ClaudeCodeToolLabels,
     options: Options,
     runQuery: QueryFn,
     private readonly onSession: (bridge: Bridge) => void,
@@ -149,20 +151,23 @@ class Bridge {
     this.executable = options.pathToClaudeCodeExecutable
     this.query = runQuery({
       prompt: this.input,
-      options: { ...options, mcpServers: { [TOOL_SERVER]: this.toolServer(tools) } },
+      options: { ...options, mcpServers: { [TOOL_SERVER]: this.toolServer(tools, toolLabels) } },
     })
     void this.pump()
   }
 
-  private toolServer(tools: Tool[]) {
+  private toolServer(tools: Tool[], toolLabels: ClaudeCodeToolLabels) {
     const server = new McpServer({ name: TOOL_SERVER, version: '1.0.0' }, { capabilities: { tools: {} } })
     // Registered as raw protocol handlers: the tools' parameters are already JSON Schema, which the
     // Zod-only registerTool path would degrade. pi validates and runs the calls itself.
+    // Ficus's labels decide what Claude Code's tool search may hold back: direct tools are marked
+    // always-load, so they are declared at full schema from the first turn.
     server.server.setRequestHandler(ListToolsRequestSchema, () => ({
       tools: tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
         inputSchema: objectSchema(tool.parameters),
+        _meta: claudeCodeToolMeta(tool.name, toolLabels),
       })),
     }))
     server.server.setRequestHandler(CallToolRequestSchema, (request) => {
@@ -394,7 +399,17 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
         tools.map((tool) => tool.name)
       )
       const effort = options?.reasoning ? EFFORT[options.reasoning] : undefined
-      const signature = hash({ model: model.id, effort, systemPrompt, tools: tools.map(toolSignature) })
+      // Fixed when the session starts, so the signature (and the Claude Code process) only changes
+      // when the prompt, model or pi's tool set does.
+      const toolLabels = claudeCodeToolLabels(options?.sessionId)
+      const signature = hash({
+        model: model.id,
+        effort,
+        systemPrompt,
+        tools: tools.map(toolSignature),
+        deferred: tools.filter((tool) => toolLabels.deferred.has(tool.name)).map((tool) => tool.name),
+        toolSearch: toolLabels.enableToolSearch,
+      })
 
       let bridge = bridges.get(key)
       // A side request must never touch the live session. Taken as a turn the session could not
@@ -431,6 +446,8 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
           DISABLE_AUTO_COMPACT: '1',
           ENABLE_CLAUDEAI_MCP_SERVERS: '0',
           MCP_TOOL_TIMEOUT: MCP_TOOL_TIMEOUT_MS,
+          // On only when the session's plan holds tools back; otherwise every tool is declared.
+          ENABLE_TOOL_SEARCH: toolLabels.enableToolSearch,
         }),
         systemPrompt,
         // No Claude Code built-in tools. The agent's own tools are pre-approved by name; anything
@@ -458,6 +475,7 @@ export function createClaudeCodeStream(deps: ClaudeCodeBridgeDeps = {}) {
           key,
           signature,
           tools,
+          toolLabels,
           canResume ? { ...baseOptions, resume: saved!.claudeSessionId } : baseOptions,
           runQuery,
           onSession,

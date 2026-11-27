@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +24,7 @@ import { claudeSystemPrompt, emptyUsage, renderHistoryPrompt } from './convert'
 import { isRetryableAssistantError } from '@earendil-works/pi-ai'
 import { classifyCaughtProviderError } from '../../../lib/error'
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic'
+import { clearClaudeCodeToolLabelsForTest, registerClaudeCodeToolLabels } from '../tool-search/claude-code'
 
 const model = anthropicProvider()
   .getModels()
@@ -593,4 +594,67 @@ test('a cache warm between turns starts no Claude Code turn and keeps the sessio
   claude.emit(...textResponse('msg_2', 'hello again'))
   expect((await next.result()).stopReason).toBe('stop')
   expect(processes).toHaveLength(1)
+})
+
+describe('Ficus tool labels in Claude Code', () => {
+  const browserOpen = {
+    name: 'browser_open',
+    description: 'Open a URL in the browser',
+    parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+  } as any
+  const labelled = (messages: Message[]) =>
+    normalizeContext({ systemPrompt: 'You are a Ficus worker.', tools: [bash, browserOpen], messages })
+  afterEach(() => clearClaudeCodeToolLabelsForTest())
+
+  test('direct tools are always-load, deferrable ones are left to Claude Code tool search', async () => {
+    registerClaudeCodeToolLabels('s-labels', { mode: 'claude-code', hidden: ['browser_open'], reason: 'test' })
+    const { stream, processes } = harness()
+    stream(model, labelled([user('hi')]), { sessionId: 's-labels' })
+    const claude = processes[0]!
+    expect(claude.options.env!.ENABLE_TOOL_SEARCH).toBe('true')
+    const { tools } = await (await claude.tools()).listTools()
+    expect(tools.find((tool) => tool.name === 'bash')!._meta).toEqual({ 'anthropic/alwaysLoad': true })
+    expect(tools.find((tool) => tool.name === 'browser_open')!._meta).toEqual({
+      'anthropic/searchHint': expect.stringContaining('Browser automation'),
+    })
+  })
+
+  test('a session that holds nothing back loads every tool up front with Claude Code tool search off', async () => {
+    registerClaudeCodeToolLabels('s-off', { mode: 'direct', hidden: [], reason: 'search is off' })
+    const { stream, processes } = harness()
+    stream(model, labelled([user('hi')]), { sessionId: 's-off' })
+    const claude = processes[0]!
+    expect(claude.options.env!.ENABLE_TOOL_SEARCH).toBe('false')
+    const { tools } = await (await claude.tools()).listTools()
+    expect(tools.map((tool) => tool._meta)).toEqual([
+      { 'anthropic/alwaysLoad': true },
+      { 'anthropic/alwaysLoad': true },
+    ])
+  })
+
+  test('calling a deferred tool keeps the signature, so the same Claude Code process carries on', async () => {
+    registerClaudeCodeToolLabels('s-stable', { mode: 'claude-code', hidden: ['browser_open'], reason: 'test' })
+    const { stream, processes } = harness()
+    const first = stream(model, labelled([user('open the page')]), { sessionId: 's-stable' })
+    const claude = processes[0]!
+    await claude.nextPrompt(1)
+    // Claude Code found browser_open with its own tool search and calls it.
+    claude.emit(...toolResponse('msg_1', 'toolu_1', { url: 'https://example.com' }, 'mcp__ficus__browser_open'))
+    const call = (await first.result()) as AssistantMessage
+    expect(call.content).toEqual([
+      { type: 'toolCall', id: 'toolu_1', name: 'browser_open', arguments: { url: 'https://example.com' } },
+    ])
+    const pending = claude.callTool('browser_open', { url: 'https://example.com' }, 'toolu_1')
+    const history = [user('open the page'), call, { ...toolResult('toolu_1', 'opened'), toolName: 'browser_open' }]
+    const second = stream(model, labelled(history), { sessionId: 's-stable' })
+    expect(await pending).toEqual({ content: [{ type: 'text', text: 'opened' }], isError: false })
+    claude.emit(...textResponse('msg_2', 'Opened it'))
+    const reply = (await second.result()) as AssistantMessage
+    const third = stream(model, labelled([...history, reply, user('thanks')]), { sessionId: 's-stable' })
+    expect((await claude.nextPrompt(2)).message.content).toEqual([{ type: 'text', text: 'thanks' }])
+    claude.emit(...textResponse('msg_3', 'Any time'))
+    expect((await third.result()).stopReason).toBe('stop')
+    expect(processes).toHaveLength(1)
+    expect(claude.closed).toBe(false)
+  })
 })

@@ -554,6 +554,26 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     }
   })
 
+  it('hands its tool-search labels to the subagents it dispatches', async () => {
+    const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+    const agentType = makeAgentType({ id: 'worker', toolSearch: { search: 'on', deferred: ['webfetch'] } }) as AgentType
+    const dispatchSpy = spyOn(Subagent, 'dispatch').mockResolvedValue({ subagents: [] })
+    try {
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+      await runner.exposeCreateSession()
+      const config = agentSessionCreateSpy.mock.calls[0][0]
+      expect(config.tools.toolSearch).toEqual({ search: 'on', deferred: ['webfetch'] })
+      const dispatchTool = config.tools.core.find((tool: any) => tool.name === 'dispatch')
+      await dispatchTool.execute('call-1', { subagents: [{ instructions: 'inspect' }] })
+      expect(dispatchSpy.mock.calls[0]?.[0].parentExecutionContext?.toolSearch).toEqual({
+        search: 'on',
+        deferred: ['webfetch'],
+      })
+    } finally {
+      dispatchSpy.mockRestore()
+    }
+  })
+
   it('offers automatic BigBrain tools as core tools that subagents do not inherit', async () => {
     automaticIntegrationTools = [{ name: 'bigbrain_shared_vaults' }, { name: 'bigbrain_shared_search_vault' }]
     const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })

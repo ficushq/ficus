@@ -22,6 +22,7 @@ import { InboxMessage } from '../InboxMessage'
 import { Subagent, type SubagentParentExecutionContext } from '../Subagent'
 import { createSquadBashTool } from '../../tools/squad-bash'
 import { filterToolsByPolicy } from '../../lib/tools'
+import { isToolSearchPolicy } from '../../services/agent/tool-search/labels'
 import { db } from '../../db'
 import { inbox } from '../../db/schema'
 import { and, eq, gte } from 'drizzle-orm'
@@ -159,6 +160,9 @@ export class SubagentRunner extends AgentRunner {
       sessionOptions.tools!.available = (sessionOptions.tools?.available ?? []).filter((tool) =>
         inheritedToolNames.includes(tool.name)
       )
+      // The child inherits the parent's tool labels along with its tools: the parent's override, or
+      // the global defaults when the parent's type has none.
+      if (parentExecutionContext) sessionOptions.tools!.toolSearch = parentExecutionContext.toolSearch ?? null
       return AgentSession.create(sessionOptions)
     })
   }
@@ -183,6 +187,9 @@ export class SubagentRunner extends AgentRunner {
       version: 1,
       squadId: context.squadId,
       environmentToolNames: [...new Set(context.environmentToolNames)].sort(),
+      // A malformed policy is dropped rather than failing the child: labels only change what is
+      // declared up front, never what the child may call.
+      ...(isToolSearchPolicy(context.toolSearch) ? { toolSearch: context.toolSearch } : {}),
     }
   }
 
